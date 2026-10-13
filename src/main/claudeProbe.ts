@@ -18,3 +18,7 @@ export function probeClaude(env: NodeJS.ProcessEnv = process.env): Promise<{ fou
   })
   return answer
 }
+
+export function forgetClaudeProbe(): void {
+  answer = undefined
+}

@@ -61,11 +61,22 @@ RANGE="$END"
 SUBJECTS=""
 # A repo with no commits has no HEAD to log — that's "nothing to list", not a git failure.
 if git rev-parse -q --verify "$END" >/dev/null; then
-  # Only feat/fix/perf reach the notes, and never a (site) one: the website ships on its own,
-  # not in the app the notes describe. `|| true`: both an empty range and a grep that filters
-  # everything out are normal outcomes (a release of only docs and its own version bump).
+  # Only feat/fix/perf reach the notes, plus any subject with no type prefix at all — many PR
+  # titles are plain sentences ("Assist without Discord: …") and are the release's headline
+  # features, so dropping them emptied v0.41.0's changelog. chore/docs/test/refactor/build/…
+  # stay out, and never a (site) one: the website ships on its own, not in the app the notes
+  # describe. `|| true`: both an empty range and a filter that drops everything are normal
+  # outcomes (a release of only docs and its own version bump).
   SUBJECTS=$(git log --no-merges --pretty=format:%s "$RANGE" |
-    grep -E '^(feat|fix|perf)(\([^)]*\))?:' | grep -vE '^[a-z]+\(site\):' || true)
+    awk '/^(feat|fix|perf)(\([^)]*\))?!?:/ || !/^[a-z]+(\([^)]*\))?!?:/' |
+    grep -vE '^[a-z]+\(site\):' || true)
+fi
+
+# An untyped subject is listed as-is, so the notes still carry it, but a PR title should have
+# had a prefix (the `PR title` check): say which ones, for the release to reword.
+UNTYPED=$(printf '%s\n' "$SUBJECTS" | grep -vE '^[a-z]+(\([^)]*\))?!?:' | grep -v '^$' || true)
+if [ -n "$UNTYPED" ]; then
+  printf 'release-notes.sh: warning: no type prefix, listed as-is — reword in the notes:\n%s\n' "$UNTYPED" >&2
 fi
 
 if [ -n "$SUBJECTS" ]; then

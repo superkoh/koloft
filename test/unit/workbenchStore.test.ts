@@ -732,6 +732,18 @@ describe('openCdpTab (§4.1c): the same fetch gate as every other write', () => 
     expect(strip().tabs.map((t) => t.kind)).toEqual(['files', 'web', 'web'])
     expect(tabId).toBe(strip().tabs[2].id)
   })
+
+  it('in a tab that follows its agent’s browser, opens the panel at once and brings each page the agent opens to the front; elsewhere it stays in the background', async () => {
+    useStore.setState({ workbenchOpen: { [TAB]: false }, workbenchLoad: {} })
+    await useStore.getState().openCdpTab(TAB, 'http://localhost:1/quiet')
+    expect(useStore.getState().workbenchOpen[TAB]).toBe(false)
+    expect(useStore.getState().workbenchLoad[TAB]).toBeUndefined()
+
+    useStore.getState().followAgentBrowser(TAB)
+    expect(useStore.getState().workbenchOpen[TAB]).toBe(true)
+    const tabId = await useStore.getState().openCdpTab(TAB, 'http://localhost:1/shown')
+    expect(useStore.getState().workbenchLoad[TAB]?.tabId).toBe(tabId)
+  })
 })
 
 describe('previewLinkTarget (X-9 — md link resolution)', () => {

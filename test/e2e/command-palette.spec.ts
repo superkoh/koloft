@@ -34,7 +34,7 @@ const SIDEBAR_BUTTON = '.aux-ico.sb-toggle'
 async function openPalette(app: ElectronApplication, page: Page): Promise<void> {
   await sendShortcut(app, 'shortcut:command-palette')
   await expect(palette(page)).toBeVisible()
-  await expect(palette(page).getByRole('textbox', { name: 'Jump to' })).toBeFocused()
+  await expect(palette(page).getByRole('textbox', { name: 'Ask or jump' })).toBeFocused()
 }
 
 function codexCalls(env: E2EEnv): { argv: string[]; sessionId: string }[] {
@@ -54,7 +54,9 @@ function codexCalls(env: E2EEnv): { argv: string[]; sessionId: string }[] {
 }
 
 test.describe('the command palette (⌘P) jumps to any session, workspace or action', () => {
-  test('⌘P, a few letters and ⏎ switch to a live session in another workspace', async ({ env }) => {
+  test('⌘P, a few letters, ↓ and ⏎ switch to a live session in another workspace; until ↓ no row is picked', async ({
+    env
+  }) => {
     test.setTimeout(120_000)
     seedSettings(env, { hintsOff: true })
     const app = await launchApp(env)
@@ -70,6 +72,8 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
       await openPalette(app, page)
       await page.keyboard.type('alpha palette')
       await expect(paletteRows(page)).toHaveCount(1)
+      await expect(hotRow(page)).toHaveCount(0)
+      await page.keyboard.press('ArrowDown')
       await expect(hotRow(page)).toContainText('Alpha palette target')
       await expect(hotRow(page).locator('.note')).toHaveText('ws-a · main')
       await page.keyboard.press('Enter')
@@ -82,7 +86,7 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
     }
   })
 
-  test('Esc closes it, a word that matches nothing says so, an action row closes the palette before it opens its own dialog, and ⌘P over another dialog does nothing', async ({
+  test('it opens on one empty input with no list, Esc closes it, a word that matches nothing lights "Start a session" for ⏎, an action row closes the palette before it opens its own dialog, and ⌘P over another dialog does nothing', async ({
     env
   }) => {
     const app = await launchApp(env)
@@ -91,17 +95,21 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
       await waitBooted(page)
 
       await openPalette(app, page)
-      await page.keyboard.type('zzq')
-      await expect(palette(page).locator('.cb-empty')).toContainText(
-        'No session, workspace or action'
-      )
-      await expect(palette(page).locator('.cb-empty')).toContainText('zzq')
       await expect(paletteRows(page)).toHaveCount(0)
+      const startPill = palette(page).getByRole('button', { name: /Start a session/ })
+      await expect(startPill).toBeDisabled()
+      await page.keyboard.type('zzq')
+      await expect(paletteRows(page)).toHaveCount(0)
+      await expect(startPill).toBeEnabled()
+      await expect(startPill).toHaveClass(/\bgo\b/)
+      await expect(startPill).toContainText('⏎')
       await page.keyboard.press('Escape')
       await expect(palette(page)).toHaveCount(0)
 
       await openPalette(app, page)
       await page.keyboard.type('settings')
+      await expect(paletteRows(page)).not.toHaveCount(0)
+      await page.keyboard.press('ArrowDown')
       await expect(hotRow(page)).toHaveText(/^Settings…⌘,$/)
       await page.keyboard.press('Enter')
       await expect(palette(page)).toHaveCount(0)
@@ -139,6 +147,7 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
       await openPalette(app, page)
       await page.keyboard.type(`${REMOTE_HOST} yesterday`)
       await expect(paletteRows(page)).toHaveCount(1)
+      await page.keyboard.press('ArrowDown')
       await expect(hotRow(page)).toHaveClass(/\bcold\b/)
       await expect(hotRow(page).locator('.note')).toContainText(
         `${REMOTE_HOST}:${REMOTE_WS_NAME} · `
@@ -180,6 +189,7 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
       await openPalette(app, page)
       await page.keyboard.type('codex palette')
       await expect(paletteRows(page)).toHaveCount(1)
+      await page.keyboard.press('ArrowDown')
       await expect(hotRow(page).getByRole('img', { name: 'Codex', exact: true })).toBeVisible()
       await expect(hotRow(page)).toHaveClass(/\bcold\b/)
       await page.keyboard.press('Enter')

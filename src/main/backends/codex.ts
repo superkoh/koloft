@@ -19,6 +19,7 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
   return {
     id: 'codex',
     availability: () => sessions.availability(),
+    forgetAvailability: () => sessions.forgetAvailability(),
     list: () => sessions.list(),
     historyRows: async (workspacePath) =>
       parseRemoteKey(workspacePath) || !(await sessions.availability()).available

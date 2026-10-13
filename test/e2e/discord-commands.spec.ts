@@ -10,6 +10,7 @@ import {
   terminalText,
   waitBooted,
   waitConductorStarted,
+  assistRecordOnDisk,
   waitForCallsBesideConductors,
   wsRows,
   oneStillRunning
@@ -160,19 +161,17 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     try {
       fake.say(OWNER, 'hello')
       await expect
-        .poll(() => said(fake), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain('Answer to: [Discord] hello')
-      const before = bindingOnDisk(env)?.lastSessionKey
+        .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('[Discord] hello')
+      const before = assistRecordOnDisk(env)?.lastSessionKey
       expect(before).toBeTruthy()
 
       fake.say(OWNER, '/clear')
       await expect
         .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([
-          expect.stringMatching(/conductor\*\* ran \/clear:\nIt is a new conversation now/)
-        ])
+        .toEqual([expect.stringMatching(/Assist\*\* ran \/clear:\nIt is a new conversation now/)])
       expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
-      await expect.poll(() => bindingOnDisk(env)?.lastSessionKey).not.toBe(before)
+      await expect.poll(() => assistRecordOnDisk(env)?.lastSessionKey).not.toBe(before)
       expect(said(fake).join('\n')).not.toContain('[Discord] /clear')
     } finally {
       await quitAndClose(app)

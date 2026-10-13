@@ -235,6 +235,14 @@ export function seedSettings(env: E2EEnv, patch: Record<string, unknown>): void 
   fs.writeFileSync(file, JSON.stringify({ ...current, ...patch }, null, 2))
 }
 
+// CC§9
+export function seedClaudeTrust(env: E2EEnv, dirs: string[]): void {
+  const projects = Object.fromEntries(
+    dirs.map((dir) => [fs.realpathSync(dir), { hasTrustDialogAccepted: true }])
+  )
+  fs.writeFileSync(path.join(env.home, '.claude.json'), JSON.stringify({ projects }))
+}
+
 export function installCodex(env: E2EEnv): void {
   const binary = path.join(env.fakeBin, 'codex')
   fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-codex.js'), binary)

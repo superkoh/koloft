@@ -509,29 +509,44 @@ export class CodexRpc {
   private nextId = 0
   private pending = new Map<number, PendingRequest>()
   private closed = false
+  private handshakeDone = false
 
   constructor(private options: CodexProcessOptions) {
-    this.process = new CodexProcess(
-      options,
+    this.process = this.spawn()
+    // CODEX§28
+    this.initialized = this.handshake().catch(async () => {
+      await this.process.stop().catch(() => {})
+      if (this.closed) throw new Error('Codex RPC connection is closed')
+      this.process = this.spawn()
+      await this.handshake()
+    })
+    void this.initialized.then(
+      () => (this.handshakeDone = true),
+      () => void this.close().catch(() => {})
+    )
+  }
+
+  private spawn(): CodexProcess {
+    return new CodexProcess(
+      this.options,
       (_raw, frame) => {
         if (frame.method !== undefined || typeof frame.id !== 'number') return
         settleRequest(this.pending, frame.id, frame)
       },
       (error) => {
         rejectAll(this.pending, error)
-        void this.close().catch(() => {})
+        if (this.handshakeDone) void this.close().catch(() => {})
       }
     )
-    this.initialized = this.process.ready.then(async () => {
-      await this.send('initialize', {
-        clientInfo: { name: 'koloft', title: 'Koloft', version: '1' },
-        capabilities: { experimentalApi: true }
-      })
-      this.process.write(JSON.stringify({ method: 'initialized' }))
+  }
+
+  private async handshake(): Promise<void> {
+    await this.process.ready
+    await this.send('initialize', {
+      clientInfo: { name: 'koloft', title: 'Koloft', version: '1' },
+      capabilities: { experimentalApi: true }
     })
-    void this.initialized.catch(() => {
-      void this.close().catch(() => {})
-    })
+    this.process.write(JSON.stringify({ method: 'initialized' }))
   }
 
   async request<T = unknown>(method: string, params: unknown = {}): Promise<T> {
@@ -545,7 +560,9 @@ export class CodexRpc {
         'account/read',
         'account/rateLimits/read',
         'model/list',
-        'config/read'
+        'config/read',
+        // CODEX§27
+        'hooks/list'
       ].includes(method)
     ) {
       throw new Error(`Codex history connection does not allow ${method}`)
