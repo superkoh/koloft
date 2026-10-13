@@ -3,7 +3,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
 import { chromium, type Locator, type Page } from '@playwright/test'
-import { BROWSER, openBrowser } from './helpers/browser'
+import { BROWSER, newWebTab, openBrowser } from './helpers/browser'
 import {
   test,
   expect,
@@ -509,7 +509,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a page Codex opens with `open` comes up in front in its own Workbench, and the agent-web hint names Codex', async ({
+  test('a page Codex opens with `open` comes up in front in its own Workbench, and the agent-web hint and an empty web tab name Codex', async ({
     env
   }) => {
     installCodex(env)
@@ -525,6 +525,9 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(hint).not.toContainText('Claude')
       await expect(wbActiveTab(page)).toHaveAttribute('title', /codex-opened/)
       await expect(wbUnreadTabs(page)).toHaveCount(0)
+
+      await newWebTab(page)
+      await expect(page.locator('.bempty')).toContainText('Or let Codex open one')
     } finally {
       await quitAndClose(app)
     }
@@ -912,7 +915,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex turn that ends while its child agent still runs shows green with ↻, and turn-done waits for the child', async ({
+  test('a Codex turn that ends while its child agent still runs shows breathing green with ↻, and turn-done waits for the child', async ({
     env
   }) => {
     installCodex(env)
@@ -929,12 +932,14 @@ test.describe('Codex sessions through the real method chooser, process transport
       const running = oneStillRunning(row)
       await expect(running).toBeVisible()
       await expect(row).toHaveClass(/st-waiting/)
+      await expect(row).toHaveClass(/\bst-bg-run\b/)
       expect(await pendingAttention(page)).toHaveLength(0)
       await running.click()
       await expect(page.locator('.tbu-pop.parked')).toContainText('Turn done · still running')
       await page.keyboard.press('Escape')
       await expect(running).toHaveCount(0, { timeout: 15_000 })
       await expect(row).toHaveClass(/st-waiting/)
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/)
       await expect
         .poll(() => pendingAttention(page), { timeout: 10_000 })
         .toMatchObject([{ kind: 'turn-done' }])
@@ -1405,6 +1410,41 @@ test.describe('Codex sessions through the real method chooser, process transport
 
       await startCodex(page, env)
       expect(codexCalls(env).at(-1)!.codexHome).toBe(home)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
+  test('a Codex sign-in tab still waiting for the browser names itself above the terminal, and its Cancel closes it and brings Settings ▸ Accounts back', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(path.join(env.home, 'fake-codex-login-waits'), '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in to Codex' }).click()
+      await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+      await expect(page.locator('.modal')).toHaveCount(0)
+
+      const bar = page.locator('.term-island > .wb-bar')
+      await expect(bar.locator('.wb-title')).toHaveText('Codex sign in: work', { timeout: 20_000 })
+      await snap(page, 'codex-sign-in-tab-bar')
+      await bar.getByRole('button', { name: 'Cancel' }).click()
+
+      await expect(bar).toHaveCount(0)
+      await expect(page.getByRole('tab', { name: 'Accounts', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true',
+        { timeout: 20_000 }
+      )
+      expect(fs.existsSync(path.join(env.userData, 'codex-homes', 'work', 'auth.json'))).toBe(false)
     } finally {
       await quitAndClose(app)
     }

@@ -703,6 +703,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         'New session⌘N',
         'Restore session…',
         'Scheduled jobs…',
+        'Talk to Assist',
         'Bind Discord channel…',
         'Remove workspace'
       ])

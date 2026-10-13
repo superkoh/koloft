@@ -158,12 +158,26 @@
           <li>tokens and keys are kept in the macOS Keychain</li>
           <li>the top bar shows how much room your Claude accounts have left</li>
           <li>
-            with no account that can be used, a session does not start. Koloft says
-            <code
-              >No Claude account in Koloft can be used. Add one, or fix the one you have, in
-              Settings ▸ Accounts.</code
-            >
-            (the same for Codex), and a scheduled job does not start either
+            with no account that can be used, the New session button is greyed out, and a line under
+            it says why (the same for Codex); a scheduled job does not start either. The line is one
+            of:
+            <ul class="dash">
+              <li>
+                <code>No Claude account yet — add one in Settings ▸ Accounts.</code> when none is
+                added
+              </li>
+              <li>
+                <code>No Claude account can be used — check Settings ▸ Accounts.</code> when none of
+                yours can be used
+              </li>
+              <li>
+                <code
+                  >"&lt;account name&gt;" is not signed in — sign in again in Settings ▸
+                  Accounts.</code
+                >
+                when one needs a fresh sign-in
+              </li>
+            </ul>
           </li>
         </ul>
 
@@ -175,22 +189,53 @@
           week), shows in Settings.
         </p>
 
-        <h2 id="assist">Koloft Assist</h2>
+        <h2 id="assist">Assist</h2>
         <p>
-          Koloft has small jobs of its own that need an AI. Today there is one: the short title of a
-          Claude session that an agent starts with <code>koloft session new</code> (see
-          <a href="../agents/">agents</a>). One of your accounts does those jobs. That is
-          <mark class="hl">Koloft Assist</mark>. Settings ▸ Sessions ▸ Assist is where you turn it
-          on or off and pick the tool it runs on.
+          <mark class="hl">Assist</mark> is Koloft's own AI. One of your accounts runs it. It does
+          small jobs for Koloft, and you can talk to it. Settings ▸ Assist is where you turn it on
+          or off and pick the tool it runs on, Claude or Codex. That one pick counts for the small
+          jobs and for every Assist you talk to.
+        </p>
+        <p>The small jobs:</p>
+        <ul class="dash">
+          <li>
+            the short title of a Claude session that an agent starts with
+            <code>koloft session new</code> (see <a href="../agents/">agents</a>)
+          </li>
+          <li>which docs the <a href="../workbench/#folded">folded Workbench card</a> lists</li>
+          <li>
+            which folder a session you ask for in <kbd>⌘P</kbd> should start in (see
+            <a href="../sessions/#find">find any session</a>)
+          </li>
+        </ul>
+        <p>Talking to it:</p>
+        <ul class="dash">
+          <li>
+            the Assist block in the sidebar, under the sessions list. It is always there, Discord or
+            not. Global comes first; it looks after every folder. Then each folder's Assist you have
+            talked to or bound to Discord (right-click the folder ▸ Talk to Assist). Then the tasks
+            Assist is running for you, such as setting up Discord. With Assist off and nothing bound
+            to Discord, it shows one grey Assist row; click it to set Assist up.
+          </li>
+          <li>
+            from your phone, once an Assist has a Discord channel (see
+            <a href="../discord/">discord</a>)
+          </li>
+          <li>from <kbd>⌘P</kbd> (see <a href="../sessions/#find">find any session</a>)</li>
+        </ul>
+        <p>
+          Assist only passes work on and never changes your files itself (see
+          <a href="../discord/#what-assist-can-do">what Assist can do</a>).
         </p>
         <ul class="dash">
           <li>
-            on Claude it uses Haiku, on Codex GPT-6 Luna; each job costs a tiny bit of that
-            account's plan or API balance, far less than one cent
+            on Claude it uses Haiku, on Codex GPT-6 Luna, for the small jobs; each costs a tiny bit
+            of that account's plan or API balance, far less than one cent
           </li>
           <li>
-            off, those jobs run without AI: a session an agent starts is named after the first line
-            of its task
+            with Assist off, the small jobs run without AI: a session an agent starts is named after
+            the first line of its task, the card lists every doc the agent wrote, and
+            <kbd>⌘P</kbd> opens the folder picker. An Assist on Discord keeps working either way.
           </li>
         </ul>
 

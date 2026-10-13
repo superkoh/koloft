@@ -76,7 +76,7 @@ function resultCard(p: Pending): Card | undefined {
   if (!body.length && p.worked) body.push('Done.')
   if (!body.length)
     body.push(
-      'It printed nothing Koloft can read. Whatever it showed is only on its screen; ask the conductor to show you its screen.'
+      'It printed nothing Koloft can read. Whatever it showed is only on its screen; ask Assist to show you its screen.'
     )
   if (p.pressedEsc)
     body.push(

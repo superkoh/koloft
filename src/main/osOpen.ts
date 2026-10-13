@@ -3,11 +3,15 @@ import path from 'path'
 import { shell } from 'electron'
 import { canOpenExternally } from '@shared/browserRoute'
 
-export async function leaveForOS(target: string, kind: 'url' | 'path' | 'reveal'): Promise<string> {
+export function osHandOffSuppressed(target: string): boolean {
   const log = process.env.KOLOFT_EXTERNAL_OPENS_FILE
   if (log) fs.appendFile(log, `${target}\n`, () => {})
+  return !!process.env.KOLOFT_SUPPRESS_OS_OPEN
+}
+
+export async function leaveForOS(target: string, kind: 'url' | 'path' | 'reveal'): Promise<string> {
   // PLATFORM§4
-  if (process.env.KOLOFT_SUPPRESS_OS_OPEN) return ''
+  if (osHandOffSuppressed(target)) return ''
   if (kind === 'url') void shell.openExternal(target)
   else if (kind === 'reveal') shell.showItemInFolder(target)
   // PLATFORM§4

@@ -5,10 +5,12 @@ import { AssistSetup } from './AssistSetup'
 // ADR-0030
 export function AssistDialog({
   setup,
-  onNotNow
+  onNotNow,
+  asked
 }: {
   setup: AssistSetupState
   onNotNow(): void
+  asked: boolean
 }): JSX.Element {
   return (
     <div className="modal-backdrop">
@@ -17,7 +19,7 @@ export function AssistDialog({
         <div className="modal-body">
           <AssistSetup setup={setup} />
         </div>
-        {setup.noTool && (
+        {(setup.noTool || asked) && (
           <div className="modal-foot">
             <button className="mini" onClick={onNotNow}>
               Not now

@@ -6,7 +6,7 @@
     <title>Install, update, what it talks to — Koloft</title>
     <meta
       name="description"
-      content="Install Koloft with one Terminal line, why it is a Terminal line, how it updates, and every host it ever talks to."
+      content="Install Koloft from its dmg or with one Terminal line, how it updates, and every host it ever talks to."
     />
     <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
@@ -19,7 +19,7 @@
     <meta property="og:title" content="Install, update, what it talks to — Koloft" />
     <meta
       property="og:description"
-      content="Install Koloft with one Terminal line, why it is a Terminal line, how it updates, and every host it ever talks to."
+      content="Install Koloft from its dmg or with one Terminal line, how it updates, and every host it ever talks to."
     />
     <meta property="og:url" content="__SITE_URL__/install/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -33,7 +33,7 @@
     <meta name="twitter:title" content="Install, update, what it talks to — Koloft" />
     <meta
       name="twitter:description"
-      content="Install Koloft with one Terminal line, why it is a Terminal line, how it updates, and every host it ever talks to."
+      content="Install Koloft from its dmg or with one Terminal line, how it updates, and every host it ever talks to."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
     <link
@@ -70,15 +70,24 @@
         <h1 class="title">Install, update, what it talks to</h1>
 
         <p>
-          Koloft is a free Mac app. <mark class="hl">One line in Terminal</mark> installs it. This
-          page says why it is a Terminal line, what you need, how Koloft stays up to date, and every
-          place on the internet it talks to.
+          Koloft is a free Mac app, <mark class="hl">signed and notarized by Apple</mark> (Apple has
+          checked it). Download it and drag it to Applications, or let one line in Terminal do that.
+          This page says what you need, how Koloft stays up to date, and every place on the internet
+          it talks to.
         </p>
 
         <h2>Install</h2>
         <p>
+          Get the <code>.dmg</code> (the disk image a Mac app comes in) from
+          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>. Open it and
+          drag Koloft to Applications. Koloft is signed with an Apple Developer ID and notarized, so
+          it opens with a normal double-click.
+        </p>
+
+        <h3>Or one line in Terminal</h3>
+        <p>
           Open Terminal, paste this line and press Return. It finds the newest release and puts
-          Koloft in your Applications folder.
+          Koloft in your Applications folder, in place of an older copy.
         </p>
         <!-- prettier-ignore -->
         <p class="command">
@@ -86,46 +95,25 @@
           <button type="button" class="copy" data-copy="cmd-install">Copy</button>
         </p>
 
-        <h3>Why a Terminal line?</h3>
-        <p>
-          Koloft is not signed by Apple. Signing needs a paid Apple Developer ID, and this project
-          does not have one. When a browser downloads an app like that, macOS puts a quarantine mark
-          on it. Gatekeeper (the part of macOS that checks apps before they open) then blocks it and
-          calls it "damaged" or from an "unidentified developer".
-        </p>
-        <p>
-          <code>curl</code> (the download tool inside Terminal) never adds that mark. So the app it
-          fetches opens with a normal double-click, with no prompt.
-        </p>
-
-        <h3>Rather download it yourself?</h3>
-        <p>
-          Get the <code>.dmg</code> (the disk image a Mac app comes in) from
-          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>. Drag Koloft
-          to Applications. Then clear the mark once:
-        </p>
-        <!-- prettier-ignore -->
-        <p class="command">
-          <code id="cmd-xattr">xattr -dr com.apple.quarantine /<wbr>Applications/<wbr>Koloft.app</code>
-          <button type="button" class="copy" data-copy="cmd-xattr">Copy</button>
-        </p>
-
         <h3>What you need</h3>
         <ul class="dash">
           <li>a Mac with Apple Silicon (M1 or later)</li>
           <li>
-            Claude Code, or the Codex CLI (command-line tool), already installed. Each Koloft
-            version names the oldest Claude Code and Codex it works with, and updates an older one
-            for you (see <a href="#updates">Updates</a> below).
+            Claude Code, or the Codex CLI (command-line tool). If neither is on the Mac, the welcome
+            steps install one for you: click its card ("Not on this Mac. Click to install.") and a
+            terminal tab runs the tool's official installer. Each Koloft version names the oldest
+            Claude Code and Codex it works with, and updates an older one for you (see
+            <a href="#updates">Updates</a> below).
           </li>
           <li>
             a Claude or Codex login to add to Koloft: every session runs on one (see
             <a href="../accounts/">accounts</a>)
           </li>
           <li>
-            if you like: <code>gh</code>, GitHub's own command-line tool, signed in, for a folder's
-            open issue and pull request counts, a branch's checks, and a Discord conductor's
-            <code>koloft gh</code>
+            git and <code>gh</code> (GitHub's own command-line tool)
+            <mark class="hl">come with Koloft</mark>. If your Mac already has its own, Koloft uses
+            yours. Sign in to gh yourself (<code>gh auth login</code>) for a folder's open issue and
+            pull request counts, a branch's checks, and <code>koloft gh</code> for Assist
           </li>
           <li>
             if you like: a Discord account, for the <a href="../discord/">butler on Discord</a>
@@ -170,21 +158,29 @@
                 <td>
                   each account's room left, as a session starts and every 5 minutes. Through
                   <code>claude</code>, the small jobs of
-                  <a href="../accounts/#assist">Koloft Assist</a> when it runs on Claude
+                  <a href="../accounts/#assist">Assist</a> when it runs on Claude
                 </td>
               </tr>
               <tr>
                 <td><code>api.github.com,</code><br /><code>github.com</code></td>
                 <td>
                   a newer Koloft and its <code>.dmg</code>; through <code>gh</code>, issue and pull
-                  request counts, a branch's checks, and what a Discord conductor asks with
-                  <code>koloft gh</code>
+                  request counts, a branch's checks, and what Assist asks with
+                  <code>koloft gh</code>; and <code>gh</code> itself, for a remote folder's machine
+                  that has none
                 </td>
               </tr>
               <tr>
                 <td>your folder's<br />git remote</td>
                 <td>
                   often <code>github.com</code>; every 5 minutes, to see if your branch is behind
+                </td>
+              </tr>
+              <tr>
+                <td><code>claude.ai,</code><br /><code>chatgpt.com</code></td>
+                <td>
+                  the official installers of <code>claude</code> and <code>codex</code>, only when
+                  you click a tool's card on the welcome steps to install it
                 </td>
               </tr>
               <tr>
@@ -208,7 +204,8 @@
               <tr>
                 <td><code>discord.com,</code><br /><code>gateway.discord.gg</code></td>
                 <td>
-                  only once you paste a bot token; see <a href="../discord/">A butler on Discord</a>
+                  only once Assist has set up your bot; see
+                  <a href="../discord/">A butler on Discord</a>
                 </td>
               </tr>
               <tr>
@@ -230,7 +227,7 @@
             the status line under each session asks <code>gh</code> about the branch's pull request
           </li>
           <li>
-            with <a href="../accounts/#assist">Koloft Assist</a> on Codex, its small jobs go through
+            with <a href="../accounts/#assist">Assist</a> on Codex, its small jobs go through
             <code>codex</code> to OpenAI, the same way a Codex session does
           </li>
           <li>the git check can be turned off in Settings ▸ Appearance ▸ Auto-fetch git remotes</li>
@@ -247,9 +244,9 @@
             the store page loads only when you click Open Chrome Web Store in Settings ▸ Extensions
           </li>
           <li>
-            with a bot token pasted in Settings ▸ Discord, your messages, and your sessions'
-            replies, questions and approvals, go to your own bot; files you send are fetched from
-            the address Discord gives for them (its own file host)
+            with a bot set up in Settings ▸ Discord, your messages and your sessions' replies,
+            questions and approvals go to your own bot. Files you send are fetched from Discord's
+            own file host
           </li>
         </ul>
         <p>

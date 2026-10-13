@@ -1,0 +1,13 @@
+{
+  "gh": {
+    "version": "2.102.0",
+    "macArm64Sha256": "da922c20d1792e5b2cbf375593d7a658acf034c12c84e007e71c76ef959c337e"
+  },
+  "git": {
+    "version": "2.53.0",
+    "dugiteTag": "v2.53.0-4",
+    "macArm64Asset": "dugite-native-v2.53.0-4098283-macOS-arm64.tar.gz",
+    "macArm64Sha256": "f9dc64635a5b62fbd7ad95db73268bbb8912255ac516d65d37bf7af22fcb8ffe",
+    "copyingSha256": "5b2198d1645f767585e8a88ac0499b04472164c0d2da22e75ecf97ef443ab32e"
+  }
+}

@@ -15,8 +15,11 @@ import {
   seedJsonl,
   settingsOnDisk,
   snap,
+  terminalText,
+  termIds,
   waitForCalls
 } from './helpers/p1'
+import { readExternalOpens } from './helpers/browser'
 import {
   changelog,
   notesBody,
@@ -26,6 +29,19 @@ import {
 } from './helpers/updateFixture'
 
 const BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS = 3000
+const SETTLE_FOR_A_TAB_THAT_MUST_STAY_OPEN_MS = 1500
+
+function codexInstalledOnlyLater(env: E2EEnv): string {
+  const codex = path.join(env.home, '.local', 'bin', 'codex')
+  env.launchEnv.KOLOFT_CODEX_CMD = codex
+  env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
+  env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = path.join(
+    __dirname,
+    'fixtures',
+    'fake-tool-installer.js'
+  )
+  return codex
+}
 
 function firstRun(env: E2EEnv, settings: Record<string, unknown> = {}): void {
   fs.writeFileSync(
@@ -63,6 +79,10 @@ async function expectStep(page: Page, n: number): Promise<void> {
     timeout: 20_000
   })
   await expect(welcome(page).locator('.ob-dots .ob-dot.on')).toHaveCount(1)
+}
+
+function installCards(page: Page): Locator {
+  return welcome(page).locator('.ob-choices .choice', { hasText: 'Not on this Mac' })
 }
 
 async function clickPrimary(page: Page): Promise<void> {
@@ -211,7 +231,8 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
     }
   })
 
-  test('T-OB-05: finishing the welcome starts the first session in the pinned folder', async ({
+  // CC§10
+  test('T-OB-05: finishing the welcome starts the first session in the pinned folder, with Claude Code’s own first-run page marked done', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -225,12 +246,16 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await advanceTo(page, 4)
 
       const primary = welcome(page).locator('.btn-primary')
+      await expect(primary).toBeEnabled({ timeout: 20_000 })
       await expect(primary).toHaveText('＋ Start first session', { timeout: 20_000 })
-      await expect(primary).toBeEnabled()
       await primary.click()
 
       const [call] = await waitForCalls(env, 1)
       expect(call.cwd).toBe(env.workspaces.a)
+      expect(
+        JSON.parse(fs.readFileSync(path.join(env.home, '.claude.json'), 'utf8'))
+          .hasCompletedOnboarding
+      ).toBe(true)
       await expect(welcome(page)).toHaveCount(0)
       await expect.poll(() => settingsOnDisk(env).onboardingSeen, { timeout: 20_000 }).toBe(true)
     } finally {
@@ -238,7 +263,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
     }
   })
 
-  test('T-OB-06: with no supported CLI installed step 4 says how to get one and launches nothing', async ({
+  test('T-OB-06: with no supported CLI installed step 4 offers to install each one, never through npm, and launches nothing', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -252,13 +277,11 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await page.waitForLoadState('domcontentloaded')
       await advanceTo(page, 4)
 
-      const warn = welcome(page).locator('.ob-warn')
-      await expect(warn).toBeVisible({ timeout: 20_000 })
-      await expect(warn).toContainText('Install Claude Code or a supported Codex CLI')
-      await expect(warn.locator('code.ob-cmd')).toHaveText([
-        'npm install -g @anthropic-ai/claude-code',
-        'npm install -g @openai/codex'
-      ])
+      await expect(installCards(page)).toHaveText(
+        [/^Claude.*Not on this Mac/, /^Codex.*Not on this Mac/],
+        { timeout: 20_000 }
+      )
+      await expect(welcome(page)).not.toContainText('npm')
       const primary = welcome(page).locator('.btn-primary')
       await expect(primary).toHaveText('Check again')
       await snap(page, 'T-OB-06')
@@ -267,6 +290,78 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await expect(primary).toHaveText('Check again', { timeout: 20_000 })
       await expect(welcome(page)).toBeVisible()
       expect(fs.existsSync(env.claudeCalls)).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§22
+  test('T-OB-14: installing from step 3 runs the installer in a terminal tab; a failed install keeps the tab and its error, a good one closes it and hands back to step 3 with the tool to sign in to', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    firstRun(env, { assist: null })
+    env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
+    codexInstalledOnlyLater(env)
+    const failing = path.join(env.home, 'fake-tool-installer-fails')
+    fs.writeFileSync(failing, '')
+    seedJsonl(env, env.workspaces.a, { summary: 'A one', mtime: Date.now() - 60_000 })
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await advanceTo(page, 3)
+      const codexCard = installCards(page).filter({ hasText: /^Codex/ })
+
+      await codexCard.click()
+      await expect(welcome(page)).toHaveCount(0, { timeout: 20_000 })
+      await expect.poll(() => termIds(page), { timeout: 20_000 }).toHaveLength(1)
+      const [tabId] = await termIds(page)
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 30_000 })
+        .toContain('Could not resolve host')
+      await page.waitForTimeout(SETTLE_FOR_A_TAB_THAT_MUST_STAY_OPEN_MS)
+      await expect(welcome(page)).toHaveCount(0)
+
+      fs.rmSync(failing)
+      await page.evaluate((id) => window.api.terminal.write(id, 'exit\r'), tabId)
+      await expectStep(page, 3)
+      await codexCard.click()
+      await expectStep(page, 3)
+      const codexSignIn = welcome(page)
+        .locator('.assist-setup .choice')
+        .filter({ has: page.locator('.choice-t', { hasText: /^Codex$/ }) })
+      await expect(codexSignIn).not.toContainText('Not on this Mac', { timeout: 20_000 })
+      expect(fs.readFileSync(path.join(env.home, 'fake-tool-installs.txt'), 'utf8')).toBe(
+        'codex\ncodex\n'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('T-OB-15: Check again on step 4 really checks again, so a tool installed a moment ago is found', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    firstRun(env)
+    env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
+    const codex = codexInstalledOnlyLater(env)
+    seedJsonl(env, env.workspaces.a, { summary: 'A one', mtime: Date.now() - 60_000 })
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await advanceTo(page, 4)
+      const primary = welcome(page).locator('.btn-primary')
+      await expect(primary).toHaveText('Check again', { timeout: 20_000 })
+
+      fs.mkdirSync(path.dirname(codex), { recursive: true })
+      fs.symlinkSync(path.join(__dirname, 'fixtures', 'fake-codex.js'), codex)
+      await primary.click()
+      await expect(primary).toHaveText('＋ Start first session', { timeout: 20_000 })
     } finally {
       await quitAndClose(app)
     }
@@ -310,7 +405,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
     }
   })
 
-  test('T-OB-11: with only Codex on this Mac step 3 offers only Codex, and Assist can run on it', async ({
+  test('T-OB-11: with only Codex on this Mac step 3 offers to install Claude and to sign in to Codex, and Assist can run on Codex', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -326,10 +421,10 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await advanceTo(page, 3)
 
       const cards = welcome(page).locator('.assist-setup .choice')
-      await expect(cards).toHaveCount(1, { timeout: 20_000 })
-      await expect(cards.nth(0).locator('.choice-t')).toHaveText('Codex')
-      await expect(cards.nth(0)).toContainText('Signed in')
-      await cards.nth(0).click()
+      await expect(cards.locator('.choice-t')).toHaveText(['Claude', 'Codex'], { timeout: 20_000 })
+      await expect(cards.nth(0)).toContainText('Not on this Mac')
+      await expect(cards.nth(1)).toContainText('Signed in')
+      await cards.nth(1).click()
       await clickPrimary(page)
       await expectStep(page, 4)
       expect(settingsOnDisk(env).assist).toEqual({ on: true, backend: 'codex' })
@@ -367,7 +462,9 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await page.waitForLoadState('domcontentloaded')
       await advanceTo(page, 3)
 
-      const card = welcome(page).locator('.assist-setup .choice')
+      const card = welcome(page)
+        .locator('.assist-setup .choice')
+        .filter({ has: page.locator('.choice-t', { hasText: /^Codex$/ }) })
       await expect(card).toContainText('"me" is not signed in. Click to sign in again.', {
         timeout: 20_000
       })

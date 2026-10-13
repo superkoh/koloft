@@ -1,6 +1,6 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
+import { LuTriangleAlert, LuX } from 'react-icons/lu'
 import type { BackendId, WorkspaceRows } from '@shared/types'
 import { basename } from '@shared/preview'
 import { hostOf } from '@shared/remoteKey'
@@ -24,7 +24,12 @@ import {
   type PickerMode
 } from '../workspacePicker'
 import { PullConfirm } from './PullConfirm'
-import { SessionLaunchButtons, SessionLaunchStatus, useSessionLaunch } from './SessionLaunchButtons'
+import {
+  BusyLine,
+  SessionLaunchButtons,
+  SessionLaunchStatus,
+  useSessionLaunch
+} from './SessionLaunchButtons'
 
 export function WorkspacePicker({
   mode,
@@ -183,14 +188,9 @@ export function WorkspacePicker({
     const f = target?.workspace.freshness
     if (locked) {
       return (
-        <div className="fresh-line busy">
-          <span className="fico-l">
-            <LuLoaderCircle size={14} />
-          </span>
-          <span>
-            {sessionLaunch.starting ? 'Starting…' : f ? `Pulling ${f.defRef}…` : 'Pulling…'}
-          </span>
-        </div>
+        <BusyLine>
+          {sessionLaunch.starting ? 'Starting…' : f ? `Pulling ${f.defRef}…` : 'Pulling…'}
+        </BusyLine>
       )
     }
     if (failedHere) {
