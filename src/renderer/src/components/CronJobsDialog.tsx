@@ -236,7 +236,6 @@ export function CronJobsDialog({
     })
     setTouched(false)
     setServerErrors([])
-    setSelectedId(job.id)
     setForm({ mode: 'edit', id: job.id })
   }
 
@@ -268,7 +267,6 @@ export function CronJobsDialog({
     if (form.mode === 'edit') input.id = form.id
     const r = await window.api.cron.save(input)
     if (r.ok) {
-      setSelectedId(r.job.id)
       closeForm()
     } else {
       setServerErrors(r.errors)
@@ -323,10 +321,6 @@ export function CronJobsDialog({
     <div
       className={'job-row' + (job.enabled ? '' : ' off') + (job.id === selected?.id ? ' on' : '')}
       key={job.id}
-      onClick={(e) => {
-        if ((e.target as Element).closest('button, input')) return
-        setSelectedId(job.id === selected?.id ? null : job.id)
-      }}
     >
       <Switch
         checked={job.enabled}
@@ -334,7 +328,10 @@ export function CronJobsDialog({
         ariaLabel={`${job.name} on`}
         onChange={(on) => void window.api.cron.setEnabled(job.id, on)}
       />
-      <div className="job-main">
+      <div
+        className="job-main"
+        onClick={() => setSelectedId(job.id === selected?.id ? null : job.id)}
+      >
         <div className="job-name">{job.name}</div>
         <div className="job-task">
           {[
@@ -680,50 +677,62 @@ export function CronJobsDialog({
   const renderHistory = (): JSX.Element | null => {
     if (jobs.length === 0) return null
     const now = new Date()
-    const rows: { at: number; row: JSX.Element }[] = []
+    type Row = {
+      key: string
+      job: string
+      at: number
+      when: string
+      dot: string
+      text: string
+      worktree?: string
+    }
+    const waiting: Row[] = []
+    const past: Row[] = []
     for (const job of selected ? [selected] : jobs) {
-      const name = selected ? null : <span className="hist-job">{job.name}</span>
       const live = liveOf(cron.live, job.id)
       if (live?.state === 'done') {
-        rows.push({
+        waiting.push({
+          key: `${job.id}-live`,
+          job: job.name,
           at: live.dueAt,
-          row: (
-            <div className="hist-row" key={`${job.id}-live`}>
-              <span className="hist-when">{describeWhen(new Date(live.dueAt), now)}</span>
-              {name}
-              <span className="hist-state">
-                <span className="dot ok" />
-                {live.kept ? `Done — not closed: ${live.kept}` : 'Done — waiting for you'}
-              </span>
-              {live.worktree && <span className="hist-wt">{` · ${live.worktree}`}</span>}
-            </div>
-          )
+          when: describeWhen(new Date(live.dueAt), now),
+          dot: 'dot ok',
+          text: live.kept ? `Done — not closed: ${live.kept}` : 'Done — waiting for you',
+          worktree: live.worktree
         })
       }
       job.history.forEach((h, i) =>
-        rows.push({
+        past.push({
+          key: `${job.id}-${h.dueAt}-${i}`,
+          job: job.name,
           at: histEnd(h),
-          row: (
-            <div className="hist-row" key={`${job.id}-${h.dueAt}-${i}`}>
-              <span className="hist-when">{histWhen(h, now)}</span>
-              {name}
-              <span className="hist-state">
-                <span className={histDot(h)} />
-                {histText(h)}
-              </span>
-              {h.worktree && <span className="hist-wt">{` · ${h.worktree}`}</span>}
-            </div>
-          )
+          when: histWhen(h, now),
+          dot: histDot(h),
+          text: histText(h),
+          worktree: h.worktree
         })
       )
     }
-    if (!selected) rows.sort((a, b) => b.at - a.at)
+    const newestFirst = (a: Row, b: Row): number => b.at - a.at
+    const rows = [...waiting.sort(newestFirst), ...past.sort(newestFirst)]
     return (
       <div className="hist">
         <span className="flabel">
           {selected ? `History · ${selected.name}` : 'History · all jobs'}
         </span>
-        <div className="hist-list">{rows.map((r) => r.row)}</div>
+        <div className="hist-list">
+          {rows.map((r) => (
+            <div className="hist-row" key={r.key}>
+              <span className="hist-when">{r.when}</span>
+              {!selected && <span className="hist-job">{r.job}</span>}
+              <span className="hist-state">
+                <span className={r.dot} />
+                {r.text}
+              </span>
+              {r.worktree && <span className="hist-wt">{` · ${r.worktree}`}</span>}
+            </div>
+          ))}
+        </div>
       </div>
     )
   }

@@ -744,6 +744,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
 
       await createJob(page, await openCron(page, 'ws-a'), { name: 'A', task: '/a' })
       await createJob(page, cronDialog(page), { name: 'B', task: '/b' })
+      await expect(cronDialog(page).locator('.hist .flabel')).toHaveText('History · all jobs')
+      await expect(cronDialog(page).locator('.job-row.on')).toHaveCount(0)
       await closeCron(page)
       const dlg = await openCron(page, 'ws-a')
 

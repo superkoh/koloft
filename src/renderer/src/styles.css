@@ -5437,7 +5437,6 @@ input.switch:focus-visible {
   background: var(--bg-1);
   border: 1px solid var(--line);
   border-radius: var(--r);
-  cursor: pointer;
 }
 .job-row.on {
   background: var(--accent-soft);
@@ -5455,6 +5454,7 @@ input.switch:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  cursor: pointer;
 }
 .job-name {
   font-size: 14px;
