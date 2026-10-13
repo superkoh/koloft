@@ -143,6 +143,7 @@ export function localHost(github: GithubLookup): Host {
   return {
     listDir,
     dirExists,
+    dirExistsOrThrow: dirExists,
     makeDir: (dir) =>
       fs.promises.mkdir(dir).then(
         () => true,

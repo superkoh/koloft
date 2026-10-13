@@ -240,7 +240,7 @@ export interface CodexSessionDeps {
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
-  pickHome(): { account: string; home: string } | undefined
+  pickHome(resumeSessionId?: string): { account: string; home: string } | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
   browserEndpoint(tabId: string): string
@@ -251,6 +251,11 @@ export interface CodexSessionDeps {
   agent: {
     enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
+  }
+  gitAccounts: {
+    configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
+    picked(cwd: string): Promise<boolean>
+    ghWrapper: string
   }
 }
 
@@ -434,7 +439,8 @@ export class CodexSessions {
     let pathVar = env.PATH
     if (fallbackBin) pathVar = pathWithDirLast(pathVar, fallbackBin)
     if (gitBin) pathVar = pathWithDirFirst(pathVar, gitBin)
-    return pathVar === env.PATH ? env : { ...env, PATH: pathVar }
+    // ADR-0033
+    return this.deps.gitAccounts.configEnv({ ...env, PATH: pathVar })
   }
 
   // ADR-0029 CODEX§27
@@ -885,7 +891,7 @@ export class CodexSessions {
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error('This Codex session is already open.')
     // CODEX§15 ADR-0030
-    const picked = this.deps.pickHome()
+    const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
     const home = picked.home
     if (opts.worktreeResourceId) {
@@ -897,8 +903,9 @@ export class CodexSessions {
     } else if (opts.worktree) {
       resource = await this.worktrees.create(workspace, opts.worktree)
       cwd = resource.worktreePath
-      // ADR-0026
-      if (!opts.scheduled) this.deps.trustFolder(workspace, processEnv)
+      // ADR-0026 CODEX§11
+      if (!opts.scheduled)
+        for (const dir of [workspace, cwd]) this.deps.trustFolder(dir, processEnv)
     } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }
@@ -913,6 +920,10 @@ export class CodexSessions {
     // ADR-0029
     const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
     const browser = endpoint ? await this.browserOverrides(home, cwd) : []
+    // CODEX§29
+    const gitNetwork = (await this.deps.gitAccounts.picked(cwd))
+      ? ['sandbox_workspace_write.network_access=true']
+      : []
     this.assertStarting()
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
@@ -953,6 +964,7 @@ export class CodexSessions {
       configOverrides: [
         STATUS_LINE_CONFIG,
         ...browser,
+        ...gitNetwork,
         ...(instructions.length ? [developerInstructions(instructions)] : []),
         ...(opts.resumeSessionId ? permissionConfig(permissions) : []),
         ...(conductor ? [CODEX_GATE_OVERRIDE, CODEX_ASKS_AND_WAITS] : [])
@@ -1037,6 +1049,7 @@ export class CodexSessions {
     // PLATFORM§2
     if (this.deps.gitBin)
       fs.symlinkSync(path.join(this.deps.gitBin, 'git'), path.join(shim.shimDir, 'git'))
+    fs.symlinkSync(this.deps.gitAccounts.ghWrapper, path.join(shim.shimDir, 'gh'))
     if (agent) writeCodexAgentShim(shim.shimDir, shim.requestDir)
     const handled = new Set<string>()
     const drops = watchJsonDrops(shim.requestDir, (name) => {

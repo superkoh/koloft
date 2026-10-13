@@ -14,9 +14,11 @@ import {
   openSessionTerminal,
   openWorktreeSession,
   panelTerm,
+  processAlive,
   readCalls,
   runIn,
   startSessionIn,
+  termIds,
   waitBooted,
   waitForCalls,
   wsGroup,
@@ -28,6 +30,8 @@ const PANEL = '.wb-panel .wb-term'
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 const HOLD_KID_BEFORE_IT_BINDS_MS = 5_000
 const A_WORKTREE_REMOVAL_SLOWER_THAN_A_QUICK_GIT_CALL_MS = 7_000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
 
 function shownTermText(page: Page, box: string): Promise<string> {
   return page.evaluate((sel) => {
@@ -469,6 +473,46 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await expect(rows).toHaveAttribute('data-tab-id', callerTabId!)
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
       expect(runGit(fx.clone, 'branch', '--list', 'worktree-kid').trim()).toBe('')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('koloft session close <a session that went to sleep> closes its tab too, not only its row', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const rows = wsRows(page, 'ws-a')
+      await startSessionIn(page, 'ws-a')
+      await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const callerTabId = await rows.getAttribute('data-tab-id')
+      const caller = rows.and(page.locator(`.ws-tab[data-tab-id="${callerTabId}"]`))
+      expect(await koloftInSession(page, 'session new --name sleeper -- hello')).toBe('0')
+      await expect(rows).toHaveCount(2, { timeout: 60_000 })
+      const child = rows.and(page.locator(`.ws-tab:not([data-tab-id="${callerTabId}"])`))
+      await expect(child).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const sleeper = (await waitForCalls(env, 2)).find((c) => c.argv.includes('sleeper'))!
+      await child.click()
+      await caller.click()
+      const asleepTab = await child.getAttribute('data-tab-id')
+      await expect.poll(() => processAlive(sleeper.pid), { timeout: 60_000 }).toBe(false)
+      await expect(child).toHaveAttribute('data-tab-id', asleepTab!)
+      await expect(caller).toHaveClass(/\bactive\b/)
+
+      expect(await koloftInSession(page, `session close ${sleeper.sessionId}`)).toBe('0')
+      await expect(rows).toHaveCount(1, { timeout: 30_000 })
+      await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(asleepTab)
+      await expect
+        .poll(() => fs.readFileSync(path.join(env.userData, 'open-tabs.json'), 'utf8'))
+        .not.toContain(sleeper.sessionId)
     } finally {
       await quitAndClose(app)
     }

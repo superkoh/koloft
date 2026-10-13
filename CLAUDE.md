@@ -28,8 +28,8 @@ Working principles:
 - Write everything the simple way. All LLM output — session replies and every file
   it writes — must use plain, everyday words that even a five-year-old could follow,
   in whatever language it is writing; never pick a hard word where an easy one
-  works. When a picture says it better, draw one: a chart, diagram, or graph
-  (mermaid or ASCII in markdown) beats a wall of text. The first time an
+  works. Tell a change or choice by its case first: who does what, what they see.
+  A picture (mermaid or ASCII) beats a wall of text. The first time an
   abbreviation, shorthand or number (issue #N, step 4) appears in a reply or
   document, say what it means — e.g. "PR (pull request, a proposed code change)".
 - Build the smallest thing that solves the problem at hand — in the design, the
@@ -142,7 +142,8 @@ Working principles:
   - **How to see it in the shipped app** — what to click in an installed build, or
     "no way from the app".
   - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it,
-    never a check you could still run.
+    never a check you could still run. Below high, it is not offered for merge: it
+    says what would make it high.
   - **Hand-test before merging** — no, or yes: what to try, and why no suite or dev
     build you drove could answer it.
 
@@ -158,11 +159,10 @@ Working principles:
   dev build you started. Ask first only to merge, release, push to `main` or delete
   on GitHub; an audit or review round changes nothing until the owner says so. The
   go to merge is also the go to clean up: wait for the PR's CI
-  (`gh pr checks <n> --watch`), then plain `gh pr merge <n> --squash` (squash folds
-  the branch's commits into one) — the repo allows only squash and GitHub deletes the
-  PR's branch on merge, so never ask about either; `--delete-branch` fails in a
-  worktree (`'main' is already used by worktree`). Then call ExitWorktree (`remove`
-  deletes the worktree; `discard_changes: true`, as the squash
+  (`gh pr checks <n> --watch`), then plain `gh pr merge <n> --squash` — the repo
+  allows only squash and GitHub deletes the PR's branch on merge, so never ask
+  about either; `--delete-branch` fails in a worktree. Then call ExitWorktree
+  (`remove` deletes the worktree; `discard_changes: true`, as the squash
   on `main` holds the commits). Despite its description it also removes a worktree
   the session was started in with `claude -w`;
   never hand the owner a `git worktree remove` or `/exit` to run. A
@@ -208,9 +208,9 @@ Working principles:
   - `npm ci` and `npm install` do not fetch the Electron binary — run
     `node node_modules/electron/install.js` once, or the first launch stalls on a
     silent download.
-  - `vendor/` (the git and gh Koloft ships) is only downloaded when the app is packed —
-    run `node scripts/fetch-vendor.cjs` once, or a dev build quietly ships neither and
-    `bundled-git-gh.spec.ts` fails.
+  - `vendor/` (the git, gh and Git Credential Manager Koloft ships) is only downloaded
+    when the app is packed — run `node scripts/fetch-vendor.cjs` once, or a dev build
+    quietly ships none of them and `bundled-git-gh.spec.ts` fails.
 - Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
   call it cannot prove stays inside this worktree, not only git ones. This block
   binds you too, its last line aside; long text for `gh` goes in a `--body-file`:

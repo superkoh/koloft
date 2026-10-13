@@ -81,6 +81,11 @@ if (argv.includes('--version')) {
   process.exit(0)
 }
 
+if (argv[0] === 'login' && flag('fake-codex-login-waits')) {
+  fs.writeSync(1, 'Open this page to sign in: https://auth.openai.com/oauth/authorize?fake=1\n')
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
+}
+
 if (argv[0] === 'login') {
   const usedPercent = Number(read('fake-codex-login-used')) || 30
   fs.writeFileSync(path.join(codexHome, 'auth.json'), JSON.stringify({ usedPercent }))
@@ -102,7 +107,10 @@ if (argv[0] === 'app-server') {
     cwd: process.cwd(),
     portOffset: process.env.KOLOFT_PORT_OFFSET || null,
     playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,
-    codexGate: process.env.KOLOFT_CODEX_GATE || null
+    codexGate: process.env.KOLOFT_CODEX_GATE || null,
+    gitConfigIncludes: Object.keys(process.env)
+      .filter((k) => /^GIT_CONFIG_VALUE_\d+$/.test(k))
+      .map((k) => process.env[k])
   })
   // CODEX§27
   const GATE_KEY = '/<session-flags>/config.toml:pre_tool_use:0:0'

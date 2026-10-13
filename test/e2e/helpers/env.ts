@@ -299,6 +299,49 @@ export interface FakeGhItem {
   isCrossRepository?: boolean
 }
 
+export function fakeGhEnvFile(env: E2EEnv): string {
+  return path.join(env.home, 'fake-gh-env.txt')
+}
+
+export const GIT_ACCOUNT_KEYCHAIN_SERVICE = 'koloft-dev-git-github.com'
+
+export function seedGitAccount(
+  env: E2EEnv,
+  login: string,
+  token: string,
+  picks: string[] = []
+): void {
+  addKeychainEntry(env, GIT_ACCOUNT_KEYCHAIN_SERVICE, login, token)
+  const file = path.join(env.userData, 'settings.json')
+  const current = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+    gitAccounts?: unknown[]
+    gitPicks?: unknown[]
+  }
+  const accounts = current.gitAccounts ?? []
+  seedSettings(env, {
+    gitAccounts: [
+      ...accounts,
+      {
+        host: 'github.com',
+        login,
+        id: 4200 + accounts.length,
+        name: login,
+        default: accounts.length === 0,
+        status: 'ok',
+        addedAt: 1 + accounts.length
+      }
+    ],
+    gitPicks: [
+      ...(current.gitPicks ?? []),
+      ...picks.map((ws) => ({
+        repo: fs.realpathSync(path.join(ws, '.git')),
+        host: 'github.com',
+        login
+      }))
+    ]
+  })
+}
+
 export function installFakeGh(
   env: E2EEnv,
   answer: {
@@ -321,6 +364,7 @@ export function installFakeGh(
     path.join(env.fakeBin, 'gh'),
     `#!/bin/sh\n` +
       `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(env.home, 'fake-gh-calls.txt'))}\n` +
+      `printf 'GH_TOKEN=%s GH_ENTERPRISE_TOKEN=%s GH_HOST=%s\\n' "$GH_TOKEN" "$GH_ENTERPRISE_TOKEN" "$GH_HOST" >> ${JSON.stringify(fakeGhEnvFile(env))}\n` +
       (answer.exitCode
         ? `echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit ${answer.exitCode}\n`
         : '') +
