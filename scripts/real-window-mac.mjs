@@ -58,7 +58,7 @@ const tart = (args, opts) => run('tart', args, opts)
 function guestScript(args) {
   const quoted = args.map((a) => `'${a.replaceAll("'", "'\\''")}'`).join(' ')
   return `set -u
-rsync -a --exclude .git --exclude .claude --exclude dist --exclude test-results "${GUEST_SHARES}/repo/" ${GUEST_HOME}/koloft/
+rsync -a --exclude /.git --exclude /.claude --exclude /dist --exclude /test-results "${GUEST_SHARES}/repo/" ${GUEST_HOME}/koloft/
 cp "${GUEST_SHARES}/kit/node" ${GUEST_HOME}/node
 cd ${GUEST_HOME}/koloft
 codesign --force --deep --sign - node_modules/electron/dist/Electron.app
