@@ -1438,3 +1438,62 @@ command line. The hook command was a small Node script that logged its stdin.
   whether both PreToolUse hooks run in one turn (each needs a model turn, so a signed-in
   account).
 
+## 28. Two app-servers starting at once in a home no app-server has used
+
+**Checked on 2026-10-12 with standalone Codex CLI 0.162.0**, no model turn. A Node script
+made a fresh temporary `CODEX_HOME` and folder, started two `codex app-server --stdio`
+in it at the same moment and sent each an `initialize`; six rounds, then six more in a
+home where one app-server had already started and stopped first.
+
+- **Fresh home: in 4 of 6 rounds one of the two exited with code 1 at once**, never
+  answering `initialize`, its stderr
+  `Error: failed to initialize sqlite state runtime under <CODEX_HOME>: failed to initialize state runtime at <CODEX_HOME>`.
+  The other started and answered. A home used once before: 0 of 6.
+- **`codex login` leaves a home in that fresh state**: after `codex login --with-api-key`
+  in an empty `CODEX_HOME` it held only `auth.json`, `log/codex-login.log` and `tmp/arg0`.
+  So a Codex account Koloft has just signed in is such a home until an app-server runs
+  in it.
+- Seen in Koloft the same day (real Codex, an account home holding only a copied
+  `auth.json`): a short-lived app-server Koloft starts to ask one thing lost this race to
+  another of Koloft's app-servers starting in the same home, and exited this way 27–116
+  ms after it started. Once it was the one asking `hooks/list` for an Assist's gate
+  (section 27; `discord-real-smoke.spec.ts`), and the Assist was refused; once it was
+  the one asking `config/read` for a tab's browser settings (section 26;
+  `agent-tools-real-smoke.spec.ts`), and the tab ran with no network, so
+  `playwright-cli` could not reach the browser. A second app-server started right after
+  answered as usual.
+
+## 29. Git credentials from inside the sandbox
+
+2026-10-11, codex-cli 0.162.0, macOS 27, fake tokens and a local git smart-HTTP stub on
+127.0.0.1; commands run through the app-server's `command/exec` (no model turn), under
+the configured sandbox.
+
+- **A credential helper can ask Koloft's main process through files in `/tmp`.** Under
+  `workspace-write` a shell helper wrote a request JSON into a `/tmp/koloft-…` folder made
+  beforehand outside the sandbox, and read the answer main wrote back; about 100 ms on top
+  of main's own delay. git has no timeout of its own while the helper waits (15 s was
+  fine).
+- **`network_access` decides whether git reaches the server at all.** Without it git
+  cannot connect, so the helper's answer never matters. With
+  `sandbox_workspace_write.network_access=true`, `git ls-remote` against the stub sent the
+  helper's username and password.
+- **`read-only`**: the helper cannot write its request and fails at once.
+- **`GIT_CONFIG_COUNT/KEY_n/VALUE_n` in the app-server's environment reach the command it
+  runs**, so an `include.path` given there is loaded. That a model turn's shell sees them
+  too is inferred, not checked.
+- **The user's own Keychain**: the login Keychain file was readable inside the sandbox
+  only with the network on; that the user's `osxkeychain` helper therefore comes back
+  empty in a default Codex tab is inferred, not checked.
+- **When the helper gives up** (main silent): it prints one line and exits 1, and git
+  falls back to its prompt (`fatal`, exit 128, with `GIT_TERMINAL_PROMPT=0`).
+- **A real model turn in a Koloft Codex tab does the same.** 2026-10-12, codex-cli 0.162.0,
+  a dev build with the tab in a worktree of a repository picked for a Koloft git account,
+  `network_access=true` given only for that pick, the request folder in `/tmp`: asked to
+  run `git ls-remote origin`, the turn's shell listed `refs/heads/main` from a local fake
+  GitHub, which saw the account's login and token (no request with credentials reached it
+  before the turn). No question was put to the owner. Established by
+  `agent-tools-real-smoke.spec.ts` › "a real Codex turn's git, inside its sandbox, reaches
+  the server with the picked account's token through Koloft".
+- Not probed yet: a push to the real github.com from a Codex turn.
+

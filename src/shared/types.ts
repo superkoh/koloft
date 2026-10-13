@@ -25,6 +25,100 @@ export function keychainService(appName: string, kind: AccountKind): string {
   return keychainNamespace(appName) + keychainServiceSuffix(kind)
 }
 
+export type GitPlatform = 'github' | 'ghes' | 'gitlab' | 'bitbucket' | 'azure' | 'gitea' | 'other'
+
+export const GIT_PLATFORMS: readonly GitPlatform[] = [
+  'github',
+  'ghes',
+  'gitlab',
+  'bitbucket',
+  'azure',
+  'gitea',
+  'other'
+]
+
+export function gitKeychainService(appName: string, host: string): string {
+  return `${keychainNamespace(appName)}-git-${host.toLowerCase()}`
+}
+
+export interface GitAuthor {
+  name: string
+  email: string
+}
+
+export interface GitAccount {
+  id: string
+  platform: GitPlatform
+  url: string
+  host: string
+  login: string
+  author?: GitAuthor
+  gcmNamespace?: string
+  default: boolean
+  status: AccountStatus
+  addedAt: number
+}
+
+export interface GitRepoPick {
+  repo: string
+  account: string
+}
+
+export interface GitAccountView extends GitAccount {
+  usedBy: string[]
+  checkError?: 'offline'
+}
+
+export type GitLoginProgress =
+  | { phase: 'checking' }
+  | { phase: 'code'; code: string; url: string }
+  | { phase: 'browser'; url?: string }
+  | { phase: 'saved'; login: string }
+  | { phase: 'failed'; message: string }
+
+export type GitLoginStart =
+  { ok: true } | { ok: false; error: 'no-sandbox' | 'no-gh' | 'no-gcm' | 'busy' | 'bad-url' }
+
+export interface GitTokenAdd {
+  platform: GitPlatform
+  url: string
+  token: string
+  username?: string
+}
+
+export type GitTokenAddResult =
+  | { ok: true; login: string }
+  | {
+      ok: false
+      error: 'rejected' | 'offline' | 'failed' | 'missing-scope' | 'bad-url'
+      scope?: string
+    }
+
+export type GitClueReason = 'url-user' | 'config-user' | 'gh-user' | 'ssh-greeting' | 'commit-email'
+
+export type GitAccountSuggestion =
+  | { kind: 'off' }
+  | { kind: 'none'; host: string }
+  | {
+      kind: 'use' | 'add' | 'cannot-push' | 'hint'
+      host: string
+      login: string
+      reason: GitClueReason
+    }
+  | { kind: 'only-one-can-push' | 'default-can-push'; host: string; login: string }
+  | { kind: 'org-blocked'; host: string; login: string; org: string }
+
+export interface WorkspaceGitAccount {
+  id: string
+  login: string
+  host: string
+  platform: GitPlatform
+  author?: GitAuthor
+  status: AccountStatus
+  sharedWith: string[]
+  pushBlockedByOrg?: string
+}
+
 export function keychainServiceSuffix(kind: AccountKind): string {
   if (kind === 'oauth') return '-claude-oauth'
   if (kind === 'codex-home') return '-codex-home'
@@ -186,6 +280,9 @@ export interface Settings {
   lastSeenVersion: string
   discord: DiscordSettings
   assistSessions: AssistRecord[]
+  gitAccounts: GitAccount[]
+  gitPicks: GitRepoPick[]
+  gitSuggestionsDismissed: string[]
 }
 
 export type AssistSetting = { on: boolean; backend: BackendId } | null
@@ -313,7 +410,10 @@ export const DEFAULT_SETTINGS: Settings = {
   hintsOff: false,
   lastSeenVersion: '',
   discord: { bindings: [] },
-  assistSessions: []
+  assistSessions: [],
+  gitAccounts: [],
+  gitPicks: [],
+  gitSuggestionsDismissed: []
 }
 
 export type BackendId = 'claude' | 'codex'
@@ -1069,6 +1169,21 @@ export interface KoloftApi {
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
     onUpdate(cb: (accounts: AccountView[]) => void): () => void
   }
+  gitAccounts: {
+    list(): Promise<GitAccountView[]>
+    onUpdate(cb: (accounts: GitAccountView[]) => void): () => void
+    loginStart(platform: GitPlatform, url: string): Promise<GitLoginStart>
+    loginCancel(): void
+    loginBrowser(): void
+    onLoginProgress(cb: (p: GitLoginProgress) => void): () => void
+    addToken(add: GitTokenAdd): Promise<GitTokenAddResult>
+    remove(id: string): Promise<void>
+    makeDefault(id: string): Promise<void>
+    check(): Promise<void>
+    pick(wsPath: string, id: string | null): Promise<void>
+    suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion>
+    dismiss(wsPath: string): Promise<void>
+  }
   // ADR-0006
   update: {
     version(): Promise<string>
@@ -1382,6 +1497,7 @@ export interface WorkspaceRows {
     hasHistory: boolean
     freshness?: WorkspaceFreshness
     github?: WorkspaceGithub
+    gitAccount?: WorkspaceGitAccount
     remote?: { host: string; path: string; connected: boolean; problem?: string }
   }
   rows: SessionRow[]

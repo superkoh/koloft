@@ -25,12 +25,18 @@ export interface GithubVerbDeps {
   scopeOf(tabId: string): string | undefined
   folderOf(scope: string): string
   repoOf(scope: string): Promise<string | null>
-  run(args: string[]): Promise<{ ok: boolean; out: string }>
+  run(args: string[], scope: string): Promise<{ ok: boolean; out: string }>
 }
 
 function flagName(arg: string): string {
   const eq = arg.indexOf('=')
   return eq < 0 ? arg : arg.slice(0, eq)
+}
+
+export function repoFlagOf(args: string[]): string | undefined {
+  const at = args.findIndex((a) => flagName(a) === '--repo')
+  if (at < 0) return undefined
+  return args[at] === '--repo' ? args[at + 1] : args[at].slice('--repo='.length)
 }
 
 function issueCreateFlags(rest: string[]): [string, string][] | null {
@@ -96,7 +102,7 @@ export function githubVerb(d: GithubVerbDeps): AgentVerb {
       if (!repo) return refused(GH_NEEDS_A_REPO)
       gh.push('--repo', repo)
     }
-    const { ok, out } = await d.run(gh)
+    const { ok, out } = await d.run(gh, scope)
     if (!ok) return refused(`koloft: gh ${noun} ${action}: ${out}`)
     if (out.length <= REPLY_CHARS_A_CONDUCTOR_TURN_HOLDS) return answered(out)
     return answered(

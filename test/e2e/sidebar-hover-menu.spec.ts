@@ -32,6 +32,19 @@ test.describe('C2 hover menu — resting the pointer on a row opens it, dragging
     await expect(menu).toBeVisible()
   })
 
+  test('T-HM-03: clicking a row to switch to its session opens no menu while the pointer rests there', async ({
+    page
+  }) => {
+    await startSessionIn(page, 'ws-a')
+    await startSessionIn(page, 'ws-b')
+    const row = wsRows(page, 'ws-a').first()
+    await centerTerm(page).hover()
+    await row.click()
+    await expect(row).toHaveClass(/\bactive\b/)
+    await page.waitForTimeout(PAST_HOVER_INTENT_DELAY_MS)
+    await expect(page.locator('.menu')).toHaveCount(0)
+  })
+
   test('T-HM-02: a terminal selection dragged across a session row opens no menu', async ({
     page
   }) => {

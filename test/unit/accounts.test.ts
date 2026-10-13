@@ -16,6 +16,9 @@ import {
   keychainRead,
   keychainWrite,
   keychainDelete,
+  gitTokenRead,
+  gitTokenWrite,
+  gitTokenDelete,
   listAccounts,
   upsertAccountMeta,
   removeAccountMeta,
@@ -25,7 +28,12 @@ import {
   recordFableCapability,
   resetProbeOutcomeState
 } from '../../src/main/accounts'
-import { keychainNamespace, keychainService, type AccountMeta } from '../../src/shared/types'
+import {
+  gitKeychainService,
+  keychainNamespace,
+  keychainService,
+  type AccountMeta
+} from '../../src/shared/types'
 
 const userData = app.getPath('userData')
 const settingsFile = path.join(userData, 'settings.json')
@@ -190,6 +198,17 @@ describe('U3 · keychain adapter seams', () => {
     expect(mode).toBe(0o600)
     await keychainDelete('oauth', 'bravo')
     expect(await keychainRead('oauth', 'bravo')).toBeNull()
+  })
+
+  it("a git account's token lives in its own per-host slot, apart from a Claude account of the same name", async () => {
+    await keychainWrite('oauth', 'bravo', 'claude-tok')
+    expect(await gitTokenWrite('github.com', 'bravo', 'gho_1')).toBe(true)
+    const stored = JSON.parse(fs.readFileSync(fixtureFile, 'utf8'))
+    expect(stored[gitKeychainService('koloft', 'github.com')]).toEqual({ bravo: 'gho_1' })
+    expect(await gitTokenRead('github.com', 'bravo')).toBe('gho_1')
+    await gitTokenDelete('github.com', 'bravo')
+    expect(await gitTokenRead('github.com', 'bravo')).toBeNull()
+    expect(await keychainRead('oauth', 'bravo')).toBe('claude-tok')
   })
 
   it('outside test mode the fixture is IGNORED (production refuses the plaintext seam)', async () => {

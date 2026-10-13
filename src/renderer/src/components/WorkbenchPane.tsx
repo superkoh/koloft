@@ -40,6 +40,7 @@ import {
   CDP_MOUNT_SETTLE_MS
 } from '@shared/cdpBudget'
 import { isWebPagePath } from '@shared/preview'
+import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
 import type {
   ArtifactView,
   BrowserCdpOp,
@@ -345,6 +346,9 @@ export function WorkbenchPane({
 }: WorkbenchPaneProps): JSX.Element {
   const termFocus = useStore((s) => s.termFocus)
   const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
+  const ownerBackend = useStore(
+    (s) => backendIdOf(s.tabs.find((t) => t.id === ownerTab)?.kind) ?? 'claude'
+  )
   const [live, setLive] = useState<string[]>([])
   const [runtime, setRuntime] = useState<Record<string, TabRuntime>>({})
   const [attached, setAttached] = useState(0)
@@ -895,7 +899,17 @@ export function WorkbenchPane({
   const submitAddress = useCallback(
     (raw: string): void => {
       if (!ownerTab) return
-      const decision = routeFor(raw, 'address')
+      const entry = raw.trim()
+      const decision = routeFor(
+        entry.startsWith('~/') ? window.api.home + entry.slice(1) : entry,
+        'address'
+      )
+      if (decision.dest === 'preview') {
+        openHere({ kind: 'file', path: decision.target, source: 'user' }, (r) =>
+          setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
+        )
+        return
+      }
       if (decision.dest !== 'browser') return
       const url = decision.target
       if (!activeTab || activeTab.kind !== 'web') {
@@ -1458,7 +1472,8 @@ export function WorkbenchPane({
         useStore.getState().showToast('All tabs have unsaved changes')
         return
       }
-      if (r.openedNew) setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
+      if (r.tabId !== tabId)
+        setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
     },
     [ownerTab, onUpdate]
   )
@@ -1631,7 +1646,7 @@ export function WorkbenchPane({
         <div className="bstate-t">No page open yet</div>
         <div className="bempty-hint">Press ⌘L and enter an address (http(s) / file://)</div>
         <div className="bempty-hint">Click a link in the terminal</div>
-        <div className="bempty-hint">Or let Claude open one</div>
+        <div className="bempty-hint">Or let {BACKEND_LABEL[ownerBackend]} open one</div>
       </div>
     ) : activeTab && !live.includes(activeTab.id) ? (
       <div className="bempty">

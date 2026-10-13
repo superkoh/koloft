@@ -114,7 +114,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await expect(welcome(page).locator('.big')).toHaveText(
         'Koloft runs Claude Code — and Codex, if you have it.'
       )
-      await expect(welcome(page).locator('.ob-skip')).toHaveText('Skip')
+      await expect(welcome(page).locator('.ob-skip')).toHaveText('Skip the tour')
       await expect(welcome(page).locator('.ob-back')).toHaveCount(0)
       await expect(page.locator('.tb-ico[aria-label="Add workspace"]')).toHaveClass(/\bon\b/)
       await expect(page.locator('.hint')).toHaveCount(0)
@@ -228,6 +228,27 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await expect(welcome(page)).toHaveCount(0)
     } finally {
       await quitAndClose(app2)
+    }
+  })
+
+  test('T-OB-16: Add a git account on step 3 ends the welcome and opens Settings with Git accounts in view', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    firstRun(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await expect(welcome(page)).toBeVisible({ timeout: 20_000 })
+      await welcome(page).locator('.ob-skip').click()
+      await expectStep(page, 3)
+      await welcome(page).locator('.ob-link', { hasText: 'Add a git account' }).click()
+      await expect(welcome(page)).toHaveCount(0)
+      await expect(page.locator('.modal .set-grp', { hasText: 'Git accounts' })).toBeInViewport()
+      await expect.poll(() => settingsOnDisk(env).onboardingSeen, { timeout: 20_000 }).toBe(true)
+    } finally {
+      await quitAndClose(app)
     }
   })
 

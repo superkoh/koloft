@@ -660,6 +660,10 @@ export class Conductors {
     return { ok: true, tabId }
   }
 
+  runningTaskTab(scope: string, name: string): string | undefined {
+    return this.tasks.find((t) => t.scope === scope && t.name === name && t.tabId)?.tabId
+  }
+
   taskRows(): AssistTaskRow[] {
     return this.tasks
       .filter((t) => t.tabId)
