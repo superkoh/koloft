@@ -1412,6 +1412,41 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  // CODEX§15
+  test('a Codex sign-in tab still waiting for the browser names itself above the terminal, and its Cancel closes it and brings Settings ▸ Accounts back', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(path.join(env.home, 'fake-codex-login-waits'), '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in to Codex' }).click()
+      await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+      await expect(page.locator('.modal')).toHaveCount(0)
+
+      const bar = page.locator('.term-island > .wb-bar')
+      await expect(bar.locator('.wb-title')).toHaveText('Codex sign in: work', { timeout: 20_000 })
+      await snap(page, 'codex-sign-in-tab-bar')
+      await bar.getByRole('button', { name: 'Cancel' }).click()
+
+      await expect(bar).toHaveCount(0)
+      await expect(page.getByRole('tab', { name: 'Accounts', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true',
+        { timeout: 20_000 }
+      )
+      expect(fs.existsSync(path.join(env.userData, 'codex-homes', 'work', 'auth.json'))).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // CODEX§14
   test('a scheduled job set to run in Codex starts Codex with its task, model and thinking level, never asking, and counts as running once Codex binds', async ({
     env
