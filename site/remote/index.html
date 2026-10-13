@@ -178,7 +178,8 @@ your Mac                     the other machine
           <li>
             The agent gets the <code>koloft</code> command there too, a moment slower, since each
             answer comes from Koloft on your Mac (see
-            <a href="../agents/">Agents can use Koloft too</a>).
+            <a href="../agents/">Agents can use Koloft too</a>). It can also start a new session on
+            that machine, in its own git worktree (a second copy of the repo on its own branch).
           </li>
           <li>
             The first session on a machine takes a few seconds longer: <code>claude</code> fetches
@@ -189,8 +190,9 @@ your Mac                     the other machine
             behind the machine.
           </li>
           <li>
-            A Discord butler can look after a remote folder's sessions too. The butler itself runs
-            on your Mac, not on the machine. See <a href="../discord/">A butler on Discord</a>.
+            A folder's <a href="../accounts/#assist">Assist</a> looks after a remote folder's
+            sessions too. It runs on your Mac, not on the machine. From your phone, see
+            <a href="../discord/">A butler on Discord</a>.
           </li>
         </ul>
 
@@ -208,6 +210,10 @@ your Mac                     the other machine
           <li>
             <code>bash</code>, <code>tmux</code> and <code>rsync</code> come from the machine's own
             package manager, which may ask for its sudo password (the admin password)
+          </li>
+          <li>
+            <code>gh</code>, GitHub's command-line tool, if the machine has none (about 40 MB,
+            once); you still sign in to it there yourself
           </li>
           <li>
             a small <code>koloft</code> script, and the guide that tells the agent how to use it
