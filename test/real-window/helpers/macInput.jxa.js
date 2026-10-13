@@ -87,8 +87,12 @@ function processElement(bundleId) {
 function dockItem(appName) {
   const dock = processElement('com.apple.dock')
   for (const list of children(dock))
-    for (const item of children(list)) if (string(item, 'AXTitle') === appName) return item
-  throw new Error('no Dock item named ' + appName)
+    for (const item of children(list)) {
+      if (string(item, 'AXTitle') !== appName) continue
+      const running = attribute(item, 'AXIsApplicationRunning')
+      if (running !== null && ObjC.unwrap(ObjC.castRefToObject(running))) return item
+    }
+  throw new Error('no running Dock item named ' + appName)
 }
 
 function axNumbers(element, name) {
