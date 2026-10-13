@@ -68,6 +68,7 @@ import {
   standardUserAgent
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
+import { stripTerminalCodes } from './terminalCodes'
 import {
   HOOK_SCRIPT,
   forgetAssistMarkers,
@@ -1299,10 +1300,6 @@ const AUTH_URL_RE = /https?:\/\/[^\s'"`<>]+/
 // CC§7
 const TOKEN_RE = /sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{24,}/
 
-function stripAnsi(s: string): string {
-  return s.replace(/\[[0-9;?]*[A-Za-z]/g, '').replace(/[()][AB0]/g, '')
-}
-
 function sendLoginProgress(p: LoginProgress): void {
   sendToRenderer('accounts:login-progress', p)
 }
@@ -1314,7 +1311,7 @@ function feedLoginWatcher(tabId: string, data: string): void {
     failLogin(tabId, 'Sign-in timed out')
     return
   }
-  w.buf = (w.buf + stripAnsi(data)).slice(-LOGIN_BUF_MAX)
+  w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
   const m = TOKEN_RE.exec(w.buf)
   if (!m) {
     if (!w.sawUrl) {
@@ -3661,10 +3658,27 @@ async function tellAssist(
   title: string,
   text: string
 ): Promise<ConductorOpenResult> {
+  const tabId = conductors?.liveTab(scope)
+  return tabId ? sendPaletteText(scope, tabId, text) : openPaletteTask(scope, title, text)
+}
+
+async function openPaletteTask(
+  scope: string,
+  title: string,
+  text: string
+): Promise<ConductorOpenResult> {
   const all = conductors
   if (!all) return { ok: false, error: STILL_STARTING }
-  const tabId = all.liveTab(scope)
-  if (!tabId) return all.openTask(scope, paletteTask(title, text))
+  const task = paletteTask(title, text)
+  const running = all.runningTaskTab(scope, task.name)
+  return running ? sendPaletteText(scope, running, text) : all.openTask(scope, task)
+}
+
+async function sendPaletteText(
+  scope: string,
+  tabId: string,
+  text: string
+): Promise<ConductorOpenResult> {
   const id = `koloft-palette-${++paletteMessages}`
   if (!(await tabReady(tabId, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS, false)))
     return { ok: false, error: `The ${conductorName(scope)} did not get ready in time.` }
@@ -4153,10 +4167,8 @@ function registerIpc(): void {
     'conductors:startFresh',
     (_e, scope: string) => conductors?.startFresh(scope) ?? { ok: false, error: STILL_STARTING }
   )
-  ipcMain.handle(
-    'conductors:openTask',
-    (_e, scope: string, title: string, text: string) =>
-      conductors?.openTask(scope, paletteTask(title, text)) ?? { ok: false, error: STILL_STARTING }
+  ipcMain.handle('conductors:openTask', (_e, scope: string, title: string, text: string) =>
+    openPaletteTask(scope, title, text)
   )
   ipcMain.handle('conductors:tell', (_e, scope: string, title: string, text: string) =>
     tellAssist(scope, title, text)
@@ -4520,7 +4532,7 @@ function registerIpc(): void {
     hosts.of(p).listDir(p, opts)
   )
   ipcMain.handle('fs:dirExists', (_e, p: string) =>
-    typeof p === 'string' && p ? hosts.of(p).dirExists(p) : false
+    typeof p === 'string' && p ? hosts.of(p).dirExistsOrThrow(p) : false
   )
   ipcMain.handle('fs:search', (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
     hosts.of(p).search(p, q, opts)

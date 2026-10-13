@@ -1,5 +1,11 @@
 import type { AccountKind, AccountMeta, SessionInfo, UsageSnapshot } from '@shared/types'
-import { fableExhausted, keepsResumedSession, resetElapsed, STALE_MS } from '@shared/accountUsage'
+import {
+  fableExhausted,
+  keepsResumedSession,
+  resetElapsed,
+  STALE_MS,
+  usableAccounts
+} from '@shared/accountUsage'
 import { ageLabel } from '@shared/freshnessOps'
 import {
   EPS,
@@ -114,9 +120,7 @@ export class AccountPicker {
   }
 
   private eligible(...kinds: AccountKind[]): AccountMeta[] {
-    return this.deps
-      .listAccounts()
-      .filter((a) => kinds.includes(a.kind) && a.enabled && a.status === 'ok')
+    return usableAccounts(this.deps.listAccounts(), kinds)
   }
 
   private probeRound(accounts: AccountMeta[]): Promise<void> {

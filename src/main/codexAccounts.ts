@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { RESUME_KEEPS_ACCOUNT_UP_TO } from '@shared/accountUsage'
+import { RESUME_KEEPS_ACCOUNT_UP_TO, usableAccounts } from '@shared/accountUsage'
 import type { AccountView, CodexLimits, CodexLimitWindow } from '@shared/types'
 
 const CODEX_HOMES = 'codex-homes'
@@ -98,7 +98,7 @@ export class CodexAccountPicker {
   private turn = 0
 
   pick(accounts: AccountView[], resumedOn?: string): AccountView | undefined {
-    const pool = accounts.filter((a) => a.kind === 'codex-home' && a.enabled && a.status === 'ok')
+    const pool = usableAccounts(accounts, ['codex-home'])
     if (pool.length === 0) return undefined
     const same = pool.find((a) => a.name === resumedOn)
     if (same && (!same.limits || heaviest(same.limits) <= RESUME_KEEPS_ACCOUNT_UP_TO)) return same

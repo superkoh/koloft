@@ -81,6 +81,11 @@ if (argv.includes('--version')) {
   process.exit(0)
 }
 
+if (argv[0] === 'login' && flag('fake-codex-login-waits')) {
+  fs.writeSync(1, 'Open this page to sign in: https://auth.openai.com/oauth/authorize?fake=1\n')
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
+}
+
 if (argv[0] === 'login') {
   const usedPercent = Number(read('fake-codex-login-used')) || 30
   fs.writeFileSync(path.join(codexHome, 'auth.json'), JSON.stringify({ usedPercent }))
