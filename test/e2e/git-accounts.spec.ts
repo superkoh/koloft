@@ -679,7 +679,7 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
       await expect(page.getByPlaceholder('Your username on that server')).toHaveValue('carol')
       await page.getByPlaceholder('Paste a token', { exact: true }).fill('fresh_token')
       await page.getByRole('button', { name: 'Save', exact: true }).click()
-      await expect(carol.locator('.acct-status')).not.toHaveText('NEEDS SIGN-IN AGAIN', {
+      await expect(carol).not.toContainText('NEEDS SIGN-IN AGAIN', {
         timeout: ACCOUNT_SHOWS_WITHIN_MS
       })
       await expect(
