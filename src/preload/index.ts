@@ -463,7 +463,6 @@ const api: KoloftApi = {
     },
     loginStart: (platform, url) => ipcRenderer.invoke('gitAccounts:login-start', platform, url),
     loginCancel: () => ipcRenderer.send('gitAccounts:login-cancel'),
-    loginWindow: () => ipcRenderer.send('gitAccounts:login-window'),
     loginBrowser: () => ipcRenderer.send('gitAccounts:login-browser'),
     onLoginProgress: (cb) => {
       const handler = (_e: unknown, p: GitLoginProgress): void => cb(p)

@@ -1450,6 +1450,24 @@ Gateway (the live connection that pushes events):
   browser led to the server picker. Signing in with a client attached was not probed.
   A snapshot taken by a client re-attached after Reset Token included the token text,
   so Koloft reads it only while no client is attached and reloads the page afterwards.
+- **discord.com pages call the Discord desktop app on its local port** — measured
+  2026-10-12 in headless Chrome against the invite page
+  (`/oauth2/authorize?client_id=…&scope=bot`), signed out, with every connection to
+  ports 6463–6472 caught by the probe: the page opened `ws://127.0.0.1:6463/?v=1`
+  at once, before it moved on to sign-in. On this Mac the desktop app listens on
+  `127.0.0.1:6463`; when the page reaches it, the app opens its own server picker and
+  the Workbench flow is left behind. No `discord://` link is involved, so the scheme
+  rules never see it. The probe ran in Chrome, not the Workbench; the e2e case BB-C72
+  shows a Workbench page reaches such a port unless Koloft stops it. Koloft cancels a
+  request to 127.0.0.1 ports 6463–6472 when a page whose host is not loopback starts it
+  (Electron's `initiatorOrigin`); an address the user types has no initiator and still
+  goes through. Driven through the Workbench of a test build on 2026-10-12, signed
+  out, with the desktop app listening on 6463: the invite page loaded and moved on to
+  sign-in, and `lsof` sampled every 100 ms saw no socket from the test app to port
+  6463, while a WebSocket that same page opened to another local port showed up. From
+  Discord's docs, not measured: the app takes the first free port in that range and
+  also answers HTTP there. Whether the signed-in invite page still
+  offers "continue in the Discord app" once the port is closed is not probed yet.
 - **`GUILD_CREATE` carries the server's `owner_id`** — seen in the 2026-10-10 Gateway
   probe's logs with the same test bot. Koloft makes new channels only in a server whose
   `owner_id` is the app owner (or the paired owner of a team app).
@@ -1612,6 +1630,15 @@ Gateway (the live connection that pushes events):
   (seen in Docker against a fake GitHub with gh 2.102.0; never against github.com).
 - Measured 2026-10-12 on macOS 27.0 with the bundled gh 2.102.0; the login was killed
   after the code line and never approved.
+- **Google refuses to sign in inside an app's own window.** 2026-10-13, a real GitHub
+  account signing in with "Continue with Google" on github.com's device page shown in an
+  Electron `BrowserWindow` (fresh in-memory partition): Google answered "Couldn't sign you
+  in — This browser or app may not be secure. Try using a different browser." The same code,
+  entered on the device page in the user's own browser, was accepted, and the sandboxed gh
+  finished the sign-in and wrote `hosts.yml`; the user's own gh stayed signed in. So the
+  device page opens in the user's browser. (That Apple and company single sign-on refuse the
+  same way is inferred, not checked; that GitHub's "Switch account" lets a second account
+  approve without signing the first out is inferred, not checked.)
 
 ## §48 ssh "who am I" without side effects
 

@@ -742,7 +742,7 @@ describe('CodexSessions', () => {
     expect(sessions.list()[0].cwd).toBe(newPath)
   })
 
-  it('a person’s new worktree launch trusts the workspace folder in the shared config, never through an account home, and passes the chosen permission as approval and sandbox flags; a scheduled one trusts nothing', async () => {
+  it('a person’s new worktree launch trusts the workspace folder and the worktree itself in the shared config, never through an account home, and passes the chosen permission as approval and sandbox flags; a scheduled one trusts nothing', async () => {
     const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
     fs.mkdirSync(worktree, { recursive: true })
     vi.spyOn(sessions.worktrees, 'create').mockResolvedValue({
@@ -754,15 +754,15 @@ describe('CodexSessions', () => {
     } as WorktreeResource)
     vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', permission: 'bypass' })
-    expect(deps.trustFolder).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(deps.trustFolder).mock.calls[0][0]).toBe(repo)
-    expect(vi.mocked(deps.trustFolder).mock.calls[0][1]?.CODEX_HOME).toBeUndefined()
+    expect(vi.mocked(deps.trustFolder).mock.calls.map(([dir]) => dir)).toEqual([repo, worktree])
+    for (const [, env] of vi.mocked(deps.trustFolder).mock.calls)
+      expect(env?.CODEX_HOME).toBeUndefined()
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.CODEX_HOME).toBe('/homes/work')
     const argv = vi.mocked(deps.pty.create).mock.calls[0][0].argv!
     expect(argv.slice(-4)).toEqual(['-a', 'never', '-s', 'danger-full-access'])
 
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
-    expect(deps.trustFolder).toHaveBeenCalledTimes(1)
+    expect(deps.trustFolder).toHaveBeenCalledTimes(2)
   })
 
   it("a worktree launch's app-server gets that worktree's port offset, and a launch in the main checkout gets none", async () => {

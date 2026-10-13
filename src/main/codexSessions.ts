@@ -240,7 +240,7 @@ export interface CodexSessionDeps {
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
-  pickHome(): { account: string; home: string } | undefined
+  pickHome(resumeSessionId?: string): { account: string; home: string } | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
   browserEndpoint(tabId: string): string
@@ -891,7 +891,7 @@ export class CodexSessions {
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error('This Codex session is already open.')
     // CODEX§15 ADR-0030
-    const picked = this.deps.pickHome()
+    const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
     const home = picked.home
     if (opts.worktreeResourceId) {
@@ -903,8 +903,9 @@ export class CodexSessions {
     } else if (opts.worktree) {
       resource = await this.worktrees.create(workspace, opts.worktree)
       cwd = resource.worktreePath
-      // ADR-0026
-      if (!opts.scheduled) this.deps.trustFolder(workspace, processEnv)
+      // ADR-0026 CODEX§11
+      if (!opts.scheduled)
+        for (const dir of [workspace, cwd]) this.deps.trustFolder(dir, processEnv)
     } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }

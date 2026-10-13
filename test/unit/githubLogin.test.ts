@@ -89,7 +89,7 @@ describe('GithubLogin with the fake gh', () => {
   let userData: string
   let fakeHome: string
   let progress: GitLoginProgress[]
-  let pages: { url: string; closed: boolean }[]
+  let pages: string[]
   let saved: { url: string; token: string }[]
   let login: GithubLogin
 
@@ -112,12 +112,7 @@ describe('GithubLogin with the fake gh', () => {
     const deps: GithubLoginDeps = {
       ghBin: undefined,
       userData,
-      openPage: (url) => {
-        const page = { url, closed: false }
-        pages.push(page)
-        return { show: () => {}, close: () => void (page.closed = true) }
-      },
-      openInBrowser: () => {},
+      openInBrowser: (url) => void pages.push(url),
       progress: (p) => progress.push(p),
       signedIn: async (url, token) => {
         if (token !== 'gho_fake_bob') return { ok: false, message: 'not accepted' }
@@ -145,7 +140,7 @@ describe('GithubLogin with the fake gh', () => {
       timeout: 5000
     })
 
-  it('shows the code, opens the device page, then saves the account GitHub names and leaves no login folder', async () => {
+  it('shows the code, opens the device page in the browser, then saves the account GitHub names and leaves no login folder', async () => {
     expect(await login.start('https://github.com')).toEqual({ ok: true })
     await codeShown()
     expect(progress).toContainEqual({
@@ -153,13 +148,12 @@ describe('GithubLogin with the fake gh', () => {
       code: 'ABCD-1234',
       url: 'https://github.com/login/device'
     })
-    expect(pages.map((p) => p.url)).toEqual(['https://github.com/login/device'])
+    expect(pages).toEqual(['https://github.com/login/device'])
     fs.writeFileSync(path.join(fakeHome, 'approve-gh-login'), '')
     await vi.waitFor(() => expect(progress.at(-1)).toEqual({ phase: 'saved', login: 'bob' }), {
       timeout: 5000
     })
     expect(saved).toEqual([{ url: 'https://github.com', token: 'gho_fake_bob' }])
-    expect(pages[0].closed).toBe(true)
     expect(loginDirs()).toEqual([])
   })
 
@@ -197,7 +191,7 @@ describe('GithubLogin with the fake gh', () => {
     await vi.waitFor(() => expect(progress).toContainEqual({ phase: 'browser', url: authorize }), {
       timeout: 5000
     })
-    expect(pages.map((p) => p.url)).toEqual([authorize])
+    expect(pages).toEqual([authorize])
   })
 
   it('a device address with no code yet is not shown before its code arrives', async () => {

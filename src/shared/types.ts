@@ -1174,7 +1174,6 @@ export interface KoloftApi {
     onUpdate(cb: (accounts: GitAccountView[]) => void): () => void
     loginStart(platform: GitPlatform, url: string): Promise<GitLoginStart>
     loginCancel(): void
-    loginWindow(): void
     loginBrowser(): void
     onLoginProgress(cb: (p: GitLoginProgress) => void): () => void
     addToken(add: GitTokenAdd): Promise<GitTokenAddResult>

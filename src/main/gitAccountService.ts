@@ -60,7 +60,7 @@ import {
   pushAccessOn,
   type Identity
 } from './gitPlatformApi'
-import { GithubLogin, type GithubLoginDeps } from './githubLogin'
+import { GithubLogin } from './githubLogin'
 
 const CLUE_COMMAND_KILL_MS = 10_000
 const REQUEST_DIR = /^koloft-git-(\d+)-/
@@ -136,7 +136,6 @@ export interface GitAccountServiceDeps {
   gcmNamespacePrefix: string
   baseEnv(): Promise<NodeJS.ProcessEnv>
   repoOf(wsPath: string): Promise<{ owner: string; name: string } | null>
-  openPage: GithubLoginDeps['openPage']
   openInBrowser(url: string): void
   progress(p: GitLoginProgress): void
   accountsChanged(views: GitAccountView[]): void
@@ -190,7 +189,6 @@ export class GitAccountService {
     this.login = new GithubLogin({
       ghBin: d.ghBin,
       userData: d.userData,
-      openPage: d.openPage,
       openInBrowser: d.openInBrowser,
       progress: d.progress,
       signedIn: (url, token) =>
@@ -464,10 +462,6 @@ export class GitAccountService {
     this.gcmRun = null
     g.run.cancel()
     void g.run.done.then(() => this.gcm.erase(g.account))
-  }
-
-  loginWindow(): void {
-    this.login.showWindow()
   }
 
   loginBrowser(): void {
