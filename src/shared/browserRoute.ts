@@ -36,10 +36,12 @@ function localTarget(p: string): RouteDecision {
 }
 
 function isHostPort(raw: string): boolean {
-  return !/\s/.test(raw) && HOST_LIKE.test(raw.split('/')[0])
+  const host = raw.split('/')[0]
+  return !/\s/.test(raw) && HOST_LIKE.test(host) && !isWebPagePath(host)
 }
 
 function addressEntry(raw: string): RouteDecision {
+  if (raw.startsWith('/')) return localTarget(raw)
   if (isHostPort(raw)) return { dest: 'browser', target: `http://${raw}` }
   return { dest: 'browser', target: SEARCH_URL + encodeURIComponent(raw) }
 }

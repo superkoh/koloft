@@ -1,12 +1,12 @@
 import { spawn } from 'child_process'
 import path from 'path'
 import { worktreeHomeRoot } from './resumePlan'
+import { stripTerminalCodes } from './terminalCodes'
 
 // CC§4
 const CLAUDE_CLEARS_ITS_TITLE_THEN_STARTS_REMOVING_THE_WORKTREE = '\x1b]0;\x07Removing worktree…'
 // CC§4
 const CLAUDE_REMOVED_THE_WORKTREE = 'Worktree removed'
-const CURSOR_AND_COLOUR_CODES = /\x1b\[[0-?]*[ -/]*[@-~]/g
 
 export class WorktreeRemovalWatch {
   private tail = ''
@@ -31,8 +31,7 @@ export class WorktreeRemovalWatch {
 
   failure(): string | undefined {
     if (this.saidSince === undefined) return undefined
-    const lines = this.saidSince
-      .replace(CURSOR_AND_COLOUR_CODES, '')
+    const lines = stripTerminalCodes(this.saidSince)
       .split(/[\r\n]+/)
       .map((line) => line.trim())
       .filter(Boolean)

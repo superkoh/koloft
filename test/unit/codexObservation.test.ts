@@ -518,10 +518,10 @@ describe('CodexObservation', () => {
       'item/completed',
       command('echo hello > b.txt', [{ type: 'unknown', command: 'echo hello > b.txt' }])
     )
-    expect(f.files()).toBeUndefined()
+    expect(f.files()?.files).toEqual([])
   })
 
-  it('starts a fresh file list when the foreground session changes', () => {
+  it('starts a fresh file list when the foreground session changes, empty until the new session touches a file (/clear)', () => {
     const f = fixture()
     f.bind()
     f.server(
@@ -529,6 +529,7 @@ describe('CodexObservation', () => {
       patch('completed', [{ path: '/repo/a.txt', kind: { type: 'add' }, diff: 'a\n' }])
     )
     f.bind(B, 2, 'thread/start')
+    expect(f.files()?.files).toEqual([])
     f.observer.receive('server', {
       method: 'item/completed',
       params: {
