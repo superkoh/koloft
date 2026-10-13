@@ -92,6 +92,36 @@ export function canOpenExternally(target: string): boolean {
   return scheme === 'http:' || scheme === 'https:' || scheme === 'mailto:' || scheme === 'tel:'
 }
 
+const DISCORD_DESKTOP_APP_HOST = '127.0.0.1'
+const DISCORD_DESKTOP_APP_FIRST_PORT = 6463
+const DISCORD_DESKTOP_APP_LAST_PORT = 6472
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
+
+function urlOrNull(raw: string): URL | null {
+  try {
+    return new URL(raw)
+  } catch {
+    return null
+  }
+}
+
+// PLATFORM§39
+export function webPageReachesDiscordDesktopApp(
+  target: string,
+  initiatorOrigin: string | undefined
+): boolean {
+  if (!initiatorOrigin) return false
+  const from = urlOrNull(initiatorOrigin)
+  if (from && LOOPBACK_HOSTS.has(from.hostname)) return false
+  const to = urlOrNull(target)
+  const port = Number(to?.port)
+  return (
+    to?.hostname === DISCORD_DESKTOP_APP_HOST &&
+    port >= DISCORD_DESKTOP_APP_FIRST_PORT &&
+    port <= DISCORD_DESKTOP_APP_LAST_PORT
+  )
+}
+
 export function dedupKey(target: string): string {
   let u: URL
   try {

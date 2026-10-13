@@ -209,6 +209,7 @@ import { currentOffer, startUpdateNotifier } from './updateNotifier'
 import { extOf } from '@shared/preview'
 import {
   canOpenExternally,
+  webPageReachesDiscordDesktopApp,
   routeFor,
   schemeOf,
   type RouteDecision,
@@ -3168,6 +3169,10 @@ function setupBrowserPartition(): void {
   ses.registerPreloadScript({
     type: 'frame',
     filePath: path.join(__dirname, '../preload/guest.js')
+  })
+  // PLATFORM§39
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    callback({ cancel: webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) })
   })
   // PLATFORM§13
   ses.webRequest.onHeadersReceived((details, callback) => {
