@@ -582,7 +582,7 @@ test.describe('pool surfaces: the aggregate is the mean of exactly the measured 
       )
       expect(pct).toBeGreaterThan(30)
       expect(pct).toBeLessThan(50)
-      const firstAcct = (await pop.locator('.tbu-rows .tbu-row').first().boundingBox())!
+      const firstAcct = (await pop.locator('.tbu-rows .tbu-row:not(.pool)').first().boundingBox())!
       expect((await pool.boundingBox())!.y).toBeLessThan(firstAcct.y)
     } finally {
       await app.close().catch(() => {})

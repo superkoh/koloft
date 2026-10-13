@@ -744,6 +744,18 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   width**, so at 80 columns the token is split across lines, and a capture stores a
   cut-off token that fails only later, when checked (seen in the guided-login flow).
   Apart from the 2.1.266 check: inferred, not checked.
+- **Saved limit resets need a full-scope login; the token Koloft holds cannot read or use
+  them.** Read 2026-10-13 from the 2.1.296 binary (`strings`): a hidden `/limit-reset`
+  command reads resets from `GET /api/oauth/usage?cedar_ember=1&skip_spend=1` (blocks
+  `cedar_ember` with `grants[]`, `resets_left`, `clears[]`, and `juniper_tide`) and spends
+  one with `POST /api/organizations/{organizationUuid}/reset_rate_limits` (`{program,
+  grant_id, request_id}`); both are skipped unless the token's scopes include
+  `user:profile`, and a `CLAUDE_CODE_OAUTH_TOKEN` gets `user:inference` only. Measured
+  the same day with one Koloft account's `setup-token` token: `GET /api/oauth/profile`
+  answered 403 `oauth_scope_insufficient` (needs `user:profile` or `user:office`), so the
+  organization id the claim's path needs is out of reach; the usage read answered 429
+  twice and showed nothing. So a session Koloft starts — Assist's too — cannot use
+  `/limit-reset` (inferred from the gate, not run).
 - **The 5h window's reset time moves forward between probes** — the window is rolling.
   (Inferred, not checked.)
 - **Remote Control refuses the long-lived token Koloft injects.** Measured 2026-10-01,

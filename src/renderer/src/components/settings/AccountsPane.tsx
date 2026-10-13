@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState, type JSX } from 'react'
 import { LuGlobe, LuPlus, LuRefreshCw, LuX } from 'react-icons/lu'
 import type { AccountKind, AccountView } from '@shared/types'
 import { useStore } from '../../store'
-import { needsSignInAgain, windowLabel } from '@shared/accountUsage'
-import { Meter, ageLabel, probeErrorLabel, resetLabel } from '../accountMeter'
+import { measuredAt, needsSignInAgain, windowLabel } from '@shared/accountUsage'
+import { Meter, ageLabel, codexBalanceLabel, probeErrorLabel, resetLabel } from '../accountMeter'
 import { GitAccountsSection } from './GitAccountsSection'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
@@ -416,8 +416,10 @@ function AccountRow({
 }): JSX.Element {
   const u = a.usage
   const now = Date.now()
-  const measuredAt = u?.at ?? a.limits?.at
-  const stale = measuredAt !== undefined ? ageLabel(measuredAt, now) : null
+  const at = measuredAt(a)
+  const stale = at !== undefined ? ageLabel(at, now) : null
+  const codexBalance =
+    a.kind === 'codex-home' && a.status === 'ok' && a.limits ? codexBalanceLabel(a.limits, now) : ''
   return (
     <div className={'acct-row' + (a.enabled ? '' : ' off') + (confirming ? ' confirming' : '')}>
       <div className="acct-main">
@@ -505,6 +507,7 @@ function AccountRow({
               {resetLabel(a.limits.windows[0].resetsAt, now)}
             </span>
           ) : null}
+          {codexBalance && <span className="acct-note">{codexBalance}</span>}
         </div>
       ) : a.kind === 'custom' ? (
         <div className="acct-meters">

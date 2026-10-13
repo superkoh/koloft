@@ -279,6 +279,7 @@ import type {
   ArtifactView,
   BackendId,
   CodexLimits,
+  CodexResetOutcome,
   CodexSignInResult,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
@@ -1449,10 +1450,10 @@ let probeAllInFlight: Promise<AccountView[]> | null = null
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
   const round = (async (): Promise<AccountView[]> => {
-    const enabled = listAccounts().filter((a) => a.enabled)
-    await Promise.all(
-      enabled.map(async (a) => {
-        if (a.kind === 'codex-home') return probeCodexAccount(a.name)
+    const claude = listAccounts().filter((a) => a.enabled && a.kind !== 'codex-home')
+    await Promise.all([
+      probeCodexAccounts(),
+      ...claude.map(async (a) => {
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
         const result = await probeAccount(a.kind, secret, {
@@ -1463,7 +1464,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
         })
         foldProbeResult(a.name, a.kind, result)
       })
-    )
+    ])
     pushAccounts()
     return accountViews()
   })()
@@ -1553,6 +1554,15 @@ async function probeCodexAccount(name: string): Promise<void> {
     usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
   pushAccounts()
+}
+
+async function codexUseReset(name: string): Promise<CodexResetOutcome> {
+  if (!findAccount(name, 'codex-home') || !codexSessions) return 'failed'
+  const outcome = await codexSessions
+    .useResetCredit(codexHomeOf(app.getPath('userData'), name))
+    .catch((): CodexResetOutcome => 'failed')
+  await probeCodexAccount(name)
+  return outcome
 }
 
 let codexProbeRound: Promise<void> | null = null
@@ -4149,6 +4159,7 @@ function registerIpc(): void {
   ipcMain.handle('accounts:codex-sign-in', (_e, name: string, again?: boolean) =>
     codexSignIn(name, again === true)
   )
+  ipcMain.handle('accounts:codex-use-reset', (_e, name: string) => codexUseReset(name))
   ipcMain.on('accounts:cancel-login', () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
   })

@@ -16,6 +16,7 @@ import {
 import {
   installCodex,
   installFakeGh,
+  seedNoClaudeAccountButStillSetUp,
   seededAccount,
   seedSettings,
   setGithubFixture,
@@ -102,8 +103,8 @@ function codexPrompts(env: E2EEnv): string[] {
       }
     })
 }
-function codexCalls(env: E2EEnv): CodexCall[] {
-  const file = path.join(env.home, 'fake-codex-calls.jsonl')
+function fakeCodexLog<T>(env: E2EEnv, name: string): T[] {
+  const file = path.join(env.home, name)
   if (!fs.existsSync(file)) return []
   return fs
     .readFileSync(file, 'utf8')
@@ -111,11 +112,14 @@ function codexCalls(env: E2EEnv): CodexCall[] {
     .filter(Boolean)
     .flatMap((line) => {
       try {
-        return [JSON.parse(line) as CodexCall]
+        return [JSON.parse(line) as T]
       } catch {
         return []
       }
     })
+}
+function codexCalls(env: E2EEnv): CodexCall[] {
+  return fakeCodexLog<CodexCall>(env, 'fake-codex-calls.jsonl')
 }
 async function startCodexInWorktree(page: Page, env: E2EEnv, name: string): Promise<CodexCall> {
   const before = codexCalls(env).length
@@ -448,6 +452,94 @@ test.describe('Codex sessions through the real method chooser, process transport
         sessionId: first.sessionId,
         codexHome: homeOf('other')
       })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
+  test('with only a Codex account the usage capsule still shows, its panel lists the account under Codex with its balance and saved resets, and a walled account uses a saved reset only after a yes, then reads its limits again', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedNoClaudeAccountButStillSetUp(env)
+    const home = path.join(env.userData, 'codex-homes', 'e2e-codex')
+    fs.writeFileSync(
+      path.join(home, 'auth.json'),
+      JSON.stringify({ usedPercent: 100, balance: '62500.0000000000', resets: 3 })
+    )
+    const resetCalls = (): unknown[] => fakeCodexLog(env, 'fake-codex-reset-calls.jsonl')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.accounts.probe())
+      const capsule = page.locator('.tbu')
+      await expect(capsule.locator('.tbu-bar')).toHaveCount(1)
+      await expect(capsule.locator('.tbu-fill.bad')).toHaveCount(1)
+
+      await capsule.click()
+      const pop = page.locator('.tbu-pop')
+      await expect(pop.locator('.tbu-pop-head', { hasText: /^Codex$/ })).toBeVisible()
+      await expect(pop.locator('.tbu-pop-head', { hasText: /^Claude$/ })).toHaveCount(0)
+      const row = pop.locator('.tbu-row', { hasText: 'e2e-codex' })
+      await expect(row.locator('.acct-status.walled')).toBeVisible()
+      await expect(row.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('100%')
+      await expect(row.locator('.tbu-row-note .acct-note')).toHaveText(
+        /^62,500 credits · 3 resets saved, first expires /
+      )
+
+      await row.getByRole('button', { name: 'Use a reset' }).click()
+      await row.getByRole('button', { name: 'Cancel' }).click()
+      await expect(row.getByRole('button', { name: 'Use a reset' })).toBeVisible()
+      expect(resetCalls()).toEqual([])
+
+      await row.getByRole('button', { name: 'Use a reset' }).click()
+      await row.getByRole('button', { name: 'Use', exact: true }).click()
+      await expect(row.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('0%')
+      await expect(row.locator('.tbu-row-note .acct-note')).toHaveText(
+        /^62,500 credits · 2 resets saved/
+      )
+      await expect(row.locator('.acct-status.walled')).toHaveCount(0)
+      await expect(row.getByRole('button', { name: 'Use a reset' })).toHaveCount(0)
+      expect(resetCalls()).toEqual([
+        { codexHome: home, params: { idempotencyKey: expect.any(String) } }
+      ])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
+  test('two Codex accounts get a Codex pool like the Claude one: a leading total bar in the capsule and a Pool row that averages them and counts the walled one', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, {
+      accounts: [seededAccount('e2e-codex', 'codex-home'), seededAccount('other', 'codex-home')]
+    })
+    for (const [name, usedPercent] of [
+      ['e2e-codex', 100],
+      ['other', 40]
+    ] as const) {
+      const home = path.join(env.userData, 'codex-homes', name)
+      fs.mkdirSync(home, { recursive: true })
+      fs.writeFileSync(path.join(home, 'auth.json'), JSON.stringify({ usedPercent }))
+    }
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.accounts.probe())
+      const capsule = page.locator('.tbu')
+      await expect(capsule.locator('.tbu-bar.total')).toHaveCount(1)
+      await expect(capsule.locator('.tbu-bar:not(.total)')).toHaveCount(2)
+
+      await capsule.click()
+      const pool = page.locator('.tbu-pop .tbu-row.pool')
+      await expect(pool.locator('.tbu-pool-meta')).toHaveText('2 measured · 1 usable')
+      await expect(pool.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('70%')
+      await expect(pool.locator('.tbu-cell-sub.alarm')).toHaveText('1 walled')
     } finally {
       await quitAndClose(app)
     }
