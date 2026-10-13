@@ -231,6 +231,27 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
     }
   })
 
+  test('T-OB-16: Add a git account on step 3 ends the welcome and opens Settings with Git accounts in view', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    firstRun(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await expect(welcome(page)).toBeVisible({ timeout: 20_000 })
+      await welcome(page).locator('.ob-skip').click()
+      await expectStep(page, 3)
+      await welcome(page).locator('.ob-link', { hasText: 'Add a git account' }).click()
+      await expect(welcome(page)).toHaveCount(0)
+      await expect(page.locator('.modal .set-grp', { hasText: 'Git accounts' })).toBeInViewport()
+      await expect.poll(() => settingsOnDisk(env).onboardingSeen, { timeout: 20_000 }).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // CC§10
   test('T-OB-05: finishing the welcome starts the first session in the pinned folder, with Claude Code’s own first-run page marked done', async ({
     env

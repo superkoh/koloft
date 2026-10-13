@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import type { WorkspaceFreshness } from '../../src/shared/types'
+import type { GitClueReason, WorkspaceFreshness } from '../../src/shared/types'
 import {
   behindBadge,
+  clueText,
   countLabel,
   headAge,
   pullNote,
@@ -167,6 +168,22 @@ describe('countLabel', () => {
     expect(countLabel(1000)).toBe('1k')
     expect(countLabel(2749)).toBe('2.7k')
     expect(countLabel(12399)).toBe('12.3k')
+  })
+})
+
+describe('clueText', () => {
+  const REASONS: GitClueReason[] = [
+    'url-user',
+    'config-user',
+    'gh-user',
+    'ssh-greeting',
+    'commit-email'
+  ]
+
+  it('names the recognized login and tells each clue apart, so the user can judge it', () => {
+    const texts = REASONS.map((r) => clueText(r, 'octo-cat'))
+    for (const t of texts) expect(t).toContain('octo-cat')
+    expect(new Set(texts).size).toBe(REASONS.length)
   })
 })
 

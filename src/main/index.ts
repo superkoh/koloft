@@ -53,7 +53,7 @@ import { flushAttention, loadLastRunAttention, saveAttention } from './attention
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
-import { openUrlExternally, osOpenFallback } from './osOpen'
+import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import {
   authPromptFor,
   certHostOf,
@@ -187,6 +187,8 @@ import {
 } from './github'
 import { GithubCountsSweep } from './githubCounts'
 import { runGh } from './prChecks'
+import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
+import { removeStaleLoginDirs } from './githubLogin'
 import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
@@ -352,7 +354,7 @@ import {
 } from './discord/dialog'
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
-import { githubVerb } from './agentGithub'
+import { githubVerb, repoFlagOf } from './agentGithub'
 import {
   claudePeerNames,
   claudeShowsAPanel,
@@ -851,6 +853,7 @@ let workspaceMgr: WorkspaceManager | null = null
 
 let freshness: GitFreshnessEngine | null = null
 let githubCounts: GithubCountsSweep | null = null
+let gitAccounts: GitAccountService | null = null
 let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
 let machinePkg: MachinePackage | null = null
@@ -1224,7 +1227,17 @@ const agentRequests = new AgentRequests({
       repoOf: async (scope) =>
         scope === GLOBAL_SCOPE ? null : hosts.of(scope).github.ownerSlashName(scope),
       // PLATFORM§1
-      run: (args) => loginEnvReady().then(() => ghRead(args))
+      run: async (args, scope) => {
+        await loginEnvReady()
+        const env =
+          scope === GLOBAL_SCOPE
+            ? await gitAccounts?.ghEnvForRepo(
+                repoFlagOf(args),
+                (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+              )
+            : await gitAccounts?.ghEnv(scope)
+        return ghRead(args, env)
+      }
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -1791,7 +1804,10 @@ app.whenReady().then(() => {
   setupGuestAudioState()
   setupGuestFullscreen()
 
-  const { shimDir, regDir, openDir, pickDir, agentDir } = setupShim()
+  sweepStaleGitRequestDirs(pidAlive)
+  const gitRequestDir = newGitRequestDir()
+  const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } =
+    setupShim(gitRequestDir)
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
   if (agentRequests.watch(agentDir)) {
@@ -1820,6 +1836,29 @@ app.whenReady().then(() => {
   if (gitFirstBin) process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
   // PLATFORM§2
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
+  removeStaleLoginDirs(app.getPath('userData'))
+  gitAccounts = new GitAccountService({
+    userData: app.getPath('userData'),
+    requestDir: gitRequestDir,
+    gitHelper,
+    ghBin: fallbackBin && path.join(fallbackBin, 'gh'),
+    baseEnv: () => loginEnvReady().then(() => ({ ...process.env })),
+    repoOf: async (wsPath) => {
+      const slug = await hosts.of(wsPath).github.ownerSlashName(wsPath)
+      const [owner, name] = slug?.split('/') ?? []
+      return owner && name ? { owner, name } : null
+    },
+    openInBrowser: (url) => void leaveForOS(url, 'url'),
+    progress: (p) => sendToRenderer('gitAccounts:login-progress', p),
+    accountsChanged: (views) => sendToRenderer('gitAccounts:update', views),
+    picksChanged: () => {
+      void githubCounts?.sweep()
+      workspaceMgr?.restampLive()
+    }
+  })
+  // ADR-0033
+  Object.assign(process.env, gitAccounts.configEnv(process.env))
+  gitAccounts.start()
   ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
@@ -2009,6 +2048,11 @@ app.whenReady().then(() => {
       agent: {
         enabled: () => agentToolsFor('codex', 'local'),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+      },
+      gitAccounts: {
+        configEnv: (env) => gitAccounts!.configEnv(env),
+        picked: (cwd) => gitAccounts!.pickedAt(cwd),
+        ghWrapper
       }
     })
   } catch (error) {
@@ -2060,8 +2104,10 @@ app.whenReady().then(() => {
     },
     freshness: (wsPath) => freshness?.get(wsPath),
     github: (wsPath) => githubCounts?.get(wsPath),
+    gitAccount: (wsPath) => gitAccounts?.workspaceAccount(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
+      void gitAccounts?.refreshRepoKeys(wsPaths).then(() => workspaceMgr?.restampLive())
       void githubCounts?.sweep()
       claudeBackend.watchRemoteHookMirrors()
     },
@@ -2593,6 +2639,7 @@ app.on('before-quit', (e) => {
   flushAttention()
   freshness?.stop()
   remoteSync?.stop()
+  gitAccounts?.stop()
   closeAllDirWatchers()
   resetQuitGuard()
 })
@@ -3780,8 +3827,15 @@ const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad re
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   // PLATFORM§1
-  openCounts: (repo) => loginEnvReady().then(() => ghOpenCounts(repo)),
-  gh: (args) => loginEnvReady().then(() => runGh(args)),
+  countedAs: (root) => gitAccounts?.pickedLogin(root),
+  openCounts: async (repo, root) => {
+    await loginEnvReady()
+    return ghOpenCounts(repo, await gitAccounts?.ghEnv(root))
+  },
+  gh: async (args, root) => {
+    await loginEnvReady()
+    return runGh(args, await gitAccounts?.ghEnv(root))
+  },
   signedIn: async () => {
     try {
       const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
@@ -4110,7 +4164,41 @@ function registerIpc(): void {
     if (remote && r?.code === 'added') remoteSync?.pokeNow(remote.host)
     return r
   }
-  ipcMain.handle('workspace:add', (_e, p: string) => addWorkspacePath(p))
+  ipcMain.handle('workspace:add', (_e, p: string) => {
+    const r = addWorkspacePath(p)
+    if (r?.code === 'added') void gitAccounts?.autoPickNewWorkspace(p)
+    return r
+  })
+  const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
+  ipcMain.handle('gitAccounts:list', () => gitAccounts?.views() ?? [])
+  ipcMain.handle('gitAccounts:login-start', () =>
+    gitAccounts ? gitAccounts.loginStart() : { ok: false, error: 'no-gh' }
+  )
+  ipcMain.on('gitAccounts:login-cancel', () => gitAccounts?.loginCancel())
+  ipcMain.on('gitAccounts:login-browser', () => gitAccounts?.loginBrowser())
+  ipcMain.handle('gitAccounts:add-token', (_e, token: unknown) =>
+    isText(token) && gitAccounts
+      ? gitAccounts.addToken(token.trim())
+      : { ok: false, error: 'rejected' }
+  )
+  ipcMain.handle('gitAccounts:remove', (_e, login: unknown) =>
+    isText(login) ? gitAccounts?.remove(login) : undefined
+  )
+  ipcMain.handle('gitAccounts:make-default', (_e, login: unknown) =>
+    isText(login) ? gitAccounts?.makeDefault(login) : undefined
+  )
+  ipcMain.handle('gitAccounts:check', () => gitAccounts?.checkAll())
+  ipcMain.handle('gitAccounts:pick', (_e, wsPath: unknown, login: unknown) =>
+    isText(wsPath) && (login === null || isText(login))
+      ? gitAccounts?.pick(wsPath, login)
+      : undefined
+  )
+  ipcMain.handle('gitAccounts:suggest', (_e, wsPath: unknown, network: unknown) =>
+    isText(wsPath) && gitAccounts ? gitAccounts.suggest(wsPath, network === true) : { kind: 'none' }
+  )
+  ipcMain.handle('gitAccounts:dismiss', (_e, wsPath: unknown) =>
+    isText(wsPath) ? gitAccounts?.dismiss(wsPath) : undefined
+  )
   ipcMain.handle('project:create', (_e, parent: unknown, name: unknown) =>
     typeof parent === 'string' && parent && typeof name === 'string'
       ? createProject(hosts.of(parent), parent, name, addWorkspacePath)

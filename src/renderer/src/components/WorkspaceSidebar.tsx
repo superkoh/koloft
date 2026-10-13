@@ -102,7 +102,6 @@ const MENU_ITEM_H = 31
 const MENU_PAD_H = 10
 const NO_INHERITED_TOOLTIP = ''
 const FRESH_POP_W = 300
-const FRESH_POP_H = 250
 
 type MenuTarget =
   | { kind: 'session'; wsPath: string; row: SessionRow }
@@ -153,7 +152,7 @@ function cardPosFor(el: HTMLElement): { left: number; top: number } {
   const r = el.getBoundingClientRect()
   return {
     left: popoverX(r.left + r.width / 2, FRESH_POP_W, window.innerWidth),
-    top: Math.min(r.bottom + 6, Math.max(4, window.innerHeight - FRESH_POP_H - 4))
+    top: r.bottom + 6
   }
 }
 

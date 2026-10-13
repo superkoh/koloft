@@ -107,7 +107,10 @@ if (argv[0] === 'app-server') {
     cwd: process.cwd(),
     portOffset: process.env.KOLOFT_PORT_OFFSET || null,
     playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,
-    codexGate: process.env.KOLOFT_CODEX_GATE || null
+    codexGate: process.env.KOLOFT_CODEX_GATE || null,
+    gitConfigIncludes: Object.keys(process.env)
+      .filter((k) => /^GIT_CONFIG_VALUE_\d+$/.test(k))
+      .map((k) => process.env[k])
   })
   // CODEX§27
   const GATE_KEY = '/<session-flags>/config.toml:pre_tool_use:0:0'

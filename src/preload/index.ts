@@ -33,6 +33,8 @@ import type {
   AssistTaskRow,
   AttentionEvent,
   AccountView,
+  GitAccountView,
+  GitLoginProgress,
   LoginProgress,
   Settings,
   UpdateProgress,
@@ -451,6 +453,29 @@ const api: KoloftApi = {
       ipcRenderer.on('accounts:update', handler)
       return () => ipcRenderer.removeListener('accounts:update', handler)
     }
+  },
+  gitAccounts: {
+    list: () => ipcRenderer.invoke('gitAccounts:list'),
+    onUpdate: (cb) => {
+      const handler = (_e: unknown, a: GitAccountView[]): void => cb(a)
+      ipcRenderer.on('gitAccounts:update', handler)
+      return () => ipcRenderer.removeListener('gitAccounts:update', handler)
+    },
+    loginStart: () => ipcRenderer.invoke('gitAccounts:login-start'),
+    loginCancel: () => ipcRenderer.send('gitAccounts:login-cancel'),
+    loginBrowser: () => ipcRenderer.send('gitAccounts:login-browser'),
+    onLoginProgress: (cb) => {
+      const handler = (_e: unknown, p: GitLoginProgress): void => cb(p)
+      ipcRenderer.on('gitAccounts:login-progress', handler)
+      return () => ipcRenderer.removeListener('gitAccounts:login-progress', handler)
+    },
+    addToken: (token) => ipcRenderer.invoke('gitAccounts:add-token', token),
+    remove: (login) => ipcRenderer.invoke('gitAccounts:remove', login),
+    makeDefault: (login) => ipcRenderer.invoke('gitAccounts:make-default', login),
+    check: () => ipcRenderer.invoke('gitAccounts:check'),
+    pick: (wsPath, login) => ipcRenderer.invoke('gitAccounts:pick', wsPath, login),
+    suggest: (wsPath, network) => ipcRenderer.invoke('gitAccounts:suggest', wsPath, network),
+    dismiss: (wsPath) => ipcRenderer.invoke('gitAccounts:dismiss', wsPath)
   },
   update: {
     version: () => ipcRenderer.invoke('app:version'),
