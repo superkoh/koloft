@@ -2,7 +2,7 @@ import type { AttentionEvent, AttentionKind, Settings } from '@shared/types'
 
 export interface RouteContext {
   windowFocused: boolean
-  backgroundTest: boolean
+  offScreenTest: boolean
 }
 
 export interface RouteDecision {
@@ -26,16 +26,16 @@ function categoryEnabled(kind: AttentionKind, s: Settings): boolean {
 export function dockBadgeText(
   pendingCount: number,
   dockBadgeEnabled: boolean,
-  backgroundTest: boolean
+  offScreenTest: boolean
 ): string | null {
-  if (backgroundTest) return null
+  if (offScreenTest) return null
   if (!dockBadgeEnabled || pendingCount <= 0) return ''
   return String(pendingCount)
 }
 
 export function route(event: AttentionEvent, ctx: RouteContext, settings: Settings): RouteDecision {
   if (!categoryEnabled(event.kind, settings)) return NONE
-  if (ctx.backgroundTest) return NONE
+  if (ctx.offScreenTest) return NONE
   const sound = event.kind === 'approval' && settings.notifyApprovalSound
   return { os: !ctx.windowFocused, sound }
 }

@@ -46,17 +46,19 @@ function runHere(args) {
   return r.status ?? 1
 }
 
-function tart(args, opts = {}) {
-  const r = spawnSync('tart', args, { encoding: 'utf8', ...opts })
-  if (r.error) fail(`tart could not run: ${r.error.message}`)
-  if (r.status !== 0) throw new Error(`tart ${args[0]} failed: ${r.stderr || r.stdout}`)
+function run(command, args, opts = {}) {
+  const r = spawnSync(command, args, { encoding: 'utf8', ...opts })
+  if (r.error) throw new Error(`${command} could not run: ${r.error.message}`)
+  if (r.status !== 0) throw new Error(`${command} ${args.join(' ')} failed: ${r.stderr}`)
   return (r.stdout ?? '').trim()
 }
+
+const tart = (args, opts) => run('tart', args, opts)
 
 function guestScript(args) {
   const quoted = args.map((a) => `'${a.replaceAll("'", "'\\''")}'`).join(' ')
   return `set -u
-rsync -a --delete --exclude .git --exclude test-results "${GUEST_SHARES}/repo/" ${GUEST_HOME}/koloft/
+rsync -a --exclude .git --exclude .claude --exclude dist --exclude test-results "${GUEST_SHARES}/repo/" ${GUEST_HOME}/koloft/
 cp "${GUEST_SHARES}/kit/node" ${GUEST_HOME}/node
 cd ${GUEST_HOME}/koloft
 codesign --force --deep --sign - node_modules/electron/dist/Electron.app
@@ -81,13 +83,8 @@ const GRANTS_FOR_TESTS_RUN_OVER_SSH = `insert or replace into access
   ('kTCCServiceScreenCapture', 'com.apple.sshd-session', 0, 2, 4, 1, 0);`
 
 function diskutilPlist(args) {
-  const r = spawnSync('diskutil', args, { encoding: 'utf8' })
-  if (r.status !== 0) throw new Error(`diskutil ${args.join(' ')} failed: ${r.stderr}`)
-  const json = spawnSync('plutil', ['-convert', 'json', '-o', '-', '-'], {
-    input: r.stdout,
-    encoding: 'utf8'
-  })
-  return JSON.parse(json.stdout)
+  const xml = run('diskutil', args)
+  return JSON.parse(run('plutil', ['-convert', 'json', '-o', '-', '-'], { input: xml }))
 }
 
 function grantWhileStopped(name, kit) {
@@ -114,11 +111,6 @@ function grantWhileStopped(name, kit) {
   } finally {
     spawnSync('diskutil', ['eject', devs[0]], { stdio: 'ignore' })
   }
-}
-
-function run(command, args) {
-  const r = spawnSync(command, args, { encoding: 'utf8' })
-  if (r.status !== 0) throw new Error(`${command} ${args.join(' ')} failed: ${r.stderr}`)
 }
 
 function ssh(ip, kit, remote, opts = {}) {

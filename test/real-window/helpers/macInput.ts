@@ -6,6 +6,11 @@ const SCRIPT = path.join(__dirname, 'macInput.jxa.js')
 
 export const COMMAND_FLAG = 0x100000
 export const KEY_P = 35
+export const KEY_RETURN = 36
+export const KEY_SPACE = 49
+const NIHAO_KEYCODES = [45, 34, 4, 0, 31]
+export const PINYIN_SIMPLIFIED = 'com.apple.inputmethod.SCIM.ITABC'
+export const ABC_LAYOUT = 'com.apple.keylayout.ABC'
 
 export interface Point {
   x: number
@@ -27,6 +32,10 @@ export function realKey(code: number, flags = 0): void {
   osa('key', code, flags)
 }
 
+export function typeNihao(): void {
+  osa('keys', ...NIHAO_KEYCODES)
+}
+
 export function realClick(p: Point): void {
   osa('click', p.x, p.y)
 }
@@ -44,33 +53,16 @@ export function dockItemCenter(appName: string): Point {
   return { x, y }
 }
 
-export const KEY_RETURN = 36
-export const KEY_SPACE = 49
-export const PINYIN_KEYS: Record<string, number> = { n: 45, i: 34, h: 4, a: 0, o: 31 }
-export const PINYIN_SIMPLIFIED = 'com.apple.inputmethod.SCIM.ITABC'
-export const ABC_LAYOUT = 'com.apple.keylayout.ABC'
-
-export function selectInputSource(id: string): string {
-  return osa('select-input-source', id)
-}
-
-export function currentInputSource(): string {
-  return osa('current-input-source')
-}
-
-export function realType(letters: string): void {
-  for (const c of letters) realKey(PINYIN_KEYS[c])
+export function selectInputSource(id: string): void {
+  osa('select-input-source', id)
 }
 
 export function notificationCenterRunning(): boolean {
   return osa('notification-center-running') === 'true'
 }
 
-export function bannerElementCenter(text: string): Point | null {
-  const found = osa('banner-element-center', text)
-  if (!found) return null
-  const [x, y] = found.split(' ').map(Number)
-  return { x, y }
+export function bannerShowing(text: string): boolean {
+  return osa('banner-showing', text) === 'true'
 }
 
 // PLATFORM§46
@@ -86,13 +78,6 @@ export function screenshot(file: string): void {
   execFileSync('screencapture', ['-x', file])
 }
 
-export function screenshotOf(
-  file: string,
-  r: { x: number; y: number; width: number; height: number }
-): void {
-  execFileSync('screencapture', ['-x', `-R${r.x},${r.y},${r.width},${r.height}`, file])
-}
-
 export function bringFinderToFront(): void {
   execFileSync('open', ['-a', 'Finder'])
 }
@@ -103,19 +88,19 @@ export async function windowBounds(
   return app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds())
 }
 
+function contentOrigin(app: ElectronApplication): Promise<Point> {
+  return app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getContentBounds())
+}
+
 export async function screenPointOf(app: ElectronApplication, target: Locator): Promise<Point> {
-  const content = await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].getContentBounds()
-  )
+  const content = await contentOrigin(app)
   const box = await target.boundingBox()
   if (!box) throw new Error('target has no box on screen')
   return { x: content.x + box.x + box.width / 2, y: content.y + box.y + box.height / 2 }
 }
 
 export async function bareScreenPointOf(app: ElectronApplication, target: Locator): Promise<Point> {
-  const content = await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].getContentBounds()
-  )
+  const content = await contentOrigin(app)
   const inPage = await target.evaluate((el) => {
     const r = el.getBoundingClientRect()
     const y = r.top + r.height / 2

@@ -1,16 +1,19 @@
 import fs from 'fs'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test as e2eTest, expect, launchApp, quitAndClose } from '../e2e/helpers/app'
-import { seedSettings } from '../e2e/helpers/env'
+import { seedSettings, type E2EEnv } from '../e2e/helpers/env'
 import {
   FAKE_SESSION_TITLE,
+  boundSessionId,
   centerTerm,
   focusOwner,
   startSessionIn,
   terminalText,
+  transcriptFile,
   waitBooted,
   wsRows
 } from '../e2e/helpers/p1'
+import { claudePrompts } from '../e2e/helpers/workbench'
 import {
   ABC_LAYOUT,
   COMMAND_FLAG,
@@ -19,7 +22,7 @@ import {
   KEY_SPACE,
   PINYIN_SIMPLIFIED,
   accessibilityTrusted,
-  bannerElementCenter,
+  bannerShowing,
   bannerTexts,
   bareScreenPointOf,
   chooseOnBanner,
@@ -30,7 +33,7 @@ import {
   realClick,
   realDrag,
   realKey,
-  realType,
+  typeNihao,
   screenPointOf,
   screenshot,
   selectInputSource,
@@ -43,6 +46,7 @@ const test = e2eTest.extend<{ shown: { app: ElectronApplication; page: Page } }>
     env.launchEnv.KOLOFT_TEST_REAL_WINDOW = '1'
     const app = await launchApp(env)
     const page = await app.firstWindow()
+    await waitBooted(page)
     await use({ app, page })
     if (testInfo.status !== testInfo.expectedStatus) {
       screenshot(testInfo.outputPath('failed-screen.png'))
@@ -68,8 +72,8 @@ test.beforeAll(() => {
   ).toBe(true)
 })
 
-const UNPACKAGED_BUILD_RUNS_AS_ELECTRON_APP = 'Electron'
-const DOCK_NAME = UNPACKAGED_BUILD_RUNS_AS_ELECTRON_APP
+// PLATFORM§46
+const DOCK_NAME = 'Electron'
 const palette = (page: Page) => page.locator('.modal.palette')
 const DRAG_BY = { x: 160, y: 90 }
 const ROOM_TO_DRAG_IN = { x: 40, y: 60, width: 760, height: 520 }
@@ -79,20 +83,23 @@ const MACOS_ASKS_TO_ALLOW_NOTIFICATIONS = 'Notifications may include'
 
 async function allowNotificationsWhenMacOSAsks(shownAnyway: () => boolean): Promise<void> {
   await expect
-    .poll(() => shownAnyway() || bannerElementCenter(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS) !== null, {
+    .poll(() => shownAnyway() || bannerShowing(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS), {
       timeout: 30_000
     })
     .toBe(true)
-  if (!bannerElementCenter(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS)) return
+  if (!bannerShowing(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS)) return
   // PLATFORM§46
   expect(chooseOnBanner(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS, 'Allow')).toBe('0')
-  await expect.poll(() => bannerElementCenter(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS)).toBeNull()
+  await expect.poll(() => bannerShowing(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS)).toBe(false)
 }
 
-async function sessionInWsA(page: Page): Promise<string> {
-  await waitBooted(page)
-  await startSessionIn(page, 'ws-a')
-  return (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')) ?? ''
+async function sessionIn(page: Page, ws: string): Promise<string> {
+  await startSessionIn(page, ws)
+  return (await wsRows(page, ws).first().getAttribute('data-tab-id')) ?? ''
+}
+
+function endTurn(page: Page, tabId: string): Promise<void> {
+  return page.evaluate(([id, line]) => window.api.terminal.write(id, line), [tabId, '/answer hi\r'])
 }
 
 const windowFocused = (app: ElectronApplication): Promise<boolean> =>
@@ -122,19 +129,26 @@ async function endATurnWhileInBackground(
   tabId: string
 ): Promise<void> {
   await goToBackground(app)
-  await page.evaluate(([id, line]) => window.api.terminal.write(id, line), [tabId, '/answer hi\r'])
+  await endTurn(page, tabId)
 }
 
-async function sentPrompts(page: Page, tabId: string): Promise<string[]> {
-  const unwrapped = (await terminalText(page, tabId)).replace(/\n/g, '')
-  return [...unwrapped.matchAll(/\[fake-claude\] handled: (.*?)>/g)].map((m) => m[1].trim())
+async function promptsStartingWith(
+  env: E2EEnv,
+  page: Page,
+  tabId: string,
+  start: string
+): Promise<string[]> {
+  const sessionId = (await boundSessionId(page, tabId)) ?? ''
+  return claudePrompts(transcriptFile(env.home, env.workspaces.a, sessionId)).filter((p) =>
+    p.startsWith(start)
+  )
 }
 
 test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods as macOS itself delivers and draws them', () => {
   test('⌘P typed on the keyboard while the session terminal has focus opens the command palette through the app menu', async ({
     shown: { app, page }
   }, testInfo) => {
-    await sessionInWsA(page)
+    await sessionIn(page, 'ws-a')
     await clickIntoTerminal(app, page)
     realKey(KEY_P, COMMAND_FLAG)
     await expect(palette(page)).toBeVisible()
@@ -145,7 +159,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
   test('dragging the title bar with the mouse moves the window along with it', async ({
     shown: { app, page }
   }, testInfo) => {
-    await sessionInWsA(page)
+    await sessionIn(page, 'ws-a')
     await app.evaluate(({ BrowserWindow }, bounds) => {
       BrowserWindow.getAllWindows()[0].setBounds(bounds)
     }, ROOM_TO_DRAG_IN)
@@ -168,7 +182,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
   test('a turn that ends while Koloft is in the background draws its count on the Dock icon, and coming back clears it', async ({
     shown: { app, page }
   }, testInfo) => {
-    const tabId = await sessionInWsA(page)
+    const tabId = await sessionIn(page, 'ws-a')
     await endATurnWhileInBackground(app, page, tabId)
     await allowNotificationsWhenMacOSAsks(() => dockBadgeDrawn(DOCK_NAME) === '1')
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('1')
@@ -182,16 +196,12 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
   }, testInfo) => {
     // PLATFORM§46
     test.skip(!notificationCenterRunning(), 'this Mac runs no Notification Center to draw banners')
-    const first = await sessionInWsA(page)
-    await startSessionIn(page, 'ws-b')
-    const second = (await wsRows(page, 'ws-b').first().getAttribute('data-tab-id')) ?? ''
+    const first = await sessionIn(page, 'ws-a')
+    const second = await sessionIn(page, 'ws-b')
     await endATurnWhileInBackground(app, page, first)
     await allowNotificationsWhenMacOSAsks(() => bannerTexts().includes(FAKE_SESSION_TITLE))
     expect(await windowFocused(app)).toBe(false)
-    await page.evaluate(
-      ([id, line]) => window.api.terminal.write(id, line),
-      [second, '/answer hi\r']
-    )
+    await endTurn(page, second)
     await expect
       .poll(() => bannerTexts(), { timeout: 30_000 })
       .toContain('turn done — your move · ws-b')
@@ -200,23 +210,24 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
   })
 
   test('with macOS Pinyin, Return while composing puts the letters in the line without sending it, and Space picks 你好 for the next Return to send', async ({
-    shown: { app, page }
+    shown: { app, page },
+    env
   }, testInfo) => {
-    const tabId = await sessionInWsA(page)
+    const tabId = await sessionIn(page, 'ws-a')
     try {
       await goToBackground(app)
-      // PLATFORM§18
+      // PLATFORM§46
       selectInputSource(PINYIN_SIMPLIFIED)
       await comeBackThroughTheDock(app)
       await clickIntoTerminal(app, page)
-      realType('nihao')
+      typeNihao()
       realKey(KEY_RETURN)
       await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/> nihao$/)
-      realType('nihao')
+      typeNihao()
       realKey(KEY_SPACE)
       await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/你好$/)
       realKey(KEY_RETURN)
-      await expect.poll(() => sentPrompts(page, tabId)).toEqual(['nihao你好'])
+      await expect.poll(() => promptsStartingWith(env, page, tabId, 'nihao')).toEqual(['nihao你好'])
       screenshot(testInfo.outputPath('pinyin-sent.png'))
     } finally {
       selectInputSource(ABC_LAYOUT)

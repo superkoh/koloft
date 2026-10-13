@@ -12,6 +12,9 @@ const LEFT_DRAGGED = 6
 const CLICK_STATE_FIELD = 1
 const DRAG_STEPS = 20
 const STEP_SECONDS = 0.02
+const ENABLED_INPUT_SOURCE_SETTLES_SECONDS = 0.5
+const NOTIFICATION_CENTER = 'com.apple.notificationcenterui'
+const BANNER_TREE_DEPTH = 14
 
 function post(event) {
   $.CGEventPost(HID_EVENT_TAP, event)
@@ -47,6 +50,10 @@ function drag(x1, y1, x2, y2) {
   mouse(LEFT_UP, x2, y2)
 }
 
+function unwrap(ref) {
+  return ObjC.unwrap(ObjC.castRefToObject(ref))
+}
+
 function attribute(element, name) {
   const value = Ref()
   if ($.AXUIElementCopyAttributeValue(element, $(name), value) !== 0) return null
@@ -55,8 +62,7 @@ function attribute(element, name) {
 
 function string(element, name) {
   const value = attribute(element, name)
-  if (value === null) return null
-  const s = ObjC.unwrap(ObjC.castRefToObject(value))
+  const s = value === null ? null : unwrap(value)
   return typeof s === 'string' ? s : null
 }
 
@@ -69,49 +75,14 @@ function children(element) {
   return out
 }
 
-function texts(element, depth, out) {
-  for (const name of ['AXValue', 'AXTitle', 'AXDescription']) {
-    const s = string(element, name)
-    if (s) out.push(s)
-  }
-  if (depth > 0) for (const child of children(element)) texts(child, depth - 1, out)
-  return out
-}
-
-function processElement(bundleId) {
-  const first = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(bundleId).firstObject
-  if (first.isNil()) return null
-  return $.AXUIElementCreateApplication(first.processIdentifier)
-}
-
-function dockItem(appName) {
-  const dock = processElement('com.apple.dock')
-  for (const list of children(dock))
-    for (const item of children(list)) {
-      if (string(item, 'AXTitle') !== appName) continue
-      const running = attribute(item, 'AXIsApplicationRunning')
-      if (running !== null && ObjC.unwrap(ObjC.castRefToObject(running))) return item
-    }
-  throw new Error('no running Dock item named ' + appName)
-}
-
-function axNumbers(element, name) {
-  const text = ObjC.unwrap(ObjC.castRefToObject(attribute(element, name)).description)
-  return [...text.matchAll(/[xywh]:(-?[\d.]+)/g)].map((m) => Number(m[1]))
-}
-
-function centerOf(element) {
-  const [x, y] = axNumbers(element, 'AXPosition')
-  const [w, h] = axNumbers(element, 'AXSize')
-  return `${x + w / 2} ${y + h / 2}`
-}
-
-function dockItemCenter(appName) {
-  return centerOf(dockItem(appName))
-}
-
 function labels(element) {
   return ['AXValue', 'AXTitle', 'AXDescription'].map((n) => string(element, n)).filter(Boolean)
+}
+
+function texts(element, depth, out) {
+  out.push(...labels(element))
+  if (depth > 0) for (const child of children(element)) texts(child, depth - 1, out)
+  return out
 }
 
 function findByText(element, needle, depth) {
@@ -124,39 +95,64 @@ function findByText(element, needle, depth) {
   return null
 }
 
-const NOTIFICATION_CENTER = 'com.apple.notificationcenterui'
+function processElement(bundleId) {
+  const first = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(bundleId).firstObject
+  if (first.isNil()) return null
+  return $.AXUIElementCreateApplication(first.processIdentifier)
+}
 
-function inputSources() {
-  const list = ObjC.castRefToObject($.TISCreateInputSourceList(null, true))
-  const out = []
-  for (let i = 0; i < list.count; i++) {
-    const source = list.objectAtIndex(i)
-    const id = $.TISGetInputSourceProperty(source, $.kTISPropertyInputSourceID)
-    out.push({ source, id: ObjC.unwrap(ObjC.castRefToObject(id)) })
-  }
-  return out
+function dockItem(appName) {
+  for (const list of children(processElement('com.apple.dock')))
+    for (const item of children(list)) {
+      if (string(item, 'AXTitle') !== appName) continue
+      const running = attribute(item, 'AXIsApplicationRunning')
+      if (running !== null && unwrap(running)) return item
+    }
+  throw new Error('no running Dock item named ' + appName)
+}
+
+function axNumbers(element, name) {
+  const text = ObjC.unwrap(ObjC.castRefToObject(attribute(element, name)).description)
+  return [...text.matchAll(/[xywh]:(-?[\d.]+)/g)].map((m) => Number(m[1]))
+}
+
+function dockItemCenter(appName) {
+  const item = dockItem(appName)
+  const [x, y] = axNumbers(item, 'AXPosition')
+  const [w, h] = axNumbers(item, 'AXSize')
+  return `${x + w / 2} ${y + h / 2}`
+}
+
+function banner(text) {
+  const center = processElement(NOTIFICATION_CENTER)
+  return center === null ? null : findByText(center, text, BANNER_TREE_DEPTH)
+}
+
+function chooseOnBanner(text, choice) {
+  const found = banner(text)
+  if (!found) return 'no banner'
+  const actions = Ref()
+  $.AXUIElementCopyActionNames(found, actions)
+  const action = ObjC.deepUnwrap(ObjC.castRefToObject(actions[0])).find((a) =>
+    a.startsWith(`Name:${choice}\n`)
+  )
+  if (!action) return 'no action ' + choice
+  return String($.AXUIElementPerformAction(found, $(action)))
 }
 
 function selectInputSource(id) {
-  const all = inputSources()
-  const steps = []
-  for (const s of all)
-    if (id.startsWith(s.id + '.') || s.id === id)
-      steps.push(`enable ${s.id}=${$.TISEnableInputSource(s.source)}`)
-  const match = all.find((s) => s.id === id)
+  const list = ObjC.castRefToObject($.TISCreateInputSourceList(null, true))
+  let match = null
+  for (let i = 0; i < list.count; i++) {
+    const source = list.objectAtIndex(i)
+    const sourceId = unwrap($.TISGetInputSourceProperty(source, $.kTISPropertyInputSourceID))
+    if (id !== sourceId && !id.startsWith(sourceId + '.')) continue
+    $.TISEnableInputSource(source)
+    if (id === sourceId) match = source
+  }
   if (!match) throw new Error('no input source ' + id)
-  delay(0.5)
-  steps.push(`select=${$.TISSelectInputSource(match.source)}`)
-  delay(0.5)
-  steps.push(`now=${currentInputSource()}`)
-  return steps.join(' ')
-}
-
-function currentInputSource() {
-  const source = $.TISCopyCurrentKeyboardInputSource()
-  return ObjC.unwrap(
-    ObjC.castRefToObject($.TISGetInputSourceProperty(source, $.kTISPropertyInputSourceID))
-  )
+  delay(ENABLED_INPUT_SOURCE_SETTLES_SECONDS)
+  $.TISSelectInputSource(match)
 }
 
 function run(argv) {
@@ -164,35 +160,19 @@ function run(argv) {
   const n = rest.map(Number)
   if (command === 'trusted') return String($.AXIsProcessTrusted())
   if (command === 'key') return key(n[0], n[1])
+  if (command === 'keys') return n.forEach((code) => key(code, 0))
   if (command === 'click') return click(n[0], n[1])
   if (command === 'drag') return drag(n[0], n[1], n[2], n[3])
   if (command === 'dock-badge') return string(dockItem(rest[0]), 'AXStatusLabel') ?? ''
   if (command === 'dock-item-center') return dockItemCenter(rest[0])
-  if (command === 'input-sources')
-    return inputSources()
-      .map((s) => s.id)
-      .join('\n')
   if (command === 'select-input-source') return selectInputSource(rest[0])
-  if (command === 'current-input-source') return currentInputSource()
   if (command === 'notification-center-running')
     return String(processElement(NOTIFICATION_CENTER) !== null)
   if (command === 'banner-texts') {
     const center = processElement(NOTIFICATION_CENTER)
-    return center === null ? '' : texts(center, 12, []).join('\n')
+    return center === null ? '' : texts(center, BANNER_TREE_DEPTH, []).join('\n')
   }
-  if (command === 'banner-element-center') {
-    const found = findByText(processElement(NOTIFICATION_CENTER), rest[0], 14)
-    return found ? centerOf(found) : ''
-  }
-  if (command === 'banner-action') {
-    const found = findByText(processElement(NOTIFICATION_CENTER), rest[0], 14)
-    if (!found) return 'no banner'
-    const actions = Ref()
-    $.AXUIElementCopyActionNames(found, actions)
-    const names = ObjC.deepUnwrap(ObjC.castRefToObject(actions[0]))
-    const action = names.find((a) => a.startsWith(`Name:${rest[1]}\n`))
-    if (!action) return 'no action ' + rest[1]
-    return String($.AXUIElementPerformAction(found, $(action)))
-  }
+  if (command === 'banner-showing') return String(banner(rest[0]) !== null)
+  if (command === 'banner-action') return chooseOnBanner(rest[0], rest[1])
   throw new Error('unknown command ' + command)
 }

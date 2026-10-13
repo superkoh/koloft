@@ -10,10 +10,10 @@ import {
 const ev = (kind: AttentionKind): AttentionEvent => ({ tabId: 'tab-A', kind, at: 1 })
 const settings = (o: Partial<Settings> = {}): Settings => ({ ...DEFAULT_SETTINGS, ...o })
 
-const FOCUSED: RouteContext = { windowFocused: true, backgroundTest: false }
-const UNFOCUSED: RouteContext = { windowFocused: false, backgroundTest: false }
-const TEST_FOCUSED: RouteContext = { windowFocused: true, backgroundTest: true }
-const TEST_UNFOCUSED: RouteContext = { windowFocused: false, backgroundTest: true }
+const FOCUSED: RouteContext = { windowFocused: true, offScreenTest: false }
+const UNFOCUSED: RouteContext = { windowFocused: false, offScreenTest: false }
+const TEST_FOCUSED: RouteContext = { windowFocused: true, offScreenTest: true }
+const TEST_UNFOCUSED: RouteContext = { windowFocused: false, offScreenTest: true }
 
 const KINDS: AttentionKind[] = ['turn-done', 'approval', 'exited']
 
@@ -31,7 +31,7 @@ describe('notifyRouter — where the user is decides whether to interrupt at all
   })
 })
 
-describe('notifyRouter — D8 hard rule: a background test launch never hits an OS outlet', () => {
+describe('notifyRouter — D8 hard rule: a test launch kept off the screen never hits an OS outlet', () => {
   it('routes every kind, focused OR unfocused, to nothing at all', () => {
     for (const kind of KINDS) {
       for (const ctx of [TEST_FOCUSED, TEST_UNFOCUSED]) {
@@ -89,7 +89,7 @@ describe('notifyRouter — sound is opt-in, approval-only, and focus-independent
 })
 
 describe('dockBadgeText — the badge decision, incl. the D8 dock guard', () => {
-  it('never touches the Dock under a background test launch (null = hands off)', () => {
+  it('never touches the Dock under a test launch kept off the screen (null = hands off)', () => {
     expect(dockBadgeText(3, true, true)).toBeNull()
     expect(dockBadgeText(0, false, true)).toBeNull()
   })
