@@ -77,7 +77,8 @@ async function dumpState(page: Page, steps: Step[], info: TestInfo, home: string
   })
 }
 
-const greenWithRunningMarker = (page: Page) => oneStillRunning(page.locator('.ws-tab.st-waiting'))
+const greenWithRunningMarker = (page: Page) =>
+  oneStillRunning(page.locator('.ws-tab.st-waiting.st-bg-run'))
 
 async function expectGreenAndRunningThroughTheFixtures5sBackgroundWindow(
   page: Page
@@ -93,12 +94,13 @@ async function expectGreenAndRunningThroughTheFixtures5sBackgroundWindow(
 async function expectDrainedThenTurnDone(page: Page, timeout: number): Promise<void> {
   await expect(page.locator('.ws-tab .ws-tab-parked')).toHaveCount(0, { timeout })
   await expect(page.locator('.ws-tab.st-waiting')).toBeVisible()
+  await expect(page.locator('.ws-tab.st-bg-run')).toHaveCount(0)
   await expect
     .poll(() => pendingAttention(page), { timeout: 10_000 })
     .toMatchObject([{ kind: 'turn-done' }])
 }
 
-test.describe('background work (subagents, shells, CC-reported tasks) after the turn ends: the lamp is green with a ↻ marker, and turn-done waits until it drains', () => {
+test.describe('background work (subagents, shells, CC-reported tasks) after the turn ends: the lamp is breathing green with a ↻ marker, and turn-done waits until it drains', () => {
   test('background subagent work shows green with ↻, with no turn-done attention, until it drains', async ({
     page,
     env

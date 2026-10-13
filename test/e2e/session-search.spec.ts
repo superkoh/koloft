@@ -5,12 +5,12 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, type E2EEnv } from './helpers/env'
 import {
-  clickAppMenuItem,
   readCalls,
   resumedId,
   runIn,
   centerTerm,
   seedJsonl,
+  sendShortcut,
   startSessionIn,
   transcriptFile,
   waitBooted,
@@ -30,16 +30,21 @@ import {
 test.setTimeout(180_000)
 
 function searchDialog(page: Page): Locator {
-  return page.getByRole('dialog', { name: 'Search sessions', exact: true })
+  return page.locator('.modal.palette')
 }
 
 async function searchFor(app: ElectronApplication, page: Page, term: string): Promise<Locator> {
   const dialog = searchDialog(page)
-  if (!(await dialog.isVisible())) await clickAppMenuItem(app, page, 'search-sessions')
-  const box = dialog.locator('.find-input')
+  if (!(await dialog.isVisible())) await sendShortcut(app, 'shortcut:command-palette')
+  const box = dialog.getByRole('textbox', { name: 'Ask or jump' })
+  await expect(box).toBeFocused()
+  if (await dialog.locator('.pal-count').isVisible()) {
+    await box.press('Escape')
+    await expect(dialog.locator('.pal-count')).toHaveCount(0)
+  }
   await box.fill(term)
-  await box.press('Enter')
-  await expect(dialog.locator('.field-hint')).toHaveText(/^(No matches|\d+ sessions?)$/, {
+  await box.press('Alt+Enter')
+  await expect(dialog.locator('.pal-count')).toHaveText(/^(No matches|\d+ conversations?)$/, {
     timeout: 30_000
   })
   return dialog
@@ -112,7 +117,22 @@ function codexCalls(env: E2EEnv): { argv: string[]; sessionId: string }[] {
     .map((line) => JSON.parse(line))
 }
 
-test.describe('Search sessions (Edit ▸ Search Sessions, ⌥⌘F) · finds a session by its words, in every workspace and backend, and opens it', () => {
+test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by its words, in every workspace and backend, and opens it', () => {
+  test('⌥⏎ turns the typed words into a search inside the palette, Esc goes back to the plain palette with the words kept, and a second Esc closes it', async ({
+    app,
+    page
+  }) => {
+    await waitBooted(page)
+    const dialog = await searchFor(app, page, 'never-said-anywhere')
+    await expect(dialog.locator('.pal-count')).toHaveText('No matches')
+    const box = dialog.getByRole('textbox', { name: 'Ask or jump' })
+    await box.press('Escape')
+    await expect(dialog.locator('.pal-count')).toHaveCount(0)
+    await expect(box).toHaveValue('never-said-anywhere')
+    await box.press('Escape')
+    await expect(dialog).toHaveCount(0)
+  })
+
   test('a cold local Claude session is found by its title or by what the model said, shows the words around the match, and resumes on click', async ({
     env
   }) => {
@@ -129,15 +149,15 @@ test.describe('Search sessions (Edit ▸ Search Sessions, ⌥⌘F) · finds a se
       await expect(wsRows(page, 'ws-a')).toHaveCount(2, { timeout: 30_000 })
 
       let dialog = await searchFor(app, page, 'benchmarks')
-      await expect(dialog.locator('.field-hint')).toHaveText('1 session')
+      await expect(dialog.locator('.pal-count')).toHaveText('1 conversation')
       await expect(hit(dialog, 'Benchmarks of the week').locator('.restore-snippet')).toHaveCount(0)
 
       dialog = await searchFor(app, page, 'never-said-anywhere')
-      await expect(dialog.locator('.field-hint')).toHaveText('No matches')
+      await expect(dialog.locator('.pal-count')).toHaveText('No matches')
       await expect(dialog.locator('.restore-row')).toHaveCount(0)
 
       dialog = await searchFor(app, page, 'zebra-NEEDLE-7')
-      await expect(dialog.locator('.field-hint')).toHaveText('1 session')
+      await expect(dialog.locator('.pal-count')).toHaveText('1 conversation')
       const row = hit(dialog, 'Benchmarks of the week')
       await expect(row.locator('.restore-snippet b')).toHaveText('ZEBRA-needle-7')
       await expect(row.locator('.restore-snippet')).toContainText('inside parse.ts')
@@ -278,7 +298,7 @@ test.describe('Search sessions (Edit ▸ Search Sessions, ⌥⌘F) · finds a se
         const dialog = await searchFor(app, page, 'lynx-needle-5')
         const row = hit(dialog, 'Yesterday on the build machine')
         await expect(row.locator('.restore-meta')).toContainText(
-          `${REMOTE_WS_NAME} (${REMOTE_HOST}) · main ·`
+          `${REMOTE_HOST}:${REMOTE_WS_NAME} · main ·`
         )
         await row.click()
 

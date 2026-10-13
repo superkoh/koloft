@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { koloftAssist } from '../../src/main/assist'
-import type { AssistSetting } from '../../src/shared/types'
+import type { AssistSetting, BackendId } from '../../src/shared/types'
 
 function recordingBinary(name: string, reply: string): { bin: string; log: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-'))
@@ -24,9 +24,14 @@ const read = (file: string): string | null =>
 
 const JOB = { system: 'You write short titles.', prompt: 'Task:\nfix the login crash' }
 
-function assistWith(setting: AssistSetting, bins: { claude?: string; codex?: string }) {
+function assistWith(
+  setting: AssistSetting,
+  bins: { claude?: string; codex?: string },
+  off: BackendId[] = []
+) {
   return koloftAssist({
     setting: () => setting,
+    enabled: (backend) => !off.includes(backend),
     claude: async () => (bins.claude ? { binary: bins.claude, env: {} } : null),
     codex: async () =>
       bins.codex ? { binary: bins.codex, env: { CODEX_HOME: '/homes/work' } } : null
@@ -42,8 +47,26 @@ describe('Koloft Assist', () => {
     expect(read(claude.log + '.argv')).toBeNull()
   })
 
-  it('answers nothing when the chosen tool has no Koloft account to run on', async () => {
+  it('answers nothing when neither tool has a Koloft account to run on', async () => {
     expect(await assistWith({ on: true, backend: 'codex' }, {})(JOB)).toBeNull()
+  })
+
+  it('runs on the other tool when the chosen one has no usable account', async () => {
+    const claude = recordingBinary('claude', 'From Claude')
+    const reply = await assistWith({ on: true, backend: 'codex' }, { claude: claude.bin })(JOB)
+    expect(reply?.trim()).toBe('From Claude')
+  })
+
+  it('never runs a tool turned off in Settings ▸ Sessions, even when it is the chosen one', async () => {
+    const codex = recordingBinary('codex', 'From Codex')
+    const claude = recordingBinary('claude', 'From Claude')
+    const reply = await assistWith(
+      { on: true, backend: 'codex' },
+      { codex: codex.bin, claude: claude.bin },
+      ['codex']
+    )(JOB)
+    expect(reply?.trim()).toBe('From Claude')
+    expect(read(codex.log + '.argv')).toBeNull()
   })
 
   // CC§9

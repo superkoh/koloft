@@ -915,7 +915,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex turn that ends while its child agent still runs shows green with ↻, and turn-done waits for the child', async ({
+  test('a Codex turn that ends while its child agent still runs shows breathing green with ↻, and turn-done waits for the child', async ({
     env
   }) => {
     installCodex(env)
@@ -932,12 +932,14 @@ test.describe('Codex sessions through the real method chooser, process transport
       const running = oneStillRunning(row)
       await expect(running).toBeVisible()
       await expect(row).toHaveClass(/st-waiting/)
+      await expect(row).toHaveClass(/\bst-bg-run\b/)
       expect(await pendingAttention(page)).toHaveLength(0)
       await running.click()
       await expect(page.locator('.tbu-pop.parked')).toContainText('Turn done · still running')
       await page.keyboard.press('Escape')
       await expect(running).toHaveCount(0, { timeout: 15_000 })
       await expect(row).toHaveClass(/st-waiting/)
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/)
       await expect
         .poll(() => pendingAttention(page), { timeout: 10_000 })
         .toMatchObject([{ kind: 'turn-done' }])

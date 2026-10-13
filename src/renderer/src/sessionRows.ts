@@ -113,7 +113,7 @@ export function rowStateClass(
   if (!running) return 'cold'
   switch (status) {
     case 'working':
-      return turnOver ? 'st-waiting' : 'st-working'
+      return turnOver ? 'st-waiting st-bg-run' : 'st-working'
     case 'waiting':
       return 'st-waiting'
     case 'approval':

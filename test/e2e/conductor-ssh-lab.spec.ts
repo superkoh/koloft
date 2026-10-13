@@ -2,6 +2,7 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { defaultControlDir } from '../../src/main/remote/ssh'
+import { ownerSays } from '../../src/shared/agentGuide'
 import { addWorkspace, openMenu, startSessionIn, waitBooted, wsGroup } from './helpers/p1'
 import {
   HAVE_LINUX_CLAUDE,
@@ -149,7 +150,7 @@ async function typeIntoRemote(page: Page, tabId: string, text: string): Promise<
 }
 
 test.describe('A conductor on this Mac looking after a Claude session on an SSH machine (Docker)', () => {
-  test('E-SSH-C1: the conductor types a message into the remote session and hears it finished in the session’s thread; the session’s question reaches the thread whole, and its button presses the key that answers it; the owner’s message in the thread is typed into the remote session and its reply comes back there; the next question is answered by the conductor with koloft session keys, pressed through ssh and tmux', async ({
+  test('E-SSH-C1: the conductor types a message into the remote session and hears it finished in the session’s thread; the session’s question reaches the thread whole, and its button presses the key that answers it; the owner’s message in the thread is typed into the remote session and its reply comes back there; the next question is answered by the conductor with koloft session keys, pressed through ssh and tmux, and the reply that ends that turn is handed to the conductor, whose answer reaches the channel', async ({
     env
   }) => {
     await withRemoteWorkspaceConductor(
@@ -165,7 +166,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
         fake.say(OWNER, `/koloft session send ${remote.sessionId} hello from Discord`)
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
-          .toContain('(Your owner, via the Koloft conductor:) hello from Discord')
+          .toContain(ownerSays('hello from Discord'))
         await expect
           .poll(() => notices(fake), { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toEqual([expect.stringMatching(/^🔔 .+ finished\.$/)])
@@ -225,6 +226,12 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toContain('Picked: Small')
+        await expect
+          .poll(
+            () => said(fake).some((s) => s.includes(`, id ${remote.sessionId}:) Picked: Small`)),
+            { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS }
+          )
+          .toBe(true)
       }
     )
   })
@@ -286,7 +293,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
         )
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
-          .toContain('(Your owner, via the Koloft conductor:) Say the word MANGO')
+          .toContain(ownerSays('Say the word MANGO'))
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
           .toMatch(/"type":"text","text":"MANGO/)
