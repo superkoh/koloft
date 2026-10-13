@@ -283,7 +283,7 @@ export class GitAccountService {
     return known
   }
 
-  // PLATFORM§52 ADR-0035
+  // PLATFORM§53 ADR-0035
   private async scanRemotes(repo: string, env: NodeJS.ProcessEnv): Promise<boolean> {
     const a = this.pickFor(repo)
     if (!a) return false
@@ -350,7 +350,7 @@ export class GitAccountService {
     if (repo) await this.checkKey(repo)
   }
 
-  // PLATFORM§48 PLATFORM§52
+  // PLATFORM§48 PLATFORM§53
   private async checkKey(repo: string): Promise<void> {
     const a = this.pickFor(repo)
     const ssh = this.remotes.get(repo)?.ssh

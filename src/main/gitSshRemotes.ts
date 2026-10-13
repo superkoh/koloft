@@ -7,7 +7,7 @@ export const AZURE_HOST = 'dev.azure.com'
 const AZURE_SSH_PATH = /^v3\/([^/]+)\/([^/]+)\/([^/]+)$/
 const REMOTE_URL_LINE = /^remote\..+\.(?:push)?url\s+(.+)$/
 
-// PLATFORM§52
+// PLATFORM§53
 const SSH_ONLY_ANSWER =
   /^remote: (?:Git access over HTTP is not allowed|Interacting with repositories by HTTP protocol is not allowed)\s*$/m
 const SERVER_FORBADE = /The requested URL returned error: 403\b/
@@ -15,7 +15,7 @@ const HTTPS_CAN_BE_OFF: GitPlatform[] = ['gitlab', 'gitea']
 
 export type HttpsTurnedAway = 'ssh-only' | 'forbidden'
 
-// PLATFORM§52
+// PLATFORM§53
 export function httpsTurnedAway(stderr: string, platform: GitPlatform): HttpsTurnedAway | null {
   if (SSH_ONLY_ANSWER.test(stderr)) return 'ssh-only'
   return HTTPS_CAN_BE_OFF.includes(platform) && SERVER_FORBADE.test(stderr) ? 'forbidden' : null
@@ -98,7 +98,7 @@ function httpsOf(
   return { url: `${project}${m[3]}`, rule: [project, `${t.prefix}v3/${m[1]}/${m[2]}/`] }
 }
 
-// PLATFORM§52 ADR-0035
+// PLATFORM§53 ADR-0035
 export async function rewriteRulesFor(
   a: Pick<GitAccount, 'platform' | 'url'>,
   urls: string[],

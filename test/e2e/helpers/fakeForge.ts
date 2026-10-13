@@ -30,7 +30,7 @@ const GITLAB_PROJECT = /^\/api\/v4\/projects\/([^/?]+)$/
 const GITEA_REPO = /^\/api\/v1\/repos\/([^/]+)\/([^/?]+)$/
 const GITLAB_DEVELOPER = 30
 const GITLAB_REPORTER = 20
-// PLATFORM§52
+// PLATFORM§53
 const HTTPS_OFF_TEXT: Record<ForgeKind, string> = {
   gitlab: 'Git access over HTTP is not allowed',
   gitea: 'Interacting with repositories by HTTP protocol is not allowed'

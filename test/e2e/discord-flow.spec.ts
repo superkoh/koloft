@@ -82,6 +82,17 @@ function threadPosts(fake: FakeDiscord): FakePost[] {
   return fake.posted.filter((p) => ids.includes(p.channelId))
 }
 
+async function waitingCard(fake: FakeDiscord, detail: string, timeout?: number): Promise<FakePost> {
+  const card = (): FakePost | undefined =>
+    threadPosts(fake).find((p) =>
+      new RegExp(
+        `^❓ .+ is waiting for you\\.\\n${detail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`
+      ).test(p.content)
+    )
+  await expect.poll(card, { timeout }).toBeTruthy()
+  return card()!
+}
+
 function inThreads(fake: FakeDiscord): string[] {
   return threadPosts(fake).map((p) => p.content)
 }
@@ -652,16 +663,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       const managedTab = await tabOf(page, managed)
       const type = (line: string): Promise<void> =>
         page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [managedTab, line])
-      const waiting = async (detail: string): Promise<FakePost> => {
-        const card = (): FakePost | undefined =>
-          threadPosts(fake).find((p) =>
-            new RegExp(
-              `^❓ .+ is waiting for you\\.\\n${detail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`
-            ).test(p.content)
-          )
-        await expect.poll(card).toBeTruthy()
-        return card()!
-      }
+      const waiting = (detail: string): Promise<FakePost> => waitingCard(fake, detail)
 
       await type('/ask Which colour?|Red|Green')
       const question = await waiting(
@@ -718,6 +720,38 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await waiting('Which shape?\n1. Round — The Round one\n2. Square — The Square one')
       fake.say(OWNER, `/koloft session keys ${managed} 1`)
       await expect.poll(() => transcriptText(env, managed)).toContain('Picked: Round')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('a session that another plain session started with koloft session new asks the owner in a thread of its own, with a button per option, and a button press there answers it', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await startSessionIn(page, 'ws-a')
+      const parentTab = await tabOf(page, (await waitForCallsBesideConductors(env, 1))[0].sessionId)
+      const type = (tab: string, line: string): Promise<void> =>
+        page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
+      await type(parentTab, '/koloft session new -- check the colour')
+      const child = (await waitForCallsBesideConductors(env, 2))[1].sessionId
+      await expect.poll(() => transcriptText(env, child)).toContain('check the colour')
+      await type(await tabOf(page, child), '/ask Which colour?|Red|Green')
+      const card = await waitingCard(
+        fake,
+        'Which colour?\n1. Red — The Red one\n2. Green — The Green one',
+        CONDUCTOR_STARTS_AND_ANSWERS_MS
+      )
+      expect(fake.threads).toEqual([
+        expect.objectContaining({ parentId: CHANNEL, members: [OWNER.id] })
+      ])
+      expect(card.buttons?.map((b) => b.label)).toEqual(['1. Red', '2. Green'])
+      fake.press(OWNER, card.buttons![0], card.channelId)
+      await expect.poll(() => transcriptText(env, child)).toContain('Picked: Red')
     } finally {
       await quitAndClose(app)
       await fake.close()

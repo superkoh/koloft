@@ -1620,6 +1620,11 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `latest` 2.1.293, `next` 2.1.294, `stable` 2.1.285). A minimum above npm's `latest`
   would leave an npm install that `claude update` cannot lift to it. On 2026-10-11 both
   channels offered 2.1.296 (`latest` and `next` 2.1.296, `stable` 2.1.287).
+- **One version's binary for one platform sits at
+  `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
+  in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
+  256,434,168 bytes, and that file ran as the remote `claude` in the Docker SSH lab
+  (aarch64). `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
 

@@ -403,8 +403,9 @@ import { installLine, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } fr
 if (!app.isPackaged) app.setName('koloft-dev')
 
 const BACKGROUND_TEST = process.env.KOLOFT_TEST_BACKGROUND === '1'
+const OFF_SCREEN_TEST = BACKGROUND_TEST && process.env.KOLOFT_TEST_REAL_WINDOW !== '1'
 // PLATFORM§4
-if (BACKGROUND_TEST && process.platform === 'darwin') {
+if (OFF_SCREEN_TEST && process.platform === 'darwin') {
   app.setActivationPolicy('accessory')
   app.dock?.hide()
 }
@@ -747,7 +748,7 @@ const osOutletsSeenByTests: OsOutletsSeenByTests = { notifications: [], dockBadg
 function updateDockBadge(pending: AttentionEvent[]): void {
   if (process.platform !== 'darwin') return
   const text = dockBadgeText(pending.length, loadSettings().dockBadge)
-  if (BACKGROUND_TEST) osOutletsSeenByTests.dockBadge = text
+  if (OFF_SCREEN_TEST) osOutletsSeenByTests.dockBadge = text
   else app.dock?.setBadge(text)
 }
 
@@ -795,7 +796,7 @@ function osNotificationText(event: AttentionEvent): { title: string; body: strin
 }
 
 function osNotification(text: { title: string; body: string }): Notification | null {
-  if (BACKGROUND_TEST) {
+  if (OFF_SCREEN_TEST) {
     osOutletsSeenByTests.notifications.push(text)
     return null
   }
@@ -1691,8 +1692,8 @@ function createWindow(): void {
     ...geo.bounds,
     minWidth: windowMinWidth(geo.bounds.width),
     minHeight: 560,
-    ...fullscreenOption(geo.fullScreen && !BACKGROUND_TEST),
-    show: !BACKGROUND_TEST,
+    ...fullscreenOption(geo.fullScreen && !OFF_SCREEN_TEST),
+    show: !OFF_SCREEN_TEST,
     title: 'Koloft',
     backgroundColor: '#0e0e10',
     titleBarStyle: 'hiddenInset',
@@ -1724,10 +1725,10 @@ function createWindow(): void {
     if (releaseWithoutHostPress) e.preventDefault()
   })
   // PLATFORM§5
-  if (!BACKGROUND_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
+  if (!OFF_SCREEN_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
   trackWindowState(
     mainWindow,
-    BACKGROUND_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined
+    OFF_SCREEN_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined
   )
 
   // PLATFORM§5
