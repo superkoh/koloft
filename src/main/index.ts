@@ -279,6 +279,7 @@ import type {
   ArtifactView,
   BackendId,
   CodexLimits,
+  CodexResetOutcome,
   CodexSignInResult,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
@@ -1542,6 +1543,26 @@ async function probeCodexAccount(name: string): Promise<void> {
     usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
   pushAccounts()
+}
+
+const CODEX_RESET_OUTCOMES: CodexResetOutcome[] = [
+  'reset',
+  'nothingToReset',
+  'noCredit',
+  'alreadyRedeemed'
+]
+
+async function codexUseReset(name: string): Promise<CodexResetOutcome> {
+  if (!findAccount(name, 'codex-home') || !codexSessions) return 'failed'
+  const key = viewKey(name, 'codex-home')
+  try {
+    const r = await codexSessions.useResetCredit(codexHomeOf(app.getPath('userData'), name))
+    usageViews.set(key, { limits: limitsFrom(r.limits, Date.now()) ?? usageViews.get(key)?.limits })
+    pushAccounts()
+    return CODEX_RESET_OUTCOMES.find((o) => o === r.outcome) ?? 'failed'
+  } catch {
+    return 'failed'
+  }
 }
 
 let codexProbeRound: Promise<void> | null = null
@@ -4138,6 +4159,7 @@ function registerIpc(): void {
   ipcMain.handle('accounts:codex-sign-in', (_e, name: string, again?: boolean) =>
     codexSignIn(name, again === true)
   )
+  ipcMain.handle('accounts:codex-use-reset', (_e, name: string) => codexUseReset(name))
   ipcMain.on('accounts:cancel-login', () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
   })

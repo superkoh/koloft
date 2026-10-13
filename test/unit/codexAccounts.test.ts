@@ -45,6 +45,37 @@ describe('limitsFrom (the rate-limit reply a Codex login gives)', () => {
     expect(limitsFrom(both, 5)?.windows.map((w) => windowLabel(w.minutes))).toEqual(['5h', '7d'])
   })
 
+  it('keeps the credit balance, how many resets are saved with the soonest expiry, and a limit Codex says was reached; a field the reply lacks stays unknown, not zero', () => {
+    const reply = {
+      rateLimits: {
+        primary: { usedPercent: 7, windowDurationMins: 10080, resetsAt: 9 },
+        secondary: null,
+        credits: { hasCredits: true, unlimited: false, balance: '62500.0000000000' },
+        rateLimitReachedType: 'rate_limit_reached'
+      },
+      rateLimitResetCredits: {
+        availableCount: 3,
+        credits: [
+          { id: 'b', status: 'available', expiresAt: 300 },
+          { id: 'a', status: 'available', expiresAt: 200 },
+          { id: 'c', status: 'redeemed', expiresAt: 100 }
+        ]
+      }
+    }
+    expect(limitsFrom(reply, 5)).toMatchObject({
+      reached: true,
+      credits: { unlimited: false, balance: 62500 },
+      resets: { available: 3, firstExpiresAt: 200 }
+    })
+    const unlimited = { rateLimits: { credits: { hasCredits: true, unlimited: true } } }
+    expect(limitsFrom(unlimited, 5)?.credits).toEqual({ unlimited: true })
+    const bare = limitsFrom(
+      { rateLimits: { credits: null, rateLimitReachedType: null }, rateLimitResetCredits: null },
+      5
+    )
+    expect(bare).toEqual({ windows: [], at: 5 })
+  })
+
   it('has nothing to show when the reply carries no limits', () => {
     expect(limitsFrom({ rateLimits: null }, 5)).toBeUndefined()
   })

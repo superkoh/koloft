@@ -731,6 +731,24 @@ throwaway `HOME` it failed, exit 1, "A default keychain could not be found" — 
 home that copies `auth.json` between accounts keeps working only while that key stays
 `file`.
 
+**The rate-limit reply also carries the credit balance and saved limit resets; one can be
+spent through the app-server.** Checked 2026-10-13 with Codex CLI 0.162.0 and a real
+ChatGPT Pro login, no model turn: a Node script sent `initialize`, `initialized` and
+`account/rateLimits/read` to `codex app-server`. The reply held `rateLimits.credits:
+{hasCredits: true, unlimited: false, balance: "62500.0000000000"}` (a decimal string),
+`rateLimits.rateLimitReachedType: null` while under the limit, a top-level
+`ordinaryUsageAllowed: true`, and a top-level `rateLimitResetCredits: {availableCount: 3,
+credits: [...]}`, each credit `{id, resetType: "codexRateLimits", status: "available",
+grantedAt, expiresAt, title: "Full reset", description}`, `expiresAt` 30 days after
+`grantedAt`. The schema the same binary prints (`codex app-server generate-json-schema`)
+types `credits` as nullable "only `availableCount` is known", and adds
+`account/rateLimitResetCredit/consume` with params `{idempotencyKey, creditId?}` (no
+`creditId`: the backend picks the next) and result `outcome`: `reset`, `nothingToReset`
+("no current rate-limit window is eligible"), `noCredit` or `alreadyRedeemed`. Not
+probed: a real `consume` — every try spends one of the owner's resets, so Koloft offers
+it only on a walled account and only the fake codex has run it; whether
+`nothingToReset` leaves the credit unspent is inferred from its description.
+
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
   done (Koloft types `codex login && exit` into the sign-in terminal, so the tab closes

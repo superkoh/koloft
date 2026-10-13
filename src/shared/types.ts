@@ -215,7 +215,13 @@ export interface CodexLimitWindow {
 export interface CodexLimits {
   windows: CodexLimitWindow[]
   at: number
+  reached?: boolean
+  credits?: { unlimited: boolean; balance?: number }
+  resets?: { available: number; firstExpiresAt?: number }
 }
+
+export type CodexResetOutcome =
+  'reset' | 'nothingToReset' | 'noCredit' | 'alreadyRedeemed' | 'failed'
 
 export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
@@ -1166,6 +1172,8 @@ export interface KoloftApi {
     cancelLogin(): void
     // CODEX§15
     codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult>
+    // CODEX§15
+    codexUseReset(name: string): Promise<CodexResetOutcome>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
     onUpdate(cb: (accounts: AccountView[]) => void): () => void
   }

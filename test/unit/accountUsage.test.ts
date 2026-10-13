@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import type { AccountView, UsageSnapshot } from '../../src/shared/types'
+import type { AccountView, CodexLimits, UsageSnapshot } from '../../src/shared/types'
 import {
+  codexGlyph,
+  codexResetOffered,
   hardLimited,
   meterLevel,
   capsuleGlyph,
@@ -279,6 +281,36 @@ describe('capsuleGlyph — the fable layer', () => {
   })
 })
 
+// CODEX§15
+describe('a Codex account in the capsule', () => {
+  const codex = (limits: Partial<CodexLimits>, p: Partial<AccountView> = {}): AccountView =>
+    view({ kind: 'codex-home', limits: { windows: [], at: NOW_MS, ...limits }, ...p })
+  const week = (used: number) => [{ minutes: 10080, used, resetsAt: 0 }]
+
+  it('draws its fullest window, walls at a full window or when Codex says a limit was reached, and greys when signed out', () => {
+    expect(
+      codexGlyph(
+        codex({ windows: [...week(0.2), { minutes: 300, used: 0.75, resetsAt: 0 }] }),
+        NOW_MS
+      )
+    ).toMatchObject({ kind: 'bar', frac: 0.75, level: 'warn' })
+    expect(codexGlyph(codex({ windows: week(1) }), NOW_MS).kind).toBe('walled')
+    expect(codexGlyph(codex({ windows: week(0.3), reached: true }), NOW_MS).kind).toBe('walled')
+    expect(codexGlyph(view({ kind: 'codex-home' }), NOW_MS).kind).toBe('empty')
+    expect(codexGlyph(codex({ windows: week(0.3) }, { status: 'expired' }), NOW_MS).kind).toBe(
+      'grey'
+    )
+  })
+
+  it('offers a saved reset only to a walled account that has one, so a reset is never spent on room it still has', () => {
+    const resets = { available: 2 }
+    expect(codexResetOffered(codex({ windows: week(1), resets }))).toBe(true)
+    expect(codexResetOffered(codex({ windows: week(0.5), resets }))).toBe(false)
+    expect(codexResetOffered(codex({ windows: week(1), resets: { available: 0 } }))).toBe(false)
+    expect(codexResetOffered(codex({ windows: week(1) }))).toBe(false)
+  })
+})
+
 describe('meteredArmed', () => {
   const walledSnap = snap({ s5: 'rejected', r5: NOW_SEC + 7_200, u5: 1 })
   const sub = (p: Partial<AccountView>): AccountView => view({ kind: 'oauth', ...p })
@@ -359,6 +391,17 @@ describe('autoProbeDue', () => {
   })
   it('a row with NO snapshot is stale however fresh its neighbours are', () => {
     expect(autoProbeDue([aged('alpha', 1_000), cold('bravo')], null, NOW_MS)).toBe(true)
+  })
+  it('a Codex account counts like a Claude one: no reading yet, or an old one, is a reason to probe', () => {
+    const codex = (limits?: { at: number }): AccountView =>
+      view({
+        name: 'codex',
+        kind: 'codex-home',
+        ...(limits && { limits: { windows: [], at: limits.at } })
+      })
+    expect(autoProbeDue([aged('alpha', 1_000), codex()], null, NOW_MS)).toBe(true)
+    expect(autoProbeDue([codex({ at: NOW_MS - 60 * M })], null, NOW_MS)).toBe(true)
+    expect(autoProbeDue([codex({ at: NOW_MS - 1_000 })], null, NOW_MS)).toBe(false)
   })
   it('rows that can never carry a number are not a reason to probe', () => {
     const rows = [

@@ -559,6 +559,8 @@ export class CodexRpc {
         'thread/loaded/list',
         'account/read',
         'account/rateLimits/read',
+        // CODEX§15
+        'account/rateLimitResetCredit/consume',
         'model/list',
         'config/read',
         // CODEX§27

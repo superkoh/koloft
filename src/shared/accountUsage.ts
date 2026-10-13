@@ -1,4 +1,11 @@
-import type { AccountKind, AccountMeta, AccountView, BackendId, UsageSnapshot } from './types'
+import type {
+  AccountKind,
+  AccountMeta,
+  AccountView,
+  BackendId,
+  CodexLimits,
+  UsageSnapshot
+} from './types'
 import { BACKEND_LABEL } from './sessionBackend'
 
 const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
@@ -142,6 +149,36 @@ export function capsuleGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   }
 }
 
+// CODEX§15
+export function codexWalled(limits: CodexLimits): boolean {
+  return limits.reached === true || limits.windows.some((w) => w.used >= 1)
+}
+
+export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
+  if (a.status !== 'ok') return { kind: 'grey' }
+  const l = a.limits
+  if (!l) return { kind: 'empty' }
+  const stale = nowMs - l.at > STALE_MS
+  if (codexWalled(l)) return { kind: 'walled', stale }
+  const binding = Math.max(0, ...l.windows.map((w) => w.used))
+  return {
+    kind: 'bar',
+    frac: Math.min(binding, CAP),
+    level: meterLevel(binding),
+    stale,
+    fable: null
+  }
+}
+
+export function codexResetOffered(a: AccountView): boolean {
+  return (
+    a.status === 'ok' &&
+    !!a.limits &&
+    codexWalled(a.limits) &&
+    (a.limits.resets?.available ?? 0) > 0
+  )
+}
+
 export function meteredArmed(views: AccountView[], nowSec: number): boolean {
   const hasMetered = views.some((a) => a.enabled && (a.kind === 'apikey' || a.kind === 'custom'))
   if (!hasMetered) return false
@@ -149,10 +186,15 @@ export function meteredArmed(views: AccountView[], nowSec: number): boolean {
   return subs.every((a) => (a.usage ? hardLimited(a.usage, nowSec) : false))
 }
 
+function measuredAt(a: AccountView): number | undefined {
+  return a.usage?.at ?? a.limits?.at
+}
+
 export function oldestAt(views: AccountView[]): number | null {
   let oldest: number | null = null
   for (const a of views) {
-    if (a.usage && (oldest === null || a.usage.at < oldest)) oldest = a.usage.at
+    const at = measuredAt(a)
+    if (at !== undefined && (oldest === null || at < oldest)) oldest = at
   }
   return oldest
 }
@@ -166,12 +208,13 @@ export function autoProbeDue(
 ): boolean {
   if (lastAttempt !== null && nowMs >= lastAttempt && nowMs - lastAttempt <= AUTO_PROBE_MS)
     return false
-  const rows = usableAccounts(views, ['oauth'])
+  const rows = usableAccounts(views, ['oauth', 'codex-home'])
   if (rows.length === 0) return false
   let oldest = Infinity
   for (const a of rows) {
-    if (!a.usage) return true
-    if (a.usage.at < oldest) oldest = a.usage.at
+    const at = measuredAt(a)
+    if (at === undefined) return true
+    if (at < oldest) oldest = at
   }
   return nowMs - oldest > AUTO_PROBE_MS
 }

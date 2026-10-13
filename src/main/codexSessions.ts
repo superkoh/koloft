@@ -518,6 +518,18 @@ export class CodexSessions {
     })
   }
 
+  // CODEX§15
+  async useResetCredit(home: string): Promise<{ outcome: unknown; limits: unknown }> {
+    return this.withRpc(home, async (rpc) => {
+      const done = record(
+        await rpc.request('account/rateLimitResetCredit/consume', {
+          idempotencyKey: randomUUID()
+        })
+      )
+      return { outcome: done.outcome, limits: await rpc.request('account/rateLimits/read', {}) }
+    })
+  }
+
   hasRuns(): boolean {
     return this.runs.size > 0 || this.pendingLaunches.size > 0
   }

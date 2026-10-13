@@ -286,6 +286,9 @@ body {
   border-radius: 3px;
   margin-right: 4px;
 }
+.tbu-bar.lead {
+  margin-left: 4px;
+}
 .tbu-bar.total .tbu-fill,
 .tbu-bar.total .tbu-fable {
   border-radius: 3px;

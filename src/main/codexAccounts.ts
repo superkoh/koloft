@@ -82,12 +82,45 @@ function limitWindow(value: unknown): CodexLimitWindow | undefined {
 
 // CODEX§15
 export function limitsFrom(reply: unknown, at: number): CodexLimits | undefined {
-  const limits = (reply as { rateLimits?: Record<string, unknown> } | null)?.rateLimits
+  const r = reply as {
+    rateLimits?: Record<string, unknown>
+    rateLimitResetCredits?: unknown
+  } | null
+  const limits = r?.rateLimits
   if (!limits) return undefined
   const windows = [limitWindow(limits.primary), limitWindow(limits.secondary)].filter(
     (w): w is CodexLimitWindow => !!w
   )
-  return { windows: windows.sort((a, b) => a.minutes - b.minutes), at }
+  const credits = creditsFrom(limits.credits)
+  const resets = resetsFrom(r.rateLimitResetCredits)
+  return {
+    windows: windows.sort((a, b) => a.minutes - b.minutes),
+    at,
+    ...(limits.rateLimitReachedType != null && { reached: true }),
+    ...(credits && { credits }),
+    ...(resets && { resets })
+  }
+}
+
+function creditsFrom(value: unknown): CodexLimits['credits'] {
+  if (!value || typeof value !== 'object') return undefined
+  const c = value as Record<string, unknown>
+  const balance = typeof c.balance === 'string' ? Number(c.balance) : NaN
+  if (c.unlimited === true) return { unlimited: true }
+  return Number.isFinite(balance) ? { unlimited: false, balance } : undefined
+}
+
+function resetsFrom(value: unknown): CodexLimits['resets'] {
+  if (!value || typeof value !== 'object') return undefined
+  const s = value as { availableCount?: unknown; credits?: unknown }
+  if (typeof s.availableCount !== 'number') return undefined
+  const expiries = (Array.isArray(s.credits) ? s.credits : [])
+    .filter((c) => c?.status === 'available' && typeof c.expiresAt === 'number')
+    .map((c) => c.expiresAt as number)
+  return {
+    available: s.availableCount,
+    ...(expiries.length > 0 && { firstExpiresAt: Math.min(...expiries) })
+  }
 }
 
 function heaviest(limits: CodexLimits): number {

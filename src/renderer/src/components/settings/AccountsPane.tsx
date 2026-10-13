@@ -3,7 +3,7 @@ import { LuGlobe, LuPlus, LuRefreshCw, LuX } from 'react-icons/lu'
 import type { AccountKind, AccountView } from '@shared/types'
 import { useStore } from '../../store'
 import { needsSignInAgain, windowLabel } from '@shared/accountUsage'
-import { Meter, ageLabel, probeErrorLabel, resetLabel } from '../accountMeter'
+import { Meter, ageLabel, codexBalanceLabel, probeErrorLabel, resetLabel } from '../accountMeter'
 import { GitAccountsSection } from './GitAccountsSection'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
@@ -504,6 +504,9 @@ function AccountRow({
               {windowLabel(a.limits.windows[0].minutes)} resets{' '}
               {resetLabel(a.limits.windows[0].resetsAt, now)}
             </span>
+          ) : null}
+          {a.status === 'ok' && a.limits && codexBalanceLabel(a.limits, now) ? (
+            <span className="acct-note">{codexBalanceLabel(a.limits, now)}</span>
           ) : null}
         </div>
       ) : a.kind === 'custom' ? (

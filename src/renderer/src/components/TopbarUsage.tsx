@@ -8,12 +8,16 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { LuRotateCw, LuSettings } from 'react-icons/lu'
-import type { AccountView } from '@shared/types'
+import type { AccountView, CodexLimitWindow, CodexResetOutcome } from '@shared/types'
 import {
   accountWalled,
   autoProbeDue,
   capsuleAria,
   capsuleGlyph,
+  codexGlyph,
+  codexResetOffered,
+  codexWalled,
+  windowLabel,
   meteredArmed,
   oldestAt,
   poolGlyph,
@@ -23,7 +27,14 @@ import {
   type CapsuleGlyph
 } from '@shared/accountUsage'
 import { useStore } from '../store'
-import { Meter, ageLabel, probeErrorLabel, resetIn, resetLabel } from './accountMeter'
+import {
+  Meter,
+  ageLabel,
+  codexBalanceLabel,
+  probeErrorLabel,
+  resetIn,
+  resetLabel
+} from './accountMeter'
 
 const POP_W = 430
 const HOVER_OPEN_MS = 150
@@ -107,11 +118,20 @@ export function TopbarUsage(): JSX.Element | null {
   )
 
   const members = accounts.filter((a) => a.kind === 'oauth' && a.enabled)
-  if (members.length === 0) return null
+  const codex = accounts.filter((a) => a.kind === 'codex-home' && a.enabled)
+  if (members.length === 0 && codex.length === 0) return null
 
+  const claude = members.length > 0
   const enabled = accounts.filter((a) => a.enabled && a.kind !== 'codex-home')
-  const armed = meteredArmed(accounts, Math.floor(now / 1000))
-  const total = poolGlyph(members, now)
+  const armed = claude && meteredArmed(accounts, Math.floor(now / 1000))
+  const total = claude ? poolGlyph(members, now) : null
+  const codexWindows = [
+    ...new Set(
+      codex.flatMap((a) =>
+        a.status === 'ok' ? (a.limits?.windows.map((w) => w.minutes) ?? []) : []
+      )
+    )
+  ].sort((x, y) => x - y)
   const cols = enabled.some((a) => a.kind === 'oauth' && a.status === 'ok' && a.usage?.hasOi)
     ? 3
     : 2
@@ -146,7 +166,10 @@ export function TopbarUsage(): JSX.Element | null {
       <button
         ref={btnRef}
         className="tbu"
-        aria-label={capsuleAria(members, now)}
+        aria-label={[
+          ...(claude ? [capsuleAria(members, now)] : []),
+          ...(codex.length > 0 ? [codexAria(codex, now)] : [])
+        ].join('; ')}
         aria-expanded={pop !== null}
         onMouseEnter={enter}
         onMouseLeave={leave}
@@ -170,6 +193,13 @@ export function TopbarUsage(): JSX.Element | null {
             <i className="tbu-fill acc" style={{ height: '100%' }} />
           </span>
         )}
+        {codex.map((a, i) => (
+          <CapsuleBar
+            key={`${a.kind}:${a.name}`}
+            glyph={codexGlyph(a, now)}
+            lead={claude && i === 0}
+          />
+        ))}
       </button>
       {/* ADR-0013 */}
       {pop &&
@@ -182,24 +212,54 @@ export function TopbarUsage(): JSX.Element | null {
             onMouseLeave={closeSoon}
           >
             <div className="tbu-pop-head">
-              <span>Claude account usage</span>
-              <span className="age">{headAge(oldestAt(enabled), now)}</span>
+              <span>Account usage</span>
+              <span className="age">{headAge(oldestAt([...enabled, ...codex]), now)}</span>
             </div>
-            <div className={'tbu-grid tbu-colhead' + (cols === 2 ? ' two' : '')} aria-hidden>
-              <span>5h</span>
-              <span>7d</span>
-              {cols === 3 && <span>fable</span>}
-            </div>
-            {members.length >= 2 && (
+            {claude && (
               <>
-                <PoolRow members={members} now={now} cols={cols} probing={probing} armed={armed} />
-                <div className="tbu-sep" />
+                <div className="tbu-pop-head">
+                  <span>Claude</span>
+                </div>
+                <div className={'tbu-grid tbu-colhead' + (cols === 2 ? ' two' : '')} aria-hidden>
+                  <span>5h</span>
+                  <span>7d</span>
+                  {cols === 3 && <span>fable</span>}
+                </div>
+                {members.length >= 2 && (
+                  <>
+                    <PoolRow
+                      members={members}
+                      now={now}
+                      cols={cols}
+                      probing={probing}
+                      armed={armed}
+                    />
+                    <div className="tbu-sep" />
+                  </>
+                )}
               </>
             )}
             <div className="tbu-rows">
-              {enabled.map((a) => (
-                <PopRow key={`${a.kind}:${a.name}`} a={a} now={now} cols={cols} />
-              ))}
+              {claude &&
+                enabled.map((a) => (
+                  <PopRow key={`${a.kind}:${a.name}`} a={a} now={now} cols={cols} />
+                ))}
+              {codex.length > 0 && (
+                <>
+                  {claude && <div className="tbu-sep" />}
+                  <div className="tbu-pop-head">
+                    <span>Codex</span>
+                  </div>
+                  <div className="tbu-grid tbu-colhead two" aria-hidden>
+                    {codexWindows.map((m) => (
+                      <span key={m}>{windowLabel(m)}</span>
+                    ))}
+                  </div>
+                  {codex.map((a) => (
+                    <CodexRow key={a.name} a={a} now={now} windows={codexWindows} />
+                  ))}
+                </>
+              )}
             </div>
             <div className="tbu-sep" />
             <button className="tbu-act" disabled={probing} onClick={() => void probe()}>
@@ -224,12 +284,32 @@ export function TopbarUsage(): JSX.Element | null {
   )
 }
 
-function CapsuleBar({ glyph: g, total }: { glyph: CapsuleGlyph; total?: boolean }): JSX.Element {
+function codexAria(codex: AccountView[], now: number): string {
+  const walled = codex.filter((a) => codexGlyph(a, now).kind === 'walled').length
+  return (
+    `${codex.length} Codex account${codex.length === 1 ? '' : 's'}` +
+    (walled > 0 ? `, ${walled} walled` : '')
+  )
+}
+
+function CapsuleBar({
+  glyph: g,
+  total,
+  lead
+}: {
+  glyph: CapsuleGlyph
+  total?: boolean
+  lead?: boolean
+}): JSX.Element {
   const stale = (g.kind === 'walled' || g.kind === 'bar') && g.stale
   const fillPct = g.kind === 'bar' ? Math.round(g.frac * 100) : 0
   const fable = g.kind === 'bar' && g.fable && g.fable.frac > g.frac ? g.fable : null
   return (
-    <span className={'tbu-bar' + (total ? ' total' : '') + (stale ? ' stale' : '')}>
+    <span
+      className={
+        'tbu-bar' + (total ? ' total' : '') + (lead ? ' lead' : '') + (stale ? ' stale' : '')
+      }
+    >
       {g.kind === 'grey' && <i className="tbu-fill cold" style={{ height: '100%' }} />}
       {g.kind === 'walled' && <i className="tbu-fill bad" style={{ height: '100%' }} />}
       {fable && (
@@ -468,6 +548,121 @@ function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: number })
           <span className="acct-note">
             {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
           </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const RESET_OUTCOME_TEXT: Record<Exclude<CodexResetOutcome, 'reset'>, string> = {
+  nothingToReset: 'Codex says there is nothing to reset right now.',
+  noCredit: 'No saved reset is left on this account.',
+  alreadyRedeemed: 'That reset was already used.',
+  failed: 'Could not reach Codex. Try again.'
+}
+
+function codexSubline(w: CodexLimitWindow): Subline {
+  if (w.resetsAt <= 0) return { kind: 'none', epoch: 0, tone: 'faint' }
+  return w.used >= 1
+    ? { kind: 'back', epoch: w.resetsAt, tone: 'red' }
+    : { kind: 'time', epoch: w.resetsAt, tone: 'faint' }
+}
+
+function CodexRow({
+  a,
+  now,
+  windows
+}: {
+  a: AccountView
+  now: number
+  windows: number[]
+}): JSX.Element {
+  const [asking, setAsking] = useState(false)
+  const [using, setUsing] = useState(false)
+  const [said, setSaid] = useState<string | null>(null)
+  const l = a.limits
+  const dead = a.status !== 'ok'
+  const walled = !dead && !!l && codexWalled(l)
+  const stale = l ? ageLabel(l.at, now) : null
+  const balance = !dead && l ? codexBalanceLabel(l, now) : ''
+  const close = (): void => {
+    setAsking(false)
+    setSaid(null)
+  }
+  const useReset = async (): Promise<void> => {
+    setUsing(true)
+    const outcome = await window.api.accounts.codexUseReset(a.name)
+    setUsing(false)
+    if (outcome === 'reset') close()
+    else setSaid(RESET_OUTCOME_TEXT[outcome])
+  }
+  return (
+    <div className={'tbu-row' + (dead ? ' dim' : '')}>
+      <div className="tbu-row-head">
+        <span className="acct-name" title={a.name}>
+          {a.name}
+        </span>
+        {a.status === 'expired' && <span className="acct-status expired">EXPIRED</span>}
+        {a.status === 'unverified' && <span className="acct-status unverified">UNVERIFIED</span>}
+        {walled && <span className="acct-status walled">WALLED</span>}
+        {codexResetOffered(a) && !asking && (
+          <button className="acct-relogin" onClick={() => setAsking(true)}>
+            Use a reset
+          </button>
+        )}
+        {stale && <span className="tbu-age">{stale}</span>}
+      </div>
+      {dead ? (
+        <div className="tbu-row-note">
+          <span className="acct-note">Not signed in — sign in again from Settings</span>
+        </div>
+      ) : l && l.windows.length > 0 ? (
+        <div className="tbu-grid two">
+          {windows.map((m) => {
+            const w = l.windows.find((x) => x.minutes === m)
+            const win = windowLabel(m)
+            return w ? (
+              <GridCell key={m} label={win} win={win} v={w.used} sub={codexSubline(w)} now={now} />
+            ) : (
+              <div key={m} className="tbu-cell" />
+            )
+          })}
+        </div>
+      ) : (
+        <div className="tbu-row-note">
+          <span className="acct-note">
+            {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
+          </span>
+        </div>
+      )}
+      {balance && (
+        <div className="tbu-row-note">
+          <span className="acct-note">{balance}</span>
+        </div>
+      )}
+      {asking && (
+        <div className="acct-confirm">
+          {said ? (
+            <>
+              <span>{said}</span>
+              <button className="mini" onClick={close}>
+                Close
+              </button>
+            </>
+          ) : (
+            <>
+              <span>
+                Use 1 of {l?.resets?.available} saved resets on <b>{a.name}</b> now? Its limits
+                start again from 0.
+              </span>
+              <button className="mini danger" disabled={using} onClick={() => void useReset()}>
+                {using ? 'Using…' : 'Use'}
+              </button>
+              <button className="mini" disabled={using} onClick={close}>
+                Cancel
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
