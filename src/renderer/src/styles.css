@@ -5438,6 +5438,10 @@ input.switch:focus-visible {
   border: 1px solid var(--line);
   border-radius: var(--r);
 }
+.job-row.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
 .job-row.off .job-main {
   opacity: 0.5;
 }
@@ -5450,6 +5454,7 @@ input.switch:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  cursor: pointer;
 }
 .job-name {
   font-size: 14px;
@@ -5537,6 +5542,12 @@ input.switch:focus-visible {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--fg-faint);
+}
+.hist-job {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
 }
 .hist-state {
   flex: 1;
