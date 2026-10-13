@@ -70,11 +70,13 @@
         <h1 class="title">A butler on Discord</h1>
 
         <p>
-          Discord is a chat app for your phone and your computer. Assist is a Claude or Codex
-          session on your Mac, tied to one Discord channel (a chat room). You write to Assist from
-          your phone. It starts your other sessions, reads them, sends them messages, and answers
-          their questions the way you tell it to. It never does the work itself: it cannot change
-          your files, whatever your permission setting, so it passes each job on to a session.
+          Discord is a chat app for your phone and your computer.
+          <a href="../accounts/#assist">Assist</a> is Koloft's own AI: a Claude or Codex session on
+          your Mac that you talk to from the sidebar. Give it a Discord channel (a chat room) and
+          you can write to it from your phone too. It starts your other sessions, reads them, sends
+          them messages, and answers their questions the way you tell it to. It never does the work
+          itself: it cannot change your files, whatever your permission setting, so it passes each
+          job on to a session.
         </p>
 
         <pre
@@ -169,7 +171,7 @@ your Mac
                 width="1322"
                 height="792"
                 loading="lazy"
-                alt="Koloft's Settings, Discord page: All 7 steps done; the bot token, stored in the macOS Keychain; your Discord account, You are sam; status, Connected as koloft-bot; two bindings, tidewatch (Claude, #tidewatch) and Global (Claude, #tidewatch-ops), each with Unbind; and a Bind a channel… button"
+                alt="Koloft's Settings, Discord page: a Set up with Assist button, under Let Assist set up Discord; your Discord account, You are sam; status, Connected as koloft-bot; server, The bot is in Tidewatch; and the start of the bindings list"
               />
             </picture>
             <span class="tape" aria-hidden="true"></span>
@@ -180,38 +182,27 @@ your Mac
         </figure>
 
         <h2>Bind a channel</h2>
-        <p>Each binding makes two choices:</p>
-        <ul class="dash">
-          <li>
-            Global or one folder. The Global Assist looks after every folder in the sessions list. A
-            folder's Assist looks after that folder only. Each folder binds one channel, and Global
-            binds one.
-          </li>
-          <li>Claude or Codex: which tool Assist itself runs on.</li>
-        </ul>
+        <p>
+          A binding ties one channel to one Assist: Global, or one folder. The Global Assist looks
+          after every folder in the sessions list. A folder's Assist looks after that folder only.
+          Each folder binds one channel, and Global binds one. Which tool Assist runs on is one
+          setting for all of them (see <a href="../accounts/#assist">Assist</a>).
+        </p>
 
-        <figure class="shot" style="--ar: 1200 / 719; --ar-phone: 700 / 690; --pos: 50% 31%">
+        <figure class="shot is-narrow" style="--ar: 430 / 620">
           <div class="frame">
-            <picture>
-              <source
-                media="(max-width: 760px)"
-                srcset="../img/s-discord-bind-phone.webp"
-                width="700"
-                height="690"
-              />
-              <img
-                src="../img/s-discord-bind.webp"
-                width="1200"
-                height="719"
-                loading="lazy"
-                alt="The Bind a Discord channel dialog. Scope: Global and tidewatch are already bound, harbor-site is picked. Assist: Claude is picked, Codex is the other choice. Channel: #tidewatch and #tidewatch-ops are taken, #harbor-site is picked."
-              />
-            </picture>
+            <img
+              src="../img/s-discord-bind.webp"
+              width="430"
+              height="620"
+              loading="lazy"
+              alt="The Bind a Discord channel dialog. Scope: Global and tidewatch are greyed out, harbor-site is picked. Channel: New channel #harbor-site-2 on top, #tidewatch and #tidewatch-ops greyed out, #harbor-site picked."
+            />
             <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
-            the Bind dialog: a scope, a tool for Assist, then a channel; ones already bound are
-            greyed out
+            the Bind dialog: a scope, then a channel; ones already bound are greyed out, and a new
+            channel named after the folder is offered first
           </figcaption>
         </figure>
         <p>There are three ways in:</p>
@@ -231,28 +222,33 @@ your Mac
               width="534"
               height="296"
               loading="lazy"
-              alt="The Assist block in the sidebar, with a + and a fold arrow. Two Assists: tidewatch, open, bound to #tidewatch, and Global, bound to #tidewatch-ops."
+              alt="The Assist block in the sidebar, with a + and a fold arrow. Two Assists: Global, bound to #tidewatch-ops, and tidewatch, open, bound to #tidewatch."
             />
             <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>the Assist block: the tidewatch Assist is open</figcaption>
         </figure>
         <p>
-          The Assist block sits in the sidebar, under the sessions list and above Notes. It shows up
-          once you have a binding. Right-click an Assist there for a menu with:
+          The <a href="../accounts/#assist">Assist block</a> sits in the sidebar, under the sessions
+          list and above Notes. Under each Assist's name is its channel, or "not on Discord".
+          Right-click an Assist there for a menu with:
         </p>
         <ul class="dash">
           <li>Open</li>
-          <li>Change channel…</li>
-          <li>Switch to Codex next time <span class="why">(or Claude)</span></li>
+          <li>
+            Change channel… <span class="why">(or Bind Discord channel…, when it has none)</span>
+          </li>
           <li>Start a fresh Assist</li>
-          <li>Unbind</li>
+          <li>
+            Unbind Discord channel
+            <span class="why">(only Discord goes; the Assist and its conversation stay)</span>
+          </li>
         </ul>
         <p>
           Assist always runs on your Mac, even for a <a href="../remote/">remote folder</a>. It runs
-          in a folder of its own under Koloft's data folder, not in your workspace. It opens as soon
-          as Koloft connects to Discord, and it never goes to <a href="../sessions/">sleep</a> the
-          way an idle session does.
+          in a folder of its own under Koloft's data folder, not in your workspace. An Assist on
+          Discord opens as soon as Koloft connects to Discord, and it never goes to
+          <a href="../sessions/">sleep</a> the way an idle session does.
         </p>
 
         <h2>From your phone</h2>
@@ -369,7 +365,7 @@ your Mac
             When the session leaves the sidebar (Remove from list, <code>/exit</code>, or
             <code>koloft session close</code>), its thread and its card are deleted. If the bot may
             not delete threads, Koloft archives it instead and a small message asks you to give the
-            bot Manage Threads (step 5 above). This is the same for every kind of session.
+            bot Manage Threads (step 4 above). This is the same for every kind of session.
           </li>
         </ul>
 
@@ -413,7 +409,7 @@ your Mac
           takes 10 files and 25 MB per message, so a bigger batch goes out as several messages.
         </p>
 
-        <h3>What Assist can do</h3>
+        <h3 id="what-assist-can-do">What Assist can do</h3>
         <p>
           It works through the <a href="../agents/">koloft command</a>, plus a few verbs only Assist
           gets. In its folder, or in every folder for Global, it can:
@@ -554,16 +550,17 @@ your Mac
             carry, and what Assist writes.
           </li>
           <li>
-            Only your account, picked in step 6, is heard. Other people and bots are ignored, and
-            their commands and button presses refused.
+            Only your account, the one Settings ▸ Discord shows, is heard. Other people and bots are
+            ignored, and their commands and button presses refused.
           </li>
           <li>
             Discord still sends every message in the server to your Mac. Koloft drops the rest
             there, and none of it goes back out.
           </li>
           <li>
-            In step 6, before you pick yourself, anyone's message in the server shows up in Koloft,
-            so you can pick.
+            If a Discord team owns the bot's app, then until you pick yourself, the last message
+            anyone wrote in the server shows up in Settings ▸ Discord, so you can say whether it is
+            you.
           </li>
           <li>
             "Waiting" and "closed" cards go out for every session in a bound folder (every folder,
@@ -574,8 +571,8 @@ your Mac
             a thread.
           </li>
           <li>
-            A pasted token signs the bot in before you bind a channel. Until you bind one, it
-            ignores messages and shows no slash commands.
+            The token signs the bot in before you bind a channel. Until you bind one, it ignores
+            messages and shows no slash commands.
           </li>
         </ul>
 
