@@ -6,13 +6,31 @@ import {
   type AssistSetting,
   type Settings
 } from './types'
+import { sanitizeGitAccounts, sanitizeGitPicks } from './gitAccountOps'
 import { normalizeSessionMethods } from './sessionBackend'
-import { sanitizeDiscord } from './conductors'
+import { sanitizeAssistSessions, sanitizeDiscord } from './conductors'
 
 export function buildResetPatch(): Partial<Settings> {
-  const { accounts, skipPermissions, fablePriority, sessionMethods, discord, assist, ...rest } =
-    DEFAULT_SETTINGS
+  const {
+    accounts,
+    skipPermissions,
+    fablePriority,
+    sessionMethods,
+    discord,
+    assist,
+    assistSessions,
+    newProjectFolders,
+    gitAccounts,
+    gitPicks,
+    gitSuggestionsDismissed,
+    ...rest
+  } = DEFAULT_SETTINGS
+  void gitAccounts
+  void gitPicks
+  void gitSuggestionsDismissed
   void assist
+  void assistSessions
+  void newProjectFolders
   void accounts
   void skipPermissions
   void fablePriority
@@ -22,9 +40,21 @@ export function buildResetPatch(): Partial<Settings> {
 }
 
 export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Settings> {
-  const { accounts, discord, ...rest } = patch
+  const {
+    accounts,
+    discord,
+    assistSessions,
+    gitAccounts,
+    gitPicks,
+    gitSuggestionsDismissed,
+    ...rest
+  } = patch
+  void gitAccounts
+  void gitPicks
+  void gitSuggestionsDismissed
   void accounts
   void discord
+  void assistSessions
   return rest
 }
 
@@ -33,8 +63,15 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   const merged = { ...DEFAULT_SETTINGS, ...doc }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
+  merged.gitAccounts = sanitizeGitAccounts(merged.gitAccounts)
+  merged.gitPicks = sanitizeGitPicks(merged.gitPicks, merged.gitAccounts)
+  merged.gitSuggestionsDismissed = Array.isArray(merged.gitSuggestionsDismissed)
+    ? merged.gitSuggestionsDismissed.filter((r): r is string => typeof r === 'string')
+    : []
+  merged.assistSessions = sanitizeAssistSessions(merged.assistSessions, merged.discord)
   merged.discord = sanitizeDiscord(merged.discord)
   merged.assist = sanitizeAssist(merged.assist)
+  merged.newProjectFolders = sanitizeFolderMap(merged.newProjectFolders)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
       ? merged.workbenchWidth
@@ -65,6 +102,15 @@ function sanitizeAssist(raw: unknown): AssistSetting {
   const { on, backend } = raw as Record<string, unknown>
   if (typeof on !== 'boolean' || (backend !== 'claude' && backend !== 'codex')) return null
   return { on, backend }
+}
+
+function sanitizeFolderMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {}
+  return Object.fromEntries(
+    Object.entries(raw).filter(
+      (e): e is [string, string] => typeof e[1] === 'string' && e[1].length > 0
+    )
+  )
 }
 
 function isZoneId(z: unknown): z is string {

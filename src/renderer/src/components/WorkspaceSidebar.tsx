@@ -69,6 +69,7 @@ import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
+import { openConductor } from './ConductorsIsland'
 import {
   discardAll,
   dirtyInWorkspace,
@@ -101,7 +102,6 @@ const MENU_ITEM_H = 31
 const MENU_PAD_H = 10
 const NO_INHERITED_TOOLTIP = ''
 const FRESH_POP_W = 300
-const FRESH_POP_H = 250
 
 type MenuTarget =
   | { kind: 'session'; wsPath: string; row: SessionRow }
@@ -152,7 +152,7 @@ function cardPosFor(el: HTMLElement): { left: number; top: number } {
   const r = el.getBoundingClientRect()
   return {
     left: popoverX(r.left + r.width / 2, FRESH_POP_W, window.innerWidth),
-    top: Math.min(r.bottom + 6, Math.max(4, window.innerHeight - FRESH_POP_H - 4))
+    top: r.bottom + 6
   }
 }
 
@@ -197,6 +197,7 @@ export function WorkspaceSidebar({
   const conductorBindings = useStore((s) => s.settings.discord.bindings)
   const setBindConductor = useStore((s) => s.setBindConductor)
   const canBind = (wsPath: string): boolean => !conductorBindings.some((b) => b.scope === wsPath)
+  const canTalk = useStore((s) => !!s.settings.assist?.on)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [foldedRows, setFoldedRows] = useState<Record<string, boolean>>({})
   const [menu, setMenu] = useState<MenuState | null>(null)
@@ -304,7 +305,12 @@ export function WorkspaceSidebar({
 
   const menuItemCount = (t: MenuTarget): number =>
     t.kind === 'workspace'
-      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit, canBind: canBind(t.wsPath) })
+      ? workspaceMenuCount({
+          missing: t.missing,
+          isGit: t.isGit,
+          canBind: canBind(t.wsPath),
+          canTalk
+        })
       : t.row.pending
         ? 1
         : t.row.running
@@ -541,6 +547,17 @@ export function WorkspaceSidebar({
               >
                 Scheduled jobs…
               </div>
+              {canTalk && (
+                <div
+                  className="mi"
+                  onClick={() => {
+                    setMenu(null)
+                    void openConductor(target.wsPath)
+                  }}
+                >
+                  Talk to Assist
+                </div>
+              )}
               {canBind(target.wsPath) && (
                 <div
                   className="mi"
@@ -798,7 +815,10 @@ export function WorkspaceSidebar({
                             ? ' — worktree deleted; click to rebuild and resume'
                             : ' — click to resume')
                     }
-                    onClick={() => openSessionRow(row, ws.path)}
+                    onClick={() => {
+                      clearTimers()
+                      openSessionRow(row, ws.path)
+                    }}
                     onContextMenu={(e) => openMenuNow(e, rowTarget)}
                     onMouseEnter={(e) => {
                       armHoverMenu(e, rowTarget)

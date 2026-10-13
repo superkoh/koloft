@@ -133,7 +133,7 @@ describe('command palette: workspace rows and groups', () => {
     ])
   })
 
-  it('puts sessions first, then workspaces, then actions, drops an empty group, and matches an action on its name only', () => {
+  it('lists nothing until something is typed, then puts sessions first, then workspaces, then actions, drops an empty group, and matches an action on its name only', () => {
     const rows = [ws(`${HOME}/restart-lab`, [row('s', { title: 'restart the server' })])]
     const groups = (q: string): string[] =>
       paletteGroups(
@@ -142,7 +142,8 @@ describe('command palette: workspace rows and groups', () => {
         [action('Restart session'), action('Settings…')],
         q
       ).map((g) => `${g.title}:${g.items.length}`)
-    expect(groups('')).toEqual(['Sessions:1', 'Workspaces:1', 'Actions:2'])
+    expect(groups('')).toEqual([])
+    expect(groups('   ')).toEqual([])
     expect(groups('restart')).toEqual(['Sessions:1', 'Workspaces:1', 'Actions:1'])
     expect(groups('settings')).toEqual(['Actions:1'])
     expect(groups('zzq')).toEqual([])

@@ -4,6 +4,7 @@ import type { AccountKind, AccountView } from '@shared/types'
 import { useStore } from '../../store'
 import { needsSignInAgain, windowLabel } from '@shared/accountUsage'
 import { Meter, ageLabel, probeErrorLabel, resetLabel } from '../accountMeter'
+import { GitAccountsSection } from './GitAccountsSection'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
 import { useSettingsUpdate } from './useSettingsUpdate'
@@ -184,6 +185,7 @@ export function AccountsPane(): JSX.Element {
       )}
       {adding && <AddAccountDialog kind={adding} onClose={() => setAdding(null)} />}
       {login && <LoginDialog />}
+      <GitAccountsSection />
     </>
   )
 }

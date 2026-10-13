@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { acceptCodexTrust, codexTrustsFolder } from '../../src/main/codexTrust'
+import {
+  acceptCodexHookTrust,
+  acceptCodexTrust,
+  codexTrustsFolder
+} from '../../src/main/codexTrust'
 
 let dir: string
 let repo: string
@@ -37,6 +41,43 @@ describe('acceptCodexTrust', () => {
     fs.writeFileSync(config, answered)
     acceptCodexTrust(config, repo)
     expect(fs.readFileSync(config, 'utf8')).toBe(answered)
+  })
+})
+
+// CODEX§15 PLATFORM§43
+it("a trust written through an account home's link to the shared config lands in the shared file and leaves the link in place", () => {
+  const shared = path.join(dir, 'shared.toml')
+  fs.writeFileSync(shared, 'model = "gpt-5"\n')
+  fs.mkdirSync(path.dirname(config))
+  fs.symlinkSync(shared, config)
+  acceptCodexTrust(config, repo)
+  acceptCodexHookTrust(config, 'k', 'sha256:1')
+  expect(fs.lstatSync(config).isSymbolicLink()).toBe(true)
+  expect(fs.readFileSync(shared, 'utf8')).toContain(`[projects."${repo}"]`)
+  expect(fs.readFileSync(shared, 'utf8')).toContain('[hooks.state."k"]\ntrusted_hash = "sha256:1"')
+})
+
+// CODEX§27
+describe('acceptCodexHookTrust', () => {
+  const KEY = '/<session-flags>/config.toml:pre_tool_use:0:0'
+
+  it('adds one trust table for the hook and keeps everything already in the file', () => {
+    fs.mkdirSync(path.dirname(config))
+    fs.writeFileSync(config, 'model = "gpt-5"\n')
+    acceptCodexHookTrust(config, KEY, 'sha256:new')
+    expect(fs.readFileSync(config, 'utf8')).toBe(
+      `model = "gpt-5"\n\n[hooks.state."${KEY}"]\ntrusted_hash = "sha256:new"\n`
+    )
+  })
+
+  it("replaces the hash of the hook's existing table in place, never adds a second table for it, which would stop every hook, and keeps the table's other keys and every other table", () => {
+    fs.mkdirSync(path.dirname(config))
+    const before = (hash: string): string =>
+      `model = "gpt-5"\n\n[hooks.state."${KEY}"]\ntrusted_hash = "${hash}"\nenabled = true\n\n[hooks.state."other"]\ntrusted_hash = "sha256:keep"\n\n[features]\napps = false\n`
+    fs.writeFileSync(config, before('sha256:old'))
+    acceptCodexHookTrust(config, KEY, 'sha256:new')
+    acceptCodexHookTrust(config, KEY, 'sha256:new')
+    expect(fs.readFileSync(config, 'utf8')).toBe(before('sha256:new'))
   })
 })
 

@@ -22,9 +22,13 @@ let pickDir: string
 let base: string
 let realBin: string
 let fakeKeychainDir: string
+let gitAuthDir: string
+let gitHelper: string
+let ghWrapper: string
 
 beforeAll(() => {
-  ;({ shimDir, regDir, pickDir } = setupShim())
+  gitAuthDir = path.join(os.tmpdir(), `koloft-shim-git-${process.pid}`)
+  ;({ shimDir, regDir, pickDir, gitHelper, ghWrapper } = setupShim(gitAuthDir))
   base = path.dirname(shimDir)
   realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realbin-'))
   for (const bin of ['claude', 'codex']) {
@@ -56,6 +60,7 @@ afterAll(() => {
   fs.rmSync(base, { recursive: true, force: true })
   fs.rmSync(realBin, { recursive: true, force: true })
   fs.rmSync(fakeKeychainDir, { recursive: true, force: true })
+  fs.rmSync(gitAuthDir, { recursive: true, force: true })
 })
 
 beforeEach(() => {
@@ -239,13 +244,21 @@ describe('claude shim (registration — unchanged behavior)', () => {
   })
 
   // CC§13
-  it("hands claude Koloft's skill plugin on the tab's own launches, but not on -p or a claude started by the tab's claude", () => {
-    const plugin = { KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin' }
+  it("hands claude Koloft's skill plugin and Koloft's prompt on the tab's own launches, but not on -p or a claude started by the tab's claude", () => {
+    const plugin = {
+      KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin',
+      KOLOFT_AGENT_PROMPT: '/koloft/agent-plugin/koloft-prompt.md'
+    }
     for (const args of [[], ['--resume', 'abcdef01-2345-4678-8abc-def012345678'], ['--resume']]) {
       const { realArgs } = runShim(args, plugin)
       const at = realArgs!.indexOf('--plugin-dir')
       expect(realArgs![at + 1], args.join(' ')).toBe('/koloft/agent-plugin')
+      const prompt = realArgs!.indexOf('--append-system-prompt-file')
+      expect(realArgs![prompt + 1], args.join(' ')).toBe('/koloft/agent-plugin/koloft-prompt.md')
     }
+    expect(runShim([], { KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin' }).realArgs).not.toContain(
+      '--append-system-prompt-file'
+    )
     expect(runShim(['-p', 'hello'], plugin).realArgs).toEqual(['-p', 'hello'])
     expect(runShim([], { ...plugin, CLAUDECODE: '1' }).realArgs).toEqual([])
   })
@@ -918,6 +931,27 @@ describe('claude shim (nested Koloft instances)', () => {
       fs.rmSync(peerShimDir, { recursive: true, force: true })
     }
   }, 30_000)
+})
+
+describe('git credential helper and gh wrapper', () => {
+  it("are written next to the claude shim, so the shim dir puts Koloft's gh first on a session's PATH, and both reach Koloft through this launch's git request dir", () => {
+    expect(ghWrapper).toBe(path.join(shimDir, 'gh'))
+    expect(path.dirname(gitHelper)).toBe(shimDir)
+    for (const f of [ghWrapper, gitHelper]) expect(fs.statSync(f).mode & 0o111).toBe(0o111)
+    fs.mkdirSync(gitAuthDir, { recursive: true })
+    const r = spawnSync(gitHelper, ['github.com/bob', 'erase'], {
+      input: 'protocol=https\nhost=github.com\n\n'
+    })
+    expect(r.status).toBe(0)
+    const drops = fs.readdirSync(gitAuthDir)
+    expect(drops).toHaveLength(1)
+    expect(JSON.parse(fs.readFileSync(path.join(gitAuthDir, drops[0]), 'utf8'))).toEqual({
+      kind: 'rejected',
+      account: 'github.com/bob',
+      protocol: 'https',
+      host: 'github.com'
+    })
+  })
 })
 
 describe('claude shim (Koloft browser endpoint)', () => {

@@ -23,6 +23,19 @@ electronLanguages:
   - en
   - zh_CN
 
+# Downloads the pinned gh (GitHub CLI), git and Git Credential Manager into vendor/,
+# checksum-checked, so a new Mac has them without installing anything
+# (scripts/vendor-release.json pins them).
+beforePack: scripts/fetch-vendor.cjs
+
+extraResources:
+  - from: vendor/gh
+    to: gh
+  - from: vendor/git
+    to: git
+  - from: vendor/gcm
+    to: gcm
+
 # Runs after the app is assembled and before it is signed, so the signature covers the
 # stripped native binaries.
 afterPack: scripts/strip-native-build-paths.cjs
@@ -32,6 +45,12 @@ asarUnpack:
   # executed by an external bash wrapper (src/main/statusline.ts) via
   # ELECTRON_RUN_AS_NODE — must exist as real files, not asar entries
   - '**/node_modules/ccstatusline/**'
+  # run the same way by the playwright-cli wrapper (src/main/playwrightCli.ts); the
+  # packager hoists its own playwright and playwright-core to the top of node_modules,
+  # and the CLI's require of them fails unless they sit unpacked beside it
+  - '**/node_modules/@playwright/cli/**'
+  - '**/node_modules/playwright/**'
+  - '**/node_modules/playwright-core/**'
 
 mac:
   target:

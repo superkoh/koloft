@@ -1,18 +1,299 @@
-import { useEffect, useState, type JSX } from 'react'
-import { LuDownload, LuRefreshCw } from 'react-icons/lu'
-import type { SessionRow, WorkspaceFreshness, WorkspaceGithub, WorkspaceRows } from '@shared/types'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
+import {
+  LuCheck,
+  LuChevronDown,
+  LuDownload,
+  LuLogIn,
+  LuPlus,
+  LuRefreshCw,
+  LuUsers,
+  LuX
+} from 'react-icons/lu'
+import type {
+  GitAccountSuggestion,
+  GitAccountView,
+  SessionRow,
+  WorkspaceFreshness,
+  WorkspaceGitAccount,
+  WorkspaceGithub,
+  WorkspaceRows
+} from '@shared/types'
 import { canPull } from '@shared/freshnessOps'
+import { basename } from '@shared/preview'
+import { gitAccountId } from '@shared/gitAccountOps'
 import { useStore } from '../store'
 import {
+  authorLine,
   headAge,
+  orgBlockedText,
   openIssuesLabel,
   openPullsLabel,
   pullNote,
   pullToast,
+  suggestionText,
   type PullNote
 } from '../freshnessView'
 import { mainRunningCount } from '../newSession'
 import { PullConfirm } from './PullConfirm'
+
+const BLANK_ICON = <svg width={14} height={14} viewBox="0 0 24 24" />
+
+interface GitNote {
+  text: string
+  warn?: boolean
+}
+
+function useGitAccountView(
+  wsPath: string,
+  withCounts: boolean,
+  onClose: () => void
+): { acct: WorkspaceGitAccount | undefined; notes: GitNote[]; block: JSX.Element | null } {
+  const ws = useStore((s) => s.workspaceRows.find((r) => r.workspace.path === wsPath)?.workspace)
+  const openGitAccounts = useStore((s) => s.openGitAccounts)
+  const shown = !!ws && !ws.remote
+  const acct = shown ? ws?.gitAccount : undefined
+  const picked = acct?.id
+  const [switching, setSwitching] = useState(false)
+  const [accounts, setAccounts] = useState<GitAccountView[]>([])
+  const [suggestion, setSuggestion] = useState<GitAccountSuggestion | null>(null)
+
+  useEffect(() => {
+    if (!shown || picked) return
+    let alive = true
+    void window.api.gitAccounts.suggest(wsPath, false).then((s) => alive && setSuggestion(s))
+    return () => {
+      alive = false
+    }
+  }, [shown, picked, wsPath])
+
+  const none = { acct: undefined, notes: [], block: null }
+  if (!shown) return none
+  if (!acct && (!suggestion || suggestion.kind === 'off')) return none
+  const host = acct?.host ?? (suggestion && suggestion.kind !== 'off' ? suggestion.host : '')
+
+  const toSettings = (): void => {
+    onClose()
+    openGitAccounts()
+  }
+  const toTokenBox = (): void => {
+    onClose()
+    openGitAccounts('git-token')
+  }
+  const openList = (): void => {
+    setSwitching(true)
+    void window.api.gitAccounts.list().then(setAccounts)
+    if (!picked) void window.api.gitAccounts.suggest(wsPath, true).then(setSuggestion)
+  }
+  const pick = (id: string | null): void => {
+    setSwitching(false)
+    void window.api.gitAccounts.pick(wsPath, id)
+  }
+  const notNow = (): void => {
+    setSuggestion({ kind: 'none', host })
+    void window.api.gitAccounts.dismiss(wsPath)
+  }
+  const useToken = (login: string): JSX.Element => (
+    <div className="tbu-row">
+      <button
+        className="mini"
+        title={`Paste a token for ${login} — opens Settings ▸ Accounts`}
+        onClick={toTokenBox}
+      >
+        Use a token
+      </button>
+    </div>
+  )
+
+  const notes: GitNote[] = []
+  if (acct && !switching) {
+    if (acct.status === 'expired')
+      notes.push({
+        warn: true,
+        text: `${acct.login} needs to sign in again — pushes and gh calls fail until then.`
+      })
+    if (acct.pushBlockedByOrg)
+      notes.push({ warn: true, text: orgBlockedText(acct.pushBlockedByOrg, acct.login) })
+  }
+  if (!acct && suggestion) {
+    const text = suggestionText(suggestion)
+    if (text) notes.push({ text, warn: suggestion.kind === 'org-blocked' })
+    else if (!switching) notes.push({ text: 'Uses your own git setup' })
+  }
+  const noteRows = withCounts ? null : (
+    <>
+      {notes.length > 0 && (
+        <div className="tbu-row">
+          {notes.map((n) => (
+            <div key={n.text} className={'fx-note' + (n.warn ? ' warn' : '')}>
+              {n.text}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+  const result = (block: JSX.Element): ReturnType<typeof useGitAccountView> => ({
+    acct,
+    notes: withCounts ? notes : [],
+    block
+  })
+  const accountHead = (
+    <>
+      <div className="tbu-sep" />
+      <div className="tbu-pop-head">
+        <span>Account</span>
+      </div>
+    </>
+  )
+
+  if (switching) {
+    const shared = acct?.sharedWith.map((p) => basename(p)) ?? []
+    return result(
+      <>
+        <div className="tbu-sep" />
+        <div className="tbu-pop-head">
+          <span>Account · {host} on this Mac</span>
+        </div>
+        {noteRows}
+        {shared.length > 0 && (
+          <div className="tbu-row">
+            <div className="fx-note">
+              Applies to the whole repository (also used by workspace
+              {shared.length === 1 ? '' : 's'} {shared.join(', ')}).
+            </div>
+          </div>
+        )}
+        {accounts
+          .filter((a) => a.host === host)
+          .map((a) => (
+            <button key={a.id} className="tbu-act" onClick={() => pick(a.id)}>
+              {a.id === picked ? <LuCheck size={14} /> : BLANK_ICON}
+              {a.login}
+              {a.default && <span className="k">default</span>}
+            </button>
+          ))}
+        <button className="tbu-act" onClick={() => pick(null)}>
+          {picked ? BLANK_ICON : <LuCheck size={14} />}
+          Use my own git setup
+        </button>
+        <div className="tbu-sep" />
+        <button className="tbu-act" onClick={toSettings}>
+          <LuPlus size={14} />
+          Add account…<span className="k">Settings ▸ Accounts</span>
+        </button>
+      </>
+    )
+  }
+
+  if (acct) {
+    const expired = acct.status === 'expired'
+    return result(
+      <>
+        {withCounts && acct.pushBlockedByOrg && useToken(acct.login)}
+        {accountHead}
+        {noteRows}
+        {!withCounts && acct.pushBlockedByOrg && useToken(acct.login)}
+        <button
+          className="tbu-act"
+          title="Change the account this workspace uses"
+          onClick={openList}
+        >
+          <LuUsers size={14} />
+          {acct.login} · {acct.host}
+          <span className="k">
+            {expired ? (
+              'needs sign-in'
+            ) : (
+              <>
+                change <LuChevronDown size={14} />
+              </>
+            )}
+          </span>
+        </button>
+        {expired ? (
+          <button className="tbu-act" onClick={toSettings}>
+            <LuLogIn size={14} />
+            Sign in again
+          </button>
+        ) : (
+          !acct.pushBlockedByOrg && (
+            <div className="tbu-row">
+              <div className="fx-note">{authorLine(acct)}</div>
+            </div>
+          )
+        )}
+      </>
+    )
+  }
+
+  if (!suggestion || suggestion.kind === 'off') return none
+  const offer = (actions: JSX.Element): ReturnType<typeof useGitAccountView> =>
+    result(
+      <>
+        {!withCounts && accountHead}
+        {noteRows}
+        {actions}
+      </>
+    )
+  const pickAccount = (
+    <button className="tbu-act" onClick={openList}>
+      <LuUsers size={14} />
+      Pick account
+    </button>
+  )
+  const notNowBtn = (
+    <button
+      className="tbu-act"
+      title="Keep your own git setup; ask again next time this changes"
+      onClick={notNow}
+    >
+      <LuX size={14} />
+      Not now
+    </button>
+  )
+  switch (suggestion.kind) {
+    case 'none':
+      return offer(pickAccount)
+    case 'org-blocked':
+      return offer(
+        <>
+          {useToken(suggestion.login)}
+          {pickAccount}
+        </>
+      )
+    case 'cannot-push':
+      return offer(
+        <>
+          {pickAccount}
+          {notNowBtn}
+        </>
+      )
+    case 'add':
+      return offer(
+        <>
+          <button className="tbu-act" onClick={toSettings}>
+            <LuPlus size={14} />
+            Add {suggestion.login}
+          </button>
+          {notNowBtn}
+        </>
+      )
+  }
+  const { login, host: on } = suggestion
+  return offer(
+    <>
+      <button
+        className="tbu-act"
+        title={`This workspace’s git and gh use ${login} from now on`}
+        onClick={() => pick(gitAccountId(on, login))}
+      >
+        <LuCheck size={14} />
+        Use {login}
+      </button>
+      {notNowBtn}
+    </>
+  )
+}
 
 export function FreshnessPopover({
   wsPath,
@@ -99,6 +380,15 @@ export function FreshnessPopover({
     onClose()
   }
 
+  const popRef = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState(0)
+  useLayoutEffect(() => {
+    const h = popRef.current?.offsetHeight
+    if (h !== undefined && h !== height) setHeight(h)
+  })
+  const fitTop = Math.min(top, Math.max(4, window.innerHeight - height - 4))
+
+  const { acct, notes: gitNotes, block: gitBlock } = useGitAccountView(wsPath, !!github, onClose)
   const inMain = mainRunningCount(rows)
   const offline = !!remote && !remote.connected
   const eligible = !!f && canPull(f)
@@ -112,8 +402,9 @@ export function FreshnessPopover({
     <>
       {confirm === null && (
         <div
+          ref={popRef}
           className="tbu-pop fx"
-          style={{ left, top }}
+          style={{ left, top: fitTop }}
           onClick={(e) => e.stopPropagation()}
           onMouseEnter={onMouseEnter}
           onMouseLeave={failed ? undefined : onMouseLeave}
@@ -175,15 +466,23 @@ export function FreshnessPopover({
             <>
               <div className="tbu-pop-head">
                 <span>GitHub · {github.repo}</span>
+                {acct && <span className="age">as {acct.login}</span>}
               </div>
               <div className="tbu-row">
                 <div className="fx-counts">
                   <span>{openIssuesLabel(github.issues)}</span>
                   <span>{openPullsLabel(github.prs)}</span>
                 </div>
+                {gitNotes.map((n) => (
+                  <div key={n.text} className={'fx-note' + (n.warn ? ' warn' : '')}>
+                    {n.text}
+                  </div>
+                ))}
               </div>
+              {gitBlock}
             </>
           )}
+          {!github && gitBlock}
         </div>
       )}
       {confirm !== null && (

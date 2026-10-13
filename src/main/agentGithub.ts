@@ -7,13 +7,12 @@ import {
   GH_READS,
   GH_READS_TEXT
 } from '@shared/githubCommands'
-import { answered, EXIT_USAGE, refused, type AgentVerb } from './agentRequests'
+import { answered, EXIT_USAGE, ONLY_ASSIST, refused, type AgentVerb } from './agentRequests'
 
 export const GH_USAGE = `koloft: usage: koloft gh ${GH_READS_TEXT} [<number or URL>] [flags], with only the flags ${GH_READ_FLAGS.join(', ')}; or koloft gh ${GH_ISSUE_CREATE_TEXT}, where --body-file <file in your own folder> may stand for --body.`
-export const GH_ONLY_A_CONDUCTOR =
-  'koloft: only a conductor (a session bound to a Discord channel) can run koloft gh; a session runs gh itself.'
+export const GH_ONLY_A_CONDUCTOR = `koloft: ${ONLY_ASSIST} can run koloft gh; a session runs gh itself.`
 export const GH_NEEDS_A_REPO =
-  'koloft: this conductor has no workspace to take the repository from; add --repo <owner>/<name>, or give a full GitHub URL.'
+  'koloft: this Assist has no workspace to take the repository from; add --repo <owner>/<name>, or give a full GitHub URL.'
 export const GH_BODY_FILE_OUTSIDE_OWN_FOLDER =
   'koloft: --body-file must name a file in your own folder, the one you run in; or give the text with --body.'
 
@@ -26,12 +25,18 @@ export interface GithubVerbDeps {
   scopeOf(tabId: string): string | undefined
   folderOf(scope: string): string
   repoOf(scope: string): Promise<string | null>
-  run(args: string[]): Promise<{ ok: boolean; out: string }>
+  run(args: string[], scope: string): Promise<{ ok: boolean; out: string }>
 }
 
 function flagName(arg: string): string {
   const eq = arg.indexOf('=')
   return eq < 0 ? arg : arg.slice(0, eq)
+}
+
+export function repoFlagOf(args: string[]): string | undefined {
+  const at = args.findIndex((a) => flagName(a) === '--repo')
+  if (at < 0) return undefined
+  return args[at] === '--repo' ? args[at + 1] : args[at].slice('--repo='.length)
 }
 
 function issueCreateFlags(rest: string[]): [string, string][] | null {
@@ -97,7 +102,7 @@ export function githubVerb(d: GithubVerbDeps): AgentVerb {
       if (!repo) return refused(GH_NEEDS_A_REPO)
       gh.push('--repo', repo)
     }
-    const { ok, out } = await d.run(gh)
+    const { ok, out } = await d.run(gh, scope)
     if (!ok) return refused(`koloft: gh ${noun} ${action}: ${out}`)
     if (out.length <= REPLY_CHARS_A_CONDUCTOR_TURN_HOLDS) return answered(out)
     return answered(

@@ -199,15 +199,19 @@ export class RemoteSync {
         st.problem = problemOf(hb)
       }
       if (st.connected) {
-        const pulls = await Promise.all([
-          this.deps.rsync(
-            host,
-            '.claude/projects',
-            target.mirrorProjectsRoot,
-            projectFlags(target.paths.map((p) => st.git.get(p)?.real ?? p))
-          ),
-          this.deps.rsync(host, '.koloft/hook-sessions', target.mirrorHookDir, HOOK_FLAGS)
-        ])
+        const transcripts = await this.deps.rsync(
+          host,
+          '.claude/projects',
+          target.mirrorProjectsRoot,
+          projectFlags(target.paths.map((p) => st.git.get(p)?.real ?? p))
+        )
+        const hooks = await this.deps.rsync(
+          host,
+          '.koloft/hook-sessions',
+          target.mirrorHookDir,
+          HOOK_FLAGS
+        )
+        const pulls = [transcripts, hooks]
         const failed = pulls.find((r) => r.code !== 0)
         st.problem = failed && problemOf(failed)
       }

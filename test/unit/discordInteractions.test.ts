@@ -17,7 +17,6 @@ const binding: ConductorBinding = {
   scope: 'global',
   backend: 'claude',
   channel: { guildId: '1', channelId: CHANNEL, name: 'koloft-all' },
-  sessionIds: [],
   touched: []
 }
 
@@ -44,7 +43,7 @@ function setup(over: Partial<InteractionDeps> = {}) {
       c === CHANNEL ? { binding } : c === THREAD ? { binding, sessionKey: 'k1' } : undefined,
     press: async (i) => void pressed.push(i),
     choices: () => [
-      { name: 'This channel’s conductor (Global)', value: 'me' },
+      { name: 'This channel’s Assist (Global)', value: 'me' },
       { name: 'fix-login · Claude', value: 'k1' },
       { name: 'docs · Codex', value: 'k2' }
     ],

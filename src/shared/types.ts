@@ -1,3 +1,5 @@
+import type { SessionRoute } from './sessionRoute'
+
 export interface ProjectInfo {
   root: string
   treeRoot: string
@@ -21,6 +23,100 @@ export function keychainNamespace(appName: string): string {
 
 export function keychainService(appName: string, kind: AccountKind): string {
   return keychainNamespace(appName) + keychainServiceSuffix(kind)
+}
+
+export type GitPlatform = 'github' | 'ghes' | 'gitlab' | 'bitbucket' | 'azure' | 'gitea' | 'other'
+
+export const GIT_PLATFORMS: readonly GitPlatform[] = [
+  'github',
+  'ghes',
+  'gitlab',
+  'bitbucket',
+  'azure',
+  'gitea',
+  'other'
+]
+
+export function gitKeychainService(appName: string, host: string): string {
+  return `${keychainNamespace(appName)}-git-${host.toLowerCase()}`
+}
+
+export interface GitAuthor {
+  name: string
+  email: string
+}
+
+export interface GitAccount {
+  id: string
+  platform: GitPlatform
+  url: string
+  host: string
+  login: string
+  author?: GitAuthor
+  gcmNamespace?: string
+  default: boolean
+  status: AccountStatus
+  addedAt: number
+}
+
+export interface GitRepoPick {
+  repo: string
+  account: string
+}
+
+export interface GitAccountView extends GitAccount {
+  usedBy: string[]
+  checkError?: 'offline'
+}
+
+export type GitLoginProgress =
+  | { phase: 'checking' }
+  | { phase: 'code'; code: string; url: string }
+  | { phase: 'browser'; url?: string }
+  | { phase: 'saved'; login: string }
+  | { phase: 'failed'; message: string }
+
+export type GitLoginStart =
+  { ok: true } | { ok: false; error: 'no-sandbox' | 'no-gh' | 'no-gcm' | 'busy' | 'bad-url' }
+
+export interface GitTokenAdd {
+  platform: GitPlatform
+  url: string
+  token: string
+  username?: string
+}
+
+export type GitTokenAddResult =
+  | { ok: true; login: string }
+  | {
+      ok: false
+      error: 'rejected' | 'offline' | 'failed' | 'missing-scope' | 'bad-url'
+      scope?: string
+    }
+
+export type GitClueReason = 'url-user' | 'config-user' | 'gh-user' | 'ssh-greeting' | 'commit-email'
+
+export type GitAccountSuggestion =
+  | { kind: 'off' }
+  | { kind: 'none'; host: string }
+  | {
+      kind: 'use' | 'add' | 'cannot-push' | 'hint'
+      host: string
+      login: string
+      reason: GitClueReason
+    }
+  | { kind: 'only-one-can-push' | 'default-can-push'; host: string; login: string }
+  | { kind: 'org-blocked'; host: string; login: string; org: string }
+
+export interface WorkspaceGitAccount {
+  id: string
+  login: string
+  host: string
+  platform: GitPlatform
+  author?: GitAuthor
+  status: AccountStatus
+  sharedWith: string[]
+  pushBlockedByOrg?: string
 }
 
 export function keychainServiceSuffix(kind: AccountKind): string {
@@ -178,13 +274,30 @@ export interface Settings {
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
+  newProjectFolders: Record<string, string>
   hintsSeen: string[]
   hintsOff: boolean
   lastSeenVersion: string
   discord: DiscordSettings
+  assistSessions: AssistRecord[]
+  gitAccounts: GitAccount[]
+  gitPicks: GitRepoPick[]
+  gitSuggestionsDismissed: string[]
 }
 
 export type AssistSetting = { on: boolean; backend: BackendId } | null
+
+export interface AssistRecord {
+  scope: string
+  sessionIds: string[]
+  lastSessionKey?: string
+}
+
+export interface AssistTaskRow {
+  tabId: string
+  scope: string
+  name: string
+}
 
 export interface DiscordChannel {
   guildId: string
@@ -197,8 +310,6 @@ export interface ConductorBinding {
   scope: string
   backend: BackendId
   channel: DiscordChannel
-  sessionIds: string[]
-  lastSessionKey?: string
   lastMessageId?: string
   touched: string[]
   threads?: SessionThread[]
@@ -215,12 +326,15 @@ export interface DiscordSettings {
   userId?: string
   userName?: string
   bindings: ConductorBinding[]
+  category?: DiscordChannel
 }
 
-export interface ConductorSaveInput {
+export interface NewChannelInput {
   id?: string
   scope: string
-  backend: BackendId
+}
+
+export interface ConductorSaveInput extends NewChannelInput {
   channel: DiscordChannel
 }
 
@@ -231,14 +345,27 @@ export interface DiscordStatus {
   phase: DiscordPhase
   botName?: string
   applicationId?: string
-  guildNames: string[]
+  guilds: DiscordGuild[]
+  appOwner?: DiscordUser
   failing: Record<string, string>
   candidate?: { name: string; text: string; at: number }
 }
 
-export const DISCORD_OFF: DiscordStatus = { phase: 'off', guildNames: [], failing: {} }
+export interface DiscordGuild {
+  id: string
+  name: string
+  ownerId?: string
+}
 
-export type ConductorSaveResult = { ok: true } | { ok: false; error: string }
+export interface DiscordUser {
+  id: string
+  name: string
+}
+
+export const DISCORD_OFF: DiscordStatus = { phase: 'off', guilds: [], failing: {} }
+
+export type ConductorSaveResult =
+  { ok: true } | { ok: false; error: string; cannotMakeChannels?: boolean }
 
 export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 
@@ -278,10 +405,15 @@ export const DEFAULT_SETTINGS: Settings = {
   worldClocks: [],
   onboardingSeen: false,
   assist: null,
+  newProjectFolders: {},
   hintsSeen: [],
   hintsOff: false,
   lastSeenVersion: '',
-  discord: { bindings: [] }
+  discord: { bindings: [] },
+  assistSessions: [],
+  gitAccounts: [],
+  gitPicks: [],
+  gitSuggestionsDismissed: []
 }
 
 export type BackendId = 'claude' | 'codex'
@@ -321,6 +453,7 @@ export interface CreateTabOptions {
   util?: boolean
   ownerTabId?: string
   role?: string
+  allow?: string[]
   conductor?: boolean
   trustFolder?: boolean
 }
@@ -530,6 +663,7 @@ export interface DocVerdict {
 
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
   conductor?: string
+  assistTask?: string
   turnOver?: boolean
   docVerdicts?: Record<string, DocVerdict>
 }
@@ -840,7 +974,9 @@ export interface KoloftApi {
     onSlept(cb: (tabId: string) => void): () => void
   }
   sessions: {
-    backends(): Promise<BackendAvailability[]>
+    backends(recheck?: boolean): Promise<BackendAvailability[]>
+    installTool(backend: BackendId): Promise<{ tabId: string; cwd: string } | null>
+    onToolsChanged(cb: () => void): () => void
     onUpdate(cb: (sessions: SessionInfo[]) => void): () => void
     onRelocated(cb: (e: { tabId: string; dir: string }) => void): () => void
     noteActivity(tabId: string): void
@@ -997,6 +1133,11 @@ export interface KoloftApi {
     fetchFreshness(path: string): Promise<WorkspaceFreshness | null>
     pull(path: string, expect: { branch: string; head: string }): Promise<WorkspacePullResult>
     discover(): Promise<DiscoveredFolder[]>
+    createProject(parent: string, name: string): Promise<ProjectCreateResult>
+  }
+  assist: {
+    route(id: number, message: string): Promise<SessionRoute | null>
+    cancel(id: number): void
   }
   settings: {
     get(): Promise<Settings>
@@ -1027,6 +1168,21 @@ export interface KoloftApi {
     codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
     onUpdate(cb: (accounts: AccountView[]) => void): () => void
+  }
+  gitAccounts: {
+    list(): Promise<GitAccountView[]>
+    onUpdate(cb: (accounts: GitAccountView[]) => void): () => void
+    loginStart(platform: GitPlatform, url: string): Promise<GitLoginStart>
+    loginCancel(): void
+    loginBrowser(): void
+    onLoginProgress(cb: (p: GitLoginProgress) => void): () => void
+    addToken(add: GitTokenAdd): Promise<GitTokenAddResult>
+    remove(id: string): Promise<void>
+    makeDefault(id: string): Promise<void>
+    check(): Promise<void>
+    pick(wsPath: string, id: string | null): Promise<void>
+    suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion>
+    dismiss(wsPath: string): Promise<void>
   }
   // ADR-0006
   update: {
@@ -1064,7 +1220,6 @@ export interface KoloftApi {
     onAddWorkspace(cb: () => void): () => void
     onSave(cb: () => void): () => void
     onFindFiles(cb: () => void): () => void
-    onSearchSessions(cb: () => void): () => void
     // PLATFORM§7
     onBrowserCommand(cb: (cmd: BrowserCommand) => void): () => void
     // PLATFORM§7
@@ -1089,18 +1244,22 @@ export interface KoloftApi {
   }
   conductors: {
     save(input: ConductorSaveInput): Promise<ConductorSaveResult>
-    unbind(id: string): Promise<void>
-    switchBackend(id: string): Promise<void>
-    open(id: string): Promise<ConductorOpenResult>
-    startFresh(id: string): Promise<ConductorOpenResult>
+    saveWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult>
+    unbind(bindingId: string): Promise<void>
+    open(scope: string): Promise<ConductorOpenResult>
+    startFresh(scope: string): Promise<ConductorOpenResult>
+    openTask(scope: string, title: string, brief: string): Promise<ConductorOpenResult>
+    tell(scope: string, title: string, text: string): Promise<ConductorOpenResult>
+    closeTask(tabId: string): Promise<void>
+    tasks(): Promise<AssistTaskRow[]>
+    onTasks(cb: (rows: AssistTaskRow[]) => void): () => void
   }
   discord: {
-    setToken(token: string): Promise<boolean>
     status(): Promise<DiscordStatus>
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
-    forgetOwner(): Promise<void>
     channels(): Promise<DiscordChannel[]>
+    setUpWithAssist(): Promise<ConductorOpenResult>
   }
 }
 
@@ -1338,6 +1497,7 @@ export interface WorkspaceRows {
     hasHistory: boolean
     freshness?: WorkspaceFreshness
     github?: WorkspaceGithub
+    gitAccount?: WorkspaceGitAccount
     remote?: { host: string; path: string; connected: boolean; problem?: string }
   }
   rows: SessionRow[]
@@ -1361,6 +1521,8 @@ export type WorkspaceAddResult =
   | { code: 'exists'; path: string }
   | { code: 'rejected-worktree' }
   | { code: 'not-found' }
+
+export type ProjectCreateResult = { ok: true; path: string } | { ok: false; reason: string }
 
 export interface WorkspaceRemoveResult {
   running: number

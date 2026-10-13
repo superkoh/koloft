@@ -15,6 +15,7 @@ function fakeClaude(body: string): string {
 function claudeAssist(bin: string, env: NodeJS.ProcessEnv = {}) {
   return koloftAssist({
     setting: () => ({ on: true, backend: 'claude' }),
+    enabled: () => true,
     claude: async () => ({ binary: bin, env }),
     codex: async () => null
   })
