@@ -195,7 +195,7 @@ async function firstClue(
     ...(remote.port ? ['-p', remote.port] : []),
     remote.dest
   ])
-  const login = loginFromSshGreeting(hello.stdout + hello.stderr)
+  const login = loginFromSshGreeting(hello)
   return login ? { login, reason: 'ssh-greeting' } : null
 }
 

@@ -38,31 +38,42 @@ describe('httpsTurnedAway', () => {
     `remote: ${body}\nfatal: unable to access 'https://h/a/b.git/': The requested URL returned error: 403\n`
 
   it("names GitLab's and Gitea's https-off answer as SSH only", () => {
-    expect(httpsTurnedAway(forbidden('Git access over HTTP is not allowed'))).toBe('ssh-only')
+    expect(httpsTurnedAway(forbidden('Git access over HTTP is not allowed'), 'gitlab')).toBe(
+      'ssh-only'
+    )
     expect(
-      httpsTurnedAway(forbidden('Interacting with repositories by HTTP protocol is not allowed'))
+      httpsTurnedAway(
+        forbidden('Interacting with repositories by HTTP protocol is not allowed'),
+        'gitea'
+      )
     ).toBe('ssh-only')
   })
 
-  it('a 403 with words it does not know still means the server turned https away', () => {
-    expect(httpsTurnedAway(forbidden('HTTP access is switched off on this instance'))).toBe(
-      'forbidden'
-    )
+  it('a 403 with words it does not know still means a GitLab or Gitea server turned https away, but not GitHub', () => {
+    const unknown = forbidden('HTTP access is switched off on this instance')
+    expect(httpsTurnedAway(unknown, 'gitlab')).toBe('forbidden')
+    expect(httpsTurnedAway(unknown, 'gitea')).toBe('forbidden')
+    expect(httpsTurnedAway(unknown, 'github')).toBeNull()
   })
 
   it('a rejected sign-in, a missing repository and an unreachable server are not https turned away', () => {
     expect(
       httpsTurnedAway(
-        "remote: HTTP Basic: Access denied. If a password was provided for Git authentication, the password was incorrect or you're required to use a token instead of a password.\nfatal: Authentication failed for 'https://h/a/b.git/'\n"
+        "remote: HTTP Basic: Access denied. If a password was provided for Git authentication, the password was incorrect or you're required to use a token instead of a password.\nfatal: Authentication failed for 'https://h/a/b.git/'\n",
+        'gitlab'
       )
     ).toBeNull()
     expect(
       httpsTurnedAway(
-        "remote: Repository not found.\nfatal: repository 'https://h/a/b.git/' not found\n"
+        "remote: Repository not found.\nfatal: repository 'https://h/a/b.git/' not found\n",
+        'gitlab'
       )
     ).toBeNull()
     expect(
-      httpsTurnedAway("fatal: unable to access 'https://h/a/b.git/': Could not resolve host: h\n")
+      httpsTurnedAway(
+        "fatal: unable to access 'https://h/a/b.git/': Could not resolve host: h\n",
+        'gitea'
+      )
     ).toBeNull()
   })
 })

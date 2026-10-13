@@ -1,5 +1,5 @@
-import type { GitAccount } from '@shared/types'
-import { credentialUrlOf } from './gitConfigFile'
+import type { GitAccount, GitPlatform } from '@shared/types'
+import { apiTargetOf, credentialUrlOf } from './gitConfigFile'
 
 const SCP_LIKE = /^(?:([^@/]+)@)?([^:/]+):(?!\/)(.*)$/
 export const AZURE_SSH_HOST = 'ssh.dev.azure.com'
@@ -11,13 +11,14 @@ const REMOTE_URL_LINE = /^remote\..+\.(?:push)?url\s+(.+)$/
 const SSH_ONLY_ANSWER =
   /^remote: (?:Git access over HTTP is not allowed|Interacting with repositories by HTTP protocol is not allowed)\s*$/m
 const SERVER_FORBADE = /The requested URL returned error: 403\b/
+const HTTPS_CAN_BE_OFF: GitPlatform[] = ['gitlab', 'gitea']
 
 export type HttpsTurnedAway = 'ssh-only' | 'forbidden'
 
 // PLATFORM§52
-export function httpsTurnedAway(stderr: string): HttpsTurnedAway | null {
+export function httpsTurnedAway(stderr: string, platform: GitPlatform): HttpsTurnedAway | null {
   if (SSH_ONLY_ANSWER.test(stderr)) return 'ssh-only'
-  return SERVER_FORBADE.test(stderr) ? 'forbidden' : null
+  return HTTPS_CAN_BE_OFF.includes(platform) && SERVER_FORBADE.test(stderr) ? 'forbidden' : null
 }
 
 export interface SshTarget {
@@ -81,7 +82,7 @@ export interface RepoRemotes {
 }
 
 function httpsBase(a: Pick<GitAccount, 'platform' | 'url'>): string {
-  return `${a.platform === 'github' ? credentialUrlOf(a) : a.url}/`
+  return `${apiTargetOf(a).url}/`
 }
 
 function httpsOf(

@@ -759,7 +759,7 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
     }
   })
 
-  test('GA-13: a Gitea that allows SSH only is named in the panel after a fetch; Make a key leaves a key for bob in Koloft’s folder, switches the repository to it, shows the public key with the keys page, says the server does not know the key yet, and removing bob deletes the key', async ({
+  test('GA-13: a Gitea that allows SSH only is named in the panel after a fetch; Make a key leaves a key for bob in Koloft’s folder, switches the repository to it, shows the public key with the keys page, does not blame the key when the SSH server cannot be reached, and removing bob deletes the key', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -791,11 +791,15 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
       expect(fs.statSync(key).mode & 0o777).toBe(0o600)
       expect(pickFiles(env).join('')).toContain(`IdentitiesOnly=yes`)
       expect(pickFiles(env).join('')).not.toContain('insteadOf')
+      await panel.locator('.tbu-act', { hasText: 'Check again' }).click()
+      await expect(panel.locator('.tbu-act', { hasText: 'Check again' })).toBeEnabled({
+        timeout: ACCOUNT_SHOWS_WITHIN_MS
+      })
       await expect(
-        panel.locator('.fx-note.warn', { hasText: 'Gitea does not know this key for bob yet.' })
-      ).toBeVisible({ timeout: ACCOUNT_SHOWS_WITHIN_MS })
+        panel.locator('.fx-note.warn', { hasText: 'does not know this key' })
+      ).toHaveCount(0)
       expect(settingsOnDisk(env).gitPicks).toEqual([
-        expect.objectContaining({ account: id, sshKey: 'not-taken' })
+        expect.objectContaining({ account: id, sshKey: 'unchecked' })
       ])
       await panel.locator('.tbu-act', { hasText: 'Open SSH keys page' }).click()
       await expect
