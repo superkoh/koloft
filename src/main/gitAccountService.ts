@@ -40,7 +40,7 @@ import { TOKEN_VARIABLES_GH_PREFERS } from './gitCredentialScripts'
 import { GitRepoKeys } from './gitRepoKey'
 import type { GitRunResult } from './gitSteps'
 import { missingScope, pushAccess, whoami } from './githubApi'
-import { GithubLogin, type GithubLoginDeps } from './githubLogin'
+import { GithubLogin } from './githubLogin'
 
 const HOST: GitHost = 'github.com'
 const CLUE_COMMAND_KILL_MS = 10_000
@@ -107,7 +107,6 @@ export interface GitAccountServiceDeps {
   ghBin: string | undefined
   baseEnv(): Promise<NodeJS.ProcessEnv>
   repoOf(wsPath: string): Promise<{ owner: string; name: string } | null>
-  openPage: GithubLoginDeps['openPage']
   openInBrowser(url: string): void
   progress(p: GitLoginProgress): void
   accountsChanged(views: GitAccountView[]): void
@@ -147,7 +146,6 @@ export class GitAccountService {
     this.login = new GithubLogin({
       ghBin: d.ghBin,
       userData: d.userData,
-      openPage: d.openPage,
       openInBrowser: d.openInBrowser,
       progress: d.progress,
       whoami,
@@ -291,10 +289,6 @@ export class GitAccountService {
 
   loginCancel(): void {
     this.login.cancel()
-  }
-
-  loginWindow(): void {
-    this.login.showWindow()
   }
 
   loginBrowser(): void {

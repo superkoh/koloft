@@ -187,7 +187,6 @@ import { GithubCountsSweep } from './githubCounts'
 import { runGh } from './prChecks'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
 import { removeStaleLoginDirs } from './githubLogin'
-import { openDeviceCodeWindow } from './deviceCodeWindow'
 import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
@@ -1842,7 +1841,6 @@ app.whenReady().then(() => {
       const [owner, name] = slug?.split('/') ?? []
       return owner && name ? { owner, name } : null
     },
-    openPage: openDeviceCodeWindow,
     openInBrowser: (url) => void leaveForOS(url, 'url'),
     progress: (p) => sendToRenderer('gitAccounts:login-progress', p),
     accountsChanged: (views) => sendToRenderer('gitAccounts:update', views),
@@ -4146,7 +4144,6 @@ function registerIpc(): void {
     gitAccounts ? gitAccounts.loginStart() : { ok: false, error: 'no-gh' }
   )
   ipcMain.on('gitAccounts:login-cancel', () => gitAccounts?.loginCancel())
-  ipcMain.on('gitAccounts:login-window', () => gitAccounts?.loginWindow())
   ipcMain.on('gitAccounts:login-browser', () => gitAccounts?.loginBrowser())
   ipcMain.handle('gitAccounts:add-token', (_e, token: unknown) =>
     isText(token) && gitAccounts

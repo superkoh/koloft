@@ -1612,6 +1612,15 @@ Gateway (the live connection that pushes events):
   (seen in Docker against a fake GitHub with gh 2.102.0; never against github.com).
 - Measured 2026-10-12 on macOS 27.0 with the bundled gh 2.102.0; the login was killed
   after the code line and never approved.
+- **Google refuses to sign in inside an app's own window.** 2026-10-13, a real GitHub
+  account signing in with "Continue with Google" on github.com's device page shown in an
+  Electron `BrowserWindow` (fresh in-memory partition): Google answered "Couldn't sign you
+  in — This browser or app may not be secure. Try using a different browser." The same code,
+  entered on the device page in the user's own browser, was accepted, and the sandboxed gh
+  finished the sign-in and wrote `hosts.yml`; the user's own gh stayed signed in. So the
+  device page opens in the user's browser. (That Apple and company single sign-on refuse the
+  same way is inferred, not checked; that GitHub's "Switch account" lets a second account
+  approve without signing the first out is inferred, not checked.)
 
 ## §48 ssh "who am I" without side effects
 

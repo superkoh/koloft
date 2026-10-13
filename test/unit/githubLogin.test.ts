@@ -78,7 +78,7 @@ describe('GithubLogin with the fake gh', () => {
   let userData: string
   let fakeHome: string
   let progress: GitLoginProgress[]
-  let pages: { url: string; closed: boolean }[]
+  let pages: string[]
   let saved: { login: string; id: number; name: string; token: string }[]
   let login: GithubLogin
 
@@ -101,12 +101,7 @@ describe('GithubLogin with the fake gh', () => {
     const deps: GithubLoginDeps = {
       ghBin: undefined,
       userData,
-      openPage: (url) => {
-        const page = { url, closed: false }
-        pages.push(page)
-        return { show: () => {}, close: () => void (page.closed = true) }
-      },
-      openInBrowser: () => {},
+      openInBrowser: (url) => void pages.push(url),
       progress: (p) => progress.push(p),
       whoami: async (token) =>
         token === 'gho_fake_bob'
@@ -134,7 +129,7 @@ describe('GithubLogin with the fake gh', () => {
       timeout: 5000
     })
 
-  it('shows the code, opens the device page, then saves the account GitHub names and leaves no login folder', async () => {
+  it('shows the code, opens the device page in the browser, then saves the account GitHub names and leaves no login folder', async () => {
     expect(await login.start()).toEqual({ ok: true })
     await codeShown()
     expect(progress).toContainEqual({
@@ -142,7 +137,7 @@ describe('GithubLogin with the fake gh', () => {
       code: 'ABCD-1234',
       url: 'https://github.com/login/device'
     })
-    expect(pages.map((p) => p.url)).toEqual(['https://github.com/login/device'])
+    expect(pages).toEqual(['https://github.com/login/device'])
     fs.writeFileSync(path.join(fakeHome, 'approve-gh-login'), '')
     await vi.waitFor(() => expect(progress.at(-1)).toEqual({ phase: 'saved', login: 'bob' }), {
       timeout: 5000
@@ -150,7 +145,6 @@ describe('GithubLogin with the fake gh', () => {
     expect(saved).toEqual([
       { host: 'github.com', login: 'bob', id: 42, name: 'Bob Example', token: 'gho_fake_bob' }
     ])
-    expect(pages[0].closed).toBe(true)
     expect(loginDirs()).toEqual([])
   })
 

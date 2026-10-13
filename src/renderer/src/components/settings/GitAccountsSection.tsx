@@ -310,7 +310,7 @@ function GitLoginBox({
         <div className="acct-login-state">
           {progress.phase === 'code' && (
             <>
-              <div>A sign-in window opened. Enter this code:</div>
+              <div>GitHub opened in your browser. Enter this code there:</div>
               <div className="acct-foot">
                 <span className="acct-name">{progress.code}</span>
                 <button
@@ -319,23 +319,24 @@ function GitLoginBox({
                 >
                   <LuCopy size={14} /> Copy
                 </button>
-                <button className="mini" onClick={() => window.api.gitAccounts.loginWindow()}>
-                  <LuExternalLink size={14} /> Open window again
+                <button className="mini" onClick={() => window.api.gitAccounts.loginBrowser()}>
+                  <LuExternalLink size={14} /> Open page again
                 </button>
                 <button
                   className="mini"
-                  title="Opens the same sign-in page in your default browser"
-                  onClick={() => window.api.gitAccounts.loginBrowser()}
+                  title="Copies the sign-in page's address, to paste into a private window"
+                  onClick={() => navigator.clipboard?.writeText(progress.url).catch(() => {})}
                 >
-                  <LuExternalLink size={14} /> Open in your browser instead
+                  <LuCopy size={14} /> Copy link
                 </button>
               </div>
               <span className="field-hint">
                 Signing in through GitHub CLI, the same way as <code>gh auth login</code>.
               </span>
               <span className="field-hint">
-                Signed in as someone else there? This window starts signed out, so you can pick any
-                account.
+                Adding a different GitHub account? Switch to it on github.com first (your picture ▸
+                Switch account), or paste the link into a private window. Your other account stays
+                signed in.
               </span>
             </>
           )}

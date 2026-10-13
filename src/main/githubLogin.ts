@@ -5,7 +5,6 @@ import path from 'path'
 import type { GitLoginProgress, GitLoginStart } from '@shared/types'
 import { githubHostEntry } from './gitClues'
 import type { whoami } from './githubApi'
-import type { DeviceCodePage } from './deviceCodeWindow'
 
 const SANDBOX_EXEC = '/usr/bin/sandbox-exec'
 const KEYCHAIN_TOOL = '/usr/bin/security'
@@ -91,7 +90,6 @@ export function removeStaleLoginDirs(userData: string): void {
 export interface GithubLoginDeps {
   ghBin: string | undefined
   userData: string
-  openPage(url: string): DeviceCodePage
   openInBrowser(url: string): void
   progress(p: GitLoginProgress): void
   whoami: typeof whoami
@@ -105,7 +103,6 @@ interface LoginRun {
   dir: string
   child?: ChildProcess
   url?: string
-  page?: DeviceCodePage
   stderr: string
   cancelled: boolean
   timer?: NodeJS.Timeout
@@ -187,7 +184,8 @@ export class GithubLogin {
       if (!code || !url) return
       run.url = url
       this.d.progress({ phase: 'code', code, url })
-      run.page = this.d.openPage(url)
+      // PLATFORM§47
+      this.d.openInBrowser(url)
     })
     child.on('error', () => this.end(run, 'Could not start gh to sign in.'))
     child.on('close', (code) => {
@@ -208,10 +206,6 @@ export class GithubLogin {
     this.end(run, null)
   }
 
-  showWindow(): void {
-    this.run?.page?.show()
-  }
-
   openInBrowser(): void {
     if (this.run?.url) this.d.openInBrowser(this.run.url)
   }
@@ -221,7 +215,6 @@ export class GithubLogin {
     this.run = null
     clearTimeout(run.timer)
     run.child?.kill()
-    run.page?.close()
     fs.rmSync(run.dir, { recursive: true, force: true })
     if (failure && !run.cancelled) this.d.progress({ phase: 'failed', message: failure })
   }
