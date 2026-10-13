@@ -23,7 +23,7 @@ function osa(...args: (string | number)[]): string {
   }).trim()
 }
 
-// PLATFORM§46
+// PLATFORM§52
 export function accessibilityTrusted(): boolean {
   return osa('trusted') === 'true'
 }
@@ -65,7 +65,7 @@ export function bannerShowing(text: string): boolean {
   return osa('banner-showing', text) === 'true'
 }
 
-// PLATFORM§46
+// PLATFORM§52
 export function chooseOnBanner(text: string, choice: string): string {
   return osa('banner-action', text, choice)
 }

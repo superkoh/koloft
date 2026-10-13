@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 import type { PrCheck, PrCheckBucket, PrChecks } from '@shared/types'
 import type { GithubRepo } from '@shared/githubUrl'
 import { FETCH_TIMEOUT_MS } from './gitFreshness'
+import { stripTerminalCodes } from './terminalCodes'
 
 export interface GhResult {
   code: number | null
@@ -18,12 +19,12 @@ const GH_MAX_BUFFER = 64 * 1024 * 1024
 export const GH_SIGNED_OUT = 4
 const BUCKETS: readonly PrCheckBucket[] = ['pass', 'fail', 'pending', 'skipping', 'cancel']
 
-export function runGh(args: string[]): Promise<GhResult> {
+export function runGh(args: string[], env?: NodeJS.ProcessEnv): Promise<GhResult> {
   return new Promise((resolve) => {
     execFile(
       'gh',
       args,
-      { timeout: FETCH_TIMEOUT_MS, maxBuffer: GH_MAX_BUFFER },
+      { timeout: FETCH_TIMEOUT_MS, maxBuffer: GH_MAX_BUFFER, ...(env && { env }) },
       (err, stdout, stderr) => {
         const code = (err as { code?: unknown } | null)?.code
         resolve({
@@ -101,12 +102,11 @@ export function jobIdOf(link: string): string | null {
 
 // PLATFORM§32
 const LOG_LINE_PREFIX = /^[^\t\n]*\t[^\t\n]*\t﻿?\d{4}-\d\d-\d\dT[\d:.]+Z ?/
-const ANSI_COLOR = /\x1b\[[0-9;]*m/g
 
 export function trimFailedLog(raw: string, limit = FAILED_LOG_LIMIT): string {
   const lines = raw
     .split('\n')
-    .map((l) => l.replace(LOG_LINE_PREFIX, '').replace(ANSI_COLOR, '').trimEnd())
+    .map((l) => stripTerminalCodes(l.replace(LOG_LINE_PREFIX, '')).trimEnd())
   const firstError = lines.findIndex((l) => l.startsWith('##[error]'))
   let end = firstError < 0 ? lines.length : firstError + 1 + LINES_KEPT_AFTER_FIRST_ERROR
   end = Math.min(end, lines.length)

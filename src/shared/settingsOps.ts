@@ -6,6 +6,7 @@ import {
   type AssistSetting,
   type Settings
 } from './types'
+import { sanitizeGitAccounts, sanitizeGitPicks } from './gitAccountOps'
 import { normalizeSessionMethods } from './sessionBackend'
 import { sanitizeAssistSessions, sanitizeDiscord } from './conductors'
 
@@ -19,8 +20,14 @@ export function buildResetPatch(): Partial<Settings> {
     assist,
     assistSessions,
     newProjectFolders,
+    gitAccounts,
+    gitPicks,
+    gitSuggestionsDismissed,
     ...rest
   } = DEFAULT_SETTINGS
+  void gitAccounts
+  void gitPicks
+  void gitSuggestionsDismissed
   void assist
   void assistSessions
   void newProjectFolders
@@ -33,7 +40,18 @@ export function buildResetPatch(): Partial<Settings> {
 }
 
 export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Settings> {
-  const { accounts, discord, assistSessions, ...rest } = patch
+  const {
+    accounts,
+    discord,
+    assistSessions,
+    gitAccounts,
+    gitPicks,
+    gitSuggestionsDismissed,
+    ...rest
+  } = patch
+  void gitAccounts
+  void gitPicks
+  void gitSuggestionsDismissed
   void accounts
   void discord
   void assistSessions
@@ -45,6 +63,11 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   const merged = { ...DEFAULT_SETTINGS, ...doc }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
+  merged.gitAccounts = sanitizeGitAccounts(merged.gitAccounts)
+  merged.gitPicks = sanitizeGitPicks(merged.gitPicks, merged.gitAccounts)
+  merged.gitSuggestionsDismissed = Array.isArray(merged.gitSuggestionsDismissed)
+    ? merged.gitSuggestionsDismissed.filter((r): r is string => typeof r === 'string')
+    : []
   merged.assistSessions = sanitizeAssistSessions(merged.assistSessions, merged.discord)
   merged.discord = sanitizeDiscord(merged.discord)
   merged.assist = sanitizeAssist(merged.assist)

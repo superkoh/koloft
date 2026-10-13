@@ -112,8 +112,10 @@
           <li>
             git and <code>gh</code> (GitHub's own command-line tool)
             <mark class="hl">come with Koloft</mark>. If your Mac already has its own, Koloft uses
-            yours. Sign in to gh yourself (<code>gh auth login</code>) for a folder's open issue and
-            pull request counts, a branch's checks, and <code>koloft gh</code> for Assist
+            yours. Sign in to gh yourself (<code>gh auth login</code>), or add a
+            <a href="../accounts/#git-accounts">git account</a> in Koloft and pick it for the
+            folder. That gives you a folder's open issue and pull request counts, a branch's checks,
+            and <code>koloft gh</code> for Assist
           </li>
           <li>
             if you like: a Discord account, for the <a href="../discord/">butler on Discord</a>
@@ -167,7 +169,24 @@
                   a newer Koloft and its <code>.dmg</code>; through <code>gh</code>, issue and pull
                   request counts, a branch's checks, and what Assist asks with
                   <code>koloft gh</code>; and <code>gh</code> itself, for a remote folder's machine
-                  that has none
+                  that has none; a GitHub <a href="../accounts/#git-accounts">git account</a>'s
+                  sign-in, and its token check
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>gitlab.com,</code><br /><code>api.bitbucket.org,</code><br /><code
+                    >dev.azure.com,</code
+                  ><br /><code>codeberg.org,</code><br />or your own git server
+                </td>
+                <td>
+                  the server of a <a href="../accounts/#git-accounts">git account</a> you add, only
+                  after you add one there. To check its token and read your username: when you add
+                  it, when Koloft starts, every 6 hours, when Settings ▸ Accounts opens, and when
+                  the server turns the token down during a git call (an account added as Other
+                  server is never checked). To see whether it can push to a folder's repository:
+                  when you add a folder, and when the git panel's Account list opens. Bitbucket also
+                  reaches <code>bitbucket.org</code> for the browser sign-in
                 </td>
               </tr>
               <tr>

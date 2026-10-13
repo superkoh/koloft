@@ -74,6 +74,19 @@ describe('CodexAccountPicker', () => {
     ])
     expect(picker.pick([account('claude', { kind: 'oauth' })])).toBeUndefined()
   })
+
+  it('a resumed session keeps the account it ran on until that account is past 95% used, and is never stuck on one that cannot run', () => {
+    const picker = new CodexAccountPicker()
+    const pool = (sameUsed?: number, over: Partial<AccountView> = {}): AccountView[] => [
+      account('same', { ...(sameUsed !== undefined && { limits: used(sameUsed) }), ...over }),
+      account('idle', { limits: used(0) })
+    ]
+    expect(picker.pick(pool(0.95), 'same')?.name).toBe('same')
+    expect(picker.pick(pool(), 'same')?.name).toBe('same')
+    expect(picker.pick(pool(0.96), 'same')?.name).toBe('idle')
+    expect(picker.pick(pool(0, { enabled: false }), 'same')?.name).toBe('idle')
+    expect(picker.pick(pool(0, { status: 'expired' }), 'same')?.name).toBe('idle')
+  })
 })
 
 describe('prepareCodexHome', () => {

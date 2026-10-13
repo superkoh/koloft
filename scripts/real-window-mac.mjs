@@ -8,7 +8,7 @@ const CONFIG = 'test/real-window/playwright.config.ts'
 const RESULTS = path.join(REPO, 'test-results', 'real-window')
 const PLAYWRIGHT_CLI = 'node_modules/@playwright/test/cli.js'
 
-// PLATFORM§46
+// PLATFORM§52
 const BASE_IMAGE = 'ghcr.io/cirruslabs/macos-golden-gate-vanilla:latest'
 const GUEST_LOGIN = 'admin'
 const GUEST_UID = 501
@@ -69,7 +69,7 @@ exit $code
 `
 }
 
-// PLATFORM§46
+// PLATFORM§52
 const GRANTS_FOR_TESTS_RUN_OVER_SSH = `insert or replace into access
   (service, client, client_type, auth_value, auth_reason, auth_version, flags) values
   ('kTCCServiceAccessibility', '/usr/libexec/sshd-keygen-wrapper', 1, 2, 4, 1, 0),

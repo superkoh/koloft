@@ -72,12 +72,12 @@ test.beforeAll(() => {
   ).toBe(true)
 })
 
-// PLATFORM§46
+// PLATFORM§52
 const DOCK_NAME = 'Electron'
 const palette = (page: Page) => page.locator('.modal.palette')
 const DRAG_BY = { x: 160, y: 90 }
 const ROOM_TO_DRAG_IN = { x: 40, y: 60, width: 760, height: 520 }
-// PLATFORM§46
+// PLATFORM§52
 const MAC_DRAG_SLACK_PX = 6
 const MACOS_ASKS_TO_ALLOW_NOTIFICATIONS = 'Notifications may include'
 
@@ -88,7 +88,7 @@ async function allowNotificationsWhenMacOSAsks(shownAnyway: () => boolean): Prom
     })
     .toBe(true)
   if (!bannerShowing(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS)) return
-  // PLATFORM§46
+  // PLATFORM§52
   expect(chooseOnBanner(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS, 'Allow')).toBe('0')
   await expect.poll(() => bannerShowing(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS)).toBe(false)
 }
@@ -194,7 +194,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
   test('a turn that ends while Koloft is in the background shows a macOS banner naming the session and what happened, once macOS has asked and been told Allow', async ({
     shown: { app, page }
   }, testInfo) => {
-    // PLATFORM§46
+    // PLATFORM§52
     test.skip(!notificationCenterRunning(), 'this Mac runs no Notification Center to draw banners')
     const first = await sessionIn(page, 'ws-a')
     const second = await sessionIn(page, 'ws-b')
@@ -216,7 +216,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     const tabId = await sessionIn(page, 'ws-a')
     try {
       await goToBackground(app)
-      // PLATFORM§46
+      // PLATFORM§52
       selectInputSource(PINYIN_SIMPLIFIED)
       await comeBackThroughTheDock(app)
       await clickIntoTerminal(app, page)

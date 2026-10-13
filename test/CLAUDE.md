@@ -180,10 +180,11 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - The test window never has OS focus. Read focus from `focusOwner` /
   `document.activeElement`, never `document.hasFocus()` (platform ledger §10). For the
   same reason no tab is ever "watched": every finished turn leaves an attention mark,
-  seen only through `pendingAttention(page)`, and main's `__koloftOsNotifCount` must
-  stay 0. A case about what a focused user clears calls `pretendWindowFocused(app)`
-  (helpers/app.ts): main then reads its window as focused, and the click it makes
-  counts as "watching".
+  seen only through `pendingAttention(page)`. No OS notification or Dock badge is ever
+  shown; what one would have said is recorded instead and read with `osOutlets(app)`
+  (helpers/app.ts). A case about what a focused user clears calls
+  `pretendWindowFocused(app)`: main then reads its window as focused, and the click it
+  makes counts as "watching".
 - Never reach real OS UI or the developer's own state. No native dialog: stub and count
   it (restart-session `countConfirmationsInsteadOfShowingThem`). File pickers answer
   from a queue (`answerFileDialog`; an empty queue means "cancelled"); add workspaces
@@ -266,7 +267,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   spec may rewrite them after launch.
 - Not env vars: `window.__koloftTerms` (terminal text), `__koloftShortcutsReady` /
   `__koloftRowsReady` (the renderer is ready for keys), main's
-  `globalThis.__koloftOsNotifCount`, and `installGitSpawnLog` (the git the app runs).
+  `globalThis.__koloftOsOutlets` (read through `osOutlets`), and `installGitSpawnLog`
+  (the git the app runs).
   When a CDP relay test waits for a message that never comes, read
   `<home>/cdp-log.txt`: it holds the relay's whole conversation.
 
@@ -276,8 +278,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   frame, the Dock, banners, a real input method. It reuses the e2e fixtures and
   launches with `KOLOFT_TEST_REAL_WINDOW=1` on top of the test seams, so the window,
   Dock icon, badge and banners are real; input goes through `helpers/macInput.ts`
-  (CGEvent and Accessibility, platform ledger §46). The hidden-window rules above
-  about focus and `__koloftOsNotifCount` turn around here.
+  (CGEvent and Accessibility, platform ledger §52). The hidden-window rules above
+  about focus and `osOutlets` turn around here: notifications and the badge are really
+  shown, and `osOutlets` records nothing.
 - Every case skips unless `KOLOFT_REAL_WINDOW=1`, which only `scripts/real-window-mac.mjs`
   sets: in a throwaway tart VM (`tart`), or on a Mac nobody is using (`here`, which the
   GitHub workflow `real-window.yml` runs). One worker, no retries.
