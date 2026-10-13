@@ -11,7 +11,7 @@ import {
   REMOTE_WS_NAME,
   remoteDir
 } from './helpers/remote'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { seedClaudeTrust, seedSettings, type E2EEnv } from './helpers/env'
 import { runGit } from './helpers/gitFixture'
 import {
   auxIcon,
@@ -226,6 +226,8 @@ function worktreeOf(call: ClaudeCall): string {
 }
 
 test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', () => {
+  test.beforeEach(({ env }) => seedClaudeTrust(env, [env.workspaces.a, env.workspaces.b]))
+
   test('BB-M01: the workspace menu has a Scheduled jobs… item, and it opens the dialog', async ({
     env
   }) => {
@@ -237,13 +239,15 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await waitBooted(page)
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
-      expect(await menuItemTexts(page)).toContain('Scheduled jobs…')
+      expect(await menuItemTexts(page)).toEqual(
+        expect.arrayContaining(['Scheduled jobs…', 'Talk to Assist'])
+      )
       const shape = await page
         .locator('.menu')
         .evaluate((el) =>
           Array.from(el.children).map((c) => (c.classList.contains('sep') ? 'sep' : 'mi'))
         )
-      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
+      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
 
       await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
       await expect(cronDialog(page)).toBeVisible()

@@ -17,7 +17,10 @@ method. A recheck adds its date, version and command to the bullet.
   always on it, but on a Mac without the Xcode Command Line Tools it is only a stub that
   fails or offers an install dialog (inferred, not checked). Homebrew tools like `gh`,
   and a `claude` found on a developer's PATH, are not found at all (ENOENT, the "no such
-  file" error). Either kind of failure shows no error in the app.
+  file" error). Either kind of failure shows no error in the app. Without the tools,
+  `xcode-select -p` exits non-zero, and `xcode-select --install` opens Apple's own
+  install dialog and returns at once (both inferred, not checked: every Mac this was
+  developed on has the tools).
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).
@@ -623,6 +626,29 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   playwright-cli 0.1.18 against Koloft's relay, `test/e2e/real-tools-smoke.spec.ts`:
   `open file://…` fails with that message on the endpoint alone and succeeds with the
   variable set to `1`).
+- **Two installs of playwright-cli share a daemon only through a `.playwright`
+  folder.** Without one, each install's own root names its bucket, so the same session
+  name in the same folder gave two daemons, each reading its own page. With a
+  `.playwright` folder in the working folder both used one bucket: 0.1.18 refused to
+  talk to a daemon 0.1.22 had started ("Client is v1.63.0-alpha-2026-08-05, session
+  'koloft-tab1' is v1.64.0-alpha-1790635538000. Run playwright-cli -s=koloft-tab1 open to
+  restart the browser session."), its `open` replaced that daemon, and 0.1.22's next
+  `eval` then read the page 0.1.18 had opened. (Measured 2026-10-11, @playwright/cli
+  0.1.22 run on Electron 43.7.3's Node and a global 0.1.18 on Node 24, two headless
+  Chromes, a temporary `HOME`.)
+- **Without `NO_UPDATE_NOTIFIER` (or `CI`) the CLI asks npm once a day for a newer
+  version**, prints a boxed "Update available … npm install -g" notice to stderr, and on
+  the same check prints a "skill … does not match the tool version" box for each
+  `.claude/skills/playwright-cli` or `.agents/skills/playwright-cli` under the working
+  folder whose `SKILL.md` differs from its own (read in `playwright-cli.js` and
+  `skillCheck.js` of 0.1.22; with the variable set, neither check runs).
+- **A refused CDP connection is reported at once.** Against Koloft's relay holding a
+  Playwright MCP client for the same tab, `playwright-cli open` failed in 0.3 s with
+  "Target page, context or browser has been closed … this endpoint already has a client"
+  (the relay's 1008 close reason), and an MCP `browser_navigate` refused the same way
+  while the CLI held the tab answered at once; once the holder exited, the other
+  connected in 0.4 s. (Measured 2026-10-11, @playwright/cli 0.1.22, @playwright/mcp
+  0.0.83 on Node 24, a Koloft dev build.)
 
 ## §18 Playwright and Electron in the e2e suite
 
@@ -1377,6 +1403,45 @@ Gateway (the live connection that pushes events):
     role the invite gives.
   - That an edit or a typing call rings the phone or marks the channel unread was not
     checked (Discord's docs say neither does).
+- **Who owns the bot, Message Content, and making channels** — measured 2026-10-11 on
+  API v10 with a test bot's own token, REST only:
+  - `GET /oauth2/applications/@me` carries `owner: {id, username}`, `team` (`null` for an
+    app one person owns, set when a team owns it) and `flags`.
+  - `PATCH /applications/@me` with `{flags: <flags> | 1 << 19}` (Message Content,
+    limited — the switch a bot in under 100 servers has) answered 200 with the bot's own
+    token. With Message Content off, identify was closed with 4014 "Disallowed
+    intent(s)"; an identify sent about 0.4 s after the PATCH got `READY`, so no wait or
+    retry is needed between them.
+  - `POST /guilds/{id}/channels` made a category (`type: 4`) and a text channel under it
+    (`type: 0`, `parent_id`, `topic`). A category's name is kept as sent (`"Koloft ·
+    MacBook"`: case, spaces and the middle dot kept), and so is a channel's topic. The
+    bot already had Manage Channels there, so the 403 a bot without it gets is from
+    Discord's docs, as is whether a second invite with more permissions widens an
+    existing bot's role (not probed). The invite permissions Koloft used before
+    (`326417615936`) lack only Manage Channels (`1 << 4`).
+  - Discord rewrites a text channel's name: `"My Project.v2 项目"` came back as
+    `my-projectv2-项目` — lowercased, a space as a hyphen, the dot dropped, Chinese kept.
+    Two channels may share one name; Koloft's `-2` is its own rule.
+  - A thread on a message in a DM answered 400 Unknown Guild.
+  - `PATCH /applications/@me` with `{bot_public: false}` answered 200 but left the bot
+    public, even after `install_params` and `custom_install_url` were cleared: the bot's
+    token cannot make the bot private. `POST /guilds` answered 400 (20001): a bot cannot
+    make a server.
+- **The Developer Portal in the Workbench browser** — measured 2026-10-10 and 10-11 with a
+  test account: with any CDP client attached to the page, Create on New Application
+  answered 403 (50001) in five rounds; with none attached and the page reloaded, it
+  answered 201. In the 2026-10-11 walk with a real Claude Code session, the session
+  filled the name and ticked the box while attached, then detached with no reload, and
+  the owner's Create answered 201. After Reset Token, the Bot page (`/developers/applications/<id>/bot`)
+  shows the new token as plain text. The invite's Authorize worked with a client
+  attached; its "I am human" check was passed by hand with the client detached. The
+  invite page first offered to continue in the Discord desktop app; continuing in the
+  browser led to the server picker. Signing in with a client attached was not probed.
+  A snapshot taken by a client re-attached after Reset Token included the token text,
+  so Koloft reads it only while no client is attached and reloads the page afterwards.
+- **`GUILD_CREATE` carries the server's `owner_id`** — seen in the 2026-10-10 Gateway
+  probe's logs with the same test bot. Koloft makes new channels only in a server whose
+  `owner_id` is the app owner (or the paired owner of a team app).
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction
@@ -1411,3 +1476,80 @@ Gateway (the live connection that pushes events):
 - Measured 2026-10-09 on macOS 27.0.1 with a bare Electron 43.7.3 app (node-pty from the
   repo, no window): one pty child running `sh` with HUP/TERM traps, one detached `sh`
   helper, then `app.quit()` one second in.
+
+## §42 A Node command-line tool run on Electron's own Node
+
+- **commander reads one argument short under Electron.** With no `argv` given,
+  commander's `parse` takes `process.versions.electron` as a sign it runs inside
+  Electron and, unless `process.defaultApp` is set, treats `argv[1]` (the script) as the
+  first user argument. Under `ELECTRON_RUN_AS_NODE=1` `process.versions.electron` is
+  still set, so playwright-cli 0.1.22's background daemon (`cliDaemon.js <session>`, a
+  commander program) stopped at once with "too many arguments. Expected 1 argument but
+  got 2". Setting `process.defaultApp = true` before the script loads fixed it.
+- **A child the tool starts with `process.execPath` gets the bare Electron again.**
+  playwright-cli starts its daemon as `spawn(process.execPath, [cliDaemon.js, …])`, so
+  a fix made in the parent does not reach the daemon. `process.execPath` can be
+  assigned; pointing it at a small script that re-runs the same launcher (with
+  `ELECTRON_RUN_AS_NODE=1`) carried the fix into the daemon, and `open`, `eval`,
+  `screenshot`, `list` and `close` all worked.
+- **Inside Codex's macOS sandbox every start prints one error line to stderr**:
+  `ERROR:electron/shell/common/mac/codesign_util.cc:79] task_name_for_pid: (os/kern)
+  failure (5)`, as the process exits. It changes nothing else; outside the sandbox it
+  does not appear. `ELECTRON_LOG_FILE=/dev/null`, with or without
+  `ELECTRON_ENABLE_LOGGING=file`, did not silence it. A model once quoted the line back
+  as the command's output.
+- Measured 2026-10-11 on macOS 27.0.1 with Electron 43.7.3 (`node_modules/electron`) and
+  @playwright/cli 0.1.22 (playwright-core 1.64.0-alpha-1790635538000), against a
+  headless Chrome's CDP endpoint, outside and inside `codex app-server`'s `command/exec`
+  (Codex CLI 0.162.0).
+
+## §43 Node `fs.renameSync` onto a symbolic link
+
+- **A rename onto a path that is a symbolic link replaces the link, not the file it points
+  to.** Writing a temp file and `fs.renameSync(tmp, link)` left `link` a plain file with
+  the new text, and the file the link pointed to kept its old text. A write that must
+  reach the shared file renames onto `fs.realpathSync(link)` instead.
+- Measured 2026-10-11 on macOS 27.0.1 with Node 24.13.0, in a scratch folder.
+
+## §44 gh (GitHub CLI) shipped inside an app
+
+- **Install on a Mac.** gh's own docs list only Homebrew and the release page's zip /
+  `.pkg` for macOS (the `.pkg` "unsigned"); there is no official one-line installer
+  (`webi.sh` is community). The `macOS_arm64.zip` of 2.102.0 is 14.4 MB; its `bin/gh` is
+  39.8 MB, signed "Developer ID Application: GitHub" with the hardened runtime; the repo's
+  licence is MIT. The release's `gh_<v>_checksums.txt` lists a sha256 per asset.
+- **The login lives in the macOS keychain, not in `GH_CONFIG_DIR`.** Under the real
+  `HOME` with an empty `GH_CONFIG_DIR`, `gh auth status` said "not logged into any GitHub
+  hosts" and `gh api user` exited 4, yet `gh auth token` printed the token a Homebrew gh
+  had stored — read by a second gh binary at another path with no keychain prompt. So a gh
+  shipped in an app shares the user's gh login. (§32 has the scratch-`HOME` case.)
+- Measured 2026-10-11 with gh 2.102.0 (macOS arm64 and Linux arm64 builds).
+
+## §45 git shipped inside an app (dugite-native)
+
+- **What GitHub Desktop ships.** dugite-native `v2.53.0-4`'s `macOS-arm64.tar.gz` is
+  62.3 MB (sha256 from the release's asset `digest`) and unpacks to 148 MB: git 2.53.0
+  built from upstream tag v2.53.0, Git LFS 3.7.1 and Git Credential Manager 2.9.0 (115 MB
+  of the total). It links Apple's `/usr/lib/libcurl.4.dylib`, so https uses the system
+  trust store and ships no CA file; it is built with `NO_PERL`. The 145 commands in
+  `libexec/git-core` are symlinks to one `git`. The tarball carries no git `COPYING`;
+  git is GPL-2.0.
+- **Built with `prefix=/`.** Run from any folder with nothing set, `init`, `commit` and a
+  local `clone` work with a "templates not found" warning, but https fails with
+  `git: 'remote-https' is not a git command` and `submodule` is not found. With
+  `GIT_EXEC_PATH=<root>/libexec/git-core` an https clone, `ls-remote` and `submodule`
+  all worked; `init.templateDir` (or `GIT_TEMPLATE_DIR`) silences the warning. Its system
+  config is `/etc/gitconfig`, never Apple's
+  `/Library/Developer/CommandLineTools/usr/share/git-core/gitconfig`, so it sets no
+  credential helper and no `init.defaultBranch`; `GIT_CONFIG_SYSTEM` points it at
+  another file. There is no `git-credential-osxkeychain` inside.
+- **Kept for Koloft**: `libexec/git-core` without LFS, scalar, the daemon/server
+  programs and the credential manager, plus `share/git-core/templates`: 8.5 MB on disk,
+  about 4 MB gzipped. The full https flow passed through `libexec/git-core/git` with
+  `bin/` removed.
+- **Signing.** `git` is ad-hoc linker-signed. `@electron/osx-sign` signs every Mach-O
+  under `Contents/` (Resources included) and follows symlinks; a copy re-signed ad hoc
+  with `--options runtime` still cloned over https. electron-builder's `extraResources`
+  copy, the mac zip (`zip -y`) and the in-app updater (`cp -R`) keep the symlinks.
+- Measured 2026-10-11 on macOS 27.0 with a temp `HOME` and `GIT_CONFIG_NOSYSTEM=1`, https
+  against github.com's public `octocat/Hello-World`.

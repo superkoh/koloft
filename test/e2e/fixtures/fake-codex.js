@@ -106,8 +106,50 @@ if (argv[0] === 'app-server') {
     argv,
     cwd: process.cwd(),
     portOffset: process.env.KOLOFT_PORT_OFFSET || null,
-    playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null
+    playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,
+    codexGate: process.env.KOLOFT_CODEX_GATE || null
   })
+  // CODEX§27
+  const GATE_KEY = '/<session-flags>/config.toml:pre_tool_use:0:0'
+  const gateCommand = argv
+    .map((value) => /^hooks\.PreToolUse=.*command=("(?:[^"\\]|\\.)*")/.exec(value)?.[1])
+    .find(Boolean)
+  const gateHooks = () => {
+    if (!gateCommand) return { hooks: [], errors: [] }
+    const command = JSON.parse(gateCommand)
+    const currentHash = 'sha256:' + crypto.createHash('sha256').update(command).digest('hex')
+    let config = ''
+    try {
+      config = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8')
+    } catch {}
+    const lines = config.split('\n')
+    const tables = lines.filter((line) => line.trim() === `[hooks.state."${GATE_KEY}"]`).length
+    if (tables > 1)
+      return { hooks: [], errors: [{ path: process.cwd(), message: 'duplicate key' }] }
+    const at = lines.findIndex((line) => line.trim() === `[hooks.state."${GATE_KEY}"]`)
+    const saved =
+      at < 0 ? undefined : /^trusted_hash = "(.*)"$/.exec(lines[at + 1]?.trim() ?? '')?.[1]
+    const trustStatus = flag('fake-codex-hook-untrusted')
+      ? 'untrusted'
+      : saved === currentHash
+        ? 'trusted'
+        : saved
+          ? 'modified'
+          : 'untrusted'
+    return {
+      hooks: [
+        {
+          key: GATE_KEY,
+          eventName: 'preToolUse',
+          command,
+          source: 'sessionFlags',
+          currentHash,
+          trustStatus
+        }
+      ],
+      errors: []
+    }
+  }
   let initialized = false
   let active
   let activeTurn
@@ -457,6 +499,12 @@ if (argv[0] === 'app-server') {
               }
             : null,
         rateLimitsByLimitId: {}
+      })
+      return
+    }
+    if (method === 'hooks/list') {
+      result(id, {
+        data: (p.cwds || []).map((cwd) => ({ cwd, warnings: [], ...gateHooks() }))
       })
       return
     }

@@ -1,7 +1,7 @@
 import { useState, type JSX } from 'react'
 import type { BackendId } from '@shared/types'
 import { accountToSignInAgain } from '@shared/accountUsage'
-import { BACKEND_LABEL } from '@shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
 import { AddAccountDialog, CodexSignInDialog, LoginDialog } from './settings/AccountsPane'
@@ -16,18 +16,50 @@ export const ASSIST_RUNS_ON: Record<BackendId, string> = {
 export const ASSIST_COST_LINE =
   'Each Assist job costs a tiny bit of that account’s plan or API balance — far less than one cent.'
 
+function InstallChoice({ backend }: { backend: BackendId }): JSX.Element {
+  const addTab = useStore((s) => s.addTab)
+  const showSignInTab = useStore((s) => s.showSignInTab)
+  const install = async (): Promise<void> => {
+    const r = await window.api.sessions.installTool(backend)
+    if (!r) return
+    showSignInTab(r.tabId)
+    addTab({
+      id: r.tabId,
+      kind: 'shell',
+      title: `Install ${BACKEND_LABEL[backend]}`,
+      cwd: r.cwd,
+      alive: true
+    })
+  }
+  return (
+    <button className="choice" onClick={() => void install()}>
+      <span className="choice-t">{BACKEND_LABEL[backend]}</span>
+      <span className="choice-d">Not on this Mac. Click to install.</span>
+    </button>
+  )
+}
+
 export function InstallHint({ children }: { children: string }): JSX.Element {
   return (
-    <div className="quiet ob-warn">
-      {children}
-      <code className="ob-cmd">npm install -g @anthropic-ai/claude-code</code>
-      <code className="ob-cmd">npm install -g @openai/codex</code>
-    </div>
+    <>
+      <div className="quiet">{children}</div>
+      <div className="ob-choices">
+        {SESSION_BACKENDS.map((b) => (
+          <InstallChoice key={b} backend={b} />
+        ))}
+      </div>
+    </>
   )
 }
 
 // ADR-0030
-export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element {
+export function AssistSetup({
+  setup,
+  offerInstall = false
+}: {
+  setup: AssistSetupState
+  offerInstall?: boolean
+}): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
   const accounts = useStore((s) => s.accounts) ?? []
   const login = useStore((s) => s.accountLogin)
@@ -50,7 +82,10 @@ export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element
   if (setup.noTool)
     return (
       <div className="assist-setup">
-        <InstallHint>Install Claude Code or Codex first, then come back to sign in.</InstallHint>
+        <InstallHint>
+          Koloft runs Claude Code or Codex, and this Mac has neither yet. Pick one to install: a
+          terminal opens and runs its official installer. Nothing else to set up first.
+        </InstallHint>
       </div>
     )
 
@@ -62,7 +97,9 @@ export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element
         That is <b>Koloft Assist</b>.
       </div>
       <div className="ob-choices">
-        {setup.tools.map((b) => {
+        {SESSION_BACKENDS.map((b) => {
+          if (!setup.tools.includes(b))
+            return offerInstall && setup.toolsKnown ? <InstallChoice key={b} backend={b} /> : null
           const again = accountToSignInAgain(accounts, b)
           return (
             <button

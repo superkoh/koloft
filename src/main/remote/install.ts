@@ -2,6 +2,7 @@ import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { remotePtsFile } from './paths'
 import { ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'
+import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
 
@@ -30,7 +31,7 @@ export function remoteShCommand(script: string, args: string[] = []): string {
   return `sh -c 'eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`
 }
 
-// PLATFORM§37
+// PLATFORM§37 PLATFORM§44
 export const ENSURE_SH = `#!/bin/sh
 ${REMOTE_PATH_LINE}
 NODE_VERSION=${NODE_VERSION}
@@ -105,16 +106,19 @@ node_platform() {
   have xz && ext=tar.xz
   return 0
 }
+fetch_checked() {
+  fetch "$1/$2" "$4/$2" || return 1
+  fetch "$1/$3" "$4/sums.txt" || return 1
+  grep " $2\$" "$4/sums.txt" > "$4/sum.txt" || return 1
+  ( cd "$4" && if have sha256sum; then sha256sum -c sum.txt; else shasum -a 256 -c sum.txt; fi ) >/dev/null 2>&1 \\
+    || { say "the $5 download failed its checksum"; return 1; }
+}
 install_node() {
   base="$1"
   name="$2"
   tmp="$HOME/.koloft/node.tmp.$$"
   rm -rf "$tmp" && mkdir -p "$tmp/x" || return 1
-  fetch "$base/$name.$ext" "$tmp/$name.$ext" || return 1
-  fetch "$base/SHASUMS256.txt" "$tmp/SHASUMS256.txt" || return 1
-  grep " $name.$ext\$" "$tmp/SHASUMS256.txt" > "$tmp/sum.txt" || return 1
-  ( cd "$tmp" && if have sha256sum; then sha256sum -c sum.txt; else shasum -a 256 -c sum.txt; fi ) >/dev/null 2>&1 \\
-    || { say "the node download failed its checksum"; return 1; }
+  fetch_checked "$base" "$name.$ext" SHASUMS256.txt "$tmp" node || return 1
   tar xf "$tmp/$name.$ext" -C "$tmp/x" || return 1
   rm -rf "$HOME/.koloft/node" && mv "$tmp/x/$name" "$HOME/.koloft/node" || return 1
   rm -rf "$tmp"
@@ -136,6 +140,27 @@ if ! node_ok && [ ! -f "$no_build_runs" ]; then
     rm -rf "$HOME/.koloft/node" "$HOME/.koloft/node.tmp.$$"; : > "$no_build_runs"
     say "node $NODE_VERSION does not run on this machine (its C library is too old): this machine gets no statusline"
   fi
+fi
+
+GH_VERSION=${VENDOR_RELEASE.gh.version}
+gh_platform() {
+  case "$(uname -s)" in Linux) gh_os=linux; gh_ext=tar.gz ;; Darwin) gh_os=macOS; gh_ext=zip ;; *) return 1 ;; esac
+  case "$(uname -m)" in x86_64|amd64) gh_arch=amd64 ;; aarch64|arm64) gh_arch=arm64 ;; *) return 1 ;; esac
+}
+install_gh() {
+  name="gh_\${GH_VERSION}_\${gh_os}_\${gh_arch}"
+  base="https://github.com/cli/cli/releases/download/v$GH_VERSION"
+  tmp="$HOME/.koloft/gh.tmp.$$"
+  rm -rf "$tmp" && mkdir -p "$tmp" || return 1
+  fetch_checked "$base" "$name.$gh_ext" "gh_\${GH_VERSION}_checksums.txt" "$tmp" gh || return 1
+  if [ "$gh_ext" = zip ]; then unzip -q "$tmp/$name.zip" -d "$tmp" || return 1
+  else tar xzf "$tmp/$name.tar.gz" -C "$tmp" || return 1; fi
+  mkdir -p "$HOME/.local/bin" && mv "$tmp/$name/bin/gh" "$HOME/.local/bin/gh" || return 1
+  rm -rf "$tmp"
+}
+if ! have gh; then
+  say "installing gh $GH_VERSION, the GitHub CLI (about 40 MB, once)"
+  gh_platform && install_gh || { rm -rf "$HOME/.koloft/gh.tmp.$$"; say "gh could not be installed: sessions on this machine have no gh"; }
 fi
 
 have tmux || install_pkg tmux || exit 4

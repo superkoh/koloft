@@ -151,8 +151,8 @@
               <tr>
                 <td>green with <code>↻ N</code></td>
                 <td>
-                  its turn is done, but N things it started still run in the background. Hover the
-                  mark to see them.
+                  its turn is done, but N things it started still run in the background. The light
+                  breathes while they run. Hover the mark to see them.
                 </td>
               </tr>
               <tr>
@@ -183,6 +183,12 @@
             Notifications and the number goes, but the dots stay.
           </li>
           <li>A folded folder shows how many of its sessions are calling.</li>
+          <li>
+            <kbd>⌘J</kbd> (View ▸ Next Waiting Session) takes you to the session with the oldest red
+            dot, in any folder, and clears it. Press it again for the next one. When no dot is left,
+            it does nothing. It wakes a sleeping session the way a click does. It skips a closed row
+            with a dot; a click still resumes that one.
+          </li>
         </ul>
 
         <h2 id="keep-running">Keep running</h2>
@@ -224,22 +230,36 @@
         <h2 id="find">Find any session</h2>
         <ul class="dash">
           <li>
-            <kbd>⌘P</kbd> (View ▸ Command Palette…) opens a box that lists every session in every
-            folder, then the folders, then the app's actions (New session…, Settings…, and so on).
-            Type a few letters of a session's title, its worktree, its folder or its machine, press
-            <kbd>⏎</kbd>, and you are there. It does what a click on the row does, so a closed
-            session is resumed. When nothing fits, it says so.
+            <kbd>⌘P</kbd> (View ▸ Command Palette…) opens one box with one input. As you type, the
+            sessions, folders and app actions (New session…, Settings…, and so on) that fit show up
+            under it. Type a few letters of a session's title, its worktree, its folder or its
+            machine, press <kbd>↓</kbd> to pick the match, then <kbd>⏎</kbd>, and you are there. It
+            does what a click on the row does, so a closed session is resumed.
           </li>
           <li>
-            <kbd>⌥⌘F</kbd> (Edit ▸ Search Sessions) searches what was said. Type a phrase, press
-            <kbd>⏎</kbd>, and every session in every folder whose title or conversation holds it is
-            listed, newest first, with one line of text around the match. Click one to open it. For
-            Claude it reads what you typed and what the agent answered, not the output of its tools.
-            For Codex, Codex itself does the search.
+            Or type what a new session should do, and press <kbd>⏎</kbd>.
+            <a href="../accounts/#assist">Assist</a> picks the folder, the worktree and a title, and
+            the session starts there with your words as its first message. If the folder's branch is
+            behind, Koloft first asks whether to pull. <kbd>⇧⏎</kbd> starts it on the other tool,
+            when you have both. When Assist is not sure which folder, or is off, the folder picker
+            opens instead. Words about Koloft itself ("turn on dark mode", "set up Discord") go to
+            Assist as a task, and "ask &lt;folder&gt; …" goes to that folder's Assist.
+          </li>
+          <li>
+            If Assist says the words call for a brand-new project, Koloft makes the folder, adds it
+            to the list and starts the session in it. The first time, a New Project box asks where
+            new projects go; Koloft remembers it for next time.
+          </li>
+          <li>
+            <kbd>⌥⏎</kbd> in the same box searches what was said. Every session in every folder
+            whose title or conversation holds the words is listed, newest first, with one line of
+            text around the match. Click one to open it. For Claude it reads what you typed and what
+            the agent answered, not the output of its tools. For Codex, Codex itself does the
+            search.
           </li>
         </ul>
         <p>
-          Both work for Claude and Codex, and for a Claude session on a
+          All of this works for Claude and Codex, and for a Claude session on a
           <a href="../remote/">remote folder</a>, which is listed with its machine's name and
           resumes there.
         </p>
@@ -277,8 +297,16 @@
             did, Claude asks you: keep it or remove it.
           </li>
           <li>
-            A Codex worktree stays until you remove it yourself, or until the session is closed with
-            <code>koloft session close</code> (see <a href="../agents/">agents</a>).
+            A Codex worktree goes, folder and branch, when the last session in it ends and nothing
+            in it changed. A restart (<kbd>⇧⌘R</kbd>) or a sleep is not an end. If something did
+            change, it stays until you remove it yourself, or until an agent closes the session with
+            <code>koloft session close</code> (see <a href="../agents/">agents</a>, which says when
+            that is allowed).
+          </li>
+          <li>
+            A session whose worktree is gone stays in the list. Hover its row and the tip reads
+            <code>worktree deleted; click to rebuild and resume</code>; a click makes the worktree
+            again and resumes the same session in it. Claude and Codex both do this.
           </li>
           <li>
             In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in,
@@ -359,7 +387,7 @@
             A row hangs under its starter only while the starter is in the same folder's list.
             Otherwise it sits at the top of that list: when its starter is gone from the list, when
             it was started into another folder with <code class="nowrap">--workspace</code>, when a
-            <a href="../discord/">Discord butler</a> started it, and always for a session on another
+            <a href="../accounts/#assist">Assist</a> started it, and always for a session on another
             machine.
           </li>
           <li>
@@ -394,9 +422,17 @@
             <span class="why">— sessions on a timer</span>
           </li>
           <li>
+            Talk to Assist
+            <span class="why"
+              >— open this folder's <a href="../accounts/#assist">Assist</a> (there while Assist is
+              on)</span
+            >
+          </li>
+          <li>
             Bind Discord channel…
             <span class="why"
-              >— give this folder its own butler (see <a href="../discord/">discord</a>)</span
+              >— give this folder's Assist a Discord channel (see
+              <a href="../discord/">discord</a>)</span
             >
           </li>
           <li>Remove workspace <span class="why">— take the folder off the list</span></li>

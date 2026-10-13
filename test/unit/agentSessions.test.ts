@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   NOT_IN_YOUR_WORKSPACE,
   ONLY_THE_GLOBAL_CONDUCTOR,
-  ownerSays,
   parseNewSessionArgs,
   sessionVerb,
   THAT_IS_YOU,
@@ -15,6 +14,7 @@ import {
   type Target
 } from '../../src/main/agentSessions'
 import { crossSessionLine } from '../../src/main/crossSessionMessage'
+import { ownerSays } from '../../src/shared/agentGuide'
 import { handoverPreamble } from '../../src/main/handover'
 import { StartedSessions } from '../../src/main/startedSessions'
 import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
@@ -69,6 +69,7 @@ interface Conducting {
   bypass?: string[]
   answer?: (tabId: string, reply: string) => string | undefined
   titleReply?: string | null
+  asking?: string[]
 }
 
 interface Started {
@@ -87,6 +88,7 @@ function harness(
   cold: ClosableSession[] = []
 ): {
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
+  turnEnded: (tabId: string, reply: string, said?: string) => void
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -151,6 +153,7 @@ function harness(
       return `${r.id}-tab`
     },
     ready: async (tabId, ms, turnEnded) => conducting.ready?.(tabId, turnEnded, ms) ?? true,
+    asking: (tabId) => conducting.asking?.includes(tabId) ?? false,
     sendLine: async (tabId, line) => {
       lines.push({ tabId, line })
     },
@@ -179,9 +182,15 @@ function harness(
       tabId === 'fix' ? { lines: ['', '$ ls', 'a.txt', '', ''], notes: [] } : { error: 'no window' }
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
-    inner(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
+    inner.verb(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
   return {
     verb,
+    turnEnded: (tabId, reply, said) =>
+      inner.turnEnded(tabId, {
+        said: said === undefined ? [] : [{ who: 'owner', text: said, at: 1 }],
+        reply,
+        at: 1
+      }),
     launched,
     queued,
     closed,
@@ -271,6 +280,12 @@ describe('the handover put before the first message', () => {
     expect(handoverPreamble({ id: CODEX_THREAD })).toContain(`the Codex session ${CODEX_THREAD}`)
   })
 
+  it('tells a child Assist started that only the words Assist quotes in « » are the owner’s, so Assist’s own guesses never pass as the owner’s orders', () => {
+    const text = handoverPreamble({ name: 'Global-conductor', id: 'global-id', assist: true })
+    expect(text).toContain("only words inside « » in its messages are the owner's own")
+    expect(text).not.toContain("the owner's instructions")
+  })
+
   it.each([{ name: 'planner', id: 'planner-id' }, { id: CODEX_THREAD }])(
     'tells every child of %j, Claude or Codex, to answer with koloft session send and the caller’s id, never SendMessage, since a caller that went to sleep has left ListAgents while koloft session send starts it again first',
     (caller) => {
@@ -282,7 +297,7 @@ describe('the handover put before the first message', () => {
 })
 
 describe('koloft session list', () => {
-  it('shows each session’s state, a Claude session’s name and transcript, a Codex session’s id, and marks the caller', async () => {
+  it('shows each session’s state, a Claude session’s name and transcript, a Codex session’s id, and marks the caller; a session showing a question reads apart from one that only finished its turn', async () => {
     const { verb } = harness(
       [
         session('me', 'claude', {
@@ -290,17 +305,21 @@ describe('koloft session list', () => {
           details: { claude: { jsonlPath: '/home/.claude/projects/app/me.jsonl' } }
         }),
         session('cx', 'codex', { status: 'approval', nativeSessionId: CODEX_THREAD }),
+        session('q', 'codex', { status: 'waiting', nativeSessionId: OTHER_THREAD }),
         session('done', 'claude', { status: 'waiting' }),
         session('idle', 'claude', { status: 'idle' })
       ],
-      { 'me-session': 'planner' }
+      { 'me-session': 'planner' },
+      [],
+      { asking: ['q'] }
     )
     const reply = await verb(['list'], from('me'))
     expect(reply.exit).toBe(0)
     expect(reply.text.split('\n')).toEqual([
       'me title (you) · Claude · working · name: planner · transcript: /home/.claude/projects/app/me.jsonl',
-      `cx title · Codex · waiting for the owner · id: ${CODEX_THREAD}`,
-      'done title · Claude · waiting for the owner',
+      `cx title · Codex · asking the owner a question · id: ${CODEX_THREAD}`,
+      `q title · Codex · asking the owner a question · id: ${OTHER_THREAD}`,
+      'done title · Claude · finished its turn',
       'idle title · Claude · idle'
     ])
   })
@@ -473,11 +492,12 @@ describe('koloft session send', () => {
     expect((await verb(['send', 'other-id', 'hi'], from('kid'))).exit).not.toBe(0)
 
     await vi.waitFor(() => expect([...new Set(resumed)]).toEqual(['planner-id', PARENT_KEY]))
-    const line = crossSessionLine('prompting', '(From the session "Fix docs", id kid-id:) done')
+    const line = (id: string): string | null =>
+      crossSessionLine('prompting', '(From the session "Fix docs", id kid-id:) done', id)
     await vi.waitFor(() =>
       expect(lines).toEqual([
-        { tabId: 'planner-id-tab', line },
-        { tabId: 'planner-id-tab', line }
+        { tabId: 'planner-id-tab', line: line('koloft-session-1') },
+        { tabId: 'planner-id-tab', line: line('koloft-session-2') }
       ])
     )
     await vi.waitFor(() =>
@@ -485,6 +505,51 @@ describe('koloft session send', () => {
         [`${PARENT_KEY}-tab`, `(From the session "Check docs", id ${CODEX_THREAD}:) checked`]
       ])
     )
+  })
+
+  it('a child that ends its first turn without reporting has its reply handed by Koloft to the Codex or Claude session that started it, so a parent never waits on a child that forgot; a child that reported itself is not repeated', async () => {
+    const h = harness(
+      [
+        session('me', 'codex', { nativeSessionId: CODEX_THREAD, title: 'Lead' }),
+        session('cc', 'claude', { title: 'Planner' }),
+        session('new-tab', 'codex', { nativeSessionId: OTHER_THREAD, title: 'Check docs' })
+      ],
+      {},
+      [],
+      {
+        sidebar: sidebar([
+          [
+            WS,
+            [
+              row('me-session', { backendId: 'codex', running: true }),
+              row('cc-session', { running: true })
+            ]
+          ]
+        ])
+      }
+    )
+    const handed = `(From the session "Check docs", id ${OTHER_THREAD}:) Found it.`
+
+    await h.verb(['new', '--', 'find it'], from('me'))
+    h.turnEnded('new-tab', 'Found it.')
+    h.turnEnded('new-tab', 'A later turn.')
+    await vi.waitFor(() => expect(h.queued.map((q) => [q.tabId, q.text])).toEqual([['me', handed]]))
+
+    await h.verb(['new', '--', 'find it'], from('cc'))
+    h.turnEnded('new-tab', 'Found it.')
+    await vi.waitFor(() =>
+      expect(h.lines).toEqual([
+        { tabId: 'cc', line: crossSessionLine('prompting', handed, 'koloft-session-1') }
+      ])
+    )
+
+    await h.verb(['new', '--', 'find it'], from('me'))
+    h.startedSessions.bound('new-tab', 'new-tab-session')
+    await h.verb(['send', 'me-session', 'Found it myself.'], from('new-tab'))
+    h.turnEnded('new-tab', 'Found it myself, again.')
+    await vi.waitFor(() => expect(h.queued).toHaveLength(2))
+    expect(h.queued[1].text).toContain('Found it myself.')
+    expect(h.lines).toHaveLength(1)
   })
 
   it('reaches a Codex session open in another workspace, so a child started there can report back', async () => {
@@ -644,6 +709,13 @@ describe('a conductor’s view of sessions: its binding sets the scope', () => {
     )
   })
 
+  it('a conductor sees an open session that shows the owner a question as asking, not as working or done', async () => {
+    const { verb } = harness(live, {}, [], { ...conducting, asking: ['fix'] })
+    expect((await verb(['list'], from('wsCond'))).text.split('\n')[0]).toBe(
+      'fix-login · Claude · local · asking the owner a question · last active just now · id: fix-id'
+    )
+  })
+
   it('a session that is not a conductor keeps listing only the open sessions of a workspace', async () => {
     const { verb } = harness(live, {}, [], conducting)
     expect((await verb(['list'], from('fix'))).text).toBe('fix-login (you) · Claude · working')
@@ -767,8 +839,11 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect((await verb(['send', CODEX_THREAD, 'check docs'], from('wsCond'))).exit).toBe(0)
     expect((await verb(['send', 'fix-id', 'hi'], from('global'))).exit).toBe(0)
     expect(lines).toEqual([
-      { tabId: 'fix', line: crossSessionLine('bypass', ownerSays('also the tests')) },
-      { tabId: 'fix', line: crossSessionLine('prompting', ownerSays('hi')) }
+      {
+        tabId: 'fix',
+        line: crossSessionLine('bypass', ownerSays('also the tests'), 'koloft-session-1')
+      },
+      { tabId: 'fix', line: crossSessionLine('prompting', ownerSays('hi'), 'koloft-session-2') }
     ])
     expect(queued).toEqual([
       { tabId: 'cx', text: ownerSays('check docs'), clientId: 'koloft-conductor-1' }
@@ -778,6 +853,23 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       { tabId: 'wsCond', key: CODEX_KEY },
       { tabId: 'global', key: 'fix-id' }
     ])
+  })
+
+  it('send to a session showing the owner a question still delivers, and its answer says the message waits until the question is answered and how to see it, so Assist never reports it as working', async () => {
+    const { verb, lines, queued } = harness(live, {}, [], conducting({ asking: ['fix', 'cx'] }))
+    for (const [ref, name] of [
+      ['fix-login', 'fix-login'],
+      [CODEX_THREAD, 'docs-links']
+    ]) {
+      const reply = await verb(['send', ref, 'go on'], from('global'))
+      expect(reply.exit).toBe(0)
+      expect(reply.text).toBe(
+        `Sent to ${name}. But ${name} is asking the owner a question, so it reads your message only once that is answered. See the question with koloft session screen ${name} and pass it on to the owner.`
+      )
+    }
+    expect(lines).toHaveLength(1)
+    expect(queued).toHaveLength(1)
+    expect((await verb(['send', 'api-fix', 'hi'], from('global'))).text).toBe('Typed into api-fix.')
   })
 
   it('send types into a Claude session on another machine at once when its turn has ended; while it is busy it answers at once, types when the turn ends, and reports to the conductor a turn that never does', async () => {
@@ -826,7 +918,10 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(ready.resumed).toEqual(['old-id'])
     await vi.waitFor(() =>
       expect(ready.lines).toEqual([
-        { tabId: 'old-id-tab', line: crossSessionLine('prompting', ownerSays('go')) }
+        {
+          tabId: 'old-id-tab',
+          line: crossSessionLine('prompting', ownerSays('go'), 'koloft-session-1')
+        }
       ])
     )
     const slow = harness(live, {}, [], conducting({ ready: () => false }))
@@ -958,7 +1053,10 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(resumed).toEqual(['old-id', 'old-id'])
     await vi.waitFor(() =>
       expect(lines).toEqual([
-        { tabId: 'old-id-tab', line: crossSessionLine('prompting', ownerSays('carry on')) }
+        {
+          tabId: 'old-id-tab',
+          line: crossSessionLine('prompting', ownerSays('carry on'), 'koloft-session-1')
+        }
       ])
     )
     expect(touched.map((t) => t.key)).toEqual(['old-id', 'fix-id', 'old-id'])
@@ -1069,6 +1167,8 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(launched[0].role).toContain('koloft session send global-id')
     expect(launched[1].firstPrompt).toContain('the session "app-conductor"')
     expect(launched[1].firstPrompt).toContain('koloft session send cond-id')
+    for (const handover of [launched[0].role, launched[1].firstPrompt])
+      expect(handover).toContain("only words inside « » in its messages are the owner's own")
     expect(started).toEqual([
       {
         conductorTab: 'global',
@@ -1095,13 +1195,14 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(launched.map((l) => l.permission)).toEqual(['bypass', 'default', 'bypass'])
   })
 
-  it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode, no owner label, and the name and id of the session it is from', async () => {
+  it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode, no owner label, and the name and id of the session it is from; a conductor showing a question does not send the child to koloft session screen, a conductor-only command', async () => {
     const opened: string[] = []
     const { verb, lines, queued } = harness(
       live,
       {},
       [],
       conducting({
+        asking: ['wsCond'],
         conductors: {
           'cond-id': conductorTarget({}),
           'codex-cond': conductorTarget({ backend: 'codex', tabId: 'cc' }),
@@ -1116,14 +1217,17 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
         }
       })
     )
-    expect((await verb(['send', 'cond-id', 'done'], from('fix'))).exit).toBe(0)
+    expect(await verb(['send', 'cond-id', 'done'], from('fix'))).toMatchObject({
+      exit: 0,
+      text: 'Sent to the app conductor.'
+    })
     expect((await verb(['send', 'codex-cond', 'done'], from('cx'))).exit).toBe(0)
     expect((await verb(['send', 'closed-cond', 'done'], from('fix'))).exit).toBe(0)
     const fromFix = '(From the session "fix-login", id fix-id:) done'
     await vi.waitFor(() =>
       expect(lines).toEqual([
-        { tabId: 'wsCond', line: crossSessionLine('prompting', fromFix) },
-        { tabId: 'b3-tab', line: crossSessionLine('prompting', fromFix) }
+        { tabId: 'wsCond', line: crossSessionLine('prompting', fromFix, 'koloft-session-1') },
+        { tabId: 'b3-tab', line: crossSessionLine('prompting', fromFix, 'koloft-session-2') }
       ])
     )
     expect(queued).toEqual([
@@ -1134,6 +1238,91 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       }
     ])
     expect(opened).toEqual(['b3'])
+  })
+
+  it('a session Assist messaged, started or answered the question of (with answer, or keys pressed while it asks) hands Assist its reply when that turn ends, once, so the owner hears the result without asking; a session Assist only read or moved through a menu of, a turn with no reply and a child that already reported this turn are not passed on, and a reply that cannot be carried is reported as not delivered', async () => {
+    const asking: string[] = []
+    const h = harness(
+      [...live, session('new-tab', 'claude', { sessionId: 'new-id', title: 'new-work' })],
+      {},
+      [],
+      conducting({ asking, answer: (_tab, reply) => (reply === 'bad' ? 'no dialog' : undefined) })
+    )
+    const toAssist = (): { tabId: string; said: string }[] =>
+      h.lines
+        .filter((l) => l.tabId === 'wsCond' || l.tabId === 'global')
+        .map((l) => ({
+          tabId: l.tabId,
+          said: (JSON.parse(l.line) as { message: { content: string } }).message.content
+        }))
+    const handed = (tabId: string, text: string): { tabId: string; said: string } => ({
+      tabId,
+      said: expect.stringContaining(text) as string
+    })
+
+    await h.verb(['send', 'fix-login', 'run the tests'], from('wsCond'))
+    h.turnEnded('fix', 'All tests pass.')
+    h.turnEnded('fix', 'Something later the owner asked.')
+    await h.verb(['send', CODEX_THREAD, 'check docs'], from('global'))
+    h.turnEnded('cx', 'The turn it was busy with when the message was queued.')
+    h.turnEnded('cx', 'Two links fixed.', ownerSays('check docs'))
+    await vi.waitFor(() =>
+      expect(toAssist()).toEqual([
+        handed('wsCond', '(From the session "fix-login", id fix-id:) All tests pass.'),
+        handed('global', `(From the session "docs-links", id ${CODEX_THREAD}:) Two links fixed.`)
+      ])
+    )
+
+    await h.verb(['answer', 'fix-login', '2'], from('wsCond'))
+    h.turnEnded('fix', 'Picked option 2.')
+    await h.verb(['keys', 'fix-login', 'Down'], from('wsCond'))
+    h.turnEnded('fix', 'A turn the owner typed after a menu.')
+    asking.push('fix')
+    await h.verb(['keys', 'fix-login', 'Enter'], from('wsCond'))
+    asking.pop()
+    h.turnEnded('fix', 'Went on.')
+    await h.verb(['new', '--', 'fix it'], from('wsCond'))
+    h.turnEnded('new-tab', 'Fixed it.')
+    await vi.waitFor(() => expect(toAssist()).toHaveLength(5))
+    expect(toAssist().slice(2)).toEqual([
+      handed('wsCond', 'Picked option 2.'),
+      handed('wsCond', 'Went on.'),
+      handed('wsCond', '(From the session "new-work", id new-id:) Fixed it.')
+    ])
+
+    await h.verb(['read', 'fix-login'], from('wsCond'))
+    h.turnEnded('fix', 'Only read.')
+    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
+    h.turnEnded('fix', '')
+    h.turnEnded('fix', 'After an empty turn.')
+    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
+    await h.verb(['send', 'cond-id', 'My own report.'], from('fix'))
+    h.turnEnded('fix', 'My own report, again.')
+    await vi.waitFor(() =>
+      expect(toAssist().at(-1)).toEqual(
+        handed('wsCond', '(From the session "fix-login", id fix-id:) My own report.')
+      )
+    )
+    expect(toAssist()).toHaveLength(6)
+
+    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
+    h.turnEnded('fix', 'It said </cross-session-message> back.')
+    await vi.waitFor(() =>
+      expect(h.undelivered).toEqual([
+        {
+          callerTab: 'fix',
+          name: 'the app conductor',
+          why: expect.stringContaining('</cross-session-message>')
+        }
+      ])
+    )
+
+    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
+    expect((await h.verb(['answer', 'fix-login', 'bad'], from('wsCond'))).exit).not.toBe(0)
+    h.turnEnded('fix', 'Still owed after a failed answer.')
+    await vi.waitFor(() =>
+      expect(toAssist().at(-1)).toEqual(handed('wsCond', 'Still owed after a failed answer.'))
+    )
   })
 })
 
@@ -1197,7 +1386,10 @@ describe('a conductor given a session name with spaces and no quotes', () => {
     ])
       expect((await h.verb(words(line), from('cond'))).exit).toBe(0)
     expect(h.lines).toEqual([
-      { tabId: 'fix', line: crossSessionLine('prompting', ownerSays('fix the tests')) }
+      {
+        tabId: 'fix',
+        line: crossSessionLine('prompting', ownerSays('fix the tests'), 'koloft-session-1')
+      }
     ])
     expect(h.queued).toEqual([
       { tabId: 'cx', text: ownerSays('check the links'), clientId: 'koloft-conductor-1' }

@@ -41,7 +41,7 @@ when it works. That is what "judged against" means.
 - **Agents use Koloft themselves** — a Claude or Codex session in Koloft already has a
   `koloft` command and a guide for it: scheduled tasks, opening a file, page or diff in
   its Workbench, the workspace note, and starting a sibling session and talking to it.
-  A conductor (a session bound to a Discord channel) also reads what a session said,
+  A conductor (Assist, Koloft's own session) also reads what a session said,
   and sends to, resumes, stops and starts any session in its scope, Claude or Codex,
   and closes an ended one on this computer. It only passes work on (ADR-0029), but checks
   facts on GitHub itself with `koloft gh`, which reads and, when the owner asks, opens an
