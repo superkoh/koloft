@@ -1580,6 +1580,10 @@ Gateway (the live connection that pushes events):
   returns nothing and drops events silently unless the responsible process has
   Accessibility (`AXIsProcessTrusted()`). A drag moved the window with the mouse to within
   3 pt (160×87 for a 160×90 drag). Mouse events here carried click state 1.
+- **A posted key's modifier flags stay held until an event without them is posted.**
+  After a key-down and key-up both posted with the ⌘ flag, the next posted click on a
+  Dock icon acted as a ⌘-click (it revealed the app in Finder instead of activating it),
+  on macOS 26.6.2 and 27.0 alike; posting the key-up with no flags fixed it.
 - **What the Dock and Notification Center draw can be read through Accessibility.** A
   Dock item's `AXStatusLabel` is its badge text ("1", or absent); `AXPosition`/`AXSize`
   come back as `AXValue`s whose `description` holds the numbers. Notification Center's
@@ -1615,9 +1619,8 @@ Gateway (the live connection that pushes events):
   run over SSH raised a dialog '"com.apple.sshd-session" is requesting to bypass the
   system private window picker…' (Allow / Open System Settings) even with the TCC rows
   above; the capture itself was written. Left alone, the dialog stayed on screen and the
-  real-window cases still passed with it in their screenshots. Answering it with a real
-  click on Allow between steps closed it, but later captures raised it again and later
-  Dock clicks failed (two runs). After Allow, macOS records the answer in
+  real-window cases still passed with it in their screenshots. A real click on Allow
+  closed it, but later captures raised it again. After Allow, macOS records the answer in
   `~/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist`,
   keyed by `/usr/libexec/sshd-keygen-wrapper`, as a dict with
   `kScreenCaptureApprovalLastAlerted`, `kScreenCaptureApprovalLastUsed`,

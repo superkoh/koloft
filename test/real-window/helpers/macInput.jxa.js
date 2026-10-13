@@ -27,7 +27,7 @@ function mouse(type, x, y) {
 function key(code, flags) {
   for (const down of [true, false]) {
     const event = $.CGEventCreateKeyboardEvent(null, code, down)
-    $.CGEventSetFlags(event, flags)
+    $.CGEventSetFlags(event, down ? flags : 0)
     post(event)
   }
 }
