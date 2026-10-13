@@ -4510,7 +4510,7 @@ function registerIpc(): void {
     hosts.of(p).listDir(p, opts)
   )
   ipcMain.handle('fs:dirExists', (_e, p: string) =>
-    typeof p === 'string' && p ? hosts.of(p).dirExists(p) : false
+    typeof p === 'string' && p ? hosts.of(p).dirExistsOrThrow(p) : false
   )
   ipcMain.handle('fs:search', (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
     hosts.of(p).search(p, q, opts)

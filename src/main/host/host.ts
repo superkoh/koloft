@@ -70,6 +70,7 @@ export type ClaudeLaunchPlan =
 export interface Host {
   listDir(dir: string, opts?: ShowIgnored): Promise<DirEntry[]>
   dirExists(dir: string): Promise<boolean>
+  dirExistsOrThrow(dir: string): Promise<boolean>
   makeDir(dir: string): Promise<boolean>
   search(
     root: string,
