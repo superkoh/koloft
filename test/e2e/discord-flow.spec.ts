@@ -383,9 +383,9 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await type('/answer second after the delete')
       await expect.poll(() => fake.threads).toHaveLength(2)
       const fresh = fake.threads[1].id
-      expect(fake.threads[1]).toEqual(
-        expect.objectContaining({ parentId: CHANNEL, members: [OWNER.id] })
-      )
+      await expect
+        .poll(() => fake.threads[1])
+        .toEqual(expect.objectContaining({ parentId: CHANNEL, members: [OWNER.id] }))
       await expect
         .poll(() => finished(fresh))
         .toEqual([expect.stringMatching(/\nAnswer to: second after the delete$/)])
