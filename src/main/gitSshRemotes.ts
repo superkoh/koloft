@@ -60,7 +60,7 @@ export function remoteUrlsOf(configLines: string): string[] {
   return [...new Set(urls)]
 }
 
-export function sshHostOf(a: Pick<GitAccount, 'platform' | 'url'>): string {
+function sshHostOf(a: Pick<GitAccount, 'platform' | 'url'>): string {
   return a.platform === 'azure' ? AZURE_SSH_HOST : new URL(credentialUrlOf(a)).hostname
 }
 
@@ -78,14 +78,14 @@ function httpsBase(a: Pick<GitAccount, 'platform' | 'url'>): string {
 function httpsOf(
   a: Pick<GitAccount, 'platform' | 'url'>,
   t: SshTarget
-): { url: string; prefix: RewriteRule } | null {
+): { url: string; rule: RewriteRule } | null {
   if (a.platform !== 'azure')
-    return { url: `${httpsBase(a)}${t.path}`, prefix: [httpsBase(a), t.prefix] }
+    return { url: `${httpsBase(a)}${t.path}`, rule: [httpsBase(a), t.prefix] }
   const m = AZURE_SSH_PATH.exec(t.path.replace(/\/+$/, ''))
   const azure = new URL(a.url)
   if (!m || `/${m[1]}`.toLowerCase() !== azure.pathname.toLowerCase()) return null
   const project = `${azure.origin}/${m[1]}/${m[2]}/_git/`
-  return { url: `${project}${m[3]}`, prefix: [project, `${t.prefix}v3/${m[1]}/${m[2]}/`] }
+  return { url: `${project}${m[3]}`, rule: [project, `${t.prefix}v3/${m[1]}/${m[2]}/`] }
 }
 
 // PLATFORM§52 ADR-0035
@@ -115,7 +115,7 @@ export async function rewriteRulesFor(
     if (host !== sshHost) continue
     const https = httpsOf(a, t)
     if (!https) continue
-    add(https.prefix)
+    add(https.rule)
     add([https.url, url])
     out.ssh ??= { url, dest: t.dest, ...(t.port ? { port: t.port } : {}) }
   }

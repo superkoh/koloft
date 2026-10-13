@@ -752,12 +752,12 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
       expect(fs.statSync(key).mode & 0o777).toBe(0o600)
       expect(pickFiles(env).join('')).toContain(`IdentitiesOnly=yes`)
       expect(pickFiles(env).join('')).not.toContain('insteadOf')
-      expect(settingsOnDisk(env).gitPicks).toEqual([
-        expect.objectContaining({ account: id, sshKey: 'unchecked' })
-      ])
       await expect(
         panel.locator('.fx-note.warn', { hasText: 'Gitea does not know this key for bob yet.' })
       ).toBeVisible({ timeout: ACCOUNT_SHOWS_WITHIN_MS })
+      expect(settingsOnDisk(env).gitPicks).toEqual([
+        expect.objectContaining({ account: id, sshKey: 'not-taken' })
+      ])
       await panel.locator('.tbu-act', { hasText: 'Open SSH keys page' }).click()
       await expect
         .poll(() => fs.readFileSync(env.externalOpens, 'utf8'))

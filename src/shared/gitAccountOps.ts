@@ -175,7 +175,7 @@ export function withOneDefaultPerHost(accounts: GitAccount[]): GitAccount[] {
   })
 }
 
-const GIT_SSH_KEY_STATES: GitSshKeyState[] = ['unchecked', 'works']
+const GIT_SSH_KEY_STATES: GitSshKeyState[] = ['unchecked', 'not-taken', 'works']
 
 const SSH_KEYS_PAGE: Partial<Record<GitPlatform, string>> = {
   gitlab: '/-/user_settings/ssh_keys',

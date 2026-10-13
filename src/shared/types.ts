@@ -59,7 +59,7 @@ export interface GitAccount {
   addedAt: number
 }
 
-export type GitSshKeyState = 'unchecked' | 'works'
+export type GitSshKeyState = 'unchecked' | 'not-taken' | 'works'
 
 export interface GitRepoPick {
   repo: string

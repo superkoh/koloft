@@ -68,10 +68,13 @@ export function masterConfigText(picks: GitRepoPick[], dir: string): string {
 }
 
 // PLATFORM§52 ADR-0035
-export function pickConfigText(rules: RewriteRule[], sshKey?: string): string {
-  if (sshKey)
-    return `[core]\n\tsshCommand = ${quoted(`ssh -i ${shq(sshKey)} -o IdentitiesOnly=yes`)}\n`
+export function rewriteConfigText(rules: RewriteRule[]): string {
   return rules.map(([to, from]) => `[url ${quoted(to)}]\n\tinsteadOf = ${quoted(from)}\n`).join('')
+}
+
+// PLATFORM§52 ADR-0035
+export function sshKeyConfigText(key: string): string {
+  return `[core]\n\tsshCommand = ${quoted(`ssh -i ${shq(key)} -o IdentitiesOnly=yes`)}\n`
 }
 
 // PLATFORM§46

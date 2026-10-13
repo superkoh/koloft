@@ -6,7 +6,8 @@ import { spawnSync } from 'child_process'
 import {
   gitAccountsDir,
   gitConfigEnv,
-  pickConfigText,
+  rewriteConfigText,
+  sshKeyConfigText,
   writeGitAccountConfigs
 } from '../../src/main/gitConfigFile'
 import { rewriteRulesFor } from '../../src/main/gitSshRemotes'
@@ -154,8 +155,8 @@ beforeAll(async () => {
     [bob, dev],
     helper,
     new Map([
-      [path.join(repoD, '.git'), pickConfigText(remotesD.rules)],
-      [path.join(repoE, '.git'), pickConfigText([], sshKey)]
+      [path.join(repoD, '.git'), rewriteConfigText(remotesD.rules)],
+      [path.join(repoE, '.git'), sshKeyConfigText(sshKey)]
     ])
   )
 })
@@ -262,7 +263,7 @@ describe('per-repository git config', () => {
       [{ repo, account: 'github.com/bob' }],
       [bob],
       helper,
-      new Map([[repo, pickConfigText([], sshKey)]])
+      new Map([[repo, sshKeyConfigText(sshKey)]])
     )
     const again = writeGitAccountConfigs(tmpDir, [], [], helper, new Map())
     expect(git(repoA, ['config', '--get', 'koloft.account'], gitConfigEnv(baseEnv(), again))).toBe(
