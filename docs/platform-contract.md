@@ -1691,11 +1691,13 @@ Gateway (the live connection that pushes events):
 - **`ssh -G <alias>` resolves the user's config offline**: it prints `hostname`, `user`,
   `port` and every `identityfile` (with no config, the five default files, two of them
   `_sk`), and prints no `proxycommand` or `identityagent` line when none is set.
-- **A server that greets the key's owner writes it to stderr and exits 1**; GitHub's
-  documented greeting is `Hi <login>! You've successfully authenticated, but GitHub does
-  not provide shell access.` (inferred, not checked: no real key was used). Read in their
-  sources, not checked against a server: GitLab greets `Welcome to GitLab, @<username>!`,
-  Gitea and Forgejo `Hi there, <login>! You've successfully authenticated…`.
+- **The greeting names the key's owner, on either stream**: GitHub's documented greeting
+  is `Hi <login>! You've successfully authenticated, but GitHub does not provide shell
+  access.` on stderr with exit 1 (inferred, not checked: no real key was used). A real
+  GitLab CE 19.4.2 printed `Welcome to GitLab, @<username>!` on **stdout** with exit 0
+  (2026-10-13, Docker, a throwaway user and key); a real Gitea 1.24.6 printed `Hi there,
+  <login>! You've successfully authenticated…` on stderr with exit 0 (§53). Forgejo's is
+  read in its source only.
 - Measured 2026-10-12 in a Docker Linux container against a local sshd with throwaway
   keys, and `ssh -F /dev/null -G github.com` on macOS 27.0.
 
@@ -1890,3 +1892,43 @@ server unless a line says so.
   performing Allow answers it. Until it is answered the app's notifications are kept
   as "Denied" and its Dock badge is not drawn either; after Allow both appear. Measured
   2026-10-12 in the tart VM above.
+
+## §53 An SSH remote sent over https, and a server that refuses https
+
+- **`url.<https>.insteadOf <ssh prefix>` from an included file rewrites every SSH
+  spelling**: `git@<host>:o/r.git`, `<host>:o/r.git`, `ssh://git@<host>/o/r.git`,
+  `ssh://git@<host>:22/o/r.git` and an ssh alias `git@<alias>:o/r.git` each need their
+  own rule and each went to `<https base>/o/r.git`; `git@ssh.dev.azure.com:v3/<org>/<p>/`
+  → `https://dev.azure.com/<org>/<p>/_git/` gave `…/_git/<repo>`. A `pushurl` is
+  rewritten by the same rules. The remote's raw value (`git config --get
+  remote.<n>.url`) stays as written, while `git remote -v` and `git remote get-url` print
+  the rewritten https address. With the user's own `url."git@github.com:".insteadOf
+  https://github.com/`, an https remote went over ssh; an included rule naming that
+  remote's full address mapped to itself kept it on https (the longest match wins, and
+  git rewrites once).
+- **A server that refuses https** answers `info/refs` with 403 and a `text/plain` body;
+  git prints the body as `remote: <text>` before `fatal: unable to access '<url>': The
+  requested URL returned error: 403` and exits 128, for `ls-remote`, `fetch` and `push`
+  alike. A real Gitea 1.24.6 with `[repository] DISABLE_HTTP_GIT = true` answered before
+  asking for credentials with `Interacting with repositories by HTTP protocol is not
+  allowed`. A real GitLab CE 19.4.2 with the admin setting "Enabled Git access protocols"
+  = SSH only (`enabled_git_access_protocol=ssh`) answered a valid token, after the 401
+  challenge, with `remote: Git access over HTTP is not allowed` and 403, for `ls-remote`
+  and `push`; a wrong password there, as with https on, gave `remote: HTTP Basic: Access
+  denied. …` and `fatal: Authentication failed for '<url>'` (401, no `returned error`
+  line). A Koloft build picked that GitLab account for a repository with an `ssh://`
+  remote, and its own fetch right after the pick showed the SSH-only note and the key
+  offer.
+- **`ssh -i <key> -o IdentitiesOnly=yes`** puts that key first; `IdentityFile` lines from
+  the user's config for the host still follow it, and ssh's default key files are then
+  left out. `ProxyJump` and the rest of the user's config still apply (`ssh -G`). So when
+  the server does not know the key yet, ssh may go on and sign in with the user's own key:
+  only the greeting's name (§48) tells whose key was taken. The real Gitea greeted a
+  registered key with `Hi there, <login>! You've successfully authenticated with the key
+  named <title>, but Gitea does not provide shell access.` and exit 0, and refused an
+  unknown one with `Permission denied (publickey).` and exit 255. `core.sshCommand = "ssh
+  -i '<key>' -o IdentitiesOnly=yes"` in an included file carried a fetch and a push, on
+  that Gitea and, with the key Koloft made added through GitLab's API, on that GitLab.
+- Measured 2026-10-13 with Apple git 2.54 and OpenSSH 10.3p1 on macOS 27.0, a temp
+  `HOME`, a 403 stub on 127.0.0.1, and a Gitea 1.24.6 and a GitLab CE 19.4.2 in Docker with
+  throwaway users and keys.

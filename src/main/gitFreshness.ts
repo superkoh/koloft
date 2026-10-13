@@ -187,6 +187,7 @@ export interface FreshnessDeps {
   workspaces(): { path: string; missing: boolean }[]
   autoFetch(): boolean
   onChange(wsPath: string): void
+  fetchFailed?(wsPath: string, stderr: string): void
   now?(): number
 }
 
@@ -460,6 +461,7 @@ export class GitFreshnessEngine {
         this.fetchFailed.delete(root)
       } else {
         this.fetchFailed.add(root)
+        this.deps.fetchFailed?.(root, r.stderr)
       }
     }
     try {

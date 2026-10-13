@@ -2465,7 +2465,8 @@ app.whenReady().then(() => {
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
     autoFetch: () => loadSettings().gitAutoFetch,
-    onChange: () => workspaceMgr?.restampLive()
+    onChange: () => workspaceMgr?.restampLive(),
+    fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })
   githubCounts = new GithubCountsSweep({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
@@ -4231,13 +4232,21 @@ function registerIpc(): void {
   )
   ipcMain.handle('gitAccounts:check', () => gitAccounts?.checkAll())
   ipcMain.handle('gitAccounts:pick', (_e, wsPath: unknown, id: unknown) =>
-    isText(wsPath) && (id === null || isText(id)) ? gitAccounts?.pick(wsPath, id) : undefined
+    isText(wsPath) && (id === null || isText(id))
+      ? gitAccounts?.pick(wsPath, id).then(() => void freshness?.fetchNow(wsPath))
+      : undefined
   )
   ipcMain.handle('gitAccounts:suggest', (_e, wsPath: unknown, network: unknown) =>
     isText(wsPath) && gitAccounts ? gitAccounts.suggest(wsPath, network === true) : { kind: 'none' }
   )
   ipcMain.handle('gitAccounts:dismiss', (_e, wsPath: unknown) =>
     isText(wsPath) ? gitAccounts?.dismiss(wsPath) : undefined
+  )
+  ipcMain.handle('gitAccounts:make-ssh-key', (_e, wsPath: unknown) =>
+    isText(wsPath) ? gitAccounts?.makeSshKey(wsPath) : undefined
+  )
+  ipcMain.handle('gitAccounts:check-ssh-key', (_e, wsPath: unknown) =>
+    isText(wsPath) ? gitAccounts?.checkSshKey(wsPath) : undefined
   )
   ipcMain.handle('project:create', (_e, parent: unknown, name: unknown) =>
     typeof parent === 'string' && parent && typeof name === 'string'
