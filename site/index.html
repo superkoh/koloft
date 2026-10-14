@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Koloft — run a dozen Claude Code and Codex sessions</title>
+    <title>Koloft — one app for all your Claude Code and Codex sessions</title>
     <meta
       name="description"
       content="A free, open-source Mac app for running many Claude Code and Codex sessions at once. Press ⌘P and say what you want: Koloft Assist picks the project and starts the agent, and the list shows which session needs you next."
@@ -15,7 +15,10 @@
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Koloft" />
-    <meta property="og:title" content="Koloft — run a dozen Claude Code and Codex sessions" />
+    <meta
+      property="og:title"
+      content="Koloft — one app for all your Claude Code and Codex sessions"
+    />
     <meta
       property="og:description"
       content="A free, open-source Mac app for running many Claude Code and Codex sessions at once. Press ⌘P and say what you want: Koloft Assist picks the project and starts the agent, and the list shows which session needs you next."
@@ -26,10 +29,13 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="Koloft's icon and the line “Run a dozen Claude Code and Codex sessions. Always know which one needs you.” on a dark, glowing background"
+      content="Koloft's icon and the line “One app for all your Claude Code and Codex sessions.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Koloft — run a dozen Claude Code and Codex sessions" />
+    <meta
+      name="twitter:title"
+      content="Koloft — one app for all your Claude Code and Codex sessions"
+    />
     <meta
       name="twitter:description"
       content="A free, open-source Mac app for running many Claude Code and Codex sessions at once. Press ⌘P and say what you want: Koloft Assist picks the project and starts the agent, and the list shows which session needs you next."
@@ -69,17 +75,14 @@
           <a href="sessions/">Docs</a>
           <a href="changelog/">Changelog</a>
         </nav>
-        <a class="btn ghost" href="https://github.com/superkoh/koloft">GitHub</a>
-        <a class="btn primary" href="install/">Download</a>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="install/"
+          ><svg class="icon" aria-hidden="true"><use href="icons.svg#download" /></svg>Download</a
+        >
         <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M4 7h16M4 12h16M4 17h16"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linecap="round"
-            />
-          </svg>
+          <svg class="icon" aria-hidden="true"><use href="icons.svg#menu" /></svg>
         </button>
       </div>
     </header>
@@ -90,13 +93,10 @@
         <span class="chip"
           ><span class="pulse"></span>Free · open source · for Apple Silicon Macs</span
         >
-        <h1>
-          Run a dozen Claude Code and Codex sessions.
-          <span class="grad">Always know which one needs you.</span>
-        </h1>
+        <h1>One app for all your <span class="grad">Claude Code and Codex</span> sessions.</h1>
         <p class="lede">
-          Koloft is a Mac app for your coding agents. Press <kbd>⌘P</kbd> and say what you want: it
-          picks the project and starts the agent there.
+          Press <kbd>⌘P</kbd> to start one, see at a glance which one needs you, and check every
+          change it makes, right beside it.
         </p>
         <div class="cta">
           <!-- prettier-ignore -->
@@ -173,7 +173,8 @@
             aria-selected="true"
             tabindex="0"
           >
-            <b>Start</b> one line → a working session
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#start" /></svg
+            ><b>Start</b> one line → a working session
           </button>
           <button
             role="tab"
@@ -182,7 +183,8 @@
             aria-selected="false"
             tabindex="-1"
           >
-            <b>Jump</b> a few letters → that session
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#jump" /></svg><b>Jump</b> a
+            few letters → that session
           </button>
           <button
             role="tab"
@@ -191,7 +193,8 @@
             aria-selected="false"
             tabindex="-1"
           >
-            <b>Search</b> <kbd>⌥⏎</kbd> → every conversation on this Mac
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#search" /></svg><b>Search</b>
+            <kbd>⌥⏎</kbd> → every conversation on this Mac
           </button>
         </div>
         <div class="tabwins reveal">

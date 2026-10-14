@@ -154,11 +154,10 @@ addEventListener('message', (e) => {
   const win = winOfFrame.get(e.source)
   const d = e.data
   if (!win || !d) return
-  if (d.koloftReady) {
+  if (!win.classList.contains('ready')) {
     win.classList.add('ready')
-    win.playing = false
+    win.playing = d.koloftFrame !== undefined
     sync(win)
-    return
   }
   if (d.koloftFrame === undefined) return
   const i = d.koloftFrame

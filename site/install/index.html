@@ -26,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="Koloft's icon and the line “Run a dozen Claude Code and Codex sessions. Always know which one needs you.” on a dark, glowing background"
+      content="Koloft's icon and the line “One app for all your Claude Code and Codex sessions.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Install, update, what it talks to — Koloft" />
@@ -50,17 +50,15 @@
           <a href="../sessions/" aria-current="page">Docs</a>
           <a href="../changelog/">Changelog</a>
         </nav>
-        <a class="btn ghost" href="https://github.com/superkoh/koloft">GitHub</a>
-        <a class="btn primary" href="../install/">Download</a>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="../install/"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#download" /></svg
+          >Download</a
+        >
         <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M4 7h16M4 12h16M4 17h16"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linecap="round"
-            />
-          </svg>
+          <svg class="icon" aria-hidden="true"><use href="../icons.svg#menu" /></svg>
         </button>
       </div>
     </header>
@@ -106,7 +104,7 @@
         <p class="command">
           <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>superkoh/<wbr>koloft-releases/<wbr>main/<wbr>install.sh | bash</code>
           <button type="button" class="copy" data-copy="cmd-install">
-              <span class="idle">Copy</span><span class="done">Copied</span>
+              <span class="idle"><svg class="icon" aria-hidden="true"><use href="../icons.svg#copy" /></svg> Copy</span><span class="done"><svg class="icon" aria-hidden="true"><use href="../icons.svg#check" /></svg> Copied</span>
             </button>
         </p>
 

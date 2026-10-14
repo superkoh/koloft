@@ -435,10 +435,6 @@ kbd {
   text-wrap: balance;
 }
 
-.hero h1 .grad {
-  display: block;
-}
-
 .grad {
   background: linear-gradient(100deg, #ffd2b8 0%, var(--brand) 30%, #b78cff 65%, #6fd6e0 100%);
   background-size: 200% 100%;
@@ -737,6 +733,11 @@ section.feat {
 .tabs button b {
   color: var(--ink);
   margin-right: 6px;
+}
+
+.tabs button > .icon {
+  margin-right: 8px;
+  color: var(--brand);
 }
 
 .tabs button[aria-selected='true'] {
