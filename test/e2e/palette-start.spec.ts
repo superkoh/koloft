@@ -137,6 +137,40 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
+  test('a git workspace never starts in its main checkout: when Assist answers main, at once or through the picker, the session starts in a fresh worktree of its own', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const fresh = /-w (session-\d{6}-\d{4}(?:-\d+)?) /
+
+      assistAnswers(env, { workspace: 1, worktree: 'main', title: 'Look', sure: true })
+      await ask(app, page, 'look at the build')
+      await page.keyboard.press('Enter')
+      const [atOnce] = await waitForCalls(env, 1, 30_000)
+      expect(fs.realpathSync(atOnce.cwd)).toBe(fs.realpathSync(env.workspaces.a))
+      const first = atOnce.argv.join(' ').match(fresh)?.[1]
+      expect(first).toBeDefined()
+
+      const picker = page.getByRole('dialog', { name: 'New Session in…' })
+      assistAnswers(env, { workspace: 1, worktree: 'main', title: 'Read', sure: false })
+      await ask(app, page, 'read the readme')
+      await page.keyboard.press('Enter')
+      await expect(picker.locator('.cb-row.hot')).toContainText('ws-a', { timeout: 30_000 })
+      await page.keyboard.press('Enter')
+      const calls = await waitForCalls(env, 2, 30_000)
+      const second = calls[1].argv.join(' ').match(fresh)?.[1]
+      expect(second).toBeDefined()
+      expect(second).not.toBe(first)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('an issue Assist names starts in that issue’s worktree, and the first prompt carries the issue first, then a blank line, then what was typed', async ({
     env
   }) => {
