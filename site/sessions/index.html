@@ -232,18 +232,40 @@
           <li>
             <kbd>⌘P</kbd> (View ▸ Command Palette…) opens one box with one input. As you type, the
             sessions, folders and app actions (New session…, Settings…, and so on) that fit show up
-            under it. Type a few letters of a session's title, its worktree, its folder or its
-            machine, press <kbd>↓</kbd> to pick the match, then <kbd>⏎</kbd>, and you are there. It
-            does what a click on the row does, so a closed session is resumed.
+            under it. Every Settings page is there too, found by English or Chinese words: type
+            "shortcuts" or "快捷键" and the row <code>Settings ▸ Shortcuts</code> shows up. Type a
+            few letters of a session's title, its worktree, its folder or its machine, press
+            <kbd>↓</kbd> to pick the match, then <kbd>⏎</kbd>, and you are there. It does what a
+            click on the row does, so a closed session is resumed.
           </li>
           <li>
-            Or type what a new session should do, and press <kbd>⏎</kbd>.
-            <a href="../accounts/#assist">Assist</a> picks the folder, the worktree and a title, and
-            the session starts there with your words as its first message. If the folder's branch is
+            A moment after you stop typing, the sessions whose conversation holds your words show up
+            too, under "In conversations": up to three, with one line of text around the match, and
+            a row <code>All N conversations that mention it</code> when there are more. Click that
+            row, or press <kbd>⌥⏎</kbd>, for the full search (below).
+          </li>
+          <li>
+            Or type what a new session should do, and press <kbd>⏎</kbd> (the button at the right
+            reads <code>Ask AI</code>). <a href="../accounts/#assist">Assist</a> picks the folder,
+            the worktree and a title, and the session starts there with your words as its first
+            message. In a folder git tracks, the session always gets a worktree of its own, never
+            the folder itself; when Assist does not name one, it is called
+            <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code>. If the folder's branch is
             behind, Koloft first asks whether to pull. <kbd>⇧⏎</kbd> starts it on the other tool,
-            when you have both. When Assist is not sure which folder, or is off, the folder picker
-            opens instead. Words about Koloft itself ("turn on dark mode", "set up Discord") go to
-            Assist as a task, and "ask &lt;folder&gt; …" goes to that folder's Assist.
+            when you have both.
+          </li>
+          <li>
+            Not everything you type starts a session. Words about Koloft itself ("turn on dark
+            mode", "set up Discord") go to Assist as a task; "open settings" or "check for updates"
+            just does it; "ask &lt;folder&gt; …" goes to that folder's Assist. Ask for a session by
+            what it was doing ("go to the session that was fixing login"), and <kbd>⌘P</kbd> jumps
+            to it, starting nothing. A question, a translation, or work that fits more than one
+            folder ("fix the tests") goes to the global Assist, which answers in its own tab.
+          </li>
+          <li>
+            With Assist off, the button reads <code>Start a session</code> and <kbd>⏎</kbd> opens
+            the folder picker instead. A folder git tracks still gets a fresh
+            <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code> worktree.
           </li>
           <li>
             If Assist says the words call for a brand-new project, Koloft makes the folder, adds it
@@ -292,6 +314,13 @@
           copy of the repo on its own branch.
         </p>
         <ul class="dash">
+          <li>
+            A session you ask for in <kbd>⌘P</kbd>, and one Assist starts, gets its own worktree too
+            when the folder is git, never the folder itself (see
+            <a href="#find">find any session</a>). Claude Code and Codex both do this, and
+            <kbd>⌘P</kbd> does it on a <a href="../remote/">remote folder</a> too. <kbd>⌘N</kbd>
+            still starts in the folder.
+          </li>
           <li>
             Claude Code removes its worktree when it exits, if nothing in it changed. If something
             did, Claude asks you: keep it or remove it.
