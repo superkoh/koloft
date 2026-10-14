@@ -91,11 +91,11 @@ ${message.slice(0, PROMPT_MAX_CHARS_SENT)}
 >>>
 
 Go down these rules in order and take the first that fits:
-1. It asks or tells one workspace something ("ask <folder name> …", "tell <folder name> …"): {"hand": "assist", "workspace": <id>}
+1. It asks or tells one workspace something ("ask <folder name> …", "tell <folder name> …", "问一下 <folder name> …"): {"hand": "assist", "workspace": <id>}
 2. It wants Koloft connected to Discord or its Discord set up: {"hand": "discord"}
 3. It wants one of the Koloft features above opened or done ("open settings", "check for updates"): {"hand": "feature", "feature": "<key>"}
-4. It only wants to open or go to one existing session, and exactly one listed session fits: {"hand": "session", "session": "<session ref>"}
-5. It wants something done with existing sessions (continue or resume one, stop, restart, check on or message them): {"hand": "koloft"}
+4. It only wants to open or go to one existing session, and one listed session title says the same thing it names (never a guess): {"hand": "session", "session": "<session ref>"}
+5. It wants something done with existing sessions (continue or resume one, stop, restart, check on or message them), even when it names one: {"hand": "koloft"}
 6. It is work to change or build something inside a project, and exactly one workspace fits (by its folder name, what it is about, or one of its recent session titles): {"workspace": <id>, "worktree": <see below>}
 7. It wants something new built (a new program, tool or project) that belongs to no workspace: {"workspace": null, "machine": <"${LOCAL_MACHINE}", or the machine the person named>, "newFolder": <a short kebab-case English folder name, a name only, never a path>}
 8. Anything else: a question, a translation, something to write, a fact to look up (like whether a pull request is merged), a scheduled job, work across several workspaces, work that could fit more than one workspace ("fix the tests", "tidy the README"), or a Koloft setting not in the features above: {"hand": "koloft"}

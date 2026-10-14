@@ -96,17 +96,15 @@ for (const backend of ['claude', 'codex'] as const) {
     codex: async () => (binary ? { binary, env: process.env } : null)
   })
 
-  describe
-    .skipIf(!binary)
-    .concurrent(
-      `⌘P routing on the real ${backend}: each typed line lands where the rules in the prompt send it`,
-      () => {
-        for (const [typed, allowed] of CASES) {
-          it(typed, { timeout: 60_000 }, async () => {
-            const route = parseRoute(await assist(routeJob(LIST, typed)), LIST)
-            expect(allowed).toContain(landing(route))
-          })
-        }
+  describe.skipIf(!binary)(
+    `⌘P routing on the real ${backend}, one line at a time as the palette asks: each typed line lands where the rules in the prompt send it`,
+    () => {
+      for (const [typed, allowed] of CASES) {
+        it(typed, { timeout: 60_000 }, async () => {
+          const route = parseRoute(await assist(routeJob(LIST, typed)), LIST)
+          expect(allowed).toContain(landing(route))
+        })
       }
-    )
+    }
+  )
 }
