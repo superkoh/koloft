@@ -32,7 +32,8 @@ const QUICK_MS = 15_000
 const READ_UI_MS = 9_000
 // PLATFORM§55
 const FIRST_BOOT_MS = 5 * 60_000
-const READ_UI_TRIES_AFTER_BOOT = 4
+const READ_UI_AFTER_BOOT_MS = 3 * 60_000
+const READ_UI_RETRY_PAUSE_MS = 1_000
 const LIVE_TAP_MAX_MOVE_PT = 10
 const LIVE_TYPE_BATCH_MS = 120
 const STREAM_FPS = '30'
@@ -134,7 +135,8 @@ export class IosPhone implements PhoneDevice {
   // PLATFORM§55
   async readScreenOnceBooted(): Promise<void> {
     let lastError: unknown
-    for (let i = 0; i < READ_UI_TRIES_AFTER_BOOT; i++) {
+    const end = Date.now() + READ_UI_AFTER_BOOT_MS
+    while (Date.now() < end) {
       try {
         const size = axScreenSize(await this.readUi())
         if (size) {
@@ -144,6 +146,7 @@ export class IosPhone implements PhoneDevice {
       } catch (error) {
         lastError = error
       }
+      await new Promise((r) => setTimeout(r, READ_UI_RETRY_PAUSE_MS))
     }
     throw lastError instanceof Error ? lastError : new ToolFailed('could not read the screen.')
   }

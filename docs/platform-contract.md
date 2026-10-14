@@ -1950,11 +1950,14 @@ server unless a line says so.
   with 16 GB; the emulator then held about 2 GB.
 - **Its gRPC control port listens on every interface with no auth by default**: the
   start log says `[::]:8554`, "security: Insecure, auth: none". `-help-all` (37.2.12)
-  offers no option to bind it to loopback only. `-grpc-use-token` makes every call
-  need `authorization: Bearer <token>`, the token being `grpc.token` in the discovery
-  file `$HOME/Library/Caches/TemporaryItems/avd/running/pid_<pid>_info.ini` (read in the
-  help text). `-idle-grpc-timeout <s>` ends the emulator after that long with no gRPC
-  call (read in the help text).
+  offers no option to bind it to loopback only, but `-grpc-use-token` does: the log
+  then says "Token/JWT auth requested without tls, restricting access to localhost",
+  "security: Local, auth: +token", and `lsof` shows it listening on `127.0.0.1` only.
+  Every call then needs `authorization: Bearer <token>`, the token being `grpc.token`
+  in the discovery file `$HOME/Library/Caches/TemporaryItems/avd/running/pid_<pid>.ini`
+  (next to `grpc.port`). It follows `$HOME`, not `ANDROID_EMULATOR_HOME`, and goes away
+  when the emulator exits. `-idle-grpc-timeout <s>` ends the emulator after that long
+  with no gRPC call (read in the help text).
 - **Through gRPC** (`emulator/lib/emulator_controller.proto`, loaded at run time with
   `@grpc/proto-loader`): `getScreenshot` PNG at 1080×2400 took 0.18 s;
   `streamScreenshot` at 540×1200 sent about 50 frames a second while the screen moved,
@@ -1964,6 +1967,16 @@ server unless a line says so.
 - **Reading the screen**: `adb shell uiautomator dump` took 5.7 s. agent-device 0.21.27
   (`snapshot -i`, which installs its own helper app on the device the first time) took
   0.2 s, `type` 0.3 s for 7 characters, `press` with `--settle` 2.4 s, `screenshot` 1.6 s.
+  Its first `snapshot -i` right after `sys.boot_completed=1` failed ("insufficient
+  application window content", the home screen not drawn yet) and the next, 1.4 s
+  later, worked.
+- **What outlives the emulator**: the first `adb` call starts an adb server that stays
+  after the emulator exits, shared by every adb on the Mac at port 5037 unless
+  `ANDROID_ADB_SERVER_PORT` names another; with it set for the emulator, adb and
+  agent-device alike, boot checks and snapshots worked through that port, and after
+  `adb kill-server` with it no adb process was left. agent-device starts a daemon per `AGENT_DEVICE_STATE_DIR` that stays
+  after `close` (its help says it leaves after 5 idle minutes);
+  `agent-device daemon stop --state-dir <dir>` ends it.
 - Measured 2026-10-14 on macOS 27.0 (M4, 16 GB) with the three zips above.
 
 ## §55 Xcode's iOS simulator driven with no window
@@ -1976,11 +1989,17 @@ server unless a line says so.
   UI tree again, not by AXe's exit code. All of it goes through Apple's private
   simulator interfaces, so an Xcode update can break it. `describe-ui` prints the
   accessibility tree as JSON (the root's `frame` is the screen in points, 402×874 for an
-  iPhone 17; `AXLabel`, `AXValue`, `type` and `frame` on every node) and took 2.5–7 s;
-  its first call after a boot failed and the next one worked. `button home` went home
-  except while the keyboard was up. `stream-video --format mjpeg` writes an HTTP
-  multipart stream to stdout (`--mjpegstream` parts, each with `Content-Length`), frames
-  in pixels (3× the points), about 8 a second.
+  iPhone 17; `AXLabel`, `AXValue`, `type` and `frame` on every node, elements scrolled
+  under the top bar keep frames partly above 0) and took 2.5–7 s. After `bootstatus -b`
+  returned, every AXe command failed with "Timed out creating the simulator remote
+  automation session" for 33 s in one boot and over 90 s in another, each try taking
+  5–12 s; then they all worked. `button home` went home except while the keyboard was
+  up. `swipe --start-x --start-y --end-x --end-y` scrolled Settings. `type` takes only
+  characters on a US keyboard: `type 'héllo'` exits 1 with "No keycode found for
+  character: 'é'". `key 42` deleted one character and `key 40` is Return (its help
+  lists both). `stream-video --format mjpeg` writes an HTTP multipart stream to stdout
+  (`--mjpegstream` parts, each with `Content-Length`), frames in pixels (3× the
+  points; 603×1311 with `--scale 0.5`), 4–8 a second.
 - **`xcrun simctl io <udid> screenshot <file>`** took 2.7 s a shot.
 - Measured 2026-10-14 in a tart VM (macOS 26.6, Xcode 27.0, 6 GB, 4 cores, no GPU), so
   the timings are a VM's. On a Mac with only the Command Line Tools, `xcrun simctl help`

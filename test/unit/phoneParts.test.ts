@@ -34,7 +34,9 @@ const settingsScreen: AxNode[] = [
           },
           { type: 'Button', AXLabel: 'Clear text', frame: frame(330, 100, 40, 40) },
           { type: 'StaticText', AXLabel: 'No  Results\n', frame: frame(0, 300, 402, 20) },
-          { type: 'Button', AXLabel: 'hidden', frame: frame(0, 0, 0, 0) }
+          { type: 'Button', AXLabel: 'hidden', frame: frame(0, 0, 0, 0) },
+          { type: 'Button', AXLabel: 'Camera', frame: frame(0, -30, 402, 50) },
+          { type: 'Image', AXLabel: '', frame: frame(30, 300, 28, 28) }
         ]
       }
     ]
@@ -42,7 +44,7 @@ const settingsScreen: AxNode[] = [
 ]
 
 describe('iPhone screen elements', () => {
-  it('lists named and actionable elements with refs and centre points, and leaves out unnamed groups and the app itself', () => {
+  it('lists named elements with refs and centre points, and leaves out unnamed ones, the app itself and anything scrolled off the screen', () => {
     expect(elementLines(axElements(settingsScreen))).toBe(
       [
         '@e1 [text-field] "Search" value="battery" at 170 120',

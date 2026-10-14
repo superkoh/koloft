@@ -42,6 +42,7 @@ const BOOT_WAIT_MS = 5 * 60_000
 const POLL_MS = 1_000
 const QUICK_MS = 9_000
 const HELPER_INSTALL_MS = 3 * 60_000
+const READ_UI_TRIES_AFTER_BOOT = 4
 const INSTALL_MS = 5 * 60_000
 const STOP_GRACE_MS = 5_000
 // PLATFORM§54
@@ -104,7 +105,7 @@ function readDiscovery(): string[] {
   try {
     return fs
       .readdirSync(dir)
-      .filter((f) => /^pid_\d+_info\.ini$/.test(f))
+      .filter((f) => /^pid_\d+\.ini$/.test(f))
       .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
   } catch {
     return []
@@ -141,6 +142,7 @@ export async function startAndroid(
   const grpcPort = await freePort()
   const env = {
     ...process.env,
+    ANDROID_ADB_SERVER_PORT: String(await freePort()),
     ANDROID_HOME: paths.sdk,
     ANDROID_SDK_ROOT: paths.sdk,
     ANDROID_AVD_HOME: paths.avdHome,
@@ -251,7 +253,20 @@ export class AndroidPhone implements PhoneDevice {
     progress(
       "getting ready to read Android's screen (the first time it installs a small helper app)"
     )
-    await this.agentDevice(['snapshot', '-i'], HELPER_INSTALL_MS)
+    await this.firstSnapshot()
+  }
+
+  // PLATFORM§54
+  private async firstSnapshot(): Promise<void> {
+    for (let i = 1; ; i++) {
+      try {
+        await this.agentDevice(['snapshot', '-i'], HELPER_INSTALL_MS)
+        return
+      } catch (error) {
+        if (i === READ_UI_TRIES_AFTER_BOOT || !this.alive()) throw error
+        await sleep(POLL_MS)
+      }
+    }
   }
 
   private call(
@@ -267,9 +282,23 @@ export class AndroidPhone implements PhoneDevice {
     )
   }
 
+  private get adbBin(): string {
+    return path.join(this.paths.sdk, 'platform-tools', 'adb')
+  }
+
   private async adb(args: string[], timeoutMs = QUICK_MS): Promise<string> {
-    const adb = path.join(this.paths.sdk, 'platform-tools', 'adb')
-    return (await runTool(adb, ['-s', this.serial, ...args], { timeoutMs, env: this.env })).stdout
+    return (await runTool(this.adbBin, ['-s', this.serial, ...args], { timeoutMs, env: this.env }))
+      .stdout
+  }
+
+  private get agentDeviceEnv(): NodeJS.ProcessEnv {
+    return {
+      ...this.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      AGENT_DEVICE_HOME: this.paths.agentDeviceHome,
+      AGENT_DEVICE_STATE_DIR: this.paths.agentDeviceHome,
+      AGENT_DEVICE_NO_UPDATE_NOTIFIER: '1'
+    }
   }
 
   // PLATFORM§42
@@ -277,17 +306,7 @@ export class AndroidPhone implements PhoneDevice {
     const r = await runTool(
       process.execPath,
       [this.paths.agentDeviceBin, ...args, '--platform', 'android', '--serial', this.serial],
-      {
-        timeoutMs,
-        cwd: this.paths.agentDeviceHome,
-        env: {
-          ...this.env,
-          ELECTRON_RUN_AS_NODE: '1',
-          AGENT_DEVICE_HOME: this.paths.agentDeviceHome,
-          AGENT_DEVICE_STATE_DIR: this.paths.agentDeviceHome,
-          AGENT_DEVICE_NO_UPDATE_NOTIFIER: '1'
-        }
-      }
+      { timeoutMs, cwd: this.paths.agentDeviceHome, env: this.agentDeviceEnv }
     )
     return r.stdout.trim()
   }
@@ -372,6 +391,13 @@ export class AndroidPhone implements PhoneDevice {
     this.client?.close()
     this.client = null
     this.kill('SIGTERM')
+    const leave = { detached: true, stdio: 'ignore' } as const
+    spawn(this.adbBin, ['kill-server'], { ...leave, env: this.env }).unref()
+    spawn(
+      process.execPath,
+      [this.paths.agentDeviceBin, 'daemon', 'stop', '--state-dir', this.paths.agentDeviceHome],
+      { ...leave, cwd: this.paths.agentDeviceHome, env: this.agentDeviceEnv }
+    ).unref()
   }
 
   private kill(signal: NodeJS.Signals): void {

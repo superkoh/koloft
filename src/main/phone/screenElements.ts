@@ -15,8 +15,6 @@ export interface AxNode {
   children?: AxNode[]
 }
 
-const CONTAINER_TYPES = new Set(['Application', 'Window', 'Group', 'ScrollArea', 'Other'])
-
 function kebab(type: string): string {
   return type.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase()
 }
@@ -26,21 +24,20 @@ function text(v: string | null | undefined): string {
 }
 
 export function axElements(roots: AxNode[]): ScreenElement[] {
+  const screen = axScreenSize(roots)
+  const onScreen = (x: number, y: number): boolean =>
+    !screen || (x >= 0 && y >= 0 && x <= screen.width && y <= screen.height)
   const out: ScreenElement[] = []
   const walk = (node: AxNode): void => {
     const type = node.type ?? ''
     const label = text(node.AXLabel) || text(node.title)
     const value = text(node.AXValue)
     const f = node.frame
-    const named = !!label || !!value
-    if (f && f.width > 0 && f.height > 0 && (!CONTAINER_TYPES.has(type) || named) && type)
-      out.push({
-        role: kebab(type),
-        label,
-        value,
-        x: Math.round(f.x + f.width / 2),
-        y: Math.round(f.y + f.height / 2)
-      })
+    if (f && f.width > 0 && f.height > 0 && type && (label || value)) {
+      const x = Math.round(f.x + f.width / 2)
+      const y = Math.round(f.y + f.height / 2)
+      if (onScreen(x, y)) out.push({ role: kebab(type), label, value, x, y })
+    }
     for (const child of node.children ?? []) walk(child)
   }
   for (const root of roots) walk(root)

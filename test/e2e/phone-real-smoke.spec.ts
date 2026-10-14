@@ -71,7 +71,7 @@ test.describe('koloft phone with the real Android emulator', () => {
 
       expect(await koloft(page, tab, 'phone stop')).toMatch(/Stopped the Android phone\./)
       const log = fs.readFileSync(path.join(env.userData, 'phone', 'android-emulator.log'), 'utf8')
-      expect(log).not.toMatch(/auth: none/)
+      expect(log).toMatch(/Started GRPC server at 127\.0\.0\.1:\d+, security: Local, auth: \+token/)
     } finally {
       await quitAndClose(app)
     }

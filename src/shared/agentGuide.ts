@@ -218,7 +218,7 @@ koloft phone tap <@ref | x y>
     Example: koloft phone tap @e3
 
 koloft phone type <text>
-    Type into the field that has focus (tap it first).
+    Type into the field that has focus (tap it first). The iPhone takes only characters on a US keyboard.
 
 koloft phone swipe <x1> <y1> <x2> <y2>
     Swipe from one point to another, for example to scroll.
