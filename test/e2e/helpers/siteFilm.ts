@@ -1,0 +1,148 @@
+import fs from 'fs'
+import path from 'path'
+import type { Page } from '@playwright/test'
+
+const REPO_ROOT = path.join(__dirname, '..', '..', '..')
+const SITE_DEMO = path.join(REPO_ROOT, 'site', 'demo')
+const BUILT_ASSETS = path.join(REPO_ROOT, 'out', 'renderer', 'assets')
+
+export interface RawFrame {
+  t?: number
+  w: number
+  h: number
+  html: Record<string, string>
+  body: Record<string, string>
+  styles?: string[]
+  root: string
+  portals: string[]
+}
+
+export function frameOf(page: Page, light = false): Promise<RawFrame> {
+  return page.evaluate((light) => {
+    for (const t of document.querySelectorAll('textarea')) t.textContent = t.value
+    for (const i of document.querySelectorAll('input')) i.setAttribute('value', i.value)
+    const attrs = (el: Element): Record<string, string> =>
+      Object.fromEntries([...el.attributes].map((a) => [a.name, a.value]))
+    const root = document.getElementById('root')
+    const frame = {
+      w: innerWidth,
+      h: innerHeight,
+      html: attrs(document.documentElement),
+      body: attrs(document.body),
+      root: root?.innerHTML ?? '',
+      portals: [...document.body.children]
+        .filter((el) => el.id !== 'root' && el.tagName !== 'SCRIPT')
+        .map((el) => el.outerHTML)
+    }
+    if (light) return frame
+    const styles = [...document.querySelectorAll('style')].map((s) => s.textContent ?? '')
+    const sheets: string[] = []
+    for (const sheet of [...document.styleSheets]) {
+      if (sheet.href || sheet.ownerNode instanceof HTMLStyleElement) continue
+      try {
+        sheets.push([...sheet.cssRules].map((r) => r.cssText).join('\n'))
+      } catch {}
+    }
+    for (const sheet of document.adoptedStyleSheets ?? [])
+      sheets.push([...sheet.cssRules].map((r) => r.cssText).join('\n'))
+    return { ...frame, styles: [...styles, ...sheets] }
+  }, light)
+}
+
+function withoutTestHomePaths(html: string): string {
+  return html
+    .replace(/(\/private)?\/var\/folders\/[^"'<>\s]*?\/koloft-e2e-home-[A-Za-z0-9]+/g, '/Users/you')
+    .replace(/-private-var-folders-[\w-]*?-koloft-e2e-home-[A-Za-z0-9]+/g, '-Users-you')
+    .replace(/[\w/]*var\/folders\/[\w/]*/g, '/Users/you')
+    .replace(/koloft-e2e-home[\w-]*/g, 'you')
+    .replace(/-e2e-home[\w-]*/g, '')
+    .replace(/<span class="dev-badge"[^>]*>DEV<\/span>/g, '')
+    .replace(/<script[\s\S]*?<\/script>/g, '')
+}
+
+interface PlainFrame {
+  t: number
+  w: number
+  h: number
+  html: Record<string, string>
+  body: Record<string, string>
+  s: number[]
+  root: string
+  portals: string[]
+}
+
+function packFilm(takes: RawFrame[][]): string {
+  const styles: string[] = []
+  const styleIndex = new Map<string, number>()
+  const addStyle = (text: string): number => {
+    if (!styleIndex.has(text)) {
+      styleIndex.set(text, styles.length)
+      styles.push(text)
+    }
+    return styleIndex.get(text)!
+  }
+  const frames: PlainFrame[] = []
+  for (const take of takes) {
+    const t0 = take[0].t ?? 0
+    let lastStyles: number[] = []
+    for (const f of take) {
+      if (f.styles) lastStyles = f.styles.map(addStyle)
+      frames.push({
+        t: (f.t ?? t0) - t0,
+        w: f.w,
+        h: f.h,
+        html: f.html,
+        body: f.body,
+        s: lastStyles,
+        root: withoutTestHomePaths(f.root),
+        portals: f.portals.map(withoutTestHomePaths)
+      })
+    }
+  }
+  const kept: PlainFrame[] = []
+  for (const f of frames) {
+    const prev = kept[kept.length - 1]
+    if (prev && f.root === prev.root && f.portals.join() === prev.portals.join()) continue
+    kept.push(f)
+  }
+  let prevDoc = ''
+  const packed = kept.map((f) => {
+    const doc = f.root + '\u0001' + f.portals.join('\u0002')
+    const max = Math.min(doc.length, prevDoc.length)
+    let p = 0
+    while (p < max && doc.charCodeAt(p) === prevDoc.charCodeAt(p)) p++
+    let s = 0
+    while (
+      s < max - p &&
+      doc.charCodeAt(doc.length - 1 - s) === prevDoc.charCodeAt(prevDoc.length - 1 - s)
+    )
+      s++
+    prevDoc = doc
+    return {
+      t: f.t,
+      w: f.w,
+      h: f.h,
+      html: f.html,
+      body: f.body,
+      s: f.s,
+      d: [p, s, doc.slice(p, doc.length - s)]
+    }
+  })
+  return 'window.KOLOFT_FRAMES = ' + JSON.stringify({ styles, frames: packed }) + '\n'
+}
+
+export function writeFilm(name: string, takes: RawFrame[][]): void {
+  fs.writeFileSync(path.join(SITE_DEMO, `${name}.frames.js`), packFilm(takes))
+}
+
+function siteCssFrom(builtCss: string): string {
+  return builtCss.replace(/\/\*[\s\S]*?\*\//g, '').replaceAll("url('../fonts/", "url('fonts/")
+}
+
+export function refreshSiteAppCss(): void {
+  const built = fs.readdirSync(BUILT_ASSETS).filter((f) => /^index-.*\.css$/.test(f))
+  if (built.length !== 1)
+    throw new Error(`expected one built index-*.css in ${BUILT_ASSETS}, found ${built.length}`)
+  const css = fs.readFileSync(path.join(BUILT_ASSETS, built[0]), 'utf8')
+  fs.writeFileSync(path.join(SITE_DEMO, 'app.css'), siteCssFrom(css))
+}
