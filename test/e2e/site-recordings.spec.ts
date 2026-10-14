@@ -16,6 +16,9 @@ import {
   centerTerm,
   gitCommitAll,
   gitInit,
+  openSessionTerminal,
+  panelTerm,
+  runIn,
   sendShortcut,
   startSessionIn,
   terminalText,
@@ -23,7 +26,6 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
-import { openSettings } from './helpers/extensions'
 import { frameOf, refreshSiteAppCss, writeFilm, type RawFrame } from './helpers/siteFilm'
 
 test.skip(
@@ -42,7 +44,7 @@ export async function forecast(req: Request, res: Response) {
 }
 `
 
-const SETTLE_BEFORE_STILL_MS = 600
+const PARENT_PICKS_UP_THE_REPORTS_MS = 20_000
 
 function writeTree(dir: string, files: Record<string, string>): void {
   for (const [rel, body] of Object.entries(files)) {
@@ -63,7 +65,7 @@ function seedDemoWorkspaces(env: E2EEnv): { tide: string; harbor: string } {
       'export interface DailyForecast { date: string; high: number; low: number }\n' +
       'export async function fetchForecast(city: string, days: number): Promise<DailyForecast[]> {\n  return []\n}\n',
     'test/forecast.test.ts': "import { test } from 'node:test'\n\ntest('forecast', () => {})\n",
-    '.gitignore': 'NOTES.md\nnode_modules\n'
+    '.gitignore': 'NOTES.md\nnode_modules\n.playwright-cli\n'
   })
   writeTree(harbor, {
     'README.md': '# harbor-site\n\nThe marketing site.\n',
@@ -115,6 +117,7 @@ function useRealClaude(env: E2EEnv, trusted: string[]): void {
   fs.symlinkSync(process.env.KOLOFT_SMOKE_CLAUDE ?? '', spot)
   for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_MODEL'])
     delete env.launchEnv[k]
+  env.launchEnv.DISABLE_AUTOUPDATER = '1'
   fs.writeFileSync(
     path.join(env.home, '.claude.json'),
     JSON.stringify({
@@ -166,11 +169,6 @@ async function sizeWindow(app: ElectronApplication, w: number, h: number): Promi
     ({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h),
     [w, h]
   )
-}
-
-async function stillFrame(page: Page): Promise<RawFrame> {
-  await page.waitForTimeout(SETTLE_BEFORE_STILL_MS)
-  return frameOf(page)
 }
 
 interface Reel {
@@ -297,94 +295,6 @@ test('app.css: the built app stylesheet without comments, its fonts under fonts/
   refreshSiteAppCss()
 })
 
-test('hero: a real claude adds ?days= and a cache to tidewatch', async ({ env }) => {
-  test.skip(!HAVE_REAL_CLAUDE, 'needs a real claude and its login')
-  test.setTimeout(600_000)
-  const { app, page } = await launchReal(env)
-  try {
-    await startSessionIn(page, 'tidewatch')
-    const row = wsRows(page, 'tidewatch').first()
-    await page.waitForTimeout(4000)
-    const started = await stillFrame(page)
-    const turn = await realTurn(
-      page,
-      row,
-      'Let GET /forecast take ?days= (1 to 7) and cache upstream calls for 10 minutes with a small TtlCache in src/cache.ts. Keep it short, no tests.',
-      true
-    )
-    writeFilm('hero', [[started], turn])
-  } finally {
-    await quitAndClose(app)
-  }
-})
-
-test('accounts: Settings ▸ Accounts with three accounts and their usage', async ({ env }) => {
-  test.setTimeout(300_000)
-  seedDemoWorkspaces(env)
-  env.launchEnv.KOLOFT_PROBE_BASE_URL = await startUsageServer({
-    'tok-personal': [0.18, 0.31],
-    'tok-work': [0.64, 0.42],
-    'tok-team': [0.91, 0.77]
-  })
-  fs.writeFileSync(
-    env.keychainFile,
-    JSON.stringify({
-      'koloft-dev-claude-oauth': {
-        Personal: 'tok-personal',
-        Work: 'tok-work',
-        Team: 'tok-team'
-      }
-    })
-  )
-  seedSettings(env, {
-    accounts: [seededAccount('Personal'), seededAccount('Work'), seededAccount('Team')]
-  })
-  const app = await launchApp(env)
-  try {
-    const page = await app.firstWindow()
-    await sizeWindow(app, 1440, 860)
-    await waitBooted(page)
-    await startSessionIn(page, 'tidewatch')
-    await page.waitForTimeout(3000)
-    await page.evaluate(() => window.api.accounts.probe())
-    await page.waitForTimeout(2000)
-    await openSettings(page)
-    await page.locator('.modal').getByText('Accounts', { exact: true }).first().click()
-    await page.waitForTimeout(2500)
-    writeFilm('accounts', [[await stillFrame(page)]])
-  } finally {
-    await quitAndClose(app)
-  }
-})
-
-test('sessions: three real claude sessions, two wait, ⌘J jumps to the next waiting one', async ({
-  env
-}) => {
-  test.skip(!HAVE_REAL_CLAUDE, 'needs a real claude and its login')
-  test.setTimeout(600_000)
-  const { app, page } = await launchReal(env, { skipPermissions: false })
-  try {
-    const film = startFilm(page)
-    await startSessionIn(page, 'tidewatch')
-    await ask(page, 'Run npm test and tell me the result in one line.')
-    await expect(wsRows(page, 'tidewatch').first()).toHaveClass(/\bst-waiting\b/, {
-      timeout: 120_000
-    })
-    await startSessionIn(page, 'harbor-site')
-    await ask(page, 'Read README.md and say in five words what this repo is.')
-    await page.waitForTimeout(2500)
-    await startSessionIn(page, 'tidewatch')
-    await ask(page, 'Add src/routes/health.ts with a GET /health route that returns { ok: true }.')
-    await expect(page.locator('.ws-tab.st-waiting')).toHaveCount(2, { timeout: 180_000 })
-    await page.waitForTimeout(4000)
-    await sendShortcut(app, 'shortcut:next-waiting-session')
-    await page.waitForTimeout(4000)
-    await film.stop('sessions')
-  } finally {
-    await quitAndClose(app)
-  }
-})
-
 test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what was said, starts a session from one line', async ({
   env
 }) => {
@@ -484,5 +394,99 @@ test('assist: Assist starts a real claude session that adds GET /health and repo
     await film.stop('assist')
   } finally {
     await quitAndClose(app)
+  }
+})
+
+test('tree: a real claude splits a job into two sibling sessions that hang under it and report back', async ({
+  env
+}) => {
+  test.skip(!HAVE_REAL_CLAUDE, 'needs a real claude and its login')
+  test.setTimeout(1_200_000)
+  const { app, page } = await launchReal(env)
+  try {
+    await startSessionIn(page, 'tidewatch')
+    const parent = wsRows(page, 'tidewatch').first()
+    const parentId = await parent.getAttribute('data-tab-id')
+    const children = page.locator(`.ws-tab[data-tab-id="${parentId}"] + .ws-subtabs > .ws-tab`)
+    await page.waitForTimeout(4000)
+    const film = startFilm(page, 700)
+    await ask(
+      page,
+      'Split this job into two sessions with the koloft command, each in its own worktree, then wait for both to report back and sum up in one line. ' +
+        'Run: koloft session new -w health --name "Health route" -- "Add src/routes/health.ts with a GET /health route that returns { ok: true }. Keep it short." ' +
+        'and: koloft session new -w quickstart --name "README quick start" -- "Add a five-line Quick start section to README.md." ' +
+        'Do not write the code yourself.'
+    )
+    await expect(children).toHaveCount(2, { timeout: 300_000 })
+    await expect(children.first()).toHaveClass(/\bst-working\b/, { timeout: 120_000 })
+    await expect
+      .poll(
+        async () =>
+          children.evaluateAll((els) => els.every((e) => !/\bst-working\b/.test(e.className))),
+        {
+          timeout: 600_000,
+          intervals: [3000]
+        }
+      )
+      .toBe(true)
+    await page.waitForTimeout(PARENT_PICKS_UP_THE_REPORTS_MS)
+    await expect(parent).not.toHaveClass(/\bst-working\b/, { timeout: 300_000 })
+    await page.waitForTimeout(6000)
+    await film.stop('tree')
+  } finally {
+    await quitAndClose(app)
+  }
+})
+
+async function startDemoPage(): Promise<{ url: string; close: () => Promise<void> }> {
+  const html = `<!doctype html><html><head><title>Tidewatch status</title><style>
+body{font:16px -apple-system,sans-serif;margin:40px;background:#f6f7f9;color:#1d2433}
+.card{background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 8px #0001;max-width:420px}
+h1{font-size:22px;margin:0 0 12px}button{font:15px inherit;padding:8px 16px;border-radius:8px;border:0;background:#2f6fec;color:#fff}
+#tide{font-size:40px;font-weight:700;margin:12px 0}</style></head><body><div class="card">
+<h1>Tidewatch · Harbor station</h1><div>Next high tide</div><div id="tide">—</div>
+<button id="refresh" onclick="document.getElementById('tide').textContent='14:32 · 2.4 m';document.title='Tidewatch · high tide 14:32'">Refresh</button>
+</div></body></html>`
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end(html)
+  })
+  await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok))
+  return {
+    url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/`,
+    close: () => new Promise<void>((ok) => server.close(() => ok()))
+  }
+}
+
+test('browser: a real claude opens a page in its own Workbench, clicks Refresh and reads it; then a terminal tab runs a command', async ({
+  env
+}) => {
+  test.skip(!HAVE_REAL_CLAUDE, 'needs a real claude and its login')
+  test.setTimeout(900_000)
+  const demo = await startDemoPage()
+  const { app, page } = await launchReal(env)
+  try {
+    await startSessionIn(page, 'tidewatch')
+    const row = wsRows(page, 'tidewatch').first()
+    await page.waitForTimeout(4000)
+    const film = startFilm(page, 600)
+    await ask(
+      page,
+      `Use the playwright-cli shell command, not MCP tools, one command per step: first run playwright-cli open ${demo.url} , then run sleep 5 , then click the Refresh button with playwright-cli, then run playwright-cli eval document.title , and tell me the next high tide in one line.`
+    )
+    await expect(row).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
+    const webTab = page.locator('.wb-panel .wb-tab:not(.pinned)', { hasText: 'Tidewatch' })
+    await expect(webTab).toBeVisible({ timeout: 300_000 })
+    await webTab.click()
+    await expect(row).not.toHaveClass(/\bst-working\b/, { timeout: 600_000 })
+    await page.waitForTimeout(3000)
+    const term = await openSessionTerminal(app, page)
+    await runIn(page, term, 'ls src && git --no-pager log --oneline -3')
+    await expect(panelTerm(page)).toContainText('routes', { timeout: 20_000 })
+    await page.waitForTimeout(3000)
+    await film.stop('browser')
+  } finally {
+    await quitAndClose(app)
+    await demo.close()
   }
 })

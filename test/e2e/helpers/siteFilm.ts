@@ -1,4 +1,5 @@
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import type { Page } from '@playwright/test'
 
@@ -17,19 +18,45 @@ export interface RawFrame {
   portals: string[]
 }
 
+interface GuestView extends HTMLElement {
+  capturePage(): Promise<{
+    toDataURL(): string
+    resize(o: { width: number }): { toDataURL(): string }
+  }>
+}
+
 export function frameOf(page: Page, light = false): Promise<RawFrame> {
-  return page.evaluate((light) => {
+  return page.evaluate(async (light) => {
     for (const t of document.querySelectorAll('textarea')) t.textContent = t.value
     for (const i of document.querySelectorAll('input')) i.setAttribute('value', i.value)
     const attrs = (el: Element): Record<string, string> =>
       Object.fromEntries([...el.attributes].map((a) => [a.name, a.value]))
     const root = document.getElementById('root')
+    const guestShots: string[] = []
+    for (const view of document.querySelectorAll<GuestView>('webview')) {
+      if (!view.offsetWidth || !view.offsetHeight) {
+        guestShots.push('<div></div>')
+        continue
+      }
+      try {
+        const shot = (await view.capturePage()).resize({ width: view.offsetWidth }).toDataURL()
+        guestShots.push(
+          `<img src="${shot}" alt="" style="display:block;width:100%;height:100%;object-fit:cover;object-position:top left">`
+        )
+      } catch {
+        guestShots.push('<div></div>')
+      }
+    }
+    let shotIndex = 0
     const frame = {
       w: innerWidth,
       h: innerHeight,
       html: attrs(document.documentElement),
       body: attrs(document.body),
-      root: root?.innerHTML ?? '',
+      root: (root?.innerHTML ?? '').replace(
+        /<webview\b[^>]*>[\s\S]*?<\/webview>/g,
+        () => guestShots[shotIndex++] ?? '<div></div>'
+      ),
       portals: [...document.body.children]
         .filter((el) => el.id !== 'root' && el.tagName !== 'SCRIPT')
         .map((el) => el.outerHTML)
@@ -49,8 +76,14 @@ export function frameOf(page: Page, light = false): Promise<RawFrame> {
   }, light)
 }
 
+const SHIPPED_APP_RESOURCES = '/Applications/Koloft.app/Contents/Resources'
+
 function withoutTestHomePaths(html: string): string {
   return html
+    .split(path.resolve(REPO_ROOT))
+    .join(SHIPPED_APP_RESOURCES)
+    .split(os.homedir())
+    .join('/Users/you')
     .replace(/(\/private)?\/var\/folders\/[^"'<>\s]*?\/koloft-e2e-home-[A-Za-z0-9]+/g, '/Users/you')
     .replace(/-private-var-folders-[\w-]*?-koloft-e2e-home-[A-Za-z0-9]+/g, '-Users-you')
     .replace(/[\w/]*var\/folders\/[\w/]*/g, '/Users/you')
