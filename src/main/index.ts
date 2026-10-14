@@ -4508,7 +4508,13 @@ function registerIpc(): void {
         ...storedSessions().flatMap((s) => s.searchable(localPins))
       ]
     },
-    codexSnippets: async (term) => (await codexSessions?.searchSnippets(term)) ?? [],
+    backendSnippets: async (term) =>
+      (
+        await Promise.all([
+          codexSessions?.searchSnippets(term) ?? [],
+          museSessions?.searchSnippets(term) ?? []
+        ])
+      ).flat(),
     hidden: (id) => !!sessionBackends.conductorOf(id),
     scan: (files, term, found) => {
       // PLATFORM§4

@@ -36,6 +36,7 @@ import {
   museHome,
   museSessionLog,
   renamedTo,
+  saidInLog,
   type LogRecord
 } from './museSessionLog'
 import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
@@ -268,6 +269,24 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
 
   private get env(): NodeJS.ProcessEnv {
     return this.processEnv ?? process.env
+  }
+
+  // MUSE§2
+  async searchSnippets(term: string): Promise<{ id: string; snippet: string }[]> {
+    const wanted = term.toLowerCase()
+    const found: { id: string; snippet: string }[] = []
+    for (const key of this.history.keys()) {
+      const file = museSessionLog(this.env, this.nativeId(key))
+      if (!file) continue
+      let hit: string | undefined
+      await saidInLog(file, (text) => {
+        if (!text.toLowerCase().includes(wanted)) return false
+        hit = text
+        return true
+      }).catch(() => undefined)
+      if (hit) found.push({ id: key, snippet: hit })
+    }
+    return found
   }
 
   trustsFolder(dir: string): boolean {

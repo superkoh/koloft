@@ -439,6 +439,33 @@ describe('MuseSessions turns from hooks', () => {
   })
 })
 
+describe('MuseSessions search', () => {
+  it('finds a session by what the owner said or Muse replied in any turn, not by the context muse sends the model', async () => {
+    mocks.list.mockResolvedValue([{ id: A, cwd: repo }])
+    await sessions.availability()
+    await sessions.refreshHistory()
+    logRecord(A, {
+      payload_type: 'runtime.command_intake.received',
+      payload: { record: { command: { kind: 'turn_submit', prompt: 'first ask' } } }
+    })
+    logRecord(A, {
+      payload_type: 'runtime.session',
+      payload: { kind: 'run', event: { kind: 'model_request_configured', text: 'zebra' } }
+    })
+    logRecord(A, {
+      payload_type: 'runtime.session',
+      payload: {
+        kind: 'run',
+        event: { kind: 'assistant_message_committed', text: 'The lantern is lit.' }
+      }
+    })
+    expect(await sessions.searchSnippets('LANTERN')).toEqual([
+      { id: museSessionKey(A), snippet: 'The lantern is lit.' }
+    ])
+    expect(await sessions.searchSnippets('zebra')).toEqual([])
+  })
+})
+
 describe('muse trust list', () => {
   it("reads muse's own trust file by the folder's real path", () => {
     const link = path.join(home, 'link')
