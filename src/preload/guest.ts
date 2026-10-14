@@ -151,38 +151,24 @@ contextBridge.executeInMainWorld({
       }
     }
 
-    type PermissionStatusLike = { state: string }
-    const permissions = (
-      globalThis as unknown as {
-        Permissions?: {
-          prototype: { query(desc: { name?: unknown }): Promise<PermissionStatusLike> }
+    const statusProto = (globalThis as unknown as { PermissionStatus?: { prototype: object } })
+      .PermissionStatus?.prototype
+    const stateDesc = statusProto && Object.getOwnPropertyDescriptor(statusProto, 'state')
+    const realState = stateDesc?.get
+    if (statusProto && realState) {
+      const holder = {
+        get state() {
+          const state = realState.call(this) as string
+          return state === 'denied' && undecided(String((this as { name?: unknown }).name))
+            ? 'prompt'
+            : state
         }
       }
-    ).Permissions?.prototype
-    const realQuery = permissions?.query
-    if (permissions && realQuery) {
       // PLATFORM§11
-      permissions.query = asNative(
-        {
-          async query(desc: { name?: unknown }): Promise<PermissionStatusLike> {
-            const status = await realQuery.call(this, desc)
-            const realState = Object.getOwnPropertyDescriptor(
-              Object.getPrototypeOf(status) as object,
-              'state'
-            )?.get
-            if (!realState) return status
-            const name = String(desc?.name)
-            Object.defineProperty(status, 'state', {
-              get: () => {
-                const state = realState.call(status) as string
-                return state === 'denied' && undecided(name) ? 'prompt' : state
-              },
-              configurable: true
-            })
-            return status
-          }
-        }.query
-      )
+      Object.defineProperty(statusProto, 'state', {
+        ...stateDesc,
+        get: asNative(Object.getOwnPropertyDescriptor(holder, 'state')!.get!)
+      })
     }
 
     // PLATFORM§12

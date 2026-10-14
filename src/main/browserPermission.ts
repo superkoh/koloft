@@ -83,16 +83,10 @@ export function permissionAsk(permission: string, details: PermissionDetails): P
   return { kind: 'ask', permission: permission as PermissionName, origin }
 }
 
-const QUERYABLE = new Set<string>([
-  'microphone',
-  'camera',
-  'notifications',
-  'geolocation',
-  'clipboard-read'
-])
-
-export function queriedPermission(name: unknown): PermissionName | null {
-  return typeof name === 'string' && QUERYABLE.has(name) ? (name as PermissionName) : null
+export function permissionQueryAsk(name: unknown, details: PermissionDetails): PermissionAsk {
+  if (name === 'microphone') return permissionAsk('media', { ...details, mediaTypes: ['audio'] })
+  if (name === 'camera') return permissionAsk('media', { ...details, mediaTypes: ['video'] })
+  return permissionAsk(typeof name === 'string' ? name : '', details)
 }
 
 export function permissionKey(origin: string, permission: PermissionName): string {

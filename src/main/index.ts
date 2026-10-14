@@ -235,8 +235,7 @@ import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@sh
 import {
   permissionAsk,
   permissionKeysFor,
-  permissionOriginOf,
-  queriedPermission,
+  permissionQueryAsk,
   type PermissionDetails,
   type PermissionName
 } from './browserPermission'
@@ -2891,14 +2890,15 @@ function setupGuestLinkReports(): void {
 // PLATFORM§11
 function setupGuestPermissionQuery(): void {
   ipcMain.on('browser:permission-undecided', (e, name: unknown) => {
-    const permission = queriedPermission(name)
-    const origin = permissionOriginOf({ requestingUrl: e.senderFrame?.url })
+    const decision = permissionQueryAsk(name, {
+      requestingUrl: e.senderFrame?.url,
+      isMainFrame: e.senderFrame?.parent === null
+    })
     e.returnValue =
       e.sender.session === session.fromPartition(BROWSER_PARTITION) &&
       !isOverlayGuest(e.sender) &&
-      permission !== null &&
-      origin !== '' &&
-      rememberedPermission(origin, permission) === undefined
+      decision.kind === 'ask' &&
+      rememberedPermission(decision.origin, decision.permission) === undefined
   })
 }
 
