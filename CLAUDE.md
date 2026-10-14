@@ -140,8 +140,8 @@ Working principles:
   - **What a user sees change** — a table, one row per case, today against after;
     or "no user-visible change".
   - **Runtime code** — +N/−M lines under `src/`, tests, docs and fixtures not counted.
-  - **How to see it in the shipped app** — what to click in an installed build, or
-    "no way from the app".
+  - **How to see it in the shipped app** — what to click in an installed build, and
+    for a changed screen or page a screenshot you took of it; or "no way from the app".
   - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it,
     never a check you could still run. Below high, it is not offered for merge: it
     says what would make it high.
@@ -228,7 +228,7 @@ Working principles:
     (a .github path counts).
   - Create or change every file, scratch scripts too, with Write/Edit, even when
     told to prefer Bash; run a script as node/python3/sh <file>. No heredoc,
-    sed -i, perl -pi or cat >.
+    node -e, sed -i, perl -pi or cat >.
   - Quote every glob, a URL's ? too: --include='*.ts', 'a?n=1'. Unquoted,
     zsh prints "no matches found", the command never runs; the tool may
     still report success.
@@ -248,8 +248,7 @@ Working principles:
   watch. Koloft is developed on the same Mac the automation runs on, so a browser window
   that takes focus, or merely covers a fullscreen Space, interrupts whatever is being
   typed at that moment. The app's own e2e suite obeys the same rule by launching
-  hidden and never showing itself (`KOLOFT_TEST_BACKGROUND=1` in
-  `test/e2e/helpers/env.ts`, pinned by `test/e2e/background-launch.spec.ts`).
+  hidden and never showing itself.
 - `README.md` is the human-facing product page (install, packaging). Don't
   read it for context — the code is the source of truth; read it only when the task is
   editing the README itself. Test-layer seams and conventions live in `test/CLAUDE.md`.

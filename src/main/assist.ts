@@ -94,7 +94,17 @@ function runOnce(
       target.binary,
       argv,
       { env: target.env, cwd: os.tmpdir(), timeout: ASSIST_TIMEOUT_MS, signal },
-      (err, stdout) => resolve(err ? null : stdout)
+      (err, stdout, stderr) => {
+        if (err && !signal?.aborted) {
+          console.error(
+            '[koloft] Assist one-shot failed:',
+            target.binary,
+            err.code ?? err.signal,
+            stderr.slice(-2000)
+          )
+        }
+        resolve(err ? null : stdout)
+      }
     )
     child.stdin?.on('error', () => {})
     child.stdin?.end(input)

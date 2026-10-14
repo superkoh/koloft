@@ -466,6 +466,55 @@ document.getElementById('ask').addEventListener('click', async function () {
     }
   })
 
+  const CHECK_THEN_ASK = `<!doctype html><html><head><meta charset="utf-8"><title>Check first</title></head>
+<body><button id="go">go</button><div id="before"></div><div id="mic"></div><div id="after"></div>
+<script>
+async function state(name) { return (await navigator.permissions.query({ name: name })).state }
+document.getElementById('go').addEventListener('click', async function () {
+  var names = ['microphone', 'camera', 'geolocation', 'notifications']
+  var first = await navigator.permissions.query({ name: 'microphone' })
+  var before = []
+  for (var i = 0; i < names.length; i++) before.push(await state(names[i]))
+  document.getElementById('before').textContent = before.join(',')
+  if (before[0] === 'denied') { document.getElementById('mic').textContent = 'gave up'; return }
+  var mic
+  try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach(function (t) { t.stop() }); mic = 'granted' } catch (e) { mic = e.name }
+  document.getElementById('mic').textContent = mic
+  document.getElementById('after').textContent = first.state + ',' + (await state('microphone'))
+})
+</script></body></html>`
+
+  test('BB-C72: a page that checks permissions.query before asking reads "prompt" for a permission never asked, so it asks and the permission bar shows; once refused it reads "denied", also on the status it got first', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const server = await startEchoServer()
+    try {
+      gitInit(env.workspaces.a)
+      await startSessionIn(page, 'ws-a')
+      await browserSession(page)
+
+      const probeUrl = server.page('/check-first', CHECK_THEN_ASK)
+      await typeInAddressBar(page, probeUrl)
+      const guest = await guestByUrl(app, probeUrl)
+      await guest.click('#go')
+
+      await expect(guest.locator('#before')).toHaveText('prompt,prompt,prompt,prompt', {
+        timeout: 30_000
+      })
+      const deny = page.locator(BROWSER.permissionDeny).first()
+      await expect(deny).toBeVisible({ timeout: 30_000 })
+      await deny.click()
+
+      await expect(guest.locator('#mic')).toHaveText('NotAllowedError', { timeout: 30_000 })
+      await expect(guest.locator('#after')).toHaveText('denied,denied', { timeout: 30_000 })
+    } finally {
+      await server.close()
+    }
+  })
+
   test('BB-C70: a page "Copy" button\'s writeText() resolves and the grant is recorded, with the real clipboard untouched', async ({
     app,
     page,
