@@ -712,9 +712,12 @@ export class GitAccountService {
     if (machine) {
       const check = {}
       this.checkingMachine = check
-      const ready = await this.onMachine.ready(machine, how === 'browser')
-      if (this.checkingMachine !== check) return { ok: false, error: 'busy' }
-      this.checkingMachine = null
+      let cancelled = false
+      const ready = await this.onMachine.ready(machine, how === 'browser').finally(() => {
+        cancelled = this.checkingMachine !== check
+        if (!cancelled) this.checkingMachine = null
+      })
+      if (cancelled) return { ok: false, error: 'busy' }
       if (!ready.ok) return ready
     }
     this.signingFor = machine
