@@ -1163,7 +1163,7 @@ export default function App(): JSX.Element {
       requestNew('main', ws.workspace.path, pending)
       return
     }
-    startNow(hostOf(ws.workspace.path), backend, () => pendingOptions(ws.workspace.path, pending))
+    startNow(hostOf(ws.workspace.path), backend, () => pendingOptions(ws.workspace, pending))
   }
 
   const pickWorkspaceForTyped = (typed: TypedStart): void => {

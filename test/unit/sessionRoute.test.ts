@@ -70,7 +70,7 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     })
   })
 
-  it('gives a new worktree that clashes with a listed one the next free -N, and drops a bad or reserved name', () => {
+  it('gives a new worktree that clashes with a listed one the next free -N, and drops a bad or reserved name and the main checkout of a git folder', () => {
     const tree = (worktree: unknown): unknown => {
       const r = parseRoute(reply({ workspace: 1, worktree }), LIST)
       return r?.kind === 'workspace' ? r.worktree : undefined
@@ -82,7 +82,7 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     expect(tree({ existing: 'nope' })).toBeNull()
     expect(tree({ issue: 433 })).toEqual({ kind: 'issue', number: 433 })
     expect(tree({ issue: -1 })).toBeNull()
-    expect(tree('main')).toEqual({ kind: 'main' })
+    expect(tree('main')).toBeNull()
   })
 
   it('always starts a folder that is not git in the folder itself', () => {

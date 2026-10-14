@@ -27,11 +27,11 @@ export function isValidModelName(model: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9.:_-]{0,80}$/.test(model)
 }
 
-export function worktreeBase(job: { name: string }, dueAt: number): string {
-  const d = new Date(dueAt)
+export function worktreeBase(name: string, at: number): string {
+  const d = new Date(at)
   const p2 = (n: number): string => String(n).padStart(2, '0')
   const stamp = `${p2(d.getFullYear() % 100)}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`
-  return `${slugOf(job.name)}-${stamp}`
+  return `${slugOf(name)}-${stamp}`
 }
 
 export function cronBackend(job: { backend?: BackendId }): BackendId {
