@@ -44,7 +44,7 @@ import { openDropHandler } from './openDrop'
 import { removeOpenShim, writeOpenShim } from './openShimScript'
 import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
 import { koloftPrompt } from '@shared/agentGuide'
-import { playwrightCliSession } from '@shared/browserTabEnv'
+import { browserControlEnv, playwrightMcpEnv } from './browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
@@ -74,17 +74,6 @@ const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
 
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
-
-const playwrightMcpEnv = (endpoint: string): Record<string, string> => ({
-  PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
-  PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1'
-})
-
-// PLATFORM§17
-const browserControlEnv = (tabId: string, endpoint: string): Record<string, string> => ({
-  PLAYWRIGHT_CLI_SESSION: playwrightCliSession(tabId),
-  ...(endpoint && { ...playwrightMcpEnv(endpoint), KOLOFT_BROWSER_CDP: endpoint })
-})
 
 const stringList = (raw: unknown): string[] =>
   (Array.isArray(raw) ? raw : []).filter((v): v is string => typeof v === 'string')

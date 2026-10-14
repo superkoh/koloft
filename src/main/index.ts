@@ -2110,9 +2110,19 @@ app.whenReady().then(() => {
       ...storedDeps,
       leftWorktree: (resource) => removeUntouchedWorktree(museSessions, resource),
       openShimRoot: path.join(userData, 'muse-open'),
+      browserEndpoint: relayEndpoint,
+      playwrightBin,
       fallbackBin,
       gitBin: gitFirstBin,
-      gitAccounts: { configEnv: (env) => gitAccounts!.configEnv(env) }
+      agent: {
+        enabled: () => agentToolsFor('muse', 'local'),
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+      },
+      gitAccounts: {
+        configEnv: (env) => gitAccounts!.configEnv(env),
+        picked: (cwd) => gitAccounts!.pickedAt(cwd),
+        ghWrapper
+      }
     })
   } catch (error) {
     startupErrors.muse = `Muse session data could not be loaded; the original file is preserved. ${String(error)}`

@@ -7,142 +7,253 @@ corrected in place, never kept for history. Code cites a section with a `// MUSE
 marker.
 
 **How everything here was established, unless a bullet says otherwise**: muse 1.4.7
-(`Muse Code 1.4.7 (1.4.7-R6101.1)`), installed with its official installer, run with
-`--provider echo` (a built-in model that echoes the prompt; no account, no network) in
-a Linux Docker container and in a throwaway macOS 27 virtual machine, October 2026. A
-terminal was simulated with a pty driver that answers the TUI's queries. Nothing that
-needs a Meta account (a real model) has been run: a bullet that depends on one says
-"inferred, not checked".
+(`Muse Code 1.4.7 (1.4.7-R6101.1)`), installed with its official installer, in a Linux
+Docker container and in a throwaway macOS 27 virtual machine, October 2026. A terminal
+was simulated with a pty driver that answers the TUI's queries. Two stand-ins for a
+real model were used, neither needing a Meta account:
+
+- `--provider echo`, a built-in model that echoes the prompt;
+- a **fake model server**: `--base-url http://127.0.0.1:8787` with
+  `META_API_KEY=<made-up>` and `MUSE_MODEL=fake-model`, answering `GET /muse-code/models`
+  (a one-model catalog), `GET /muse-code/config` and `POST /responses` (Server-Sent
+  Events in the shape of the OpenAI Responses API, with `function_call` items to make
+  muse call its tools). Its runs were in Docker, where muse's Linux sandbox
+  (bubblewrap) cannot start, so a plain sandboxed shell command fails there.
+
+A bullet measured only with `!cmd` (a shell command the user types into the TUI) says
+so; whether the model's own shell tool behaves the same on macOS is inferred, not
+checked. Nothing has been run against Meta's real API.
 
 ## §1 The command line
 
 - `muse [OPTIONS] [PROMPT]` starts the TUI (text user interface); a prompt becomes the
   first message. `muse resume <session-uuid-or-name>` reopens a session in the TUI.
   `muse exec [OPTIONS] [PROMPT]` runs one prompt headless (subcommand first, its flags
-  after). Root options may sit on either side of `resume` (`muse resume --help` says
-  so).
+  after). Root options may sit on either side of `resume`.
 - Options Koloft uses: `--model <id>`, `--reasoning-effort
-  none|minimal|low|medium|high|xhigh|max|ultra`, `--approval-mode
-  untrusted|on-request|never` (default `on-request`), `--trust-workspace` (§10). There
-  is no accept-edits mode. `--model` is refused with `--provider echo` ("--model
-  requires --provider meta or local").
+  none|minimal|low|medium|high|xhigh|max|ultra`, `--trust-workspace` (§10), and the
+  approval and sandbox flags of §15. `--model` is refused with `--provider echo`.
 - `-c KEY=JSON` sets one setting for the run; an unknown key refuses the run.
-  `developer_instructions` and `instructions` are unknown keys, so there is no measured
-  way to hand Muse extra instructions. `--agents <JSON>` takes an agent-definition
-  overlay and is accepted; whether its text reaches the model cannot be seen with the
-  echo provider (inferred, not checked).
+  `-c run.developer_prompt="…"` reaches the model, but only until `/clear` (macOS
+  measured: the second session's request carried no developer prompt). Koloft hands
+  instructions over through a hook instead (§12).
 - `muse --version` prints `Muse Code 1.4.7 (1.4.7-R6101.1)`.
+- `muse exec --json` prints one session-stream record per line; the answer is the
+  `text` of the last `run.terminal.completed` record. `--no-session-log` keeps the run
+  out of the session list; `--disable-reminders` skips muse's own reminder helpers.
 - The installer (`curl -fsSL https://dev.meta.ai/install.sh | bash`) puts a launcher
   script at `~/.local/bin/muse`. It ends with `exec "$binary" "$@"`, so the process a
-  terminal spawns becomes the muse binary itself and keeps its PID (macOS: `lsof -p`
-  on the spawned PID lists muse's own files).
+  terminal spawns becomes the muse binary itself and keeps its PID.
 
 ## §2 Where Muse keeps its data
 
-- museHome is `~/.local/share/muse` on both macOS and Linux (`serve`'s `initialize`
-  reports it), and `$XDG_DATA_HOME/muse` when that is set (Linux measured).
-- Sessions live at `museHome/sessions/YYYY/MM/DD/<session-uuidv7>/session.jsonl`.
-- Settings and trust live under `~/.config/muse/` (§10).
+- museHome (sessions, live registry) is `$XDG_DATA_HOME/muse`, else
+  `~/.local/share/muse`, on macOS too.
+- Settings, credentials and trust live in `$XDG_CONFIG_HOME/muse`, else
+  `~/.config/muse`: `settings.json`, `auth.json`, `trust.json`, a user-scope
+  `AGENTS.md`.
+- Sessions live at `museHome/sessions/YYYY/MM/DD/<session-uuidv7>/session.jsonl`; a
+  resumed session appends to the same file.
+- `session.jsonl`: line 0 is a wrapper record; every other line is
+  `{…, "payload_type": "<type>", "payload": {…}}`. The user's words of a turn are in a
+  `runtime.command_intake.received` record at `payload.record.command.prompt`; the
+  reply is in a `runtime.session` record with `payload.kind == "run"` and
+  `payload.event.kind == "assistant_message_committed"`, at `payload.event.text`,
+  written once, whole (echo and fake model). A rename is a `session.name.changed`
+  record with `payload.new_name` and `payload.source: "user"`, written within 20 ms of
+  `/rename`; muse also names every new session by itself (`source: "automatic"`, a
+  made-up name like `iron-libra`). A
+  `model_request_configured` record re-embeds the whole assembled context; it is not
+  the user's words.
+- Muse has no full-text search: `session/list`'s `filter.text` matches name or title
+  prefixes only, and `session-index.db` holds only the first prompt.
 
 ## §3 Status: OSC 7501
 
 - Muse speaks the terminal "program status" protocol, OSC 7501 (the same one Claude
   Code 2.1.295+ sends, CC ledger). At startup it writes the query `ESC ] 7501 ; ? ESC
-  \` once per process (not again after `/clear` or a turn). It sends states only after
-  the terminal answers exactly `ESC ] 7501 ; ? : states=idle,working,done,blocked,error
-  : kinds=permission,question,auth ESC \`. A terminal that never answers (tmux, §6)
-  gets no states.
-- State frames look like `ESC ] 7501 ; state=<state>:app=muse ESC \`. Seen sequences:
-  startup `idle`; a turn `working` then `done`; a failing `!cmd` shell command
-  `working` then `error` and nothing after; `/clear` and `/new` `clear` then `idle`;
-  `/exit` a bare `clear`.
+  \` once per process. It sends states only after the terminal answers exactly `ESC ]
+  7501 ; ? : states=idle,working,done,blocked,error : kinds=permission,question,auth
+  ESC \`. A terminal that never answers (tmux, §6) gets no states.
+- State frames look like `ESC ] 7501 ; state=<state>[:kind=<kind>]:app=muse ESC \`.
+  Seen: startup `idle`; a turn `working` then `done` (also when started with a first
+  prompt: `idle`, then `working` 40 ms later); `/clear`, `/new` and in-TUI `/resume`
+  `clear` then `idle`; `/exit` a bare `clear`; a failed turn or a failing `!cmd`
+  `error`.
+- `blocked` kinds, all measured: `kind=auth` (muse's login screen, no login),
+  `kind=permission` (a shell command asking to leave the sandbox, a new network
+  target; fake model), `kind=question` (the model's `request_user_input`; fake model).
+- A turn muse starts by itself — a background command finished or a subagent handed
+  back its result after the turn — sends **no** 7501 frames; its hooks fire (§11).
 - The first `idle` comes only after the trust question (§10) is answered, and it can
-  arrive before the live-registry file (§4) is written (0.13 s before, measured once).
-- With no login, muse (default provider, started with a first prompt) shows its login
-  screen ("Log in with browser · Set an API key", then a device code) and sends
-  `state=blocked:kind=auth:app=muse`; it has already written its live-registry file
-  (§4). `blocked` with `:kind=permission|question` needs a real model to trigger
-  (inferred, not checked).
-- Started with a first prompt, muse is taken to report the state it is in (`working`)
-  once the terminal answers the query; only the startup `idle` has been seen (inferred,
-  not checked).
-- Muse has no status-line hook: OSC 7501 and its own footer are all it shows.
+  arrive before the live-registry file (§4) is written.
+- Muse has no status-line hook and no setting for its own footer.
 
 ## §4 Which session a process holds: the live registry
 
 - For every live session Muse writes
   `museHome/runtime/muse/sessions/<sessionId>.json`:
-  `{"schema_version":1,"session_id":"…","session_name":null,"endpoint_hint":"ms-….sock","workspace_label":"…","target_eligibility":"message_capable","process_generation_hint":"pid=<pid>"}`.
+  `{"schema_version":1,"session_id":"…","process_generation_hint":"pid=<pid>",…}`.
   The pid is the TUI process (§1).
-- On `/clear` and `/new` the old file goes and the new session's file appears with the
-  same pid (well within a second). `muse resume <id>` writes the resumed id. After
+- On `/clear`, `/new` and in-TUI `/resume` the old file goes and the new session's
+  file appears with the same pid. `muse resume <id>` writes the resumed id. After
   `/exit` the last file stays behind, stale.
 - **Muse must create `runtime/muse/sessions` itself**: when that folder already existed
-  (made by another process) before muse started, muse wrote no registry file at all
-  (waited 8 s, Linux).
-- The process also keeps `museHome/sessions/…/<id>/.session.lock` open for the session
-  it holds (`lsof -p`, 5–16 ms on macOS), switching on `/clear`, `/new` and resume.
-  Subagent locks sit under `subagent/`.
+  before muse started, muse wrote no registry file at all (Linux).
+- Subagent logs sit under `<session>/subagent/<child>/session.jsonl`.
 
-## §5 `muse serve`: listing and reading sessions
+## §5 `muse serve`: listing, reading, pending asks
 
 - `muse serve` speaks MSP (Muse Session Protocol): JSON-RPC 2.0 over stdio, one JSON
-  object per line. Handshake: request `initialize {clientInfo:{name,version}}` (`name`
-  must match `[a-z0-9_]+`; a hyphen is refused; no `capabilities` needed), then the
-  notification `initialized`. `muse schema generate-ts` exports the protocol types.
-- `session/list {limit?, cursor?, workspaceRoot?}` → `{sessions:[…], nextCursor}`;
-  without `workspaceRoot` it lists every folder's sessions; `nextCursor` is `null` on
-  the last page. A session carries `sessionId`, `path`, `createdAt`/`updatedAt`
-  (RFC 3339 strings), `workspaceRoot`, `title`, `name`, `firstUserPrompt`,
-  `turnCount`, `kind` (`"root"`), `forkedFrom`. Listing works without a login. A
-  session a TUI holds is listed with `status:"notLoaded"`.
-- `session/read {sessionId, excludeItems:false}` → `history:{mode:"inline",
-  items:[…]}` with items of kind `userMessage`, `agentMessage` (both with `text`),
-  `reasoning`, `reminderChild`; every item carries `itemId`, `turnId`, `status` and
-  `recordedAt` (RFC 3339), seen on macOS. Without a login a plain `muse serve` refuses it
-  (`resume_refused_class_c`: the automated reviewer is unavailable). `muse serve
-  --provider echo` reads echo-made sessions, including one a TUI holds right after
-  its `done` (0.13 s). Reading a session made with the real model this way is
-  inferred, not checked.
+  object per line. Handshake: `initialize {clientInfo:{name,version}}` (`name` matches
+  `[a-z0-9_]+`), then the notification `initialized`.
+- `session/list {limit?, cursor?}` → `{sessions:[…], nextCursor}`, every folder's
+  sessions, without a login. A session carries `sessionId`, `path`, `createdAt`,
+  `updatedAt`, `workspaceRoot`, `title`, `name`, `firstUserPrompt`, `kind`, … A new
+  session is missing from the list for 3–5 s.
+- `muse serve --provider echo` (no login needed) can read a session another muse
+  process holds: `session/read` returns its items (`userMessage`, `agentMessage`, … with
+  `itemId`, `recordedAt`), and `approval/listPending {sessionId}` returns what it waits
+  on: `approvals:[{approvalId, availableChoices:[{choiceId, decision, label}], rawArgs,
+  …}]` and `userInputs:[{questions:[{id, header, question, options:[{label,
+  description}], selection:{mode}}], …}]` (fake model). It cannot act on it:
+  `approval/decide`, `userInput/answer`, `view/subscribe`, `session/resume` are refused
+  (`-32021 sessionInUse` / `-32024 sessionNotLoaded`). Neither can the TUI attach to a
+  host Koloft would run.
 
 ## §6 tmux swallows OSC 7501
 
 - Inside tmux 3.3a (the multiplexer Koloft's remote tabs run in) the 7501 query never
   reaches the outer terminal, also with `allow-passthrough on`, so Muse sends no states
-  at all. A remote Muse tab would have no status.
+  at all.
 
 ## §7 No way to post into a live session from outside
 
-- `muse session-message send` refuses a sender that is not itself a muse session
-  ("external agent ingress is unavailable"). With the experimental gate
-  `MUSE_EXPERIMENTAL_EXTERNAL_AGENT_INGRESS=1`, `list` works but `send` is refused
-  (`causal_metadata_invalid`). The `ms-*.sock` socket the registry names is not MSP
-  (`malformed_hello`). So the only way in is typing into the terminal.
+- `muse session-message send` refuses a sender that is not itself a muse session. The
+  `ms-*.sock` socket the registry names is not MSP. So the only way in is typing into
+  the terminal.
+- While a turn runs the TUI drops an Enter (macOS); a bracketed paste lands in the
+  input box unsent until the next Enter.
 
-## §8 Shell commands inside Muse
+## §8 Shell commands inside Muse (macOS)
 
-- `!cmd` (a shell command the user runs from the TUI), macOS VM, both default and
-  `--approval-mode never`: it keeps the TUI's PATH and environment (a PATH-prepended
-  script ran; a custom variable survived), the network works, `/tmp` is writable, and
-  `~/Library/Application Support/…` is not ("Operation not permitted", Muse's
-  sandbox). Whether the model's own shell tool gets the same is inferred, not checked.
-- In Docker, `!cmd` fails because Muse's Linux sandbox (bubblewrap) cannot make
-  namespaces there, even with `--privileged`.
+- Measured with `!cmd`: the command runs under `/bin/sh -c`, not a login shell, with
+  the TUI's environment intact (nothing removed; a PATH-prepended folder stays first)
+  plus `MUSE_SESSION_ID` and proxy variables. The sandbox lets it write `/tmp`,
+  `$TMPDIR` and the workspace, read but not write `~/Library/Application Support`,
+  and not write `~/Library/Caches` or other home folders.
+- Network, by `--sandbox-network` mode: `proxy-only` (the default) allows only what
+  goes through muse's own per-launch proxy (`HTTP_PROXY`, `NODE_USE_ENV_PROXY=1`);
+  direct TCP to 127.0.0.1 and every unix socket are refused (`EPERM`). `enabled` opens
+  TCP and unix sockets but keeps the file rules. `restricted` closes everything.
+- A git `include` from `GIT_CONFIG_COUNT`, a credential helper on that include, and a
+  `gh` wrapper first on PATH all work in every mode but `restricted`, talking to
+  Koloft through a folder in `/tmp`.
+- Playwright's CDP client ignores the proxy, and writes under `~/Library/Caches`: with
+  `--sandbox-network enabled` and `PWTEST_DAEMON_SESSION_DIR`, `PWTEST_SOCKETS_DIR`,
+  `PWTEST_SERVER_REGISTRY` and `PLAYWRIGHT_BROWSERS_PATH` pointed at `/tmp`,
+  `playwright-cli` reaches Koloft's relay. Under `--permission-profile :unrestricted`
+  it works with no change.
+- `kill -0` on a process outside the sandbox is refused (`EPERM`).
+- A variable in muse's environment is visible to every shell command, `META_API_KEY`
+  included.
 
 ## §9 Hooks
 
-- Hooks passed per run (`-c hooks=…`, `-c managed_hooks_path=…`) fire for the first
-  session only and are lost after `/clear`. Only hooks in the user's own
-  `~/.config/muse/settings.json` survive it. Hook commands get a cleared environment
-  (HOME, PATH, PWD, MUSE_SESSION_ID, MUSE_THREAD_ID). `muse resume` fires no
-  SessionStart; SessionEnd always says `reason:"other"`.
+- `TBH_MANAGED_HOOKS_PATH=<file>` in muse's environment loads `{"hooks":{…}}` from that
+  file (`<Event>: [{hooks:[{type:"command", command}]}]`); the hooks fire for every
+  session of that process, `/clear` and in-TUI `/resume` included. `-c hooks=…` and
+  `-c managed_hooks_path=…` are lost after `/clear`. Hooks in the user's own
+  `settings.json` run too, in no fixed order.
+- A hook command's environment is only `HOME`, `PATH`, `PWD`, `TERM`,
+  `MUSE_SESSION_ID`, `MUSE_THREAD_ID`; it runs outside the sandbox. Its stdin is one
+  JSON object with `session_id`, `cwd`, `hook_event_name` and the event's fields.
+- Events Koloft reads: `SessionStart {source: "startup"|"clear"}` at the first prompt
+  of a session (never at idle, never on `muse resume` or in-TUI `/resume`; `/new` says
+  `startup`); `UserPromptSubmit {prompt, turn_id}`; `Stop {last_assistant_message,
+  turn_id}`; `StopFailure {error, last_assistant_message}`; `PreToolUse` / `PostToolUse`
+  `{tool_name, tool_input, tool_response}`; `PostToolUseFailure`;
+  `SubagentStart` / `SubagentStop {subagent_id, child_session_id}`; `SessionEnd`.
+- Tool shapes (fake model): `write_file` and `edit_file` → `PostToolUse.tool_response
+  {filePath, structuredPatch:[{lines:["+…","-…"], oldStart, oldLines, newStart,
+  newLines}]}`; `bash` with `yield_time_ms` that outlives it → `tool_response` holds
+  `"execution_state":"background_running"` and a `work_id`. A real subagent has a UUID
+  `subagent_id`; muse's own reminder helpers say `skill-reminder`, `goal-reminder`,
+  `verify-reminder`.
+- `!cmd` is a tool named `shell`. `request_user_input` fires no `PreToolUse`.
+- A `PreToolUse` hook printing `{"hookSpecificOutput":{"hookEventName":"PreToolUse",
+  "permissionDecision":"deny","permissionDecisionReason":"…"}}` or
+  `{"decision":"block","reason":"…"}` blocks the tool (measured on `!cmd`). A
+  `PermissionRequest` hook can deny with `{"hookSpecificOutput":{"hookEventName":
+  "PermissionRequest","decision":{"behavior":"deny","message":"…"}}}` but never
+  approve (fake model).
+- Hook stdout is capped at 16 384 bytes; above it the hook fails and nothing it
+  printed is used.
 
 ## §10 Workspace trust
 
 - The TUI in a folder with no recorded decision first asks "Do you trust this
   workspace? … 1 Trust and continue 2 Quit". The answer is saved in
-  `~/.config/muse/trust.json`:
+  `$XDG_CONFIG_HOME/muse/trust.json`:
   `{"schema_version":1,"projects":{"<path>":{"decision":"trusted"}}}`, keyed by the
-  folder's real path (a TUI started in a symlinked folder saved the resolved path).
-- `--trust-workspace` trusts the folder for that run only and saves nothing. `muse
-  exec` in an untrusted folder still runs.
+  folder's real path.
+- An entry another program wrote first is honoured (no question), and muse keeps the
+  other entries when it adds one (it rewrites the file pretty-printed).
+- `--trust-workspace` trusts the folder for that run only and saves nothing.
+
+## §11 Approvals and questions in the terminal
+
+- (fake model) `blocked:kind=permission` shows "1. Yes, proceed (y)  2. No … (esc)";
+  a network target adds "2. Yes, don't ask again this session (p)". `y`, `1` or Enter
+  approve, Esc rejects. `blocked:kind=question` shows the options; Enter picks the
+  first, `<n>` then Enter or Down then Enter another, Esc cancels. A key sent within
+  half a second of the `blocked` frame was applied only a minute later; two seconds
+  after it, at once.
+- Network approvals fire no hook at all; only the 7501 frame and
+  `approval/listPending` (§5) show them.
+
+## §12 Handing muse instructions
+
+- A `SessionStart` hook (§9) that prints
+  `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"…"}}`
+  puts that text into the developer message of the model request (fake model: read
+  from the request body). It fires again after `/clear`; after `muse resume` the text
+  comes back from the session log without the hook firing.
+
+## §13 Credentials
+
+- `muse login` signs in with a device code in the browser; `muse auth set --provider
+  meta --api-key-stdin` stores an API key. `META_API_KEY` in the environment beats
+  both.
+- On macOS a stored credential goes into the login Keychain (service
+  `ai.meta.dev.credentials`, account `meta`), one item for the whole user whatever
+  `XDG_CONFIG_HOME` says: a logout in one config folder logs every folder out. With
+  `TBH_CREDENTIAL_BACKEND=file` the credential is a file, `auth.json` in that config
+  folder (mode 0600), and two folders hold two credentials. Measured for API keys;
+  where a finished device-code login lands is not probed (needs a Meta account).
+- `muse serve` (experimental capability) `account/read` → `state:
+  "loggedOut"|"apiKey"|"envKey"|"accountLogin"`; `account/loginStart {type}` returns
+  the device code and URL.
+- A rejected `META_API_KEY` ends the launch before the TUI: "failed to fetch model
+  catalog: authentication failed: your API key from META_API_KEY was rejected".
+
+## §14 Updates
+
+- The launcher updates muse itself: unless `MUSE_NO_AUTO_UPDATE=1`, at most once an
+  hour it fetches a newer build in the background; the next start prints "Muse Code
+  updated X -> Y". `MUSE_SYNC_UPDATE=1` checks and downloads before starting (about
+  15 s for 311 MB, no login); offline it exits 1 at once, and its curl has no connect
+  timeout. There is no `muse update` command.
+
+## §15 Approval and sandbox flags
+
+- `--permission-profile :read-only|:ask-me|:auto-review|:unrestricted`; with no flag a
+  new session runs `:auto-review`, where a second model call decides whether to
+  approve (fake model: `role=judge` requests).
+- `--permission-profile` refuses to combine with `--sandbox-network`, `--approval-mode`,
+  `--approval-judge`, `--disable-approval` and `--yolo` (exit 2).
+- `--approval-judge off` with `--sandbox-network enabled` (no profile): no judge, a
+  shell command leaving the sandbox still asks the user, a network fetch runs without
+  asking (fake model).
+- `--permission-profile :unrestricted`: no sandbox, no prompts; a command asking to
+  leave the sandbox is refused rather than asked.

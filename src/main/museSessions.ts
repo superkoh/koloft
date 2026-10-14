@@ -1,23 +1,44 @@
 import fs from 'fs'
-import os from 'os'
 import path from 'path'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import { randomUUID } from 'crypto'
-import type { LaunchPermission } from '@shared/types'
+import type { BackgroundItem, LaunchPermission } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import type { Turn } from '@shared/turns'
+import { koloftPrompt } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
-import { TESTED_MUSE_LINE } from './cliMinimums'
+import { MIN_MUSE_VERSION, TESTED_MUSE_LINE } from './cliMinimums'
+import { isNewer } from './releaseNotes'
 import { record } from './codexObservation'
-import { oncePerName, watchJsonDrops } from './jsonDrops'
+import { oncePerName, watchJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import { openDropHandler } from './openDrop'
 import { removeOpenShim, writeOpenShim } from './openShimScript'
+import { writeCodexAgentShim } from './agentShim'
+import { browserControlEnv } from './browserControlEnv'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
   statusEvent,
   type ProgramStatus
 } from './programStatus'
+import {
+  HOOK_DROP_PREFIX,
+  MUSE_HOOKS_ENV,
+  museHook,
+  writeMuseHooks,
+  type MuseHook
+} from './museHooks'
+import {
+  SessionLogTail,
+  finishedWork,
+  museHome,
+  museSessionLog,
+  renamedTo,
+  type LogRecord
+} from './museSessionLog'
+import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { UUID, museSessionKey } from './sessionStore'
 import { listMuseSessions, readMuseTurns, type MuseHistory } from './museServe'
 import { pathWithDirFirst } from './toolInstall'
@@ -30,8 +51,20 @@ import {
   type StoredSessionDeps
 } from './storedSessions'
 
+const exec = promisify(execFile)
+
 export interface MuseSessionDeps extends StoredSessionDeps {
   openShimRoot: string
+  playwrightBin: string
+  browserEndpoint(tabId: string): string
+  agent: {
+    enabled(): boolean
+    answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
+  }
+  gitAccounts: StoredSessionDeps['gitAccounts'] & {
+    picked(cwd: string): Promise<boolean>
+    ghWrapper: string
+  }
 }
 
 interface MuseRun extends StoredRun {
@@ -39,7 +72,13 @@ interface MuseRun extends StoredRun {
   startedAt: number
   boundAt: number
   sinceClear: ProgramStatus[]
-  lastReplyId?: string
+  prompt?: { turnId: string; text: string; at: number }
+  endedTurns: Set<string>
+  children: Set<string>
+  background: Map<string, BackgroundItem>
+  touched: Map<string, FileAcc>
+  liveWrites: number
+  log?: { sessionId: string; tail: SessionLogTail }
 }
 
 // MUSE§1
@@ -54,33 +93,64 @@ const MUSE: CliSpec = {
   testedLine: TESTED_MUSE_LINE
 }
 
-// MUSE§1
-const APPROVAL_MODE: Record<LaunchPermission, string | undefined> = {
-  default: undefined,
-  acceptEdits: undefined,
-  bypass: 'never'
+// MUSE§14
+const MUSE_UPDATE_TIMEOUT_MS = 5 * 60_000
+
+// MUSE§15
+function approvalFlags(permission: LaunchPermission, networkOpen: boolean): string[] {
+  if (permission === 'bypass') return ['--permission-profile', ':unrestricted']
+  return ['--approval-judge', 'off', ...(networkOpen ? ['--sandbox-network', 'enabled'] : [])]
 }
+
+// MUSE§8
+const PLAYWRIGHT_DIRS = {
+  PWTEST_DAEMON_SESSION_DIR: 'pw-daemon',
+  PWTEST_SOCKETS_DIR: 'pw-sockets',
+  PWTEST_SERVER_REGISTRY: 'pw-registry'
+} as const
 
 // MUSE§4
 const REGISTRY_SWEEP_MS = 500
 
-// MUSE§2
+// MUSE§9
+const BACKGROUND_RUNNING = 'background_running'
+const WRITING_TOOLS = new Set(['write_file', 'edit_file'])
+
+// MUSE§4
 function registryDir(env: NodeJS.ProcessEnv): string {
-  const data = env.XDG_DATA_HOME || path.join(env.HOME || os.homedir(), '.local', 'share')
-  return path.join(data, 'muse', 'runtime', 'muse', 'sessions')
+  return path.join(museHome(env), 'runtime', 'muse', 'sessions')
+}
+
+// MUSE§2 MUSE§10
+function trustFile(env: NodeJS.ProcessEnv): string {
+  const config = env.XDG_CONFIG_HOME || path.join(env.HOME || '', '.config')
+  return path.join(config, 'muse', 'trust.json')
+}
+
+function readTrust(env: NodeJS.ProcessEnv): Record<string, unknown> {
+  try {
+    return record(JSON.parse(fs.readFileSync(trustFile(env), 'utf8')))
+  } catch {
+    return {}
+  }
 }
 
 // MUSE§10
 export function museTrustsFolder(env: NodeJS.ProcessEnv, dir: string): boolean {
-  const config = env.XDG_CONFIG_HOME || path.join(env.HOME || os.homedir(), '.config')
-  try {
-    const trust = record(
-      JSON.parse(fs.readFileSync(path.join(config, 'muse', 'trust.json'), 'utf8'))
-    )
-    return record(record(trust.projects)[realpathSafe(dir)]).decision === 'trusted'
-  } catch {
-    return false
-  }
+  return record(record(readTrust(env).projects)[realpathSafe(dir)]).decision === 'trusted'
+}
+
+// ADR-0026 MUSE§10
+export function trustMuseFolder(env: NodeJS.ProcessEnv, dir: string): void {
+  if (museTrustsFolder(env, dir)) return
+  const trust = readTrust(env)
+  const projects = { ...record(trust.projects), [realpathSafe(dir)]: { decision: 'trusted' } }
+  const file = trustFile(env)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  writeWholeBeforeVisible(
+    realpathSafe(file),
+    JSON.stringify({ schema_version: 1, ...trust, projects }, null, 2)
+  )
 }
 
 interface RegistryEntry {
@@ -118,12 +188,37 @@ function readRegistry(
   return { entries, whole }
 }
 
+const responseOf = (input: Record<string, unknown>): Record<string, unknown> => {
+  if (typeof input.tool_response !== 'string') return record(input.tool_response)
+  try {
+    return record(JSON.parse(input.tool_response))
+  } catch {
+    return {}
+  }
+}
+
+// MUSE§9
+function patchDelta(response: Record<string, unknown>): { added: number; removed: number } {
+  let added = 0
+  let removed = 0
+  for (const hunk of Array.isArray(response.structuredPatch) ? response.structuredPatch : []) {
+    const lines = record(hunk).lines
+    for (const line of Array.isArray(lines) ? lines : []) {
+      if (typeof line !== 'string') continue
+      if (line.startsWith('+')) added++
+      else if (line.startsWith('-')) removed++
+    }
+  }
+  return { added, removed }
+}
+
 export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> {
   readonly id = 'muse'
   private parsers = new Map<string, ProgramStatusParser>()
   private sweeping?: ReturnType<typeof setInterval>
   private registrySeenAt?: number
   private unreadable = new Set<string>()
+  private updateTried = false
 
   constructor(
     file: string,
@@ -133,8 +228,26 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
     deps.pty.on('data', ({ id, data }: { id: string; data: string }) => this.onData(id, data))
   }
 
-  protected resolveRuntime(): Promise<CliRuntime> {
-    return resolveCliRuntime(MUSE)
+  // MUSE§14
+  protected async resolveRuntime(): Promise<CliRuntime> {
+    let runtime = await resolveCliRuntime(MUSE)
+    if (!isNewer(MIN_MUSE_VERSION, runtime.version)) return runtime
+    const updating = !this.updateTried
+    if (updating) {
+      this.updateTried = true
+      this.deps.error(
+        `Muse Code ${runtime.version} is older than ${MIN_MUSE_VERSION}, the oldest this Koloft supports. Updating it now…`
+      )
+      await exec(runtime.binary, ['--version'], {
+        env: { ...runtime.env, MUSE_SYNC_UPDATE: '1' },
+        timeout: MUSE_UPDATE_TIMEOUT_MS
+      }).catch(() => undefined)
+      runtime = await resolveCliRuntime(MUSE)
+      if (!isNewer(MIN_MUSE_VERSION, runtime.version)) return runtime
+    }
+    const stillOld = `Koloft needs Muse Code ${MIN_MUSE_VERSION} or newer, and this Mac has ${runtime.version}. Run "muse --version" with a working network to update it, then try again.`
+    if (updating) this.deps.error(stillOld)
+    throw new Error(stillOld)
   }
 
   protected untestedNotice(version: string): string {
@@ -191,19 +304,32 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
   }
 
   protected async startRun(
-    { opts, cwd, workspace, resource }: StartContext,
+    { opts, cwd, workspace, resource, freshWorktree }: StartContext,
     binary: string
   ): Promise<MuseRun> {
-    const tabId = this.deps.pty.nextId()
-    const tools = this.startOpenShim((target) => this.deps.events(tabId, { type: 'open', target }))
-    const env = { ...this.processEnv, PATH: pathWithDirFirst(this.processEnv?.PATH, tools.dir) }
-    const permission = opts.permission ?? 'default'
+    const env = this.env
     // ADR-0026 MUSE§10
-    const trust = opts.trustFolder || (!!resource && this.trustsFolder(workspace))
+    if (freshWorktree) for (const dir of [workspace, cwd]) trustMuseFolder(env, dir)
+    if (opts.trustFolder) trustMuseFolder(env, cwd)
+    const trust = !!resource && this.trustsFolder(workspace)
+    const tabId = this.deps.pty.nextId()
+    const endpoint = this.deps.browserEndpoint(tabId)
+    // MUSE§8
+    const networkOpen = !!endpoint || (await this.deps.gitAccounts.picked(cwd))
+    this.assertStarting()
+    const permission = opts.permission ?? 'default'
+    const agent = this.deps.agent.enabled() ? this.deps.agent : undefined
+    let bound: MuseRun | undefined
+    const tools = this.startTools(
+      (target) => this.deps.events(tabId, { type: 'open', target }),
+      (hook) => bound && this.onHook(bound, hook),
+      agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
+      agent ? koloftPrompt('muse') : undefined
+    )
     const argv = [
       ...(opts.model ? ['--model', opts.model] : []),
       ...(opts.effort ? ['--reasoning-effort', opts.effort] : []),
-      ...(APPROVAL_MODE[permission] ? ['--approval-mode', APPROVAL_MODE[permission]!] : []),
+      ...approvalFlags(permission, networkOpen),
       ...(trust ? ['--trust-workspace'] : []),
       ...(opts.resumeSessionId
         ? ['resume', this.nativeId(opts.resumeSessionId)]
@@ -221,9 +347,13 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
         rows: opts.rows,
         executable: binary,
         argv,
-        processEnv: env,
+        processEnv: { ...env, PATH: pathWithDirFirst(env.PATH, tools.dir) },
         resumeSessionId: opts.resumeSessionId,
-        extraEnv: resource ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) } : {}
+        extraEnv: {
+          ...tools.env,
+          ...browserControlEnv(tabId, endpoint),
+          ...(resource && { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) })
+        }
       })
       const run: MuseRun = {
         tabId: handle.id,
@@ -237,12 +367,21 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
         startedAt: handle.startedAt,
         boundAt: handle.startedAt,
         sinceClear: [],
+        endedTurns: new Set(),
+        children: new Set(),
+        background: new Map(),
+        touched: new Map(),
+        liveWrites: 0,
         releaseTools: () => {
           tools.release()
           this.parsers.delete(handle.id)
         }
       }
-      this.sweeping ??= setInterval(() => this.sweepRegistry(), REGISTRY_SWEEP_MS)
+      bound = run
+      this.sweeping ??= setInterval(() => {
+        this.sweepRegistry()
+        this.followLogs()
+      }, REGISTRY_SWEEP_MS)
       this.sweeping.unref?.()
       return run
     } catch (error) {
@@ -252,20 +391,169 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
     }
   }
 
-  // MUSE§8
-  private startOpenShim(open: (target: string) => void): { dir: string; release(): void } {
+  // MUSE§8 MUSE§9
+  private startTools(
+    open: (target: string) => void,
+    hook: (hook: MuseHook) => void,
+    agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
+    context: string | undefined
+  ): { dir: string; env: Record<string, string>; release(): void } {
     const shim = writeOpenShim(this.deps.openShimRoot, randomUUID(), undefined)
-    const drops = watchJsonDrops(
-      shim.requestDir,
-      oncePerName(() => openDropHandler(open))
-    )
-    return {
-      dir: shim.shimDir,
-      release: () => {
-        drops?.close()
-        removeOpenShim(shim)
+    try {
+      fs.symlinkSync(
+        path.join(this.deps.playwrightBin, 'playwright-cli'),
+        path.join(shim.shimDir, 'playwright-cli')
+      )
+      // PLATFORM§2
+      if (this.deps.gitBin)
+        fs.symlinkSync(path.join(this.deps.gitBin, 'git'), path.join(shim.shimDir, 'git'))
+      fs.symlinkSync(this.deps.gitAccounts.ghWrapper, path.join(shim.shimDir, 'gh'))
+      if (agent) writeCodexAgentShim(shim.shimDir, shim.requestDir)
+      const playwright = Object.fromEntries(
+        Object.entries(PLAYWRIGHT_DIRS).map(([name, dir]) => {
+          const full = path.join(shim.requestDir, dir)
+          fs.mkdirSync(full, { recursive: true })
+          return [name, full]
+        })
+      )
+      const hooksFile = writeMuseHooks(shim.shimDir, shim.requestDir, context)
+      const opens = oncePerName(() => openDropHandler(open))
+      const drops = watchJsonDrops(shim.requestDir, (name) => {
+        if (name.startsWith('req-'))
+          return agent ? (obj): void => agent(shim.requestDir, name, obj) : null
+        if (name.startsWith('res-')) return null
+        if (name.startsWith(HOOK_DROP_PREFIX))
+          return (obj, full): void => {
+            fs.rm(full, { force: true }, () => {})
+            const parsed = museHook(obj)
+            if (parsed) hook(parsed)
+          }
+        return opens(name)
+      })
+      return {
+        dir: shim.shimDir,
+        env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },
+        release: () => {
+          drops?.close()
+          removeOpenShim(shim)
+        }
       }
+    } catch (error) {
+      removeOpenShim(shim)
+      throw error
     }
+  }
+
+  // MUSE§9
+  private onHook(run: MuseRun, hook: MuseHook): void {
+    if (run.explicitStop || run.stopping) return
+    const { input } = hook
+    if (hook.event === 'SubagentStart' || hook.event === 'SubagentStop') {
+      if (typeof input.child_session_id === 'string') run.children.add(input.child_session_id)
+      const id = typeof input.subagent_id === 'string' ? input.subagent_id : ''
+      if (!UUID.test(id)) return
+      if (hook.event === 'SubagentStart')
+        run.background.set(`agent:${id}`, {
+          id: `agent:${id}`,
+          kind: 'agent',
+          label: `Agent ${id.slice(0, 8)}`,
+          state: 'working'
+        })
+      else run.background.delete(`agent:${id}`)
+      return this.publishBackground(run)
+    }
+    if (run.children.has(hook.sessionId)) return
+    if (hook.event === 'SessionStart' || hook.event === 'UserPromptSubmit')
+      this.bindTo(run, hook.sessionId)
+    if (run.info?.nativeSessionId !== hook.sessionId) return
+    switch (hook.event) {
+      case 'UserPromptSubmit': {
+        const text = typeof input.prompt === 'string' ? input.prompt : ''
+        const turnId = typeof input.turn_id === 'string' ? input.turn_id : ''
+        run.prompt = { turnId, text, at: Date.now() }
+        if (text && run.info.title === PLACEHOLDER_TITLES.muse)
+          this.retitle(run.info, text.slice(0, 100))
+        return
+      }
+      case 'Stop':
+      case 'StopFailure':
+        this.readLog(run)
+        return this.endTurn(run, input)
+      case 'PostToolUse':
+        return this.afterTool(run, input)
+    }
+  }
+
+  private endTurn(run: MuseRun, input: Record<string, unknown>): void {
+    const turnId = typeof input.turn_id === 'string' ? input.turn_id : ''
+    if (!turnId || run.endedTurns.has(turnId)) return
+    run.endedTurns.add(turnId)
+    const reply =
+      typeof input.last_assistant_message === 'string' ? input.last_assistant_message : ''
+    const prompt = run.prompt?.turnId === turnId ? run.prompt : undefined
+    const at = Date.now()
+    const turn: Turn = {
+      said: prompt?.text ? [{ who: 'owner', text: prompt.text, at: prompt.at }] : [],
+      reply,
+      at
+    }
+    this.deps.events(run.tabId, { type: 'stop' })
+    if (reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
+  }
+
+  // MUSE§9
+  private afterTool(run: MuseRun, input: Record<string, unknown>): void {
+    const tool = String(input.tool_name)
+    const response = responseOf(input)
+    if (WRITING_TOOLS.has(tool) && typeof response.filePath === 'string') {
+      const target = path.resolve(run.cwd, response.filePath)
+      const { added, removed } = patchDelta(response)
+      noteWrite(run.touched, target, added, removed, Date.now())
+      run.liveWrites++
+      this.deps.events(run.tabId, {
+        type: 'files-changed',
+        files: capTouched([...run.touched].map(([src, acc]) => touchedItem(src, acc))),
+        lastTouched: target,
+        lastWritten: target,
+        liveWrites: run.liveWrites
+      })
+    } else if (
+      tool === 'bash' &&
+      response.execution_state === BACKGROUND_RUNNING &&
+      typeof response.work_id === 'string'
+    ) {
+      const command = record(input.tool_input).command
+      run.background.set(response.work_id, {
+        id: response.work_id,
+        kind: 'command',
+        label: typeof command === 'string' ? command.slice(0, 160) : 'Background command',
+        state: 'working'
+      })
+      this.publishBackground(run)
+    }
+  }
+
+  private publishBackground(run: MuseRun): void {
+    this.deps.events(run.tabId, { type: 'background-changed', items: [...run.background.values()] })
+  }
+
+  // MUSE§2
+  private readLog(run: MuseRun): void {
+    const id = run.info?.nativeSessionId
+    if (!id) return
+    if (run.log?.sessionId !== id) {
+      const file = museSessionLog(this.env, id)
+      if (!file) return
+      run.log = { sessionId: id, tail: new SessionLogTail(file, (r) => this.onLogRecord(run, r)) }
+    }
+    run.log.tail.read()
+  }
+
+  private onLogRecord(run: MuseRun, r: LogRecord): void {
+    const name = renamedTo(r)
+    if (name && run.info) return this.retitle(run.info, name)
+    const work = finishedWork(r)
+    if (work && run.background.delete(work)) this.publishBackground(run)
   }
 
   // MUSE§3
@@ -283,6 +571,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
         this.registrySeenAt = undefined
       }
     }
+    this.readLog(run)
     if (this.sweepRegistry().has(run) || !run.info) return
     for (const status of states) if (status.state !== 'clear') this.emitState(run, status)
   }
@@ -290,33 +579,22 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
   private emitState(run: MuseRun, status: ProgramStatus): void {
     const event = statusEvent(status)
     if (event) this.deps.events(run.tabId, event)
-    if (status.state === 'done' || status.state === 'error') void this.afterTurn(run)
   }
 
-  // MUSE§5
-  private async afterTurn(run: MuseRun): Promise<void> {
-    const key = run.info?.sessionId
-    if (!key) return
-    const read = await this.readHistoryOf(key, 1)
-    const turn = read?.turns[0]
-    const fresh =
-      turn &&
-      read.lastReplyId &&
-      read.lastReplyId !== run.lastReplyId &&
-      turn.at >= run.boundAt &&
-      run.info?.sessionId === key
-    if (run.explicitStop || run.stopping) return
-    if (fresh) {
-      run.lastReplyId = read.lastReplyId
-      this.deps.events(run.tabId, { type: 'turn-ended', turn })
-    }
-    if (run.info?.title !== PLACEHOLDER_TITLES.muse) return
-    await this.refreshHistory().catch(() => {})
-    if (run.explicitStop || run.stopping) return
-    const info = run.info
-    const named = info && this.history.get(info.sessionId)
-    const title = named?.name || named?.preview?.slice(0, 100)
-    if (info && title && info.title === PLACEHOLDER_TITLES.muse) this.retitle(info, title)
+  // MUSE§4 MUSE§9
+  private bindTo(run: MuseRun, sessionId: string): boolean {
+    if (run.info?.nativeSessionId === sessionId) return false
+    const key = museSessionKey(sessionId)
+    const known = this.history.get(key)
+    const switched = !!known && (known.createdAt ?? 0) * 1000 < run.boundAt
+    if (run.info) run.boundAt = Date.now()
+    run.prompt = undefined
+    run.children.clear()
+    run.background.clear()
+    run.log = undefined
+    this.bind(run, known ?? { id: sessionId, cwd: run.cwd }, switched ? 'switch' : 'replace')
+    for (const status of run.sinceClear) this.emitState(run, status)
+    return true
   }
 
   // MUSE§4
@@ -345,16 +623,12 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
       const mine = entries
         .filter((e) => e.pid === run.pid && e.mtimeMs >= run.startedAt - 1000)
         .sort((a, b) => b.mtimeMs - a.mtimeMs)[0]
-      if (!mine || run.info?.nativeSessionId === mine.sessionId) continue
-      const key = museSessionKey(mine.sessionId)
-      const known = this.history.get(key)
-      const switched = !!known && (known.createdAt ?? 0) * 1000 < run.boundAt
-      if (run.info) run.boundAt = Date.now()
-      run.lastReplyId = undefined
-      this.bind(run, known ?? { id: mine.sessionId, cwd: run.cwd }, switched ? 'switch' : 'replace')
-      rebound.add(run)
-      for (const status of run.sinceClear) this.emitState(run, status)
+      if (mine && this.bindTo(run, mine.sessionId)) rebound.add(run)
     }
     return rebound
+  }
+
+  private followLogs(): void {
+    for (const run of this.runs.values()) if (!run.explicitStop && run.info) this.readLog(run)
   }
 }

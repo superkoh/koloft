@@ -15,10 +15,7 @@ const OWN_WORKTREE_RULE =
 const SHARED_CHECKOUT_RULE =
   'If this session does not run in a worktree of its own, never create or switch branches here: other sessions share this checkout.'
 
-type GuidedBackend = Exclude<BackendId, 'muse'>
-
-// MUSE§1
-const HELPER_RULES: Record<GuidedBackend, string[]> = {
+const HELPER_RULES: Record<BackendId, string[]> = {
   claude: [
     `${OWN_WORKTREE_RULE}, and instead of giving a subagent or a workflow agent a worktree of its own. ${SHARED_CHECKOUT_RULE}`,
     'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
@@ -31,10 +28,16 @@ const HELPER_RULES: Record<GuidedBackend, string[]> = {
     'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
     'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a sub-agent (spawn_agent) when the owner asked for sub-agents or for work in the background; otherwise do it yourself. Your sub-agents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
     'Anything else: do it yourself, in this session.'
+  ],
+  muse: [
+    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE}`,
+    'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
+    'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a subagent (subagent_spawn) when the owner asked for subagents or for work in the background; otherwise do it yourself. Your subagents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
+    'Anything else: do it yourself, in this session.'
   ]
 }
 
-export function koloftPrompt(backend: GuidedBackend): string {
+export function koloftPrompt(backend: BackendId): string {
   return `You are running inside Koloft, an app that runs and manages coding sessions for its owner (the person you work for). Run "koloft help" in your shell to see what Koloft lets you do, including how to drive the web pages in this session's Workbench with the playwright-cli command.
 
 HELPERS

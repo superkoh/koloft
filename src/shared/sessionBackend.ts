@@ -167,13 +167,8 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
     local: {
       ...EVERYTHING,
       accounts: PENDING,
-      // MUSE§1
-      agentTools: PENDING,
-      browserControl: PENDING,
-      filesTouched: PENDING,
       // MUSE§3
-      statusline3: { unsupported: 'MUSE§3' },
-      rename: PENDING
+      statusline3: { unsupported: 'MUSE§3' }
     },
     // MUSE§6
     ssh: 'refused'
