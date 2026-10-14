@@ -947,11 +947,16 @@ const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
 
-// CODEX§3 CODEX§20
+// CODEX§3 CODEX§20 MUSE§5
 async function codexAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
   for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
-    const ask = codexSessions?.openApproval(tabId) ?? codexSessions?.openQuestion(tabId)
-    if (ask || !polls || !codexSessions?.hasTab(tabId)) return ask
+    const ask =
+      codexSessions?.openApproval(tabId) ??
+      codexSessions?.openQuestion(tabId) ??
+      museSessions?.openApproval(tabId) ??
+      museSessions?.openQuestion(tabId)
+    const keyed = codexSessions?.hasTab(tabId) || museSessions?.hasTab(tabId)
+    if (ask || !polls || !keyed) return ask
     if (tracker.statusOf(tabId) !== 'approval' && !tracker.awaitsInput(tabId)) return undefined
     await sleep(CODEX_REQUEST_POLL_MS)
   }
@@ -2448,8 +2453,11 @@ app.whenReady().then(() => {
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
     modeOf: (tabId) => sessionBackends.permissionClass(tabId),
-    codexApproval: (tabId) => codexSessions?.openApproval(tabId),
-    codexQuestion: (tabId) => codexSessions?.openQuestion(tabId),
+    pendingApproval: (tabId) =>
+      codexSessions?.openApproval(tabId) ?? museSessions?.openApproval(tabId),
+    pendingQuestion: (tabId) =>
+      codexSessions?.openQuestion(tabId) ?? museSessions?.openQuestion(tabId),
+    answerable: async (tabId) => museSessions?.answerable(tabId),
     regDir: hookPaths.regDir,
     attachmentsDir
   })

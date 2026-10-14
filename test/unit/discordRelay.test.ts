@@ -6,7 +6,7 @@ import type { ConductorBinding, SessionStatus } from '../../src/shared/types'
 import type { DiscordMessage } from '../../src/main/discord/link'
 import type { CodexQuestion } from '../../src/main/discord/dialog'
 import {
-  CODEX_INPUT_NOT_PROBED,
+  inputNotProbed,
   CONDUCTOR_ASKS,
   DiscordRelay,
   OFFLINE_REPLY,
@@ -108,8 +108,9 @@ function setup(
     sendLine: async (tab, line) =>
       void sent.push({ tab, content: JSON.parse(line).message.content }),
     modeOf: () => 'bypass',
-    codexApproval: () => undefined,
-    codexQuestion: () => undefined,
+    pendingApproval: () => undefined,
+    pendingQuestion: () => undefined,
+    answerable: async () => undefined,
     regDir: dir,
     attachmentsDir: path.join(dir, 'attachments'),
     ...more
@@ -464,13 +465,13 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     let input = false
     const { relay, writes } = setup({}, [], {
       backendOf: () => 'codex',
-      codexApproval: () => approval,
-      codexQuestion: () => question,
+      pendingApproval: () => approval,
+      pendingQuestion: () => question,
       awaitsInput: () => input
     })
     expect(await relay.answerSession(MANAGED, 'yes')).toBe(SHOWS_NO_DIALOG)
     input = true
-    expect(await relay.answerSession(MANAGED, 'yes')).toBe(CODEX_INPUT_NOT_PROBED)
+    expect(await relay.answerSession(MANAGED, 'yes')).toBe(inputNotProbed('Codex'))
     question = {
       id: 0,
       question: 'Which colour?',
@@ -486,6 +487,31 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     expect(await relay.answerSession(MANAGED, 'no')).toBeUndefined()
     expect(writes.map((w) => w.data)).toEqual(['2', '2', 'y', '\x1b'])
   })
+
+  // MUSE§11
+  it('a Muse question is pressed its digit then Enter, and an approval y or Esc, each only once Muse is ready to take keys', async () => {
+    let approval: { id: string } | undefined
+    let question: CodexQuestion | undefined = {
+      id: 'u1',
+      question: 'Which colour?',
+      options: [{ label: 'Red' }, { label: 'Blue' }]
+    }
+    const ready: string[] = []
+    const { relay, writes } = setup({}, [], {
+      backendOf: () => 'muse',
+      pendingApproval: () => approval,
+      pendingQuestion: () => question,
+      answerable: async () => void ready.push('ready')
+    })
+    expect(await relay.answerSession(MANAGED, 'blue')).toBeUndefined()
+    expect(writes.map((w) => w.data)).toEqual(['2', '\r'])
+    question = undefined
+    approval = { id: 'a1' }
+    expect(await relay.answerSession(MANAGED, 'maybe')).toBe('a Muse approval takes yes or no.')
+    expect(await relay.answerSession(MANAGED, 'yes')).toBeUndefined()
+    expect(writes.map((w) => w.data)).toEqual(['2', '\r', 'y'])
+    expect(ready).toEqual(['ready', 'ready'])
+  })
 })
 
 describe('DiscordRelay: a Codex conductor’s own question', () => {
@@ -499,7 +525,7 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
     const queued: string[] = []
     const { relay, posts, writes } = setup({ backend: 'codex' }, [], {
       backendOf: () => 'codex',
-      codexQuestion: () => question,
+      pendingQuestion: () => question,
       queue: async (_t, text) => void queued.push(text)
     })
     relay.codexAsked(TAB, question!)
@@ -518,7 +544,7 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
       })
     )
     relay.onMessage(message('502', OWNER, 'green'))
-    expect(writes.map((w) => w.data)).toEqual(['2'])
+    await vi.waitFor(() => expect(writes.map((w) => w.data)).toEqual(['2']))
 
     relay.codexAsked(TAB, question!)
     question = undefined

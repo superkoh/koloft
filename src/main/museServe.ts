@@ -143,6 +143,48 @@ export function museHistory(items: unknown, n: number): MuseHistory {
   return { turns: log.last(n), lastReplyId }
 }
 
+export interface MuseAsk {
+  approval?: { id: string; command?: string }
+  question?: { id: string; question: string; options: { label: string; description?: string }[] }
+}
+
+const commandOf = (args: Record<string, unknown>): string | undefined =>
+  [args.command, args.url, args.path].find((v): v is string => typeof v === 'string')
+
+// MUSE§5 MUSE§11
+export function museAsk(reply: unknown): MuseAsk {
+  const r = record(reply)
+  const approval = record(Array.isArray(r.approvals) ? r.approvals[0] : undefined)
+  if (typeof approval.approvalId === 'string')
+    return { approval: { id: approval.approvalId, command: commandOf(record(approval.rawArgs)) } }
+  const input = record(Array.isArray(r.userInputs) ? r.userInputs[0] : undefined)
+  const questions = Array.isArray(input.questions) ? input.questions.map(record) : []
+  const q = questions[0]
+  if (typeof input.userInputId !== 'string' || questions.length !== 1) return {}
+  if (typeof q.question !== 'string' || record(q.selection).mode !== 'single') return {}
+  const options = (Array.isArray(q.options) ? q.options : []).flatMap((raw) => {
+    const o = record(raw)
+    return typeof o.label === 'string'
+      ? [
+          {
+            label: o.label,
+            ...(typeof o.description === 'string' && { description: o.description })
+          }
+        ]
+      : []
+  })
+  return options.length
+    ? { question: { id: input.userInputId, question: q.question, options } }
+    : {}
+}
+
+// MUSE§5
+export function readMuseAsk(options: ServeOptions, sessionId: string): Promise<MuseAsk> {
+  return withServe({ ...options, extraArgs: ['--provider', 'echo'] }, async (request) =>
+    museAsk(await request('approval/listPending', { sessionId }))
+  )
+}
+
 // MUSE§5
 export async function readMuseTurns(
   options: ServeOptions,

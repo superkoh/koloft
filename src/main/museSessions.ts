@@ -40,7 +40,15 @@ import {
 } from './museSessionLog'
 import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { UUID, museSessionKey } from './sessionStore'
-import { listMuseSessions, readMuseTurns, type MuseHistory } from './museServe'
+import {
+  listMuseSessions,
+  readMuseAsk,
+  readMuseTurns,
+  type MuseAsk,
+  type MuseHistory
+} from './museServe'
+import { sleep } from './codexTransport'
+import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
 import { realpathSafe } from './projectInfo'
 import {
@@ -79,7 +87,11 @@ interface MuseRun extends StoredRun {
   touched: Map<string, FileAcc>
   liveWrites: number
   log?: { sessionId: string; tail: SessionLogTail }
+  waiting?: { since: number; ask: MuseAsk }
 }
+
+// MUSE§11
+const KEYS_TAKE_AFTER_A_DIALOG_SHOWS_MS = 2000
 
 // MUSE§1
 const MUSE: CliSpec = {
@@ -577,8 +589,37 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
   }
 
   private emitState(run: MuseRun, status: ProgramStatus): void {
+    if (status.state === 'blocked') this.readAsk(run)
+    else run.waiting = undefined
     const event = statusEvent(status)
     if (event) this.deps.events(run.tabId, event)
+  }
+
+  // MUSE§5 MUSE§11
+  private readAsk(run: MuseRun): void {
+    const sessionId = run.info?.nativeSessionId
+    if (!sessionId || !this.binary) return
+    const waiting = { since: Date.now(), ask: {} as MuseAsk }
+    run.waiting = waiting
+    void readMuseAsk(this.serveOptions(), sessionId)
+      .then((ask) => {
+        if (run.waiting === waiting) waiting.ask = ask
+      })
+      .catch(() => undefined)
+  }
+
+  openApproval(tabId: string): CodexApproval | undefined {
+    return this.runs.get(tabId)?.waiting?.ask.approval
+  }
+
+  openQuestion(tabId: string): CodexQuestion | undefined {
+    return this.runs.get(tabId)?.waiting?.ask.question
+  }
+
+  // MUSE§11
+  async answerable(tabId: string): Promise<void> {
+    const since = this.runs.get(tabId)?.waiting?.since
+    if (since !== undefined) await sleep(since + KEYS_TAKE_AFTER_A_DIALOG_SHOWS_MS - Date.now())
   }
 
   // MUSE§4 MUSE§9
