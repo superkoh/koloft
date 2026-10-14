@@ -48,24 +48,25 @@ export function parseOpenCounts(stdout: string): OpenCounts | null {
   }
 }
 
+export function openCountsArgs(repo: GithubRepo): string[] {
+  return [
+    'api',
+    'graphql',
+    '-f',
+    `owner=${repo.owner}`,
+    '-f',
+    `name=${repo.repo}`,
+    '-f',
+    `query=${OPEN_COUNTS_QUERY}`
+  ]
+}
+
 // PLATFORM§32
 export async function ghOpenCounts(
   repo: GithubRepo,
   env?: NodeJS.ProcessEnv
 ): Promise<OpenCounts | null> {
-  const { ok, out } = await ghRead(
-    [
-      'api',
-      'graphql',
-      '-f',
-      `owner=${repo.owner}`,
-      '-f',
-      `name=${repo.repo}`,
-      '-f',
-      `query=${OPEN_COUNTS_QUERY}`
-    ],
-    env
-  )
+  const { ok, out } = await ghRead(openCountsArgs(repo), env)
   return ok ? parseOpenCounts(out) : null
 }
 

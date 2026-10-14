@@ -77,6 +77,21 @@ const GH_AUTH_SUBCOMMANDS = ['login', 'logout', 'switch', 'refresh', 'setup-git'
 
 // PLATFORM§49
 export function ghWrapperScript(requestDir: string): string {
+  return ghWrapper(`proto=""
+host=""
+${requestFns(requestDir)}
+ask gh-token "$acct"
+tok=${replyField('token')}`)
+}
+
+// PLATFORM§49 ADR-0036
+export function machineGhWrapperScript(): string {
+  return ghWrapper(
+    'tok="$(sh "$(git config --get koloft.helper 2>/dev/null)" "$acct" get </dev/null 2>/dev/null | sed -n "s/^password=//p")"'
+  )
+}
+
+function ghWrapper(fetchToken: string): string {
   return `#!/bin/sh
 : koloft gh wrapper
 self="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
@@ -108,11 +123,7 @@ case "$1 $2" in
     exit 1
     ;;
 esac
-proto=""
-host=""
-${requestFns(requestDir)}
-ask gh-token "$acct"
-tok=${replyField('token')}
+${fetchToken}
 if [ -z "$tok" ]; then
   echo "koloft: Koloft did not hand over the token for $acct; sign in again in Settings ▸ Accounts." >&2
   exit 1

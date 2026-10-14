@@ -130,7 +130,7 @@ async function run(bin: string, args: string[], timeoutMs: number): Promise<RunR
 export function runSsh(
   host: string,
   remoteCmd: string,
-  opts: { controlDir: string; timeoutMs?: number }
+  opts: { controlDir: string; timeoutMs?: number; input?: Buffer }
 ): Promise<RunResult> {
   return runSshBytes(host, remoteCmd, { ...opts, maxBuffer: 32 * 1024 * 1024 }).then((r) => ({
     ...r,

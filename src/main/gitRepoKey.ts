@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 import fs from 'fs'
-import { isRemoteKey } from '@shared/remoteKey'
+import { parseRemoteKey } from '@shared/remoteKey'
 import type { GitOut } from './resumePlan'
 
 const REPO_KEY_GIT_TIMEOUT_MS = 5000
@@ -28,10 +28,37 @@ export async function repoKeyOf(
   }
 }
 
+export type RemoteRepoKeys = (machine: string, paths: string[]) => Promise<(string | null)[]>
+
 export class GitRepoKeys {
   private keys = new Map<string, string | null>()
 
-  constructor(private gitOut: GitOut = plainGitOut) {}
+  constructor(
+    private gitOut: GitOut = plainGitOut,
+    private remote: RemoteRepoKeys = async (_, paths) => paths.map(() => null)
+  ) {}
+
+  private async keysOf(wsPaths: string[]): Promise<(string | null)[]> {
+    const out: (string | null)[] = wsPaths.map(() => null)
+    const byMachine = new Map<string, number[]>()
+    await Promise.all(
+      wsPaths.map(async (p, i) => {
+        const remote = parseRemoteKey(p)
+        if (!remote) out[i] = await repoKeyOf(p, this.gitOut)
+        else byMachine.set(remote.host, [...(byMachine.get(remote.host) ?? []), i])
+      })
+    )
+    await Promise.all(
+      [...byMachine].map(async ([machine, at]) => {
+        const found = await this.remote(
+          machine,
+          at.map((i) => parseRemoteKey(wsPaths[i])!.path)
+        )
+        at.forEach((i, n) => (out[i] = found[n] ?? null))
+      })
+    )
+    return out
+  }
 
   private otherFolders = new Map<string, string>()
 
@@ -41,16 +68,15 @@ export class GitRepoKeys {
 
   async resolve(dir: string): Promise<string | null> {
     const known = this.known(dir)
-    if (known || isRemoteKey(dir)) return known
-    const found = await repoKeyOf(dir, this.gitOut)
+    if (known) return known
+    const [found] = await this.keysOf([dir])
     if (found) this.otherFolders.set(dir, found)
     return found
   }
 
   async refresh(wsPaths: string[]): Promise<void> {
-    const local = wsPaths.filter((p) => !isRemoteKey(p))
-    const found = await Promise.all(local.map((p) => repoKeyOf(p, this.gitOut)))
-    this.keys = new Map(local.map((p, i) => [p, found[i]]))
+    const found = await this.keysOf(wsPaths)
+    this.keys = new Map(wsPaths.map((p, i) => [p, found[i]]))
   }
 
   set(wsPath: string, repoKey: string): void {

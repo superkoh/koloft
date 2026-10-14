@@ -1932,3 +1932,63 @@ server unless a line says so.
 - Measured 2026-10-13 with Apple git 2.54 and OpenSSH 10.3p1 on macOS 27.0, a temp
   `HOME`, a 403 stub on 127.0.0.1, and a Gitea 1.24.6 and a GitLab CE 19.4.2 in Docker with
   throwaway users and keys.
+
+## §54 One included git config from the environment, on old git
+
+- **`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n` is ignored before git 2.31**: 2.13.7, 2.24.4 and
+  2.30.6 read nothing from it, silently; 2.43.0 does.
+- **`GIT_CONFIG_PARAMETERS="'include.path=<abs path>'"`** (the old one-quote form) loaded
+  the included file on 2.13.7, 2.24.4, 2.30.6 and 2.43.0 alike: an `includeIf
+  "gitdir:<real .git>"` / `"gitdir:<real .git>/"` pair in it matched the main checkout,
+  a subfolder and a linked worktree and no other repository; `credential.<url>.helper`
+  from it answered `git credential fill`; `url.insteadOf` rewrote `ls-remote --get-url`;
+  `user.email` showed; a `git -c alias.k='!git config …' k` child saw it too.
+- **The two-part form `'include.path'='<path>'`** (git ≥ 2.31's own) makes 2.13.7, 2.24.4
+  and 2.30.6 stop with `error: bogus format in GIT_CONFIG_PARAMETERS` / `fatal: unable to
+  parse command-line config` — every git command fails. 2.43.0 reads a value mixing both
+  forms in either order, and when the user runs `git -c core.y=2 …` it passes our
+  one-quote entry on to its children unchanged, with `'core.y'='2'` appended.
+- **An appended entry keeps the user's own**: `'core.x=1' 'include.path=…'` gave both
+  values on every version above.
+- **Below 2.13** `includeIf` does not exist (git's release notes; not run here).
+- `git rev-parse --git-common-dir` prints a path relative to the folder it ran in;
+  `--path-format=absolute` came with git 2.31, so `cd` into it and `pwd -P` works on all
+  of the above.
+- Measured 2026-10-13 in Docker (alpine:3.6 git 2.13.7, alpine:3.11 git 2.24.4,
+  alpine:3.13 git 2.30.6, ubuntu:24.04 git 2.43.0, linux/arm64), with a throwaway repo,
+  worktree and helper script under a plain user's `HOME`. (debian:bullseye-slim's own
+  security mirror answered 404 for git's packages that day, so Debian 11's 2.30.2 was not
+  run; Alpine's 2.30.6 stands in for it.)
+
+## §55 Git Credential Manager's plain-file store, moved to another machine
+
+- **Layout**: with `GCM_CREDENTIAL_STORE=plaintext` and `GCM_PLAINTEXT_STORE_PATH=<dir>`,
+  GCM 3.0.1 on macOS wrote `<dir>/<namespace>/<protocol>/<host>/<account>.credential`
+  holding the secret on line 1, then `service=<protocol>://<host>` and
+  `account=<account>`; for a Gitea refresh token the host folder is
+  `refresh_token.<host>` and the account `OAUTH_USER` (as §50's Keychain item). Nothing
+  reached the Keychain: it ran under a sandbox that denies `/usr/bin/security` and the
+  Security server's mach services.
+- **The folder copied to Linux works there**: GCM 3.0.1 `linux-arm64` with the same
+  namespace and store path, `GCM_PROVIDER=generic`, `GCM_INTERACTIVE=never`, no `DISPLAY`
+  or `WAYLAND_DISPLAY`, and a request carrying `wwwauth[]=Basic realm="Gitea"`, posted
+  `grant_type=refresh_token` with the copied refresh token and Gitea's built-in client id
+  to a stub's `/login/oauth/access_token`, printed the new access token with
+  `username=OAUTH_USER`, exit 0, and wrote the new refresh token back into the same file.
+- **Without libicu the Linux build aborts** (`Couldn't find a valid ICU package installed
+  on the system`, exit 134, core dump) on a Debian 12 slim image;
+  `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` in its environment makes it run.
+- **Release assets of 3.0.1**: `gcm-linux-x64-3.0.1.tar.gz` 31.6 MB,
+  `gcm-linux-arm64-3.0.1.tar.gz` 18.2 MB (44 MB unpacked: the executable, two
+  `.so` files and `NOTICE`), `gcm-osx-x64` and `gcm-osx-arm64` tarballs, no musl build and
+  no checksums file; the sha256 of each comes from the release API's asset `digest`, and
+  the arm64 Linux download matched it.
+- Measured 2026-10-13: the store on macOS 27.0 with the bundled GCM 3.0.1 (a `store` of a
+  fake refresh token, the same code path a sign-in uses to save it), the `get` in Docker
+  `node:22-bookworm-slim` (linux/arm64) with git 2.39.5 against a node stub.
+
+## §56 Reaching the Mac from a container under colima
+
+- Inside a colima container `host.docker.internal` (and `host.lima.internal`) resolve to
+  `192.168.5.2`, and a server listening on the Mac's `127.0.0.1` answered there.
+- Measured 2026-10-13, colima on macOS 27.0, `node:22-bookworm-slim`.

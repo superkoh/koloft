@@ -706,7 +706,7 @@ export function WorkspaceSidebar({
     const w = rows.find((r) => r.workspace.path === fresh.path)
     if (!w) return null
     const f = freshnessShown(w.workspace.freshness) ? w.workspace.freshness : undefined
-    if (!f && !w.workspace.github) return null
+    if (!f && !w.workspace.github && !w.workspace.gitPickable) return null
     return (
       <FreshnessPopover
         key={fresh.path}
@@ -751,7 +751,7 @@ export function WorkspaceSidebar({
               isGit: ws.isGit
             }
             const badge = behindBadge(ws.freshness, Date.now())
-            const gitPanel = freshnessShown(ws.freshness) || !!ws.github
+            const gitPanel = freshnessShown(ws.freshness) || !!ws.github || !!ws.gitPickable
             const nameMq = `ws:${ws.path}`
             const door = ws.isGit
               ? {

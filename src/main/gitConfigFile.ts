@@ -32,7 +32,7 @@ export function gitAccountsDir(userData: string): string {
   return path.join(userData, 'git-accounts')
 }
 
-function fileNameOf(id: string): string {
+export function fileNameOf(id: string): string {
   return id.replace(/[^a-z0-9._@+-]/g, '_')
 }
 
@@ -78,12 +78,13 @@ export function sshKeyConfigText(key: string): string {
 }
 
 // PLATFORM§46
-export function accountConfigText(a: GitAccount, helperPath: string): string {
+export function accountConfigText(a: GitAccount, helperPath: string, namesHelper = false): string {
   return [
     '[koloft]',
     `\taccount = ${quoted(a.id)}`,
     `\tplatform = ${a.platform}`,
     `\thost = ${quoted(a.host)}`,
+    ...(namesHelper ? [`\thelper = ${quoted(helperPath)}`] : []),
     `[credential ${quoted(credentialUrlOf(a))}]`,
     '\thelper =',
     `\thelper = ${quoted(`!${shq(helperPath)} ${shq(a.id)}`)}`,
@@ -105,6 +106,26 @@ function keepOnly(folder: string, kept: Set<string>): void {
   }
 }
 
+export interface GitAccountFiles {
+  accounts: Map<string, string>
+  picks: Map<string, string | undefined>
+  master: [string, string]
+}
+
+export function gitAccountFiles(
+  dir: string,
+  picks: GitRepoPick[],
+  accounts: GitAccount[],
+  accountText: (a: GitAccount) => string,
+  pickTexts: Map<string, string>
+): GitAccountFiles {
+  return {
+    accounts: new Map(accounts.map((a) => [accountConfigPath(dir, a.id), accountText(a)])),
+    picks: new Map(picks.map((p) => [pickConfigPath(dir, p.repo), pickTexts.get(p.repo)])),
+    master: [path.join(dir, 'config'), masterConfigText(picks, dir)]
+  }
+}
+
 export function writeGitAccountConfigs(
   dir: string,
   picks: GitRepoPick[],
@@ -112,26 +133,23 @@ export function writeGitAccountConfigs(
   helperPath: string,
   pickTexts: Map<string, string>
 ): string {
+  const files = gitAccountFiles(
+    dir,
+    picks,
+    accounts,
+    (a) => accountConfigText(a, helperPath),
+    pickTexts
+  )
   const accountsDir = path.join(dir, 'accounts')
   const picksDir = path.join(dir, 'picks')
   for (const d of [accountsDir, picksDir]) fs.mkdirSync(d, { recursive: true })
-  const written = new Set<string>()
-  for (const a of accounts) {
-    const file = accountConfigPath(dir, a.id)
-    writeWholeBeforeVisible(file, accountConfigText(a, helperPath))
-    written.add(path.basename(file))
-  }
-  keepOnly(accountsDir, written)
-  const picked = new Set<string>()
-  for (const p of picks) {
-    const file = pickConfigPath(dir, p.repo)
-    const text = pickTexts.get(p.repo)
+  for (const [file, text] of files.accounts) writeWholeBeforeVisible(file, text)
+  keepOnly(accountsDir, new Set([...files.accounts.keys()].map((f) => path.basename(f))))
+  for (const [file, text] of files.picks)
     if (text !== undefined) writeWholeBeforeVisible(file, text)
-    picked.add(path.basename(file))
-  }
-  keepOnly(picksDir, picked)
-  const master = path.join(dir, 'config')
-  writeWholeBeforeVisible(master, masterConfigText(picks, dir))
+  keepOnly(picksDir, new Set([...files.picks.keys()].map((f) => path.basename(f))))
+  const [master, text] = files.master
+  writeWholeBeforeVisible(master, text)
   return master
 }
 

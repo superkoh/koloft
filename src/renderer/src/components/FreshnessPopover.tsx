@@ -51,7 +51,8 @@ function useGitAccountView(
 ): { acct: WorkspaceGitAccount | undefined; notes: GitNote[]; block: JSX.Element | null } {
   const ws = useStore((s) => s.workspaceRows.find((r) => r.workspace.path === wsPath)?.workspace)
   const openGitAccounts = useStore((s) => s.openGitAccounts)
-  const shown = !!ws && !ws.remote
+  const shown = !!ws
+  const machine = ws?.remote?.host
   const acct = shown ? ws?.gitAccount : undefined
   const picked = acct?.id
   const [switching, setSwitching] = useState(false)
@@ -75,11 +76,11 @@ function useGitAccountView(
 
   const toSettings = (): void => {
     onClose()
-    openGitAccounts()
+    openGitAccounts(undefined, machine)
   }
   const toTokenBox = (): void => {
     onClose()
-    openGitAccounts('git-token')
+    openGitAccounts('git-token', machine)
   }
   const openList = (): void => {
     setSwitching(true)
@@ -159,7 +160,9 @@ function useGitAccountView(
       <>
         <div className="tbu-sep" />
         <div className="tbu-pop-head">
-          <span>Account · {host} on this Mac</span>
+          <span>
+            Account · {host} on {machine ?? 'this Mac'}
+          </span>
         </div>
         {noteRows}
         {shared.length > 0 && (
@@ -171,7 +174,7 @@ function useGitAccountView(
           </div>
         )}
         {accounts
-          .filter((a) => a.host === host)
+          .filter((a) => a.host === host && a.machine === machine)
           .map((a) => (
             <button key={a.id} className="tbu-act" onClick={() => pick(a.id)}>
               {a.id === picked ? <LuCheck size={14} /> : BLANK_ICON}
