@@ -47,6 +47,7 @@ let created: {
 let started: number
 let agentTools: boolean
 let endpoint: string
+let picked: { account: string; env: Record<string, string> } | undefined
 
 const registryDir = (): string =>
   path.join(home, '.local', 'share', 'muse', 'runtime', 'muse', 'sessions')
@@ -130,6 +131,7 @@ beforeEach(() => {
   started = Date.now()
   agentTools = false
   endpoint = ''
+  picked = { account: 'work', env: { TBH_CREDENTIAL_BACKEND: 'file' } }
   let tab = 0
   pty = Object.assign(new EventEmitter(), {
     nextId: vi.fn(() => `pty-${++tab}`),
@@ -164,6 +166,7 @@ beforeEach(() => {
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
     openShimRoot: path.join(home, 'muse-open'),
+    pickHome: () => picked,
     playwrightBin: tools,
     browserEndpoint: () => endpoint,
     agent: { enabled: () => agentTools, answer: vi.fn() },
@@ -238,6 +241,13 @@ describe('MuseSessions launch', () => {
   it("writes the folder into muse's own trust list when Koloft was told to trust it", async () => {
     await launch({ trustFolder: true })
     expect(museTrustsFolder({ HOME: home }, repo)).toBe(true)
+  })
+
+  it('runs on the account Koloft picked, and does not start at all when there is none', async () => {
+    await launch()
+    expect(created[0].env.TBH_CREDENTIAL_BACKEND).toBe('file')
+    picked = undefined
+    await expect(launch()).rejects.toThrow(/No Muse account/)
   })
 
   it("puts the tab's own open, gh and playwright-cli commands first on muse's PATH", async () => {

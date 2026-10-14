@@ -7,7 +7,17 @@ export interface ProjectInfo {
 }
 
 // CC§7 CODEX§15
-export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home'
+export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home' | 'muse-home'
+
+export const ACCOUNT_KINDS: readonly AccountKind[] = [
+  'oauth',
+  'apikey',
+  'custom',
+  'codex-home',
+  'muse-home'
+]
+
+export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = ['codex-home', 'muse-home']
 
 export type AccountStatus = 'ok' | 'expired' | 'unverified'
 
@@ -129,7 +139,7 @@ export interface WorkspaceGitAccount {
 
 export function keychainServiceSuffix(kind: AccountKind): string {
   if (kind === 'oauth') return '-claude-oauth'
-  if (kind === 'codex-home') return '-codex-home'
+  if (kind === 'codex-home' || kind === 'muse-home') return `-${kind}`
   return kind === 'apikey' ? '-anthropic-api' : '-custom-endpoint'
 }
 
@@ -164,8 +174,7 @@ export function sanitizeAccountList(raw: unknown): AccountMeta[] {
   const seen = new Set<string>()
   for (const a of raw as Partial<AccountMeta>[]) {
     if (!a || typeof a.name !== 'string' || !ACCOUNT_NAME_RE.test(a.name)) continue
-    if (a.kind !== 'oauth' && a.kind !== 'apikey' && a.kind !== 'custom' && a.kind !== 'codex-home')
-      continue
+    if (!a.kind || !ACCOUNT_KINDS.includes(a.kind)) continue
     if (a.kind === 'custom' && !isHttpUrl(a.baseUrl)) continue
     const key = `${a.kind}:${a.name.toLowerCase()}`
     if (seen.has(key)) continue
@@ -244,7 +253,7 @@ export interface AccountView extends AccountMeta {
   probeError?: ProbeErrorKind
 }
 
-export type CodexSignInResult =
+export type SignInResult =
   | { ok: true; tabId: string; cwd: string }
   | { ok: false; error: 'invalid-name' | 'duplicate' | 'unavailable' }
 
@@ -1199,7 +1208,9 @@ export interface KoloftApi {
     ): Promise<'ok' | 'invalid-name' | 'duplicate' | 'unknown'>
     cancelLogin(): void
     // CODEX§15
-    codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult>
+    codexSignIn(name: string, again?: boolean): Promise<SignInResult>
+    // MUSE§13
+    museSignIn(name: string, again?: boolean): Promise<SignInResult>
     // CODEX§15
     codexUseReset(name: string): Promise<CodexResetOutcome>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void

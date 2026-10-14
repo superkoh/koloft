@@ -27,6 +27,7 @@ import {
   poolSnapshot,
   popoverX,
   sublineFor,
+  ACCOUNT_KINDS_OF,
   type CapsuleGlyph,
   type PoolSnapshot
 } from '@shared/accountUsage'
@@ -126,7 +127,7 @@ export function TopbarUsage(): JSX.Element | null {
   if (members.length === 0 && codex.length === 0) return null
 
   const claude = members.length > 0
-  const enabled = accounts.filter((a) => a.enabled && a.kind !== 'codex-home')
+  const enabled = accounts.filter((a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind))
   const armed = claude && meteredArmed(accounts, Math.floor(now / 1000))
   const total = claude ? poolGlyph(members, now) : null
   const codexGlyphs = codex.map((a) => codexGlyph(a, now))

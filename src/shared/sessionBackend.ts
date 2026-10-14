@@ -166,7 +166,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
   muse: {
     local: {
       ...EVERYTHING,
-      accounts: PENDING,
       // MUSE§3
       statusline3: { unsupported: 'MUSE§3' }
     },

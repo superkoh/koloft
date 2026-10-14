@@ -3,7 +3,13 @@ import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { randomUUID } from 'crypto'
-import type { BackgroundItem, LaunchPermission } from '@shared/types'
+import type {
+  BackendSessionInfo,
+  BackgroundItem,
+  CreateTabOptions,
+  LaunchPermission
+} from '@shared/types'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import { koloftPrompt } from '@shared/agentGuide'
@@ -64,6 +70,7 @@ const exec = promisify(execFile)
 
 export interface MuseSessionDeps extends StoredSessionDeps {
   openShimRoot: string
+  pickHome(resumeSessionId?: string): { account: string; env: Record<string, string> } | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
   agent: {
@@ -76,7 +83,14 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   }
 }
 
+interface MuseLaunch {
+  binary: string
+  account: string
+  env: NodeJS.ProcessEnv
+}
+
 interface MuseRun extends StoredRun {
+  account: string
   pid?: number
   startedAt: number
   boundAt: number
@@ -225,7 +239,7 @@ function patchDelta(response: Record<string, unknown>): { added: number; removed
   return { added, removed }
 }
 
-export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> {
+export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaunch> {
   readonly id = 'muse'
   private parsers = new Map<string, ProgramStatusParser>()
   private sweeping?: ReturnType<typeof setInterval>
@@ -330,15 +344,25 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
     }
   }
 
-  protected prepare(): string {
-    return this.binary!
+  get cliBinary(): string | undefined {
+    return this.binary
+  }
+
+  protected prepare(opts: CreateTabOptions): MuseLaunch {
+    // ADR-0030 MUSE§13
+    const picked = this.deps.pickHome(opts.resumeSessionId)
+    if (!picked) throw new Error(NO_USABLE_ACCOUNT.muse)
+    return { binary: this.binary!, account: picked.account, env: { ...this.env, ...picked.env } }
+  }
+
+  protected runDetails(run: MuseRun): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {
+    return { pickedAccount: run.account }
   }
 
   protected async startRun(
     { opts, cwd, workspace, resource, freshWorktree }: StartContext,
-    binary: string
+    { binary, account, env }: MuseLaunch
   ): Promise<MuseRun> {
-    const env = this.env
     // ADR-0026 MUSE§10
     if (freshWorktree) for (const dir of [workspace, cwd]) trustMuseFolder(env, dir)
     if (opts.trustFolder) trustMuseFolder(env, cwd)
@@ -394,6 +418,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> 
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
         permission,
+        account,
         pid: this.deps.pty.pidOf(handle.id),
         startedAt: handle.startedAt,
         boundAt: handle.startedAt,

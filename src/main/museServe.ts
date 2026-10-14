@@ -12,6 +12,7 @@ export interface ServeOptions {
   binary: string
   env: NodeJS.ProcessEnv
   extraArgs?: string[]
+  experimental?: boolean
 }
 
 // MUSE§5
@@ -71,7 +72,10 @@ export async function withServe<T>(
       child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n')
     })
   try {
-    await request('initialize', { clientInfo: { name: 'koloft', version: '1' } })
+    await request('initialize', {
+      clientInfo: { name: 'koloft', version: '1' },
+      ...(options.experimental && { capabilities: { experimentalApi: true } })
+    })
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'initialized', params: {} }) + '\n')
     return await use(request)
   } finally {
@@ -183,6 +187,34 @@ export function readMuseAsk(options: ServeOptions, sessionId: string): Promise<M
   return withServe({ ...options, extraArgs: ['--provider', 'echo'] }, async (request) =>
     museAsk(await request('approval/listPending', { sessionId }))
   )
+}
+
+// MUSE§13
+const SIGNED_IN_STATES = ['apiKey', 'accountLogin']
+
+// MUSE§13
+export async function museSignedIn(options: ServeOptions): Promise<boolean> {
+  return withServe({ ...options, experimental: true }, async (request) =>
+    SIGNED_IN_STATES.includes(String(record(await request('account/read', {})).state))
+  )
+}
+
+// MUSE§13
+export function storeMuseKey(options: ServeOptions, key: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(options.binary, ['auth', 'set', '--provider', 'meta', '--api-key-stdin'], {
+      cwd: os.homedir(),
+      env: options.env,
+      stdio: ['pipe', 'ignore', 'pipe']
+    })
+    let said = ''
+    child.stderr.on('data', (chunk) => (said += String(chunk)))
+    child.on('error', reject)
+    child.on('exit', (code) =>
+      code === 0 ? resolve() : reject(new Error(said.trim() || 'muse auth set failed'))
+    )
+    child.stdin.end(key)
+  })
 }
 
 // MUSE§5

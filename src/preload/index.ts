@@ -443,6 +443,7 @@ const api: KoloftApi = {
     startLogin: (name, reauth) => ipcRenderer.invoke('accounts:start-login', name, reauth),
     cancelLogin: () => ipcRenderer.send('accounts:cancel-login'),
     codexSignIn: (name, again) => ipcRenderer.invoke('accounts:codex-sign-in', name, again),
+    museSignIn: (name, again) => ipcRenderer.invoke('accounts:muse-sign-in', name, again),
     codexUseReset: (name) => ipcRenderer.invoke('accounts:codex-use-reset', name),
     onLoginProgress: (cb) => {
       const handler = (_e: unknown, p: LoginProgress): void => cb(p)

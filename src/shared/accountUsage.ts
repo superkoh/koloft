@@ -8,15 +8,13 @@ import type {
 } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
 
-const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
+export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
   claude: ['oauth', 'apikey', 'custom'],
   codex: ['codex-home'],
-  muse: []
+  muse: ['muse-home']
 }
 
-const signsInByItself = (backend: BackendId): boolean => ACCOUNT_KINDS_OF[backend].length === 0
-
-const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home']
+const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home', 'muse-home']
 
 export function usableAccounts<A extends Pick<AccountMeta, 'kind' | 'enabled' | 'status'>>(
   accounts: readonly A[],
@@ -27,7 +25,7 @@ export function usableAccounts<A extends Pick<AccountMeta, 'kind' | 'enabled' | 
 
 // ADR-0030
 export function hasUsableAccount(accounts: readonly AccountMeta[], backend: BackendId): boolean {
-  return signsInByItself(backend) || usableAccounts(accounts, ACCOUNT_KINDS_OF[backend]).length > 0
+  return usableAccounts(accounts, ACCOUNT_KINDS_OF[backend]).length > 0
 }
 
 export function needsSignInAgain(a: Pick<AccountMeta, 'kind' | 'status'>): boolean {
@@ -69,7 +67,7 @@ export const NO_USABLE_ACCOUNT: Record<BackendId, string> = {
     'No Claude account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
   codex:
     'No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
-  muse: 'Muse uses its own sign-in: run muse login in a terminal.'
+  muse: 'No Muse account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
 }
 
 export const STALE_MS = 15 * 60_000

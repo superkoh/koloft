@@ -1,0 +1,77 @@
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { MuseAccountPicker, prepareMuseHome } from '../../src/main/museAccounts'
+import type { AccountView } from '../../src/shared/types'
+
+let root: string
+let owner: string
+let home: string
+
+beforeEach(() => {
+  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'muse-accounts-')))
+  owner = path.join(root, 'config')
+  home = path.join(root, 'homes', 'work')
+  fs.mkdirSync(path.join(owner, 'muse'), { recursive: true })
+  fs.mkdirSync(path.join(owner, 'gh'))
+})
+afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
+
+const trusted = (file: string): string[] =>
+  Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')).projects ?? {})
+
+describe("a Muse account's own settings folder", () => {
+  it("links back to the owner's muse settings and every other app's settings, but keeps its own sign-in", () => {
+    fs.writeFileSync(path.join(owner, 'muse', 'settings.json'), '{}')
+    prepareMuseHome(home, owner)
+    expect(fs.readlinkSync(path.join(home, 'muse', 'settings.json'))).toBe(
+      path.join(owner, 'muse', 'settings.json')
+    )
+    expect(fs.readlinkSync(path.join(home, 'gh'))).toBe(path.join(owner, 'gh'))
+    fs.writeFileSync(path.join(home, 'muse', 'auth.json'), '{}')
+    prepareMuseHome(home, owner)
+    expect(fs.lstatSync(path.join(home, 'muse', 'auth.json')).isSymbolicLink()).toBe(false)
+  })
+
+  it("keeps a folder muse trusted while the link was replaced, in the owner's trust list", () => {
+    fs.writeFileSync(
+      path.join(owner, 'muse', 'trust.json'),
+      JSON.stringify({ schema_version: 1, projects: { '/a': { decision: 'trusted' } } })
+    )
+    prepareMuseHome(home, owner)
+    const mine = path.join(home, 'muse', 'trust.json')
+    fs.rmSync(mine)
+    fs.writeFileSync(
+      mine,
+      JSON.stringify({ schema_version: 1, projects: { '/b': { decision: 'trusted' } } })
+    )
+    prepareMuseHome(home, owner)
+    expect(fs.lstatSync(mine).isSymbolicLink()).toBe(true)
+    expect(trusted(path.join(owner, 'muse', 'trust.json')).sort()).toEqual(['/a', '/b'])
+  })
+})
+
+describe('picking a Muse account', () => {
+  const account = (name: string, extra: Partial<AccountView> = {}): AccountView => ({
+    name,
+    kind: 'muse-home',
+    enabled: true,
+    fable: 'unknown',
+    status: 'ok',
+    addedAt: 0,
+    ...extra
+  })
+
+  it('keeps a resumed session on its account, takes turns otherwise, and skips one that is off or signed out', () => {
+    const picker = new MuseAccountPicker()
+    const all = [account('a'), account('b'), account('c', { status: 'expired' })]
+    expect(picker.pick(all, 'b')?.name).toBe('b')
+    expect([picker.pick(all)?.name, picker.pick(all)?.name, picker.pick(all)?.name]).toEqual([
+      'a',
+      'b',
+      'a'
+    ])
+    expect(picker.pick([account('a', { enabled: false })])).toBeUndefined()
+  })
+})

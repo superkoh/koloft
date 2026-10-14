@@ -27,6 +27,8 @@ import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { MuseSessions } from './museSessions'
+import { MuseAccountPicker, museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
+import { museSignedIn, storeMuseKey } from './museServe'
 import type { SessionsWithStore } from './storedSessions'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { WorktreeResource } from './sessionStore'
@@ -259,9 +261,11 @@ import {
   GIT_PLATFORMS,
   isHttpUrl,
   keychainNamespace,
+  SIGN_IN_FOLDER_KINDS,
   type GitPlatform,
   type GitTokenAdd
 } from '@shared/types'
+import { ACCOUNT_KINDS_OF } from '@shared/accountUsage'
 import {
   answerPermissionRequest,
   awaitGuestFor,
@@ -284,7 +288,7 @@ import type {
   BackendId,
   CodexLimits,
   CodexResetOutcome,
-  CodexSignInResult,
+  SignInResult,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
   BrowserDownload,
@@ -1466,9 +1470,12 @@ let probeAllInFlight: Promise<AccountView[]> | null = null
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
   const round = (async (): Promise<AccountView[]> => {
-    const claude = listAccounts().filter((a) => a.enabled && a.kind !== 'codex-home')
+    const claude = listAccounts().filter(
+      (a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind)
+    )
     await Promise.all([
       probeCodexAccounts(),
+      probeMuseAccounts(),
       ...claude.map(async (a) => {
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
@@ -1498,6 +1505,7 @@ async function addAccount(
   secret: string,
   endpoint?: { baseUrl?: string; model?: string }
 ): Promise<AccountAddResult> {
+  if (kind === 'muse-home') return addMuseKey(name, typeof secret === 'string' ? secret : '')
   const v = validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = typeof secret === 'string' ? secret.trim() : ''
@@ -1594,7 +1602,7 @@ function probeCodexAccounts(): Promise<void> {
   return codexProbeRound
 }
 
-async function codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult> {
+async function codexSignIn(name: string, again?: boolean): Promise<SignInResult> {
   const v = again
     ? findAccount(name, 'codex-home')
       ? 'ok'
@@ -1618,6 +1626,103 @@ async function codexSignIn(name: string, again?: boolean): Promise<CodexSignInRe
   const tab = homeShellTab(`CODEX_HOME=${shq(home)} ${shq(binary)} login && exit`)
   codexSignInPtys.set(tab.tabId, name)
   return { ok: true, ...tab }
+}
+
+const musePicker = new MuseAccountPicker()
+const museSignInPtys = new Map<string, string>()
+
+// MUSE§2 MUSE§13
+function museHomeFor(name: string): string {
+  const env = museSessions?.defaultEnv ?? process.env
+  const home = museHomeOf(app.getPath('userData'), name)
+  prepareMuseHome(home, env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'))
+  return home
+}
+
+// ADR-0030 MUSE§13
+function pickMuseHome(
+  resumeSessionId?: string
+): { account: string; env: Record<string, string> } | undefined {
+  const picked = musePicker.pick(accountViews(), sessionAccounts?.of('muse', resumeSessionId))
+  return picked && { account: picked.name, env: museAccountEnv(museHomeFor(picked.name)) }
+}
+
+async function museServeFor(
+  name: string
+): Promise<{ binary: string; env: NodeJS.ProcessEnv } | undefined> {
+  const binary = (await museSessions?.availability())?.available && museSessions?.cliBinary
+  if (!binary) return undefined
+  return { binary, env: { ...museSessions?.defaultEnv, ...museAccountEnv(museHomeFor(name)) } }
+}
+
+// MUSE§13
+async function probeMuseAccount(name: string): Promise<void> {
+  const acct = findAccount(name, 'muse-home')
+  const serve = acct && (await museServeFor(name))
+  if (!acct || !serve) return
+  const key = viewKey(name, 'muse-home')
+  try {
+    const signedIn = await museSignedIn(serve)
+    const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
+    if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+    usageViews.delete(key)
+  } catch {
+    usageViews.set(key, { probeError: 'network' })
+  }
+  pushAccounts()
+}
+
+function probeMuseAccounts(): Promise<void> {
+  return Promise.all(
+    listAccounts()
+      .filter((a) => a.kind === 'muse-home' && a.enabled)
+      .map((a) => probeMuseAccount(a.name))
+  ).then(() => undefined)
+}
+
+function noteMuseAccount(name: string): void {
+  const acct = findAccount(name, 'muse-home')
+  upsertAccountMeta({
+    name,
+    kind: 'muse-home',
+    enabled: acct?.enabled ?? true,
+    fable: 'unknown',
+    status: acct?.status ?? 'unverified',
+    addedAt: acct?.addedAt ?? Date.now()
+  })
+  pushAccounts()
+}
+
+// MUSE§13
+async function museSignIn(name: string, again?: boolean): Promise<SignInResult> {
+  const v = again
+    ? findAccount(name, 'muse-home')
+      ? 'ok'
+      : 'invalid-name'
+    : validateNewAccount(name, 'muse-home')
+  if (v !== 'ok') return { ok: false, error: v }
+  const serve = await museServeFor(name)
+  if (!serve) return { ok: false, error: 'unavailable' }
+  noteMuseAccount(name)
+  const env = museAccountEnv(museHomeFor(name))
+  const assignments = Object.entries(env).map(([k, val]) => `${k}=${shq(val)}`)
+  const tab = homeShellTab(`${assignments.join(' ')} ${shq(serve.binary)} login && exit`)
+  museSignInPtys.set(tab.tabId, name)
+  return { ok: true, ...tab }
+}
+
+// MUSE§13
+async function addMuseKey(name: string, key: string): Promise<AccountAddResult> {
+  const v = validateNewAccount(name, 'muse-home')
+  if (v !== 'ok') return { ok: false, error: v }
+  const trimmed = key.trim()
+  const serve = trimmed ? await museServeFor(name) : undefined
+  if (!serve) return { ok: false, error: 'unknown' }
+  noteMuseAccount(name)
+  await storeMuseKey(serve, trimmed).catch(() => undefined)
+  await probeMuseAccount(name)
+  const account = accountViews().find((a) => a.kind === 'muse-home' && a.name === name)
+  return { ok: account?.status === 'ok', account }
 }
 
 function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
@@ -1988,6 +2093,11 @@ app.whenReady().then(() => {
       codexSignInPtys.delete(e.id)
       void probeCodexAccount(codexAccount)
     }
+    const museAccount = museSignInPtys.get(e.id)
+    if (museAccount) {
+      museSignInPtys.delete(e.id)
+      void probeMuseAccount(museAccount)
+    }
     if (teardownKilledPtys.delete(e.id)) {
       flowGates.get(e.id)?.reset()
       flowGates.delete(e.id)
@@ -2115,6 +2225,7 @@ app.whenReady().then(() => {
       ...storedDeps,
       leftWorktree: (resource) => removeUntouchedWorktree(museSessions, resource),
       openShimRoot: path.join(userData, 'muse-open'),
+      pickHome: pickMuseHome,
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,
@@ -4201,8 +4312,8 @@ function registerIpc(): void {
     ) => addAccount(name, kind, secret, endpoint)
   )
   ipcMain.handle('accounts:remove', async (_e, name: string, kind: AccountKind) => {
-    // CODEX§15
-    if (kind !== 'codex-home') await keychainDelete(kind, name)
+    // CODEX§15 MUSE§13
+    if (!SIGN_IN_FOLDER_KINDS.includes(kind)) await keychainDelete(kind, name)
     removeAccountMeta(name, kind)
     usageViews.delete(viewKey(name, kind))
     picker.forget(kind, name)
@@ -4228,6 +4339,9 @@ function registerIpc(): void {
     startGuidedLogin(name)
     return 'ok'
   })
+  ipcMain.handle('accounts:muse-sign-in', (_e, name: string, again?: boolean) =>
+    museSignIn(name, again === true)
+  )
   ipcMain.handle('accounts:codex-sign-in', (_e, name: string, again?: boolean) =>
     codexSignIn(name, again === true)
   )

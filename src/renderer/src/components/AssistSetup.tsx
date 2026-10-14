@@ -10,7 +10,7 @@ import {
 } from '@shared/sessionBackend'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
-import { AddAccountDialog, CodexSignInDialog, LoginDialog } from './settings/AccountsPane'
+import { AddAccountDialog, LoginDialog, SignInDialog } from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 
 // CC§9 CODEX§15
@@ -155,7 +155,11 @@ export function AssistSetup({
       )}
       {login && <LoginDialog />}
       {codexSignIn && (
-        <CodexSignInDialog again={codexSignIn.again} onClose={() => setCodexSignIn(null)} />
+        <SignInDialog
+          backend="codex"
+          again={codexSignIn.again}
+          onClose={() => setCodexSignIn(null)}
+        />
       )}
       {pasting && <AddAccountDialog kind="oauth" onClose={() => setPasting(false)} />}
     </div>
