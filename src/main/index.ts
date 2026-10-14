@@ -115,7 +115,8 @@ import {
   DEFAULT_THEME,
   remoteWrapperScript,
   setupStatusline,
-  statusLineSetting
+  statusLineSetting,
+  unpackedModulePath
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
 import { bundledGcm, bundledGhDir, linkOrUnlink, setupBundledGit } from './bundledTools'
@@ -377,6 +378,7 @@ import {
 } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
+import { Phones } from './phone/phones'
 import {
   resolveWorkspace,
   sessionChoices,
@@ -1070,6 +1072,20 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
   }
 })
 
+const phones = new Phones({
+  dir: () => path.join(app.getPath('userData'), 'phone'),
+  agentDeviceBin: () => unpackedModulePath('agent-device', 'bin', 'agent-device.mjs'),
+  ready: loginEnvReady,
+  open: (tabId, url) => void openInWorkbench(tabId, routeFor(url, 'agent'), 'agent', url),
+  machineOf: (tabId) => tracker.remoteOf(tabId)?.host,
+  writeOnMachine: (machine, file, bytes) =>
+    hosts.machine(machine).writeBytes(formatRemoteKey(machine, file), bytes),
+  sessionName: (tabId) => {
+    const s = sessionOfTab(tabId)
+    return s ? sidebarTitle(s) : undefined
+  }
+})
+
 const assist = koloftAssist({
   setting: () => loadSettings().assist,
   enabled: (backend) => loadSettings().sessionMethods.enabled[backend],
@@ -1212,6 +1228,7 @@ const agentRequests = new AgentRequests({
     ...notesAndWorkbenchVerbs,
     note: unlessWorkspacelessConductor(notesAndWorkbenchVerbs.note),
     session: sessionCommand.verb,
+    phone: phones.verb,
     workspace: workspaceVerb({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
       sidebar: () => workspaceMgr?.rows() ?? []
@@ -2664,6 +2681,7 @@ app.on('before-quit', (e) => {
   claudeTabExits.clear()
   cronRunner?.quitSweep()
   cronRunner?.stop()
+  phones.quit()
   discordLink?.stop()
   conductors?.flush()
   workspaceMgr?.dispose()
@@ -3398,6 +3416,7 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
   }
   discordNotices?.closed(tabId)
   discordLive?.closed(tabId)
+  if (!restarting) phones.tabClosed(tabId)
   return stopTabProcess(tabId, restarting)
 }
 

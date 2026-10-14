@@ -43,7 +43,10 @@
     "test": "npm run test:unit && npm run test:e2e"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.6",
+    "@grpc/proto-loader": "^0.8.1",
     "@playwright/cli": "0.1.22",
+    "agent-device": "0.21.27",
     "ccstatusline": "2.2.30",
     "electron-chrome-extensions": "^4.9.0",
     "electron-chrome-web-store": "^0.13.0",

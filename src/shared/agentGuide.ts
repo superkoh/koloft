@@ -32,7 +32,7 @@ const HELPER_RULES: Record<BackendId, string[]> = {
 }
 
 export function koloftPrompt(backend: BackendId): string {
-  return `You are running inside Koloft, an app that runs and manages coding sessions for its owner (the person you work for). Run "koloft help" in your shell to see what Koloft lets you do, including how to drive the web pages in this session's Workbench with the playwright-cli command.
+  return `You are running inside Koloft, an app that runs and manages coding sessions for its owner (the person you work for). Run "koloft help" in your shell to see what Koloft lets you do, including how to drive the web pages in this session's Workbench with the playwright-cli command, and an Android or iPhone emulator with koloft phone.
 
 HELPERS
 
@@ -198,10 +198,49 @@ WEB PAGES
 To use the web pages in this session's Workbench, drive them with the playwright-cli command (a tool that controls a browser), which Koloft puts in Claude Code and Codex sessions on this computer. Run it by that name, not through npx or a full path, so you get Koloft's copy. "playwright-cli --help" lists its commands.
     Example: playwright-cli open https://example.com
     Example: playwright-cli snapshot
-When the owner allows browser control, it drives the Workbench browser, whose address is in $KOLOFT_BROWSER_CDP; otherwise it starts a hidden browser of its own. In the Workbench it works in tabs of its own, which the owner sees marked as driven by you; it cannot see the tabs the owner opened, so open the address you need yourself. The Workbench browser takes one tool at a time: if Playwright MCP tools also drive it in this session, the one that comes second is refused with "this endpoint already has a client", so use one of the two ("playwright-cli close" lets go of it). A session on another machine (over SSH) cannot reach the Workbench browser yet.`
+When the owner allows browser control, it drives the Workbench browser, whose address is in $KOLOFT_BROWSER_CDP; otherwise it starts a hidden browser of its own. In the Workbench it works in tabs of its own, which the owner sees marked as driven by you; it cannot see the tabs the owner opened, so open the address you need yourself. The Workbench browser takes one tool at a time: if Playwright MCP tools also drive it in this session, the one that comes second is refused with "this endpoint already has a client", so use one of the two ("playwright-cli close" lets go of it). A session on another machine (over SSH) cannot reach the Workbench browser yet.
+
+PHONE
+
+Koloft can run one phone emulator (an Android phone or an iPhone simulator) on the owner's Mac, with no window of its own. Its live screen shows in this session's Workbench, where the owner can watch and tap too. Only one phone runs at a time, and it belongs to the session that started it; it stops when that session's tab closes. Stop it with "koloft phone stop" when you no longer need it.
+
+koloft phone start android|ios
+    Start the phone and open its screen in the Workbench. It answers at once: run "koloft phone status" until it says ready (Android: about half a minute, plus a one-time 2.3 GB download; iPhone: up to a few minutes the first time). The iPhone needs Xcode and AXe on the Mac; if one is missing, the answer says how to get it. Running start again opens the screen again if the owner closed it.
+
+koloft phone status
+    Say whether the phone is starting, ready or failed, and its screen size: x and y for tap and swipe count from the top left in that size.
+
+koloft phone snapshot
+    List what is on the screen, one element a line, each with a ref like @e3 to tap. A ref holds until the next snapshot.
+
+koloft phone tap <@ref | x y>
+    Tap an element from the last snapshot, or a point.
+    Example: koloft phone tap @e3
+
+koloft phone type <text>
+    Type into the field that has focus (tap it first).
+
+koloft phone swipe <x1> <y1> <x2> <y2>
+    Swipe from one point to another, for example to scroll.
+
+koloft phone key home|back|enter|delete
+    Press a key. back is Android only.
+
+koloft phone screenshot <file>
+    Save a picture of the screen as a PNG file you can look at.
+    Example: koloft phone screenshot shot.png
+
+koloft phone install <app file>
+    Install an app on the phone: an .apk on Android, a simulator .app built by Xcode on the iPhone. The file must be on the Mac, so a session on another machine (over SSH) cannot install.
+
+koloft phone open <app id>
+    Open an installed app by its package name (Android) or bundle id (iPhone).
+    Example: koloft phone open com.android.settings
+
+After a tap, a swipe or typing, run snapshot again to see what changed. A command that takes long answers after a few seconds that it is still running; "koloft phone status" then tells how it ended.`
 
 export const AGENT_SKILL_DESCRIPTION =
-  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
+  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, start and drive an Android or iPhone emulator whose screen shows in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
 
 const RELAY_NEVER_GUESS = `You pass on what the owner says and what the sessions say; you never make anything up.
 - When you send a session the owner's words, quote them exactly as the owner wrote them, inside ${OWNER_QUOTE_MARKS}. Koloft tells the session that only those words are the owner's. What you add outside them only says where the words come from, gives facts the session may not have, and asks it to answer the owner; it never adds an order, a decision, a step, a permission or a hint at an answer the owner did not give, like "change nothing yet" or "should X come first?".
