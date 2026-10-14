@@ -55,6 +55,7 @@ function linkBack(own: string, owners: string): void {
 export function prepareMuseHome(home: string, ownersConfig: string): void {
   const own = path.join(home, 'muse')
   fs.mkdirSync(own, { recursive: true, mode: 0o700 })
+  fs.mkdirSync(path.join(ownersConfig, 'muse'), { recursive: true })
   for (const name of SHARED_WITH_THE_OWNER)
     linkBack(path.join(own, name), path.join(ownersConfig, 'muse', name))
   let entries: string[] = []

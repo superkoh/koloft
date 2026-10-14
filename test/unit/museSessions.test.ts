@@ -77,7 +77,7 @@ const say = (tabId: string, data: string): void => {
 
 function hook(tabId: string, event: string, input: Record<string, unknown>): string {
   const tab = created.find((c) => c.id === tabId)!
-  const hooks = JSON.parse(fs.readFileSync(tab.extraEnv.TBH_MANAGED_HOOKS_PATH, 'utf8')).hooks
+  const hooks = JSON.parse(fs.readFileSync(tab.env.TBH_MANAGED_HOOKS_PATH!, 'utf8')).hooks
   const command: string = hooks[event][0].hooks[0].command
   return execFileSync('/bin/sh', ['-c', command], {
     input: JSON.stringify({ hook_event_name: event, cwd: repo, ...input }),
@@ -234,8 +234,8 @@ describe('MuseSessions launch', () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
     expect(created[0].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
-    expect(created[0].extraEnv).toMatchObject({ KOLOFT_BROWSER_CDP: endpoint })
-    expect(created[0].extraEnv.PWTEST_DAEMON_SESSION_DIR).toMatch(/^\/tmp\//)
+    expect(created[0].env).toMatchObject({ KOLOFT_BROWSER_CDP: endpoint })
+    expect(created[0].env.PWTEST_DAEMON_SESSION_DIR).toMatch(/^\/tmp\//)
   })
 
   it("writes the folder into muse's own trust list when Koloft was told to trust it", async () => {

@@ -402,13 +402,14 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
         rows: opts.rows,
         executable: binary,
         argv,
-        processEnv: { ...env, PATH: pathWithDirFirst(env.PATH, tools.dir) },
-        resumeSessionId: opts.resumeSessionId,
-        extraEnv: {
+        processEnv: {
+          ...env,
+          PATH: pathWithDirFirst(env.PATH, tools.dir),
           ...tools.env,
-          ...browserControlEnv(tabId, endpoint),
-          ...(resource && { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) })
-        }
+          ...browserControlEnv(tabId, endpoint)
+        },
+        resumeSessionId: opts.resumeSessionId,
+        extraEnv: resource ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) } : {}
       })
       const run: MuseRun = {
         tabId: handle.id,

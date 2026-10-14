@@ -7,6 +7,7 @@ import {
   installGhForWorkspaceA,
   installMuse,
   museCalls,
+  museSaid,
   seedSettings,
   trustInMuse,
   type E2EEnv
@@ -886,6 +887,46 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           { answers: { colour: { answers: ['Green'] } } },
           { answers: { colour: { answers: ['Red'] } } }
         ])
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  // MUSE§5 MUSE§11
+  test('a managed Muse session’s approval reaches its thread with its command and is answered by the Yes button there, and its one-question list is answered by the conductor with koloft session answer; each presses its keys in the terminal', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const museId = museCalls(env)[0].sessionId
+      const museTab = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.backendId === 'muse'
+      )!.tabId
+      const said = (): string[] => museSaid(env, museId)
+      await page.evaluate((id) => window.api.terminal.write(id, '/approve\r'), museTab)
+      const approval = (): FakePost | undefined =>
+        threadPosts(fake).find((p) => /^❓ .+ is waiting for you\.\nls -la\n/.test(p.content))
+      await expect.poll(approval, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
+      expect(approval()!.buttons?.map((b) => b.label)).toEqual(['Yes', 'No'])
+      fake.press(OWNER, approval()!.buttons![0], approval()!.channelId)
+      await expect.poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toContain('Ran: ls -la')
+
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
+      await page.evaluate((id) => window.api.terminal.write(id, '/ask\r'), museTab)
+      await expect
+        .poll(() => inThreads(fake).join('\n\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toMatch(/(^|\n)❓ .+ is waiting for you\.\nWhich colour\?\n1\. Red\n2\. Blue\n/)
+      fake.say(OWNER, `/koloft session answer ${museId} Blue`)
+      await expect
+        .poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Picked: Blue')
     } finally {
       await quitAndClose(app)
       await fake.close()

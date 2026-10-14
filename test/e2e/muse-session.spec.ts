@@ -3,6 +3,7 @@ import path from 'path'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
+  E2E_MUSE_ACCOUNT,
   installMuse,
   museCalls,
   seedSettings,
@@ -26,6 +27,8 @@ import {
 } from './helpers/p1'
 
 test.setTimeout(120_000)
+
+const ASKS_THE_OWNER_WITH_THE_BROWSER = ['--approval-judge', 'off', '--sandbox-network', 'enabled']
 
 function museRows(page: Page): Locator {
   return wsRows(page, 'ws-a').filter({
@@ -57,8 +60,10 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await runIn(page, centerTerm(page), '')
       await expect.poll(() => museCalls(env).length).toBe(1)
       const call = museCalls(env)[0]
-      expect(call.argv).toEqual([])
+      expect(call.argv).toEqual(ASKS_THE_OWNER_WITH_THE_BROWSER)
       expect(fs.existsSync(path.join(call.pathHead, 'open'))).toBe(true)
+      expect(call.configHome).toBe(path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT))
+      expect(call.credentials).toBe('file')
       const row = museRows(page)
       await expect(row).toHaveClass(/st-waiting/)
       fs.writeFileSync(path.join(env.home, 'fake-muse-delay'), '1500')
@@ -97,7 +102,11 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
       await history.getByRole('button').filter({ hasText: 'first topic' }).click()
       await expect.poll(() => museCalls(env).length).toBe(3)
-      expect(museCalls(env)[2].argv).toEqual(['resume', first.sessionId])
+      expect(museCalls(env)[2].argv).toEqual([
+        ...ASKS_THE_OWNER_WITH_THE_BROWSER,
+        'resume',
+        first.sessionId
+      ])
       expect(museCalls(env)[2].sessionId).toBe(first.sessionId)
     } finally {
       await quitAndClose(app)
@@ -122,7 +131,11 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       page = await app.firstWindow()
       await waitBooted(page)
       await expect.poll(() => museCalls(env).length, { timeout: 30_000 }).toBe(2)
-      expect(museCalls(env)[1].argv).toEqual(['resume', first.sessionId])
+      expect(museCalls(env)[1].argv).toEqual([
+        ...ASKS_THE_OWNER_WITH_THE_BROWSER,
+        'resume',
+        first.sessionId
+      ])
       await expect(museRows(page)).toHaveCount(1)
       await expect(museRows(page)).toHaveClass(/st-(waiting|idle)/, { timeout: 30_000 })
     } finally {
@@ -147,10 +160,39 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await chooseBackend(page, 'other')
       await expect.poll(() => museCalls(env).length).toBe(1)
       const call = museCalls(env)[0]
-      expect(call.argv).toEqual(['--trust-workspace'])
+      expect(call.argv).toEqual([...ASKS_THE_OWNER_WITH_THE_BROWSER, '--trust-workspace'])
       expect(fs.realpathSync(call.cwd)).not.toBe(fs.realpathSync(env.workspaces.a))
       expect(path.basename(call.cwd)).toBe('muse-tree')
       await expect(museRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§9
+  test("a subagent and a command left running in the background show breathing green with ↻ only while Muse's hooks and session log say they run, and a rename in Muse retitles the row", async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(path.join(env.home, 'fake-muse-subagent-ms'), '4000')
+    fs.writeFileSync(path.join(env.home, 'fake-muse-bg-ms'), '4000')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startMuse(page, env)
+      const row = museRows(page)
+      await runIn(page, centerTerm(page), '/subagent')
+      await expect(row).toHaveClass(/\bst-bg-run\b/)
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 15_000 })
+      await runIn(page, centerTerm(page), '/bg')
+      await expect(row).toHaveClass(/\bst-bg-run\b/)
+      await expect(row).toHaveClass(/st-waiting/)
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 15_000 })
+      await runIn(page, centerTerm(page), '/rename Docs cleanup')
+      await expect(row).toContainText('Docs cleanup')
     } finally {
       await quitAndClose(app)
     }
@@ -169,6 +211,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       const first = await startMuse(page, env)
       await runIn(page, centerTerm(page), 'keep me')
       await expect(museRows(page)).toContainText('keep me')
+      await expect(museRows(page)).toHaveClass(/st-waiting/)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect.poll(() => processAlive(first.pid)).toBe(false)
       await expect(museRows(page)).toHaveClass(/cold/)
@@ -212,12 +255,13 @@ test.describe('Muse Code sessions through the real method chooser, status signal
         'muse-large',
         '--reasoning-effort',
         'high',
-        '--approval-mode',
-        'never',
+        '--permission-profile',
+        ':unrestricted',
         '--trust-workspace',
         TASK
       ])
       expect(museCalls(env)[0].cwd).not.toBe(env.workspaces.a)
+      expect(museCalls(env)[0].credentials).toBe('file')
       await expect
         .poll(
           () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),
