@@ -645,13 +645,11 @@ export interface SessionUsage {
 }
 
 export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
-export const CODEX_PLACEHOLDER_TITLE = 'Codex session'
-export const MUSE_PLACEHOLDER_TITLE = 'Muse session'
 
 export const PLACEHOLDER_TITLES: Record<BackendId, string> = {
   claude: PLACEHOLDER_SESSION_TITLE,
-  codex: CODEX_PLACEHOLDER_TITLE,
-  muse: MUSE_PLACEHOLDER_TITLE
+  codex: 'Codex session',
+  muse: 'Muse session'
 }
 
 export const PENDING_SESSION_TITLE = 'Starting…'

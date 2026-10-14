@@ -93,17 +93,17 @@ function zdotFile(name: string, userDotDir: string, shimDir: string): string {
   return name === '.zprofile' ? `${source}export PATH=${shq(shimDir)}:"$PATH"\n` : source
 }
 
-export interface CodexOpenShim {
+export interface OpenShim {
   shimDir: string
   zdotDir: string
   requestDir: string
 }
 
-export function writeCodexOpenShim(
+export function writeOpenShim(
   root: string,
   token: string,
   userZdotdir: string | undefined
-): CodexOpenShim {
+): OpenShim {
   const shimDir = path.join(root, token)
   const zdotDir = path.join(shimDir, 'zdot')
   const shim = { shimDir, zdotDir, requestDir: `/tmp/koloft-cx-open-${token}` }
@@ -117,13 +117,13 @@ export function writeCodexOpenShim(
       fs.writeFileSync(path.join(zdotDir, name), zdotFile(name, userDotDir, shimDir))
     fs.mkdirSync(shim.requestDir, { mode: 0o700 })
   } catch (error) {
-    removeCodexOpenShim(shim)
+    removeOpenShim(shim)
     throw error
   }
   return shim
 }
 
-export function removeCodexOpenShim(shim: CodexOpenShim): void {
+export function removeOpenShim(shim: OpenShim): void {
   fs.rmSync(shim.shimDir, { recursive: true, force: true })
   fs.rmSync(shim.requestDir, { recursive: true, force: true })
 }

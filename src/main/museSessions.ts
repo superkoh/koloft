@@ -2,33 +2,29 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
-import type {
-  BackendAvailability,
-  BackendSessionInfo,
-  CreateTabOptions,
-  LaunchPermission
-} from '@shared/types'
+import type { LaunchPermission } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import { portOffset } from '@shared/worktreeName'
-import { resolveCliRuntime, type CliSpec } from './cliRuntime'
+import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
 import { TESTED_MUSE_LINE } from './cliMinimums'
 import { record } from './codexObservation'
-import { watchJsonDrops } from './jsonDrops'
-import { openDropTarget, type OpenDrop } from './openDrop'
-import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
+import { oncePerName, watchJsonDrops } from './jsonDrops'
+import { openDropHandler } from './openDrop'
+import { removeOpenShim, writeOpenShim } from './openShimScript'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
   statusEvent,
   type ProgramStatus
 } from './programStatus'
-import { museSessionKey } from './sessionStore'
-import { listMuseSessions, readMuseTurns, type MuseSession } from './museServe'
-import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
+import { UUID, museSessionKey } from './sessionStore'
+import { listMuseSessions, readMuseTurns, type MuseHistory } from './museServe'
+import { pathWithDirFirst } from './toolInstall'
 import { realpathSafe } from './projectInfo'
 import {
   StoredSessions,
+  type HistoryEntry,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
@@ -36,9 +32,6 @@ import {
 
 export interface MuseSessionDeps extends StoredSessionDeps {
   openShimRoot: string
-  fallbackBin?: string
-  gitBin?: string
-  gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }
 }
 
 interface MuseRun extends StoredRun {
@@ -72,11 +65,9 @@ const APPROVAL_MODE: Record<LaunchPermission, string | undefined> = {
 const REGISTRY_SWEEP_MS = 500
 
 // MUSE§2
-export function museHome(env: NodeJS.ProcessEnv): string {
-  return path.join(
-    env.XDG_DATA_HOME || path.join(env.HOME || os.homedir(), '.local', 'share'),
-    'muse'
-  )
+function registryDir(env: NodeJS.ProcessEnv): string {
+  const data = env.XDG_DATA_HOME || path.join(env.HOME || os.homedir(), '.local', 'share')
+  return path.join(data, 'muse', 'runtime', 'muse', 'sessions')
 }
 
 // MUSE§10
@@ -98,10 +89,8 @@ interface RegistryEntry {
   mtimeMs: number
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 // MUSE§4
-function readRegistry(dir: string): RegistryEntry[] {
+function readRegistry(dir: string, pids: Set<number>): RegistryEntry[] {
   let names: string[]
   try {
     names = fs.readdirSync(dir)
@@ -113,24 +102,21 @@ function readRegistry(dir: string): RegistryEntry[] {
     const full = path.join(dir, name)
     try {
       const entry = record(JSON.parse(fs.readFileSync(full, 'utf8')))
-      const pid = /^pid=(\d+)$/.exec(String(entry.process_generation_hint))
+      const pid = Number(/^pid=(\d+)$/.exec(String(entry.process_generation_hint))?.[1])
       if (entry.schema_version !== 1 || typeof entry.session_id !== 'string') return []
-      if (!UUID.test(entry.session_id) || !pid) return []
-      return [
-        { sessionId: entry.session_id, pid: Number(pid[1]), mtimeMs: fs.statSync(full).mtimeMs }
-      ]
+      if (!UUID.test(entry.session_id) || !pids.has(pid)) return []
+      return [{ sessionId: entry.session_id, pid, mtimeMs: fs.statSync(full).mtimeMs }]
     } catch {
       return []
     }
   })
 }
 
-export class MuseSessions extends StoredSessions<MuseRun, MuseSession> {
+export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry> {
   readonly id = 'muse'
-  private binary?: string
-  private processEnv?: NodeJS.ProcessEnv
   private parsers = new Map<string, ProgramStatusParser>()
   private sweeping?: ReturnType<typeof setInterval>
+  private registrySeenAt?: number
   private unreadable = new Set<string>()
 
   constructor(
@@ -141,66 +127,36 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseSession> {
     deps.pty.on('data', ({ id, data }: { id: string; data: string }) => this.onData(id, data))
   }
 
-  protected async probe(): Promise<BackendAvailability> {
-    try {
-      const runtime = await resolveCliRuntime(MUSE)
-      this.binary = runtime.binary
-      this.processEnv = this.withShippedTools(runtime.env)
-      return { id: 'muse', available: true, version: runtime.version, verified: runtime.verified }
-    } catch (error) {
-      this.binary = undefined
-      this.processEnv = undefined
-      return {
-        id: 'muse',
-        available: false,
-        reason: error instanceof Error ? error.message : 'Muse Code is unavailable.'
-      }
-    }
-  }
-
-  // ADR-0033
-  private withShippedTools(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    const { fallbackBin, gitBin } = this.deps
-    let pathVar = env.PATH
-    if (fallbackBin) pathVar = pathWithDirLast(pathVar, fallbackBin)
-    if (gitBin) pathVar = pathWithDirFirst(pathVar, gitBin)
-    return this.deps.gitAccounts.configEnv({ ...env, PATH: pathVar })
-  }
-
-  protected forgetProbe(): void {
-    super.forgetProbe()
-    this.binary = undefined
-    this.processEnv = undefined
-  }
-
-  protected readyToRead(): boolean {
-    return !!this.binary
+  protected resolveRuntime(): Promise<CliRuntime> {
+    return resolveCliRuntime(MUSE)
   }
 
   protected untestedNotice(version: string): string {
     return `Muse Code ${version} is newer than the version Koloft was tested with (${TESTED_MUSE_LINE}.x). It may misbehave.`
   }
 
-  get defaultEnv(): NodeJS.ProcessEnv {
+  private get env(): NodeJS.ProcessEnv {
     return this.processEnv ?? process.env
   }
 
   trustsFolder(dir: string): boolean {
-    return museTrustsFolder(this.defaultEnv, dir)
+    return museTrustsFolder(this.env, dir)
   }
 
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {
     if (!this.binary) throw new Error('Muse Code is unavailable.')
-    return { binary: this.binary, env: this.defaultEnv }
+    return { binary: this.binary, env: this.env }
   }
 
-  protected async listHistory(): Promise<{ key: string; entry: MuseSession; archived: boolean }[]> {
+  protected async listHistory(): Promise<
+    { key: string; entry: HistoryEntry; archived: boolean }[]
+  > {
     const sessions = await listMuseSessions(this.serveOptions())
     return sessions.map((entry) => ({ key: museSessionKey(entry.id), entry, archived: false }))
   }
 
   async transcriptExists(key: string): Promise<boolean> {
-    await this.refreshHistory()
+    if (!this.history.has(key)) await this.refreshHistory()
     return this.history.has(key)
   }
 
@@ -209,10 +165,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseSession> {
     return (await this.readHistoryOf(key, n))?.turns ?? []
   }
 
-  private async readHistoryOf(
-    key: string,
-    n: number
-  ): Promise<Awaited<ReturnType<typeof readMuseTurns>> | undefined> {
+  private async readHistoryOf(key: string, n: number): Promise<MuseHistory | undefined> {
     if (!this.binary && !(await this.availability()).available) return undefined
     try {
       return await readMuseTurns(this.serveOptions(), this.nativeId(key), n)
@@ -225,10 +178,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseSession> {
       }
       return undefined
     }
-  }
-
-  protected prepare(): undefined {
-    return undefined
   }
 
   protected async startRun({ opts, cwd, workspace, resource }: StartContext): Promise<MuseRun> {
@@ -280,7 +229,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseSession> {
           this.parsers.delete(handle.id)
         }
       }
-      this.watchRegistry()
+      this.sweeping ??= setInterval(() => this.sweepRegistry(), REGISTRY_SWEEP_MS)
+      this.sweeping.unref?.()
       return run
     } catch (error) {
       this.parsers.delete(tabId)
@@ -291,24 +241,16 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseSession> {
 
   // MUSE§8
   private startOpenShim(open: (target: string) => void): { dir: string; release(): void } {
-    const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), undefined)
-    const handled = new Set<string>()
-    const drops = watchJsonDrops(shim.requestDir, (name) =>
-      name.startsWith('req-') || name.startsWith('res-')
-        ? null
-        : (obj, full) => {
-            if (handled.has(name)) return
-            handled.add(name)
-            fs.rm(full, { force: true }, () => {})
-            const target = openDropTarget(record(obj) as OpenDrop)
-            if (target) open(target)
-          }
+    const shim = writeOpenShim(this.deps.openShimRoot, randomUUID(), undefined)
+    const drops = watchJsonDrops(
+      shim.requestDir,
+      oncePerName(() => openDropHandler(open))
     )
     return {
       dir: shim.shimDir,
       release: () => {
         drops?.close()
-        removeCodexOpenShim(shim)
+        removeOpenShim(shim)
       }
     }
   }
@@ -320,12 +262,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseSession> {
     const { asked, states } = parser.push(data)
     if (asked) this.deps.pty.write(tabId, PROGRAM_STATUS_REPLY)
     const run = this.runs.get(tabId)
-    for (const status of states) {
-      if (!run || run.explicitStop) continue
-      run.lastStatus = status.state === 'clear' ? undefined : status
-      if (this.sweepRegistry().has(run) || !run.info || !run.lastStatus) continue
-      this.emitState(run, status)
-    }
+    if (!run || run.explicitStop || states.length === 0) return
+    for (const status of states) run.lastStatus = status.state === 'clear' ? undefined : status
+    if (this.sweepRegistry().has(run) || !run.info) return
+    for (const status of states) if (status.state !== 'clear') this.emitState(run, status)
   }
 
   private emitState(run: MuseRun, status: ProgramStatus): void {
@@ -350,16 +290,12 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseSession> {
       run.lastReplyId = read.lastReplyId
       this.deps.events(run.tabId, { type: 'turn-ended', turn })
     }
+    if (run.info?.title !== PLACEHOLDER_TITLES.muse) return
     await this.refreshHistory().catch(() => {})
     const info = run.info
     const named = info && this.history.get(info.sessionId)
     const title = named?.name || named?.preview?.slice(0, 100)
     if (info && title && info.title === PLACEHOLDER_TITLES.muse) this.retitle(info, title)
-  }
-
-  private watchRegistry(): void {
-    this.sweeping ??= setInterval(() => this.sweepRegistry(), REGISTRY_SWEEP_MS)
-    this.sweeping.unref?.()
   }
 
   // MUSE§4
@@ -370,11 +306,21 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseSession> {
       this.sweeping = undefined
       return rebound
     }
-    const entries = readRegistry(
-      path.join(museHome(this.defaultEnv), 'runtime', 'muse', 'sessions')
+    const dir = registryDir(this.env)
+    let changedAt: number
+    try {
+      changedAt = fs.statSync(dir).mtimeMs
+    } catch {
+      return rebound
+    }
+    const unbound = [...this.runs.values()].some((r) => !r.info && !r.explicitStop)
+    if (changedAt === this.registrySeenAt && !unbound) return rebound
+    this.registrySeenAt = changedAt
+    const live = [...this.runs.values()].filter(
+      (r) => !r.explicitStop && !r.stopping && r.pid !== undefined
     )
-    for (const run of this.runs.values()) {
-      if (run.explicitStop || run.stopping || run.pid === undefined) continue
+    const entries = readRegistry(dir, new Set(live.map((r) => r.pid!)))
+    for (const run of live) {
       const mine = entries
         .filter((e) => e.pid === run.pid && e.mtimeMs >= run.startedAt - 1000)
         .sort((a, b) => b.mtimeMs - a.mtimeMs)[0]
@@ -388,23 +334,5 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseSession> {
       if (run.lastStatus) this.emitState(run, run.lastStatus)
     }
     return rebound
-  }
-
-  protected async endRun(): Promise<void> {}
-
-  protected exitedOnItsOwn(): boolean {
-    return true
-  }
-
-  protected runDetails(): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {
-    return {}
-  }
-
-  protected degradedDetails(): BackendSessionInfo['details'] {
-    return undefined
-  }
-
-  protected archivedNotice(): string {
-    return 'This Muse session is archived.'
   }
 }

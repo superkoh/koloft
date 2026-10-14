@@ -24,6 +24,10 @@ export const SESSION_BACKENDS = Object.keys(BACKEND_LABEL) as BackendId[]
 
 export const ALWAYS_ON_BACKEND: BackendId = 'claude'
 
+export function byBackend<T>(value: (backend: BackendId) => T): Record<BackendId, T> {
+  return Object.fromEntries(SESSION_BACKENDS.map((b) => [b, value(b)])) as Record<BackendId, T>
+}
+
 export const ASSIST_BACKENDS = ['claude', 'codex'] as const satisfies readonly BackendId[]
 export type AssistBackend = (typeof ASSIST_BACKENDS)[number]
 
@@ -52,9 +56,7 @@ export function backendIdOf(value: unknown): BackendId | undefined {
 
 export function normalizeSessionMethods(raw: unknown): SessionMethods {
   const value = raw && typeof raw === 'object' ? (raw as Partial<SessionMethods>) : {}
-  const enabled = Object.fromEntries(
-    SESSION_BACKENDS.map((b) => [b, b === ALWAYS_ON_BACKEND || value.enabled?.[b] !== false])
-  ) as Record<BackendId, boolean>
+  const enabled = byBackend((b) => b === ALWAYS_ON_BACKEND || value.enabled?.[b] !== false)
   const picked = backendIdOf(value.defaultBackend)
   return {
     enabled,

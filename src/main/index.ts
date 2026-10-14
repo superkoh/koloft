@@ -429,7 +429,6 @@ let resetAllFlow: () => void = () => {}
 let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
 let codexSessions: CodexSessions | null = null
-let codexStartupError: string | undefined
 let museSessions: MuseSessions | null = null
 const startupErrors: Partial<Record<BackendId, string>> = {}
 
@@ -1144,7 +1143,7 @@ async function sendPeerLine(tabId: string, line: string, ms: number): Promise<vo
 }
 
 async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
-  if (!codexSessions) throw new Error(codexStartupError ?? 'Codex is not available.')
+  if (!codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')
   await codexSessions.queueMessage(tabId, text, clientId)
 }
 
@@ -2103,8 +2102,7 @@ app.whenReady().then(() => {
       }
     })
   } catch (error) {
-    codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
-    startupErrors.codex = codexStartupError
+    startupErrors.codex = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
   }
   try {
     museSessions = new MuseSessions(path.join(userData, 'muse-sessions.json'), {
@@ -2666,8 +2664,8 @@ function askQuit(): boolean {
 }
 setQuitAsk(askQuit)
 
-let codexQuitPending = false
-let codexQuitStopped = false
+let storedQuitPending = false
+let storedQuitStopped = false
 app.on('before-quit', (e) => {
   const decision = quitDecision(Date.now())
   if (decision === 'wait') {
@@ -2684,10 +2682,10 @@ app.on('before-quit', (e) => {
   clearQuitFallback()
   if (!quitCommitted) rememberOpenTabs()
   quitCommitted = true
-  if (!codexQuitStopped && storedSessions().some((s) => s.hasRuns())) {
+  if (!storedQuitStopped && storedSessions().some((s) => s.hasRuns())) {
     e.preventDefault()
-    if (!codexQuitPending) {
-      codexQuitPending = true
+    if (!storedQuitPending) {
+      storedQuitPending = true
       void Promise.all(
         storedSessions().map((s) =>
           s
@@ -2697,7 +2695,7 @@ app.on('before-quit', (e) => {
             )
         )
       ).finally(() => {
-        codexQuitStopped = true
+        storedQuitStopped = true
         app.quit()
       })
     }

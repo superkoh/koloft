@@ -33,17 +33,17 @@ interface SessionStoreData {
   resources: Record<string, WorktreeResource>
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function codexSessionKey(id: string): string {
-  if (!UUID.test(id)) throw new Error('Invalid Codex session ID')
-  return `codex:local:${id}`
-}
+const localSessionKey =
+  (backend: 'codex' | 'muse', label: string) =>
+  (id: string): string => {
+    if (!UUID.test(id)) throw new Error(`Invalid ${label} session ID`)
+    return `${backend}:local:${id}`
+  }
 
-export function museSessionKey(id: string): string {
-  if (!UUID.test(id)) throw new Error('Invalid Muse session ID')
-  return `muse:local:${id}`
-}
+export const codexSessionKey = localSessionKey('codex', 'Codex')
+export const museSessionKey = localSessionKey('muse', 'Muse')
 
 type KeyOf = (id: string) => string
 

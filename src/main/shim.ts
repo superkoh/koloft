@@ -228,6 +228,10 @@ const UTIL_TERMINAL_REFUSAL = {
   )
 }
 
+const GUARDED_OUTSIDE_THE_CLAUDE_SHIM = (
+  Object.keys(UTIL_TERMINAL_REFUSAL) as (keyof typeof UTIL_TERMINAL_REFUSAL)[]
+).filter((tool) => tool !== 'claude')
+
 export function utilTerminalGuard(bin: keyof typeof UTIL_TERMINAL_REFUSAL): string {
   return `#!/bin/sh
 ${UTIL_TERMINAL_REFUSAL[bin]}
@@ -507,7 +511,7 @@ export function setupShim(gitAuthDir: string): ShimPaths {
   fs.writeFileSync(openShimPath, OPEN_SHIM_SCRIPT, { mode: 0o755 })
   fs.chmodSync(openShimPath, 0o755)
 
-  for (const tool of ['codex', 'muse'] as const) {
+  for (const tool of GUARDED_OUTSIDE_THE_CLAUDE_SHIM) {
     const guardPath = path.join(shimDir, tool)
     fs.writeFileSync(guardPath, utilTerminalGuard(tool), { mode: 0o755 })
     fs.chmodSync(guardPath, 0o755)

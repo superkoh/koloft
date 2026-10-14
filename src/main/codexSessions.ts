@@ -39,11 +39,10 @@ import { endCodexAppServersLeftByACrash } from './leftovers'
 import { codexSessionKey } from './sessionStore'
 import { codexTooOld, resolveCodexRuntime, updateCodex, type CodexRuntime } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
-import { watchJsonDrops } from './jsonDrops'
-import { openDropTarget, type OpenDrop } from './openDrop'
-import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
+import { oncePerName, watchJsonDrops } from './jsonDrops'
+import { openDropHandler } from './openDrop'
+import { removeOpenShim, writeOpenShim } from './openShimScript'
 import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
-import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
 import { koloftPrompt } from '@shared/agentGuide'
 import { playwrightCliSession } from '@shared/browserTabEnv'
 import { portOffset } from '@shared/worktreeName'
@@ -184,14 +183,6 @@ function launchChoiceArgs(opts: CreateTabOptions): string[] {
   ]
 }
 
-export interface CodexAvailability {
-  id: 'codex'
-  available: boolean
-  reason?: string
-  version?: string
-  verified?: boolean
-}
-
 const sourceKinds = ['cli', 'vscode', 'appServer']
 
 async function* everyPage(
@@ -220,14 +211,11 @@ export interface CodexSessionDeps extends StoredSessionDeps {
   browserEndpoint(tabId: string): string
   openShimRoot: string
   playwrightBin: string
-  fallbackBin?: string
-  gitBin?: string
   agent: {
     enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
   }
-  gitAccounts: {
-    configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
+  gitAccounts: StoredSessionDeps['gitAccounts'] & {
     picked(cwd: string): Promise<boolean>
     ghWrapper: string
   }
@@ -245,17 +233,10 @@ interface CodexLaunch {
   processEnv: NodeJS.ProcessEnv | undefined
 }
 
-export class CodexSessions extends StoredSessions<
-  CodexRun,
-  CodexThread,
-  CodexLaunch,
-  CodexAvailability
-> {
+export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLaunch> {
   readonly id = 'codex'
   private crashLeftoversEnded?: Promise<void>
   private gateTrustedAt = new Map<string, number | undefined>()
-  private binary?: string
-  private processEnv?: NodeJS.ProcessEnv
   private updateTried = false
 
   constructor(
@@ -265,7 +246,7 @@ export class CodexSessions extends StoredSessions<
     super(file, codexSessionKey, deps)
   }
 
-  private async resolveUpdatingOnce(): Promise<CodexRuntime> {
+  protected async resolveRuntime(): Promise<CodexRuntime> {
     let runtime = await resolveCodexRuntime()
     if (!codexTooOld(runtime)) return runtime
     const updating = !this.updateTried
@@ -283,40 +264,8 @@ export class CodexSessions extends StoredSessions<
     throw new Error(stillOld)
   }
 
-  protected async probe(): Promise<CodexAvailability> {
-    try {
-      const runtime = await this.resolveUpdatingOnce()
-      this.binary = runtime.binary
-      this.processEnv = this.withShippedTools(runtime.env)
-      return {
-        id: 'codex',
-        available: true,
-        version: runtime.version,
-        verified: runtime.verified
-      }
-    } catch (error) {
-      this.binary = undefined
-      this.processEnv = undefined
-      return {
-        id: 'codex',
-        available: false,
-        reason: error instanceof Error ? error.message : 'Codex CLI is unavailable.'
-      }
-    }
-  }
-
   protected untestedNotice(version: string): string {
     return `Codex ${version} is newer than the version Koloft was tested with (${TESTED_CODEX_LINE}.x). It may misbehave.`
-  }
-
-  protected forgetProbe(): void {
-    super.forgetProbe()
-    this.binary = undefined
-    this.processEnv = undefined
-  }
-
-  protected readyToRead(): boolean {
-    return !!this.binary
   }
 
   private async startTransport(
@@ -334,10 +283,6 @@ export class CodexSessions extends StoredSessions<
     }
   }
 
-  get defaultEnv(): NodeJS.ProcessEnv | undefined {
-    return this.processEnv
-  }
-
   get cliBinary(): string | undefined {
     return this.binary
   }
@@ -345,15 +290,6 @@ export class CodexSessions extends StoredSessions<
   // CODEX§15
   private envFor(home: string | undefined): NodeJS.ProcessEnv | undefined {
     return home ? { ...this.processEnv, CODEX_HOME: home } : this.processEnv
-  }
-
-  private withShippedTools(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    const { fallbackBin, gitBin } = this.deps
-    let pathVar = env.PATH
-    if (fallbackBin) pathVar = pathWithDirLast(pathVar, fallbackBin)
-    if (gitBin) pathVar = pathWithDirFirst(pathVar, gitBin)
-    // ADR-0033
-    return this.deps.gitAccounts.configEnv({ ...env, PATH: pathVar })
   }
 
   // ADR-0029 CODEX§27
@@ -656,7 +592,7 @@ export class CodexSessions extends StoredSessions<
     open: (target: string) => void,
     agent?: (dir: string, name: string, raw: unknown) => void
   ): { zdotDir: string; release(): void } {
-    const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), userZdotdir)
+    const shim = writeOpenShim(this.deps.openShimRoot, randomUUID(), userZdotdir)
     fs.symlinkSync(
       path.join(this.deps.playwrightBin, 'playwright-cli'),
       path.join(shim.shimDir, 'playwright-cli')
@@ -666,24 +602,18 @@ export class CodexSessions extends StoredSessions<
       fs.symlinkSync(path.join(this.deps.gitBin, 'git'), path.join(shim.shimDir, 'git'))
     fs.symlinkSync(this.deps.gitAccounts.ghWrapper, path.join(shim.shimDir, 'gh'))
     if (agent) writeCodexAgentShim(shim.shimDir, shim.requestDir)
-    const handled = new Set<string>()
+    const opens = oncePerName(() => openDropHandler(open))
     const drops = watchJsonDrops(shim.requestDir, (name) => {
       if (name.startsWith('req-'))
         return agent ? (obj): void => agent(shim.requestDir, name, obj) : null
       if (name.startsWith('res-')) return null
-      return (obj, full) => {
-        if (handled.has(name)) return
-        handled.add(name)
-        fs.rm(full, { force: true }, () => {})
-        const target = openDropTarget(record(obj) as OpenDrop)
-        if (target) open(target)
-      }
+      return opens(name)
     })
     return {
       zdotDir: shim.zdotDir,
       release: () => {
         drops?.close()
-        removeCodexOpenShim(shim)
+        removeOpenShim(shim)
       }
     }
   }

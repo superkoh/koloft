@@ -58,8 +58,11 @@ needs a Meta account (a real model) has been run: a bullet that depends on one s
   `/exit` a bare `clear`.
 - The first `idle` comes only after the trust question (§10) is answered, and it can
   arrive before the live-registry file (§4) is written (0.13 s before, measured once).
-- `blocked`, with `:kind=permission|question|auth`, is in the binary but needs a real
-  model to trigger (inferred, not checked).
+- With no login, muse (default provider, started with a first prompt) shows its login
+  screen ("Log in with browser · Set an API key", then a device code) and sends
+  `state=blocked:kind=auth:app=muse`; it has already written its live-registry file
+  (§4). `blocked` with `:kind=permission|question` needs a real model to trigger
+  (inferred, not checked).
 - Started with a first prompt, muse is taken to report the state it is in (`working`)
   once the terminal answers the query; only the startup `idle` has been seen (inferred,
   not checked).

@@ -4,6 +4,7 @@ import {
   ALWAYS_ON_BACKEND,
   BACKEND_LABEL,
   SESSION_BACKENDS,
+  byBackend,
   shownAsInstalled,
   unsupportedPairMessage
 } from '@shared/sessionBackend'
@@ -132,9 +133,7 @@ export function SessionLaunchButtons({
 
 function useNoAccountLeads(): Record<BackendId, string> {
   const accounts = useStore((s) => s.accounts)
-  return Object.fromEntries(
-    SESSION_BACKENDS.map((b) => [b, accounts ? noUsableAccountLead(accounts, b) : ''])
-  ) as Record<BackendId, string>
+  return byBackend((b) => (accounts ? noUsableAccountLead(accounts, b) : ''))
 }
 
 export function useAccountIssue(): (backend: BackendId) => string {
@@ -189,8 +188,7 @@ export function BusyLine({ children }: { children: ReactNode }) {
 }
 
 export function SessionLaunchStatus({ launch }: { launch: ReturnType<typeof useSessionLaunch> }) {
-  const watched =
-    launch.methods.defaultBackend === ALWAYS_ON_BACKEND ? [ALWAYS_ON_BACKEND] : SESSION_BACKENDS
+  const watched = [...new Set([ALWAYS_ON_BACKEND, launch.methods.defaultBackend])]
   const issues = watched.flatMap((b) => {
     const reason = launch.methods.enabled[b] ? launch.setupIssue(b) : ''
     return reason ? [{ backend: b, reason }] : []

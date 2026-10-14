@@ -8,6 +8,7 @@ import {
 import {
   backendAvailable,
   BACKEND_LABEL,
+  byBackend,
   effectiveBackend,
   SESSION_BACKENDS,
   unsupportedPairMessage
@@ -357,21 +358,10 @@ export default function App(): JSX.Element {
     let alive = true
     void window.api.sessions.backends().then(
       (list) => {
-        if (alive)
-          setProbed(
-            Object.fromEntries(
-              SESSION_BACKENDS.map((b) => [b, backendAvailable(list, b)])
-            ) as Record<SessionBackend, boolean>
-          )
+        if (alive) setProbed(byBackend((b) => backendAvailable(list, b)))
       },
       () => {
-        if (alive)
-          setProbed(
-            Object.fromEntries(SESSION_BACKENDS.map((b) => [b, false])) as Record<
-              SessionBackend,
-              boolean
-            >
-          )
+        if (alive) setProbed(byBackend(() => false))
       }
     )
     return () => {

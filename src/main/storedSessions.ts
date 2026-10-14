@@ -1,4 +1,3 @@
-import fs from 'fs'
 import path from 'path'
 import type {
   BackendAvailability,
@@ -18,16 +17,10 @@ import type { SearchCandidate } from './sessionSearch'
 import { SessionStore, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
-import { occupantName } from './resumePlan'
+import { dirExistsSync as dirExists, occupantName } from './resumePlan'
+import type { CliRuntime } from './cliRuntime'
+import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
-
-export const dirExists = (p: string): boolean => {
-  try {
-    return fs.statSync(p).isDirectory()
-  } catch {
-    return false
-  }
-}
 
 const AVAILABILITY_FAILURE_MS = 60_000
 const EMIT_THROTTLE_MS = 500
@@ -68,6 +61,9 @@ export interface StoredSessionDeps {
   leftWorktree?(resource: WorktreeResource): Promise<void>
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
+  fallbackBin?: string
+  gitBin?: string
+  gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }
 }
 
 export interface StartContext {
@@ -100,18 +96,15 @@ interface RowScope {
   roots: Map<string, string>
 }
 
-export abstract class StoredSessions<
-  R extends StoredRun,
-  H extends HistoryEntry,
-  P = unknown,
-  A extends BackendAvailability = BackendAvailability
-> {
+export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry, P = undefined> {
   abstract readonly id: BackendId
   protected runs = new Map<string, R>()
   protected history = new Map<string, H>()
   protected archivedIds = new Set<string>()
-  private probed?: { at: number; reply: A }
-  private probing?: Promise<A>
+  private probed?: { at: number; reply: BackendAvailability }
+  private probing?: Promise<BackendAvailability>
+  protected binary?: string
+  protected processEnv?: NodeJS.ProcessEnv
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
@@ -141,16 +134,62 @@ export abstract class StoredSessions<
     })
   }
 
-  protected abstract probe(): Promise<A>
+  protected abstract resolveRuntime(): Promise<CliRuntime>
   protected abstract listHistory(): Promise<{ key: string; entry: H; archived: boolean }[]>
-  protected abstract prepare(opts: CreateTabOptions): P
   protected abstract startRun(ctx: StartContext, prepared: P): Promise<R>
-  protected abstract endRun(run: R): Promise<void>
-  protected abstract exitedOnItsOwn(run: R): boolean
-  protected abstract runDetails(run: R): Pick<BackendSessionInfo, 'details' | 'pickedAccount'>
-  protected abstract degradedDetails(): BackendSessionInfo['details']
-  protected abstract archivedNotice(key: string): string
   protected abstract untestedNotice(version: string): string
+
+  protected prepare(_opts: CreateTabOptions): P {
+    return undefined as P
+  }
+
+  protected async endRun(_run: R): Promise<void> {}
+
+  protected exitedOnItsOwn(_run: R): boolean {
+    return true
+  }
+
+  protected runDetails(_run: R): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {
+    return {}
+  }
+
+  protected degradedDetails(): BackendSessionInfo['details'] {
+    return undefined
+  }
+
+  protected archivedNotice(_key: string): string {
+    return `This ${this.label} session is archived.`
+  }
+
+  private async probe(): Promise<BackendAvailability> {
+    try {
+      const runtime = await this.resolveRuntime()
+      this.binary = runtime.binary
+      this.processEnv = this.withShippedTools(runtime.env)
+      return { id: this.id, available: true, version: runtime.version, verified: runtime.verified }
+    } catch (error) {
+      this.binary = undefined
+      this.processEnv = undefined
+      return {
+        id: this.id,
+        available: false,
+        reason: error instanceof Error ? error.message : `${this.label} CLI is unavailable.`
+      }
+    }
+  }
+
+  // ADR-0033
+  private withShippedTools(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const { fallbackBin, gitBin } = this.deps
+    let pathVar = env.PATH
+    if (fallbackBin) pathVar = pathWithDirLast(pathVar, fallbackBin)
+    if (gitBin) pathVar = pathWithDirFirst(pathVar, gitBin)
+    return this.deps.gitAccounts.configEnv({ ...env, PATH: pathVar })
+  }
+
+  get defaultEnv(): NodeJS.ProcessEnv | undefined {
+    return this.processEnv
+  }
   abstract transcriptExists(key: string): Promise<boolean>
   abstract readTurns(key: string, n: number): Promise<Turn[]>
 
@@ -171,7 +210,7 @@ export abstract class StoredSessions<
     this.emitTimer = setTimeout(() => this.changed(), wait)
   }
 
-  async availability(opts: { force?: boolean } = {}): Promise<A> {
+  async availability(opts: { force?: boolean } = {}): Promise<BackendAvailability> {
     const probed = this.probed
     if (
       !opts.force &&
@@ -194,13 +233,15 @@ export abstract class StoredSessions<
 
   protected forgetProbe(): void {
     this.probed = undefined
+    this.binary = undefined
+    this.processEnv = undefined
   }
 
   protected noteBinaryGone(error: unknown): void {
     if (binaryGone(error)) this.forgetProbe()
   }
 
-  private warnUntestedVersion(available: A): void {
+  private warnUntestedVersion(available: BackendAvailability): void {
     if (available.verified !== false || !available.version) return
     if (this.warnedVersion === available.version) return
     this.warnedVersion = available.version
@@ -362,11 +403,9 @@ export abstract class StoredSessions<
     return this.refreshing
   }
 
-  protected abstract readyToRead(): boolean
-
   private async readHistory(): Promise<void> {
     if (this.shuttingDown) return
-    if (!this.readyToRead()) {
+    if (!this.binary) {
       const available = await this.availability()
       if (!available.available) {
         this.historyError = new Error(available.reason ?? `${this.label} CLI is unavailable.`)

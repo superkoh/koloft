@@ -3,18 +3,10 @@ import os from 'os'
 import readline from 'readline'
 import { TurnLog, type Turn } from '@shared/turns'
 import { record } from './codexObservation'
+import type { HistoryEntry } from './storedSessions'
 
 const SERVE_ANSWERS_WITHIN_MS = 15_000
 const LIST_PAGE = 200
-
-export interface MuseSession {
-  id: string
-  cwd: string
-  name?: string | null
-  preview?: string
-  createdAt?: number
-  updatedAt?: number
-}
 
 export interface ServeOptions {
   binary: string
@@ -92,7 +84,7 @@ const seconds = (iso: unknown): number | undefined => {
   return Number.isFinite(ms) ? ms / 1000 : undefined
 }
 
-function museSession(raw: unknown): MuseSession | undefined {
+function museSession(raw: unknown): HistoryEntry | undefined {
   const s = record(raw)
   if (typeof s.sessionId !== 'string' || typeof s.workspaceRoot !== 'string') return undefined
   if (s.kind !== undefined && s.kind !== 'root') return undefined
@@ -108,9 +100,9 @@ function museSession(raw: unknown): MuseSession | undefined {
 }
 
 // MUSE§5
-export async function listMuseSessions(options: ServeOptions): Promise<MuseSession[]> {
+export async function listMuseSessions(options: ServeOptions): Promise<HistoryEntry[]> {
   return withServe(options, async (request) => {
-    const found: MuseSession[] = []
+    const found: HistoryEntry[] = []
     const seen = new Set<string>()
     let cursor: string | undefined
     do {
