@@ -299,7 +299,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await advanceTo(page, 4)
 
       await expect(installCards(page)).toHaveText(
-        [/^Claude.*Not on this Mac/, /^Codex.*Not on this Mac/],
+        [/^Claude.*Not on this Mac/, /^Codex.*Not on this Mac/, /^Muse.*Not on this Mac/],
         { timeout: 20_000 }
       )
       await expect(welcome(page)).not.toContainText('npm')
