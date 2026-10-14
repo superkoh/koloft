@@ -52,10 +52,10 @@ describe('routeJob: what Koloft Assist is told', () => {
     expect(prompt).toContain('fix the login bug')
   })
 
-  it('lists the Koloft features it may pick by key, leaving out those that act on whichever session or workspace is current', () => {
+  it('lists the Koloft features it may pick by key with the words people use for each, leaving out those that act on whichever session or workspace is current', () => {
     const { prompt } = routeJob(LIST, 'open settings')
-    expect(prompt).toContain('open-settings | Settings…')
-    expect(prompt).toContain('settings-accounts | Settings ▸ Accounts')
+    expect(prompt).toContain('open-settings | Settings… | 设置, 偏好, preferences')
+    expect(prompt).toContain('settings-accounts | Settings ▸ Accounts | 账号, 账户, token')
     expect(prompt).not.toContain('restart-session')
     expect(prompt).not.toContain('scheduled-jobs')
   })
