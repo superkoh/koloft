@@ -286,6 +286,14 @@ body {
   border-radius: 3px;
   margin-right: 4px;
 }
+.tbu-group {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+}
+.tbu > * + .tbu-group {
+  margin-left: 4px;
+}
 .tbu-bar.total .tbu-fill,
 .tbu-bar.total .tbu-fable {
   border-radius: 3px;
@@ -559,7 +567,7 @@ body {
 .isl-sessions {
   flex: 1;
 }
-.isl-notes {
+.isl-dock {
   flex: 0 0 auto;
   margin: 0 6px;
   border-color: var(--line-layout);
@@ -582,7 +590,7 @@ body {
   white-space: nowrap;
   text-align: left;
 }
-.isl-notes .wb-title .ic {
+.isl-dock .wb-title .ic {
   flex: 0 0 auto;
   display: flex;
   align-self: center;
@@ -595,13 +603,13 @@ body {
   flex: 1;
   min-height: 0;
 }
-.isl-notes .ed-area {
+.isl-dock .ed-area {
   min-width: 0;
 }
 
 /* ADR-0012 PLATFORM§10 */
 .island.wb-col:focus-within,
-.island.isl-notes:focus-within,
+.island.isl-dock:focus-within,
 .island.wb-col.caret {
   border-color: var(--accent-line);
 }
@@ -623,8 +631,8 @@ body {
   cursor: row-resize;
   -webkit-app-region: no-drag;
 }
-.gutter-h:not(.idle):hover + .isl-notes,
-.gutter-h.active + .isl-notes {
+.gutter-h:not(.idle):hover + .isl-dock,
+.gutter-h.active + .isl-dock {
   border-top-color: var(--accent);
 }
 .gutter-h.idle {
@@ -5438,6 +5446,10 @@ input.switch:focus-visible {
   border: 1px solid var(--line);
   border-radius: var(--r);
 }
+.job-row.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
 .job-row.off .job-main {
   opacity: 0.5;
 }
@@ -5450,6 +5462,7 @@ input.switch:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  cursor: pointer;
 }
 .job-name {
   font-size: 14px;
@@ -5537,6 +5550,12 @@ input.switch:focus-visible {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--fg-faint);
+}
+.hist-job {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
 }
 .hist-state {
   flex: 1;

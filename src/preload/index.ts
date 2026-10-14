@@ -443,6 +443,7 @@ const api: KoloftApi = {
     startLogin: (name, reauth) => ipcRenderer.invoke('accounts:start-login', name, reauth),
     cancelLogin: () => ipcRenderer.send('accounts:cancel-login'),
     codexSignIn: (name, again) => ipcRenderer.invoke('accounts:codex-sign-in', name, again),
+    codexUseReset: (name) => ipcRenderer.invoke('accounts:codex-use-reset', name),
     onLoginProgress: (cb) => {
       const handler = (_e: unknown, p: LoginProgress): void => cb(p)
       ipcRenderer.on('accounts:login-progress', handler)
@@ -475,7 +476,9 @@ const api: KoloftApi = {
     check: () => ipcRenderer.invoke('gitAccounts:check'),
     pick: (wsPath, id) => ipcRenderer.invoke('gitAccounts:pick', wsPath, id),
     suggest: (wsPath, network) => ipcRenderer.invoke('gitAccounts:suggest', wsPath, network),
-    dismiss: (wsPath) => ipcRenderer.invoke('gitAccounts:dismiss', wsPath)
+    dismiss: (wsPath) => ipcRenderer.invoke('gitAccounts:dismiss', wsPath),
+    makeSshKey: (wsPath) => ipcRenderer.invoke('gitAccounts:make-ssh-key', wsPath),
+    checkSshKey: (wsPath) => ipcRenderer.invoke('gitAccounts:check-ssh-key', wsPath)
   },
   update: {
     version: () => ipcRenderer.invoke('app:version'),

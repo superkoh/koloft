@@ -9,9 +9,10 @@ import type {
   ProjectInfo,
   BackendSessionInfo,
   SessionResumeRequest,
-  BackendSessionRow
+  BackendSessionRow,
+  CodexResetOutcome
 } from '@shared/types'
-import { CODEX_PLACEHOLDER_TITLE } from '@shared/types'
+import { CODEX_PLACEHOLDER_TITLE, CODEX_RESET_OUTCOMES } from '@shared/types'
 import { identityOf, sourceOf } from '@shared/sessionBackend'
 import type { SearchCandidate } from './sessionSearch'
 import type { SessionEvent } from '@shared/sessionEvent'
@@ -516,6 +517,16 @@ export class CodexSessions {
       if (!account.account) return { signedIn: false }
       return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
     })
+  }
+
+  // CODEX§15
+  async useResetCredit(home: string): Promise<CodexResetOutcome> {
+    const done = record(
+      await this.withRpc(home, (rpc) =>
+        rpc.request('account/rateLimitResetCredit/consume', { idempotencyKey: randomUUID() })
+      )
+    )
+    return CODEX_RESET_OUTCOMES.find((o) => o === done.outcome) ?? 'failed'
   }
 
   hasRuns(): boolean {

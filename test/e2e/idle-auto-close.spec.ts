@@ -1,8 +1,10 @@
 import fs from 'fs'
 import path from 'path'
 import type { Locator } from '@playwright/test'
+import type { Terminal } from '@xterm/xterm'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
+  centerTerm,
   focusOwner,
   processAlive,
   readCalls,
@@ -22,8 +24,11 @@ import { seedSettings } from './helpers/env'
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_CLOSE_AND_EACH_REFUSAL_MS = 3000
 const ONE_CLOSE_WINDOW_WITH_MARGIN_MS = 4000
+// CC§12
+const FULLSCREEN_TUI_MOUSE_AND_FOCUS_REPORTS_ON =
+  '\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1004h\x1b[?1006h'
 
-test('an idle session goes to sleep quietly once its needs-you mark is seen (window focus is not a rule): its process ends but its row, tab and screen stay; an unsaved edit and the open tab keep their process; clicking it wakes the same session in that tab, and a line typed while it wakes reaches it', async ({
+test('an idle session goes to sleep quietly once its needs-you mark is seen (window focus is not a rule): its process ends but its row, tab and screen stay; an unsaved edit and the open tab keep their process; clicking it wakes the same session in that tab, and a line typed while it wakes reaches it with nothing from the mouse moves and focus reports its screen sent meanwhile', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -89,9 +94,22 @@ test('an idle session goes to sleep quietly once its needs-you mark is seen (win
     await expect(row('Open C')).not.toHaveClass(/\bcold\b/)
     expect(readCalls(env)).toHaveLength(3)
 
+    await page.evaluate(
+      ([id, modes]) => {
+        const terms = (window as unknown as { __koloftTerms: Record<string, Terminal> })
+          .__koloftTerms
+        terms[id].write(modes)
+      },
+      [asleepTab!, FULLSCREEN_TUI_MOUSE_AND_FOCUS_REPORTS_ON]
+    )
     await row('Idle A').click()
     await expect(row('Idle A')).toHaveClass(/\bactive\b/)
     await expect.poll(() => focusOwner(page)).toBe('tui')
+    const screen = (await centerTerm(page).boundingBox())!
+    await page.mouse.move(screen.x + 20, screen.y + 20)
+    await page.mouse.move(screen.x + screen.width / 2, screen.y + screen.height / 2, {
+      steps: 15
+    })
     await page.keyboard.type('/answer typed while waking')
     await page.keyboard.press('Enter')
     const calls = await waitForCalls(env, 4)

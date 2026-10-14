@@ -69,7 +69,7 @@ type AddMode =
       progress: GitLoginProgress
       again?: string
     }
-  | { step: 'token'; platform: GitPlatform; url: string; why?: string }
+  | { step: 'token'; platform: GitPlatform; url: string; why?: string; again?: string }
 
 function workspacesLabel(n: number): string {
   return `${n} workspace${n === 1 ? '' : 's'}`
@@ -173,7 +173,7 @@ export function GitAccountsSection(): JSX.Element {
       return
     }
     if (gitSignIn(platform, url) === 'token') {
-      setAdding({ step: 'token', platform, url })
+      setAdding({ step: 'token', platform, url, again })
       return
     }
     setAdding({ step: 'login', platform, url, progress: { phase: 'checking' }, again })
@@ -189,7 +189,7 @@ export function GitAccountsSection(): JSX.Element {
       setAdding({ step: 'host', platform, url: raw, error: startFailure(r.error, platform) })
       return
     }
-    setAdding({ step: 'token', platform, url, why: startFailure(r.error, platform) })
+    setAdding({ step: 'token', platform, url, why: startFailure(r.error, platform), again })
   }
 
   return (
@@ -247,7 +247,14 @@ export function GitAccountsSection(): JSX.Element {
         <GitLoginBox
           mode={adding}
           onRetry={() => void begin(adding.platform, adding.url, adding.again)}
-          onToken={() => setAdding({ step: 'token', platform: adding.platform, url: adding.url })}
+          onToken={() =>
+            setAdding({
+              step: 'token',
+              platform: adding.platform,
+              url: adding.url,
+              again: adding.again
+            })
+          }
           onClose={() => setAdding(null)}
         />
       )}
@@ -256,6 +263,7 @@ export function GitAccountsSection(): JSX.Element {
           platform={adding.platform}
           url={adding.url}
           why={adding.why}
+          login={adding.again}
           onClose={() => setAdding(null)}
         />
       )}
@@ -520,15 +528,17 @@ function GitTokenBox({
   platform,
   url,
   why,
+  login,
   onClose
 }: {
   platform: GitPlatform
   url: string
   why?: string
+  login?: string
   onClose(): void
 }): JSX.Element {
   const [secret, setSecret] = useState('')
-  const [username, setUsername] = useState('')
+  const [username, setUsername] = useState(login ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const host = gitHostOf(url)

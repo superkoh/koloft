@@ -149,7 +149,7 @@ export function ConductorsIsland(): JSX.Element {
   return (
     <>
       <div className="gutter-h idle" style={{ height: 10 }} />
-      <div className="island isl-notes isl-conductors">
+      <div className="island isl-dock isl-conductors">
         <div className="wb-bar">
           <span className="wb-title" title="Assist">
             <span className="ic">

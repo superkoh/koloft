@@ -86,7 +86,7 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
     }
   })
 
-  test('it opens on one empty input with no list, Esc closes it, a word that matches nothing lights "Start a session" for ⏎, an action row closes the palette before it opens its own dialog, and ⌘P over another dialog does nothing', async ({
+  test('it opens on one empty input with no list, Esc closes it, a word that matches nothing lights "Ask AI" for ⏎, an action row closes the palette before it opens its own dialog, and ⌘P over another dialog does nothing', async ({
     env
   }) => {
     const app = await launchApp(env)
@@ -96,7 +96,7 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
 
       await openPalette(app, page)
       await expect(paletteRows(page)).toHaveCount(0)
-      const startPill = palette(page).getByRole('button', { name: /Start a session/ })
+      const startPill = palette(page).getByRole('button', { name: /^Ask AI/ })
       await expect(startPill).toBeDisabled()
       await page.keyboard.type('zzq')
       await expect(paletteRows(page)).toHaveCount(0)
@@ -120,6 +120,34 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
       await sendShortcut(app, 'shortcut:toggle-sidebar')
       await expect(page.locator(SIDEBAR_BUTTON)).toHaveAttribute('aria-pressed', 'false')
       await expect(palette(page)).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Koloft feature is found by a keyword in any language, even inside a sentence, and its row opens Settings on its own page; ⏎ before ↓ still asks AI', async ({
+    env
+  }) => {
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      await openPalette(app, page)
+      await page.keyboard.type('帮我改一下快捷键')
+      await expect(hotRow(page)).toHaveCount(0)
+      await expect(palette(page).getByRole('button', { name: /^Ask AI/ })).toHaveClass(/\bgo\b/)
+      await page.keyboard.press('ArrowDown')
+      await expect(hotRow(page)).toHaveText('Settings ▸ Shortcuts')
+      await page.keyboard.press('Enter')
+      await expect(palette(page)).toHaveCount(0)
+      const settings = page.getByRole('dialog', { name: 'Settings' })
+      await expect(settings.getByRole('tab', { selected: true })).toHaveText('Shortcuts')
+      await page.keyboard.press('Escape')
+      await expect(settings).toHaveCount(0)
+
+      await sendShortcut(app, 'shortcut:open-settings')
+      await expect(settings.getByRole('tab', { selected: true })).toHaveText('Accounts')
     } finally {
       await quitAndClose(app)
     }

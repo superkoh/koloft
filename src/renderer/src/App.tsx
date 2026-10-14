@@ -99,7 +99,7 @@ import {
   RESTORE_FAILED_NOTICE,
   wakeTab
 } from './resumeFlow'
-import { visitTab } from './sessionClick'
+import { openSessionRow, visitTab } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { UnsavedDialog } from './components/UnsavedDialog'
@@ -143,6 +143,11 @@ import { NewProjectDialog, type ProjectSeed } from './components/NewProjectDialo
 import type { PendingStart, TypedStart } from './newSession'
 import { pendingOptions, projectOptions, projectParentKey } from './aiStart'
 import type { PaletteAction } from './palette'
+import {
+  PALETTE_FEATURES,
+  type PaletteActionKey,
+  type PaletteFeature
+} from '@shared/paletteFeatures'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
@@ -164,7 +169,7 @@ function focusedWorkbench(): HTMLElement | null {
   return (document.activeElement?.closest('.wb-panel[data-surface]') as HTMLElement | null) ?? null
 }
 
-const NOTES_ISLAND = '.isl-notes:not(.isl-conductors)'
+const NOTES_ISLAND = '.isl-notes'
 
 function aDialogIsOpen(): boolean {
   return !!document.querySelector('.modal-backdrop, .bmodal-backdrop')
@@ -1120,50 +1125,60 @@ export default function App(): JSX.Element {
       })
       return
     }
-    if (route?.kind === 'koloft' || route?.kind === 'assist') {
+    if (!route && !useStore.getState().settings.assist?.on) {
+      showToast(
+        'Koloft Assist is off, so pick the workspace yourself. Turn it on in Settings ▸ Assist.'
+      )
+      pickWorkspaceForTyped({ prompt, title: '' })
+      return
+    }
+    const toAssist = (title: string, workspace: string | null): void => {
       void (
-        route.kind === 'koloft'
-          ? window.api.conductors.openTask(GLOBAL_SCOPE, route.title, prompt)
-          : window.api.conductors.tell(route.path, route.title, prompt)
+        workspace
+          ? window.api.conductors.tell(workspace, title, prompt)
+          : window.api.conductors.openTask(GLOBAL_SCOPE, title, prompt)
       ).then((r) => {
-        if (r.ok) {
-          window.api.attention.visit(r.tabId)
-          useStore.getState().activateTab(r.tabId)
-          return
-        }
+        if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
-        requestNew('main', undefined, {
-          prompt,
-          title: route.title,
-          path: route.kind === 'assist' ? route.path : null,
-          worktree: null
-        })
+        requestNew('main', undefined, { prompt, title, path: workspace, worktree: null })
       })
+    }
+    if (route?.kind === 'feature') {
+      paletteActions()
+        .find((a) => a.key === route.key)
+        ?.run()
+      return
+    }
+    if (route?.kind === 'session') {
+      const row = workspaceRows
+        .find((w) => w.workspace.path === route.path)
+        ?.rows.find((r) => r.id === route.id)
+      if (row) openSessionRow(row, route.path)
+      else toAssist(route.title, null)
+      return
+    }
+    if (route?.kind === 'assist') {
+      toAssist(route.title, route.path)
+      return
+    }
+    const ws =
+      route?.kind === 'workspace' &&
+      workspaceRows.find((w) => w.workspace.path === route.path && !w.workspace.missing)
+    if (route?.kind !== 'workspace' || !ws) {
+      toAssist(route?.title ?? '', null)
       return
     }
     const pending: PendingStart = {
       prompt,
-      title: route?.title ?? '',
-      path: route?.path ?? null,
-      worktree: route?.worktree ?? null
-    }
-    const ws =
-      route && workspaceRows.find((w) => w.workspace.path === route.path && !w.workspace.missing)
-    if (!route || !route.sure || !ws) {
-      if (!route)
-        showToast(
-          useStore.getState().settings.assist?.on
-            ? 'Koloft Assist could not answer, so pick the workspace yourself.'
-            : 'Koloft Assist is off, so pick the workspace yourself. Turn it on in Settings ▸ Assist.'
-        )
-      requestNew('main', undefined, pending)
-      return
+      title: route.title,
+      path: route.path,
+      worktree: route.worktree
     }
     if (pullable(ws) && pending.worktree?.kind !== 'existing') {
       requestNew('main', ws.workspace.path, pending)
       return
     }
-    startNow(hostOf(ws.workspace.path), backend, () => pendingOptions(ws.workspace.path, pending))
+    startNow(hostOf(ws.workspace.path), backend, () => pendingOptions(ws.workspace, pending))
   }
 
   const pickWorkspaceForTyped = (typed: TypedStart): void => {
@@ -1175,49 +1190,29 @@ export default function App(): JSX.Element {
     const hasHistory = workspaceRows.some(
       (w) => w.workspace.path === currentWs && w.workspace.hasHistory
     )
-    const actions: Omit<PaletteAction, 'kind'>[] = [
-      { key: 'new-session', label: 'New session…', keys: '⌘N', run: () => globalNew('main') },
-      {
-        key: 'new-worktree-session',
-        label: 'New worktree session…',
-        keys: '⇧⌘N',
-        run: () => globalNew('worktree')
-      },
-      {
-        key: 'add-workspace',
-        label: 'Add workspace…',
-        keys: '⇧⌘O',
-        run: () => void addWorkspace()
-      },
-      { key: 'add-remote', label: 'Add remote workspace…', run: () => setRemoteDialog(true) },
-      {
-        key: 'restart-session',
-        label: 'Restart session',
-        keys: '⇧⌘R',
-        run: () => useStore.getState().restartActiveSession()
-      },
-      { key: 'toggle-workbench', label: 'Toggle Workbench', keys: '⇧⌘B', run: toggleWorkbench },
-      { key: 'toggle-sidebar', label: 'Toggle sidebar', keys: '⌘B', run: toggleSidebar },
-      {
-        key: 'restore-session',
-        label: 'Restore session…',
-        disabled: !hasHistory,
-        run: () => setRestoreWs(currentWs)
-      },
-      {
-        key: 'scheduled-jobs',
-        label: 'Scheduled jobs…',
-        disabled: !currentWs,
-        run: () => currentWs && setCronWs({ path: currentWs })
-      },
-      { key: 'open-settings', label: 'Settings…', keys: '⌘,', run: () => setSettingsOpen(true) },
-      {
-        key: 'check-update',
-        label: 'Check for updates…',
-        run: () => useStore.getState().openUpdateCheck()
-      }
-    ]
-    return actions.map((a) => ({ ...a, kind: 'action' }))
+    const run: Record<PaletteActionKey, () => void> = {
+      'new-session': () => globalNew('main'),
+      'new-worktree-session': () => globalNew('worktree'),
+      'add-workspace': () => void addWorkspace(),
+      'add-remote': () => setRemoteDialog(true),
+      'restart-session': () => useStore.getState().restartActiveSession(),
+      'toggle-workbench': toggleWorkbench,
+      'toggle-sidebar': toggleSidebar,
+      'restore-session': () => setRestoreWs(currentWs),
+      'scheduled-jobs': () => currentWs && setCronWs({ path: currentWs }),
+      'open-settings': () => setSettingsOpen(true),
+      'check-update': () => useStore.getState().openUpdateCheck()
+    }
+    const disabled: Partial<Record<PaletteFeature['key'], boolean>> = {
+      'restore-session': !hasHistory,
+      'scheduled-jobs': !currentWs
+    }
+    return PALETTE_FEATURES.map(({ pane, actsOnCurrent: _, ...f }) => ({
+      ...f,
+      kind: 'action',
+      disabled: disabled[f.key],
+      run: pane ? () => useStore.getState().openSettingsPane(pane) : run[f.key as PaletteActionKey]
+    }))
   }
 
   const activeTab = tabs.find((t) => t.id === activeTabId)

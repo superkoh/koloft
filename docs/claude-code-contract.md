@@ -744,6 +744,18 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   width**, so at 80 columns the token is split across lines, and a capture stores a
   cut-off token that fails only later, when checked (seen in the guided-login flow).
   Apart from the 2.1.266 check: inferred, not checked.
+- **Saved limit resets need a full-scope login; the token Koloft holds cannot read or use
+  them.** Read 2026-10-13 from the 2.1.296 binary (`strings`): a hidden `/limit-reset`
+  command reads resets from `GET /api/oauth/usage?cedar_ember=1&skip_spend=1` (blocks
+  `cedar_ember` with `grants[]`, `resets_left`, `clears[]`, and `juniper_tide`) and spends
+  one with `POST /api/organizations/{organizationUuid}/reset_rate_limits` (`{program,
+  grant_id, request_id}`); both are skipped unless the token's scopes include
+  `user:profile`, and a `CLAUDE_CODE_OAUTH_TOKEN` gets `user:inference` only. Measured
+  the same day with one Koloft account's `setup-token` token: `GET /api/oauth/profile`
+  answered 403 `oauth_scope_insufficient` (needs `user:profile` or `user:office`), so the
+  organization id the claim's path needs is out of reach; the usage read answered 429
+  twice and showed nothing. So a session Koloft starts — Assist's too — cannot use
+  `/limit-reset` (inferred from the gate, not run).
 - **The 5h window's reset time moves forward between probes** — the window is rolling.
   (Inferred, not checked.)
 - **Remote Control refuses the long-lived token Koloft injects.** Measured 2026-10-01,
@@ -1243,6 +1255,16 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   scrolling to a paced drain of 2–3 lines per frame; no reply keeps the native profile,
   which drains in step with the input. claude also skips its DEC-2026 probe when
   `TERM_PROGRAM=Apple_Terminal`; "no XTVERSION reply" is the other half of that gate.
+- **Fullscreen claude turns on mouse and focus reports, and loses a mouse report cut
+  in two with another written in between.** Measured 2026-10-13, CC 2.1.296,
+  `"tui": "fullscreen"`, a python pty in a scratch `HOME`, the input box read back
+  through `pyte`. At start it sends `?1000h ?1002h ?1003h ?1004h ?1006h` (1003: a
+  report on every mouse move). An SGR report (`ESC[<0;79;45M`) left the input box
+  empty when written whole, before the TUI was up, in a flood of 2000, during a resize
+  of a long resumed transcript, or cut at any byte with 0.3–2.5 s before the rest. Cut
+  after `ESC[<0` with a whole `ESC[<35;61;45M` written in the gap, `;79;45M` stayed in
+  the box as typed text; cut after `ESC[<` it left `<0;79;45M`, after `ESC[<0;79` it
+  left `;45M`.
 - **Cell widths follow Unicode 11 tables** (Ink / string-width). A terminal using other
   tables makes wide CJK and emoji drift and clip at the right edge.
 - **A bare LF (`\n`, the same as Ctrl+J) inserts a newline in the input box; CR
@@ -1620,6 +1642,11 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `latest` 2.1.293, `next` 2.1.294, `stable` 2.1.285). A minimum above npm's `latest`
   would leave an npm install that `claude update` cannot lift to it. On 2026-10-11 both
   channels offered 2.1.296 (`latest` and `next` 2.1.296, `stable` 2.1.287).
+- **One version's binary for one platform sits at
+  `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
+  in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
+  256,434,168 bytes, and that file ran as the remote `claude` in the Docker SSH lab
+  (aarch64). `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
 

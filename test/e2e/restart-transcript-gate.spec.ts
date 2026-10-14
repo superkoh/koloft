@@ -1,8 +1,9 @@
 import fs from 'fs'
 import path from 'path'
-import type { ElectronApplication, Page } from '@playwright/test'
+import { execFileSync } from 'child_process'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
-import type { E2EEnv } from './helpers/env'
+import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
   clickAppMenuItem,
@@ -13,6 +14,7 @@ import {
   resumedId,
   runIn,
   startSessionIn,
+  termIds,
   waitBooted,
   waitForCalls,
   wsRows
@@ -21,6 +23,102 @@ import {
 const WS_A = 'ws-a'
 
 const LIVE_TOAST = 'Nothing to restart yet — this session has no conversation.'
+
+function claudeTokenFromKeychain(): string {
+  const account = process.env.KOLOFT_SMOKE_ACCOUNT
+  if (!account) return ''
+  const service = process.env.KOLOFT_SMOKE_KEYCHAIN_SERVICE ?? 'koloft-claude-oauth'
+  try {
+    return execFileSync('security', ['find-generic-password', '-s', service, '-a', account, '-w'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).replace(/\n$/, '')
+  } catch {
+    return ''
+  }
+}
+
+const REAL_CLAUDE = process.env.KOLOFT_SMOKE_CLAUDE ?? ''
+const CLAUDE_TOKEN = process.env.KOLOFT_SMOKE_OAUTH_TOKEN || claudeTokenFromKeychain()
+const HAVE_REAL_CLAUDE = fs.existsSync(REAL_CLAUDE) && !!CLAUDE_TOKEN
+const NEEDS_REAL_CLAUDE =
+  'set KOLOFT_SMOKE_CLAUDE (absolute path of a real claude binary) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT (a Settings ▸ Accounts name, read off the Keychain)'
+const A_REAL_MODEL_TURN_MS = 180_000
+const NO_RETRY_SINCE_EVERY_RUN_SPENDS_REAL_MONEY = 0
+// CC§7
+const AMBIENT_ENV_THAT_WOULD_BYPASS_THE_ACCOUNT = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_MODEL'
+]
+
+function useRealClaude(env: E2EEnv): void {
+  const spot = path.join(env.fakeBin, 'claude')
+  fs.rmSync(spot, { force: true })
+  fs.symlinkSync(REAL_CLAUDE, spot)
+  for (const k of AMBIENT_ENV_THAT_WOULD_BYPASS_THE_ACCOUNT) delete env.launchEnv[k]
+  fs.mkdirSync(path.join(env.home, '.claude', 'projects'), { recursive: true })
+  // CC§9 CC§10
+  fs.writeFileSync(
+    path.join(env.home, '.claude.json'),
+    JSON.stringify({
+      hasCompletedOnboarding: true,
+      bypassPermissionsModeAccepted: true,
+      projects: { [env.workspaces.a]: { hasTrustDialogAccepted: true } }
+    })
+  )
+  seedSettings(env, {
+    skipPermissions: true,
+    accounts: [
+      { name: 'alpha', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
+    ]
+  })
+  fs.writeFileSync(
+    env.keychainFile,
+    JSON.stringify({ 'koloft-dev-claude-oauth': { alpha: CLAUDE_TOKEN } })
+  )
+}
+
+// CC§11
+async function registeredIn(
+  env: E2EEnv,
+  cwd: string,
+  notPid?: number
+): Promise<{ pid: number; sessionId: string }> {
+  const dir = path.join(env.home, '.claude', 'sessions')
+  const want = fs.realpathSync(cwd)
+  const find = (): { pid: number; sessionId: string } | undefined => {
+    if (!fs.existsSync(dir)) return undefined
+    for (const f of fs.readdirSync(dir).filter((n) => /^\d+\.json$/.test(n))) {
+      try {
+        const e = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))
+        if (e.pid !== notPid && fs.realpathSync(e.cwd) === want && processAlive(e.pid)) return e
+      } catch {}
+    }
+    return undefined
+  }
+  await expect.poll(() => find() !== undefined, { timeout: 60_000 }).toBe(true)
+  return find()!
+}
+
+const ENTERS_BEFORE_GIVING_UP = 3
+const A_TAKEN_PROMPT_STARTS_WORKING_WITHIN_MS = 10_000
+const PAST_THE_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS = 1_000
+
+async function askReal(page: Page, row: Locator, text: string): Promise<void> {
+  await centerTerm(page).click()
+  await page.keyboard.type(text)
+  for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
+    await page.waitForTimeout(PAST_THE_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS)
+    await page.keyboard.press('Enter')
+    const working = await expect(row)
+      .toHaveClass(/\bst-working\b/, { timeout: A_TAKEN_PROMPT_STARTS_WORKING_WITHIN_MS })
+      .then(() => true)
+      .catch(() => false)
+    if (working) return
+  }
+  throw new Error(`the session never started on the prompt after ${ENTERS_BEFORE_GIVING_UP} Enters`)
+}
 
 async function launch(env: E2EEnv): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await launchApp(env)
@@ -212,6 +310,46 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       await app.close().catch(() => {})
     }
   })
+})
 
-  test.skip('BB-C07: the gate against a real claude is a manual round with no automated form', () => {})
+test.describe('the ⇧⌘R transcript gate against the REAL claude: opt-in, it spends real money', () => {
+  test.describe.configure({ retries: NO_RETRY_SINCE_EVERY_RUN_SPENDS_REAL_MONEY })
+
+  test('BB-C07: against the real claude, ⇧⌘R before the first prompt is a no-op with a toast, and after one real turn it resumes the same conversation in its one row', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+    gitInit(env.workspaces.a)
+    useRealClaude(env)
+    const { app, page } = await launch(env)
+    try {
+      await startSessionIn(page, WS_A)
+      const live = await registeredIn(env, env.workspaces.a)
+      // CC§2
+      expect(fs.existsSync(transcriptOf(env, env.workspaces.a, live.sessionId))).toBe(false)
+      const tabs = await termIds(page)
+
+      await restart(app, page)
+      await expect(page.locator('.toast-msg')).toHaveText(LIVE_TOAST, { timeout: 20_000 })
+      expect(processAlive(live.pid)).toBe(true)
+      expect(await termIds(page)).toEqual(tabs)
+
+      const row = wsRows(page, WS_A).first()
+      await askReal(page, row, 'Say exactly: koloft-gate-ok')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: A_REAL_MODEL_TURN_MS })
+      await expect
+        .poll(() => fs.existsSync(transcriptOf(env, env.workspaces.a, live.sessionId)))
+        .toBe(true)
+
+      await restart(app, page)
+      await expect.poll(() => processAlive(live.pid), { timeout: 30_000 }).toBe(false)
+      const resumed = await registeredIn(env, env.workspaces.a, live.pid)
+      expect(resumed.sessionId).toBe(live.sessionId)
+      await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
+      await expect(wsRows(page, WS_A)).toHaveCount(1)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
 })

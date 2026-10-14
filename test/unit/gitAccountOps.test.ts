@@ -72,6 +72,24 @@ describe('sanitizeGitAccounts', () => {
 })
 
 describe('sanitizeGitPicks', () => {
+  it("keeps a pick's SSH key state and drops one it does not know", () => {
+    const accounts = sanitizeGitAccounts([
+      stored({ platform: 'gitea', url: 'https://codeberg.org', login: 'bob' })
+    ])
+    expect(
+      sanitizeGitPicks(
+        [
+          { repo: '/r/a/.git', account: 'codeberg.org/bob', sshKey: 'works' },
+          { repo: '/r/b/.git', account: 'codeberg.org/bob', sshKey: 'maybe' }
+        ],
+        accounts
+      )
+    ).toEqual([
+      { repo: '/r/a/.git', account: 'codeberg.org/bob', sshKey: 'works' },
+      { repo: '/r/b/.git', account: 'codeberg.org/bob' }
+    ])
+  })
+
   it('upgrades a {host, login} pick to the account id and drops a pick of an unknown account', () => {
     const accounts = sanitizeGitAccounts([
       stored({ platform: 'github', url: 'https://github.com', login: 'bob' })

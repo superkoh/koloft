@@ -614,7 +614,7 @@ export class SshHost implements Host {
     return { path: this.keyed(created), mtimeMs: fp.mtimeMs, size: fp.size }
   }
 
-  // PLATFORM§52
+  // PLATFORM§54
   watchDir(dir: string, onChange: (dir: string) => void): boolean {
     this.deps.watch(this.bare(dir), () => onChange(dir))
     return false

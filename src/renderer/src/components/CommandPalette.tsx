@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { LuFolder, LuSearch, LuSparkles } from 'react-icons/lu'
-import type { BackendId, SessionSearchHit } from '@shared/types'
+import type { BackendId, SearchSnippet, SessionSearchHit } from '@shared/types'
 import type { SessionRoute } from '@shared/sessionRoute'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { basename } from '@shared/preview'
@@ -34,6 +34,35 @@ function countLine(n: number): string {
   return n === 1 ? '1 conversation' : `${n} conversations`
 }
 
+function startLabel(assistOn: boolean, backend: string | undefined): string {
+  const verb = assistOn ? 'Ask AI' : 'Start'
+  if (backend) return `${verb} · ${backend}`
+  return assistOn ? verb : 'Start a session'
+}
+
+const SNIPPET_LEAD_CHARS = 24
+const LONGEST_TEXT_SCANNED_WHILE_TYPING = 80
+
+function worthScanningWhileTyping(typed: string): boolean {
+  return (
+    typed.length >= 2 && typed.length <= LONGEST_TEXT_SCANNED_WHILE_TYPING && !typed.includes('\n')
+  )
+}
+
+function SnippetText({ snippet, short }: { snippet: SearchSnippet; short?: boolean }): JSX.Element {
+  const lead =
+    short && snippet.before.length > SNIPPET_LEAD_CHARS
+      ? `…${snippet.before.slice(-SNIPPET_LEAD_CHARS)}`
+      : snippet.before
+  return (
+    <>
+      {lead}
+      <b>{snippet.match}</b>
+      {snippet.after}
+    </>
+  )
+}
+
 export type PaletteRouted = (prompt: string, backend: BackendId, route: SessionRoute | null) => void
 
 export function CommandPalette({
@@ -55,7 +84,8 @@ export function CommandPalette({
   const attention = useStore((s) => s.attention)
   const assistOn = useStore((s) => !!s.settings.assist?.on)
   const [query, setQuery] = useState('')
-  const [hot, setHot] = useState<number | null>(null)
+  const [hotKey, setHotKey] = useState<string | null>(null)
+  const [composing, setComposing] = useState(false)
   const [mode, setMode] = useState<'ask' | 'thinking' | 'search'>('ask')
   const [hits, setHits] = useState<SessionSearchHit[]>([])
   const [searchDone, setSearchDone] = useState(false)
@@ -69,17 +99,22 @@ export function CommandPalette({
   )
   const workspaceItems = useMemo(() => paletteWorkspaces(rows, window.api.home), [rows])
   const showBackend = mixesBackends(sessionItems.map((s) => s.row))
-  const groups = paletteGroups(sessionItems, workspaceItems, actions, query)
-  const visible = groups.flatMap((g) => g.items)
-  const count = mode === 'search' ? hits.length : visible.length
-  const picked = mode === 'search' ? (hot ?? 0) : hot
-  const at = picked === null ? null : Math.min(picked, Math.max(0, count - 1))
   const typed = query.trim()
+  const scan = mode === 'search' || (!composing && worthScanningWhileTyping(typed))
+  const groups = paletteGroups(sessionItems, workspaceItems, actions, query, scan ? hits : [])
+  const visible = groups.flatMap((g) => g.items)
+  const keys = mode === 'search' ? hits.map((h) => h.row.id) : visible.map((i) => i.key)
+  const count = keys.length
+  const keyAt = keys.indexOf(hotKey ?? '')
+  const at = keyAt >= 0 ? keyAt : mode === 'search' && count > 0 ? 0 : null
   const [primary, other] = methods
   const startIsDefault = mode === 'ask' && at === null && !!typed
+  const pick = (i: number | null): void => setHotKey(i === null ? null : keys[i])
 
   const open = (item: PaletteItem | undefined): void => {
     if (!item || (item.kind === 'action' && item.disabled)) return
+    if (item.kind === 'more') return search()
+    if (item.kind === 'hit') return onOpenHit(item.hit)
     onClose()
     if (item.kind === 'session') openSessionRow(item.row, item.wsPath)
     else if (item.kind === 'workspace') useStore.getState().selectWorkspace(item.wsPath)
@@ -110,7 +145,7 @@ export function CommandPalette({
   const search = (): void => {
     if (!typed) return
     setMode('search')
-    setHot(null)
+    setHotKey(null)
   }
 
   useEffect(() => {
@@ -119,7 +154,7 @@ export function CommandPalette({
   }, [])
 
   useEffect(() => {
-    if (mode !== 'search') return
+    if (!typed || !scan) return
     const id = ++lastSearchId
     setHits([])
     setSearchDone(false)
@@ -139,7 +174,7 @@ export function CommandPalette({
       off()
       if (sent) window.api.sessions.search(++lastSearchId, '')
     }
-  }, [mode, typed])
+  }, [typed, scan])
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
@@ -149,7 +184,7 @@ export function CommandPalette({
       if (mode === 'ask') onClose()
       else {
         setMode('ask')
-        setHot(null)
+        setHotKey(null)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -168,8 +203,8 @@ export function CommandPalette({
     }
     if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && count > 0) {
       e.preventDefault()
-      if (e.key === 'ArrowDown') setHot(at === null ? 0 : Math.min(at + 1, count - 1))
-      else setHot(at ? at - 1 : null)
+      if (e.key === 'ArrowDown') pick(at === null ? 0 : Math.min(at + 1, count - 1))
+      else pick(at ? at - 1 : null)
       return
     }
     if (e.key !== 'Enter') return
@@ -221,6 +256,23 @@ export function CommandPalette({
             {item.keys && <span className="k">{item.keys}</span>}
           </>
         )}
+        {item.kind === 'hit' && (
+          <>
+            {showBackend && <SessionBackendIcon backend={item.hit.row.backendId} />}
+            <span className="wsp-name">{item.hit.row.title}</span>
+            {item.hit.snippet && (
+              <span className="note">
+                <SnippetText snippet={item.hit.snippet} short />
+              </span>
+            )}
+          </>
+        )}
+        {item.kind === 'more' && (
+          <>
+            <span className="wsp-name">All {countLine(item.count)} that mention it</span>
+            <span className="k">⌥⏎</span>
+          </>
+        )}
       </div>
     )
   }
@@ -231,7 +283,7 @@ export function CommandPalette({
     if (mode === 'thinking')
       return (
         <div className="pal-status">
-          <BusyLine>Picking a workspace and a worktree…</BusyLine>
+          <BusyLine>Working out who should take this…</BusyLine>
         </div>
       )
     if (mode === 'search')
@@ -251,9 +303,7 @@ export function CommandPalette({
                 <span className="restore-title">{h.row.title}</span>
                 {h.snippet && (
                   <span className="restore-snippet">
-                    {h.snippet.before}
-                    <b>{h.snippet.match}</b>
-                    {h.snippet.after}
+                    <SnippetText snippet={h.snippet} />
                   </span>
                 )}
                 <span className="restore-meta">
@@ -310,14 +360,20 @@ export function CommandPalette({
             rows={1}
             spellCheck={false}
             autoComplete="off"
-            placeholder="What should a new session do? Or find one to jump to…"
+            placeholder={
+              assistOn
+                ? 'Ask or tell Koloft anything, or find a session to jump to…'
+                : 'What should a new session do? Or find one to jump to…'
+            }
             aria-label="Ask or jump"
             readOnly={mode === 'thinking'}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
-              setHot(null)
+              setHotKey(null)
             }}
+            onCompositionStart={() => setComposing(true)}
+            onCompositionEnd={() => setComposing(false)}
             onKeyDown={onKeyDown}
           />
         </div>
@@ -341,7 +397,7 @@ export function CommandPalette({
                 onClick={() => start(primary)}
               >
                 <LuSparkles size={12} className="pal-pill-glyph" />{' '}
-                {other ? `Start · ${BACKEND_LABEL[primary]}` : 'Start a session'}
+                {startLabel(assistOn, other && BACKEND_LABEL[primary])}
                 {startIsDefault && <span className="k">⏎</span>}
               </button>
               {other && (

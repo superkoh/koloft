@@ -279,6 +279,7 @@ import type {
   ArtifactView,
   BackendId,
   CodexLimits,
+  CodexResetOutcome,
   CodexSignInResult,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
@@ -309,6 +310,7 @@ import type {
   SessionInfo,
   SessionMethods,
   AttentionEvent,
+  OsOutletsSeenByTests,
   AttentionSubject,
   SessionResumeRequest,
   SessionRow,
@@ -348,7 +350,7 @@ import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, type SlashTarget } from './discord/slash'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
-import { bracketedPaste, typedPieces, typeKeys } from './typeKeys'
+import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
 import { MYSELF } from '@shared/slashCommands'
 import {
   codexDialog,
@@ -402,8 +404,9 @@ import { installLine, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } fr
 if (!app.isPackaged) app.setName('koloft-dev')
 
 const BACKGROUND_TEST = process.env.KOLOFT_TEST_BACKGROUND === '1'
+const OFF_SCREEN_TEST = BACKGROUND_TEST && process.env.KOLOFT_TEST_REAL_WINDOW !== '1'
 // PLATFORM§4
-if (BACKGROUND_TEST && process.platform === 'darwin') {
+if (OFF_SCREEN_TEST && process.platform === 'darwin') {
   app.setActivationPolicy('accessory')
   app.dock?.hide()
 }
@@ -651,6 +654,11 @@ function sleepTab(tabId: string): void {
   rememberOpenTabs()
 }
 
+function sleepingTabOf(sessionId: string): string | undefined {
+  for (const [tabId, t] of sleepers) if (t.sessionId === sessionId) return tabId
+  return undefined
+}
+
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
   conductors?.onPtyExit(tabId, false)
@@ -692,7 +700,7 @@ async function handOverTyping(oldId: string, newId: string): Promise<void> {
 
 function writeToTab(id: string, data: string): void {
   const typed = typedWhileAsleep.get(id)
-  if (typed !== undefined) typedWhileAsleep.set(id, typed + data)
+  if (typed !== undefined) typedWhileAsleep.set(id, typed + withoutMouseAndFocusReports(data))
   else ptyMgr.write(wokenAs.get(id) ?? id, data)
 }
 async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
@@ -727,15 +735,22 @@ function attentionCtx(): AttentionContext {
   return { windowFocused: focused, activeTabId: uiActiveTabId }
 }
 
-function projectFolderName(tabId: string): string | undefined {
-  const root = sessionOfTab(tabId)?.treeRoot
+function projectFolderName(event: AttentionEvent): string | undefined {
+  const root =
+    sessionOfTab(event.tabId)?.treeRoot ??
+    (event.sessionId ? workspaceMgr?.workspaceOf(event.sessionId) : undefined)
   return root ? path.basename(root) : undefined
 }
 
+const osOutletsSeenByTests: OsOutletsSeenByTests = { notifications: [], dockBadge: '' }
+;(globalThis as { __koloftOsOutlets?: OsOutletsSeenByTests }).__koloftOsOutlets =
+  osOutletsSeenByTests
+
 function updateDockBadge(pending: AttentionEvent[]): void {
   if (process.platform !== 'darwin') return
-  const text = dockBadgeText(pending.length, loadSettings().dockBadge, BACKGROUND_TEST)
-  if (text !== null) app.dock?.setBadge(text)
+  const text = dockBadgeText(pending.length, loadSettings().dockBadge)
+  if (OFF_SCREEN_TEST) osOutletsSeenByTests.dockBadge = text
+  else app.dock?.setBadge(text)
 }
 
 function pointFocusClearingAtTabBeforeFocusingWindow(tabId: string): void {
@@ -760,7 +775,6 @@ function activateTabFromNotification(tabId: string): void {
 
 // PLATFORM§4
 const osNotifications = new Map<string, Notification>()
-;(globalThis as { __koloftOsNotifCount?: number }).__koloftOsNotifCount = 0
 
 function retractStaleOsNotifications(pending: AttentionEvent[]): void {
   for (const [tabId, n] of osNotifications) {
@@ -773,15 +787,26 @@ function retractStaleOsNotifications(pending: AttentionEvent[]): void {
   }
 }
 
-function showOsNotification(event: AttentionEvent): void {
+function osNotificationText(event: AttentionEvent): { title: string; body: string } {
   const reason = ATTENTION_REASON[event.kind]
-  const folder = projectFolderName(event.tabId)
-  const g = globalThis as { __koloftOsNotifCount?: number }
-  g.__koloftOsNotifCount = (g.__koloftOsNotifCount ?? 0) + 1
-  const n = new Notification({
+  const folder = projectFolderName(event)
+  return {
     title: event.title || PLACEHOLDER_SESSION_TITLE,
     body: folder ? `${reason} · ${folder}` : reason
-  })
+  }
+}
+
+function osNotification(text: { title: string; body: string }): Notification | null {
+  if (OFF_SCREEN_TEST) {
+    osOutletsSeenByTests.notifications.push(text)
+    return null
+  }
+  return Notification.isSupported() ? new Notification(text) : null
+}
+
+function showOsNotification(event: AttentionEvent): void {
+  const n = osNotification(osNotificationText(event))
+  if (!n) return
   n.on('click', () => {
     osNotifications.delete(event.tabId)
     activateTabFromNotification(event.tabId)
@@ -798,10 +823,7 @@ function showOsNotification(event: AttentionEvent): void {
 }
 
 function notifyPlain(title: string, body: string): void {
-  if (BACKGROUND_TEST || !Notification.isSupported()) return
-  const g = globalThis as { __koloftOsNotifCount?: number }
-  g.__koloftOsNotifCount = (g.__koloftOsNotifCount ?? 0) + 1
-  new Notification({ title, body }).show()
+  osNotification({ title, body })?.show()
 }
 
 const OUTLET_FLAP_DEDUPE_MS = 5000
@@ -819,13 +841,9 @@ function routeAttentionEvent(event: AttentionEvent): void {
   const now = Date.now()
   if (lastAt !== undefined && now - lastAt < OUTLET_FLAP_DEDUPE_MS) return
   recentOutlets.set(outletKey, now)
-  const decision = route(
-    event,
-    { windowFocused: attentionCtx().windowFocused, backgroundTest: BACKGROUND_TEST },
-    loadSettings()
-  )
+  const decision = route(event, attentionCtx().windowFocused, loadSettings())
   if (decision.os) showOsNotification(event)
-  if (decision.sound) shell.beep()
+  if (decision.sound && !BACKGROUND_TEST) shell.beep()
 }
 let mainWindow: BrowserWindow | null = null
 
@@ -969,11 +987,10 @@ function pushAccounts(): void {
 }
 
 function notifyExpired(name: string): void {
-  if (BACKGROUND_TEST || !Notification.isSupported()) return
-  new Notification({
-    title: 'Claude account expired',
-    body: `Account ${name} expired and left the pool — sign in again from Settings to restore it`
-  }).show()
+  notifyPlain(
+    'Claude account expired',
+    `Account ${name} expired and left the pool — sign in again from Settings to restore it`
+  )
 }
 
 function foldProbeResult(
@@ -1135,6 +1152,7 @@ const sessionDeps: SessionVerbDeps = {
     setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
   sidebar: () => workspaceMgr?.rows() ?? [],
+  worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
   touch: (tabId, key) => conductors?.touch(tabId, key),
   conductorOf: conductorTarget,
@@ -1433,10 +1451,10 @@ let probeAllInFlight: Promise<AccountView[]> | null = null
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
   const round = (async (): Promise<AccountView[]> => {
-    const enabled = listAccounts().filter((a) => a.enabled)
-    await Promise.all(
-      enabled.map(async (a) => {
-        if (a.kind === 'codex-home') return probeCodexAccount(a.name)
+    const claude = listAccounts().filter((a) => a.enabled && a.kind !== 'codex-home')
+    await Promise.all([
+      probeCodexAccounts(),
+      ...claude.map(async (a) => {
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
         const result = await probeAccount(a.kind, secret, {
@@ -1447,7 +1465,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
         })
         foldProbeResult(a.name, a.kind, result)
       })
-    )
+    ])
     pushAccounts()
     return accountViews()
   })()
@@ -1537,6 +1555,15 @@ async function probeCodexAccount(name: string): Promise<void> {
     usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
   pushAccounts()
+}
+
+async function codexUseReset(name: string): Promise<CodexResetOutcome> {
+  if (!findAccount(name, 'codex-home') || !codexSessions) return 'failed'
+  const outcome = await codexSessions
+    .useResetCredit(codexHomeOf(app.getPath('userData'), name))
+    .catch((): CodexResetOutcome => 'failed')
+  await probeCodexAccount(name)
+  return outcome
 }
 
 let codexProbeRound: Promise<void> | null = null
@@ -1677,8 +1704,8 @@ function createWindow(): void {
     ...geo.bounds,
     minWidth: windowMinWidth(geo.bounds.width),
     minHeight: 560,
-    ...fullscreenOption(geo.fullScreen && !BACKGROUND_TEST),
-    show: !BACKGROUND_TEST,
+    ...fullscreenOption(geo.fullScreen && !OFF_SCREEN_TEST),
+    show: !OFF_SCREEN_TEST,
     title: 'Koloft',
     backgroundColor: '#0e0e10',
     titleBarStyle: 'hiddenInset',
@@ -1710,10 +1737,10 @@ function createWindow(): void {
     if (releaseWithoutHostPress) e.preventDefault()
   })
   // PLATFORM§5
-  if (!BACKGROUND_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
+  if (!OFF_SCREEN_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
   trackWindowState(
     mainWindow,
-    BACKGROUND_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined
+    OFF_SCREEN_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined
   )
 
   // PLATFORM§5
@@ -2440,7 +2467,8 @@ app.whenReady().then(() => {
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
     autoFetch: () => loadSettings().gitAutoFetch,
-    onChange: () => workspaceMgr?.restampLive()
+    onChange: () => workspaceMgr?.restampLive(),
+    fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })
   githubCounts = new GithubCountsSweep({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
@@ -3441,9 +3469,10 @@ async function closeSessionFully(
   target: ClosableSession,
   info = projectInfoFor(target.treeRoot)
 ): Promise<void> {
-  if (target.tabId) {
-    sendToRenderer('tab:killedByMain', target.tabId)
-    await killTabPty(target.tabId)
+  const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
+  if (tabId) {
+    sendToRenderer('tab:killedByMain', tabId)
+    await killTabPty(tabId)
   } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
     sendToRenderer('cron:toast', `${target.title} was opened again, so Koloft did not close it.`)
     return
@@ -3708,8 +3737,15 @@ function commandIntoConductor(b: ConductorBinding, text: string): string {
 const PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS = 10_000
 let paletteMessages = 0
 
+const PALETTE_TASK_ANSWERS_ITSELF =
+  'When this is a question or a piece of writing you can answer from what you know (translate, explain, draft a message), answer it here yourself; start or message a session only for work on files, commands or what a workspace holds.'
+
 function paletteTask(title: string, text: string): AssistTask {
-  return { name: title || firstLineName(text), brief: text }
+  return {
+    name: title || firstLineName(text),
+    brief: `${text}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
+    staysOpen: true
+  }
 }
 
 async function tellAssist(
@@ -4135,6 +4171,7 @@ function registerIpc(): void {
   ipcMain.handle('accounts:codex-sign-in', (_e, name: string, again?: boolean) =>
     codexSignIn(name, again === true)
   )
+  ipcMain.handle('accounts:codex-use-reset', (_e, name: string) => codexUseReset(name))
   ipcMain.on('accounts:cancel-login', () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
   })
@@ -4206,13 +4243,21 @@ function registerIpc(): void {
   )
   ipcMain.handle('gitAccounts:check', () => gitAccounts?.checkAll())
   ipcMain.handle('gitAccounts:pick', (_e, wsPath: unknown, id: unknown) =>
-    isText(wsPath) && (id === null || isText(id)) ? gitAccounts?.pick(wsPath, id) : undefined
+    isText(wsPath) && (id === null || isText(id))
+      ? gitAccounts?.pick(wsPath, id).then(() => void freshness?.fetchNow(wsPath))
+      : undefined
   )
   ipcMain.handle('gitAccounts:suggest', (_e, wsPath: unknown, network: unknown) =>
     isText(wsPath) && gitAccounts ? gitAccounts.suggest(wsPath, network === true) : { kind: 'none' }
   )
   ipcMain.handle('gitAccounts:dismiss', (_e, wsPath: unknown) =>
     isText(wsPath) ? gitAccounts?.dismiss(wsPath) : undefined
+  )
+  ipcMain.handle('gitAccounts:make-ssh-key', (_e, wsPath: unknown) =>
+    isText(wsPath) ? gitAccounts?.makeSshKey(wsPath) : undefined
+  )
+  ipcMain.handle('gitAccounts:check-ssh-key', (_e, wsPath: unknown) =>
+    isText(wsPath) ? gitAccounts?.checkSshKey(wsPath) : undefined
   )
   ipcMain.handle('project:create', (_e, parent: unknown, name: unknown) =>
     typeof parent === 'string' && parent && typeof name === 'string'

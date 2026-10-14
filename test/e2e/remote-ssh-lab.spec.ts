@@ -697,6 +697,47 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     )
   })
 
+  // PLATFORM§37
+  test('E-SSH-18: on a Linux machine, with a plain and a tcsh login shell, the Workbench saves a file there, refuses a save once the file changed there, and "Keep mine" overwrites it', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      for (const [alias, user] of [
+        ['kt-key', 'kuser'],
+        ['kt-tcsh', 'tuser']
+      ] as [LabAlias, string][]) {
+        await addMachine(page, alias, user)
+        await expect(dot(page, alias)).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        const file = `${remoteKeyFor(alias, user)}/README.md`
+        const onTheMachine = (): string => runOnTarget(lab, user, 'cat proj/README.md')
+
+        const opened = await page.evaluate((p) => window.api.edit.open(p), file)
+        expect(opened.text).toBe(README(user))
+        const saved = await page.evaluate(([p, o]) => window.api.edit.write(p, 'mine\n', o), [
+          file,
+          opened
+        ] as const)
+        expect(saved).toMatchObject({ ok: true, size: 5 })
+        expect(onTheMachine()).toBe('mine\n')
+
+        runOnTarget(lab, user, 'printf "theirs, longer\\n" > proj/README.md')
+        const refused = await page.evaluate(([p, o]) => window.api.edit.write(p, 'again\n', o), [
+          file,
+          saved
+        ] as const)
+        expect(refused).toMatchObject({ ok: false, code: 'stale', text: 'theirs, longer\n' })
+        expect(onTheMachine()).toBe('theirs, longer\n')
+
+        const kept = await page.evaluate(
+          ([p, o]) => window.api.edit.write(p, 'again\n', o, { force: true }),
+          [file, saved] as const
+        )
+        expect(kept).toMatchObject({ ok: true })
+        expect(onTheMachine()).toBe('again\n')
+      }
+    })
+  })
+
   // PLATFORM§34
   test('E-SSH-08: a machine whose shell prints a greeting at login: the dot says so instead of never syncing in silence', async ({
     env
