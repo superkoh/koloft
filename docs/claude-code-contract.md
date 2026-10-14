@@ -1255,6 +1255,16 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   scrolling to a paced drain of 2–3 lines per frame; no reply keeps the native profile,
   which drains in step with the input. claude also skips its DEC-2026 probe when
   `TERM_PROGRAM=Apple_Terminal`; "no XTVERSION reply" is the other half of that gate.
+- **Fullscreen claude turns on mouse and focus reports, and loses a mouse report cut
+  in two with another written in between.** Measured 2026-10-13, CC 2.1.296,
+  `"tui": "fullscreen"`, a python pty in a scratch `HOME`, the input box read back
+  through `pyte`. At start it sends `?1000h ?1002h ?1003h ?1004h ?1006h` (1003: a
+  report on every mouse move). An SGR report (`ESC[<0;79;45M`) left the input box
+  empty when written whole, before the TUI was up, in a flood of 2000, during a resize
+  of a long resumed transcript, or cut at any byte with 0.3–2.5 s before the rest. Cut
+  after `ESC[<0` with a whole `ESC[<35;61;45M` written in the gap, `;79;45M` stayed in
+  the box as typed text; cut after `ESC[<` it left `<0;79;45M`, after `ESC[<0;79` it
+  left `;45M`.
 - **Cell widths follow Unicode 11 tables** (Ink / string-width). A terminal using other
   tables makes wide CJK and emoji drift and clip at the right edge.
 - **A bare LF (`\n`, the same as Ctrl+J) inserts a newline in the input box; CR

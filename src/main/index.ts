@@ -353,7 +353,7 @@ import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, type SlashTarget } from './discord/slash'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
-import { bracketedPaste, typedPieces, typeKeys } from './typeKeys'
+import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
 import { MYSELF } from '@shared/slashCommands'
 import {
   codexDialog,
@@ -703,7 +703,7 @@ async function handOverTyping(oldId: string, newId: string): Promise<void> {
 
 function writeToTab(id: string, data: string): void {
   const typed = typedWhileAsleep.get(id)
-  if (typed !== undefined) typedWhileAsleep.set(id, typed + data)
+  if (typed !== undefined) typedWhileAsleep.set(id, typed + withoutMouseAndFocusReports(data))
   else ptyMgr.write(wokenAs.get(id) ?? id, data)
 }
 async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
@@ -1157,6 +1157,7 @@ const sessionDeps: SessionVerbDeps = {
     setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
   sidebar: () => workspaceMgr?.rows() ?? [],
+  worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
   touch: (tabId, key) => conductors?.touch(tabId, key),
   conductorOf: conductorTarget,
@@ -3749,8 +3750,15 @@ function commandIntoConductor(b: ConductorBinding, text: string): string {
 const PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS = 10_000
 let paletteMessages = 0
 
+const PALETTE_TASK_ANSWERS_ITSELF =
+  'When this is a question or a piece of writing you can answer from what you know (translate, explain, draft a message), answer it here yourself; start or message a session only for work on files, commands or what a workspace holds.'
+
 function paletteTask(title: string, text: string): AssistTask {
-  return { name: title || firstLineName(text), brief: text }
+  return {
+    name: title || firstLineName(text),
+    brief: `${text}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
+    staysOpen: true
+  }
 }
 
 async function tellAssist(

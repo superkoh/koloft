@@ -47,6 +47,7 @@ import {
   type WorkbenchTabSet
 } from './components/workbenchTabs'
 import { DEFAULT_PANEL_OPEN } from '@shared/workbenchState'
+import type { SettingsPaneId } from '@shared/paletteFeatures'
 
 export interface Tab {
   id: string
@@ -98,6 +99,7 @@ interface AppState {
   attention: AttentionEvent[]
   settings: Settings
   settingsOpen: boolean
+  settingsPane: SettingsPaneId | null
   settingsFocus: SettingsFocus
   welcomeActive: boolean
   onboardingStep: number
@@ -178,6 +180,7 @@ interface AppState {
   setAttention: (pending: AttentionEvent[]) => void
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
+  openSettingsPane: (pane: SettingsPaneId) => void
   setSettingsFocus: (focus: SettingsFocus) => void
   gitAccountsMachine: string | undefined
   openGitAccounts: (focus?: 'git-token', machine?: string) => void
@@ -475,6 +478,7 @@ export const useStore = create<AppState>((set, get) => ({
   attention: [],
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
+  settingsPane: null,
   settingsFocus: null,
   gitAccountsMachine: undefined,
   welcomeActive: false,
@@ -783,7 +787,8 @@ export const useStore = create<AppState>((set, get) => ({
   setLeftovers: (leftovers) => set({ leftovers }),
   setAttention: (attention) => set({ attention }),
   setSettings: (settings) => set({ settings }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen, settingsPane: null }),
+  openSettingsPane: (settingsPane) => set({ settingsOpen: true, settingsPane }),
   setSettingsFocus: (settingsFocus) => set({ settingsFocus }),
   openGitAccounts: (focus, machine) =>
     set({
