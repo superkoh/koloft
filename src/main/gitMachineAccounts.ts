@@ -8,7 +8,7 @@ import { problemOf, type RunResult } from './remote/ssh'
 import {
   CLUE_ENV,
   CLUE_GIT,
-  CLUE_READ,
+  CLUE_READ_WITHOUT_TOKENS,
   CLUE_SSH,
   FORGET_SECRETS,
   HELPER_ANSWERS,
@@ -209,7 +209,7 @@ export class GitMachineAccounts {
   }
 
   async clueFile(machine: string, file: string): Promise<string | null> {
-    const r = await this.run(machine, CLUE_READ, [file])
+    const r = await this.run(machine, CLUE_READ_WITHOUT_TOKENS, [file])
     return r.code === 0 ? r.stdout : null
   }
 }

@@ -123,6 +123,24 @@ describe('a token sent to a machine', () => {
   })
 })
 
+describe('a file Koloft reads on a machine for a suggestion', () => {
+  it("never brings the machine's gh token back to the Mac", async () => {
+    const hosts = path.join(home, 'hosts.yml')
+    fs.writeFileSync(
+      hosts,
+      'github.com:\n    oauth_token: gho_SECRET\n    git_protocol: https\n    user: bob\n'
+    )
+    const machine = new GitMachineAccounts(async (_m, script, args = []) => {
+      const r = onMachine(script, args)
+      return { code: r.status, stdout: r.stdout, stderr: r.stderr }
+    })
+    const read = await machine.clueFile('box', hosts)
+    expect(read).toContain('user: bob')
+    expect(read).not.toContain('gho_SECRET')
+    expect(await machine.clueFile('box', path.join(home, 'missing.yml'))).toBeNull()
+  })
+})
+
 describe('the files Koloft keeps in step on a machine', () => {
   it('replaces the set each time, removing what is no longer listed', () => {
     const send = (files: Record<string, string>): void => {

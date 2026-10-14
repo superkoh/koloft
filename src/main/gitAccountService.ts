@@ -181,6 +181,8 @@ export class GitAccountService {
   private machines = new Map<string, Pick<GitMachine, 'accounts' | 'picks'>>()
   private onMachine: GitMachineAccounts
   private signingFor: string | undefined
+  private checkingMachine: object | null = null
+  private machineSyncs = new Map<string, Promise<boolean>>()
   private offline = new Set<string>()
   private found = new Map<string, GitAccountSuggestion>()
   private orgBlocked = new Map<string, { id: string; org: string }>()
@@ -523,9 +525,9 @@ export class GitAccountService {
     this.d.picksChanged()
   }
 
-  private async changedOn(machine: string): Promise<void> {
+  private async changedOn(machine: string): Promise<boolean> {
     this.reload()
-    await this.syncMachine(machine).finally(() => this.changed())
+    return this.syncMachine(machine).finally(() => this.changed())
   }
 
   private setStatus(id: string, status: AccountStatus): void {
@@ -668,10 +670,11 @@ export class GitAccountService {
     upsertGitAccount(account, machine)
     if (before && before.gcmNamespace !== account.gcmNamespace)
       await this.onMachine.forget(machine, before)
-    await this.changedOn(machine)
-    if (!account.gcmNamespace || (await this.onMachine.helperAnswers(machine, account))) return
+    const synced = await this.changedOn(machine)
+    if (synced && (!account.gcmNamespace || (await this.onMachine.helperAnswers(machine, account))))
+      return
     await this.forgetOnMachine(machine, account)
-    throw new Error('machine helper failed')
+    throw new Error('machine setup failed')
   }
 
   private async signedIn(
@@ -700,13 +703,18 @@ export class GitAccountService {
   }
 
   async loginStart(platform: GitPlatform, raw: string, machine?: string): Promise<GitLoginStart> {
-    if (this.gcmRun || this.login.running) return { ok: false, error: 'busy' }
+    if (this.gcmRun || this.login.running || this.checkingMachine)
+      return { ok: false, error: 'busy' }
     const url = gitAccountUrl(platform, raw)
     const how = url && gitSignIn(platform, url)
     if (!url || !how || how === 'token') return { ok: false, error: 'bad-url' }
     if (how === 'browser' && !this.gcm.available()) return { ok: false, error: 'no-gcm' }
     if (machine) {
+      const check = {}
+      this.checkingMachine = check
       const ready = await this.onMachine.ready(machine, how === 'browser')
+      if (this.checkingMachine !== check) return { ok: false, error: 'busy' }
+      this.checkingMachine = null
       if (!ready.ok) return ready
     }
     this.signingFor = machine
@@ -755,6 +763,7 @@ export class GitAccountService {
 
   loginCancel(): void {
     this.login.cancel()
+    this.checkingMachine = null
     const g = this.gcmRun
     if (!g) return
     this.gcmRun = null
@@ -827,7 +836,14 @@ export class GitAccountService {
   }
 
   // PLATFORM§53 ADR-0035 ADR-0036
-  private async syncMachine(machine: string): Promise<void> {
+  private syncMachine(machine: string): Promise<boolean> {
+    const after = this.machineSyncs.get(machine) ?? Promise.resolve(true)
+    const next = after.then(() => this.syncMachineNow(machine)).catch(() => false)
+    this.machineSyncs.set(machine, next)
+    return next
+  }
+
+  private async syncMachineNow(machine: string): Promise<boolean> {
     const picks = this.picksIn(machine).map((p) => ({ ...p, repo: parseRemoteKey(p.repo)!.path }))
     const hostname = (dest: string, port?: string): Promise<string | null> =>
       this.sshHostname(dest, port, (args) => this.onMachine.clueSsh(machine, args), machine)
@@ -845,7 +861,7 @@ export class GitAccountService {
         })
       )
     )
-    await this.onMachine.sync(machine, this.accountsIn(machine), picks, texts)
+    return this.onMachine.sync(machine, this.accountsIn(machine), picks, texts)
   }
 
   async pick(wsPath: string, id: string | null): Promise<void> {
@@ -854,7 +870,7 @@ export class GitAccountService {
     const at = parseRemoteKey(repo)
     setGitPick(at?.path ?? repo, id, at?.host)
     this.keys.set(wsPath, repo)
-    if (at) return this.changedOn(at.host)
+    if (at) return void (await this.changedOn(at.host))
     this.orgBlocked.delete(repo)
     this.httpsRefused.delete(repo)
     this.remotes.set(repo, { rules: [] })

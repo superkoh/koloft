@@ -146,7 +146,7 @@ export const CLUE_SSH = `${OWN_SETUP_ONLY}
 if [ "$1" = -G ]; then exec ssh "$@"; fi
 exec timeout 10 ssh "$@" </dev/null`
 
-export const CLUE_READ = 'cat "$1" 2>/dev/null'
+export const CLUE_READ_WITHOUT_TOKENS = 'sed \'/token/d\' "$1" 2>/dev/null'
 
 const CLUE_ENV_PLAIN = [
   'GIT_SSH_COMMAND',
