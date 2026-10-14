@@ -4381,6 +4381,7 @@ input.switch:focus-visible {
 .wb-tab.pinned {
   flex: 0 0 auto;
   min-width: 0;
+  max-width: none;
   padding: 0 10px;
   background: transparent;
   border-color: var(--line);
@@ -4433,18 +4434,6 @@ input.switch:focus-visible {
 .wb-tab .x:hover {
   color: var(--accent);
   opacity: 1;
-}
-.wb-tab .cnt {
-  flex: 0 0 auto;
-  padding: 0 5px;
-  border-radius: 5px;
-  border: 1px solid var(--accent-line);
-  background: var(--accent-soft);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 15px;
-  color: var(--accent);
 }
 .wb-sep {
   flex: 0 0 auto;
@@ -5075,9 +5064,6 @@ input.switch:focus-visible {
 }
 .wb-peek .wb-tabs {
   padding-right: 33px;
-}
-.wb-peek .wb-tab.pinned {
-  max-width: none;
 }
 .wb-peek .cv-list {
   flex: 0 1 auto;
