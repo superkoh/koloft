@@ -18,7 +18,7 @@ import { openSessionRow } from '../sessionClick'
 import { mixesBackends, relTime } from '../sessionRows'
 import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
-import { BusyLine } from './SessionLaunchButtons'
+import { BusyLine, enterMethod } from './SessionLaunchButtons'
 
 const SEARCH_AFTER_TYPING_MS = 400
 
@@ -75,7 +75,8 @@ export function CommandPalette({
   const picked = mode === 'search' ? (hot ?? 0) : hot
   const at = picked === null ? null : Math.min(picked, Math.max(0, count - 1))
   const typed = query.trim()
-  const [primary, other] = methods
+  const [primary, ...others] = methods
+  const [other, third] = others
   const startIsDefault = mode === 'ask' && at === null && !!typed
 
   const open = (item: PaletteItem | undefined): void => {
@@ -178,8 +179,8 @@ export function CommandPalette({
     if (e.altKey) search()
     else if (mode === 'search') {
       if (at !== null && hits[at]) onOpenHit(hits[at])
-    } else if (at !== null && !e.shiftKey) open(visible[at])
-    else start(e.shiftKey && other ? other : primary)
+    } else if (at !== null && !e.shiftKey && !(e.ctrlKey && third)) open(visible[at])
+    else start(enterMethod(e, others) ?? primary)
   }
 
   const rowOf = (item: PaletteItem): JSX.Element => {
@@ -352,6 +353,16 @@ export function CommandPalette({
                   onClick={() => start(other)}
                 >
                   {BACKEND_LABEL[other]} <span className="k">⇧⏎</span>
+                </button>
+              )}
+              {third && (
+                <button
+                  className="pal-pill"
+                  disabled={!typed}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => start(third)}
+                >
+                  {BACKEND_LABEL[third]} <span className="k">⌃⏎</span>
                 </button>
               )}
             </>

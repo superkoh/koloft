@@ -83,6 +83,18 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
   }
 }
 
+export function otherMethods(backends: BackendId[], defaultBackend: BackendId): BackendId[] {
+  return backends.length > 1 ? backends.filter((b) => b !== defaultBackend) : []
+}
+
+export function enterMethod(
+  e: { shiftKey: boolean; ctrlKey: boolean },
+  [shiftEnterBackend, ctrlEnterBackend]: BackendId[]
+): BackendId | undefined {
+  if (e.ctrlKey && ctrlEnterBackend) return ctrlEnterBackend
+  return e.shiftKey ? shiftEnterBackend : undefined
+}
+
 export function SessionLaunchButtons({
   launch,
   backends,
@@ -104,12 +116,18 @@ export function SessionLaunchButtons({
     (a, b) =>
       Number(a === launch.methods.defaultBackend) - Number(b === launch.methods.defaultBackend)
   )
-  const shiftEnterBackend = ordered.find((b) => b !== launch.methods.defaultBackend)
+  const [shiftEnterBackend, ctrlEnterBackend] = otherMethods(ordered, launch.methods.defaultBackend)
   return (
     <>
       {ordered.map((backend) => {
         const isDefault = backend === launch.methods.defaultBackend || ordered.length === 1
-        const key = isDefault ? '⏎' : backend === shiftEnterBackend ? '⇧⏎' : undefined
+        const key = isDefault
+          ? '⏎'
+          : backend === shiftEnterBackend
+            ? '⇧⏎'
+            : backend === ctrlEnterBackend
+              ? '⌃⏎'
+              : undefined
         const reason = issue(backend)
         return (
           <button

@@ -13,6 +13,8 @@ import { SeedFields } from './SeedFields'
 import { updateSettings } from './settings/useSettingsUpdate'
 import {
   BusyLine,
+  enterMethod,
+  otherMethods,
   SessionLaunchButtons,
   SessionLaunchStatus,
   useSessionLaunch,
@@ -77,10 +79,7 @@ export function NewProjectDialog({
   const parentKey = remote?.ok ? remote.key : where
   const ready = !!name && !nameBad && !!where && !whereBad
   const backends = sessionLaunch.usable
-  const other =
-    backends.length > 1
-      ? backends.find((b) => b !== sessionLaunch.methods.defaultBackend)
-      : undefined
+  const others = otherMethods(backends, sessionLaunch.methods.defaultBackend)
 
   const submit = (backend: BackendId = sessionLaunch.methods.defaultBackend): void => {
     if (!ready || locked || sessionLaunch.issue(backend)) return
@@ -94,7 +93,7 @@ export function NewProjectDialog({
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
     if (locked || e.key !== 'Enter' || isComposing(e)) return
     e.preventDefault()
-    submit(e.shiftKey && other ? other : undefined)
+    submit(enterMethod(e, others))
   }
 
   const pick = async (): Promise<void> => {

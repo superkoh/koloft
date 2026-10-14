@@ -123,6 +123,9 @@ export function AssistSetup({
             </button>
           )
         })}
+        {offerInstall &&
+          setup.toolsKnown &&
+          setup.missingOtherTools.map((b) => <InstallChoice key={b} backend={b} />)}
       </div>
       <div className="quiet">
         {ASSIST_COST_LINE} Turn it off any time in Settings ▸ Sessions; Koloft then does those jobs

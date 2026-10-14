@@ -58,8 +58,8 @@ export function SessionMethodsSection() {
         <div className="set-lab">
           <b>Default method</b>
           <small>
-            New session starts with this method. With several workspaces, Enter picks it and ⇧⏎ the
-            other one.
+            New session starts with this method. With several workspaces, Enter picks it, ⇧⏎ the
+            next one and ⌃⏎ the third.
           </small>
         </div>
         <div className="seg" role="group" aria-label="Default session method">

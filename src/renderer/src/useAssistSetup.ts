@@ -3,14 +3,17 @@ import { hasUsableAccount } from '@shared/accountUsage'
 import {
   ASSIST_BACKENDS,
   SESSION_BACKENDS,
+  assistBackendOf,
   shownAsInstalled,
   type AssistBackend
 } from '@shared/sessionBackend'
+import type { BackendId } from '@shared/types'
 import { useStore } from './store'
 import { useInstalledBackends } from './useInstalledBackends'
 
 export interface AssistSetupState {
   tools: AssistBackend[]
+  missingOtherTools: BackendId[]
   toolsKnown: boolean
   noTool: boolean
   usable: Record<AssistBackend, boolean>
@@ -38,6 +41,9 @@ export function useAssistSetup(): AssistSetupState {
   const askBypass = skipPermissions && bypassAccepted === false
   return {
     tools,
+    missingOtherTools: SESSION_BACKENDS.filter(
+      (b) => !assistBackendOf(b) && !shownAsInstalled(installed, b)
+    ),
     toolsKnown: installed !== null,
     noTool: !SESSION_BACKENDS.some((b) => shownAsInstalled(installed, b)),
     usable: { claude, codex },
