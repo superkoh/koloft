@@ -33,7 +33,7 @@ import {
 import { gitTokenDelete, gitTokenRead, gitTokenWrite } from './accounts'
 import {
   dismissSuggestion,
-  gitMachineNames,
+  listGitMachines,
   listGitAccounts,
   listGitPicks,
   removeGitAccount,
@@ -178,7 +178,7 @@ export class GitAccountService {
   private readonly master: string
   private accounts: GitAccount[] = []
   private picks: GitRepoPick[] = []
-  private machines = new Map<string, GitMachine>()
+  private machines = new Map<string, Pick<GitMachine, 'accounts' | 'picks'>>()
   private onMachine: GitMachineAccounts
   private signingFor: string | undefined
   private offline = new Set<string>()
@@ -262,13 +262,9 @@ export class GitAccountService {
     this.accounts = listGitAccounts()
     this.picks = listGitPicks()
     this.machines = new Map(
-      gitMachineNames().map((m) => [
+      Object.entries(listGitMachines()).map(([m, { accounts, picks }]) => [
         m,
-        {
-          accounts: listGitAccounts(m),
-          picks: listGitPicks(m).map((p) => ({ ...p, repo: formatRemoteKey(m, p.repo) })),
-          dismissed: []
-        }
+        { accounts, picks: picks.map((p) => ({ ...p, repo: formatRemoteKey(m, p.repo) })) }
       ])
     )
     const texts = new Map<string, string>()
@@ -313,14 +309,17 @@ export class GitAccountService {
   private async sshHostname(
     dest: string,
     port: string | undefined,
-    env: NodeJS.ProcessEnv
+    sshG: (args: string[]) => Promise<GitRunResult>,
+    machine = ''
   ): Promise<string | null> {
-    const key = `${dest} ${port ?? ''}`
+    const key = `${machine} ${dest} ${port ?? ''}`
     let known = this.sshHosts.get(key)
     if (!known) {
-      known = runForClue('ssh', ['-G', ...(port ? ['-p', port] : []), dest], { env }).then(
-        (g) => (g.code === 0 && sshSetting(g.stdout, 'hostname')) || null
-      )
+      known = sshG(['-G', ...(port ? ['-p', port] : []), dest]).then((g) => {
+        const host = (g.code === 0 && sshSetting(g.stdout, 'hostname')) || null
+        if (!host) this.sshHosts.delete(key)
+        return host
+      })
       this.sshHosts.set(key, known)
     }
     return known
@@ -337,7 +336,7 @@ export class GitAccountService {
       env: withoutConfigEntries(env)
     })
     const found = await rewriteRulesFor(a, remoteUrlsOf(listed.stdout), (dest, port) =>
-      this.sshHostname(dest, port, env)
+      this.sshHostname(dest, port, (args) => runForClue('ssh', args, { env }))
     )
     if (this.pickFor(repo)?.id !== a.id) return false
     this.scanned.set(repo, stamp)
@@ -684,24 +683,11 @@ export class GitAccountService {
     const token = 'token' in secret ? secret.token : secret.cred.password
     const me = await identify(apiTargetOf({ platform, url }), token)
     if (!me.ok) return { ok: false, message: identityFailure(platform, me) }
+    const kept =
+      'token' in secret ? secret : { gcmNamespace: secret.gcmNamespace, store: secret.store ?? '' }
     try {
-      if (machine)
-        await this.saveOnMachine(
-          machine,
-          platform,
-          url,
-          me,
-          'token' in secret
-            ? secret
-            : { gcmNamespace: secret.gcmNamespace, store: secret.store ?? '' }
-        )
-      else
-        await this.save(
-          platform,
-          url,
-          me,
-          'token' in secret ? secret : { gcmNamespace: secret.gcmNamespace }
-        )
+      if (machine) await this.saveOnMachine(machine, platform, url, me, kept)
+      else await this.save(platform, url, me, kept)
     } catch {
       return {
         ok: false,
@@ -843,10 +829,8 @@ export class GitAccountService {
   // PLATFORM§53 ADR-0035 ADR-0036
   private async syncMachine(machine: string): Promise<void> {
     const picks = this.picksIn(machine).map((p) => ({ ...p, repo: parseRemoteKey(p.repo)!.path }))
-    const hostname = async (dest: string, port?: string): Promise<string | null> => {
-      const g = await this.onMachine.clueSsh(machine, ['-G', ...(port ? ['-p', port] : []), dest])
-      return (g.code === 0 && sshSetting(g.stdout, 'hostname')) || null
-    }
+    const hostname = (dest: string, port?: string): Promise<string | null> =>
+      this.sshHostname(dest, port, (args) => this.onMachine.clueSsh(machine, args), machine)
     const texts = new Map(
       await Promise.all(
         picks.map(async (p): Promise<[string, string]> => {
@@ -922,9 +906,7 @@ export class GitAccountService {
     dir: string,
     network: boolean
   ): Promise<GitAccountSuggestion> {
-    const facts =
-      this.onMachine.known(machine) ??
-      (await this.onMachine.ready(machine, false), this.onMachine.known(machine))
+    const facts = await this.onMachine.factsFor(machine)
     if (!facts) return { kind: 'off' }
     return suggestFor(
       dir,

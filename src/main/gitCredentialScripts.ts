@@ -84,11 +84,19 @@ ask gh-token "$acct"
 tok=${replyField('token')}`)
 }
 
+export const MACHINE_TOKEN_FROM_HELPER =
+  'tok="$(sh "$(git config --get koloft.helper 2>/dev/null)" "$acct" get </dev/null 2>/dev/null | sed -n "s/^password=//p")"'
+
+export const GH_TOKEN_EXPORTS = `unset ${GH_TOKEN_VARIABLES.join(' ')}
+if [ "$plat" = ghes ]; then
+  export GH_ENTERPRISE_TOKEN="$tok" GH_HOST="$(git config --get koloft.host 2>/dev/null)"
+else
+  export GH_TOKEN="$tok" GH_HOST=github.com
+fi`
+
 // PLATFORM§49 ADR-0036
 export function machineGhWrapperScript(): string {
-  return ghWrapper(
-    'tok="$(sh "$(git config --get koloft.helper 2>/dev/null)" "$acct" get </dev/null 2>/dev/null | sed -n "s/^password=//p")"'
-  )
+  return ghWrapper(MACHINE_TOKEN_FROM_HELPER)
 }
 
 function ghWrapper(fetchToken: string): string {
@@ -128,12 +136,7 @@ if [ -z "$tok" ]; then
   echo "koloft: Koloft did not hand over the token for $acct; sign in again in Settings ▸ Accounts." >&2
   exit 1
 fi
-unset ${GH_TOKEN_VARIABLES.join(' ')}
-if [ "$plat" = ghes ]; then
-  export GH_ENTERPRISE_TOKEN="$tok" GH_HOST="$(git config --get koloft.host 2>/dev/null)"
-else
-  export GH_TOKEN="$tok" GH_HOST=github.com
-fi
+${GH_TOKEN_EXPORTS}
 exec "$real" "$@"
 `
 }

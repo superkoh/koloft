@@ -8,6 +8,9 @@ export const NODE_VERSION = '22.12.0'
 
 export const REMOTE_GIT_DIR = '.koloft/git-accounts'
 
+export const FETCH_FN =
+  'fetch() { if command -v curl >/dev/null 2>&1; then curl -fsSL -o "$2" "$1"; else wget -qO "$2" "$1"; fi; }'
+
 // PLATFORM§54 ADR-0036
 const GIT_ACCOUNTS_INCLUDE_LINE =
   `koloft_git="'include.path=$HOME/${REMOTE_GIT_DIR}/config'"; ` +
@@ -47,7 +50,7 @@ ${REMOTE_ENV_LINES}
 NODE_VERSION=${NODE_VERSION}
 say() { printf '[Koloft] %s\\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
-fetch() { if have curl; then curl -fsSL -o "$2" "$1"; else wget -qO "$2" "$1"; fi; }
+${FETCH_FN}
 
 pm=""
 for c in apt-get dnf yum apk brew; do

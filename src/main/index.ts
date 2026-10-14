@@ -4261,9 +4261,7 @@ function registerIpc(): void {
   ipcMain.handle('gitAccounts:check', () => gitAccounts?.checkAll())
   ipcMain.handle('gitAccounts:pick', (_e, wsPath: unknown, id: unknown) =>
     isText(wsPath) && (id === null || isText(id))
-      ? gitAccounts
-          ?.pick(wsPath, id)
-          .then(() => void (parseRemoteKey(wsPath) || freshness?.fetchNow(wsPath)))
+      ? gitAccounts?.pick(wsPath, id).then(() => void freshness?.fetchNow(wsPath))
       : undefined
   )
   ipcMain.handle('gitAccounts:suggest', (_e, wsPath: unknown, network: unknown) =>

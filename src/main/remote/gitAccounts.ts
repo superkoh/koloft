@@ -3,8 +3,8 @@ import type { GitAccount } from '@shared/types'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 import { credentialRequest, gcmProviderOf } from '../gitCredentialManager'
 import { GH_SIGNED_OUT } from '../prChecks'
-import { GH_TOKEN_VARIABLES } from '../gitCredentialScripts'
-import { REMOTE_GIT_DIR } from './install'
+import { GH_TOKEN_EXPORTS, MACHINE_TOKEN_FROM_HELPER } from '../gitCredentialScripts'
+import { FETCH_FN, REMOTE_GIT_DIR } from './install'
 
 const REMOTE_GCM_DIR = '.koloft/gcm'
 const GCM_BIN_NAME = 'git-credential-manager'
@@ -72,7 +72,7 @@ export function gcmDownload(asset: string): { url: string; sha256: string } | nu
   }
 }
 
-export const INSTALL_GCM = `fetch() { if command -v curl >/dev/null 2>&1; then curl -fsSL -o "$2" "$1"; else wget -qO "$2" "$1"; fi; }
+export const INSTALL_GCM = `${FETCH_FN}
 d="$HOME/${REMOTE_GCM_DIR}"
 t="$HOME/${REMOTE_GCM_DIR}.tmp.$$"
 rm -rf "$t" && mkdir -p "$t/x" || exit 1
@@ -176,16 +176,11 @@ export function parseClueEnv(stdout: string): NodeJS.ProcessEnv {
 export const MACHINE_GH = `cd "$1" 2>/dev/null || exit 1
 shift
 acct="$(git config --get koloft.account 2>/dev/null)"
-helper="$(git config --get koloft.helper 2>/dev/null)"
-tok="$(sh "$helper" "$acct" get </dev/null 2>/dev/null | sed -n 's/^password=//p')"
+plat="$(git config --get koloft.platform 2>/dev/null)"
+${MACHINE_TOKEN_FROM_HELPER}
 [ -n "$tok" ] || exit ${GH_SIGNED_OUT}
 command -v gh >/dev/null 2>&1 || exit ${GH_MISSING}
-unset ${GH_TOKEN_VARIABLES.join(' ')}
-if [ "$(git config --get koloft.platform 2>/dev/null)" = ghes ]; then
-  GH_ENTERPRISE_TOKEN="$tok" GH_HOST="$(git config --get koloft.host 2>/dev/null)"; export GH_ENTERPRISE_TOKEN GH_HOST
-else
-  GH_TOKEN="$tok" GH_HOST=github.com; export GH_TOKEN GH_HOST
-fi
+${GH_TOKEN_EXPORTS}
 exec gh "$@"`
 
 export function machineGhMissing(code: number | null): boolean {

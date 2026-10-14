@@ -4,7 +4,7 @@ import { formatRemoteKey } from '@shared/remoteKey'
 import type { GitAccount, GitRepoPick } from '@shared/types'
 import { accountConfigText, fileNameOf, gitAccountFiles } from './gitConfigFile'
 import type { GhResult } from './prChecks'
-import type { RunResult } from './remote/ssh'
+import { problemOf, type RunResult } from './remote/ssh'
 import {
   CLUE_ENV,
   CLUE_GIT,
@@ -26,8 +26,7 @@ import {
   machinePaths,
   parseClueEnv,
   parsePreflight,
-  type MachineFacts,
-  type MachinePaths
+  type MachineFacts
 } from './remote/gitAccounts'
 import type { GitRunResult } from './gitSteps'
 
@@ -42,9 +41,7 @@ export type MachineRun = (
 ) => Promise<RunResult>
 
 export type MachineReady =
-  | { ok: true; facts: MachineFacts }
-  | { ok: false; error: 'machine'; message: string }
-  | { ok: false; error: 'no-gcm' }
+  { ok: true } | { ok: false; error: 'machine'; message: string } | { ok: false; error: 'no-gcm' }
 
 export async function throughTempStore<T>(
   root: string,
@@ -73,26 +70,20 @@ export class GitMachineAccounts {
 
   constructor(private run: MachineRun) {}
 
-  known(machine: string): MachineFacts | undefined {
+  async factsFor(machine: string): Promise<MachineFacts | undefined> {
+    if (!this.facts.has(machine)) await this.ready(machine, false)
     return this.facts.get(machine)
-  }
-
-  paths(machine: string): MachinePaths | null {
-    const facts = this.facts.get(machine)
-    return facts ? machinePaths(facts.home, fileNameOf) : null
   }
 
   async ready(machine: string, needGcm: boolean): Promise<MachineReady> {
     const r = await this.run(machine, MACHINE_PREFLIGHT, [], { timeoutMs: MACHINE_STEP_TIMEOUT_MS })
     const facts = r.code === 0 ? parsePreflight(r.stdout) : null
-    if (!facts) {
-      const said = r.stderr.trim().split('\n').at(-1) || 'no answer'
+    if (!facts)
       return {
         ok: false,
         error: 'machine',
-        message: `Koloft could not reach ${machine} (${said}).`
+        message: `Koloft could not reach ${machine} (${problemOf(r)}).`
       }
-    }
     this.facts.set(machine, facts)
     const need = `${INCLUDE_IF_FIRST_GIT[0]}.${INCLUDE_IF_FIRST_GIT[1]}`
     if (!facts.git)
@@ -107,16 +98,15 @@ export class GitMachineAccounts {
         error: 'machine',
         message: `git on ${machine} is ${facts.git}; git accounts need git ${need} or newer there. Update git on ${machine}, then add the account again.`
       }
-    if (!needGcm || facts.gcm) return { ok: true, facts }
+    if (!needGcm || facts.gcm) return { ok: true }
     const download = facts.gcmAsset && gcmDownload(facts.gcmAsset)
     if (!download) return { ok: false, error: 'no-gcm' }
     const installed = await this.run(machine, INSTALL_GCM, [download.url, download.sha256], {
       timeoutMs: GCM_INSTALL_TIMEOUT_MS
     })
     if (installed.code !== 0) return { ok: false, error: 'no-gcm' }
-    const ok = { ...facts, gcm: true }
-    this.facts.set(machine, ok)
-    return { ok: true, facts: ok }
+    this.facts.set(machine, { ...facts, gcm: true })
+    return { ok: true }
   }
 
   async writeToken(machine: string, a: GitAccount, token: string): Promise<boolean> {
@@ -160,8 +150,9 @@ export class GitMachineAccounts {
     picks: GitRepoPick[],
     pickTexts: Map<string, string>
   ): Promise<boolean> {
-    const p = this.paths(machine) ?? (await this.ready(machine, false), this.paths(machine))
-    if (!p) return false
+    const facts = await this.factsFor(machine)
+    if (!facts) return false
+    const p = machinePaths(facts.home, fileNameOf)
     const files = gitAccountFiles(
       p.dir,
       picks,

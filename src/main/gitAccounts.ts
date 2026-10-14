@@ -21,8 +21,8 @@ function saveScope(machine: string | undefined, patch: Partial<GitMachine>): voi
   })
 }
 
-export function gitMachineNames(): string[] {
-  return Object.keys(loadSettings().gitMachines)
+export function listGitMachines(): Record<string, GitMachine> {
+  return loadSettings().gitMachines
 }
 
 export function listGitAccounts(machine?: string): GitAccount[] {
