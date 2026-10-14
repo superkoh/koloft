@@ -433,4 +433,23 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
     ).toEqual(placed)
     await quitAndClose(app)
   })
+
+  test('WB-WIN-11: in the Workbench window each changed file’s diff is only as tall as its lines, so three small changes all show on one screen', async ({
+    app,
+    page,
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(3)
+    await startSessionIn(page, 'ws-a')
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+    const aux = await popOut(app, page)
+    await showFilesView(aux, 'Changes')
+    const blocks = aux.locator('.wb-panel .cv-blk[data-ready="1"]')
+    await expect(blocks).toHaveCount(3, { timeout: 30_000 })
+    const stream = await aux.locator('.wb-panel .cv-stream').boundingBox()
+    const last = await blocks.last().boundingBox()
+    if (!stream || !last) throw new Error('the Changes stream is not laid out')
+    expect(last.y + last.height).toBeLessThanOrEqual(stream.y + stream.height)
+  })
 })

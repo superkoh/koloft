@@ -97,6 +97,9 @@ export function openWorkbenchWindow(): WorkbenchWindow | null {
   const opened = window.open('about:blank', WORKBENCH_WINDOW_NAME) as HostWindow | null
   if (!opened) return null
   const doc = opened.document
+  doc.open()
+  doc.write('<!doctype html><html><head></head><body></body></html>')
+  doc.close()
   doc.title = 'Workbench'
   doc.documentElement.lang = document.documentElement.lang
   copyStyles(doc)

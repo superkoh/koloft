@@ -1356,5 +1356,11 @@ a temporary userData, nothing shown), unless a bullet says otherwise.
   the 6.1.0-beta.302 source).
 - **A `WebContentsView` moved between two windows** (`addChildView` on the other one)
   keeps its webContents id, its page and an attached debugger.
+- **The `about:blank` child's document is in quirks mode** (`document.compatMode` is
+  `BackCompat`; the opener's is `CSS1Compat`), so the opener's stylesheets lay out
+  differently there: a Changes diff block grew from 258 px to 1341 px tall. Writing
+  `<!doctype html>` into it with `document.open()` / `write()` / `close()` before
+  building its DOM switches it to standards mode (seen 2026-10-14, Electron 43.7.3, in a
+  `workbench-window.spec.ts` run).
 - That `CSS.highlights` ranges in the child's document paint only when set in the
   child's own registry is inferred, not checked.
