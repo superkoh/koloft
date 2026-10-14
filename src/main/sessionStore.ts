@@ -3,7 +3,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import type { LaunchPermission } from '@shared/types'
 
-export interface CodexMember {
+export interface StoredMember {
   id: string
   key: string
   workspacePath: string
@@ -29,7 +29,7 @@ export interface WorktreeResource {
 
 interface SessionStoreData {
   version: 1
-  members: Record<string, CodexMember>
+  members: Record<string, StoredMember>
   resources: Record<string, WorktreeResource>
 }
 
@@ -40,6 +40,13 @@ export function codexSessionKey(id: string): string {
   return `codex:local:${id}`
 }
 
+export function museSessionKey(id: string): string {
+  if (!UUID.test(id)) throw new Error('Invalid Muse session ID')
+  return `muse:local:${id}`
+}
+
+type KeyOf = (id: string) => string
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -48,11 +55,11 @@ function absolute(value: unknown): value is string {
   return typeof value === 'string' && path.isAbsolute(value)
 }
 
-function validMember(value: unknown, key: string): value is CodexMember {
+function validMember(value: unknown, key: string, keyOf: KeyOf): value is StoredMember {
   if (!record(value) || typeof value.id !== 'string' || !UUID.test(value.id)) return false
   return (
     value.key === key &&
-    key === codexSessionKey(value.id) &&
+    key === keyOf(value.id) &&
     absolute(value.workspacePath) &&
     absolute(value.cwd) &&
     typeof value.title === 'string' &&
@@ -86,14 +93,14 @@ function validResource(value: unknown, id: string): value is WorktreeResource {
   )
 }
 
-function parseData(value: unknown): SessionStoreData {
+function parseData(value: unknown, keyOf: KeyOf): SessionStoreData {
   if (!record(value) || value.version !== 1) throw new Error('Unsupported session store version')
   if (!record(value.members) || !record(value.resources)) throw new Error('Invalid session store')
   for (const [id, resource] of Object.entries(value.resources)) {
     if (!validResource(resource, id)) throw new Error(`Invalid worktree resource: ${id}`)
   }
   for (const [key, member] of Object.entries(value.members)) {
-    if (!validMember(member, key)) throw new Error(`Invalid session member: ${key}`)
+    if (!validMember(member, key, keyOf)) throw new Error(`Invalid session member: ${key}`)
     if (member.worktreeResourceId && !Object.hasOwn(value.resources, member.worktreeResourceId)) {
       throw new Error(`Missing worktree resource for session: ${key}`)
     }
@@ -104,16 +111,19 @@ function parseData(value: unknown): SessionStoreData {
 export class SessionStore {
   private data: SessionStoreData
 
-  constructor(readonly filePath: string) {
+  constructor(
+    readonly filePath: string,
+    private keyOf: KeyOf = codexSessionKey
+  ) {
     try {
-      this.data = parseData(JSON.parse(fs.readFileSync(filePath, 'utf8')))
+      this.data = parseData(JSON.parse(fs.readFileSync(filePath, 'utf8')), keyOf)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       this.data = { version: 1, members: {}, resources: {} }
     }
   }
 
-  listMembers(workspacePath?: string): CodexMember[] {
+  listMembers(workspacePath?: string): StoredMember[] {
     return structuredClone(
       Object.values(this.data.members).filter(
         (member) => workspacePath === undefined || member.workspacePath === workspacePath
@@ -121,19 +131,19 @@ export class SessionStore {
     )
   }
 
-  getMember(key: string): CodexMember | undefined {
+  getMember(key: string): StoredMember | undefined {
     return Object.hasOwn(this.data.members, key)
       ? structuredClone(this.data.members[key])
       : undefined
   }
 
-  upsertMember(member: CodexMember): void {
+  upsertMember(member: StoredMember): void {
     const next = structuredClone(this.data)
     next.members[member.key] = structuredClone(member)
     this.commit(next)
   }
 
-  updateMember(key: string, patch: Partial<Omit<CodexMember, 'id' | 'key'>>): CodexMember {
+  updateMember(key: string, patch: Partial<Omit<StoredMember, 'id' | 'key'>>): StoredMember {
     const member = this.getMember(key)
     if (!member) throw new Error(`Session member not found: ${key}`)
     const updated = { ...member, ...patch }
@@ -177,7 +187,7 @@ export class SessionStore {
   }
 
   private commit(next: SessionStoreData): void {
-    parseData(next)
+    parseData(next, this.keyOf)
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true })
     const temporary = `${this.filePath}.${randomUUID()}.tmp`
     try {
