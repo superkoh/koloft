@@ -5,6 +5,10 @@ import type { BrowserDialogAnswer } from '@shared/types'
 const ask = (kind: string, message: string, defaultValue: string): BrowserDialogAnswer =>
   ipcRenderer.sendSync('browser:js-dialog', { kind, message, defaultValue })
 
+// PLATFORM§11
+const undecided = (name: string): boolean =>
+  ipcRenderer.sendSync('browser:permission-undecided', name) === true
+
 interface GuestClick {
   isTrusted: boolean
   target: { closest?(selector: string): { href?: string } | null } | null
@@ -48,7 +52,10 @@ guest.addEventListener('click', backgroundOpen, true)
 guest.addEventListener('auxclick', backgroundOpen, true)
 
 contextBridge.executeInMainWorld({
-  func: (ask: (kind: string, message: string, defaultValue: string) => BrowserDialogAnswer) => {
+  func: (
+    ask: (kind: string, message: string, defaultValue: string) => BrowserDialogAnswer,
+    undecided: (name: string) => boolean
+  ) => {
     // PLATFORM§14
     const nativeSource = new WeakMap<object, string>()
     const asNative = <T extends (...args: never[]) => unknown>(fn: T): T => {
@@ -144,6 +151,30 @@ contextBridge.executeInMainWorld({
       }
     }
 
+    type PermissionStatusLike = { state: string }
+    const permissions = (
+      globalThis as unknown as {
+        Permissions?: {
+          prototype: { query(desc: { name?: unknown }): Promise<PermissionStatusLike> }
+        }
+      }
+    ).Permissions?.prototype
+    const realQuery = permissions?.query
+    if (permissions && realQuery) {
+      // PLATFORM§11
+      permissions.query = asNative(
+        {
+          async query(desc: { name?: unknown }): Promise<PermissionStatusLike> {
+            const status = await realQuery.call(this, desc)
+            if (status.state === 'denied' && undecided(String(desc?.name))) {
+              Object.defineProperty(status, 'state', { get: () => 'prompt', configurable: true })
+            }
+            return status
+          }
+        }.query
+      )
+    }
+
     // PLATFORM§12
     const dialogs = {
       alert(...args: unknown[]): void {
@@ -162,5 +193,5 @@ contextBridge.executeInMainWorld({
     page.confirm = asNative(dialogs.confirm)
     page.prompt = asNative(dialogs.prompt)
   },
-  args: [ask]
+  args: [ask, undecided]
 })

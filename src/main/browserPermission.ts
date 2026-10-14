@@ -83,6 +83,18 @@ export function permissionAsk(permission: string, details: PermissionDetails): P
   return { kind: 'ask', permission: permission as PermissionName, origin }
 }
 
+const QUERYABLE = new Set<string>([
+  'microphone',
+  'camera',
+  'notifications',
+  'geolocation',
+  'clipboard-read'
+])
+
+export function queriedPermission(name: unknown): PermissionName | null {
+  return typeof name === 'string' && QUERYABLE.has(name) ? (name as PermissionName) : null
+}
+
 export function permissionKey(origin: string, permission: PermissionName): string {
   return `${origin} ${permission}`
 }

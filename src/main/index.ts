@@ -235,6 +235,8 @@ import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@sh
 import {
   permissionAsk,
   permissionKeysFor,
+  permissionOriginOf,
+  queriedPermission,
   type PermissionDetails,
   type PermissionName
 } from './browserPermission'
@@ -1830,6 +1832,7 @@ app.whenReady().then(() => {
   muteGuestsUnderTest()
   setupGuestGestures()
   setupGuestLinkReports()
+  setupGuestPermissionQuery()
   setupPermissionCleanup()
   setupGuestBackgroundOpen()
   setupGuestAudioState()
@@ -2882,6 +2885,20 @@ function setupGuestLinkReports(): void {
     if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (typeof url !== 'string' || !url) return
     sendToRenderer('browser:blocked-scheme', url.slice(0, 2048))
+  })
+}
+
+// PLATFORM§11
+function setupGuestPermissionQuery(): void {
+  ipcMain.on('browser:permission-undecided', (e, name: unknown) => {
+    const permission = queriedPermission(name)
+    const origin = permissionOriginOf({ requestingUrl: e.senderFrame?.url })
+    e.returnValue =
+      e.sender.session === session.fromPartition(BROWSER_PARTITION) &&
+      !isOverlayGuest(e.sender) &&
+      permission !== null &&
+      origin !== '' &&
+      rememberedPermission(origin, permission) === undefined
   })
 }
 
