@@ -64,8 +64,8 @@
         <div class="kicker">Features</div>
         <h1>Everything Koloft does, <em>and where it works.</em></h1>
         <p>
-          32 features, grouped by what you are doing. Each card says whether it works with Claude
-          Code and Codex on your Mac, and in a remote folder over SSH.
+          32 features, grouped by what you are doing. Where it matters, a card says whether it works
+          with Claude Code and Codex on your Mac, and in a remote folder over SSH.
         </p>
         <nav class="fchips" aria-label="Feature groups">
           <a href="#palette">⌘P, one box for everything</a>
@@ -149,9 +149,9 @@
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
               <li class="yes">✓ Codex</li>
-              <li class="part">◐ Remote</li>
+              <li class="yes">✓ Remote</li>
             </ul>
-            <p class="fnote">In remote folders search matches session titles, not what was said.</p>
+
             <a class="more" href="../sessions/#find"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
@@ -166,6 +166,9 @@
               through Settings.
             </p>
 
+            <p class="fnote">
+              Needs Assist on (Settings ▸ Assist); with it off, ⏎ opens the folder picker.
+            </p>
             <a class="more" href="../accounts/#assist"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
@@ -256,9 +259,9 @@
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
               <li class="yes">✓ Codex</li>
-              <li class="no">– Remote</li>
+              <li class="yes">✓ Remote</li>
             </ul>
-            <p class="fnote">Remote sessions always sit at the top level.</p>
+
             <a class="more" href="../sessions/#session-tree"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
@@ -394,7 +397,7 @@
               <li class="yes">✓ Codex</li>
               <li class="yes">✓ Remote</li>
             </ul>
-            <p class="fnote">Remote folders refresh every few seconds.</p>
+
             <a class="more" href="../workbench/"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
@@ -521,9 +524,12 @@
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
               <li class="yes">✓ Codex</li>
-              <li class="no">– Remote</li>
+              <li class="part">◐ Remote</li>
             </ul>
-            <p class="fnote">On your Mac only for now.</p>
+            <p class="fnote">
+              In remote folders a bare open is not caught yet; koloft open still shows a file in the
+              Workbench.
+            </p>
             <a class="more" href="../agents/"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
@@ -572,7 +578,8 @@
             </div>
             <p>
               Say “have tidewatch fix the login bug”: Assist starts the session, answers its
-              questions, and tells you when it is done. It never edits a file itself.
+              questions, and tells you when it is done. It is there to pass work on, not to edit
+              your files.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -615,8 +622,9 @@
               <h3>It sets Discord up for you</h3>
             </div>
             <p>
-              One click: Assist creates the bot, the server and the channel on Discord’s site. You
-              sign in, pass the human checks, and press the few buttons only a person may.
+              One click: Assist makes the bot, and a server and channel if you have none, doing the
+              clicking on Discord’s site. You sign in, pass the human checks, and press the few
+              buttons only a person may.
             </p>
 
             <a class="more" href="../discord/"
@@ -801,8 +809,9 @@
               <h3>Private by design</h3>
             </div>
             <p>
-              No Koloft account, no analytics, no copy of your chats: it reads the tools’ own
-              records. Every place it talks to is listed.
+              No Koloft account and no analytics. It reads the tools’ own records; a remote folder’s
+              are mirrored to your Mac so its list works, and nothing goes anywhere else. Every
+              place it talks to is listed.
             </p>
 
             <a class="more" href="../install/#what-it-talks-to"

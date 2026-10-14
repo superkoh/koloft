@@ -254,9 +254,9 @@
           </div>
         </div>
         <p class="honest">
-          <span>note</span>Picking the place needs Koloft Assist on (Settings ▸ Assist); with it
-          off, ⏎ opens the folder picker with your words kept. Codex runs in local folders only, and
-          in remote folders search matches session titles, not what was said.
+          <span>note</span>Picking the place and asking Koloft itself need Koloft Assist on
+          (Settings ▸ Assist); with it off, ⏎ opens the folder picker with your words kept. Codex
+          runs in local folders only.
         </p>
         <a class="more" href="features/#palette"
           >Everything ⌘P does
@@ -397,8 +397,9 @@
           </a>
         </div>
         <p class="honest">
-          <span>note</span>On your Mac. In remote folders the agent can't drive the browser or open
-          things in the Workbench yet.
+          <span>note</span>In remote folders the agent can't drive the browser yet, and a bare
+          <code>open</code> is not caught; <code>koloft open</code> still shows a file in the
+          Workbench.
         </p>
         <a class="more" href="features/#agents"
           >What agents can do with Koloft
@@ -416,7 +417,8 @@
           <h2>Hand it the work. <em>It reports back.</em></h2>
           <p>
             Koloft's own helper starts sessions, answers their questions and tells you when a turn
-            ends, here or from your own Discord bot on your phone. It never edits a file itself.
+            ends, here or from your own Discord bot on your phone. It is there to pass work on, not
+            to edit your files.
           </p>
         </div>
         <div
@@ -555,7 +557,10 @@
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#no-copy" /></svg
             ><s>copy your chats</s>
-            <p>It reads the tools' own records and never keeps a copy of your chats.</p>
+            <p>
+              It reads the tools' own records; a remote folder's are mirrored to your Mac, and
+              nothing goes anywhere else.
+            </p>
           </li>
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#no-cover" /></svg
