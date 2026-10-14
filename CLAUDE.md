@@ -140,7 +140,7 @@ Working principles:
     or "no user-visible change".
   - **Runtime code** — +N/−M lines under `src/`, tests, docs and fixtures not counted.
   - **How to see it in the shipped app** — what to click in an installed build, and
-    for a screen change a screenshot you took of it; or "no way from the app".
+    for a changed screen or page a screenshot you took of it; or "no way from the app".
   - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it,
     never a check you could still run. Below high, it is not offered for merge: it
     says what would make it high.
