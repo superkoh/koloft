@@ -107,20 +107,30 @@ describe('ghActiveLogin', () => {
 })
 
 describe('loginFromSshGreeting', () => {
+  const onStderr = (stderr: string): { stdout: string; stderr: string } => ({ stdout: '', stderr })
+
   it('reads the login from GitHub’s greeting on stderr', () => {
     expect(
       loginFromSshGreeting(
-        "Hi bob! You've successfully authenticated, but GitHub does not provide shell access.\n"
+        onStderr(
+          "Hi bob! You've successfully authenticated, but GitHub does not provide shell access.\n"
+        )
       )
     ).toBe('bob')
-    expect(loginFromSshGreeting('git@github.com: Permission denied (publickey).\n')).toBeNull()
+    expect(
+      loginFromSshGreeting(onStderr('git@github.com: Permission denied (publickey).\n'))
+    ).toBeNull()
   })
 
-  it('reads GitLab’s and Gitea’s greetings too', () => {
-    expect(loginFromSshGreeting('Welcome to GitLab, @dev.ops!\n')).toBe('dev.ops')
+  it('reads GitLab’s greeting on stdout and Gitea’s on stderr', () => {
+    expect(loginFromSshGreeting({ stdout: 'Welcome to GitLab, @dev.ops!\n', stderr: '' })).toBe(
+      'dev.ops'
+    )
     expect(
       loginFromSshGreeting(
-        "Hi there, carol! You've successfully authenticated with the key named k, but Gitea does not provide shell access.\n"
+        onStderr(
+          "Hi there, carol! You've successfully authenticated with the key named k, but Gitea does not provide shell access.\n"
+        )
       )
     ).toBe('carol')
   })

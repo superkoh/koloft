@@ -731,6 +731,24 @@ throwaway `HOME` it failed, exit 1, "A default keychain could not be found" — 
 home that copies `auth.json` between accounts keeps working only while that key stays
 `file`.
 
+**The rate-limit reply also carries the credit balance and saved limit resets; one can be
+spent through the app-server.** Checked 2026-10-13 with Codex CLI 0.162.0 and a real
+ChatGPT Pro login, no model turn: a Node script sent `initialize`, `initialized` and
+`account/rateLimits/read` to `codex app-server`. The reply held `rateLimits.credits:
+{hasCredits: true, unlimited: false, balance: "62500.0000000000"}` (a decimal string),
+`rateLimits.rateLimitReachedType: null` while under the limit, a top-level
+`ordinaryUsageAllowed: true`, and a top-level `rateLimitResetCredits: {availableCount: 3,
+credits: [...]}`, each credit `{id, resetType: "codexRateLimits", status: "available",
+grantedAt, expiresAt, title: "Full reset", description}`, `expiresAt` 30 days after
+`grantedAt`. The schema the same binary prints (`codex app-server generate-json-schema`)
+types `credits` as nullable "only `availableCount` is known", and adds
+`account/rateLimitResetCredit/consume` with params `{idempotencyKey, creditId?}` (no
+`creditId`: the backend picks the next) and result `outcome`: `reset`, `nothingToReset`
+("no current rate-limit window is eligible"), `noCredit` or `alreadyRedeemed`. Not
+probed: a real `consume` — every try spends one of the owner's resets, so Koloft offers
+it only on a walled account and only the fake codex has run it; whether
+`nothingToReset` leaves the credit unspent is inferred from its description.
+
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
   done (Koloft types `codex login && exit` into the sign-in terminal, so the tab closes
@@ -1222,6 +1240,10 @@ the one before, the screen read back through `pyte`.
   first. ESC closed the model list and left the composer empty.
 - **Shift+Tab (`ESC[Z`)** at the empty composer switched the session to Plan mode ("Model
   changed to … for Plan mode").
+- **Mouse and focus reports:** on its welcome screen (2026-10-13, 0.162.0, a scratch
+  `CODEX_HOME`, otherwise as above) the TUI sent both `h` and `l` for 1000, 1002, 1003
+  and 1006, and only `?1004h` (focus reports); the order was not recorded. What it does
+  with a cut mouse report was not run.
 - Not run: the same keys through ssh and tmux, since Koloft starts no remote Codex tab
   (§16).
 - **A bare `codex` may stop on a "Background server has incompatible feature settings"
@@ -1495,5 +1517,13 @@ the configured sandbox.
   before the turn). No question was put to the owner. Established by
   `agent-tools-real-smoke.spec.ts` › "a real Codex turn's git, inside its sandbox, reaches
   the server with the picked account's token through Koloft".
+- **ssh with a key in Koloft's own folder works inside the sandbox once the network is
+  on.** 2026-10-13, codex-cli 0.162.0, `command/exec` under `workspace-write`, a
+  repository whose included config set `core.sshCommand = "ssh -i '<~/Library/Application
+  Support/…/key>' -o IdentitiesOnly=yes"`: the command read the key and `git push` reached
+  a Gitea 1.24.6 over ssh; without `network_access` ssh failed with `connect to host …:
+  Operation not permitted`. In both runs git could not write inside the repository's
+  `.git` (`index.lock`, `refs/remotes/origin/main.lock`: `Operation not permitted`), so the
+  push went out but the remote-tracking ref was not updated.
 - Not probed yet: a push to the real github.com from a Codex turn.
 

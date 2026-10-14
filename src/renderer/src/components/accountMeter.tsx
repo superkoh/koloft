@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import type { AccountView } from '@shared/types'
+import type { AccountView, CodexLimits } from '@shared/types'
 import { FABLE_STOP, meterLevel, type MeterLevel } from '@shared/accountUsage'
 
 const FABLE_WARN_AT = 0.85
@@ -39,6 +39,26 @@ export function probeErrorLabel(e: NonNullable<AccountView['probeError']>): stri
     default:
       return 'Probe failed'
   }
+}
+
+// CODEX§15
+export function codexBalanceLabel(l: CodexLimits, nowMs: number): string {
+  const parts: string[] = []
+  if (l.credits?.unlimited) parts.push('unlimited credits')
+  else if (l.credits?.balance !== undefined)
+    parts.push(`${Math.floor(l.credits.balance).toLocaleString('en-US')} credits`)
+  if (l.resets) {
+    const n = l.resets.available
+    parts.push(
+      n === 0
+        ? 'no resets saved'
+        : `${n} reset${n === 1 ? '' : 's'} saved` +
+            (l.resets.firstExpiresAt
+              ? `, ${n === 1 ? 'expires' : 'first expires'} ${resetLabel(l.resets.firstExpiresAt, nowMs)}`
+              : '')
+    )
+  }
+  return parts.join(' · ')
 }
 
 // CC§7

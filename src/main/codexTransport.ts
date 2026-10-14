@@ -503,6 +503,22 @@ export async function createCodexTransport(
   }
 }
 
+const METHODS_A_SIDE_CONNECTION_MAY_SEND_NEVER_A_TURN = [
+  'thread/list',
+  // CODEX§24
+  'thread/search',
+  'thread/read',
+  'thread/loaded/list',
+  'account/read',
+  'account/rateLimits/read',
+  // CODEX§15
+  'account/rateLimitResetCredit/consume',
+  'model/list',
+  'config/read',
+  // CODEX§27
+  'hooks/list'
+]
+
 export class CodexRpc {
   private process: CodexProcess
   private initialized: Promise<void>
@@ -550,22 +566,8 @@ export class CodexRpc {
   }
 
   async request<T = unknown>(method: string, params: unknown = {}): Promise<T> {
-    if (
-      ![
-        'thread/list',
-        // CODEX§24
-        'thread/search',
-        'thread/read',
-        'thread/loaded/list',
-        'account/read',
-        'account/rateLimits/read',
-        'model/list',
-        'config/read',
-        // CODEX§27
-        'hooks/list'
-      ].includes(method)
-    ) {
-      throw new Error(`Codex history connection does not allow ${method}`)
+    if (!METHODS_A_SIDE_CONNECTION_MAY_SEND_NEVER_A_TURN.includes(method)) {
+      throw new Error(`Codex side connection does not allow ${method}`)
     }
     await this.initialized
     return (await this.send(method, params)) as T

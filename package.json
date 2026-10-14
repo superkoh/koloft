@@ -1,6 +1,6 @@
 {
   "name": "koloft",
-  "version": "0.42.0",
+  "version": "0.43.0",
   "description": "A macOS app that runs and manages your Claude Code sessions — every session in a folder, with a Workbench beside it.",
   "main": "./out/main/index.js",
   "author": {
@@ -39,6 +39,7 @@
     "test:unit:changed": "vitest run --changed=main",
     "test:unit:watch": "vitest",
     "test:e2e": "playwright test",
+    "handtest": "node test/handtest/run.mjs",
     "test": "npm run test:unit && npm run test:e2e"
   },
   "dependencies": {
@@ -69,6 +70,7 @@
     "electron": "^43.7.3",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "jiti": "^2.7.0",
     "katex": "^0.18.7",
     "markdown-it": "^15.0.2",
     "markdown-it-footnote": "^4.0.0",

@@ -63,7 +63,7 @@ export async function worktreeNameFor(
   dueAt: number,
   taken: (name: string) => Promise<boolean>
 ): Promise<string> {
-  const base = worktreeBase(job, dueAt)
+  const base = worktreeBase(job.name, dueAt)
   if (!(await taken(base))) return base
   for (let i = 2; i <= 99; i++) {
     const name = withSuffix(base, `-${i}`)

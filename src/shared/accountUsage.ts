@@ -1,4 +1,11 @@
-import type { AccountKind, AccountMeta, AccountView, BackendId, UsageSnapshot } from './types'
+import type {
+  AccountKind,
+  AccountMeta,
+  AccountView,
+  BackendId,
+  CodexLimits,
+  UsageSnapshot
+} from './types'
 import { BACKEND_LABEL } from './sessionBackend'
 
 const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
@@ -142,6 +149,40 @@ export function capsuleGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   }
 }
 
+export function codexHeaviest(limits: CodexLimits): number {
+  return Math.max(0, ...limits.windows.map((w) => w.used))
+}
+
+// CODEX§15
+export function codexWalled(limits: CodexLimits): boolean {
+  return limits.reached === true || codexHeaviest(limits) >= 1
+}
+
+export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
+  if (a.status !== 'ok') return { kind: 'grey' }
+  const l = a.limits
+  if (!l) return { kind: 'empty' }
+  const stale = nowMs - l.at > STALE_MS
+  if (codexWalled(l)) return { kind: 'walled', stale }
+  const binding = codexHeaviest(l)
+  return {
+    kind: 'bar',
+    frac: Math.min(binding, CAP),
+    level: meterLevel(binding),
+    stale,
+    fable: null
+  }
+}
+
+export function codexResetOffered(a: AccountView): boolean {
+  return (
+    a.status === 'ok' &&
+    !!a.limits &&
+    codexWalled(a.limits) &&
+    (a.limits.resets?.available ?? 0) > 0
+  )
+}
+
 export function meteredArmed(views: AccountView[], nowSec: number): boolean {
   const hasMetered = views.some((a) => a.enabled && (a.kind === 'apikey' || a.kind === 'custom'))
   if (!hasMetered) return false
@@ -149,10 +190,15 @@ export function meteredArmed(views: AccountView[], nowSec: number): boolean {
   return subs.every((a) => (a.usage ? hardLimited(a.usage, nowSec) : false))
 }
 
+export function measuredAt(a: AccountView): number | undefined {
+  return a.usage?.at ?? a.limits?.at
+}
+
 export function oldestAt(views: AccountView[]): number | null {
   let oldest: number | null = null
   for (const a of views) {
-    if (a.usage && (oldest === null || a.usage.at < oldest)) oldest = a.usage.at
+    const at = measuredAt(a)
+    if (at !== undefined && (oldest === null || at < oldest)) oldest = at
   }
   return oldest
 }
@@ -166,12 +212,13 @@ export function autoProbeDue(
 ): boolean {
   if (lastAttempt !== null && nowMs >= lastAttempt && nowMs - lastAttempt <= AUTO_PROBE_MS)
     return false
-  const rows = usableAccounts(views, ['oauth'])
+  const rows = usableAccounts(views, ['oauth', 'codex-home'])
   if (rows.length === 0) return false
   let oldest = Infinity
   for (const a of rows) {
-    if (!a.usage) return true
-    if (a.usage.at < oldest) oldest = a.usage.at
+    const at = measuredAt(a)
+    if (at === undefined) return true
+    if (at < oldest) oldest = at
   }
   return nowMs - oldest > AUTO_PROBE_MS
 }
@@ -245,6 +292,67 @@ export function poolSnapshot(members: AccountView[], nowMs: number): PoolSnapsho
     earliestBack,
     oldestAt: oldestAt(M)
   }
+}
+
+export interface CodexPoolSnapshot {
+  measured: number
+  usable: number
+  walled: number
+  tension: number
+  windows: { minutes: number; mean: number }[]
+  earliestBack: number | null
+  oldestAt: number | null
+}
+
+// CODEX§15
+export function codexPoolSnapshot(members: AccountView[], nowMs: number): CodexPoolSnapshot {
+  const nowSec = Math.floor(nowMs / 1000)
+  const live = usableAccounts(members, ['codex-home'])
+  const M = live.filter((a) => a.limits !== undefined)
+  const limitsOf = (a: AccountView): CodexLimits => a.limits as CodexLimits
+  const walledRows = M.filter((a) => codexWalled(limitsOf(a)))
+  const mean = (xs: number[]): number => xs.reduce((s, x) => s + x, 0) / xs.length
+  const minutes = [...new Set(M.flatMap((a) => limitsOf(a).windows.map((w) => w.minutes)))].sort(
+    (x, y) => x - y
+  )
+  let earliestBack: number | null = null
+  for (const a of walledRows)
+    for (const w of limitsOf(a).windows)
+      if (
+        w.used >= 1 &&
+        w.resetsAt > nowSec &&
+        (earliestBack === null || w.resetsAt < earliestBack)
+      )
+        earliestBack = w.resetsAt
+  return {
+    measured: M.length,
+    usable: live.length - walledRows.length,
+    walled: walledRows.length,
+    tension: M.length
+      ? mean(M.map((a) => (codexWalled(limitsOf(a)) ? 1 : Math.min(codexHeaviest(limitsOf(a)), 1))))
+      : 0,
+    windows: minutes.map((m) => ({
+      minutes: m,
+      mean: mean(
+        M.flatMap((a) =>
+          limitsOf(a)
+            .windows.filter((w) => w.minutes === m)
+            .map((w) => Math.min(w.used, 1))
+        )
+      )
+    })),
+    earliestBack,
+    oldestAt: oldestAt(M)
+  }
+}
+
+export function codexPoolGlyph(members: AccountView[], nowMs: number): CapsuleGlyph | null {
+  const p = codexPoolSnapshot(members, nowMs)
+  if (p.measured < 2) return null
+  const stale = p.oldestAt !== null && nowMs - p.oldestAt > STALE_MS
+  if (p.walled === p.measured) return { kind: 'walled', stale }
+  const frac = Math.min(p.tension, CAP)
+  return { kind: 'bar', frac, level: meterLevel(p.tension), stale, fable: null }
 }
 
 export function poolGlyph(members: AccountView[], nowMs: number): CapsuleGlyph | null {
