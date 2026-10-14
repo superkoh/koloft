@@ -1240,6 +1240,10 @@ the one before, the screen read back through `pyte`.
   first. ESC closed the model list and left the composer empty.
 - **Shift+Tab (`ESC[Z`)** at the empty composer switched the session to Plan mode ("Model
   changed to … for Plan mode").
+- **Mouse and focus reports:** on its welcome screen (2026-10-13, 0.162.0, a scratch
+  `CODEX_HOME`, otherwise as above) the TUI sent both `h` and `l` for 1000, 1002, 1003
+  and 1006, and only `?1004h` (focus reports); the order was not recorded. What it does
+  with a cut mouse report was not run.
 - Not run: the same keys through ssh and tmux, since Koloft starts no remote Codex tab
   (§16).
 - **A bare `codex` may stop on a "Background server has incompatible feature settings"
