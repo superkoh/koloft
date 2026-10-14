@@ -20,6 +20,7 @@ export interface FakeForge {
   hits: FakeForgeHit[]
   addUser(token: string, user: Partial<FakeForgeUser> & { login: string }): void
   setAccess(token: string, repoPath: string, access: 'push' | 'read'): void
+  refuseHttps(answer?: string): void
   close(): Promise<void>
 }
 
@@ -29,6 +30,11 @@ const GITLAB_PROJECT = /^\/api\/v4\/projects\/([^/?]+)$/
 const GITEA_REPO = /^\/api\/v1\/repos\/([^/]+)\/([^/?]+)$/
 const GITLAB_DEVELOPER = 30
 const GITLAB_REPORTER = 20
+// PLATFORM§53
+const HTTPS_OFF_TEXT: Record<ForgeKind, string> = {
+  gitlab: 'Git access over HTTP is not allowed',
+  gitea: 'Interacting with repositories by HTTP protocol is not allowed'
+}
 
 const pkt = (s: string): string => (s.length + 4).toString(16).padStart(4, '0') + s
 
@@ -52,6 +58,7 @@ export async function startFakeForge(kind: ForgeKind): Promise<FakeForge> {
   const access = new Map<string, 'push' | 'read'>()
   const hits: FakeForgeHit[] = []
   const realm = kind === 'gitlab' ? 'GitLab' : 'Gitea'
+  let httpsOff: string | null = null
 
   const send = (res: http.ServerResponse, status: number, body: unknown): void => {
     res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -64,6 +71,10 @@ export async function startFakeForge(kind: ForgeKind): Promise<FakeForge> {
     hits.push({ url, basic })
     const smart = SMART_HTTP.exec(url)
     if (smart) {
+      if (httpsOff) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' })
+        return res.end(httpsOff)
+      }
       if (!basic || !users.has(basic.password)) {
         res.writeHead(401, { 'WWW-Authenticate': `Basic realm="${realm}"` })
         return res.end()
@@ -119,6 +130,9 @@ export async function startFakeForge(kind: ForgeKind): Promise<FakeForge> {
     },
     setAccess: (token, repoPath, level) => {
       access.set(`${token} ${repoPath}`, level)
+    },
+    refuseHttps: (answer = HTTPS_OFF_TEXT[kind]) => {
+      httpsOff = answer
     },
     close: () =>
       new Promise<void>((r) => {

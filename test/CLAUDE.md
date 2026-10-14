@@ -15,6 +15,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - `npm run test:e2e`   — Playwright drives the real built app. Needs
   `npm run build` first — Playwright never builds (root CLAUDE.md).
 - `npm test`           — both.
+- `node scripts/real-window-mac.mjs tart|here` — the real-window layer (below); never
+  part of `npm test`.
 
 ## Unit layer (test/unit/)
 
@@ -167,7 +169,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 ### Keys, focus and the hidden window
 
 - Native menu accelerators are unreachable from Playwright's synthetic keys — send
-  the IPC (`sendShortcut`) or click the menu item (`clickAppMenuItem`). Which island
+  the IPC (`sendShortcut`) or click the menu item (`clickAppMenuItem`); a case about the
+  key itself belongs in the real-window layer. Which island
   a key belongs to is decided by focus, so click the target area first. Dialog-local
   keys (⏎/Esc/digits/arrows/typing inside C8/C9/C10) are renderer keydown — plain
   `page.keyboard`. The app drops a shortcut sent before its first rows push, on
@@ -177,10 +180,11 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - The test window never has OS focus. Read focus from `focusOwner` /
   `document.activeElement`, never `document.hasFocus()` (platform ledger §10). For the
   same reason no tab is ever "watched": every finished turn leaves an attention mark,
-  seen only through `pendingAttention(page)`, and main's `__koloftOsNotifCount` must
-  stay 0. A case about what a focused user clears calls `pretendWindowFocused(app)`
-  (helpers/app.ts): main then reads its window as focused, and the click it makes
-  counts as "watching".
+  seen only through `pendingAttention(page)`. No OS notification or Dock badge is ever
+  shown; what one would have said is recorded instead and read with `osOutlets(app)`
+  (helpers/app.ts). A case about what a focused user clears calls
+  `pretendWindowFocused(app)`: main then reads its window as focused, and the click it
+  makes counts as "watching".
 - Never reach real OS UI or the developer's own state. No native dialog: stub and count
   it (restart-session `countConfirmationsInsteadOfShowingThem`). File pickers answer
   from a queue (`answerFileDialog`; an empty queue means "cancelled"); add workspaces
@@ -256,15 +260,63 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_TEST_TOOL_INSTALLER` (fixtures/fake-tool-installer.js), `KOLOFT_TEST_CLT`,
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
   `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
-  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, the session timing knobs
+  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, `KOLOFT_TEST_REAL_WINDOW`
+  (real-window layer), the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
   `KOLOFT_FILE_DIALOG_FILE` and `KOLOFT_UPDATE_FIXTURE` are read on every use, so a
   spec may rewrite them after launch.
 - Not env vars: `window.__koloftTerms` (terminal text), `__koloftShortcutsReady` /
   `__koloftRowsReady` (the renderer is ready for keys), main's
-  `globalThis.__koloftOsNotifCount`, and `installGitSpawnLog` (the git the app runs).
+  `globalThis.__koloftOsOutlets` (read through `osOutlets`), and `installGitSpawnLog`
+  (the git the app runs).
   When a CDP relay test waits for a message that never comes, read
   `<home>/cdp-log.txt`: it holds the relay's whole conversation.
+
+## Hand tests
+
+A hand test is a case no suite answers. Split it into steps, and give each step to the
+first of these that can do it; only a step none of them can do goes to the owner:
+
+1. The hand-test sandbox, `npm run handtest` (test/handtest/sandbox.ts; its usage text
+   says how). It lends a Claude account from the installed Koloft: the token goes into
+   a 0600 file in the sandbox's home, is never printed, and goes with `stop`. Local
+   Claude and local Codex tabs run there, a remote Claude tab with `--remote`; a remote
+   Codex tab does not exist in the product (CODEX§16). Drive it with
+   `playwright-cli attach --cdp=<cdp>` and screenshots; check results in transcripts,
+   files and `<home>/koloft.log`.
+2. A fake server: helpers/fakeDiscord.ts, the GitHub fixture, the fake `gh`.
+3. The real binary in a temp HOME (claude, codex, gh) — a temp HOME does not hide the
+   login Keychain, so a probe that signs in runs in Docker.
+4. The Docker SSH lab, for anything about a remote machine.
+5. A Mac with a real window, for what the sandbox cannot see (below).
+6. The owner, only for: a captcha, their own Discord account or phone, a first sign-in
+   with their own account, a matter of taste, or an effect that takes days to show.
+
+The sandbox is launched like an e2e app, so "Keys, focus and the hidden window" and
+"Test-only seams" above hold for it too: no Dock, badge or OS notification is shown
+(main records what it would have said in `__koloftOsOutlets`), no real ⌘ key or mouse, a file picker that answers from `<home>/file-dialog-answers`, OS
+hand-offs in `<home>/external-opens.txt`. Beyond those, its terminal draws with DOM
+(not WebGL), and the lab machine has no UTF-8 locale, so a remote Claude draws `_` for
+its symbols.
+
+The owner's step goes through AskUserQuestion, one case at a time: the steps inside
+the question, the outcomes as options. Its card reaches the owner's Discord thread
+when a binding covers the workspace, also from a session another session started
+(discord-flow). The card carries text only — no picture — so name what to look at.
+After the owner answers, check their step in a log or file yourself.
+
+## Real-window layer (test/real-window/)
+
+- For what only macOS itself delivers or draws: menu keys, the mouse on the window
+  frame, the Dock, banners, a real input method. It reuses the e2e fixtures and
+  launches with `KOLOFT_TEST_REAL_WINDOW=1` on top of the test seams, so the window,
+  Dock icon, badge and banners are real; input goes through `helpers/macInput.ts`
+  (CGEvent and Accessibility, platform ledger §52). The hidden-window rules above
+  about focus and `osOutlets` turn around here: notifications and the badge are really
+  shown, and `osOutlets` records nothing.
+- Every case skips unless `KOLOFT_REAL_WINDOW=1`, which only `scripts/real-window-mac.mjs`
+  sets: in a throwaway tart VM (`tart`), or on a Mac nobody is using (`here`, which the
+  GitHub workflow `real-window.yml` runs). One worker, no retries.
 
 ## Component & case numbers used in specs and test titles
 

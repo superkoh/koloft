@@ -488,6 +488,7 @@ if (argv[0] === 'app-server') {
     }
     if (method === 'account/rateLimits/read') {
       const auth = signIn()
+      const now = Math.floor(Date.now() / 1000)
       result(id, {
         rateLimits:
           auth && auth.usedPercent !== undefined
@@ -496,13 +497,48 @@ if (argv[0] === 'app-server') {
                 primary: {
                   usedPercent: auth.usedPercent,
                   windowDurationMins: 10080,
-                  resetsAt: Math.floor(Date.now() / 1000) + 3600
+                  resetsAt: now + 3600
                 },
-                secondary: null
+                secondary: null,
+                credits:
+                  auth.balance !== undefined
+                    ? { hasCredits: true, unlimited: false, balance: auth.balance }
+                    : null,
+                rateLimitReachedType: auth.usedPercent >= 100 ? 'rate_limit_reached' : null
+              }
+            : null,
+        rateLimitResetCredits:
+          auth && auth.resets !== undefined
+            ? {
+                availableCount: auth.resets,
+                credits: Array.from({ length: auth.resets }, (_, i) => ({
+                  id: `fake-reset-${i}`,
+                  resetType: 'codexRateLimits',
+                  status: 'available',
+                  grantedAt: now,
+                  expiresAt: now + (i + 1) * 86400,
+                  title: 'Full reset'
+                }))
               }
             : null,
         rateLimitsByLimitId: {}
       })
+      return
+    }
+    if (method === 'account/rateLimitResetCredit/consume') {
+      const auth = signIn() || {}
+      append('fake-codex-reset-calls.jsonl', { codexHome, params: p })
+      const outcome = !auth.resets
+        ? 'noCredit'
+        : auth.usedPercent >= 100
+          ? 'reset'
+          : 'nothingToReset'
+      if (outcome === 'reset')
+        fs.writeFileSync(
+          path.join(codexHome, 'auth.json'),
+          JSON.stringify({ ...auth, usedPercent: 0, resets: auth.resets - 1 })
+        )
+      result(id, { outcome })
       return
     }
     if (method === 'hooks/list') {

@@ -88,7 +88,8 @@ export function setupE2EEnv(): E2EEnv {
     keychainFile,
     JSON.stringify({
       [UNPACKAGED_BUILD_APIKEY_SVC]: { [E2E_CLAUDE_ACCOUNT]: E2E_CLAUDE_ACCOUNT_KEY }
-    })
+    }),
+    { mode: 0o600 }
   )
   fs.writeFileSync(
     path.join(userData, 'settings.json'),
@@ -255,7 +256,7 @@ export function installCodex(env: E2EEnv): void {
 export function addCodexAccount(env: E2EEnv, authJson: string): void {
   const accountHome = path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT)
   fs.mkdirSync(accountHome, { recursive: true })
-  fs.writeFileSync(path.join(accountHome, 'auth.json'), authJson)
+  fs.writeFileSync(path.join(accountHome, 'auth.json'), authJson, { mode: 0o600 })
   const file = path.join(env.userData, 'settings.json')
   const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }
   seedSettings(env, {

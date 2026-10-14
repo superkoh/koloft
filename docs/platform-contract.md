@@ -674,6 +674,29 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `confirm`, `prompt`) does not settle until the dialog is answered**: the dialog blocks
   the guest's input ack that the click waits for. Awaiting the click first deadlocks the
   test, so start it, answer the modal, then await it.
+- **CDP can drive an input-method composition in a hidden window.**
+  `Input.imeSetComposition` fires `compositionstart`/`compositionupdate` and
+  `insertCompositionText` input events with `isComposing: true`; `Input.insertText` then
+  commits the text and fires `compositionend`. A key sent with `Input.dispatchKeyEvent`
+  while the composition is open arrives as a `keydown` with `isComposing: true` and
+  whatever `keyCode` it was given; a `rawKeyDown` Enter neither ends the composition nor
+  inserts a newline. xterm reacts to that keyCode: keyCode 13 makes its
+  CompositionHelper finish the composition early, and in a Koloft session terminal
+  neither the committed text nor any later key reached the session; keyCode 229 is
+  ignored as an IME key, and the commit and the next Enter arrive as one line.
+  (Measured 2026-10-12, Electron 43.7.3 / Chrome 150, a `show: false` window with the
+  app hidden from the Dock: a probe script on a bare textarea, then the e2e terminal
+  case.)
+- **What macOS's own Pinyin hands Chromium.** Every key typed while composing arrives as
+  a `keydown` with `keyCode` 229 (`isComposing` true from the second key on). Return
+  while composing is a `keydown` with `key` "Enter" and `keyCode` 229, `isComposing`
+  true; it ends the composition with the typed letters ("nihao") and its `keyup` is
+  `keyCode` 13. Space picks the first word: a 229 `keydown`, then `compositionend` with
+  "你好", `keyup` 32. In a Koloft session terminal the letters went into the line without
+  sending it, and the next Return sent "nihao你好". So a real input method never gives
+  the 13-coded composing Enter that sticks xterm. Measured 2026-10-12 on macOS 26.6.2,
+  Electron 43.7.3, `com.apple.inputmethod.SCIM.ITABC`, real keys in a shown window
+  (test/real-window, §52).
 
 ## §19 The `ws` library (8.x)
 
@@ -699,6 +722,21 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   manual window resize brought a blank re-shown tab back).
 - **Moving the window between monitors with different devicePixelRatio can corrupt the
   WebGL glyph atlas**; clearing the atlas on each DPR change fixes it (observed).
+- **A shown window on a virtual Mac kept its drawing with or without the repairs.** On GitHub's `macos-latest` runner (macOS 26.6.2,
+  a virtual display), a WebGL session terminal grabbed with `screencapture` before and
+  after switching to another session and back, minimizing and restoring from the Dock,
+  the Workbench going full width and back, and Finder covering it for 3 s, drew the same
+  picture (ink difference 0–0.8%) both with Koloft's forced repaint on re-show and atlas
+  repair in place and with both switched off (one run each, 2026-10-12, Electron 43.7.3).
+  These repairs answer GPU memory losses that a virtual GPU has not been seen to cause.
+- **These losses did not happen in the hidden e2e window.** With Koloft's forced
+  repaint on re-show switched off, a WebGL session terminal switched away and back, or
+  hidden behind a full-width Workbench and back, drew the same picture as before (one
+  run each); with its atlas repair switched off, one left beside a closed shell that
+  had drawn 24k distinct coloured CJK glyphs did too (three runs). Measured 2026-10-12,
+  Electron 43.7.3 / Chrome 150, a `show: false` window, `webgl-terminal.spec.ts`. So a
+  headless test shows that the WebGL path draws, but has not been seen to make these
+  repairs fail.
 
 ## §21 xterm.js
 
@@ -1662,11 +1700,13 @@ Gateway (the live connection that pushes events):
 - **`ssh -G <alias>` resolves the user's config offline**: it prints `hostname`, `user`,
   `port` and every `identityfile` (with no config, the five default files, two of them
   `_sk`), and prints no `proxycommand` or `identityagent` line when none is set.
-- **A server that greets the key's owner writes it to stderr and exits 1**; GitHub's
-  documented greeting is `Hi <login>! You've successfully authenticated, but GitHub does
-  not provide shell access.` (inferred, not checked: no real key was used). Read in their
-  sources, not checked against a server: GitLab greets `Welcome to GitLab, @<username>!`,
-  Gitea and Forgejo `Hi there, <login>! You've successfully authenticated…`.
+- **The greeting names the key's owner, on either stream**: GitHub's documented greeting
+  is `Hi <login>! You've successfully authenticated, but GitHub does not provide shell
+  access.` on stderr with exit 1 (inferred, not checked: no real key was used). A real
+  GitLab CE 19.4.2 printed `Welcome to GitLab, @<username>!` on **stdout** with exit 0
+  (2026-10-13, Docker, a throwaway user and key); a real Gitea 1.24.6 printed `Hi there,
+  <login>! You've successfully authenticated…` on stderr with exit 0 (§53). Forgejo's is
+  read in its source only.
 - Measured 2026-10-12 in a Docker Linux container against a local sshd with throwaway
   keys, and `ssh -F /dev/null -G github.com` on macOS 27.0.
 
@@ -1792,3 +1832,112 @@ server unless a line says so.
   means "can push" is not checked, so Koloft only asks whether `GET
   .../<project>/_apis/git/repositories/<repo>` answers 200. No private commit address
   exists.
+
+## §52 Real keys, real mouse and a real screen on a Mac nobody sits at
+
+- **Keys and clicks from `CGEventPost` are real input.** Posted at the HID tap from JXA
+  (`osascript -l JavaScript`, no compiler needed), ⌘P reached the app menu's accelerator,
+  which a key sent into a hidden window does not (§7); a click on a Dock icon activated
+  that app; a drag on a `-webkit-app-region: drag` spot moved the window. `CGEventPost`
+  returns nothing and drops events silently unless the responsible process has
+  Accessibility (`AXIsProcessTrusted()`). A drag moved the window with the mouse to within
+  3 pt (160×87 for a 160×90 drag). Mouse events here carried click state 1.
+- **A posted key's modifier flags stay held until an event without them is posted.**
+  After a key-down and key-up both posted with the ⌘ flag, the next posted click on a
+  Dock icon acted as a ⌘-click (it revealed the app in Finder instead of activating it),
+  on macOS 26.6.2 and 27.0 alike; posting the key-up with no flags fixed it.
+- **What the Dock and Notification Center draw can be read through Accessibility.** A
+  Dock item's `AXStatusLabel` is its badge text ("1", or absent); `AXPosition`/`AXSize`
+  come back as `AXValue`s whose `description` holds the numbers. Notification Center's
+  banners are Accessibility elements of `com.apple.notificationcenterui`. An unpackaged
+  build shows in the Dock as "Electron" and notifies as `com.github.Electron`.
+- **Switching the input method from another process.** `TISEnableInputSource` on the
+  input method and its mode, then `TISSelectInputSource`, makes the system report the
+  new source at once, but a window that already has focus keeps typing through the old
+  one; it picks the new one up when its app is activated again.
+- **GitHub's `macos-latest` runner** (measured 2026-10-12, macOS 26.6.2, 1024×768
+  display): SIP off; its system TCC.db already grants Accessibility to `/bin/bash`,
+  `/usr/bin/osascript` and `/usr/libexec/sshd-keygen-wrapper` and Screen Recording to
+  `/bin/bash`, so a workflow step can post events, read the Dock and run `screencapture`
+  with no setup. It runs no Notification Center: usernoted logs "Error connection with
+  NotificationCenter" (`com.apple.notificationcenterui.main` not found), and an app's
+  `requestAuthorization` comes back `didGrant: 0 hasError: 1`, so no banner is ever
+  drawn there.
+- **A tart VM** (measured 2026-10-12, tart 2.40.1, `ghcr.io/cirruslabs/macos-golden-gate-vanilla`
+  = macOS 27.0, 35 GB on disk, 1024×768): user `admin`/`admin`, logged in to a desktop
+  at boot, `sudo` without a password, SSH on; SIP on; Notification Center running; no
+  Node and no tart guest agent. Its system TCC.db can be read but not written from inside
+  ("attempt to write a readonly database"), and screenshots fail ("could not create
+  image from display"). With the VM stopped, the host can attach its `disk.img` (ASIF)
+  with `diskutil image attach --noMount`, mount the volume named Data with
+  `nobrowse,noowners` (no root needed), and insert rows into
+  `Library/Application Support/com.apple.TCC/TCC.db`; after boot the guest honours them
+  with SIP still on (`AXIsProcessTrusted()` true over SSH and under `launchctl asuser`,
+  `screencapture` works). The rows that worked name `/usr/libexec/sshd-keygen-wrapper`,
+  `/usr/libexec/sshd-session` and `/usr/bin/osascript`; which of them mattered was not
+  separated. Before that, a booted clone held a row denying Accessibility to
+  `sshd-keygen-wrapper`.
+- **macOS 27 asks about screen capture from SSH, and keeps asking.** A `screencapture`
+  run over SSH raised a dialog '"com.apple.sshd-session" is requesting to bypass the
+  system private window picker…' (Allow / Open System Settings) even with the TCC rows
+  above; the capture itself was written. Left alone, the dialog stayed on screen and the
+  real-window cases still passed with it in their screenshots. A real click on Allow
+  closed it, but later captures raised it again. After Allow, macOS records the answer in
+  `~/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist`,
+  keyed by `/usr/libexec/sshd-keygen-wrapper`, as a dict with
+  `kScreenCaptureApprovalLastAlerted`, `kScreenCaptureApprovalLastUsed`,
+  `kScreenCapturePrivacyHintDate` (30 days on), `kScreenCapturePrivacyHintPolicy`
+  2592000 and `kScreenCaptureAlertableUsageCount`; a copy written to the stopped disk
+  before boot was replaced when the user logged in (the group container was re-created).
+  macOS 26.6.2 on GitHub's runner did not ask.
+- **Notifications from a dev build need a full ad-hoc signature.** The Electron.app in
+  `node_modules` is only linker-signed (`Info.plist=not bound`, no sealed resources);
+  its `requestAuthorization` failed at once (`didGrant: 0 hasError: 1`) and nothing was
+  shown, on macOS 26.6.2 and 27.0 alike. After `codesign --force --deep --sign -` on the
+  bundle, macOS 27 registered it and put up its own question as a banner
+  ("“Electron” Notifications — Notifications may include alerts, sounds, and icon
+  badges."). That banner has no Allow button element: Allow, Don't Allow and Close are
+  named Accessibility actions on it (`Name:Allow\nTarget:0x0\nSelector:(null)`), and
+  performing Allow answers it. Until it is answered the app's notifications are kept
+  as "Denied" and its Dock badge is not drawn either; after Allow both appear. Measured
+  2026-10-12 in the tart VM above.
+
+## §53 An SSH remote sent over https, and a server that refuses https
+
+- **`url.<https>.insteadOf <ssh prefix>` from an included file rewrites every SSH
+  spelling**: `git@<host>:o/r.git`, `<host>:o/r.git`, `ssh://git@<host>/o/r.git`,
+  `ssh://git@<host>:22/o/r.git` and an ssh alias `git@<alias>:o/r.git` each need their
+  own rule and each went to `<https base>/o/r.git`; `git@ssh.dev.azure.com:v3/<org>/<p>/`
+  → `https://dev.azure.com/<org>/<p>/_git/` gave `…/_git/<repo>`. A `pushurl` is
+  rewritten by the same rules. The remote's raw value (`git config --get
+  remote.<n>.url`) stays as written, while `git remote -v` and `git remote get-url` print
+  the rewritten https address. With the user's own `url."git@github.com:".insteadOf
+  https://github.com/`, an https remote went over ssh; an included rule naming that
+  remote's full address mapped to itself kept it on https (the longest match wins, and
+  git rewrites once).
+- **A server that refuses https** answers `info/refs` with 403 and a `text/plain` body;
+  git prints the body as `remote: <text>` before `fatal: unable to access '<url>': The
+  requested URL returned error: 403` and exits 128, for `ls-remote`, `fetch` and `push`
+  alike. A real Gitea 1.24.6 with `[repository] DISABLE_HTTP_GIT = true` answered before
+  asking for credentials with `Interacting with repositories by HTTP protocol is not
+  allowed`. A real GitLab CE 19.4.2 with the admin setting "Enabled Git access protocols"
+  = SSH only (`enabled_git_access_protocol=ssh`) answered a valid token, after the 401
+  challenge, with `remote: Git access over HTTP is not allowed` and 403, for `ls-remote`
+  and `push`; a wrong password there, as with https on, gave `remote: HTTP Basic: Access
+  denied. …` and `fatal: Authentication failed for '<url>'` (401, no `returned error`
+  line). A Koloft build picked that GitLab account for a repository with an `ssh://`
+  remote, and its own fetch right after the pick showed the SSH-only note and the key
+  offer.
+- **`ssh -i <key> -o IdentitiesOnly=yes`** puts that key first; `IdentityFile` lines from
+  the user's config for the host still follow it, and ssh's default key files are then
+  left out. `ProxyJump` and the rest of the user's config still apply (`ssh -G`). So when
+  the server does not know the key yet, ssh may go on and sign in with the user's own key:
+  only the greeting's name (§48) tells whose key was taken. The real Gitea greeted a
+  registered key with `Hi there, <login>! You've successfully authenticated with the key
+  named <title>, but Gitea does not provide shell access.` and exit 0, and refused an
+  unknown one with `Permission denied (publickey).` and exit 255. `core.sshCommand = "ssh
+  -i '<key>' -o IdentitiesOnly=yes"` in an included file carried a fetch and a push, on
+  that Gitea and, with the key Koloft made added through GitLab's API, on that GitLab.
+- Measured 2026-10-13 with Apple git 2.54 and OpenSSH 10.3p1 on macOS 27.0, a temp
+  `HOME`, a 403 stub on 127.0.0.1, and a Gitea 1.24.6 and a GitLab CE 19.4.2 in Docker with
+  throwaway users and keys.

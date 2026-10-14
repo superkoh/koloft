@@ -1,6 +1,11 @@
 import fs from 'fs'
 import path from 'path'
-import { RESUME_KEEPS_ACCOUNT_UP_TO, usableAccounts } from '@shared/accountUsage'
+import {
+  RESUME_KEEPS_ACCOUNT_UP_TO,
+  codexHeaviest,
+  codexWalled,
+  usableAccounts
+} from '@shared/accountUsage'
 import type { AccountView, CodexLimits, CodexLimitWindow } from '@shared/types'
 
 const CODEX_HOMES = 'codex-homes'
@@ -82,16 +87,45 @@ function limitWindow(value: unknown): CodexLimitWindow | undefined {
 
 // CODEX§15
 export function limitsFrom(reply: unknown, at: number): CodexLimits | undefined {
-  const limits = (reply as { rateLimits?: Record<string, unknown> } | null)?.rateLimits
+  const r = reply as {
+    rateLimits?: Record<string, unknown>
+    rateLimitResetCredits?: unknown
+  } | null
+  const limits = r?.rateLimits
   if (!limits) return undefined
   const windows = [limitWindow(limits.primary), limitWindow(limits.secondary)].filter(
     (w): w is CodexLimitWindow => !!w
   )
-  return { windows: windows.sort((a, b) => a.minutes - b.minutes), at }
+  const credits = creditsFrom(limits.credits)
+  const resets = resetsFrom(r.rateLimitResetCredits)
+  return {
+    windows: windows.sort((a, b) => a.minutes - b.minutes),
+    at,
+    ...(limits.rateLimitReachedType != null && { reached: true }),
+    ...(credits && { credits }),
+    ...(resets && { resets })
+  }
 }
 
-function heaviest(limits: CodexLimits): number {
-  return Math.max(0, ...limits.windows.map((w) => w.used))
+function creditsFrom(value: unknown): CodexLimits['credits'] {
+  if (!value || typeof value !== 'object') return undefined
+  const c = value as Record<string, unknown>
+  const balance = typeof c.balance === 'string' ? Number(c.balance) : NaN
+  if (c.unlimited === true) return { unlimited: true }
+  return Number.isFinite(balance) ? { unlimited: false, balance } : undefined
+}
+
+function resetsFrom(value: unknown): CodexLimits['resets'] {
+  if (!value || typeof value !== 'object') return undefined
+  const s = value as { availableCount?: unknown; credits?: unknown }
+  if (typeof s.availableCount !== 'number') return undefined
+  const expiries = (Array.isArray(s.credits) ? s.credits : [])
+    .filter((c) => c?.status === 'available' && typeof c.expiresAt === 'number')
+    .map((c) => c.expiresAt as number)
+  return {
+    available: s.availableCount,
+    ...(expiries.length > 0 && { firstExpiresAt: Math.min(...expiries) })
+  }
 }
 
 export class CodexAccountPicker {
@@ -101,10 +135,17 @@ export class CodexAccountPicker {
     const pool = usableAccounts(accounts, ['codex-home'])
     if (pool.length === 0) return undefined
     const same = pool.find((a) => a.name === resumedOn)
-    if (same && (!same.limits || heaviest(same.limits) <= RESUME_KEEPS_ACCOUNT_UP_TO)) return same
-    const measured = pool.filter((a) => a.limits && heaviest(a.limits) < 1)
+    if (
+      same &&
+      (!same.limits ||
+        (!codexWalled(same.limits) && codexHeaviest(same.limits) <= RESUME_KEEPS_ACCOUNT_UP_TO))
+    )
+      return same
+    const measured = pool.filter((a) => a.limits && !codexWalled(a.limits))
     if (measured.length > 0)
-      return measured.reduce((best, a) => (heaviest(a.limits!) < heaviest(best.limits!) ? a : best))
+      return measured.reduce((best, a) =>
+        codexHeaviest(a.limits!) < codexHeaviest(best.limits!) ? a : best
+      )
     return pool[this.turn++ % pool.length]
   }
 }

@@ -8,6 +8,7 @@ import {
   test,
   expect,
   launchApp,
+  osOutlets,
   pendingAttention,
   pretendWindowFocused,
   quitAndClose
@@ -15,6 +16,7 @@ import {
 import {
   installCodex,
   installFakeGh,
+  seedNoClaudeAccountButStillSetUp,
   seededAccount,
   seedSettings,
   setGithubFixture,
@@ -101,8 +103,8 @@ function codexPrompts(env: E2EEnv): string[] {
       }
     })
 }
-function codexCalls(env: E2EEnv): CodexCall[] {
-  const file = path.join(env.home, 'fake-codex-calls.jsonl')
+function fakeCodexLog<T>(env: E2EEnv, name: string): T[] {
+  const file = path.join(env.home, name)
   if (!fs.existsSync(file)) return []
   return fs
     .readFileSync(file, 'utf8')
@@ -110,11 +112,14 @@ function codexCalls(env: E2EEnv): CodexCall[] {
     .filter(Boolean)
     .flatMap((line) => {
       try {
-        return [JSON.parse(line) as CodexCall]
+        return [JSON.parse(line) as T]
       } catch {
         return []
       }
     })
+}
+function codexCalls(env: E2EEnv): CodexCall[] {
+  return fakeCodexLog<CodexCall>(env, 'fake-codex-calls.jsonl')
 }
 async function startCodexInWorktree(page: Page, env: E2EEnv, name: string): Promise<CodexCall> {
   const before = codexCalls(env).length
@@ -447,6 +452,94 @@ test.describe('Codex sessions through the real method chooser, process transport
         sessionId: first.sessionId,
         codexHome: homeOf('other')
       })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
+  test('with only a Codex account the usage capsule still shows, its panel lists the account under Codex with its balance and saved resets, and a walled account uses a saved reset only after a yes, then reads its limits again', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedNoClaudeAccountButStillSetUp(env)
+    const home = path.join(env.userData, 'codex-homes', 'e2e-codex')
+    fs.writeFileSync(
+      path.join(home, 'auth.json'),
+      JSON.stringify({ usedPercent: 100, balance: '62500.0000000000', resets: 3 })
+    )
+    const resetCalls = (): unknown[] => fakeCodexLog(env, 'fake-codex-reset-calls.jsonl')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.accounts.probe())
+      const capsule = page.locator('.tbu')
+      await expect(capsule.locator('.tbu-bar')).toHaveCount(1)
+      await expect(capsule.locator('.tbu-fill.bad')).toHaveCount(1)
+
+      await capsule.click()
+      const pop = page.locator('.tbu-pop')
+      await expect(pop.locator('.tbu-pop-head', { hasText: /^Codex$/ })).toBeVisible()
+      await expect(pop.locator('.tbu-pop-head', { hasText: /^Claude$/ })).toHaveCount(0)
+      const row = pop.locator('.tbu-row', { hasText: 'e2e-codex' })
+      await expect(row.locator('.acct-status.walled')).toBeVisible()
+      await expect(row.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('100%')
+      await expect(row.locator('.tbu-row-note .acct-note')).toHaveText(
+        /^62,500 credits · 3 resets saved, first expires /
+      )
+
+      await row.getByRole('button', { name: 'Use a reset' }).click()
+      await row.getByRole('button', { name: 'Cancel' }).click()
+      await expect(row.getByRole('button', { name: 'Use a reset' })).toBeVisible()
+      expect(resetCalls()).toEqual([])
+
+      await row.getByRole('button', { name: 'Use a reset' }).click()
+      await row.getByRole('button', { name: 'Use', exact: true }).click()
+      await expect(row.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('0%')
+      await expect(row.locator('.tbu-row-note .acct-note')).toHaveText(
+        /^62,500 credits · 2 resets saved/
+      )
+      await expect(row.locator('.acct-status.walled')).toHaveCount(0)
+      await expect(row.getByRole('button', { name: 'Use a reset' })).toHaveCount(0)
+      expect(resetCalls()).toEqual([
+        { codexHome: home, params: { idempotencyKey: expect.any(String) } }
+      ])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
+  test('two Codex accounts get a Codex pool like the Claude one: a leading total bar in the capsule and a Pool row that averages them and counts the walled one', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, {
+      accounts: [seededAccount('e2e-codex', 'codex-home'), seededAccount('other', 'codex-home')]
+    })
+    for (const [name, usedPercent] of [
+      ['e2e-codex', 100],
+      ['other', 40]
+    ] as const) {
+      const home = path.join(env.userData, 'codex-homes', name)
+      fs.mkdirSync(home, { recursive: true })
+      fs.writeFileSync(path.join(home, 'auth.json'), JSON.stringify({ usedPercent }))
+    }
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.accounts.probe())
+      const capsule = page.locator('.tbu')
+      await expect(capsule.locator('.tbu-bar.total')).toHaveCount(1)
+      await expect(capsule.locator('.tbu-bar:not(.total)')).toHaveCount(2)
+
+      await capsule.click()
+      const pool = page.locator('.tbu-pop .tbu-row.pool')
+      await expect(pool.locator('.tbu-pool-meta')).toHaveText('2 measured · 1 usable')
+      await expect(pool.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('70%')
+      await expect(pool.locator('.tbu-cell-sub.alarm')).toHaveText('1 walled')
     } finally {
       await quitAndClose(app)
     }
@@ -964,7 +1057,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex turn that ends while its child agent still runs shows breathing green with ↻, and turn-done waits for the child', async ({
+  test('a Codex turn that ends while its child agent still runs shows breathing green with ↻, and turn-done — its mark and its OS notification — waits for the child', async ({
     env
   }) => {
     installCodex(env)
@@ -977,12 +1070,14 @@ test.describe('Codex sessions through the real method chooser, process transport
       const row = codexRows(page)
       await row.click()
       await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+      const notifiedBefore = (await osOutlets(app)).notifications.length
       await runIn(page, centerTerm(page), 'spawn child')
       const running = oneStillRunning(row)
       await expect(running).toBeVisible()
       await expect(row).toHaveClass(/st-waiting/)
       await expect(row).toHaveClass(/\bst-bg-run\b/)
       expect(await pendingAttention(page)).toHaveLength(0)
+      expect((await osOutlets(app)).notifications).toHaveLength(notifiedBefore)
       await running.click()
       await expect(page.locator('.tbu-pop.parked')).toContainText('Turn done · still running')
       await page.keyboard.press('Escape')
@@ -992,6 +1087,11 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect
         .poll(() => pendingAttention(page), { timeout: 10_000 })
         .toMatchObject([{ kind: 'turn-done' }])
+      const [mark] = await pendingAttention(page)
+      expect(mark.title).toBeTruthy()
+      expect((await osOutlets(app)).notifications.slice(notifiedBefore)).toEqual([
+        { title: mark.title, body: 'turn done — your move · ws-a' }
+      ])
     } finally {
       await quitAndClose(app)
     }
@@ -1494,6 +1594,46 @@ test.describe('Codex sessions through the real method chooser, process transport
         { timeout: 20_000 }
       )
       expect(fs.existsSync(path.join(env.userData, 'codex-homes', 'work', 'auth.json'))).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
+  test('with two Codex accounts, once both show their weekly use in Settings ▸ Accounts, every new Codex session runs in the one with more room left, even though it is listed second', async ({
+    env
+  }) => {
+    installCodex(env)
+    const busy = path.join(env.userData, 'codex-homes', 'e2e-codex')
+    const roomy = path.join(env.userData, 'codex-homes', 'roomy')
+    fs.writeFileSync(path.join(busy, 'auth.json'), JSON.stringify({ usedPercent: 90 }))
+    fs.mkdirSync(roomy, { recursive: true })
+    fs.writeFileSync(path.join(roomy, 'auth.json'), JSON.stringify({ usedPercent: 10 }))
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8')
+    ) as { accounts: Record<string, unknown>[] }
+    seedSettings(env, {
+      hintsOff: true,
+      accounts: [
+        ...settings.accounts,
+        { ...settings.accounts.find((a) => a.name === 'e2e-codex'), name: 'roomy' }
+      ]
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      const weekly = (name: string): Locator =>
+        page.locator('.acct-row', { hasText: name }).locator('.acct-meter[data-win="7d"] .m-pct')
+      await expect(weekly('e2e-codex')).toHaveText('90%', { timeout: 30_000 })
+      await expect(weekly('roomy')).toHaveText('10%', { timeout: 30_000 })
+      await page.keyboard.press('Escape')
+
+      await startCodex(page, env)
+      await startCodex(page, env)
+      expect(codexCalls(env).map((c) => c.codexHome)).toEqual([roomy, roomy])
     } finally {
       await quitAndClose(app)
     }

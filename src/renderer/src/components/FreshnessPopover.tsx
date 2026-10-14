@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import {
   LuCheck,
   LuChevronDown,
+  LuCopy,
   LuDownload,
+  LuExternalLink,
   LuLogIn,
   LuPlus,
   LuRefreshCw,
@@ -20,7 +22,7 @@ import type {
 } from '@shared/types'
 import { canPull } from '@shared/freshnessOps'
 import { basename } from '@shared/preview'
-import { gitAccountId } from '@shared/gitAccountOps'
+import { gitAccountId, gitPlatformName } from '@shared/gitAccountOps'
 import { useStore } from '../store'
 import {
   authorLine,
@@ -54,6 +56,7 @@ function useGitAccountView(
   const acct = shown ? ws?.gitAccount : undefined
   const picked = acct?.id
   const [switching, setSwitching] = useState(false)
+  const [checking, setChecking] = useState(false)
   const [accounts, setAccounts] = useState<GitAccountView[]>([])
   const [suggestion, setSuggestion] = useState<GitAccountSuggestion | null>(null)
 
@@ -113,6 +116,11 @@ function useGitAccountView(
       })
     if (acct.pushBlockedByOrg)
       notes.push({ warn: true, text: orgBlockedText(acct.pushBlockedByOrg, acct.login) })
+    if (acct.ssh?.kind === 'https-refused')
+      notes.push({
+        warn: true,
+        text: `${acct.ssh.sshOnly ? 'This server allows SSH only' : 'This server turned https away, so it may allow SSH only'} — ${acct.login} has no SSH key on this Mac yet.`
+      })
   }
   if (!acct && suggestion) {
     const text = suggestionText(suggestion)
@@ -185,8 +193,49 @@ function useGitAccountView(
     )
   }
 
+  if (acct?.ssh?.kind === 'key') {
+    const { publicKey, keysPage, notTakenYet } = acct.ssh
+    const check = (): void => {
+      setChecking(true)
+      void window.api.gitAccounts.checkSshKey(wsPath).finally(() => setChecking(false))
+    }
+    return result(
+      <>
+        {!withCounts && accountHead}
+        <div className="tbu-row">
+          <div className="fx-note">
+            Key for {acct.login} on this Mac. Add it to your {gitPlatformName(acct.platform)} SSH
+            keys, then check again.
+          </div>
+          <pre className="acct-login-tail">{publicKey}</pre>
+          {notTakenYet && !checking && (
+            <div className="fx-note warn">
+              {gitPlatformName(acct.platform)} does not know this key for {acct.login} yet.
+            </div>
+          )}
+        </div>
+        <button
+          className="tbu-act"
+          onClick={() => navigator.clipboard?.writeText(publicKey).catch(() => {})}
+        >
+          <LuCopy size={14} />
+          Copy key
+        </button>
+        <button className="tbu-act" onClick={() => window.api.browser.openExternal(keysPage)}>
+          <LuExternalLink size={14} />
+          Open SSH keys page
+        </button>
+        <button className="tbu-act" disabled={checking} onClick={check}>
+          <LuRefreshCw size={14} />
+          {checking ? 'Checking…' : 'Check again'}
+        </button>
+      </>
+    )
+  }
+
   if (acct) {
     const expired = acct.status === 'expired'
+    const refused = acct.ssh?.kind === 'https-refused'
     return result(
       <>
         {withCounts && acct.pushBlockedByOrg && useToken(acct.login)}
@@ -214,6 +263,15 @@ function useGitAccountView(
           <button className="tbu-act" onClick={toSettings}>
             <LuLogIn size={14} />
             Sign in again
+          </button>
+        ) : refused ? (
+          <button
+            className="tbu-act"
+            title={`Makes an SSH key on this Mac for ${acct.login} only`}
+            onClick={() => void window.api.gitAccounts.makeSshKey(wsPath)}
+          >
+            <LuPlus size={14} />
+            Make a key for {acct.login}
           </button>
         ) : (
           !acct.pushBlockedByOrg && (

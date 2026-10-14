@@ -28,8 +28,8 @@ Working principles:
 - Write everything the simple way. All LLM output — session replies and every file
   it writes — must use plain, everyday words that even a five-year-old could follow,
   in whatever language it is writing; never pick a hard word where an easy one
-  works. When a picture says it better, draw one: a chart, diagram, or graph
-  (mermaid or ASCII in markdown) beats a wall of text. The first time an
+  works. Tell a change or choice by its case first: who does what, what they see.
+  A picture (mermaid or ASCII) beats a wall of text. The first time an
   abbreviation, shorthand or number (issue #N, step 4) appears in a reply or
   document, say what it means — e.g. "PR (pull request, a proposed code change)".
 - Build the smallest thing that solves the problem at hand — in the design, the
@@ -142,9 +142,10 @@ Working principles:
   - **How to see it in the shipped app** — what to click in an installed build, or
     "no way from the app".
   - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it,
-    never a check you could still run.
-  - **Hand-test before merging** — no, or yes: what to try, and why no suite or dev
-    build you drove could answer it.
+    never a check you could still run. Below high, it is not offered for merge: it
+    says what would make it high.
+  - **Hand-test before merging** — no, or yes: the one step only a person can do, and
+    why no suite, sandbox or dev build you drove could do it.
 
   Then a table of what ran (suite · result · why that one), what did not run and
   why, and `Out of scope`: each cut, and each claim still "inferred, not checked",
@@ -158,11 +159,10 @@ Working principles:
   dev build you started. Ask first only to merge, release, push to `main` or delete
   on GitHub; an audit or review round changes nothing until the owner says so. The
   go to merge is also the go to clean up: wait for the PR's CI
-  (`gh pr checks <n> --watch`), then plain `gh pr merge <n> --squash` (squash folds
-  the branch's commits into one) — the repo allows only squash and GitHub deletes the
-  PR's branch on merge, so never ask about either; `--delete-branch` fails in a
-  worktree (`'main' is already used by worktree`). Then call ExitWorktree (`remove`
-  deletes the worktree; `discard_changes: true`, as the squash
+  (`gh pr checks <n> --watch`), then plain `gh pr merge <n> --squash` — the repo
+  allows only squash and GitHub deletes the PR's branch on merge, so never ask
+  about either; `--delete-branch` fails in a worktree. Then call ExitWorktree
+  (`remove` deletes the worktree; `discard_changes: true`, as the squash
   on `main` holds the commits). Despite its description it also removes a worktree
   the session was started in with `claude -w`;
   never hand the owner a `git worktree remove` or `/exit` to run. A
@@ -192,7 +192,9 @@ Working principles:
   question — never a list of open questions at the end of a report. Automate every
   check you can — a suite, a dev build you drive; the owner hand-tests only a case
   that matters and truly cannot be automated (name it and say why), or a round the
-  owner asks for. One dev build at a time: stop every older one first, its Electron
+  owner asks for. Even then the AI does every step of the case the ladder in
+  `test/CLAUDE.md` (Hand tests) lets it do, asks the owner only for the step that
+  needs a person, and checks that step itself afterwards in a log or file. One dev build at a time: stop every older one first, its Electron
   main process too (killing `electron-vite` alone leaves the window up). A dev build
   has its own profile (`koloft-dev`), so the installed Koloft, where these sessions
   run, stays open.

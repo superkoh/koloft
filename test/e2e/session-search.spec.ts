@@ -174,6 +174,40 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
     }
   })
 
+  test('while typing, before any ⌥⏎, a session that only mentions the words shows under "In conversations" with the words around the match, and ↓ ⏎ resumes it', async ({
+    env
+  }) => {
+    const found = seedJsonl(env, env.workspaces.a, { summary: 'Benchmarks of the week' })
+    appendReply(
+      transcriptFile(env.home, env.workspaces.a, found),
+      'I traced the crash to ZEBRA-needle-7 inside parse.ts and added a guard.'
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: 30_000 })
+
+      await sendShortcut(app, 'shortcut:command-palette')
+      const dialog = searchDialog(page)
+      await dialog.getByRole('textbox', { name: 'Ask or jump' }).fill('zebra-needle')
+      const group = dialog.getByRole('group', { name: 'In conversations' })
+      const row = group.locator('.cb-row', { hasText: 'Benchmarks of the week' })
+      await expect(row.locator('.note b')).toHaveText('ZEBRA-needle', { timeout: 30_000 })
+      await expect(dialog.locator('.cb-row.hot')).toHaveCount(0)
+      expect(readCalls(env)).toHaveLength(0)
+
+      await page.keyboard.press('ArrowDown')
+      await expect(row).toHaveClass(/\bhot\b/)
+      await page.keyboard.press('Enter')
+      await expect(dialog).toHaveCount(0)
+      const [call] = await waitForCalls(env, 1)
+      expect(resumedId(call)).toBe(found)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('a running session found by search switches to its own tab, starting nothing', async ({
     app,
     page,

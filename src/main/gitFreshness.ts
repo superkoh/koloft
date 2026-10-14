@@ -187,6 +187,7 @@ export interface GitSnapshot {
 export interface Measured {
   snapshot: GitSnapshot | null
   enoent: boolean
+  fetchStderr?: string
 }
 
 export interface PullRun extends NetResult {
@@ -229,6 +230,7 @@ export class LocalRunner implements FreshnessRunner {
     // PLATFORM§30
     const fetchHeadBefore = fetchHeadAt(root)
     let fetched: boolean | null = null
+    let fetchStderr: string | undefined
     if (fetchTimeoutMs !== null) {
       const r = await networkGit(
         this.bin,
@@ -239,6 +241,7 @@ export class LocalRunner implements FreshnessRunner {
       )
       if (r.enoent) return { snapshot: null, enoent: true }
       fetched = r.ok
+      if (!r.ok) fetchStderr = r.stderr
     }
     const counts = parseLeftRight(
       await readGit(this.bin, root, ['rev-list', '--left-right', '--count', `HEAD...${defRef}`])
@@ -253,7 +256,8 @@ export class LocalRunner implements FreshnessRunner {
         ...snapshot,
         tracking: { fetched, fetchHeadAt: fetchHeadBefore, ...counts, dirty }
       },
-      enoent: false
+      enoent: false,
+      fetchStderr
     }
   }
 
@@ -315,6 +319,7 @@ export interface FreshnessDeps {
   autoFetch(): boolean
   onChange(wsPath: string): void
   runner(wsPath: string): FreshnessRunner | null
+  fetchFailed?(wsPath: string, stderr: string): void
   now?(): number
 }
 
@@ -539,6 +544,7 @@ export class GitFreshnessEngine {
       return null
     }
     if (measured.enoent) this.gitUnavailable = true
+    if (measured.fetchStderr !== undefined) this.deps.fetchFailed?.(root, measured.fetchStderr)
     return measured.snapshot && this.freshnessOf(root, measured.snapshot, attemptAt)
   }
 

@@ -295,15 +295,21 @@ export function remoteKeyFor(alias: LabAlias, user: string): string {
   return `ssh://${alias}/home/${user}/proj`
 }
 
+export function keychainSecret(service: string, account: string): string {
+  return execFileSync('security', ['find-generic-password', '-s', service, '-a', account, '-w'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore']
+  }).replace(/\n$/, '')
+}
+
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
   if (!account) return ''
-  const service = process.env.KOLOFT_SMOKE_KEYCHAIN_SERVICE ?? 'koloft-claude-oauth'
   try {
-    return execFileSync('security', ['find-generic-password', '-s', service, '-a', account, '-w'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
-    }).replace(/\n$/, '')
+    return keychainSecret(
+      process.env.KOLOFT_SMOKE_KEYCHAIN_SERVICE ?? 'koloft-claude-oauth',
+      account
+    )
   } catch {
     return ''
   }
@@ -315,12 +321,12 @@ export const HAVE_LINUX_CLAUDE = fs.existsSync(LINUX_CLAUDE) && !!CLAUDE_TOKEN
 export const NEEDS_LINUX_CLAUDE =
   'set KOLOFT_SMOKE_CLAUDE_LINUX (a Linux claude binary for the lab machine’s CPU) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT'
 
-export function useRealClaudeOnTheMachine(
-  env: E2EEnv,
+export function installClaudeOnTheMachine(
   lab: SshLab,
+  binary: string,
   alsoTrusted: string[] = []
 ): void {
-  installOnTarget(lab, LINUX_CLAUDE, '/usr/local/bin/claude')
+  installOnTarget(lab, binary, '/usr/local/bin/claude')
   // CC§9 CC§10
   runOnTarget(
     lab,
@@ -335,6 +341,14 @@ export function useRealClaudeOnTheMachine(
       })
     )} > .claude.json`
   )
+}
+
+export function useRealClaudeOnTheMachine(
+  env: E2EEnv,
+  lab: SshLab,
+  alsoTrusted: string[] = []
+): void {
+  installClaudeOnTheMachine(lab, LINUX_CLAUDE, alsoTrusted)
   seedSettings(env, {
     skipPermissions: true,
     accounts: [

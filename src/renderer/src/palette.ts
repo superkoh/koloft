@@ -1,4 +1,10 @@
-import type { AttentionEvent, SessionInfo, SessionRow, WorkspaceRows } from '@shared/types'
+import type {
+  AttentionEvent,
+  SessionInfo,
+  SessionRow,
+  SessionSearchHit,
+  WorkspaceRows
+} from '@shared/types'
 import { remoteCopyText } from '@shared/remoteKey'
 import { shortenHome } from './browseModel'
 import {
@@ -34,16 +40,32 @@ export interface PaletteAction {
   key: string
   label: string
   keys?: string
+  words: string[]
   disabled?: boolean
   run: () => void
 }
 
-export type PaletteItem = PaletteSession | PaletteWorkspace | PaletteAction
+export interface PaletteHit {
+  kind: 'hit'
+  key: string
+  hit: SessionSearchHit
+}
+
+export interface PaletteMoreHits {
+  kind: 'more'
+  key: string
+  count: number
+}
+
+export type PaletteItem =
+  PaletteSession | PaletteWorkspace | PaletteAction | PaletteHit | PaletteMoreHits
 
 export interface PaletteGroup {
-  title: 'Sessions' | 'Workspaces' | 'Actions'
+  title: 'Sessions' | 'In conversations' | 'Workspaces' | 'Actions'
   items: PaletteItem[]
 }
+
+export const CONVERSATION_HITS_SHOWN = 3
 
 export function matchesQuery(text: string, query: string): boolean {
   const hay = text.toLowerCase()
@@ -52,6 +74,24 @@ export function matchesQuery(text: string, query: string): boolean {
     .split(/\s+/)
     .filter(Boolean)
     .every((word) => hay.includes(word))
+}
+
+export function matchesAction(action: PaletteAction, query: string): boolean {
+  const typed = query.toLowerCase()
+  return (
+    matchesQuery([action.label, ...action.words].join(' '), query) ||
+    action.words.some((w) => typed.includes(w.toLowerCase()))
+  )
+}
+
+function conversationItems(hits: SessionSearchHit[], shown: Set<string>): PaletteItem[] {
+  const fresh = hits.filter((h) => h.snippet && !shown.has(h.row.id))
+  const items: PaletteItem[] = fresh
+    .slice(0, CONVERSATION_HITS_SHOWN)
+    .map((hit) => ({ kind: 'hit', key: `h:${hit.row.id}`, hit }))
+  if (fresh.length > CONVERSATION_HITS_SHOWN)
+    items.push({ kind: 'more', key: 'more-hits', count: hits.length })
+  return items
 }
 
 export function paletteSessions(
@@ -99,13 +139,17 @@ export function paletteGroups(
   sessions: PaletteSession[],
   workspaces: PaletteWorkspace[],
   actions: PaletteAction[],
-  query: string
+  query: string,
+  hits: SessionSearchHit[] = []
 ): PaletteGroup[] {
   if (!query.trim()) return []
+  const matched = sessions.filter((s) => matchesQuery(s.text, query))
+  const shown = new Set(matched.map((s) => s.row.id))
   const groups: PaletteGroup[] = [
-    { title: 'Sessions', items: sessions.filter((s) => matchesQuery(s.text, query)) },
+    { title: 'Sessions', items: matched },
+    { title: 'In conversations', items: conversationItems(hits, shown) },
     { title: 'Workspaces', items: workspaces.filter((w) => matchesQuery(w.note, query)) },
-    { title: 'Actions', items: actions.filter((a) => matchesQuery(a.label, query)) }
+    { title: 'Actions', items: actions.filter((a) => matchesAction(a, query)) }
   ]
   return groups.filter((g) => g.items.length > 0)
 }

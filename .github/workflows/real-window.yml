@@ -1,0 +1,38 @@
+name: Real window
+
+# The test/real-window specs need a Mac whose screen they may take over: real keys,
+# a real mouse, the Dock and notification banners. A GitHub macOS runner is one.
+# Run by hand (Actions tab, or `gh workflow run real-window.yml`); it is not a gate.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-window:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - run: npm ci
+
+      - run: node node_modules/electron/install.js
+
+      - run: npm run rebuild
+
+      - run: npm run build
+
+      - run: node scripts/real-window-mac.mjs here
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: real-window
+          path: test-results/real-window

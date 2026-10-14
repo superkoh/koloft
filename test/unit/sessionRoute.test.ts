@@ -13,7 +13,7 @@ const LIST: RouteWorkspace[] = [
     name: 'app',
     git: true,
     worktrees: ['fix-login', 'redis-cache'],
-    titles: ['Login fails on Safari']
+    sessions: [{ id: 'sess-safari', title: 'Login fails on Safari' }]
   },
   {
     path: 'devbox:/srv/api',
@@ -21,7 +21,7 @@ const LIST: RouteWorkspace[] = [
     name: 'api',
     git: true,
     worktrees: [],
-    titles: []
+    sessions: []
   },
   {
     path: '/Users/me/notes',
@@ -29,7 +29,10 @@ const LIST: RouteWorkspace[] = [
     name: 'notes',
     git: false,
     worktrees: [],
-    titles: ['Weekly report']
+    sessions: [
+      { id: 'sess-report', title: 'Weekly report' },
+      { id: 'sess-plan', title: 'Plan the quarter' }
+    ]
   }
 ]
 
@@ -40,22 +43,32 @@ describe('routeJob: what Koloft Assist is told', () => {
     const { prompt } = routeJob(LIST, 'fix the login bug')
     expect(prompt).not.toContain('/Users/me')
     expect(prompt).not.toContain('/srv/api')
-    expect(prompt).toContain('1 | local | app | git | Login fails on Safari')
+    expect(prompt).toContain('1 | local | app | git | [1.1] Login fails on Safari')
+    expect(prompt).toContain(
+      '3 | local | notes | not git | [3.1] Weekly report; [3.2] Plan the quarter'
+    )
     expect(prompt).toContain('existing worktrees: fix-login, redis-cache')
     expect(prompt).toContain('"local", "devbox"')
     expect(prompt).toContain('fix the login bug')
   })
+
+  it('lists the Koloft features it may pick by key, leaving out those that act on whichever session or workspace is current', () => {
+    const { prompt } = routeJob(LIST, 'open settings')
+    expect(prompt).toContain('open-settings | Settings…')
+    expect(prompt).toContain('settings-accounts | Settings ▸ Accounts')
+    expect(prompt).not.toContain('restart-session')
+    expect(prompt).not.toContain('scheduled-jobs')
+  })
 })
 
 describe('parseRoute: an answer is checked before anything uses it', () => {
-  it('reads a workspace by its number, with title, reason and how sure it is', () => {
+  it('reads a workspace by its number, with title and reason', () => {
     expect(
       parseRoute(
         reply({
           workspace: 1,
           worktree: { new: 'safari-login' },
           title: 'Safari 登录',
-          sure: false,
           why: 'The login bug lives in app.'
         }),
         LIST
@@ -65,12 +78,31 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
       path: '/Users/me/code/app',
       worktree: { kind: 'new', name: 'safari-login' },
       title: 'Safari 登录',
-      why: 'The login bug lives in app.',
-      sure: false
+      why: 'The login bug lives in app.'
     })
   })
 
-  it('gives a new worktree that clashes with a listed one the next free -N, and drops a bad or reserved name', () => {
+  it('reads a feature only by a key it was offered, and a session only by a ref it was shown', () => {
+    expect(parseRoute(reply({ hand: 'feature', feature: 'check-update' }), LIST)).toEqual({
+      kind: 'feature',
+      key: 'check-update',
+      title: '',
+      why: ''
+    })
+    expect(parseRoute(reply({ hand: 'feature', feature: 'restart-session' }), LIST)).toBeNull()
+    expect(parseRoute(reply({ hand: 'feature', feature: 'nope' }), LIST)).toBeNull()
+    expect(parseRoute(reply({ hand: 'session', session: '3.2' }), LIST)).toMatchObject({
+      kind: 'session',
+      path: '/Users/me/notes',
+      id: 'sess-plan'
+    })
+    expect(parseRoute(reply({ hand: 'session', session: 1.1 }), LIST)).toMatchObject({
+      id: 'sess-safari'
+    })
+    expect(parseRoute(reply({ hand: 'session', session: '2.1' }), LIST)).toBeNull()
+  })
+
+  it('gives a new worktree that clashes with a listed one the next free -N, and drops a bad or reserved name and the main checkout of a git folder', () => {
     const tree = (worktree: unknown): unknown => {
       const r = parseRoute(reply({ workspace: 1, worktree }), LIST)
       return r?.kind === 'workspace' ? r.worktree : undefined
@@ -82,7 +114,7 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     expect(tree({ existing: 'nope' })).toBeNull()
     expect(tree({ issue: 433 })).toEqual({ kind: 'issue', number: 433 })
     expect(tree({ issue: -1 })).toBeNull()
-    expect(tree('main')).toEqual({ kind: 'main' })
+    expect(tree('main')).toBeNull()
   })
 
   it('always starts a folder that is not git in the folder itself', () => {

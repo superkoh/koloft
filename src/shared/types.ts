@@ -59,10 +59,17 @@ export interface GitAccount {
   addedAt: number
 }
 
+export type GitSshKeyState = 'unchecked' | 'not-taken' | 'works'
+
 export interface GitRepoPick {
   repo: string
   account: string
+  sshKey?: GitSshKeyState
 }
+
+export type WorkspaceGitSsh =
+  | { kind: 'https-refused'; sshOnly: boolean }
+  | { kind: 'key'; publicKey: string; keysPage: string; notTakenYet: boolean }
 
 export interface GitAccountView extends GitAccount {
   usedBy: string[]
@@ -117,6 +124,7 @@ export interface WorkspaceGitAccount {
   status: AccountStatus
   sharedWith: string[]
   pushBlockedByOrg?: string
+  ssh?: WorkspaceGitSsh
 }
 
 export function keychainServiceSuffix(kind: AccountKind): string {
@@ -215,7 +223,20 @@ export interface CodexLimitWindow {
 export interface CodexLimits {
   windows: CodexLimitWindow[]
   at: number
+  reached?: boolean
+  credits?: { unlimited: boolean; balance?: number }
+  resets?: { available: number; firstExpiresAt?: number }
 }
+
+// CODEX§15
+export const CODEX_RESET_OUTCOMES = [
+  'reset',
+  'nothingToReset',
+  'noCredit',
+  'alreadyRedeemed'
+] as const
+
+export type CodexResetOutcome = (typeof CODEX_RESET_OUTCOMES)[number] | 'failed'
 
 export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
@@ -567,6 +588,11 @@ export interface AttentionEvent extends AttentionSubject {
   kind: AttentionKind
   at: number
   resurrected?: boolean
+}
+
+export interface OsOutletsSeenByTests {
+  notifications: { title: string; body: string }[]
+  dockBadge: string
 }
 
 export const ATTENTION_REASON: Record<AttentionKind, string> = {
@@ -1166,6 +1192,8 @@ export interface KoloftApi {
     cancelLogin(): void
     // CODEX§15
     codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult>
+    // CODEX§15
+    codexUseReset(name: string): Promise<CodexResetOutcome>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
     onUpdate(cb: (accounts: AccountView[]) => void): () => void
   }
@@ -1183,6 +1211,8 @@ export interface KoloftApi {
     pick(wsPath: string, id: string | null): Promise<void>
     suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion>
     dismiss(wsPath: string): Promise<void>
+    makeSshKey(wsPath: string): Promise<void>
+    checkSshKey(wsPath: string): Promise<void>
   }
   // ADR-0006
   update: {
