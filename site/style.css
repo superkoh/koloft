@@ -1,3 +1,27 @@
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/Geist-Variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/GeistMono-Variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/InstrumentSerif-Italic.woff2') format('woff2');
+}
+
 :root {
   color-scheme: dark;
   --bg: #0c0b0a;
@@ -13,8 +37,9 @@
   --brand-2: #c8642f;
   --glow: #ff7a3d;
   --cool: #8fb8ff;
-  --sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --serif: 'Instrument Serif', Georgia, serif;
   --wrap: min(1180px, 100% - 32px);
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -442,6 +467,23 @@ kbd {
   background-clip: text;
   color: transparent;
   animation: sheen 8s linear infinite;
+}
+
+.hero h1 .grad,
+h2 em {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  padding-right: 0.08em;
+}
+
+.hero h1 .grad {
+  font-size: 1.1em;
+}
+
+h2 em {
+  color: var(--brand);
 }
 
 @keyframes sheen {
