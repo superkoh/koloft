@@ -170,6 +170,7 @@ export function setupE2EEnv(): E2EEnv {
     PATH: `${fakeBin}:${nodeDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
     KOLOFT_CLAUDE_CMD: 'claude',
     KOLOFT_CODEX_CMD: 'codex-not-installed',
+    KOLOFT_MUSE_CMD: 'muse-not-installed',
     KOLOFT_KEYCHAIN_FILE: keychainFile,
     // CC§2
     KOLOFT_SCRATCHPAD_BASE: scratchpadBase,
@@ -251,6 +252,43 @@ export function installCodex(env: E2EEnv): void {
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
   fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
   addCodexAccount(env, '{}')
+}
+
+export function installMuse(env: E2EEnv): void {
+  const binary = path.join(env.fakeBin, 'muse')
+  fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-muse.js'), binary)
+  env.launchEnv.KOLOFT_MUSE_CMD = binary
+}
+
+export interface MuseCall {
+  pid: number
+  argv: string[]
+  cwd: string
+  sessionId: string
+  pathHead: string
+}
+
+export function museCalls(env: E2EEnv): MuseCall[] {
+  const file = path.join(env.home, 'fake-muse-calls.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as MuseCall)
+}
+
+// MUSE§10
+export function trustInMuse(env: E2EEnv, dir: string): void {
+  const config = path.join(env.home, '.config', 'muse')
+  fs.mkdirSync(config, { recursive: true })
+  fs.writeFileSync(
+    path.join(config, 'trust.json'),
+    JSON.stringify({
+      schema_version: 1,
+      projects: { [fs.realpathSync(dir)]: { decision: 'trusted' } }
+    })
+  )
 }
 
 export function addCodexAccount(env: E2EEnv, authJson: string): void {

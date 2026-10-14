@@ -60,6 +60,9 @@ needs a Meta account (a real model) has been run: a bullet that depends on one s
   arrive before the live-registry file (§4) is written (0.13 s before, measured once).
 - `blocked`, with `:kind=permission|question|auth`, is in the binary but needs a real
   model to trigger (inferred, not checked).
+- Started with a first prompt, muse is taken to report the state it is in (`working`)
+  once the terminal answers the query; only the startup `idle` has been seen (inferred,
+  not checked).
 - Muse has no status-line hook: OSC 7501 and its own footer are all it shows.
 
 ## §4 Which session a process holds: the live registry

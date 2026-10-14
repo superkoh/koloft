@@ -2,7 +2,15 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { installCodex, installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  installCodex,
+  installGhForWorkspaceA,
+  installMuse,
+  museCalls,
+  seedSettings,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
 import {
   newSessionInWith,
   processAlive,
@@ -532,6 +540,51 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => bindingOnDisk(env)?.threads?.some((t) => t.threadId === opener.id))
         .toBe(false)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('the conductor types a message into a Muse session once it is idle, and the reply that ends that turn is handed to the conductor', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const museId = museCalls(env)[0].sessionId
+      const said = (): string[] => {
+        const file = path.join(
+          env.home,
+          '.local',
+          'share',
+          'muse',
+          'sessions',
+          'fake',
+          `${museId}.json`
+        )
+        const session = JSON.parse(fileText(file) || '{"items":[]}') as {
+          items: { kind: string; text: string }[]
+        }
+        return session.items.filter((i) => i.kind === 'userMessage').map((i) => i.text)
+      }
+
+      fake.say(OWNER, `/koloft session send ${museId} check the docs`)
+      await expect
+        .poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual([ownerSays('check the docs')])
+      await expect
+        .poll(
+          () =>
+            peerMessages(env).some((m) => m.includes(`, id ${museId}:) `) && m.includes('echo: ')),
+          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+        )
+        .toBe(true)
     } finally {
       await quitAndClose(app)
       await fake.close()
