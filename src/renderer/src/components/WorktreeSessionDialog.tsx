@@ -185,7 +185,7 @@ export function WorktreeSessionDialog({
   }, [locked, launchLock])
   const backends =
     aim.kind === 'recover'
-      ? sessionLaunch.usable.filter((b) => b === 'codex')
+      ? sessionLaunch.usable.filter((b) => b === aim.backend)
       : sessionLaunch.usable
   const other =
     backends.length > 1
@@ -222,7 +222,7 @@ export function WorktreeSessionDialog({
 
   const launch = (target: WtAim, backend = sessionLaunch.methods.defaultBackend): void => {
     if (locked || sessionLaunch.issue(backend)) return
-    const method = target.kind === 'recover' ? 'codex' : backend
+    const method = target.kind === 'recover' ? target.backend : backend
     if (target.kind === 'recover') {
       void sessionLaunch.launch(resolveLaunch(target, wsPath), method)
     } else if (target.kind === 'open') {

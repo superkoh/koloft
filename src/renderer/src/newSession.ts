@@ -1,5 +1,6 @@
 import { ageLabel, type FreshLineState } from '@shared/freshnessOps'
 import type {
+  BackendId,
   CreateTabOptions,
   GithubItem,
   SessionRow,
@@ -113,14 +114,26 @@ export type WtAim =
   | { kind: 'none' }
   | { kind: 'create'; name: string }
   | { kind: 'open'; name: string; dir: string }
-  | { kind: 'recover'; name: string; dir: string; recoveryResourceId: string }
+  | {
+      kind: 'recover'
+      name: string
+      dir: string
+      recoveryResourceId: string
+      backend: BackendId
+    }
   | { kind: 'reserved'; name: string }
   | { kind: 'invalid'; name: string }
   | { kind: 'item'; item: GithubItem; name: string; dir: string | null }
 
 function existingWorktreeAim(w: WorktreeInfo): WtAim {
-  return w.recoveryResourceId
-    ? { kind: 'recover', name: w.name, dir: w.dir, recoveryResourceId: w.recoveryResourceId }
+  return w.recoveryResourceId && w.recoveryBackend
+    ? {
+        kind: 'recover',
+        name: w.name,
+        dir: w.dir,
+        recoveryResourceId: w.recoveryResourceId,
+        backend: w.recoveryBackend
+      }
     : { kind: 'open', name: w.name, dir: w.dir }
 }
 

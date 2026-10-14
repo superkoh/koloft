@@ -2,6 +2,8 @@
 export const MIN_CLAUDE_VERSION = '2.1.293'
 export const MIN_CODEX_VERSION = '0.161.0'
 export const TESTED_CODEX_LINE = MIN_CODEX_VERSION.split('.').slice(0, 2).join('.')
+// MUSE§1
+export const TESTED_MUSE_LINE = '1.4'
 
 export const ENSURE_CLAUDE_MINIMUM_FN = `claude_meets_minimum() {
   kmin_v="$("$1" --version 2>/dev/null | sed -n '1s/^\\([0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*\\).*/\\1/p')"

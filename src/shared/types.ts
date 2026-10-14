@@ -1551,6 +1551,7 @@ export interface WorkspaceGithub {
 
 export interface WorktreeInfo {
   recoveryResourceId?: string
+  recoveryBackend?: BackendId
   name: string
   dir: string
   branch?: string

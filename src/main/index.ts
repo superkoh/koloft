@@ -26,6 +26,9 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
+import { MuseSessions } from './museSessions'
+import type { SessionsWithStore } from './storedSessions'
+import type { SessionEvent } from '@shared/sessionEvent'
 import type { WorktreeResource } from './sessionStore'
 import {
   OpenTabsFile,
@@ -159,6 +162,7 @@ import { sanitizeSessionWorkbench } from '@shared/workbenchState'
 import { dirExistsSync, gitProbes, type GitOut, type ResumeProbes } from './resumePlan'
 import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
+import { museBackend } from './backends/muse'
 import { codexConfigFile } from './codexTrust'
 import {
   acceptBypassWarning,
@@ -426,6 +430,12 @@ let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
 let codexSessions: CodexSessions | null = null
 let codexStartupError: string | undefined
+let museSessions: MuseSessions | null = null
+const startupErrors: Partial<Record<BackendId, string>> = {}
+
+function storedSessions(): SessionsWithStore[] {
+  return [codexSessions, museSessions].filter((s): s is CodexSessions | MuseSessions => !!s)
+}
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
@@ -2001,10 +2011,11 @@ app.whenReady().then(() => {
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
     tracker.setAlive(e.id, false)
-    if (codexSessions?.hasTab(e.id))
-      void codexSessions
-        .stop(e.id, e.signal ? -1 : e.exitCode)
-        .catch((error) => sendToRenderer('cron:toast', String(error)))
+    for (const stored of storedSessions())
+      if (stored.hasTab(e.id))
+        void stored
+          .stop(e.id, e.signal ? -1 : e.exitCode)
+          .catch((error) => sendToRenderer('cron:toast', String(error)))
     workspaceMgr?.launchEnded(e.id)
     cronRunner?.onPtyExit(e.id)
     conductors?.onPtyExit(e.id, sleepers.has(e.id))
@@ -2050,22 +2061,25 @@ app.whenReady().then(() => {
   savedOpenTabs = readOpenTabs(openTabsPath)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
   sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
+  const storedDeps = {
+    pty: ptyMgr,
+    runtime: tracker,
+    projectInfo: projectInfoFor,
+    changed: () => {
+      const all = onSessionsChanged()
+      sendToRenderer('sessions:update', all)
+      workspaceMgr?.onAdditionalSessionsChanged()
+      retitleDiscordThreads(all)
+    },
+    replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
+    memberRemoved: (key: string) => discordThreads?.left(key),
+    events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
+    error: (message: string) => sendToRenderer('cron:toast', message)
+  }
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
-      pty: ptyMgr,
-      runtime: tracker,
-      projectInfo: projectInfoFor,
-      changed: () => {
-        const all = onSessionsChanged()
-        sendToRenderer('sessions:update', all)
-        workspaceMgr?.onAdditionalSessionsChanged()
-        retitleDiscordThreads(all)
-      },
-      replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),
-      memberRemoved: (key) => discordThreads?.left(key),
-      leftWorktree: removeUntouchedCodexWorktree,
-      events: (tabId, event) => sessionBackends.observe(tabId, event),
-      error: (message) => sendToRenderer('cron:toast', message),
+      ...storedDeps,
+      leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
@@ -2090,6 +2104,26 @@ app.whenReady().then(() => {
     })
   } catch (error) {
     codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
+    startupErrors.codex = codexStartupError
+  }
+  try {
+    museSessions = new MuseSessions(path.join(userData, 'muse-sessions.json'), {
+      ...storedDeps,
+      leftWorktree: (resource) => removeUntouchedWorktree(museSessions, resource),
+      openShimRoot: path.join(userData, 'muse-open'),
+      fallbackBin,
+      gitBin: gitFirstBin,
+      gitAccounts: { configEnv: (env) => gitAccounts!.configEnv(env) }
+    })
+  } catch (error) {
+    startupErrors.muse = `Muse session data could not be loaded; the original file is preserved. ${String(error)}`
+  }
+  if (museSessions) {
+    sessionBackends.register(museBackend(museSessions, resumeProbes))
+    void museSessions
+      .availability()
+      .then((muse) => (muse.available ? museSessions!.refreshHistory() : undefined))
+      .catch((error) => sendToRenderer('cron:toast', String(error)))
   }
   if (codexSessions) {
     sessionBackends.register(codexBackend(codexSessions, resumeProbes))
@@ -2105,8 +2139,10 @@ app.whenReady().then(() => {
   }
   workspaceMgr = new WorkspaceManager({
     additionalRows: (wsPath) =>
-      (codexSessions?.rows(wsPath) ?? []).map((r) => ({ ...r, backendId: 'codex' as const })),
-    additionalMembers: () => codexSessions?.members() ?? new Set(),
+      storedSessions().flatMap((stored) =>
+        stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
+      ),
+    additionalMembers: () => new Set(storedSessions().flatMap((stored) => [...stored.members()])),
     projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
     loadLayout,
     saveLayout,
@@ -2114,7 +2150,8 @@ app.whenReady().then(() => {
     runningBindings: () => {
       const m = new Map<string, string>()
       for (const s of allSessions()) if (s.alive && s.sessionId) m.set(s.sessionId, s.tabId)
-      for (const [key, tabId] of codexSessions?.runningBindings() ?? []) m.set(key, tabId)
+      for (const stored of storedSessions())
+        for (const [key, tabId] of stored.runningBindings()) m.set(key, tabId)
       for (const [tabId, t] of sleepers) if (!m.has(t.sessionId)) m.set(t.sessionId, tabId)
       return m
     },
@@ -2159,7 +2196,8 @@ app.whenReady().then(() => {
     sessionsOnDiskOrRunning: (ids) =>
       conductors?.forgetGone(
         (key) =>
-          ids.has(key) || (identityOf(key).backendId === 'codex' && !codexSessions?.threadGone(key))
+          ids.has(key) ||
+          storedSessions().some((s) => s.id === identityOf(key).backendId && !s.threadGone(key))
       ),
     memberDropped: (sessionId, why) => {
       discordThreads?.left(sessionId)
@@ -2502,7 +2540,9 @@ app.whenReady().then(() => {
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
     worktreeRecorded: (root, name) =>
-      codexSessions?.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`) ?? false,
+      storedSessions().some((s) =>
+        s.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`)
+      ),
     branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
     countRunFolders,
     accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
@@ -2644,17 +2684,22 @@ app.on('before-quit', (e) => {
   clearQuitFallback()
   if (!quitCommitted) rememberOpenTabs()
   quitCommitted = true
-  if (!codexQuitStopped && codexSessions?.hasRuns()) {
+  if (!codexQuitStopped && storedSessions().some((s) => s.hasRuns())) {
     e.preventDefault()
     if (!codexQuitPending) {
       codexQuitPending = true
-      void codexSessions
-        .stopAll()
-        .catch((error) => console.error('[koloft] Codex did not stop cleanly:', error))
-        .finally(() => {
-          codexQuitStopped = true
-          app.quit()
-        })
+      void Promise.all(
+        storedSessions().map((s) =>
+          s
+            .stopAll()
+            .catch((error) =>
+              console.error(`[koloft] ${BACKEND_LABEL[s.id]} did not stop cleanly:`, error)
+            )
+        )
+      ).finally(() => {
+        codexQuitStopped = true
+        app.quit()
+      })
     }
     return
   }
@@ -3060,7 +3105,11 @@ function cdpOp(
 function relayDeps(): RelayDeps {
   return {
     sessionForTab: (tabId) =>
-      claudeBackend.sessionIdOf(tabId) ?? codexSessions?.sessionIdOf(tabId) ?? null,
+      claudeBackend.sessionIdOf(tabId) ??
+      storedSessions()
+        .map((s) => s.sessionIdOf(tabId))
+        .find(Boolean) ??
+      null,
     mount: async (sessionId, targetId) => {
       const r = await cdpOp('mount', sessionId, { targetId })
       if (!r.ok || typeof r.guestId !== 'number')
@@ -3391,11 +3440,11 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
   if (sleeper) {
     forgetSleeper(tabId)
     const tree = projectInfoFor(sleeper.cwd).treeRoot
-    const resource =
-      sleeper.kind === 'codex' && !restarting
-        ? codexSessions?.store.listResources().find((r) => r.worktreePath === tree)
-        : undefined
-    return (resource ? removeUntouchedCodexWorktree(resource) : Promise.resolve()).then(() => true)
+    const owner = restarting ? undefined : storedSessions().find((s) => s.id === sleeper.kind)
+    const resource = owner?.store.listResources().find((r) => r.worktreePath === tree)
+    return (resource ? removeUntouchedWorktree(owner, resource) : Promise.resolve()).then(
+      () => true
+    )
   }
   discordNotices?.closed(tabId)
   discordLive?.closed(tabId)
@@ -3486,14 +3535,16 @@ async function closeSessionFully(
     return
   }
   archiveSession(target.sessionId)
-  codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
+  for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
 }
 
-async function removeUntouchedCodexWorktree(resource: WorktreeResource): Promise<void> {
+async function removeUntouchedWorktree(
+  owner: SessionsWithStore | null | undefined,
+  resource: WorktreeResource
+): Promise<void> {
   const tree = resource.worktreePath
   if ([...sleepers.values()].some((t) => projectInfoFor(t.cwd).treeRoot === tree)) return
-  if (sessionBackends.occupantOf(tree) || !(await codexSessions?.worktrees.untouched(resource)))
-    return
+  if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
   const problem = await removeTree(hostGitOut, {
     root: resource.originalCwd,
     treeRoot: tree,
@@ -3844,7 +3895,7 @@ function cronBindDeadlineMs(): number {
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
   occupantOf: (dir) => sessionBackends.occupantOf(dir),
-  recorded: (dir) => codexSessions?.worktrees.recorded(dir) ?? false,
+  recorded: (dir) => storedSessions().some((s) => s.worktrees.recorded(dir)),
   ...gitProbes(localGitOut)
 }
 
@@ -4025,7 +4076,7 @@ function registerIpc(): void {
     return sessionBackends.availability((id) => ({
       id,
       available: false,
-      reason: codexStartupError ?? `${BACKEND_LABEL[id]} is not ready.`
+      reason: startupErrors[id] ?? `${BACKEND_LABEL[id]} is not ready.`
     }))
   })
   ipcMain.handle('sessions:installTool', (_e, backend: unknown) => {
@@ -4267,13 +4318,18 @@ function registerIpc(): void {
     return r
   })
   ipcMain.handle('workspace:removeConfirmed', async (_e, p: string) => {
-    const codexTabs = new Set(
-      (codexSessions?.rows(p) ?? [])
-        .filter((r) => r.running || r.pending)
-        .map((r) => (r.pending ? r.id : codexSessions?.aliveTabFor(r.id)))
-        .filter((id): id is string => !!id)
+    await Promise.all(
+      storedSessions().flatMap((stored) => {
+        const tabs = new Set(
+          stored
+            .rows(p)
+            .filter((r) => r.running || r.pending)
+            .map((r) => (r.pending ? r.id : stored.aliveTabFor(r.id)))
+            .filter((id): id is string => !!id)
+        )
+        return [...tabs].map((id) => stored.stop(id))
+      })
     )
-    await Promise.all([...codexTabs].map((id) => codexSessions?.stop(id)))
     const marked = markedSessionsOf(p)
     workspaceMgr?.removeConfirmed(p)
     cronRunner?.removeWorkspace(p)
@@ -4337,21 +4393,25 @@ function registerIpc(): void {
   ipcMain.handle('workspace:discover', () => workspaceMgr?.discover() ?? [])
   ipcMain.handle('workspace:worktrees', async (_e, p: string) => {
     const trees = (await workspaceMgr?.worktrees(p)) ?? []
-    if (SUPPORTED_PAIRS.codex[hostOf(p)]) {
-      for (const resource of codexSessions?.store.listResources() ?? []) {
+    for (const stored of storedSessions()) {
+      if (!SUPPORTED_PAIRS[stored.id][hostOf(p)]) continue
+      for (const resource of stored.store.listResources()) {
         if (
           resource.originalCwd !== p ||
           (resource.state === 'ready' && dirExistsSync(resource.worktreePath))
         )
           continue
         const existing = trees.find((t) => t.dir === resource.worktreePath)
-        if (existing) existing.recoveryResourceId = resource.id
-        else
+        if (existing) {
+          existing.recoveryResourceId = resource.id
+          existing.recoveryBackend = stored.id
+        } else
           trees.push({
             name: resource.worktreeName,
             dir: resource.worktreePath,
             branch: resource.worktreeBranch ?? undefined,
-            recoveryResourceId: resource.id
+            recoveryResourceId: resource.id,
+            recoveryBackend: stored.id
           })
       }
     }
@@ -4428,7 +4488,7 @@ function registerIpc(): void {
         .filter((p) => !parseRemoteKey(p))
       return [
         ...(workspaceMgr?.searchableRows() ?? []),
-        ...(codexSessions?.searchable(localPins) ?? [])
+        ...storedSessions().flatMap((s) => s.searchable(localPins))
       ]
     },
     codexSnippets: async (term) => (await codexSessions?.searchSnippets(term)) ?? [],

@@ -18,6 +18,7 @@ export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefine
 export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes): SessionBackend {
   return {
     id: 'codex',
+    recoversWorktrees: true,
     availability: () => sessions.availability(),
     forgetAvailability: () => sessions.forgetAvailability(),
     list: () => sessions.list(),

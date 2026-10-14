@@ -103,7 +103,7 @@ describe('PtyManager per-tab environment', () => {
     expect(env.TERM_PROGRAM).toBe('Apple_Terminal')
   })
 
-  it('hands the koloft request folder to every tab but a Codex one, and the skill plugin and the koloft allow rule only to a launch that brings the plugin', () => {
+  it('hands the koloft request folder to every tab but a Codex or Muse one, and the skill plugin and the koloft allow rule only to a launch that brings the plugin', () => {
     const allowKoloft: boolean[] = []
     const envFor = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
       mocks.spawn.mockClear()
@@ -130,6 +130,10 @@ describe('PtyManager per-tab environment', () => {
       '/koloft/agent'
     )
     expect(envFor({ kind: 'codex', cwd: os.tmpdir() }).KOLOFT_AGENT_DIR).toBeUndefined()
+    const muse = envFor({ kind: 'muse', cwd: os.tmpdir(), executable: '/bin/muse' })
+    expect(muse.KOLOFT_AGENT_DIR).toBeUndefined()
+    expect(muse.KOLOFT_HOOK_SETTINGS).toBeUndefined()
+    expect(allowKoloft).toEqual([false, true])
   })
 
   it('marks a global-terminal (utility) shell with KOLOFT_UTIL=1, the variable the shim hard block keys off', () => {

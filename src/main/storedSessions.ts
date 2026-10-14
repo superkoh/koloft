@@ -78,6 +78,23 @@ export interface StartContext {
   freshWorktree: boolean
 }
 
+export interface SessionsWithStore {
+  readonly id: BackendId
+  readonly store: SessionStore
+  readonly worktrees: SessionWorktrees
+  rows(workspace: string): BackendSessionRow[]
+  members(): Set<string>
+  runningBindings(): Map<string, string>
+  threadGone(key: string): boolean
+  hasRuns(): boolean
+  stopAll(deadlineMs?: number): Promise<void>
+  hasTab(tabId: string): boolean
+  sessionIdOf(tabId: string): string | undefined
+  aliveTabFor(key: string): string | undefined
+  stop(tabId: string, nativeExitCode?: number, restarting?: boolean): Promise<void>
+  searchable(workspaces: string[]): SearchCandidate[]
+}
+
 interface RowScope {
   byPath: Map<string, WorktreeResource>
   roots: Map<string, string>
