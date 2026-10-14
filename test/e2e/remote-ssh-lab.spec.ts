@@ -305,7 +305,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-18: a checkout behind its origin on a machine whose login shell is fish shows the behind badge, and Pull fast-forwards it there with real git', async ({
+  test('E-SSH-20: a checkout behind its origin on a machine whose login shell is fish shows the behind badge, and Pull fast-forwards it there with real git', async ({
     env
   }) => {
     await withLab(env, async ({ page, lab }) => {
