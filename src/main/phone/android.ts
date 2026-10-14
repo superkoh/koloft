@@ -3,8 +3,12 @@ import fs from 'fs'
 import net from 'net'
 import os from 'os'
 import path from 'path'
-import * as grpc from '@grpc/grpc-js'
-import * as protoLoader from '@grpc/proto-loader'
+import type {
+  ChannelCredentials,
+  ClientReadableStream,
+  Metadata,
+  ServiceError
+} from '@grpc/grpc-js'
 import {
   runTool,
   ToolFailed,
@@ -24,14 +28,14 @@ export interface AndroidPaths {
   log: string
 }
 
-type Callback = (err: grpc.ServiceError | null, res: Record<string, unknown>) => void
-type Unary = (req: unknown, md: grpc.Metadata, cb: Callback) => void
+type Callback = (err: ServiceError | null, res: Record<string, unknown>) => void
+type Unary = (req: unknown, md: Metadata, cb: Callback) => void
 interface EmulatorClient {
   getStatus: Unary
   getScreenshot: Unary
   sendTouch: Unary
   sendKey: Unary
-  streamScreenshot(req: unknown, md: grpc.Metadata): grpc.ClientReadableStream<{ image: Buffer }>
+  streamScreenshot(req: unknown, md: Metadata): ClientReadableStream<{ image: Buffer }>
   close(): void
 }
 
@@ -81,11 +85,6 @@ function freePort(): Promise<number> {
   })
 }
 
-// PLATFORM§54
-export function discoveryDir(home = os.homedir()): string {
-  return path.join(home, 'Library', 'Caches', 'TemporaryItems', 'avd', 'running')
-}
-
 export function tokenFor(iniTexts: string[], grpcPort: number): string | null {
   for (const text of iniTexts) {
     const kv = new Map(
@@ -100,8 +99,9 @@ export function tokenFor(iniTexts: string[], grpcPort: number): string | null {
   return null
 }
 
+// PLATFORM§54
 function readDiscovery(): string[] {
-  const dir = discoveryDir()
+  const dir = path.join(os.homedir(), 'Library', 'Caches', 'TemporaryItems', 'avd', 'running')
   try {
     return fs
       .readdirSync(dir)
@@ -185,10 +185,9 @@ export async function startAndroid(
 }
 
 export class AndroidPhone implements PhoneDevice {
-  readonly kind = 'android'
   readonly screen = SCREEN
   private client: EmulatorClient | null = null
-  private md = new grpc.Metadata()
+  private md!: Metadata
   private heartbeat: NodeJS.Timeout | null = null
   private exited = false
 
@@ -210,6 +209,9 @@ export class AndroidPhone implements PhoneDevice {
       () => tokenFor(readDiscovery(), grpcPort),
       this.alive
     )
+    const grpc = await import('@grpc/grpc-js')
+    const protoLoader = await import('@grpc/proto-loader')
+    this.md = new grpc.Metadata()
     this.md.set('authorization', `Bearer ${token}`)
     const proto = path.join(this.paths.sdk, 'emulator', 'lib', 'emulator_controller.proto')
     const def = protoLoader.loadSync(proto, {
@@ -224,7 +226,7 @@ export class AndroidPhone implements PhoneDevice {
           control: {
             EmulatorController: new (
               addr: string,
-              creds: grpc.ChannelCredentials,
+              creds: ChannelCredentials,
               opts: object
             ) => EmulatorClient
           }
@@ -287,8 +289,7 @@ export class AndroidPhone implements PhoneDevice {
   }
 
   private async adb(args: string[], timeoutMs = QUICK_MS): Promise<string> {
-    return (await runTool(this.adbBin, ['-s', this.serial, ...args], { timeoutMs, env: this.env }))
-      .stdout
+    return runTool(this.adbBin, ['-s', this.serial, ...args], { timeoutMs, env: this.env })
   }
 
   private get agentDeviceEnv(): NodeJS.ProcessEnv {
@@ -303,12 +304,12 @@ export class AndroidPhone implements PhoneDevice {
 
   // PLATFORM§42
   private async agentDevice(args: string[], timeoutMs = QUICK_MS): Promise<string> {
-    const r = await runTool(
+    const out = await runTool(
       process.execPath,
       [this.paths.agentDeviceBin, ...args, '--platform', 'android', '--serial', this.serial],
       { timeoutMs, cwd: this.paths.agentDeviceHome, env: this.agentDeviceEnv }
     )
-    return r.stdout.trim()
+    return out.trim()
   }
 
   snapshot(): Promise<string> {

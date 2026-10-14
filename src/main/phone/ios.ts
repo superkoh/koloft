@@ -21,9 +21,9 @@ import {
   type ScreenElement
 } from './screenElements'
 
-export const XCODE_MISSING =
+const XCODE_MISSING =
   'iOS needs Xcode. Install Xcode from the App Store, open it once so it finishes setting up, and make sure it has an iOS simulator (Xcode ▸ Settings ▸ Components).'
-export const AXE_MISSING =
+const AXE_MISSING =
   'iOS needs AXe, a free command-line tool that taps and types on the simulator. Install it with: brew install cameroncooke/axe/axe'
 const NO_IPHONE =
   'Xcode has no iPhone simulator. Add one in Xcode ▸ Settings ▸ Components, then try again.'
@@ -65,7 +65,7 @@ function iosVersion(runtime: string): number {
 }
 
 async function xcrun(args: string[], timeoutMs = QUICK_MS): Promise<string> {
-  return (await runTool('xcrun', args, { timeoutMs })).stdout
+  return runTool('xcrun', args, { timeoutMs })
 }
 
 export async function iosToolsMissing(): Promise<string | null> {
@@ -102,7 +102,6 @@ export async function startIos(progress: (text: string) => void): Promise<IosPho
 }
 
 export class IosPhone implements PhoneDevice {
-  readonly kind = 'ios'
   screen: Screen = { width: 0, height: 0 }
   private elements: ScreenElement[] = []
   private queue: Promise<unknown> = Promise.resolve()
@@ -123,9 +122,7 @@ export class IosPhone implements PhoneDevice {
   }
 
   private axe(args: string[], timeoutMs = QUICK_MS): Promise<string> {
-    return this.serial(
-      async () => (await runTool('axe', [...args, '--udid', this.udid], { timeoutMs })).stdout
-    )
+    return this.serial(() => runTool('axe', [...args, '--udid', this.udid], { timeoutMs }))
   }
 
   private async readUi(): Promise<AxNode[]> {
@@ -253,16 +250,19 @@ export class IosPhone implements PhoneDevice {
 
   typeLive(text: string): void {
     this.typed += text
-    if (this.typeTimer) return
-    this.typeTimer = setTimeout(() => {
-      const batch = this.typed
-      this.typed = ''
-      this.typeTimer = null
-      void this.type(batch).catch(() => {})
-    }, LIVE_TYPE_BATCH_MS)
+    if (!this.typeTimer) this.typeTimer = setTimeout(() => this.sendTyped(), LIVE_TYPE_BATCH_MS)
+  }
+
+  private sendTyped(): void {
+    if (this.typeTimer) clearTimeout(this.typeTimer)
+    this.typeTimer = null
+    const batch = this.typed
+    this.typed = ''
+    if (batch) void this.type(batch).catch(() => {})
   }
 
   keyLive(key: PhoneKey): void {
+    this.sendTyped()
     void this.key(key).catch(() => {})
   }
 

@@ -1059,13 +1059,15 @@ function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
   }
 }
 
+const agentOpen = (tabId: string, target: string, view?: ArtifactView) => {
+  const machine = tracker.remoteOf(tabId)?.host
+  return machine && !schemeOf(target)
+    ? openOnMachine(tabId, machine, target, view)
+    : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
+}
+
 const notesAndWorkbenchVerbs = workbenchVerbs({
-  open: (tabId, target, view) => {
-    const machine = tracker.remoteOf(tabId)?.host
-    return machine && !schemeOf(target)
-      ? openOnMachine(tabId, machine, target, view)
-      : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
-  },
+  open: agentOpen,
   notesFileOf: (tabId) => {
     const workspace = sessionBackends.workspaceOfTab(tabId)
     return workspace ? notesFileOfPinned(workspace) : undefined
@@ -1076,7 +1078,7 @@ const phones = new Phones({
   dir: () => path.join(app.getPath('userData'), 'phone'),
   agentDeviceBin: () => unpackedModulePath('agent-device', 'bin', 'agent-device.mjs'),
   ready: loginEnvReady,
-  open: (tabId, url) => void openInWorkbench(tabId, routeFor(url, 'agent'), 'agent', url),
+  open: (tabId, url) => void agentOpen(tabId, url),
   machineOf: (tabId) => tracker.remoteOf(tabId)?.host,
   writeOnMachine: (machine, file, bytes) =>
     hosts.machine(machine).writeBytes(formatRemoteKey(machine, file), bytes),

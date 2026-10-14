@@ -18,7 +18,6 @@ export interface Screen {
 }
 
 export interface PhoneDevice {
-  readonly kind: PhoneKind
   readonly screen: Screen
   snapshot(): Promise<string>
   tap(target: string | Point): Promise<string>
@@ -38,17 +37,14 @@ export interface PhoneDevice {
 
 export class ToolFailed extends Error {}
 
-export interface ToolRun {
-  stdout: string
-  stderr: string
-}
+const TOOL_OUTPUT_MAX_BYTES = 16 * 1024 * 1024
 
 // PLATFORM§27
 export function runTool(
   bin: string,
   args: string[],
-  opts: { timeoutMs: number; env?: NodeJS.ProcessEnv; cwd?: string; maxBuffer?: number }
-): Promise<ToolRun> {
+  opts: { timeoutMs: number; env?: NodeJS.ProcessEnv; cwd?: string }
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = execFile(
       bin,
@@ -58,10 +54,10 @@ export function runTool(
         killSignal: 'SIGKILL',
         env: opts.env ?? process.env,
         cwd: opts.cwd,
-        maxBuffer: opts.maxBuffer ?? 16 * 1024 * 1024
+        maxBuffer: TOOL_OUTPUT_MAX_BYTES
       },
       (err, stdout, stderr) => {
-        if (!err) return resolve({ stdout, stderr })
+        if (!err) return resolve(stdout)
         const said = (stderr || stdout).trim().split('\n').slice(-3).join(' ')
         if (err.killed) reject(new ToolFailed(`${bin} took too long and was stopped.`))
         else if (typeof err.code === 'string') reject(new ToolFailed(`${bin}: ${err.message}`))

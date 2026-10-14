@@ -13,7 +13,7 @@ export interface SdkPackage {
 }
 
 const REPO = 'https://dl.google.com/android/repository/'
-export const SYSTEM_IMAGE_DIR = 'system-images/android-36/google_apis/arm64-v8a'
+const SYSTEM_IMAGE_DIR = 'system-images/android-36/google_apis/arm64-v8a'
 
 // PLATFORM§54
 export const ANDROID_PACKAGES: SdkPackage[] = [
@@ -52,7 +52,7 @@ export function sdkMissing(sdk: string): SdkPackage[] {
   return ANDROID_PACKAGES.filter((p) => !fs.existsSync(readyMark(sdk, p)))
 }
 
-export function downloadText(done: number): string {
+function downloadText(done: number): string {
   const pct = Math.floor((done / TOTAL_BYTES) * 100)
   return `downloading Google's Android emulator, ${pct}% of ${(TOTAL_BYTES / GB).toFixed(1)} GB (only the first time)`
 }
@@ -118,7 +118,7 @@ export const AVD_NAME = 'koloft'
 export const SCREEN = { width: 1080, height: 2400 }
 
 // PLATFORM§54
-export function avdConfig(): string {
+function avdConfig(): string {
   return [
     'PlayStore.enabled=false',
     'abi.type=arm64-v8a',

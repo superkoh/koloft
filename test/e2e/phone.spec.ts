@@ -90,7 +90,7 @@ async function liveScreen(app: ElectronApplication): Promise<Page> {
 test.afterEach(({ env }) => killFakeRemote(env))
 
 test.describe('koloft phone: a session drives a phone emulator whose live screen is in its Workbench', () => {
-  test('PH-01: in a local Claude session, start ios opens the live screen in the Workbench; the AI reads the screen, taps by ref, saves a screenshot; a click on the live screen taps the phone; stop shuts it down', async ({
+  test('PH-01: in a local Claude session, start ios opens the live screen in the Workbench; the AI reads the screen, taps by ref, saves a screenshot; a click on the live screen taps the phone, and what the owner types there reaches it before the Enter that follows; stop shuts it down', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -126,6 +126,15 @@ test.describe('koloft phone: a session drives a phone emulator whose live screen
       await expect
         .poll(() => simulatorCalls(calls))
         .toContain(`axe ${MIDDLE_OF_A_402_BY_874_SCREEN}`)
+
+      await guest.keyboard.type('hi')
+      await guest.keyboard.press('Enter')
+      const enter = 'axe key 40 --udid FAKE-IPHONE-17'
+      await expect.poll(() => simulatorCalls(calls)).toContain(enter)
+      const sent = simulatorCalls(calls)
+      const typed = sent.indexOf('axe type hi --udid FAKE-IPHONE-17')
+      expect(typed).toBeGreaterThan(-1)
+      expect(typed).toBeLessThan(sent.indexOf(enter))
 
       expect((await koloft(page, tab, 'phone stop')).said).toContain('Stopped the iPhone.')
       expect(simulatorCalls(calls)).toContain('xcrun simctl shutdown FAKE-IPHONE-17')

@@ -9,6 +9,7 @@ import {
   type AgentReply,
   type AgentVerb
 } from '../agentRequests'
+import { AGENT_SHIM_WAITS_MS, REMOTE_AGENT_SHIM_WAITS_MS } from '../agentShim'
 import { startAndroid } from './android'
 import { sdkMissing } from './androidSdk'
 import { PHONE_KEYS, type PhoneDevice, type PhoneKey, type PhoneKind, type Point } from './device'
@@ -40,11 +41,11 @@ interface Phone {
 }
 
 const NAME: Record<PhoneKind, string> = { android: 'Android phone', ios: 'iPhone' }
-const KINDS: PhoneKind[] = ['android', 'ios']
-const REPLY_BEFORE_THE_SHIM_GIVES_UP_MS = 8_000
+const KINDS = Object.keys(NAME) as PhoneKind[]
+const REPLY_THIS_LONG_BEFORE_THE_SHIM_GIVES_UP_MS = 2_000
 const READY_NOTE = 'Click to tap, drag to swipe, and type on your keyboard.'
 
-export const PHONE_USAGE = `koloft phone: one of
+const PHONE_USAGE = `koloft phone: one of
   start android|ios, status, stop,
   snapshot, tap <@ref | x y>, type <text>, swipe <x1> <y1> <x2> <y2>,
   key home|back|enter|delete, screenshot <file>, install <app file>, open <app id>.
@@ -176,7 +177,7 @@ export class Phones {
 
   private boot(phone: Phone): void {
     const progress = (note: string): void => {
-      if (this.phone !== phone || phone.phase.at !== 'starting') return
+      if (this.phone !== phone || phone.phase.at !== 'starting' || phone.phase.note === note) return
       phone.phase = { at: 'starting', note }
       phone.screen.setNote(`${note[0].toUpperCase()}${note.slice(1)}…`)
     }
@@ -211,11 +212,13 @@ export class Phones {
     return answered(`Stopped the ${NAME[phone.kind]}.`)
   }
 
-  private async stop(phone: Phone): Promise<void> {
+  private async stop(phone: Phone, now = false): Promise<void> {
     if (this.phone === phone) this.phone = null
     phone.abort.abort()
     phone.screen.close()
-    if (phone.phase.at === 'ready') await phone.phase.device.stop()
+    if (phone.phase.at !== 'ready') return
+    if (now) phone.phase.device.stopNow()
+    else await phone.phase.device.stop()
   }
 
   tabClosed(tabId: string): void {
@@ -223,12 +226,7 @@ export class Phones {
   }
 
   quit(): void {
-    const phone = this.phone
-    if (!phone) return
-    this.phone = null
-    phone.abort.abort()
-    phone.screen.close()
-    if (phone.phase.at === 'ready') phone.phase.device.stopNow()
+    if (this.phone) void this.stop(this.phone, true)
   }
 
   private async slow(phone: Phone, what: string, work: Promise<string>): Promise<AgentReply> {
@@ -236,8 +234,11 @@ export class Phones {
       (text) => answered(text),
       (error: unknown) => refused(`koloft: ${what} failed: ${errorText(error)}`)
     )
+    const shimWaits = this.deps.machineOf(phone.tabId)
+      ? REMOTE_AGENT_SHIM_WAITS_MS
+      : AGENT_SHIM_WAITS_MS
     const timer = new Promise<null>((r) =>
-      setTimeout(() => r(null), REPLY_BEFORE_THE_SHIM_GIVES_UP_MS)
+      setTimeout(() => r(null), shimWaits - REPLY_THIS_LONG_BEFORE_THE_SHIM_GIVES_UP_MS)
     )
     const first = await Promise.race([settled, timer])
     if (first) return first
@@ -250,9 +251,8 @@ export class Phones {
     )
   }
 
-  private filePath(caller: AgentCaller, file: string): string {
-    const resolve = this.deps.machineOf(caller.tabId) ? path.posix.resolve : path.resolve
-    return resolve(caller.cwd, file)
+  private filePath(caller: AgentCaller, file: string, machine: string | undefined): string {
+    return (machine ? path.posix.resolve : path.resolve)(caller.cwd, file)
   }
 
   private readonly deviceVerbs: Record<
@@ -297,16 +297,16 @@ export class Phones {
     },
     screenshot: async (device, args, caller, phone) => {
       if (args.length !== 1) return usage()
-      const file = this.filePath(caller, args[0])
       const machine = this.deps.machineOf(caller.tabId)
+      const file = this.filePath(caller, args[0], machine)
       return this.slow(
         phone,
         'screenshot',
         device.screenshot().then(async (png) => {
           if (machine) await this.deps.writeOnMachine(machine, file, png)
           else {
-            fs.mkdirSync(path.dirname(file), { recursive: true })
-            fs.writeFileSync(file, png)
+            await fs.promises.mkdir(path.dirname(file), { recursive: true })
+            await fs.promises.writeFile(file, png)
           }
           const size = pngSize(png)
           const { width, height } = device.screen
@@ -320,7 +320,7 @@ export class Phones {
         return refused(
           'koloft: install takes an app file on the Mac the phone runs on, and this session runs on another machine.'
         )
-      const file = this.filePath(caller, args[0])
+      const file = this.filePath(caller, args[0], undefined)
       if (!fs.existsSync(file)) return refused(`koloft: there is no file at ${file}.`)
       return this.slow(
         phone,
