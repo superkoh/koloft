@@ -70,7 +70,8 @@ function workspaceLines(list: RouteWorkspace[]): string {
     .join('\n')
 }
 
-const featureLines = (): string => ROUTABLE_FEATURES.map((f) => `${f.key} | ${f.label}`).join('\n')
+const featureLines = (): string =>
+  ROUTABLE_FEATURES.map((f) => `${f.key} | ${f.label} | ${f.words.join(', ')}`).join('\n')
 
 export function routeJob(
   list: RouteWorkspace[],
@@ -82,7 +83,7 @@ export function routeJob(
 Workspaces (id | machine | folder name | git? | recent sessions as [session ref] title):
 ${workspaceLines(list)}
 
-Koloft features (key | name):
+Koloft features (key | name | words people use for it):
 ${featureLines()}
 
 What the person typed:
