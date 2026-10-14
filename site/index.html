@@ -280,13 +280,14 @@
           </div>
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#phone" /></svg>
-            <b>They talk to each other</b><code>koloft session send</code> passes a message between
-            sessions; the answer comes back when that turn ends.
+            <b>They report back</b>A child reports back with
+            <code>koloft session send</code> (Claude sessions also talk with SendMessage); Assist
+            gets each session's reply back by itself when the turn ends.
           </div>
         </div>
         <p class="honest">
-          <span>note</span>Works for Claude Code and Codex. In a remote folder the child opens on
-          that machine, beside its parent.
+          <span>note</span>Works for Claude Code and Codex. In a remote folder (Claude only) the
+          child opens on that machine, beside its parent.
         </p>
         <a class="more" href="features/#agents"
           >What agents can do with Koloft
@@ -352,9 +353,10 @@
           <h2>Say it in plain words. <em>Assist runs Koloft for you.</em></h2>
           <p>
             Assist is Koloft's own helper. Tell it what you want, here or on your phone: it starts,
-            resumes, stops and closes sessions, reads what they said, answers their questions,
-            presses their keys, runs slash commands in them and sets up scheduled jobs. It runs your
-            sessions; it is not there to edit your files.
+            resumes and stops sessions, closes finished ones, reads what they said, answers their
+            questions and presses their keys. From Discord it also runs slash commands in them, and
+            a folder's Assist sets up scheduled jobs for that folder. It runs your sessions; it is
+            not there to edit your files.
           </p>
         </div>
         <div
@@ -383,7 +385,8 @@
         </div>
         <p class="honest">
           <span>note</span>Turn Assist on in Settings ▸ Assist. It runs on your Mac; it can message
-          a session in a remote folder, not start one there. It can't change Settings for you.
+          a session in a remote folder, not start one there. It can't change your Settings, apart
+          from setting up its own Discord bot when you ask.
         </p>
         <a class="more" href="features/#assist"
           >Everything Assist does
@@ -435,8 +438,9 @@
           </a>
         </div>
         <p class="honest">
-          <span>note</span>Schedules on your Mac run while it is awake: turn on Koloft ▸ Keep Mac
-          Awake, or use a remote folder.
+          <span>note</span>A schedule fires only while Koloft is open and your Mac is awake; leave
+          View ▸ Keep Mac Awake on (it is on by default). In a remote folder the run itself keeps
+          going even if the Mac sleeps later.
         </p>
       </section>
 
@@ -455,8 +459,8 @@
           <svg class="go" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
           <h3>Pull requests and checks</h3>
           <p>
-            Commit, push and open the PR from the Workbench; a failing check's log goes back to the
-            session in one click.
+            Commit and push from the Workbench; one click opens GitHub's new-PR page for the branch,
+            and a failing check's log goes back to the session in one click.
           </p>
         </a>
         <a class="tile reveal" href="install/">
