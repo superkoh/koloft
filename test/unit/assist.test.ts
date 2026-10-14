@@ -34,10 +34,11 @@ function assistWith(
   return koloftAssist({
     setting: () => setting,
     enabled: (backend) => !off.includes(backend),
-    claude: async () => (bins.claude ? { binary: bins.claude, env: {} } : null),
-    codex: async () =>
-      bins.codex ? { binary: bins.codex, env: { CODEX_HOME: '/homes/work' } } : null,
-    muse: async () => (bins.muse ? { binary: bins.muse, env: {} } : null)
+    target: async (backend) => {
+      const binary = bins[backend]
+      if (!binary) return null
+      return { binary, env: backend === 'codex' ? { CODEX_HOME: '/homes/work' } : {} }
+    }
   })
 }
 

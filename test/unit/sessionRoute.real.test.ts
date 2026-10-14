@@ -90,14 +90,10 @@ const CASES: [string, string[]][] = [
 
 for (const backend of ['claude', 'codex', 'muse'] as const) {
   const binary = BINARIES[backend]
-  const target = async (): Promise<{ binary: string; env: NodeJS.ProcessEnv } | null> =>
-    binary ? { binary, env: process.env } : null
   const assist = koloftAssist({
     setting: () => ({ on: true, backend }),
     enabled: (b) => b === backend,
-    claude: target,
-    codex: target,
-    muse: target
+    target: async () => (binary ? { binary, env: process.env } : null)
   })
 
   describe.skipIf(!binary)(

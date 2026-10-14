@@ -1,13 +1,11 @@
 import fs from 'fs'
 import path from 'path'
-import type { AccountView } from '@shared/types'
-import { usableAccounts } from '@shared/accountUsage'
 import { record } from './codexObservation'
 
 const MUSE_HOMES = 'muse-homes'
 
 // MUSE§13
-export const MUSE_FILE_CREDENTIALS = { TBH_CREDENTIAL_BACKEND: 'file' }
+const MUSE_FILE_CREDENTIALS = { TBH_CREDENTIAL_BACKEND: 'file' }
 
 export function museHomeOf(userData: string, name: string): string {
   return path.join(userData, MUSE_HOMES, name)
@@ -20,7 +18,7 @@ export function museAccountEnv(home: string): Record<string, string> {
 
 const SHARED_WITH_THE_OWNER = ['settings.json', 'trust.json', 'AGENTS.md']
 
-function readJson(file: string): Record<string, unknown> {
+export function readJson(file: string): Record<string, unknown> {
   try {
     return record(JSON.parse(fs.readFileSync(file, 'utf8')))
   } catch {
@@ -66,15 +64,5 @@ export function prepareMuseHome(home: string, ownersConfig: string): void {
     const mine = path.join(home, entry)
     if (entry === 'muse' || fs.lstatSync(mine, { throwIfNoEntry: false })) continue
     fs.symlinkSync(path.join(ownersConfig, entry), mine)
-  }
-}
-
-export class MuseAccountPicker {
-  private turn = 0
-
-  pick(accounts: AccountView[], resumedOn?: string): AccountView | undefined {
-    const pool = usableAccounts(accounts, ['muse-home'])
-    if (pool.length === 0) return undefined
-    return pool.find((a) => a.name === resumedOn) ?? pool[this.turn++ % pool.length]
   }
 }

@@ -28,15 +28,8 @@ export function byBackend<T>(value: (backend: BackendId) => T): Record<BackendId
   return Object.fromEntries(SESSION_BACKENDS.map((b) => [b, value(b)])) as Record<BackendId, T>
 }
 
-export const ASSIST_BACKENDS = ['claude', 'codex', 'muse'] as const satisfies readonly BackendId[]
-export type AssistBackend = (typeof ASSIST_BACKENDS)[number]
-
-export function assistBackendOf(value: unknown): AssistBackend | undefined {
-  return ASSIST_BACKENDS.find((b) => b === value)
-}
-
-export function assistBackendsFrom(preferred: AssistBackend): AssistBackend[] {
-  return [preferred, ...ASSIST_BACKENDS.filter((b) => b !== preferred)]
+export function backendsFrom(preferred: BackendId): BackendId[] {
+  return [preferred, ...SESSION_BACKENDS.filter((b) => b !== preferred)]
 }
 
 export function productList(backends: readonly BackendId[], joiner: 'or' | 'and'): string {
@@ -67,12 +60,8 @@ export function normalizeSessionMethods(raw: unknown): SessionMethods {
 export function preferredAssistBackend(settings: {
   assist: { backend: BackendId } | null
   sessionMethods: SessionMethods
-}): AssistBackend {
-  return (
-    assistBackendOf(settings.assist?.backend) ??
-    assistBackendOf(settings.sessionMethods.defaultBackend) ??
-    ASSIST_BACKENDS[0]
-  )
+}): BackendId {
+  return settings.assist?.backend ?? settings.sessionMethods.defaultBackend
 }
 
 export function backendAvailable(list: BackendAvailability[], id: BackendId): boolean {

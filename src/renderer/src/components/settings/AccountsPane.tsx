@@ -1,25 +1,17 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import { LuGlobe, LuPlus, LuRefreshCw, LuX } from 'react-icons/lu'
-import type { AccountKind, AccountView } from '@shared/types'
+import type { AccountKind, AccountView, SignInFolderKind } from '@shared/types'
 import { SIGN_IN_FOLDER_KINDS } from '@shared/types'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useStore } from '../../store'
 import { ACCOUNT_KINDS_OF, measuredAt, needsSignInAgain, windowLabel } from '@shared/accountUsage'
 
 type SignInBackend = 'codex' | 'muse'
 
-const SIGN_IN: Record<SignInBackend, { label: string; command: string; shared: string }> = {
-  // CODEX§15
-  codex: {
-    label: 'Codex',
-    command: 'codex login',
-    shared: 'Your Codex settings and trusted folders are shared by every account.'
-  },
-  // MUSE§13
-  muse: {
-    label: 'Muse',
-    command: 'muse login',
-    shared: 'Your Muse settings and trusted folders are shared by every account.'
-  }
+// CODEX§15 MUSE§13
+const SIGNS_IN_TO: Record<SignInBackend, SignInFolderKind> = {
+  codex: 'codex-home',
+  muse: 'muse-home'
 }
 import { Meter, ageLabel, codexBalanceLabel, probeErrorLabel, resetLabel } from '../accountMeter'
 import { GitAccountsSection } from './GitAccountsSection'
@@ -382,16 +374,15 @@ export function SignInDialog({
   const [name, setName] = useState(again ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { label, command, shared } = SIGN_IN[backend]
+  const label = BACKEND_LABEL[backend]
+  const command = `${backend} login`
+  const shared = `Your ${label} settings and trusted folders are shared by every account.`
 
   const start = async (): Promise<void> => {
     setBusy(true)
     setError(null)
     const nm = name.trim()
-    const r =
-      backend === 'muse'
-        ? await window.api.accounts.museSignIn(nm, !!again)
-        : await window.api.accounts.codexSignIn(nm, !!again)
+    const r = await window.api.accounts.signIn(SIGNS_IN_TO[backend], nm, !!again)
     setBusy(false)
     if (!r.ok) {
       setError(

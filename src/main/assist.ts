@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process'
 import os from 'node:os'
 import type { AssistSetting, BackendId } from '@shared/types'
-import { ASSIST_BACKENDS, assistBackendOf, assistBackendsFrom } from '@shared/sessionBackend'
+import { backendsFrom } from '@shared/sessionBackend'
+import { lastCompletedText } from './museSessionLog'
 
 export interface AssistJob {
   system: string
@@ -55,19 +56,27 @@ const MUSE_ONE_SHOT = (task: string): string[] => [
   task
 ]
 
-// MUSE§1
-export function museAnswer(stdout: string): string | null {
-  let answer: string | null = null
-  for (const line of stdout.split('\n')) {
-    try {
-      const rec = JSON.parse(line)
-      if (rec.payload_type === 'run.terminal.completed' && typeof rec.payload?.text === 'string')
-        answer = rec.payload.text
-    } catch {
-      continue
-    }
+const withSystemFirst = (job: AssistJob): string => `${job.system}\n\n${job.prompt}`
+
+const ONE_SHOT: Record<
+  BackendId,
+  {
+    argv(job: AssistJob): string[]
+    stdin(job: AssistJob): string
+    answer(out: string): string | null
   }
-  return answer
+> = {
+  claude: {
+    argv: (job) => CLAUDE_ONE_SHOT(job.system),
+    stdin: (job) => job.prompt,
+    answer: (out) => out
+  },
+  codex: { argv: () => CODEX_ONE_SHOT, stdin: withSystemFirst, answer: (out) => out },
+  muse: {
+    argv: (job) => MUSE_ONE_SHOT(withSystemFirst(job)),
+    stdin: () => '',
+    answer: lastCompletedText
+  }
 }
 
 export interface AssistTarget {
@@ -78,9 +87,7 @@ export interface AssistTarget {
 export interface AssistDeps {
   setting(): AssistSetting
   enabled(backend: BackendId): boolean
-  claude(): Promise<AssistTarget | null>
-  codex(): Promise<AssistTarget | null>
-  muse(): Promise<AssistTarget | null>
+  target(backend: BackendId): Promise<AssistTarget | null>
 }
 
 function runOnce(
@@ -115,18 +122,14 @@ export function koloftAssist(deps: AssistDeps): Assist {
   return async (job) => {
     const setting = deps.setting()
     if (!setting?.on) return null
-    const preferred = assistBackendOf(setting.backend) ?? ASSIST_BACKENDS[0]
-    for (const backend of assistBackendsFrom(preferred)) {
+    for (const backend of backendsFrom(setting.backend)) {
       if (!deps.enabled(backend)) continue
-      const target = await deps[backend]()
+      const target = await deps.target(backend)
       if (job.signal?.aborted) return null
       if (!target) continue
-      const task = `${job.system}\n\n${job.prompt}`
-      if (backend === 'claude')
-        return runOnce(target, CLAUDE_ONE_SHOT(job.system), job.prompt, job.signal)
-      if (backend === 'codex') return runOnce(target, CODEX_ONE_SHOT, task, job.signal)
-      const out = await runOnce(target, MUSE_ONE_SHOT(task), '', job.signal)
-      return out === null ? null : museAnswer(out)
+      const shot = ONE_SHOT[backend]
+      const out = await runOnce(target, shot.argv(job), shot.stdin(job), job.signal)
+      return out === null ? null : shot.answer(out)
     }
     return null
   }

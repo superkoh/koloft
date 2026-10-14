@@ -1,20 +1,14 @@
 import { useState, type JSX } from 'react'
 import type { BackendId } from '@shared/types'
 import { accountToSignInAgain } from '@shared/accountUsage'
-import {
-  ASSIST_BACKENDS,
-  BACKEND_LABEL,
-  SESSION_BACKENDS,
-  productList,
-  type AssistBackend
-} from '@shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS, productList } from '@shared/sessionBackend'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
 import { AddAccountDialog, LoginDialog, SignInDialog } from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 
 // CC§9 CODEX§15 MUSE§1
-export const ASSIST_RUNS_ON: Record<AssistBackend, string> = {
+export const ASSIST_RUNS_ON: Record<BackendId, string> = {
   claude: 'Haiku, about 750 tokens a job',
   codex: 'GPT-6 Luna, a few thousand tokens a job',
   muse: 'Muse’s default model'
@@ -74,12 +68,12 @@ export function AssistSetup({
   const setBypassAccepted = useStore((s) => s.setBypassAccepted)
   const update = useSettingsUpdate()
   const [signIn, setSignIn] = useState<{
-    backend: Exclude<AssistBackend, 'claude'>
+    backend: Exclude<BackendId, 'claude'>
     again?: string
   } | null>(null)
   const [pasting, setPasting] = useState(false)
 
-  const pick = (b: AssistBackend, again: string | undefined): void => {
+  const pick = (b: BackendId, again: string | undefined): void => {
     if (setup.usable[b]) update({ assist: { on: true, backend: b } })
     else if (b === 'claude') beginLogin(again)
     else setSignIn({ backend: b, again })
@@ -106,7 +100,7 @@ export function AssistSetup({
         That is <b>Koloft Assist</b>.
       </div>
       <div className="ob-choices">
-        {ASSIST_BACKENDS.map((b) => {
+        {SESSION_BACKENDS.map((b) => {
           if (!setup.tools.includes(b))
             return offerInstall && setup.toolsKnown ? <InstallChoice key={b} backend={b} /> : null
           const again = accountToSignInAgain(accounts, b)

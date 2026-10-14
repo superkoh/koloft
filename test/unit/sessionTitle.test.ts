@@ -16,9 +16,7 @@ function claudeAssist(bin: string, env: NodeJS.ProcessEnv = {}) {
   return koloftAssist({
     setting: () => ({ on: true, backend: 'claude' }),
     enabled: () => true,
-    claude: async () => ({ binary: bin, env }),
-    codex: async () => null,
-    muse: async () => null
+    target: async (backend) => (backend === 'claude' ? { binary: bin, env } : null)
   })
 }
 

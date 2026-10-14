@@ -14,11 +14,13 @@ import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
+import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { SessionStore, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
 import { dirExistsSync as dirExists, occupantName } from './resumePlan'
 import type { CliRuntime } from './cliRuntime'
+import { isNewer } from './releaseNotes'
 import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 
@@ -89,6 +91,10 @@ export interface SessionsWithStore {
   aliveTabFor(key: string): string | undefined
   stop(tabId: string, nativeExitCode?: number, restarting?: boolean): Promise<void>
   searchable(workspaces: string[]): SearchCandidate[]
+  searchSnippets(term: string, signal?: AbortSignal): Promise<{ id: string; snippet: string }[]>
+  openApproval(tabId: string): CodexApproval | undefined
+  openQuestion(tabId: string): CodexQuestion | undefined
+  answerable?(tabId: string): Promise<void>
 }
 
 interface RowScope {
@@ -134,7 +140,34 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     })
   }
 
-  protected abstract resolveRuntime(): Promise<CliRuntime>
+  protected abstract readonly cli: {
+    product: string
+    minVersion: string
+    howToUpdate: string
+    find(): Promise<CliRuntime>
+    update(runtime: CliRuntime): Promise<void>
+  }
+  private updateTried = false
+
+  private async resolveRuntime(): Promise<CliRuntime> {
+    const { product, minVersion, howToUpdate } = this.cli
+    let runtime = await this.cli.find()
+    if (!isNewer(minVersion, runtime.version)) return runtime
+    const updating = !this.updateTried
+    if (updating) {
+      this.updateTried = true
+      this.deps.error(
+        `${product} ${runtime.version} is older than ${minVersion}, the oldest this Koloft supports. Updating it now…`
+      )
+      await this.cli.update(runtime)
+      runtime = await this.cli.find()
+      if (!isNewer(minVersion, runtime.version)) return runtime
+    }
+    const stillOld = `Koloft needs ${product} ${minVersion} or newer, and this Mac has ${runtime.version}. ${howToUpdate}, then try again.`
+    if (updating) this.deps.error(stillOld)
+    throw new Error(stillOld)
+  }
+
   protected abstract listHistory(): Promise<{ key: string; entry: H; archived: boolean }[]>
   protected abstract startRun(ctx: StartContext, prepared: P): Promise<R>
   protected abstract untestedNotice(version: string): string

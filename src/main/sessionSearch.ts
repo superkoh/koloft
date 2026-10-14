@@ -14,7 +14,7 @@ export interface TranscriptScan {
 
 export interface SessionSearchDeps {
   candidates(): SearchCandidate[]
-  backendSnippets(term: string): Promise<{ id: string; snippet: string }[]>
+  backendSnippets(term: string, signal: AbortSignal): Promise<{ id: string; snippet: string }[]>
   hidden(id: string): boolean
   scan(
     files: TranscriptFile[],
@@ -69,13 +69,15 @@ export class SessionSearch {
       .flatMap(({ row, file }) => (file ? [{ id: row.id, file, mtime: row.mtime }] : []))
       .sort((a, b) => b.mtime - a.mtime)
     const scan = this.deps.scan(files, wanted, foundIn)
-    const backends = this.deps.backendSnippets(wanted).then((said) => {
+    const stopBackends = new AbortController()
+    const backends = this.deps.backendSnippets(wanted, stopBackends.signal).then((said) => {
       for (const { id, snippet } of said) foundIn(id, snippetAround(snippet, wanted))
     })
     this.stopCurrent = () => {
       live = false
       clearTimeout(timer)
       scan.stop()
+      stopBackends.abort()
     }
     void Promise.allSettled([scan.done, backends]).then(() => flush(true))
   }

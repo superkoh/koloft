@@ -126,25 +126,16 @@ export async function listMuseSessions(options: ServeOptions): Promise<HistoryEn
   })
 }
 
-export interface MuseHistory {
-  turns: Turn[]
-  lastReplyId?: string
-}
-
-export function museHistory(items: unknown, n: number): MuseHistory {
+export function museHistory(items: unknown, n: number): Turn[] {
   const log = new TurnLog()
-  let lastReplyId: string | undefined
   for (const raw of Array.isArray(items) ? items : []) {
     const item = record(raw)
     if (typeof item.text !== 'string') continue
-    const at = seconds(item.recordedAt) ?? 0
-    if (item.kind === 'userMessage') log.add({ who: 'owner', text: item.text, at: at * 1000 })
-    else if (item.kind === 'agentMessage') {
-      log.add({ who: 'assistant', text: item.text, at: at * 1000 })
-      if (typeof item.itemId === 'string') lastReplyId = item.itemId
-    }
+    const at = (seconds(item.recordedAt) ?? 0) * 1000
+    if (item.kind === 'userMessage') log.add({ who: 'owner', text: item.text, at })
+    else if (item.kind === 'agentMessage') log.add({ who: 'assistant', text: item.text, at })
   }
-  return { turns: log.last(n), lastReplyId }
+  return log.last(n)
 }
 
 export interface MuseAsk {
@@ -222,7 +213,7 @@ export async function readMuseTurns(
   options: ServeOptions,
   sessionId: string,
   n: number
-): Promise<MuseHistory> {
+): Promise<Turn[]> {
   return withServe({ ...options, extraArgs: ['--provider', 'echo'] }, async (request) => {
     const reply = record(await request('session/read', { sessionId, excludeItems: false }))
     return museHistory(record(reply.history).items, n)

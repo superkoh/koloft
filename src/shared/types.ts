@@ -17,7 +17,14 @@ export const ACCOUNT_KINDS: readonly AccountKind[] = [
   'muse-home'
 ]
 
-export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = ['codex-home', 'muse-home']
+export type SignInFolderKind = Extract<AccountKind, 'codex-home' | 'muse-home'>
+export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = [
+  'codex-home',
+  'muse-home'
+] satisfies SignInFolderKind[]
+
+export const isSignInFolderKind = (kind: unknown): kind is SignInFolderKind =>
+  SIGN_IN_FOLDER_KINDS.some((k) => k === kind)
 
 export type AccountStatus = 'ok' | 'expired' | 'unverified'
 
@@ -1207,10 +1214,8 @@ export interface KoloftApi {
       reauth?: boolean
     ): Promise<'ok' | 'invalid-name' | 'duplicate' | 'unknown'>
     cancelLogin(): void
-    // CODEX§15
-    codexSignIn(name: string, again?: boolean): Promise<SignInResult>
-    // MUSE§13
-    museSignIn(name: string, again?: boolean): Promise<SignInResult>
+    // CODEX§15 MUSE§13
+    signIn(kind: SignInFolderKind, name: string, again?: boolean): Promise<SignInResult>
     // CODEX§15
     codexUseReset(name: string): Promise<CodexResetOutcome>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void

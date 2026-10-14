@@ -1,19 +1,15 @@
 import { useEffect } from 'react'
 import { hasUsableAccount } from '@shared/accountUsage'
-import {
-  ASSIST_BACKENDS,
-  SESSION_BACKENDS,
-  shownAsInstalled,
-  type AssistBackend
-} from '@shared/sessionBackend'
+import { SESSION_BACKENDS, shownAsInstalled } from '@shared/sessionBackend'
+import type { BackendId } from '@shared/types'
 import { useStore } from './store'
 import { useInstalledBackends } from './useInstalledBackends'
 
 export interface AssistSetupState {
-  tools: AssistBackend[]
+  tools: BackendId[]
   toolsKnown: boolean
   noTool: boolean
-  usable: Record<AssistBackend, boolean>
+  usable: Record<BackendId, boolean>
   askBypass: boolean
   loaded: boolean
   done: boolean
@@ -35,12 +31,12 @@ export function useAssistSetup(): AssistSetupState {
     if (bypassAccepted === null) void window.api.accounts.bypassAccepted().then(setBypassAccepted)
   }, [bypassAccepted, setBypassAccepted])
 
-  const tools = ASSIST_BACKENDS.filter((b) => shownAsInstalled(installed, b))
+  const tools = SESSION_BACKENDS.filter((b) => shownAsInstalled(installed, b))
   const askBypass = skipPermissions && bypassAccepted === false
   return {
     tools,
     toolsKnown: installed !== null,
-    noTool: !SESSION_BACKENDS.some((b) => shownAsInstalled(installed, b)),
+    noTool: tools.length === 0,
     usable: { claude, codex, muse },
     askBypass,
     loaded: accountsLoaded && bypassAccepted !== null,

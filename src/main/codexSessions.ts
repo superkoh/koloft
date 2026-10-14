@@ -37,12 +37,10 @@ import {
 import { acceptCodexHookTrust, codexConfigFile } from './codexTrust'
 import { endCodexAppServersLeftByACrash } from './leftovers'
 import { codexSessionKey } from './sessionStore'
-import { codexTooOld, resolveCodexRuntime, updateCodex, type CodexRuntime } from './codexRuntime'
+import { resolveCodexRuntime, updateCodex } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
-import { oncePerName, watchJsonDrops } from './jsonDrops'
-import { openDropHandler } from './openDrop'
-import { removeOpenShim, writeOpenShim } from './openShimScript'
-import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
+import { startToolShim } from './toolShim'
+import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { koloftPrompt } from '@shared/agentGuide'
 import { browserControlEnv, playwrightMcpEnv } from './browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
@@ -226,31 +224,19 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   readonly id = 'codex'
   private crashLeftoversEnded?: Promise<void>
   private gateTrustedAt = new Map<string, number | undefined>()
-  private updateTried = false
+  protected readonly cli = {
+    product: 'Codex CLI',
+    minVersion: MIN_CODEX_VERSION,
+    howToUpdate: 'Run "codex update"',
+    find: () => resolveCodexRuntime(),
+    update: updateCodex
+  }
 
   constructor(
     file: string,
     protected deps: CodexSessionDeps
   ) {
     super(file, codexSessionKey, deps)
-  }
-
-  protected async resolveRuntime(): Promise<CodexRuntime> {
-    let runtime = await resolveCodexRuntime()
-    if (!codexTooOld(runtime)) return runtime
-    const updating = !this.updateTried
-    if (updating) {
-      this.updateTried = true
-      this.deps.error(
-        `Codex ${runtime.version} is older than ${MIN_CODEX_VERSION}, the oldest this Koloft supports. Updating it now…`
-      )
-      await updateCodex(runtime)
-      runtime = await resolveCodexRuntime()
-      if (!codexTooOld(runtime)) return runtime
-    }
-    const stillOld = `Koloft needs Codex CLI ${MIN_CODEX_VERSION} or newer, and this Mac has ${runtime.version}. Run "codex update", then try again.`
-    if (updating) this.deps.error(stillOld)
-    throw new Error(stillOld)
   }
 
   protected untestedNotice(version: string): string {
@@ -575,36 +561,16 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     }
   }
 
-  // CODEX§12
   private startOpenShim(
     userZdotdir: string | undefined,
     open: (target: string) => void,
     agent?: (dir: string, name: string, raw: unknown) => void
   ): { zdotDir: string; release(): void } {
-    const shim = writeOpenShim(this.deps.openShimRoot, randomUUID(), userZdotdir)
-    fs.symlinkSync(
-      path.join(this.deps.playwrightBin, 'playwright-cli'),
-      path.join(shim.shimDir, 'playwright-cli')
+    const { shim, release } = startToolShim(
+      { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
+      { userZdotdir, open, agent }
     )
-    // PLATFORM§2
-    if (this.deps.gitBin)
-      fs.symlinkSync(path.join(this.deps.gitBin, 'git'), path.join(shim.shimDir, 'git'))
-    fs.symlinkSync(this.deps.gitAccounts.ghWrapper, path.join(shim.shimDir, 'gh'))
-    if (agent) writeCodexAgentShim(shim.shimDir, shim.requestDir)
-    const opens = oncePerName(() => openDropHandler(open))
-    const drops = watchJsonDrops(shim.requestDir, (name) => {
-      if (name.startsWith('req-'))
-        return agent ? (obj): void => agent(shim.requestDir, name, obj) : null
-      if (name.startsWith('res-')) return null
-      return opens(name)
-    })
-    return {
-      zdotDir: shim.zdotDir,
-      release: () => {
-        drops?.close()
-        removeOpenShim(shim)
-      }
-    }
+    return { zdotDir: shim.zdotDir, release }
   }
 
   // CODEX§17

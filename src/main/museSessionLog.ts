@@ -44,6 +44,17 @@ const logRecord = (line: string): LogRecord | undefined => {
   }
 }
 
+// MUSE§1
+export function lastCompletedText(stdout: string): string | null {
+  let text: string | null = null
+  for (const line of stdout.split('\n')) {
+    const r = logRecord(line)
+    if (r?.payloadType === 'run.terminal.completed' && typeof r.payload.text === 'string')
+      text = r.payload.text
+  }
+  return text
+}
+
 // MUSE§2
 export const renamedTo = (r: LogRecord): string | undefined =>
   r.payloadType === 'session.name.changed' &&
@@ -73,6 +84,7 @@ export class SessionLogTail {
   ) {}
 
   read(): void {
+    if ((fs.statSync(this.file, { throwIfNoEntry: false })?.size ?? 0) <= this.offset) return
     let fd: number
     try {
       fd = fs.openSync(this.file, 'r')

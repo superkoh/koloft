@@ -42,7 +42,7 @@ describe('ProgramStatusParser (OSC 7501, MUSE§3)', () => {
 })
 
 describe('museHistory (a Muse session read back as turns, MUSE§5)', () => {
-  it('pairs each prompt with the replies after it and names the last reply', () => {
+  it('pairs each prompt with the replies after it', () => {
     const read = museHistory(
       [
         { kind: 'userMessage', itemId: 'u1', text: 'first', recordedAt: '2026-10-13T23:26:15Z' },
@@ -64,8 +64,7 @@ describe('museHistory (a Muse session read back as turns, MUSE§5)', () => {
       ],
       2
     )
-    expect(read.lastReplyId).toBe('a2')
-    expect(read.turns.map((t) => [t.said.map((s) => s.text), t.reply])).toEqual([
+    expect(read.map((t) => [t.said.map((s) => s.text), t.reply])).toEqual([
       [['first'], 'echo: first'],
       [['second'], 'echo: second']
     ])

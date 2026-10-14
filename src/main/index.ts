@@ -27,7 +27,7 @@ import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { MuseSessions } from './museSessions'
-import { MuseAccountPicker, museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
+import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museSignedIn, storeMuseKey } from './museServe'
 import type { SessionsWithStore } from './storedSessions'
 import type { SessionEvent } from '@shared/sessionEvent'
@@ -47,7 +47,7 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
-  assistBackendsFrom,
+  backendsFrom,
   preferredAssistBackend,
   statusUnavailable,
   SUPPORTED_PAIRS
@@ -173,7 +173,7 @@ import {
   claudeSettingsPath
 } from './claudeTrust'
 import {
-  CodexAccountPicker,
+  HomeAccountPicker,
   codexHomeOf,
   codexHomes,
   limitsFrom,
@@ -263,6 +263,8 @@ import {
   isHttpUrl,
   keychainNamespace,
   SIGN_IN_FOLDER_KINDS,
+  isSignInFolderKind,
+  type SignInFolderKind,
   type GitPlatform,
   type GitTokenAdd
 } from '@shared/types'
@@ -953,14 +955,13 @@ const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
 
 // CODEX§3 CODEX§20 MUSE§5
-async function codexAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
+async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
   for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
+    const stored = storedSessions()
     const ask =
-      codexSessions?.openApproval(tabId) ??
-      codexSessions?.openQuestion(tabId) ??
-      museSessions?.openApproval(tabId) ??
-      museSessions?.openQuestion(tabId)
-    const keyed = codexSessions?.hasTab(tabId) || museSessions?.hasTab(tabId)
+      stored.map((s) => s.openApproval(tabId)).find(Boolean) ??
+      stored.map((s) => s.openQuestion(tabId)).find(Boolean)
+    const keyed = stored.some((s) => s.hasTab(tabId))
     if (ask || !polls || !keyed) return ask
     if (tracker.statusOf(tabId) !== 'approval' && !tracker.awaitsInput(tabId)) return undefined
     await sleep(CODEX_REQUEST_POLL_MS)
@@ -1093,19 +1094,19 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
 const assist = koloftAssist({
   setting: () => loadSettings().assist,
   enabled: (backend) => loadSettings().sessionMethods.enabled[backend],
-  claude: async () => {
-    const env = await pickedAccountEnv()
-    if (!env) return null
-    return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
-  },
-  codex: async () => {
-    const picked = pickCodexHome()
-    if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
-    const binary = codexSessions.cliBinary
-    if (!binary) return null
-    return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
-  },
-  muse: async () => {
+  target: async (backend) => {
+    if (backend === 'claude') {
+      const env = await pickedAccountEnv()
+      if (!env) return null
+      return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
+    }
+    if (backend === 'codex') {
+      const picked = pickCodexHome()
+      if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
+      const binary = codexSessions.cliBinary
+      if (!binary) return null
+      return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+    }
     const picked = musePicker.pick(accountViews())
     return picked ? ((await museServeFor(picked.name)) ?? null) : null
   }
@@ -1136,7 +1137,7 @@ async function whyAssistCannotRunOn(
 
 async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoice> {
   const settings = loadSettings()
-  const [preferred, ...others] = assistBackendsFrom(preferredAssistBackend(settings))
+  const [preferred, ...others] = backendsFrom(preferredAssistBackend(settings))
   const { enabled } = settings.sessionMethods
   const whyNot = (backend: BackendId): Promise<string | undefined> =>
     avoid === backend
@@ -1556,8 +1557,7 @@ async function addAccount(
   return result.ok ? { ok: true, account } : { ok: false, error: result.error, account }
 }
 
-const codexPicker = new CodexAccountPicker()
-const codexSignInPtys = new Map<string, string>()
+const codexPicker = new HomeAccountPicker('codex-home')
 const CODEX_LIMITS_STALE_MS = 5 * 60_000
 
 function codexSharedConfig(): string {
@@ -1620,40 +1620,72 @@ function probeCodexAccounts(): Promise<void> {
   return codexProbeRound
 }
 
-async function codexSignIn(name: string, again?: boolean): Promise<SignInResult> {
-  const v = again
-    ? findAccount(name, 'codex-home')
-      ? 'ok'
-      : 'invalid-name'
-    : validateNewAccount(name, 'codex-home')
-  if (v !== 'ok') return { ok: false, error: v }
-  const binary = (await codexSessions?.availability())?.available && codexSessions?.cliBinary
-  if (!binary) return { ok: false, error: 'unavailable' }
-  const home = codexHomeOf(app.getPath('userData'), name)
-  prepareCodexHome(home, codexSharedConfig())
-  const acct = findAccount(name, 'codex-home')
+type HomeKind = SignInFolderKind
+const signInPtys = new Map<string, { kind: HomeKind; name: string }>()
+
+function noteHomeAccount(name: string, kind: HomeKind): void {
+  const acct = findAccount(name, kind)
   upsertAccountMeta({
     name,
-    kind: 'codex-home',
+    kind,
     enabled: acct?.enabled ?? true,
     fable: 'unknown',
     status: acct?.status ?? 'unverified',
     addedAt: acct?.addedAt ?? Date.now()
   })
   pushAccounts()
-  const tab = homeShellTab(`CODEX_HOME=${shq(home)} ${shq(binary)} login && exit`)
-  codexSignInPtys.set(tab.tabId, name)
+}
+
+const homeLogin: Record<
+  HomeKind,
+  (name: string) => Promise<{ binary: string; env: Record<string, string> } | undefined>
+> = {
+  // CODEX§15
+  'codex-home': async (name) => {
+    const binary = (await codexSessions?.availability())?.available && codexSessions?.cliBinary
+    if (!binary) return undefined
+    const home = codexHomeOf(app.getPath('userData'), name)
+    prepareCodexHome(home, codexSharedConfig())
+    return { binary, env: { CODEX_HOME: home } }
+  },
+  // MUSE§13
+  'muse-home': async (name) => {
+    const serve = await museServeFor(name)
+    return serve && { binary: serve.binary, env: museAccountEnv(museHomeFor(name)) }
+  }
+}
+
+const probeHomeAccount: Record<HomeKind, (name: string) => Promise<void>> = {
+  'codex-home': (name) => probeCodexAccount(name),
+  'muse-home': (name) => probeMuseAccount(name)
+}
+
+async function signInToHome(kind: HomeKind, name: string, again: boolean): Promise<SignInResult> {
+  const v = again
+    ? findAccount(name, kind)
+      ? 'ok'
+      : 'invalid-name'
+    : validateNewAccount(name, kind)
+  if (v !== 'ok') return { ok: false, error: v }
+  const login = await homeLogin[kind](name)
+  if (!login) return { ok: false, error: 'unavailable' }
+  noteHomeAccount(name, kind)
+  const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
+  const tab = homeShellTab(`${assignments.join(' ')} ${shq(login.binary)} login && exit`)
+  signInPtys.set(tab.tabId, { kind, name })
   return { ok: true, ...tab }
 }
 
-const musePicker = new MuseAccountPicker()
-const museSignInPtys = new Map<string, string>()
+const musePicker = new HomeAccountPicker('muse-home')
+const preparedMuseHomes = new Set<string>()
 
 // MUSE§2 MUSE§13
 function museHomeFor(name: string): string {
-  const env = museSessions?.defaultEnv ?? process.env
   const home = museHomeOf(app.getPath('userData'), name)
+  if (preparedMuseHomes.has(home)) return home
+  const env = museSessions?.defaultEnv ?? process.env
   prepareMuseHome(home, env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'))
+  preparedMuseHomes.add(home)
   return home
 }
 
@@ -1698,37 +1730,6 @@ function probeMuseAccounts(): Promise<void> {
   ).then(() => undefined)
 }
 
-function noteMuseAccount(name: string): void {
-  const acct = findAccount(name, 'muse-home')
-  upsertAccountMeta({
-    name,
-    kind: 'muse-home',
-    enabled: acct?.enabled ?? true,
-    fable: 'unknown',
-    status: acct?.status ?? 'unverified',
-    addedAt: acct?.addedAt ?? Date.now()
-  })
-  pushAccounts()
-}
-
-// MUSE§13
-async function museSignIn(name: string, again?: boolean): Promise<SignInResult> {
-  const v = again
-    ? findAccount(name, 'muse-home')
-      ? 'ok'
-      : 'invalid-name'
-    : validateNewAccount(name, 'muse-home')
-  if (v !== 'ok') return { ok: false, error: v }
-  const serve = await museServeFor(name)
-  if (!serve) return { ok: false, error: 'unavailable' }
-  noteMuseAccount(name)
-  const env = museAccountEnv(museHomeFor(name))
-  const assignments = Object.entries(env).map(([k, val]) => `${k}=${shq(val)}`)
-  const tab = homeShellTab(`${assignments.join(' ')} ${shq(serve.binary)} login && exit`)
-  museSignInPtys.set(tab.tabId, name)
-  return { ok: true, ...tab }
-}
-
 // MUSE§13
 async function addMuseKey(name: string, key: string): Promise<AccountAddResult> {
   const v = validateNewAccount(name, 'muse-home')
@@ -1736,7 +1737,7 @@ async function addMuseKey(name: string, key: string): Promise<AccountAddResult> 
   const trimmed = key.trim()
   const serve = trimmed ? await museServeFor(name) : undefined
   if (!serve) return { ok: false, error: 'unknown' }
-  noteMuseAccount(name)
+  noteHomeAccount(name, 'muse-home')
   await storeMuseKey(serve, trimmed).catch(() => undefined)
   await probeMuseAccount(name)
   const account = accountViews().find((a) => a.kind === 'muse-home' && a.name === name)
@@ -2107,15 +2108,10 @@ app.whenReady().then(() => {
       sessionBackends.forgetAvailability()
       sendToRenderer('sessions:toolsChanged')
     }
-    const codexAccount = codexSignInPtys.get(e.id)
-    if (codexAccount) {
-      codexSignInPtys.delete(e.id)
-      void probeCodexAccount(codexAccount)
-    }
-    const museAccount = museSignInPtys.get(e.id)
-    if (museAccount) {
-      museSignInPtys.delete(e.id)
-      void probeMuseAccount(museAccount)
+    const signedIn = signInPtys.get(e.id)
+    if (signedIn) {
+      signInPtys.delete(e.id)
+      void probeHomeAccount[signedIn.kind](signedIn.name)
     }
     if (teardownKilledPtys.delete(e.id)) {
       flowGates.get(e.id)?.reset()
@@ -2181,7 +2177,7 @@ app.whenReady().then(() => {
     ptyMgr.wakeReady(t.tabId)
     const conductor = !!conductors?.heldResident(t.tabId)
     if (conductor && (t.next === 'approval' || t.next === 'waiting'))
-      void codexAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
+      void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     discordNotices?.onStatus(t.tabId, t.prev, t.next)
     void discordLive?.refresh(t.tabId)
     if (!(conductor && t.next === 'waiting'))
@@ -2481,7 +2477,7 @@ app.whenReady().then(() => {
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
   const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
-    const ask = await codexAskOf(tabId)
+    const ask = await pendingAskOf(tabId)
     return ask ? codexDialog(ask) : discordRelay?.dialog(tabId)
   }
   const buttons = new AskButtons({
@@ -2589,10 +2585,16 @@ app.whenReady().then(() => {
     sendLine: sendPeerLine,
     modeOf: (tabId) => sessionBackends.permissionClass(tabId),
     pendingApproval: (tabId) =>
-      codexSessions?.openApproval(tabId) ?? museSessions?.openApproval(tabId),
+      storedSessions()
+        .map((s) => s.openApproval(tabId))
+        .find(Boolean),
     pendingQuestion: (tabId) =>
-      codexSessions?.openQuestion(tabId) ?? museSessions?.openQuestion(tabId),
-    answerable: async (tabId) => museSessions?.answerable(tabId),
+      storedSessions()
+        .map((s) => s.openQuestion(tabId))
+        .find(Boolean),
+    answerable: async (tabId) => {
+      await Promise.all(storedSessions().map((s) => s.answerable?.(tabId)))
+    },
     regDir: hookPaths.regDir,
     attachmentsDir
   })
@@ -4385,11 +4387,12 @@ function registerIpc(): void {
     startGuidedLogin(name)
     return 'ok'
   })
-  ipcMain.handle('accounts:muse-sign-in', (_e, name: string, again?: boolean) =>
-    museSignIn(name, again === true)
-  )
-  ipcMain.handle('accounts:codex-sign-in', (_e, name: string, again?: boolean) =>
-    codexSignIn(name, again === true)
+  ipcMain.handle(
+    'accounts:sign-in',
+    async (_e, kind: unknown, name: string, again?: boolean): Promise<SignInResult> =>
+      isSignInFolderKind(kind)
+        ? signInToHome(kind, name, again === true)
+        : { ok: false, error: 'invalid-name' }
   )
   ipcMain.handle('accounts:codex-use-reset', (_e, name: string) => codexUseReset(name))
   ipcMain.on('accounts:cancel-login', () => {
@@ -4668,13 +4671,8 @@ function registerIpc(): void {
         ...storedSessions().flatMap((s) => s.searchable(localPins))
       ]
     },
-    backendSnippets: async (term) =>
-      (
-        await Promise.all([
-          codexSessions?.searchSnippets(term) ?? [],
-          museSessions?.searchSnippets(term) ?? []
-        ])
-      ).flat(),
+    backendSnippets: async (term, signal) =>
+      (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
     hidden: (id) => !!sessionBackends.conductorOf(id),
     scan: (files, term, found) => {
       // PLATFORM§4

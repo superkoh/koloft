@@ -2,7 +2,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { MuseAccountPicker, prepareMuseHome } from '../../src/main/museAccounts'
+import { prepareMuseHome } from '../../src/main/museAccounts'
+import { HomeAccountPicker } from '../../src/main/codexAccounts'
 import type { AccountView } from '../../src/shared/types'
 
 let root: string
@@ -64,7 +65,7 @@ describe('picking a Muse account', () => {
   })
 
   it('keeps a resumed session on its account, takes turns otherwise, and skips one that is off or signed out', () => {
-    const picker = new MuseAccountPicker()
+    const picker = new HomeAccountPicker('muse-home')
     const all = [account('a'), account('b'), account('c', { status: 'expired' })]
     expect(picker.pick(all, 'b')?.name).toBe('b')
     expect([picker.pick(all)?.name, picker.pick(all)?.name, picker.pick(all)?.name]).toEqual([

@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { ASSIST_BACKENDS, BACKEND_LABEL } from '@shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { useStore } from '../../store'
 import { useAssistSetup } from '../../useAssistSetup'
 import { ASSIST_COST_LINE, ASSIST_RUNS_ON } from '../AssistSetup'
@@ -37,7 +37,7 @@ export function AssistSection(): JSX.Element {
       <div className="set-row child">
         <div className="set-lab">
           <b>Runs on</b>
-          {ASSIST_BACKENDS.map((b) => (
+          {SESSION_BACKENDS.map((b) => (
             <small key={b} className={setup.usable[b] ? undefined : 'ob-warn'}>
               {BACKEND_LABEL[b]} ·{' '}
               {setup.usable[b] ? ASSIST_RUNS_ON[b] : 'no account — add one in Settings ▸ Accounts'}
@@ -46,7 +46,7 @@ export function AssistSection(): JSX.Element {
           <small>{ASSIST_SESSIONS_FOLLOW}</small>
         </div>
         <div className="seg" role="group" aria-label="Koloft Assist runs on">
-          {ASSIST_BACKENDS.map((b) => (
+          {SESSION_BACKENDS.map((b) => (
             <button
               key={b}
               className={assist?.backend === b ? 'on' : ''}

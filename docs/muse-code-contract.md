@@ -21,8 +21,8 @@ real model were used, neither needing a Meta account:
   (bubblewrap) cannot start, so a plain sandboxed shell command fails there.
 
 A bullet measured only with `!cmd` (a shell command the user types into the TUI) says
-so; whether the model's own shell tool behaves the same on macOS is inferred, not
-checked. Nothing has been run against Meta's real API.
+so; the model's own shell tool was checked against those on macOS with the fake model
+(§8). Nothing has been run against Meta's real API.
 
 ## §1 The command line
 
@@ -40,7 +40,8 @@ checked. Nothing has been run against Meta's real API.
 - `muse --version` prints `Muse Code 1.4.7 (1.4.7-R6101.1)`.
 - `muse exec --json` prints one session-stream record per line; the answer is the
   `text` of the last `run.terminal.completed` record. `--no-session-log` keeps the run
-  out of the session list; `--disable-reminders` skips muse's own reminder helpers.
+  out of the session list; `--disable-reminders` skips muse's own reminder helpers. Both
+  are `exec` flags only: the TUI given `--disable-reminders` prints its help and exits.
 - The installer (`curl -fsSL https://dev.meta.ai/install.sh | bash`) puts a launcher
   script at `~/.local/bin/muse`. It ends with `exec "$binary" "$@"`, so the process a
   terminal spawns becomes the muse binary itself and keeps its PID.
@@ -157,6 +158,13 @@ checked. Nothing has been run against Meta's real API.
 - `kill -0` on a process outside the sandbox is refused (`EPERM`).
 - A variable in muse's environment is visible to every shell command, `META_API_KEY`
   included.
+- The model's own `bash` tool behaves like `!cmd` on every point above (fake model,
+  macOS VM, under `--approval-mode never`, `never` + `--sandbox-network enabled` and
+  `:unrestricted`): same `/bin/sh -c`, PATH order and variables (`XDG_CONFIG_HOME`
+  too); a `koloft`-style command first on PATH talking to Koloft through a folder in
+  `/tmp`, and a `gh` wrapper, work in all three; `playwright-cli` reaches the relay
+  only with the network `enabled`. A token the model's command prints reaches the
+  model as `[REDACTED]`.
 
 ## §9 Hooks
 
@@ -245,6 +253,13 @@ checked. Nothing has been run against Meta's real API.
   `TBH_CREDENTIAL_BACKEND=file` the credential is a file, `auth.json` in that config
   folder (mode 0600), and two folders hold two credentials. Measured for API keys;
   where a finished device-code login lands is not probed (needs a Meta account).
+- A config folder whose `muse/trust.json`, `settings.json` and `AGENTS.md` are symlinks
+  to the user's own files works: muse keeps each symlink and rewrites the file it
+  points to (trust answers, `/theme`, `/permissions`), drops empty `.<name>.lock` files
+  beside the symlinks, and `auth set` writes a real `auth.json` (0600) in the folder
+  itself. A `settings.json` without `"schema_version"` stops both the TUI and
+  `muse serve` ("malformed settings file"). Sessions and the live registry stay in
+  museHome (§2) whatever `XDG_CONFIG_HOME` says (Docker and macOS).
 - `muse serve` (experimental capability) `account/read` → `state:
   "loggedOut"|"apiKey"|"envKey"|"accountLogin"`; `account/loginStart {type}` returns
   the device code and URL.
@@ -268,6 +283,12 @@ checked. Nothing has been run against Meta's real API.
   `--approval-judge`, `--disable-approval` and `--yolo` (exit 2).
 - `--approval-judge off` with `--sandbox-network enabled` (no profile): no judge, a
   shell command leaving the sandbox still asks the user, a network fetch runs without
-  asking (fake model).
+  asking (fake model). Without the network flag a network fetch asks the user too, and
+  on macOS so did file writes and other commands the judge would have reviewed.
+- `--approval-mode never` (alone, with `--sandbox-network enabled` or with
+  `--approval-judge off`): nothing ever asks the user and no judge runs; every tool
+  runs inside the sandbox, `web_fetch` included, and a shell command asking to leave
+  the sandbox is refused with "unsandboxed execution requires human approval, but
+  approval prompts are disabled" (fake model, Docker and macOS).
 - `--permission-profile :unrestricted`: no sandbox, no prompts; a command asking to
   leave the sandbox is refused rather than asked.

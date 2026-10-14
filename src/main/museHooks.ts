@@ -18,7 +18,7 @@ const EVENTS = [
   'SubagentStop'
 ] as const
 
-export type MuseHookName = (typeof EVENTS)[number]
+type MuseHookName = (typeof EVENTS)[number]
 
 export const HOOK_DROP_PREFIX = 'hook-'
 
@@ -37,7 +37,7 @@ exit 0
 `
 
 // MUSE§9 MUSE§12
-export const SESSION_START_OUTPUT_LIMIT = 16_384
+const SESSION_START_OUTPUT_LIMIT = 16_384
 
 // MUSE§12
 export function sessionStartContext(text: string): string {

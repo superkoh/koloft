@@ -128,7 +128,7 @@ beforeEach(() => {
     verified: true
   })
   mocks.list.mockResolvedValue([])
-  mocks.read.mockResolvedValue({ turns: [] })
+  mocks.read.mockResolvedValue([])
   pids = new Map()
   created = []
   started = Date.now()
@@ -300,6 +300,14 @@ describe('Assist on Muse', () => {
     expect(museTrustsFolder({ HOME: home }, repo)).toBe(true)
     const told = JSON.parse(hook(id, 'SessionStart', { session_id: A, source: 'startup' }))
     expect(told.hookSpecificOutput.additionalContext).toBe('You are the Assist of ws.')
+  })
+
+  it('an Assist task allowed the browser gets the Workbench browser and an open sandbox network to reach it', async () => {
+    endpoint = 'ws://127.0.0.1:9/cdp/x'
+    assist = { role: 'r', allow: ['Bash(playwright-cli *)'] }
+    await launch()
+    expect(created[0].argv).toEqual(['--approval-mode', 'never', '--sandbox-network', 'enabled'])
+    expect(created[0].env.KOLOFT_BROWSER_CDP).toBe(endpoint)
   })
 
   // ADR-0029 MUSE§9
