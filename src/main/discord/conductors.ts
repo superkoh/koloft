@@ -566,7 +566,9 @@ export class Conductors {
       return result
     const fallback = await this.d.backend('codex')
     if ('error' in fallback) return refusal(fallback.error)
-    this.d.toast(`Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`)
+    this.d.toast(
+      `Assist runs on ${BACKEND_LABEL[fallback.backend]} this time: ${CODEX_GATE_NOT_TRUSTED}`
+    )
     return open({ backend: fallback.backend })
   }
 

@@ -9,11 +9,13 @@ function recordingBinary(name: string, reply: string): { bin: string; log: strin
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-'))
   const bin = path.join(dir, name)
   const log = path.join(dir, 'calls')
+  const replyFile = path.join(dir, 'reply')
+  fs.writeFileSync(replyFile, reply + '\n')
   fs.writeFileSync(
     bin,
     `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(log + '.argv')}\n` +
       `cat > ${JSON.stringify(log + '.stdin')}\nprintf '%s\\n' "$CODEX_HOME" > ${JSON.stringify(log + '.home')}\n` +
-      `echo ${JSON.stringify(reply)}\n`,
+      `cat ${JSON.stringify(replyFile)}\n`,
     { mode: 0o755 }
   )
   return { bin, log }
@@ -26,7 +28,7 @@ const JOB = { system: 'You write short titles.', prompt: 'Task:\nfix the login c
 
 function assistWith(
   setting: AssistSetting,
-  bins: { claude?: string; codex?: string },
+  bins: { claude?: string; codex?: string; muse?: string },
   off: BackendId[] = []
 ) {
   return koloftAssist({
@@ -34,8 +36,18 @@ function assistWith(
     enabled: (backend) => !off.includes(backend),
     claude: async () => (bins.claude ? { binary: bins.claude, env: {} } : null),
     codex: async () =>
-      bins.codex ? { binary: bins.codex, env: { CODEX_HOME: '/homes/work' } } : null
+      bins.codex ? { binary: bins.codex, env: { CODEX_HOME: '/homes/work' } } : null,
+    muse: async () => (bins.muse ? { binary: bins.muse, env: {} } : null)
   })
+}
+
+function museStream(answer: string): string {
+  return [
+    { payload_type: 'runtime.session', payload: { event: { kind: 'started' } } },
+    { payload_type: 'run.terminal.completed', payload: { terminal: 'completed', text: answer } }
+  ]
+    .map((r) => JSON.stringify(r))
+    .join('\n')
 }
 
 describe('Koloft Assist', () => {
@@ -94,5 +106,22 @@ describe('Koloft Assist', () => {
     expect(argv[argv.length - 1]).toBe('-')
     expect(read(codex.log + '.stdin')).toBe(`${JOB.system}\n\n${JOB.prompt}`)
     expect(read(codex.log + '.home')?.trim()).toBe('/homes/work')
+  })
+
+  it('runs on the third tool when neither of the others can', async () => {
+    const muse = recordingBinary('muse', museStream('From Muse'))
+    const reply = await assistWith({ on: true, backend: 'claude' }, { muse: muse.bin })(JOB)
+    expect(reply).toBe('From Muse')
+  })
+
+  // MUSE§1
+  it('on Muse, runs one exec that leaves no session behind, and answers with the text of its finished record', async () => {
+    const muse = recordingBinary('muse', museStream('Fix Login Crash'))
+    const reply = await assistWith({ on: true, backend: 'muse' }, { muse: muse.bin })(JOB)
+    expect(reply).toBe('Fix Login Crash')
+    const argv = read(muse.log + '.argv')!.split('\n')
+    expect(argv[0]).toBe('exec')
+    expect(argv).toEqual(expect.arrayContaining(['--json', '--no-session-log']))
+    expect(argv.join('\n')).toContain(`${JOB.system}\n\n${JOB.prompt}`)
   })
 })

@@ -203,27 +203,40 @@ function tui() {
   let blocked
   let current
   let typed = ''
-  const fire = (event, input) => {
-    for (const group of hooks[event] ?? [])
-      for (const h of group.hooks ?? [])
-        spawnSync('/bin/sh', ['-c', h.command], {
-          input: JSON.stringify({
-            hook_event_name: event,
-            cwd: process.cwd(),
-            session_id: session.id,
-            transcript_path: null,
-            ...input
-          }),
-          env: {
-            HOME: home,
-            PATH: process.env.PATH,
-            PWD: process.cwd(),
-            TERM: 'xterm-256color',
-            MUSE_SESSION_ID: session.id,
-            MUSE_THREAD_ID: input.session_id ?? session.id
-          }
-        })
-  }
+  const fire = (event, input) =>
+    (hooks[event] ?? []).flatMap((group) =>
+      (group.hooks ?? []).map(
+        (h) =>
+          spawnSync('/bin/sh', ['-c', h.command], {
+            input: JSON.stringify({
+              hook_event_name: event,
+              cwd: process.cwd(),
+              session_id: session.id,
+              transcript_path: null,
+              ...input
+            }),
+            env: {
+              HOME: home,
+              PATH: process.env.PATH,
+              PWD: process.cwd(),
+              TERM: 'xterm-256color',
+              MUSE_SESSION_ID: session.id,
+              MUSE_THREAD_ID: input.session_id ?? session.id
+            },
+            encoding: 'utf8'
+          }).stdout
+      )
+    )
+  const denial = (outs) =>
+    outs
+      .map((out) => {
+        try {
+          return JSON.parse(out).hookSpecificOutput
+        } catch {
+          return undefined
+        }
+      })
+      .find((o) => o?.permissionDecision === 'deny')
   const status = (s) => {
     current = s === 'state=clear' ? undefined : s
     if (statusOn) process.stdout.write(`${ESC}]7501;${s}${ESC}\\`)
@@ -285,7 +298,8 @@ function tui() {
   const turn = (text) => {
     if (!started) {
       started = true
-      fire('SessionStart', { source: startSource })
+      for (const out of fire('SessionStart', { source: startSource }))
+        if (out) append('fake-muse-told.jsonl', { sessionId: session.id, out })
     }
     const turnId = crypto.randomUUID()
     status('state=working:app=muse')
@@ -319,6 +333,15 @@ function tui() {
     if (text.startsWith('/write ')) {
       const target = text.slice('/write '.length).trim()
       const turnId = turn(text)
+      const denied = denial(
+        fire('PreToolUse', {
+          turn_id: turnId,
+          tool_name: 'write_file',
+          tool_input: { path: target, content: 'written by fake muse\n' }
+        })
+      )
+      if (denied)
+        return later(() => say(turnId, `Blocked: ${denied.permissionDecisionReason}`, text))
       fs.writeFileSync(path.resolve(process.cwd(), target), 'written by fake muse\n')
       fire('PostToolUse', {
         turn_id: turnId,

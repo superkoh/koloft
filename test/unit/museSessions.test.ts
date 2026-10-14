@@ -13,6 +13,7 @@ import {
 import { museSessionKey } from '../../src/main/sessionStore'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
+import { MUSE_CONDUCTOR_GATE_SCRIPT } from '../../src/main/conductorGate'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
 
 const mocks = vi.hoisted(() => ({
@@ -48,6 +49,8 @@ let started: number
 let agentTools: boolean
 let endpoint: string
 let picked: { account: string; env: Record<string, string> } | undefined
+let assist: { role: string; allow: string[] } | undefined
+let gateScript: string
 
 const registryDir = (): string =>
   path.join(home, '.local', 'share', 'muse', 'runtime', 'muse', 'sessions')
@@ -132,6 +135,9 @@ beforeEach(() => {
   agentTools = false
   endpoint = ''
   picked = { account: 'work', env: { TBH_CREDENTIAL_BACKEND: 'file' } }
+  assist = undefined
+  gateScript = path.join(home, 'muse-conductor-gate.js')
+  fs.writeFileSync(gateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
   let tab = 0
   pty = Object.assign(new EventEmitter(), {
     nextId: vi.fn(() => `pty-${++tab}`),
@@ -169,6 +175,15 @@ beforeEach(() => {
     pickHome: () => picked,
     playwrightBin: tools,
     browserEndpoint: () => endpoint,
+    assistOf: () => assist,
+    conductorGate: {
+      script: gateScript,
+      writeAllow: (tabId, allow) => {
+        const file = path.join(home, `${tabId}.allow.json`)
+        fs.writeFileSync(file, JSON.stringify(allow))
+        return file
+      }
+    },
     agent: { enabled: () => agentTools, answer: vi.fn() },
     gitAccounts: {
       configEnv: (env) => env,
@@ -268,6 +283,48 @@ describe('MuseSessions launch', () => {
     expect(hook(off.id, 'SessionStart', { session_id: B, source: 'startup' })).toBe('')
     const first = created[0].env.PATH!.split(':')[0]
     expect(fs.existsSync(path.join(first, 'koloft'))).toBe(true)
+  })
+})
+
+describe('Assist on Muse', () => {
+  const decision = (out: string): string | undefined =>
+    out ? JSON.parse(out).hookSpecificOutput.permissionDecision : undefined
+
+  it('never stops to ask, trusts its folder, and is told its role instead of the session guide', async () => {
+    agentTools = true
+    endpoint = 'ws://127.0.0.1:9/cdp/x'
+    assist = { role: 'You are the Assist of ws.', allow: [] }
+    const { id } = await launch()
+    expect(created[0].argv).toEqual(['--approval-mode', 'never'])
+    expect(created[0].env.KOLOFT_BROWSER_CDP).toBeUndefined()
+    expect(museTrustsFolder({ HOME: home }, repo)).toBe(true)
+    const told = JSON.parse(hook(id, 'SessionStart', { session_id: A, source: 'startup' }))
+    expect(told.hookSpecificOutput.additionalContext).toBe('You are the Assist of ws.')
+  })
+
+  // ADR-0029 MUSE§9
+  it('may run commands, read, and write only inside its own folder; every other muse tool is stopped before it runs', async () => {
+    assist = { role: 'r', allow: [] }
+    const { id } = await launch()
+    const tool = (
+      tool_name: string,
+      tool_input: Record<string, unknown> = {}
+    ): string | undefined =>
+      decision(hook(id, 'PreToolUse', { session_id: A, tool_name, tool_input }))
+    expect(tool('bash', { command: 'koloft session list' })).toBeUndefined()
+    expect(tool('read_file', { path: '/etc/hosts' })).toBeUndefined()
+    expect(tool('write_file', { path: 'notes.md', content: 'x' })).toBeUndefined()
+    expect(tool('edit_file', { path: path.join(repo, 'a', 'b.md') })).toBeUndefined()
+    expect(tool('write_file', { path: '../outside.md', content: 'x' })).toBe('deny')
+    expect(tool('edit_file', { path: '/etc/hosts' })).toBe('deny')
+    for (const other of ['subagent_spawn', 'web_fetch', 'add_memory', 'cron_create'])
+      expect(tool(other)).toBe('deny')
+  })
+
+  it('a plain session gets no tool gate', async () => {
+    await launch()
+    const hooks = JSON.parse(fs.readFileSync(created[0].env.TBH_MANAGED_HOOKS_PATH!, 'utf8')).hooks
+    expect(hooks.PreToolUse).toBeUndefined()
   })
 })
 

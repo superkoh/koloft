@@ -13,10 +13,11 @@ import type { AssistSetupState } from '../useAssistSetup'
 import { AddAccountDialog, LoginDialog, SignInDialog } from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 
-// CC§9 CODEX§15
+// CC§9 CODEX§15 MUSE§1
 export const ASSIST_RUNS_ON: Record<AssistBackend, string> = {
   claude: 'Haiku, about 750 tokens a job',
-  codex: 'GPT-6 Luna, a few thousand tokens a job'
+  codex: 'GPT-6 Luna, a few thousand tokens a job',
+  muse: 'Muse’s default model'
 }
 
 export const ASSIST_COST_LINE =
@@ -72,13 +73,16 @@ export function AssistSetup({
   const beginLogin = useStore((s) => s.beginLogin)
   const setBypassAccepted = useStore((s) => s.setBypassAccepted)
   const update = useSettingsUpdate()
-  const [codexSignIn, setCodexSignIn] = useState<{ again?: string } | null>(null)
+  const [signIn, setSignIn] = useState<{
+    backend: Exclude<AssistBackend, 'claude'>
+    again?: string
+  } | null>(null)
   const [pasting, setPasting] = useState(false)
 
   const pick = (b: AssistBackend, again: string | undefined): void => {
     if (setup.usable[b]) update({ assist: { on: true, backend: b } })
     else if (b === 'claude') beginLogin(again)
-    else setCodexSignIn({ again })
+    else setSignIn({ backend: b, again })
   }
   const acceptBypass = async (): Promise<void> => {
     if (await window.api.accounts.acceptBypass()) setBypassAccepted(true)
@@ -123,9 +127,6 @@ export function AssistSetup({
             </button>
           )
         })}
-        {offerInstall &&
-          setup.toolsKnown &&
-          setup.missingOtherTools.map((b) => <InstallChoice key={b} backend={b} />)}
       </div>
       <div className="quiet">
         {ASSIST_COST_LINE} Turn it off any time in Settings ▸ Sessions; Koloft then does those jobs
@@ -157,11 +158,11 @@ export function AssistSetup({
         </>
       )}
       {login && <LoginDialog />}
-      {codexSignIn && (
+      {signIn && (
         <SignInDialog
-          backend="codex"
-          again={codexSignIn.again}
-          onClose={() => setCodexSignIn(null)}
+          backend={signIn.backend}
+          again={signIn.again}
+          onClose={() => setSignIn(null)}
         />
       )}
       {pasting && <AddAccountDialog kind="oauth" onClose={() => setPasting(false)} />}

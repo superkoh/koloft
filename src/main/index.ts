@@ -47,7 +47,7 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
-  otherAssistBackend,
+  assistBackendsFrom,
   preferredAssistBackend,
   statusUnavailable,
   SUPPORTED_PAIRS
@@ -1103,6 +1103,10 @@ const assist = koloftAssist({
     const binary = codexSessions.cliBinary
     if (!binary) return null
     return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+  },
+  muse: async () => {
+    const picked = musePicker.pick(accountViews())
+    return picked ? ((await museServeFor(picked.name)) ?? null) : null
   }
 })
 const assistRuns = new Map<number, AbortController>()
@@ -1117,6 +1121,11 @@ async function whyAssistCannotRunOn(
       return 'Codex is not available on this Mac'
     return codexPicker.pick(accountViews()) ? undefined : 'every Codex account is at its limit'
   }
+  if (backend === 'muse') {
+    if (!museSessions || !(await museSessions.availability()).available)
+      return 'Muse is not available on this Mac'
+    return musePicker.pick(accountViews()) ? undefined : 'there is no usable Muse account'
+  }
   const { res } = await pickForLaunch()
   if (res.account !== null) return undefined
   return res.reason === 'no-accounts'
@@ -1126,18 +1135,26 @@ async function whyAssistCannotRunOn(
 
 async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoice> {
   const settings = loadSettings()
-  const preferred = preferredAssistBackend(settings)
-  const other = otherAssistBackend(preferred)
+  const [preferred, ...others] = assistBackendsFrom(preferredAssistBackend(settings))
   const { enabled } = settings.sessionMethods
-  const why =
-    avoid === preferred ? 'it could not start' : await whyAssistCannotRunOn(preferred, enabled)
+  const whyNot = (backend: BackendId): Promise<string | undefined> =>
+    avoid === backend
+      ? Promise.resolve(`${BACKEND_LABEL[backend]} could not start`)
+      : whyAssistCannotRunOn(backend, enabled)
+  const why = await whyNot(preferred)
   if (!why) return { backend: preferred }
-  const otherWhy =
-    avoid === other ? 'it could not start' : await whyAssistCannotRunOn(other, enabled)
-  if (!otherWhy)
-    return { backend: other, because: `Assist runs on ${BACKEND_LABEL[other]} this time: ${why}.` }
+  const whys = [why]
+  for (const other of others) {
+    const otherWhy = await whyNot(other)
+    if (!otherWhy)
+      return {
+        backend: other,
+        because: `Assist runs on ${BACKEND_LABEL[other]} this time: ${why}.`
+      }
+    whys.push(otherWhy)
+  }
   return {
-    error: `Assist cannot start: ${why}, and ${otherWhy}. Check Settings ▸ Accounts.`
+    error: `Assist cannot start: ${whys.join(', and ')}. Check Settings ▸ Accounts.`
   }
 }
 const COMMAND_NEEDS_DISCORD =
@@ -2226,6 +2243,11 @@ app.whenReady().then(() => {
       leftWorktree: (resource) => removeUntouchedWorktree(museSessions, resource),
       openShimRoot: path.join(userData, 'muse-open'),
       pickHome: pickMuseHome,
+      assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
+      conductorGate: {
+        script: hookPaths.museGateScript,
+        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
+      },
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,

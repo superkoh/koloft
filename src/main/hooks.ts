@@ -6,6 +6,7 @@ import { shq } from '@shared/shellQuote'
 import {
   CODEX_CONDUCTOR_GATE_SCRIPT,
   CONDUCTOR_GATE_SCRIPT,
+  MUSE_CONDUCTOR_GATE_SCRIPT,
   codexGateShell,
   conductorGateCommand
 } from './conductorGate'
@@ -17,6 +18,7 @@ export interface HookPaths {
   hookScript: string
   gateScript: string
   codexGate: string
+  museGateScript: string
   settingsDir: string
   regDir: string
 }
@@ -277,8 +279,10 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   fs.writeFileSync(codexGateScript, CODEX_CONDUCTOR_GATE_SCRIPT)
   const codexGate = path.join(hookDir, 'codex-conductor-gate.sh')
   fs.writeFileSync(codexGate, codexGateShell(codexGateScript))
+  const museGateScript = path.join(hookDir, 'muse-conductor-gate.js')
+  fs.writeFileSync(museGateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
 
-  return { hookScript, gateScript, codexGate, settingsDir, regDir }
+  return { hookScript, gateScript, codexGate, museGateScript, settingsDir, regDir }
 }
 
 // CC§8

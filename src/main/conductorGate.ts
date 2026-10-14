@@ -130,6 +130,42 @@ ${TOOLS_THE_ALLOW_FILE_NAMES}
 
 ${DENY_AND_SAY(CODEX_CONDUCTOR_DENIED)}`
 
+const MUSE_CONDUCTOR_DENIED =
+  'Koloft: Assist only passes work on. It may run shell commands, read files, change files inside its own folder and ask the owner a question with request_user_input. It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
+
+// MUSE§9
+const MUSE_RUN_OR_READ_TOOLS = [
+  'bash',
+  'bash_input',
+  'work_status',
+  'read_file',
+  'search',
+  'submit_reminder_decision'
+]
+const MUSE_WRITE_TOOLS = ['write_file', 'edit_file']
+
+// ADR-0029 MUSE§9
+export const MUSE_CONDUCTOR_GATE_SCRIPT = `const path = require('path')
+const RUN_OR_READ_TOOLS = new Set(${JSON.stringify(MUSE_RUN_OR_READ_TOOLS)})
+const WRITE_TOOLS = new Set(${JSON.stringify(MUSE_WRITE_TOOLS)})
+
+function inOwnFolder(event) {
+  const file = event.tool_input && event.tool_input.path
+  if (typeof event.cwd !== 'string' || typeof file !== 'string') return false
+  const own = path.resolve(event.cwd)
+  return path.resolve(own, file).startsWith(own + path.sep)
+}
+
+function allowed(event) {
+  if (RUN_OR_READ_TOOLS.has(event.tool_name)) return true
+  if (WRITE_TOOLS.has(event.tool_name)) return inOwnFolder(event)
+  return false
+}
+
+${TOOLS_THE_ALLOW_FILE_NAMES}
+
+${DENY_AND_SAY(MUSE_CONDUCTOR_DENIED)}`
+
 export function conductorGateCommand(gateScript: string, allowFile: string): string {
   return `ELECTRON_RUN_AS_NODE=1 ${shq(process.execPath)} ${shq(gateScript)} ${shq(allowFile)}`
 }

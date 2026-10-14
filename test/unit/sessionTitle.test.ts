@@ -17,7 +17,8 @@ function claudeAssist(bin: string, env: NodeJS.ProcessEnv = {}) {
     setting: () => ({ on: true, backend: 'claude' }),
     enabled: () => true,
     claude: async () => ({ binary: bin, env }),
-    codex: async () => null
+    codex: async () => null,
+    muse: async () => null
   })
 }
 

@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import os from 'node:os'
 import type { AssistSetting, BackendId } from '@shared/types'
-import { ASSIST_BACKENDS, assistBackendOf, otherAssistBackend } from '@shared/sessionBackend'
+import { ASSIST_BACKENDS, assistBackendOf, assistBackendsFrom } from '@shared/sessionBackend'
 
 export interface AssistJob {
   system: string
@@ -46,6 +46,30 @@ const CODEX_ONE_SHOT = [
   '-'
 ]
 
+// MUSE§1
+const MUSE_ONE_SHOT = (task: string): string[] => [
+  'exec',
+  '--json',
+  '--no-session-log',
+  '--disable-reminders',
+  task
+]
+
+// MUSE§1
+export function museAnswer(stdout: string): string | null {
+  let answer: string | null = null
+  for (const line of stdout.split('\n')) {
+    try {
+      const rec = JSON.parse(line)
+      if (rec.payload_type === 'run.terminal.completed' && typeof rec.payload?.text === 'string')
+        answer = rec.payload.text
+    } catch {
+      continue
+    }
+  }
+  return answer
+}
+
 export interface AssistTarget {
   binary: string
   env: NodeJS.ProcessEnv
@@ -56,6 +80,7 @@ export interface AssistDeps {
   enabled(backend: BackendId): boolean
   claude(): Promise<AssistTarget | null>
   codex(): Promise<AssistTarget | null>
+  muse(): Promise<AssistTarget | null>
 }
 
 function runOnce(
@@ -81,14 +106,17 @@ export function koloftAssist(deps: AssistDeps): Assist {
     const setting = deps.setting()
     if (!setting?.on) return null
     const preferred = assistBackendOf(setting.backend) ?? ASSIST_BACKENDS[0]
-    for (const backend of [preferred, otherAssistBackend(preferred)]) {
+    for (const backend of assistBackendsFrom(preferred)) {
       if (!deps.enabled(backend)) continue
       const target = await deps[backend]()
       if (job.signal?.aborted) return null
       if (!target) continue
-      return backend === 'claude'
-        ? runOnce(target, CLAUDE_ONE_SHOT(job.system), job.prompt, job.signal)
-        : runOnce(target, CODEX_ONE_SHOT, `${job.system}\n\n${job.prompt}`, job.signal)
+      const task = `${job.system}\n\n${job.prompt}`
+      if (backend === 'claude')
+        return runOnce(target, CLAUDE_ONE_SHOT(job.system), job.prompt, job.signal)
+      if (backend === 'codex') return runOnce(target, CODEX_ONE_SHOT, task, job.signal)
+      const out = await runOnce(target, MUSE_ONE_SHOT(task), '', job.signal)
+      return out === null ? null : museAnswer(out)
     }
     return null
   }

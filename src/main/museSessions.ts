@@ -23,6 +23,7 @@ import { openDropHandler } from './openDrop'
 import { removeOpenShim, writeOpenShim } from './openShimScript'
 import { writeCodexAgentShim } from './agentShim'
 import { browserControlEnv } from './browserControlEnv'
+import { allowsTheBrowser, conductorGateCommand } from './conductorGate'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -73,6 +74,8 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   pickHome(resumeSessionId?: string): { account: string; env: Record<string, string> } | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
+  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
+  conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
   agent: {
     enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -128,6 +131,9 @@ function approvalFlags(permission: LaunchPermission, networkOpen: boolean): stri
   if (permission === 'bypass') return ['--permission-profile', ':unrestricted']
   return ['--approval-judge', 'off', ...(networkOpen ? ['--sandbox-network', 'enabled'] : [])]
 }
+
+// ADR-0029 MUSE§15
+const CONDUCTOR_FLAGS = ['--approval-mode', 'never']
 
 // MUSE§8
 const PLAYWRIGHT_DIRS = {
@@ -365,26 +371,41 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
   ): Promise<MuseRun> {
     // ADR-0026 MUSE§10
     if (freshWorktree) for (const dir of [workspace, cwd]) trustMuseFolder(env, dir)
-    if (opts.trustFolder) trustMuseFolder(env, cwd)
+    // ADR-0029
+    const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
+    const conductor = opts.conductor || !!assist
+    const role = opts.role ?? assist?.role
+    const allow = opts.allow ?? assist?.allow ?? []
+    if (opts.trustFolder || assist) trustMuseFolder(env, cwd)
     const trust = !!resource && this.trustsFolder(workspace)
     const tabId = this.deps.pty.nextId()
-    const endpoint = this.deps.browserEndpoint(tabId)
+    const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
     // MUSE§8
     const networkOpen = !!endpoint || (await this.deps.gitAccounts.picked(cwd))
     this.assertStarting()
     const permission = opts.permission ?? 'default'
     const agent = this.deps.agent.enabled() ? this.deps.agent : undefined
+    const instructions = [
+      ...(agent && !conductor ? [koloftPrompt('muse')] : []),
+      ...(role ? [role] : [])
+    ]
     let bound: MuseRun | undefined
     const tools = this.startTools(
       (target) => this.deps.events(tabId, { type: 'open', target }),
       (hook) => bound && this.onHook(bound, hook),
       agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
-      agent ? koloftPrompt('muse') : undefined
+      instructions.join('\n\n') || undefined,
+      conductor
+        ? conductorGateCommand(
+            this.deps.conductorGate.script,
+            this.deps.conductorGate.writeAllow(tabId, allow)
+          )
+        : undefined
     )
     const argv = [
       ...(opts.model ? ['--model', opts.model] : []),
       ...(opts.effort ? ['--reasoning-effort', opts.effort] : []),
-      ...approvalFlags(permission, networkOpen),
+      ...(conductor ? CONDUCTOR_FLAGS : approvalFlags(permission, networkOpen)),
       ...(trust ? ['--trust-workspace'] : []),
       ...(opts.resumeSessionId
         ? ['resume', this.nativeId(opts.resumeSessionId)]
@@ -453,7 +474,8 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     open: (target: string) => void,
     hook: (hook: MuseHook) => void,
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
-    context: string | undefined
+    context: string | undefined,
+    gate: string | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const shim = writeOpenShim(this.deps.openShimRoot, randomUUID(), undefined)
     try {
@@ -473,7 +495,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(shim.shimDir, shim.requestDir, context)
+      const hooksFile = writeMuseHooks(shim.shimDir, shim.requestDir, context, gate)
       const opens = oncePerName(() => openDropHandler(open))
       const drops = watchJsonDrops(shim.requestDir, (name) => {
         if (name.startsWith('req-'))

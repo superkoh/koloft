@@ -50,26 +50,24 @@ export function sessionStartContext(text: string): string {
 }
 
 // MUSE§9
-export function writeMuseHooks(shimDir: string, requestDir: string, context?: string): string {
+export function writeMuseHooks(
+  shimDir: string,
+  requestDir: string,
+  context?: string,
+  gate?: string
+): string {
   const script = path.join(shimDir, 'muse-hook')
   fs.writeFileSync(script, HOOK_SCRIPT, { mode: 0o755 })
   const contextFile = path.join(shimDir, 'session-start.json')
   if (context) fs.writeFileSync(contextFile, sessionStartContext(context))
-  const hooks = Object.fromEntries(
-    EVENTS.map((event) => [
+  const run = (command: string): unknown[] => [{ hooks: [{ type: 'command', command }] }]
+  const hooks = Object.fromEntries([
+    ...EVENTS.map((event) => [
       event,
-      [
-        {
-          hooks: [
-            {
-              type: 'command',
-              command: `/bin/sh ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)}`
-            }
-          ]
-        }
-      ]
-    ])
-  )
+      run(`/bin/sh ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)}`)
+    ]),
+    ...(gate ? [['PreToolUse', run(gate)]] : [])
+  ])
   const file = path.join(shimDir, 'hooks.json')
   fs.writeFileSync(file, JSON.stringify({ hooks }))
   return file

@@ -28,15 +28,15 @@ export function byBackend<T>(value: (backend: BackendId) => T): Record<BackendId
   return Object.fromEntries(SESSION_BACKENDS.map((b) => [b, value(b)])) as Record<BackendId, T>
 }
 
-export const ASSIST_BACKENDS = ['claude', 'codex'] as const satisfies readonly BackendId[]
+export const ASSIST_BACKENDS = ['claude', 'codex', 'muse'] as const satisfies readonly BackendId[]
 export type AssistBackend = (typeof ASSIST_BACKENDS)[number]
 
 export function assistBackendOf(value: unknown): AssistBackend | undefined {
   return ASSIST_BACKENDS.find((b) => b === value)
 }
 
-export function otherAssistBackend(backend: AssistBackend): AssistBackend {
-  return backend === 'claude' ? 'codex' : 'claude'
+export function assistBackendsFrom(preferred: AssistBackend): AssistBackend[] {
+  return [preferred, ...ASSIST_BACKENDS.filter((b) => b !== preferred)]
 }
 
 export function productList(backends: readonly BackendId[], joiner: 'or' | 'and'): string {

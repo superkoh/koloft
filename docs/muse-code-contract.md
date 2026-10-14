@@ -167,7 +167,10 @@ checked. Nothing has been run against Meta's real API.
   `settings.json` run too, in no fixed order.
 - A hook command's environment is only `HOME`, `PATH`, `PWD`, `TERM`,
   `MUSE_SESSION_ID`, `MUSE_THREAD_ID`; it runs outside the sandbox. Its stdin is one
-  JSON object with `session_id`, `cwd`, `hook_event_name` and the event's fields.
+  JSON object with `session_id`, `cwd`, `hook_event_name` and the event's fields. For
+  what a subagent or one of muse's reminder helpers does (their `SubagentStart`, their
+  tool calls, their `Stop`), `session_id` is that child's own id, the one
+  `SubagentStart` names as `child_session_id` (fake model).
 - Events Koloft reads: `SessionStart {source: "startup"|"clear"}` at the first prompt
   of a session (never at idle, never on `muse resume` or in-TUI `/resume`; `/new` says
   `startup`); `UserPromptSubmit {prompt, turn_id}`; `Stop {last_assistant_message,
@@ -183,8 +186,19 @@ checked. Nothing has been run against Meta's real API.
 - `!cmd` is a tool named `shell`. `request_user_input` fires no `PreToolUse`.
 - A `PreToolUse` hook printing `{"hookSpecificOutput":{"hookEventName":"PreToolUse",
   "permissionDecision":"deny","permissionDecisionReason":"…"}}` or
-  `{"decision":"block","reason":"…"}` blocks the tool (measured on `!cmd`). A
-  `PermissionRequest` hook can deny with `{"hookSpecificOutput":{"hookEventName":
+  `{"decision":"block","reason":"…"}` blocks the tool before it runs, and the model
+  reads `tool blocked by hook: <reason>`. Measured on `!cmd` and (fake model, Docker)
+  on every model tool tried: `write_file`, `edit_file`, `bash`, `web_fetch`,
+  `subagent_spawn`, `send_session_message`, `cron_create`, `add_memory`, `workflow`,
+  `monitor`; no file changed, no subagent started.
+- The model's tools in 1.4.7: `bash`, `bash_input`, `work_status`, `read_file`,
+  `search`, `read_skill`, `write_file`, `edit_file`, `read_memory`, `add_memory`,
+  `edit_memory`, `web_fetch`, `web_search`, `monitor`, `subagent_spawn` and the other
+  `subagent_*`, plus `request_user_input`. `write_file {path, content}` and
+  `edit_file {path, find, replace}` take a `path` relative to `cwd` or absolute. The
+  reminder helpers answer through a tool `submit_reminder_decision`, which fires
+  `PreToolUse` too (fake model).
+- A `PermissionRequest` hook can deny with `{"hookSpecificOutput":{"hookEventName":
   "PermissionRequest","decision":{"behavior":"deny","message":"…"}}}` but never
   approve (fake model).
 - Hook stdout is capped at 16 384 bytes; above it the hook fails and nothing it
