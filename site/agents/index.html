@@ -116,12 +116,12 @@
             Claude, Codex starts Codex), in its own git worktree with
             <code class="nowrap">-w</code>. Only Assist (see below) can pick the other kind, with
             <code class="nowrap">--backend</code>; and when Assist leaves out
-            <code class="nowrap">-w</code> in a folder git tracks, Koloft still makes a worktree,
-            named <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code>. Its row hangs under
-            the session that started it (see
-            <a href="../sessions/#session-tree">sessions an agent starts</a>). A Claude session it
-            starts gets a short title that <a href="../accounts/#assist">Assist</a> makes from its
-            task (with Assist off, the first line of the task), or the name the agent gave it with
+            <code class="nowrap">-w</code> in a folder git tracks, Koloft still makes one (see
+            <a href="../sessions/#worktrees">worktree sessions</a>). Its row hangs under the session
+            that started it (see <a href="../sessions/#session-tree">sessions an agent starts</a>).
+            A Claude session it starts gets a short title that
+            <a href="../accounts/#assist">Assist</a> makes from its task (with Assist off, the first
+            line of the task), or the name the agent gave it with
             <code class="nowrap">--name</code>; the same title shows in the sidebar, in
             <code class="nowrap">session list</code> and in Discord. Codex names it itself.
           </li>
