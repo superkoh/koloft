@@ -1,10 +1,21 @@
 import { useEffect, useState } from 'react'
-import { BACKEND_LABEL, SESSION_BACKENDS, normalizeSessionMethods } from '@shared/sessionBackend'
+import {
+  ALWAYS_ON_BACKEND,
+  BACKEND_LABEL,
+  SESSION_BACKENDS,
+  normalizeSessionMethods
+} from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
 import { useStore } from '../../store'
 import { SessionBackendIcon } from '../SessionBackendIcon'
 import { Switch } from './Switch'
 import { useSettingsUpdate } from './useSettingsUpdate'
+
+const METHOD_NOTE: Record<BackendId, string> = {
+  claude: 'Always enabled',
+  codex: 'Runs on a Codex account from Settings ▸ Accounts',
+  muse: 'Runs on the sign-in Muse has on this Mac (muse login)'
+}
 
 type Detected = Awaited<ReturnType<typeof window.api.sessions.backends>>
 
@@ -75,19 +86,17 @@ export function SessionMethodsSection() {
         <div className="set-row" key={backend}>
           <div className="set-lab">
             <b>{BACKEND_LABEL[backend]}</b>
-            <small>
-              {backend === 'claude'
-                ? 'Always enabled'
-                : 'Runs on a Codex account from Settings ▸ Accounts'}
-            </small>
+            <small>{METHOD_NOTE[backend]}</small>
             <small>{status(backend)}</small>
           </div>
           <Switch
             checked={methods.enabled[backend]}
-            disabled={backend === 'claude'}
+            disabled={backend === ALWAYS_ON_BACKEND}
             ariaLabel={`Enable ${BACKEND_LABEL[backend]}`}
             title={
-              backend === 'claude' ? 'Claude is always enabled' : 'Enable Codex for new sessions'
+              backend === ALWAYS_ON_BACKEND
+                ? `${BACKEND_LABEL[backend]} is always enabled`
+                : `Enable ${BACKEND_LABEL[backend]} for new sessions`
             }
             onChange={(on) =>
               update({

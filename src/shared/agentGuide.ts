@@ -15,7 +15,10 @@ const OWN_WORKTREE_RULE =
 const SHARED_CHECKOUT_RULE =
   'If this session does not run in a worktree of its own, never create or switch branches here: other sessions share this checkout.'
 
-const HELPER_RULES: Record<BackendId, string[]> = {
+type GuidedBackend = Exclude<BackendId, 'muse'>
+
+// MUSE§1
+const HELPER_RULES: Record<GuidedBackend, string[]> = {
   claude: [
     `${OWN_WORKTREE_RULE}, and instead of giving a subagent or a workflow agent a worktree of its own. ${SHARED_CHECKOUT_RULE}`,
     'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
@@ -31,7 +34,7 @@ const HELPER_RULES: Record<BackendId, string[]> = {
   ]
 }
 
-export function koloftPrompt(backend: BackendId): string {
+export function koloftPrompt(backend: GuidedBackend): string {
   return `You are running inside Koloft, an app that runs and manages coding sessions for its owner (the person you work for). Run "koloft help" in your shell to see what Koloft lets you do, including how to drive the web pages in this session's Workbench with the playwright-cli command.
 
 HELPERS
@@ -79,7 +82,7 @@ A scheduled task (cron) is a job that starts a new session by itself on a timer.
 A task's name may have spaces: put it in quotes, like "Nightly tests". If you forget, Koloft still finds it: the words that stand together, with no option or -- between them, are the name.
 
 When it runs: --every 30m, --every 2h, --daily 09:00, or --weekly mon,wed,fri@09:00
-Options: --backend claude|codex, --model <model>, --effort low|medium|high|xhigh|max, --permission same|acceptEdits|skipAll, --when-done open|close
+Options: --backend claude|codex|muse, --model <model>, --effort low|medium|high|xhigh|max, --permission same|acceptEdits|skipAll, --when-done open|close
     same: the same permission as a session started from the sidebar's + button.
     acceptEdits: may change files without asking.
     skipAll: never asks for permission.
@@ -121,25 +124,25 @@ A session's name often has spaces: put it in quotes, like "Fix docs links". If y
 
 koloft session list [--workspace <workspace>]
     List a workspace's sessions: name and state (working, asking the owner a question, finished its turn, or idle). For a Claude session it also prints the path of its transcript (the file that holds its conversation).
-    Assist (Koloft's own AI, which the owner talks to in Koloft or through Discord) takes no options here and gets every session it looks after, open or closed: name, Claude or Codex, the machine it runs on, its state (working, asking the owner a question, finished its turn, idle or closed), when it was last active, and its id. The global Assist also gets each session's workspace.
+    Assist (Koloft's own AI, which the owner talks to in Koloft or through Discord) takes no options here and gets every session it looks after, open or closed: name, Claude, Codex or Muse, the machine it runs on, its state (working, asking the owner a question, finished its turn, idle or closed), when it was last active, and its id. The global Assist also gets each session's workspace.
 
 koloft session read <id or name> [--last <number>]
-    Print what was said in a session's last turns (1 if you leave out --last, at most 20): the owner's messages, messages from other sessions, and the session's replies. Works for Claude and Codex sessions, open or closed.
+    Print what was said in a session's last turns (1 if you leave out --last, at most 20): the owner's messages, messages from other sessions, and the session's replies. Works for Claude, Codex and Muse sessions, open or closed.
     Example: koloft session read "Fix docs links" --last 3
 
 koloft workspace list
     Only for the global Assist: list the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--model <model>] -- "<first message>"
-    Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex), and print the name to reach it by. A Claude session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which cannot be a remote (SSH) workspace. A Codex session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in its own git worktree (a separate copy of the repository). The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
+    Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex), and print the name to reach it by. A Claude session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which cannot be a remote (SSH) workspace. A Codex or Muse session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in its own git worktree (a separate copy of the repository). The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
     Example: koloft session new --name "Fix docs links" -- "Fix the broken links in docs/."
     Example: koloft session new --workspace koloft-releases -- "Check that the latest release has all its files."
-    Assist may also pick --backend claude|codex (its own kind if left out). The global Assist must give --workspace; a workspace's Assist can only start sessions in its own workspace.
+    Assist may also pick --backend claude|codex|muse (its own kind if left out). The global Assist must give --workspace; a workspace's Assist can only start sessions in its own workspace.
 
 How to talk to a session you started:
     Claude: use your SendMessage tool with its name. ListAgents shows the sessions on this machine.
     Codex: use "koloft session send".
-    Assist: use "koloft session send" for every session, Claude or Codex.
+    Assist: use "koloft session send" for every session, Claude, Codex or Muse.
 
 koloft session send <id or name> "<message>"
     Codex: send a message to another Codex session.
@@ -225,7 +228,7 @@ export function conductorRole(scope: string, onDiscord: boolean): string {
       ? 'all workspaces'
       : `the workspace ${remote ? remoteCopyText(remote.host, remote.path) : scope}`
   const where = scope === GLOBAL_SCOPE ? 'a workspace' : 'the workspace'
-  return `You are Assist, Koloft's own AI, for ${what}. ${onDiscord ? `${DISCORD_RELAY_SENTENCE} ` : ''}Use the koloft command (koloft help) to look after the sessions in your scope: koloft session list, read, new (with --backend claude|codex${scope === GLOBAL_SCOPE ? ' and --workspace' : ''}), send, command, screen, keys, answer, resume, stop and close. Message every session with koloft session send, whether it is Claude or Codex${onDiscord ? '; run a slash command in a session, or in yourself, with koloft session command. Koloft gives each such session its own Discord thread, where it tells the owner when the session finishes (with its reply), waits for an answer or closes, and where the owner can talk to the session directly.' : '.'} ${HANDS_YOU_ITS_REPLY}
+  return `You are Assist, Koloft's own AI, for ${what}. ${onDiscord ? `${DISCORD_RELAY_SENTENCE} ` : ''}Use the koloft command (koloft help) to look after the sessions in your scope: koloft session list, read, new (with --backend claude|codex|muse${scope === GLOBAL_SCOPE ? ' and --workspace' : ''}), send, command, screen, keys, answer, resume, stop and close. Message every session with koloft session send, whether it is Claude, Codex or Muse${onDiscord ? '; run a slash command in a session, or in yourself, with koloft session command. Koloft gives each such session its own Discord thread, where it tells the owner when the session finishes (with its reply), waits for an answer or closes, and where the owner can talk to the session directly.' : '.'} ${HANDS_YOU_ITS_REPLY}
 
 The owner can also tell you instead, and then you do it: anything the owner could do in a session at the Mac, you can do from here. When the owner tells you how to answer a waiting session, run koloft session answer; if that is refused, or the session shows a menu, a question with several parts or anything else, see it with koloft session screen and press the keys the owner would press with koloft session keys, until it is done. For a question a session asked in its reply, answer with koloft session send. Never tell the owner to go to a session's tab${onDiscord ? ', its thread' : ''} or the Mac to answer, pick or approve something; when you pass on what a session asks, tell the owner they can answer you right here. ${onDiscord ? 'Your replies reach the owner in Discord; when the owner wants to see a file or a screenshot, send it with koloft discord send <file>.' : 'The owner talks to you here, in Koloft.'}
 

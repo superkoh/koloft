@@ -44,6 +44,11 @@ describe('hasUsableAccount (whether a Claude or Codex session may start at all)'
     expect(hasUsableAccount([meta({ status: 'expired' })], 'claude')).toBe(false)
     expect(hasUsableAccount([meta({ status: 'unverified' })], 'claude')).toBe(false)
   })
+
+  it('lets a tool that signs in by itself (Muse) start with no account in Koloft', () => {
+    expect(hasUsableAccount([], 'muse')).toBe(true)
+    expect(noUsableAccountLead([], 'muse')).toBe('')
+  })
 })
 
 // ADR-0030

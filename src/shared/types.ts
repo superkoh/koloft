@@ -396,7 +396,10 @@ export type HintId = (typeof HINT_IDS)[number]
 export const WORLD_CLOCK_MAX = 3
 
 export const DEFAULT_SETTINGS: Settings = {
-  sessionMethods: { defaultBackend: 'claude', enabled: { claude: true, codex: true } },
+  sessionMethods: {
+    defaultBackend: 'claude',
+    enabled: { claude: true, codex: true, muse: true }
+  },
   fontFamily:
     '"JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", Menlo, Monaco, monospace',
   fontSize: 13,
@@ -437,7 +440,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gitSuggestionsDismissed: []
 }
 
-export type BackendId = 'claude' | 'codex'
+export type BackendId = 'claude' | 'codex' | 'muse'
 export type HostId = 'local' | 'ssh'
 export interface SessionMethods {
   defaultBackend: BackendId
@@ -643,6 +646,13 @@ export interface SessionUsage {
 
 export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
 export const CODEX_PLACEHOLDER_TITLE = 'Codex session'
+export const MUSE_PLACEHOLDER_TITLE = 'Muse session'
+
+export const PLACEHOLDER_TITLES: Record<BackendId, string> = {
+  claude: PLACEHOLDER_SESSION_TITLE,
+  codex: CODEX_PLACEHOLDER_TITLE,
+  muse: MUSE_PLACEHOLDER_TITLE
+}
 
 export const PENDING_SESSION_TITLE = 'Starting…'
 

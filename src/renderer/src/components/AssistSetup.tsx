@@ -1,14 +1,20 @@
 import { useState, type JSX } from 'react'
 import type { BackendId } from '@shared/types'
 import { accountToSignInAgain } from '@shared/accountUsage'
-import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
+import {
+  ASSIST_BACKENDS,
+  BACKEND_LABEL,
+  SESSION_BACKENDS,
+  productList,
+  type AssistBackend
+} from '@shared/sessionBackend'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
 import { AddAccountDialog, CodexSignInDialog, LoginDialog } from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 
 // CC§9 CODEX§15
-export const ASSIST_RUNS_ON: Record<BackendId, string> = {
+export const ASSIST_RUNS_ON: Record<AssistBackend, string> = {
   claude: 'Haiku, about 750 tokens a job',
   codex: 'GPT-6 Luna, a few thousand tokens a job'
 }
@@ -69,7 +75,7 @@ export function AssistSetup({
   const [codexSignIn, setCodexSignIn] = useState<{ again?: string } | null>(null)
   const [pasting, setPasting] = useState(false)
 
-  const pick = (b: BackendId, again: string | undefined): void => {
+  const pick = (b: AssistBackend, again: string | undefined): void => {
     if (setup.usable[b]) update({ assist: { on: true, backend: b } })
     else if (b === 'claude') beginLogin(again)
     else setCodexSignIn({ again })
@@ -83,8 +89,7 @@ export function AssistSetup({
     return (
       <div className="assist-setup">
         <InstallHint>
-          Koloft runs Claude Code or Codex, and this Mac has neither yet. Pick one to install: a
-          terminal opens and runs its official installer. Nothing else to set up first.
+          {`Koloft runs ${productList(SESSION_BACKENDS, 'or')}, and this Mac has none of them yet. Pick one to install: a terminal opens and runs its official installer. Nothing else to set up first.`}
         </InstallHint>
       </div>
     )
@@ -97,7 +102,7 @@ export function AssistSetup({
         That is <b>Koloft Assist</b>.
       </div>
       <div className="ob-choices">
-        {SESSION_BACKENDS.map((b) => {
+        {ASSIST_BACKENDS.map((b) => {
           if (!setup.tools.includes(b))
             return offerInstall && setup.toolsKnown ? <InstallChoice key={b} backend={b} /> : null
           const again = accountToSignInAgain(accounts, b)

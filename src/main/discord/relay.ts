@@ -41,6 +41,9 @@ import {
 export const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 export const CODEX_NEEDS_YES_OR_NO = 'Reply yes or no.'
 export const SHOWS_NO_DIALOG = 'Koloft sees no question or approval in it right now.'
+// MUSE§3
+export const ASKS_WHAT_KOLOFT_CANNOT_SEE =
+  'It is waiting for an answer Koloft cannot read from here. Assist can still answer it by pressing its keys.'
 export const CODEX_INPUT_NOT_PROBED =
   'Codex is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. Assist can still answer this one by pressing its keys.'
 export const CONDUCTOR_ASKS = '❓ **Assist** is waiting for you.'
@@ -420,7 +423,10 @@ export class DiscordRelay {
       return undefined
     }
     const ask = this.openAsk(tab)
-    if (!ask) return SHOWS_NO_DIALOG
+    if (!ask)
+      return this.d.status(tab) === 'approval' || this.d.awaitsInput(tab)
+        ? ASKS_WHAT_KOLOFT_CANNOT_SEE
+        : SHOWS_NO_DIALOG
     if (ask.hook) {
       this.answer(tab, hookAnswer(ask.payload, reply))
       return undefined

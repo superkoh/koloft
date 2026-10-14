@@ -7,7 +7,13 @@ import type {
   WorkspaceRows
 } from '@shared/types'
 import { ownerSays } from '@shared/agentGuide'
-import { BACKEND_LABEL } from '@shared/sessionBackend'
+import {
+  BACKEND_LABEL,
+  SESSION_BACKENDS,
+  backendIdOf,
+  capabilitiesFor,
+  messagingOf
+} from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { basename } from '@shared/preview'
@@ -74,8 +80,9 @@ export function parseNewSessionArgs(args: string[]): Parsed<NewSessionArgs> {
     if (key === 'worktree' && !isValidWorktreeName(value))
       return fail(`"${value}" cannot be a worktree name. Use letters, digits, dots, - and _.`)
     if (key === 'backend') {
-      if (value !== 'claude' && value !== 'codex') return fail('--backend is claude or codex.')
-      flags.backend = value
+      const backend = backendIdOf(value)
+      if (!backend) return fail(`--backend is one of ${SESSION_BACKENDS.join(', ')}.`)
+      flags.backend = backend
     } else flags[key] = value
     i++
   }
@@ -117,7 +124,7 @@ export function formatSessionList(
         BACKEND_LABEL[info.backendId],
         stateWords(info, asking)
       ]
-      if (info.backendId === 'codex') parts.push(`id: ${idToReach(info)}`)
+      if (info.backendId !== 'claude') parts.push(`id: ${idToReach(info)}`)
       if (peerName) parts.push(`name: ${peerName}`)
       const transcript = info.details?.claude?.jsonlPath
       if (transcript) parts.push(`transcript: ${transcript}`)
@@ -356,8 +363,8 @@ const SEND_USAGE =
 const NO_WORKSPACE = 'koloft session: Koloft does not know which workspace this session is in.'
 const LIST_USAGE =
   'koloft session list: the only option is --workspace <folder name or path>, like: koloft session list --workspace koloft'
-const CODEX_HAS_NO_NAME =
-  'koloft session new: a Codex session has no name, so leave out --name. Koloft prints an id to reach it by.'
+const hasNoName = (backend: BackendId): string =>
+  `koloft session new: a ${BACKEND_LABEL[backend]} session has no name, so leave out --name. Koloft prints an id to reach it by.`
 
 async function listSessions(
   d: SessionVerbDeps,
@@ -384,7 +391,8 @@ async function startSibling(
   oweReply: (tabId: string) => void
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
-  if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
+  if (backend !== 'claude' && args.name !== undefined)
+    return refused(hasNoName(backend), EXIT_USAGE)
   const caller: SessionCaller = {
     name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
     id: idToReach(me),
@@ -406,15 +414,23 @@ async function startSibling(
     // CODEX§17
     ...(backend === 'codex'
       ? { role: handoverPreamble(caller), firstPrompt: args.prompt }
-      : { firstPrompt: withHandover(caller, args.prompt) })
+      : capabilitiesFor(backend, 'local').agentTools === true
+        ? { firstPrompt: withHandover(caller, args.prompt) }
+        : { firstPrompt: args.prompt })
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
   if (conductorTab) {
-    d.started(conductorTab, tabId, name ?? 'a Codex session', workspace, backend)
+    d.started(
+      conductorTab,
+      tabId,
+      name ?? `a ${BACKEND_LABEL[backend]} session`,
+      workspace,
+      backend
+    )
     return answered(
-      `Started ${name ? `session "${name}"` : 'a Codex session'} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
+      `Started ${name ? `session "${name}"` : `a ${BACKEND_LABEL[backend]} session`} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
     )
   }
   const listHint =
@@ -737,7 +753,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     line: string | undefined,
     until: number
   ): Promise<string> => {
-    if (t.backend === 'codex') {
+    if (messagingOf(t.backend, !!t.remote) === 'queue') {
       await d.queue(tab, text, `koloft-conductor-${++queued}`)
       return `Sent to ${t.name}.`
     }
@@ -747,7 +763,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     }
     if (!(await d.ready(tab, until - Date.now(), true)))
       throw new Error(
-        `${t.name} stayed busy. It runs on another machine, where Koloft can only type into it once its turn has ended and it shows no question.`
+        `${t.name} stayed busy. ${t.remote ? 'It runs on another machine, where Koloft' : 'Koloft'} can only type into it once its turn has ended and it shows no question.`
       )
     await d.press(tab, [text, '\r'])
     return `Typed into ${t.name}.`
@@ -760,9 +776,10 @@ export function sessionVerb(d: SessionVerbDeps): {
     caller: Pick<AgentCaller, 'tabId' | 'session'>,
     fromAssist: boolean
   ): Promise<AgentReply> => {
-    const typed = t.backend === 'claude' && t.remote
+    const route = messagingOf(t.backend, !!t.remote)
+    const typed = route === 'typed'
     const line =
-      typed || t.backend === 'codex'
+      route !== 'peerLine'
         ? undefined
         : crossSessionLine(d.modeOf(caller.tabId), text, `koloft-session-${++lined}`)
     if (line === null)

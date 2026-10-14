@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import type { DiscoveredFolder } from '@shared/types'
 import { basename } from '@shared/preview'
-import { backendAvailable } from '@shared/sessionBackend'
+import {
+  ALWAYS_ON_BACKEND,
+  SESSION_BACKENDS,
+  backendAvailable,
+  productList
+} from '@shared/sessionBackend'
 import { shortenHome } from '../browseModel'
 import { useStore } from '../store'
 import { relTime } from '../sessionRows'
@@ -195,7 +200,7 @@ export function Onboarding({
   const [found, setFound] = useState<DiscoveredFolder[] | null>(null)
   const [checked, setChecked] = useState<string[]>([])
   const [probe, setProbe] = useState<Probe>('pending')
-  const [codexFound, setCodexFound] = useState(false)
+  const [otherFound, setOtherFound] = useState(false)
 
   useEffect(() => {
     if (step !== 2 || found !== null) return
@@ -207,10 +212,12 @@ export function Onboarding({
 
   const runProbe = useCallback((): void => {
     setProbe('pending')
-    setCodexFound(false)
+    setOtherFound(false)
     void window.api.sessions.backends(true).then((backends) => {
-      setCodexFound(backendAvailable(backends, 'codex'))
-      setProbe(backendAvailable(backends, 'claude') ? 'found' : 'missing')
+      setOtherFound(
+        SESSION_BACKENDS.some((b) => b !== ALWAYS_ON_BACKEND && backendAvailable(backends, b))
+      )
+      setProbe(backendAvailable(backends, ALWAYS_ON_BACKEND) ? 'found' : 'missing')
     })
   }, [])
 
@@ -246,11 +253,11 @@ export function Onboarding({
     if (step === 3)
       return {
         label: 'Continue',
-        disabled: !setup.done && !noTool,
+        disabled: !setup.done && setup.tools.length > 0,
         go: () => setStep(4)
       }
     if (probe === 'pending') return { label: '＋ Start first session', disabled: true }
-    if (probe === 'missing' && !codexFound) return { label: 'Check again', go: runProbe }
+    if (probe === 'missing' && !otherFound) return { label: 'Check again', go: runProbe }
     if (!firstWs) return { label: 'Choose Folder…', go: () => void onAddWorkspace() }
     return {
       label: '＋ Start first session',
@@ -371,14 +378,13 @@ export function Onboarding({
               When Koloft is in the background, a light turning amber or green also sends a
               notification (Settings ▸ Notifications).
             </div>
-            {probe === 'missing' && !codexFound ? (
+            {probe === 'missing' && !otherFound ? (
               <InstallHint>
-                To start a session, install Claude Code or Codex. A terminal opens and runs its
-                official installer.
+                {`To start a session, install ${productList(SESSION_BACKENDS, 'or')}. A terminal opens and runs its official installer.`}
               </InstallHint>
             ) : (
               <div className="quiet">
-                {codexFound ? 'The CLI' : 'Claude itself'} may ask a thing or two first: theme, or
+                {otherFound ? 'The CLI' : 'Claude itself'} may ask a thing or two first: theme, or
                 whether you trust this folder. Answer in the terminal.
               </div>
             )}

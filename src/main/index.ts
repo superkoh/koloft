@@ -42,7 +42,7 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
-  otherBackend,
+  otherAssistBackend,
   preferredAssistBackend,
   statusUnavailable,
   SUPPORTED_PAIRS
@@ -250,7 +250,7 @@ import {
   BROWSER_PARTITION,
   DISCORD_OFF,
   PLACEHOLDER_SESSION_TITLE,
-  CODEX_PLACEHOLDER_TITLE,
+  PLACEHOLDER_TITLES,
   exitedAbnormally,
   GIT_PLATFORMS,
   isHttpUrl,
@@ -565,7 +565,7 @@ function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
 }
 function sidebarTitle(s: SessionInfo): string | undefined {
-  const placeholder = s.title === PLACEHOLDER_SESSION_TITLE || s.title === CODEX_PLACEHOLDER_TITLE
+  const placeholder = Object.values(PLACEHOLDER_TITLES).includes(s.title)
   return s.title && !placeholder ? s.title : undefined
 }
 
@@ -593,11 +593,12 @@ function rememberOpenTabs(all = allSessions()): void {
   if (!openTabsFile || !openTabsRestored || quitCommitted) return
   const live = all.filter((s) => s.alive && s.sessionId).map(openTabOf)
   for (const h of ptyMgr.list()) {
-    if (!h.alive || !h.resumeSessionId || (h.kind !== 'claude' && h.kind !== 'codex')) continue
+    const kind = backendIdOf(h.kind)
+    if (!h.alive || !h.resumeSessionId || !kind) continue
     const remote = tracker.remoteOf(h.id)
     live.push({
       sessionId: h.resumeSessionId,
-      kind: h.kind,
+      kind,
       title: '',
       cwd: remote ? formatRemoteKey(remote.host, h.cwd) : h.cwd
     })
@@ -1108,7 +1109,7 @@ async function whyAssistCannotRunOn(
 async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoice> {
   const settings = loadSettings()
   const preferred = preferredAssistBackend(settings)
-  const other = otherBackend(preferred)
+  const other = otherAssistBackend(preferred)
   const { enabled } = settings.sessionMethods
   const why =
     avoid === preferred ? 'it could not start' : await whyAssistCannotRunOn(preferred, enabled)
@@ -2103,7 +2104,8 @@ app.whenReady().then(() => {
       .catch((error) => sendToRenderer('cron:toast', String(error)))
   }
   workspaceMgr = new WorkspaceManager({
-    additionalRows: (wsPath) => codexSessions?.rows(wsPath) ?? [],
+    additionalRows: (wsPath) =>
+      (codexSessions?.rows(wsPath) ?? []).map((r) => ({ ...r, backendId: 'codex' as const })),
     additionalMembers: () => codexSessions?.members() ?? new Set(),
     projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
     loadLayout,
@@ -4026,9 +4028,10 @@ function registerIpc(): void {
       reason: codexStartupError ?? `${BACKEND_LABEL[id]} is not ready.`
     }))
   })
-  ipcMain.handle('sessions:installTool', (_e, backend: unknown) =>
-    backend === 'claude' || backend === 'codex' ? installTool(backend) : null
-  )
+  ipcMain.handle('sessions:installTool', (_e, backend: unknown) => {
+    const id = backendIdOf(backend)
+    return id ? installTool(id) : null
+  })
   ipcMain.handle('attention:list', () => attention.list())
   ipcMain.handle('tabs:list', (): TabInventoryReply => {
     rendererReady = true

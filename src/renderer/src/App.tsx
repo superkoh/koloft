@@ -358,13 +358,20 @@ export default function App(): JSX.Element {
     void window.api.sessions.backends().then(
       (list) => {
         if (alive)
-          setProbed({
-            claude: backendAvailable(list, 'claude'),
-            codex: backendAvailable(list, 'codex')
-          })
+          setProbed(
+            Object.fromEntries(
+              SESSION_BACKENDS.map((b) => [b, backendAvailable(list, b)])
+            ) as Record<SessionBackend, boolean>
+          )
       },
       () => {
-        if (alive) setProbed({ claude: false, codex: false })
+        if (alive)
+          setProbed(
+            Object.fromEntries(SESSION_BACKENDS.map((b) => [b, false])) as Record<
+              SessionBackend,
+              boolean
+            >
+          )
       }
     )
     return () => {
@@ -376,12 +383,14 @@ export default function App(): JSX.Element {
     [probed]
   )
   const sessionMethods = useStore((s) => s.settings.sessionMethods)
-  const namedMethods = useMemo((): [SessionBackend, SessionBackend] | null => {
+  const namedMethods = useMemo((): SessionBackend[] | null => {
     if (!probed) return null
     const usable = SESSION_BACKENDS.filter((b) => sessionMethods.enabled[b] && probed[b])
-    if (usable.length < 2) return null
-    const other = usable.find((b) => b !== sessionMethods.defaultBackend)
-    return other ? [sessionMethods.defaultBackend, other] : null
+    if (usable.length < 2 || !usable.includes(sessionMethods.defaultBackend)) return null
+    return [
+      sessionMethods.defaultBackend,
+      ...usable.filter((b) => b !== sessionMethods.defaultBackend)
+    ]
   }, [probed, sessionMethods])
 
   const startSession = useCallback(
@@ -1694,16 +1703,17 @@ export default function App(): JSX.Element {
                           ? `New ${BACKEND_LABEL[namedMethods[0]]} session`
                           : 'New session'}
                       </button>
-                      {namedMethods && (
+                      {namedMethods?.slice(1).map((other) => (
                         <button
+                          key={other}
                           className="mini"
-                          disabled={!!welcomeIssue(namedMethods[1])}
-                          title={welcomeIssue(namedMethods[1])}
-                          onClick={() => startIn(welcomeWs.workspace.path, namedMethods[1])}
+                          disabled={!!welcomeIssue(other)}
+                          title={welcomeIssue(other)}
+                          onClick={() => startIn(welcomeWs.workspace.path, other)}
                         >
-                          New {BACKEND_LABEL[namedMethods[1]]} session
+                          New {BACKEND_LABEL[other]} session
                         </button>
-                      )}
+                      ))}
                       <NoAccountLines
                         backends={welcomeBackends.filter((b) => !welcomeRefusal(b))}
                       />
