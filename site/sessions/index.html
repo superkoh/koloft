@@ -246,10 +246,11 @@
           </li>
           <li>
             Or type what a new session should do, and press <kbd>⏎</kbd> (the button at the right
-            reads <code>Ask AI</code>). <a href="../accounts/#assist">Assist</a> picks the folder,
-            the worktree and a title, and the session starts there with your words as its first
-            message. In a folder git tracks, the session always gets a worktree of its own, never
-            the folder itself; when Assist does not name one, it is called
+            reads <code>Ask AI</code>, or <code>Ask AI · Claude</code> when you have both tools).
+            <a href="../accounts/#assist">Assist</a> picks the folder, the worktree and a title, and
+            the session starts there with your words as its first message. In a folder git tracks,
+            the session always gets a worktree of its own, never the folder itself; when Assist does
+            not name one, it is called
             <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code>. If the folder's branch is
             behind, Koloft first asks whether to pull. <kbd>⇧⏎</kbd> starts it on the other tool,
             when you have both.
@@ -263,8 +264,11 @@
             folder ("fix the tests") goes to the global Assist, which answers in its own tab.
           </li>
           <li>
-            With Assist off, the button reads <code>Start a session</code> and <kbd>⏎</kbd> opens
-            the folder picker instead. A folder git tracks still gets a fresh
+            With Assist off, the button reads <code>Start a session</code> (<code
+              >Start · Claude</code
+            >
+            when you have both tools) and <kbd>⏎</kbd> opens the folder picker instead. A folder git
+            tracks still gets a fresh
             <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code> worktree.
           </li>
           <li>

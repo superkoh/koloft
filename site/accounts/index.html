@@ -196,11 +196,11 @@
           Sign in to Codex runs <code>codex login</code> in a terminal tab. Each sign-in becomes its
           own Codex home, a folder that holds that one login. The sign-in tab says
           <code>Codex sign in: &lt;name&gt;</code> above the terminal, with a Cancel button. New
-          Codex sessions start on the least-used one, and never on one Codex says has hit its limit.
-          Each account's use, for each limit Codex reports (such as 5 hours and a week), shows in
-          Settings and in the usage panel at the bottom of the sidebar, with its credits and the
-          limit resets it has saved, like
-          <code>62,500 credits · 3 resets saved, first expires 10-21</code>.
+          Codex sessions start on the least-used one, and skip one that has hit its limit while
+          another is free; when all have hit it, Koloft takes turns. Each account's use, for each
+          limit Codex reports (such as 5 hours and a week), shows in Settings and in the usage panel
+          at the bottom of the sidebar, with its credits and the limit resets it has saved, like
+          <code>62,500 credits · 3 resets saved, first expires 10-21 09:00</code>.
         </p>
         <p>
           An account that hit its limit shows <code>WALLED</code> in the panel. When it has a saved
