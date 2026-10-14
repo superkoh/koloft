@@ -40,7 +40,7 @@ export interface PaletteAction {
   key: string
   label: string
   keys?: string
-  words?: string[]
+  words: string[]
   disabled?: boolean
   run: () => void
 }
@@ -77,11 +77,10 @@ export function matchesQuery(text: string, query: string): boolean {
 }
 
 export function matchesAction(action: PaletteAction, query: string): boolean {
-  const words = action.words ?? []
   const typed = query.toLowerCase()
   return (
-    matchesQuery([action.label, ...words].join(' '), query) ||
-    words.some((w) => typed.includes(w.toLowerCase()))
+    matchesQuery([action.label, ...action.words].join(' '), query) ||
+    action.words.some((w) => typed.includes(w.toLowerCase()))
   )
 }
 

@@ -99,7 +99,7 @@ import {
   RESTORE_FAILED_NOTICE,
   wakeTab
 } from './resumeFlow'
-import { visitTab } from './sessionClick'
+import { openSessionRow, visitTab } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { UnsavedDialog } from './components/UnsavedDialog'
@@ -143,8 +143,11 @@ import { NewProjectDialog, type ProjectSeed } from './components/NewProjectDialo
 import type { PendingStart, TypedStart } from './newSession'
 import { pendingOptions, projectOptions, projectParentKey } from './aiStart'
 import type { PaletteAction } from './palette'
-import { PALETTE_FEATURES } from '@shared/paletteFeatures'
-import { openSessionRow } from './sessionClick'
+import {
+  PALETTE_FEATURES,
+  type PaletteActionKey,
+  type PaletteFeature
+} from '@shared/paletteFeatures'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
@@ -1126,7 +1129,7 @@ export default function App(): JSX.Element {
       showToast(
         'Koloft Assist is off, so pick the workspace yourself. Turn it on in Settings ▸ Assist.'
       )
-      requestNew('main', undefined, { prompt, title: '', path: null, worktree: null })
+      pickWorkspaceForTyped({ prompt, title: '' })
       return
     }
     const toAssist = (title: string, workspace: string | null): void => {
@@ -1135,19 +1138,15 @@ export default function App(): JSX.Element {
           ? window.api.conductors.tell(workspace, title, prompt)
           : window.api.conductors.openTask(GLOBAL_SCOPE, title, prompt)
       ).then((r) => {
-        if (r.ok) {
-          window.api.attention.visit(r.tabId)
-          useStore.getState().activateTab(r.tabId)
-          return
-        }
+        if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
         requestNew('main', undefined, { prompt, title, path: workspace, worktree: null })
       })
     }
     if (route?.kind === 'feature') {
-      const action = paletteActions().find((a) => a.key === route.key && !a.disabled)
-      if (action) action.run()
-      else toAssist(route.title, null)
+      paletteActions()
+        .find((a) => a.key === route.key)
+        ?.run()
       return
     }
     if (route?.kind === 'session') {
@@ -1191,7 +1190,7 @@ export default function App(): JSX.Element {
     const hasHistory = workspaceRows.some(
       (w) => w.workspace.path === currentWs && w.workspace.hasHistory
     )
-    const run: Record<string, () => void> = {
+    const run: Record<PaletteActionKey, () => void> = {
       'new-session': () => globalNew('main'),
       'new-worktree-session': () => globalNew('worktree'),
       'add-workspace': () => void addWorkspace(),
@@ -1204,7 +1203,7 @@ export default function App(): JSX.Element {
       'open-settings': () => setSettingsOpen(true),
       'check-update': () => useStore.getState().openUpdateCheck()
     }
-    const disabled: Record<string, boolean> = {
+    const disabled: Partial<Record<PaletteFeature['key'], boolean>> = {
       'restore-session': !hasHistory,
       'scheduled-jobs': !currentWs
     }
@@ -1212,7 +1211,7 @@ export default function App(): JSX.Element {
       ...f,
       kind: 'action',
       disabled: disabled[f.key],
-      run: pane ? () => useStore.getState().openSettingsPane(pane) : run[f.key]
+      run: pane ? () => useStore.getState().openSettingsPane(pane) : run[f.key as PaletteActionKey]
     }))
   }
 

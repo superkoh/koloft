@@ -27,8 +27,21 @@ export const SETTINGS_PANES: { id: SettingsPaneId; label: string; words: string[
   { id: 'about', label: 'About', words: ['关于', '版本号', 'version'] }
 ]
 
+export type PaletteActionKey =
+  | 'new-session'
+  | 'new-worktree-session'
+  | 'add-workspace'
+  | 'add-remote'
+  | 'restart-session'
+  | 'toggle-workbench'
+  | 'toggle-sidebar'
+  | 'restore-session'
+  | 'scheduled-jobs'
+  | 'open-settings'
+  | 'check-update'
+
 export interface PaletteFeature {
-  key: string
+  key: PaletteActionKey | `settings-${SettingsPaneId}`
   label: string
   keys?: string
   words: string[]

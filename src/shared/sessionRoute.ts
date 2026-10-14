@@ -45,23 +45,24 @@ const WHY_MAX_CHARS = 200
 
 const ROUTE_SYSTEM = 'You decide who in the Koloft app should take what a person typed.'
 
-function sessionRefs(
-  list: RouteWorkspace[]
-): { ref: string; path: string; session: RouteSession }[] {
-  return list.flatMap((w, i) =>
-    w.sessions
-      .slice(0, SESSIONS_SENT_PER_WORKSPACE)
-      .map((session, j) => ({ ref: `${i + 1}.${j + 1}`, path: w.path, session }))
-  )
+const sessionsSent = (w: RouteWorkspace): RouteSession[] =>
+  w.sessions.slice(0, SESSIONS_SENT_PER_WORKSPACE)
+
+function sessionOfRef(
+  list: RouteWorkspace[],
+  ref: string
+): { path: string; session: RouteSession } | undefined {
+  const [i, j] = ref.split('.').map(Number)
+  const w = list[i - 1]
+  const session = w && sessionsSent(w)[j - 1]
+  return session && { path: w.path, session }
 }
 
 function workspaceLines(list: RouteWorkspace[]): string {
-  const refs = sessionRefs(list)
   return list
     .map((w, i) => {
-      const recent = refs
-        .filter((r) => r.path === w.path)
-        .map((r) => `[${r.ref}] ${r.session.title}`)
+      const recent = sessionsSent(w)
+        .map((s, j) => `[${i + 1}.${j + 1}] ${s.title}`)
         .join('; ')
       const head = `${i + 1} | ${w.machine} | ${w.name} | ${w.git ? 'git' : 'not git'} | ${recent}`
       return w.git ? `${head}\n   existing worktrees: ${w.worktrees.join(', ') || '(none)'}` : head
@@ -170,7 +171,7 @@ export function parseRoute(reply: string | null, list: RouteWorkspace[]): Sessio
     return feature ? { ...said, kind: 'feature', key: feature.key } : null
   }
   if (o.hand === 'session') {
-    const hit = sessionRefs(list).find((r) => r.ref === String(o.session))
+    const hit = sessionOfRef(list, String(o.session))
     return hit ? { ...said, kind: 'session', path: hit.path, id: hit.session.id } : null
   }
   if (o.workspace === null) {

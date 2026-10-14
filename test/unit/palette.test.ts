@@ -66,6 +66,7 @@ const action = (label: string): PaletteAction => ({
   kind: 'action',
   key: label,
   label,
+  words: [],
   run: () => {}
 })
 
