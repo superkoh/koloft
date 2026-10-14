@@ -1,4 +1,5 @@
 import { LOCAL_MACHINE, type SessionRoute } from '@shared/sessionRoute'
+import type { WorkspaceRows } from '@shared/types'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 import {
   pendingLaunch,
@@ -23,15 +24,15 @@ export function askRoute(message: string): {
 }
 
 export async function pendingOptions(
-  ws: { path: string; isGit: boolean },
+  ws: Pick<WorkspaceRows['workspace'], 'path' | 'isGit'>,
   pending: PendingStart
 ): Promise<SessionLaunchOptions> {
-  const issue = ws.path === pending.path && pending.worktree?.kind === 'issue'
+  const named = ws.path === pending.path ? pending.worktree : null
   const [worktrees, items] = await Promise.all([
     ws.isGit ? window.api.workspace.worktrees(ws.path) : [],
-    issue ? window.api.github.openItems(ws.path).catch(() => null) : null
+    named?.kind === 'issue' ? window.api.github.openItems(ws.path).catch(() => null) : null
   ])
-  const wt = pendingWorktree(ws, pending, worktrees, Date.now())
+  const wt = pendingWorktree(named, ws.isGit, worktrees, Date.now())
   return pendingLaunch(
     ws.path,
     wt,

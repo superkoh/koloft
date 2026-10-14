@@ -105,10 +105,11 @@ export function distinctName(name: string, taken: string[]): string {
   return `${name}-${n}`
 }
 
-const UNNAMED_SESSION = { name: 'session' }
-
-export function freshWorktreeName(taken: string[], now: number): string {
-  return distinctName(worktreeBase(UNNAMED_SESSION, now), taken)
+export function freshWorktreeName(worktrees: { name: string }[], now: number): string {
+  return distinctName(
+    worktreeBase('session', now),
+    worktrees.map((w) => w.name)
+  )
 }
 
 function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {

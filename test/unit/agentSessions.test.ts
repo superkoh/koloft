@@ -141,7 +141,7 @@ function harness(
     },
     conductorScope: (tabId) => conducting.scopes?.[tabId],
     sidebar: () => conducting.sidebar ?? [],
-    worktreeNames: async () => conducting.worktrees ?? [],
+    worktrees: async () => (conducting.worktrees ?? []).map((name) => ({ name, dir: name })),
     readTurns: async (key, n) => {
       reads.push({ key, n })
       return (conducting.turns?.[key] ?? []).slice(-n)

@@ -4,7 +4,8 @@ import type {
   SessionInfo,
   SessionRow,
   SessionStatus,
-  WorkspaceRows
+  WorkspaceRows,
+  WorktreeInfo
 } from '@shared/types'
 import { ownerSays } from '@shared/agentGuide'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
@@ -310,7 +311,7 @@ export interface SessionVerbDeps {
   closeSoon(target: ClosableSession): void
   conductorScope(tabId: string): string | undefined
   sidebar(): WorkspaceRows[]
-  worktreeNames(workspace: string): Promise<string[]>
+  worktrees(workspace: string): Promise<WorktreeInfo[]>
   readTurns(key: string, n: number): Promise<Turn[]>
   touch(tabId: string, key: string): void
   conductorOf(ref: string): Target | undefined
@@ -400,8 +401,8 @@ async function startSibling(
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
   const worktree =
     args.worktree ??
-    (conductorTab !== undefined && gitWorkspace
-      ? freshWorktreeName(await d.worktreeNames(workspace), Date.now())
+    (caller.assist && gitWorkspace
+      ? freshWorktreeName(await d.worktrees(workspace), Date.now())
       : undefined)
   const tabId = await d.launch({
     kind: backend,

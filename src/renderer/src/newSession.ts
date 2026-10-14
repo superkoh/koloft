@@ -57,19 +57,15 @@ export function typedLaunch(typed: TypedStart): Pick<CreateTabOptions, 'firstPro
 }
 
 export function pendingWorktree(
-  ws: { path: string; isGit: boolean },
-  pending: PendingStart,
+  named: RouteWorktree | null,
+  isGit: boolean,
   worktrees: WorktreeInfo[],
   now: number
 ): RouteWorktree | null {
-  const named = ws.path === pending.path ? pending.worktree : null
-  if (named || !ws.isGit) return named
+  if (named || !isGit) return named
   return {
     kind: 'new',
-    name: freshWorktreeName(
-      worktrees.map((w) => w.name),
-      now
-    )
+    name: freshWorktreeName(worktrees, now)
   }
 }
 
