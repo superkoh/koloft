@@ -472,6 +472,7 @@ document.getElementById('ask').addEventListener('click', async function () {
 async function state(name) { return (await navigator.permissions.query({ name: name })).state }
 document.getElementById('go').addEventListener('click', async function () {
   var names = ['microphone', 'camera', 'geolocation', 'notifications']
+  var first = await navigator.permissions.query({ name: 'microphone' })
   var before = []
   for (var i = 0; i < names.length; i++) before.push(await state(names[i]))
   document.getElementById('before').textContent = before.join(',')
@@ -479,11 +480,11 @@ document.getElementById('go').addEventListener('click', async function () {
   var mic
   try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach(function (t) { t.stop() }); mic = 'granted' } catch (e) { mic = e.name }
   document.getElementById('mic').textContent = mic
-  document.getElementById('after').textContent = await state('microphone')
+  document.getElementById('after').textContent = first.state + ',' + (await state('microphone'))
 })
 </script></body></html>`
 
-  test('BB-C72: a page that checks permissions.query before asking reads "prompt" for a permission never asked, so it asks and the permission bar shows; once refused it reads "denied"', async ({
+  test('BB-C72: a page that checks permissions.query before asking reads "prompt" for a permission never asked, so it asks and the permission bar shows; once refused it reads "denied", also on the status it got first', async ({
     app,
     page,
     env
@@ -508,7 +509,7 @@ document.getElementById('go').addEventListener('click', async function () {
       await deny.click()
 
       await expect(guest.locator('#mic')).toHaveText('NotAllowedError', { timeout: 30_000 })
-      await expect(guest.locator('#after')).toHaveText('denied', { timeout: 30_000 })
+      await expect(guest.locator('#after')).toHaveText('denied,denied', { timeout: 30_000 })
     } finally {
       await server.close()
     }

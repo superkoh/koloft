@@ -166,9 +166,19 @@ contextBridge.executeInMainWorld({
         {
           async query(desc: { name?: unknown }): Promise<PermissionStatusLike> {
             const status = await realQuery.call(this, desc)
-            if (status.state === 'denied' && undecided(String(desc?.name))) {
-              Object.defineProperty(status, 'state', { get: () => 'prompt', configurable: true })
-            }
+            const realState = Object.getOwnPropertyDescriptor(
+              Object.getPrototypeOf(status) as object,
+              'state'
+            )?.get
+            if (!realState) return status
+            const name = String(desc?.name)
+            Object.defineProperty(status, 'state', {
+              get: () => {
+                const state = realState.call(status) as string
+                return state === 'denied' && undecided(name) ? 'prompt' : state
+              },
+              configurable: true
+            })
             return status
           }
         }.query
