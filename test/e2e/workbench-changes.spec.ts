@@ -54,7 +54,7 @@ const CV = {
 
 const previewLabel = (page: Page): Locator => page.locator(WORKBENCH.previewDiffLabel)
 
-const badge = (page: Page): Locator => page.locator('.wb-tab.pinned .cnt')
+const badge = (page: Page): Locator => page.locator('.wb-panel .wb-tab.pinned .lb')
 const reloadBtn = (page: Page): Locator => page.locator('.wb-bar .icobtn[aria-label="Reload"]')
 const baseBtn = (page: Page): Locator =>
   page.locator('.wb-bar .seg button', { hasText: /^(base|vs HEAD) ▾$/ })
@@ -445,7 +445,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(total.locator('.cv-total-n')).toHaveText('1 file')
     await expect(total.locator('.ft-delta .add')).toHaveText('+1')
     await expect(total.locator('.ft-delta .del')).toHaveText('−1')
-    await expect(badge(page)).toHaveText('5')
+    await expect(badge(page)).toHaveText('5 files')
     await expect(total).not.toHaveAttribute('data-partial', '1')
 
     fx.editTracked(fx.paths.markdown)
@@ -537,7 +537,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
     await openChanges(page)
     await waitStream(page, 5)
-    await expect(badge(page)).toHaveText('5')
+    await expect(badge(page)).toHaveText('5 files')
 
     await rowOf(page, 'src/change-4.ts').click()
     const anchoredTop = await scrollTop(page)
@@ -556,7 +556,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     expect(await blockTop(page, 'src/change-4.ts')).toBe(anchorOffset)
 
     fx.addUntracked('src/zz-late.ts')
-    await expect(badge(page)).toHaveText('6', { timeout: 30_000 })
+    await expect(badge(page)).toHaveText('6 files', { timeout: 30_000 })
     await expect(rowOf(page, 'src/zz-late.ts')).toHaveCount(1)
     expect(await scrollTop(page)).toBe(anchoredTop)
   })
@@ -572,24 +572,24 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
     await openChanges(page)
     await waitStream(page, 6)
-    await expect(badge(page)).toHaveText('6')
+    await expect(badge(page)).toHaveText('6 files')
 
     await pickChip(page, 'Type', 'docs')
     await expect.poll(() => shownPaths(page)).toEqual(['docs/guide.md', 'docs/report.html'])
-    await expect(badge(page)).toHaveText('6')
+    await expect(badge(page)).toHaveText('6 files')
 
     fx.editTracked(fx.paths.changeable[4])
-    await expect(badge(page)).toHaveText('7', { timeout: 30_000 })
+    await expect(badge(page)).toHaveText('7 files', { timeout: 30_000 })
     expect(await shownPaths(page)).toEqual(['docs/guide.md', 'docs/report.html'])
 
     await reloadBtn(page).click()
-    await expect(badge(page)).toHaveText('7')
+    await expect(badge(page)).toHaveText('7 files')
     await expect.poll(() => shownPaths(page)).toEqual(['docs/guide.md', 'docs/report.html'])
     await expect(blockOf(page, 'docs/guide.md').locator(CV.diffRow).first()).toBeVisible()
 
     await pickChip(page, 'Type', 'all')
     await expect.poll(() => shownPaths(page)).toHaveLength(7)
-    await expect(badge(page)).toHaveText('7')
+    await expect(badge(page)).toHaveText('7 files')
   })
 
   test('WB-C11: an over-sized change set shows the truncation banner and labels what was cut off', async ({
@@ -631,7 +631,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       timeout: 30_000
     })
     expect(await rows(page).count()).toBe(0)
-    expect(await badge(page).count()).toBe(0)
+    await expect(badge(page)).toHaveText('No changes')
 
     await baseBtn(page).click()
     await expect(filesMenu(page)).toBeVisible()
@@ -944,10 +944,13 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
     fx.addUntracked('src/while-collapsed.ts')
     await expect(previewLabel(page)).toHaveText('3 files')
+    const previewTab = await page.locator(WORKBENCH.previewDiff).textContent()
+    expect(previewTab).toBe('3 files+2−2')
 
     await clickAppMenuItem(app, page, 'toggle-browser')
     await expect.poll(() => layoutState(page)).toBe('T2')
     await expect(page.locator(WORKBENCH.previewCard)).toHaveCount(0)
+    await expect(page.locator('.wb-panel .wb-tab.pinned')).toHaveText(previewTab ?? '')
     await showChanges(page)
     await waitStream(page, 3)
     await expect(page.locator(CV.total)).toContainText('3 files')
@@ -1169,7 +1172,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       await waitBooted(page)
       await openChanges(page)
       await waitStream(page, 2)
-      await expect(badge(page)).toHaveText('2')
+      await expect(badge(page)).toHaveText('2 files')
       await expect(rowOf(page, 'src/change-1.ts').locator('.ft-gbadge')).toHaveText('M')
       const good = await rows(page).allInnerTexts()
 
@@ -1179,7 +1182,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       await page.waitForTimeout(2 * GIT_KILLED_AFTER_MS)
 
       expect(await rows(page).allInnerTexts()).toEqual(good)
-      await expect(badge(page)).toHaveText('2')
+      await expect(badge(page)).toHaveText('2 files')
     } finally {
       await next.close().catch(() => {})
     }
