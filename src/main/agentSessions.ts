@@ -9,6 +9,7 @@ import type {
 import { ownerSays } from '@shared/agentGuide'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import { freshWorktreeName } from '@shared/sessionRoute'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { basename } from '@shared/preview'
 import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
@@ -309,6 +310,7 @@ export interface SessionVerbDeps {
   closeSoon(target: ClosableSession): void
   conductorScope(tabId: string): string | undefined
   sidebar(): WorkspaceRows[]
+  worktreeNames(workspace: string): Promise<string[]>
   readTurns(key: string, n: number): Promise<Turn[]>
   touch(tabId: string, key: string): void
   conductorOf(ref: string): Target | undefined
@@ -395,11 +397,17 @@ async function startSibling(
       ? (args.name ??
         (await nameForTask(args.prompt, d.assist, new Set(d.allSessions().map((s) => s.title)))))
       : undefined
+  const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
+  const worktree =
+    args.worktree ??
+    (conductorTab !== undefined && gitWorkspace
+      ? freshWorktreeName(await d.worktreeNames(workspace), Date.now())
+      : undefined)
   const tabId = await d.launch({
     kind: backend,
     cwd: workspace,
     name,
-    worktree: args.worktree,
+    worktree,
     model: args.model,
     // ADR-0028
     permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',

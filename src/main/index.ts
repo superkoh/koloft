@@ -1152,6 +1152,8 @@ const sessionDeps: SessionVerbDeps = {
     setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
   sidebar: () => workspaceMgr?.rows() ?? [],
+  worktreeNames: async (wsPath) =>
+    ((await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? []).map((w) => w.name),
   readTurns: (key, n) => sessionBackends.turns(key, n),
   touch: (tabId, key) => conductors?.touch(tabId, key),
   conductorOf: conductorTarget,

@@ -23,15 +23,22 @@ export function askRoute(message: string): {
 }
 
 export async function pendingOptions(
-  wsPath: string,
+  ws: { path: string; isGit: boolean },
   pending: PendingStart
 ): Promise<SessionLaunchOptions> {
-  const wt = pendingWorktree(wsPath, pending)
+  const issue = ws.path === pending.path && pending.worktree?.kind === 'issue'
   const [worktrees, items] = await Promise.all([
-    wt?.kind === 'existing' || wt?.kind === 'issue' ? window.api.workspace.worktrees(wsPath) : [],
-    wt?.kind === 'issue' ? window.api.github.openItems(wsPath).catch(() => null) : null
+    ws.isGit ? window.api.workspace.worktrees(ws.path) : [],
+    issue ? window.api.github.openItems(ws.path).catch(() => null) : null
   ])
-  return pendingLaunch(wsPath, wt, pending, worktrees, items?.state === 'items' ? items.issues : [])
+  const wt = pendingWorktree(ws, pending, worktrees, Date.now())
+  return pendingLaunch(
+    ws.path,
+    wt,
+    pending,
+    worktrees,
+    items?.state === 'items' ? items.issues : []
+  )
 }
 
 export function projectParentKey(machine: string, where: string): string | null {

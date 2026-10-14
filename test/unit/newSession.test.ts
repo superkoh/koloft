@@ -407,15 +407,24 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     })
   })
 
-  it('⌘P drops the worktree Assist named in another workspace once the person picks a different one', () => {
+  it('⌘P never starts in the main checkout of a git workspace: with no worktree from Assist, or once the person picks another workspace, it makes a fresh one; a folder that is not git starts in itself', () => {
     const p: PendingStart = {
       prompt: 'fix login',
       title: '',
       path: '/repo',
       worktree: { kind: 'new', name: 'login' }
     }
-    expect(pendingWorktree('/repo', p)).toEqual({ kind: 'new', name: 'login' })
-    expect(pendingWorktree('/other', p)).toBeNull()
+    const at = new Date(2026, 9, 13, 23, 21).getTime()
+    const git = (path: string): { path: string; isGit: boolean } => ({ path, isGit: true })
+    expect(pendingWorktree(git('/repo'), p, [], at)).toEqual({ kind: 'new', name: 'login' })
+    expect(pendingWorktree(git('/other'), p, [], at)).toEqual({
+      kind: 'new',
+      name: 'session-261013-2321'
+    })
+    expect(
+      pendingWorktree(git('/repo'), { ...p, worktree: null }, [wt('session-261013-2321')], at)
+    ).toEqual({ kind: 'new', name: 'session-261013-2321-2' })
+    expect(pendingWorktree({ path: '/notes', isGit: false }, p, [], at)).toBeNull()
   })
 
   it('labels the primary with the number it acts on', () => {

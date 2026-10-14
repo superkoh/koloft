@@ -70,6 +70,7 @@ interface Conducting {
   answer?: (tabId: string, reply: string) => string | undefined
   titleReply?: string | null
   asking?: string[]
+  worktrees?: string[]
 }
 
 interface Started {
@@ -140,6 +141,7 @@ function harness(
     },
     conductorScope: (tabId) => conducting.scopes?.[tabId],
     sidebar: () => conducting.sidebar ?? [],
+    worktreeNames: async () => conducting.worktrees ?? [],
     readTurns: async (key, n) => {
       reads.push({ key, n })
       return (conducting.turns?.[key] ?? []).slice(-n)
@@ -1184,6 +1186,30 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
         workspace: WS,
         backend: 'claude'
       }
+    ])
+  })
+
+  it('a session Assist starts in a git workspace never runs in its main checkout: -w names the worktree, else Koloft picks a free one; a session another session starts stays where it is told', async () => {
+    const { verb, launched } = harness(
+      live,
+      {},
+      [],
+      conducting({ worktrees: ['session-261013-2321'] })
+    )
+    vi.useFakeTimers({ now: new Date(2026, 9, 13, 23, 21), toFake: ['Date'] })
+    try {
+      await verb(['new', '--workspace', WS, '--backend', 'codex', '--', 'go'], from('global'))
+      await verb(['new', '--', 'go'], from('wsCond'))
+      await verb(['new', '-w', 'docs', '--', 'go'], from('wsCond'))
+      await verb(['new', '--', 'go'], from('fix'))
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(launched.map((l) => [l.kind, l.cwd, l.worktree])).toEqual([
+      ['codex', WS, 'session-261013-2321-2'],
+      ['claude', WS, 'session-261013-2321-2'],
+      ['claude', WS, 'docs'],
+      ['claude', WS, undefined]
     ])
   })
 

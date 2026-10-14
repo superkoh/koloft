@@ -8,7 +8,7 @@ import type {
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import type { RouteWorktree } from '@shared/sessionRoute'
+import { freshWorktreeName, type RouteWorktree } from '@shared/sessionRoute'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 
 export type RunChoice =
@@ -56,8 +56,21 @@ export function typedLaunch(typed: TypedStart): Pick<CreateTabOptions, 'firstPro
   return { firstPrompt: typed.prompt.trim() || undefined, name: typed.title.trim() || undefined }
 }
 
-export function pendingWorktree(wsPath: string, pending: PendingStart): RouteWorktree | null {
-  return wsPath === pending.path ? pending.worktree : null
+export function pendingWorktree(
+  ws: { path: string; isGit: boolean },
+  pending: PendingStart,
+  worktrees: WorktreeInfo[],
+  now: number
+): RouteWorktree | null {
+  const named = ws.path === pending.path ? pending.worktree : null
+  if (named || !ws.isGit) return named
+  return {
+    kind: 'new',
+    name: freshWorktreeName(
+      worktrees.map((w) => w.name),
+      now
+    )
+  }
 }
 
 export function pendingLaunch(

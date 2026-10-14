@@ -1,3 +1,4 @@
+import { worktreeBase } from './cronNames'
 import { isValidWorktreeName } from './worktreeName'
 
 export interface RouteWorkspace {
@@ -70,14 +71,13 @@ Reply with one JSON object and nothing else:
  "workspace": <workspace id as a number, or null when this needs a brand-new project>,
  "machine": <only when workspace is null: "${LOCAL_MACHINE}", or the machine the person named>,
  "newFolder": <only when workspace is null: a short kebab-case English folder name, a name only, never a path>,
- "worktree": <"main" to work in the main checkout (always "main" for a folder that is not git),
-              or {"existing": "<name>"} to continue in a listed worktree,
+ "worktree": <"main" for a folder that is not git; a git folder never works in its main checkout, even to read, ask or release, so for one:
+              {"existing": "<name>"} to continue in a listed worktree,
               or {"issue": <number>} when the message names an issue number,
               or {"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}>,
  "title": <a very short title in the language of the message, at most 16 Chinese characters or 6 words>,
  "sure": <true only when the message names one workspace or clearly points to exactly one (by its folder name, what it is about, or one of its recent session titles); false when it could fit more than one, like "fix the tests" or "tidy the README">,
- "why": <one short sentence in the language of the message>}
-Use a new worktree for a change to the code; use "main" for releasing, reading, asking or investigating without changing code.`
+ "why": <one short sentence in the language of the message>}`
   return { system: ROUTE_SYSTEM, prompt }
 }
 
@@ -105,8 +105,14 @@ export function distinctName(name: string, taken: string[]): string {
   return `${name}-${n}`
 }
 
+const UNNAMED_SESSION = { name: 'session' }
+
+export function freshWorktreeName(taken: string[], now: number): string {
+  return distinctName(worktreeBase(UNNAMED_SESSION, now), taken)
+}
+
 function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
-  if (!ws.git || raw === 'main') return { kind: 'main' }
+  if (!ws.git) return { kind: 'main' }
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   if (typeof o.existing === 'string') {
