@@ -350,7 +350,7 @@ import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, type SlashTarget } from './discord/slash'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
-import { bracketedPaste, typedPieces, typeKeys } from './typeKeys'
+import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
 import { MYSELF } from '@shared/slashCommands'
 import {
   codexDialog,
@@ -700,7 +700,7 @@ async function handOverTyping(oldId: string, newId: string): Promise<void> {
 
 function writeToTab(id: string, data: string): void {
   const typed = typedWhileAsleep.get(id)
-  if (typed !== undefined) typedWhileAsleep.set(id, typed + data)
+  if (typed !== undefined) typedWhileAsleep.set(id, typed + withoutMouseAndFocusReports(data))
   else ptyMgr.write(wokenAs.get(id) ?? id, data)
 }
 async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {

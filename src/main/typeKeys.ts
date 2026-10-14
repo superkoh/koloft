@@ -26,6 +26,13 @@ export function typedPieces(text: string): string[] {
 }
 
 // CC§12 CODEX§25
+const MOUSE_AND_FOCUS_REPORTS = /\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[[IO]/g
+
+export function withoutMouseAndFocusReports(data: string): string {
+  return data.replace(MOUSE_AND_FOCUS_REPORTS, '')
+}
+
+// CC§12 CODEX§25
 const NAMED_KEYS = new Map([
   ['enter', '\r'],
   ['esc', '\x1b'],
