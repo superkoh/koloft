@@ -137,7 +137,7 @@ koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>
     Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex), and print the name to reach it by. A Claude session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which cannot be a remote (SSH) workspace. A Codex or Muse session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in its own git worktree (a separate copy of the repository). The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
     Example: koloft session new --name "Fix docs links" -- "Fix the broken links in docs/."
     Example: koloft session new --workspace koloft-releases -- "Check that the latest release has all its files."
-    Assist may also pick --backend claude|codex|muse (its own kind if left out). The global Assist must give --workspace; a workspace's Assist can only start sessions in its own workspace.
+    Assist may also pick --backend claude|codex|muse (its own kind if left out). The global Assist must give --workspace; a workspace's Assist can only start sessions in its own workspace. A session Assist starts in a git workspace always gets its own worktree: -w names it, and without -w Koloft picks a name.
 
 How to talk to a session you started:
     Claude: use your SendMessage tool with its name. ListAgents shows the sessions on this machine.

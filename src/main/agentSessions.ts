@@ -4,7 +4,8 @@ import type {
   SessionInfo,
   SessionRow,
   SessionStatus,
-  WorkspaceRows
+  WorkspaceRows,
+  WorktreeInfo
 } from '@shared/types'
 import { ownerSays } from '@shared/agentGuide'
 import {
@@ -15,6 +16,7 @@ import {
   messagingOf
 } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import { freshWorktreeName } from '@shared/sessionRoute'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { basename } from '@shared/preview'
 import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
@@ -316,6 +318,7 @@ export interface SessionVerbDeps {
   closeSoon(target: ClosableSession): void
   conductorScope(tabId: string): string | undefined
   sidebar(): WorkspaceRows[]
+  worktrees(workspace: string): Promise<WorktreeInfo[]>
   readTurns(key: string, n: number): Promise<Turn[]>
   touch(tabId: string, key: string): void
   conductorOf(ref: string): Target | undefined
@@ -403,11 +406,17 @@ async function startSibling(
       ? (args.name ??
         (await nameForTask(args.prompt, d.assist, new Set(d.allSessions().map((s) => s.title)))))
       : undefined
+  const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
+  const worktree =
+    args.worktree ??
+    (caller.assist && gitWorkspace
+      ? freshWorktreeName(await d.worktrees(workspace), Date.now())
+      : undefined)
   const tabId = await d.launch({
     kind: backend,
     cwd: workspace,
     name,
-    worktree: args.worktree,
+    worktree,
     model: args.model,
     // ADR-0028
     permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',

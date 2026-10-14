@@ -1,4 +1,5 @@
 import { LOCAL_MACHINE, type SessionRoute } from '@shared/sessionRoute'
+import type { WorkspaceRows } from '@shared/types'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 import {
   pendingLaunch,
@@ -23,15 +24,22 @@ export function askRoute(message: string): {
 }
 
 export async function pendingOptions(
-  wsPath: string,
+  ws: Pick<WorkspaceRows['workspace'], 'path' | 'isGit'>,
   pending: PendingStart
 ): Promise<SessionLaunchOptions> {
-  const wt = pendingWorktree(wsPath, pending)
+  const named = ws.path === pending.path ? pending.worktree : null
   const [worktrees, items] = await Promise.all([
-    wt?.kind === 'existing' || wt?.kind === 'issue' ? window.api.workspace.worktrees(wsPath) : [],
-    wt?.kind === 'issue' ? window.api.github.openItems(wsPath).catch(() => null) : null
+    ws.isGit ? window.api.workspace.worktrees(ws.path) : [],
+    named?.kind === 'issue' ? window.api.github.openItems(ws.path).catch(() => null) : null
   ])
-  return pendingLaunch(wsPath, wt, pending, worktrees, items?.state === 'items' ? items.issues : [])
+  const wt = pendingWorktree(named, ws.isGit, worktrees, Date.now())
+  return pendingLaunch(
+    ws.path,
+    wt,
+    pending,
+    worktrees,
+    items?.state === 'items' ? items.issues : []
+  )
 }
 
 export function projectParentKey(machine: string, where: string): string | null {

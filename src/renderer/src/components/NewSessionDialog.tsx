@@ -47,7 +47,7 @@ export function NewSessionDialog({
       launchLock={launchLock}
       onConfirm={async (target, backend) => {
         const at = target.workspace.path
-        if (pending) await onStart(await pendingOptions(at, pending), backend)
+        if (pending) await onStart(await pendingOptions(target.workspace, pending), backend)
         else if (mode === 'worktree') setWorktreePath(at)
         else await onStart({ cwd: at }, backend)
       }}
