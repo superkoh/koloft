@@ -3736,8 +3736,15 @@ function commandIntoConductor(b: ConductorBinding, text: string): string {
 const PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS = 10_000
 let paletteMessages = 0
 
+const PALETTE_TASK_ANSWERS_ITSELF =
+  'When this is a question or a piece of writing you can answer from what you know (translate, explain, draft a message), answer it here yourself; start or message a session only for work on files, commands or what a workspace holds.'
+
 function paletteTask(title: string, text: string): AssistTask {
-  return { name: title || firstLineName(text), brief: text }
+  return {
+    name: title || firstLineName(text),
+    brief: `${text}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
+    staysOpen: true
+  }
 }
 
 async function tellAssist(
