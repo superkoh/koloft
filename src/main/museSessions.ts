@@ -38,7 +38,7 @@ interface MuseRun extends StoredRun {
   pid?: number
   startedAt: number
   boundAt: number
-  lastStatus?: ProgramStatus
+  sinceClear: ProgramStatus[]
   lastReplyId?: string
 }
 
@@ -90,14 +90,18 @@ interface RegistryEntry {
 }
 
 // MUSE§4
-function readRegistry(dir: string, pids: Set<number>): RegistryEntry[] {
+function readRegistry(
+  dir: string,
+  pids: Set<number>
+): { entries: RegistryEntry[]; whole: boolean } {
   let names: string[]
   try {
     names = fs.readdirSync(dir)
   } catch {
-    return []
+    return { entries: [], whole: true }
   }
-  return names.flatMap((name) => {
+  let whole = true
+  const entries = names.flatMap((name) => {
     if (!name.endsWith('.json')) return []
     const full = path.join(dir, name)
     try {
@@ -107,12 +111,14 @@ function readRegistry(dir: string, pids: Set<number>): RegistryEntry[] {
       if (!UUID.test(entry.session_id) || !pids.has(pid)) return []
       return [{ sessionId: entry.session_id, pid, mtimeMs: fs.statSync(full).mtimeMs }]
     } catch {
+      whole = false
       return []
     }
   })
+  return { entries, whole }
 }
 
-export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry> {
+export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, string> {
   readonly id = 'muse'
   private parsers = new Map<string, ProgramStatusParser>()
   private sweeping?: ReturnType<typeof setInterval>
@@ -180,8 +186,14 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry> {
     }
   }
 
-  protected async startRun({ opts, cwd, workspace, resource }: StartContext): Promise<MuseRun> {
-    const binary = this.binary!
+  protected prepare(): string {
+    return this.binary!
+  }
+
+  protected async startRun(
+    { opts, cwd, workspace, resource }: StartContext,
+    binary: string
+  ): Promise<MuseRun> {
     const tabId = this.deps.pty.nextId()
     const tools = this.startOpenShim((target) => this.deps.events(tabId, { type: 'open', target }))
     const env = { ...this.processEnv, PATH: pathWithDirFirst(this.processEnv?.PATH, tools.dir) }
@@ -224,6 +236,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry> {
         pid: this.deps.pty.pidOf(handle.id),
         startedAt: handle.startedAt,
         boundAt: handle.startedAt,
+        sinceClear: [],
         releaseTools: () => {
           tools.release()
           this.parsers.delete(handle.id)
@@ -263,7 +276,13 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry> {
     if (asked) this.deps.pty.write(tabId, PROGRAM_STATUS_REPLY)
     const run = this.runs.get(tabId)
     if (!run || run.explicitStop || states.length === 0) return
-    for (const status of states) run.lastStatus = status.state === 'clear' ? undefined : status
+    for (const status of states) {
+      if (status.state !== 'clear') run.sinceClear = [...run.sinceClear, status].slice(-2)
+      else {
+        run.sinceClear = []
+        this.registrySeenAt = undefined
+      }
+    }
     if (this.sweepRegistry().has(run) || !run.info) return
     for (const status of states) if (status.state !== 'clear') this.emitState(run, status)
   }
@@ -286,12 +305,14 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry> {
       read.lastReplyId !== run.lastReplyId &&
       turn.at >= run.boundAt &&
       run.info?.sessionId === key
+    if (run.explicitStop || run.stopping) return
     if (fresh) {
       run.lastReplyId = read.lastReplyId
       this.deps.events(run.tabId, { type: 'turn-ended', turn })
     }
     if (run.info?.title !== PLACEHOLDER_TITLES.muse) return
     await this.refreshHistory().catch(() => {})
+    if (run.explicitStop || run.stopping) return
     const info = run.info
     const named = info && this.history.get(info.sessionId)
     const title = named?.name || named?.preview?.slice(0, 100)
@@ -315,11 +336,11 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry> {
     }
     const unbound = [...this.runs.values()].some((r) => !r.info && !r.explicitStop)
     if (changedAt === this.registrySeenAt && !unbound) return rebound
-    this.registrySeenAt = changedAt
     const live = [...this.runs.values()].filter(
       (r) => !r.explicitStop && !r.stopping && r.pid !== undefined
     )
-    const entries = readRegistry(dir, new Set(live.map((r) => r.pid!)))
+    const { entries, whole } = readRegistry(dir, new Set(live.map((r) => r.pid!)))
+    if (whole) this.registrySeenAt = changedAt
     for (const run of live) {
       const mine = entries
         .filter((e) => e.pid === run.pid && e.mtimeMs >= run.startedAt - 1000)
@@ -327,11 +348,12 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry> {
       if (!mine || run.info?.nativeSessionId === mine.sessionId) continue
       const key = museSessionKey(mine.sessionId)
       const known = this.history.get(key)
-      run.boundAt = Date.now()
+      const switched = !!known && (known.createdAt ?? 0) * 1000 < run.boundAt
+      if (run.info) run.boundAt = Date.now()
       run.lastReplyId = undefined
-      this.bind(run, known ?? { id: mine.sessionId, cwd: run.cwd }, known ? 'switch' : 'replace')
+      this.bind(run, known ?? { id: mine.sessionId, cwd: run.cwd }, switched ? 'switch' : 'replace')
       rebound.add(run)
-      if (run.lastStatus) this.emitState(run, run.lastStatus)
+      for (const status of run.sinceClear) this.emitState(run, status)
     }
     return rebound
   }

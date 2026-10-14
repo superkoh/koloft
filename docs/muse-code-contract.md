@@ -98,7 +98,8 @@ needs a Meta account (a real model) has been run: a bullet that depends on one s
   session a TUI holds is listed with `status:"notLoaded"`.
 - `session/read {sessionId, excludeItems:false}` → `history:{mode:"inline",
   items:[…]}` with items of kind `userMessage`, `agentMessage` (both with `text`),
-  `reasoning`, `reminderChild`. Without a login a plain `muse serve` refuses it
+  `reasoning`, `reminderChild`; every item carries `itemId`, `turnId`, `status` and
+  `recordedAt` (RFC 3339), seen on macOS. Without a login a plain `muse serve` refuses it
   (`resume_refused_class_c`: the automated reviewer is unavailable). `muse serve
   --provider echo` reads echo-made sessions, including one a TUI holds right after
   its `done` (0.13 s). Reading a session made with the real model this way is

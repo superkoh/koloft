@@ -30,7 +30,7 @@ export class ProgramStatusParser {
     for (const body of this.bodies.push(chunk)) {
       if (!body.startsWith(PROGRAM_STATUS)) continue
       const rest = body.slice(PROGRAM_STATUS.length)
-      if (rest === '?' || rest.startsWith('?:')) {
+      if (rest === '?') {
         asked = true
         continue
       }

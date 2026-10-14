@@ -237,6 +237,35 @@ describe('MuseSessions finished turns', () => {
   })
 })
 
+describe('MuseSessions before the first bind', () => {
+  it('hands on a reply that finished before the tab bound, and replays working then done so a job sees the turn end', async () => {
+    const { id } = await launch()
+    const turn = {
+      said: [{ who: 'owner', text: 'job', at: Date.now() }],
+      reply: 'done it',
+      at: Date.now()
+    }
+    mocks.read.mockResolvedValue({ turns: [turn], lastReplyId: 'item-1' })
+    say(id, osc('state=working:app=muse') + osc('state=done:app=muse'))
+    const statuses: (string | undefined)[] = []
+    runtime.on('status', ({ next }: { next: string }) => statuses.push(next))
+    register(A, pids.get(id)!)
+    say(id, 'more output')
+    await vi.waitFor(() =>
+      expect(
+        vi.mocked(sessions['deps'].events).mock.calls.filter(([, e]) => e.type === 'turn-ended')
+      ).toHaveLength(1)
+    )
+    expect(statuses).toEqual(['working', 'waiting'])
+  })
+
+  it('does not take its own answer echoed back by the terminal for a new question', async () => {
+    const { id } = await launch()
+    say(id, PROGRAM_STATUS_REPLY)
+    expect(pty.write).not.toHaveBeenCalled()
+  })
+})
+
 describe('museTrustsFolder', () => {
   it("reads muse's own trust file by the folder's real path", () => {
     const link = path.join(home, 'link')
