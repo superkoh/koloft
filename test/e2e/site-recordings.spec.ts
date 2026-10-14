@@ -21,8 +21,6 @@ import {
   runIn,
   sendShortcut,
   startSessionIn,
-  terminalText,
-  termIds,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -45,6 +43,7 @@ export async function forecast(req: Request, res: Response) {
 `
 
 const PARENT_PICKS_UP_THE_REPORTS_MS = 20_000
+const ASSIST_PASSES_THE_REPORT_ON_MS = 45_000
 
 function writeTree(dir: string, files: Record<string, string>): void {
   for (const [rel, body] of Object.entries(files)) {
@@ -118,6 +117,8 @@ function useRealClaude(env: E2EEnv, trusted: string[]): void {
   for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_MODEL'])
     delete env.launchEnv[k]
   env.launchEnv.DISABLE_AUTOUPDATER = '1'
+  fs.mkdirSync(path.join(env.home, '.claude'), { recursive: true })
+  fs.writeFileSync(path.join(env.home, '.claude', 'CLAUDE.md'), 'Always reply in English.\n')
   fs.writeFileSync(
     path.join(env.home, '.claude.json'),
     JSON.stringify({
@@ -269,11 +270,6 @@ async function ask(page: Page, text: string): Promise<void> {
   await page.keyboard.press('Enter')
 }
 
-async function allTerminalsText(page: Page): Promise<string> {
-  const ids = await termIds(page)
-  return (await Promise.all(ids.map((id) => terminalText(page, id)))).join('\n----\n')
-}
-
 async function launchReal(
   env: E2EEnv,
   extra: Record<string, unknown> = {},
@@ -308,13 +304,13 @@ test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what wa
     await realTurn(
       page,
       wsRows(page, 'tidewatch').first(),
-      'In one short sentence, say why a login test that waits on a fixed timer is flaky. Do not run anything.'
+      "the login test waits on a fixed timer, why's that flaky? one line, don't run anything"
     )
     await startSessionIn(page, 'harbor-site', { method: 'Claude' })
     await realTurn(
       page,
       wsRows(page, 'harbor-site').first(),
-      'In one short sentence, suggest a dark mode colour for the pricing page. Do not run anything.'
+      "pick a dark mode colour for the pricing page, one line, don't run anything"
     )
     await page.waitForTimeout(4000)
     const r = reel(page)
@@ -348,7 +344,7 @@ test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what wa
     await sendShortcut(app, 'shortcut:command-palette')
     await expect(box).toBeFocused()
     await r.roll(700)
-    await typeFilmed(page, r, 'Add a retry with backoff to the tidewatch weather client')
+    await typeFilmed(page, r, "tidewatch's weather calls keep failing, make them retry")
     await r.roll(1500)
     await page.keyboard.press('Enter')
     await r.roll(1500, 150)
@@ -376,21 +372,12 @@ test('assist: Assist starts a real claude session that adds GET /health and repo
     await page.locator('.ws-head', { hasText: 'tidewatch' }).click({ button: 'right' })
     await page.locator('.menu .mi', { hasText: 'Talk to Assist' }).click()
     await page.waitForTimeout(12_000)
-    await ask(
-      page,
-      'Start a session here that adds a GET /health route returning { ok: true } in src/routes/health.ts, and tell me when it is done.'
-    )
+    await ask(page, "add a health check to tidewatch and tell me when it's done")
     const child = wsRows(page, 'tidewatch').first()
     await expect(wsRows(page, 'tidewatch')).toHaveCount(1, { timeout: 240_000 })
     await expect(child).toHaveClass(/\bst-working\b/, { timeout: 120_000 })
     await expect(child).not.toHaveClass(/\bst-working\b/, { timeout: 420_000 })
-    await expect
-      .poll(async () => ((await allTerminalsText(page)).match(/Health route/g) ?? []).length, {
-        timeout: 300_000,
-        intervals: [2000]
-      })
-      .toBeGreaterThan(2)
-    await page.waitForTimeout(20_000)
+    await page.waitForTimeout(ASSIST_PASSES_THE_REPORT_ON_MS)
     await film.stop('assist')
   } finally {
     await quitAndClose(app)
@@ -412,10 +399,7 @@ test('tree: a real claude splits a job into two sibling sessions that hang under
     const film = startFilm(page, 700)
     await ask(
       page,
-      'Split this job into two sessions with the koloft command, each in its own worktree, then wait for both to report back and sum up in one line. ' +
-        'Run: koloft session new -w health --name "Health route" -- "Add src/routes/health.ts with a GET /health route that returns { ok: true }. Keep it short." ' +
-        'and: koloft session new -w quickstart --name "README quick start" -- "Add a five-line Quick start section to README.md." ' +
-        'Do not write the code yourself.'
+      'get two sessions on this in parallel: a /health endpoint, and a quick start in the README'
     )
     await expect(children).toHaveCount(2, { timeout: 300_000 })
     await expect(children.first()).toHaveClass(/\bst-working\b/, { timeout: 120_000 })
@@ -470,10 +454,7 @@ test('browser: a real claude opens a page in its own Workbench, clicks Refresh a
     const row = wsRows(page, 'tidewatch').first()
     await page.waitForTimeout(4000)
     const film = startFilm(page, 600)
-    await ask(
-      page,
-      `Use the playwright-cli shell command, not MCP tools, one command per step: first run playwright-cli open ${demo.url} , then run sleep 5 , then click the Refresh button with playwright-cli, then run playwright-cli eval document.title , and tell me the next high tide in one line.`
-    )
+    await ask(page, `open ${demo.url} in the browser and tell me when the next high tide is`)
     await expect(row).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
     const webTab = page.locator('.wb-panel .wb-tab:not(.pinned)', { hasText: 'Tidewatch' })
     await expect(webTab).toBeVisible({ timeout: 300_000 })

@@ -127,8 +127,8 @@
           data-film="pal-start"
           data-phone-crop="300,40,840,502"
           data-title="Koloft, recorded: ⌘P starts a session from one line"
-          data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":59,"crop":"0,0,1440,860"}]'
-          data-cues='[{"at":2,"to":55,"html":"<kbd>⌘P</kbd> one line","x":"6%","y":"70%"},{"at":56,"to":58,"html":"⏎ start","x":"6%","y":"70%"},{"at":58,"to":66,"html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"},{"at":67,"html":"…and the real Claude Code is already working","x":"30%","y":"8%"}]'
+          data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":58,"crop":"0,0,1440,860"}]'
+          data-cues='[{"at":2,"to":55,"html":"<kbd>⌘P</kbd> one plain sentence","x":"6%","y":"70%"},{"at":56,"to":56,"html":"⏎ start","x":"6%","y":"70%"},{"at":57,"to":63,"html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"},{"at":64,"html":"…and the real Claude Code is already working","x":"30%","y":"8%"}]'
         ></div>
         <p class="real">
           recorded in Koloft with a real Claude Code 2.1.296 — every screen is the app's own
@@ -206,8 +206,8 @@
             data-film="pal-start"
             data-phone-crop="300,40,840,502"
             data-title="Koloft, recorded: ⌘P starts a session"
-            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":59,"crop":"0,0,1440,860"}]'
-            data-cues='[{"at":58,"to":66,"html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"}]'
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":58,"crop":"0,0,1440,860"}]'
+            data-cues='[{"at":57,"to":63,"html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"}]'
           ></div>
           <div
             class="win"
@@ -265,7 +265,7 @@
           data-film="tree"
           data-phone-crop="0,0,360,520"
           data-title="Koloft, recorded: a session splits its job into two sessions that report back"
-          data-cues='[{"at":21,"to":24,"html":"two new sessions hang under the one that started them","x":"3%","y":"38%"},{"at":25,"to":32,"html":"each one reports back by itself","x":"30%","y":"60%"},{"at":33,"html":"…and the parent sums up","x":"30%","y":"74%"}]'
+          data-cues='[{"at":14,"to":20,"html":"two new sessions hang under the one that started them","x":"3%","y":"38%"},{"at":21,"to":27,"html":"each one reports back by itself","x":"30%","y":"60%"},{"at":28,"html":"…the parent checks the work and sums up","x":"30%","y":"74%"}]'
         ></div>
         <div class="proof reveal">
           <div>
@@ -313,7 +313,7 @@
           class="win reveal"
           data-film="browser"
           data-title="Koloft, recorded: the agent opens a page in its Workbench, clicks Refresh and reads it; then a terminal tab runs a command"
-          data-cues='[{"at":17,"to":32,"html":"the agent opens the page in its own Workbench","x":"36%","y":"40%"},{"at":33,"to":41,"html":"…clicks Refresh and reads the answer","x":"36%","y":"40%"},{"at":42,"html":"a terminal tab, right beside it","x":"36%","y":"40%"}]'
+          data-cues='[{"at":12,"to":14,"html":"the agent opens the page in its own Workbench","x":"36%","y":"40%"},{"at":15,"to":19,"html":"it sees “—”, so it clicks Refresh","x":"36%","y":"40%"},{"at":20,"html":"a terminal tab, right beside it","x":"36%","y":"40%"}]'
         ></div>
         <div class="proof reveal">
           <div>
@@ -364,14 +364,9 @@
           data-film="assist"
           data-phone-crop="0,0,830,700"
           data-title="Koloft, recorded: Assist starts a session and hears its reply"
-          data-cues='[{"at":18,"html":"the session reports back by itself","x":"34%","y":"54%"}]'
+          data-cues='[{"at":16,"to":19,"html":"one plain sentence; Assist starts the session","x":"34%","y":"54%"},{"at":20,"html":"the session reports back by itself","x":"34%","y":"54%"}]'
         ></div>
         <div class="proof reveal">
-          <div>
-            <svg class="icon" aria-hidden="true"><use href="icons.svg#phone" /></svg>
-            <b>From your phone</b>Bind Assist to your own Discord bot: one thread per session, Yes /
-            No buttons for its questions, files both ways. Assist sets the bot up for you.
-          </div>
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#keys" /></svg>
             <b>It answers and presses keys</b>A session stuck on a question or a menu? Tell Assist
@@ -381,6 +376,11 @@
             <svg class="icon" aria-hidden="true"><use href="icons.svg#timer" /></svg>
             <b>It sets up schedules</b>“Run the tests every night at 2 and write a short report”
             becomes a scheduled job for that folder.
+          </div>
+          <div>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#wand" /></svg>
+            <b>Ask Koloft itself</b>Type “set up Discord” in <kbd>⌘P</kbd> and Assist takes it as a
+            job, clicking through Discord's site while you sign in.
           </div>
         </div>
         <p class="honest">
@@ -394,12 +394,53 @@
         ></a>
       </section>
 
+      <section class="feat" id="phone">
+        <div class="head reveal">
+          <div class="kicker">
+            <span class="badge"
+              ><svg class="icon" aria-hidden="true"><use href="icons.svg#phone" /></svg></span
+            >05 · From your phone
+          </div>
+          <h2>Away from the Mac? <em>Your sessions come with you.</em></h2>
+          <p>
+            Bind Assist to your own Discord bot and talk to it from anywhere. Every session gets its
+            own thread, its questions come as buttons, and a card tells you when it has finished.
+            Your bot, your server: no server of ours in between.
+          </p>
+        </div>
+        <ol class="steps reveal">
+          <li>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#phone" /></svg>
+            <b>Say it in the channel</b>“add a health check to tidewatch” goes to that folder's
+            Assist on your Mac, which starts the session.
+          </li>
+          <li>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#tree" /></svg>
+            <b>Each session, its own thread</b>A card follows its light: working, waiting for you,
+            finished. Type in the thread and it goes straight to that session.
+          </li>
+          <li>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#check" /></svg>
+            <b>Answer with a tap</b>A tool asking to run gets Yes / No; a question with one pick
+            gets a button per option. Files go both ways.
+          </li>
+        </ol>
+        <p class="honest">
+          <span>note</span>Assist sets the bot up for you; you sign in and pass Discord's human
+          checks. Questions with several parts get no buttons: reply in the thread.
+        </p>
+        <a class="more" href="discord/"
+          >A butler on Discord
+          <svg class="icon" aria-hidden="true"><use href="icons.svg#arrow" /></svg
+        ></a>
+      </section>
+
       <section class="feat" id="schedule">
         <div class="head reveal">
           <div class="kicker">
             <span class="badge"
               ><svg class="icon" aria-hidden="true"><use href="icons.svg#timer" /></svg></span
-            >05 · Agents that keep working
+            >06 · Agents that keep working
           </div>
           <h2>Work keeps going <em>while you're away.</em></h2>
           <p>
