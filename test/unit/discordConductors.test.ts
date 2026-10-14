@@ -415,6 +415,22 @@ describe('Conductors', () => {
     })
   })
 
+  it('a task typed in ⌘P is told to answer what it can itself and to stay open for the owner to read, not to close itself', async () => {
+    const c = make()
+    const opening = c.openTask('global', {
+      name: 'Translate',
+      brief: 'Translate this.',
+      typedInPalette: true
+    })
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    await opening
+    expect(started[0].role).toContain('Your task: Translate this.')
+    expect(started[0].role).toContain('answer it here yourself')
+    expect(started[0].role).toContain('do not close this session')
+    expect(started[0].role).not.toContain('run koloft session close as your very last step')
+  })
+
   it('asking for the same task twice while it starts starts it once, and both get its tab', async () => {
     const c = make()
     const task = { name: 'Set up Discord', brief: 'b' }

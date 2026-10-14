@@ -49,6 +49,7 @@ export interface AssistTask {
   name: string
   brief: string
   allow?: string[]
+  typedInPalette?: true
 }
 
 export interface AssistIdentity {
@@ -632,7 +633,7 @@ export class Conductors {
   ): Promise<ConductorOpenResult> {
     if (choice.because) this.d.toast(choice.because)
     if (!this.record(scope)) this.changeRecord(scope, (r) => r)
-    const role = assistTaskRole(scope, task.brief)
+    const role = assistTaskRole(scope, task.brief, task.typedInPalette)
     const title = assistTaskName(scope, task.name)
     const launch: ConductorLaunch = {
       ...this.launchFor(scope, choice.backend),

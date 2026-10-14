@@ -3737,7 +3737,7 @@ const PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS = 10_000
 let paletteMessages = 0
 
 function paletteTask(title: string, text: string): AssistTask {
-  return { name: title || firstLineName(text), brief: text }
+  return { name: title || firstLineName(text), brief: text, typedInPalette: true }
 }
 
 async function tellAssist(

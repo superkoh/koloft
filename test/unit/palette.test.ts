@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import type { AttentionEvent, SessionInfo, SessionRow, WorkspaceRows } from '../../src/shared/types'
+import type {
+  AttentionEvent,
+  SessionInfo,
+  SessionRow,
+  SessionSearchHit,
+  WorkspaceRows
+} from '../../src/shared/types'
 import { PLACEHOLDER_SESSION_TITLE } from '../../src/shared/types'
 import {
   matchesQuery,
@@ -133,7 +139,7 @@ describe('command palette: workspace rows and groups', () => {
     ])
   })
 
-  it('lists nothing until something is typed, then puts sessions first, then workspaces, then actions, drops an empty group, and matches an action on its name only', () => {
+  it('lists nothing until something is typed, then puts sessions first, then workspaces, then actions, drops an empty group, and matches an action without keywords on its name only', () => {
     const rows = [ws(`${HOME}/restart-lab`, [row('s', { title: 'restart the server' })])]
     const groups = (q: string): string[] =>
       paletteGroups(
@@ -147,5 +153,34 @@ describe('command palette: workspace rows and groups', () => {
     expect(groups('restart')).toEqual(['Sessions:1', 'Workspaces:1', 'Actions:1'])
     expect(groups('settings')).toEqual(['Actions:1'])
     expect(groups('zzq')).toEqual([])
+  })
+
+  it('finds a feature by any of its keywords, also when the keyword sits inside a longer sentence, whatever the language', () => {
+    const settings: PaletteAction = { ...action('Settings…'), words: ['设置', 'preferences'] }
+    const found = (q: string): number =>
+      paletteGroups([], [], [settings], q).flatMap((g) => g.items).length
+    expect(found('设置')).toBe(1)
+    expect(found('帮我打开设置')).toBe(1)
+    expect(found('Preferences')).toBe(1)
+    expect(found('sett')).toBe(1)
+    expect(found('关于')).toBe(0)
+  })
+
+  it('shows conversations that mention the words below the sessions, leaves out sessions already listed by name, and offers all of them once there are more than fit', () => {
+    const rows = [ws(`${HOME}/a`, [row('named', { title: 'login page' })])]
+    const hit = (id: string, mtime = 0): SessionSearchHit => ({
+      row: row(id, { mtime }),
+      workspacePath: `${HOME}/a`,
+      snippet: { before: '', match: 'login', after: '' }
+    })
+    const hits = [
+      hit('named'),
+      ...[1, 2, 3, 4].map((n) => hit(`c${n}`)),
+      { ...hit('t'), snippet: undefined }
+    ]
+    const groups = paletteGroups(paletteSessions(rows, [], [], []), [], [], 'login', hits)
+    expect(groups.map((g) => g.title)).toEqual(['Sessions', 'In conversations'])
+    expect(groups[1].items.map((i) => i.key)).toEqual(['h:c1', 'h:c2', 'h:c3', 'more-hits'])
+    expect(groups[1].items[3]).toMatchObject({ kind: 'more', count: hits.length })
   })
 })

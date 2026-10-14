@@ -234,9 +234,14 @@ You only pass work on; you never do it yourself. Do not write or change files (y
 ${RELAY_NEVER_GUESS}`
 }
 
-export function assistTaskRole(scope: string, brief: string): string {
+const TYPED_IN_PALETTE = `The owner typed this task in Koloft's ⌘P box. When it is a question or a piece of writing you can answer from what you know (translate, explain, draft a message), answer it here yourself; start or message a session only for work on files, commands or what a workspace holds. The owner reads your answer in this tab, so do not close this session when you are done: the owner closes it.`
+
+const CLOSE_WHEN_DONE =
+  'When the task is done, or the owner says to stop, run koloft session close as your very last step, without waiting to be asked.'
+
+export function assistTaskRole(scope: string, brief: string, typedInPalette = false): string {
   return `${conductorRole(scope, false)}
 
 This session is one task of the ${conductorName(scope)}, not its everyday conversation. Do not write to your memory folder: the everyday Assist reads the same one. Your task: ${brief}
-When the task is done, or the owner says to stop, run koloft session close as your very last step, without waiting to be asked.`
+${typedInPalette ? TYPED_IN_PALETTE : CLOSE_WHEN_DONE}`
 }
