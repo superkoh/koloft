@@ -108,14 +108,17 @@ describe('permissionAsk — what a raw permission request becomes', () => {
 })
 
 describe('permissionQueryAsk — what a page asking permissions.query would get asked', () => {
-  it('reads a query by its Permissions name as the request the same page would make', () => {
+  it('reads a status by the name Chromium gives it as the request the same page would make', () => {
     const page = { requestingUrl: 'https://meet.example/room' }
-    expect(permissionQueryAsk('microphone', page)).toEqual({
+    expect(permissionQueryAsk('audio_capture', page)).toEqual({
       kind: 'ask',
       permission: 'microphone',
       origin: 'https://meet.example'
     })
-    expect(permissionQueryAsk('camera', page)).toMatchObject({ kind: 'ask', permission: 'camera' })
+    expect(permissionQueryAsk('video_capture', page)).toMatchObject({
+      kind: 'ask',
+      permission: 'camera'
+    })
     expect(permissionQueryAsk('geolocation', page)).toMatchObject({
       kind: 'ask',
       permission: 'geolocation'
@@ -124,7 +127,7 @@ describe('permissionQueryAsk — what a page asking permissions.query would get 
 
   it('is no ask from a sub-frame, or for a name no prompt exists for, so those keep reading denied', () => {
     expect(
-      permissionQueryAsk('microphone', {
+      permissionQueryAsk('audio_capture', {
         requestingUrl: 'https://ads.example/',
         isMainFrame: false
       })

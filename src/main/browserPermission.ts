@@ -83,9 +83,10 @@ export function permissionAsk(permission: string, details: PermissionDetails): P
   return { kind: 'ask', permission: permission as PermissionName, origin }
 }
 
+// PLATFORM§11
 export function permissionQueryAsk(name: unknown, details: PermissionDetails): PermissionAsk {
-  if (name === 'microphone') return permissionAsk('media', { ...details, mediaTypes: ['audio'] })
-  if (name === 'camera') return permissionAsk('media', { ...details, mediaTypes: ['video'] })
+  if (name === 'audio_capture') return permissionAsk('media', { ...details, mediaTypes: ['audio'] })
+  if (name === 'video_capture') return permissionAsk('media', { ...details, mediaTypes: ['video'] })
   return permissionAsk(typeof name === 'string' ? name : '', details)
 }
 
