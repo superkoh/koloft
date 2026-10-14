@@ -944,13 +944,13 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
     fx.addUntracked('src/while-collapsed.ts')
     await expect(previewLabel(page)).toHaveText('3 files')
-    const previewTab = await page.locator(WORKBENCH.previewDiff).innerText()
-    expect(previewTab).toMatch(/^3 files\s*\+2\s*−2$/)
+    const previewTab = await page.locator(WORKBENCH.previewDiff).textContent()
+    expect(previewTab).toBe('3 files+2−2')
 
     await clickAppMenuItem(app, page, 'toggle-browser')
     await expect.poll(() => layoutState(page)).toBe('T2')
     await expect(page.locator(WORKBENCH.previewCard)).toHaveCount(0)
-    await expect(page.locator('.wb-panel .wb-tab.pinned')).toHaveText(previewTab)
+    await expect(page.locator('.wb-panel .wb-tab.pinned')).toHaveText(previewTab ?? '')
     await showChanges(page)
     await waitStream(page, 3)
     await expect(page.locator(CV.total)).toContainText('3 files')
