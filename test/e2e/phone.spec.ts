@@ -13,12 +13,10 @@ import {
   writeExec
 } from './helpers/remote'
 import {
-  centerTerm,
   newSessionInWith,
-  sendShortcut,
   startSessionIn,
   termIds,
-  terminalText,
+  unwrappedTerminalText,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -57,7 +55,7 @@ async function koloft(
   timeout = KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS
 ): Promise<{ exit: string; said: string }> {
   const marks = async (): Promise<RegExpMatchArray[]> => [
-    ...(await terminalText(page, tabId)).matchAll(EXIT_MARK)
+    ...(await unwrappedTerminalText(page, tabId)).matchAll(EXIT_MARK)
   ]
   const before = (await marks()).length
   await page.evaluate(
@@ -65,7 +63,7 @@ async function koloft(
     [tabId, `/koloft ${args}\r`]
   )
   await expect.poll(async () => (await marks()).length, { timeout }).toBe(before + 1)
-  const text = await terminalText(page, tabId)
+  const text = await unwrappedTerminalText(page, tabId)
   const all = await marks()
   const from = before ? (all[before - 1].index ?? 0) + all[before - 1][0].length : 0
   return { exit: all[before][1], said: text.slice(from, all[before].index).replace(/\s+/g, ' ') }
@@ -220,9 +218,7 @@ test.describe('koloft phone: a session drives a phone emulator whose live screen
       )
       expect((await koloft(page, other, 'phone snapshot')).exit).toBe('1')
 
-      await wsRows(page, 'ws-a').first().click()
-      await centerTerm(page).click()
-      await sendShortcut(app, 'shortcut:close-tab')
+      await page.evaluate((tab) => window.api.terminal.kill(tab), owner)
       await expect
         .poll(() => simulatorCalls(calls))
         .toContain('xcrun simctl shutdown FAKE-IPHONE-17')

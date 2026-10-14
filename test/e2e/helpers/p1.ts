@@ -555,6 +555,28 @@ export function terminalText(page: Page, tabId: string): Promise<string> {
   }, tabId)
 }
 
+export function unwrappedTerminalText(page: Page, tabId: string): Promise<string> {
+  return page.evaluate((id) => {
+    type Line = { isWrapped: boolean; translateToString(trim?: boolean): string }
+    const term = (
+      window as unknown as {
+        __koloftTerms?: Record<
+          string,
+          { buffer: { active: { length: number; getLine(i: number): Line | undefined } } }
+        >
+      }
+    ).__koloftTerms?.[id]
+    if (!term) return ''
+    const b = term.buffer.active
+    let out = ''
+    for (let i = 0; i < b.length; i++) {
+      const wrapsOn = b.getLine(i + 1)?.isWrapped ?? false
+      out += (b.getLine(i)?.translateToString(!wrapsOn) ?? '') + (wrapsOn ? '' : '\n')
+    }
+    return out
+  }, tabId)
+}
+
 export function termIds(page: Page): Promise<string[]> {
   return page.evaluate(() =>
     Object.keys(

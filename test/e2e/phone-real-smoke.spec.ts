@@ -4,7 +4,7 @@ import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { guestByUrl } from './helpers/browser'
 import { seedSettings } from './helpers/env'
-import { startSessionIn, termIds, terminalText, waitBooted } from './helpers/p1'
+import { startSessionIn, termIds, unwrappedTerminalText, waitBooted } from './helpers/p1'
 import { ANDROID_PACKAGES } from '../../src/main/phone/androidSdk'
 
 const SDK = process.env.KOLOFT_SMOKE_ANDROID_SDK ?? ''
@@ -22,14 +22,14 @@ function lendSdk(userData: string): void {
 
 async function koloft(page: Page, tabId: string, args: string): Promise<string> {
   const marks = async (): Promise<number> =>
-    [...(await terminalText(page, tabId)).matchAll(EXIT_MARK)].length
+    [...(await unwrappedTerminalText(page, tabId)).matchAll(EXIT_MARK)].length
   const before = await marks()
   await page.evaluate(
     ([id, line]) => window.api.terminal.write(id, line),
     [tabId, `/koloft ${args}\r`]
   )
   await expect.poll(marks, { timeout: 30_000 }).toBe(before + 1)
-  const text = await terminalText(page, tabId)
+  const text = await unwrappedTerminalText(page, tabId)
   return text.slice(text.lastIndexOf(`/koloft ${args}`)).replace(/\s+/g, ' ')
 }
 
