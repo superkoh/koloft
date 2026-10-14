@@ -95,6 +95,7 @@ interface MuseRun extends StoredRun {
   touched: Map<string, FileAcc>
   liveWrites: number
   log?: { sessionId: string; tail: SessionLogTail }
+  endedTurns: Set<string>
   waiting?: { since: number; ask: MuseAsk }
 }
 
@@ -430,6 +431,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
         background: new Map(),
         touched: new Map(),
         liveWrites: 0,
+        endedTurns: new Set(),
         releaseTools: () => {
           tools.release()
           this.parsers.delete(handle.id)
@@ -535,6 +537,8 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
 
   private endTurn(run: MuseRun, input: Record<string, unknown>): void {
     const turnId = typeof input.turn_id === 'string' ? input.turn_id : ''
+    if (!turnId || run.endedTurns.has(turnId)) return
+    run.endedTurns.add(turnId)
     const reply =
       typeof input.last_assistant_message === 'string' ? input.last_assistant_message : ''
     const prompt = run.prompt?.turnId === turnId ? run.prompt : undefined
@@ -667,6 +671,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     run.prompt = undefined
     run.children.clear()
     run.background.clear()
+    run.endedTurns.clear()
     run.log = undefined
     this.bind(run, known ?? { id: sessionId, cwd: run.cwd }, switched ? 'switch' : 'replace')
     for (const status of run.sinceClear) this.emitState(run, status)
