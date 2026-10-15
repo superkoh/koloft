@@ -111,6 +111,16 @@ kbd {
   mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 100%);
 }
 
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 .nav {
   position: sticky;
   top: 0;
@@ -374,7 +384,10 @@ kbd {
 
 .aurora {
   position: absolute;
-  inset: -20% -10% auto;
+  top: -20%;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
   height: 900px;
   z-index: -1;
   pointer-events: none;
@@ -388,17 +401,17 @@ kbd {
 }
 
 .aurora i:nth-child(1) {
-  width: 760px;
-  height: 760px;
-  left: 4%;
+  width: max(760px, 42vw);
+  height: max(760px, 42vw);
+  left: 6%;
   top: -6%;
   background: radial-gradient(closest-side, var(--glow), transparent);
 }
 
 .aurora i:nth-child(2) {
-  width: 680px;
-  height: 680px;
-  right: 0;
+  width: max(680px, 38vw);
+  height: max(680px, 38vw);
+  right: 6%;
   top: -10%;
   background: radial-gradient(closest-side, #7a5cff, transparent);
   animation-duration: 22s;
@@ -406,8 +419,8 @@ kbd {
 }
 
 .aurora i:nth-child(3) {
-  width: 560px;
-  height: 560px;
+  width: max(560px, 30vw);
+  height: max(560px, 30vw);
   left: 38%;
   top: 22%;
   background: radial-gradient(closest-side, #2fb7c4, transparent);
@@ -1279,7 +1292,15 @@ section.feat {
   overflow: hidden;
   border: 1px solid var(--edge);
   background:
-    radial-gradient(ellipse at 50% 120%, rgba(255, 122, 61, 0.35), transparent 60%), var(--bg-2);
+    radial-gradient(
+      ellipse at 50% 120%,
+      rgba(255, 122, 61, 0.35),
+      rgba(255, 122, 61, 0.2) 22%,
+      rgba(255, 122, 61, 0.08) 40%,
+      rgba(255, 122, 61, 0.02) 52%,
+      transparent 60%
+    ),
+    var(--bg-2);
 }
 
 .final h2 {
