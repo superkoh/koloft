@@ -94,6 +94,40 @@ test.describe('who ends the claude on the other machine: every way of ending a r
     }
   })
 
+  test('E-RW-31: ⌘W on a remote tab asks first while its turn runs, and closes without asking once the row reads waiting', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await page.waitForTimeout(MIRROR_PULL_SETTLE_MS)
+
+      await runIn(page, centerTerm(page), '/busy')
+      await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+      const dialog = page.locator('.modal', { hasText: 'Close running session?' })
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(dialog).toBeVisible({ timeout: 15_000 })
+      await page.keyboard.press('Escape')
+      await expect(dialog).toHaveCount(0)
+
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+      await page.waitForTimeout(MIRROR_PULL_SETTLE_MS)
+      expect(killLines(env, first.sessionId)).toHaveLength(0)
+      await row.click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => killLines(env, first.sessionId).length, { timeout: 30_000 }).toBe(1)
+      await expect(dialog).toHaveCount(0)
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-05: ⇧⌘R kills the remote session, then starts a new one resuming the same id', async ({
     env
   }) => {
