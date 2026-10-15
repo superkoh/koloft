@@ -119,14 +119,16 @@
       </div>
 
       <div class="stage" id="stage">
-        <div
-          class="win"
-          data-film="pal-start"
-          data-phone-crop="300,40,840,502"
-          data-title="Koloft, recorded: ⌘P starts a session from one line"
-          data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":58,"crop":"0,0,1440,860"}]'
-          data-cues='[{"at":2,"to":55,"html":"<kbd>⌘P</kbd> one plain sentence","x":"6%","y":"70%"},{"at":56,"to":56,"html":"⏎ start","x":"6%","y":"70%"},{"at":57,"to":63,"html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"},{"at":64,"html":"…and the real Claude Code is already working","x":"30%","y":"8%"}]'
-        ></div>
+        <div class="glow">
+          <div
+            class="win"
+            data-film="pal-start"
+            data-phone-crop="300,40,840,502"
+            data-title="Koloft, recorded: ⌘P starts a session from one line"
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":58,"crop":"0,0,1440,860"}]'
+            data-cues='[{"at":2,"to":55,"html":"<kbd>⌘P</kbd> one plain sentence","x":"6%","y":"70%"},{"at":56,"to":56,"html":"⏎ start","x":"6%","y":"70%"},{"at":57,"to":63,"html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"},{"at":64,"html":"…and the real Claude Code is already working","x":"30%","y":"8%"}]'
+          ></div>
+        </div>
         <p class="real">
           recorded in Koloft with a real Claude Code 2.1.296 — every screen is the app's own
         </p>
@@ -194,7 +196,7 @@
             <kbd>⌥⏎</kbd> → every conversation
           </button>
         </div>
-        <div class="tabwins reveal">
+        <div class="tabwins glow reveal">
           <div
             class="win"
             id="win-start"
@@ -257,13 +259,15 @@
             parent.
           </p>
         </div>
-        <div
-          class="win reveal"
-          data-film="tree"
-          data-phone-crop="0,0,360,520"
-          data-title="Koloft, recorded: a session splits its job into two sessions that report back"
-          data-cues='[{"at":14,"to":20,"html":"two new sessions hang under the one that started them","x":"3%","y":"38%"},{"at":21,"to":27,"html":"each one reports back by itself","x":"30%","y":"60%"},{"at":28,"html":"…the parent checks the work and sums up","x":"30%","y":"74%"}]'
-        ></div>
+        <div class="glow reveal">
+          <div
+            class="win"
+            data-film="tree"
+            data-phone-crop="0,0,360,520"
+            data-title="Koloft, recorded: a session splits its job into two sessions that report back"
+            data-cues='[{"at":14,"to":20,"html":"two new sessions hang under the one that started them","x":"3%","y":"38%"},{"at":21,"to":27,"html":"each one reports back by itself","x":"30%","y":"60%"},{"at":28,"html":"…the parent checks the work and sums up","x":"30%","y":"74%"}]'
+          ></div>
+        </div>
         <div class="proof reveal">
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#sibling" /></svg>
@@ -306,12 +310,14 @@
             terminal tab in the session's folder, and every change as a live diff.
           </p>
         </div>
-        <div
-          class="win reveal"
-          data-film="browser"
-          data-title="Koloft, recorded: the agent opens a page in its Workbench, clicks Refresh and reads it; then a terminal tab runs a command"
-          data-cues='[{"at":12,"to":14,"html":"the agent opens the page in its own Workbench","x":"36%","y":"40%"},{"at":15,"to":19,"html":"it sees “—”, so it clicks Refresh","x":"36%","y":"40%"},{"at":20,"html":"a terminal tab, right beside it","x":"36%","y":"40%"}]'
-        ></div>
+        <div class="glow reveal">
+          <div
+            class="win"
+            data-film="browser"
+            data-title="Koloft, recorded: the agent opens a page in its Workbench, clicks Refresh and reads it; then a terminal tab runs a command"
+            data-cues='[{"at":12,"to":14,"html":"the agent opens the page in its own Workbench","x":"36%","y":"40%"},{"at":15,"to":19,"html":"it sees “—”, so it clicks Refresh","x":"36%","y":"40%"},{"at":20,"html":"a terminal tab, right beside it","x":"36%","y":"40%"}]'
+          ></div>
+        </div>
         <div class="proof reveal">
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#browser" /></svg>
@@ -356,13 +362,15 @@
             not there to edit your files.
           </p>
         </div>
-        <div
-          class="win reveal"
-          data-film="assist"
-          data-phone-crop="0,0,830,700"
-          data-title="Koloft, recorded: Assist starts a session and hears its reply"
-          data-cues='[{"at":16,"to":19,"html":"one plain sentence; Assist starts the session","x":"34%","y":"54%"},{"at":20,"html":"the session reports back by itself","x":"34%","y":"54%"}]'
-        ></div>
+        <div class="glow reveal">
+          <div
+            class="win"
+            data-film="assist"
+            data-phone-crop="0,0,830,700"
+            data-title="Koloft, recorded: Assist starts a session and hears its reply"
+            data-cues='[{"at":16,"to":19,"html":"one plain sentence; Assist starts the session","x":"34%","y":"54%"},{"at":20,"html":"the session reports back by itself","x":"34%","y":"54%"}]'
+          ></div>
+        </div>
         <div class="proof reveal">
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#keys" /></svg>
