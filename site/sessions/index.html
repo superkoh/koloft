@@ -326,9 +326,11 @@
         <ul class="dash">
           <li>
             A session you ask for in <kbd>⌘P</kbd>, and one Assist starts, gets its own worktree too
-            in a folder git tracks, never the folder itself. Assist names it; when it does not, the
-            worktree is called <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code>. Claude
-            Code and Codex both do this, and <kbd>⌘P</kbd> does it on a
+            in a folder git tracks, never the folder itself. It is always a new worktree, never one
+            that is already there. Assist names it; when it does not, the worktree is called
+            <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code>. A name already in use
+            gets <code class="nowrap">-2</code> after it, then <code class="nowrap">-3</code>.
+            Claude Code and Codex both do this, and <kbd>⌘P</kbd> does it on a
             <a href="../remote/">remote folder</a> too. <kbd>⌘N</kbd> still starts in the folder.
           </li>
           <li>
