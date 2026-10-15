@@ -126,8 +126,9 @@
           <li>
             <code>koloft session new</code> — start a session of the same kind (Claude starts
             Claude, Codex starts Codex), in its own git worktree with
-            <code class="nowrap">-w</code>. Only Assist (see below) can pick the other kind, with
-            <code class="nowrap">--backend</code>; and when Assist leaves out
+            <code class="nowrap">-w</code>; a worktree name already in use gets
+            <code class="nowrap">-2</code> after it. Only Assist (see below) can pick the other
+            kind, with <code class="nowrap">--backend</code>; and when Assist leaves out
             <code class="nowrap">-w</code> in a folder git tracks, Koloft still makes one (see
             <a href="../sessions/#worktrees">worktree sessions</a>). Its row hangs under the session
             that started it (see <a href="../sessions/#session-tree">sessions an agent starts</a>).
