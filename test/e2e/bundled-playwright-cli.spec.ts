@@ -28,7 +28,7 @@ test.describe('the playwright-cli Koloft ships, run from a Claude Code session o
 
       expect(
         await run("command -v playwright-cli | grep -c '/commands/[0-9a-f]*/bin/playwright-cli$'")
-      ).toMatch(/^1$/m)
+      ).toMatch(/^(> )?1$/m)
       expect(await run(`playwright-cli open ${url}`)).toContain(`Page Title: ${title}`)
       const screen = await run('playwright-cli eval document.title')
       expect(screen).toContain(`"${title}"`)

@@ -173,7 +173,11 @@
         <h3>Good to know</h3>
         <ul class="dash">
           <li>tokens and keys are kept in the macOS Keychain</li>
-          <li>the top bar shows how much room your Claude accounts have left</li>
+          <li>
+            the little bars at the bottom of the sidebar show how much room your Claude and Codex
+            accounts have left. Hover them for the <code>Account usage</code> panel: one part per
+            tool, each with its accounts and, with two or more accounts, a Pool row
+          </li>
           <li>
             with no account that can be used, the New session button is greyed out, and a line under
             it says why (the same for Codex); a scheduled job does not start either. The line is one
@@ -203,8 +207,16 @@
           Sign in to Codex runs <code>codex login</code> in a terminal tab. Each sign-in becomes its
           own Codex home, a folder that holds that one login. The sign-in tab says
           <code>Codex sign in: &lt;name&gt;</code> above the terminal, with a Cancel button. New
-          Codex sessions start on the least-used one. Each account's use, for each limit Codex
-          reports (such as 5 hours and a week), shows in Settings.
+          Codex sessions start on the least-used one, and skip one that has hit its limit while
+          another is free; when all have hit it, Koloft takes turns. Settings and the
+          <code>Account usage</code> panel show each account's use for each limit Codex reports
+          (such as 5 hours and a week), its credits, and the resets it has saved, like
+          <code>62,500 credits · 3 resets saved, first expires 10-21 09:00</code>.
+        </p>
+        <p>
+          An account that hit its limit shows <code>WALLED</code> in the panel. When it has a saved
+          reset, a <code>Use a reset</code> button is there too: say yes, and Koloft spends one
+          reset and reads the account's limits again.
         </p>
 
         <h2 id="assist">Assist</h2>
@@ -330,10 +342,28 @@
             <a href="../agents/">agents</a>)
           </li>
           <li>
+            a pick works when the folder's remote is an SSH address too (<code class="nowrap"
+              >git@github.com:…</code
+            >, <code class="nowrap">ssh://…</code>, or an ssh alias of your own): inside a Koloft
+            session, git then goes over https with the picked account's token; your own git setup,
+            <code>~/.ssh</code> and the Keychain are left alone. An account added as Other server
+            does not do this
+          </li>
+          <li>
             a <a href="../remote/">remote folder</a> has no Account part: its sessions use that
             machine's own git setup
           </li>
         </ul>
+        <h3>Servers that allow SSH only</h3>
+        <p>
+          Some GitLab and Gitea servers allow SSH only. Then the
+          <a href="../sessions/#git-panel">git panel</a> says
+          <code>This server allows SSH only — bob has no SSH key on this Mac yet.</code> with a
+          <code>Make a key for bob</code> button. Press it, and Koloft makes the key, shows it with
+          <code>Copy key</code> and <code>Open SSH keys page</code>, and <code>Check again</code>
+          tells you whether the server knows it yet. Pushes and fetches in that folder then use that
+          key.
+        </p>
 
         <h2>Your own accounts</h2>
         <p>

@@ -7,7 +7,9 @@ import {
   gitInit,
   readCalls,
   sendShortcut,
+  setNextSessionTitle,
   settingsOnDisk,
+  startSessionIn,
   waitBooted,
   waitForCalls,
   wsRows,
@@ -137,7 +139,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('a git workspace never starts in its main checkout: when Assist answers main, at once or through the picker, the session starts in a fresh worktree of its own', async ({
+  test('a git workspace never starts in its main checkout: when Assist answers main, or the picker is used with Assist off, the session starts in a fresh worktree of its own', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -157,11 +159,12 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       expect(first).toBeDefined()
 
       const picker = page.getByRole('dialog', { name: 'New Session in…' })
-      assistAnswers(env, { workspace: 1, worktree: 'main', title: 'Read', sure: false })
+      await page.evaluate(() =>
+        window.api.settings.set({ assist: { on: false, backend: 'claude' } })
+      )
       await ask(app, page, 'read the readme')
       await page.keyboard.press('Enter')
-      await expect(picker.locator('.cb-row.hot')).toContainText('ws-a', { timeout: 30_000 })
-      await page.keyboard.press('Enter')
+      await picker.locator('.cb-row', { hasText: 'ws-a' }).click()
       const calls = await waitForCalls(env, 2, 30_000)
       const second = calls[1].argv.join(' ').match(fresh)?.[1]
       expect(second).toBeDefined()
@@ -171,7 +174,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('an issue Assist names starts in that issue’s worktree, and the first prompt carries the issue first, then a blank line, then what was typed', async ({
+  test('an issue Assist names starts in a new worktree named for it, and the first prompt carries the issue first, then a blank line, then what was typed; the same issue again never reuses that worktree, it starts in issue-218-2', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -207,12 +210,19 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       expect(sent.endsWith('--comments), then work on it.\n\nhandle #218 and add a test')).toBe(
         true
       )
+
+      const made = path.join(env.workspaces.a, '.claude', 'worktrees', 'issue-218')
+      await expect.poll(() => fs.existsSync(made), { timeout: 30_000 }).toBe(true)
+      await ask(app, page, 'more on #218')
+      await page.keyboard.press('Enter')
+      const calls = await waitForCalls(env, 2, 30_000)
+      expect(calls[1].argv.join(' ')).toContain('-w issue-218-2 ')
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('⏎ asks Assist even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words; when Assist is unsure, cannot answer or is off, the workspace picker opens with its pick first and the session starts on the pick', async ({
+  test('⏎ asks AI even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words; an answer it cannot use hands the words to a global Assist task, and with Assist off the workspace picker opens and the session starts on the pick', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -234,24 +244,15 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect(palette(page)).toHaveCount(0)
 
       const picker = page.getByRole('dialog', { name: 'New Session in…' })
-      assistAnswers(env, { workspace: 2, worktree: 'main', title: 'Readme', sure: false })
-      await ask(app, page, 'tidy the readme')
-      await page.keyboard.press('Enter')
-      await expect(picker.locator('.cb-row.hot')).toContainText('ws-b', { timeout: 30_000 })
-      await page.keyboard.press('Enter')
-      const [unsure] = await waitForCalls(env, 1)
-      await expect(picker).toHaveCount(0)
-      expect(fs.realpathSync(unsure.cwd)).toBe(fs.realpathSync(env.workspaces.b))
-      expect(textAfterDashes(unsure)).toBe('tidy the readme')
-      expect(nameOf(unsure)).toBe('Readme')
-
       assistAnswers(env, 'not an answer')
       await ask(app, page, 'fix the build')
       await page.keyboard.press('Enter')
-      await expect(page.locator('.toast')).toContainText('could not answer', { timeout: 30_000 })
-      await expect(picker).toBeVisible()
-      await page.keyboard.press('Escape')
-      await expect(picker).toHaveCount(0)
+      const [assist] = await waitForCalls(env, 1, 30_000)
+      expect(assist.cwd).toBe(path.join(env.userData, 'conductors', 'global'))
+      await expect
+        .poll(() => page.evaluate(() => window.api.conductors.tasks()))
+        .toEqual([{ tabId: expect.any(String), scope: 'global', name: 'fix the build' }])
+      await expect(page.locator('.modal')).toHaveCount(0)
 
       await page.evaluate(() =>
         window.api.settings.set({ assist: { on: false, backend: 'claude' } })
@@ -325,6 +326,42 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect
         .poll(tasks)
         .toContainEqual({ tabId: expect.any(String), scope: env.workspaces.b, name: 'Ask ws-b' })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('the AI can name a Koloft feature, which opens at once on its own Settings page, or one existing session, which ⌘P jumps to without starting anything', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      assistAnswers(env, { hand: 'feature', feature: 'settings-shortcuts', title: 'Keys' })
+      await ask(app, page, '我想改快捷键')
+      await page.keyboard.press('Enter')
+      const settings = page.getByRole('dialog', { name: 'Settings' })
+      await expect(settings.getByRole('tab', { selected: true })).toHaveText('Shortcuts', {
+        timeout: 30_000
+      })
+      await page.keyboard.press('Escape')
+      await expect(settings).toHaveCount(0)
+      expect(readCalls(env)).toHaveLength(0)
+
+      setNextSessionTitle(env, 'Alpha jump target')
+      await startSessionIn(page, 'ws-a')
+      await expect(wsRows(page, 'ws-a')).toContainText('Alpha jump target')
+      await startSessionIn(page, 'ws-b')
+      await expect(wsRows(page, 'ws-b')).toHaveClass(/\bactive\b/)
+      assistAnswers(env, { hand: 'session', session: '1.1', title: 'Alpha' })
+      await ask(app, page, 'take me to the alpha work')
+      await page.keyboard.press('Enter')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bactive\b/, { timeout: 30_000 })
+      expect(assistWasAsked(env)).toContain('[1.1] Alpha jump target')
+      expect(readCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }

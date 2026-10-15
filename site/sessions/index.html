@@ -244,21 +244,15 @@
             sessions, folders and app actions (New session…, Settings…, and so on) that fit show up
             under it. Type a few letters of a session's title, its worktree, its folder or its
             machine, press <kbd>↓</kbd> to pick the match, then <kbd>⏎</kbd>, and you are there. It
-            does what a click on the row does, so a closed session is resumed.
+            does what a click on the row does, so a closed session is resumed. Every Settings page
+            is there too, found by English or Chinese words: type "shortcuts" or "快捷键" and the
+            row <code>Settings ▸ Shortcuts</code> shows up.
           </li>
           <li>
-            Or type what a new session should do, and press <kbd>⏎</kbd>.
-            <a href="../accounts/#assist">Assist</a> picks the folder, the worktree and a title, and
-            the session starts there with your words as its first message. If the folder's branch is
-            behind, Koloft first asks whether to pull. <kbd>⇧⏎</kbd> starts it on the other tool,
-            when you have both. When Assist is not sure which folder, or is off, the folder picker
-            opens instead. Words about Koloft itself ("turn on dark mode", "set up Discord") go to
-            Assist as a task, and "ask &lt;folder&gt; …" goes to that folder's Assist.
-          </li>
-          <li>
-            If Assist says the words call for a brand-new project, Koloft makes the folder, adds it
-            to the list and starts the session in it. The first time, a New Project box asks where
-            new projects go; Koloft remembers it for next time.
+            A moment after you stop typing, the sessions whose conversation holds your words show up
+            too, under <code>In conversations</code>: up to three, with one line of text around the
+            match, and a row <code>All N conversations that mention it</code> when there are more.
+            Click that row, or press <kbd>⌥⏎</kbd>, for the full search.
           </li>
           <li>
             <kbd>⌥⏎</kbd> in the same box searches what was said. Every session in every folder
@@ -266,6 +260,34 @@
             text around the match. Click one to open it. For Claude it reads what you typed and what
             the agent answered, not the output of its tools. For Codex, Codex itself does the
             search.
+          </li>
+          <li>
+            Or type what a new session should do, and press <kbd>⏎</kbd> (the button at the right
+            reads <code>Ask AI</code>; with both tools it adds your default one, like
+            <code>Ask AI · Claude</code>). <a href="../accounts/#assist">Assist</a> picks the
+            folder, the worktree and a title, and the session starts there with your words as its
+            first message. In a folder git tracks it gets a worktree of its own (see
+            <a href="#worktrees">worktree sessions</a>). If the folder's branch is behind, Koloft
+            first asks whether to pull. <kbd>⇧⏎</kbd> starts it on the other tool, when you have
+            both.
+          </li>
+          <li>
+            Not everything you type starts a session. Words about Koloft itself ("turn on dark
+            mode", "set up Discord") go to Assist as a task; "open settings" or "check for updates"
+            just does it; "ask &lt;folder&gt; …" goes to that folder's Assist. Ask for a session by
+            what it was doing ("go to the session that was fixing login"), and <kbd>⌘P</kbd> jumps
+            to it, starting nothing. A question, a translation, or work that fits more than one
+            folder ("fix the tests") goes to the Global Assist, which answers in its own tab.
+          </li>
+          <li>
+            With Assist off, the button reads <code>Start a session</code> (with both tools,
+            <code>Start</code> plus your default one, like <code>Start · Claude</code>) and
+            <kbd>⏎</kbd> opens the folder picker instead.
+          </li>
+          <li>
+            If Assist says the words call for a brand-new project, Koloft makes the folder, adds it
+            to the list and starts the session in it. The first time, a New Project box asks where
+            new projects go; Koloft remembers it for next time.
           </li>
         </ul>
         <p>
@@ -295,13 +317,20 @@
  +-----------------------------------------+
 </pre>
 
-        <h2>Worktree sessions</h2>
+        <h2 id="worktrees">Worktree sessions</h2>
         <p>
           Two agents in one folder can step on each other's files.
           <kbd>⇧⌘N</kbd> starts a session in <mark class="hl">its own git worktree</mark>, a second
           copy of the repo on its own branch.
         </p>
         <ul class="dash">
+          <li>
+            A session you ask for in <kbd>⌘P</kbd>, and one Assist starts, gets its own worktree too
+            in a folder git tracks, never the folder itself. Assist names it; when it does not, the
+            worktree is called <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code>. Claude
+            Code and Codex both do this, and <kbd>⌘P</kbd> does it on a
+            <a href="../remote/">remote folder</a> too. <kbd>⌘N</kbd> still starts in the folder.
+          </li>
           <li>
             Claude Code removes its worktree when it exits, if nothing in it changed. If something
             did, Claude asks you: keep it or remove it.

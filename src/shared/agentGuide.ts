@@ -131,7 +131,7 @@ koloft workspace list
     Only for the global Assist: list the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--model <model>] -- "<first message>"
-    Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex), and print the name to reach it by. A Claude session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which cannot be a remote (SSH) workspace. A Codex session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in its own git worktree (a separate copy of the repository). The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
+    Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex), and print the name to reach it by. A Claude session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which cannot be a remote (SSH) workspace. A Codex session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
     Example: koloft session new --name "Fix docs links" -- "Fix the broken links in docs/."
     Example: koloft session new --workspace koloft-releases -- "Check that the latest release has all its files."
     Assist may also pick --backend claude|codex (its own kind if left out). The global Assist must give --workspace; a workspace's Assist can only start sessions in its own workspace. A session Assist starts in a git workspace always gets its own worktree: -w names it, and without -w Koloft picks a name.
@@ -234,9 +234,15 @@ You only pass work on; you never do it yourself. Do not write or change files (y
 ${RELAY_NEVER_GUESS}`
 }
 
-export function assistTaskRole(scope: string, brief: string): string {
+const STAY_OPEN =
+  'The owner reads your answer in this tab, so do not close this session when you are done: the owner closes it.'
+
+const CLOSE_WHEN_DONE =
+  'When the task is done, or the owner says to stop, run koloft session close as your very last step, without waiting to be asked.'
+
+export function assistTaskRole(scope: string, brief: string, staysOpen = false): string {
   return `${conductorRole(scope, false)}
 
 This session is one task of the ${conductorName(scope)}, not its everyday conversation. Do not write to your memory folder: the everyday Assist reads the same one. Your task: ${brief}
-When the task is done, or the owner says to stop, run koloft session close as your very last step, without waiting to be asked.`
+${staysOpen ? STAY_OPEN : CLOSE_WHEN_DONE}`
 }

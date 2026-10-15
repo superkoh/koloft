@@ -56,7 +56,8 @@ import type {
   SessionInfo
 } from '@shared/types'
 import { CommitDialog } from './CommitDialog'
-import { commentBlocked } from './changesModel'
+import { CHANGES_MSG, commentBlocked } from './changesModel'
+import { FilesTabLabel, useChangeTotals } from './FilesTabLabel'
 import { checksDot, checksLine, failingChecks, type ChecksDot } from './prChecksView'
 import { BrowserActions } from './BrowserActions'
 import { BrowserAddressBar } from './BrowserAddressBar'
@@ -1578,6 +1579,7 @@ export function WorkbenchPane({
     return out
   }, [states, liveTabs])
   const changedCount = Object.keys(git).length
+  const totals = useChangeTotals(git, numstat, treeRoot, base)
   const backlink =
     activeTab?.sourceTabId && set.tabs.some((t) => t.id === activeTab.sourceTabId)
       ? activeTab.sourceTabId
@@ -1669,7 +1671,11 @@ export function WorkbenchPane({
         (drag?.id === t.id ? ' dragging' : '') +
         (drag && drag.over === i && drag.id !== t.id ? ' dropbefore' : '')
       }
-      title={t.url || t.path || undefined}
+      title={
+        t.kind === 'files' && totals?.files
+          ? CHANGES_MSG.totals(totals)
+          : t.url || t.path || undefined
+      }
       data-wb-tab-id={t.id}
       onMouseDown={() => activate(t.id)}
       draggable={t.kind !== 'files' && t.kind !== 'terminal'}
@@ -1693,8 +1699,11 @@ export function WorkbenchPane({
       onDragEnd={() => setDrag(null)}
     >
       <span className="ic">{iconFor(t)}</span>
-      <span className="lb">{tabLabel(set, t)}</span>
-      {t.kind === 'files' && changedCount > 0 && <span className="cnt">{changedCount}</span>}
+      {t.kind === 'files' ? (
+        <FilesTabLabel totals={totals} />
+      ) : (
+        <span className="lb">{tabLabel(set, t)}</span>
+      )}
       {(audio[t.id]?.audible || audio[t.id]?.muted) && (
         <span
           className={'btab-spk' + (audio[t.id]?.muted ? ' muted' : '')}
