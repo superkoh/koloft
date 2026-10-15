@@ -10,8 +10,7 @@ import type {
 import { ownerSays } from '@shared/agentGuide'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { distinctName } from '@shared/sessionRoute'
-import { worktreeBase } from '@shared/cronNames'
+import { freshWorktreeName } from '@shared/sessionRoute'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { basename } from '@shared/preview'
 import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
@@ -402,10 +401,7 @@ async function startSibling(
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
   const worktree =
     gitWorkspace && (args.worktree || caller.assist)
-      ? distinctName(
-          args.worktree ?? worktreeBase('session', Date.now()),
-          (await d.worktrees(workspace)).map((w) => w.name)
-        )
+      ? freshWorktreeName(await d.worktrees(workspace), Date.now(), args.worktree)
       : args.worktree
   const tabId = await d.launch({
     kind: backend,

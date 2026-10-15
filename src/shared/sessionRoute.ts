@@ -132,9 +132,13 @@ export function distinctName(name: string, taken: string[]): string {
   return `${name}-${n}`
 }
 
-export function freshWorktreeName(worktrees: { name: string }[], now: number): string {
+export function freshWorktreeName(
+  worktrees: { name: string }[],
+  now: number,
+  wished?: string
+): string {
   return distinctName(
-    worktreeBase('session', now),
+    wished ?? worktreeBase('session', now),
     worktrees.map((w) => w.name)
   )
 }

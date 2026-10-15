@@ -8,7 +8,8 @@ import type {
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { distinctName, freshWorktreeName, type RouteWorktree } from '@shared/sessionRoute'
+import { distinctName, type RouteWorktree } from '@shared/sessionRoute'
+import { worktreeBase } from '@shared/cronNames'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 
 export type RunChoice =
@@ -59,14 +60,10 @@ export function typedLaunch(typed: TypedStart): Pick<CreateTabOptions, 'firstPro
 export function pendingWorktree(
   named: RouteWorktree | null,
   isGit: boolean,
-  worktrees: WorktreeInfo[],
   now: number
 ): RouteWorktree | null {
   if (named || !isGit) return named
-  return {
-    kind: 'new',
-    name: freshWorktreeName(worktrees, now)
-  }
+  return { kind: 'new', name: worktreeBase('session', now) }
 }
 
 export function pendingLaunch(
@@ -77,16 +74,23 @@ export function pendingLaunch(
   issues: GithubItem[]
 ): SessionLaunchOptions {
   if (!wt || wt.kind === 'main') return { cwd: wsPath, ...typedLaunch(pending) }
-  const taken = worktrees.map((w) => w.name)
-  if (wt.kind === 'issue') {
-    const item = issues.find((i) => i.kind === 'issue' && i.number === wt.number)
-    return {
-      cwd: wsPath,
-      worktree: distinctName(`issue-${wt.number}`, taken),
-      ...(item ? seededItemExtras(item, pending.prompt, pending.title) : typedLaunch(pending))
-    }
+  const item =
+    wt.kind === 'issue'
+      ? issues.find((i) => i.kind === 'issue' && i.number === wt.number)
+      : undefined
+  const wished = wt.kind === 'issue' ? itemWorktreeName('issue', wt.number) : wt.name
+  return {
+    cwd: wsPath,
+    worktree: distinctName(
+      wished,
+      worktrees.map((w) => w.name)
+    ),
+    ...(item ? seededItemExtras(item, pending.prompt, pending.title) : typedLaunch(pending))
   }
-  return { cwd: wsPath, worktree: distinctName(wt.name, taken), ...typedLaunch(pending) }
+}
+
+function itemWorktreeName(kind: GithubItem['kind'], number: number): string {
+  return `${kind}-${number}`
 }
 
 export function seededItemExtras(
@@ -133,7 +137,7 @@ export function itemFilterText(item: GithubItem): string {
 }
 
 export function itemAim(item: GithubItem, worktrees: WorktreeInfo[]): WtAim {
-  const name = `${item.kind}-${item.number}`
+  const name = itemWorktreeName(item.kind, item.number)
   const hit =
     (item.branch && worktrees.find((w) => w.branch === item.branch)) ||
     worktrees.find((w) => w.name === name)
