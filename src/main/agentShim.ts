@@ -20,7 +20,7 @@ jstr() {
 }
 `
 
-const REMOTE_AGENT_SHIM_WAITS_MS = 30_000
+export const REMOTE_AGENT_SHIM_WAITS_MS = 30_000
 const REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS = 250
 
 const body = (waitsMs: number, pollMs = SHIM_POLL_MS): string => `

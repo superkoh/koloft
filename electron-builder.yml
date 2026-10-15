@@ -51,6 +51,9 @@ asarUnpack:
   - '**/node_modules/@playwright/cli/**'
   - '**/node_modules/playwright/**'
   - '**/node_modules/playwright-core/**'
+  # run the same way for `koloft phone` (src/main/phone/android.ts), and its helper apps
+  # are pushed to the Android emulator as real files
+  - '**/node_modules/agent-device/**'
 
 mac:
   target:

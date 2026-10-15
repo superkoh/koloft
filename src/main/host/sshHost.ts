@@ -489,6 +489,13 @@ export class SshHost implements Host {
     return (await this.sh('test -f "$1"', [this.bare(file)])).code === 0
   }
 
+  async writeBytes(file: string, bytes: Buffer): Promise<void> {
+    const r = await this.sh('mkdir -p "$(dirname "$1")" && cat > "$1"', [this.bare(file)], {
+      input: bytes
+    })
+    if (r.code !== 0) throw new Error(problemOf(r) || `could not write ${this.bare(file)}`)
+  }
+
   async search(root: string, query: string, opts?: { showIgnored?: boolean }) {
     const q = query.trim().toLowerCase()
     if (!q) return { hits: [], truncated: false }

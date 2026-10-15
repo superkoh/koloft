@@ -1944,3 +1944,76 @@ server unless a line says so.
 - Measured 2026-10-13 with Apple git 2.54 and OpenSSH 10.3p1 on macOS 27.0, a temp
   `HOME`, a 403 stub on 127.0.0.1, and a Gitea 1.24.6 and a GitLab CE 19.4.2 in Docker with
   throwaway users and keys.
+
+## §54 Google's Android emulator, set up without its installer
+
+- **Three zips are enough; no Java and no sdkmanager.** `emulator-darwin_aarch64-16428233.zip`
+  (emulator 37.2.12, 416 MB), `platform-tools_r37.0.1-darwin.zip` (adb, 16 MB) and
+  `sys-img/google_apis/arm64-v8a-36_r07.zip` (Android 16, 1.87 GB; 4.6 GB unpacked) from
+  `https://dl.google.com/android/repository/`, with sizes and SHA-1 sums listed in
+  `repository2-3.xml` and `sys-img/google_apis/sys-img2-3.xml`. Laid out as
+  `<sdk>/emulator`, `<sdk>/platform-tools` and
+  `<sdk>/system-images/android-36/google_apis/arm64-v8a`, plus an AVD written by hand
+  (`<name>.ini` with an absolute `path=`, and `<name>.avd/config.ini` naming
+  `image.sysdir.1`), the emulator started with `ANDROID_HOME`, `ANDROID_AVD_HOME` and
+  `ANDROID_EMULATOR_HOME` pointing there.
+- **`-no-window` runs it with no window and no Dock icon.** A cold boot (`-no-snapshot`)
+  of that image with `hw.ramSize=2048` reached `sys.boot_completed=1` in 29 s on an M4
+  with 16 GB; the emulator then held about 2 GB.
+- **Its gRPC control port listens on every interface with no auth by default**: the
+  start log says `[::]:8554`, "security: Insecure, auth: none". `-help-all` (37.2.12)
+  offers no option to bind it to loopback only, but `-grpc-use-token` does: the log
+  then says "Token/JWT auth requested without tls, restricting access to localhost",
+  "security: Local, auth: +token", and `lsof` shows it listening on `127.0.0.1` only.
+  Every call then needs `authorization: Bearer <token>`, the token being `grpc.token`
+  in the discovery file `$HOME/Library/Caches/TemporaryItems/avd/running/pid_<pid>.ini`
+  (next to `grpc.port`). It follows `$HOME`, not `ANDROID_EMULATOR_HOME`, and goes away
+  when the emulator exits. `-idle-grpc-timeout <s>` ends the emulator after that long
+  with no gRPC call (read in the help text).
+- **Through gRPC** (`emulator/lib/emulator_controller.proto`, loaded at run time with
+  `@grpc/proto-loader`): `getScreenshot` PNG at 1080×2400 took 0.18 s;
+  `streamScreenshot` at 540×1200 sent about 50 frames a second while the screen moved,
+  and a page drawing those PNGs in a Workbench web tab showed 22–32. `sendTouch` taps
+  landed 4 of 4 once the home screen was up. `sendKey` with `text` typed, but slowly:
+  12 characters took over 1.5 s.
+- **Reading the screen**: `adb shell uiautomator dump` took 5.7 s. agent-device 0.21.27
+  (`snapshot -i`, which installs its own helper app on the device the first time) took
+  0.2 s, `type` 0.3 s for 7 characters, `press` with `--settle` 2.4 s, `screenshot` 1.6 s.
+  Its first `snapshot -i` right after `sys.boot_completed=1` failed ("insufficient
+  application window content", the home screen not drawn yet) and the next, 1.4 s
+  later, worked.
+- **What outlives the emulator**: the first `adb` call starts an adb server that stays
+  after the emulator exits, shared by every adb on the Mac at port 5037 unless
+  `ANDROID_ADB_SERVER_PORT` names another; with it set for the emulator, adb and
+  agent-device alike, boot checks and snapshots worked through that port, and after
+  `adb kill-server` with it no adb process was left. agent-device starts a daemon per `AGENT_DEVICE_STATE_DIR` that stays
+  after `close` (its help says it leaves after 5 idle minutes);
+  `agent-device daemon stop --state-dir <dir>` ends it.
+- Measured 2026-10-14 on macOS 27.0 (M4, 16 GB) with the three zips above.
+
+## §55 Xcode's iOS simulator driven with no window
+
+- **`xcrun simctl bootstatus <udid> -b` boots a simulator with no Simulator app and no
+  window.** The first boot of a new iPhone 17 (iOS 27) took 2 min 28 s; a later boot 12 s.
+  Booted, it used about 1.5 GB more than shut down.
+- **AXe 1.8.0** (`brew install cameroncooke/axe/axe`) drives it with no window: `tap -x
+  -y` and `type <text>` (7 characters in 0.4 s) changed the screen, checked by reading the
+  UI tree again, not by AXe's exit code. All of it goes through Apple's private
+  simulator interfaces, so an Xcode update can break it. `describe-ui` prints the
+  accessibility tree as JSON (the root's `frame` is the screen in points, 402×874 for an
+  iPhone 17; `AXLabel`, `AXValue`, `type` and `frame` on every node, elements scrolled
+  under the top bar keep frames partly above 0) and took 2.5–7 s. After `bootstatus -b`
+  returned, every AXe command failed with "Timed out creating the simulator remote
+  automation session" for 33 s in one boot and over 90 s in another, each try taking
+  5–12 s; then they all worked. `button home` went home except while the keyboard was
+  up. `swipe --start-x --start-y --end-x --end-y` scrolled Settings. `type` takes only
+  characters on a US keyboard: `type 'héllo'` exits 1 with "No keycode found for
+  character: 'é'". `key 42` deleted one character and `key 40` is Return (its help
+  lists both). `stream-video --format mjpeg` writes an HTTP multipart stream to stdout
+  (`--mjpegstream` parts, each with `Content-Length`), frames in pixels (3× the
+  points; 603×1311 with `--scale 0.5`), 4–8 a second.
+- **`xcrun simctl io <udid> screenshot <file>`** took 2.7 s a shot.
+- Measured 2026-10-14 in a tart VM (macOS 26.6, Xcode 27.0, 6 GB, 4 cores, no GPU), so
+  the timings are a VM's. On a Mac with only the Command Line Tools, `xcrun simctl help`
+  exits 72 with `xcrun: error: unable to find utility "simctl", not a developer tool or
+  in PATH` (seen 2026-10-14, macOS 27.0).
