@@ -9,6 +9,7 @@ export interface AgentRequest {
   tabId?: string
   argv: string[]
   cwd: string
+  pid?: number
 }
 
 export interface AgentReply {
@@ -20,6 +21,7 @@ export interface AgentCaller {
   tabId: string
   cwd: string
   session: SessionInfo
+  pid?: number
 }
 
 export type AgentVerb = (args: string[], caller: AgentCaller) => AgentReply | Promise<AgentReply>
@@ -78,7 +80,8 @@ export function parseAgentRequest(raw: unknown): AgentRequest | null {
   return {
     tabId: typeof r.tabId === 'string' && r.tabId ? r.tabId : undefined,
     argv: r.argv,
-    cwd: r.cwd
+    cwd: r.cwd,
+    ...(typeof r.pid === 'number' ? { pid: r.pid } : {})
   }
 }
 
@@ -186,6 +189,6 @@ export class AgentRequests {
     if (!this.deps.enabled(tabId)) return refused(AGENT_TOOLS_OFF)
     const session = this.deps.session(tabId)
     if (!session) return refused(UNKNOWN_TAB)
-    return dispatchAgent(this.deps.verbs, req.argv, { tabId, cwd: req.cwd, session })
+    return dispatchAgent(this.deps.verbs, req.argv, { tabId, cwd: req.cwd, session, pid: req.pid })
   }
 }

@@ -102,6 +102,7 @@ import {
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { REMOTE_AGENT_SHIM } from './agentShim'
+import { SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import {
   oncePerName,
@@ -345,7 +346,10 @@ import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/
 import { DISCORD_SETUP_TASK, DISCORD_SETUP_TASK_NAME, setupStatusText } from './discord/setupTask'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
-import { Notices } from './discord/notices'
+import { Notices, noticeBinding, type NoticeSubject } from './discord/notices'
+import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
+import { secretVerb } from './agentSecret'
+import { OWNER_TYPES_A_SECRET_WITHIN_MS } from './agentShim'
 import { SessionThreads } from './discord/threads'
 import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
@@ -905,6 +909,8 @@ function machinePackage(): MachinePackage {
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM
   }
+  for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
+    pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   try {
@@ -929,6 +935,7 @@ let discordNotices: Notices | null = null
 let discordThreads: SessionThreads | null = null
 let discordLive: LiveStatus | null = null
 let askButtons: AskButtons | null = null
+let secretAsks: SecretAsks | null = null
 const answerable = new Set<string>()
 let answerableRegDir: string | undefined
 let discordConnected = false
@@ -1243,6 +1250,15 @@ const agentRequests = new AgentRequests({
           ? bindWithNewChannel({ scope: found.value.path })
           : { ok: false, error: found.error }
       }
+    }),
+    secret: secretVerb({
+      ask: (a) =>
+        secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
+      alive: pidAlive,
+      machine: (tabId) => tracker.remoteOf(tabId)?.host,
+      pages: guestPagesOf,
+      open: openOnTabMachine,
+      sleep
     }),
     gh: githubVerb({
       scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
@@ -1963,6 +1979,7 @@ app.whenReady().then(() => {
     discordRelay?.forget(e.id)
     discordThreads?.forget(e.id)
     askButtons?.forget(e.id)
+    secretAsks?.forget(e.id)
     if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
     if (answerableRegDir) forgetAssistMarkers(answerableRegDir, e.id)
     loginPtys.delete(e.id)
@@ -2308,6 +2325,22 @@ app.whenReady().then(() => {
     respond: (i, body) => link.respond(i, body)
   })
   askButtons = buttons
+  const secrets = new SecretAsks({
+    owner: () => conductorsNow.owner(),
+    place: async (tabId, card) => {
+      const subject = noticeSubjectOf(tabId)
+      if (!subject || subject.conductor) return undefined
+      const b = noticeBinding(conductorsNow.bindings(), subject, 'waiting')
+      if (!b) return undefined
+      const name = (await discordShownName(sessionOfTab(tabId))) ?? subject.name
+      const channelId = await threads.place(b, { ...subject, name })
+      const messageId = (await link.card(channelId, card(name))).at(-1)
+      return messageId ? { channelId, messageId, name } : undefined
+    },
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
+    respond: (i, body) => link.respond(i, body)
+  })
+  secretAsks = secrets
   const interactions = new Interactions({
     owner: () => conductorsNow.owner(),
     routeOf: (channelId) => conductorsNow.routeOf(channelId),
@@ -2321,7 +2354,8 @@ app.whenReady().then(() => {
       if (!found.ok) throw new Error(found.error)
       return commandInto(b, found.value, text)
     },
-    press: (i) => buttons.press(i),
+    press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? secrets.press(i) : buttons.press(i)),
+    submit: (i) => secrets.submit(i),
     respond: (i, body) => link.respond(i, body)
   })
   const sessionDestination = (b: ConductorBinding, threadId: string, key: string): Destination => {
@@ -2418,19 +2452,7 @@ app.whenReady().then(() => {
     card: async (channelId, card) => discordRelay?.card(channelId, card),
     archive: (threadId) => threads.archive(threadId),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
-    subject: (tabId) => {
-      const s = sessionOfTab(tabId)
-      return s?.sessionId
-        ? {
-            tabId,
-            key: s.sessionId,
-            name: s.title,
-            backend: s.backendId,
-            workspace: sessionBackends.workspaceOfTab(tabId),
-            conductor: s.conductor
-          }
-        : undefined
-    },
+    subject: noticeSubjectOf,
     shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     commandRunning: (tabId) => slash.running(tabId),
@@ -3667,6 +3689,41 @@ function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolea
 function registerSlashCommands(): void {
   const guilds = new Set((conductors?.bindings() ?? []).map((b) => b.channel.guildId))
   void discordLink?.registerCommands([...guilds], SLASH_COMMANDS)
+}
+
+function noticeSubjectOf(tabId: string): NoticeSubject | undefined {
+  const s = sessionOfTab(tabId)
+  return s?.sessionId
+    ? {
+        tabId,
+        key: s.sessionId,
+        name: s.title,
+        backend: s.backendId,
+        workspace: sessionBackends.workspaceOfTab(tabId),
+        conductor: s.conductor
+      }
+    : undefined
+}
+
+const LOOPBACK_OPEN_TIMEOUT_MS = 15_000
+
+// CODEX§15
+async function openOnTabMachine(tabId: string, url: string): Promise<string> {
+  const host = tracker.remoteOf(tabId)?.host
+  if (!host) {
+    const res = await fetch(url, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(LOOPBACK_OPEN_TIMEOUT_MS)
+    }).catch((error: unknown) => `nothing (${errorText(error)})`)
+    return typeof res === 'string' ? res : String(res.status)
+  }
+  await loginEnvReady()
+  const r = await runSsh(
+    host,
+    `curl -sS -o /dev/null -w '%{http_code}' --max-time ${LOOPBACK_OPEN_TIMEOUT_MS / 1000} ${shq(url)}`,
+    { controlDir: remoteControlDir, timeoutMs: LOOPBACK_OPEN_TIMEOUT_MS * 2 }
+  )
+  return r.stdout.trim() || `nothing (${r.stderr.trim()})`
 }
 
 function guestPagesOf(tabId: string): GuestPage[] {

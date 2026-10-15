@@ -3,6 +3,7 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
+import { SECRET_VERB, writeSudoShims } from './sudoShim'
 
 export const AGENT_SHIM_WAITS_MS = 10_000
 const SHIM_POLL_MS = 50
@@ -23,6 +24,9 @@ jstr() {
 const REMOTE_AGENT_SHIM_WAITS_MS = 30_000
 const REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS = 250
 
+export const OWNER_TYPES_A_SECRET_WITHIN_MS = 9 * 60_000
+const SECRET_REPLY_OUTLIVES_THE_ASK_MS = 60_000
+
 const body = (waitsMs: number, pollMs = SHIM_POLL_MS): string => `
 ${NEWID_FN}
 id="$(newid)"
@@ -32,13 +36,17 @@ for a in "$@"; do args="$args\${args:+,}\\"$(jstr "$a")\\""; done
 part="$dir/req-$id.part"
 req="$dir/req-$id.json"
 res="$dir/res-$id.json"
-if ! printf '{%s"argv":[%s],"cwd":"%s"}\\n' "$tabfield" "$args" "$(jstr "$PWD")" > "$part" 2>/dev/null || ! mv "$part" "$req" 2>/dev/null; then
+trap 'rm -f "$req" "$part" 2>/dev/null' EXIT
+trap 'exit 143' TERM HUP INT
+if ! printf '{%s"argv":[%s],"cwd":"%s","pid":%s}\\n' "$tabfield" "$args" "$(jstr "$PWD")" "$$" > "$part" 2>/dev/null || ! mv "$part" "$req" 2>/dev/null; then
   rm -f "$part" 2>/dev/null
   echo "$unwritable" >&2
   exit 1
 fi
 waits=0
-while [ ! -f "$res" ] && [ "$waits" -lt ${waitsMs / pollMs} ]; do sleep ${pollMs / 1000}; waits=$((waits+1)); done
+limit=${waitsMs / pollMs}
+[ "$1" = ${SECRET_VERB} ] && limit=${(OWNER_TYPES_A_SECRET_WITHIN_MS + SECRET_REPLY_OUTLIVES_THE_ASK_MS) / pollMs}
+while [ ! -f "$res" ] && [ "$waits" -lt "$limit" ]; do sleep ${pollMs / 1000}; waits=$((waits+1)); done
 if [ ! -f "$res" ]; then
   rm -f "$req" 2>/dev/null
   echo "koloft: Koloft did not answer." >&2
@@ -93,4 +101,5 @@ ${body(AGENT_SHIM_WAITS_MS)}`
 
 export function writeCodexAgentShim(shimDir: string, requestDir: string): void {
   fs.writeFileSync(path.join(shimDir, 'koloft'), codexAgentShim(requestDir), { mode: 0o755 })
+  writeSudoShims(shimDir)
 }

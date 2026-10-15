@@ -37,11 +37,13 @@ function setup(over: Partial<InteractionDeps> = {}) {
   const replies: unknown[] = []
   const runs: { session: string; text: string }[] = []
   const pressed: DiscordInteraction[] = []
+  const submitted: DiscordInteraction[] = []
   const deps: InteractionDeps = {
     owner: () => OWNER,
     routeOf: (c) =>
       c === CHANNEL ? { binding } : c === THREAD ? { binding, sessionKey: 'k1' } : undefined,
     press: async (i) => void pressed.push(i),
+    submit: async (i) => void submitted.push(i),
     choices: () => [
       { name: 'This channel’s Assist (Global)', value: 'me' },
       { name: 'fix-login · Claude', value: 'k1' },
@@ -54,7 +56,7 @@ function setup(over: Partial<InteractionDeps> = {}) {
     respond: async (_i, body) => void replies.push(body),
     ...over
   }
-  return { interactions: new Interactions(deps), replies, runs, pressed }
+  return { interactions: new Interactions(deps), replies, runs, pressed, submitted }
 }
 
 describe('Discord slash commands', () => {
@@ -84,6 +86,15 @@ describe('Discord slash commands', () => {
     await interactions.handle(interaction({ channelId: THREAD, type: 3, customId: 'ask:x:0' }))
     await interactions.handle(interaction({ channelId: '999', type: 3, customId: 'ask:y:0' }))
     expect(pressed.map((i) => i.customId)).toEqual(['ask:x:0'])
+    expect(runs).toEqual([])
+  })
+
+  it('a form sent in a thread Koloft knows is handed on as a submission, never run as a command', async () => {
+    const { interactions, runs, pressed, submitted } = setup()
+    await interactions.handle(interaction({ channelId: THREAD, type: 5, customId: 'secret:x' }))
+    await interactions.handle(interaction({ channelId: '999', type: 5, customId: 'secret:y' }))
+    expect(submitted.map((i) => i.customId)).toEqual(['secret:x'])
+    expect(pressed).toEqual([])
     expect(runs).toEqual([])
   })
 
@@ -186,6 +197,25 @@ describe('reading an interaction from the Gateway', () => {
         data: { custom_id: 'ask:x:1' }
       })
     ).toMatchObject({ type: 3, command: '', customId: 'ask:x:1' })
+  })
+
+  it('a sent form carries its custom id and what was typed in each box, in a row or under a label', () => {
+    const sent = (components: unknown[]) =>
+      interactionOf({
+        id: '3',
+        token: 't',
+        type: 5,
+        channel_id: THREAD,
+        member: { user: { id: OWNER } },
+        data: { custom_id: 'secret:x', components } as never
+      })
+    const typed = 'p@ss "w" \\ 日本'
+    expect(
+      sent([{ type: 1, components: [{ type: 4, custom_id: 'value', value: typed }] }])
+    ).toMatchObject({ type: 5, customId: 'secret:x', fields: { value: typed } })
+    expect(
+      sent([{ type: 18, component: { type: 4, custom_id: 'value', value: typed } }])
+    ).toMatchObject({ fields: { value: typed } })
   })
 
   it('a command Discord already has with the same shape is not created again', () => {
