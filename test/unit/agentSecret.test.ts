@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ASKER_GONE,
   FILLED,
   FILLED_AND_EMPTIED,
   NO_DISCORD,
@@ -18,8 +17,8 @@ import type { SessionInfo } from '../../src/shared/types'
 
 const session = { tabId: 'tab-1', title: 'Fix login' } as SessionInfo
 
-function caller(pid?: number): AgentCaller {
-  return { tabId: 'tab-1', cwd: '/w', session, pid }
+function caller(): AgentCaller {
+  return { tabId: 'tab-1', cwd: '/w', session }
 }
 
 interface FakeField {
@@ -50,7 +49,6 @@ function setup(over: Partial<SecretVerbDeps> = {}, answer: string | undefined | 
       asked.push(a)
       return answer
     },
-    alive: () => true,
     machine: () => undefined,
     pages: () => [],
     open: async (_tab, url) => {
@@ -68,7 +66,7 @@ describe('koloft secret sudo (what Koloft’s password helper runs)', () => {
     const { verb, asked } = setup()
     const r = await verb(
       ['sudo', 'Password:', '/usr/bin/sudo -A brew services restart nginx'],
-      caller(42)
+      caller()
     )
     expect(r).toEqual({ exit: 0, text: 'pw' })
     expect(asked[0].header('fix-login')).toContain('sudo password')
@@ -79,16 +77,6 @@ describe('koloft secret sudo (what Koloft’s password helper runs)', () => {
     expect((await setup({}, null).verb(['sudo', 'Password:', 'x'], caller())).text).toBe(NO_DISCORD)
     const late = setup({ ask: async () => undefined })
     expect((await late.verb(['sudo', 'Password:', 'x'], caller())).text).toBe(NOT_IN_TIME)
-  })
-
-  it('a password that arrives after the command stopped waiting on this Mac is not written out', async () => {
-    const { verb } = setup({ alive: () => false })
-    expect((await verb(['sudo', 'Password:', 'x'], caller(42))).text).toBe(ASKER_GONE)
-  })
-
-  it('on another machine the pid is not this Mac’s, so it is not checked here', async () => {
-    const { verb } = setup({ alive: () => false, machine: () => 'lab' })
-    expect(await verb(['sudo', 'Password:', 'x'], caller(42))).toEqual({ exit: 0, text: 'pw' })
   })
 })
 

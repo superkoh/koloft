@@ -39,6 +39,10 @@ function setup(over: Partial<NoticeDeps> = {}) {
     place: async (_b, s) => `thread-${s.key}`,
     threadOf: (key) => `thread-${key}`,
     card: async (channelId, card) => void cards.push([channelId, shown(card)]),
+    post: async (channelId, card) => {
+      cards.push([channelId, shown(card)])
+      return `msg-${cards.length}`
+    },
     archive: (threadId) => void archived.push(threadId),
     withButtons: (_t, view, card) => ({
       ...card,

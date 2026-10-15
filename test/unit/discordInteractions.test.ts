@@ -199,23 +199,21 @@ describe('reading an interaction from the Gateway', () => {
     ).toMatchObject({ type: 3, command: '', customId: 'ask:x:1' })
   })
 
-  it('a sent form carries its custom id and what was typed in each box, in a row or under a label', () => {
-    const sent = (components: unknown[]) =>
+  it('a sent form carries its custom id and what was typed in each box, exactly', () => {
+    const typed = 'p@ss "w" \\ 日本'
+    expect(
       interactionOf({
         id: '3',
         token: 't',
         type: 5,
         channel_id: THREAD,
         member: { user: { id: OWNER } },
-        data: { custom_id: 'secret:x', components } as never
+        data: {
+          custom_id: 'secret:x',
+          components: [{ components: [{ custom_id: 'value', value: typed }] }]
+        }
       })
-    const typed = 'p@ss "w" \\ 日本'
-    expect(
-      sent([{ type: 1, components: [{ type: 4, custom_id: 'value', value: typed }] }])
     ).toMatchObject({ type: 5, customId: 'secret:x', fields: { value: typed } })
-    expect(
-      sent([{ type: 18, component: { type: 4, custom_id: 'value', value: typed } }])
-    ).toMatchObject({ fields: { value: typed } })
   })
 
   it('a command Discord already has with the same shape is not created again', () => {

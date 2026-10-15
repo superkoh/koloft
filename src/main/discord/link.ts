@@ -94,7 +94,6 @@ export interface DiscordInteraction {
 interface RawComponent {
   custom_id?: string
   value?: unknown
-  component?: RawComponent
   components?: RawComponent[]
 }
 
@@ -114,15 +113,12 @@ interface RawInteraction {
 }
 
 // PLATFORM§39
-function fieldsOf(
-  components: RawComponent[],
-  into: Record<string, string> = {}
-): Record<string, string> {
-  for (const c of components) {
-    if (c.custom_id && typeof c.value === 'string') into[c.custom_id] = c.value
-    fieldsOf([...(c.component ? [c.component] : []), ...(c.components ?? [])], into)
-  }
-  return into
+function fieldsOf(rows: RawComponent[]): Record<string, string> {
+  const fields: Record<string, string> = {}
+  for (const row of rows)
+    for (const c of row.components ?? [])
+      if (c.custom_id && typeof c.value === 'string') fields[c.custom_id] = c.value
+  return fields
 }
 
 export interface SlashCommandSpec {

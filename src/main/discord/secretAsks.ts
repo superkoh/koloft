@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { accentOf, type Card } from './cards'
+import { accentOf, type Card, type CardButton } from './cards'
 import { privately, type DiscordInteraction } from './link'
 import { ONLY_THE_OWNER_ANSWERS } from './buttons'
 
@@ -52,18 +52,14 @@ export class SecretAsks {
 
   async ask(ask: SecretAsk, waitMs: number): Promise<string | undefined | null> {
     const id = randomUUID()
-    const card = (name: string): Card => ({
-      accent: accentOf(name),
-      header: ask.header(name),
-      body: ask.body,
-      footer: PLAIN_TEXT_WARNING,
-      buttons: [{ label: 'Enter it', style: 'primary', id: `${SECRET_ID_PREFIX}${id}` }]
-    })
+    const button = { label: 'Enter it', style: 'primary' as const, id: `${SECRET_ID_PREFIX}${id}` }
     let settle!: (value: string | undefined) => void
     const answer = new Promise<string | undefined>((resolve) => (settle = resolve))
     const pending: Pending = { ask, settle }
     this.pending.set(id, pending)
-    const placed = await this.d.place(ask.tabId, card).catch(() => undefined)
+    const placed = await this.d
+      .place(ask.tabId, (name) => cardOf(ask, name, PLAIN_TEXT_WARNING, [button]))
+      .catch(() => undefined)
     if (!placed) {
       this.pending.delete(id)
       return null
@@ -75,18 +71,22 @@ export class SecretAsks {
     return value
   }
 
-  // PLATFORM§39
-  async press(i: DiscordInteraction): Promise<void> {
+  private async pendingFor(i: DiscordInteraction): Promise<[string, Pending] | undefined> {
     if (i.userId !== this.d.owner()) {
       await this.d.respond(i, privately(ONLY_THE_OWNER_ANSWERS))
-      return
+      return undefined
     }
     const id = (i.customId ?? '').slice(SECRET_ID_PREFIX.length)
     const pending = this.pending.get(id)
-    if (!pending) {
-      await this.d.respond(i, privately(NO_LONGER_WAITING))
-      return
-    }
+    if (!pending) await this.d.respond(i, privately(NO_LONGER_WAITING))
+    return pending && [id, pending]
+  }
+
+  // PLATFORM§39
+  async press(i: DiscordInteraction): Promise<void> {
+    const found = await this.pendingFor(i)
+    if (!found) return
+    const [id, pending] = found
     await this.d.respond(i, {
       type: OPEN_A_FORM,
       data: {
@@ -112,15 +112,9 @@ export class SecretAsks {
   }
 
   async submit(i: DiscordInteraction): Promise<void> {
-    if (i.userId !== this.d.owner()) {
-      await this.d.respond(i, privately(ONLY_THE_OWNER_ANSWERS))
-      return
-    }
-    const id = (i.customId ?? '').slice(SECRET_ID_PREFIX.length)
-    if (!this.pending.has(id)) {
-      await this.d.respond(i, privately(NO_LONGER_WAITING))
-      return
-    }
+    const found = await this.pendingFor(i)
+    if (!found) return
+    const [id] = found
     const value = i.fields?.[FIELD] ?? ''
     if (!value) {
       await this.d.respond(i, privately(NOTHING_TYPED))
@@ -142,13 +136,10 @@ export class SecretAsks {
     p.settle(value)
     const placed = p.placed
     if (!placed) return
-    void this.d
-      .edit(placed, {
-        accent: accentOf(placed.name),
-        header: p.ask.header(placed.name),
-        body: p.ask.body,
-        footer: `-# ${footer}`
-      })
-      .catch(() => undefined)
+    void this.d.edit(placed, cardOf(p.ask, placed.name, `-# ${footer}`)).catch(() => undefined)
   }
+}
+
+function cardOf(ask: SecretAsk, name: string, footer: string, buttons?: CardButton[]): Card {
+  return { accent: accentOf(name), header: ask.header(name), body: ask.body, footer, buttons }
 }

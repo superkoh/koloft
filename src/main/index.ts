@@ -101,8 +101,8 @@ import {
 } from './remote/launch'
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
-import { REMOTE_AGENT_SHIM } from './agentShim'
-import { SUDO_SHIM_FILES } from './sudoShim'
+import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
+import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import {
   oncePerName,
@@ -346,10 +346,9 @@ import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/
 import { DISCORD_SETUP_TASK, DISCORD_SETUP_TASK_NAME, setupStatusText } from './discord/setupTask'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
-import { Notices, noticeBinding, type NoticeSubject } from './discord/notices'
+import { Notices, type NoticeSubject } from './discord/notices'
 import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
 import { secretVerb } from './agentSecret'
-import { OWNER_TYPES_A_SECRET_WITHIN_MS } from './agentShim'
 import { SessionThreads } from './discord/threads'
 import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
@@ -1251,10 +1250,9 @@ const agentRequests = new AgentRequests({
           : { ok: false, error: found.error }
       }
     }),
-    secret: secretVerb({
+    [SECRET_VERB]: secretVerb({
       ask: (a) =>
         secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
-      alive: pidAlive,
       machine: (tabId) => tracker.remoteOf(tabId)?.host,
       pages: guestPagesOf,
       open: openOnTabMachine,
@@ -2327,16 +2325,7 @@ app.whenReady().then(() => {
   askButtons = buttons
   const secrets = new SecretAsks({
     owner: () => conductorsNow.owner(),
-    place: async (tabId, card) => {
-      const subject = noticeSubjectOf(tabId)
-      if (!subject || subject.conductor) return undefined
-      const b = noticeBinding(conductorsNow.bindings(), subject, 'waiting')
-      if (!b) return undefined
-      const name = (await discordShownName(sessionOfTab(tabId))) ?? subject.name
-      const channelId = await threads.place(b, { ...subject, name })
-      const messageId = (await link.card(channelId, card(name))).at(-1)
-      return messageId ? { channelId, messageId, name } : undefined
-    },
+    place: async (tabId, card) => discordNotices?.placeCard(tabId, card),
     edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
     respond: (i, body) => link.respond(i, body)
   })
@@ -2450,6 +2439,7 @@ app.whenReady().then(() => {
     place: (b, subject) => threads.place(b, subject),
     threadOf: (key) => threads.threadOf(key),
     card: async (channelId, card) => discordRelay?.card(channelId, card),
+    post: async (channelId, card) => (await link.card(channelId, card)).at(-1),
     archive: (threadId) => threads.archive(threadId),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     subject: noticeSubjectOf,

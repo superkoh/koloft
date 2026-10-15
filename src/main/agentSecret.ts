@@ -1,3 +1,4 @@
+import { LOOPBACK_HOSTS, urlOrNull } from '@shared/browserRoute'
 import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from './agentRequests'
 import type { SecretAsk } from './discord/secretAsks'
 
@@ -6,8 +7,6 @@ export const SECRET_USAGE =
 export const NO_DISCORD =
   "koloft: Koloft asks the owner for a secret only in this session's Discord thread, and no Discord channel covers this session. Ask the owner to do this step at the Mac."
 export const NOT_IN_TIME = 'koloft: the owner did not answer in time; nothing was passed on.'
-export const ASKER_GONE =
-  'koloft: the command that asked had already stopped waiting, so Koloft passed nothing on.'
 export const NO_SUCH_FIELD =
   "koloft: no single field matches that selector in this session's Workbench pages (the Koloft window has to be open). Give a selector that matches exactly one input box."
 export const PAGE_CHANGED =
@@ -19,7 +18,6 @@ export const FILLED_AND_EMPTIED =
   'Koloft filled the field and submitted the form, but the field still held the text afterwards, so Koloft emptied it: the sign-in may have failed. Look at the page.'
 
 const A_SUBMITTED_PAGE_MOVES_ON_MS = 3000
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
 
 export interface FieldPage {
   url(): string
@@ -28,7 +26,6 @@ export interface FieldPage {
 
 export interface SecretVerbDeps {
   ask(a: SecretAsk): Promise<string | undefined | null>
-  alive(pid: number): boolean
   machine(tabId: string): string | undefined
   pages(tabId: string): FieldPage[]
   open(tabId: string, url: string): Promise<string>
@@ -80,11 +77,7 @@ const emptyIfKept = (selector: string): string => `(() => {
 })()`
 
 function originOf(url: string): string {
-  try {
-    return new URL(url).origin
-  } catch {
-    return url
-  }
+  return urlOrNull(url)?.origin ?? url
 }
 
 async function factsOn(page: FieldPage, selector: string): Promise<FieldFacts> {
@@ -92,54 +85,46 @@ async function factsOn(page: FieldPage, selector: string): Promise<FieldFacts> {
   return facts ?? { count: 0 }
 }
 
-function given(value: string | undefined | null): AgentReply | undefined {
+async function askOwner(d: SecretVerbDeps, ask: SecretAsk): Promise<string | AgentReply> {
+  const value = await d.ask(ask)
   if (value === null) return refused(NO_DISCORD)
-  if (value === undefined) return refused(NOT_IN_TIME)
-  return undefined
+  return value ?? refused(NOT_IN_TIME)
 }
 
 // PLATFORM§54
 async function sudoPassword(
   d: SecretVerbDeps,
   tabId: string,
-  pid: number | undefined,
   prompt: string,
   command: string
 ): Promise<AgentReply> {
-  const value = await d.ask({
+  const value = await askOwner(d, {
     tabId,
     header: (name) => `🔑 **${name}** asks for your sudo password`,
     body: `Command: \`${command || 'sudo'}\`\nsudo asked: ${prompt || 'Password:'}`,
     label: 'Your sudo password'
   })
-  const no = given(value)
-  if (no) return no
-  if (pid !== undefined && !d.machine(tabId) && !d.alive(pid)) return refused(ASKER_GONE)
-  return answered(value!)
+  return typeof value === 'string' ? answered(value) : value
 }
 
 // PLATFORM§17
 async function pageField(d: SecretVerbDeps, tabId: string, selector: string): Promise<AgentReply> {
-  const found: { page: FieldPage; label: string }[] = []
-  let matches = 0
-  for (const page of d.pages(tabId)) {
-    const facts = await factsOn(page, selector)
-    matches += facts.count
-    if (facts.count === 1 && facts.label) found.push({ page, label: facts.label })
-  }
-  if (matches !== 1 || found.length !== 1) return refused(NO_SUCH_FIELD)
-  const [{ page, label }] = found
+  const pages = d.pages(tabId)
+  const facts = await Promise.all(pages.map((p) => factsOn(p, selector)))
+  if (facts.reduce((n, f) => n + f.count, 0) !== 1) return refused(NO_SUCH_FIELD)
+  const at = facts.findIndex((f) => f.count === 1)
+  const page = pages[at]
+  const label = facts[at].label ?? 'field'
   const origin = originOf(page.url())
-  const value = await d.ask({
+  const value = await askOwner(d, {
     tabId,
     header: (name) => `🔑 **${name}** asks you to fill in a field on a web page`,
     body: `Page: ${origin}\nField: ${label}`,
     label
   })
-  const no = given(value)
-  if (no) return no
+  if (typeof value !== 'string') return value
   if (originOf(page.url()) !== origin) return refused(PAGE_CHANGED)
-  if ((await page.run(fillAndSubmit(selector, value!)).catch(() => false)) !== true)
+  if ((await page.run(fillAndSubmit(selector, value)).catch(() => false)) !== true)
     return refused(PAGE_CHANGED)
   await d.sleep(A_SUBMITTED_PAGE_MOVES_ON_MS)
   const emptied = await page.run(emptyIfKept(selector)).catch(() => false)
@@ -147,18 +132,14 @@ async function pageField(d: SecretVerbDeps, tabId: string, selector: string): Pr
 }
 
 function loopback(text: string): string | undefined {
-  try {
-    const url = new URL(text.trim())
-    return url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname) ? url.href : undefined
-  } catch {
-    return undefined
-  }
+  const url = urlOrNull(text.trim())
+  return url?.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname) ? url.href : undefined
 }
 
 // CODEX§15
 async function signInEnd(d: SecretVerbDeps, tabId: string, signIn: string): Promise<AgentReply> {
   const where = d.machine(tabId) ?? 'this Mac'
-  const value = await d.ask({
+  const value = await askOwner(d, {
     tabId,
     header: (name) => `🔑 **${name}** needs the address a sign-in ends on`,
     body: [
@@ -168,9 +149,8 @@ async function signInEnd(d: SecretVerbDeps, tabId: string, signIn: string): Prom
     ].join('\n'),
     label: 'The address the sign-in ended on'
   })
-  const no = given(value)
-  if (no) return no
-  const url = loopback(value!)
+  if (typeof value !== 'string') return value
+  const url = loopback(value)
   if (!url) return refused(NOT_LOOPBACK)
   const status = await d.open(tabId, url)
   return answered(`Koloft opened the address on ${where}; it answered ${status}.`)
@@ -180,7 +160,7 @@ export function secretVerb(d: SecretVerbDeps): AgentVerb {
   return (args, caller) => {
     const [sub, ...rest] = args
     if (sub === 'sudo' && rest.length <= 2)
-      return sudoPassword(d, caller.tabId, caller.pid, rest[0] ?? '', rest[1] ?? '')
+      return sudoPassword(d, caller.tabId, rest[0] ?? '', rest[1] ?? '')
     if (sub === 'page' && rest.length === 1 && rest[0].trim())
       return pageField(d, caller.tabId, rest[0])
     if (sub === 'url' && rest.length === 1 && rest[0].trim())

@@ -115,6 +115,29 @@ describe('koloft command in a Claude session', () => {
     expect(r.status).toBe(3)
   })
 
+  it('an answer for a koloft command that already went away is never written, so a secret meant for it does not stay on disk', async () => {
+    const requests = new AgentRequests({
+      verbs,
+      tab: () => ({ util: false }),
+      session,
+      enabled: () => true,
+      alive: (pid) => pid !== 4242
+    })
+    await requests.answer(agentDir, 'req-gone.json', {
+      tabId: TAB,
+      argv: ['echo', 'hunter2'],
+      cwd: base,
+      pid: 4242
+    })
+    await requests.answer(agentDir, 'req-here.json', {
+      tabId: TAB,
+      argv: ['echo', 'hi'],
+      cwd: base,
+      pid: 4243
+    })
+    expect(fs.readdirSync(agentDir)).toEqual(['res-here.json'])
+  })
+
   it('outside a live Koloft session it says so and exits 1 without writing a request', async () => {
     const r = await run(path.join(shimDir, 'koloft'), ['help'], {
       ...claudeEnv(),

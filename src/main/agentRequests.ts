@@ -21,7 +21,6 @@ export interface AgentCaller {
   tabId: string
   cwd: string
   session: SessionInfo
-  pid?: number
 }
 
 export type AgentVerb = (args: string[], caller: AgentCaller) => AgentReply | Promise<AgentReply>
@@ -178,6 +177,7 @@ export class AgentRequests {
       setTimeout(() => this.claimed.delete(full), CLAIM_OUTLIVES_DROP_REREADS_MS)
     )
     const reply = await this.replyTo(req, tabId)
+    if (req?.pid !== undefined && !this.deps.alive(req.pid)) return
     try {
       writeWholeBeforeVisible(path.join(dir, `res-${id}.json`), replyJson(reply))
     } catch {}
@@ -189,6 +189,6 @@ export class AgentRequests {
     if (!this.deps.enabled(tabId)) return refused(AGENT_TOOLS_OFF)
     const session = this.deps.session(tabId)
     if (!session) return refused(UNKNOWN_TAB)
-    return dispatchAgent(this.deps.verbs, req.argv, { tabId, cwd: req.cwd, session, pid: req.pid })
+    return dispatchAgent(this.deps.verbs, req.argv, { tabId, cwd: req.cwd, session })
   }
 }
