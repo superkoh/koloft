@@ -3,23 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Koloft — run and manage Claude Code and Codex on your Mac</title>
+    <title>Koloft — built for you, and for your agents</title>
     <meta
       name="description"
-      content="A free, open-source Mac app. Pick a folder; Koloft shows its Claude Code and Codex sessions, starts and resumes them, and puts a Workbench beside each."
+      content="Free, open-source Mac app for Claude Code and Codex: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes."
     />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/" />
     <link rel="icon" href="favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Koloft" />
-    <meta property="og:title" content="Koloft — run and manage Claude Code and Codex on your Mac" />
+    <meta property="og:title" content="Koloft — built for you, and for your agents" />
     <meta
       property="og:description"
-      content="A free, open-source Mac app. Pick a folder; Koloft shows its Claude Code and Codex sessions, starts and resumes them, and puts a Workbench beside each."
+      content="Free, open-source Mac app for Claude Code and Codex: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes."
     />
     <meta property="og:url" content="__SITE_URL__/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -27,32 +26,23 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+      content="Koloft's icon and the line “Built for you. And for your agents.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta
-      name="twitter:title"
-      content="Koloft — run and manage Claude Code and Codex on your Mac"
-    />
+    <meta name="twitter:title" content="Koloft — built for you, and for your agents" />
     <meta
       name="twitter:description"
-      content="A free, open-source Mac app. Pick a folder; Koloft shows its Claude Code and Codex sessions, starts and resumes them, and puts a Workbench beside each."
+      content="Free, open-source Mac app for Claude Code and Codex: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
-    <link
-      rel="preload"
-      href="fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
+    <link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="style.css" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Koloft",
-        "description": "A free, open-source Mac app. Pick a folder; Koloft shows its Claude Code and Codex sessions, starts and resumes them, and puts a Workbench beside each.",
+        "description": "Free, open-source Mac app for Claude Code and Codex: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes.",
         "url": "__SITE_URL__/",
         "operatingSystem": "macOS (Apple Silicon)",
         "applicationCategory": "DeveloperApplication",
@@ -68,200 +58,568 @@
     </script>
   </head>
   <body>
-    <div class="sheet">
-      <header class="masthead">
-        <h1 class="brand">
-          <a href="./"><img src="icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a>
-        </h1>
-        <nav class="contents" aria-label="Pages">
-          <a href="./" aria-current="page">home</a>
-          <a href="sessions/">sessions</a>
-          <a href="workbench/">workbench</a>
-          <a href="agents/">agents</a>
-          <a href="scheduled/">scheduled</a>
-          <a href="accounts/">accounts</a>
-          <a href="remote/">remote</a>
-          <a href="discord/">discord</a>
-          <a href="install/">install</a>
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="./"><img src="icon.svg" alt="" width="26" height="26" />Koloft</a>
+        <nav class="links" aria-label="Site">
+          <a href="#palette">⌘P</a>
+          <a href="#sessions">Sessions</a>
+          <a href="#workbench">Workbench</a>
+          <a href="#assist">Assist</a>
+          <a href="features/">Features</a>
+          <a href="sessions/">Docs</a>
+          <a href="changelog/">Changelog</a>
         </nav>
-      </header>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="install/"
+          ><svg class="icon" aria-hidden="true"><use href="icons.svg#download" /></svg>Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
 
-      <main>
-        <p>
-          Koloft is a free, open-source Mac app that runs and manages Claude Code and Codex, the AI
-          coding agents that live in your terminal. You <mark class="hl">pick a folder</mark>.
-          Koloft shows its sessions, starts new ones and resumes old ones. Beside each session hangs
-          a Workbench: the files it changed, a file browser, web pages, a shell. The agent's own
-          terminal sits in the middle, <mark class="hl">untouched</mark>. Each folder also gets one
-          plain-text note.
+    <main>
+      <div class="hero">
+        <div class="aurora"><i></i><i></i><i></i></div>
+        <span class="chip"
+          ><span class="pulse"></span>Free · open source · for Apple Silicon Macs</span
+        >
+        <h1>Built for you. <span class="grad">And for your agents.</span></h1>
+        <p class="lede">
+          Koloft is a free Mac app for Claude Code and Codex. You start a session with one plain
+          sentence and follow it in one window, or hear from it on your phone when it needs you.
+          Your agents start sessions of their own, drive a browser of their own, and report back.
         </p>
-
-        <div class="quick">
+        <div class="cta">
           <!-- prettier-ignore -->
-          <p class="command">
-            <code id="cmd"><span class="swipe">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>superkoh/<wbr>koloft-releases/<wbr>main/<wbr>install.sh | bash</span></code>
-            <button type="button" class="copy" data-copy="cmd">Copy</button>
-          </p>
-          <p class="quick-note">
-            (signed and notarized by Apple; Apple Silicon Macs only;
-            <a href="install/">or download it yourself</a>)
+          <div class="cmd">
+            <code id="cmd">curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash</code>
+            <button class="copy" type="button" data-copy="cmd">
+              <span class="idle"><svg class="icon" aria-hidden="true"><use href="icons.svg#copy" /></svg> Copy</span>
+              <span class="done"><svg class="icon" aria-hidden="true"><use href="icons.svg#check" /></svg> Copied</span>
+            </button>
+          </div>
+          <a
+            class="btn primary big"
+            href="https://github.com/superkoh/koloft-releases/releases/latest"
+          >
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#download" /></svg>
+            Download for Mac
+          </a>
+        </div>
+        <p class="note">
+          Signed and notarized by Apple · no sign-up · no tracking ·
+          <a href="install/">other ways to install</a>
+        </p>
+      </div>
+
+      <div class="stage" id="stage">
+        <div class="glow">
+          <div
+            class="win"
+            data-film="pal-start"
+            data-phone-crop="300,40,840,502"
+            data-title="Koloft, recorded: ⌘P starts a session from one line"
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":58,"crop":"0,0,1440,860"}]'
+            data-cues='[{"at":2,"to":55,"html":"<kbd>⌘P</kbd> one plain sentence","x":"6%","y":"70%"},{"at":56,"to":56,"html":"⏎ start","x":"6%","y":"70%"},{"at":57,"to":63,"html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"},{"at":64,"html":"…and the real Claude Code is already working","x":"30%","y":"8%"}]'
+          ></div>
+        </div>
+        <p class="real">
+          recorded in Koloft with a real Claude Code 2.1.296 — every screen is the app's own
+        </p>
+      </div>
+
+      <p class="objection reveal">
+        <b>Not a replacement.</b> Koloft runs the <code>claude</code> and <code>codex</code> you
+        already have, reads their own records (nothing to import), and never covers their screen. A
+        red dot tells you which session is waiting; <kbd>⌘J</kbd> jumps to it.
+      </p>
+
+      <section class="feat" id="palette">
+        <div class="head with-art reveal">
+          <div>
+            <div class="kicker">
+              <span class="badge"
+                ><svg class="icon" aria-hidden="true"><use href="icons.svg#palette" /></svg></span
+              >01 · One line starts a session
+            </div>
+            <h2>Say what you want. <em>Skip the where and how.</em></h2>
+            <p>
+              Press <kbd>⌘P</kbd> and type the job. With Assist on, Koloft picks the folder, opens a
+              worktree in a git repo and names the session; the real Claude Code or Codex starts on
+              your words. The same box jumps to any session and searches everything you said.
+            </p>
+          </div>
+          <img
+            class="keycaps"
+            src="img/keycaps.webp"
+            alt=""
+            width="720"
+            height="360"
+            loading="lazy"
+          />
+        </div>
+        <div class="tabs reveal" role="tablist" aria-label="What ⌘P does">
+          <button
+            role="tab"
+            id="tab-start"
+            aria-controls="win-start"
+            aria-selected="true"
+            tabindex="0"
+          >
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#start" /></svg
+            ><b>Start</b> one line → a working session
+          </button>
+          <button
+            role="tab"
+            id="tab-jump"
+            aria-controls="win-jump"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#jump" /></svg><b>Jump</b> a
+            few letters → that session
+          </button>
+          <button
+            role="tab"
+            id="tab-search"
+            aria-controls="win-search"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#search" /></svg><b>Search</b>
+            <kbd>⌥⏎</kbd> → every conversation
+          </button>
+        </div>
+        <div class="tabwins glow reveal">
+          <div
+            class="win"
+            id="win-start"
+            role="tabpanel"
+            aria-labelledby="tab-start"
+            data-film="pal-start"
+            data-phone-crop="300,40,840,502"
+            data-title="Koloft, recorded: ⌘P starts a session"
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":58,"crop":"0,0,1440,860"}]'
+            data-cues='[{"at":57,"to":63,"html":"Assist picks the folder, a worktree and a title","x":"30%","y":"8%"}]'
+          ></div>
+          <div
+            class="win"
+            id="win-jump"
+            role="tabpanel"
+            aria-labelledby="tab-jump"
+            data-film="pal-jump"
+            data-phone-crop="300,40,840,502"
+            data-title="Koloft, recorded: ⌘P jumps to a session"
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":8,"crop":"0,0,1440,860"}]'
+            data-cues='[{"at":6,"to":7,"html":"↓ then ⏎","x":"8%","y":"70%"}]'
+            hidden
+          ></div>
+          <div
+            class="win"
+            id="win-search"
+            role="tabpanel"
+            aria-labelledby="tab-search"
+            data-film="pal-search"
+            data-phone-crop="300,40,840,502"
+            data-title="Koloft, recorded: ⌘P searches every conversation"
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":9,"crop":"0,0,1440,860"}]'
+            data-cues='[{"at":6,"to":7,"html":"<kbd>⌥⏎</kbd> search every conversation","x":"8%","y":"70%"},{"at":8,"to":8,"html":"the chat that said “timer”","x":"8%","y":"70%"}]'
+            hidden
+          ></div>
+        </div>
+        <p class="honest">
+          <span>note</span>Picking the place needs Koloft Assist on (Settings ▸ Assist); with it
+          off, ⏎ opens the folder picker with your words kept. ⏎ starts your default tool, ⇧⏎ the
+          other; Codex sessions take their title from Codex.
+        </p>
+        <a class="more" href="features/#palette"
+          >Everything ⌘P does
+          <svg class="icon" aria-hidden="true"><use href="icons.svg#arrow" /></svg
+        ></a>
+      </section>
+
+      <section class="feat" id="sessions">
+        <div class="head reveal">
+          <div class="kicker">
+            <span class="badge"
+              ><svg class="icon" aria-hidden="true"><use href="icons.svg#tree" /></svg></span
+            >02 · Sessions that start sessions
+          </div>
+          <h2>Your agent splits the work. <em>You see every piece.</em></h2>
+          <p>
+            An agent runs <code>koloft session new</code> and a real session opens under the one
+            that started it, in a worktree of its own when it asks for one. Click into any of them
+            and keep talking. When a child finishes its first turn, its result goes back to the
+            parent.
           </p>
         </div>
-
-        <figure class="shot" style="--ar: 2640 / 1100; --ar-phone: 780 / 996">
-          <div class="frame">
-            <picture>
-              <source
-                media="(max-width: 760px)"
-                srcset="img/hero-phone.webp"
-                width="780"
-                height="996"
-              />
-              <img
-                src="img/hero-1322.webp"
-                srcset="
-                  img/hero-1088.webp 1088w,
-                  img/hero-1322.webp 1322w,
-                  img/hero-2176.webp 2176w
-                "
-                sizes="(max-width: 760px) calc(100vw - 48px), 661px"
-                width="2176"
-                height="907"
-                fetchpriority="high"
-                alt="Koloft: the running Claude Code session on the left, and its Workbench on the right showing the changes the agent made"
-              />
-            </picture>
-            <span class="tape" aria-hidden="true"></span>
+        <div class="glow reveal">
+          <div
+            class="win"
+            data-film="tree"
+            data-phone-crop="0,0,360,520"
+            data-title="Koloft, recorded: a session splits its job into two sessions that report back"
+            data-cues='[{"at":14,"to":20,"html":"two new sessions hang under the one that started them","x":"3%","y":"38%"},{"at":21,"to":27,"html":"each one reports back by itself","x":"30%","y":"60%"},{"at":28,"html":"…the parent checks the work and sums up","x":"30%","y":"74%"}]'
+          ></div>
+        </div>
+        <div class="proof reveal">
+          <div>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#sibling" /></svg>
+            <b>Real sessions, not hidden sub-tasks</b>Each child has its own tab, terminal and
+            Workbench. Watch it work, answer it, or take it over.
           </div>
-          <figcaption>
-            the agent's own terminal, and its Workbench with the diffs<span class="phone-only">
-              (on a phone: the left part of the session)</span
-            >
-          </figcaption>
-        </figure>
-
-        <h2>What's inside</h2>
-        <ul class="dash">
-          <li>
-            <a href="sessions/">Folders and their sessions</a>
-            <span class="why"
-              >— the list, red dots, start and resume, finding any session, worktree sessions,
-              sessions an agent starts</span
-            >
-          </li>
-          <li>
-            <a href="workbench/">The Workbench</a>
-            <span class="why">— changed files, a file browser, web tabs, a shell, the note</span>
-          </li>
-          <li>
-            <a href="agents/">Agents can use Koloft too</a>
-            <span class="why">— the koloft command, and its web tabs for Playwright</span>
-          </li>
-          <li>
-            <a href="scheduled/">Sessions on a timer</a>
-            <span class="why">— a session every hour, day or week</span>
-          </li>
-          <li>
-            <a href="accounts/">Several accounts, one pool</a>
-            <span class="why"
-              >— Claude and Codex accounts, picked per launch; Assist, Koloft's own AI; git
-              accounts, one per repository</span
-            >
-          </li>
-          <li>
-            <a href="remote/">Remote folders</a>
-            <span class="why">— a folder on a machine you reach by ssh (alpha)</span>
-          </li>
-          <li>
-            <a href="discord/">A butler on Discord</a>
-            <span class="why">— talk to your sessions from your phone</span>
-          </li>
-          <li><a href="install/">Install, update, what it talks to</a></li>
-          <li>
-            <a href="changelog/">Changelog</a>
-            <span class="why"
-              >— what is new, what was fixed and what got faster in each version</span
-            >
-          </li>
-        </ul>
-
-        <h2>What it won't do</h2>
-        <ul class="dash">
-          <li>
-            <s class="struck">build a database of your chats</s>
-            <span class="why"
-              >(it reads the tools' own files, and keeps only a list of which ones are its
-              own)</span
-            >
-          </li>
-          <li>
-            <s class="struck">send anything about you</s>
-            <span class="why"
-              >(no tracking; <a href="install/#what-it-talks-to">the few places it talks to</a> —
-              and, only if you turn on the Discord butler, your own Discord bot: see
-              <a href="discord/">discord</a>)</span
-            >
-          </li>
-          <li>
-            <s class="struck">ask you to sign up</s>
-            <span class="why"
-              >(no Koloft account: it runs on the Claude or Codex login you add to it)</span
-            >
-          </li>
-          <li>
-            <s class="struck">cover the agent's own screen</s>
-            <span class="why">(its terminal stays as it is)</span>
-          </li>
-        </ul>
-
-        <h2>Small things</h2>
-        <ul class="dash">
-          <li><a href="sessions/#red-dots">red dots</a> for sessions that need you</li>
-          <li><a href="sessions/#keep-running">sessions that keep running</a></li>
-          <li>
-            <a href="sessions/#find"
-              >type what a session should do, ask Koloft anything, jump to any session or Settings
-              page, search every chat</a
-            >
-            (<kbd>⌘P</kbd>)
-          </li>
-          <li>
-            <a href="sessions/#red-dots">jump to the session that has waited longest</a>
-            (<kbd>⌘J</kbd>)
-          </li>
-          <li>a <a href="sessions/#the-sidebar">sidebar you can hide</a> (<kbd>⌘B</kbd>)</li>
-          <li>a status line</li>
-          <li>
-            a terminal font that comes with Koloft (JetBrainsMono Nerd Font), so the status line's
-            arrows and icons show up
-          </li>
-          <li>a reminder with each prompt, so Claude keeps replying in your language</li>
-          <li>notifications</li>
-          <li>keep-awake</li>
-          <li>a shortcuts page</li>
-          <li>world clocks</li>
-          <li>an update banner</li>
-        </ul>
-
-        <p class="next">start reading -&gt; <a href="sessions/">Folders and their sessions</a></p>
-      </main>
-
-      <footer class="signoff">
-        <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
+          <div>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#tree" /></svg>
+            <b>A tree you can fold</b>Children hang under the session that started them; a folded
+            parent shows how many inside need you.
+          </div>
+          <div>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#phone" /></svg>
+            <b>They report back</b>A child reports back with
+            <code>koloft session send</code> (Claude sessions also talk with SendMessage); Assist
+            gets each session's reply back by itself when the turn ends.
+          </div>
+        </div>
+        <p class="honest">
+          <span>note</span>Works for Claude Code and Codex. In a remote folder (Claude only) the
+          child opens on that machine, beside its parent.
         </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
-        </p>
-      </footer>
-    </div>
+        <a class="more" href="features/#agents"
+          >What agents can do with Koloft
+          <svg class="icon" aria-hidden="true"><use href="icons.svg#arrow" /></svg
+        ></a>
+      </section>
 
+      <section class="feat" id="workbench">
+        <div class="head reveal">
+          <div class="kicker">
+            <span class="badge"
+              ><svg class="icon" aria-hidden="true"><use href="icons.svg#workbench" /></svg></span
+            >03 · A workbench for every session
+          </div>
+          <h2>The agent keeps its terminal. <em>It gets a browser too.</em></h2>
+          <p>
+            The middle is Claude Code's or Codex's own terminal; Koloft draws nothing over it.
+            Beside it hangs that session's Workbench: a real browser the agent can open and click, a
+            terminal tab in the session's folder, and every change as a live diff.
+          </p>
+        </div>
+        <div class="glow reveal">
+          <div
+            class="win"
+            data-film="browser"
+            data-title="Koloft, recorded: the agent opens a page in its Workbench, clicks Refresh and reads it; then a terminal tab runs a command"
+            data-cues='[{"at":12,"to":14,"html":"the agent opens the page in its own Workbench","x":"36%","y":"40%"},{"at":15,"to":19,"html":"it sees “—”, so it clicks Refresh","x":"36%","y":"40%"},{"at":20,"html":"a terminal tab, right beside it","x":"36%","y":"40%"}]'
+          ></div>
+        </div>
+        <div class="proof reveal">
+          <div>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#browser" /></svg>
+            <b>A browser you share with the agent</b>It opens pages with the
+            <code>playwright-cli</code> that ships inside, clicks and reads them; sites you signed
+            into in the Workbench stay signed in for it.
+          </div>
+          <div>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#statusbar" /></svg>
+            <b>A terminal tab beside it</b><kbd>⌃`</kbd> opens a shell in the session's folder: run
+            the app, the tests, git, without leaving the session.
+          </div>
+          <div>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#comment" /></svg>
+            <b>Every change, live</b>Each file it touches shows up as a diff; ✎ on a hunk drops your
+            note into its input box.
+          </div>
+        </div>
+        <p class="honest">
+          <span>note</span>In remote folders the terminal tab and changes work; the agent can't
+          drive the browser there yet.
+        </p>
+        <a class="more" href="features/#workbench"
+          >Everything in the Workbench
+          <svg class="icon" aria-hidden="true"><use href="icons.svg#arrow" /></svg
+        ></a>
+      </section>
+
+      <section class="feat" id="assist">
+        <div class="head reveal">
+          <div class="kicker">
+            <span class="badge"
+              ><svg class="icon" aria-hidden="true"><use href="icons.svg#assist" /></svg></span
+            >04 · Talk to Koloft
+          </div>
+          <h2>Say it in plain words. <em>Assist runs Koloft for you.</em></h2>
+          <p>
+            Assist is Koloft's own helper. Tell it what you want, here or on your phone: it starts,
+            resumes and stops sessions, closes finished ones, reads what they said, answers their
+            questions and presses their keys. From Discord it also runs slash commands in them, and
+            a folder's Assist sets up scheduled jobs for that folder. It runs your sessions; it is
+            not there to edit your files.
+          </p>
+        </div>
+        <div class="glow reveal">
+          <div
+            class="win"
+            data-film="assist"
+            data-phone-crop="0,0,830,700"
+            data-title="Koloft, recorded: Assist starts a session and hears its reply"
+            data-cues='[{"at":16,"to":19,"html":"one plain sentence; Assist starts the session","x":"34%","y":"54%"},{"at":20,"html":"the session reports back by itself","x":"34%","y":"54%"}]'
+          ></div>
+        </div>
+        <div class="proof reveal">
+          <div>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#keys" /></svg>
+            <b>It answers and presses keys</b>A session stuck on a question or a menu? Tell Assist
+            “pick the second one”: it reads the screen and presses the keys.
+          </div>
+          <div>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#timer" /></svg>
+            <b>It sets up schedules</b>“Run the tests every night at 2 and write a short report”
+            becomes a scheduled job for that folder.
+          </div>
+          <div>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#wand" /></svg>
+            <b>Ask Koloft itself</b>Type “set up Discord” in <kbd>⌘P</kbd> and Assist takes it as a
+            job, clicking through Discord's site and stopping for you to sign in and pass the human
+            checks.
+          </div>
+        </div>
+        <p class="honest">
+          <span>note</span>Turn Assist on in Settings ▸ Assist. It runs on your Mac; it can message
+          a session in a remote folder, not start one there. It can't change your Settings, apart
+          from setting up its own Discord bot when you ask.
+        </p>
+        <a class="more" href="features/#assist"
+          >Everything Assist does
+          <svg class="icon" aria-hidden="true"><use href="icons.svg#arrow" /></svg
+        ></a>
+      </section>
+
+      <section class="feat" id="phone">
+        <div class="head reveal">
+          <div class="kicker">
+            <span class="badge"
+              ><svg class="icon" aria-hidden="true"><use href="icons.svg#phone" /></svg></span
+            >05 · From your phone
+          </div>
+          <h2>Away from the Mac? <em>Your sessions come with you.</em></h2>
+          <p>
+            Bind Assist to your own Discord bot and talk to it from anywhere. Each session Assist
+            looks after gets its own thread, its questions come as buttons, and a card tells you
+            when it has finished. Your bot, your server: no server of ours in between.
+          </p>
+        </div>
+        <ol class="steps reveal">
+          <li>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#phone" /></svg>
+            <b>Say it in the channel</b>“add a health check to tidewatch” goes to Assist on your
+            Mac, which starts the session in that folder.
+          </li>
+          <li>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#tree" /></svg>
+            <b>Each session, its own thread</b>A card follows its light: working, waiting for you,
+            finished. Type in the thread and it goes straight to that session.
+          </li>
+          <li>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#check" /></svg>
+            <b>Answer with a tap</b>A tool asking to run gets Yes / No; a question with one pick
+            gets a button per option. A file you attach reaches the session; ask Assist and it sends
+            files back.
+          </li>
+        </ol>
+        <p class="honest">
+          <span>note</span>Assist sets the bot up for you; you sign in, click the two buttons
+          Discord lets only you click, and pass its human checks. Questions with several parts get
+          no buttons: with Claude on your Mac, reply in the thread, one line per part; otherwise
+          tell Assist what to pick.
+        </p>
+        <a class="more" href="discord/"
+          >A butler on Discord
+          <svg class="icon" aria-hidden="true"><use href="icons.svg#arrow" /></svg
+        ></a>
+      </section>
+
+      <section class="feat" id="schedule">
+        <div class="head reveal">
+          <div class="kicker">
+            <span class="badge"
+              ><svg class="icon" aria-hidden="true"><use href="icons.svg#timer" /></svg></span
+            >06 · Agents that keep working
+          </div>
+          <h2>Work keeps going <em>while you're away.</em></h2>
+          <p>
+            Put a job on a schedule and Koloft starts a fresh session for it every hour, day or
+            week; in a git repo, in a worktree of its own. Read what it did in the morning, here or
+            by asking Assist from your phone.
+          </p>
+        </div>
+        <div class="grid3 inline">
+          <a class="tile reveal" href="scheduled/">
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#timer" /></svg>
+            <svg class="go" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
+            <h3>On a schedule</h3>
+            <p>
+              Hourly, daily or on the days you pick, as a sentence or a /skill. Tell it to close
+              when done and it tidies up, unless work is left uncommitted or unmerged.
+            </p>
+          </a>
+          <a class="tile reveal" href="sessions/#keep-running">
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#pin" /></svg>
+            <svg class="go" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
+            <h3>Keep running</h3>
+            <p>
+              Pin a session and it never sleeps, and it starts in the background every time Koloft
+              opens.
+            </p>
+          </a>
+          <a class="tile reveal" href="remote/">
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#remote" /></svg>
+            <svg class="go" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
+            <h3>On another machine <span class="alpha">alpha</span></h3>
+            <p>
+              In a folder you reach over SSH, Claude runs in tmux, so it keeps going when the line
+              drops or your Mac sleeps.
+            </p>
+          </a>
+        </div>
+        <p class="honest">
+          <span>note</span>A schedule fires only while Koloft is open and your Mac is awake; leave
+          View ▸ Keep Mac Awake on (it is on by default). In a remote folder the run itself keeps
+          going even if the Mac sleeps later.
+        </p>
+      </section>
+
+      <div class="grid3">
+        <a class="tile reveal" href="features/#accounts">
+          <svg class="icon" aria-hidden="true"><use href="icons.svg#accounts" /></svg>
+          <svg class="go" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
+          <h3>Several accounts, one pool</h3>
+          <p>
+            A new session starts on the Claude or Codex account with the most room; no more “limit
+            reached”.
+          </p>
+        </a>
+        <a class="tile reveal" href="features/#workbench">
+          <svg class="icon" aria-hidden="true"><use href="icons.svg#checks" /></svg>
+          <svg class="go" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
+          <h3>Pull requests and checks</h3>
+          <p>
+            Commit and push from the Workbench; one click opens GitHub's new-PR page for the branch,
+            and a failing check's log goes back to the session in one click.
+          </p>
+        </a>
+        <a class="tile reveal" href="install/">
+          <svg class="icon" aria-hidden="true"><use href="icons.svg#bundled" /></svg>
+          <svg class="go" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
+          <h3>Everything comes with it</h3>
+          <p>git, gh and playwright-cli ship inside; one click installs Claude Code or Codex.</p>
+        </a>
+      </div>
+
+      <a class="allfeatures reveal" href="features/">
+        <span>Every feature, and where each one works</span>
+        <svg class="icon" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
+      </a>
+
+      <section class="promise reveal">
+        <div class="kicker">Our promise</div>
+        <h2>What it will <em>never</em> do</h2>
+        <ul>
+          <li>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#no-signup" /></svg
+            ><s>ask you to sign up</s>
+            <p>No Koloft account. It runs on your own Claude or Codex login.</p>
+          </li>
+          <li>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#no-tracking" /></svg
+            ><s>track you</s>
+            <p>
+              No analytics. The few places it talks to are
+              <a href="install/#what-it-talks-to">all listed</a>.
+            </p>
+          </li>
+          <li>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#no-copy" /></svg
+            ><s>copy your chats</s>
+            <p>
+              It reads the tools' own records; a remote folder's are mirrored to your Mac, and
+              nothing goes anywhere else.
+            </p>
+          </li>
+          <li>
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#no-cover" /></svg
+            ><s>cover the agent</s>
+            <p>Nothing is drawn over the agent's terminal.</p>
+          </li>
+        </ul>
+      </section>
+
+      <section class="final reveal">
+        <h2>Give your agents <em>a home.</em></h2>
+        <p>Free and open source (GPL-3.0). One line to install, nothing to sign up for.</p>
+        <div class="cta">
+          <!-- prettier-ignore -->
+          <div class="cmd">
+            <code id="cmd-final">curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash</code>
+            <button class="copy" type="button" data-copy="cmd-final">
+              <span class="idle"><svg class="icon" aria-hidden="true"><use href="icons.svg#copy" /></svg> Copy</span>
+              <span class="done"><svg class="icon" aria-hidden="true"><use href="icons.svg#check" /></svg> Copied</span>
+            </button>
+          </div>
+          <a
+            class="btn primary big"
+            href="https://github.com/superkoh/koloft-releases/releases/latest"
+          >
+            <svg class="icon" aria-hidden="true"><use href="icons.svg#download" /></svg>
+            Download for Mac
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="./"><img src="icon.svg" alt="" width="26" height="26" />Koloft</a>
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="features/">All features</a>
+          <a href="sessions/">Folders and their sessions</a>
+          <a href="workbench/">The Workbench</a>
+          <a href="agents/">Agents can use Koloft too</a>
+          <a href="scheduled/">Sessions on a timer</a>
+          <a href="accounts/">Several accounts, one pool</a>
+          <a href="remote/">Remote folders</a>
+          <a href="discord/">A butler on Discord</a>
+          <a href="install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
+
+    <template id="ctl-icons">
+      <svg class="icon pause" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 6v12M15 6v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </svg>
+      <svg class="icon play" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M8 5.5v13l10-6.5z" fill="currentColor" />
+      </svg>
+    </template>
     <script src="script.js"></script>
   </body>
 </html>
