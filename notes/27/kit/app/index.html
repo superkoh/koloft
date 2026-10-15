@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; font: 14px -apple-system, sans-serif; background: #fff; }
+  .bar { height: 52px; background: #ddd; display: flex; align-items: center; padding-left: 90px; -webkit-app-region: drag; }
+  .bar button { -webkit-app-region: no-drag; }
+  .plain { padding: 60px 0 0 90px; }
+  button { font-size: 14px; padding: 6px 18px; }
+  body:not(.bare) button:hover { background: #ffe066; }
+  #moves { position: fixed; left: 8px; bottom: 8px; font: 12px monospace; }
+  .wa[title] { position: relative; }
+  .wa[title]::after { content: ''; position: absolute; inset: 0; }
+  .wapn[title] { position: relative; }
+  .wapn[title]::after { content: ''; position: absolute; inset: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  const c = new URLSearchParams(location.search).get('case')
+  const root = document.getElementById('root')
+  const cases = {
+    a: '<div class="bar"></div><div class="plain"><button id="target" title="Plain tip">Plain</button></div>',
+    b: '<div class="bar"></div><div class="plain"><button id="target" class="wa" title="Workaround tip">Workaround</button></div>',
+    c: '<div class="bar"><button id="target" title="Strip tip">Strip</button></div>',
+    d: '<div class="bar"></div><div class="plain"><button id="target" class="wapn" title="PE none tip">PE none</button></div>',
+    e: '<div class="bar"><button id="target" class="wa" title="Strip workaround tip">Strip WA</button></div>'
+  }
+  root.innerHTML = cases[c[0]]
+  document.title = 'case ' + c
+  if (c.endsWith('0')) document.body.classList.add('bare')
+  const moves = document.createElement('div')
+  moves.id = 'moves'
+  document.body.appendChild(moves)
+  let n = 0
+  if (!c.endsWith('0')) document.addEventListener('mousemove', (e) => { n++; moves.textContent = n + ' moves, last ' + e.clientX + ',' + e.clientY })
+</script>
+</body>
+</html>
