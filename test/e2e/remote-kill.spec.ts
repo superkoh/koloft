@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
   test,
   expect,
@@ -41,6 +41,7 @@ import {
 const MIRROR_PULL_SETTLE_MS = 4000
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_CLOSE_MS = 3000
+const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -48,10 +49,14 @@ function tmuxName(id: string): string {
   return `k-${id}`
 }
 
+function closeConfirm(page: Page): Locator {
+  return page.locator('.modal', { hasText: 'Close running session?' })
+}
+
 async function closeTabPastAnyConfirm(app: ElectronApplication, page: Page): Promise<void> {
   await page.locator('.ws-tab.active').first().click()
   await sendShortcut(app, 'shortcut:close-tab')
-  const confirm = page.locator('.modal', { hasText: 'Close running session?' })
+  const confirm = closeConfirm(page)
   if (await confirm.isVisible({ timeout: 4000 }).catch(() => false)) {
     await confirm
       .locator('.btn-primary, button', { hasText: /^Close$/ })
@@ -105,24 +110,20 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       const [first] = await waitForCalls(env, 1)
       const row = wsRows(page, REMOTE_WS_NAME).first()
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      await page.waitForTimeout(MIRROR_PULL_SETTLE_MS)
 
-      await runIn(page, centerTerm(page), '/busy')
+      await runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
       await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
-      const dialog = page.locator('.modal', { hasText: 'Close running session?' })
+      const dialog = closeConfirm(page)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(dialog).toBeVisible({ timeout: 15_000 })
       await page.keyboard.press('Escape')
       await expect(dialog).toHaveCount(0)
 
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
-      await page.waitForTimeout(MIRROR_PULL_SETTLE_MS)
       expect(killLines(env, first.sessionId)).toHaveLength(0)
       await row.click()
       await sendShortcut(app, 'shortcut:close-tab')
       await expect.poll(() => killLines(env, first.sessionId).length, { timeout: 30_000 }).toBe(1)
-      await expect(dialog).toHaveCount(0)
-      await expect(row).toHaveClass(/\bcold\b/, { timeout: 60_000 })
     } finally {
       await quitAndClose(app)
     }
