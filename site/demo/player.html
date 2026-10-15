@@ -45,7 +45,7 @@
     <script>
       const params = new URLSearchParams(location.search)
       const FILMS = ['pal-start', 'pal-jump', 'pal-search', 'tree', 'browser', 'assist']
-      const film = FILMS.includes(params.get('film')) ? params.get('film') : FILMS[0]
+      const film = FILMS.find((f) => f === params.get('film')) || FILMS[0]
       const startAt = Number(params.get('from') || 0)
       const HOLD_LAST_FRAME_MS = 5000
       const script = document.createElement('script')
