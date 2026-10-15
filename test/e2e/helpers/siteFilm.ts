@@ -27,6 +27,7 @@ interface GuestView extends HTMLElement {
 
 export function frameOf(page: Page, light = false): Promise<RawFrame> {
   return page.evaluate(async (light) => {
+    for (const s of document.body.querySelectorAll('script')) s.remove()
     for (const t of document.querySelectorAll('textarea')) t.textContent = t.value
     for (const i of document.querySelectorAll('input')) i.setAttribute('value', i.value)
     const attrs = (el: Element): Record<string, string> =>
@@ -90,7 +91,6 @@ function withoutTestHomePaths(html: string): string {
     .replace(/koloft-e2e-home[\w-]*/g, 'you')
     .replace(/-e2e-home[\w-]*/g, '')
     .replace(/<span class="dev-badge"[^>]*>DEV<\/span>/g, '')
-    .replace(/<script[\s\S]*?<\/script>/g, '')
 }
 
 interface PlainFrame {
