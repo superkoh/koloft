@@ -17,10 +17,7 @@ export interface RouteWorkspace {
 }
 
 export type RouteWorktree =
-  | { kind: 'main' }
-  | { kind: 'existing'; name: string }
-  | { kind: 'issue'; number: number }
-  | { kind: 'new'; name: string }
+  { kind: 'main' } | { kind: 'issue'; number: number } | { kind: 'new'; name: string }
 
 export interface RouteText {
   title: string
@@ -101,9 +98,8 @@ Go down these rules in order and take the first that fits:
 7. It wants something new built (a new program, tool or project) that belongs to no workspace: {"workspace": null, "machine": <"${LOCAL_MACHINE}", or the machine the person named>, "newFolder": <a short kebab-case English folder name, a name only, never a path>}
 8. Anything else: a question, a translation, something to write, a fact to look up (like whether a pull request is merged), a scheduled job, work across several workspaces, work that could fit more than one workspace ("fix the tests", "tidy the README"), or a Koloft setting not in the features above: {"hand": "koloft"}
 
-"worktree" (rule 6 only): "main" for a folder that is not git; a git folder never works in its main checkout, even to read, ask or release, so for one:
-  {"existing": "<name>"} to continue in a listed worktree,
-  or {"issue": <number>} when the message names an issue number,
+"worktree" (rule 6 only): "main" for a folder that is not git; a git folder never works in its main checkout, even to read, ask or release, and never in a worktree that already exists, so for one:
+  {"issue": <number>} when the message names an issue number,
   or {"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}
 
 Reply with that one JSON object and nothing else, adding to it:
@@ -147,10 +143,6 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
   if (!ws.git) return { kind: 'main' }
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
-  if (typeof o.existing === 'string') {
-    const hit = ws.worktrees.find((w) => w.toLowerCase() === String(o.existing).toLowerCase())
-    return hit ? { kind: 'existing', name: hit } : null
-  }
   if (typeof o.issue === 'number' && Number.isInteger(o.issue) && o.issue > 0)
     return { kind: 'issue', number: o.issue }
   if (typeof o.new === 'string') {

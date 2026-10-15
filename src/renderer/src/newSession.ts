@@ -8,7 +8,7 @@ import type {
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { freshWorktreeName, type RouteWorktree } from '@shared/sessionRoute'
+import { distinctName, freshWorktreeName, type RouteWorktree } from '@shared/sessionRoute'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 
 export type RunChoice =
@@ -77,31 +77,16 @@ export function pendingLaunch(
   issues: GithubItem[]
 ): SessionLaunchOptions {
   if (!wt || wt.kind === 'main') return { cwd: wsPath, ...typedLaunch(pending) }
+  const taken = worktrees.map((w) => w.name)
   if (wt.kind === 'issue') {
     const item = issues.find((i) => i.kind === 'issue' && i.number === wt.number)
-    const aim = item && itemAim(item, worktrees)
-    if (item && aim?.kind === 'item') {
-      const choice: RunChoice = aim.dir
-        ? { kind: 'existing', name: aim.name, dir: aim.dir }
-        : { kind: 'create', name: aim.name }
-      return {
-        ...resolveLaunch(choice, wsPath),
-        ...seededItemExtras(item, pending.prompt, pending.title)
-      }
-    }
     return {
-      ...resolveLaunch({ kind: 'create', name: `issue-${wt.number}` }, wsPath),
-      ...typedLaunch(pending)
+      cwd: wsPath,
+      worktree: distinctName(`issue-${wt.number}`, taken),
+      ...(item ? seededItemExtras(item, pending.prompt, pending.title) : typedLaunch(pending))
     }
   }
-  const hit = worktrees.find((w) => w.name === wt.name)
-  return {
-    ...resolveLaunch(
-      hit ? { kind: 'existing', ...hit } : { kind: 'create', name: wt.name },
-      wsPath
-    ),
-    ...typedLaunch(pending)
-  }
+  return { cwd: wsPath, worktree: distinctName(wt.name, taken), ...typedLaunch(pending) }
 }
 
 export function seededItemExtras(
