@@ -114,7 +114,9 @@
         <ul class="dash">
           <li>
             Files: <code>N files</code> with the lines added and removed, or
-            <code>No changes</code>.
+            <code>No changes</code>. When git has nothing to compare, as in a folder git does not
+            track or one with no commit yet, just <code>Files</code>. With the Workbench open, the
+            Files tab at the top left reads the same.
           </li>
           <li>
             Docs: the Markdown and HTML files the agent wrote, or opened for you with
@@ -147,11 +149,6 @@
           The files this session touched, each with its diff right there. You read what the agent
           did without typing <code>git diff</code>. The <code>base</code> switch picks what to
           compare with: changes since the branch started, or only the ones not committed yet.
-        </p>
-        <p>
-          The Files tab at the top left reads like the folded card: <code>4 files +7 −2</code>, or
-          <code>No changes</code>. When git has nothing to compare, as in a folder git does not
-          track or one with no commit yet, it just says <code>Files</code>.
         </p>
         <p>
           Each hunk (one block of changed lines) has <code>✎ comment</code> in its header. Click it,
