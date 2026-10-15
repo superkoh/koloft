@@ -9,6 +9,7 @@ export interface AgentRequest {
   tabId?: string
   argv: string[]
   cwd: string
+  pid?: number
 }
 
 export interface AgentReply {
@@ -78,7 +79,8 @@ export function parseAgentRequest(raw: unknown): AgentRequest | null {
   return {
     tabId: typeof r.tabId === 'string' && r.tabId ? r.tabId : undefined,
     argv: r.argv,
-    cwd: r.cwd
+    cwd: r.cwd,
+    ...(typeof r.pid === 'number' ? { pid: r.pid } : {})
   }
 }
 
@@ -175,6 +177,7 @@ export class AgentRequests {
       setTimeout(() => this.claimed.delete(full), CLAIM_OUTLIVES_DROP_REREADS_MS)
     )
     const reply = await this.replyTo(req, tabId)
+    if (req?.pid !== undefined && !this.deps.alive(req.pid)) return
     try {
       writeWholeBeforeVisible(path.join(dir, `res-${id}.json`), replyJson(reply))
     } catch {}

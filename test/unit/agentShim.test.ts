@@ -115,6 +115,29 @@ describe('koloft command in a Claude session', () => {
     expect(r.status).toBe(3)
   })
 
+  it('an answer for a koloft command that already went away is never written, so a secret meant for it does not stay on disk', async () => {
+    const requests = new AgentRequests({
+      verbs,
+      tab: () => ({ util: false }),
+      session,
+      enabled: () => true,
+      alive: (pid) => pid !== 4242
+    })
+    await requests.answer(agentDir, 'req-gone.json', {
+      tabId: TAB,
+      argv: ['echo', 'hunter2'],
+      cwd: base,
+      pid: 4242
+    })
+    await requests.answer(agentDir, 'req-here.json', {
+      tabId: TAB,
+      argv: ['echo', 'hi'],
+      cwd: base,
+      pid: 4243
+    })
+    expect(fs.readdirSync(agentDir)).toEqual(['res-here.json'])
+  })
+
   it('outside a live Koloft session it says so and exits 1 without writing a request', async () => {
     const r = await run(path.join(shimDir, 'koloft'), ['help'], {
       ...claudeEnv(),
@@ -156,7 +179,26 @@ describe('koloft command in a Claude session on a remote machine', () => {
       TMUX_PANE: '%0'
     })
     expect(r.stdout).toBe('hi\n')
-    expect(raws).toEqual([{ tabId: TAB, tmux: 'k-sess1', argv: ['echo', 'hi'], cwd: base }])
+    expect(raws).toEqual([
+      { tabId: TAB, tmux: 'k-sess1', argv: ['echo', 'hi'], cwd: base, pid: expect.any(Number) }
+    ])
+    expect(fs.readdirSync(hookDir)).toEqual([])
+  })
+
+  it('killed while it waits, it takes its request back, so no answer is ever written for nobody', async () => {
+    const hookDir = path.join(base, '.koloft', 'hook-sessions')
+    const remoteShim = path.join(base, 'machine-bin', 'koloft')
+    fs.mkdirSync(path.dirname(remoteShim))
+    fs.mkdirSync(hookDir, { recursive: true })
+    fs.writeFileSync(remoteShim, REMOTE_AGENT_SHIM, { mode: 0o755 })
+    const child = spawn(remoteShim, ['secret', 'sudo', 'Password:', 'x'], {
+      env: { HOME: base, PATH: '/usr/bin:/bin', KOLOFT_TAB_ID: TAB }
+    })
+    const closed = new Promise((resolve) => child.on('close', resolve))
+    while (!fs.readdirSync(hookDir).some((n) => REQUEST_NAME.test(n)))
+      await new Promise((r) => setTimeout(r, 20))
+    child.kill('SIGTERM')
+    await closed
     expect(fs.readdirSync(hookDir)).toEqual([])
   })
 })
