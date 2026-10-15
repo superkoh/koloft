@@ -1189,27 +1189,31 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     ])
   })
 
-  it('a session Assist starts in a git workspace never runs in its main checkout: -w names the worktree, else Koloft picks a free one; a session another session starts stays where it is told', async () => {
+  it('a session Assist starts in a git workspace never runs in its main checkout: -w names the worktree, else Koloft picks a free one; a session another session starts stays where it is told; no -w ever reuses a worktree that exists, its name gets the next free -N', async () => {
     const { verb, launched } = harness(
       live,
       {},
       [],
-      conducting({ worktrees: ['session-261013-2321'] })
+      conducting({ worktrees: ['session-261013-2321', 'docs'] })
     )
     vi.useFakeTimers({ now: new Date(2026, 9, 13, 23, 21), toFake: ['Date'] })
     try {
       await verb(['new', '--workspace', WS, '--backend', 'codex', '--', 'go'], from('global'))
       await verb(['new', '--', 'go'], from('wsCond'))
+      await verb(['new', '-w', 'links', '--', 'go'], from('wsCond'))
       await verb(['new', '-w', 'docs', '--', 'go'], from('wsCond'))
       await verb(['new', '--', 'go'], from('fix'))
+      await verb(['new', '-w', 'docs', '--', 'go'], from('fix'))
     } finally {
       vi.useRealTimers()
     }
     expect(launched.map((l) => [l.kind, l.cwd, l.worktree])).toEqual([
       ['codex', WS, 'session-261013-2321-2'],
       ['claude', WS, 'session-261013-2321-2'],
-      ['claude', WS, 'docs'],
-      ['claude', WS, undefined]
+      ['claude', WS, 'links'],
+      ['claude', WS, 'docs-2'],
+      ['claude', WS, undefined],
+      ['claude', WS, 'docs-2']
     ])
   })
 

@@ -378,16 +378,12 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     expect(seededItemExtras(issue, ' ', '')).toEqual(itemLaunchExtras(issue))
   })
 
-  it('⌘P starts where Assist pointed: the main checkout, a listed worktree, a new one, or the issue’s worktree with its lines first', () => {
+  it('⌘P starts where Assist pointed: the main checkout of a folder that is not git, a new worktree, or a new worktree for the issue with its lines first; a worktree that already exists is never reused, its name gets the next free -N', () => {
     const said = { prompt: ' fix login ', title: 'Login fix' }
     const typed = { firstPrompt: 'fix login', name: 'Login fix' }
-    const listed = [wt('auth')]
+    const listed = [wt('auth'), wt('issue-218')]
     expect(pendingLaunch('/repo', { kind: 'main' }, said, listed, [])).toEqual({
       cwd: '/repo',
-      ...typed
-    })
-    expect(pendingLaunch('/repo', { kind: 'existing', name: 'auth' }, said, listed, [])).toEqual({
-      cwd: '/repo/.claude/worktrees/auth',
       ...typed
     })
     expect(pendingLaunch('/repo', { kind: 'new', name: 'login' }, said, listed, [])).toEqual({
@@ -395,9 +391,19 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
       worktree: 'login',
       ...typed
     })
+    expect(pendingLaunch('/repo', { kind: 'new', name: 'auth' }, said, listed, [])).toEqual({
+      cwd: '/repo',
+      worktree: 'auth-2',
+      ...typed
+    })
     expect(pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, [], [issue])).toEqual({
       cwd: '/repo',
       worktree: 'issue-218',
+      ...seededItemExtras(issue, ' fix login ', 'Login fix')
+    })
+    expect(pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, listed, [issue])).toEqual({
+      cwd: '/repo',
+      worktree: 'issue-218-2',
       ...seededItemExtras(issue, ' fix login ', 'Login fix')
     })
     expect(pendingLaunch('/repo', { kind: 'issue', number: 9 }, said, [], [issue])).toEqual({
@@ -407,19 +413,15 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     })
   })
 
-  it('⌘P never starts in the main checkout of a git workspace: with no worktree from Assist it makes a fresh one, free of the listed names; a folder that is not git starts in itself', () => {
+  it('⌘P never starts in the main checkout of a git workspace: with no worktree from Assist it makes a new one named for the time; a folder that is not git starts in itself', () => {
     const at = new Date(2026, 9, 13, 23, 21).getTime()
     const login: RouteWorktree = { kind: 'new', name: 'login' }
-    expect(pendingWorktree(login, true, [], at)).toEqual(login)
-    expect(pendingWorktree(null, true, [], at)).toEqual({
+    expect(pendingWorktree(login, true, at)).toEqual(login)
+    expect(pendingWorktree(null, true, at)).toEqual({
       kind: 'new',
       name: 'session-261013-2321'
     })
-    expect(pendingWorktree(null, true, [wt('session-261013-2321')], at)).toEqual({
-      kind: 'new',
-      name: 'session-261013-2321-2'
-    })
-    expect(pendingWorktree(null, false, [], at)).toBeNull()
+    expect(pendingWorktree(null, false, at)).toBeNull()
   })
 
   it('labels the primary with the number it acts on', () => {

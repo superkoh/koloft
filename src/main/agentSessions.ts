@@ -400,10 +400,9 @@ async function startSibling(
       : undefined
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
   const worktree =
-    args.worktree ??
-    (caller.assist && gitWorkspace
-      ? freshWorktreeName(await d.worktrees(workspace), Date.now())
-      : undefined)
+    gitWorkspace && (args.worktree || caller.assist)
+      ? freshWorktreeName(await d.worktrees(workspace), Date.now(), args.worktree)
+      : args.worktree
   const tabId = await d.launch({
     kind: backend,
     cwd: workspace,
