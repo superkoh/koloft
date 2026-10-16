@@ -28,7 +28,7 @@ const JOB = { system: 'You write short titles.', prompt: 'Task:\nfix the login c
 
 function assistWith(
   setting: AssistSetting,
-  bins: { claude?: string; codex?: string; muse?: string },
+  bins: Partial<Record<BackendId, string>>,
   off: BackendId[] = []
 ) {
   return koloftAssist({

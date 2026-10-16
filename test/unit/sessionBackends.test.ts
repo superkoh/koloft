@@ -244,11 +244,12 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
   })
 
-  it('supports every pair but Codex and Muse on a remote machine', () => {
+  it('supports every pair but Codex, Muse and Antigravity on a remote machine', () => {
     expect(SUPPORTED_PAIRS).toEqual({
       claude: { local: true, ssh: true },
       codex: { local: true, ssh: false },
-      muse: { local: true, ssh: false }
+      muse: { local: true, ssh: false },
+      agy: { local: true, ssh: false }
     })
   })
 })
@@ -269,7 +270,7 @@ describe('shownAsInstalled (which tools a dialog offers while the installed-tool
 describe('effectiveBackend (what every direct entrance starts on a Mac that may have only one of the two CLIs)', () => {
   const methods = (defaultBackend: BackendId, codex = true) => ({
     defaultBackend,
-    enabled: { claude: true, codex, muse: true }
+    enabled: { claude: true, codex, muse: true, agy: true }
   })
   const have = (...ids: BackendId[]): ReadonlySet<BackendId> => new Set(ids)
 

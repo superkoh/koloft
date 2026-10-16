@@ -11,13 +11,15 @@ import { hostOf } from './remoteKey'
 export const BACKEND_LABEL: Record<BackendId, string> = {
   claude: 'Claude',
   codex: 'Codex',
-  muse: 'Muse'
+  muse: 'Muse',
+  agy: 'Antigravity'
 }
 
 export const BACKEND_PRODUCT: Record<BackendId, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
-  muse: 'Muse Code'
+  muse: 'Muse Code',
+  agy: 'Antigravity CLI'
 }
 
 export const SESSION_BACKENDS = Object.keys(BACKEND_LABEL) as BackendId[]
@@ -79,7 +81,9 @@ const MESSAGING: Record<BackendId, Record<HostId, Messaging>> = {
   // CODEX§17
   codex: { local: 'queue', ssh: 'queue' },
   // MUSE§7
-  muse: { local: 'typed', ssh: 'typed' }
+  muse: { local: 'typed', ssh: 'typed' },
+  // AGY§15 AGY§16
+  agy: { local: 'typed', ssh: 'typed' }
 }
 
 export function messagingOf(backend: BackendId, remote: boolean): Messaging {
@@ -159,6 +163,10 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
       statusline3: { unsupported: 'MUSE§3' }
     },
     // MUSE§6
+    ssh: 'refused'
+  },
+  agy: {
+    local: EVERYTHING,
     ssh: 'refused'
   }
 }

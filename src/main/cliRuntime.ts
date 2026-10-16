@@ -1,3 +1,4 @@
+import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -21,6 +22,16 @@ export interface CliSpec {
   environment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   version: RegExp
   testedLine: string
+  installedOffPath?(env: NodeJS.ProcessEnv): string
+}
+
+function executable(file: string): boolean {
+  try {
+    fs.accessSync(file, fs.constants.X_OK)
+    return fs.statSync(file).isFile()
+  } catch {
+    return false
+  }
 }
 
 export async function resolveCliRuntime(
@@ -45,6 +56,8 @@ export async function resolveCliRuntime(
       })
       binary = login.probed
       resolved = login.env
+      const offPath = spec.installedOffPath?.(resolved)
+      if (!binary && offPath && executable(offPath)) binary = offPath
     } catch (e) {
       throw new Error(
         e instanceof LoginShellError && e.reason === 'incomplete'

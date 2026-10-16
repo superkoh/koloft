@@ -111,6 +111,7 @@ function setup(
     pendingApproval: () => undefined,
     pendingQuestion: () => undefined,
     answerable: async () => undefined,
+    answerInPlace: async () => false,
     regDir: dir,
     attachmentsDir: path.join(dir, 'attachments'),
     ...more

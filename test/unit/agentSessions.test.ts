@@ -162,6 +162,7 @@ function harness(
     press: async (tabId, keys) => {
       pressed.push({ tabId, keys })
     },
+    deliver: async () => false,
     modeOf: (tabId) => (conducting.bypass?.includes(tabId) ? 'bypass' : 'prompting'),
     stop: (tabId) => {
       stopped.push(tabId)

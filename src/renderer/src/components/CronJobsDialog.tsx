@@ -62,7 +62,8 @@ const MODEL_CHIPS: { value: JobFields['model']; label: string }[] = [
 const MODEL_CHIPS_OF: Record<BackendId, typeof MODEL_CHIPS> = {
   claude: MODEL_CHIPS,
   codex: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other'),
-  muse: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other')
+  muse: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other'),
+  agy: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other')
 }
 
 const EFFORT_CHIPS: { value: JobFields['effort']; label: string }[] = [
@@ -98,11 +99,12 @@ const effortHint = (label: string): string =>
 const NEVER_ASK_HINT =
   '"Never ask" can change files anywhere on this Mac, not only in the run\'s folder.'
 const NO_GIT_NOTE = 'This folder is not a git repo, so the run works in the folder itself.'
-// CC§9 CODEX§14 MUSE§10
+// CC§9 CODEX§14 MUSE§10 AGY§5
 const TRUST_QUESTION: Record<BackendId, string> = {
   claude: 'do you trust this project?',
   codex: 'do you trust the contents of this directory?',
-  muse: 'Do you trust this workspace?'
+  muse: 'Do you trust this workspace?',
+  agy: 'Do you trust the contents of this project?'
 }
 const trustHint = (backend: BackendId): string =>
   `${BACKEND_LABEL[backend]} has never been opened in this folder. Start one session here ` +

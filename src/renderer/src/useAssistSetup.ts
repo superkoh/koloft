@@ -25,6 +25,7 @@ export function useAssistSetup(): AssistSetupState {
   const claude = useStore((s) => hasUsableAccount(s.accounts ?? [], 'claude'))
   const codex = useStore((s) => hasUsableAccount(s.accounts ?? [], 'codex'))
   const muse = useStore((s) => hasUsableAccount(s.accounts ?? [], 'muse'))
+  const agy = useStore((s) => hasUsableAccount(s.accounts ?? [], 'agy'))
   const { installed } = useInstalledBackends()
 
   useEffect(() => {
@@ -37,9 +38,9 @@ export function useAssistSetup(): AssistSetupState {
     tools,
     toolsKnown: installed !== null,
     noTool: tools.length === 0,
-    usable: { claude, codex, muse },
+    usable: { claude, codex, muse, agy },
     askBypass,
     loaded: accountsLoaded && bypassAccepted !== null,
-    done: (claude || codex || muse) && assist !== null && !askBypass
+    done: (claude || codex || muse || agy) && assist !== null && !askBypass
   }
 }

@@ -3,10 +3,11 @@ import { parseRemoteKey } from '@shared/remoteKey'
 import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import type { MuseSessions } from '../museSessions'
+import type { AgySessions } from '../agySessions'
 import { dirExistsSync, planResume, type ResumeProbes } from '../resumePlan'
 
 export function storedBackend(
-  sessions: CodexSessions | MuseSessions,
+  sessions: CodexSessions | MuseSessions | AgySessions,
   resumeProbes: ResumeProbes,
   own: Pick<SessionBackend, 'accountUsable' | 'trustsFolder' | 'turns'>
 ): SessionBackend {

@@ -27,6 +27,17 @@ import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { MuseSessions } from './museSessions'
+import { AgySessions } from './agySessions'
+import {
+  agyAccountEnv,
+  agyHomeOf,
+  agySignedIn,
+  oneShotAgyHome,
+  prepareAgyHome,
+  setAgyApiKeyRoute
+} from './agyAccounts'
+import { ownersGeminiDir } from './agyStore'
+import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museSignedIn, storeMuseKey } from './museServe'
 import type { SessionsWithStore } from './storedSessions'
@@ -402,7 +413,7 @@ import {
 import { crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
-import { koloftAssist } from './assist'
+import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
@@ -437,10 +448,13 @@ let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
 let codexSessions: CodexSessions | null = null
 let museSessions: MuseSessions | null = null
+let agySessions: AgySessions | null = null
 const startupErrors: Partial<Record<BackendId, string>> = {}
 
 function storedSessions(): SessionsWithStore[] {
-  return [codexSessions, museSessions].filter((s): s is CodexSessions | MuseSessions => !!s)
+  return [codexSessions, museSessions, agySessions].filter(
+    (s): s is CodexSessions | MuseSessions | AgySessions => !!s
+  )
 }
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
@@ -1107,6 +1121,7 @@ const assist = koloftAssist({
       if (!binary) return null
       return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
     }
+    if (backend === 'agy') return agyOneShotTarget()
     const picked = musePicker.pick(accountViews())
     return picked ? ((await museServeFor(picked.name)) ?? null) : null
   }
@@ -1127,6 +1142,11 @@ async function whyAssistCannotRunOn(
     if (!museSessions || !(await museSessions.availability()).available)
       return 'Muse is not available on this Mac'
     return musePicker.pick(accountViews()) ? undefined : 'there is no usable Muse account'
+  }
+  if (backend === 'agy') {
+    if (!agySessions || !(await agySessions.availability()).available)
+      return 'Antigravity is not available on this Mac'
+    return agyPicker.pick(accountViews()) ? undefined : 'there is no usable Antigravity account'
   }
   const { res } = await pickForLaunch()
   if (res.account !== null) return undefined
@@ -1203,6 +1223,10 @@ const sessionDeps: SessionVerbDeps = {
   asking: asksTheOwner,
   sendLine: sendPeerLine,
   press: (tabId, keys) => ptyMgr.type(tabId, keys),
+  deliver: async (tabId, text) => {
+    const owner = storedSessions().find((s) => s.hasTab(tabId))
+    return owner?.deliver ? owner.deliver(tabId, text) : false
+  },
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
   answer: async (tabId, reply) => {
@@ -1495,6 +1519,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
     await Promise.all([
       probeCodexAccounts(),
       probeMuseAccounts(),
+      probeAgyAccounts(),
       ...claude.map(async (a) => {
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
@@ -1525,6 +1550,7 @@ async function addAccount(
   endpoint?: { baseUrl?: string; model?: string }
 ): Promise<AccountAddResult> {
   if (kind === 'muse-home') return addMuseKey(name, typeof secret === 'string' ? secret : '')
+  if (kind === 'agy-home') return addAgyKey(name, typeof secret === 'string' ? secret : '')
   const v = validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = typeof secret === 'string' ? secret.trim() : ''
@@ -1638,7 +1664,9 @@ function noteHomeAccount(name: string, kind: HomeKind): void {
 
 const homeLogin: Record<
   HomeKind,
-  (name: string) => Promise<{ binary: string; env: Record<string, string> } | undefined>
+  (
+    name: string
+  ) => Promise<{ binary: string; env: Record<string, string>; args?: string[] } | undefined>
 > = {
   // CODEX§15
   'codex-home': async (name) => {
@@ -1652,12 +1680,22 @@ const homeLogin: Record<
   'muse-home': async (name) => {
     const serve = await museServeFor(name)
     return serve && { binary: serve.binary, env: museAccountEnv(museHomeFor(name)) }
+  },
+  // AGY§5 AGY§7
+  'agy-home': async (name) => {
+    const binary = (await agySessions?.availability())?.available && agySessions?.cliBinary
+    if (!binary) return undefined
+    const home = agyHomeFor(name)
+    const apiKey = await agyApiKeyOf(name)
+    setAgyApiKeyRoute(home, !!apiKey)
+    return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
   }
 }
 
 const probeHomeAccount: Record<HomeKind, (name: string) => Promise<void>> = {
   'codex-home': (name) => probeCodexAccount(name),
-  'muse-home': (name) => probeMuseAccount(name)
+  'muse-home': (name) => probeMuseAccount(name),
+  'agy-home': (name) => probeAgyAccount(name)
 }
 
 async function signInToHome(kind: HomeKind, name: string, again: boolean): Promise<SignInResult> {
@@ -1671,7 +1709,8 @@ async function signInToHome(kind: HomeKind, name: string, again: boolean): Promi
   if (!login) return { ok: false, error: 'unavailable' }
   noteHomeAccount(name, kind)
   const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
-  const tab = homeShellTab(`${assignments.join(' ')} ${shq(login.binary)} login && exit`)
+  const args = (login.args ?? ['login']).map(shq).join(' ')
+  const tab = homeShellTab(`${assignments.join(' ')} ${shq(login.binary)} ${args} && exit`)
   signInPtys.set(tab.tabId, { kind, name })
   return { ok: true, ...tab }
 }
@@ -1742,6 +1781,83 @@ async function addMuseKey(name: string, key: string): Promise<AccountAddResult> 
   await probeMuseAccount(name)
   const account = accountViews().find((a) => a.kind === 'muse-home' && a.name === name)
   return { ok: account?.status === 'ok', account }
+}
+
+const agyPicker = new HomeAccountPicker('agy-home')
+const preparedAgyHomes = new Set<string>()
+
+function ownersGemini(): string {
+  return ownersGeminiDir(agySessions?.defaultEnv ?? process.env)
+}
+
+// AGY§4
+function agyHomeFor(name: string): string {
+  const home = agyHomeOf(app.getPath('userData'), name)
+  if (preparedAgyHomes.has(home)) return home
+  prepareAgyHome(home, ownersGemini())
+  preparedAgyHomes.add(home)
+  return home
+}
+
+async function agyApiKeyOf(name: string): Promise<string | undefined> {
+  return (await keychainRead('agy-home', name)) ?? undefined
+}
+
+// ADR-0030
+function pickAgyHome(resumeSessionId?: string): { account: string; home: string } | undefined {
+  const picked = agyPicker.pick(accountViews(), sessionAccounts?.of('agy', resumeSessionId))
+  return picked && { account: picked.name, home: agyHomeFor(picked.name) }
+}
+
+// AGY§5 AGY§6
+async function probeAgyAccount(name: string): Promise<void> {
+  const acct = findAccount(name, 'agy-home')
+  if (!acct) return
+  const signedIn = agySignedIn(agyHomeFor(name), !!(await agyApiKeyOf(name)))
+  const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
+  if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+  pushAccounts()
+}
+
+function probeAgyAccounts(): Promise<void> {
+  return Promise.all(
+    listAccounts()
+      .filter((a) => a.kind === 'agy-home' && a.enabled)
+      .map((a) => probeAgyAccount(a.name))
+  ).then(() => undefined)
+}
+
+// AGY§6
+async function addAgyKey(name: string, key: string): Promise<AccountAddResult> {
+  const v = validateNewAccount(name, 'agy-home')
+  if (v !== 'ok') return { ok: false, error: v }
+  const trimmed = key.trim()
+  if (!trimmed || !(await keychainWrite('agy-home', name, trimmed)))
+    return { ok: false, error: 'unknown' }
+  setAgyApiKeyRoute(agyHomeFor(name), true)
+  noteHomeAccount(name, 'agy-home')
+  await probeAgyAccount(name)
+  const account = accountViews().find((a) => a.kind === 'agy-home' && a.name === name)
+  return { ok: account?.status === 'ok', account }
+}
+
+// AGY§6 AGY§20
+async function agyOneShotTarget(): Promise<AssistTarget | null> {
+  const picked = agyPicker.pick(accountViews())
+  const binary = (await agySessions?.availability())?.available && agySessions?.cliBinary
+  if (!picked || !binary) return null
+  const apiKey = await agyApiKeyOf(picked.name)
+  const shot = oneShotAgyHome(
+    agyHomeFor(picked.name),
+    path.join(app.getPath('userData'), 'agy-one-shots'),
+    !!apiKey
+  )
+  return {
+    binary,
+    env: { ...agySessions?.defaultEnv, ...agyAccountEnv(apiKey) },
+    args: [`--gemini_dir=${shot.dir}`],
+    done: shot.done
+  }
 }
 
 function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
@@ -2263,6 +2379,44 @@ app.whenReady().then(() => {
   } catch (error) {
     startupErrors.muse = `Muse session data could not be loaded; the original file is preserved. ${String(error)}`
   }
+  try {
+    agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
+      ...storedDeps,
+      leftWorktree: (resource) => removeUntouchedWorktree(agySessions, resource),
+      openShimRoot: path.join(userData, 'agy-open'),
+      scriptsDir: path.join(userData, 'agy-scripts'),
+      ownersGemini,
+      pickHome: pickAgyHome,
+      apiKeyOf: agyApiKeyOf,
+      builtInStatusLine: () => undefined,
+      assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
+      conductorGate: {
+        script: hookPaths.agyGateScript,
+        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
+      },
+      browserEndpoint: relayEndpoint,
+      playwrightBin,
+      fallbackBin,
+      gitBin: gitFirstBin,
+      agent: {
+        enabled: () => agentToolsFor('agy', 'local'),
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+      },
+      gitAccounts: {
+        configEnv: (env) => gitAccounts!.configEnv(env),
+        ghWrapper
+      }
+    })
+  } catch (error) {
+    startupErrors.agy = `Antigravity session data could not be loaded; the original file is preserved. ${String(error)}`
+  }
+  if (agySessions) {
+    sessionBackends.register(agyBackend(agySessions, resumeProbes))
+    void agySessions
+      .availability()
+      .then((agy) => (agy.available ? agySessions!.refreshHistory() : undefined))
+      .catch((error) => sendToRenderer('cron:toast', String(error)))
+  }
   if (museSessions) {
     sessionBackends.register(museBackend(museSessions, resumeProbes))
     void museSessions
@@ -2594,6 +2748,10 @@ app.whenReady().then(() => {
         .find(Boolean),
     answerable: async (tabId) => {
       await Promise.all(storedSessions().map((s) => s.answerable?.(tabId)))
+    },
+    answerInPlace: async (tabId, reply) => {
+      const owner = storedSessions().find((s) => s.hasTab(tabId))
+      return owner?.answer ? owner.answer(tabId, reply) : false
     },
     regDir: hookPaths.regDir,
     attachmentsDir

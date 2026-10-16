@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
-import type { LaunchPermission } from '@shared/types'
+import type { BackendId, LaunchPermission } from '@shared/types'
 
 export interface StoredMember {
   id: string
@@ -36,7 +36,7 @@ interface SessionStoreData {
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const localSessionKey =
-  (backend: 'codex' | 'muse', label: string) =>
+  (backend: Exclude<BackendId, 'claude'>, label: string) =>
   (id: string): string => {
     if (!UUID.test(id)) throw new Error(`Invalid ${label} session ID`)
     return `${backend}:local:${id}`
@@ -44,6 +44,7 @@ const localSessionKey =
 
 export const codexSessionKey = localSessionKey('codex', 'Codex')
 export const museSessionKey = localSessionKey('muse', 'Muse')
+export const agySessionKey = localSessionKey('agy', 'Antigravity')
 
 type KeyOf = (id: string) => string
 

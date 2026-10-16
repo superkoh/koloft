@@ -95,6 +95,8 @@ export interface SessionsWithStore {
   openApproval(tabId: string): CodexApproval | undefined
   openQuestion(tabId: string): CodexQuestion | undefined
   answerable?(tabId: string): Promise<void>
+  answer?(tabId: string, reply: string): Promise<string | undefined | false>
+  deliver?(tabId: string, text: string): Promise<boolean>
 }
 
 interface RowScope {
