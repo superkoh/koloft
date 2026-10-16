@@ -26,7 +26,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
 vi.mock('../../src/main/museServe', () => ({
   listMuseSessions: mocks.list,
-  readMuseTurns: mocks.read
+  readMuseTurns: mocks.read,
+  readMuseAsk: async () => ({})
 }))
 
 const A = '01a13795-6b09-7531-bdd6-84ce54f976ea'
@@ -726,6 +727,7 @@ describe('a Muse session on a remote machine', () => {
   let attach: boolean
   let killed: string[]
   let gone: boolean
+  let reachable: boolean
 
   function onMachine(): void {
     mirrorDir = path.join(home, 'mirror')
@@ -734,6 +736,7 @@ describe('a Muse session on a remote machine', () => {
     attach = false
     killed = []
     gone = false
+    reachable = true
     const acct = path.join(home, 'acct')
     fs.mkdirSync(path.join(acct, 'muse'), { recursive: true })
     fs.writeFileSync(path.join(acct, 'muse', 'auth.json'), '{"providers":{"meta":{}}}')
@@ -741,6 +744,7 @@ describe('a Muse session on a remote machine', () => {
     const machine: MuseMachine = {
       launchMuse: async (spec) => {
         launches.push(spec)
+        if (!attach) spec.account.auth()
         return {
           attach,
           tmuxName: (tabId) => (spec.resumeSessionId ? `k-${spec.resumeSessionId}` : `m-${tabId}`),
@@ -762,21 +766,26 @@ describe('a Muse session on a remote machine', () => {
       remoteDirExists: async () => true,
       remote: {
         machine: () => machine,
-        hosts: () => [],
+        hosts: () => ['box'],
         keyed: (host, p) => `ssh://${host}${p}`,
         mirrorDir: () => mirrorDir,
         gone: () => gone,
+        connected: () => reachable,
         poke: () => {},
         setupLine: () => undefined
       }
     })
   }
 
-  const mirror = (runId: string, ...lines: Record<string, unknown>[]): void =>
+  const pulled = (): void => sessions.followMirrors('box')
+
+  const mirror = (runId: string, ...lines: Record<string, unknown>[]): void => {
     fs.appendFileSync(
       path.join(mirrorDir, `${runId}.muse.jsonl`),
       lines.map((l) => JSON.stringify(l) + '\n').join('')
     )
+    pulled()
+  }
 
   async function boundRemote(): Promise<string> {
     const { id } = await sessions.launch({ kind: 'muse', cwd: KEY })
@@ -790,10 +799,11 @@ describe('a Muse session on a remote machine', () => {
     const { id } = await sessions.launch({ kind: 'muse', cwd: KEY, firstPrompt: 'hi' })
     expect(launches[0]).toMatchObject({
       cwd: KEY,
-      account: { name: 'work', auth: '{"providers":{"meta":{}}}' },
+      account: { name: 'work' },
       args: ['--approval-judge', 'off', 'hi'],
       trust: []
     })
+    expect(launches[0].account.auth()).toBe('{"providers":{"meta":{}}}')
     expect(vi.mocked(pty.create).mock.calls[0][0]).toMatchObject({
       kind: 'muse',
       cwd: os.homedir(),
@@ -803,6 +813,22 @@ describe('a Muse session on a remote machine', () => {
     await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
     expect(sessions.list()[0]).toMatchObject({ sessionId: museSessionKey(A, 'box'), cwd: KEY })
     expect(sessions.store.getMember(museSessionKey(A, 'box'))).toMatchObject({ cwd: KEY })
+  })
+
+  it("lists the machine's sessions under its workspace through muse serve there, and while the machine cannot be reached keeps the list it had instead of asking it", async () => {
+    onMachine()
+    mocks.list.mockImplementation(async (options: { over?: unknown }) =>
+      options.over ? [{ id: A, cwd: '/srv/proj', name: 'On the box', createdAt: 1 }] : []
+    )
+    await sessions.refreshHistory()
+    expect(sessions.rows(KEY).map((r) => [r.id, r.title, r.cwd])).toEqual([
+      [museSessionKey(A, 'box'), 'On the box', KEY]
+    ])
+    reachable = false
+    mocks.list.mockClear()
+    await sessions.refreshHistory()
+    expect(mocks.list).toHaveBeenCalledTimes(1)
+    expect(sessions.rows(KEY).map((r) => r.id)).toEqual([museSessionKey(A, 'box')])
   })
 
   it('refuses to start when the picked account keeps no credential file to carry to the machine', async () => {
@@ -884,6 +910,7 @@ describe('a Muse session on a remote machine', () => {
     )
     await sessions.resume({ sessionId: museSessionKey(A, 'box'), cwd: KEY })
     expect(launches[0]).toMatchObject({ resumeSessionId: A })
+    pulled()
     await vi.waitFor(() => expect(events('notify')).toHaveLength(1))
     expect(sessions.list()[0].nativeSessionId).toBe(A)
     expect(events('turn-ended')).toHaveLength(0)

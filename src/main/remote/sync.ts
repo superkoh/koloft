@@ -44,6 +44,7 @@ export interface RemoteSyncDeps {
   targets(): RemoteTarget[]
   onChange(host: string): void
   onLeft?(host: string, sessionIds: string[]): void
+  onHooksPulled?(host: string): void
 }
 
 interface HostState {
@@ -213,6 +214,7 @@ export class RemoteSync {
         const pulls = [transcripts, hooks]
         const failed = pulls.find((r) => r.code !== 0)
         st.problem = failed && problemOf(failed)
+        if (hooks.code === 0) this.deps.onHooksPulled?.(host)
       }
       if (
         before.connected !== st.connected ||

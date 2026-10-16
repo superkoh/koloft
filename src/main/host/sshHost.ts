@@ -83,7 +83,7 @@ export interface MuseMachineLaunch {
   cwd: string
   fallbackCwd?: string
   resumeSessionId?: string
-  account: { name: string; auth?: string }
+  account: { name: string; auth(): string }
   args: string[]
   trust: string[]
   trustIf?: string
@@ -683,16 +683,9 @@ export class SshHost implements Host {
   // MUSE§16
   async launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan> {
     const d = this.deps.claude
-    await this.deps.sshEnvReady?.()
-    ensureControlDir(d.controlDir)
+    await this.sshReady()
     const sid = spec.resumeSessionId
-    const attach =
-      !!sid &&
-      launchMode({ alive: d.alive(), killed: this.killedSessions, sessionId: sid }) === 'attach'
-    if (sid) {
-      this.killedSessions.delete(sid)
-      await this.kills.get(tmuxSessionName(sid))
-    }
+    const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
     const tmuxName = (tabId: string): string => (sid ? tmuxSessionName(sid) : `m-${tabId}`)
     const pkg = d.machinePackage()
     const hookScript = `${remoteMachineDir(pkg.name)}/${MUSE_HOOK_FILE}`
@@ -707,7 +700,7 @@ export class SshHost implements Host {
           [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
         }
         if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
-        if (!attach && spec.account.auth) files[`${tabId}.auth.json`] = spec.account.auth
+        if (!attach) files[`${tabId}.auth.json`] = spec.account.auth()
         writeTabPackage(tabDir, {
           tabId,
           tmuxName: tmuxName(tabId),
@@ -729,17 +722,43 @@ export class SshHost implements Host {
             files
           }
         })
-        return launchLine({
-          host: this.machine,
-          sshOptions: sshOptions(d.controlDir, false),
-          machine: pkg,
-          tabDir,
-          tabId,
-          mode: attach ? 'attach' : 'start'
-        })
+        return this.tabLaunchLine(pkg, tabDir, tabId, attach ? 'attach' : 'start')
       },
       resized: this.resized
     }
+  }
+
+  private async sshReady(): Promise<void> {
+    await this.deps.sshEnvReady?.()
+    ensureControlDir(this.deps.claude.controlDir)
+  }
+
+  // PLATFORM§35
+  private async attachOrStart(sid: string): Promise<'start' | 'attach'> {
+    const mode = launchMode({
+      alive: this.deps.claude.alive(),
+      killed: this.killedSessions,
+      sessionId: sid
+    })
+    this.killedSessions.delete(sid)
+    await this.kills.get(tmuxSessionName(sid))
+    return mode
+  }
+
+  private tabLaunchLine(
+    machine: MachinePackage,
+    tabDir: string,
+    tabId: string,
+    mode: 'start' | 'attach'
+  ): string {
+    return launchLine({
+      host: this.machine,
+      sshOptions: sshOptions(this.deps.claude.controlDir, false),
+      machine,
+      tabDir,
+      tabId,
+      mode
+    })
   }
 
   // MUSE§10
@@ -778,16 +797,14 @@ export class SshHost implements Host {
 
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
-    await this.deps.sshEnvReady?.()
-    ensureControlDir(d.controlDir)
+    await this.sshReady()
     const settings = d.settings()
     const agentTools = d.agentTools()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()
     const args = machineClaudeArgs(spec, sid, settings.skipPermissions)
     if (!args.ok) return args
     const tmuxName = tmuxSessionName(sid)
-    const mode = launchMode({ alive: d.alive(), killed: this.killedSessions, sessionId: sid })
-    this.killedSessions.delete(sid)
+    const mode = await this.attachOrStart(sid)
     // CC§2
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root
@@ -795,7 +812,6 @@ export class SshHost implements Host {
     const worktree = spec.worktree ?? worktreeNameAround(cwd)
     const pkg = d.machinePackage()
     const machineDir = remoteMachineDir(pkg.name)
-    await this.kills.get(tmuxName)
     const pickKey = mode === 'start' ? `launch-${sid}` : undefined
     const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
     // ADR-0030
@@ -820,14 +836,7 @@ export class SshHost implements Host {
           agentPlugin: agentTools,
           claudeArgs: args.args
         })
-        return launchLine({
-          host: this.machine,
-          sshOptions: sshOptions(d.controlDir, false),
-          machine: pkg,
-          tabDir,
-          tabId,
-          mode
-        })
+        return this.tabLaunchLine(pkg, tabDir, tabId, mode)
       },
       resized: this.resized,
       machine: {

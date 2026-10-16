@@ -943,6 +943,7 @@ export class ClaudeBackend implements SessionBackend {
       resumeSessionId: spec.resumeSessionId,
       conductor,
       resized: plan.resized,
+      remoteHost: machine?.tracking.host,
       shell: plan.shell,
       extraEnv: agentPlugin
         ? {

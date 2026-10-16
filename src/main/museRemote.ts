@@ -2,7 +2,7 @@ import { shq } from '@shared/shellQuote'
 import { PROGRAM_STATUS_REPLY } from './programStatus'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SAID_MARKS } from './museSessionLog'
-import { QUOTE_PROMPT_FN, REMIND_REPLY_LANGUAGE_FN } from './replyLanguage'
+import { museHookScript } from './museHooks'
 
 export const MUSE_WRAP_FILE = 'muse-wrap.py'
 export const MUSE_HOOK_FILE = 'muse-hook.sh'
@@ -209,10 +209,17 @@ def bind(sid):
             subprocess.call(['tmux', 'rename-session', '-t', os.environ.get('TMUX_PANE', ''), name], stdout=quiet, stderr=quiet)
 
 
+registry_seen = [None]
+
+
 def follow_registry():
     mine = 'pid=%d' % pid
     best = None
     try:
+        changed = os.stat(registry).st_mtime
+        if bound and changed == registry_seen[0]:
+            return
+        registry_seen[0] = changed
         names = os.listdir(registry)
     except OSError:
         return
@@ -277,22 +284,14 @@ sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 128 + os.WTERMSIG(s
 `
 
 // MUSE§9 MUSE§16 ADR-0031
-export const REMOTE_MUSE_HOOK_SH = `#!/bin/bash
-f="${REMOTE_HOOK_DIR}/$1${MIRROR_SUFFIX}"
-said="$HOME/.koloft/tabs/$1.said"
-${REMIND_REPLY_LANGUAGE_FN}
-${QUOTE_PROMPT_FN}
-input="$(cat | tr -d '\\n')"
-p="$(mktemp 2>/dev/null)" || exit 0
-printf '{"t":"hook","event":"%s","input":%s}\\n' "$2" "$input" > "$p" && cat "$p" >> "$f"
-rm -f "$p"
-case "$2" in
-  SessionStart) [ -f "$3" ] && cat "$3" ;;
-  UserPromptSubmit) quote_prompt > "$said"; remind_reply_language UserPromptSubmit ;;
-  PostToolUse) remind_reply_language PostToolUse ;;
-esac
-exit 0
-`
+export const REMOTE_MUSE_HOOK_SH = museHookScript(
+  `f="${REMOTE_HOOK_DIR}/$1${MIRROR_SUFFIX}"
+event="$2"
+said="$HOME/.koloft/tabs/$1.said"`,
+  `p="$(mktemp 2>/dev/null)" || exit 0
+printf '{"t":"hook","event":"%s","input":%s}\\n' "$event" "$input" > "$p" && cat "$p" >> "$f"
+rm -f "$p"`
+)
 
 const SAID_LINES_A_FILE_HANDS_BACK = 20
 

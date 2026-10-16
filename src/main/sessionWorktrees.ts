@@ -20,7 +20,7 @@ export interface TreeIo {
   git(cwd: string, args: string[]): Promise<string>
   exists(p: string): Promise<boolean>
   real(p: string): string
-  keyed(cwd: string, listed: string): string
+  keyed(listed: string): string
   onThisMac: boolean
 }
 
@@ -33,7 +33,7 @@ const LOCAL_IO: TreeIo = {
   git,
   exists: async (p) => fs.existsSync(p),
   real: (p) => fs.realpathSync(p),
-  keyed: (_cwd, listed) => path.resolve(listed),
+  keyed: (listed) => path.resolve(listed),
   onThisMac: true
 }
 
@@ -48,7 +48,7 @@ async function checkouts(io: TreeIo, cwd: string): Promise<Checkout[]> {
         fields.find((v) => v.startsWith(prefix))?.slice(prefix.length) ?? ''
       const branch = field('branch ')
       return {
-        path: io.keyed(cwd, field('worktree ')),
+        path: io.keyed(field('worktree ')),
         head: field('HEAD '),
         branch: branch.startsWith('refs/heads/') ? branch.slice('refs/heads/'.length) : null,
         locked: fields.some((v) => v === 'locked' || v.startsWith('locked '))

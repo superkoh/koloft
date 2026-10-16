@@ -24,20 +24,13 @@ type MuseHookName = (typeof EVENTS)[number]
 export const HOOK_DROP_PREFIX = 'hook-'
 
 // MUSE§12 ADR-0031
-const HOOK_SCRIPT = `#!/bin/bash
-: koloft muse hook
-dir="$1"
-event="$2"
-said="$4"
-[ -d "$dir" ] || exit 0
-${NEWID_FN}
+export function museHookScript(head: string, keep: string): string {
+  return `#!/bin/bash
+${head}
 ${REMIND_REPLY_LANGUAGE_FN}
 ${QUOTE_PROMPT_FN}
 input="$(cat | tr -d '\\n')"
-id="$(newid)"
-[ -n "$id" ] || id="$$-$(date +%s)"
-part="$dir/${HOOK_DROP_PREFIX}$id.part"
-printf '{"event":"%s","input":%s}\\n' "$event" "$input" > "$part" 2>/dev/null && mv "$part" "$dir/${HOOK_DROP_PREFIX}$id.json" 2>/dev/null
+${keep}
 case "$event" in
   SessionStart) [ -f "$3" ] && cat "$3" ;;
   UserPromptSubmit) quote_prompt > "$said"; remind_reply_language UserPromptSubmit ;;
@@ -45,6 +38,20 @@ case "$event" in
 esac
 exit 0
 `
+}
+
+const HOOK_SCRIPT = museHookScript(
+  `: koloft muse hook
+dir="$1"
+event="$2"
+said="$4"
+[ -d "$dir" ] || exit 0
+${NEWID_FN}`,
+  `id="$(newid)"
+[ -n "$id" ] || id="$$-$(date +%s)"
+part="$dir/${HOOK_DROP_PREFIX}$id.part"
+printf '{"event":"%s","input":%s}\\n' "$event" "$input" > "$part" 2>/dev/null && mv "$part" "$dir/${HOOK_DROP_PREFIX}$id.json" 2>/dev/null`
+)
 
 // MUSE§9 MUSE§12
 const SESSION_START_OUTPUT_LIMIT = 16_384

@@ -86,7 +86,7 @@ import {
   writeAllowFile,
   writeTabHookSettings
 } from './hooks'
-import { formatRemoteKey, hostOf, parseRemoteKey } from '@shared/remoteKey'
+import { formatRemoteKey, hostOf, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -164,7 +164,14 @@ import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
-import { dirExistsSync, gitProbes, type GitOut, type ResumeProbes } from './resumePlan'
+import {
+  dirExistsSync,
+  gitProbes,
+  worktreeHomeRoot,
+  worktreeNameAround,
+  type GitOut,
+  type ResumeProbes
+} from './resumePlan'
 import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { museBackend } from './backends/muse'
@@ -619,12 +626,11 @@ function rememberOpenTabs(all = allSessions()): void {
   for (const h of ptyMgr.list()) {
     const kind = backendIdOf(h.kind)
     if (!h.alive || !h.resumeSessionId || !kind) continue
-    const remote = tracker.remoteOf(h.id)
     live.push({
       sessionId: h.resumeSessionId,
       kind,
       title: '',
-      cwd: remote ? formatRemoteKey(remote.host, h.cwd) : h.cwd
+      cwd: h.remoteHost ? formatRemoteKey(h.remoteHost, h.cwd) : h.cwd
     })
   }
   const activeTab = uiActiveTabId ?? activeTabBeforeReload
@@ -1076,23 +1082,21 @@ function agentToolsFor(backend: BackendId, host: HostId): boolean {
 // CC§2
 function pinnedKeyOn(host: string, onMachine: string): string {
   for (const pinned of workspaceMgr?.remoteTargets().find((t) => t.host === host)?.paths ?? []) {
-    const real = remoteSync?.gitInfo(host, pinned)?.real ?? pinned
+    const real = workspaceMgr?.realRemotePath({ host, path: pinned }) ?? pinned
     if (onMachine === real || onMachine.startsWith(real + '/'))
       return formatRemoteKey(host, pinned + onMachine.slice(real.length))
   }
   return formatRemoteKey(host, onMachine)
 }
 
-const WORKTREE_HOME = '/.claude/worktrees/'
-
 // ADR-0025 CC§3
 function projectInfoOnHost(cwd: string): ProjectInfo {
   const key = parseRemoteKey(cwd)
   if (!key) return projectInfoFor(cwd)
-  const at = key.path.indexOf(WORKTREE_HOME)
-  const worktreeName = at < 0 ? undefined : key.path.slice(at + WORKTREE_HOME.length).split('/')[0]
-  const tree = worktreeName ? key.path.slice(0, at) + WORKTREE_HOME + worktreeName : key.path
-  const top = at < 0 ? key.path : key.path.slice(0, at)
+  const worktreeName = worktreeNameAround(key.path)
+  let tree = key.path
+  while (worktreeName && !worktreeHomeRoot(tree)) tree = path.posix.dirname(tree)
+  const top = (worktreeName && worktreeHomeRoot(tree)) || key.path
   const pinned = (workspaceMgr?.remoteTargets().find((t) => t.host === key.host)?.paths ?? [])
     .filter((p) => top === p || top.startsWith(p + '/'))
     .sort((a, b) => b.length - a.length)[0]
@@ -1114,7 +1118,7 @@ function machineTreeIo(cwd: string): TreeIo {
     },
     exists: (p) => machine.dirExists(p),
     real: (p) => p,
-    keyed: (_cwd, listed) => pinnedKeyOn(host, listed),
+    keyed: (listed) => pinnedKeyOn(host, listed),
     onThisMac: false
   }
 }
@@ -1126,6 +1130,7 @@ const museOnMachines: MuseRemoteDeps = {
   mirrorDir: (host) => mirrorHookDir(app.getPath('userData'), host),
   gone: (host, sessionId) =>
     !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId),
+  connected: (host) => !!remoteSync?.connected(host),
   poke: (host) => remoteSync?.pokeNow(host),
   setupLine: () => setupLine(playwrightCliBin)
 }
@@ -1140,7 +1145,7 @@ function machineProbes(cwd: string): ResumeProbes {
 }
 
 function remoteHostOfTab(tabId: string): string | undefined {
-  return tracker.remoteOf(tabId)?.host ?? museSessions?.hostOfTab(tabId)
+  return ptyMgr.get(tabId)?.remoteHost
 }
 
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
@@ -2738,13 +2743,9 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
-      const live = new Set([
-        ...tracker
-          .list()
-          .filter((sess) => sess.alive && sess.remote)
-          .map((sess) => sess.remote!.host),
-        ...(museSessions?.hostsWithRuns() ?? [])
-      ])
+      const live = new Set(
+        ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : []))
+      )
       return (workspaceMgr?.remoteTargets() ?? []).map((t) => ({
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
@@ -2760,7 +2761,8 @@ app.whenReady().then(() => {
     onLeft: (host, ids) => {
       claudeBackend.noticeRemoteExits(host, ids)
       museSessions?.noticeRemoteExits(host, ids)
-    }
+    },
+    onHooksPulled: (host) => museSessions?.followMirrors(host)
   })
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
@@ -4389,9 +4391,9 @@ function registerIpc(): void {
     const cwdByTab = new Map(tracked.map((s) => [s.tabId, s.cwd]))
     const tabs = adoptableTabs(
       ptys.map((h) => {
-        const remote = tracker.remoteOf(h.id)
         const cwd = cwdByTab.get(h.id)
-        return remote && cwd ? { ...h, cwd: formatRemoteKey(remote.host, cwd) } : h
+        if (!h.remoteHost || !cwd) return h
+        return { ...h, cwd: isRemoteKey(cwd) ? cwd : formatRemoteKey(h.remoteHost, cwd) }
       }),
       tracked
     )
@@ -4691,13 +4693,12 @@ function registerIpc(): void {
     const trees = (await workspaceMgr?.worktrees(p)) ?? []
     for (const stored of storedSessions()) {
       if (!SUPPORTED_PAIRS[stored.id][hostOf(p)]) continue
-      for (const resource of stored.store.listResources()) {
-        if (
-          resource.originalCwd !== p ||
-          (resource.state === 'ready' &&
-            (await hosts.of(resource.worktreePath).dirExists(resource.worktreePath)))
-        )
-          continue
+      const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
+      const there = await Promise.all(
+        mine.map((r) => r.state === 'ready' && hosts.of(r.worktreePath).dirExists(r.worktreePath))
+      )
+      for (const [i, resource] of mine.entries()) {
+        if (there[i]) continue
         const existing = trees.find((t) => t.dir === resource.worktreePath)
         if (existing) {
           existing.recoveryResourceId = resource.id

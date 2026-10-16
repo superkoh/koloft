@@ -142,7 +142,7 @@ describe('PtyManager per-tab environment', () => {
     mocks.spawn.mockClear()
     const mgr = new PtyManager()
     mgr.shimDir = '/koloft/shim'
-    mgr.create({ kind: 'muse', cwd: os.tmpdir(), launchCommand: 'ssh box' })
+    mgr.create({ kind: 'muse', cwd: os.tmpdir(), launchCommand: 'ssh box', remoteHost: 'box' })
     expect(spawnedEnv().PATH.split(':')[0]).toBe('/koloft/shim')
   })
 

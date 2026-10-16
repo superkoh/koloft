@@ -11,7 +11,7 @@ import type {
 } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import { BACKEND_LABEL, SUPPORTED_PAIRS, identityOf, sourceOf } from '@shared/sessionBackend'
-import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
+import { hostOf, isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
@@ -30,6 +30,11 @@ const EMIT_THROTTLE_MS = 500
 
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+
+export const hostOfKey = (key: string): string | undefined => {
+  const { sourceId } = identityOf(key)
+  return sourceId === 'local' ? undefined : sourceId
+}
 
 // ADR-0025
 const seenMissing = (cwd: string): boolean => !isRemoteKey(cwd) && !dirExists(cwd)
@@ -352,6 +357,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   rows(workspace: string): BackendSessionRow[] {
+    if (!SUPPORTED_PAIRS[this.id][hostOf(workspace)]) return []
     const scope: RowScope = {
       byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
       roots: new Map()
@@ -529,8 +535,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
 
   protected nativeId(key: string): string {
     const identity = identityOf(key)
-    const host = identity.sourceId === 'local' ? undefined : identity.sourceId
-    if (identity.backendId !== this.id || this.keyOf(identity.nativeSessionId, host) !== key) {
+    if (
+      identity.backendId !== this.id ||
+      this.keyOf(identity.nativeSessionId, hostOfKey(key)) !== key
+    ) {
       throw new Error(
         `A ${SUPPORTED_PAIRS[this.id].ssh ? '' : 'local '}${this.label} session is required.`
       )
