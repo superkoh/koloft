@@ -50,8 +50,8 @@ export async function handoverInOwnersLanguage(
   caller: SessionCaller,
   assist: Assist
 ): Promise<string> {
+  if (!caller.ownerWords) return handoverPreamble(caller)
   const english = englishProse(caller)
-  if (!caller.ownerWords) return preambleFrom(caller, english)
   const reply = await assist({
     system: TRANSLATOR,
     prompt: translateInstructions(caller.ownerWords) + english
@@ -61,14 +61,8 @@ export async function handoverInOwnersLanguage(
     .map((l) => l.trim())
     .filter(Boolean)
   const translation = lines.length === 2 ? lines[1] : ''
-  return preambleFrom(caller, translation.split(CALLER_SLOT).length === 2 ? translation : english)
-}
-
-// ADR-0031
-const OWNER_WORDS_THEN_ONE_LINE = /^«([\s\S]*)»\n[^\n]*$/
-
-export function ownerWordsIn(preamble: string): string | undefined {
-  return OWNER_WORDS_THEN_ONE_LINE.exec(preamble)?.[1]
+  const holdsTheCallerOnce = translation.split(CALLER_SLOT).length === 2
+  return preambleFrom(caller, holdsTheCallerOnce ? translation : english)
 }
 
 export function withHandover(preamble: string, prompt: string): string {

@@ -491,6 +491,7 @@ describe('koloft session new', () => {
         )
       )
       expect(launched[1].firstPrompt).toBe('Fix the sidebar.')
+      expect(launched[1].ownerWords).toBe('先把侧栏修好')
       expect(launched[1].role).toMatch(
         new RegExp(
           `^«先把侧栏修好»\\n${codexCaller}[^\\n]* koloft session send ${CODEX_THREAD} "<your result>"$`
