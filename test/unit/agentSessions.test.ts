@@ -758,9 +758,9 @@ describe('a conductor’s view of sessions: its binding sets the scope', () => {
     startedSessions.bound('grand-tab', 'grand-id')
     expect((await verb(['list'], from('fix'))).text.split('\n')).toEqual([
       'fix-login (you) · Claude · working',
-      `docs-links · Codex · closed · last active 2 h ago · id: ${CODEX_THREAD} · started by: you`,
-      'nap · Claude · idle · last active just now · id: nap-id',
-      'grandkid · Claude · closed · last active 3 days ago · id: grand-id · started by: docs-links'
+      `docs-links · Codex · local · closed · last active 2 h ago · id: ${CODEX_THREAD} · started by: you`,
+      'nap · Claude · local · idle · last active just now · id: nap-id',
+      'grandkid · Claude · local · closed · last active 3 days ago · id: grand-id · started by: docs-links'
     ])
   })
 

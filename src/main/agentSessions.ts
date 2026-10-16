@@ -97,14 +97,9 @@ function stateWords(info: SessionInfo | undefined, asking: (tabId: string) => bo
   return info && asking(info.tabId) ? ASKING : STATE_WORDS[info?.status ?? 'idle']
 }
 
-export interface ListedSession {
+interface ListedSession {
   info: SessionInfo
   peerName?: string
-  starter?: string
-}
-
-interface ListedRow {
-  row: SessionRow
   starter?: string
 }
 
@@ -116,43 +111,24 @@ function starterPart(starter: string | undefined): string[] {
   return starter ? [`started by: ${starter}`] : []
 }
 
-function rowState(row: SessionRow, asking: (tabId: string) => boolean): string {
-  return row.running ? stateWords(undefined, asking) : 'closed'
-}
-
-function formatSessionList(
+function openSessionLines(
   sessions: ListedSession[],
-  notOpen: ListedRow[],
   callerTabId: string,
-  asking: (tabId: string) => boolean,
-  now: number
-): string {
-  if (sessions.length === 0 && notOpen.length === 0) return 'This workspace has no sessions.'
-  return [
-    ...sessions.map(({ info, peerName, starter }) => {
-      const parts = [
-        `${info.title}${info.tabId === callerTabId ? ' (you)' : ''}`,
-        BACKEND_LABEL[info.backendId],
-        stateWords(info, asking)
-      ]
-      if (info.backendId === 'codex') parts.push(`id: ${idToReach(info)}`)
-      if (peerName) parts.push(`name: ${peerName}`)
-      parts.push(...starterPart(starter))
-      const transcript = info.details?.claude?.jsonlPath
-      if (transcript) parts.push(`transcript: ${transcript}`)
-      return parts.join(' · ')
-    }),
-    ...notOpen.map(({ row, starter }) =>
-      [
-        row.title,
-        BACKEND_LABEL[row.backendId],
-        rowState(row, asking),
-        `last active ${ageLabel(row.mtime, now)}`,
-        `id: ${row.nativeSessionId ?? row.id}`,
-        ...starterPart(starter)
-      ].join(' · ')
-    )
-  ].join('\n')
+  asking: (tabId: string) => boolean
+): string[] {
+  return sessions.map(({ info, peerName, starter }) => {
+    const parts = [
+      `${info.title}${info.tabId === callerTabId ? ' (you)' : ''}`,
+      BACKEND_LABEL[info.backendId],
+      stateWords(info, asking)
+    ]
+    if (info.backendId === 'codex') parts.push(`id: ${idToReach(info)}`)
+    if (peerName) parts.push(`name: ${peerName}`)
+    parts.push(...starterPart(starter))
+    const transcript = info.details?.claude?.jsonlPath
+    if (transcript) parts.push(`transcript: ${transcript}`)
+    return parts.join(' · ')
+  })
 }
 
 export interface PinnedWorkspace {
@@ -194,31 +170,28 @@ function peerNamesOf(d: SessionVerbDeps, placed: PlacedRow[]): Promise<(string |
   )
 }
 
-function formatConductorList(
+function rowLines(
   placed: PlacedRow[],
   names: (string | null)[],
   starters: (string | undefined)[],
   withWorkspace: boolean,
   now: number,
   asking: (tabId: string) => boolean
-): string {
-  if (placed.length === 0) return 'There are no sessions to look after.'
-  return placed
-    .map(({ workspace, row, title, live: info }, i) => {
-      const parts = [
-        title,
-        BACKEND_LABEL[row.backendId],
-        parseRemoteKey(workspace)?.host ?? 'local',
-        info || row.running ? stateWords(info, asking) : 'closed',
-        `last active ${ageLabel(row.mtime, now)}`,
-        `id: ${row.nativeSessionId ?? row.id}`
-      ]
-      if (names[i]) parts.push(`name: ${names[i]}`)
-      parts.push(...starterPart(starters[i]))
-      if (withWorkspace) parts.push(`workspace: ${workspaceLabel(workspace)}`)
-      return parts.join(' · ')
-    })
-    .join('\n')
+): string[] {
+  return placed.map(({ workspace, row, title, live: info }, i) => {
+    const parts = [
+      title,
+      BACKEND_LABEL[row.backendId],
+      parseRemoteKey(workspace)?.host ?? 'local',
+      info || row.running ? stateWords(info, asking) : 'closed',
+      `last active ${ageLabel(row.mtime, now)}`,
+      `id: ${row.nativeSessionId ?? row.id}`
+    ]
+    if (names[i]) parts.push(`name: ${names[i]}`)
+    parts.push(...starterPart(starters[i]))
+    if (withWorkspace) parts.push(`workspace: ${workspaceLabel(workspace)}`)
+    return parts.join(' · ')
+  })
 }
 
 function formatTurns(turns: Turn[]): string {
@@ -391,21 +364,26 @@ const LIST_USAGE =
 const CODEX_HAS_NO_NAME =
   'koloft session new: a Codex session has no name, so leave out --name. Koloft prints an id to reach it by.'
 
-function starterOf(
+function starterNamer(
   d: SessionVerbDeps,
-  target: { sessionId: string; tabId?: string },
-  me: SessionInfo
-): string | undefined {
-  const [starter] = d.startedSessions.startersOf(target)
-  if (starter === undefined) return undefined
-  if (starter === me.sessionId) return 'you'
-  return (
-    d.allSessions().find((s) => s.sessionId === starter)?.title ??
-    d
-      .sidebar()
-      .flatMap((w) => w.rows)
-      .find((r) => r.id === starter)?.title
-  )
+  everyRow: PlacedRow[],
+  me: { sessionId: string }
+): (target: { sessionId: string; tabId?: string }) => string | undefined {
+  const titles = new Map(everyRow.map((p) => [p.row.id, p.title]))
+  return (target) => {
+    const [starter] = d.startedSessions.startersOf(target)
+    return starter === me.sessionId ? 'you' : starter && titles.get(starter)
+  }
+}
+
+function placedStarters(
+  d: SessionVerbDeps,
+  everyRow: PlacedRow[],
+  placed: PlacedRow[],
+  me: { sessionId: string }
+): (string | undefined)[] {
+  const starterOf = starterNamer(d, everyRow, me)
+  return placed.map((p) => starterOf({ sessionId: p.row.id, tabId: p.live?.tabId }))
 }
 
 async function listSessions(
@@ -414,19 +392,24 @@ async function listSessions(
   me: SessionInfo,
   workspace: string
 ): Promise<AgentReply> {
+  const everyRow = placedRows(d.sidebar(), sessions)
+  const starterOf = starterNamer(d, everyRow, me)
   const peerName = d.peerNames()
   const listed = await Promise.all(
     sessions.map(async (info) => ({
       info,
       peerName:
         info.backendId === 'claude' ? ((await peerName(info.sessionId)) ?? undefined) : undefined,
-      starter: starterOf(d, info, me)
+      starter: starterOf(info)
     }))
   )
-  const notOpen = (d.sidebar().find((w) => w.workspace.path === workspace)?.rows ?? [])
-    .filter((row) => !row.pending && !sessions.some((s) => s.sessionId === row.id))
-    .map((row) => ({ row, starter: starterOf(d, { sessionId: row.id }, me) }))
-  return answered(formatSessionList(listed, notOpen, me.tabId, d.asking, Date.now()))
+  const open = new Set(sessions.map((s) => s.sessionId))
+  const notOpen = everyRow.filter((p) => p.workspace === workspace && !open.has(p.row.id))
+  const lines = [
+    ...openSessionLines(listed, me.tabId, d.asking),
+    ...rowLines(notOpen, [], placedStarters(d, everyRow, notOpen, me), false, Date.now(), d.asking)
+  ]
+  return answered(lines.join('\n') || 'This workspace has no sessions.')
 }
 
 async function startSibling(
@@ -952,20 +935,18 @@ export function sessionVerb(d: SessionVerbDeps): {
     const scope = d.conductorScope(caller.tabId)
     if (sub === 'list' && scope !== undefined) {
       if (rest.length > 0) return refused(CONDUCTOR_LIST_USAGE, EXIT_USAGE)
-      const placed = placedRows(d.sidebar(), d.allSessions()).filter((p) =>
-        inScope(scope, p.workspace)
-      )
+      const everyRow = placedRows(d.sidebar(), d.allSessions())
+      const placed = everyRow.filter((p) => inScope(scope, p.workspace))
+      if (placed.length === 0) return answered('There are no sessions to look after.')
       return answered(
-        formatConductorList(
+        rowLines(
           placed,
           await peerNamesOf(d, placed),
-          placed.map((p) =>
-            starterOf(d, { sessionId: p.row.id, tabId: p.live?.tabId }, caller.session)
-          ),
+          placedStarters(d, everyRow, placed, caller.session),
           scope === GLOBAL_SCOPE,
           Date.now(),
           d.asking
-        )
+        ).join('\n')
       )
     }
     if (sub === 'read') return readSession(d, rest, caller.tabId)
