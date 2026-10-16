@@ -236,8 +236,26 @@ if (argv[0] === 'app-server') {
         }
       })
     }
-    if (text.startsWith('/koloft ')) {
-      const command = `koloft ${text.slice('/koloft '.length).trim()}`
+    if (text.startsWith('write ')) {
+      const target = path.join(thread.cwd, text.slice('write '.length).trim())
+      const diff = 'written by Codex\n'
+      fs.writeFileSync(target, diff)
+      // CODEX§12
+      event('item/completed', {
+        threadId: thread.id,
+        turnId: turn.id,
+        item: {
+          type: 'fileChange',
+          id: 'write-' + turn.id,
+          status: 'completed',
+          changes: [{ path: target, kind: { type: 'add' }, diff }]
+        }
+      })
+    }
+    const ran = /^\/(koloft|sh) (.+)$/s.exec(text)
+    if (ran) {
+      const [, tool, rest] = ran
+      const command = tool === 'koloft' ? `koloft ${rest.trim()}` : rest.trim()
       execFile('/bin/zsh', ['-lc', command], { cwd: thread.cwd }, (e, out, err) => {
         const exitCode = e ? (typeof e.code === 'number' ? e.code : 1) : 0
         event('item/completed', {
@@ -245,7 +263,7 @@ if (argv[0] === 'app-server') {
           turnId: turn.id,
           item: {
             type: 'commandExecution',
-            id: 'koloft-' + turn.id,
+            id: `${tool}-${turn.id}`,
             status: exitCode === 0 ? 'completed' : 'failed',
             exitCode,
             aggregatedOutput: `${out}${err}`,
@@ -662,10 +680,11 @@ async function startTui() {
       const [q] = frame.params.questions
       question = { id: frame.id, key: q.id, labels: q.options.map((o) => o.label) }
       process.stdout.write('\r\n' + q.question + ' ' + question.labels.join(' / ') + ' ')
-    } else if (frame.method === 'item/completed' && frame.params.item.id.startsWith('koloft-')) {
-      const { aggregatedOutput, exitCode } = frame.params.item
+    } else if (frame.method === 'item/completed' && /^(koloft|sh)-/.test(frame.params.item.id)) {
+      const { aggregatedOutput, exitCode, id } = frame.params.item
       const said = aggregatedOutput.replace(/\r?\n/g, '\r\n')
-      process.stdout.write(`\r\n${said}[fake-codex] koloft exit=${exitCode}\r\n> `)
+      const tool = id.slice(0, id.indexOf('-'))
+      process.stdout.write(`\r\n${said}[fake-codex] ${tool} exit=${exitCode}\r\n> `)
     } else if (frame.method === 'turn/started') {
       working = true
       turnId = frame.params.turn.id

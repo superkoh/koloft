@@ -2,8 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
-import type { E2EEnv } from './helpers/env'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { installCodex, type E2EEnv } from './helpers/env'
+import { startCodex } from './helpers/codex'
 import {
   boundSessionId,
   centerTerm,
@@ -747,6 +748,35 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       .toEqual(['src/agent-notes-b.ts', 'src/agent-notes.ts'])
     await pickChip(page, 'Ownership', 'session')
     await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['src/agent-notes.ts'])
+  })
+
+  test('a file a Codex turn wrote shows in its Changes with its text, and the Ownership filter keeps it while dropping a change the session did not make', async ({
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(1)
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await showChanges(page)
+      await waitStream(page, 1)
+
+      await runIn(page, centerTerm(page), 'write src/codex-notes.ts')
+      await expect
+        .poll(() => shownPaths(page), { timeout: 30_000 })
+        .toEqual(['src/change-1.ts', 'src/codex-notes.ts'])
+      await waitStream(page, 2)
+      await expect(rowOf(page, 'src/codex-notes.ts').locator('.ft-gbadge')).toHaveText('U')
+      await expect(blockOf(page, 'src/codex-notes.ts')).toContainText('written by Codex')
+
+      await pickChip(page, 'Ownership', 'session')
+      await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['src/codex-notes.ts'])
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   test("after /clear the Ownership filter's session choice no longer lists the files the old session wrote", async ({
