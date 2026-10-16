@@ -152,8 +152,6 @@ test.describe('Muse Code sessions through the real method chooser, status signal
   }) => {
     installCodex(env)
     installMuse(env)
-    trustInMuse(env, env.workspaces.a)
-    trustInMuse(env, env.workspaces.b)
     seedSettings(env, { hintsOff: true })
     const app = await launchApp(env)
     try {
@@ -164,6 +162,10 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(dlg.getByText('⏎ Claude · ⇧⏎ other agent')).toBeVisible()
       const hotWs = dlg.locator('.cb-row.hot .wsp-name')
       const picked = await hotWs.innerText()
+      trustInMuse(
+        env,
+        Object.values(env.workspaces).find((ws) => path.basename(ws) === picked)!
+      )
 
       await page.keyboard.press('Shift+Enter')
       const list = page.getByRole('listbox', { name: 'Agents' })
