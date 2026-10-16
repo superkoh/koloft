@@ -66,9 +66,9 @@ export function ExtensionsPane(): JSX.Element {
           <b>Let agents use Koloft</b>
           <small>
             A session&apos;s agent gets a koloft command: it can open files and pages in its
-            Workbench, read and add to the workspace note, manage scheduled tasks and start sibling
-            sessions. A toast tells you when it changes a scheduled task. Turning this on reaches
-            sessions started afterwards; turning it off stops the command in every session at once.
+            Workbench, read and add to the note, manage scheduled tasks and start sibling sessions.
+            A toast tells you when it changes a scheduled task. Turning this on reaches sessions
+            started afterwards; turning it off stops the command in every session at once.
           </small>
         </div>
         <Switch checked={settings.agentTools} onChange={(on) => update({ agentTools: on })} />

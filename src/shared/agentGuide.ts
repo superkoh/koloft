@@ -84,10 +84,10 @@ koloft diff <file>
     Example: koloft diff src/app.ts
 
 koloft note
-    Print the workspace note.
+    Print the note.
 
 koloft note append <text>
-    Add text to the end of the workspace note.
+    Add text to the end of the note.
     Example: koloft note append "Run npm run rebuild after changing the Electron version."
 
 SCHEDULED TASKS
@@ -219,7 +219,7 @@ To use the web pages in this session's Workbench, drive them with the playwright
 When the owner allows browser control, it drives the Workbench browser, whose address is in $KOLOFT_BROWSER_CDP; otherwise it starts a hidden browser of its own. In the Workbench it works in tabs of its own, which the owner sees marked as driven by you; it cannot see the tabs the owner opened, so open the address you need yourself. The Workbench browser takes one tool at a time: if Playwright MCP tools also drive it in this session, the one that comes second is refused with "this endpoint already has a client", so use one of the two ("playwright-cli close" lets go of it). A session on another machine (over SSH) cannot reach the Workbench browser yet.`
 
 export const AGENT_SKILL_DESCRIPTION =
-  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
+  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
 
 const RELAY_NEVER_GUESS = `You pass on what the owner says and what the sessions say; you never make anything up.
 - When you send a session the owner's words, quote them exactly as the owner wrote them, inside ${OWNER_QUOTE_MARKS}. Koloft tells the session that only those words are the owner's. What you add outside them only says where the words come from, gives facts the session may not have, and asks it to answer the owner; it never adds an order, a decision, a step, a permission or a hint at an answer the owner did not give, like "change nothing yet" or "should X come first?".

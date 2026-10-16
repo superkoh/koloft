@@ -760,7 +760,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         )
         expect(claudeSkillListingsIn(transcript()).join('\n')).toMatch(/^- koloft:koloft: /m)
         expect(outputs.some((o) => o.includes('koloft note append <text>'))).toBe(true)
-        expect(outputs.some((o) => o.includes('Added to the workspace note.'))).toBe(true)
+        expect(outputs.some((o) => o.includes('Added to the note.'))).toBe(true)
       },
       (lab) => useRealClaudeOnTheMachine(env, lab)
     )
