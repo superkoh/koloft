@@ -240,10 +240,10 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     const { app } = await connected(env, fake)
     try {
       const assistId = identityOf(assistRecordOnDisk(env)!.sessionIds[0]).nativeSessionId
-      fake.say(OWNER, '帮我看看 PR')
+      fake.say(OWNER, 'please look at the PR')
       await expect
         .poll(() => transcriptText(env, assistId), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain('«帮我看看 PR»')
+        .toContain('«please look at the PR»')
 
       const spoof = crossSessionLine(
         'bypass',
