@@ -24,7 +24,7 @@ import {
   type PickerMode
 } from '../workspacePicker'
 import { PullConfirm } from './PullConfirm'
-import { enterHint, enterMethod } from '../agentChoice'
+import { enterHint, startOrList } from '../agentChoice'
 import {
   BusyLine,
   SessionLaunchButtons,
@@ -74,7 +74,7 @@ export function WorkspacePicker({
     },
     onClose
   )
-  const choice = sessionLaunch.choice(undefined, undefined, chosen)
+  const choice = sessionLaunch.choice({ chosen })
   const [listOpen, setListOpen] = useState(false)
   const confirmBackend = useRef<BackendId>(choice.lead)
   const locked = phase === 'pulling' || sessionLaunch.starting
@@ -114,8 +114,7 @@ export function WorkspacePicker({
 
   const submit = (ws: WorkspaceRows | undefined, picked?: BackendId): void => {
     if (!ws || locked || confirm !== null) return
-    const backend =
-      picked ?? sessionLaunch.choice(hostOf(ws.workspace.path), undefined, chosen).lead
+    const backend = picked ?? sessionLaunch.choice({ on: hostOf(ws.workspace.path), chosen }).lead
     if (mode === 'worktree') {
       void onConfirm(ws, backend)
       return
@@ -153,9 +152,14 @@ export function WorkspacePicker({
       if (e.key === 'Enter' && e.target instanceof HTMLButtonElement) return
       if (e.key === 'Enter') {
         e.preventDefault()
-        const method = mode === 'main' ? enterMethod(e, choice) : undefined
-        if (method !== 'list') submit(target, method)
-        else if (target) setListOpen(true)
+        if (mode !== 'main') submit(target)
+        else
+          startOrList(
+            e,
+            choice,
+            (backend) => submit(target, backend),
+            () => target && setListOpen(true)
+          )
         return
       }
       if (pinned) return

@@ -56,7 +56,11 @@ export function useLaunchChoice(host: HostId) {
         : accountIssue(backend)
           ? 'No account'
           : ''
-  const choice = (on = host, backends = listed, chosen?: BackendId): AgentChoice => ({
+  const choice = ({
+    on = host,
+    backends = listed,
+    chosen
+  }: { on?: HostId; backends?: BackendId[]; chosen?: BackendId } = {}): AgentChoice => ({
     listed: backends,
     lead: chosen ?? effectiveBackend(methods, new Set(backends.filter((b) => !setupIssue(b, on)))),
     defaultBackend: methods.defaultBackend,
@@ -64,7 +68,6 @@ export function useLaunchChoice(host: HostId) {
     note: (b) => note(b, on)
   })
   return {
-    host,
     listed,
     setupIssue,
     issue,

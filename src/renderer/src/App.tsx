@@ -378,15 +378,15 @@ export default function App(): JSX.Element {
     [probed]
   )
   const sessionMethods = useStore((s) => s.settings.sessionMethods)
+  const listed = useMemo(
+    () => listedBackends(sessionMethods, probed && ((b) => probed[b])),
+    [probed, sessionMethods]
+  )
   const namedMethods = useMemo((): SessionBackend[] | null => {
-    if (!probed) return null
-    const usable = SESSION_BACKENDS.filter((b) => sessionMethods.enabled[b] && probed[b])
-    if (usable.length < 2 || !usable.includes(sessionMethods.defaultBackend)) return null
-    return [
-      sessionMethods.defaultBackend,
-      ...usable.filter((b) => b !== sessionMethods.defaultBackend)
-    ]
-  }, [probed, sessionMethods])
+    const { defaultBackend } = sessionMethods
+    if (listed.length < 2 || !listed.includes(defaultBackend)) return null
+    return [defaultBackend, ...listed.filter((b) => b !== defaultBackend)]
+  }, [listed, sessionMethods])
 
   const startSession = useCallback(
     async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
@@ -1278,7 +1278,7 @@ export default function App(): JSX.Element {
 
   const welcomeRoot = welcomeWs?.workspace.path
   const paletteChoice: AgentChoice = {
-    listed: listedBackends(sessionMethods, probed && ((b) => probed[b])),
+    listed,
     lead: effectiveBackend(sessionMethods, installed),
     defaultBackend: sessionMethods.defaultBackend,
     issue: () => '',

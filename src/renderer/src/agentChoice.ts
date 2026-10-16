@@ -18,6 +18,17 @@ export function enterMethod(
   return others.length === 1 && !issue(others[0]) ? others[0] : 'list'
 }
 
+export function startOrList(
+  e: { shiftKey: boolean },
+  choice: AgentChoice,
+  start: (backend: BackendId) => void,
+  openList: () => void
+): void {
+  const method = enterMethod(e, choice)
+  if (method === 'list') openList()
+  else start(method)
+}
+
 export function enterHint(choice: AgentChoice): string {
   if (choice.listed.length < 2) return ''
   const shift = enterMethod({ shiftKey: true }, choice)
