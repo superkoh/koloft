@@ -5,7 +5,14 @@ import { execFileSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { localGitOut } from '../../src/main/host/localHost'
 import { projectInfoFor } from '../../src/main/projectInfo'
-import { closingTree, removeTree, whatIsLeft, type ClosingTree } from '../../src/main/sessionClose'
+import {
+  closingTree,
+  removeTree,
+  tidyTree,
+  whatIsLeft,
+  type ClosingTree
+} from '../../src/main/sessionClose'
+import type { GitOut } from '../../src/main/resumePlan'
 
 let directory: string
 let repo: string
@@ -97,5 +104,70 @@ describe('closing a session that runs in its own worktree', () => {
 
   it('a session in the repository itself has no worktree to remove', async () => {
     expect(await closingTree(localGitOut, projectInfoFor(repo))).toBeNull()
+  })
+})
+
+describe('tidying a scheduled run’s folder (#22)', () => {
+  const run = (): { root: string; treeRoot: string; worktreeName: string } => ({
+    root: repo,
+    treeRoot: tree,
+    worktreeName: 'run-1'
+  })
+  const onDisk = async (dir: string): Promise<boolean> => fs.existsSync(dir)
+
+  function removeFolderKeepingBranch(): void {
+    git(repo, 'worktree', 'unlock', tree)
+    git(repo, 'worktree', 'remove', '--force', tree)
+  }
+
+  it('removes a clean, locked folder and its branch', async () => {
+    expect(await tidyTree(localGitOut, run(), onDisk)).toEqual({ removed: true, kept: [] })
+    expect(fs.existsSync(tree)).toBe(false)
+    expect(branches()).toEqual(['main'])
+  })
+
+  it('keeps a folder with an uncommitted file, and says so', async () => {
+    fs.writeFileSync(path.join(tree, 'report.md'), 'draft')
+    const r = await tidyTree(localGitOut, run(), onDisk)
+    expect(r.removed).toBe(false)
+    expect(r.kept[0]).toMatch(/^Changes not committed:\n.*report\.md/)
+    expect(fs.existsSync(tree)).toBe(true)
+  })
+
+  it('deletes the branch a folder removed by hand left behind', async () => {
+    removeFolderKeepingBranch()
+    expect(await tidyTree(localGitOut, run(), onDisk)).toEqual({ removed: true, kept: [] })
+    expect(branches()).toEqual(['main'])
+  })
+
+  it('keeps the branch a folder removed by hand left behind when it holds a commit no other branch has, so the row can still rebuild the run', async () => {
+    commit(tree, 'only-here.txt', 'never pushed')
+    removeFolderKeepingBranch()
+    const r = await tidyTree(localGitOut, run(), onDisk)
+    expect(r.removed).toBe(false)
+    expect(r.kept[0]).toContain('only-here.txt')
+    expect(branches()).toEqual(['main', 'worktree-run-1'])
+  })
+
+  it('keeps everything and names the problem when the machine cannot be asked', async () => {
+    const unreachable = async (): Promise<boolean> => {
+      throw new Error('ssh: connect to host devbox port 22: Connection refused')
+    }
+    expect(await tidyTree(localGitOut, run(), unreachable)).toEqual({
+      removed: false,
+      kept: ['machine unreachable: ssh: connect to host devbox port 22: Connection refused']
+    })
+    expect(fs.existsSync(tree)).toBe(true)
+  })
+
+  it('reads "removed" when git fails because another remover took the folder first', async () => {
+    const anotherRemoverWins: GitOut = async (dir, args, timeoutMs) => {
+      if (args[0] === 'worktree' && args[1] === 'remove') {
+        fs.rmSync(tree, { recursive: true, force: true })
+        return null
+      }
+      return localGitOut(dir, args, timeoutMs)
+    }
+    expect(await tidyTree(anotherRemoverWins, run(), onDisk)).toEqual({ removed: true, kept: [] })
   })
 })

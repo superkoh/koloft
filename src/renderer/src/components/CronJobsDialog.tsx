@@ -18,7 +18,15 @@ import {
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import { describeSchedule, describeWhen, nextRun } from '@shared/schedule'
-import { histEnd, histText, histWhen, lastRunOf, liveOf, whenLine } from '@shared/cronHistory'
+import {
+  histEnd,
+  histFolder,
+  histText,
+  histWhen,
+  lastRunOf,
+  liveOf,
+  whenLine
+} from '@shared/cronHistory'
 import {
   emptyFields,
   permissionAfterSwitch,
@@ -406,10 +414,9 @@ export function CronJobsDialog({
       <p className="fnote">
         A new copy of the repo every time —{' '}
         <span className="m">{`.claude/worktrees/${slug}-<date>-<time>`}</span>, branch{' '}
-        <span className="m">{`worktree-${slug}-…`}</span>. Your own files are never touched. Each
-        run&apos;s folder and branch stay until you remove them (
-        <span className="m">git worktree remove</span>). Closing and /exit work exactly as in any
-        New worktree session.
+        <span className="m">{`worktree-${slug}-…`}</span>. Your own files are never touched. When a
+        run&apos;s tab closes, Koloft removes its folder and branch, unless they hold work not
+        committed; its row in the sidebar still resumes it.
       </p>
     ) : (
       <p className="fnote">{NO_GIT_NOTE}</p>
@@ -685,6 +692,7 @@ export function CronJobsDialog({
       dot: string
       text: string
       worktree?: string
+      folder?: string
     }
     const waiting: Row[] = []
     const past: Row[] = []
@@ -709,7 +717,8 @@ export function CronJobsDialog({
           when: histWhen(h, now),
           dot: histDot(h),
           text: histText(h),
-          worktree: h.worktree
+          worktree: h.worktree,
+          folder: histFolder(h)
         })
       )
     }
@@ -730,6 +739,7 @@ export function CronJobsDialog({
                 {r.text}
               </span>
               {r.worktree && <span className="hist-wt">{` · ${r.worktree}`}</span>}
+              {r.folder && <span className="hist-folder">{` · ${r.folder}`}</span>}
             </div>
           ))}
         </div>

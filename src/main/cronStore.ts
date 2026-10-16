@@ -64,6 +64,9 @@ function cleanHistory(raw: unknown): HistoryLine[] {
       line.worktree = item.worktree
     }
     if (state === 'failed' && typeof item.note === 'string') line.note = item.note
+    if (typeof item.sessionId === 'string' && item.sessionId) line.sessionId = item.sessionId
+    if (item.removed === true) line.removed = true
+    if (typeof item.kept === 'string' && item.kept) line.kept = item.kept
     lines.push(line)
   }
   return lines
