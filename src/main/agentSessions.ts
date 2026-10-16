@@ -100,20 +100,36 @@ function stateWords(info: SessionInfo | undefined, asking: (tabId: string) => bo
 export interface ListedSession {
   info: SessionInfo
   peerName?: string
+  starter?: string
+}
+
+interface ListedRow {
+  row: SessionRow
+  starter?: string
 }
 
 function idToReach(s: SessionInfo): string {
   return s.nativeSessionId ?? s.sessionId
 }
 
-export function formatSessionList(
+function starterPart(starter: string | undefined): string[] {
+  return starter ? [`started by: ${starter}`] : []
+}
+
+function rowState(row: SessionRow, asking: (tabId: string) => boolean): string {
+  return row.running ? stateWords(undefined, asking) : 'closed'
+}
+
+function formatSessionList(
   sessions: ListedSession[],
+  notOpen: ListedRow[],
   callerTabId: string,
-  asking: (tabId: string) => boolean
+  asking: (tabId: string) => boolean,
+  now: number
 ): string {
-  if (sessions.length === 0) return 'This workspace has no open sessions.'
-  return sessions
-    .map(({ info, peerName }) => {
+  if (sessions.length === 0 && notOpen.length === 0) return 'This workspace has no sessions.'
+  return [
+    ...sessions.map(({ info, peerName, starter }) => {
       const parts = [
         `${info.title}${info.tabId === callerTabId ? ' (you)' : ''}`,
         BACKEND_LABEL[info.backendId],
@@ -121,11 +137,22 @@ export function formatSessionList(
       ]
       if (info.backendId === 'codex') parts.push(`id: ${idToReach(info)}`)
       if (peerName) parts.push(`name: ${peerName}`)
+      parts.push(...starterPart(starter))
       const transcript = info.details?.claude?.jsonlPath
       if (transcript) parts.push(`transcript: ${transcript}`)
       return parts.join(' · ')
-    })
-    .join('\n')
+    }),
+    ...notOpen.map(({ row, starter }) =>
+      [
+        row.title,
+        BACKEND_LABEL[row.backendId],
+        rowState(row, asking),
+        `last active ${ageLabel(row.mtime, now)}`,
+        `id: ${row.nativeSessionId ?? row.id}`,
+        ...starterPart(starter)
+      ].join(' · ')
+    )
+  ].join('\n')
 }
 
 export interface PinnedWorkspace {
@@ -170,6 +197,7 @@ function peerNamesOf(d: SessionVerbDeps, placed: PlacedRow[]): Promise<(string |
 function formatConductorList(
   placed: PlacedRow[],
   names: (string | null)[],
+  starters: (string | undefined)[],
   withWorkspace: boolean,
   now: number,
   asking: (tabId: string) => boolean
@@ -186,6 +214,7 @@ function formatConductorList(
         `id: ${row.nativeSessionId ?? row.id}`
       ]
       if (names[i]) parts.push(`name: ${names[i]}`)
+      parts.push(...starterPart(starters[i]))
       if (withWorkspace) parts.push(`workspace: ${workspaceLabel(workspace)}`)
       return parts.join(' · ')
     })
@@ -292,7 +321,7 @@ export async function findClosable(
   return (
     hit ??
     fail(
-      `koloft session close: you did not start a session "${ref}". You can close only this session or one you started with koloft session new.`
+      `koloft session close: you did not start a session "${ref}". You can close only this session, or one started with koloft session new by you or by a session you started.`
     )
   )
 }
@@ -362,20 +391,42 @@ const LIST_USAGE =
 const CODEX_HAS_NO_NAME =
   'koloft session new: a Codex session has no name, so leave out --name. Koloft prints an id to reach it by.'
 
+function starterOf(
+  d: SessionVerbDeps,
+  target: { sessionId: string; tabId?: string },
+  me: SessionInfo
+): string | undefined {
+  const [starter] = d.startedSessions.startersOf(target)
+  if (starter === undefined) return undefined
+  if (starter === me.sessionId) return 'you'
+  return (
+    d.allSessions().find((s) => s.sessionId === starter)?.title ??
+    d
+      .sidebar()
+      .flatMap((w) => w.rows)
+      .find((r) => r.id === starter)?.title
+  )
+}
+
 async function listSessions(
   d: SessionVerbDeps,
   sessions: SessionInfo[],
-  callerTabId: string
+  me: SessionInfo,
+  workspace: string
 ): Promise<AgentReply> {
   const peerName = d.peerNames()
   const listed = await Promise.all(
     sessions.map(async (info) => ({
       info,
       peerName:
-        info.backendId === 'claude' ? ((await peerName(info.sessionId)) ?? undefined) : undefined
+        info.backendId === 'claude' ? ((await peerName(info.sessionId)) ?? undefined) : undefined,
+      starter: starterOf(d, info, me)
     }))
   )
-  return answered(formatSessionList(listed, callerTabId, d.asking))
+  const notOpen = (d.sidebar().find((w) => w.workspace.path === workspace)?.rows ?? [])
+    .filter((row) => !row.pending && !sessions.some((s) => s.sessionId === row.id))
+    .map((row) => ({ row, starter: starterOf(d, { sessionId: row.id }, me) }))
+  return answered(formatSessionList(listed, notOpen, me.tabId, d.asking, Date.now()))
 }
 
 async function startSibling(
@@ -908,6 +959,9 @@ export function sessionVerb(d: SessionVerbDeps): {
         formatConductorList(
           placed,
           await peerNamesOf(d, placed),
+          placed.map((p) =>
+            starterOf(d, { sessionId: p.row.id, tabId: p.live?.tabId }, caller.session)
+          ),
           scope === GLOBAL_SCOPE,
           Date.now(),
           d.asking
@@ -919,10 +973,10 @@ export function sessionVerb(d: SessionVerbDeps): {
       const listsOther = rest.length === 2 && rest[0] === '--workspace'
       if (rest.length > 0 && !listsOther) return refused(LIST_USAGE, EXIT_USAGE)
       if (!listsOther)
-        return ws ? listSessions(d, sessionsIn(ws), caller.tabId) : refused(NO_WORKSPACE)
+        return ws ? listSessions(d, sessionsIn(ws), caller.session, ws) : refused(NO_WORKSPACE)
       const found = resolveWorkspace(rest[1], d.pinnedWorkspaces())
       if (!found.ok) return refused(`koloft session list: ${found.error}`)
-      return listSessions(d, sessionsIn(found.value.path), caller.tabId)
+      return listSessions(d, sessionsIn(found.value.path), caller.session, found.value.path)
     }
     if (sub === 'new') {
       const parsed = parseNewSessionArgs(rest)
