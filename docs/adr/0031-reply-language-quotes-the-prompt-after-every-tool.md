@@ -38,7 +38,7 @@ prompt, and it is what Claude Code itself does with an output style's line (CC§
 A message from another session does not replace the quote: the person reads the reply,
 so a child's English report must not turn its parent English. Neither does a background
 task's finish report or a subagent's message, which reach the prompt hook too (CC§19):
-from 10-11 to 10-16, before they were skipped, 63% of the reminders quoted a
+before they were skipped, 63% of the reminders over six days quoted a
 `<task-notification>` instead of the owner, and in Chinese turns the notes under such a
 quote were English 30% of the time against 13% under the owner's own words (67% against
 1% once the turn had been compacted, 37% against 15% past 60 tool calls).
