@@ -92,6 +92,10 @@ if (argv[0] === 'login') {
   process.exit(0)
 }
 
+// CODEX§16
+const SHELL = fs.existsSync('/bin/zsh') ? '/bin/zsh' : process.env.SHELL || '/bin/sh'
+const SHELL_FLAG = argv.includes('allow_login_shell=false') ? '-c' : '-lc'
+
 let loginFromTheClient = null
 
 function signIn() {
@@ -249,7 +253,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       event('item/completed', { threadId: thread.id, turnId: turn.id, item: asked })
       runHook('UserPromptSubmit', { session_id: thread.id, cwd: thread.cwd, prompt: text })
       if (text.startsWith('open ')) {
-        const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
+        const shell = spawnSync(SHELL, [SHELL_FLAG, text], { cwd: thread.cwd, encoding: 'utf8' })
         event('item/completed', {
           threadId: thread.id,
           turnId: turn.id,
@@ -259,7 +263,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
             status: shell.status === 0 ? 'completed' : 'failed',
             exitCode: shell.status,
             aggregatedOutput: (shell.stdout || '') + (shell.stderr || ''),
-            command: `/bin/zsh -lc '${text}'`,
+            command: `${SHELL} ${SHELL_FLAG} '${text}'`,
             cwd: thread.cwd,
             commandActions: [{ type: 'unknown', command: text }]
           }
@@ -267,7 +271,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       }
       if (text.startsWith('/koloft ')) {
         const command = `koloft ${text.slice('/koloft '.length).trim()}`
-        execFile('/bin/zsh', ['-lc', command], { cwd: thread.cwd }, (e, out, err) => {
+        execFile(SHELL, [SHELL_FLAG, command], { cwd: thread.cwd }, (e, out, err) => {
           const exitCode = e ? (typeof e.code === 'number' ? e.code : 1) : 0
           event('item/completed', {
             threadId: thread.id,
@@ -278,7 +282,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
               status: exitCode === 0 ? 'completed' : 'failed',
               exitCode,
               aggregatedOutput: `${out}${err}`,
-              command: `/bin/zsh -lc '${command}'`,
+              command: `${SHELL} ${SHELL_FLAG} '${command}'`,
               cwd: thread.cwd,
               commandActions: [{ type: 'unknown', command }]
             }

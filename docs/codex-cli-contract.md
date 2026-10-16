@@ -895,6 +895,29 @@ was only read in help.
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
 
+**A login shell drops the server's `PATH` on Linux.** Checked on 2026-10-16 with
+`@openai/codex@0.162.0` (`npm i -g`, `codex-linux-arm64`) in a plain
+`node:22-bookworm-slim` container, as a non-root user whose shell is bash, no login:
+the app-server ran with `model_provider` pointed at a local fake Responses API (plain
+HTTP, `env_key` set) that answered the first request with one `exec_command` function
+call. The app-server's own `PATH` began with `/opt/kbin`, which held a `koloft` script,
+and its environment had `KOLOFT_TAB_ID`. By default the item's command was `/bin/bash
+-lc '…'`; Debian's `/etc/profile` set `PATH` afresh, so the command saw Codex's own
+`codex-path` folder and `/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games`,
+`command -v koloft` found nothing, and `KOLOFT_TAB_ID` was still set. With `-c
+allow_login_shell=false` the command was `/bin/bash -c '…'`, its `PATH` kept `/opt/kbin`
+(after Codex's `codex-path` and an `arg0` folder in `CODEX_HOME/tmp`), and it found
+`koloft`. The request's tool list was `exec_command, write_stdin, request_user_input,
+apply_patch, view_image, get_goal, create_goal, update_goal, tool_search, web_search`.
+
+**A hook trusted on the Mac's terms is trusted on the machine.** Same day, same container:
+`hooks/list` on the Mac's codex-cli 0.162.0 (a new empty `CODEX_HOME`) with `-c
+hooks.UserPromptSubmit=…` and `-c hooks.PostToolUse=…` gave keys
+`/<session-flags>/config.toml:user_prompt_submit:0:0` and `…:post_tool_use:0:0` and their
+`sha256:` hashes, `untrusted`. Writing those two `[hooks.state."<key>"]` tables with
+`trusted_hash` into the machine's `CODEX_HOME/config.toml` with `awk` and `printf`, twice
+over, left one table each, and the machine's 0.162.0 then listed both hooks `trusted`.
+
 Not tried: `codex login --device-auth` on the machine; `workspace-write` on a host that
 allows user namespaces; a real refresh token on the machine.
 

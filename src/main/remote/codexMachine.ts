@@ -45,6 +45,13 @@ export interface CodexTabSpec {
 
 const SERVER_START_TRIES = 150
 
+// CODEX§16
+const NO_LOGIN_SHELL = 'allow_login_shell=false'
+
+// CODEX§16
+const LOGIN_PATH_TOO = `login_path=$(bash -lc 'printf "\\nKOLOFT_LOGIN_PATH=%s\\n" "$PATH"' </dev/null 2>/dev/null | sed -n 's/^KOLOFT_LOGIN_PATH=//p')
+[ -n "$login_path" ] && PATH="$PATH:$login_path"`
+
 const REPLY_LANGUAGE_FILE = 'codex-reply-language.sh'
 const REPLY_LANGUAGE_IN_BASH = 'codex-reply-language.bash'
 
@@ -85,7 +92,7 @@ export function codexTabScript(s: CodexTabSpec): string {
     )
     .join('')
   const config = [
-    ...s.config.map((c) => `-c ${shq(c)}`),
+    ...[...s.config, NO_LOGIN_SHELL].map((c) => `-c ${shq(c)}`),
     ...(s.agentTools
       ? [`-c "sandbox_workspace_write.writable_roots=[\\"${REMOTE_HOOK_DIR}\\"]"`]
       : [])
@@ -101,6 +108,7 @@ mkdir -p "$H" "${serversDir(s.instance)}" && chmod 700 "$H" || exit 3
 cd ${shq(s.cwd)} || exit 3
 ${trust}${hookTrustLines(s.hookTrust)}S="${serversDir(s.instance)}/${s.tabId}"
 rm -f "$S.sock"
+${LOGIN_PATH_TOO}
 (
 ${exports}  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
   ${CODEX_REPLY_LANGUAGE_ENV}="$M/${REPLY_LANGUAGE_FILE}"; ${CODEX_SAID_ENV}="$S.said"

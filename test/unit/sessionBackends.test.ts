@@ -145,14 +145,11 @@ describe('session backend boundary', () => {
     expect(identityOf(nativeSessionId).backendId).toBe('claude')
   })
 
-  it('refuses implicit/new unsupported launches before reaching any backend', async () => {
+  it('refuses a launch with no method before reaching any backend, and hands a Codex launch here or on a machine to Codex', async () => {
     const registry = new SessionBackends(lifecycle())
     const create = vi.fn(async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }))
     const backend: SessionBackend = { ...stubBackend('codex'), create }
     registry.register(backend)
-    await expect(registry.create({ kind: 'codex', cwd: 'ssh://server/repo' })).rejects.toThrow(
-      'Codex sessions cannot run on a remote machine yet.'
-    )
     await expect(registry.create({ kind: undefined as never, cwd: '/repo' })).resolves.toEqual({
       ok: false,
       code: 'invalid-args'
@@ -161,7 +158,12 @@ describe('session backend boundary', () => {
     await expect(registry.create({ kind: 'codex', cwd: '/repo' })).resolves.toMatchObject({
       ok: true
     })
+    await expect(
+      registry.create({ kind: 'codex', cwd: 'ssh://server/repo' })
+    ).resolves.toMatchObject({ ok: true })
+    expect(create).toHaveBeenCalledTimes(2)
     expect(registry.forSession('codex:local:id')).toBe(backend)
+    expect(registry.forSession('codex:ssh%3Aserver:id')).toBe(backend)
   })
 
   // ADR-0030
@@ -242,10 +244,15 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
   })
 
-  it('supports every pair but Codex on a remote machine', () => {
+  // CODEX§16
+  it('supports every pair, and Codex on a remote machine leaves pending what Claude there does, with no native three-line status bar', () => {
     expect(SUPPORTED_PAIRS).toEqual({
       claude: { local: true, ssh: true },
-      codex: { local: true, ssh: false }
+      codex: { local: true, ssh: true }
+    })
+    expect(capabilitiesFor('codex', 'ssh')).toEqual({
+      ...capabilitiesFor('claude', 'ssh'),
+      statusline3: { unsupported: 'CODEX§8' }
     })
   })
 })

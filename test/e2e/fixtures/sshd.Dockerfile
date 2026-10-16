@@ -2,7 +2,7 @@ FROM node:22-bookworm-slim
 ENV LANG=C.UTF-8
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    openssh-server openssh-client tmux rsync git tcsh fish procps \
+    openssh-server openssh-client tmux rsync git tcsh fish procps ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 RUN rm -f /etc/ssh/ssh_host_* \
  && sed -i 's/^session[[:space:]]*required[[:space:]]*pam_loginuid.so/session optional pam_loginuid.so/' /etc/pam.d/sshd \

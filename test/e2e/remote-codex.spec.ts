@@ -124,7 +124,9 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
         env,
         'fake-codex-hook-output.jsonl'
       ).find((h) => h.event === 'UserPromptSubmit')
-      expect(replyLanguage?.stdout).toContain("The user's latest message begins: «Codex fixture session")
+      expect(replyLanguage?.stdout).toContain(
+        "The user's latest message begins: «Codex fixture session"
+      )
 
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/cold/, { timeout: 30_000 })
