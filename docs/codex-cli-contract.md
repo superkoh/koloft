@@ -903,6 +903,13 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   held, the model ran `cat <path>/SKILL.md` and answered it. `skills/list` gave `{name,
   description, path, scope: "user", enabled, pluginId}`; a fresh home was seeded with
   `skills/.system/` (imagegen, openai-docs, skill-creator, skill-installer).
+- **`$CODEX_HOME/rules/*.rules` applies to a turn's commands.** 2026-10-16, Codex CLI
+  0.162.0, a real turn in a trusted folder of a throwaway `CODEX_HOME` whose
+  `rules/default.rules` held `prefix_rule(pattern=["touch"], decision="forbidden")`:
+  asked to run `touch made-by-probe.txt`, the command was refused (`policy forbids
+  commands starting with \`touch\``) and no file appeared. So a home Koloft makes per
+  account sees the owner's own global instructions, skills and command rules only if it
+  links them from the owner's home.
 - **Developer instructions do not count as the owner asking for sub-agents.** Codex
   ships sub-agents on (`codex features list`: `multi_agent stable true`) but tells the
   model, last in its developer message, `Do not spawn sub-agents unless the user or

@@ -171,15 +171,33 @@ describe('prepareCodexHome', () => {
   })
 
   // CODEX§15
-  it("links a home's sessions and archived_sessions to the default home's, so any account lists and resumes every session", () => {
+  it("links a home's sessions, archived_sessions, skills and rules to the default home's, so any account lists and resumes every session and sees the owner's own skills and command rules", () => {
     const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
     const shared = path.join(dir, 'dot-codex', 'config.toml')
     const home = path.join(dir, 'homes', 'work')
     prepareCodexHome(home, shared)
-    for (const folder of ['sessions', 'archived_sessions']) {
+    for (const folder of ['sessions', 'archived_sessions', 'skills', 'rules']) {
       expect(fs.readlinkSync(path.join(home, folder))).toBe(path.join(dir, 'dot-codex', folder))
       expect(fs.statSync(path.join(dir, 'dot-codex', folder)).isDirectory()).toBe(true)
     }
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  // CODEX§17
+  it("a home reads the owner's own AGENTS.md once the owner has one, and keeps an AGENTS.md of its own", () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
+    const shared = path.join(dir, 'dot-codex', 'config.toml')
+    const home = path.join(dir, 'homes', 'work')
+    prepareCodexHome(home, shared)
+    expect(fs.existsSync(path.join(home, 'AGENTS.md'))).toBe(false)
+    fs.writeFileSync(path.join(dir, 'dot-codex', 'AGENTS.md'), 'Answer in Chinese.\n')
+    prepareCodexHome(home, shared)
+    expect(fs.readFileSync(path.join(home, 'AGENTS.md'), 'utf8')).toBe('Answer in Chinese.\n')
+    const own = path.join(dir, 'homes', 'own')
+    fs.mkdirSync(own, { recursive: true })
+    fs.writeFileSync(path.join(own, 'AGENTS.md'), 'Mine.\n')
+    prepareCodexHome(own, shared)
+    expect(fs.readFileSync(path.join(own, 'AGENTS.md'), 'utf8')).toBe('Mine.\n')
     fs.rmSync(dir, { recursive: true, force: true })
   })
 

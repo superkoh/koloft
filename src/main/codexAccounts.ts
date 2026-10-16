@@ -34,7 +34,8 @@ export function codexHomes(userData: string): string[] {
   }
 }
 
-const FOLDERS_EVERY_HOME_SHARES = ['sessions', 'archived_sessions']
+const FOLDERS_EVERY_HOME_SHARES = ['sessions', 'archived_sessions', 'skills', 'rules']
+const OWNER_FILES_EVERY_HOME_READS = ['AGENTS.md']
 
 function newerThan(a: string, b: string): boolean {
   const there = fs.statSync(b, { throwIfNoEntry: false })
@@ -68,6 +69,12 @@ export function prepareCodexHome(home: string, sharedConfig: string): void {
   const sharedHome = path.dirname(sharedConfig)
   for (const folder of FOLDERS_EVERY_HOME_SHARES)
     shareFolder(path.join(home, folder), path.join(sharedHome, folder))
+  for (const file of OWNER_FILES_EVERY_HOME_READS) {
+    const theirs = path.join(sharedHome, file)
+    const own = path.join(home, file)
+    if (fs.existsSync(theirs) && !fs.lstatSync(own, { throwIfNoEntry: false }))
+      fs.symlinkSync(theirs, own)
+  }
   const config = path.join(home, 'config.toml')
   try {
     fs.lstatSync(config)
