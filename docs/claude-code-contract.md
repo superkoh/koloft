@@ -337,6 +337,14 @@ Unless a bullet below says more, it is inferred, not checked.
   several times — 3 times in real transcripts, with the same `message.id` and
   `requestId`. Some records carry neither id and each must count; records with model
   `<synthetic>` carry no real spend.
+- **In a sub-agent transcript the repeats are not the same: they grow.** Swept
+  2026-10-16 on this Mac, every `*.jsonl` under `~/.claude/projects` (3825 files, CC
+  2.1.111–2.1.301, field names and numbers only): in main transcripts all 52,548
+  `message.id` + `requestId` keys repeat the same usage object; in the
+  `<session>/subagents/**` transcripts 32,181 of 44,412 keys have lines with different
+  usage, the later ones holding the larger `output_tokens` (a streamed-so-far count),
+  in every CC version present. Summing the largest value per key gives 71.3 M output
+  tokens across both kinds; summing the first line gives 37.8 M.
 - **Some CC versions mix subagent turns (`isSidechain: true`) into the main jsonl**,
   their usage records and Esc interrupts included; their spend is the session's, their
   context window and model are not. Which versions was not recorded.
