@@ -44,35 +44,28 @@ function bands(counts, n) {
   return runs
 }
 
+const RUN_DIRECTIONS = [
+  [1, 0, 1],
+  [0, 1, 1],
+  [1, 1, Math.SQRT2],
+  [1, -1, Math.SQRT2]
+]
+
 function strokeWidth({ width, height, lit }) {
-  const across = new Uint16Array(width * height).fill(65535)
-  for (let y = 0; y < height; y++) {
-    let x = 0
-    while (x < width) {
-      if (!lit[y * width + x]) {
-        x++
-        continue
+  const on = (x, y) => x >= 0 && y >= 0 && x < width && y < height && lit[y * width + x] === 1
+  const across = new Float32Array(width * height).fill(Infinity)
+  for (const [dx, dy, step] of RUN_DIRECTIONS)
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) {
+        if (!on(x, y) || on(x - dx, y - dy)) continue
+        let n = 0
+        while (on(x + n * dx, y + n * dy)) n++
+        for (let i = 0; i < n; i++) {
+          const k = (y + i * dy) * width + x + i * dx
+          across[k] = Math.min(across[k], n * step)
+        }
       }
-      let end = x
-      while (end < width && lit[y * width + end]) end++
-      for (let i = x; i < end; i++) across[y * width + i] = end - x
-      x = end
-    }
-  }
-  for (let x = 0; x < width; x++) {
-    let y = 0
-    while (y < height) {
-      if (!lit[y * width + x]) {
-        y++
-        continue
-      }
-      let end = y
-      while (end < height && lit[end * width + x]) end++
-      for (let i = y; i < end; i++) across[i * width + x] = Math.min(across[i * width + x], end - y)
-      y = end
-    }
-  }
-  const runs = across.filter((v) => v !== 65535).sort((a, b) => a - b)
+  const runs = across.filter(Number.isFinite).sort((a, b) => a - b)
   return runs[runs.length >> 1]
 }
 
@@ -111,14 +104,13 @@ function extent(box) {
 }
 
 function reweigh(sheet, box, radius) {
-  const pad = Math.ceil(Math.abs(radius)) + 1
-  const width = box.x1 - box.x0 + 1 + 2 * pad
-  const height = box.y1 - box.y0 + 1 + 2 * pad
+  const reach = Math.abs(radius)
+  const width = box.x1 - box.x0 + 1 + 2 * reach
+  const height = box.y1 - box.y0 + 1 + 2 * reach
   const source = new Uint8Array(width * height)
   for (let y = box.y0; y <= box.y1; y++)
     for (let x = box.x0; x <= box.x1; x++)
-      source[(y - box.y0 + pad) * width + x - box.x0 + pad] = sheet.lit[y * sheet.width + x]
-  const reach = Math.ceil(Math.abs(radius))
+      source[(y - box.y0 + reach) * width + x - box.x0 + reach] = sheet.lit[y * sheet.width + x]
   const disk = []
   for (let dy = -reach; dy <= reach; dy++)
     for (let dx = -reach; dx <= reach; dx++)
@@ -133,7 +125,7 @@ function reweigh(sheet, box, radius) {
           const nx = x + dx
           const ny = y + dy
           const near = nx >= 0 && ny >= 0 && nx < width && ny < height && source[ny * width + nx]
-          if (grow ? near : !near) {
+          if (Boolean(near) === grow) {
             on = grow
             break
           }
@@ -179,20 +171,21 @@ function trace(png, side) {
 const paths = {}
 for (const [file, names] of Object.entries(sheets)) {
   const sheet = readSheet(path.join(iconDir, file))
-  const stroke = strokeWidth(sheet)
   const boxes = glyphBoxes(sheet)
   for (const [i, name] of names.entries()) {
     if (!name) continue
     const box = boxes[i]
     if (box.x1 < 0) throw new Error(`${name} in ${file} is an empty cell`)
-    const strokeAtExtent = (STROKE * extent(box)) / GLYPH_EXTENT
-    const radius = (strokeAtExtent - stroke) / (2 * (1 - STROKE / GLYPH_EXTENT))
+    const stroke = strokeWidth(reweigh(sheet, box, 0))
+    const radius = Math.round(
+      (STROKE * extent(box) - GLYPH_EXTENT * stroke) / (2 * (GLYPH_EXTENT - STROKE))
+    )
     const glyph = reweigh(sheet, box, radius)
     const glyphBox = litBox(glyph)
     const side = Math.round((extent(glyphBox) * VIEWBOX) / GLYPH_EXTENT)
     paths[name] = await trace(crop(glyph, glyphBox, side), side)
+    console.log(`${file} ${name}: line ${stroke.toFixed(1)}px, grown ${radius}px`)
   }
-  console.log(`${file}: stroke ${stroke}px`)
 }
 
 const out = path.join(iconDir, 'paths.ts')
