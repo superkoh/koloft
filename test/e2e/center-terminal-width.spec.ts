@@ -22,7 +22,7 @@ const CENTER_MAX_COLS = 120
 const MIN_SIDE_GUTTER_PX = 24
 const SUBPIXEL_PX = 2
 const BELOW_THE_WINDOW_MIN_WIDTH_PX = 900
-const WIDE_WINDOW_PX = 1440
+const WIDE_WINDOW_PX = 1720
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -171,6 +171,7 @@ test.describe('the center session terminal stops at 120 columns and sits centred
     installCodex(env)
     const { app, page } = await launchWithPanelShut(env)
     try {
+      await setWindowWidth(app, WIDE_WINDOW_PX)
       await startSessionIn(page, 'ws-a', { method: 'Codex' })
       await expect.poll(() => shownCenterCols(page), { timeout: 20_000 }).toBe(CENTER_MAX_COLS)
     } finally {
@@ -184,6 +185,7 @@ test.describe('the center session terminal stops at 120 columns and sits centred
     seedSettings(env, { hintsOff: true })
     const { app, page } = await launchWithRemote(env)
     try {
+      await setWindowWidth(app, WIDE_WINDOW_PX)
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       await expect.poll(() => shownCenterCols(page), { timeout: 30_000 }).toBe(CENTER_MAX_COLS)
