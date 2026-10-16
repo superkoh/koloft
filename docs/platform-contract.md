@@ -1063,7 +1063,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
   gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
-  existence and mtime show whether a fetch ran.
+  existence and mtime show whether a fetch ran. **A failed fetch writes it too** (0
+  bytes), so its mtime says a fetch was tried, not that one worked — read it before
+  fetching. With `BatchMode=yes` and no askpass, a fetch the machine has no credentials
+  for fails at once with exit 128 and never waits: `Host key verification failed.` (ssh
+  origin, host not in `known_hosts`, 0.4 s), `Permission denied (publickey).` (no key,
+  0.6 s), `could not read Username … terminal prompts disabled` (https needing a login,
+  0.3 s). (2026-10-06, git 2.39.5 on Debian 12 in the e2e sshd Docker image, reached
+  with `/usr/bin/ssh` and `SshHost`'s options; a public https origin fetched in 1.6 s.
+  The 0-byte `FETCH_HEAD` also came from a fetch of a missing local path with git 2.54.0
+  on macOS 27, 2026-10-11.)
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
   own config is enough), and git splits its command on spaces.
 

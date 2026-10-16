@@ -4,7 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import type { WorkspaceFreshness, WorkspacePullResult } from '@shared/types'
 import { defaultBranch } from './gitStatus'
-import { isRemoteKey } from '@shared/remoteKey'
+import { isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { canPull, pullToast } from '@shared/freshnessOps'
 
 const execFile = promisify(execFileCb)
@@ -74,7 +74,7 @@ function isEnoent(e: unknown): boolean {
   return (e as NodeJS.ErrnoException | null)?.code === 'ENOENT'
 }
 
-interface NetResult {
+export interface NetResult {
   ok: boolean
   stdout: string
   stderr: string
@@ -168,6 +168,137 @@ function fetchHeadAt(root: string): number | null {
   }
 }
 
+export interface GitTracking {
+  fetched: boolean | null
+  fetchHeadAt: number | null
+  ahead: number
+  behind: number
+  dirty: boolean
+}
+
+export interface GitSnapshot {
+  branch: string
+  head: string
+  defRef: string
+  linked: boolean
+  hasSubmodules: boolean
+  tracking: GitTracking | null
+}
+
+export interface Measured {
+  snapshot: GitSnapshot | null
+  enoent: boolean
+  fetchStderr?: string
+}
+
+export interface PullRun extends NetResult {
+  count: number
+  after: GitSnapshot | null
+}
+
+export interface FreshnessRunner {
+  measure(root: string, fetchTimeoutMs: number | null): Promise<Measured>
+  pull(root: string, defBranch: string, from: string, timeoutMs: number): Promise<PullRun>
+}
+
+const fetchesRunning = new Set<number>()
+
+export class LocalRunner implements FreshnessRunner {
+  private defRefMemo = new Map<string, string>()
+
+  constructor(private bin = 'git') {}
+
+  async measure(root: string, fetchTimeoutMs: number | null): Promise<Measured> {
+    try {
+      return await this.snapshot(root, fetchTimeoutMs)
+    } catch (e) {
+      return { snapshot: null, enoent: isEnoent(e) }
+    }
+  }
+
+  private async snapshot(root: string, fetchTimeoutMs: number | null): Promise<Measured> {
+    const base = await localBase(this.bin, root, () => this.resolveDefRef(root))
+    const snapshot: GitSnapshot = {
+      branch: base.branch,
+      head: base.head,
+      defRef: base.defRef ?? '',
+      linked: isLinkedWorktree(root),
+      hasSubmodules: fs.existsSync(path.join(root, '.gitmodules')),
+      tracking: null
+    }
+    if (base.branch === 'HEAD' || !base.defRef) return { snapshot, enoent: false }
+    const defRef = base.defRef
+    // PLATFORM§30
+    const fetchHeadBefore = fetchHeadAt(root)
+    let fetched: boolean | null = null
+    let fetchStderr: string | undefined
+    if (fetchTimeoutMs !== null) {
+      const r = await networkGit(
+        this.bin,
+        root,
+        ['fetch', '--quiet', '--no-auto-maintenance', 'origin', stripOrigin(defRef)],
+        fetchTimeoutMs,
+        fetchesRunning
+      )
+      if (r.enoent) return { snapshot: null, enoent: true }
+      fetched = r.ok
+      if (!r.ok) fetchStderr = r.stderr
+    }
+    const counts = parseLeftRight(
+      await readGit(this.bin, root, ['rev-list', '--left-right', '--count', `HEAD...${defRef}`])
+    )
+    if (!counts) return { snapshot: null, enoent: false }
+    const dirty =
+      (
+        await readGit(this.bin, root, ['status', '--porcelain', '-uno', '--ignore-submodules=all'])
+      ).trim() !== ''
+    return {
+      snapshot: {
+        ...snapshot,
+        tracking: { fetched, fetchHeadAt: fetchHeadBefore, ...counts, dirty }
+      },
+      enoent: false,
+      fetchStderr
+    }
+  }
+
+  async pull(root: string, defBranch: string, from: string, timeoutMs: number): Promise<PullRun> {
+    const r = await networkGit(
+      this.bin,
+      root,
+      [
+        '-c',
+        'advice.diverging=false',
+        'pull',
+        '--ff-only',
+        '--no-recurse-submodules',
+        'origin',
+        defBranch
+      ],
+      timeoutMs,
+      fetchesRunning
+    )
+    const after = r.enoent ? null : (await this.measure(root, null)).snapshot
+    const count = r.ok && after ? await commitsBetween(this.bin, root, from, after.head) : 0
+    return { ...r, count, after }
+  }
+
+  private async resolveDefRef(root: string): Promise<string | null> {
+    const memo = this.defRefMemo.get(root)
+    if (memo !== undefined) {
+      try {
+        await readGit(this.bin, root, ['rev-parse', '--verify', '--quiet', memo])
+        return memo
+      } catch {
+        this.defRefMemo.delete(root)
+      }
+    }
+    const def = await defaultBranch(root, { timeoutMs: LOCAL_TIMEOUT_MS })
+    if (def?.startsWith('origin/')) this.defRefMemo.set(root, def)
+    return def
+  }
+}
+
 function sameFreshness(a: WorkspaceFreshness, b: WorkspaceFreshness): boolean {
   return (
     a.state === b.state &&
@@ -191,12 +322,12 @@ export interface FreshnessDeps {
   busy?(wsPath: string): boolean
   toast?(text: string): void
   onChange(wsPath: string): void
+  runner(wsPath: string): FreshnessRunner | null
   fetchFailed?(wsPath: string, stderr: string): void
   now?(): number
 }
 
 export interface FreshnessOptions {
-  gitBin?: string
   fetchTimeoutMs?: number
 }
 
@@ -207,23 +338,19 @@ export class GitFreshnessEngine {
   private attemptedAt = new Map<string, number>()
   private errors = new Map<string, number>()
   private backoffUntil = new Map<string, number>()
-  private defRefMemo = new Map<string, string>()
   private fetchFailed = new Set<string>()
   private version = new Map<string, number>()
-  private live = new Set<number>()
   private gitUnavailable = false
   private stopped = false
   private sweeping = false
   private startTimer?: NodeJS.Timeout
   private interval?: NodeJS.Timeout
-  private gitBin: string
   private fetchTimeoutMs: number
 
   constructor(
     private deps: FreshnessDeps,
     opts: FreshnessOptions = {}
   ) {
-    this.gitBin = opts.gitBin ?? 'git'
     this.fetchTimeoutMs = opts.fetchTimeoutMs ?? FETCH_TIMEOUT_MS
   }
 
@@ -244,8 +371,8 @@ export class GitFreshnessEngine {
     if (this.interval) clearInterval(this.interval)
     this.startTimer = undefined
     this.interval = undefined
-    for (const pid of this.live) killGroup(pid)
-    this.live.clear()
+    for (const pid of fetchesRunning) killGroup(pid)
+    fetchesRunning.clear()
   }
 
   get(wsPath: string): WorkspaceFreshness | undefined {
@@ -253,52 +380,71 @@ export class GitFreshnessEngine {
   }
 
   fetchNow(wsPath: string): Promise<WorkspaceFreshness | null> {
-    if (this.gitUnavailable || this.stopped || isRemoteKey(wsPath)) return Promise.resolve(null)
+    if (this.gitUnavailable || this.stopped) return Promise.resolve(null)
     this.backoffUntil.delete(wsPath)
     this.errors.delete(wsPath)
     return this.runFetch(wsPath)
   }
 
-  private pinned(): { path: string; missing: boolean }[] {
-    return this.deps.workspaces().filter((w) => !isRemoteKey(w.path))
+  refreshLocal(paths: string[]): Promise<void> {
+    return this.refresh(paths.filter((p) => !isRemoteKey(p)))
   }
 
-  async refreshLocal(paths: string[]): Promise<void> {
+  machineUp(host: string): Promise<void> {
+    if (this.deps.autoFetch()) return this.sweep({ host })
+    return this.refresh(
+      this.deps
+        .workspaces()
+        .map((w) => w.path)
+        .filter((p) => parseRemoteKey(p)?.host === host)
+    )
+  }
+
+  private due(wsPath: string): boolean {
+    const now = this.now()
+    const last = this.attemptedAt.get(wsPath)
+    if (last !== undefined && now - last < THROTTLE_MS) return false
+    const until = this.backoffUntil.get(wsPath)
+    return until === undefined || now >= until
+  }
+
+  private async refresh(paths: string[]): Promise<void> {
     if (this.gitUnavailable) return
     const missing = new Set(
-      this.pinned()
+      this.deps
+        .workspaces()
         .filter((w) => w.missing)
         .map((w) => w.path)
     )
     for (const p of paths) {
-      if (isRemoteKey(p)) continue
       if (missing.has(p)) continue
       if (this.inflight.has(p)) continue
       const at = this.measuredAt.get(p)
       if (at !== undefined && this.now() - at < LOCAL_MIN_INTERVAL_MS) continue
       const version = this.version.get(p) ?? 0
-      const next = await this.measure(p, false, null)
+      const next = await this.measure(this.deps.runner(p), p, false, null)
       if ((this.version.get(p) ?? 0) !== version) continue
       this.apply(p, next)
     }
   }
 
-  async sweep(opts: { stagger?: boolean } = {}): Promise<void> {
+  async sweep(opts: { stagger?: boolean; host?: string | null } = {}): Promise<void> {
     if (this.gitUnavailable || this.stopped) return
-    if (this.sweeping) return
     if (!this.deps.autoFetch()) return
-    this.sweeping = true
+    const oneMachine = typeof opts.host === 'string'
+    if (this.sweeping && !oneMachine) return
+    if (!oneMachine) this.sweeping = true
     try {
-      const due: string[] = []
-      for (const ws of this.pinned()) {
-        if (ws.missing) continue
-        const now = this.now()
-        const last = this.attemptedAt.get(ws.path)
-        if (last !== undefined && now - last < THROTTLE_MS) continue
-        const until = this.backoffUntil.get(ws.path)
-        if (until !== undefined && now < until) continue
-        due.push(ws.path)
-      }
+      const due = this.deps
+        .workspaces()
+        .filter(
+          (ws) =>
+            !ws.missing &&
+            (opts.host === undefined || (parseRemoteKey(ws.path)?.host ?? null) === opts.host) &&
+            this.deps.runner(ws.path) &&
+            this.due(ws.path)
+        )
+        .map((ws) => ws.path)
       let next = 0
       const worker = async (): Promise<void> => {
         for (;;) {
@@ -315,7 +461,7 @@ export class GitFreshnessEngine {
       )
       for (const p of due) await this.fastForwardAfterFetch(p)
     } finally {
-      this.sweeping = false
+      if (!oneMachine) this.sweeping = false
     }
   }
 
@@ -331,8 +477,9 @@ export class GitFreshnessEngine {
     const gate = new Promise<WorkspaceFreshness | null>((res) => (release = res))
     this.inflight.set(wsPath, gate)
     try {
-      const cur = await this.measure(wsPath, false, null)
-      if (!cur || cur.state !== 'ok') return { ok: false, reason: 'state changed' }
+      const runner = this.deps.runner(wsPath)
+      const cur = await this.measure(runner, wsPath, false, null)
+      if (!runner || !cur || cur.state !== 'ok') return { ok: false, reason: 'state changed' }
       const defBranch = stripOrigin(cur.defRef)
       if (
         cur.linked ||
@@ -345,24 +492,10 @@ export class GitFreshnessEngine {
         return { ok: false, reason: 'state changed' }
       }
       const from = cur.head
-      const r = await networkGit(
-        this.gitBin,
-        wsPath,
-        [
-          '-c',
-          'advice.diverging=false',
-          'pull',
-          '--ff-only',
-          '--no-recurse-submodules',
-          'origin',
-          defBranch
-        ],
-        PULL_TIMEOUT_MS,
-        this.live
-      )
+      const r = await runner.pull(wsPath, defBranch, from, PULL_TIMEOUT_MS)
       if (r.enoent) this.gitUnavailable = true
       if (r.ok) this.fetchFailed.delete(wsPath)
-      const next = await this.measure(wsPath, false, null)
+      const next = r.after && this.freshnessOf(wsPath, r.after, null)
       if (next) this.apply(wsPath, r.ok ? { ...next, state: 'ok', fetchedAt: this.now() } : next)
       if (!r.ok) {
         return {
@@ -370,20 +503,8 @@ export class GitFreshnessEngine {
           reason: r.timedOut ? 'pull timed out' : pullErrorReason(r.stderr, r.stdout)
         }
       }
-      const to =
-        next?.head ??
-        (await readGit(this.gitBin, wsPath, ['rev-parse', 'HEAD']).then(
-          (s) => s.trim(),
-          () => from
-        ))
-      return {
-        ok: true,
-        summary: {
-          count: await commitsBetween(this.gitBin, wsPath, from, to),
-          from: short(from),
-          to: short(to)
-        }
-      }
+      const to = r.after?.head ?? from
+      return { ok: true, summary: { count: r.count, from: short(from), to: short(to) } }
     } finally {
       if (this.inflight.get(wsPath) === gate) this.inflight.delete(wsPath)
       release(this.cache.get(wsPath) ?? null)
@@ -392,7 +513,14 @@ export class GitFreshnessEngine {
 
   private async fastForwardAfterFetch(wsPath: string): Promise<void> {
     const f = this.cache.get(wsPath)
-    if (!f || !canPull(f) || !this.deps.autoPull?.() || this.deps.busy?.(wsPath)) return
+    if (
+      isRemoteKey(wsPath) ||
+      !f ||
+      !canPull(f) ||
+      !this.deps.autoPull?.() ||
+      this.deps.busy?.(wsPath)
+    )
+      return
     const r = await this.pull(wsPath, { branch: f.branch, head: f.head })
     if (r.ok) this.deps.toast?.(pullToast(wsPath, f.branch, r.summary))
   }
@@ -404,7 +532,7 @@ export class GitFreshnessEngine {
     const attemptAt = this.now()
     this.attemptedAt.set(wsPath, attemptAt)
     const p = (async () => {
-      const next = await this.measure(wsPath, true, attemptAt)
+      const next = await this.measure(this.deps.runner(wsPath), wsPath, true, attemptAt)
       if (!next || next.state === 'error') {
         const streak = (this.errors.get(wsPath) ?? 0) + 1
         this.errors.set(wsPath, streak)
@@ -422,112 +550,55 @@ export class GitFreshnessEngine {
   }
 
   private async measure(
+    runner: FreshnessRunner | null,
     root: string,
     doFetch: boolean,
     attemptAt: number | null
   ): Promise<WorkspaceFreshness | null> {
-    const prev = this.cache.get(root)
-    const lastAttemptAt = attemptAt ?? prev?.lastAttemptAt ?? null
-    let base: LocalBase
+    if (!runner) return null
+    let measured: Measured
     try {
-      base = await localBase(this.gitBin, root, () => this.resolveDefRef(root))
-    } catch (e) {
-      if (isEnoent(e)) this.gitUnavailable = true
+      measured = await runner.measure(root, doFetch ? this.fetchTimeoutMs : null)
+    } catch {
       return null
     }
-    const linked = isLinkedWorktree(root)
-    const hasSubmodules = fs.existsSync(path.join(root, '.gitmodules'))
-    if (base.branch === 'HEAD' || !base.defRef) {
+    if (measured.enoent) this.gitUnavailable = true
+    if (measured.fetchStderr !== undefined) this.deps.fetchFailed?.(root, measured.fetchStderr)
+    return measured.snapshot && this.freshnessOf(root, measured.snapshot, attemptAt)
+  }
+
+  private freshnessOf(
+    root: string,
+    snapshot: GitSnapshot,
+    attemptAt: number | null
+  ): WorkspaceFreshness {
+    const prev = this.cache.get(root)
+    const lastAttemptAt = attemptAt ?? prev?.lastAttemptAt ?? null
+    const { tracking, ...base } = snapshot
+    if (!tracking) {
       return {
+        ...base,
         state: 'none',
         behind: 0,
         ahead: 0,
-        branch: base.branch,
-        head: base.head,
-        defRef: base.defRef ?? '',
         onDefault: false,
         dirty: false,
-        linked,
-        hasSubmodules,
         fetchedAt: prev?.fetchedAt ?? null,
         lastAttemptAt
       }
     }
-    const defRef = base.defRef
-    const defBranch = stripOrigin(defRef)
-    let fetchedAt = prev?.fetchedAt ?? fetchHeadAt(root)
-    if (doFetch) {
-      const r = await networkGit(
-        this.gitBin,
-        root,
-        ['fetch', '--quiet', '--no-auto-maintenance', 'origin', defBranch],
-        this.fetchTimeoutMs,
-        this.live
-      )
-      if (r.enoent) {
-        this.gitUnavailable = true
-        return null
-      }
-      if (r.ok) {
-        fetchedAt = this.now()
-        this.fetchFailed.delete(root)
-      } else {
-        this.fetchFailed.add(root)
-        this.deps.fetchFailed?.(root, r.stderr)
-      }
+    if (tracking.fetched === true) this.fetchFailed.delete(root)
+    if (tracking.fetched === false) this.fetchFailed.add(root)
+    return {
+      ...base,
+      state: this.fetchFailed.has(root) ? 'error' : 'ok',
+      behind: tracking.behind,
+      ahead: tracking.ahead,
+      onDefault: base.branch === stripOrigin(base.defRef),
+      dirty: tracking.dirty,
+      fetchedAt: tracking.fetched ? this.now() : (prev?.fetchedAt ?? tracking.fetchHeadAt),
+      lastAttemptAt
     }
-    try {
-      const counts = parseLeftRight(
-        await readGit(this.gitBin, root, [
-          'rev-list',
-          '--left-right',
-          '--count',
-          `HEAD...${defRef}`
-        ])
-      )
-      if (!counts) return null
-      const dirty =
-        (
-          await readGit(this.gitBin, root, [
-            'status',
-            '--porcelain',
-            '-uno',
-            '--ignore-submodules=all'
-          ])
-        ).trim() !== ''
-      return {
-        state: this.fetchFailed.has(root) ? 'error' : 'ok',
-        behind: counts.behind,
-        ahead: counts.ahead,
-        branch: base.branch,
-        head: base.head,
-        defRef,
-        onDefault: base.branch === defBranch,
-        dirty,
-        linked,
-        hasSubmodules,
-        fetchedAt,
-        lastAttemptAt
-      }
-    } catch (e) {
-      if (isEnoent(e)) this.gitUnavailable = true
-      return null
-    }
-  }
-
-  private async resolveDefRef(root: string): Promise<string | null> {
-    const memo = this.defRefMemo.get(root)
-    if (memo !== undefined) {
-      try {
-        await readGit(this.gitBin, root, ['rev-parse', '--verify', '--quiet', memo])
-        return memo
-      } catch {
-        this.defRefMemo.delete(root)
-      }
-    }
-    const def = await defaultBranch(root, { timeoutMs: LOCAL_TIMEOUT_MS })
-    if (def?.startsWith('origin/')) this.defRefMemo.set(root, def)
-    return def
   }
 
   private apply(wsPath: string, next: WorkspaceFreshness | null): WorkspaceFreshness | null {

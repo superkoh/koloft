@@ -252,8 +252,100 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(fs.readdirSync(hookDir)).toEqual(['res-r1.json'])
       expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
     })
+
+    it('measures how far the checkout is behind origin, fetching in the same command only when asked, and fast-forwards it in one command that answers with the checkout as it now stands', async () => {
+      const publisher = withOrigin()
+      publishTwo(publisher)
+      const sent: string[] = []
+      const host = machine((cmd, opts) => {
+        sent.push(cmd)
+        return runOnMachine(cmd, opts)
+      })
+
+      const before = await host.freshness.measure(keyed(repo), null)
+      expect(before.snapshot).toMatchObject({
+        branch: 'main',
+        defRef: 'origin/main',
+        linked: false,
+        hasSubmodules: false,
+        tracking: { fetched: null, behind: 0, ahead: 0, dirty: false }
+      })
+      const after = await host.freshness.measure(keyed(repo), 15_000)
+      expect(after.snapshot?.tracking).toMatchObject({ fetched: true, behind: 2, ahead: 0 })
+      expect(sent).toHaveLength(2)
+
+      const from = git('rev-parse', 'HEAD').trim()
+      const pulled = await host.freshness.pull(keyed(repo), 'main', from, 60_000)
+      const to = git('rev-parse', 'HEAD').trim()
+      expect(to).toBe(execFileSync('git', ['-C', publisher, 'rev-parse', 'HEAD']).toString().trim())
+      expect(pulled).toMatchObject({
+        ok: true,
+        count: 2,
+        after: { head: to, tracking: { fetched: null, behind: 0, ahead: 0 } }
+      })
+      expect(pulled.stdout).not.toContain('KOLOFT_PULLED')
+      expect(sent).toHaveLength(3)
+    })
   }
 )
+
+function withOrigin(): string {
+  const origin = path.join(home, 'origin.git')
+  const publisher = path.join(home, 'publisher')
+  git('branch', '-M', 'main')
+  execFileSync('git', ['clone', '-q', '--bare', repo, origin])
+  git('remote', 'add', 'origin', origin)
+  git('fetch', '-q', 'origin')
+  execFileSync('git', ['clone', '-q', origin, publisher])
+  return publisher
+}
+
+function publishTwo(publisher: string): void {
+  for (const n of ['1', '2']) {
+    fs.writeFileSync(path.join(publisher, `up${n}.txt`), n)
+    execFileSync('git', ['-C', publisher, 'add', '-A'])
+    execFileSync('git', [
+      '-C',
+      publisher,
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'user.name=t',
+      'commit',
+      '-qm',
+      n
+    ])
+  }
+  execFileSync('git', ['-C', publisher, 'push', '-q', 'origin', 'main'])
+}
+
+// PLATFORM§30
+describe('freshness of a checkout on the machine', () => {
+  it('a fetch the machine cannot do says so, and keeps the time of the last fetch from before it', async () => {
+    withOrigin()
+    const fetchHead = path.join(repo, '.git', 'FETCH_HEAD')
+    const lastFetchS = 1_700_000_000
+    fs.utimesSync(fetchHead, lastFetchS, lastFetchS)
+    git('remote', 'set-url', 'origin', path.join(home, 'gone.git'))
+
+    const got = await machine().freshness.measure(keyed(repo), 15_000)
+
+    expect(got.snapshot?.tracking).toMatchObject({ fetched: false, fetchHeadAt: lastFetchS * 1000 })
+    expect(fs.statSync(fetchHead).mtimeMs).toBeGreaterThan(lastFetchS * 1000)
+  })
+
+  it('answers nothing, and pulls nothing, when the machine cannot be reached', async () => {
+    withOrigin()
+    const host = machine(unreachable)
+    expect((await host.freshness.measure(keyed(repo), 15_000)).snapshot).toBeNull()
+    const from = git('rev-parse', 'HEAD').trim()
+    expect(await host.freshness.pull(keyed(repo), 'main', from, 60_000)).toMatchObject({
+      ok: false,
+      count: 0,
+      after: null
+    })
+  })
+})
 
 const unreachable = async (): Promise<BytesResult> => ({
   code: 255,
