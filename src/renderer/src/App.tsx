@@ -25,15 +25,15 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  LuSettings,
-  LuFolderPlus,
-  LuPanelRight,
-  LuPanelLeft,
-  LuAppWindow,
-  LuCoffee,
-  LuCircleArrowUp,
-  LuChevronRight
-} from 'react-icons/lu'
+  IconAddProject,
+  IconChevronRight,
+  IconKeepAwake,
+  IconOpenedPage,
+  IconSettings,
+  IconSidebarLeft,
+  IconSidebarRight,
+  IconUpdate
+} from './icons'
 import type {
   BrowserAuthChallenge,
   BrowserCdpOp,
@@ -1474,7 +1474,7 @@ export default function App(): JSX.Element {
               title="Page Koloft opened for you"
               aria-label="Opened page"
             >
-              <LuAppWindow size={20} />
+              <IconOpenedPage size={20} />
             </button>
           )}
           {window.api.isDev && (
@@ -1494,7 +1494,7 @@ export default function App(): JSX.Element {
             title="Add workspace (⇧⌘O)"
             aria-label="Add workspace"
           >
-            <LuFolderPlus size={20} />
+            <IconAddProject size={20} />
           </button>
           {addMenu && (
             <div
@@ -1536,13 +1536,13 @@ export default function App(): JSX.Element {
               className="btn-primary upd-banner"
               onClick={() => useStore.getState().openUpdateCheck()}
             >
-              <LuCircleArrowUp size={15} />
+              <IconUpdate size={15} />
               <span>
                 {updateOffer.status === 'restart-required'
                   ? `Koloft ${updateOffer.installed} installed · restart`
                   : `Koloft ${updateOffer.latest} available`}
               </span>
-              <LuChevronRight size={15} />
+              <IconChevronRight size={15} />
             </button>
           )}
           <ConductorsIsland />
@@ -1581,7 +1581,7 @@ export default function App(): JSX.Element {
             aria-label="Keep Mac awake"
             aria-pressed={keepAwake}
           >
-            <LuCoffee size={20} />
+            <IconKeepAwake size={20} />
           </button>
           <button
             className="tb-ico"
@@ -1589,7 +1589,7 @@ export default function App(): JSX.Element {
             title="Settings"
             aria-label="Settings"
           >
-            <LuSettings size={20} />
+            <IconSettings size={20} />
           </button>
         </div>
         <div
@@ -1857,7 +1857,7 @@ export default function App(): JSX.Element {
                 title="Workbench (⇧⌘B)"
                 aria-label="Workbench"
               >
-                <LuPanelRight size={18} />
+                <IconSidebarRight size={18} />
               </button>
             )}
           </div>
@@ -1871,7 +1871,7 @@ export default function App(): JSX.Element {
         aria-label="Sidebar"
         aria-pressed={!sidebarHidden}
       >
-        <LuPanelLeft size={18} />
+        <IconSidebarLeft size={18} />
         {callingCount > 0 && <span className="ws-tab-parked ws-unread-count">{callingCount}</span>}
       </button>
       {/* ADR-0013 */}

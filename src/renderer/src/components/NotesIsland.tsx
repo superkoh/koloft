@@ -1,5 +1,5 @@
 import { useEffect, useState, type JSX } from 'react'
-import { LuChevronDown, LuChevronUp, LuCopy, LuNotebookPen } from 'react-icons/lu'
+import { IconChevronDown, IconChevronUp, IconCopy, IconNotes } from '../icons'
 import { basename } from '@shared/preview'
 import { NOTES_TAB, notesOwner } from '@shared/cwdKey'
 import { editRefusal, EditPane } from './EditPane'
@@ -89,7 +89,7 @@ export function NotesIsland({
       <div className="wb-bar">
         <span className="wb-title" title={file ?? wsPath}>
           <span className="ic">
-            <LuNotebookPen size={14} />
+            <IconNotes size={14} />
           </span>
           <span className="nm">Notes</span>
           <span className="dir">&nbsp;· {basename(wsPath)}</span>
@@ -106,7 +106,7 @@ export function NotesIsland({
             showToast('Copied path')
           }}
         >
-          <LuCopy size={14} />
+          <IconCopy size={14} />
         </button>
         <button
           className="icobtn"
@@ -115,7 +115,7 @@ export function NotesIsland({
           onMouseDown={(e) => e.preventDefault()}
           onClick={onToggleFold}
         >
-          {folded ? <LuChevronUp size={14} /> : <LuChevronDown size={14} />}
+          {folded ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
         </button>
       </div>
       {!folded && (

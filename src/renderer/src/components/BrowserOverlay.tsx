@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { LuArrowLeft, LuArrowUpRight, LuX } from 'react-icons/lu'
+import { IconBack, IconClose, IconLinkOut } from '../icons'
 import { BrowserGuest, type GuestElement } from './BrowserGuest'
 import { BrowserModal } from './BrowserModal'
 import { useStore } from '../store'
@@ -71,14 +71,14 @@ export function BrowserOverlay({
     <div className="wovl">
       <div className="wovl-head">
         <button className="mini" aria-label="Back" onClick={back}>
-          <LuArrowLeft size={14} />
+          <IconBack size={14} />
         </button>
         <b>{title ?? pageTitle ?? ''}</b>
         <button className="mini" aria-label="Open in system browser" onClick={external}>
-          <LuArrowUpRight size={14} />
+          <IconLinkOut size={14} />
         </button>
         <button className="mini" aria-label="Close" onClick={onClose}>
-          <LuX size={14} />
+          <IconClose size={14} />
         </button>
       </div>
       <BrowserGuest

@@ -1,61 +1,61 @@
 import type { JSX } from 'react'
 import {
-  LuBell,
-  LuClock,
-  LuFolder,
-  LuGitBranchPlus,
-  LuGlobe,
-  LuNotebookPen,
-  LuPanelRight,
-  LuUsers
-} from 'react-icons/lu'
+  IconAccounts,
+  IconFolder,
+  IconNewWorktree,
+  IconNotes,
+  IconNotifications,
+  IconScheduled,
+  IconSidebarRight,
+  IconWebPage
+} from '../../icons'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
-const CARDS: { Icon: typeof LuFolder; title: string; body: string; where: string }[] = [
+const CARDS: { Icon: typeof IconFolder; title: string; body: string; where: string }[] = [
   {
-    Icon: LuFolder,
+    Icon: IconFolder,
     title: 'Claude and Codex sessions',
     body: 'Pin a folder, start with your default CLI or choose another, or restore a session from history. Codex runs locally.',
     where: '⇧⌘O · sidebar'
   },
   {
-    Icon: LuGitBranchPlus,
+    Icon: IconNewWorktree,
     title: 'Worktree sessions',
     body: 'Run Claude and Codex sessions in separate worktrees so they do not share working files.',
     where: '⇧⌘N'
   },
   {
-    Icon: LuPanelRight,
+    Icon: IconSidebarRight,
     title: 'Workbench per session',
     body: 'Changed files with diffs, a file browser, a real browser, a shell.',
     where: '⇧⌘B · ⌃`'
   },
   {
-    Icon: LuGlobe,
+    Icon: IconWebPage,
     title: 'Claude drives your browser',
     body: "Playwright tools use Koloft's tabs, with your logins. One switch turns it off.",
     where: 'Settings ▸ Extensions'
   },
   {
-    Icon: LuUsers,
+    Icon: IconAccounts,
     title: 'Several accounts, one pool',
     body: 'Each session starts on the account with the most room left.',
     where: 'Settings ▸ Accounts'
   },
   {
-    Icon: LuBell,
+    Icon: IconNotifications,
     title: 'Lights and notifications',
     body: "A light per running session: working, needs your OK, turn done. Pings when you're away.",
     where: 'Settings ▸ Notifications'
   },
   {
-    Icon: LuClock,
+    Icon: IconScheduled,
     title: 'Scheduled jobs',
     body: 'Run a Claude or Codex task on a timer, in its own worktree when the folder is a git repo, with a run history.',
     where: 'workspace menu ▸ Scheduled jobs…'
   },
   {
-    Icon: LuNotebookPen,
+    Icon: IconNotes,
     title: 'A note per workspace',
     body: 'Plain text that stays with the folder, under its sessions.',
     where: '⌥⌘N'

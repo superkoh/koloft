@@ -1,6 +1,6 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { LuTriangleAlert, LuX } from 'react-icons/lu'
+import { IconClose, IconWarning } from '../icons'
 import type { BackendId, WorkspaceRows } from '@shared/types'
 import { basename } from '@shared/preview'
 import { hostOf } from '@shared/remoteKey'
@@ -207,7 +207,7 @@ export function WorkspacePicker({
     return (
       <div className="fresh-line stale">
         <span className="fico-l">
-          <LuTriangleAlert size={14} />
+          <IconWarning size={14} />
         </span>
         <span>
           <b>{copy.strong}</b>
@@ -233,7 +233,7 @@ export function WorkspacePicker({
           <div className="modal-header">
             <span>{title}</span>
             <span className="modal-close" onClick={close} aria-label="Close">
-              <LuX size={16} />
+              <IconClose size={16} />
             </span>
           </div>
           <div className="modal-body">

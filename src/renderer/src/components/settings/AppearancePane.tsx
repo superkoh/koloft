@@ -1,5 +1,5 @@
 import { useEffect, useState, type JSX } from 'react'
-import { LuMinus, LuPlus } from 'react-icons/lu'
+import { IconMinus, IconPlus } from '../../icons'
 import { clampFontSize } from '@shared/settingsOps'
 import { useStore } from '../../store'
 import { Switch } from './Switch'
@@ -66,7 +66,7 @@ export function AppearancePane(): JSX.Element {
         </div>
         <div className="set-stepper">
           <button aria-label="Smaller" onClick={() => commitSize(settings.fontSize - 1)}>
-            <LuMinus size={13} />
+            <IconMinus size={13} />
           </button>
           <input
             type="number"
@@ -81,7 +81,7 @@ export function AppearancePane(): JSX.Element {
             }}
           />
           <button aria-label="Larger" onClick={() => commitSize(settings.fontSize + 1)}>
-            <LuPlus size={13} />
+            <IconPlus size={13} />
           </button>
         </div>
       </div>
