@@ -822,6 +822,19 @@ describe('remote workspaces', () => {
     expect(asked).toEqual([`${REMOTE} +fetch`])
   })
 
+  it('gitAutoPull never pulls a remote workspace by itself, however far behind it is', async () => {
+    const asked: string[] = []
+    const h = harness({
+      paths: [REMOTE],
+      missing: [],
+      autoPull: () => true,
+      machine: () => machineRunner(asked)
+    })
+    await h.engine.sweep()
+    expect(asked).toEqual([`${REMOTE} +fetch`])
+    expect(f(h.engine.get(REMOTE)).behind).toBe(2)
+  })
+
   it('a machine whose git is missing never stops the local badges', async () => {
     const asked: string[] = []
     const gitMissing = Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' })
