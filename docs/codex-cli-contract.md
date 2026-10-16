@@ -31,10 +31,24 @@ Schema availability is distinguished from behavior actually seen on the wire.
   app-server in a throwaway `CODEX_HOME`, no login): the result is `{data, nextCursor,
   backwardsCursor}` (the last key new), each item carries `id, sessionId, preview,
   source, status, path, cwd, cliVersion, originator, historyMode, model, name, turns,
-  …` (33 keys; `status {type: "notLoaded"}`, `turns []`, `historyMode "paginated"`); a
-  rollout the full-screen TUI wrote has `source: "vscode"`, one `codex exec` wrote has
-  `source: "exec"` and is left out by that list; `initialize` now also brings a
-  `remoteControl/status/changed` notification.
+  …` (32 keys, counted again on 0.162.1 and 0.163.0 on 2026-10-16: `id, environments,
+  extra, sessionId, forkedFromId, parentThreadId, preview, ephemeral, section,
+  sectionEnteredAt, projectId, historyMode, modelProvider, model, reasoningEffort,
+  createdAt, updatedAt, recencyAt, status, path, cwd, cliVersion, originator, source,
+  canAcceptDirectInput, threadSource, agentNickname, agentRole, gitInfo, name,
+  daybreakEnabled, turns`; `status {type: "notLoaded"}`, `turns []`, `historyMode
+  "paginated"`); a rollout the full-screen TUI wrote has `source: "vscode"`, one `codex
+  exec` wrote has `source: "exec"` and is left out by that list; `initialize` now also
+  brings a `remoteControl/status/changed` notification. **0.163.0 adds `readStates` to
+  the `thread/list` result** (a map from thread id to `{firstUnread: {type: "turn",
+  turnId}, revision}`; the result keys are `data, readStates, nextCursor,
+  backwardsCursor`), a `thread/readState/changed` notification (`{threadId,
+  readState}`) sent just before each `idle` status, the methods
+  `thread/readState/update` and `thread/items/read` (strings), and a `thread/list`
+  param `excludedThreadIds` (one real id drops that thread; more than 100 entries or a
+  non-UUID is refused with `-32602`); 0.162.1 ignores that param without a word, so
+  Koloft cannot lean on it below 0.163.0 (2026-10-16, a Node client on a stdio
+  app-server in a throwaway `CODEX_HOME`).
 - Request IDs are strings **or numbers, including zero**. Startup and temporary title
   requests used strings; the real command approval request used numeric `0`.
 - The TUI made its own `config/read` and `account/read` requests through the relay.
@@ -253,11 +267,17 @@ flags on a resume, `turn_context` fields), 15 (`auth.json`, the shared `sessions
 turn on another login, and the read-after-resume limit, issue #486), 17 (the handover
 note naming the thread), 19 (message phases), 21 (auto-compaction), 23 (paste), 24, 25
 and 26 were measured again, and the real-binary e2e specs that stand on 10, 11, 17, 23
-and 26 passed on 0.162.1. Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+:
+and 26 passed on 0.162.1. On 0.163.0 (2026-10-16): sections 1 (`thread/list` shape),
+10 (the command line after the zsh backend went), 11 (a resume's permissions — changed,
+see there), 13/14 (`model/list`, the default model), 17 (a message queued mid-turn), 20
+(the waiting question), 21 (the slash popup) and 25 (the TUI's startup bytes, OSC 7501,
+the leader key) were measured again, and the same e2e specs passed. Still only on
+0.153.4 or 0.159.3, and so inferred for 0.161+:
 section 1's update-notice key, 2, 3 (the approval keys), 4, 8 (status-line item ids),
 9 (the trust question before connecting), 12 (`fileChange` / `commandActions` shapes,
-the `open` shim), 13 (token-usage fields) and 14 (first prompt, `-m`,
-`model_reasoning_effort`).
+the `open` shim) and 13's token-usage fields. `codex --help`, `app-server --help`,
+`exec --help` and `resume --help` are byte-identical on 0.161.0, 0.162.1 and 0.163.0
+(2026-10-16).
 
 Keep worktree tests inside a temporary repository. Record version, executable source,
 matching request IDs, thread IDs and event order; redact login/account contents. Fixture
@@ -344,7 +364,17 @@ Koloft reads, is unchanged). The same rollout's `turn_context` gained a
 `approval_policy` and `sandbox_policy`, which still hold what §11 reads. Established by
 `agent-tools-real-smoke.spec.ts` › "a real Codex in a worktree Koloft made gets the
 ignored files .worktreeinclude lists, and echoes, with its shell tool, the port offset of
-that worktree’s name" (green again on 0.162.1, 2026-10-11).
+that worktree’s name" (green again on 0.162.1, 2026-10-11, and on 0.163.0, 2026-10-16).
+**0.163.0 dropped its patched zsh backend, and the command line is unchanged**
+(2026-10-16, a Node client on a stdio app-server, real turns on 0.162.1 and 0.163.0): the
+model's `echo hi` still ran as `["/bin/zsh","-lc","echo hi"]`, the rollout item's keys are
+the eleven above on both, with `source: "unified_exec_startup"` and `cwd` written as a
+`file://` URL; on the wire the item's `command` is one string (`/bin/zsh -lc 'echo hi'`)
+and `source` is `unifiedExecStartup`. The retired flags `features.shell_zsh_fork` and
+`features.unified_exec_zsh_fork` (`-c` or `config.toml`) bring a `deprecationNotice`
+notification ("… is deprecated and ignored. The patched zsh backend has been removed…"),
+`-c zsh_path=…` a `configWarning` plus a thread `warning` and an ERROR line on stderr;
+`shell_environment_policy` is still taken in silence. Koloft sends none of those keys.
 
 ## 11. Folder trust and the approval flags
 
@@ -431,7 +461,38 @@ the sandbox bypassed, resumed after its tab closed, …" (before the change: `tu
 `never` / `workspace-write`, the write refused). A new thread with the choice on the
 app-server alone, and no `-a`/`-s` on the TUI, is not probed yet. The resume case
 passed again on 0.162.1 (2026-10-11; its `turn_context` read still finds
-`approval_policy` and `sandbox_policy`, §10).
+`approval_policy` and `sandbox_policy`, §10) and on 0.163.0 (2026-10-16).
+
+**Codex CLI 0.163.0 restores a resumed thread's own permissions and ignores the
+app-server's `-c approval_policy=…` / `-c sandbox_mode=…` on a resume.** Measured
+2026-10-16 with a Node client on `codex app-server --stdio` and, for the TUI line, a
+real `codex --remote unix://… resume <id>` on an `app-server --listen` started with
+those two `-c` flags; a throwaway `CODEX_HOME` holding a copy of this Mac's login, real
+turns, each turn's settings read from the rollout's `turn_context` (its keys as in
+§10, nothing new for the changelog's "network approvals"):
+
+- A thread started `never` / `danger-full-access` came back the same on a bare resume
+  by a new app-server with no `-c` (on 0.162.1 the same resume came back `never` /
+  `workspace-write`, as the bullet above says — that sentence holds only up to 0.162.1).
+- The same thread resumed by an app-server with `-c approval_policy="never" -c
+  sandbox_mode="workspace-write"` still ran `never` / `danger-full-access`: the `-c` was
+  ignored. A thread started with no permission params (`on-request` /
+  `workspace-write`) resumed with `-c approval_policy="never" -c
+  sandbox_mode="danger-full-access"` stayed `on-request` / `workspace-write`, through
+  the plain client and through the real TUI alike.
+- Explicit params on the request win: `thread/resume {threadId, approvalPolicy:
+  "on-request", sandbox: "workspace-write"}` on the `never` / danger thread ran
+  `on-request` / `workspace-write`, and the next bare resume restored *that* — a value
+  set by params becomes what the thread remembers. The `thread/resume` result carries
+  `approvalPolicy`, `sandbox` and `activePermissionProfile` matching the `turn_context`.
+
+Koloft is not caught by this: it resumes a thread with the permission it saved for that
+session (`permission` in its own metadata, the one the thread was started with), so what
+the thread restores is what the `-c` would have set; the conductor's choice is the same
+on start and resume. The `-c` pair on a resume is dead weight on 0.163.0 and still the
+thing that sets the sandbox on 0.161–0.162. A resume that should *change* a thread's
+permissions would have to go through the `thread/resume` params (the TUI sends that
+request; Koloft's relay would have to add them) — not needed today.
 
 ## 12. Files a turn touched, and a command that opens a file
 
@@ -574,8 +635,27 @@ tokens (input / cached input / output): `gpt-6-astra` 10 / 1 / 50, `gpt-6-sol` 2
 account home runs on it). OpenAI charges nothing to write the cache. The page lists
 a higher "long context" price for prompts above 272K tokens; Codex's window on this Mac
 (258400 on the wire, 272000 in `~/.codex/models_cache.json`) stays below it, so only
-the short-context price is used. The model ids match the `slug`s in
-`~/.codex/models_cache.json` on the same day. A ChatGPT plan login is not billed per token:
+the short-context price is used — **no longer true for `gpt-6.1-sol`**: on 2026-10-16
+the `models_cache.json` a fresh throwaway home got from `model/list` on 0.162.1 and on
+0.163.0 gives it a `context_window` of 500000 (the other six 272000), so a prompt above
+272K tokens on it is billed at the long-context price Koloft's table does not hold
+(`pricing.ts` prices every OpenAI model at the short-context rate; the context meter
+reads `modelContextWindow` from the wire, not the table). The same page on 2026-10-16
+("Long context: >272K input tokens", input / cached / output): `gpt-6.1-sol` 4 / 0.20 /
+15, `gpt-6-astra` 20 / 2 / 75, `gpt-6-sol` 4 / 0.4 / 15, `gpt-6-luna` 0.2 / 0.02 / 0.75,
+`gpt-5.6-sol` 8 / 0.8 / 30, `gpt-5.6-terra` 4 / 0.4 / 18, `gpt-5.6-luna` 0.4 / 0.04 /
+1.8 — twice the short-context price, except that a 272K-window model never reaches it
+(issue #669). The model ids match the
+`slug`s in `~/.codex/models_cache.json` on the same day. `model/list` on 2026-10-16
+(0.162.1 and 0.163.0 alike) listed `gpt-6.1-sol` (`isDefault: true`, efforts `low` …
+`ultra`), `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`,
+`gpt-5.6-luna`, each with `availableAccessPrograms {cyber: ["standard"]}`; the cache adds
+`gpt-reserve` and `codex-auto-review` (visibility `hide`), and the binary's bundled
+catalog also names `gpt-daybreak-blue-latest` and `gpt-daybreak-red-latest`, which this
+account does not get. "Daybreak", on by default since 0.163.0, is a per-thread
+cyber-access program (`daybreakEnabled` on `thread/start`, thread items and the
+`thread/list` rows; `/daybreak` in the TUI; the `cli_daybreak` flag went from under
+development to stable), not a change of the default model. A ChatGPT plan login is not billed per token:
 this cost is what the same tokens would cost on the API, not what the person pays.
 
 ## 14. A launch that starts with a task, a model and a thinking level
@@ -900,7 +980,16 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   `turn/start`; that turn's first item was the queued `userMessage` with
   `clientId: "koloft-conductor-1"`, and the model answered it there. Thread status went
   `idle`, then `active` (`activeFlags: []`) between the two turns. On an idle thread the
-  same call started a turn at once.
+  same call started a turn at once. **The same on 0.163.0, whose notes say a follow-up
+  typed in the TUI now steers the running turn** (2026-10-16, the same setup on
+  `gpt-6.1-sol`): the reply came in 6 ms, `thread/queue/changed {threadId}` fired on
+  add, mid-turn and at the end, the `sleep 20` ran to its end (`durationMs 19879`,
+  `status completed`), the first turn answered and completed with no extra
+  `userMessage`, the next `turn/started` came 5 ms later on its own with the queued
+  `userMessage` (`clientId` as sent) first, and `thread/queue/list` was empty after.
+  So a message Koloft queues is not an interrupt. `turn/steer` and `turn/interrupt` are
+  methods on 0.161.0–0.163.0 (strings; `codex features list` shows `steer` as removed,
+  on, and `instant_interrupt` under development, on since 0.162.1) — neither run.
 
 ## 18. Which command lines open the full-screen TUI
 
@@ -1060,7 +1149,12 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   the TUI drew it as a question the owner could pick by digit. In one run whose brief
   still allowed a plain-text question, the model asked in plain text instead; told to
   ask every question with that tool, it did. Not probed: what `isBlocking: false`
-  changes.
+  changes. The same on 0.163.0 (2026-10-16, the flag on, `on-request` / `read-only`):
+  `waitingOnUserInput`, then `item/tool/requestUserInput` (`isBlocking: false`,
+  `autoResolutionMs: null`), the turn waited 10 s for the answer, then
+  `serverRequest/resolved {threadId, requestId}` came, the flags cleared and the turn
+  completed with the picked option; `default_mode_request_user_input` is still under
+  development, off, on 0.161.0–0.163.0.
 - Not probed: several questions in one request, a free-text answer (`N+1` and notes),
   `isSecret`, a form with several fields or a field that is not an enum, and an
   elicitation `mode` other than `form`. Koloft refuses those from Discord.
@@ -1119,6 +1213,11 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   and `active` again within 3–4 ms. Each queued `userMessage` item carried the
   `clientUserMessageId` as `clientId`, and `thread/queue/list` was empty as soon as the
   last one's turn started.
+- **The popup on 0.163.0 has 55 entries; `/config` and `/daybreak` are the ones 0.162.1
+  lacks** (2026-10-16, `codex --no-daemon` in a python pty, each list scrolled; `/keymap`,
+  `/daemon` and `/side` are on both). `/keymap` names a "Global Leader ctrl-x"
+  (`tui.keymap.global.leader`, default `ctrl-x`), "Chat Interrupt Turn esc", "Composer
+  Queue tab" and "Toggle Side Conversation ctrl-/" among 153 actions (§25).
 
 ## 22. `codex update`
 
@@ -1253,8 +1352,34 @@ the one before, the screen read back through `pyte`.
   fires only for explicit command-line feature overrides. `--no-daemon` is refused with
   `--remote` ("--no-daemon cannot be used with --remote"), and Koloft's TUI, which
   connects with `--remote` to Koloft's own app-server, showed no such dialog in the
-  real-binary e2e cases on 0.162.1 (2026-10-11). Strings read the same day; the
-  dialog itself was not raised.
+  real-binary e2e cases on 0.162.1 (2026-10-11) or 0.163.0 (2026-10-16). Strings read
+  the same day; the dialog itself was not raised.
+- **Since 0.163.0 the TUI tells its terminal what it is doing with OSC 7501, with no
+  query first** (2026-10-16, `codex --no-daemon -c check_for_update_on_startup=false` in
+  a python pty at 100×40 on 0.162.1 and 0.163.0, the raw bytes saved, two env shapes:
+  Koloft's — `TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=Apple_Terminal`,
+  no `TERM_SESSION_ID` — and the same without `TERM_PROGRAM`; also a TUI under
+  `--remote`): 0.163.0 writes `ESC ] 7501 ; state=idle:app=codex ESC \` about 1.6 s in,
+  `state=working:app=codex` 30 ms after a typed CR, `state=idle:app=codex` when the
+  answer ends, and `state=clear` at exit — unasked (there is no `7501;?` query in the
+  binary), the same with or without `TERM_PROGRAM`, and under `--remote`. The strings
+  also name `blocked` (not seen) and an iTerm2 `OSC 21337;status=…` (not seen).
+  Unlike Claude Code's (CC§12: query-gated, with `id` and `kind`), it carries only
+  `state` and `app`. 0.162.1 writes none of it. Koloft's terminal does not handle 7501
+  for either CLI (issue #487). The startup and exit sequences are otherwise the same on
+  both versions and both env shapes: `?2004h`, `>7u`, `?1004h`, the `6n`, OSC 10/11
+  and `?u`/DA1 queries, `?1049h`, `?1007l`, then `?1000h ?1002h ?1003h ?1006h`; at exit
+  `?1006l ?1015l ?1003l ?1002l ?1000l <1u ?1007l ?1049l <u ?2004l ?1004l` — so the
+  mouse modes are set at start and reset at exit, not both on the welcome screen as the
+  bullet above says from 2026-10-13. No XTVERSION query is sent. 0.163.0's strings drop
+  `TERM_SESSION_ID` from the terminal-detection env list (`ITERM_SESSION_ID` stays);
+  `TERM_PROGRAM` and `Apple_Terminal` are still named, and nothing the TUI wrote differed
+  with `TERM_PROGRAM` set.
+- **Ctrl+X (0x18), the leader key 0.163.0 adds, shows nothing at the idle composer in
+  3 s**; a following Esc shows "esc again to edit previous message". One Ctrl+C at an
+  empty composer quits at once (both versions). What Ctrl+X followed by another key does
+  was not run; Koloft itself never sends 0x18 (a conductor's `koloft session keys` would
+  have to name it).
 
 ## 26. Reaching the Workbench browser: sandbox, MCP servers and their environment
 
