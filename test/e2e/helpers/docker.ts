@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'child_process'
 import crypto from 'crypto'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { seedSettings, type E2EEnv } from './env'
 import { writeExec } from './remote'
@@ -336,6 +337,39 @@ export function installClaudeOnTheMachine(
         )
       })
     )} > .claude.json`
+  )
+}
+
+const LINUX_MUSE_DIR = process.env.KOLOFT_SMOKE_MUSE_LINUX_DIR ?? ''
+export const HAVE_LINUX_MUSE = fs.existsSync(path.join(LINUX_MUSE_DIR, 'muse'))
+export const NEEDS_LINUX_MUSE =
+  'set KOLOFT_SMOKE_MUSE_LINUX_DIR (the ~/.local/bin of a Linux muse install for the lab machine’s CPU: its launcher and its muse-bin-* binary)'
+
+// MUSE§1 MUSE§5
+const MUSE_ON_THE_ECHO_MODEL = `#!/bin/sh
+MUSE_NO_AUTO_UPDATE=1; export MUSE_NO_AUTO_UPDATE
+case "$1" in serve|--version|auth|login|exec) exec "$HOME/.local/muse-official/muse" "$@" ;; esac
+exec "$HOME/.local/muse-official/muse" --provider echo "$@"
+`
+
+export function installRealMuseOnTheMachine(lab: SshLab, user: string): void {
+  const home = `/home/${user}`
+  dk(['exec', lab.target, 'mkdir', '-p', `${home}/.local/muse-official`, `${home}/.local/bin`])
+  dk(['cp', `${LINUX_MUSE_DIR}/.`, `${lab.target}:${home}/.local/muse-official/`])
+  dk(['exec', lab.target, 'chown', '-R', `${user}:${user}`, `${home}/.local`])
+  const launcher = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-lab-muse-')), 'muse')
+  fs.writeFileSync(launcher, MUSE_ON_THE_ECHO_MODEL)
+  installOnTarget(lab, launcher, `${home}/.local/bin/muse`)
+  fs.rmSync(path.dirname(launcher), { recursive: true, force: true })
+  runOnTarget(
+    lab,
+    user,
+    `mkdir -p .config/muse && printf '%s' ${JSON.stringify(
+      JSON.stringify({
+        schema_version: 1,
+        projects: { [`${home}/proj`]: { decision: 'trusted' } }
+      })
+    )} > .config/muse/trust.json`
   )
 }
 

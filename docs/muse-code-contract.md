@@ -358,3 +358,11 @@ server of the opening note and with `--provider echo`; October 2026.
   in tmux too, and across `/clear`.
 - `muse session-message send` exits 1 with `external_agent_ingress_closed` in every
   variant tried; the only way to put words into a running TUI is typing.
+- Measured end to end through Koloft (Docker lab, real `ssh`, tmux 3.3a with
+  `allow-passthrough on`, muse 1.4.9 on `--provider echo`): the wrapper's numbered
+  passthrough frames reach Koloft and light the row; `tmux rename-session -t $TMUX_PANE`
+  run by the wrapper renames the session the tab is in; a hook command written as
+  `bash "$HOME/…"` gets `$HOME` expanded, so muse runs hook commands through a shell;
+  `/clear` writes the new session's registry file with the same pid, so the wrapper
+  follows it. Typed text followed by Enter in one write lands in the input box unsent;
+  an Enter sent a second later submits it.
