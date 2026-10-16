@@ -282,8 +282,8 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
     or Gitea / Forgejo / Codeberg (sign in on the site), your own GitLab or Azure DevOps
     (a pasted token), or any other server (its address, your username and a token, kept
     without checking). Tokens live in the Keychain. Pick one per repository in its git
-    panel's `Account` part; a folder with no pick, and a remote (SSH) folder, keeps the
-    machine's own git and gh setup.
+    panel's `Account` part; a folder with no pick keeps the machine's own git and gh
+    setup.
 
   With the mode off, sessions run a bare `claude` or `codex` on whatever login the
   machine already has.
