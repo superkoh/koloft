@@ -54,9 +54,9 @@ export function workbenchVerbs(d: WorkbenchVerbDeps): AgentVerbs {
       const file = d.notesFileOf(caller.tabId)
       if (!file) return refused(NOT_PINNED)
       const existing = fs.readFileSync(file, 'utf8')
-      if (sub === undefined) return answered(existing || 'The workspace note is empty.')
+      if (sub === undefined) return answered(existing || 'The note is empty.')
       fs.appendFileSync(file, noteAppendText(existing, text))
-      return answered('Added to the workspace note.')
+      return answered('Added to the note.')
     }
   }
 }
