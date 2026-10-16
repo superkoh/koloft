@@ -99,7 +99,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   test.afterEach(({ env }) => killFakeRemote(env))
 
   // ADR-0038 CODEX§16
-  test("E-RC-01: a Codex session there starts its own app-server on the machine in Koloft's Codex home, signed in with the Mac account's token that never lands on the machine; it binds in the sidebar, and closing its tab ends that server", async ({
+  test("E-RC-01: a Codex session there starts its own app-server on the machine in Koloft's Codex home, signed in with the Mac account's token that never lands on the machine, with Koloft's reply-language hook trusted and run there; it binds in the sidebar, and closing its tab ends that server", async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
@@ -120,6 +120,11 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       expect(tui).toHaveLength(1)
       expect(tui[0]).toMatchObject({ cwd: remoteDir(env), effectiveCwd: remoteDir(env) })
       expect(serverAlive(env, server.tabId!)).toBe(true)
+      const replyLanguage = machineCodexLog<{ event: string; stdout: string }>(
+        env,
+        'fake-codex-hook-output.jsonl'
+      ).find((h) => h.event === 'UserPromptSubmit')
+      expect(replyLanguage?.stdout).toContain("The user's latest message begins: «Codex fixture session")
 
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/cold/, { timeout: 30_000 })
