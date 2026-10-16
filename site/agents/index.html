@@ -156,9 +156,10 @@
             <code class="nowrap">session send</code> is not sent twice.
           </li>
           <li>
-            <code>koloft session close</code> — close itself, a session it started, or a session
-            that one of those started, for good: its tab, its row in the sidebar, and its worktree
-            and branches if it had one. Koloft says no, and lists what is left, while:
+            <code>koloft session close</code> — close itself, or any session started under it with
+            <code class="nowrap">session new</code> (by it, by one it started, and so on down the
+            chain), for good: its tab, its row in the sidebar, and its worktree and branches if it
+            had one. Koloft says no, and lists what is left, while:
             <ul class="dash">
               <li>a file is not committed</li>
               <li>a commit is not on the remote yet</li>

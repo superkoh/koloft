@@ -425,9 +425,10 @@
           </li>
           <li>
             A row hangs under its starter only while the starter is in the same folder's list. When
-            its starter closes itself for good, it moves up under the session that started the
-            starter. Otherwise it sits at the top of that list: when its starter is gone from the
-            list, when it was started into another folder with
+            its starter is closed for good (by <code class="nowrap">koloft session close</code>, or
+            by Remove from list), it moves up under the session that started the starter, or to the
+            top of the list if there was none. Otherwise it sits at the top of that list: when its
+            starter is gone from the list, when it was started into another folder with
             <code class="nowrap">--workspace</code>, when a
             <a href="../accounts/#assist">Assist</a> started it, and always for a session on another
             machine.
@@ -528,8 +529,8 @@
           <li>
             Account: which <a href="../accounts/#git-accounts">git account</a> this folder pushes
             as. Shown for a folder on github.com or another host Koloft knows git accounts for. On a
-            remote folder it lists the accounts kept on that machine (see
-            <a href="../accounts/#machine-accounts">git accounts on another machine</a>).
+            remote folder it shows once that machine has at least one git account, and lists those
+            (see <a href="../accounts/#machine-accounts">git accounts on another machine</a>).
           </li>
         </ul>
         <figure class="shot" style="--ar: 740 / 612; --w: min(370px, 100cqw)">
@@ -557,13 +558,14 @@
           Auto-fetch is off) lets Koloft pull by itself: after each background fetch, a folder that
           sits on its default branch with a clean tree and no local commits is fast-forwarded, and a
           small message names the folder, the branch and how many commits came in. It waits while a
-          session in that checkout is working on a task, and tries again on the next fetch. The same
-          for Claude Code and Codex sessions; a remote folder is never pulled.
+          session in that checkout is mid-task (working, stopped at a permission prompt, or in a
+          state Koloft cannot see), and tries again on the next fetch. The same for Claude Code and
+          Codex sessions; a remote folder is never pulled.
         </p>
         <p>
           A Pull you click yourself asks <code>Pull into main?</code> first only while a session in
-          that checkout is working on a task, since pulling changes files under it mid-task.
-          Worktree sessions are not affected.
+          that checkout is mid-task in the same sense, since pulling changes files under it
+          mid-task. Worktree sessions are not affected.
         </p>
         <p>
           On a <a href="../remote/">remote folder</a> the panel shows the GitHub part, the issue and

@@ -352,8 +352,9 @@
             does not do this
           </li>
           <li>
-            a <a href="../remote/">remote folder</a>'s Account part lists the accounts kept on its
-            machine (see <a href="#machine-accounts">On another machine</a>); with no pick, its
+            a <a href="../remote/">remote folder</a>'s Account part shows once its machine has at
+            least one git account (add it in Settings first; see
+            <a href="#machine-accounts">On another machine</a>) and lists those; with no pick, its
             sessions use that machine's own git setup
           </li>
         </ul>
@@ -379,18 +380,23 @@
             GitLab.com, Bitbucket, Gitea / Forgejo / Codeberg: you sign in on the site in your
             browser on the Mac, and what the sign-in tool saved is moved whole to the machine and
             deleted from the Mac. If the machine has no sign-in tool (Git Credential Manager),
-            Koloft installs it there first
+            Koloft installs it there first when it can (Linux or macOS, with curl or wget);
+            otherwise it asks you for a token instead
           </li>
           <li>
             the remote folder's <a href="../sessions/#git-panel">git panel</a> gets an
             <code>Account</code> part listing that machine's accounts. A Claude Code session there
-            pushes, fetches and runs <code>gh</code> as the one you pick, and the panel's issue and
-            pull request counts come from it too; <code>gh auth login</code> there says to manage
-            the account in Koloft instead. (A remote folder runs Claude Code only.)
+            pushes and fetches as the one you pick; for a GitHub or GitHub Enterprise account,
+            <code>gh</code> runs as it too, the panel's issue and pull request counts come from it,
+            and <code>gh auth login</code> there says to manage the account in Koloft instead. (A
+            remote folder runs Claude Code only.)
           </li>
           <li>
             the machine needs git 2.13 or newer. An older one is told
-            <code>git on <i>machine</i> is 2.12.0; git accounts need git 2.13 or newer there.</code>
+            <code
+              >git on <i>machine</i> is 2.12.0; git accounts need git 2.13 or newer there. Update
+              git on <i>machine</i>, then add the account again.</code
+            >
             and keeps no account
           </li>
           <li><code>Make a key</code> (below) is for this Mac only; there is none for a machine</li>
