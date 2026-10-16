@@ -163,7 +163,7 @@ export function parseRoute(reply: string | null, list: RouteWorkspace[]): Sessio
   const said = { title: text(o.title), why: text(o.why, WHY_MAX_CHARS) }
   if (o.hand === 'koloft') return { ...said, kind: 'koloft' }
   if (o.hand === 'discord') return { ...said, kind: 'discord' }
-  if (o.hand === 'feature' || (o.hand === undefined && o.feature !== undefined)) {
+  if (o.hand === 'feature' || o.feature !== undefined) {
     const feature = ROUTABLE_FEATURES.find((f) => f.key === o.feature)
     return feature ? { ...said, kind: 'feature', key: feature.key } : null
   }
