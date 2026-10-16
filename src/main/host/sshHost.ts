@@ -29,7 +29,7 @@ import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
-import { remoteShCommand } from '../remote/install'
+import { FINGERPRINT, remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
   resizeStandInCmd,
@@ -81,6 +81,8 @@ export interface SshHostDeps {
   run(cmd: string, opts?: { timeoutMs?: number; input?: Buffer }): Promise<BytesResult>
   sshEnvReady?(): Promise<void>
   shell(dir: string): Omit<ShellLaunch, 'cwd'>
+  watch(path: string, onChange: (stamp: string) => void): void
+  unwatch(path: string): void
   github: GithubOptions
   claude: MachineClaudeDeps
 }
@@ -148,8 +150,7 @@ node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
-// PLATFORM§37
-const FINGERPRINT = `fp() { stat -c '%.9Y %s' "$1" 2>/dev/null || stat -f '%Fm %z' "$1"; }`
+const GONE_FROM_DISK = { mtimeMs: 0, size: 0 }
 
 const EXIT_GONE = 44
 const EXIT_NOT_FILE = 45
@@ -707,15 +708,28 @@ export class SshHost implements Host {
     return { path: this.keyed(created), mtimeMs: fp.mtimeMs, size: fp.size }
   }
 
-  watchDir(): boolean {
+  // PLATFORM§57
+  watchDir(dir: string, onChange: (dir: string) => void): boolean {
+    this.deps.watch(this.bare(dir), () => onChange(dir))
     return false
   }
 
-  unwatchDir(): void {}
+  unwatchDir(dir: string): void {
+    this.deps.unwatch(this.bare(dir))
+  }
 
-  watchFile(): void {}
+  watchFile(
+    file: string,
+    onChange: (file: string, fp: { mtimeMs: number; size: number }) => void
+  ): void {
+    this.deps.watch(this.bare(file), (stamp) =>
+      onChange(file, parseFingerprint(stamp) ?? GONE_FROM_DISK)
+    )
+  }
 
-  unwatchFile(): void {}
+  unwatchFile(file: string): void {
+    this.deps.unwatch(this.bare(file))
+  }
 
   shell(cwd: string): ShellLaunch {
     return { ...this.deps.shell(this.bare(cwd)), cwd, resized: this.resized }
@@ -786,6 +800,9 @@ export class SshHost implements Host {
     const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
     // ADR-0030
     if (pickKey && !account) throw new Error(NO_USABLE_ACCOUNT.claude)
+    // CC§9
+    const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
+    const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -804,7 +821,7 @@ export class SshHost implements Host {
           portOffset: worktree ? portOffset(worktree) : undefined,
           settings: d.hookSettings(tabId, machineDir, agentTools),
           agentPlugin: agentTools,
-          claudeArgs: args.args
+          claudeArgs
         })
         return launchLine({
           host: this.machine,

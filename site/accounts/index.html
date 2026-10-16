@@ -302,11 +302,13 @@
           <li>Other server: its address, your username there and a token, kept without checking</li>
         </ul>
         <p>
-          Each account is kept on this Mac only, in the Keychain like your other tokens. Its row
-          says how many folders use it; their names show when you click Remove.
-          <code>Make default</code> makes it the first choice when a folder on that host picks one;
-          <code>Remove</code> takes it off this Mac, and its folders go back to your own setup. When
-          the server turns its token down, the row says <code>NEEDS SIGN-IN AGAIN</code>.
+          An account for this Mac is kept on this Mac only, in the Keychain like your other tokens.
+          An account for another machine stays on that machine (see
+          <a href="#machine-accounts">On another machine</a>). Its row says how many folders use it;
+          their names show when you click Remove. <code>Make default</code> makes it the first
+          choice when a folder on that host picks one; <code>Remove</code> takes it off this Mac,
+          and its folders go back to your own setup. When the server turns its token down, the row
+          says <code>NEEDS SIGN-IN AGAIN</code>.
         </p>
         <h3>Picking one per folder</h3>
         <p>
@@ -350,9 +352,54 @@
             does not do this
           </li>
           <li>
-            a <a href="../remote/">remote folder</a> has no Account part: its sessions use that
-            machine's own git setup
+            a <a href="../remote/">remote folder</a>'s Account part lists that machine's git
+            accounts; see <a href="#machine-accounts">On another machine</a>
           </li>
+        </ul>
+        <h3 id="machine-accounts">On another machine</h3>
+        <p>
+          A <a href="../remote/">remote folder</a>'s machine keeps git accounts of its own. Once a
+          remote folder is in the list, Settings ▸ Accounts ▸ Git accounts gets a
+          <code>Machine</code> row: <code>This Mac</code>, and each machine. Pick a machine and the
+          list, <code>Add account</code>, <code>Make default</code> and <code>Remove</code> are that
+          machine's. Your Mac's accounts never go to a machine, and a machine's never come to the
+          Mac. Once a machine has an account, its remote folder's
+          <a href="../sessions/#git-panel">git panel</a> gets the same <code>Account</code> part as
+          a local one, and a pick there works as above: git follows it, and for a GitHub or GitHub
+          Enterprise account <code>gh</code>, the issue and pull request counts, and
+          <code>gh auth login</code> do too (a remote folder runs Claude Code only). What differs:
+        </p>
+        <ul class="dash">
+          <li>
+            a token you paste goes over SSH to the machine, into a folder under your home that only
+            you can read
+          </li>
+          <li>
+            GitHub and GitHub Enterprise: the one-time code and the sign-in page still show on your
+            Mac
+          </li>
+          <li>
+            GitLab.com, Bitbucket, Gitea / Forgejo / Codeberg: you sign in on the site in your
+            browser on the Mac, and what the sign-in tool (Git Credential Manager) saved is moved
+            whole to the machine. If the machine has no sign-in tool, Koloft installs it there first
+            when it can: on Linux or macOS that has curl or wget, not on a musl Linux such as
+            Alpine. When it cannot, it asks you for a token. Bitbucket has no token path, so it
+            cannot be added for such a machine
+          </li>
+          <li>
+            the machine needs git 2.13 or newer. With an older git, Koloft keeps no account and
+            says:
+            <code
+              >git on &lt;machine&gt; is 2.12.0; git accounts need git 2.13 or newer there. Update
+              git on &lt;machine&gt;, then add the account again.</code
+            >
+          </li>
+          <li>
+            Koloft does not check on a machine whether an account can push to the folder's
+            repository, so it picks or suggests one from the folder's address and git setup alone,
+            and never warns that an organization blocks the push
+          </li>
+          <li><code>Make a key</code> (below) is for this Mac only; there is none for a machine</li>
         </ul>
         <h3>Servers that allow SSH only</h3>
         <p>

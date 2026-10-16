@@ -370,7 +370,6 @@ export function installClaudeOnTheMachine(
     `printf '%s' ${JSON.stringify(
       JSON.stringify({
         hasCompletedOnboarding: true,
-        bypassPermissionsModeAccepted: true,
         projects: Object.fromEntries(
           ['/home/kuser/proj', ...alsoTrusted].map((dir) => [dir, { hasTrustDialogAccepted: true }])
         )

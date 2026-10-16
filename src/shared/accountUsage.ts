@@ -158,6 +158,11 @@ export function codexWalled(limits: CodexLimits): boolean {
   return limits.reached === true || codexHeaviest(limits) >= 1
 }
 
+export function codexBackAt(limits: CodexLimits): number {
+  const full = limits.windows.filter((w) => w.used >= 1)
+  return Math.max(0, ...(full.length ? full : limits.windows).map((w) => w.resetsAt))
+}
+
 export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   if (a.status !== 'ok') return { kind: 'grey' }
   const l = a.limits

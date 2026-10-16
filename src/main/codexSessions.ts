@@ -1,5 +1,4 @@
 import fs from 'fs'
-import { realpathSafe } from './projectInfo'
 import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
@@ -37,11 +36,25 @@ import {
   CODEX_GATE_ENV,
   CODEX_GATE_HOOK_COMMAND,
   CODEX_GATE_NOT_TRUSTED,
-  CODEX_GATE_OVERRIDE,
+  codexHookOverride,
   CODEX_ASKS_AND_WAITS
 } from './conductorGate'
-import { acceptCodexHookTrust, codexConfigFile } from './codexTrust'
-import { endCodexAppServersLeftByACrash } from './leftovers'
+import {
+  CODEX_REPLY_LANGUAGE_ENV,
+  CODEX_REPLY_LANGUAGE_HOOKS,
+  CODEX_SAID_ENV,
+  seedCodexOwnerWords
+} from './hooks'
+import { ownerWordsIn } from './handover'
+import { acceptCodexHookTrust, codexConfigFile, codexHookTrusted } from './codexTrust'
+import {
+  CODEX_OPEN_SHIM_FOLDER,
+  CODEX_TMP_DIR,
+  CODEX_TMP_FOLDER,
+  endCodexAppServersLeftByACrash,
+  ownedByThisRun,
+  removeFoldersLeftByEndedRuns
+} from './leftovers'
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
@@ -119,26 +132,52 @@ const runsPlaywrightMcp = (word: string): boolean =>
 const KEY_THE_CODEX_FLAG_PARSER_TAKES = /^[A-Za-z0-9_-]+$/
 
 // CODEX§26
-export function playwrightEnvOverrides(mcpServers: unknown): string[] {
+export function playwrightEnvOverrides(mcpServers: unknown, approveTools = false): string[] {
   return Object.entries(record(mcpServers)).flatMap(([name, raw]) => {
     const entry = record(raw)
     const words = [entry.command, ...(Array.isArray(entry.args) ? entry.args : [])]
     if (!KEY_THE_CODEX_FLAG_PARSER_TAKES.test(name)) return []
     if (!words.some((w) => typeof w === 'string' && runsPlaywrightMcp(w))) return []
     return [
-      `mcp_servers.${name}.env_vars=${mergedList(entry.env_vars, Object.keys(playwrightMcpEnv('')))}`
+      `mcp_servers.${name}.env_vars=${mergedList(entry.env_vars, Object.keys(playwrightMcpEnv('')))}`,
+      // CODEX§26
+      ...(approveTools ? [`mcp_servers.${name}.default_tools_approval_mode="approve"`] : [])
     ]
   })
 }
 
-interface GateHook {
+interface ListedHook {
   key: string
+  command: string
   currentHash: string
   trustStatus: string
 }
 
+const ASSIST_MEMORY = `# Assist memory
+
+This file is your memory folder. When the owner asks you to remember something, add it here as one short line. Keep everything already here.
+`
+
+// CODEX§17
+function seedAssistMemory(folder: string): void {
+  try {
+    fs.writeFileSync(path.join(folder, 'AGENTS.md'), ASSIST_MEMORY, { flag: 'wx' })
+  } catch {}
+}
+
+interface KoloftHook {
+  event: string
+  command: string
+}
+
+const GATE_HOOK: KoloftHook = { event: 'PreToolUse', command: CODEX_GATE_HOOK_COMMAND }
+
+const hookOverrides = (hooks: KoloftHook[]): string[] =>
+  hooks.map(({ event, command }) => codexHookOverride(event, command))
+
 // CODEX§27
-function gateHookIn(reply: unknown): GateHook | undefined {
+function koloftHooksIn(reply: unknown, wanted: KoloftHook[]): ListedHook[] {
+  const found: ListedHook[] = []
   const lists = record(reply).data
   for (const list of Array.isArray(lists) ? lists : []) {
     const hooks = record(list).hooks
@@ -146,19 +185,23 @@ function gateHookIn(reply: unknown): GateHook | undefined {
       const hook = record(raw)
       if (
         hook.source === 'sessionFlags' &&
-        hook.eventName === 'preToolUse' &&
-        hook.command === CODEX_GATE_HOOK_COMMAND &&
+        wanted.some(
+          (w) =>
+            w.command === hook.command &&
+            w.event.toLowerCase() === String(hook.eventName).toLowerCase()
+        ) &&
         typeof hook.key === 'string' &&
         typeof hook.currentHash === 'string'
       )
-        return {
+        found.push({
           key: hook.key,
+          command: String(hook.command),
           currentHash: hook.currentHash,
           trustStatus: String(hook.trustStatus)
-        }
+        })
     }
   }
-  return undefined
+  return found
 }
 
 interface Permissions {
@@ -241,9 +284,10 @@ export interface CodexSessionDeps {
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
-  pickHome(resumeSessionId?: string): { account: string; home: string } | undefined
+  pickHome(resumeSessionId?: string): { account: string; home: string; notice?: string } | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
+  replyLanguageScript: string
   browserEndpoint(tabId: string): string
   openShimRoot: string
   playwrightBin: string
@@ -284,7 +328,7 @@ interface Run {
 export class CodexSessions {
   private crashLeftoversEnded?: Promise<void>
   private runs = new Map<string, Run>()
-  private gateTrustedAt = new Map<string, number | undefined>()
+  private listedHooks = new Map<string, ListedHook>()
   private history = new Map<string, CodexThread>()
   private archivedIds = new Set<string>()
   private binary?: string
@@ -411,9 +455,12 @@ export class CodexSessions {
     options: Parameters<typeof createCodexTransport>[0]
   ): Promise<CodexTransport> {
     // CODEX§5
-    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG).catch(
-      () => {}
-    ))
+    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG)
+      .catch(() => {})
+      .then(() => {
+        removeFoldersLeftByEndedRuns(CODEX_TMP_DIR, CODEX_TMP_FOLDER)
+        removeFoldersLeftByEndedRuns(this.deps.openShimRoot, CODEX_OPEN_SHIM_FOLDER)
+      }))
     try {
       return await createCodexTransport(options)
     } catch (error) {
@@ -445,30 +492,47 @@ export class CodexSessions {
   }
 
   // ADR-0029 CODEX§27
-  private async trustGate(launch: CodexProcessOptions, configFile: string): Promise<void> {
-    const file = realpathSafe(configFile)
-    const changedAt = (): number | undefined => {
-      try {
-        return fs.statSync(file).mtimeMs
-      } catch {
-        return undefined
-      }
-    }
-    if (this.gateTrustedAt.has(file) && this.gateTrustedAt.get(file) === changedAt()) return
-    await this.askGateTrust(launch, configFile)
-    this.gateTrustedAt.set(file, changedAt())
+  private async trustKoloftHooks(
+    launch: CodexProcessOptions,
+    configFile: string,
+    wanted: KoloftHook[]
+  ): Promise<Set<string>> {
+    const onDisk = wanted.filter((w) => {
+      const hook = this.listedHooks.get(w.command)
+      return !!hook && codexHookTrusted(configFile, hook.key, hook.currentHash)
+    })
+    if (onDisk.length === wanted.length) return new Set(wanted.map((w) => w.command))
+    return this.askHookTrust(
+      { ...launch, configOverrides: [...(launch.configOverrides ?? []), ...hookOverrides(wanted)] },
+      configFile,
+      wanted
+    )
   }
 
   // CODEX§27
-  private async askGateTrust(launch: CodexProcessOptions, configFile: string): Promise<void> {
+  private async askHookTrust(
+    launch: CodexProcessOptions,
+    configFile: string,
+    wanted: KoloftHook[]
+  ): Promise<Set<string>> {
     const rpc = new CodexRpc(launch)
     try {
-      const gate = async (): Promise<GateHook | undefined> =>
-        gateHookIn(await rpc.request('hooks/list', { cwds: [launch.cwd] }).catch(() => undefined))
-      const hook = await gate()
-      if (hook?.trustStatus === 'trusted') return
-      if (hook) acceptCodexHookTrust(configFile, hook.key, hook.currentHash)
-      if ((await gate())?.trustStatus !== 'trusted') throw new Error(CODEX_GATE_NOT_TRUSTED)
+      const listed = async (): Promise<ListedHook[]> => {
+        const hooks = koloftHooksIn(
+          await rpc.request('hooks/list', { cwds: [launch.cwd] }).catch(() => undefined),
+          wanted
+        )
+        for (const hook of hooks) this.listedHooks.set(hook.command, hook)
+        return hooks
+      }
+      const first = await listed()
+      const untrusted = first.filter((h) => h.trustStatus !== 'trusted')
+      for (const h of untrusted)
+        try {
+          acceptCodexHookTrust(configFile, h.key, h.currentHash)
+        } catch {}
+      const now = untrusted.length ? await listed() : first
+      return new Set(now.filter((h) => h.trustStatus === 'trusted').map((h) => h.command))
     } finally {
       await rpc.close().catch(() => {})
     }
@@ -496,16 +560,19 @@ export class CodexSessions {
   }
 
   // CODEX§26
-  private async browserOverrides(home: string, cwd: string): Promise<string[]> {
-    const read = await this.withRpc(home, (rpc) => rpc.request('config/read', { cwd })).catch(
-      () => undefined
-    )
+  private async browserOverrides(home: string, cwd: string, conductor: boolean): Promise<string[]> {
+    const readConfig = (): Promise<unknown> =>
+      this.withRpc(home, (rpc) => rpc.request('config/read', { cwd }))
+    // CODEX§28
+    const read = await readConfig()
+      .catch(readConfig)
+      .catch(() => undefined)
     if (!read) return []
     const config = record(record(read).config)
     const cacheDir = path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright')
     fs.mkdirSync(cacheDir, { recursive: true })
     return [
-      ...playwrightEnvOverrides(config.mcp_servers),
+      ...playwrightEnvOverrides(config.mcp_servers, conductor),
       ...browserSandboxOverrides(config.sandbox_workspace_write, cacheDir)
     ]
   }
@@ -904,6 +971,7 @@ export class CodexSessions {
     // CODEX§15 ADR-0030
     const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
+    if (picked.notice) this.deps.error(picked.notice)
     const home = picked.home
     if (opts.worktreeResourceId) {
       const saved = this.store.getResource(opts.worktreeResourceId)
@@ -927,10 +995,11 @@ export class CodexSessions {
     const role = opts.role ?? assist?.role
     const allow = opts.allow ?? assist?.allow ?? []
     if (opts.trustFolder || assist) this.deps.trustFolder(cwd, this.envFor(home))
+    if (conductor && (opts.trustFolder || assist)) seedAssistMemory(cwd)
     const tabId = this.deps.pty.nextId()
     // ADR-0029
     const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
-    const browser = endpoint ? await this.browserOverrides(home, cwd) : []
+    const browser = endpoint ? await this.browserOverrides(home, cwd, conductor) : []
     // CODEX§29
     const gitNetwork = (await this.deps.gitAccounts.picked(cwd))
       ? ['sandbox_workspace_write.network_access=true']
@@ -953,6 +1022,9 @@ export class CodexSessions {
       agent && ((dir, name, raw) => agent.answer(run?.tabId, dir, name, raw))
     )
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
+    const said = path.join(openShim.shimDir, 'said')
+    const ownerWords = role && opts.firstPrompt ? ownerWordsIn(role) : undefined
+    if (ownerWords) seedCodexOwnerWords(said, ownerWords)
     const observer = new CodexObservation(observe)
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('codex')] : []),
@@ -969,7 +1041,9 @@ export class CodexSessions {
         ...(conductor && {
           [CODEX_GATE_ENV]: this.deps.conductorGate.script,
           [ASSIST_ALLOW_ENV]: this.deps.conductorGate.writeAllow(tabId, allow)
-        })
+        }),
+        [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
+        [CODEX_SAID_ENV]: said
       },
       cwd,
       configOverrides: [
@@ -978,15 +1052,26 @@ export class CodexSessions {
         ...gitNetwork,
         ...(instructions.length ? [developerInstructions(instructions)] : []),
         ...(opts.resumeSessionId ? permissionConfig(permissions) : []),
-        ...(conductor ? [CODEX_GATE_OVERRIDE, CODEX_ASKS_AND_WAITS] : [])
+        CODEX_ASKS_AND_WAITS
       ]
     }
+    const hooks = [...(conductor ? [GATE_HOOK] : []), ...CODEX_REPLY_LANGUAGE_HOOKS]
     let transport: CodexTransport | undefined
     try {
-      if (conductor) await this.trustGate(processOptions, codexConfigFile(this.envFor(home)))
+      // ADR-0029 ADR-0031
+      const trusted = await this.trustKoloftHooks(
+        processOptions,
+        codexConfigFile(this.envFor(home)),
+        hooks
+      )
+      if (conductor && !trusted.has(GATE_HOOK.command)) throw new Error(CODEX_GATE_NOT_TRUSTED)
       this.assertStarting()
       transport = await this.startTransport({
         ...processOptions,
+        configOverrides: [
+          ...processOptions.configOverrides!,
+          ...hookOverrides(hooks.filter((h) => trusted.has(h.command)))
+        ],
         onFrame: (direction, frame) => observer.receive(direction, frame),
         onDisconnect: () => this.markDegraded(run),
         onError: (error) => {
@@ -1051,8 +1136,12 @@ export class CodexSessions {
     userZdotdir: string | undefined,
     open: (target: string) => void,
     agent?: (dir: string, name: string, raw: unknown) => void
-  ): { zdotDir: string; release(): void } {
-    const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), userZdotdir)
+  ): { shimDir: string; zdotDir: string; release(): void } {
+    const shim = writeCodexOpenShim(
+      this.deps.openShimRoot,
+      ownedByThisRun(randomUUID()),
+      userZdotdir
+    )
     fs.symlinkSync(
       path.join(this.deps.playwrightBin, 'playwright-cli'),
       path.join(shim.shimDir, 'playwright-cli')
@@ -1076,6 +1165,7 @@ export class CodexSessions {
       }
     })
     return {
+      shimDir: shim.shimDir,
       zdotDir: shim.zdotDir,
       release: () => {
         drops?.close()
