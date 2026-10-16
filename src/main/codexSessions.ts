@@ -589,10 +589,7 @@ export class CodexSessions {
   }
 
   rows(workspace: string): BackendSessionRow[] {
-    const scope: RowScope = {
-      byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
-      roots: new Map()
-    }
+    const scope = this.rowScope()
     const rows = new Map<string, BackendSessionRow>()
     for (const [key, t] of this.history) {
       const member = this.store.getMember(key)
@@ -662,6 +659,18 @@ export class CodexSessions {
         ? { worktreeState: { ...resource, worktreeBranch: resource.worktreeBranch ?? '' } }
         : {})
     }
+  }
+
+  private rowScope(): RowScope {
+    return {
+      byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
+      roots: new Map()
+    }
+  }
+
+  workspacesFor(cwds: string[]): string[] {
+    const scope = this.rowScope()
+    return cwds.map((cwd) => this.workspaceFor(cwd, scope))
   }
 
   private workspaceFor(cwd: string, scope?: RowScope): string {

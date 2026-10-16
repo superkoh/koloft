@@ -15,6 +15,9 @@ export interface CodexScan {
 
 const TOKEN_FIELDS = ['inTok', 'outTok', 'cacheWriteTok', 'cacheReadTok'] as const
 
+export const CLAUDE_USAGE_WORDS = ['"usage"']
+export const CODEX_USAGE_WORDS = ['session_meta', 'turn_context', 'token_usage_record']
+
 function num(x: unknown): number {
   return typeof x === 'number' && isFinite(x) && x > 0 ? x : 0
 }
@@ -61,7 +64,7 @@ interface ClaudeCall {
 export function scanClaudeLines(text: string): UsageRecord[] {
   const calls: ClaudeCall[] = []
   const callByIds = new Map<string, ClaudeCall>()
-  for (const obj of parsedLines(text, ['"usage"'])) {
+  for (const obj of parsedLines(text, CLAUDE_USAGE_WORDS)) {
     const msg = obj?.message
     if (obj.type !== 'assistant' || !msg?.usage || typeof msg.usage !== 'object') continue
     const model = typeof msg.model === 'string' ? msg.model : ''
@@ -98,7 +101,7 @@ export function scanCodexLines(text: string): CodexScan | null {
   const booked = new Set<string>()
   const out = new RecordsByDayAndModel()
   let sessionId = ''
-  for (const obj of parsedLines(text, ['session_meta', 'turn_context', 'token_usage_record'])) {
+  for (const obj of parsedLines(text, CODEX_USAGE_WORDS)) {
     const p = obj?.payload
     if (!p || typeof p !== 'object') continue
     if (obj.type === 'session_meta' && !meta) {

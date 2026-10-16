@@ -237,6 +237,13 @@ export class WorkspaceManager {
     )
   }
 
+  transcriptFiles(): { file: string; workspace: string }[] {
+    return [...this.transcriptFileById].flatMap(([id, file]) => {
+      const workspace = this.wsBySession.get(id)
+      return workspace ? [{ file, workspace }] : []
+    })
+  }
+
   findRow(sessionId: string): SessionRow | undefined {
     for (const rows of this.allRowsCache.values()) {
       const hit = rows.find((r) => r.id === sessionId)

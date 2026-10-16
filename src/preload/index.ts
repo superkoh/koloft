@@ -431,6 +431,14 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('settings:update', handler)
     }
   },
+  usage: {
+    read: () => ipcRenderer.invoke('usage:read'),
+    onChanged: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('usage:changed', handler)
+      return () => ipcRenderer.removeListener('usage:changed', handler)
+    }
+  },
   accounts: {
     list: () => ipcRenderer.invoke('accounts:list'),
     add: (name, kind, secret, endpoint) =>

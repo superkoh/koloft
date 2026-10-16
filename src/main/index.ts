@@ -249,6 +249,8 @@ import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
+import createUsageScanWorker from './usageScanWorker?nodeWorker'
+import { UsageCache, listUsageFiles, statOf, type ScannedFile } from './usageCache'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
   ATTENTION_REASON,
@@ -4495,6 +4497,28 @@ function registerIpc(): void {
     },
     send: (found) => sendToRenderer('sessions:search-hits', found)
   })
+  const usageCache = new UsageCache({
+    cacheFile: () => path.join(app.getPath('userData'), 'usage-cache.json'),
+    listFiles: async () => {
+      await workspaceMgr?.firstScan
+      return listUsageFiles(
+        workspaceMgr?.transcriptFiles() ?? [],
+        path.dirname(codexSharedConfig())
+      )
+    },
+    stat: statOf,
+    scan: (files, scanned, ended) => {
+      // PLATFORM§4
+      const worker = createUsageScanWorker({ workerData: { files } })
+      worker.on('message', (file: ScannedFile) => scanned(file))
+      worker.on('error', (error) => console.error('[koloft] usage read failed', error))
+      worker.once('exit', ended)
+    },
+    codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
+    changed: () => sendToRenderer('usage:changed')
+  })
+  ipcMain.handle('usage:read', () => usageCache.read())
+
   ipcMain.on('sessions:search', (_e, searchId: unknown, term: unknown) => {
     if (typeof searchId !== 'number' || typeof term !== 'string') return
     sessionSearch.start(searchId, term)

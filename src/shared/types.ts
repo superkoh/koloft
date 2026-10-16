@@ -1,4 +1,5 @@
 import type { SessionRoute } from './sessionRoute'
+import type { TokenCounts } from './pricing'
 
 export interface ProjectInfo {
   root: string
@@ -454,6 +455,19 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export type BackendId = 'claude' | 'codex'
 export type HostId = 'local' | 'ssh'
+
+export interface UsageRow extends TokenCounts {
+  sessionId: string
+  day: string
+  model: string
+  backend: BackendId
+  workspace: string
+}
+
+export interface UsageRead {
+  rows: UsageRow[]
+  reading: boolean
+}
 export interface SessionMethods {
   defaultBackend: BackendId
   enabled: Record<BackendId, boolean>
@@ -1184,6 +1198,10 @@ export interface KoloftApi {
     get(): Promise<Settings>
     set(patch: Partial<Settings>): Promise<Settings>
     onUpdate(cb: (s: Settings) => void): () => void
+  }
+  usage: {
+    read(): Promise<UsageRead>
+    onChanged(cb: () => void): () => void
   }
   accounts: {
     list(): Promise<AccountView[]>
