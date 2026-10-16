@@ -60,7 +60,7 @@ Working principles:
   6 × 4 sheet of white glyphs on black, each glyph drawn from its purpose in the
   app. Every glyph is designed near-square and fills its square — no strip-shaped
   icon (a thin symbol such as a minus or an arrow sits inside a circle); the
-  script sizes each glyph so its larger side is 20 of the 24 units and evens its
+  script sizes each glyph so its larger side is 22 of the 24 units and evens its
   line to 2 units. Commit the sheet next to the others, name its cells in
   `sheets.json` (`null` for a cell left unused), run `node scripts/trace-icons.mjs` to rewrite
   `paths.ts`, export the icon from `index.tsx`, and look at it at its real size.

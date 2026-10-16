@@ -12,7 +12,7 @@ const sheets = JSON.parse(fs.readFileSync(path.join(iconDir, 'sheets.json'), 'ut
 const COLUMNS = 6
 const ROWS = 4
 const VIEWBOX = 24
-const GLYPH_EXTENT = 20
+const GLYPH_EXTENT = 22
 const STROKE = 2
 const LIT = 128
 
