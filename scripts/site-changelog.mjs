@@ -60,15 +60,12 @@ function renderRelease(release) {
 function renderChangelog(template, releasePages) {
   if (!template.includes(PLACEHOLDER)) throw new Error(`the page has no ${PLACEHOLDER} line`)
   // ADR-0037
-  const firstOfEachTag = [
-    ...new Map(
-      releasePages
-        .flat()
-        .reverse()
-        .map((r) => [r.tag_name, r])
-    ).values()
-  ]
-  const releases = firstOfEachTag.sort((a, b) => b.published_at.localeCompare(a.published_at))
+  const firstOfEachTag = new Map()
+  for (const r of releasePages.flat())
+    if (!firstOfEachTag.has(r.tag_name)) firstOfEachTag.set(r.tag_name, r)
+  const releases = [...firstOfEachTag.values()].sort((a, b) =>
+    b.published_at.localeCompare(a.published_at)
+  )
   if (!releases.length) throw new Error('no published releases to list')
   const list = releases.map(renderRelease).join('\n\n')
   return template.replace(PLACEHOLDER, () => list)

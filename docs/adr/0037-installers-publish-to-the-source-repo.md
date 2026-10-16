@@ -6,13 +6,13 @@ list. Their one-line install command,
 `raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh`, is printed in
 every one of their release notes.
 **Decision**: each release goes to `superkoh/koloft`, next to its tag, and the updater
-and `install.sh` read that list. The first version that reads it (the bridge) was also
-published to `superkoh/koloft-releases`, and the `install.sh` there was switched to
-read `superkoh/koloft`. An old app updates to the bridge, then from the bridge to the
-newest version — two updates in a row. `superkoh/koloft-releases` takes no new release
-after the bridge, and is never deleted or renamed: the bridge must stay its newest
-release, or an old app has nothing to update to. The site changelog reads both lists,
-so the bridge shows up twice there and is listed once.
+and `install.sh` read that list. The first version that reads it, the bridge, is in
+both repos, and the `install.sh` in `superkoh/koloft-releases` reads `superkoh/koloft`.
+An old app updates to the bridge, then from the bridge to the newest version — two
+updates in a row. `superkoh/koloft-releases` takes no release after the bridge, and is
+never deleted or renamed: the bridge must stay its newest release, or an old app has
+nothing to update to. The site changelog reads both lists, the new one first, and lists
+a tag found in both once.
 **Rejected**: publishing every release to both repos — old apps would update in one
 step, at the cost of a second upload of every dmg forever. Recreating the old releases
 in `superkoh/koloft` — GitHub stamps each with the day it was made, so the changelog
