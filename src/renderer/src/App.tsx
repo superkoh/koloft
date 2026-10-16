@@ -114,7 +114,7 @@ import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
 import { ConductorsIsland, setUpDiscordWithAssist } from './components/ConductorsIsland'
 import { BindConductorDialog } from './components/BindConductorDialog'
-import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
+import { conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
@@ -1078,7 +1078,7 @@ export default function App(): JSX.Element {
     selectedWs,
     lastWsPath
   )
-  const notesWs = activeConductor ? conductorNotesWorkspace(activeConductor) : currentWs
+  const notesWs = activeConductor ?? currentWs
   notesWsRef.current = notesWs
   const [notesFocusWs, setNotesFocusWs] = useState(notesWs)
   if (notesFocusWs !== notesWs) {

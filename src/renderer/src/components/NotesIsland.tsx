@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import { IconChevronDown, IconChevronUp, IconCopy, IconNotes } from '../icons'
-import { basename } from '@shared/preview'
+import { scopeName } from '@shared/conductors'
 import { NOTES_TAB, notesOwner } from '@shared/cwdKey'
 import { editRefusal, EditPane } from './EditPane'
 import { beginEdit, getEntry } from '../editRegistry'
@@ -92,7 +92,7 @@ export function NotesIsland({
             <IconNotes size={14} />
           </span>
           <span className="nm">Notes</span>
-          <span className="dir">&nbsp;· {basename(wsPath)}</span>
+          <span className="dir">&nbsp;· {scopeName(wsPath)}</span>
         </span>
         <button
           className="icobtn"

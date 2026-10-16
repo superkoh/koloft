@@ -29,7 +29,6 @@ import {
   itemFilterText,
   itemLabel,
   itemLaunchExtras,
-  mainRunningCount,
   moveHot,
   primaryKind,
   primaryLabel,
@@ -47,7 +46,7 @@ import {
 } from '../newSession'
 import { ipcErrorText } from '../agentUi'
 import { shortenHome } from '../browseModel'
-import { pullToast } from '../freshnessView'
+import { busyInCheckout, pullToast } from '@shared/freshnessOps'
 import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { PullConfirm } from './PullConfirm'
@@ -277,7 +276,7 @@ export function WorktreeSessionDialog({
       launch(aim, backend)
       return
     }
-    const count = mainRunningCount(ws.rows)
+    const count = busyInCheckout(useStore.getState().sessions, wsPath)
     confirmBackend.current = backend
     if (count > 0) setConfirm(count)
     else void doPull(backend)

@@ -7,13 +7,12 @@ import { hostOf } from '@shared/remoteKey'
 import {
   escPeel,
   freshLineCopy,
-  mainRunningCount,
   primaryLabel,
   pullFailedReason,
   type PullPhase
 } from '../newSession'
 import { ipcErrorText } from '../agentUi'
-import { pullToast } from '../freshnessView'
+import { busyInCheckout, pullToast } from '@shared/freshnessOps'
 import { useStore } from '../store'
 import {
   digitPick,
@@ -127,7 +126,7 @@ export function WorkspacePicker({
       void sessionLaunch.launch({ cwd: ws.workspace.path }, backend)
       return
     }
-    const count = mainRunningCount(ws.rows)
+    const count = busyInCheckout(useStore.getState().sessions, ws.workspace.path)
     if (count > 0) {
       confirmBackend.current = backend
       setConfirmWs(ws)
