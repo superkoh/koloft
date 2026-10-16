@@ -126,6 +126,16 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   their payloads, sent `kill -TERM`). **claude waits for its
   own SessionEnd hook to finish before it exits**, so when the session pty dies the
   hook's report file is already whole. (Both inferred, not checked.)
+- **`/exit` while a background shell command still runs draws a dialog, not an exit.**
+  Titled "Background work is running", it lists what will stop ("The following will
+  stop when you exit: shell · sleep 300") and offers `1. Exit and stop tasks` (preselected),
+  `2. Move to background and exit`, `3. Stay`, "Enter to confirm · Esc to cancel". Left
+  alone for 40 s nothing happened: no SessionEnd, the process and the `sleep` alive. Enter
+  then fired SessionEnd `prompt_input_exit`, killed the `sleep` and exited with code 0
+  about 1.1 s later. The same on 2.1.299 and 2.1.300 (2026-10-15, python pty, scratch
+  `HOME`, haiku, `--dangerously-skip-permissions`, a `run_in_background` Bash `sleep`
+  from the model, one run each). Koloft itself never types `/exit`; a person or an agent
+  that does, with a background command running, leaves the session on this dialog.
 - **Every hook payload carries `session_id`**, run-state events (UserPromptSubmit,
   Stop, Notification) included, not only SessionStart/SessionEnd. (Inferred, not
   checked.)
@@ -176,10 +186,23 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
 - **CC keeps re-writing `worktree-state` through the run, so the LAST one sits near the
   end of the file** and says where the session is now; the first one only says where
   it started. Census 2026-09-23, CC ≤2.1.281, 313 transcripts carrying one: the last
-  record sat at most 49KB from the end (p90 27KB), so a 64KB tail read always finds it.
+  record sat at most 49KB from the end (p90 27KB).
   241 ended on `worktreeSession: null` (left the worktree), all in the root checkout's
   slug; 70 ended bound, all in a worktree's slug; 2 ended bound in the root slug.
   Measured by reading every `~/.claude/projects/*/*.jsonl` on the dev Mac.
+  **The re-write does not come every turn, so no fixed tail size is enough.** Measured
+  2026-10-15 (python pty, scratch `HOME`, haiku, a throwaway one-commit repo, one run per
+  binary): a session that entered a worktree with `EnterWorktree` and left it with
+  `ExitWorktree` in its first turn, then took two more turns (a Bash `echo` and a plain
+  reply), ended with its last `relocated` + `worktree-state: null` pair 25 KB from the
+  end on 2.1.300 (the two turns added 13 KB and 7 KB, no new pair) and 6 KB from the end
+  on 2.1.299 (its Bash turn wrote a fresh pair, the plain turn added 6 KB; what triggers
+  a re-write is not probed). In a `-w` session on 2.1.300 the pair was re-written twice
+  inside the first turn (before and after the API call) and not at all in the second.
+  Since 2.1.300 a tool result is on disk twice (the `api-request` records, below), so a
+  few turns after a move can push the last pair past any fixed window; Koloft's rescan
+  in `workspaces.ts` reads the tail in doubling chunks until one holds a
+  `worktree-state` or `relocated` line.
 - **Auto-memory lives beside the transcripts, in `~/.claude/projects/<slug>/memory/`**
   (`MEMORY.md` plus one `.md` per memory), and CC writes it with the ordinary
   Write/Edit tools, so memory files land in the transcript's file writes like any
@@ -313,6 +336,23 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
 - **Concurrent sessions do not revert each other's `~/.claude.json` writes from 2.1.259
   on** (changelog: "workspace trust no longer resets"; read 2026-09-18, not measured).
   Before that, a workspace's trust answer (the key is in §9) could be reset.
+- **Since 2.1.300 the transcript also records every API request: three new record
+  types, and a bigger file.** Measured 2026-10-15, one `claude -p` run of the same
+  two-request prompt (a Bash `echo`, then a reply; haiku, scratch `HOME`) on each
+  binary: 2.1.299 wrote 25 records, 99,337 bytes; 2.1.300 wrote 33 records, 154,524
+  bytes. The extra records: one `api-request-shape` (`{type, shapeHash, shape}`, 39 KB
+  here, 83–85 KB in an interactive session — the tool definitions; written once per
+  distinct shape), one `api-request-blob` per message sent (`{type, hash, message}` — a
+  copy of that user or assistant message, so a tool result is on disk twice), and one
+  `api-request` per request (`{type, id, querySource, shapeHash, params, base, keep,
+  tail, cacheControl, requestDigest}`, about 1.5 KB). The `assistant` record gained a
+  `requestRef`. The `prompt_snapshot` attachment (`systemPrompt`, `tools`, …; 56 KB in
+  `-p`, 115–127 KB interactive) is older — 2.1.299 writes it too. None of the three
+  carries `cwd`; the shape and `api-request` records carry `sessionId`, `timestamp` and
+  `version`, the blob only `sessionId`. Every Koloft reader that parses records picks
+  them by `type` (`extractJsonlMeta`, `extractJsonlTail`, `lastTurnsOfLines`, the usage
+  reader, `transcriptSearch`), so they read the same values as before; only the byte
+  counts grew (the `worktree-state` tail bullet above).
 
 Unless a bullet below says more, it is inferred, not checked.
 
@@ -476,9 +516,10 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   `remote-ssh-lab.spec.ts` › "E-SSH-11: a REAL claude on the machine, in a worktree
   session made there through ssh and tmux, echoes with its Bash tool the port offset of
   that worktree’s name (opt-in, spends real money)". Both passed again on 2.1.296
-  (2026-10-11) and 2.1.299 (2026-10-14), as did E-SSH-15 (`koloft help` and `koloft
-  note append` from the Bash tool on the machine) and E-SSH-C2 (a conductor's typed
-  message answered, its question answered by `koloft session answer`).
+  (2026-10-11), 2.1.299 (2026-10-14) and 2.1.300 (2026-10-15), as did E-SSH-15
+  (`koloft help` and `koloft note append` from the Bash tool on the machine) and
+  E-SSH-C2 (a conductor's typed message answered, its question answered by `koloft
+  session answer`).
 - **CC's background retention sweep leaves hand-made worktrees under
   `.claude/worktrees/` alone from 2.1.246 on** (changelog, read 2026-09-18, not
   measured). Before that it could remove them.
@@ -761,7 +802,9 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   names `ANTHROPIC_SMALL_FAST_MODEL`, `CLAUDE_CODE_AUTO_MODE_MODEL` and
   `CLAUDE_CODE_BG_CLASSIFIER_MODEL` — pointers only; the diff of `*_MODEL` names
   between 2.1.293 and 2.1.296 is the one workflow variable, and between 2.1.296 and
-  2.1.299 it is empty (`strings`, 2026-10-14; no `ANTHROPIC_*` name changed either).
+  2.1.299 it is empty (`strings`, 2026-10-14; no `ANTHROPIC_*` name changed either),
+  as between 2.1.299 and 2.1.300 (`strings`, 2026-10-15; every `CLAUDE_CODE_*` and
+  `ANTHROPIC_*` name Koloft's shim sets is still in the 2.1.300 binary).
   `CLAUDE_CONFIG_DIR` does NOT isolate credentials on macOS (official docs —
   credentials always go through the system Keychain). `claude setup-token` is the
   official login flow: it prints the authorization URL and, on success, the token on
@@ -1002,8 +1045,8 @@ SessionEnd` with millisecond stamps, and the resulting
 `~/.claude/projects/<slug>/<id>.jsonl` read back record by record.
 Probes P1–P7. Flag spellings quoted from `claude --help` of the same build. The launch
 line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is pinned by
-`cron-real-smoke.spec.ts` › BB-R01, green on 2.1.296 (2026-10-11) and 2.1.299
-(2026-10-14).
+`cron-real-smoke.spec.ts` › BB-R01, green on 2.1.296 (2026-10-11), 2.1.299
+(2026-10-14) and 2.1.300 (2026-10-15).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1137,7 +1180,13 @@ other bullets of §9 were not re-measured on this build.
   CC's short form of `--name`. From `claude --help` on 2.1.281 (2026-09-24):
   `--permission-prompts` takes `host` or `none`; `--effort` takes exactly `low`,
   `medium`, `high`, `xhigh`, `max`. The `--help` text of 2.1.293, 2.1.296 and 2.1.299 is
-  byte-identical, 311 lines (run with stdin closed, 2026-10-11 and 2026-10-14). The
+  byte-identical, 311 lines (run with stdin closed, 2026-10-11 and 2026-10-14); 2.1.300's
+  differs only inside the `--restricted` paragraph (the word "REPL" dropped from the list
+  of code-running tools; still 311 lines, 2026-10-15). The `CLAUDE_CODE_*` names the
+  2.1.300 binary adds over 2.1.299 (`strings`, 2026-10-15; pointers, none read):
+  `ATTACHMENTS_BY_PATH`, `FILE_READ_MAX_PDF_PAGES_PER_MESSAGE`,
+  `FILE_READ_MAX_PDF_PAGES_PER_TURN`, `HIDE_REPLY_SERVER_NAME`,
+  `MESSAGES_PROMPT_CACHE_TTL`; gone: `FORCE_SANDBOX`. The
   `CLAUDE_CODE_*` names the 2.1.299 binary adds over 2.1.296 (`strings`, 2026-10-14;
   pointers, none read): `ARTIFACT_PUBLISH_EDITS`, `AUTO_MODE_COMPACT_THREAD_RULE`,
   `CCR_WORKER_SOCKET`, `DISABLE_FILE_MENTIONS`, `ENABLE_SHARE_BUNDLE`,
@@ -1592,7 +1641,27 @@ below was one run.
   waiting hook ended by SIGTERM just before `/exit` fired SessionEnd
   `prompt_input_exit`. `/exit` 3 s after the answer, with no turn between, fired it
   too (1 run). Seen live in Koloft three times the same night: the first `/exit` of a
-  session that had answered a question in the terminal left its row cold.
+  session that had answered a question in the terminal left its row cold. **On 2.1.300
+  the SessionEnd hook ran**: the same shape (a `PermissionRequest` hook that printed
+  nothing and waited, `2` typed in the terminal, one more turn, 5 s idle, `/exit`) ended
+  the waiting hook with SIGTERM and fired SessionEnd `prompt_input_exit` 0.1 s later,
+  exit code 0 about 2 s after Enter (2026-10-15, python pty, scratch `HOME`, haiku, 1
+  run; the 2.1.300 changelog: "Fixed SessionEnd hooks sometimes not running when you
+  exit while a background command is still running").
+- **A hook's `updatedInput` is checked against the tool's own input schema since
+  2.1.300** (changelog: "unknown keys are dropped, and input the tool rejects denies the
+  call"). 2026-10-15, python pty, scratch `HOME`, haiku, `--dangerously-skip-permissions`,
+  a `PermissionRequest` hook answering an `AskUserQuestion` ("Pick a colour", Red /
+  Green), one run each: Koloft's shape (`{…tool_input, answers: {"<question>":
+  "Green"}}`) was taken as before — `PostToolUse` showed `answers` in `tool_input` and
+  `tool_response`, the model replied "you picked Green"; the same with an extra
+  `bogusKey: "x"` — taken, and the key gone from `PostToolUse`'s `tool_input`; with
+  `answers` set to a string the call was denied, the model saw "PermissionRequest hook
+  for AskUserQuestion returned updatedInput that failed schema validation: … The
+  parameter `answers` type is expected as `record` but provided as `string`. The tool
+  input from the model was valid; the hook's rewrite of it was not." (`Denied by
+  PermissionRequest hook`), asked once more, was denied again and gave up. So
+  `dialog.ts`'s answer survives, and a malformed one no longer slips through.
 - **The transcript's `tool_use` input and the hook's `tool_input` hold the same values
   in a different key order.** One `AskUserQuestion`, 2026-10-06, CC 2.1.291: the hook
   had `question, header, options, multiSelect`, the transcript `question, header,
@@ -1699,6 +1768,10 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   refused when the hook cannot be handed them" is about a plugin's hooks module
   (strings keyed `tool.call`, `tool.check`, `classic.PreToolUse`), not a settings-file
   command hook.
+- **Since 2.1.300 a `PreToolUse` hook's `updatedInput` is checked like Claude's own
+  input** (changelog: "unknown keys are dropped, and input the tool rejects denies the
+  call"; not run — Koloft's gate never rewrites input, it only allows or denies; the
+  `PermissionRequest` side was run, §14).
 
 ## §16 `claude --version` and `claude update`
 
@@ -1709,8 +1782,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
 - **`claude --version` prints `2.1.294 (Claude Code)`** — the version first, then a
   space — and returns at once (`time` shows 0.00 s native, 0.12 s for the npm install),
   so a check on every launch costs next to nothing. The same shape on 2.1.296
-  (`2.1.296 (Claude Code)`, the darwin-arm64 download, 2026-10-11) and 2.1.299
-  (`2.1.299 (Claude Code)`, 2026-10-14).
+  (`2.1.296 (Claude Code)`, the darwin-arm64 download, 2026-10-11), 2.1.299
+  (`2.1.299 (Claude Code)`, 2026-10-14) and 2.1.300 (`2.1.300 (Claude Code)`,
+  2026-10-15).
 - **A downloaded binary updates itself into its `HOME`, not in place.** A 2.1.296
   scratch copy run with a scratch `HOME` printed "✔ Update installed" during a session
   and put the new version under that `HOME`'s `.local/share/claude/versions/`; the copy
@@ -1733,13 +1807,15 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `latest` 2.1.293, `next` 2.1.294, `stable` 2.1.285). A minimum above npm's `latest`
   would leave an npm install that `claude update` cannot lift to it. On 2026-10-11 both
   channels offered 2.1.296 (`latest` and `next` 2.1.296, `stable` 2.1.287); on
-  2026-10-14 both offered 2.1.299 (`latest` and `next` 2.1.299, `stable` 2.1.287).
+  2026-10-14 both offered 2.1.299 (`latest` and `next` 2.1.299, `stable` 2.1.287); on
+  2026-10-15 both offered 2.1.300 (`latest` and `next` 2.1.300, `stable` 2.1.292).
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
   256,434,168 bytes, and that file ran as the remote `claude` in the Docker SSH lab
   (aarch64); on 2026-10-14 `2.1.299/linux-arm64/claude` answered 200 with 264,626,168
-  bytes. `linux-x64` is inferred from the same shape, not checked.
+  bytes; on 2026-10-15 `2.1.300/linux-arm64/claude` with 266,264,568 bytes, and that
+  file ran as the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
 
@@ -1788,8 +1864,8 @@ sends path, diff fence, hunk and note as one message" (4 runs) and
 `remote-ssh-lab.spec.ts` › "E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL
 claude on the machine through ssh and tmux …" (3 runs; one of them failed only on an
 earlier assertion that the model obey the note, the paste facts held in all three).
-Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, and on
-2.1.299, 2026-10-14.
+Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
+2.1.299, 2026-10-14, and on 2.1.300, 2026-10-15.
 
 - **claude turns bracketed paste on at startup** (it writes `ESC[?2004h`; 2.1.287 notes).
 - **A write wrapped in `ESC[200~` … `ESC[201~` lands as one block and is not sent.** On
