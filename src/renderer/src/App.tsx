@@ -151,6 +151,7 @@ import {
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
+const CENTER_TERMINAL_MAX_COLS = 100
 
 const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch arguments'
 
@@ -325,6 +326,12 @@ export default function App(): JSX.Element {
   }, [])
 
   const [tuiFocus, setTuiFocus] = useState(0)
+  const [termCapWidth, setTermCapWidth] = useState(0)
+  const focusTuiFromMargin = useCallback((e: MouseEvent<HTMLDivElement>): void => {
+    if (e.target !== e.currentTarget) return
+    e.preventDefault()
+    setTuiFocus((n) => n + 1)
+  }, [])
 
   const returnFocus = useCallback((): void => {
     const st = useStore.getState()
@@ -1603,7 +1610,13 @@ export default function App(): JSX.Element {
       <div className="center" ref={centerRef}>
         <div className="center-row">
           {sidebarHidden && panelFull && <div className="wb-full-drag" />}
-          <div className="term-col" style={{ display: panelFull ? 'none' : undefined }}>
+          <div
+            className="term-col"
+            style={{
+              display: panelFull ? 'none' : undefined,
+              ['--term-cap-w' as string]: termCapWidth ? `${termCapWidth}px` : undefined
+            }}
+          >
             <div className="center-top">
               <WorldClock />
             </div>
@@ -1627,12 +1640,15 @@ export default function App(): JSX.Element {
                       style={{
                         display: t.id === shown.id || t.ghost === shown.id ? 'block' : 'none'
                       }}
+                      onMouseDown={focusTuiFromMargin}
                     >
                       <TerminalView
                         id={t.ghost}
                         active={t.id === shown.id || t.ghost === shown.id}
                         scrollbar={false}
                         focusSignal={tuiFocus}
+                        maxCols={CENTER_TERMINAL_MAX_COLS}
+                        onCapWidth={setTermCapWidth}
                       />
                     </div>
                   ),
@@ -1643,11 +1659,14 @@ export default function App(): JSX.Element {
                       display: t.id === shown.id ? 'block' : 'none',
                       visibility: t.ghost ? 'hidden' : undefined
                     }}
+                    onMouseDown={focusTuiFromMargin}
                   >
                     <TerminalView
                       id={t.id}
                       active={t.id === shown.id && !t.ghost}
                       scrollbar={false}
+                      maxCols={CENTER_TERMINAL_MAX_COLS}
+                      onCapWidth={setTermCapWidth}
                       onUserInput={
                         isSessionKind(t.kind)
                           ? () => window.api.sessions.noteActivity(t.id)
