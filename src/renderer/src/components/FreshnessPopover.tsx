@@ -14,12 +14,11 @@ import {
 import type {
   GitAccountSuggestion,
   GitAccountView,
-  SessionRow,
   WorkspaceFreshness,
   WorkspaceGitAccount,
   WorkspaceGithub
 } from '@shared/types'
-import { canPull } from '@shared/freshnessOps'
+import { busyInCheckout, canPull, pullToast } from '@shared/freshnessOps'
 import { basename } from '@shared/preview'
 import { gitAccountId, gitPlatformName } from '@shared/gitAccountOps'
 import { useStore } from '../store'
@@ -30,11 +29,9 @@ import {
   openIssuesLabel,
   openPullsLabel,
   pullNote,
-  pullToast,
   suggestionText,
   type PullNote
 } from '../freshnessView'
-import { mainRunningCount } from '../newSession'
 import { PullConfirm } from './PullConfirm'
 
 const BLANK_ICON = <svg width={14} height={14} viewBox="0 0 24 24" />
@@ -51,7 +48,8 @@ function useGitAccountView(
 ): { acct: WorkspaceGitAccount | undefined; notes: GitNote[]; block: JSX.Element | null } {
   const ws = useStore((s) => s.workspaceRows.find((r) => r.workspace.path === wsPath)?.workspace)
   const openGitAccounts = useStore((s) => s.openGitAccounts)
-  const shown = !!ws && !ws.remote
+  const shown = !!ws
+  const machine = ws?.remote?.host
   const acct = shown ? ws?.gitAccount : undefined
   const picked = acct?.id
   const [switching, setSwitching] = useState(false)
@@ -75,11 +73,11 @@ function useGitAccountView(
 
   const toSettings = (): void => {
     onClose()
-    openGitAccounts()
+    openGitAccounts(undefined, machine)
   }
   const toTokenBox = (): void => {
     onClose()
-    openGitAccounts('git-token')
+    openGitAccounts('git-token', machine)
   }
   const openList = (): void => {
     setSwitching(true)
@@ -159,7 +157,9 @@ function useGitAccountView(
       <>
         <div className="tbu-sep" />
         <div className="tbu-pop-head">
-          <span>Account · {host} on this Mac</span>
+          <span>
+            Account · {host} on {machine ?? 'this Mac'}
+          </span>
         </div>
         {noteRows}
         {shared.length > 0 && (
@@ -171,7 +171,7 @@ function useGitAccountView(
           </div>
         )}
         {accounts
-          .filter((a) => a.host === host)
+          .filter((a) => a.host === host && a.machine === machine)
           .map((a) => (
             <button key={a.id} className="tbu-act" onClick={() => pick(a.id)}>
               {a.id === picked ? <LuCheck size={14} /> : BLANK_ICON}
@@ -356,7 +356,6 @@ export function FreshnessPopover({
   wsPath,
   f,
   github,
-  rows,
   left,
   top,
   onClose,
@@ -367,7 +366,6 @@ export function FreshnessPopover({
   wsPath: string
   f?: WorkspaceFreshness
   github?: WorkspaceGithub
-  rows: SessionRow[]
   left: number
   top: number
   onClose: () => void
@@ -444,7 +442,6 @@ export function FreshnessPopover({
   const fitTop = Math.min(top, Math.max(4, window.innerHeight - height - 4))
 
   const { acct, notes: gitNotes, block: gitBlock } = useGitAccountView(wsPath, !!github, onClose)
-  const inMain = mainRunningCount(rows)
   const eligible = !!f && canPull(f)
   const note: PullNote | null = failed ? { text: failed, tone: 'alarm' } : f ? pullNote(f) : null
 
@@ -486,6 +483,7 @@ export function FreshnessPopover({
                 className="tbu-act pull"
                 disabled={!eligible || pulling}
                 onClick={() => {
+                  const inMain = busyInCheckout(useStore.getState().sessions, wsPath)
                   if (inMain > 0) {
                     setConfirm(inMain)
                     return

@@ -84,7 +84,7 @@ describe('suggestFor', () => {
           return { code: 0, stdout: 'host github.com\nhostname github.com\nport 22\n', stderr: '' }
         return { code: 1, stdout: '', stderr: sshGreeting }
       },
-      readFile: (p) => {
+      readFile: async (p) => {
         try {
           return fs.readFileSync(p, 'utf8')
         } catch {

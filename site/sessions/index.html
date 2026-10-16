@@ -8,8 +8,7 @@
       name="description"
       content="Koloft lists each folder's Claude Code and Codex sessions from the tools' own files, starts and resumes them, and can give each its own git worktree."
     />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/sessions/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -27,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+      content="Koloft's icon and the line “Built for you. And for your agents.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Folders and their sessions — Koloft" />
@@ -36,25 +35,38 @@
       content="Koloft lists each folder's Claude Code and Codex sessions from the tools' own files, starts and resumes them, and can give each its own git worktree."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
-    <link
-      rel="preload"
-      href="../fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="stylesheet" href="../style.css" />
   </head>
-  <body>
+  <body class="doc">
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="../"><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a>
+        <nav class="links" aria-label="Site">
+          <a href="../#palette">⌘P</a>
+          <a href="../#sessions">Sessions</a>
+          <a href="../#workbench">Workbench</a>
+          <a href="../#assist">Assist</a>
+          <a href="../features/">Features</a>
+          <a href="../sessions/" aria-current="page">Docs</a>
+          <a href="../changelog/">Changelog</a>
+        </nav>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="../install/"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#download" /></svg
+          >Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="../icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
+
     <div class="sheet">
       <header class="masthead">
-        <p class="brand">
-          <a href="../"
-            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
-          >
-        </p>
-        <nav class="contents" aria-label="Pages">
-          <a href="../">home</a>
+        <nav class="contents" aria-label="Docs">
           <a href="../sessions/" aria-current="page">sessions</a>
           <a href="../workbench/">workbench</a>
           <a href="../agents/">agents</a>
@@ -77,7 +89,6 @@
               height="800"
               alt="The sidebar: the folder tidewatch with a branch sign, 2 behind, 7 open issues and 2 open pull requests, five sessions under it with their branch names, two of them with a red dot; below it the folder harbor-site with one session"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             two folders and their sessions. The bars on the left are the lights: green for a turn
@@ -201,7 +212,6 @@
               loading="lazy"
               alt="The tidewatch sessions; the row Fix tide times near midnight has a small pin before its name"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>the pin on a row marked Keep running</figcaption>
         </figure>
@@ -316,9 +326,11 @@
         <ul class="dash">
           <li>
             A session you ask for in <kbd>⌘P</kbd>, and one Assist starts, gets its own worktree too
-            in a folder git tracks, never the folder itself. Assist names it; when it does not, the
-            worktree is called <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code>. Claude
-            Code and Codex both do this, and <kbd>⌘P</kbd> does it on a
+            in a folder git tracks, never the folder itself and never a worktree that is already
+            there. Assist names it; when it does not, the worktree is called
+            <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code>. A name already in use
+            gets <code class="nowrap">-2</code> after it, then <code class="nowrap">-3</code>.
+            Claude Code and Codex both do this, and <kbd>⌘P</kbd> does it on a
             <a href="../remote/">remote folder</a> too. <kbd>⌘N</kbd> still starts in the folder.
           </li>
           <li>
@@ -383,7 +395,6 @@
               loading="lazy"
               alt="The folder tidewatch: the session Add storm alerts endpoint with two sessions set in under it, Update the API docs and Write the storm alert tests, and under the second of those, one level deeper, Check the test fixtures; below them all, Fix tide times near midnight on its own"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>one session started two, and one of those started one more</figcaption>
         </figure>
@@ -402,7 +413,6 @@
               loading="lazy"
               alt="The same folder with Add storm alerts endpoint folded: a red 2 and a grey 3 at the right of its name, and the arrow now points right"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>folded: 2 of the 3 sessions inside need you</figcaption>
         </figure>
@@ -478,7 +488,6 @@
               loading="lazy"
               alt="The row Add storm alerts endpoint with its right-click menu open: Reveal in Finder, Copy session ID, Keep running, Close"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>the menu of a running session</figcaption>
         </figure>
@@ -529,7 +538,6 @@
               loading="lazy"
               alt="The git panel under the tidewatch folder: main · origin/main, fetched just now, 2 behind, 0 ahead, a note that Koloft only pulls into a clean tree, Pull · fast-forward greyed out, Fetch now, and GitHub · tidewatch-labs/tidewatch with 7 open issues and 2 open pull requests"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             the git panel. Pull is greyed out here, and the panel says why: Koloft only pulls into a
@@ -546,24 +554,41 @@
           issue and pull request counts, but no Pull, no Fetch now and no behind number.
         </p>
 
-        <p class="next">next page -&gt; <a href="../workbench/">The Workbench</a></p>
+        <p class="next">Next page → <a href="../workbench/">The Workbench</a></p>
       </main>
-
-      <footer class="signoff">
-        <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="../changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
-        </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
-        </p>
-      </footer>
     </div>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="../"
+            ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
+          >
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="../features/">All features</a>
+          <a href="../sessions/">Folders and their sessions</a>
+          <a href="../workbench/">The Workbench</a>
+          <a href="../agents/">Agents can use Koloft too</a>
+          <a href="../scheduled/">Sessions on a timer</a>
+          <a href="../accounts/">Several accounts, one pool</a>
+          <a href="../remote/">Remote folders</a>
+          <a href="../discord/">A butler on Discord</a>
+          <a href="../install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="../changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
 
     <script src="../script.js"></script>
   </body>

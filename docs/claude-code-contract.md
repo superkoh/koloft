@@ -1911,6 +1911,11 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   `"prompt":"<cross-session-message from-mode=\"bypass\">\n<body>\n</cross-session-message>"`.
   In one project's transcripts on this Mac since 2026-10-09, 10 of 12 such messages were followed by the
   prompt hook's context.
+- **A background task's finish report (§8) and a subagent's message fire `UserPromptSubmit`
+  too, its `prompt` the text as delivered**: `<task-notification>\n<task-id>…` and
+  `<agent-message from=\"<name>\">\n…`. Swept 2026-10-16 from the transcripts on this Mac
+  since 10-11: the prompt hook's context followed 1,224 `<task-notification>` prompts on
+  2.1.296, 2.1.299, 2.1.300 and 2.1.301, and 4 `<agent-message>` prompts on 2.1.296.
 - **A `PostToolBatch` event also exists** (once per batch of tool calls; its
   `additionalContext` reached the model on 2.1.296; its name is in the 2.1.294 binary).
   It is not in the CHANGELOG; the 2.1.293 binary, the oldest Koloft supports, carries

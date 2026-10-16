@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import type {
   AccountStatus,
   GitAccount,
@@ -10,6 +11,7 @@ import type {
   GitAccountView,
   GitLoginProgress,
   GitLoginStart,
+  GitMachine,
   GitPlatform,
   GitRepoPick,
   GitTokenAdd,
@@ -31,6 +33,7 @@ import {
 import { gitTokenDelete, gitTokenRead, gitTokenWrite } from './accounts'
 import {
   dismissSuggestion,
+  listGitMachines,
   listGitAccounts,
   listGitPicks,
   removeGitAccount,
@@ -66,6 +69,8 @@ import {
 import { GH_TOKEN_VARIABLES } from './gitCredentialScripts'
 import { CredentialManager, type GcmAccount, type GcmSignIn } from './gitCredentialManager'
 import { GitRepoKeys } from './gitRepoKey'
+import { GitMachineAccounts, throughTempStore, type MachineRun } from './gitMachineAccounts'
+import type { GhResult } from './prChecks'
 import type { GitRunResult } from './gitSteps'
 import { pushAccess } from './githubApi'
 import {
@@ -158,19 +163,26 @@ export interface GitAccountServiceDeps {
   progress(p: GitLoginProgress): void
   accountsChanged(views: GitAccountView[]): void
   picksChanged(): void
+  runOnMachine: MachineRun
 }
 
 interface GcmRun {
   run: GcmSignIn
   account: GcmAccount
+  machine?: string
   url?: string
 }
 
 export class GitAccountService {
-  private keys = new GitRepoKeys()
+  private keys: GitRepoKeys
   private readonly master: string
   private accounts: GitAccount[] = []
   private picks: GitRepoPick[] = []
+  private machines = new Map<string, Pick<GitMachine, 'accounts' | 'picks'>>()
+  private onMachine: GitMachineAccounts
+  private signingFor: string | undefined
+  private checkingMachine: object | null = null
+  private machineSyncs = new Map<string, Promise<boolean>>()
   private offline = new Set<string>()
   private found = new Map<string, GitAccountSuggestion>()
   private orgBlocked = new Map<string, { id: string; org: string }>()
@@ -187,6 +199,12 @@ export class GitAccountService {
   private loginEnv: NodeJS.ProcessEnv = { ...process.env }
 
   constructor(private d: GitAccountServiceDeps) {
+    this.onMachine = new GitMachineAccounts(d.runOnMachine)
+    this.keys = new GitRepoKeys(undefined, async (machine, paths) =>
+      this.accountsIn(machine).length
+        ? this.onMachine.repoKeys(machine, paths)
+        : paths.map(() => null)
+    )
     this.master = this.reload()
     this.gcm = new CredentialManager({
       bin: d.gcmBin,
@@ -215,11 +233,16 @@ export class GitAccountService {
       openInBrowser: d.openInBrowser,
       progress: d.progress,
       signedIn: (url, token) =>
-        this.signedIn(url === GITHUB_DOT_COM ? 'github' : 'ghes', url, { token })
+        this.signedIn(url === GITHUB_DOT_COM ? 'github' : 'ghes', url, { token }, this.signingFor)
     })
   }
 
+  private signInStoreRoot(): string {
+    return path.join(gitAccountsDir(this.d.userData), 'machine-sign-in')
+  }
+
   start(): void {
+    fs.rmSync(this.signInStoreRoot(), { recursive: true, force: true })
     fs.mkdirSync(this.d.requestDir, { recursive: true, mode: 0o700 })
     this.requests.watch(this.d.requestDir)
     this.checks.start()
@@ -240,6 +263,12 @@ export class GitAccountService {
   private reload(): string {
     this.accounts = listGitAccounts()
     this.picks = listGitPicks()
+    this.machines = new Map(
+      Object.entries(listGitMachines()).map(([m, { accounts, picks }]) => [
+        m,
+        { accounts, picks: picks.map((p) => ({ ...p, repo: formatRemoteKey(m, p.repo) })) }
+      ])
+    )
     const texts = new Map<string, string>()
     for (const p of this.picks) {
       const rules = this.remotes.get(p.repo)?.rules
@@ -259,25 +288,40 @@ export class GitAccountService {
     return sshKeyPath(gitAccountsDir(this.d.userData), id)
   }
 
+  private machineOf(repo: string | null): string | undefined {
+    return repo ? parseRemoteKey(repo)?.host : undefined
+  }
+
+  private accountsIn(machine: string | undefined): GitAccount[] {
+    return machine ? (this.machines.get(machine)?.accounts ?? []) : this.accounts
+  }
+
+  private picksIn(machine: string | undefined): GitRepoPick[] {
+    return machine ? (this.machines.get(machine)?.picks ?? []) : this.picks
+  }
+
   private pickOf(repo: string | null): GitRepoPick | undefined {
-    return this.picks.find((p) => p.repo === repo)
+    return this.picksIn(this.machineOf(repo)).find((p) => p.repo === repo)
   }
 
   private pickFor(repo: string | null): GitAccount | undefined {
-    return this.account(this.pickOf(repo)?.account)
+    return this.account(this.pickOf(repo)?.account, this.machineOf(repo))
   }
 
   private async sshHostname(
     dest: string,
     port: string | undefined,
-    env: NodeJS.ProcessEnv
+    sshG: (args: string[]) => Promise<GitRunResult>,
+    machine = ''
   ): Promise<string | null> {
-    const key = `${dest} ${port ?? ''}`
+    const key = `${machine} ${dest} ${port ?? ''}`
     let known = this.sshHosts.get(key)
     if (!known) {
-      known = runForClue('ssh', ['-G', ...(port ? ['-p', port] : []), dest], { env }).then(
-        (g) => (g.code === 0 && sshSetting(g.stdout, 'hostname')) || null
-      )
+      known = sshG(['-G', ...(port ? ['-p', port] : []), dest]).then((g) => {
+        const host = (g.code === 0 && sshSetting(g.stdout, 'hostname')) || null
+        if (!host) this.sshHosts.delete(key)
+        return host
+      })
       this.sshHosts.set(key, known)
     }
     return known
@@ -294,7 +338,7 @@ export class GitAccountService {
       env: withoutConfigEntries(env)
     })
     const found = await rewriteRulesFor(a, remoteUrlsOf(listed.stdout), (dest, port) =>
-      this.sshHostname(dest, port, env)
+      this.sshHostname(dest, port, (args) => runForClue('ssh', args, { env }))
     )
     if (this.pickFor(repo)?.id !== a.id) return false
     this.scanned.set(repo, stamp)
@@ -395,8 +439,8 @@ export class GitAccountService {
     return turned && { kind: 'https-refused', sshOnly: turned === 'ssh-only' }
   }
 
-  private account(id: string | undefined): GitAccount | undefined {
-    return this.accounts.find((a) => a.id === id)
+  private account(id: string | undefined, machine?: string): GitAccount | undefined {
+    return this.accountsIn(machine).find((a) => a.id === id)
   }
 
   private async secret(a: GitAccount): Promise<GitCredential | null> {
@@ -454,13 +498,20 @@ export class GitAccountService {
   }
 
   views(): GitAccountView[] {
-    return this.accounts.map((a) => ({
-      ...a,
-      usedBy: this.picks
+    const usedBy = (a: GitAccount, machine?: string): string[] =>
+      this.picksIn(machine)
         .filter((p) => p.account === a.id)
-        .flatMap((p) => this.keys.workspacesOf(p.repo)),
-      ...(this.offline.has(a.id) && { checkError: 'offline' as const })
-    }))
+        .flatMap((p) => this.keys.workspacesOf(p.repo))
+    return [
+      ...this.accounts.map((a) => ({
+        ...a,
+        usedBy: usedBy(a),
+        ...(this.offline.has(a.id) && { checkError: 'offline' as const })
+      })),
+      ...[...this.machines].flatMap(([machine, m]) =>
+        m.accounts.map((a) => ({ ...a, usedBy: usedBy(a, machine), machine }))
+      )
+    ]
   }
 
   private accountsChanged(): void {
@@ -474,6 +525,11 @@ export class GitAccountService {
     this.d.picksChanged()
   }
 
+  private async changedOn(machine: string): Promise<boolean> {
+    this.reload()
+    return this.syncMachine(machine).finally(() => this.changed())
+  }
+
   private setStatus(id: string, status: AccountStatus): void {
     const a = this.account(id)
     if (!a) return
@@ -481,8 +537,16 @@ export class GitAccountService {
     this.changed()
   }
 
+  pickableOnMachine(wsPath: string): boolean {
+    const machine = parseRemoteKey(wsPath)?.host
+    return !!machine && this.accountsIn(machine).length > 0
+  }
+
   pickedAccount(root: string): string | undefined {
-    return this.pickFor(this.keys.known(root))?.id
+    const repo = this.keys.known(root)
+    const id = this.pickFor(repo)?.id
+    const machine = this.machineOf(repo)
+    return id && machine ? `${machine} ${id}` : id
   }
 
   async pickedAt(cwd: string): Promise<boolean> {
@@ -517,19 +581,55 @@ export class GitAccountService {
   }
 
   async ghEnv(root: string): Promise<NodeJS.ProcessEnv | undefined> {
+    if (parseRemoteKey(root)) return undefined
     return this.envFor(this.pickFor(await this.keys.resolve(root)))
+  }
+
+  // ADR-0036
+  async machineGh(root: string, args: string[]): Promise<GhResult | null> {
+    const at = parseRemoteKey(root)
+    const a = at && this.pickFor(await this.keys.resolve(root))
+    if (!at || !a || !isGhPlatform(a.platform)) return null
+    return this.onMachine.gh(at.host, at.path, args)
   }
 
   async ghEnvForRepo(
     slug: string | undefined,
     workspaces: string[]
   ): Promise<NodeJS.ProcessEnv | undefined> {
-    for (const ws of slug ? workspaces : []) {
+    for (const ws of slug ? workspaces.filter((w) => !parseRemoteKey(w)) : []) {
       const picked = this.pickFor(this.keys.known(ws))
       const repo = picked && (await this.d.repoOf(ws))
       if (repo && `${repo.owner}/${repo.name}` === slug) return this.envFor(picked)
     }
     return this.envFor(this.accounts.find((a) => a.platform === 'github' && a.default))
+  }
+
+  private newAccount(
+    platform: GitPlatform,
+    url: string,
+    me: { login: string; author?: GitAccount['author'] },
+    secret: { token: string } | { gcmNamespace: string },
+    machine?: string
+  ): { account: GitAccount; before: GitAccount | undefined } {
+    const host = gitHostOf(url)
+    const id = gitAccountId(host, me.login)
+    const before = this.account(id, machine)
+    return {
+      before,
+      account: {
+        id,
+        platform,
+        url,
+        host,
+        login: me.login,
+        ...(me.author && { author: me.author }),
+        ...('gcmNamespace' in secret && { gcmNamespace: secret.gcmNamespace }),
+        default: false,
+        status: 'ok',
+        addedAt: before?.addedAt ?? Date.now()
+      }
+    }
   }
 
   private async save(
@@ -538,103 +638,140 @@ export class GitAccountService {
     me: { login: string; author?: GitAccount['author'] },
     secret: { token: string } | { gcmNamespace: string }
   ): Promise<GitAccount> {
-    const host = gitHostOf(url)
-    const id = gitAccountId(host, me.login)
-    const before = this.account(id)
+    const { account, before } = this.newAccount(platform, url, me, secret)
     if ('token' in secret) {
-      if (!(await gitTokenWrite(host, me.login, secret.token)))
+      if (!(await gitTokenWrite(account.host, me.login, secret.token)))
         throw new Error('keychain write failed')
-    }
-    const account: GitAccount = {
-      id,
-      platform,
-      url,
-      host,
-      login: me.login,
-      ...(me.author && { author: me.author }),
-      ...('gcmNamespace' in secret && { gcmNamespace: secret.gcmNamespace }),
-      default: false,
-      status: 'ok',
-      addedAt: before?.addedAt ?? Date.now()
     }
     upsertGitAccount(account)
     if (before?.gcmNamespace && before.gcmNamespace !== account.gcmNamespace)
       void this.gcm.erase(before)
     if (before && !before.gcmNamespace && 'gcmNamespace' in secret)
       void gitTokenDelete(before.host, before.login)
-    this.offline.delete(id)
+    this.offline.delete(account.id)
     this.changed()
     return account
+  }
+
+  // ADR-0036
+  private async saveOnMachine(
+    machine: string,
+    platform: GitPlatform,
+    url: string,
+    me: { login: string; author?: GitAccount['author'] },
+    secret: { token: string } | { gcmNamespace: string; store: string }
+  ): Promise<void> {
+    const { account, before } = this.newAccount(platform, url, me, secret, machine)
+    const sent =
+      'token' in secret
+        ? await this.onMachine.writeToken(machine, account, secret.token)
+        : await this.onMachine.moveGcmStore(machine, secret.store)
+    if (!sent) throw new Error('machine write failed')
+    upsertGitAccount(account, machine)
+    if (before && before.gcmNamespace !== account.gcmNamespace)
+      await this.onMachine.forget(machine, before)
+    const synced = await this.changedOn(machine)
+    if (synced && (!account.gcmNamespace || (await this.onMachine.helperAnswers(machine, account))))
+      return
+    await this.forgetOnMachine(machine, account)
+    throw new Error('machine setup failed')
   }
 
   private async signedIn(
     platform: GitPlatform,
     url: string,
-    secret: { token: string } | { gcmNamespace: string; cred: GitCredential }
+    secret: { token: string } | { gcmNamespace: string; cred: GitCredential; store?: string },
+    machine?: string
   ): Promise<{ ok: true; login: string } | { ok: false; message: string }> {
     const token = 'token' in secret ? secret.token : secret.cred.password
     const me = await identify(apiTargetOf({ platform, url }), token)
     if (!me.ok) return { ok: false, message: identityFailure(platform, me) }
+    const kept =
+      'token' in secret ? secret : { gcmNamespace: secret.gcmNamespace, store: secret.store ?? '' }
     try {
-      await this.save(
-        platform,
-        url,
-        me,
-        'token' in secret ? secret : { gcmNamespace: secret.gcmNamespace }
-      )
+      if (machine) await this.saveOnMachine(machine, platform, url, me, kept)
+      else await this.save(platform, url, me, kept)
     } catch {
-      return { ok: false, message: 'Koloft could not save the account.' }
+      return {
+        ok: false,
+        message: machine
+          ? `Koloft could not set the account up on ${machine}.`
+          : 'Koloft could not save the account.'
+      }
     }
     return { ok: true, login: me.login }
   }
 
-  async loginStart(platform: GitPlatform, raw: string): Promise<GitLoginStart> {
-    if (this.gcmRun || this.login.running) return { ok: false, error: 'busy' }
+  async loginStart(platform: GitPlatform, raw: string, machine?: string): Promise<GitLoginStart> {
+    if (this.gcmRun || this.login.running || this.checkingMachine)
+      return { ok: false, error: 'busy' }
     const url = gitAccountUrl(platform, raw)
     const how = url && gitSignIn(platform, url)
     if (!url || !how || how === 'token') return { ok: false, error: 'bad-url' }
+    if (how === 'browser' && !this.gcm.available()) return { ok: false, error: 'no-gcm' }
+    if (machine) {
+      const check = {}
+      this.checkingMachine = check
+      let cancelled = false
+      const ready = await this.onMachine.ready(machine, how === 'browser').finally(() => {
+        cancelled = this.checkingMachine !== check
+        if (!cancelled) this.checkingMachine = null
+      })
+      if (cancelled) return { ok: false, error: 'busy' }
+      if (!ready.ok) return ready
+    }
+    this.signingFor = machine
     if (how === 'gh') return this.login.start(url)
-    if (!this.gcm.available()) return { ok: false, error: 'no-gcm' }
-    return this.gcmLogin(platform, url)
+    return this.gcmLogin(platform, url, machine)
   }
 
-  // PLATFORM§50 ADR-0034
-  private gcmLogin(platform: GitPlatform, url: string): GitLoginStart {
+  // PLATFORM§50 ADR-0034 ADR-0036
+  private gcmLogin(platform: GitPlatform, url: string, machine?: string): GitLoginStart {
     const namespace = `${this.d.gcmNamespacePrefix}-${randomUUID()}`
     const account = { platform, url, gcmNamespace: namespace }
     this.d.progress({ phase: 'browser' })
-    const g: GcmRun = {
-      account,
-      run: this.gcm.signIn(account, (opened) => {
-        g.url = opened
-        if (this.gcmRun === g) this.d.progress({ phase: 'browser', url: opened })
-      })
-    }
+    const g = { account, machine } as GcmRun
     this.gcmRun = g
-    void g.run.done.then(async (r) => {
+    const signIn = async (store?: string): Promise<void> => {
+      g.run = this.gcm.signIn(
+        account,
+        (opened) => {
+          g.url = opened
+          if (this.gcmRun === g) this.d.progress({ phase: 'browser', url: opened })
+        },
+        store
+      )
+      const r = await g.run.done
       if (this.gcmRun !== g) return
       const fail = (message: string): void => {
         this.gcmRun = null
-        void this.gcm.erase(account)
+        if (!machine) void this.gcm.erase(account)
         this.d.progress({ phase: 'failed', message })
       }
       if ('error' in r) return fail(`Sign-in did not finish${r.error ? `: ${r.error}` : '.'}`)
-      const saved = await this.signedIn(platform, url, { gcmNamespace: namespace, cred: r })
+      const saved = await this.signedIn(
+        platform,
+        url,
+        { gcmNamespace: namespace, cred: r, store },
+        machine
+      )
       if (this.gcmRun !== g) return
       if (!saved.ok) return fail(saved.message)
       this.gcmRun = null
       this.d.progress({ phase: 'saved', login: saved.login })
-    })
+    }
+    void (machine ? throughTempStore(this.signInStoreRoot(), signIn) : signIn())
     return { ok: true }
   }
 
   loginCancel(): void {
     this.login.cancel()
+    this.checkingMachine = null
     const g = this.gcmRun
     if (!g) return
     this.gcmRun = null
     g.run.cancel()
-    void g.run.done.then(() => this.gcm.erase(g.account))
+    if (!g.machine) void g.run.done.then(() => this.gcm.erase(g.account))
   }
 
   loginBrowser(): void {
@@ -649,6 +786,10 @@ export class GitAccountService {
   async addToken(add: GitTokenAdd): Promise<GitTokenAddResult> {
     const url = gitAccountUrl(add.platform, add.url)
     if (!url) return { ok: false, error: 'bad-url' }
+    if (add.machine) {
+      const ready = await this.onMachine.ready(add.machine, false)
+      if (!ready.ok) return ready.error === 'machine' ? ready : { ok: false, error: 'failed' }
+    }
     let me: { login: string; author?: GitAccount['author'] }
     if (add.platform === 'other') {
       const login = add.username?.trim() ?? ''
@@ -663,16 +804,25 @@ export class GitAccountService {
       me = found
     }
     try {
-      await this.save(add.platform, url, me, { token: add.token })
+      if (add.machine)
+        await this.saveOnMachine(add.machine, add.platform, url, me, { token: add.token })
+      else await this.save(add.platform, url, me, { token: add.token })
     } catch {
       return { ok: false, error: 'failed' }
     }
     return { ok: true, login: me.login }
   }
 
-  async remove(id: string): Promise<void> {
-    const a = this.account(id)
+  private async forgetOnMachine(machine: string, a: GitAccount): Promise<void> {
+    await this.onMachine.forget(machine, a)
+    removeGitAccount(a.id, machine)
+    await this.changedOn(machine)
+  }
+
+  async remove(id: string, machine?: string): Promise<void> {
+    const a = this.account(id, machine)
     if (!a) return
+    if (machine) return this.forgetOnMachine(machine, a)
     if (a.gcmNamespace) await this.gcm.erase(a)
     else await gitTokenDelete(a.host, a.login)
     for (const f of [this.keyPath(a.id), `${this.keyPath(a.id)}.pub`]) fs.rmSync(f, { force: true })
@@ -682,17 +832,48 @@ export class GitAccountService {
     this.changed()
   }
 
-  makeDefault(id: string): void {
-    setDefaultGitAccount(id)
+  makeDefault(id: string, machine?: string): void {
+    setDefaultGitAccount(id, machine)
     this.reload()
     this.accountsChanged()
+  }
+
+  // PLATFORM§53 ADR-0035 ADR-0036
+  private syncMachine(machine: string): Promise<boolean> {
+    const after = this.machineSyncs.get(machine) ?? Promise.resolve(true)
+    const next = after.then(() => this.syncMachineNow(machine)).catch(() => false)
+    this.machineSyncs.set(machine, next)
+    return next
+  }
+
+  private async syncMachineNow(machine: string): Promise<boolean> {
+    const picks = this.picksIn(machine).map((p) => ({ ...p, repo: parseRemoteKey(p.repo)!.path }))
+    const hostname = (dest: string, port?: string): Promise<string | null> =>
+      this.sshHostname(dest, port, (args) => this.onMachine.clueSsh(machine, args), machine)
+    const texts = new Map(
+      await Promise.all(
+        picks.map(async (p): Promise<[string, string]> => {
+          const a = this.account(p.account, machine)
+          const listed = await this.onMachine.clueGit(machine, p.repo, [
+            'config',
+            '--get-regexp',
+            REMOTE_URLS
+          ])
+          const found = a && (await rewriteRulesFor(a, remoteUrlsOf(listed.stdout), hostname))
+          return [p.repo, found ? rewriteConfigText(found.rules) : '']
+        })
+      )
+    )
+    return this.onMachine.sync(machine, this.accountsIn(machine), picks, texts)
   }
 
   async pick(wsPath: string, id: string | null): Promise<void> {
     const repo = await this.keys.resolve(wsPath)
     if (!repo) return
-    setGitPick(repo, id)
+    const at = parseRemoteKey(repo)
+    setGitPick(at?.path ?? repo, id, at?.host)
     this.keys.set(wsPath, repo)
+    if (at) return void (await this.changedOn(at.host))
     this.orgBlocked.delete(repo)
     this.httpsRefused.delete(repo)
     this.remotes.set(repo, { rules: [] })
@@ -726,7 +907,7 @@ export class GitAccountService {
       {
         git: (cwd, args, opts) => runForClue('git', args, { cwd, ...opts }),
         ssh: (args) => runForClue('ssh', args, { env }),
-        readFile: readText,
+        readFile: async (p) => readText(p),
         home: os.homedir(),
         env,
         githubUrl: GITHUB_URL,
@@ -738,12 +919,46 @@ export class GitAccountService {
     )
   }
 
+  // ADR-0036
+  private async suggestOnMachine(
+    machine: string,
+    dir: string,
+    network: boolean
+  ): Promise<GitAccountSuggestion> {
+    const facts = await this.onMachine.factsFor(machine)
+    if (!facts) return { kind: 'off' }
+    return suggestFor(
+      dir,
+      { network: network && facts.timeout, pushChecks: false },
+      {
+        git: (cwd, args, opts) => this.onMachine.clueGit(machine, cwd, args, opts.input),
+        ssh: (args) => this.onMachine.clueSsh(machine, args),
+        readFile: (p) => this.onMachine.clueFile(machine, p),
+        home: facts.home,
+        env: await this.onMachine.clueEnv(machine),
+        githubUrl: GITHUB_URL,
+        accounts: () => this.accountsIn(machine),
+        serverOf: credentialUrlOf,
+        token: async () => null,
+        pushAccess: pushAccessOn
+      }
+    )
+  }
+
   async suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion> {
     const repo = await this.keys.resolve(wsPath)
     if (!repo) return { kind: 'off' }
-    const dismissed = suggestionDismissed(repo)
+    const at = parseRemoteKey(repo)
+    const dismissed = suggestionDismissed(at?.path ?? repo, at?.host)
     const cached = this.found.get(wsPath)
-    const s = !network && cached ? cached : await this.suggestNow(wsPath, network && !dismissed)
+    const ask = network && !dismissed
+    const dir = parseRemoteKey(wsPath)
+    const s =
+      !network && cached
+        ? cached
+        : at && dir
+          ? await this.suggestOnMachine(at.host, dir.path, ask)
+          : await this.suggestNow(wsPath, ask)
     if (s !== cached && (!network || s.kind !== 'none')) this.found.set(wsPath, s)
     return dismissed && s.kind !== 'off' ? { kind: 'none', host: s.host } : s
   }
@@ -751,16 +966,18 @@ export class GitAccountService {
   async dismiss(wsPath: string): Promise<void> {
     const repo = await this.keys.resolve(wsPath)
     if (!repo) return
-    dismissSuggestion(repo)
+    const at = parseRemoteKey(repo)
+    dismissSuggestion(at?.path ?? repo, at?.host)
   }
 
   async autoPickNewWorkspace(wsPath: string): Promise<void> {
-    if (this.accounts.length === 0) return
+    const machine = parseRemoteKey(wsPath)?.host
+    if (this.accountsIn(machine).length === 0) return
     const repo = await this.keys.resolve(wsPath)
     if (!repo || this.pickFor(repo)) return
     const s = await this.suggest(wsPath, true)
     if (!PICKED_WITHOUT_ASKING.includes(s.kind) || !('login' in s)) return
-    const account = this.account(gitAccountId(s.host, s.login))
+    const account = this.account(gitAccountId(s.host, s.login), machine)
     if (account) await this.pick(wsPath, account.id)
   }
 }

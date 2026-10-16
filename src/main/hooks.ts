@@ -207,7 +207,7 @@ case "$event" in
             flag=${shq(NOT_FROM_THE_RELAY)}
           fi
           ;;
-        *'"prompt":"<cross-session-message '*) ;;
+        *'"prompt":"<cross-session-message '*|*'"prompt":"<task-notification>'*|*'"prompt":"<agent-message '*) ;;
         *)
           quote_prompt > "$said"
           [ -f "$reg/$tab.conductor" ] && : > "$reg/$tab.typed"
