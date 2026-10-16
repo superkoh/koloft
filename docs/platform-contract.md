@@ -847,6 +847,17 @@ inferred, not checked.
   tab scrambled the Claude TUI). A WebGL terminal taken out of the layout entirely,
   with no xterm mounting or disposing (seen: the Claude TUI behind a full-width
   Workbench), came back blank until the atlas was cleared and repainted (§20).
+- **`clearTextureAtlas()` silently does nothing when page 0 looks empty.**
+  `TextureAtlas.clearTexture()` returns early when `pages[0].currentRow` is at (0, 0),
+  meant as "nothing drawn yet". But a merged page never moves its `currentRow`, and a
+  cleared page 0 stays at (0, 0) when new glyphs land on a later page. After heavy CJK
+  output and one earlier clear, page 0 was an 8192-px merged page at (0, 0), so every
+  later clear kept the old cache: glyph textures wiped the way the GPU loses them stayed
+  blank (ink 73410 → 0 → 510 pixels after `webgl:repair`) until the app restarted. Making
+  page 0's `currentRow.x` non-zero before the call lets the clear run (ink back to
+  73410); one clear resets it to (0, 0), so the other owners of that atlas skip theirs.
+  Measured 2026-10-16, Electron 43.7.3, addon 0.20.0-beta.298, `webgl-repair.spec.ts`;
+  the same guard is still on xterm.js master that day.
 
 ## §24 DOM, CSS and form controls in Chromium
 
