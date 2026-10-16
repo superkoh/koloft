@@ -882,6 +882,16 @@ inferred, not checked.
   `<svg><image href="https://…"/></svg>` works as a network beacon.
 - **CSS `image-set('https://…' 1x)` in a `style` attribute fetches from the network
   without ever spelling `url(`.**
+- **A `title` tooltip on macOS shows only now and then while the mouse rests inside the
+  element** (electron/electron#49843). Measured 2026-10-15 in a tart VM (macOS 27.0,
+  Electron 43.7.3, Chromium 150.0.7871.250, `titleBarStyle: 'hiddenInset'`), the real
+  mouse moved with `CGEventPost` and rested 2 s, a tooltip counted when Electron owned a
+  level-103 window (checked against screenshots), 8 hovers per fresh launch: a plain
+  `<button title>` hovered at its centre showed 1, 5 and 1 of 8 in three runs; at its very
+  left or right edge 24 of 24; with `position: relative` and an `::after` cover
+  (`content: ''; position: absolute; inset: 0`) on the element 16 of 16; the same cover
+  with `pointer-events: none` 6 of 16; a `no-drag` button inside a `drag` bar 16 of 16, so
+  the drag region is not the cause.
 
 ## §25 React and zustand
 
