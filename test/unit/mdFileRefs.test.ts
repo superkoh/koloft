@@ -77,6 +77,13 @@ describe('fileRefs', () => {
     expect(commas).toContain('>docs/说明.md:3</a>，然后提交')
   })
 
+  it('links only the path when Chinese words run straight into it, but keeps a folder whose own name is Chinese', () => {
+    const glued = md.render('见docs/说明.md:3。\n')
+    expect(glued).toContain('见<a class="md-fileref" data-path="docs/说明.md" data-line="3">')
+    const folder = md.render('see 说明/a.md:3 here\n')
+    expect(folder).toContain('data-path="说明/a.md"')
+  })
+
   it('leaves the text of an existing markdown link alone', () => {
     const html = md.render('[sample.ts:12](https://example.com)\n')
     expect(html).not.toContain('md-fileref')
