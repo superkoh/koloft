@@ -425,11 +425,11 @@
           </li>
           <li>
             A row hangs under its starter only while the starter is in the same folder's list. When
-            its starter is closed for good (by <code class="nowrap">koloft session close</code>, or
-            by Remove from list), it moves up under the session that started the starter, or to the
-            top of the list if there was none. Otherwise it sits at the top of that list: when its
-            starter is gone from the list, when it was started into another folder with
-            <code class="nowrap">--workspace</code>, when a
+            the starter leaves the list (closed for good with
+            <code class="nowrap">koloft session close</code>, or by Remove from list), the row moves
+            up under the starter's own starter, or to the top if there was none. A row also sits at
+            the top when it was started into another folder with
+            <code class="nowrap">--workspace</code>, when an
             <a href="../accounts/#assist">Assist</a> started it, and always for a session on another
             machine.
           </li>
@@ -528,9 +528,9 @@
           </li>
           <li>
             Account: which <a href="../accounts/#git-accounts">git account</a> this folder pushes
-            as. Shown for a folder on github.com or another host Koloft knows git accounts for. On a
-            remote folder it shows once that machine has at least one git account, and lists those
-            (see <a href="../accounts/#machine-accounts">git accounts on another machine</a>).
+            as. Shown for a folder on github.com or another host Koloft knows git accounts for, and
+            for a remote folder whose machine has one (see
+            <a href="../accounts/#machine-accounts">git accounts on another machine</a>).
           </li>
         </ul>
         <figure class="shot" style="--ar: 740 / 612; --w: min(370px, 100cqw)">
@@ -554,23 +554,22 @@
           <code>Fetch now</code> still works.
         </p>
         <p>
-          Under it, <code>Auto-pull the default branch</code> (off at first, and greyed out while
-          Auto-fetch is off) lets Koloft pull by itself: after each background fetch, a folder that
-          sits on its default branch with a clean tree and no local commits is fast-forwarded, and a
-          small message names the folder, the branch and how many commits came in. It waits while a
-          session in that checkout is mid-task (working, stopped at a permission prompt, or in a
-          state Koloft cannot see), and tries again on the next fetch. The same for Claude Code and
-          Codex sessions; a remote folder is never pulled.
+          Under it, <code>Auto-pull the default branch</code> (off at first; greyed out while
+          Auto-fetch is off) lets Koloft pull by itself. After each background fetch, a folder that
+          Pull would allow (see above) is pulled, and a small message names the folder, the branch
+          and how many commits came in. It waits while a session in that checkout is mid-task
+          (working, stopped at a permission prompt, or in a state Koloft cannot see) and tries again
+          on the next fetch. Claude Code and Codex sessions count the same way; a remote folder is
+          never pulled.
         </p>
         <p>
-          A Pull you click yourself asks <code>Pull into main?</code> first only while a session in
-          that checkout is mid-task in the same sense, since pulling changes files under it
-          mid-task. Worktree sessions are not affected.
+          If you click Pull while a session in that checkout is mid-task, Koloft first asks
+          <code>Pull into main?</code>, because the pull would change files under that session.
+          Worktree sessions are not affected.
         </p>
         <p>
-          On a <a href="../remote/">remote folder</a> the panel shows the GitHub part, the issue and
-          pull request counts, and, once that machine has a git account, the Account part listing
-          them, but no Pull, no Fetch now and no behind number.
+          On a <a href="../remote/">remote folder</a> the panel shows no Pull, no Fetch now and no
+          behind number; the GitHub part and the Account part work as above.
         </p>
 
         <p class="next">Next page → <a href="../workbench/">The Workbench</a></p>
