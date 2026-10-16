@@ -489,7 +489,12 @@ turns, each turn's settings read from the rollout's `turn_context` (its keys as 
 Koloft is not caught by this: it resumes a thread with the permission it saved for that
 session (`permission` in its own metadata, the one the thread was started with), so what
 the thread restores is what the `-c` would have set; the conductor's choice is the same
-on start and resume. The `-c` pair on a resume is dead weight on 0.163.0 and still the
+on start and resume — as long as the thread's last turn ran under that choice. A
+`bypass` thread whose last turn was a resume without Koloft's `-c` (on 0.161–0.162 a
+bare resume always came back `workspace-write`, above) keeps `workspace-write` on
+0.163.0 while Koloft's row says bypass, and the old path cannot lift it (inferred from
+the three resume shapes measured; that thread was not built). The `-c` pair on a
+resume is dead weight on 0.163.0 and still the
 thing that sets the sandbox on 0.161–0.162. A resume that should *change* a thread's
 permissions would have to go through the `thread/resume` params (the TUI sends that
 request; Koloft's relay would have to add them) — not needed today.
