@@ -352,7 +352,11 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   `version`, the blob only `sessionId`. Every Koloft reader that parses records picks
   them by `type` (`extractJsonlMeta`, `extractJsonlTail`, `lastTurnsOfLines`, the usage
   reader, `transcriptSearch`), so they read the same values as before; only the byte
-  counts grew (the `worktree-state` tail bullet above).
+  counts grew (the `worktree-state` tail bullet above). The same three records, with the
+  same keys and no `cwd`, on 2.1.301 (2026-10-16, one `-p` run of the same prompt, sonnet,
+  the real `HOME` with a scratch `CLAUDE_CONFIG_DIR`: 31 records, 145,974 bytes, one
+  36.6 KB `api-request-shape`; that run also wrote `cost-state` and `atis-latch` records,
+  which both binaries name — not new, and no Koloft reader picks them).
 
 Unless a bullet below says more, it is inferred, not checked.
 
@@ -496,7 +500,11 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   strings + docs). The 2.1.294 strings agree that the hook makes the worktree
   ("configure WorktreeCreate and WorktreeRemove hooks in settings.json for another
   version-control system"; "Provides the absolute path to the created worktree
-  directory"); that the copy is then off was not re-read there.
+  directory"); that the copy is then off was not re-read there. Since 2.1.301 the quit
+  prompt of such a worktree says "A WorktreeCreate hook made this worktree, so Claude
+  Code can't tell whether it has unpushed commits" and asks before removing it (the
+  changelog's fix; `strings`, 2026-10-16, not run — Koloft's `-w` worktrees are made by
+  CC itself, so the §4 exit facts above are the ones that apply).
 - **A `-w` session's Bash tool has an isolation guard that refuses a command it cannot
   prove stays inside the worktree**, awk programs included: it already refused
   `system(`, a `| "cmd"`, `| getline`, `@load`/`@include` and `/inet/`; 2.1.299 also
@@ -516,7 +524,7 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   `remote-ssh-lab.spec.ts` › "E-SSH-11: a REAL claude on the machine, in a worktree
   session made there through ssh and tmux, echoes with its Bash tool the port offset of
   that worktree’s name (opt-in, spends real money)". Both passed again on 2.1.296
-  (2026-10-11), 2.1.299 (2026-10-14) and 2.1.300 (2026-10-15), as did E-SSH-15
+  (2026-10-11), 2.1.299 (2026-10-14), 2.1.300 (2026-10-15) and 2.1.301 (2026-10-16), as did E-SSH-15
   (`koloft help` and `koloft note append` from the Bash tool on the machine) and
   E-SSH-C2 (a conductor's typed message answered, its question answered by `koloft
   session answer`).
@@ -804,7 +812,12 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   between 2.1.293 and 2.1.296 is the one workflow variable, and between 2.1.296 and
   2.1.299 it is empty (`strings`, 2026-10-14; no `ANTHROPIC_*` name changed either),
   as between 2.1.299 and 2.1.300 (`strings`, 2026-10-15; every `CLAUDE_CODE_*` and
-  `ANTHROPIC_*` name Koloft's shim sets is still in the 2.1.300 binary).
+  `ANTHROPIC_*` name Koloft's shim sets is still in the 2.1.300 binary) and between
+  2.1.300 and 2.1.301 (`strings`, 2026-10-16: the same 15 `*_MODEL` and 74 `ANTHROPIC_*`
+  names, every name `src/` uses still there). The 2.1.301 changelog's "the `fable` (and
+  `best`) alias … now retries once on the previous Fable model" is not found in the
+  strings; what both binaries carry is the catalog entry `claude-fable-5-1` with
+  `fallback_3p: "claude-fable-5"` (pointer, not run).
   `CLAUDE_CONFIG_DIR` does NOT isolate credentials on macOS (official docs —
   credentials always go through the system Keychain). `claude setup-token` is the
   official login flow: it prints the authorization URL and, on success, the token on
@@ -1046,7 +1059,7 @@ SessionEnd` with millisecond stamps, and the resulting
 Probes P1–P7. Flag spellings quoted from `claude --help` of the same build. The launch
 line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is pinned by
 `cron-real-smoke.spec.ts` › BB-R01, green on 2.1.296 (2026-10-11), 2.1.299
-(2026-10-14) and 2.1.300 (2026-10-15).
+(2026-10-14), 2.1.300 (2026-10-15) and 2.1.301 (2026-10-16).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1182,7 +1195,22 @@ other bullets of §9 were not re-measured on this build.
   `medium`, `high`, `xhigh`, `max`. The `--help` text of 2.1.293, 2.1.296 and 2.1.299 is
   byte-identical, 311 lines (run with stdin closed, 2026-10-11 and 2026-10-14); 2.1.300's
   differs only inside the `--restricted` paragraph (the word "REPL" dropped from the list
-  of code-running tools; still 311 lines, 2026-10-15). The `CLAUDE_CODE_*` names the
+  of code-running tools; still 311 lines, 2026-10-15); 2.1.301's is byte-identical to
+  2.1.300's (2026-10-16). The `CLAUDE_CODE_*` names the 2.1.301 binary adds over 2.1.300
+  (`strings`, 2026-10-16; pointers): `ATTACHMENTS_IN_USER_DATA`, `DAPPER_CUPCAKE`,
+  `RETRY_WATCHDOG_MAX_USAGE_LIMIT_WAIT_MS`; gone: `SQUISHY_NEWT`. **Unattended retry
+  mode** (read from the 2.1.300 and 2.1.301 strings, 2026-10-16; not run): with
+  `CLAUDE_CODE_RETRY_WATCHDOG` set, a 429, a 529 or an `overloaded_error` no longer
+  ends the request after the usual retry count (`api_request_retry_exhausted`) or the
+  repeated-529 give-up; each wait is the time to `anthropic-ratelimit-unified-reset`,
+  else a backoff capped at 5 min, any one wait capped at 6 h and by what is left of
+  `CLAUDE_CODE_RETRY_WATCHDOG_MAX_WAIT_MS` (2.1.300; unset means no limit). 2.1.301
+  adds `CLAUDE_CODE_RETRY_WATCHDOG_MAX_USAGE_LIMIT_WAIT_MS`, a budget for the waits on a
+  usage-limit 429 (`anthropic-ratelimit-unified-status: rejected`): a reset further
+  away than what is left ends the request with `api_request_usage_limit_wait_too_long`,
+  unless the overage status header says `allowed` or `allowed_warning`. The self-hosted
+  runner's spawn env sets `CLAUDE_CODE_RETRY_WATCHDOG: "1"`. Koloft sets none of the
+  three. The `CLAUDE_CODE_*` names the
   2.1.300 binary adds over 2.1.299 (`strings`, 2026-10-15; pointers, none read):
   `ATTACHMENTS_BY_PATH`, `FILE_READ_MAX_PDF_PAGES_PER_MESSAGE`,
   `FILE_READ_MAX_PDF_PAGES_PER_TURN`, `HIDE_REPLY_SERVER_NAME`,
@@ -1451,8 +1479,10 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   their own `id`, a gone one gets `state=clear:id=<id>`, and exit writes a bare
   `state=clear`. The sequence is not wrapped for tmux (the DCS passthrough wrapper is
   not applied), so whether it crosses tmux to the outer terminal is not probed; in or
-  out of fullscreen alike (read, not run). The 2.1.299 binary carries the same builder,
-  states, kinds and startup probe (`strings`, 2026-10-14).
+  out of fullscreen alike (read, not run). The 2.1.299 and 2.1.301 binaries carry the
+  same builder, states, kinds and startup probe (`strings`, 2026-10-14 and 2026-10-16).
+  Since Codex CLI 0.163.0 the Codex TUI writes OSC 7501 too, with no query first and
+  only `state` and `app=codex` (`docs/codex-cli-contract.md` §25).
 - **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle
   processes about two days old (date and CC version not recorded). On 2026-09-24, CC
   2.1.281, four live sessions (not idle, 20 min to 4 h old) held 196–403 MB each
@@ -1783,8 +1813,14 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   space — and returns at once (`time` shows 0.00 s native, 0.12 s for the npm install),
   so a check on every launch costs next to nothing. The same shape on 2.1.296
   (`2.1.296 (Claude Code)`, the darwin-arm64 download, 2026-10-11), 2.1.299
-  (`2.1.299 (Claude Code)`, 2026-10-14) and 2.1.300 (`2.1.300 (Claude Code)`,
-  2026-10-15).
+  (`2.1.299 (Claude Code)`, 2026-10-14), 2.1.300 (`2.1.300 (Claude Code)`,
+  2026-10-15) and 2.1.301 (`2.1.301 (Claude Code)`, 2026-10-16). **Since 2.1.301 a
+  short command's exit waits for a login refresh that is in flight** (`strings`,
+  2026-10-16, not run: the exit helper the subcommands share gained
+  `waitForOAuthRefresh`, default on; the headless exit passes it off), the fix the
+  changelog names for "sign-outs after a short command such as `claude auth status`
+  exited in the middle of a token refresh" — `claude --version`, which Koloft's shim runs
+  before every launch, is such a command.
 - **A downloaded binary updates itself into its `HOME`, not in place.** A 2.1.296
   scratch copy run with a scratch `HOME` printed "✔ Update installed" during a session
   and put the new version under that `HOME`'s `.local/share/claude/versions/`; the copy
@@ -1808,14 +1844,16 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   would leave an npm install that `claude update` cannot lift to it. On 2026-10-11 both
   channels offered 2.1.296 (`latest` and `next` 2.1.296, `stable` 2.1.287); on
   2026-10-14 both offered 2.1.299 (`latest` and `next` 2.1.299, `stable` 2.1.287); on
-  2026-10-15 both offered 2.1.300 (`latest` and `next` 2.1.300, `stable` 2.1.292).
+  2026-10-15 both offered 2.1.300 (`latest` and `next` 2.1.300, `stable` 2.1.292); on
+  2026-10-16 both offered 2.1.301 (`latest` and `next` 2.1.301, `stable` 2.1.292).
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
   256,434,168 bytes, and that file ran as the remote `claude` in the Docker SSH lab
   (aarch64); on 2026-10-14 `2.1.299/linux-arm64/claude` answered 200 with 264,626,168
-  bytes; on 2026-10-15 `2.1.300/linux-arm64/claude` with 266,264,568 bytes, and that
-  file ran as the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
+  bytes; on 2026-10-15 `2.1.300/linux-arm64/claude` with 266,264,568 bytes, and on
+  2026-10-16 `2.1.301/linux-arm64/claude` with 267,247,608 bytes — each ran as the
+  lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
 
@@ -1865,7 +1903,7 @@ sends path, diff fence, hunk and note as one message" (4 runs) and
 claude on the machine through ssh and tmux …" (3 runs; one of them failed only on an
 earlier assertion that the model obey the note, the paste facts held in all three).
 Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
-2.1.299, 2026-10-14, and on 2.1.300, 2026-10-15.
+2.1.299, 2026-10-14, on 2.1.300, 2026-10-15, and on 2.1.301, 2026-10-16.
 
 - **claude turns bracketed paste on at startup** (it writes `ESC[?2004h`; 2.1.287 notes).
 - **A write wrapped in `ESC[200~` … `ESC[201~` lands as one block and is not sent.** On
