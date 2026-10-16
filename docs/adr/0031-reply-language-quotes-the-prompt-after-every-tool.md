@@ -109,9 +109,11 @@ follow the same rule unmeasured. In the runs the model noticed it had been resta
 that its folder was a fresh repository; the original turn had neither. The runs were
 `claude -p`; in an interactive tab Claude Code writes a note to the transcript only after
 the next tool's hook has run (CC§19), so there the check is one tool call late and can
-quote an English note once more after a Chinese one followed it — not measured, and not
-worked around: remembering which note was already quoted would also stop the repeat the
-measured runs had while no new note came. A Codex tab runs
+quote an English note once more after a Chinese one followed it. The same bench with the
+hook made to see only what an interactive tab has on disk (the transcript up to the last
+tool result): 7 / 18 English in 4 runs. It is not worked around: remembering which note
+was already quoted would also stop the repeat the measured runs had while no new note
+came. A Codex tab runs
 the same check on its rollout; in a real Codex 0.162 tab, asked in Chinese to copy an
 English sentence as a note, it wrote that note in Chinese twice out of twice under "The
 user writes Chinese" — how far Codex drifts in a long session was still not measured.
