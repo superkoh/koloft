@@ -53,14 +53,17 @@ export async function endCodexAppServersLeftByACrash(
 
 // PLATFORM§3
 export const CODEX_TMP_DIR = process.platform === 'darwin' ? '/tmp' : os.tmpdir()
-export const CODEX_TMP_FOLDER = /^koloft-cx-(?:open-)?(?:(\d+)-)?/
-export const CODEX_OPEN_SHIM_FOLDER = /^(?:(\d+)-)?[0-9a-f-]{36}$/
+const MACOS_PID_AT_MOST_FIVE_DIGITS = '\\d{1,5}'
+export const CODEX_TMP_FOLDER = new RegExp(
+  `^koloft-cx-(?:open-)?(${MACOS_PID_AT_MOST_FIVE_DIGITS})-`
+)
+export const CODEX_OPEN_SHIM_FOLDER = new RegExp(
+  `^(${MACOS_PID_AT_MOST_FIVE_DIGITS})-[0-9a-f-]{36}$`
+)
 
 export const ownedByThisRun = (name: string): string => `${process.pid}-${name}`
 
-const UNOWNED_FOLDER_KEPT_MS = 24 * 60 * 60 * 1000
-
-export function removeFoldersLeftByEndedRuns(dir: string, ours: RegExp, now = Date.now()): void {
+export function removeFoldersLeftByEndedRuns(dir: string, ours: RegExp): void {
   let names: string[]
   try {
     names = fs.readdirSync(dir)
@@ -68,16 +71,9 @@ export function removeFoldersLeftByEndedRuns(dir: string, ours: RegExp, now = Da
     return
   }
   for (const name of names) {
-    const match = ours.exec(name)
-    if (!match) continue
-    const owner = match[1]
-    const full = path.join(dir, name)
-    try {
-      const ended = owner
-        ? !pidAlive(Number(owner))
-        : now - fs.statSync(full).mtimeMs > UNOWNED_FOLDER_KEPT_MS
-      if (ended) fs.rmSync(full, { recursive: true, force: true })
-    } catch {}
+    const owner = ours.exec(name)?.[1]
+    if (owner && !pidAlive(Number(owner)))
+      fs.rmSync(path.join(dir, name), { recursive: true, force: true })
   }
 }
 
