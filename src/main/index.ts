@@ -209,7 +209,7 @@ import {
 } from './updater'
 import { currentOffer, startUpdateNotifier } from './updateNotifier'
 import { extOf } from '@shared/preview'
-import { busyInCheckout, pullToast } from '@shared/freshnessOps'
+import { busyInCheckout } from '@shared/freshnessOps'
 import {
   canOpenExternally,
   webPageReachesDiscordDesktopApp,
@@ -2471,8 +2471,7 @@ app.whenReady().then(() => {
     autoFetch: () => loadSettings().gitAutoFetch,
     autoPull: () => loadSettings().gitAutoPull,
     busy: (wsPath) => busyInCheckout(allSessions(), wsPath) > 0,
-    pulled: (wsPath, branch, summary) =>
-      sendToRenderer('cron:toast', pullToast(wsPath, branch, summary)),
+    toast: (text) => sendToRenderer('cron:toast', text),
     onChange: () => workspaceMgr?.restampLive(),
     fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })

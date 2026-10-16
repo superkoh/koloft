@@ -139,16 +139,20 @@ export function AppearancePane(): JSX.Element {
         </div>
         <Switch checked={settings.gitAutoFetch} onChange={(on) => update({ gitAutoFetch: on })} />
       </div>
-      <div className="set-row">
+      <div className={'set-row child' + (settings.gitAutoFetch ? '' : ' off')}>
         <div className="set-lab">
           <b>Auto-pull the default branch</b>
           <small>
             After each background fetch, fast-forwards a workspace that sits on its default branch
             with a clean tree and no local commits. Skipped while a session in that checkout is
-            working on a task, and tried again on the next fetch. Needs Auto-fetch.
+            working on a task, and tried again on the next fetch.
           </small>
         </div>
-        <Switch checked={settings.gitAutoPull} onChange={(on) => update({ gitAutoPull: on })} />
+        <Switch
+          checked={settings.gitAutoPull}
+          disabled={!settings.gitAutoFetch}
+          onChange={(on) => update({ gitAutoPull: on })}
+        />
       </div>
     </>
   )

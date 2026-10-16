@@ -371,7 +371,6 @@ export function FreshnessPopover({
   onMouseLeave: () => void
 }): JSX.Element {
   const showToast = useStore((s) => s.showToast)
-  const sessions = useStore((s) => s.sessions)
   const [fetching, setFetching] = useState(false)
   const [pulling, setPulling] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
@@ -440,7 +439,6 @@ export function FreshnessPopover({
   const fitTop = Math.min(top, Math.max(4, window.innerHeight - height - 4))
 
   const { acct, notes: gitNotes, block: gitBlock } = useGitAccountView(wsPath, !!github, onClose)
-  const inMain = busyInCheckout(sessions, wsPath)
   const eligible = !!f && canPull(f)
   const note: PullNote | null = failed ? { text: failed, tone: 'alarm' } : f ? pullNote(f) : null
 
@@ -482,6 +480,7 @@ export function FreshnessPopover({
                 className="tbu-act pull"
                 disabled={!eligible || pulling}
                 onClick={() => {
+                  const inMain = busyInCheckout(useStore.getState().sessions, wsPath)
                   if (inMain > 0) {
                     setConfirm(inMain)
                     return

@@ -1,8 +1,6 @@
-import path from 'path'
-import { execFileSync } from 'child_process'
 import { test, expect, launchApp } from './helpers/app'
 import { seedSettings } from './helpers/env'
-import { setupGitFixture } from './helpers/gitFixture'
+import { headSha, runGit, setupGitFixture } from './helpers/gitFixture'
 import { closeMenu, menuItemTexts, openGitPanel, openMenu, snap } from './helpers/p1'
 
 const BADGE_TIMEOUT = 30_000
@@ -66,18 +64,14 @@ test.describe('Git freshness · sidebar behind badge, popover and fast-forward p
     const fx = setupGitFixture(env)
     fx.originAhead(3)
     seedSettings(env, { gitAutoPull: true })
-    const rev = (repo: string, ref: string): string =>
-      execFileSync('git', ['-C', path.join(env.home, repo), 'rev-parse', ref], {
-        encoding: 'utf8'
-      }).trim()
-    const upstream = rev('repo-origin.git', 'main')
-    expect(rev('repo', 'HEAD')).not.toBe(upstream)
+    const upstream = runGit(fx.origin, 'rev-parse', 'main').trim()
+    expect(headSha(fx)).not.toBe(upstream)
 
     const app = await launchApp(env)
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     try {
-      await expect.poll(() => rev('repo', 'HEAD'), { timeout: BADGE_TIMEOUT }).toBe(upstream)
+      await expect.poll(() => headSha(fx), { timeout: BADGE_TIMEOUT }).toBe(upstream)
       await expect(page.locator('.ws-head')).toHaveCount(1)
       await expect(page.locator('.ws-behind')).toHaveCount(0)
     } finally {

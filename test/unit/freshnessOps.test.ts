@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { ageLabel, busyInCheckout, canPull, freshLineState } from '@shared/freshnessOps'
-import type { SessionInfo, WorkspaceFreshness } from '@shared/types'
+import type { WorkspaceFreshness } from '@shared/types'
 
 const NOW = 1_700_000_000_000
 const MIN = 60_000
 
 describe('busyInCheckout (a pull asks first only while a root-checkout session is mid-task)', () => {
-  type Live = Pick<SessionInfo, 'alive' | 'remote' | 'treeRoot' | 'status' | 'details' | 'worktree'>
+  type Live = Parameters<typeof busyInCheckout>[0][number]
   const live = (patch: Partial<Live> = {}): Live => ({
     treeRoot: '/repo',
     alive: true,
@@ -18,7 +18,7 @@ describe('busyInCheckout (a pull asks first only while a root-checkout session i
     expect(busyInCheckout([live(), live({ status: 'approval' })], '/repo')).toBe(2)
   })
 
-  it('does not count a session idle at its prompt, an ended one, a worktree one or another repo', () => {
+  it('does not count a session idle at its prompt, an ended one, or one whose tree root is not the workspace path as pinned (a worktree, another repo)', () => {
     expect(
       busyInCheckout(
         [
@@ -26,9 +26,8 @@ describe('busyInCheckout (a pull asks first only while a root-checkout session i
           live({ status: 'idle' }),
           live({ status: undefined }),
           live({ alive: false }),
-          live({ treeRoot: '/repo/.claude/worktrees/fix', worktree: 'fix' }),
-          live({ treeRoot: '/other' }),
-          live({ remote: { host: 'box' } })
+          live({ treeRoot: '/repo/.claude/worktrees/fix' }),
+          live({ treeRoot: '/other' })
         ],
         '/repo'
       )

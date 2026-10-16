@@ -65,7 +65,7 @@ function harness(
     autoFetch?: () => boolean
     autoPull?: () => boolean
     busy?: (wsPath: string) => boolean
-    pulled?: (wsPath: string) => void
+    toast?: (text: string) => void
     paths?: string[]
     missing?: string[]
     gitBin?: string
@@ -84,7 +84,7 @@ function harness(
       autoFetch: opts.autoFetch ?? ((): boolean => true),
       autoPull: opts.autoPull,
       busy: opts.busy,
-      pulled: opts.pulled,
+      toast: opts.toast,
       onChange: (p) => changed.push(p),
       now: () => now
     },
@@ -421,24 +421,23 @@ describe('sweep throttle, backoff and the gitAutoFetch switch', () => {
   })
 
   it('gitAutoPull fast-forwards a clean default branch right after the sweep fetches it, and says so', async () => {
-    const pulled: string[] = []
-    const h = harness({ autoPull: () => true, pulled: (p) => pulled.push(p) })
+    const toasts: string[] = []
+    const h = harness({ autoPull: () => true, toast: (t) => toasts.push(t) })
     publish(2)
     await h.engine.sweep()
     expect(f(h.engine.get(work)).behind).toBe(0)
     expect(git(work, 'rev-parse', 'HEAD')).toBe(git(work, 'rev-parse', 'origin/main'))
-    expect(pulled).toEqual([work])
+    expect(toasts).toEqual([expect.stringMatching(/^work · main: fast-forwarded 2 commits/)])
   })
 
-  it('gitAutoPull leaves the checkout alone while a session there is mid-task, or when the switch is off', async () => {
+  it.each([
+    ['a session there is mid-task', { autoPull: (): boolean => true, busy: (): boolean => true }],
+    ['the switch is off', { autoPull: (): boolean => false }]
+  ])('gitAutoPull leaves the checkout alone when %s', async (_, opts) => {
     publish(2)
-    for (const h of [
-      harness({ autoPull: () => true, busy: () => true }),
-      harness({ autoPull: () => false })
-    ]) {
-      await h.engine.sweep()
-      expect(f(h.engine.get(work)).behind).toBe(2)
-    }
+    const h = harness(opts)
+    await h.engine.sweep()
+    expect(f(h.engine.get(work)).behind).toBe(2)
   })
 
   it('skips a workspace whose directory is gone', async () => {

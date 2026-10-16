@@ -2,10 +2,10 @@ import { execFile as execFileCb, spawn } from 'child_process'
 import { promisify } from 'util'
 import fs from 'fs'
 import path from 'path'
-import type { WorkspaceFreshness, WorkspacePullResult, WorkspacePullSummary } from '@shared/types'
+import type { WorkspaceFreshness, WorkspacePullResult } from '@shared/types'
 import { defaultBranch } from './gitStatus'
 import { isRemoteKey } from '@shared/remoteKey'
-import { canPull } from '@shared/freshnessOps'
+import { canPull, pullToast } from '@shared/freshnessOps'
 
 const execFile = promisify(execFileCb)
 
@@ -189,7 +189,7 @@ export interface FreshnessDeps {
   autoFetch(): boolean
   autoPull?(): boolean
   busy?(wsPath: string): boolean
-  pulled?(wsPath: string, branch: string, summary: WorkspacePullSummary): void
+  toast?(text: string): void
   onChange(wsPath: string): void
   fetchFailed?(wsPath: string, stderr: string): void
   now?(): number
@@ -307,12 +307,13 @@ export class GitFreshnessEngine {
           if (this.stopped) return
           if (opts.stagger && i > 0) await delay(STAGGER_MS)
           if (this.stopped) return
-          await this.autoPull(due[i], await this.runFetch(due[i]))
+          await this.runFetch(due[i])
         }
       }
       await Promise.all(
         Array.from({ length: Math.min(SWEEP_CONCURRENCY, due.length) }, () => worker())
       )
+      for (const p of due) await this.fastForwardAfterFetch(p)
     } finally {
       this.sweeping = false
     }
@@ -389,10 +390,11 @@ export class GitFreshnessEngine {
     }
   }
 
-  private async autoPull(wsPath: string, f: WorkspaceFreshness | null): Promise<void> {
+  private async fastForwardAfterFetch(wsPath: string): Promise<void> {
+    const f = this.cache.get(wsPath)
     if (!f || !canPull(f) || !this.deps.autoPull?.() || this.deps.busy?.(wsPath)) return
     const r = await this.pull(wsPath, { branch: f.branch, head: f.head })
-    if (r.ok) this.deps.pulled?.(wsPath, f.branch, r.summary)
+    if (r.ok) this.deps.toast?.(pullToast(wsPath, f.branch, r.summary))
   }
 
   private runFetch(wsPath: string): Promise<WorkspaceFreshness | null> {
