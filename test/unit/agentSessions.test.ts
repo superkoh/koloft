@@ -70,6 +70,7 @@ interface Conducting {
   bypass?: string[]
   answer?: (tabId: string, reply: string) => string | undefined
   titleReply?: string | null
+  translation?: string | null
   asking?: string[]
   worktrees?: string[]
 }
@@ -130,7 +131,8 @@ function harness(
       launched.push(spec)
       return 'new-tab'
     },
-    assist: async () => conducting.titleReply ?? null,
+    assist: async (job) =>
+      (job.system === 'You translate.' ? conducting.translation : conducting.titleReply) ?? null,
     queue: async (tabId, text, clientId) => {
       queued.push({ tabId, text, clientId })
     },
@@ -444,6 +446,58 @@ describe('koloft session new', () => {
     expect(launched[1].role).toContain('«帮我跑一下测试»')
     expect(launched[2].role).toContain('«帮我跑一下测试»')
   })
+
+  // ADR-0031
+  it.each([
+    [
+      'Chinese\n\nKoloft 启动了你，因为会话 {caller} 请它这么做。做完后运行这条命令发回结果：\n',
+      true
+    ],
+    ['Chinese\nKoloft 启动了你，因为会话请它这么做。', false],
+    ['Chinese\nKoloft 启动了你，因为会话 {caller} 请它这么做。\n做完后发回结果：', false],
+    ['Koloft 启动了你，因为会话 {caller} 请它这么做。做完后运行这条命令发回结果：', false],
+    [null, false]
+  ])(
+    'a child’s handover is written in the language of the owner’s words, keeping those words, the caller and the koloft session send command exact, and stays English when the model’s reply %j is not the language’s name and then one line with the caller in it',
+    async (translation, translated) => {
+      const { verb, launched } = harness(
+        [session('me', 'claude'), session('cx', 'codex', { nativeSessionId: CODEX_THREAD })],
+        { 'me-session': 'planner' },
+        [],
+        {
+          quotedPrompts: { me: '先把侧栏修好' },
+          turns: {
+            'cx-session': [
+              { said: [{ who: 'owner', text: '先把侧栏修好', at: 1 }], reply: 'ok', at: 1 }
+            ]
+          },
+          translation
+        }
+      )
+      await verb(['new', '--', 'Fix the sidebar.'], from('me'))
+      await verb(['new', '--', 'Fix the sidebar.'], from('cx'))
+      const [claudeCaller, codexCaller] = translated
+        ? [
+            'Koloft 启动了你，因为会话 "planner" 请它',
+            `Koloft 启动了你，因为会话 ${CODEX_THREAD} 请它`
+          ]
+        : [
+            'Koloft started you because the session "planner" asked it',
+            `Koloft started you because the Codex session ${CODEX_THREAD} asked it`
+          ]
+      expect(launched[0].firstPrompt).toMatch(
+        new RegExp(
+          `^«先把侧栏修好»\\n${claudeCaller}[^\\n]* koloft session send me-session "<your result>"\\n\\nFix the sidebar\\.$`
+        )
+      )
+      expect(launched[1].firstPrompt).toBe('Fix the sidebar.')
+      expect(launched[1].role).toMatch(
+        new RegExp(
+          `^«先把侧栏修好»\\n${codexCaller}[^\\n]* koloft session send ${CODEX_THREAD} "<your result>"$`
+        )
+      )
+    }
+  )
 
   it('--workspace starts the sibling in another sidebar workspace, found by full path or folder name', async () => {
     const { verb, launched } = harness([session('me', 'claude')])

@@ -9,12 +9,7 @@ import {
   codexGateShell,
   conductorGateCommand
 } from './conductorGate'
-import {
-  HANDOVER_OPENING,
-  OWNER_WORDS_BEFORE_QUOTE,
-  OWNER_WORDS_END,
-  OWNER_WORDS_QUOTED_CHARS
-} from './handover'
+import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
 import { FROM_A_SESSION, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
@@ -50,7 +45,7 @@ const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
 const QUOTE_PROMPT_FN = `quote_prompt() {
   printf '%s' "$input" |
     LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' |
-    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*${OWNER_WORDS_BEFORE_QUOTE}(.*)${OWNER_WORDS_END}.*$/\\1/' \\
+    LC_ALL=C sed -E -e 's/^«(.*)»\\\\n.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n.*$/\\1/' \\
       -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
       -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n\\[Discord\\] //' \\
       -e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//' |

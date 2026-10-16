@@ -220,7 +220,8 @@ const START_A_CHILD_THEN_CLOSE_IT = {
 }
 const TITLE_SAMPLE_EVERY_MS = 250
 // CODEX§17
-const TITLE_DRAWN_FROM_THE_HANDOVER = /Koloft started you|hand-?off|hand-?over/i
+const TITLE_DRAWN_FROM_THE_HANDOVER =
+  /Koloft started you|koloft session send|«|hand-?off|hand-?over/i
 
 // CC§9
 function launchNameOfTheChild(env: E2EEnv): string | undefined {

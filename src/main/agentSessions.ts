@@ -34,7 +34,7 @@ import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { FROM_A_SESSION, crossSessionLine, type ModeClass } from './crossSessionMessage'
 import {
   OWNER_WORDS_QUOTED_CHARS,
-  handoverPreamble,
+  handoverInOwnersLanguage,
   withHandover,
   type SessionCaller
 } from './handover'
@@ -435,16 +435,18 @@ async function startSibling(
     assist: conductorTab !== undefined,
     ownerWords
   }
-  const name =
+  const [name, preamble] = await Promise.all([
     backend === 'claude'
       ? (args.name ??
-        (await nameForTask(
+        nameForTask(
           args.prompt,
           d.assist,
           new Set(d.allSessions().map((s) => s.title)),
           ownerWords
-        )))
-      : undefined
+        ))
+      : undefined,
+    handoverInOwnersLanguage(caller, d.assist)
+  ])
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
   const worktree =
     gitWorkspace && (args.worktree || caller.assist)
@@ -460,8 +462,8 @@ async function startSibling(
     permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
     // CODEX§17
     ...(backend === 'codex'
-      ? { role: handoverPreamble(caller), firstPrompt: args.prompt }
-      : { firstPrompt: withHandover(caller, args.prompt) })
+      ? { role: preamble, firstPrompt: args.prompt }
+      : { firstPrompt: withHandover(preamble, args.prompt) })
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
   oweReply(tabId)

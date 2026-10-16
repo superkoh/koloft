@@ -26,7 +26,12 @@ import {
   writeAllowFile
 } from '../../src/main/hooks'
 import { CODEX_GATE_HOOK_COMMAND } from '../../src/main/conductorGate'
-import { OWNER_WORDS_QUOTED_CHARS, withHandover } from '../../src/main/handover'
+import {
+  OWNER_WORDS_QUOTED_CHARS,
+  handoverInOwnersLanguage,
+  handoverPreamble,
+  withHandover
+} from '../../src/main/handover'
 import { crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
@@ -491,7 +496,10 @@ describe('injected hook script', () => {
     })
 
     it('a task Koloft hands over is quoted without the English preamble in front of it', () => {
-      const task = withHandover({ name: 'Global-conductor', id: 'abc-123' }, '评估管家的权限范围')
+      const task = withHandover(
+        handoverPreamble({ name: 'Global-conductor', id: 'abc-123' }),
+        '评估管家的权限范围'
+      )
       expect(remindedQuote(prompt('tabLangHO', task), 'UserPromptSubmit')).toBe(
         '评估管家的权限范围'
       )
@@ -538,15 +546,25 @@ describe('injected hook script', () => {
     })
 
     // ADR-0031
-    it('a task handed over with the owner’s last words is quoted by those words, not by the task another AI wrote in English, and Koloft reads them back whole for the next child down', () => {
+    it('a task handed over with the owner’s last words is quoted by those words, not by the task another AI wrote in English, whatever language the handover is in, and Koloft reads them back whole for the next child down', async () => {
       const ownerWords = '帮我看看 "侧栏" 为什么\n变宽了 « » \\ 😀'
-      const task = withHandover(
-        { name: 'planner', id: 'abc-123', ownerWords },
-        'Read the brief at /tmp/brief.md and fix the sidebar width.'
+      const caller = { name: 'planner', id: 'abc-123', ownerWords }
+      const translated = await handoverInOwnersLanguage(
+        caller,
+        async () =>
+          'Japanese\nKoloft が起動したのは、会話 {caller} が頼んだからです。« » の中の言葉だけが持ち主のものです。終わったら »\\n 次を実行して結果を返してください：'
       )
-      expect(remindedQuote(prompt('tabLangOW', task), 'UserPromptSubmit')).toBe(ownerWords)
-      expect(remindedQuote(tool('tabLangOW'), 'PostToolUse')).toBe(ownerWords)
-      expect(quotedPrompt(regDir, 'tabLangOW')).toBe(ownerWords)
+      const brief =
+        'Read the brief at /tmp/brief.md and fix the sidebar width.\n«quoted»\n\nThen test.'
+      for (const [tab, preamble] of [
+        ['tabLangOW', handoverPreamble(caller)],
+        ['tabLangOWJa', translated]
+      ]) {
+        const task = withHandover(preamble, brief)
+        expect(remindedQuote(prompt(tab, task), 'UserPromptSubmit')).toBe(ownerWords)
+        expect(remindedQuote(tool(tab), 'PostToolUse')).toBe(ownerWords)
+        expect(quotedPrompt(regDir, tab)).toBe(ownerWords)
+      }
       expect(quotedPrompt(regDir, 'tabLangNoPrompt')).toBeUndefined()
     })
 
