@@ -175,7 +175,7 @@ import {
   prepareCodexHome
 } from './codexAccounts'
 import { shq } from '@shared/shellQuote'
-import { CronRunner, type LaunchRequest, type LeftTab } from './cronRunner'
+import { CronRunner, type LaunchRequest, type LeftTab, type RunLeftovers } from './cronRunner'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
@@ -403,7 +403,7 @@ import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import {
   closingTree,
-  MACHINE_UNREACHABLE,
+  machineUnreachable,
   removeTree,
   tidyTree,
   whatIsLeft,
@@ -2537,8 +2537,9 @@ app.whenReady().then(() => {
       codexSessions?.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`) ?? false,
     branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
     listRunFolders,
+    runLeftovers,
     tidyRun,
-    inUse: runFolderInUse,
+    foldersInUse,
     quitting: () => quitCommitted,
     accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
@@ -3555,7 +3556,7 @@ async function closeSessionFully(
 
 async function removeUntouchedCodexWorktree(resource: WorktreeResource): Promise<void> {
   const tree = resource.worktreePath
-  if ([...sleepers.values()].some((t) => projectInfoFor(t.cwd).treeRoot === tree)) return
+  if (sleeperTrees().includes(tree)) return
   if (sessionBackends.occupantOf(tree) || !(await codexSessions?.worktrees.untouched(resource)))
     return
   const problem = await removeTree(hostGitOut, {
@@ -3592,9 +3593,30 @@ async function closeTheRunFully(tabId: string, root: string, worktree?: string):
   if (session) await closeSessionFully(session, cronRunTree(root, worktree))
 }
 
-async function listRunFolders(root: string, slug: string): Promise<string[]> {
+async function worktreeFolders(root: string): Promise<string[]> {
   const entries = await hosts.of(root).listDir(worktreeHomeOf(root), { showIgnored: true })
-  return entries.filter((e) => e.isDir && isRunFolderOf(slug, e.name)).map((e) => e.name)
+  return entries.filter((e) => e.isDir).map((e) => e.name)
+}
+
+async function listRunFolders(root: string, slug: string): Promise<string[]> {
+  return (await worktreeFolders(root)).filter((name) => isRunFolderOf(slug, name))
+}
+
+const WORKTREE_BRANCH = 'worktree-'
+
+async function runLeftovers(root: string): Promise<RunLeftovers> {
+  const [folders, branches] = await Promise.all([
+    worktreeFolders(root),
+    hostGitOut(root, ['branch', '--list', `${WORKTREE_BRANCH}*`, '--format=%(refname:short)'])
+  ])
+  const branched =
+    branches === null
+      ? null
+      : branches
+          .split('\n')
+          .filter((b) => b.startsWith(WORKTREE_BRANCH))
+          .map((b) => b.slice(WORKTREE_BRANCH.length))
+  return { folders, branched }
 }
 
 const STILL_RUNNING_ON_THE_MACHINE = 'still running on the machine'
@@ -3604,7 +3626,7 @@ async function tidyRun(root: string, worktree: string, sessionId?: string): Prom
   if (host && sessionId) {
     const after = await claudeBackend.waitRemoteGone(host, sessionId)
     if (after === 'alive') return { removed: false, kept: [STILL_RUNNING_ON_THE_MACHINE] }
-    if (after === 'unreachable') return { removed: false, kept: [MACHINE_UNREACHABLE] }
+    if (after === 'unreachable') return machineUnreachable()
   }
   const info = cronRunTree(root, worktree)
   const result = await tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d))
@@ -3612,12 +3634,13 @@ async function tidyRun(root: string, worktree: string, sessionId?: string): Prom
   return result
 }
 
-function runFolderInUse(root: string, worktree: string, leavingTabId?: string): boolean {
-  const tree = cronRunTree(root, worktree).treeRoot
-  return (
-    aliveSessionsIn(tree, leavingTabId).length > 0 ||
-    [...sleepers.values()].some((t) => projectInfoFor(t.cwd).treeRoot === tree)
-  )
+function sleeperTrees(): string[] {
+  return [...sleepers.values()].map((t) => projectInfoFor(t.cwd).treeRoot)
+}
+
+function foldersInUse(leavingTabId?: string): Set<string> {
+  const alive = allSessions().filter((s) => s.tabId !== leavingTabId && s.alive)
+  return new Set([...alive.map(treeRootOf), ...sleeperTrees()])
 }
 
 async function launchQuietTab(

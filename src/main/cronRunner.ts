@@ -37,7 +37,7 @@ import {
   tick,
   type Due
 } from './cronScheduler'
-import { MACHINE_UNREACHABLE, type TidyResult } from './sessionClose'
+import type { TidyResult } from './sessionClose'
 
 const MAX_WORKTREE_NAME = 64
 const STAMP_LEN = 12
@@ -82,6 +82,11 @@ export interface LeftTab {
   sessionId?: string
 }
 
+export interface RunLeftovers {
+  folders: string[]
+  branched: string[] | null
+}
+
 export interface LaunchRequest {
   jobId: string
   backend: BackendId
@@ -115,8 +120,9 @@ export interface RunnerDeps {
   worktreeRecorded(root: string, name: string): boolean
   branchExists(root: string, branch: string): Promise<boolean>
   listRunFolders(root: string, slug: string): MaybeAsync<string[]>
+  runLeftovers(root: string): Promise<RunLeftovers>
   tidyRun(root: string, worktree: string, sessionId?: string): Promise<TidyResult>
-  inUse(root: string, worktree: string, leavingTabId?: string): boolean
+  foldersInUse(leavingTabId?: string): Set<string>
   quitting(): boolean
   accountUsable(backend: BackendId): boolean
   trusted(wsPath: string, backend: BackendId): MaybeAsync<boolean>
@@ -607,45 +613,58 @@ export class CronRunner {
 
   onTabGone(left: LeftTab, jobIds: (string | undefined)[] = [], leavingTabId?: string): void {
     if (this.d.quitting()) return
-    const toSweep = new Map<CronJob, boolean>()
+    const toSweep = new Set<CronJob>()
     for (const id of jobIds) {
       const job = id ? this.byId(id) : undefined
-      if (job) toSweep.set(job, false)
+      if (job) toSweep.add(job)
     }
     const name = left.treeRoot?.split('/').pop() ?? ''
     for (const job of this.jobs) {
       if (left.treeRoot !== runFolder(job.workspacePath, name)) continue
       const line = job.history.find((h) => h.worktree === name)
       if (!line && !isRunFolderOf(slugOf(job.name), name)) continue
-      const wroteId = !!line && !!left.sessionId && !line.sessionId
-      if (line && wroteId) line.sessionId = left.sessionId
-      toSweep.set(job, wroteId || !!toSweep.get(job))
+      if (line && left.sessionId && !line.sessionId) {
+        line.sessionId = left.sessionId
+        this.d.store.save(this.jobs)
+        this.push()
+      }
+      toSweep.add(job)
     }
-    for (const [job, changed] of toSweep) this.sweepSoon(job, changed, leavingTabId)
+    this.sweepSoon([...toSweep], leavingTabId)
   }
 
   sweepLeftFolders(): void {
-    for (const job of this.jobs) this.sweepSoon(job)
+    this.sweepSoon(this.jobs)
   }
 
-  private sweepSoon(job: CronJob, changed = false, leavingTabId?: string): void {
-    void this.sweep(job, changed, leavingTabId).catch((error) =>
-      this.d.toast(`⏰ ${job.name}: ${String(error)}`)
-    )
+  private sweepSoon(jobs: CronJob[], leavingTabId?: string): void {
+    if (!jobs.length) return
+    void Promise.allSettled(jobs.map((job) => this.sweep(job, leavingTabId))).then((results) => {
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') this.d.toast(`⏰ ${jobs[i].name}: ${String(r.reason)}`)
+      })
+      this.refreshFolders()
+    })
   }
 
-  private async sweep(job: CronJob, changed: boolean, leavingTabId?: string): Promise<void> {
+  private async sweep(job: CronJob, leavingTabId?: string): Promise<void> {
     const root = job.workspacePath
     const remote = isRemoteKey(root)
-    const listed = remote ? [] : await this.d.listRunFolders(root, slugOf(job.name))
+    const slug = slugOf(job.name)
+    const { folders, branched } = await this.d.runLeftovers(root)
+    const mayBeLeft = (h: HistoryLine, name: string): boolean =>
+      !branched || !!h.kept || folders.includes(name) || branched.includes(name)
+    const listed = remote ? [] : folders.filter((name) => isRunFolderOf(slug, name))
     const named = job.history.flatMap((h) =>
-      h.worktree && (!remote || h.sessionId) ? [h.worktree] : []
+      h.worktree && (!remote || h.sessionId) && mayBeLeft(h, h.worktree) ? [h.worktree] : []
     )
+    let busy = this.d.foldersInUse(leavingTabId)
     let unreachable: TidyResult | undefined
+    let changed = false
     for (const name of new Set([...listed, ...named])) {
       const folder = runFolder(root, name)
       const open = [...this.live.values()].some((r) => r.worktree === name)
-      if (open || this.inFlight.has(folder) || this.d.inUse(root, name, leavingTabId)) continue
+      if (open || this.inFlight.has(folder) || busy.has(folder)) continue
       const line = job.history.find((h) => h.worktree === name)
       let result = unreachable
       if (!result) {
@@ -655,7 +674,8 @@ export class CronRunner {
         } finally {
           this.inFlight.delete(folder)
         }
-        if (result.kept.some((k) => k.startsWith(MACHINE_UNREACHABLE))) unreachable = result
+        busy = this.d.foldersInUse(leavingTabId)
+        if (result.unreachable) unreachable = result
       }
       if (line && noteFolder(line, result)) changed = true
     }
@@ -663,7 +683,6 @@ export class CronRunner {
       this.d.store.save(this.jobs)
       this.push()
     }
-    this.refreshFolders()
   }
 
   quitSweep(): void {

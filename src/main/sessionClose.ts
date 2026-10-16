@@ -62,15 +62,28 @@ export async function removeTree(git: GitOut, tree: ClosingTree): Promise<string
     DELETING_HUNDREDS_OF_THOUSANDS_OF_IGNORED_FILES_MS
   )
   if (removed === null) return `git could not remove the worktree ${tree.treeRoot}.`
-  for (const branch of tree.branches) await git(tree.root, ['branch', '-D', branch])
+  await deleteBranches(git, tree.root, tree.branches)
   return null
 }
 
-export const MACHINE_UNREACHABLE = 'machine unreachable'
+async function deleteBranches(git: GitOut, root: string, branches: string[]): Promise<boolean> {
+  let deleted = false
+  for (const branch of branches)
+    if ((await git(root, ['branch', '-D', branch])) !== null) deleted = true
+  return deleted
+}
+
+const MACHINE_UNREACHABLE = 'machine unreachable'
 
 export interface TidyResult {
   removed: boolean
   kept: string[]
+  unreachable?: true
+}
+
+export function machineUnreachable(why?: string): TidyResult {
+  const kept = why ? `${MACHINE_UNREACHABLE}: ${why}` : MACHINE_UNREACHABLE
+  return { removed: false, kept: [kept], unreachable: true }
 }
 
 const NOTHING_THERE: TidyResult = { removed: false, kept: [] }
@@ -85,7 +98,7 @@ export async function tidyTree(
   try {
     there = await dirExists(info.treeRoot)
   } catch (error) {
-    return { removed: false, kept: [`${MACHINE_UNREACHABLE}: ${(error as Error).message}`] }
+    return machineUnreachable((error as Error).message)
   }
   const tree = await closingTree(git, info)
   if (!tree) return NOTHING_THERE
@@ -96,10 +109,7 @@ export async function tidyTree(
       await commitsOnlyOn(git, tree.root, tree.branches, tree.branches)
     )
     if (kept.length) return { removed: false, kept }
-    let deleted = false
-    for (const branch of tree.branches)
-      if ((await git(tree.root, ['branch', '-D', branch])) !== null) deleted = true
-    return deleted
+    return (await deleteBranches(git, tree.root, tree.branches))
       ? REMOVED
       : { removed: false, kept: [`git could not delete ${tree.branches.join(', ')}.`] }
   }

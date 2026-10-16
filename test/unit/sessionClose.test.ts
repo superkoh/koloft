@@ -155,7 +155,8 @@ describe('tidying a scheduled run’s folder (#22)', () => {
     }
     expect(await tidyTree(localGitOut, run(), unreachable)).toEqual({
       removed: false,
-      kept: ['machine unreachable: ssh: connect to host devbox port 22: Connection refused']
+      kept: ['machine unreachable: ssh: connect to host devbox port 22: Connection refused'],
+      unreachable: true
     })
     expect(fs.existsSync(tree)).toBe(true)
   })

@@ -52,6 +52,7 @@ function makeHarness(
     account: boolean
     pinned: boolean
     folders: string[]
+    branches: string[] | null
     busy: boolean
     left: string[]
     quitting: boolean
@@ -84,6 +85,7 @@ function makeHarness(
     account: true,
     pinned: true,
     folders: [] as string[],
+    branches: null as string[] | null,
     busy: false,
     left: [] as string[],
     quitting: false,
@@ -120,8 +122,9 @@ function makeHarness(
     worktreeRecorded: () => false,
     branchExists,
     listRunFolders: () => flags.folders,
+    runLeftovers: async () => ({ folders: flags.folders, branched: flags.branches }),
     tidyRun,
-    inUse: (_root: string, name: string) => flags.inUse.includes(name),
+    foldersInUse: () => new Set(flags.inUse),
     quitting: () => flags.quitting,
     accountUsable: () => flags.account,
     trusted: () => true,
@@ -1087,7 +1090,7 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
     const h = makeHarness([makeJob({ history: [{ ...ended }] })])
     await h.runner.runNow('j1')
     h.flags.folders = [RUN, OLD, OLDER]
-    h.flags.inUse = [OLD]
+    h.flags.inUse = [folderOf(OLD)]
     h.tidied.set(OLDER, REMOVED)
     const saves = h.save.mock.calls.length
     h.runner.sweepLeftFolders()
@@ -1095,6 +1098,23 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
     expect(h.tidyRun.mock.calls.map((c) => c[1])).toEqual([OLDER])
     expect(h.jobs[0].history).toEqual([ended])
     expect(h.save.mock.calls).toHaveLength(saves)
+  })
+
+  it('a line whose folder and branch are both gone is not tidied again, unless it still shows a reason', async () => {
+    const LEFT_BRANCH = 'nightly-report-260830-1000'
+    const h = makeHarness([
+      makeJob({
+        history: [
+          { dueAt: T0 - DAY, state: 'ended', worktree: OLD, removed: true },
+          { dueAt: T0 - 2 * DAY, state: 'ended', worktree: OLDER, kept: 'machine unreachable' },
+          { dueAt: T0 - 3 * DAY, state: 'ended', worktree: LEFT_BRANCH }
+        ]
+      })
+    ])
+    h.flags.branches = [LEFT_BRANCH]
+    h.runner.sweepLeftFolders()
+    await flush()
+    expect(h.tidyRun.mock.calls.map((c) => c[1])).toEqual([OLDER, LEFT_BRANCH])
   })
 
   it('closing a resumed row in a run folder sweeps that job and writes its session onto the line; a tab in a folder of no job sweeps nothing', async () => {
@@ -1180,7 +1200,7 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
 
     it('one "machine unreachable" ends the job’s sweep and marks its other folders the same', async () => {
       const h = makeHarness([remoteJob()])
-      h.tidied.set(A, { removed: false, kept: ['machine unreachable'] })
+      h.tidied.set(A, { removed: false, kept: ['machine unreachable'], unreachable: true })
       h.runner.sweepLeftFolders()
       await flush()
       expect(h.tidyRun.mock.calls).toEqual([[REMOTE, A, 'sa']])
