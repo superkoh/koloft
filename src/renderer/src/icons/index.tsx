@@ -1,7 +1,7 @@
 import type { ReactNode, SVGProps } from 'react'
 import { ICON_PATHS } from './paths'
 
-export type IconProps = Omit<SVGProps<SVGSVGElement>, 'ref'> & { size?: number | string }
+type IconProps = Omit<SVGProps<SVGSVGElement>, 'ref'> & { size?: number | string }
 export type Icon = (props: IconProps) => ReactNode
 
 const TURN_LEFT = 'rotate(90 12 12)'

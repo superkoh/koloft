@@ -9,7 +9,8 @@ import {
   IconInfo,
   IconNotifications,
   IconShortcuts,
-  IconTerminal
+  IconTerminal,
+  type Icon
 } from '../../icons'
 import { clearHistory } from '../../browserHistory'
 import { useStore } from '../../store'
@@ -67,7 +68,7 @@ function ClearBrowsingData(): JSX.Element {
   )
 }
 
-const PANE_ICONS: Record<SettingsPaneId, typeof IconAccounts> = {
+const PANE_ICONS: Record<SettingsPaneId, Icon> = {
   welcome: IconAiStart,
   sessions: IconTerminal,
   accounts: IconAccounts,

@@ -7,11 +7,12 @@ import {
   IconNotifications,
   IconScheduled,
   IconSidebarRight,
-  IconWebPage
+  IconWebPage,
+  type Icon
 } from '../../icons'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
-const CARDS: { Icon: typeof IconFolder; title: string; body: string; where: string }[] = [
+const CARDS: { Icon: Icon; title: string; body: string; where: string }[] = [
   {
     Icon: IconFolder,
     title: 'Claude and Codex sessions',

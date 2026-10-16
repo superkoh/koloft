@@ -101,7 +101,6 @@ function glyphBoxes(sheet) {
             box.y0 = Math.min(box.y0, y)
             box.y1 = Math.max(box.y1, y)
           }
-      if (box.x1 < 0) throw new Error(`empty cell at column ${x0}, row ${y0}`)
       boxes.push(box)
     }
   return boxes
@@ -131,7 +130,7 @@ function trace(png, side) {
       const scale = VIEWBOX / side
       resolve(
         d
-          .replace(/-?\d+(\.\d+)?/g, (n) => String(Math.round(Number(n) * scale * 100) / 100))
+          .replace(/-?\d+(\.\d+)?/g, (n) => String(Math.round(Number(n) * scale * 10) / 10))
           .replace(/ ?([MCLZ]) ?/g, '$1')
           .replace(/, /g, ',')
           .trim()
@@ -149,6 +148,7 @@ for (const [file, names] of Object.entries(sheets)) {
   for (const [i, name] of names.entries()) {
     if (!name) continue
     const box = boxes[i]
+    if (box.x1 < 0) throw new Error(`${name} in ${file} is an empty cell`)
     if (Math.max(box.x1 - box.x0, box.y1 - box.y0) >= side)
       throw new Error(`${name} in ${file} is wider than its ${side}px crop`)
     paths[name] = await trace(crop(sheet, box, side), side)
