@@ -1,6 +1,5 @@
 import type { AssistTaskRow, SessionInfo, Settings } from '@shared/types'
 import { GLOBAL_SCOPE } from '@shared/conductors'
-import { isRemoteKey } from '@shared/remoteKey'
 
 type TabState = { id: string; alive: boolean; asleep?: true }
 
@@ -34,10 +33,6 @@ export function assistScopes(
 ): string[] {
   const talked = settings.assist?.on ? settings.assistSessions.map((r) => r.scope) : []
   return [...new Set([GLOBAL_SCOPE, ...settings.discord.bindings.map((b) => b.scope), ...talked])]
-}
-
-export function conductorNotesWorkspace(scope: string): string | null {
-  return scope === GLOBAL_SCOPE || isRemoteKey(scope) ? null : scope
 }
 
 export function conductorsNeedYou(n: number): string {

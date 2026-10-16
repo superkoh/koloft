@@ -377,6 +377,7 @@ import {
   conductorName,
   GLOBAL_SCOPE,
   inviteLink,
+  isAssistScope,
   isDiscordId,
   scopeName
 } from '@shared/conductors'
@@ -1053,8 +1054,10 @@ function pinnedWorkspaceOfTab(tabId: string): string | undefined {
   return workspace && workspaceMgr?.isPinned(workspace) ? workspace : undefined
 }
 
-function notesFileOfPinned(workspace: string): string | undefined {
-  return workspaceMgr?.isPinned(workspace) ? ensureNotesFile(notesBaseDir(), workspace) : undefined
+function notesFileOfScope(scope: string): string | undefined {
+  return isAssistScope(scope, (s) => !!workspaceMgr?.isPinned(s))
+    ? ensureNotesFile(notesBaseDir(), scope)
+    : undefined
 }
 
 function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
@@ -1072,8 +1075,8 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
       : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
   },
   notesFileOf: (tabId) => {
-    const workspace = sessionBackends.workspaceOfTab(tabId)
-    return workspace ? notesFileOfPinned(workspace) : undefined
+    const scope = conductors?.scopeOfTab(tabId) ?? sessionBackends.workspaceOfTab(tabId)
+    return scope ? notesFileOfScope(scope) : undefined
   }
 })
 
@@ -1217,7 +1220,6 @@ const agentRequests = new AgentRequests({
       })
     ),
     ...notesAndWorkbenchVerbs,
-    note: unlessWorkspacelessConductor(notesAndWorkbenchVerbs.note),
     session: sessionCommand.verb,
     workspace: workspaceVerb({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
@@ -4795,7 +4797,7 @@ function registerIpc(): void {
   )
   ipcMain.handle('notes:path', (_e, ws: unknown) => {
     if (typeof ws !== 'string' || !ws) return null
-    return notesFileOfPinned(ws) ?? null
+    return notesFileOfScope(ws) ?? null
   })
   ipcMain.handle('github:info', async (_e, root: unknown, force: unknown) => {
     if (typeof root !== 'string' || !root) return null
