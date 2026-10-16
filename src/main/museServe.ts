@@ -13,14 +13,24 @@ export interface ServeOptions {
   env: NodeJS.ProcessEnv
   extraArgs?: string[]
   experimental?: boolean
+  over?(serveArgs: string[]): { binary: string; args: string[] }
 }
 
-// MUSE§5
+export interface MuseHistoryEntry extends HistoryEntry {
+  logPath?: string
+}
+
+// MUSE§5 MUSE§16
 export async function withServe<T>(
   options: ServeOptions,
   use: (request: (method: string, params: unknown) => Promise<unknown>) => Promise<T>
 ): Promise<T> {
-  const child = spawn(options.binary, ['serve', ...(options.extraArgs ?? [])], {
+  const serveArgs = options.extraArgs ?? []
+  const command = options.over?.(serveArgs) ?? {
+    binary: options.binary,
+    args: ['serve', ...serveArgs]
+  }
+  const child = spawn(command.binary, command.args, {
     cwd: os.homedir(),
     env: options.env,
     stdio: ['pipe', 'pipe', 'ignore']
@@ -88,7 +98,7 @@ const seconds = (iso: unknown): number | undefined => {
   return Number.isFinite(ms) ? ms / 1000 : undefined
 }
 
-function museSession(raw: unknown): HistoryEntry | undefined {
+function museSession(raw: unknown): MuseHistoryEntry | undefined {
   const s = record(raw)
   if (typeof s.sessionId !== 'string' || typeof s.workspaceRoot !== 'string') return undefined
   if (s.kind !== undefined && s.kind !== 'root') return undefined
@@ -99,14 +109,15 @@ function museSession(raw: unknown): HistoryEntry | undefined {
     name: title ?? (typeof s.name === 'string' ? s.name : null),
     preview: typeof s.firstUserPrompt === 'string' ? s.firstUserPrompt : undefined,
     createdAt: seconds(s.createdAt),
-    updatedAt: seconds(s.updatedAt)
+    updatedAt: seconds(s.updatedAt),
+    ...(typeof s.path === 'string' && { logPath: s.path })
   }
 }
 
 // MUSE§5
-export async function listMuseSessions(options: ServeOptions): Promise<HistoryEntry[]> {
+export async function listMuseSessions(options: ServeOptions): Promise<MuseHistoryEntry[]> {
   return withServe(options, async (request) => {
-    const found: HistoryEntry[] = []
+    const found: MuseHistoryEntry[] = []
     const seen = new Set<string>()
     let cursor: string | undefined
     do {

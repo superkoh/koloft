@@ -74,13 +74,13 @@ export function finishedWork(r: LogRecord): string | undefined {
     : undefined
 }
 
-export class SessionLogTail {
+export class LineTail {
   private offset = 0
   private rest = ''
 
   constructor(
-    private file: string,
-    private onRecord: (r: LogRecord) => void
+    readonly file: string,
+    private onLine: (line: string) => void
   ) {}
 
   read(): void {
@@ -99,18 +99,40 @@ export class SessionLogTail {
       this.offset = size
       const lines = (this.rest + buf.toString('utf8')).split('\n')
       this.rest = lines.pop() ?? ''
-      for (const line of lines) {
-        const r = line && logRecord(line)
-        if (r) this.onRecord(r)
-      }
+      for (const line of lines) if (line) this.onLine(line)
     } finally {
       fs.closeSync(fd)
     }
   }
 }
 
+export class SessionLogTail extends LineTail {
+  constructor(file: string, onRecord: (r: LogRecord) => void) {
+    super(file, (line) => {
+      const r = logRecord(line)
+      if (r) onRecord(r)
+    })
+  }
+}
+
 const PROMPT_TYPE = 'runtime.command_intake.received'
 const REPLY_KIND = 'assistant_message_committed'
+
+export const SAID_MARKS = [PROMPT_TYPE, REPLY_KIND]
+
+// MUSE§2
+export function textOfLogLine(line: string): string | undefined {
+  if (!SAID_MARKS.some((mark) => line.includes(mark))) return undefined
+  const r = logRecord(line)
+  if (!r) return undefined
+  const text =
+    r.payloadType === PROMPT_TYPE
+      ? record(record(r.payload.record).command).prompt
+      : record(r.payload.event).kind === REPLY_KIND
+        ? record(r.payload.event).text
+        : undefined
+  return typeof text === 'string' ? text : undefined
+}
 
 // MUSE§2
 export async function saidInLog(
@@ -120,16 +142,8 @@ export async function saidInLog(
   const lines = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity })
   try {
     for await (const line of lines) {
-      if (!line.includes(PROMPT_TYPE) && !line.includes(REPLY_KIND)) continue
-      const r = logRecord(line)
-      if (!r) continue
-      const text =
-        r.payloadType === PROMPT_TYPE
-          ? record(record(r.payload.record).command).prompt
-          : record(r.payload.event).kind === REPLY_KIND
-            ? record(r.payload.event).text
-            : undefined
-      if (typeof text === 'string' && each(text) === true) return
+      const text = textOfLogLine(line)
+      if (text !== undefined && each(text) === true) return
     }
   } finally {
     lines.close()

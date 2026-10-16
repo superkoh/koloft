@@ -125,8 +125,8 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 ## §6 tmux swallows OSC 7501
 
 - Inside tmux 3.3a (the multiplexer Koloft's remote tabs run in) the 7501 query never
-  reaches the outer terminal, also with `allow-passthrough on`, so Muse sends no states
-  at all.
+  reaches the outer terminal, also with `allow-passthrough on`, so Muse on its own sends
+  no states at all. §16 has what makes them flow.
 
 ## §7 No way to post into a live session from outside
 
@@ -292,3 +292,35 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   approval prompts are disabled" (fake model, Docker and macOS).
 - `--permission-profile :unrestricted`: no sandbox, no prompts; a command asking to
   leave the sandbox is refused rather than asked.
+
+## §16 Muse on another machine, inside tmux
+
+How established: muse 1.4.9 (`Muse Code 1.4.9 (1.4.9-R6297.1)`), official installer, in a
+Linux Docker container reached over a real `ssh`, inside tmux 3.3a, with the fake model
+server of the opening note and with `--provider echo`; October 2026.
+
+- Hooks inside tmux fire exactly as outside it (§9). Their environment has no `TMUX`,
+  no `TMUX_PANE` and nothing Koloft put in muse's environment, so a hook cannot learn
+  which tab or tmux session it belongs to except from its own command line.
+- A process between tmux and muse that owns muse's terminal (a python3 `pty` wrapper)
+  and answers the 7501 query itself with the reply of §3 makes every state flow.
+  The wrapper must not pass the query on. Re-sent to tmux as a DCS passthrough
+  (`ESC P tmux;` + the frame with every ESC doubled + `ESC \`), the frames reach the
+  terminal outside tmux when tmux has `set -g allow-passthrough on`.
+- Attaching to the tmux session again replays no 7501 frame.
+- `TBH_TMUX_RUN_STATUS_PATH` writes nothing Koloft can use.
+- `ssh <machine> muse serve --provider echo` speaks §5 over the ssh pipe: `initialize`
+  answers in about 0.3 s, `session/list`, `session/read` and `approval/listPending` are
+  fast and need no login. In 1.4.9 `session/read` returns items only with
+  `excludeItems: false`. A session a TUI holds shows in the list after a few seconds,
+  `status: notLoaded`.
+- An `auth.json` copied from one config folder into another (§13) signs muse in there;
+  on Linux no keyring and no `TBH_CREDENTIAL_BACKEND` is needed. `META_API_KEY` shows
+  in `account/read` as `envKey`.
+- The installer (`curl -fsSL https://dev.meta.ai/install.sh | MUSE_NO_MODIFY_PATH=1 bash`)
+  takes about 18 s and 331 MB, puts a static binary under `~/.local/bin`, and has builds
+  for Linux and macOS on x86_64 and aarch64.
+- A recorded `trust.json` answer or `--trust-workspace` keeps the trust question away
+  in tmux too, and across `/clear`.
+- `muse session-message send` exits 1 with `external_agent_ingress_closed` in every
+  variant tried; the only way to put words into a running TUI is typing.

@@ -41,7 +41,7 @@ const MASTER_FULL = 'Session open refused by peer'
 
 const spilledHosts = new Set<string>()
 
-function backgroundOptions(host: string, controlDir: string): string[] {
+export function backgroundOptions(host: string, controlDir: string): string[] {
   return sshOptions(controlDir, true, spilledHosts.has(host) ? SPILL_MASTER : SHARED_MASTER)
 }
 

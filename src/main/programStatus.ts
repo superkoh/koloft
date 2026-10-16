@@ -10,6 +10,7 @@ export const PROGRAM_STATUS_REPLY =
 export interface ProgramStatus {
   state: string
   kind?: string
+  seq?: number
 }
 
 function fields(body: string): Record<string, string> {
@@ -35,7 +36,8 @@ export class ProgramStatusParser {
         continue
       }
       const f = fields(rest)
-      if (f.state && f.id === undefined) states.push({ state: f.state, kind: f.kind })
+      if (f.state && f.id === undefined)
+        states.push({ state: f.state, kind: f.kind, ...(f.seq && { seq: Number(f.seq) }) })
     }
     return { asked, states }
   }

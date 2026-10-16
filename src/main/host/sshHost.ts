@@ -48,12 +48,15 @@ import {
 } from '../remote/paths'
 import { launchMode } from '../remote/sync'
 import {
+  backgroundOptions,
   ensureControlDir,
   problemOf,
   sshLinkBroke,
   sshOptions,
   type BytesResult
 } from '../remote/ssh'
+import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
+import { remoteMuseHooks, sessionStartContext } from '../museHooks'
 import { claudeArgv } from '../claudeArgs'
 import { listSkills, type SkillFs } from '../skillList'
 import { worktreeNameAround } from '../resumePlan'
@@ -74,6 +77,25 @@ export interface MachineClaudeDeps {
   agentTools(): boolean
   pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
   hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
+}
+
+export interface MuseMachineLaunch {
+  cwd: string
+  fallbackCwd?: string
+  resumeSessionId?: string
+  account: { name: string; auth?: string }
+  args: string[]
+  trust: string[]
+  trustIf?: string
+  context?: string
+  portOffset?: number
+}
+
+export interface MuseMachinePlan {
+  attach: boolean
+  tmuxName(tabId: string): string
+  launchCommand(tabId: string): string
+  resized(tabId: string, cols: number, rows: number): void
 }
 
 export interface SshHostDeps {
@@ -656,6 +678,92 @@ export class SshHost implements Host {
   // CC§9
   async trustsFolder(dir: string): Promise<boolean> {
     return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
+  }
+
+  // MUSE§16
+  async launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan> {
+    const d = this.deps.claude
+    await this.deps.sshEnvReady?.()
+    ensureControlDir(d.controlDir)
+    const sid = spec.resumeSessionId
+    const attach =
+      !!sid &&
+      launchMode({ alive: d.alive(), killed: this.killedSessions, sessionId: sid }) === 'attach'
+    if (sid) {
+      this.killedSessions.delete(sid)
+      await this.kills.get(tmuxSessionName(sid))
+    }
+    const tmuxName = (tabId: string): string => (sid ? tmuxSessionName(sid) : `m-${tabId}`)
+    const pkg = d.machinePackage()
+    const hookScript = `${remoteMachineDir(pkg.name)}/${MUSE_HOOK_FILE}`
+    const bareOrNot = (p?: string): string | undefined => (p ? this.bare(p) : undefined)
+    return {
+      attach,
+      tmuxName,
+      launchCommand: (tabId) => {
+        const tabDir = tabPackageDir(d.userData, tabId)
+        const contextFile = spec.context ? `$HOME/.koloft/tabs/${tabId}.ctx.json` : undefined
+        const files: Record<string, string> = {
+          [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
+        }
+        if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
+        if (!attach && spec.account.auth) files[`${tabId}.auth.json`] = spec.account.auth
+        writeTabPackage(tabDir, {
+          tabId,
+          tmuxName: tmuxName(tabId),
+          machineName: pkg.name,
+          cwd: this.bare(spec.cwd),
+          fallbackCwd: bareOrNot(spec.fallbackCwd),
+          banner: '',
+          portOffset: spec.portOffset,
+          settings: {},
+          claudeArgs: [],
+          muse: {
+            run: museRunLines({
+              tabId,
+              account: spec.account.name,
+              args: spec.args,
+              trust: spec.trust.map((p) => this.bare(p)),
+              trustIf: bareOrNot(spec.trustIf)
+            }),
+            files
+          }
+        })
+        return launchLine({
+          host: this.machine,
+          sshOptions: sshOptions(d.controlDir, false),
+          machine: pkg,
+          tabDir,
+          tabId,
+          mode: attach ? 'attach' : 'start'
+        })
+      },
+      resized: this.resized
+    }
+  }
+
+  // MUSE§10
+  async museTrusts(dir: string): Promise<boolean> {
+    return (await this.sh(MUSE_TRUSTED_SH, [this.bare(dir)])).code === 0
+  }
+
+  async runScript(script: string, args: string[]): Promise<string | null> {
+    const r = await this.sh(script, args, { timeoutMs: GIT_TIMEOUT_MS })
+    return r.code === 0 ? r.stdout.toString('utf8') : null
+  }
+
+  // MUSE§5 MUSE§16
+  museServe(args: string[]): { binary: string; args: string[] } {
+    const d = this.deps.claude
+    ensureControlDir(d.controlDir)
+    return {
+      binary: 'ssh',
+      args: [
+        ...backgroundOptions(this.machine, d.controlDir),
+        this.machine,
+        remoteShCommand('MUSE_NO_AUTO_UPDATE=1 exec muse serve "$@"', args)
+      ]
+    }
   }
 
   async listSkills(root: string): Promise<SkillSuggestion[]> {

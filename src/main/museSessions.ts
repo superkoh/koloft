@@ -1,4 +1,5 @@
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -36,24 +37,37 @@ import {
   type MuseHook
 } from './museHooks'
 import {
+  LineTail,
   SessionLogTail,
   finishedWork,
   museHome,
   museSessionLog,
   renamedTo,
   saidInLog,
+  textOfLogLine,
   type LogRecord
 } from './museSessionLog'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
-import { UUID, museSessionKey } from './sessionStore'
-import { listMuseSessions, readMuseAsk, readMuseTurns, type MuseAsk } from './museServe'
+import { UUID, hostOfPath, museSessionKey } from './sessionStore'
+import {
+  listMuseSessions,
+  readMuseAsk,
+  readMuseTurns,
+  type MuseAsk,
+  type MuseHistoryEntry,
+  type ServeOptions
+} from './museServe'
+import { identityOf } from '@shared/sessionBackend'
+import { isRemoteKey, resolveOnHost } from '@shared/remoteKey'
+import { POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE, tmuxSessionName } from './remote/launch'
+import type { MuseMachineLaunch, MuseMachinePlan } from './host/sshHost'
+import { MIRROR_SUFFIX, MUSE_LOG_GREP, RUN_POINTER_SUFFIX } from './museRemote'
 import { sleep } from './codexTransport'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
 import { realpathSafe } from './projectInfo'
 import {
   StoredSessions,
-  type HistoryEntry,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
@@ -69,13 +83,31 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
   agent: {
-    enabled(): boolean
+    enabled(remote: boolean): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
   }
   gitAccounts: StoredSessionDeps['gitAccounts'] & {
     picked(cwd: string): Promise<boolean>
     ghWrapper: string
   }
+  remote?: MuseRemoteDeps
+}
+
+export interface MuseMachine {
+  launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan>
+  museServe(args: string[]): { binary: string; args: string[] }
+  museTrusts(dir: string): Promise<boolean>
+  endTmuxSession(tmuxName: string): Promise<string | undefined>
+  runScript(script: string, args: string[]): Promise<string | null>
+}
+
+export interface MuseRemoteDeps {
+  machine(host: string): MuseMachine
+  hosts(): string[]
+  keyed(host: string, pathOnMachine: string): string
+  mirrorDir(host: string): string
+  gone(host: string, sessionId: string): boolean
+  poke(host: string): void
 }
 
 interface MuseLaunch {
@@ -98,6 +130,37 @@ interface MuseRun extends StoredRun {
   log?: { sessionId: string; tail: SessionLogTail }
   endedTurns: Set<string>
   waiting?: { since: number; ask: MuseAsk }
+  host?: string
+  tmuxName?: string
+  attachTo?: string
+  mirror?: { tail: LineTail; replay?: string[] }
+  lastSeq: number
+}
+
+const REMOTE_EXIT_WAIT_MS = 10_000
+
+const hostOfKey = (key: string): string | undefined => {
+  const { sourceId } = identityOf(key)
+  return sourceId === 'local' ? undefined : sourceId
+}
+
+const cwdRelative = (cwd: string, p: string): string =>
+  isRemoteKey(cwd) ? resolveOnHost(`${cwd}/`, p) : path.resolve(cwd, p)
+
+const textOrEmpty = (file: string): string => {
+  try {
+    return fs.readFileSync(file, 'utf8').trim()
+  } catch {
+    return ''
+  }
+}
+
+function mirrorLine(raw: string): Record<string, unknown> | undefined {
+  try {
+    return record(JSON.parse(raw))
+  } catch {
+    return undefined
+  }
 }
 
 // MUSE§11
@@ -239,12 +302,13 @@ function patchDelta(response: Record<string, unknown>): { added: number; removed
   return { added, removed }
 }
 
-export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaunch> {
+export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, MuseLaunch> {
   readonly id = 'muse'
   private parsers = new Map<string, ProgramStatusParser>()
   private sweeping?: ReturnType<typeof setInterval>
   private registrySeenAt?: number
   private unreadable = new Set<string>()
+  private remoteHistory = new Map<string, MuseHistoryEntry[]>()
   // MUSE§14
   protected readonly cli = {
     product: 'Muse Code',
@@ -282,8 +346,32 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
   ): Promise<{ id: string; snippet: string }[]> {
     const wanted = term.toLowerCase()
     const found: { id: string; snippet: string }[] = []
+    const onMachines = new Map<string, Map<string, string>>()
+    for (const [key, entry] of this.history) {
+      const host = hostOfKey(key)
+      if (!host) continue
+      if (entry.logPath)
+        onMachines.set(host, (onMachines.get(host) ?? new Map()).set(entry.logPath, key))
+    }
+    const remote = Promise.all(
+      [...onMachines].map(async ([host, keyOfLog]) => {
+        const out = await this.deps.remote
+          ?.machine(host)
+          .runScript(MUSE_LOG_GREP, [term, ...keyOfLog.keys()])
+          .catch(() => null)
+        const hits = new Map<string, string>()
+        for (const line of out?.split('\n') ?? []) {
+          const tab = line.indexOf('\t')
+          const key = keyOfLog.get(line.slice(0, tab))
+          const text = key && !hits.has(key) ? textOfLogLine(line.slice(tab + 1)) : undefined
+          if (key && text?.toLowerCase().includes(wanted)) hits.set(key, text)
+        }
+        return [...hits].map(([id, snippet]) => ({ id, snippet }))
+      })
+    )
     for (const key of this.history.keys()) {
       if (signal?.aborted) break
+      if (hostOfKey(key)) continue
       const file = museSessionLog(this.env, this.nativeId(key))
       if (!file) continue
       let hit: string | undefined
@@ -295,15 +383,18 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
       }).catch(() => undefined)
       if (hit) found.push({ id: key, snippet: hit })
     }
-    return found
+    return [...found, ...(await remote).flat()]
   }
 
-  trustsFolder(dir: string): boolean {
-    return museTrustsFolder(this.env, dir)
+  trustsFolder(dir: string): boolean | Promise<boolean> {
+    const host = hostOfPath(dir)
+    if (!host) return museTrustsFolder(this.env, dir)
+    return this.deps.remote?.machine(host).museTrusts(dir) ?? false
   }
 
   // MUSE§4
   runningElsewhere(key: string): boolean {
+    if (hostOfKey(key)) return false
     const file = path.join(registryDir(this.env), `${this.nativeId(key)}.json`)
     try {
       const pid = registryPid(record(JSON.parse(fs.readFileSync(file, 'utf8'))))
@@ -319,11 +410,42 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     return { binary: this.binary, env: this.env }
   }
 
+  // MUSE§16
+  private serveFor(key: string): ServeOptions {
+    return this.serveOn(hostOfKey(key))
+  }
+
+  private serveOn(host: string | undefined): ServeOptions {
+    if (!host) return this.serveOptions()
+    const machine = this.deps.remote?.machine(host)
+    if (!machine) throw new Error(`Koloft cannot reach ${host}.`)
+    return { binary: 'ssh', env: this.env, over: (args) => machine.museServe(args) }
+  }
+
   protected async listHistory(): Promise<
-    { key: string; entry: HistoryEntry; archived: boolean }[]
+    { key: string; entry: MuseHistoryEntry; archived: boolean }[]
   > {
-    const sessions = await listMuseSessions(this.serveOptions())
-    return sessions.map((entry) => ({ key: museSessionKey(entry.id), entry, archived: false }))
+    const remote = this.deps.remote
+    const hosts = remote?.hosts() ?? []
+    const [sessions] = await Promise.all([
+      listMuseSessions(this.serveOptions()),
+      ...hosts.map(async (host) => {
+        const listed = await listMuseSessions(this.serveOn(host)).catch(() => undefined)
+        if (listed)
+          this.remoteHistory.set(
+            host,
+            listed.map((entry) => ({ ...entry, cwd: remote!.keyed(host, entry.cwd) }))
+          )
+      })
+    ])
+    for (const host of this.remoteHistory.keys())
+      if (!hosts.includes(host)) this.remoteHistory.delete(host)
+    return [
+      ...sessions.map((entry) => ({ key: museSessionKey(entry.id), entry, archived: false })),
+      ...[...this.remoteHistory].flatMap(([host, entries]) =>
+        entries.map((entry) => ({ key: museSessionKey(entry.id, host), entry, archived: false }))
+      )
+    ]
   }
 
   async transcriptExists(key: string): Promise<boolean> {
@@ -333,9 +455,9 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
 
   // MUSE§5
   async readTurns(key: string, n: number): Promise<Turn[]> {
-    if (!this.binary && !(await this.availability()).available) return []
+    if (!hostOfKey(key) && !this.binary && !(await this.availability()).available) return []
     try {
-      const turns = await readMuseTurns(this.serveOptions(), this.nativeId(key), n)
+      const turns = await readMuseTurns(this.serveFor(key), this.nativeId(key), n)
       this.unreadable.delete(key)
       return turns
     } catch (error) {
@@ -364,7 +486,114 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     return { pickedAccount: run.account }
   }
 
-  protected async startRun(
+  protected async startRun(ctx: StartContext, launch: MuseLaunch): Promise<MuseRun> {
+    return isRemoteKey(ctx.cwd) ? this.startRemoteRun(ctx, launch) : this.startLocalRun(ctx, launch)
+  }
+
+  // ADR-0030 MUSE§13 MUSE§16
+  private credentialFor(account: string, env: NodeJS.ProcessEnv, host: string): string {
+    try {
+      return fs.readFileSync(path.join(env.XDG_CONFIG_HOME ?? '', 'muse', 'auth.json'), 'utf8')
+    } catch {
+      throw new Error(
+        `The Muse account ${account} keeps no credential file Koloft can carry to ${host}. Sign it in again in Settings ▸ Accounts.`
+      )
+    }
+  }
+
+  // MUSE§16
+  private async startRemoteRun(
+    { opts, cwd, workspace, resource, freshWorktree }: StartContext,
+    { account, env }: MuseLaunch
+  ): Promise<MuseRun> {
+    const remote = this.deps.remote
+    const host = hostOfPath(cwd)
+    if (!remote || !host) throw new Error('Koloft cannot reach this machine.')
+    const permission = opts.permission ?? 'default'
+    const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
+    const plan = await remote.machine(host).launchMuse({
+      cwd,
+      fallbackCwd: workspace !== cwd ? workspace : undefined,
+      resumeSessionId: resumeId,
+      account: { name: account, auth: this.credentialFor(account, env, host) },
+      args: [
+        ...(opts.model ? ['--model', opts.model] : []),
+        ...(opts.effort ? ['--reasoning-effort', opts.effort] : []),
+        ...approvalFlags(permission, false),
+        ...(resumeId ? ['resume', resumeId] : opts.firstPrompt ? [opts.firstPrompt] : [])
+      ],
+      trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
+      trustIf: resource ? workspace : undefined,
+      context: this.deps.agent.enabled(true) ? koloftPrompt('muse') : undefined,
+      portOffset: resource ? portOffset(resource.worktreeName) : undefined
+    })
+    this.assertStarting()
+    const tabId = this.deps.pty.nextId()
+    this.parsers.set(tabId, new ProgramStatusParser())
+    try {
+      const handle = this.deps.pty.create({
+        id: tabId,
+        kind: 'muse',
+        cwd: os.homedir(),
+        cols: opts.cols,
+        rows: opts.rows,
+        shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
+        launchCommand: plan.launchCommand,
+        resized: plan.resized,
+        resumeSessionId: opts.resumeSessionId
+      })
+      const run: MuseRun = {
+        tabId: handle.id,
+        cwd,
+        workspace,
+        resource,
+        explicitStop: false,
+        resumeKey: opts.resumeSessionId,
+        permission,
+        launchName: opts.name,
+        account,
+        startedAt: handle.startedAt,
+        boundAt: handle.startedAt,
+        sinceClear: [],
+        children: new Set(),
+        background: new Map(),
+        touched: new Map(),
+        liveWrites: 0,
+        endedTurns: new Set(),
+        host,
+        tmuxName: plan.tmuxName(handle.id),
+        attachTo: plan.attach ? resumeId : undefined,
+        lastSeq: 0,
+        releaseTools: () => this.parsers.delete(handle.id)
+      }
+      if (!plan.attach) run.mirror = { tail: this.mirrorTail(run, handle.id) }
+      remote.poke(host)
+      this.keepSweeping()
+      return run
+    } catch (error) {
+      this.parsers.delete(tabId)
+      throw error
+    }
+  }
+
+  private mirrorTail(run: MuseRun, runId: string): LineTail {
+    const file = path.join(this.deps.remote!.mirrorDir(run.host!), runId + MIRROR_SUFFIX)
+    return new LineTail(file, (line) => {
+      if (run.mirror?.replay) run.mirror.replay.push(line)
+      else this.onMirrorLine(run, mirrorLine(line))
+    })
+  }
+
+  private keepSweeping(): void {
+    this.sweeping ??= setInterval(() => {
+      this.sweepRegistry()
+      this.followLogs()
+      this.followMirrors()
+    }, REGISTRY_SWEEP_MS)
+    this.sweeping.unref?.()
+  }
+
+  private async startLocalRun(
     { opts, cwd, workspace, resource, freshWorktree }: StartContext,
     { binary, account, env }: MuseLaunch
   ): Promise<MuseRun> {
@@ -383,7 +612,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     const networkOpen = !!endpoint || (await this.deps.gitAccounts.picked(cwd))
     this.assertStarting()
     const permission = opts.permission ?? 'default'
-    const agent = this.deps.agent.enabled() ? this.deps.agent : undefined
+    const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('muse')] : []),
       ...(role ? [role] : [])
@@ -450,17 +679,14 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
         touched: new Map(),
         liveWrites: 0,
         endedTurns: new Set(),
+        lastSeq: 0,
         releaseTools: () => {
           tools.release()
           this.parsers.delete(handle.id)
         }
       }
       bound = run
-      this.sweeping ??= setInterval(() => {
-        this.sweepRegistry()
-        this.followLogs()
-      }, REGISTRY_SWEEP_MS)
-      this.sweeping.unref?.()
+      this.keepSweeping()
       return run
     } catch (error) {
       this.parsers.delete(tabId)
@@ -575,7 +801,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     const tool = String(input.tool_name)
     const response = responseOf(input)
     if (WRITING_TOOLS.has(tool) && typeof response.filePath === 'string') {
-      const target = path.resolve(run.cwd, response.filePath)
+      const target = cwdRelative(run.cwd, response.filePath)
       const { added, removed } = patchDelta(response)
       noteWrite(run.touched, target, added, removed, Date.now())
       run.liveWrites++
@@ -587,7 +813,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
         liveWrites: run.liveWrites
       })
     } else if (tool === 'read_file' && typeof record(input.tool_input).path === 'string') {
-      noteRead(run.touched, path.resolve(run.cwd, String(record(input.tool_input).path)))
+      noteRead(run.touched, cwdRelative(run.cwd, String(record(input.tool_input).path)))
     } else if (
       tool === 'bash' &&
       response.execution_state === BACKGROUND_RUNNING &&
@@ -611,7 +837,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
   // MUSE§2
   private readLog(run: MuseRun): void {
     const id = run.info?.nativeSessionId
-    if (!id) return
+    if (!id || run.host) return
     if (run.log?.sessionId !== id) {
       const file = museSessionLog(this.env, id)
       if (!file) return
@@ -632,9 +858,25 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     const parser = this.parsers.get(tabId)
     if (!parser) return
     const { asked, states } = parser.push(data)
-    if (asked) this.deps.pty.write(tabId, PROGRAM_STATUS_REPLY)
     const run = this.runs.get(tabId)
-    if (!run || run.explicitStop || states.length === 0) return
+    if (asked && !run?.host) this.deps.pty.write(tabId, PROGRAM_STATUS_REPLY)
+    if (run) this.applyStates(run, states)
+  }
+
+  // MUSE§16
+  private freshStates(run: MuseRun, states: ProgramStatus[]): ProgramStatus[] {
+    if (!run.host) return states
+    return states.filter((status) => {
+      if (status.seq === undefined || status.seq <= run.lastSeq) return false
+      run.lastSeq = status.seq
+      return true
+    })
+  }
+
+  private applyStates(run: MuseRun, arrived: ProgramStatus[]): void {
+    if (run.explicitStop) return
+    const states = this.freshStates(run, arrived)
+    if (states.length === 0) return
     for (const status of states) {
       if (status.state !== 'clear') run.sinceClear = [...run.sinceClear, status].slice(-2)
       else {
@@ -642,9 +884,97 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
         this.registrySeenAt = undefined
       }
     }
-    this.readLog(run)
-    if (this.sweepRegistry().has(run) || !run.info) return
+    if (!run.host) {
+      this.readLog(run)
+      if (this.sweepRegistry().has(run)) return
+    }
+    if (!run.info) return
     for (const status of states) if (status.state !== 'clear') this.emitState(run, status)
+  }
+
+  // MUSE§16
+  private followMirrors(): void {
+    for (const run of this.runs.values()) {
+      if (!run.host || run.explicitStop || run.stopping) continue
+      if (run.attachTo && !run.info) this.bindTo(run, run.attachTo)
+      if (!run.mirror && run.attachTo) {
+        const pointer = path.join(
+          this.deps.remote!.mirrorDir(run.host),
+          tmuxSessionName(run.attachTo) + RUN_POINTER_SUFFIX
+        )
+        const runId = textOrEmpty(pointer)
+        if (runId) run.mirror = { tail: this.mirrorTail(run, runId), replay: [] }
+      }
+      const mirror = run.mirror
+      if (!mirror) continue
+      mirror.tail.read()
+      if (mirror.replay?.length) {
+        const lines = mirror.replay
+        mirror.replay = undefined
+        this.replayMirror(run, lines.map(mirrorLine))
+      }
+    }
+  }
+
+  private replayMirror(run: MuseRun, lines: (Record<string, unknown> | undefined)[]): void {
+    const bound = lines.filter((l) => l?.t === 'bound').at(-1)
+    if (bound) this.onMirrorLine(run, bound)
+    const states = lines.filter((l) => l?.t === 'state' && typeof l.seq === 'number')
+    const last = states.sort((a, b) => Number(a!.seq) - Number(b!.seq)).at(-1)
+    if (last) this.onMirrorLine(run, last)
+  }
+
+  private onMirrorLine(run: MuseRun, line: Record<string, unknown> | undefined): void {
+    if (!line || run.explicitStop) return
+    if (line.t === 'bound' && typeof line.sessionId === 'string' && UUID.test(line.sessionId)) {
+      this.bindTo(run, line.sessionId)
+      run.tmuxName = tmuxSessionName(line.sessionId)
+      if (run.host) this.deps.remote?.poke(run.host)
+    } else if (line.t === 'state' && typeof line.state === 'string') {
+      const kind = typeof line.kind === 'string' ? line.kind : undefined
+      this.applyStates(run, [{ state: line.state, kind, seq: Number(line.seq) }])
+    } else if (line.t === 'hook') {
+      const hook = museHook(line)
+      if (hook) this.onHook(run, hook)
+    } else if (line.t === 'log' && typeof line.payloadType === 'string') {
+      this.onLogRecord(run, { payloadType: line.payloadType, payload: record(line.payload) })
+    }
+  }
+
+  protected async endRun(run: MuseRun): Promise<void> {
+    if (!run.host || !run.tmuxName || this.shuttingDown) return
+    const problem = await this.deps.remote?.machine(run.host).endTmuxSession(run.tmuxName)
+    if (problem)
+      this.deps.error(`Could not stop Muse on ${run.host}: ${problem}. It is still running there.`)
+    this.deps.remote?.poke(run.host)
+  }
+
+  noticeRemoteExits(host: string, sessionIds: string[]): void {
+    for (const run of this.runs.values()) {
+      const sid = run.info?.nativeSessionId
+      if (run.host !== host || !sid || !sessionIds.includes(sid)) continue
+      setTimeout(() => {
+        const still = this.runs.get(run.tabId) === run && run.info?.nativeSessionId === sid
+        if (!still || !this.deps.remote?.gone(host, sid)) return
+        void this.stop(run.tabId, 1).catch((error) => this.deps.error(String(error)))
+      }, REMOTE_EXIT_WAIT_MS).unref()
+    }
+  }
+
+  hostOfTab(tabId: string): string | undefined {
+    return this.runs.get(tabId)?.host
+  }
+
+  hostsWithRuns(): Set<string> {
+    return new Set([...this.runs.values()].flatMap((r) => (r.host ? [r.host] : [])))
+  }
+
+  tabOnMachine(host: string, tmuxName: string, launchTab: string): string | undefined {
+    for (const run of this.runs.values()) {
+      if (run.host !== host || run.explicitStop) continue
+      if ((tmuxName && run.tmuxName === tmuxName) || run.tabId === launchTab) return run.tabId
+    }
+    return undefined
   }
 
   private emitState(run: MuseRun, status: ProgramStatus): void {
@@ -657,10 +987,11 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
   // MUSE§5 MUSE§11
   private readAsk(run: MuseRun): void {
     const sessionId = run.info?.nativeSessionId
-    if (!sessionId || !this.binary) return
+    if (!sessionId || (!run.host && !this.binary)) return
     const waiting = { since: Date.now(), ask: {} as MuseAsk }
     run.waiting = waiting
-    void readMuseAsk(this.serveOptions(), sessionId)
+    void Promise.resolve()
+      .then(() => readMuseAsk(this.serveFor(run.info!.sessionId), sessionId))
       .then((ask) => {
         if (run.waiting === waiting) waiting.ask = ask
       })
@@ -684,7 +1015,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
   // MUSE§4 MUSE§9
   private bindTo(run: MuseRun, sessionId: string): boolean {
     if (run.info?.nativeSessionId === sessionId) return false
-    const key = museSessionKey(sessionId)
+    const key = museSessionKey(sessionId, run.host)
     const known = this.history.get(key)
     const switched = !!known && (known.createdAt ?? 0) * 1000 < run.boundAt
     if (run.info) run.boundAt = Date.now()
@@ -713,7 +1044,9 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     } catch {
       return rebound
     }
-    const unbound = [...this.runs.values()].some((r) => !r.info && !r.explicitStop)
+    const unbound = [...this.runs.values()].some(
+      (r) => !r.info && !r.explicitStop && r.pid !== undefined
+    )
     if (changedAt === this.registrySeenAt && !unbound) return rebound
     const live = [...this.runs.values()].filter(
       (r) => !r.explicitStop && !r.stopping && r.pid !== undefined
@@ -735,6 +1068,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
   }
 
   private followLogs(): void {
-    for (const run of this.runs.values()) if (!run.explicitStop && run.info) this.readLog(run)
+    for (const run of this.runs.values())
+      if (!run.explicitStop && run.info && !run.host) this.readLog(run)
   }
 }
