@@ -18,7 +18,7 @@ import {
 } from './helpers/p1'
 import { seedWorkbenchDefault } from './helpers/workbench'
 
-const CENTER_MAX_COLS = 100
+const CENTER_MAX_COLS = 120
 const MIN_SIDE_GUTTER_PX = 24
 const SUBPIXEL_PX = 2
 const BELOW_THE_WINDOW_MIN_WIDTH_PX = 900
@@ -100,8 +100,8 @@ async function launchWithPanelShut(env: E2EEnv): Promise<{ app: ElectronApplicat
   return { app, page }
 }
 
-test.describe('the center session terminal stops at 100 columns and sits centred, with at least 24 px on each side; the Workbench terminal still fills its pane', () => {
-  test('a narrow window fills the Claude tab 24 px in from each side; widened, it holds at 100 columns, centred, the pty told so, while the world clock stays at the left edge, at any font size; a click in the margin lands in the terminal; the Workbench terminal goes past 100', async ({
+test.describe('the center session terminal stops at 120 columns and sits centred, with at least 24 px on each side; the Workbench terminal still fills its pane', () => {
+  test('a narrow window fills the Claude tab 24 px in from each side; widened, it holds at 120 columns, centred, the pty told so, while the world clock stays at the left edge, at any font size; a click in the margin lands in the terminal; the Workbench terminal goes past 120', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -166,7 +166,7 @@ test.describe('the center session terminal stops at 100 columns and sits centred
     }
   })
 
-  test('a local Codex tab stops at 100 columns too', async ({ env }) => {
+  test('a local Codex tab stops at 120 columns too', async ({ env }) => {
     test.setTimeout(180_000)
     installCodex(env)
     const { app, page } = await launchWithPanelShut(env)
@@ -178,7 +178,7 @@ test.describe('the center session terminal stops at 100 columns and sits centred
     }
   })
 
-  test('a remote Claude tab stops at 100 columns too', async ({ env }) => {
+  test('a remote Claude tab stops at 120 columns too', async ({ env }) => {
     test.setTimeout(240_000)
     seedWorkbenchDefault(env, false)
     seedSettings(env, { hintsOff: true })
