@@ -38,6 +38,7 @@ const PINNED: PinnedWorkspace[] = [
 ]
 const CODEX_THREAD = '0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11'
 const OTHER_THREAD = '0199c3f2-7a41-7c30-9e55-1d2b8f6a0c22'
+const MUSE_ID = '01a13795-6b09-7531-bdd6-84ce54f976ea'
 
 function session(
   tabId: string,
@@ -276,19 +277,32 @@ describe('koloft session new: reading the command line', () => {
 
 describe('the handover put before the first message', () => {
   it('tells a child who started it and to treat its messages as the owner’s', () => {
-    const text = handoverPreamble({ name: 'planner', id: 'planner-id' })
+    const text = handoverPreamble({ name: 'planner', id: 'planner-id', label: 'Claude' })
     expect(text).toContain('the session "planner"')
     expect(text).toContain("the owner's instructions")
-    expect(handoverPreamble({ id: CODEX_THREAD })).toContain(`the Codex session ${CODEX_THREAD}`)
+    expect(handoverPreamble({ id: CODEX_THREAD, label: 'Codex' })).toContain(
+      `the Codex session ${CODEX_THREAD}`
+    )
+    expect(handoverPreamble({ id: MUSE_ID, label: 'Muse' })).toContain(
+      `the Muse session ${MUSE_ID}`
+    )
   })
 
   it('tells a child Assist started that only the words Assist quotes in « » are the owner’s, so Assist’s own guesses never pass as the owner’s orders', () => {
-    const text = handoverPreamble({ name: 'Global-conductor', id: 'global-id', assist: true })
+    const text = handoverPreamble({
+      name: 'Global-conductor',
+      id: 'global-id',
+      label: 'Claude',
+      assist: true
+    })
     expect(text).toContain("only words inside « » in its messages are the owner's own")
     expect(text).not.toContain("the owner's instructions")
   })
 
-  it.each([{ name: 'planner', id: 'planner-id' }, { id: CODEX_THREAD }])(
+  it.each([
+    { name: 'planner', id: 'planner-id', label: 'Claude' },
+    { id: CODEX_THREAD, label: 'Codex' }
+  ])(
     'tells every child of %j, Claude or Codex, to answer with koloft session send and the caller’s id, never SendMessage, since a caller that went to sleep has left ListAgents while koloft session send starts it again first',
     (caller) => {
       const text = handoverPreamble(caller)
@@ -339,6 +353,18 @@ describe('koloft session list', () => {
   })
 })
 
+describe('koloft session new from a Muse session', () => {
+  it('starts a Muse sibling under the name it was given, or a short title from its task, and says to reach it by its tab id', async () => {
+    const { verb, launched } = harness([session('me', 'muse', { nativeSessionId: MUSE_ID })])
+    const named = await verb(['new', '--name', 'Fix links', '--', 'Fix the links.'], from('me'))
+    expect(named.exit).toBe(0)
+    expect(launched[0]).toMatchObject({ kind: 'muse', name: 'Fix links' })
+    expect(launched[0].firstPrompt).toContain(`the Muse session ${MUSE_ID}`)
+    expect(named.text).toContain('koloft session send new-tab')
+    expect(named.text).not.toContain('SendMessage')
+  })
+})
+
 describe('koloft session new', () => {
   it('a Claude caller starts a named Claude sibling in its workspace whose first message says who to report to, since the transcript replays that message on every resume while a SessionStart note lives only as long as its tab', async () => {
     const { verb, launched } = harness([session('me', 'claude')], { 'me-session': 'planner' })
@@ -347,7 +373,9 @@ describe('koloft session new', () => {
     const [spec] = launched
     expect(spec).toMatchObject({ kind: 'claude', cwd: WS, worktree: 'links' })
     expect(
-      spec.firstPrompt?.startsWith(handoverPreamble({ name: 'planner', id: 'me-session' }))
+      spec.firstPrompt?.startsWith(
+        handoverPreamble({ name: 'planner', id: 'me-session', label: 'Claude' })
+      )
     ).toBe(true)
     expect(spec.firstPrompt?.endsWith('Fix the links.')).toBe(true)
     expect(reply.text).toContain(`"${spec.name}"`)
@@ -448,6 +476,25 @@ describe('koloft session send', () => {
     for (const ref of [[OTHER_THREAD], ['cx'], ['Test runner'], ['Test', 'runner']])
       expect((await verb(['send', ...ref, 'What', 'did you find?'], from('me'))).exit).toBe(0)
     expect(queued).toEqual(Array(4).fill({ tabId: 'cx', text: 'What did you find?' }))
+  })
+
+  it('a Muse session reaches an open Muse or Codex session: typed into a Muse one once it is idle, queued on a Codex one, both marked with who sent it', async () => {
+    const { verb, pressed, queued } = harness([
+      session('me', 'muse', { nativeSessionId: MUSE_ID, title: 'Docs fixer' }),
+      session('mu', 'muse', { title: 'Test runner' }),
+      session('cx', 'codex', { nativeSessionId: OTHER_THREAD, title: 'Linter' })
+    ])
+    expect((await verb(['send', 'Test runner', 'Run', 'it'], from('me'))).exit).toBe(0)
+    expect((await verb(['send', 'cx', 'Lint', 'it'], from('me'))).exit).toBe(0)
+    expect(pressed).toHaveLength(1)
+    expect(pressed[0]).toMatchObject({
+      tabId: 'mu',
+      keys: [expect.stringContaining('Run it'), '\r']
+    })
+    expect(pressed[0].keys[0]).toContain('Docs fixer')
+    expect(queued.map((q) => [q.tabId, q.text])).toEqual([
+      ['cx', expect.stringContaining('Lint it')]
+    ])
   })
 
   it('points a Claude caller, or a Claude target, to SendMessage and sends nothing', async () => {

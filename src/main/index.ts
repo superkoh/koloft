@@ -48,6 +48,7 @@ import {
   capabilitiesFor,
   identityOf,
   backendsFrom,
+  messagingOf,
   preferredAssistBackend,
   statusUnavailable,
   SUPPORTED_PAIRS
@@ -1007,9 +1008,9 @@ function pushAccounts(): void {
   sendToRenderer('accounts:update', accountViews())
 }
 
-function notifyExpired(name: string): void {
+function notifyExpired(name: string, label = 'Claude'): void {
   notifyPlain(
-    'Claude account expired',
+    `${label} account expired`,
     `Account ${name} expired and left the pool — sign in again from Settings to restore it`
   )
 }
@@ -1715,6 +1716,7 @@ async function probeMuseAccount(name: string): Promise<void> {
     const signedIn = await museSignedIn(serve)
     const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
     if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+    if (status === 'expired' && acct.status !== 'expired') notifyExpired(name, 'Muse')
     usageViews.delete(key)
   } catch {
     usageViews.set(key, { probeError: 'network' })
@@ -2369,7 +2371,9 @@ app.whenReady().then(() => {
     tabAlive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     liveTabFor: (backend, key) => sessionBackends.get(backend).aliveTabFor(key),
     runningElsewhere: async (backend, key) =>
-      backend === 'claude' && (await runningClaudePid(key)) !== null,
+      backend === 'claude'
+        ? (await runningClaudePid(key)) !== null
+        : backend === 'muse' && !!museSessions?.runningElsewhere(key),
     transcriptExists: async (backend, key) => sessionBackends.get(backend).transcriptExists(key),
     start: (l) =>
       launchQuietTab(
@@ -2381,7 +2385,12 @@ app.whenReady().then(() => {
           conductor: true,
           trustFolder: true,
           firstPrompt: l.firstPrompt,
-          name: l.backend === 'claude' ? asPeerName(l.title) : undefined
+          name:
+            l.backend === 'claude'
+              ? asPeerName(l.title)
+              : l.backend === 'muse'
+                ? l.title
+                : undefined
         },
         l.title
       ),
@@ -3836,7 +3845,7 @@ async function resumeRow(
       ok: false,
       error:
         plan.reason === 'running'
-          ? `“${row.title}” is already running in another claude process, so Koloft left it there.`
+          ? `“${row.title}” is already running in another ${row.backendId} process, so Koloft left it there.`
           : `Could not start “${row.title}” — its folder is gone.`
     }
   }
@@ -3995,10 +4004,13 @@ async function sendPaletteText(
   text: string
 ): Promise<ConductorOpenResult> {
   const id = `koloft-palette-${++paletteMessages}`
-  if (!(await tabReady(tabId, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS, false)))
+  const route = messagingOf(backendIdOf(ptyMgr.get(tabId)?.kind) ?? 'claude', false)
+  if (!(await tabReady(tabId, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS, route === 'typed')))
     return { ok: false, error: `The ${conductorName(scope)} did not get ready in time.` }
   try {
-    if (backendIdOf(ptyMgr.get(tabId)?.kind) === 'codex') await queueCodexMessage(tabId, text, id)
+    if (route === 'queue') await queueCodexMessage(tabId, text, id)
+    else if (route === 'typed')
+      await ptyMgr.type(tabId, [`The owner typed this in ⌘P: ${text}`, '\r'])
     else {
       const line = crossSessionLine('prompting', `The owner typed this in ⌘P: ${text}`, id)
       if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }

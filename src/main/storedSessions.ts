@@ -50,6 +50,7 @@ export interface StoredRun {
   explicitStop: boolean
   resumeKey?: string
   permission: LaunchPermission
+  launchName?: string
   releaseTools(): void
 }
 
@@ -659,7 +660,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         workspacePath: run.workspace,
         cwd: run.cwd,
         title:
-          entry.name || entry.preview?.slice(0, 100) || m?.title || PLACEHOLDER_TITLES[this.id],
+          run.launchName ||
+          entry.name ||
+          entry.preview?.slice(0, 100) ||
+          m?.title ||
+          PLACEHOLDER_TITLES[this.id],
         createdAt: m?.createdAt ?? (entry.createdAt ? entry.createdAt * 1000 : now),
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
@@ -674,6 +679,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       this.deps.error(String(e))
     }
     run.resumeKey = undefined
+    run.launchName = undefined
     this.deps.runtime.forget(run.tabId)
     run.info = {
       tabId: run.tabId,

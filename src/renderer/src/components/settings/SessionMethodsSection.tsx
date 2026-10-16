@@ -14,7 +14,7 @@ import { useSettingsUpdate } from './useSettingsUpdate'
 const METHOD_NOTE: Record<BackendId, string> = {
   claude: 'Always enabled',
   codex: 'Runs on a Codex account from Settings ▸ Accounts',
-  muse: 'Runs on the sign-in Muse has on this Mac (muse login)'
+  muse: 'Runs on a Muse account from Settings ▸ Accounts'
 }
 
 type Detected = Awaited<ReturnType<typeof window.api.sessions.backends>>

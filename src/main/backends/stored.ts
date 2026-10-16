@@ -33,6 +33,8 @@ export function storedBackend(
       }
     },
     resumePlan: async (key): Promise<ResumePlan> => {
+      if ('runningElsewhere' in sessions && sessions.runningElsewhere(key))
+        return { action: 'unavailable', reason: 'running' }
       const row = sessions.findRow(key)
       if (row && !row.worktreeState && !dirExistsSync(row.cwd)) {
         return { action: 'unavailable', reason: 'no-cwd' }

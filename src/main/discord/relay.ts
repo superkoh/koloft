@@ -265,7 +265,8 @@ export class DiscordRelay {
       await this.d.queue(tab, text, item.clientId)
       return
     }
-    if (dest.conductor) return this.sendAsPeer(tab, text, item.clientId)
+    if (dest.conductor && this.d.backendOf(tab) === 'claude')
+      return this.sendAsPeer(tab, text, item.clientId)
     await this.d.type(tab, [text, '\r'])
   }
 

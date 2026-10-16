@@ -19,6 +19,7 @@ import { record } from './codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import { startToolShim } from './toolShim'
 import { readJson } from './museAccounts'
+import { pidAlive } from './leftovers'
 import { browserControlEnv } from './browserControlEnv'
 import { allowsTheBrowser, conductorGateCommand } from './conductorGate'
 import {
@@ -43,7 +44,7 @@ import {
   saidInLog,
   type LogRecord
 } from './museSessionLog'
-import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
+import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { UUID, museSessionKey } from './sessionStore'
 import { listMuseSessions, readMuseAsk, readMuseTurns, type MuseAsk } from './museServe'
 import { sleep } from './codexTransport'
@@ -179,6 +180,10 @@ interface RegistryEntry {
 }
 
 // MUSE§4
+const registryPid = (entry: Record<string, unknown>): number =>
+  Number(/^pid=(\d+)$/.exec(String(entry.process_generation_hint))?.[1])
+
+// MUSE§4
 function readRegistry(
   dir: string,
   pids: Set<number>,
@@ -198,7 +203,7 @@ function readRegistry(
       const { mtimeMs } = fs.statSync(full)
       if (mtimeMs < since) return []
       const entry = record(JSON.parse(fs.readFileSync(full, 'utf8')))
-      const pid = Number(/^pid=(\d+)$/.exec(String(entry.process_generation_hint))?.[1])
+      const pid = registryPid(entry)
       if (entry.schema_version !== 1 || typeof entry.session_id !== 'string') return []
       if (!UUID.test(entry.session_id) || !pids.has(pid)) return []
       return [{ sessionId: entry.session_id, pid, mtimeMs }]
@@ -295,6 +300,18 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
 
   trustsFolder(dir: string): boolean {
     return museTrustsFolder(this.env, dir)
+  }
+
+  // MUSE§4
+  runningElsewhere(key: string): boolean {
+    const file = path.join(registryDir(this.env), `${this.nativeId(key)}.json`)
+    try {
+      const pid = registryPid(record(JSON.parse(fs.readFileSync(file, 'utf8'))))
+      const ours = [...this.runs.values()].some((r) => r.pid === pid)
+      return pid > 0 && !ours && pidAlive(pid)
+    } catch {
+      return false
+    }
   }
 
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {
@@ -422,6 +439,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
         permission,
+        launchName: opts.name,
         account,
         pid: this.deps.pty.pidOf(handle.id),
         startedAt: handle.startedAt,
@@ -568,6 +586,8 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
         lastWritten: target,
         liveWrites: run.liveWrites
       })
+    } else if (tool === 'read_file' && typeof record(input.tool_input).path === 'string') {
+      noteRead(run.touched, path.resolve(run.cwd, String(record(input.tool_input).path)))
     } else if (
       tool === 'bash' &&
       response.execution_state === BACKGROUND_RUNNING &&

@@ -286,6 +286,16 @@ describe('MuseSessions launch', () => {
   })
 })
 
+describe('a Muse session open in another process', () => {
+  it('counts as running elsewhere while the process named in its registry file is alive and not one of Koloft’s tabs, and not once that process is gone', async () => {
+    await sessions.availability()
+    register(A, process.pid)
+    expect(sessions.runningElsewhere(museSessionKey(A))).toBe(true)
+    register(B, 2 ** 22 + 1)
+    expect(sessions.runningElsewhere(museSessionKey(B))).toBe(false)
+  })
+})
+
 describe('Assist on Muse', () => {
   const decision = (out: string): string | undefined =>
     out ? JSON.parse(out).hookSpecificOutput.permissionDecision : undefined
@@ -311,7 +321,7 @@ describe('Assist on Muse', () => {
   })
 
   // ADR-0029 MUSE§9
-  it('may run commands, read, and write only inside its own folder; every other muse tool is stopped before it runs', async () => {
+  it('may read, write only inside its own folder and run one plain koloft command per bash call, like a Claude Assist; every other muse tool is stopped before it runs', async () => {
     assist = { role: 'r', allow: [] }
     const { id } = await launch()
     const tool = (
@@ -320,6 +330,8 @@ describe('Assist on Muse', () => {
     ): string | undefined =>
       decision(hook(id, 'PreToolUse', { session_id: A, tool_name, tool_input }))
     expect(tool('bash', { command: 'koloft session list' })).toBeUndefined()
+    expect(tool('bash', { command: 'rm -rf ../workspace' })).toBe('deny')
+    expect(tool('bash', { command: 'koloft session list; rm -rf ..' })).toBe('deny')
     expect(tool('read_file', { path: '/etc/hosts' })).toBeUndefined()
     expect(tool('write_file', { path: 'notes.md', content: 'x' })).toBeUndefined()
     expect(tool('edit_file', { path: path.join(repo, 'a', 'b.md') })).toBeUndefined()
