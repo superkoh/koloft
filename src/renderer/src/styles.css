@@ -37,6 +37,8 @@
   --bg-4: #34343a;
   --bg-term: #070708;
   --bg-side: #0f0f11;
+  --bg-panel: #121214;
+  --bg-panel-sunk: #0c0c0d;
   --term-ground: var(--bg-term);
   --line-layout: rgba(255, 255, 255, 0.09);
 
@@ -528,7 +530,6 @@ body {
   gap: 10px;
   padding: 12px 16px;
   background: var(--fg);
-  border: 1px solid transparent;
   border-radius: 10px;
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65);
   font-size: 14px;
@@ -548,10 +549,6 @@ body {
   from {
     opacity: 0;
     transform: translate(-50%, -10px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -597,7 +594,7 @@ body {
   flex: 0 0 auto;
   margin: 0 6px;
   border-color: var(--line-layout);
-  --bg-2: #161618;
+  --bg-2: var(--bg-1);
 }
 .upd-banner {
   flex: 0 0 auto;
@@ -5078,8 +5075,8 @@ input.switch:focus-visible {
   position: relative;
   margin-top: 10px;
   border-color: var(--line-layout);
-  --bg-2: #121214;
-  --bg-1: #0c0c0d;
+  --bg-2: var(--bg-panel);
+  --bg-1: var(--bg-panel-sunk);
   --term-ground: var(--bg-1);
 }
 .wb-peek {
@@ -5140,7 +5137,7 @@ input.switch:focus-visible {
 
 .toast.link {
   cursor: pointer;
-  border-color: var(--accent-press);
+  outline: 1px solid var(--accent-press);
 }
 .toast.link .toast-msg {
   text-decoration: underline;
@@ -5148,9 +5145,7 @@ input.switch:focus-visible {
   text-underline-offset: 3px;
 }
 .toast.link:hover {
-  box-shadow:
-    0 14px 40px rgba(0, 0, 0, 0.65),
-    0 0 0 2px var(--accent-press);
+  outline-width: 3px;
 }
 
 .bperm {
