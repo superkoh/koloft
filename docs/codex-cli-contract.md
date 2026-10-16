@@ -1009,6 +1009,12 @@ Codex's own full-screen screen from one that prints and exits.
   `codex -i a.png b.png` reads as a prompt, which opens the TUI anyway.
 - That `login` opens no full-screen screen is read off its help text ("Manage login"),
   not checked by running it.
+- **Text in the terminal before the TUI starts is gone once it draws.** 2026-10-16,
+  Codex CLI 0.162.0 started by Koloft (`--remote`) in a real Electron/xterm tab: a line
+  Koloft wrote into the tab before Codex's first output was in neither the screen nor the
+  scrollback of the active buffer once the start screen showed
+  (`agent-tools-real-smoke.spec.ts` run). So a note meant for the owner cannot be printed
+  above a Codex tab the way the Claude shim prints its account line.
 
 ## 19. What a turn said, live and read back
 
