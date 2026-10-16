@@ -176,6 +176,16 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `/tmp`, and a `gh` wrapper, work in all three; `playwright-cli` reaches the relay
   only with the network `enabled`. A token the model's command prints reaches the
   model as `[REDACTED]`.
+- Processes the `bash` tool starts (1.4.9, macOS VM, fake model, `ps` and `lsof` run
+  outside the sandbox): a command left running through `yield_time_ms` is a direct
+  child of the muse pid (`node srv.mjs …`, no shell or sandbox process between), and
+  carries `MUSE_SESSION_ID` and `MUSE_THREAD_ID` (the session's id) and
+  `CLAUDE_CODE_TOOL_USE_ID`, never `CLAUDE_CODE_SESSION_ID`. The tool refuses a
+  trailing `&`, `nohup` or `disown`. Listening on a port fails (`listen EPERM`) under
+  the default sandbox network; with `--sandbox-network enabled` or `:unrestricted` it
+  works and `lsof` shows the child listening. A clean `/exit` stops all of them, even
+  one a script started with `nohup` that launchd had already adopted; only when muse
+  itself is killed (`kill -9`) do they stay, under launchd, still listening.
 
 ## §9 Hooks
 

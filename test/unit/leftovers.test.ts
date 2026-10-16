@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { scanLeftovers, stopLeftover } from '../../src/main/leftovers'
+import { museServersAmong } from '../../src/main/taskProcs'
 
 const SID = '1b6fa18b-8f8d-44ae-8ff1-718bb0f9556d'
 const OTHER = 'bfa0a674-0000-4000-8000-000000000000'
+const MUSE = '01a145aa-f73e-78f0-ab8b-ed913d7b0176'
 const QEMU =
   '/Users/me/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64 -avd nb'
 
@@ -17,6 +19,12 @@ const PROCS: { pid: number; ppid: number; command: string; env: string }[] = [
     ppid: 1,
     command: 'adb -L tcp:5037 fork-server',
     env: `CLAUDE_CODE_SESSION_ID=${OTHER}`
+  },
+  {
+    pid: 8300,
+    ppid: 1,
+    command: 'node srv.mjs 18081',
+    env: `MUSE_SESSION_ID=${MUSE} MUSE_THREAD_ID=${MUSE} CLAUDE_CODE_TOOL_USE_ID=call_7`
   }
 ]
 
@@ -38,19 +46,45 @@ const exec = async (_cmd: string, args: string[]): Promise<string> => {
   )
 }
 
+// MUSE§8
+describe('the servers a Muse session keeps running', () => {
+  it('are the background commands whose process, a child of muse, or anything under it, listens on a port', async () => {
+    const ps = [
+      ' 2914 2913 00:10 0:01.00 /Users/me/.local/bin/muse-bin-1.4.9',
+      ' 2936 2914 00:05 0:00.10 node srv.mjs 18081',
+      ' 2950 2914 00:05 0:00.10 /bin/zsh -c npm run dev',
+      ' 2951 2950 00:05 0:00.10 node vite',
+      ' 2960 2914 00:05 0:00.10 sleep 30'
+    ].join('\n')
+    const run = async (cmd: string, args: string[]): Promise<string> =>
+      cmd === 'ps' ? ps : args.some((a) => a.includes('2936')) ? 'p2936\np2951\n' : ''
+    const found = await museServersAmong(
+      2914,
+      new Map([
+        ['w-srv', 'node srv.mjs 18081'],
+        ['w-dev', 'npm run dev'],
+        ['w-sleep', 'sleep 30']
+      ]),
+      run
+    )
+    expect([...found].sort()).toEqual(['w-dev', 'w-srv'])
+  })
+})
+
 describe('programs a session left running on their own', () => {
-  it('are the ones launchd adopted that still name the session, listed by their clean command line', async () => {
+  it('are the ones launchd adopted that still name the session, a Claude one by its id and a Muse one by its row key, listed by their clean command line', async () => {
     const found = await scanLeftovers(exec)
     expect(found).toEqual({
       [SID]: [{ pid: 7541, command: QEMU }],
-      [OTHER]: [{ pid: 8200, command: 'adb -L tcp:5037 fork-server' }]
+      [OTHER]: [{ pid: 8200, command: 'adb -L tcp:5037 fork-server' }],
+      [`muse:local:${MUSE}`]: [{ pid: 8300, command: 'node srv.mjs 18081' }]
     })
   })
 
   it('reads the environment only of the adopted processes, never the whole table', async () => {
     asked.length = 0
     await scanLeftovers(exec)
-    expect(asked[1]).toEqual(['eww', '-o', 'pid=,command=', '-p', '7541,8100,8200'])
+    expect(asked[1]).toEqual(['eww', '-o', 'pid=,command=', '-p', '7541,8100,8200,8300'])
   })
 
   it('stops one only while it is still that session’s leftover (a reused pid or another session is refused)', async () => {

@@ -80,6 +80,7 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
   skipPermissions(): boolean
+  serversAmong(pid: number, commands: Map<string, string>): Promise<Set<string>>
   agent: {
     enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -105,6 +106,7 @@ interface MuseRun extends StoredRun {
   prompt?: { turnId: string; text: string; at: number; reply?: string }
   children: Set<string>
   background: Map<string, BackgroundItem>
+  commands: Map<string, string>
   jobs: Map<string, boolean>
   touched: Map<string, FileAcc>
   liveWrites: number
@@ -475,6 +477,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         sinceClear: [],
         children: new Set(),
         background: new Map(),
+        commands: new Map(),
         jobs: new Map(),
         touched: new Map(),
         liveWrites: 0,
@@ -597,6 +600,23 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     }
     this.deps.events(run.tabId, { type: 'stop' })
     if (reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
+    void this.markServers(run)
+  }
+
+  // MUSE§8
+  private async markServers(run: MuseRun): Promise<void> {
+    if (!run.pid || !run.commands.size) return
+    const servers = await this.deps
+      .serversAmong(run.pid, run.commands)
+      .catch(() => new Set<string>())
+    let changed = false
+    for (const id of servers) {
+      const item = run.background.get(id)
+      if (item?.kind !== 'command') continue
+      run.background.set(item.id, { ...item, kind: 'server', state: 'waiting' })
+      changed = true
+    }
+    if (changed) this.publishBackground(run)
   }
 
   // MUSE§9
@@ -623,6 +643,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       typeof response.work_id === 'string'
     ) {
       const command = record(input.tool_input).command
+      if (typeof command === 'string') run.commands.set(response.work_id, command)
       run.background.set(response.work_id, {
         id: response.work_id,
         kind: 'command',
@@ -687,6 +708,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const name = renamedTo(r)
     if (name && run.info) return this.retitle(run.info, name)
     const work = finishedWork(r)
+    if (work) run.commands.delete(work)
     if (work && run.background.delete(work)) this.publishBackground(run)
     const prompt = run.prompt
     const reply = replyIn(r)
@@ -766,6 +788,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     run.prompt = undefined
     run.children.clear()
     run.background.clear()
+    run.commands.clear()
     run.jobs.clear()
     this.holdForJobs(run)
     run.endedTurns.clear()

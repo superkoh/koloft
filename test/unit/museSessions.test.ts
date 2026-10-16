@@ -53,6 +53,7 @@ let picked: { account: string; env: Record<string, string> } | undefined
 let assist: { role: string; allow: string[] } | undefined
 let gateScript: string
 let skipPermissions: boolean
+let servers: Set<string>
 
 const registryDir = (): string =>
   path.join(home, '.local', 'share', 'muse', 'runtime', 'muse', 'sessions')
@@ -139,6 +140,7 @@ beforeEach(() => {
   picked = { account: 'work', env: { TBH_CREDENTIAL_BACKEND: 'file' } }
   assist = undefined
   skipPermissions = false
+  servers = new Set()
   gateScript = path.join(home, 'muse-conductor-gate.js')
   fs.writeFileSync(gateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
   let tab = 0
@@ -188,6 +190,7 @@ beforeEach(() => {
       }
     },
     skipPermissions: () => skipPermissions,
+    serversAmong: async () => servers,
     agent: { enabled: () => agentTools, answer: vi.fn() },
     gitAccounts: {
       configEnv: (env) => env,
@@ -566,6 +569,35 @@ describe('MuseSessions turns from hooks', () => {
     })
     hook(id, 'Stop', { session_id: A, last_assistant_message: 'done', turn_id: 't2' })
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+
+  // MUSE§8
+  it('shows a background command that listens on a port as a server parked in the background, once its turn ends', async () => {
+    const id = await boundTab()
+    const work = 'work.v2.managed_bash.sha256.srv'
+    hook(id, 'PostToolUse', {
+      session_id: A,
+      tool_name: 'bash',
+      tool_input: { command: 'npm run dev' },
+      tool_response: JSON.stringify({ execution_state: 'background_running', work_id: work })
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        expect.objectContaining({ kind: 'command', state: 'working' })
+      ])
+    )
+    servers = new Set([work])
+    hook(id, 'Stop', { session_id: A, last_assistant_message: 'Started it', turn_id: 't1' })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        expect.objectContaining({
+          id: work,
+          kind: 'server',
+          label: 'npm run dev',
+          state: 'waiting'
+        })
+      ])
+    )
   })
 
   it('shows a monitor as waiting in the background until its timeout ends it', async () => {

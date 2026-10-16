@@ -27,6 +27,7 @@ import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { MuseSessions, museShowsAnEmptyInputBox } from './museSessions'
+import { museServersAmong } from './taskProcs'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museSignedIn, storeMuseKey } from './museServe'
 import type { SessionsWithStore } from './storedSessions'
@@ -2262,6 +2263,7 @@ app.whenReady().then(() => {
         writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
       },
       skipPermissions: () => loadSettings().skipPermissions,
+      serversAmong: (pid, commands) => museServersAmong(pid, commands),
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,

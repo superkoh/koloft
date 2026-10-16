@@ -98,6 +98,30 @@ function parseLsofPids(stdout: string): Set<number> {
   return out
 }
 
+// MUSE§8
+export async function museServersAmong(
+  rootPid: number,
+  commands: Map<string, string>,
+  exec: Exec = defaultExec
+): Promise<Set<string>> {
+  const servers = new Set<string>()
+  const snap = parsePs(await exec('ps', ['-Ao', 'pid=,ppid=,etime=,time=,command=']))
+  if (!snap) return servers
+  const trees = new Map<string, number[]>()
+  for (const child of snap.childrenOf.get(rootPid) ?? []) {
+    const line = snap.commandOf.get(child) ?? ''
+    for (const [id, command] of commands)
+      if (line === command || line.endsWith(` ${command}`)) trees.set(id, descendants(snap, child))
+  }
+  const all = [...trees.values()].flat()
+  if (!all.length) return servers
+  const listening = parseLsofPids(
+    await exec('lsof', ['-a', '-p', all.join(','), '-iTCP', '-sTCP:LISTEN', '-Fp'])
+  )
+  for (const [id, pids] of trees) if (pids.some((p) => listening.has(p))) servers.add(id)
+  return servers
+}
+
 // CC§2 CC§8
 export async function inspectTaskProcs(
   rootPid: number,
