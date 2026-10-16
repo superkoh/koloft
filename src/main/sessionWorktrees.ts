@@ -4,9 +4,12 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import { parseRemoteKey } from '@shared/remoteKey'
 import { SessionStore, type WorktreeResource } from './sessionStore'
 
 const execFileAsync = promisify(execFile)
+
+const bare = (p: string): string => parseRemoteKey(p)?.path ?? p
 
 interface Checkout {
   path: string
@@ -15,58 +18,18 @@ interface Checkout {
   locked: boolean
 }
 
+export interface TreeOps {
+  git(cwd: string, args: string[]): Promise<string>
+  realpath(p: string): Promise<string>
+  exists(p: string): Promise<boolean>
+  keyed(p: string): string
+  copyIncludes(root: string, worktreePath: string): Promise<void>
+  sameFileInRoot(root: string, tree: string, rel: string): Promise<boolean>
+}
+
 async function git(cwd: string, args: string[]): Promise<string> {
   const result = await execFileAsync('git', ['-C', cwd, ...args], { maxBuffer: 4 * 1024 * 1024 })
   return result.stdout.trimEnd()
-}
-
-async function checkouts(cwd: string): Promise<Checkout[]> {
-  const raw = await git(cwd, ['worktree', 'list', '--porcelain', '-z'])
-  return raw
-    .split('\0\0')
-    .filter(Boolean)
-    .map((block) => {
-      const fields = block.split('\0')
-      const field = (prefix: string): string =>
-        fields.find((v) => v.startsWith(prefix))?.slice(prefix.length) ?? ''
-      const branch = field('branch ')
-      return {
-        path: field('worktree '),
-        head: field('HEAD '),
-        branch: branch.startsWith('refs/heads/') ? branch.slice('refs/heads/'.length) : null,
-        locked: fields.some((v) => v === 'locked' || v.startsWith('locked '))
-      }
-    })
-}
-
-async function rootOf(cwd: string): Promise<string> {
-  const listed = await checkouts(cwd)
-  const root = listed[0]?.path
-  if (!root || (await git(cwd, ['rev-parse', '--is-bare-repository'])) !== 'false') {
-    throw new Error('A Git working repository is required')
-  }
-  return fs.realpathSync(root)
-}
-
-async function branchExists(cwd: string, branch: string): Promise<boolean> {
-  try {
-    await git(cwd, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])
-    return true
-  } catch (error) {
-    if ((error as { code?: number }).code === 1) return false
-    throw error
-  }
-}
-
-async function unregisterOnlyThisMissingCheckout(
-  root: string,
-  checkoutPath: string
-): Promise<void> {
-  await git(root, ['worktree', 'remove', checkoutPath])
-}
-
-function validName(name: string): void {
-  if (!isValidWorktreeName(name)) throw new Error('Invalid worktree name')
 }
 
 const NOTHING_IGNORED_EXIT = 1
@@ -122,22 +85,78 @@ async function sameFileInRoot(root: string, tree: string, rel: string): Promise<
   }
 }
 
+export const LOCAL_TREE_OPS: TreeOps = {
+  git,
+  realpath: async (p) => fs.realpathSync(p),
+  exists: async (p) => fs.existsSync(p),
+  keyed: (p) => path.resolve(p),
+  copyIncludes: copyWorktreeIncludes,
+  sameFileInRoot
+}
+
+async function checkouts(ops: TreeOps, cwd: string): Promise<Checkout[]> {
+  const raw = await ops.git(cwd, ['worktree', 'list', '--porcelain', '-z'])
+  return raw
+    .split('\0\0')
+    .filter(Boolean)
+    .map((block) => {
+      const fields = block.split('\0')
+      const field = (prefix: string): string =>
+        fields.find((v) => v.startsWith(prefix))?.slice(prefix.length) ?? ''
+      const branch = field('branch ')
+      return {
+        path: ops.keyed(field('worktree ')),
+        head: field('HEAD '),
+        branch: branch.startsWith('refs/heads/') ? branch.slice('refs/heads/'.length) : null,
+        locked: fields.some((v) => v === 'locked' || v.startsWith('locked '))
+      }
+    })
+}
+
+async function rootOf(ops: TreeOps, cwd: string): Promise<string> {
+  const listed = await checkouts(ops, cwd)
+  const root = listed[0]?.path
+  if (!root || (await ops.git(cwd, ['rev-parse', '--is-bare-repository'])) !== 'false') {
+    throw new Error('A Git working repository is required')
+  }
+  return ops.realpath(root)
+}
+
+async function branchExists(ops: TreeOps, cwd: string, branch: string): Promise<boolean> {
+  try {
+    await ops.git(cwd, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])
+    return true
+  } catch (error) {
+    if ((error as { code?: number }).code === 1) return false
+    throw error
+  }
+}
+
+function validName(name: string): void {
+  if (!isValidWorktreeName(name)) throw new Error('Invalid worktree name')
+}
+
 export class SessionWorktrees {
   private readonly preparing = new Set<string>()
 
-  constructor(private readonly store: SessionStore) {}
+  constructor(
+    private readonly store: SessionStore,
+    private readonly opsFor: (p: string) => TreeOps = () => LOCAL_TREE_OPS
+  ) {}
 
   async create(originalCwd: string, name: string): Promise<WorktreeResource> {
     validName(name)
-    const root = await rootOf(originalCwd)
-    return this.createAt(root, name, await git(originalCwd, ['rev-parse', 'HEAD']))
+    const ops = this.opsFor(originalCwd)
+    const root = await rootOf(ops, originalCwd)
+    return this.createAt(root, name, await ops.git(originalCwd, ['rev-parse', 'HEAD']))
   }
 
   async adopt(originalCwd: string, checkoutPath: string): Promise<WorktreeResource> {
-    const root = await rootOf(originalCwd)
-    const target = fs.realpathSync(checkoutPath)
+    const ops = this.opsFor(originalCwd)
+    const root = await rootOf(ops, originalCwd)
+    const target = await ops.realpath(checkoutPath)
     if (target === root) throw new Error('Select a linked worktree')
-    const checkout = (await checkouts(root)).find((c) => path.resolve(c.path) === target)
+    const checkout = (await checkouts(ops, root)).find((c) => c.path === target)
     if (!checkout) throw new Error('The checkout is not a worktree of this repository')
     const known = this.store
       .listResources()
@@ -156,7 +175,7 @@ export class SessionWorktrees {
       id: randomUUID(),
       originalCwd: root,
       worktreePath: target,
-      worktreeName: path.basename(target),
+      worktreeName: path.posix.basename(target),
       worktreeBranch: checkout.branch,
       originalHeadCommit: checkout.head,
       state: 'ready',
@@ -169,12 +188,13 @@ export class SessionWorktrees {
   async untouched(resource: WorktreeResource): Promise<boolean> {
     if (!resource.managed) return false
     const tree = resource.worktreePath
+    const ops = this.opsFor(tree)
     try {
       const [branch, head, changes, ignored] = await Promise.all([
-        git(tree, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
-        git(tree, ['rev-parse', 'HEAD']),
-        git(tree, ['status', '--porcelain', '--untracked-files=all']),
-        git(tree, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard'])
+        ops.git(tree, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
+        ops.git(tree, ['rev-parse', 'HEAD']),
+        ops.git(tree, ['status', '--porcelain', '--untracked-files=all']),
+        ops.git(tree, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard'])
       ])
       if (
         branch !== `worktree-${resource.worktreeName}` ||
@@ -183,7 +203,7 @@ export class SessionWorktrees {
       )
         return false
       for (const rel of ignored.split('\0').filter(Boolean)) {
-        if (!(await sameFileInRoot(resource.originalCwd, tree, rel))) return false
+        if (!(await ops.sameFileInRoot(resource.originalCwd, tree, rel))) return false
       }
       return true
     } catch {
@@ -197,7 +217,7 @@ export class SessionWorktrees {
 
   async rebuild(resourceId: string): Promise<WorktreeResource> {
     const resource = this.requiredResource(resourceId)
-    if (fs.existsSync(resource.worktreePath)) {
+    if (await this.opsFor(resource.worktreePath).exists(resource.worktreePath)) {
       return this.adopt(resource.originalCwd, resource.worktreePath)
     }
     return this.materialize(resource)
@@ -206,9 +226,14 @@ export class SessionWorktrees {
   async prepareRenamed(resourceId: string, name: string): Promise<WorktreeResource> {
     validName(name)
     const resource = this.requiredResource(resourceId)
+    const ops = this.opsFor(resource.originalCwd)
     const base =
-      resource.worktreeBranch && (await branchExists(resource.originalCwd, resource.worktreeBranch))
-        ? await git(resource.originalCwd, ['rev-parse', `refs/heads/${resource.worktreeBranch}`])
+      resource.worktreeBranch &&
+      (await branchExists(ops, resource.originalCwd, resource.worktreeBranch))
+        ? await ops.git(resource.originalCwd, [
+            'rev-parse',
+            `refs/heads/${resource.worktreeBranch}`
+          ])
         : resource.originalHeadCommit
     return this.createAt(resource.originalCwd, name, base)
   }
@@ -220,10 +245,11 @@ export class SessionWorktrees {
   }
 
   private async createAt(root: string, name: string, base: string): Promise<WorktreeResource> {
-    const target = path.join(root, '.claude', 'worktrees', name)
-    if (fs.existsSync(target)) throw new Error('Worktree directory already exists')
+    const ops = this.opsFor(root)
+    const target = `${root}/.claude/worktrees/${name}`
+    if (await ops.exists(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`
-    if (await branchExists(root, branch)) throw new Error('Worktree branch already exists')
+    if (await branchExists(ops, root, branch)) throw new Error('Worktree branch already exists')
     if (this.recorded(target)) {
       throw new Error(
         'This worktree name has a recovery record; recover it or choose a different name'
@@ -263,26 +289,27 @@ export class SessionWorktrees {
     reuseBranch: boolean
   ): Promise<WorktreeResource> {
     const resource = pending
+    const ops = this.opsFor(resource.originalCwd)
     try {
-      const root = await rootOf(resource.originalCwd)
+      const root = await rootOf(ops, resource.originalCwd)
       if (root !== resource.originalCwd) throw new Error('The recorded repository has changed')
-      if (fs.existsSync(resource.worktreePath)) throw new Error('Worktree directory already exists')
-      const stale = (await checkouts(root)).find(
-        (c) => path.resolve(c.path) === resource.worktreePath
-      )
+      if (await ops.exists(resource.worktreePath))
+        throw new Error('Worktree directory already exists')
+      const stale = (await checkouts(ops, root)).find((c) => c.path === resource.worktreePath)
       if (stale) {
         if (stale.locked)
           throw new Error('The missing worktree is locked; unlock it before rebuilding')
-        await unregisterOnlyThisMissingCheckout(root, resource.worktreePath)
+        await ops.git(root, ['worktree', 'remove', bare(resource.worktreePath)])
       }
       const branch = resource.worktreeBranch
+      const tree = bare(resource.worktreePath)
       const args = branch
-        ? reuseBranch && (await branchExists(root, branch))
-          ? ['worktree', 'add', resource.worktreePath, branch]
-          : ['worktree', 'add', '-b', branch, resource.worktreePath, resource.originalHeadCommit]
-        : ['worktree', 'add', '--detach', resource.worktreePath, resource.originalHeadCommit]
-      await git(root, args)
-      await copyWorktreeIncludes(root, resource.worktreePath)
+        ? reuseBranch && (await branchExists(ops, root, branch))
+          ? ['worktree', 'add', tree, branch]
+          : ['worktree', 'add', '-b', branch, tree, resource.originalHeadCommit]
+        : ['worktree', 'add', '--detach', tree, resource.originalHeadCommit]
+      await ops.git(root, args)
+      await ops.copyIncludes(root, resource.worktreePath)
       const ready: WorktreeResource = { ...pending, state: 'ready' }
       this.store.putResource(ready)
       return ready

@@ -758,67 +758,104 @@ Not tried, because they need a second real login or would open a browser on this
 
 ## 16. Codex on a remote machine
 
-**Checked on 2026-09-24.** On the Mac: standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`).
-On the machine: an Ubuntu 24.04 x86_64 server reached with `ssh -o BatchMode=yes` (bash,
-tmux, no node, no Codex, no Codex login). For the probe only, the official
-`@openai/codex@0.153.4-linux-x64` npm package was unpacked into a new folder in the
-machine's home (its `codex` and `rg`, not its bundled `bwrap`), run with a new empty
-`CODEX_HOME` beside it, and the folder was deleted afterwards. No login or key was
-copied to the machine.
+**Checked on 2026-10-16.** On the Mac: standalone Codex CLI 0.162.0 (`codex-cli 0.162.0`).
+On the machine: the repo's Docker SSH lab image (`test/e2e/fixtures/sshd.Dockerfile`,
+Debian 12 arm64, reached as `kuser` with a throwaway key), with `@openai/codex@0.162.0`
+installed by `npm i -g` (it pulls `codex-linux-arm64`, a static
+`aarch64-unknown-linux-musl` build with `codex-resources/bwrap`, root-owned). A Node
+probe on the Mac drove `ssh -T <machine> 'cd <folder> && CODEX_HOME=<home> exec codex
+app-server --stdio -c check_for_update_on_startup=false'`, and a Node relay built like
+Koloft's (section 1) served the real TUI. A real ChatGPT Pro login was used; no
+`auth.json` holding a usable refresh token ever reached the machine (below), the Mac's
+own `auth.json` kept its `last_refresh` and mtime, and the container was removed after.
 
-What was tried is the "Codex runs on the machine, its screen runs on the Mac" shape: a
-small Node probe relay on the Mac built like Koloft's (section 1), whose app-server was
-`ssh -T <machine> 'cd <folder> && CODEX_HOME=<home> exec <codex> app-server --stdio'`.
+**What the machine needs.**
+- System CA certificates. Without the `ca-certificates` package every HTTPS call fails;
+  the surface errors are `account/login/completed {success:false, error:"workspace
+  routing discovery failed"}` and `account/rateLimits/read` -32603 "error sending request
+  for url (…/wham/usage)"; only `RUST_LOG=debug` shows "server certificate verification
+  failed. CAfile: none".
+- A sandbox the kernel allows. Under Docker's default profile both the bundled `bwrap`
+  and Debian's `bubblewrap` 0.8.0 fail "No permissions to create a new namespace", so a
+  `workspace-write` turn completes with its commandExecution and fileChange `failed`;
+  `danger-full-access` ran them. With seccomp and AppArmor off, bwrap failed later
+  ("setting up uid map: Permission denied"). That `workspace-write` works on a real
+  host or VM with unprivileged user namespaces is **inferred, not checked**. Without
+  `bwrap` on `PATH` every start sends `configWarning` ("Codex could not find bubblewrap on
+  PATH … will use the bundled bubblewrap"; the TUI shows "⚠ 1 warning · f2"); with
+  Debian's `bubblewrap` installed it is gone. The 0.162.0 refusal of a writable sandbox
+  executable did not appear (the bundled one was root-owned); not probed with a
+  user-writable copy.
 
-- A Node script sent `initialize`, `initialized`, `account/read` and `thread/list` down
-  that ssh line. All answered: `initialize` after about 4.4 seconds (ssh connect plus
-  Codex start) with `platformOs: "linux"` and the machine's `codexHome`; `account/read`
-  gave `{account: null, requiresOpenaiAuth: true}`; `thread/list` gave an empty `data`.
-  Closing stdin ended the remote app-server (exit 0) in about 0.2 seconds, and `ps` on
-  the machine showed nothing left over. Koloft's own `CodexProcess.stop()` ends stdin
-  first too, but then at once sends SIGTERM to the processes it owns on the Mac — here
-  the ssh client — and that path was not run against ssh; that the remote app-server
-  still ends cleanly when the ssh client is killed is **inferred, not checked**. The app-server also sent a `configWarning` that
-  bubblewrap was not on the machine's `PATH` and that it would use its bundled one. This
-  probe did not unpack the package's `codex-resources/bwrap`, so there was none; a real
-  launch must put that file on the machine or install `bubblewrap` there, and that the
-  bundled one works on Ubuntu is **inferred, not checked**. Codex 0.162.0 "rejects
-  writable sandbox-construction executables" — a `bwrap` on `PATH` that the sandboxed
-  user can write to is refused (release notes, read 2026-10-11, not run): a copy put on
-  the machine by Koloft would have to be read-only for that user.
-- The real TUI ran on the Mac in a Python PTY (120×40) as `codex -c
-  check_for_update_on_startup=false --remote unix://<relay socket> -C <folder on the
-  machine>`. That folder does not exist on the Mac, and the TUI still connected: it sent
-  `config/read` with `cwd: <folder on the machine>` (its trust check) and
-  `account/read`, and showed its sign-in screen. Before that answer came, its start card
-  showed the Mac folder the TUI process was started in. With a folder missing on the Mac
-  and no socket at all, it failed only with "failed to connect to remote app server".
-  Closing the TUI closed the relay's connection and the remote app-server ended.
-- Sign-in from that screen did not work on this machine. "Sign in with Device Code" sent
-  `account/login/start {type: "chatgptDeviceCode"}` to the machine, which answered
-  error `-32603`, "device code request failed with status 403 Forbidden". A plain `curl`
-  to `https://auth.openai.com/` from the machine also got 403, so OpenAI refuses that
-  machine, not Codex; that the cause is the machine's network or region is **inferred,
-  not checked**. "Sign in with ChatGPT" answered
-  an `authUrl` whose `redirect_uri` is `http://localhost:1455/…` — the machine's own
-  localhost, which a browser on the Mac does not reach.
+**Signing in from the Mac: `chatgptAuthTokens`.** The 0.162.0 schema has
+`account/login/start {type:"chatgptAuthTokens", accessToken, chatgptAccountId,
+chatgptPlanType?}` (marked "[UNSTABLE] FOR OPENAI INTERNAL USE ONLY") and a server→client
+request `account/chatgptAuthTokens/refresh {reason:"unauthorized", previousAccountId}`
+answered with `{accessToken, chatgptAccountId, chatgptPlanType?}`. With `initialize`
+carrying `capabilities.experimentalApi: true` (without it: not probed), an app-server on
+an empty remote home took the Mac login's access token and account id: the call
+answered at once, `account/updated {authMode:"chatgptAuthTokens", planType:"pro"}` came
+~0.4 s later, and `account/read` then answered `{type:"chatgpt", planType:"pro"}` plus
+`workspaceRouting`. Rate limits and `model/list` read normally, and turns ran (below). The
+home got no `auth.json`, and a byte search of every file under the user's home and
+`/tmp` found neither the access nor the refresh token. Logging in with a token whose
+signature was broken made the server send `account/chatgptAuthTokens/refresh {reason:
+"unauthorized"}` at once; answering it with the real token completed the login. The
+login lives in the process: every connection to one `--listen` server saw it, and every
+new `--stdio` process started signed out. How the Mac gets a fresh access token when its
+own expires (`account/read {refreshToken: true}` on a local managed home, per the
+GetAccountParams description) is **inferred, not checked** — running it rotates the
+owner's refresh token.
 
-Not tried, and why:
-- **A real model turn over ssh.** The machine has no login and this probe copied none, so
-  no turn, tool call, approval or file edit ran on the machine. That turn frames look the
-  same as section 12's when they cross ssh is **inferred, not checked**.
-- **Signing in on a machine OpenAI does not refuse.** That `codex login --device-auth`
-  (the flag is in `codex login --help` on 0.153.4) signs the machine in from an
-  `ssh -t` terminal is **inferred, not checked**.
-- **"Codex and its screen both on the machine"** (a relay that runs on the machine next
-  to a TUI in tmux) needs a relay and node shipped to the machine; it was not built or
-  run. `codex app-server --help` lists `--listen unix://PATH` and `app-server proxy
-  --sock <SOCKET_PATH>` ("proxy stdio bytes to the running app-server control socket"),
-  so an app-server that outlives one ssh line may not need Koloft's own relay there —
-  **inferred, not checked** (only the help text was read).
+A copied `auth.json` (refresh token replaced by a dummy before Codex started) also
+signed the machine in (`authMode:"chatgpt"`) and ran turns; its `last_refresh` and mtime
+did not change. A real refresh token on the machine was not probed.
 
-So Koloft keeps Codex on a remote machine refused: the part that runs (transport, the
-remote folder, stop) is checked, but no one has yet signed in and run a turn there.
+**Turns over ssh.** Same frames as section 12: `thread/started`, `turn/started`,
+`item/started`/`item/completed`, `item/agentMessage/delta`, `turn/diff/updated`,
+`thread/tokenUsage/updated`, `account/rateLimits/updated`, `turn/moderationMetadata`,
+`turn/completed`. "Reply pong" took 2.6–3.7 s from `turn/start`; `touch hello.txt` plus a
+file edit took 6.2 s; `initialize` answered in ~0.2–0.3 s (ssh to a local container, not
+a network). Files landed in the remote folder; the rollout in
+`<home>/sessions/YYYY/MM/DD/`. A second ssh line's `thread/list` (no login needed) listed
+the threads with `source:"vscode"` and the remote `cwd`; a third line's `thread/resume`
+returned both turns and a turn there recalled the first answer. `thread/resume` also
+sends `deprecationNotice` "Full-history hydration is deprecated for paginated threads;
+use `excludeTurns: true`…".
+
+**The real TUI.** `codex -c check_for_update_on_startup=false --remote unix://<relay
+socket> -C <remote folder>` (Python PTY, 120×40) through a relay that, after the TUI's
+`initialized`, sends its own `account/login/start chatgptAuthTokens` (id
+`koloft-login-1`, its reply dropped), holds the TUI's frames until
+`account/login/completed`, and answers refresh requests itself: no sign-in screen, the
+reply rendered, "Worked for 1s". The TUI's Mac home got `config.toml`, `history.jsonl`
+and `tui-thread-reference-capabilities/`, no `auth.json`. One Ctrl-C at an idle composer
+detaches: "Disconnected from this task. Any running work continues." plus a `codex
+--remote … resume <id>` line. The footer's `current-dir` shows the Mac folder until the
+thread starts, then the remote folder; `git-branch` stays empty, because the TUI sends
+`command/exec ["git","-c","safe.bareRepository=explicit","branch","--show-current"]` to
+the remote with `cwd` = the Mac folder its process started in, answered -32603 "failed
+to spawn command: No such file or directory (os error 2)". A 0.162.0 TUI against a
+0.161.0 remote app-server ran a turn the same way.
+
+**An app-server that outlives the ssh line.** `codex app-server --listen
+unix:///tmp/x.sock` (started with `setsid nohup`) makes the path a symlink into
+`/tmp/codex-daemon-<uid>/<hash>`, and the socket speaks WebSocket (an HTTP Upgrade got
+101; a bare JSON line got nothing). `codex app-server proxy --sock <path>` pipes stdio
+bytes to it, so a client speaks WebSocket through `ssh -T … proxy`. A turn running `sleep
+20` survived a SIGKILL of the ssh client (the remote proxy process ended with it); a new
+proxy line found the thread in `thread/loaded/list`, `thread/resume` answered `status:
+active` with the turn `inProgress`, then delivered `turn/completed` and the command's
+result. A second connection got only `thread/started` and `thread/status/changed` for
+another connection's thread until it resumed it, then every turn notification.
+`app-server daemon bootstrap` ("durable local app-server management for SSH-driven use")
+was only read in help.
+
+**Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
+process within 0.3 s. Mid-turn: not probed.
+
+Not tried: `codex login --device-auth` on the machine; `workspace-write` on a host that
+allows user namespaces; a real refresh token on the machine.
 
 ## 17. Handing a session context and a command, and queuing a message into it
 

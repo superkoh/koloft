@@ -87,7 +87,8 @@ import {
   runSshBytes,
   sshOptions
 } from './remote/ssh'
-import { ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import { ENSURE_CODEX_SH, ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import { codexMachineInstance, ENSURE_CODEX_FILE } from './remote/codexMachine'
 import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
   AGENT_PLUGIN_DIR,
@@ -100,7 +101,12 @@ import {
   CLAUDE_AUTH_ENV_VARS,
   type MachinePackage
 } from './remote/launch'
-import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
+import {
+  machinePackageBase,
+  mirrorHookDir,
+  mirrorProjectsRoot,
+  tabPackageDir
+} from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { REMOTE_AGENT_SHIM } from './agentShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
@@ -903,6 +909,7 @@ function machinePackage(): MachinePackage {
   if (machinePkg) return machinePkg
   const pkgFiles: Record<string, string | Buffer> = {
     'ensure.sh': ENSURE_SH,
+    [ENSURE_CODEX_FILE]: ENSURE_CODEX_SH,
     'hook.sh': HOOK_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
@@ -1045,6 +1052,10 @@ function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   )
 }
 
+function machineOfTab(tabId: string): string | undefined {
+  return tracker.remoteOf(tabId)?.host ?? codexSessions?.machineOfTab(tabId)
+}
+
 function agentToolsFor(backend: BackendId, host: HostId): boolean {
   return loadSettings().agentTools && capabilitiesFor(backend, host).agentTools === true
 }
@@ -1069,7 +1080,7 @@ function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
   open: (tabId, target, view) => {
-    const machine = tracker.remoteOf(tabId)?.host
+    const machine = machineOfTab(tabId)
     return machine && !schemeOf(target)
       ? openOnMachine(tabId, machine, target, view)
       : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
@@ -1275,7 +1286,7 @@ const agentRequests = new AgentRequests({
   session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    return !!backend && agentToolsFor(backend, tracker.remoteOf(tabId) ? 'ssh' : 'local')
+    return !!backend && agentToolsFor(backend, machineOfTab(tabId) ? 'ssh' : 'local')
   },
   alive: pidAlive
 })
@@ -2070,6 +2081,20 @@ app.whenReady().then(() => {
   sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
+      machine: {
+        instance: codexMachineInstance(userData),
+        ready: loginEnvReady,
+        run: (host, cmd) =>
+          loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
+        sshArgs: (background) => {
+          ensureControlDir(remoteControlDir)
+          return sshOptions(remoteControlDir, background)
+        },
+        machinePackage,
+        tabDir: (tabId) => tabPackageDir(userData, tabId),
+        host: (machine) => hosts.machine(machine),
+        machines: () => [...new Set((workspaceMgr?.remoteTargets() ?? []).map((t) => t.host))]
+      },
       pty: ptyMgr,
       runtime: tracker,
       projectInfo: projectInfoFor,
@@ -2097,7 +2122,7 @@ app.whenReady().then(() => {
       fallbackBin,
       gitBin: gitFirstBin,
       agent: {
-        enabled: () => agentToolsFor('codex', 'local'),
+        enabled: (host) => agentToolsFor('codex', host),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
       },
       gitAccounts: {
@@ -2110,7 +2135,7 @@ app.whenReady().then(() => {
     codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
   }
   if (codexSessions) {
-    sessionBackends.register(codexBackend(codexSessions, resumeProbes))
+    sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineResumeProbes))
     void codexSessions
       .availability()
       .then((codex) => {
@@ -2462,12 +2487,13 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
-      const live = new Set(
-        tracker
+      const live = new Set([
+        ...tracker
           .list()
           .filter((sess) => sess.alive && sess.remote)
-          .map((sess) => sess.remote!.host)
-      )
+          .map((sess) => sess.remote!.host),
+        ...(codexSessions?.machinesWithTabs() ?? [])
+      ])
       return (workspaceMgr?.remoteTargets() ?? []).map((t) => ({
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
@@ -3891,6 +3917,14 @@ const resumeProbes: ResumeProbes = {
   ...gitProbes(localGitOut)
 }
 
+function machineResumeProbes(machine: string): ResumeProbes {
+  return {
+    ...resumeProbes,
+    dirExists: (p) => hosts.machine(machine).dirExists(p),
+    ...gitProbes(hostGitOut)
+  }
+}
+
 function commitSettings(patch: Partial<Settings>): Settings {
   const s = saveSettings(patch)
   sendToRenderer('settings:update', s)
@@ -3985,7 +4019,8 @@ const claudeBackend = new ClaudeBackend({
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   error: (message) => sendToRenderer('cron:toast', message),
-  assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey)
+  assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
+  machineOfOtherTab: (tabId) => codexSessions?.machineOfTab(tabId)
 })
 sessionBackends.register(claudeBackend)
 
@@ -4389,7 +4424,7 @@ function registerIpc(): void {
       for (const resource of codexSessions?.store.listResources() ?? []) {
         if (
           resource.originalCwd !== p ||
-          (resource.state === 'ready' && dirExistsSync(resource.worktreePath))
+          (resource.state === 'ready' && (await hosts.of(p).dirExists(resource.worktreePath)))
         )
           continue
         const existing = trees.find((t) => t.dir === resource.worktreePath)

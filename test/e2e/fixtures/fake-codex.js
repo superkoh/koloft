@@ -4,7 +4,6 @@ const path = require('path')
 const crypto = require('crypto')
 const readline = require('readline')
 const { execFile, spawnSync } = require('child_process')
-const WebSocket = require('ws')
 
 const VERSION_AT_KOLOFTS_MINIMUM = '0.161.0'
 
@@ -93,7 +92,10 @@ if (argv[0] === 'login') {
   process.exit(0)
 }
 
+let loginFromTheClient = null
+
 function signIn() {
+  if (loginFromTheClient) return loginFromTheClient
   try {
     return JSON.parse(fs.readFileSync(path.join(codexHome, 'auth.json'), 'utf8'))
   } catch {
@@ -101,10 +103,32 @@ function signIn() {
   }
 }
 
-if (argv[0] === 'app-server') {
+const argValue = (key) => {
+  const i = argv.indexOf(key)
+  return i >= 0 ? argv[i + 1] : undefined
+}
+
+if (argv[0] === 'app-server' && argv[1] === 'proxy') {
+  const net = require('net')
+  const requested = argValue('--sock')
+  let target = requested
+  try {
+    target = fs.realpathSync(requested)
+  } catch {}
+  const socket = net.connect(target)
+  socket.on('error', (error) => {
+    console.error(`failed to connect to ${requested}: ${error.message}`)
+    process.exit(1)
+  })
+  process.stdin.pipe(socket)
+  socket.pipe(process.stdout)
+  socket.on('close', () => process.exit(0))
+} else if (argv[0] === 'app-server') {
   append('fake-codex-server-calls.jsonl', {
     argv,
     cwd: process.cwd(),
+    codexHome,
+    tabId: process.env.KOLOFT_TAB_ID || null,
     portOffset: process.env.KOLOFT_PORT_OFFSET || null,
     playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,
     codexGate: process.env.KOLOFT_CODEX_GATE || null,
@@ -153,411 +177,455 @@ if (argv[0] === 'app-server') {
       errors: []
     }
   }
-  let initialized = false
-  let active
-  let activeTurn
-  let pendingApproval
-  const emit = (frame) => {
-    append('fake-codex-wire.jsonl', { direction: 'server', frame })
-    process.stdout.write(JSON.stringify(frame) + '\n')
-  }
-  const result = (id, value) => emit({ id, result: value })
-  const error = (id, message) => emit({ id, error: { code: -32000, message } })
-  const event = (method, params) => emit({ method, params })
-  const status = (thread, value) => {
-    thread.status = value
-    save(thread)
-    event('thread/status/changed', { threadId: thread.id, status: value })
-  }
-  const complete = (thread, turn) => {
-    if (turn.status === 'interrupted') return
-    turn.status = 'completed'
-    thread.updatedAt = Math.floor(Date.now() / 1000)
-    const desired = read('fake-codex-next-title')
-    if (desired) {
-      fs.unlinkSync(file('fake-codex-next-title'))
-      thread.name = desired
-    } else thread.name ||= thread.preview.slice(0, 60) || 'Codex fixture session'
-    const asked = turn.items.find((item) => item.type === 'userMessage')?.content[0].text
-    const reply = {
-      type: 'agentMessage',
-      id: crypto.randomUUID(),
-      text: `Codex fixture answered: ${asked}`,
-      phase: 'final_answer'
+  const serve = (write) => {
+    let initialized = false
+    let active
+    let activeTurn
+    let pendingApproval
+    const emit = (frame) => {
+      append('fake-codex-wire.jsonl', { direction: 'server', frame })
+      write(JSON.stringify(frame))
     }
-    turn.items.push(reply)
-    event('item/completed', { threadId: thread.id, turnId: turn.id, item: reply })
-    thread.turns.push(turn)
-    status(thread, { type: 'idle' })
-    event('thread/name/updated', { threadId: thread.id, threadName: thread.name })
-    event('thread/tokenUsage/updated', {
-      threadId: thread.id,
-      turnId: turn.id,
-      tokenUsage: {
-        total: { inputTokens: 120, outputTokens: 25, cachedInputTokens: 10, totalTokens: 145 },
-        last: { inputTokens: 120, outputTokens: 25, totalTokens: 145 },
-        modelContextWindow: 272000
+    const result = (id, value) => emit({ id, result: value })
+    const error = (id, message) => emit({ id, error: { code: -32000, message } })
+    const event = (method, params) => emit({ method, params })
+    const status = (thread, value) => {
+      thread.status = value
+      save(thread)
+      event('thread/status/changed', { threadId: thread.id, status: value })
+    }
+    const complete = (thread, turn) => {
+      if (turn.status === 'interrupted') return
+      turn.status = 'completed'
+      thread.updatedAt = Math.floor(Date.now() / 1000)
+      const desired = read('fake-codex-next-title')
+      if (desired) {
+        fs.unlinkSync(file('fake-codex-next-title'))
+        thread.name = desired
+      } else thread.name ||= thread.preview.slice(0, 60) || 'Codex fixture session'
+      const asked = turn.items.find((item) => item.type === 'userMessage')?.content[0].text
+      const reply = {
+        type: 'agentMessage',
+        id: crypto.randomUUID(),
+        text: `Codex fixture answered: ${asked}`,
+        phase: 'final_answer'
       }
-    })
-    event('turn/completed', { threadId: thread.id, turn })
-    queued.shift()?.()
-  }
-  const queued = []
-  const startTurn = (thread, text, clientId, started) => {
-    persistTurn(thread, text)
-    const turn = { id: crypto.randomUUID(), status: 'inProgress', items: [], error: null }
-    activeTurn = turn
-    started?.(turn)
-    status(thread, { type: 'active', activeFlags: [] })
-    event('turn/started', { threadId: thread.id, turn })
-    // CODEX§19
-    const asked = {
-      type: 'userMessage',
-      id: crypto.randomUUID(),
-      clientId,
-      content: [{ type: 'text', text, text_elements: [] }]
-    }
-    turn.items.push(asked)
-    event('item/completed', { threadId: thread.id, turnId: turn.id, item: asked })
-    if (text.startsWith('open ')) {
-      const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
-      event('item/completed', {
+      turn.items.push(reply)
+      event('item/completed', { threadId: thread.id, turnId: turn.id, item: reply })
+      thread.turns.push(turn)
+      status(thread, { type: 'idle' })
+      event('thread/name/updated', { threadId: thread.id, threadName: thread.name })
+      event('thread/tokenUsage/updated', {
         threadId: thread.id,
         turnId: turn.id,
-        item: {
-          type: 'commandExecution',
-          id: 'open-' + turn.id,
-          status: shell.status === 0 ? 'completed' : 'failed',
-          exitCode: shell.status,
-          aggregatedOutput: (shell.stdout || '') + (shell.stderr || ''),
-          command: `/bin/zsh -lc '${text}'`,
-          cwd: thread.cwd,
-          commandActions: [{ type: 'unknown', command: text }]
+        tokenUsage: {
+          total: { inputTokens: 120, outputTokens: 25, cachedInputTokens: 10, totalTokens: 145 },
+          last: { inputTokens: 120, outputTokens: 25, totalTokens: 145 },
+          modelContextWindow: 272000
         }
       })
+      event('turn/completed', { threadId: thread.id, turn })
+      queued.shift()?.()
     }
-    if (text.startsWith('/koloft ')) {
-      const command = `koloft ${text.slice('/koloft '.length).trim()}`
-      execFile('/bin/zsh', ['-lc', command], { cwd: thread.cwd }, (e, out, err) => {
-        const exitCode = e ? (typeof e.code === 'number' ? e.code : 1) : 0
+    const queued = []
+    const startTurn = (thread, text, clientId, started) => {
+      persistTurn(thread, text)
+      const turn = { id: crypto.randomUUID(), status: 'inProgress', items: [], error: null }
+      activeTurn = turn
+      started?.(turn)
+      status(thread, { type: 'active', activeFlags: [] })
+      event('turn/started', { threadId: thread.id, turn })
+      // CODEX§19
+      const asked = {
+        type: 'userMessage',
+        id: crypto.randomUUID(),
+        clientId,
+        content: [{ type: 'text', text, text_elements: [] }]
+      }
+      turn.items.push(asked)
+      event('item/completed', { threadId: thread.id, turnId: turn.id, item: asked })
+      if (text.startsWith('open ')) {
+        const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
         event('item/completed', {
           threadId: thread.id,
           turnId: turn.id,
           item: {
             type: 'commandExecution',
-            id: 'koloft-' + turn.id,
-            status: exitCode === 0 ? 'completed' : 'failed',
-            exitCode,
-            aggregatedOutput: `${out}${err}`,
-            command: `/bin/zsh -lc '${command}'`,
+            id: 'open-' + turn.id,
+            status: shell.status === 0 ? 'completed' : 'failed',
+            exitCode: shell.status,
+            aggregatedOutput: (shell.stdout || '') + (shell.stderr || ''),
+            command: `/bin/zsh -lc '${text}'`,
             cwd: thread.cwd,
-            commandActions: [{ type: 'unknown', command }]
+            commandActions: [{ type: 'unknown', command: text }]
           }
         })
-        complete(thread, turn)
-      })
-      return
-    }
-    if (text.includes('approve')) {
-      pendingApproval = { id: 'approval-' + turn.id, thread, turn }
-      status(thread, { type: 'active', activeFlags: ['waitingOnApproval'] })
-      emit({
-        id: pendingApproval.id,
-        method: 'item/commandExecution/requestApproval',
-        params: {
-          threadId: thread.id,
-          turnId: turn.id,
-          itemId: 'command-1',
-          command: 'echo approved',
-          cwd: thread.cwd
-        }
-      })
-    } else if (text.includes('ask me')) {
-      pendingApproval = { id: 'question-' + turn.id, thread, turn }
-      status(thread, { type: 'active', activeFlags: ['waitingOnUserInput'] })
-      // CODEX§20
-      emit({
-        id: pendingApproval.id,
-        method: 'item/tool/requestUserInput',
-        params: {
-          threadId: thread.id,
-          turnId: turn.id,
-          itemId: 'call-1',
-          questions: [
-            {
-              id: 'colour',
-              header: 'Colour',
-              question: 'Which colour do you prefer?',
-              isOther: true,
-              isSecret: false,
-              options: [
-                { label: 'Red', description: 'Choose red.' },
-                { label: 'Green', description: 'Choose green.' }
-              ]
+      }
+      if (text.startsWith('/koloft ')) {
+        const command = `koloft ${text.slice('/koloft '.length).trim()}`
+        execFile('/bin/zsh', ['-lc', command], { cwd: thread.cwd }, (e, out, err) => {
+          const exitCode = e ? (typeof e.code === 'number' ? e.code : 1) : 0
+          event('item/completed', {
+            threadId: thread.id,
+            turnId: turn.id,
+            item: {
+              type: 'commandExecution',
+              id: 'koloft-' + turn.id,
+              status: exitCode === 0 ? 'completed' : 'failed',
+              exitCode,
+              aggregatedOutput: `${out}${err}`,
+              command: `/bin/zsh -lc '${command}'`,
+              cwd: thread.cwd,
+              commandActions: [{ type: 'unknown', command }]
             }
-          ],
-          isBlocking: true,
-          autoResolutionMs: null
-        }
-      })
-    } else if (text.includes('spawn child')) {
-      // CODEX§4
-      const childId = crypto.randomUUID()
-      event('item/completed', {
-        threadId: thread.id,
-        turnId: turn.id,
-        item: {
-          type: 'collabAgentToolCall',
-          id: 'spawn-' + turn.id,
-          tool: 'spawnAgent',
-          status: 'completed',
-          senderThreadId: thread.id,
-          receiverThreadIds: [childId],
-          agentsStates: { [childId]: { status: 'pendingInit' } }
-        }
-      })
-      setTimeout(() => complete(thread, turn), 120)
-      setTimeout(
-        () => event('thread/status/changed', { threadId: childId, status: { type: 'idle' } }),
-        Number(read('fake-codex-child-ms', '4000'))
-      )
-    } else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
-  }
-  const lines = readline.createInterface({ input: process.stdin })
-  lines.on('line', (line) => {
-    let frame
-    try {
-      frame = JSON.parse(line)
-    } catch {
-      process.exit(2)
-    }
-    append('fake-codex-wire.jsonl', { direction: 'client', frame })
-    const { id, method, params: p = {} } = frame
-    if (method === 'initialize') {
-      result(id, { userAgent: `fake-codex/${VERSION_AT_KOLOFTS_MINIMUM}`, platformFamily: 'unix' })
-      return
-    }
-    if (method === 'initialized') {
-      initialized = true
-      return
-    }
-    if (!initialized) {
-      error(id, 'Not initialized')
-      return
-    }
-    if (!method && pendingApproval && id === pendingApproval.id) {
-      const { thread, turn } = pendingApproval
-      pendingApproval = undefined
-      status(thread, { type: 'active', activeFlags: [] })
-      complete(thread, turn)
-      return
-    }
-    if (method === 'thread/list') {
-      if (flag('fake-codex-history-error')) {
-        error(id, 'History is unavailable')
-        return
-      }
-      result(id, { data: p.archived ? [] : savedThreads(), nextCursor: null })
-      return
-    }
-    if (method === 'thread/search') {
-      const term = String(p.searchTerm).toLowerCase()
-      const said = (thread) =>
-        thread.turns
-          .flatMap((turn) => turn.items)
-          .map((item) =>
-            item.type === 'agentMessage'
-              ? item.text
-              : (item.content ?? []).map((c) => c.text).join(' ')
-          )
-          .find((text) => text?.toLowerCase().includes(term))
-      const data = (p.archived ? [] : savedThreads()).flatMap((thread) => {
-        const snippet = said(thread)
-        return snippet ? [{ snippet, thread }] : []
-      })
-      result(id, { data, nextCursor: null, backwardsCursor: null })
-      return
-    }
-    if (method === 'thread/read') {
-      const thread = load(p.threadId)
-      if (!thread) error(id, 'Thread not found')
-      else result(id, { thread })
-      return
-    }
-    if (['thread/start', 'thread/resume', 'thread/fork'].includes(method)) {
-      const previous = p.threadId ? load(p.threadId) : undefined
-      if (method !== 'thread/start' && !previous) {
-        error(id, 'Thread not found')
-        return
-      }
-      active = method === 'thread/resume' ? previous : newThread(p.cwd || process.cwd(), previous)
-      if (p.cwd) active.cwd = p.cwd
-      if (method === 'thread/fork' && previous.path)
-        persistTurn(active, previous.preview || 'Forked session')
-      save(active)
-      const opened = active
-      setTimeout(
-        () => {
-          result(id, {
-            thread: opened,
-            model: opened.model,
-            modelProvider: 'openai',
-            cwd: opened.cwd,
-            approvalPolicy: 'on-request',
-            sandbox: { type: 'workspaceWrite' },
-            reasoningEffort: 'medium'
           })
-          event('thread/started', { thread: opened })
-        },
-        Number(read('fake-codex-delay', '0')) || 0
-      )
-      return
-    }
-    if (method === 'thread/unsubscribe') {
-      result(id, { status: 'unsubscribed' })
-      return
-    }
-    if (method === 'turn/start' || method === 'thread/queue/add') {
-      const thread = active?.id === p.threadId ? active : load(p.threadId)
-      if (!thread) {
-        error(id, 'Thread not found')
+          complete(thread, turn)
+        })
         return
       }
-      const text = (p.input || []).map((item) => item.text || '').join('\n')
-      // CODEX§17
-      if (method === 'thread/queue/add') {
-        result(id, { queuedSubmission: { id: crypto.randomUUID() } })
-        const begin = () => startTurn(thread, text, p.clientUserMessageId ?? null)
-        if (activeTurn?.status === 'inProgress') queued.push(begin)
-        else begin()
-        return
-      }
-      startTurn(thread, text, null, (turn) => result(id, { turn }))
-      return
-    }
-    // CODEX§21
-    if (method === 'thread/compact/start') {
-      const thread = active?.id === p.threadId ? active : load(p.threadId)
-      if (!thread) {
-        error(id, 'Thread not found')
-        return
-      }
-      result(id, {})
-      const turn = { id: crypto.randomUUID(), status: 'inProgress', items: [], error: null }
-      const item = { type: 'contextCompaction', id: crypto.randomUUID() }
-      activeTurn = turn
-      status(thread, { type: 'active', activeFlags: [] })
-      event('turn/started', { threadId: thread.id, turn })
-      event('item/started', { threadId: thread.id, turnId: turn.id, item })
-      setTimeout(() => {
-        event('item/completed', { threadId: thread.id, turnId: turn.id, item })
-        turn.status = 'completed'
-        status(thread, { type: 'idle' })
-        event('turn/completed', { threadId: thread.id, turn })
-        queued.shift()?.()
-      }, 120)
-      return
-    }
-    if (method === 'turn/interrupt') {
-      result(id, {})
-      pendingApproval = undefined
-      if (active && activeTurn) {
-        activeTurn.status = 'interrupted'
-        status(active, { type: 'idle' })
-        event('turn/completed', { threadId: active.id, turn: activeTurn })
-      }
-      return
-    }
-    if (method === 'config/read') {
-      const mcpServers = read('fake-codex-mcp-servers.json')
-      result(id, {
-        config: { model: 'gpt-5.5', ...(mcpServers && { mcp_servers: JSON.parse(mcpServers) }) },
-        origins: {},
-        layers: []
-      })
-      return
-    }
-    if (method === 'account/read') {
-      result(id, {
-        account: signIn()
-          ? { type: 'chatgpt', email: 'fixture@example.invalid', planType: 'plus' }
-          : null,
-        requiresOpenaiAuth: false
-      })
-      return
-    }
-    if (method === 'account/rateLimits/read') {
-      const auth = signIn()
-      const now = Math.floor(Date.now() / 1000)
-      result(id, {
-        rateLimits:
-          auth && auth.usedPercent !== undefined
-            ? {
-                limitId: 'codex',
-                primary: {
-                  usedPercent: auth.usedPercent,
-                  windowDurationMins: 10080,
-                  resetsAt: now + 3600
-                },
-                secondary: null,
-                credits:
-                  auth.balance !== undefined
-                    ? { hasCredits: true, unlimited: false, balance: auth.balance }
-                    : null,
-                rateLimitReachedType: auth.usedPercent >= 100 ? 'rate_limit_reached' : null
+      if (text.includes('approve')) {
+        pendingApproval = { id: 'approval-' + turn.id, thread, turn }
+        status(thread, { type: 'active', activeFlags: ['waitingOnApproval'] })
+        emit({
+          id: pendingApproval.id,
+          method: 'item/commandExecution/requestApproval',
+          params: {
+            threadId: thread.id,
+            turnId: turn.id,
+            itemId: 'command-1',
+            command: 'echo approved',
+            cwd: thread.cwd
+          }
+        })
+      } else if (text.includes('ask me')) {
+        pendingApproval = { id: 'question-' + turn.id, thread, turn }
+        status(thread, { type: 'active', activeFlags: ['waitingOnUserInput'] })
+        // CODEX§20
+        emit({
+          id: pendingApproval.id,
+          method: 'item/tool/requestUserInput',
+          params: {
+            threadId: thread.id,
+            turnId: turn.id,
+            itemId: 'call-1',
+            questions: [
+              {
+                id: 'colour',
+                header: 'Colour',
+                question: 'Which colour do you prefer?',
+                isOther: true,
+                isSecret: false,
+                options: [
+                  { label: 'Red', description: 'Choose red.' },
+                  { label: 'Green', description: 'Choose green.' }
+                ]
               }
-            : null,
-        rateLimitResetCredits:
-          auth && auth.resets !== undefined
-            ? {
-                availableCount: auth.resets,
-                credits: Array.from({ length: auth.resets }, (_, i) => ({
-                  id: `fake-reset-${i}`,
-                  resetType: 'codexRateLimits',
-                  status: 'available',
-                  grantedAt: now,
-                  expiresAt: now + (i + 1) * 86400,
-                  title: 'Full reset'
-                }))
-              }
-            : null,
-        rateLimitsByLimitId: {}
-      })
-      return
-    }
-    if (method === 'account/rateLimitResetCredit/consume') {
-      const auth = signIn() || {}
-      append('fake-codex-reset-calls.jsonl', { codexHome, params: p })
-      const outcome = !auth.resets
-        ? 'noCredit'
-        : auth.usedPercent >= 100
-          ? 'reset'
-          : 'nothingToReset'
-      if (outcome === 'reset')
-        fs.writeFileSync(
-          path.join(codexHome, 'auth.json'),
-          JSON.stringify({ ...auth, usedPercent: 0, resets: auth.resets - 1 })
+            ],
+            isBlocking: true,
+            autoResolutionMs: null
+          }
+        })
+      } else if (text.includes('spawn child')) {
+        // CODEX§4
+        const childId = crypto.randomUUID()
+        event('item/completed', {
+          threadId: thread.id,
+          turnId: turn.id,
+          item: {
+            type: 'collabAgentToolCall',
+            id: 'spawn-' + turn.id,
+            tool: 'spawnAgent',
+            status: 'completed',
+            senderThreadId: thread.id,
+            receiverThreadIds: [childId],
+            agentsStates: { [childId]: { status: 'pendingInit' } }
+          }
+        })
+        setTimeout(() => complete(thread, turn), 120)
+        setTimeout(
+          () => event('thread/status/changed', { threadId: childId, status: { type: 'idle' } }),
+          Number(read('fake-codex-child-ms', '4000'))
         )
-      result(id, { outcome })
-      return
+      } else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
     }
-    if (method === 'hooks/list') {
-      result(id, {
-        data: (p.cwds || []).map((cwd) => ({ cwd, warnings: [], ...gateHooks() }))
-      })
-      return
+    return (line) => {
+      let frame
+      try {
+        frame = JSON.parse(line)
+      } catch {
+        process.exit(2)
+      }
+      append('fake-codex-wire.jsonl', { direction: 'client', frame })
+      const { id, method, params: p = {} } = frame
+      if (method === 'initialize') {
+        result(id, {
+          userAgent: `fake-codex/${VERSION_AT_KOLOFTS_MINIMUM}`,
+          platformFamily: 'unix'
+        })
+        return
+      }
+      if (method === 'initialized') {
+        initialized = true
+        return
+      }
+      if (!initialized) {
+        error(id, 'Not initialized')
+        return
+      }
+      if (!method && pendingApproval && id === pendingApproval.id) {
+        const { thread, turn } = pendingApproval
+        pendingApproval = undefined
+        status(thread, { type: 'active', activeFlags: [] })
+        complete(thread, turn)
+        return
+      }
+      if (method === 'thread/list') {
+        if (flag('fake-codex-history-error')) {
+          error(id, 'History is unavailable')
+          return
+        }
+        result(id, { data: p.archived ? [] : savedThreads(), nextCursor: null })
+        return
+      }
+      if (method === 'thread/search') {
+        const term = String(p.searchTerm).toLowerCase()
+        const said = (thread) =>
+          thread.turns
+            .flatMap((turn) => turn.items)
+            .map((item) =>
+              item.type === 'agentMessage'
+                ? item.text
+                : (item.content ?? []).map((c) => c.text).join(' ')
+            )
+            .find((text) => text?.toLowerCase().includes(term))
+        const data = (p.archived ? [] : savedThreads()).flatMap((thread) => {
+          const snippet = said(thread)
+          return snippet ? [{ snippet, thread }] : []
+        })
+        result(id, { data, nextCursor: null, backwardsCursor: null })
+        return
+      }
+      if (method === 'thread/read') {
+        const thread = load(p.threadId)
+        if (!thread) error(id, 'Thread not found')
+        else result(id, { thread })
+        return
+      }
+      if (['thread/start', 'thread/resume', 'thread/fork'].includes(method)) {
+        const previous = p.threadId ? load(p.threadId) : undefined
+        if (method !== 'thread/start' && !previous) {
+          error(id, 'Thread not found')
+          return
+        }
+        active = method === 'thread/resume' ? previous : newThread(p.cwd || process.cwd(), previous)
+        if (p.cwd) active.cwd = p.cwd
+        if (method === 'thread/fork' && previous.path)
+          persistTurn(active, previous.preview || 'Forked session')
+        save(active)
+        const opened = active
+        setTimeout(
+          () => {
+            result(id, {
+              thread: opened,
+              model: opened.model,
+              modelProvider: 'openai',
+              cwd: opened.cwd,
+              approvalPolicy: 'on-request',
+              sandbox: { type: 'workspaceWrite' },
+              reasoningEffort: 'medium'
+            })
+            event('thread/started', { thread: opened })
+          },
+          Number(read('fake-codex-delay', '0')) || 0
+        )
+        return
+      }
+      if (method === 'thread/unsubscribe') {
+        result(id, { status: 'unsubscribed' })
+        return
+      }
+      if (method === 'turn/start' || method === 'thread/queue/add') {
+        const thread = active?.id === p.threadId ? active : load(p.threadId)
+        if (!thread) {
+          error(id, 'Thread not found')
+          return
+        }
+        const text = (p.input || []).map((item) => item.text || '').join('\n')
+        // CODEX§17
+        if (method === 'thread/queue/add') {
+          result(id, { queuedSubmission: { id: crypto.randomUUID() } })
+          const begin = () => startTurn(thread, text, p.clientUserMessageId ?? null)
+          if (activeTurn?.status === 'inProgress') queued.push(begin)
+          else begin()
+          return
+        }
+        startTurn(thread, text, null, (turn) => result(id, { turn }))
+        return
+      }
+      // CODEX§21
+      if (method === 'thread/compact/start') {
+        const thread = active?.id === p.threadId ? active : load(p.threadId)
+        if (!thread) {
+          error(id, 'Thread not found')
+          return
+        }
+        result(id, {})
+        const turn = { id: crypto.randomUUID(), status: 'inProgress', items: [], error: null }
+        const item = { type: 'contextCompaction', id: crypto.randomUUID() }
+        activeTurn = turn
+        status(thread, { type: 'active', activeFlags: [] })
+        event('turn/started', { threadId: thread.id, turn })
+        event('item/started', { threadId: thread.id, turnId: turn.id, item })
+        setTimeout(() => {
+          event('item/completed', { threadId: thread.id, turnId: turn.id, item })
+          turn.status = 'completed'
+          status(thread, { type: 'idle' })
+          event('turn/completed', { threadId: thread.id, turn })
+          queued.shift()?.()
+        }, 120)
+        return
+      }
+      if (method === 'turn/interrupt') {
+        result(id, {})
+        pendingApproval = undefined
+        if (active && activeTurn) {
+          activeTurn.status = 'interrupted'
+          status(active, { type: 'idle' })
+          event('turn/completed', { threadId: active.id, turn: activeTurn })
+        }
+        return
+      }
+      if (method === 'config/read') {
+        const mcpServers = read('fake-codex-mcp-servers.json')
+        result(id, {
+          config: { model: 'gpt-5.5', ...(mcpServers && { mcp_servers: JSON.parse(mcpServers) }) },
+          origins: {},
+          layers: []
+        })
+        return
+      }
+      if (method === 'account/read') {
+        result(id, {
+          account: signIn()
+            ? { type: 'chatgpt', email: 'fixture@example.invalid', planType: 'plus' }
+            : null,
+          requiresOpenaiAuth: false
+        })
+        return
+      }
+      if (method === 'account/rateLimits/read') {
+        const auth = signIn()
+        const now = Math.floor(Date.now() / 1000)
+        result(id, {
+          rateLimits:
+            auth && auth.usedPercent !== undefined
+              ? {
+                  limitId: 'codex',
+                  primary: {
+                    usedPercent: auth.usedPercent,
+                    windowDurationMins: 10080,
+                    resetsAt: now + 3600
+                  },
+                  secondary: null,
+                  credits:
+                    auth.balance !== undefined
+                      ? { hasCredits: true, unlimited: false, balance: auth.balance }
+                      : null,
+                  rateLimitReachedType: auth.usedPercent >= 100 ? 'rate_limit_reached' : null
+                }
+              : null,
+          rateLimitResetCredits:
+            auth && auth.resets !== undefined
+              ? {
+                  availableCount: auth.resets,
+                  credits: Array.from({ length: auth.resets }, (_, i) => ({
+                    id: `fake-reset-${i}`,
+                    resetType: 'codexRateLimits',
+                    status: 'available',
+                    grantedAt: now,
+                    expiresAt: now + (i + 1) * 86400,
+                    title: 'Full reset'
+                  }))
+                }
+              : null,
+          rateLimitsByLimitId: {}
+        })
+        return
+      }
+      if (method === 'account/rateLimitResetCredit/consume') {
+        const auth = signIn() || {}
+        append('fake-codex-reset-calls.jsonl', { codexHome, params: p })
+        const outcome = !auth.resets
+          ? 'noCredit'
+          : auth.usedPercent >= 100
+            ? 'reset'
+            : 'nothingToReset'
+        if (outcome === 'reset')
+          fs.writeFileSync(
+            path.join(codexHome, 'auth.json'),
+            JSON.stringify({ ...auth, usedPercent: 0, resets: auth.resets - 1 })
+          )
+        result(id, { outcome })
+        return
+      }
+      if (method === 'hooks/list') {
+        result(id, {
+          data: (p.cwds || []).map((cwd) => ({ cwd, warnings: [], ...gateHooks() }))
+        })
+        return
+      }
+      if (method === 'model/list') {
+        result(id, { data: [], nextCursor: null })
+        return
+      }
+      if (method === 'thread/loaded/list') {
+        result(id, { data: active ? [active.id] : [] })
+        return
+      }
+      // CODEX§16
+      if (method === 'account/login/start') {
+        append('fake-codex-logins.jsonl', {
+          type: p.type,
+          accessToken: p.accessToken ?? null,
+          accountId: p.chatgptAccountId ?? null
+        })
+        loginFromTheClient = { type: 'chatgpt', usedPercent: 10 }
+        result(id, {})
+        event('account/login/completed', { loginId: null, success: true, error: null })
+        return
+      }
+      if (id !== undefined) result(id, {})
     }
-    if (method === 'model/list') {
-      result(id, { data: [], nextCursor: null })
-      return
+  }
+  const listen = argValue('--listen')
+  if (listen) {
+    const http = require('http')
+    const { WebSocketServer } = require('ws')
+    const requested = listen.replace(/^unix:\/\//, '')
+    const short = `/tmp/fcx-${crypto.createHash('sha1').update(requested).digest('hex').slice(0, 12)}.sock`
+    fs.rmSync(short, { force: true })
+    const server = http.createServer((_req, res) => res.writeHead(404).end())
+    const wss = new WebSocketServer({ server })
+    wss.on('connection', (ws) => {
+      const receive = serve((line) => ws.send(line))
+      ws.on('message', (data) => receive(String(data)))
+    })
+    const leave = () => {
+      fs.rmSync(short, { force: true })
+      fs.rmSync(requested, { force: true })
+      process.exit(0)
     }
-    if (method === 'thread/loaded/list') {
-      result(id, { data: active ? [active.id] : [] })
-      return
-    }
-    if (id !== undefined) result(id, {})
-  })
-  process.stdin.on('end', () => process.exit(0))
+    process.on('SIGTERM', leave)
+    process.on('SIGHUP', () => {})
+    server.listen(short, () => {
+      fs.rmSync(requested, { force: true })
+      fs.symlinkSync(short, requested)
+    })
+  } else {
+    const receive = serve((line) => process.stdout.write(line + '\n'))
+    readline.createInterface({ input: process.stdin }).on('line', receive)
+    process.stdin.on('end', () => process.exit(0))
+  }
 } else {
   void startTui()
 }
@@ -592,6 +660,7 @@ async function startTui() {
     console.error('fake-codex needs --remote')
     process.exit(2)
   }
+  const WebSocket = require('ws')
   const ws = new WebSocket(url.startsWith('unix://') ? 'ws+unix://' + url.slice(7) + ':/' : url)
   let id = 0
   let thread

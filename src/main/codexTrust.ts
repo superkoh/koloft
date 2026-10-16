@@ -60,14 +60,16 @@ export function acceptCodexHookTrust(configFile: string, key: string, hash: stri
 
 // CODEX§11
 export function codexTrustsFolder(configFile: string, dir: string): boolean {
-  let text: string
-  let header: string
   try {
-    text = fs.readFileSync(configFile, 'utf8')
-    header = projectHeader(dir)
+    return configTrusts(fs.readFileSync(configFile, 'utf8'), fs.realpathSync(dir))
   } catch {
     return false
   }
+}
+
+// CODEX§11
+export function configTrusts(text: string, realDir: string): boolean {
+  const header = `[projects.${JSON.stringify(realDir)}]`
   const lines = text.split(/\r?\n/).map((line) => line.trim())
   const start = lines.indexOf(header)
   if (start < 0) return false

@@ -57,6 +57,7 @@ import {
 import { claudeArgv } from '../claudeArgs'
 import { listSkills, type SkillFs } from '../skillList'
 import { worktreeNameAround } from '../resumePlan'
+import type { TreeOps } from '../sessionWorktrees'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
@@ -364,6 +365,20 @@ cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm 
 
 const RESIZE_SETTLE_MS = 200
 
+const REAL_PATH = 'cd "$1" 2>/dev/null && pwd -P'
+
+// CC§3
+const COPY_WORKTREE_INCLUDES = `cd "$1" 2>/dev/null && [ -f .worktreeinclude ] || exit 0
+git ls-files -z --others --ignored --exclude-from=.worktreeinclude | git check-ignore -z --stdin |
+  tr '\\0' '\\n' | while IFS= read -r f; do
+    [ -f "$f" ] && [ ! -L "$f" ] && [ ! -e "$2/$f" ] || continue
+    mkdir -p "$2/$(dirname "$f")" && cp "$f" "$2/$f"
+  done
+exit 0`
+
+const SAME_FILE_IN_ROOT = `for f in "$1/$3" "$2/$3"; do [ -f "$f" ] && [ ! -L "$f" ] || exit 1; done
+cmp -s "$1/$3" "$2/$3"`
+
 export class SshHost implements Host {
   readonly github: GithubLookup
   private git: GitOps
@@ -487,6 +502,32 @@ export class SshHost implements Host {
 
   async fileExists(file: string): Promise<boolean> {
     return (await this.sh('test -f "$1"', [this.bare(file)])).code === 0
+  }
+
+  get treeOps(): TreeOps {
+    const fail = (r: BytesResult): Error =>
+      Object.assign(new Error(r.stderr.trim() || problemOf(r)), { code: r.code ?? undefined })
+    return {
+      git: async (cwd, args) => {
+        const r = await this.gitRun(cwd, args)
+        if (r.code !== 0) throw Object.assign(new Error(r.stderr.trim()), { code: r.code })
+        return r.stdout.trimEnd()
+      },
+      realpath: async (p) => {
+        const r = await this.sh(REAL_PATH, [this.bare(p)])
+        if (r.code !== 0) throw fail(r)
+        return this.keyed(r.stdout.toString('utf8').trim())
+      },
+      exists: (p) => this.dirExistsOrThrow(p),
+      keyed: (p) => this.keyed(p),
+      copyIncludes: async (root, tree) => {
+        await this.sh(COPY_WORKTREE_INCLUDES, [this.bare(root), this.bare(tree)], {
+          timeoutMs: GIT_STEP_TIMEOUT_MS
+        })
+      },
+      sameFileInRoot: async (root, tree, rel) =>
+        (await this.sh(SAME_FILE_IN_ROOT, [this.bare(root), this.bare(tree), rel])).code === 0
+    }
   }
 
   async search(root: string, query: string, opts?: { showIgnored?: boolean }) {

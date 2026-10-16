@@ -2,6 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import type { LaunchPermission } from '@shared/types'
+import { identityOf, sessionKey } from '@shared/sessionBackend'
+import { isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
 
 export interface CodexMember {
   id: string
@@ -35,9 +37,20 @@ interface SessionStoreData {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function codexSessionKey(id: string): string {
+const MACHINE_SOURCE = 'ssh:'
+
+export function codexSessionKey(id: string, machine?: string): string {
   if (!UUID.test(id)) throw new Error('Invalid Codex session ID')
-  return `codex:local:${id}`
+  return sessionKey({
+    backendId: 'codex',
+    sourceId: machine ? `${MACHINE_SOURCE}${machine}` : 'local',
+    nativeSessionId: id
+  })
+}
+
+export function machineOfCodexKey(key: string): string | undefined {
+  const { sourceId } = identityOf(key)
+  return sourceId.startsWith(MACHINE_SOURCE) ? sourceId.slice(MACHINE_SOURCE.length) : undefined
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -45,14 +58,15 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 function absolute(value: unknown): value is string {
-  return typeof value === 'string' && path.isAbsolute(value)
+  return typeof value === 'string' && isAbsoluteOnHost(value)
 }
 
 function validMember(value: unknown, key: string): value is CodexMember {
   if (!record(value) || typeof value.id !== 'string' || !UUID.test(value.id)) return false
   return (
     value.key === key &&
-    key === codexSessionKey(value.id) &&
+    typeof value.workspacePath === 'string' &&
+    key === codexSessionKey(value.id, parseRemoteKey(value.workspacePath)?.host) &&
     absolute(value.workspacePath) &&
     absolute(value.cwd) &&
     typeof value.title === 'string' &&

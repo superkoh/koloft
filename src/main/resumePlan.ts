@@ -56,7 +56,7 @@ async function freeWorktreeName(base: string, home: string, probes: ResumeProbes
   const taken = async (dir: string): Promise<boolean> =>
     !!probes.recorded?.(dir) || (await probes.dirExists(dir))
   let n = 2
-  while (n < RENAME_SUFFIX_CAP && (await taken(path.join(home, `${base}-${n}`)))) n++
+  while (n < RENAME_SUFFIX_CAP && (await taken(`${home}/${base}-${n}`))) n++
   return `${base}-${n}`
 }
 

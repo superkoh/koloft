@@ -5,7 +5,8 @@ import { listAccounts } from '../accounts'
 import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import { acceptCodexTrust, codexConfigFile, codexTrustsFolder } from '../codexTrust'
-import { dirExistsSync, planResume, type ResumeProbes } from '../resumePlan'
+import { planResume, type ResumeProbes } from '../resumePlan'
+import { machineOfCodexKey } from '../sessionStore'
 
 export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefined): void {
   try {
@@ -15,16 +16,18 @@ export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefine
   }
 }
 
-export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes): SessionBackend {
+export function codexBackend(
+  sessions: CodexSessions,
+  resumeProbes: ResumeProbes,
+  machineProbes: (machine: string) => ResumeProbes
+): SessionBackend {
   return {
     id: 'codex',
     availability: () => sessions.availability(),
     forgetAvailability: () => sessions.forgetAvailability(),
     list: () => sessions.list(),
     historyRows: async (workspacePath) =>
-      parseRemoteKey(workspacePath) || !(await sessions.availability()).available
-        ? []
-        : sessions.historyRows(workspacePath),
+      (await sessions.availability()).available ? sessions.historyRows(workspacePath) : [],
     create: async (spec) => ({ ok: true, ...(await sessions.launch(spec)) }),
     resume: async (req) => {
       try {
@@ -39,10 +42,12 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
     },
     resumePlan: async (key): Promise<ResumePlan> => {
       const row = sessions.findRow(key)
-      if (row && !row.worktreeState && !dirExistsSync(row.cwd)) {
+      const machine = machineOfCodexKey(key)
+      const probes = machine ? machineProbes(machine) : resumeProbes
+      if (row && !row.worktreeState && !(await probes.dirExists(row.cwd))) {
         return { action: 'unavailable', reason: 'no-cwd' }
       }
-      return planResume(row, resumeProbes, row?.worktreeState?.worktreePath)
+      return planResume(row, probes, row?.worktreeState?.worktreePath)
     },
     hasTab: (tabId) => sessions.hasTab(tabId),
     workspaceOfTab: (tabId) => sessions.workspaceOfTab(tabId),
@@ -53,7 +58,10 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
     observe: (tabId, event) => sessions.observe(tabId, event),
     occupantOf: (dir) => sessions.occupantOf(dir),
     accountUsable: () => hasUsableAccount(listAccounts(), 'codex'),
-    trustsFolder: (dir) => codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir),
+    trustsFolder: (dir) =>
+      parseRemoteKey(dir)
+        ? sessions.machineTrusts(dir)
+        : codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir),
     turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n),
     // ADR-0028
     permissionClass: (tabId) => (sessions.launchedBypassingChecks(tabId) ? 'bypass' : 'prompting')
