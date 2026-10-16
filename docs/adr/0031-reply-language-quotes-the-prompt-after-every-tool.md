@@ -36,7 +36,12 @@ prompt only and after every tool did equally well there. The reminder after ever
 is there because the transcripts show drift growing with the distance from the
 prompt, and it is what Claude Code itself does with an output style's line (CC§19).
 A message from another session does not replace the quote: the person reads the reply,
-so a child's English report must not turn its parent English.
+so a child's English report must not turn its parent English. Neither does a background
+task's finish report or a subagent's message, which reach the prompt hook too (CC§19):
+from 10-11 to 10-16, before they were skipped, 63% of the reminders quoted a
+`<task-notification>` instead of the owner, and in Chinese turns the notes under such a
+quote were English 30% of the time against 13% under the owner's own words (67% against
+1% once the turn had been compacted, 37% against 15% past 60 tool calls).
 **Rejected**: repeating a generic sentence (above: it barely helped — the quote is what
 works). Naming the language ("Reply in Chinese") — Koloft would have to guess the
 language in a shell script, for every language; the quote lets the model see it.
