@@ -242,6 +242,13 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   after it, at once.
 - Network approvals fire no hook at all; only the 7501 frame and
   `approval/listPending` (§5) show them.
+- The input box is the one row between the last two full-width `────` rules, starting
+  with `❯` (bare when empty, `❯ <draft>` with text in it); the status row, and any
+  background-task rows, come below the second rule. An approval box takes its place:
+  several rows between the rules and no `❯` row (1.4.9, fake model, Docker, 2026-10,
+  read from the rendered screen). Slash-command menus were not looked at.
+- What a slash command prints (`/usage`, `/status`, …) is drawn on the screen only; the
+  session log holds none of it (1.4.9, fake model).
 
 ## §12 Handing muse instructions
 

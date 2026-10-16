@@ -26,7 +26,7 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
-import { MuseSessions } from './museSessions'
+import { MuseSessions, museShowsAnEmptyInputBox } from './museSessions'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museSignedIn, storeMuseKey } from './museServe'
 import type { SessionsWithStore } from './storedSessions'
@@ -501,9 +501,14 @@ const slash = new SlashCommands({
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId) => {
     const s = sessionOfTab(tabId)
+    if (s?.backendId === 'muse') {
+      const lines = await screenLines(tabId)
+      return lines && !museShowsAnEmptyInputBox(lines)
+    }
     if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
     return claudeShowsAPanel(s.sessionId)
   },
+  screen: screenLines,
   nextMirrorPull: (tabId) => {
     const remote = tracker.remoteOf(tabId)
     return remote && remoteSync?.nextPullDone(remote.host)
@@ -3223,6 +3228,11 @@ const boundSessions = new Map<string, string>()
 const screenAsks = new Map<string, (a: ScreenAnswer) => void>()
 let windowOpenedAt = 0
 const SCREEN_ANSWER_BUDGET_MS = 3000
+
+async function screenLines(tabId: string): Promise<string[] | undefined> {
+  const screen = await screenOf(tabId)
+  return 'lines' in screen ? screen.lines : undefined
+}
 
 async function screenOf(tabId: string): Promise<SessionScreen> {
   const handle = ptyMgr.get(tabId)

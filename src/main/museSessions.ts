@@ -114,6 +114,17 @@ interface MuseRun extends StoredRun {
 // MUSE§11
 const KEYS_TAKE_AFTER_A_DIALOG_SHOWS_MS = 2000
 
+const INPUT_BOX_RULE = /^─{8,}$/
+const EMPTY_INPUT_ROW = '❯'
+
+// MUSE§11
+export function museShowsAnEmptyInputBox(lines: string[]): boolean {
+  const rules = lines.flatMap((line, i) => (INPUT_BOX_RULE.test(line.trim()) ? [i] : []))
+  if (rules.length < 2) return false
+  const [above, below] = rules.slice(-2)
+  return below === above + 2 && lines[above + 1].trim() === EMPTY_INPUT_ROW
+}
+
 // MUSE§1
 const MUSE: CliSpec = {
   command: 'muse',

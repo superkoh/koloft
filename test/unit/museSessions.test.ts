@@ -6,6 +6,7 @@ import { EventEmitter } from 'events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   MuseSessions,
+  museShowsAnEmptyInputBox,
   museTrustsFolder,
   trustMuseFolder,
   type MuseSessionDeps
@@ -653,6 +654,39 @@ describe('MuseSessions search', () => {
       { id: museSessionKey(A), snippet: 'The lantern is lit.' }
     ])
     expect(await sessions.searchSnippets('zebra')).toEqual([])
+  })
+})
+
+describe('reading the Muse screen before typing into it', () => {
+  const RULE = '─'.repeat(60)
+  const STATUS = '  fake-model · high · ~/ws · Auto-review'
+
+  // MUSE§11
+  it('takes typing only while the input box between the last two rules is empty, with or without background tasks listed under it', () => {
+    expect(museShowsAnEmptyInputBox(['Muse Code 1.4.9', RULE, '❯', RULE, STATUS])).toBe(true)
+    expect(
+      museShowsAnEmptyInputBox([
+        RULE,
+        '❯ ',
+        RULE,
+        'main · ↓ to select',
+        '└ ◆ Background sleep',
+        STATUS
+      ])
+    ).toBe(true)
+    expect(museShowsAnEmptyInputBox([RULE, '❯ half a draft', RULE, STATUS])).toBe(false)
+    expect(
+      museShowsAnEmptyInputBox([
+        '◇ Calling tools (1s · esc to interrupt)',
+        RULE,
+        'Approval request · keys active in a moment',
+        '⟩ 1. Yes, proceed (y)',
+        '  4. No, and tell Muse Code what to do differently (esc)',
+        RULE,
+        STATUS
+      ])
+    ).toBe(false)
+    expect(museShowsAnEmptyInputBox(['❯'])).toBe(false)
   })
 })
 

@@ -34,6 +34,7 @@ export interface SlashDeps {
   asking(tabId: string): boolean
   takesTyping(tabId: string): boolean
   panelOpen(tabId: string): Promise<boolean | undefined>
+  screen(tabId: string): Promise<string[] | undefined>
   nextMirrorPull(tabId: string): Promise<void> | undefined
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
   exclusive(tabId: string, typing: () => Promise<boolean>): Promise<boolean>
@@ -53,6 +54,7 @@ interface Pending {
   reply?: string
   newKey?: string
   pressedEsc: boolean
+  screen?: string[]
   timers: ReturnType<typeof setTimeout>[]
   settle?: ReturnType<typeof setTimeout>
   mirrorPull?: Promise<void>
@@ -64,7 +66,17 @@ export function commandKeys(text: string, backend: BackendId | undefined): strin
   return backend === 'codex' ? [TO_LINE_END + CLEAR_TO_LINE_START, ...typed] : typed
 }
 
-function resultCard(p: Pending): Card | undefined {
+const SCREEN_LINES_IN_A_RESULT = 40
+
+function screenShot(lines: string[] | undefined): string | undefined {
+  const shown = [...(lines ?? [])]
+  while (shown.length && !shown[shown.length - 1].trim()) shown.pop()
+  while (shown.length && !shown[0].trim()) shown.shift()
+  if (!shown.length) return undefined
+  return `It printed nothing Koloft can read, so here is its screen:\n\`\`\`\n${shown.slice(-SCREEN_LINES_IN_A_RESULT).join('\n')}\n\`\`\``
+}
+
+function resultCard(p: Pending, screen: string[] | undefined): Card | undefined {
   const details = p.outputs.filter((o) => o.kind === 'details').map((o) => o.text)
   const printed = p.outputs.filter((o) => o.kind !== 'details').map((o) => o.text)
   const said = details.length && !p.worked ? details : printed
@@ -76,7 +88,8 @@ function resultCard(p: Pending): Card | undefined {
   if (!body.length && p.worked) body.push('Done.')
   if (!body.length)
     body.push(
-      'It printed nothing Koloft can read. Whatever it showed is only on its screen; ask Assist to show you its screen.'
+      screenShot(screen) ??
+        'It printed nothing Koloft can read, and its screen could not be read either.'
     )
   if (p.pressedEsc)
     body.push(
@@ -163,6 +176,7 @@ export class SlashCommands {
       !p.newKey &&
       this.d.turnOver(tab)
     if (!quiet()) return
+    p.screen = await this.d.screen(tab).catch(() => undefined)
     let panel = await this.d.panelOpen(tab)
     if (!quiet()) return
     if (panel !== false) {
@@ -238,8 +252,14 @@ export class SlashCommands {
 
   private finish(tab: string): void {
     const p = this.take(tab)
-    const card = p && resultCard(p)
-    if (p && card) this.d.card(p.channelId, card)
+    if (!p) return
+    const readable = p.outputs.length > 0 || p.worked || !!p.reply || !!p.newKey
+    const screen =
+      readable || p.screen ? Promise.resolve(p.screen) : this.d.screen(tab).catch(() => undefined)
+    void screen.then((lines) => {
+      const card = resultCard(p, lines)
+      if (card) this.d.card(p.channelId, card)
+    })
   }
 
   private take(tab: string): Pending | undefined {

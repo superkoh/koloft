@@ -281,6 +281,13 @@ function tui() {
       credentials: process.env.TBH_CREDENTIAL_BACKEND || null
     })
     process.stdout.write(`Muse fixture ready ${session.id}\r\n`)
+    inputBox()
+  }
+  const inputBox = () => {
+    const rule = '─'.repeat(40)
+    process.stdout.write(
+      `${rule}\r\n❯\r\n${rule}\r\n  fake-model · ${path.basename(process.cwd())}\r\n`
+    )
   }
   const say = (turnId, text, prompt) => {
     session.items.push({
@@ -296,6 +303,7 @@ function tui() {
       event: { kind: 'assistant_message_committed', text }
     })
     process.stdout.write(`${text}\r\n`)
+    inputBox()
     fire('Stop', { turn_id: turnId, last_assistant_message: text, prompt })
     status('state=done:app=muse')
   }
@@ -453,6 +461,11 @@ function tui() {
       }
       save(child)
       process.stdout.write(`Fork created: ${child.id}\r\nSource session stays active.\r\n`)
+      return
+    }
+    if (text === '/usage') {
+      process.stdout.write('Usage this week\r\n  5h window   12% used\r\n')
+      inputBox()
       return
     }
     if (text.startsWith('/rename ')) {
