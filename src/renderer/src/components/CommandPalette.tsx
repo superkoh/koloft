@@ -18,7 +18,7 @@ import { openSessionRow } from '../sessionClick'
 import { mixesBackends, relTime } from '../sessionRows'
 import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
-import { enterMethod, type AgentChoice } from '../agentChoice'
+import { startOrList, type AgentChoice } from '../agentChoice'
 import { BusyLine, SessionLaunchButtons } from './SessionLaunchButtons'
 
 const SEARCH_AFTER_TYPING_MS = 400
@@ -215,11 +215,7 @@ export function CommandPalette({
     else if (mode === 'search') {
       if (at !== null && hits[at]) onOpenHit(hits[at])
     } else if (at !== null && !e.shiftKey) open(visible[at])
-    else {
-      const method = enterMethod(e, choice)
-      if (method !== 'list') start(method)
-      else if (typed) setListOpen(true)
-    }
+    else startOrList(e, choice, start, () => typed && setListOpen(true))
   }
 
   const rowOf = (item: PaletteItem): JSX.Element => {

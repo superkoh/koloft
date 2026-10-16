@@ -49,7 +49,7 @@ import { busyInCheckout, pullToast } from '@shared/freshnessOps'
 import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { PullConfirm } from './PullConfirm'
-import { enterMethod } from '../agentChoice'
+import { startOrList } from '../agentChoice'
 import {
   BusyLine,
   SessionLaunchButtons,
@@ -183,7 +183,9 @@ export function WorktreeSessionDialog({
     }
   }, [locked, launchLock])
   const choice =
-    aim.kind === 'recover' ? sessionLaunch.choice(undefined, [aim.backend]) : sessionLaunch.choice()
+    aim.kind === 'recover'
+      ? sessionLaunch.choice({ backends: [aim.backend], chosen: aim.backend })
+      : sessionLaunch.choice()
   const confirmBackend = useRef<BackendId>(choice.lead)
 
   useEffect(() => {
@@ -287,9 +289,7 @@ export function WorktreeSessionDialog({
       setHot((h) => moveHot(h, names, query, 'up'))
     } else if (e.key === 'Enter' && !isComposing(e)) {
       e.preventDefault()
-      const method = enterMethod(e, choice)
-      if (method !== 'list') submit(method)
-      else if (actionable) setListOpen(true)
+      startOrList(e, choice, submit, () => actionable && setListOpen(true))
     }
   }
 

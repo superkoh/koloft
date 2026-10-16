@@ -11,7 +11,7 @@ import { remoteKeyFromForm } from '../remoteWorkspace'
 import { useStore } from '../store'
 import { SeedFields } from './SeedFields'
 import { updateSettings } from './settings/useSettingsUpdate'
-import { enterMethod } from '../agentChoice'
+import { startOrList } from '../agentChoice'
 import {
   BusyLine,
   SessionLaunchButtons,
@@ -92,9 +92,7 @@ export function NewProjectDialog({
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
     if (locked || e.key !== 'Enter' || isComposing(e)) return
     e.preventDefault()
-    const method = enterMethod(e, choice)
-    if (method !== 'list') submit(method)
-    else if (ready) setListOpen(true)
+    startOrList(e, choice, submit, () => ready && setListOpen(true))
   }
 
   const pick = async (): Promise<void> => {
