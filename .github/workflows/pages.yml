@@ -8,9 +8,9 @@ on:
       - 'build/icon.svg'
       - 'scripts/site-changelog.mjs'
       - '.github/workflows/pages.yml'
-  # A release in superkoh/koloft-releases fires no event here. The release procedure runs
-  # `gh workflow run pages.yml` after it publishes; the daily timer catches a release that
-  # skipped that step.
+  # A release event runs on its tag, and only main may deploy to github-pages. The release
+  # procedure runs `gh workflow run pages.yml` after it publishes; the daily timer catches a
+  # release that skipped that step.
   schedule:
     - cron: '0 12 * * *'
   workflow_dispatch:
@@ -37,7 +37,9 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api --paginate --slurp 'repos/superkoh/koloft-releases/releases?per_page=100' > "$RUNNER_TEMP/releases.json"
+          gh api --paginate --slurp 'repos/superkoh/koloft/releases?per_page=100' > "$RUNNER_TEMP/new.json"
+          gh api --paginate --slurp 'repos/superkoh/koloft-releases/releases?per_page=100' > "$RUNNER_TEMP/old.json"
+          jq -s add "$RUNNER_TEMP/new.json" "$RUNNER_TEMP/old.json" > "$RUNNER_TEMP/releases.json"
           node scripts/site-changelog.mjs "$RUNNER_TEMP/releases.json" site/changelog/index.html
 
       - id: pages
