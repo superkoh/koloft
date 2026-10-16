@@ -10,7 +10,7 @@ import type {
   SessionResumeRequest
 } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
-import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, identityOf, sourceOf, unsupportedPairMessage } from '@shared/sessionBackend'
 import { isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
@@ -144,8 +144,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       this.changedSoon()
     })
   }
-
-  readonly runsOnRemoteMachines: boolean = false
 
   protected abstract readonly cli: {
     product: string
@@ -583,8 +581,8 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     if (!available.available) throw new Error(available.reason)
     let cwd = opts.cwd
     const remote = typeof cwd === 'string' && isRemoteKey(cwd)
-    if (remote && !this.runsOnRemoteMachines)
-      throw new Error(`${this.label} sessions cannot run on a remote machine yet.`)
+    const refusal = remote ? unsupportedPairMessage(this.id, 'ssh') : undefined
+    if (refusal) throw new Error(refusal)
     if (typeof cwd !== 'string' || (!remote && (!path.isAbsolute(cwd) || !dirExists(cwd))))
       throw new Error('The session folder is missing.')
     const workspace = this.workspaceFor(cwd)

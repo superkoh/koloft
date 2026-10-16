@@ -65,9 +65,9 @@ import {
   mergedAgySettings,
   ownersTitleCommand,
   prepareAgyHome,
-  titleCommandIn,
-  trustAgyFolder
+  titleCommandIn
 } from './agyAccounts'
+import { readJson } from './museAccounts'
 import { AGY_KEY_ENV, tmuxSessionName } from './remote/launch'
 import { AgyApi, activeHookName, type PendingInteraction } from './agyApi'
 import {
@@ -154,7 +154,6 @@ interface AgyLaunch {
 
 interface AgyAsk {
   id: string
-  since: number
   approval?: CodexApproval
   question?: CodexQuestion
   pending?: PendingInteraction
@@ -163,14 +162,12 @@ interface AgyAsk {
 
 interface AgyRun extends StoredRun {
   account: string
-  home: string
   pid?: number
   api?: AgyApi
   dir?: string
   remote?: { host: string; startedAs: string }
   shown?: string
   log: LineTail
-  startedAt: number
   title?: AgyTitleState
   touched: Map<string, FileAcc>
   liveWrites: number
@@ -178,7 +175,7 @@ interface AgyRun extends StoredRun {
   lastTool?: { name: string; args: Record<string, unknown> }
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
-  compacting?: { since: number; shown: boolean; timer?: ReturnType<typeof setTimeout> }
+  compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
 }
 
 // AGY§1 AGY§3
@@ -211,11 +208,28 @@ const HELD_ELSEWHERE =
 const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content'])
 
 // AGY§26
-function permissionFlags(permission: LaunchPermission | 'conductor'): string[] {
-  if (permission === 'bypass' || permission === 'conductor')
-    return ['--dangerously-skip-permissions']
+function permissionFlags(permission: LaunchPermission): string[] {
+  if (permission === 'bypass') return ['--dangerously-skip-permissions']
   if (permission === 'acceptEdits') return ['--mode', 'accept-edits']
   return []
+}
+
+// AGY§1 AGY§21 AGY§26
+function agyArgs(
+  opts: CreateTabOptions,
+  resumeId: string | undefined,
+  permission: LaunchPermission
+): string[] {
+  return [
+    ...(opts.model ? ['--model', opts.model] : []),
+    ...(opts.effort ? ['--effort', opts.effort] : []),
+    ...permissionFlags(permission),
+    ...(resumeId
+      ? [`--conversation=${resumeId}`]
+      : opts.firstPrompt
+        ? ['-i', opts.firstPrompt]
+        : [])
+  ]
 }
 
 // AGY§8
@@ -296,7 +310,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     return `Antigravity CLI ${version} is newer than the version Koloft was tested with (${TESTED_AGY_LINE}.x). It may misbehave.`
   }
 
-  readonly runsOnRemoteMachines = true
   private remoteHistory = new Map<string, HistoryEntry[]>()
 
   private get gemini(): string {
@@ -483,7 +496,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       statusLine: this.deps.builtInStatusLine(pick.account),
       apiKey: !!apiKey
     })
-    if (freshWorktree || opts.trustFolder || assist) trustAgyFolder(pick.home, trust)
     mergeAgyHooks(pick.home, gemini, koloftHookEntry(runWithSh(scripts.hook)))
     let bound: AgyRun | undefined
     const tools = startToolShim(
@@ -510,14 +522,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       const argv = [
         `--gemini_dir=${pick.home}`,
         `--csrf_token=${token}`,
-        ...(opts.model ? ['--model', opts.model] : []),
-        ...(opts.effort ? ['--effort', opts.effort] : []),
-        ...permissionFlags(conductor ? 'conductor' : permission),
-        ...(resumeId
-          ? [`--conversation=${resumeId}`]
-          : opts.firstPrompt
-            ? ['-i', opts.firstPrompt]
-            : [])
+        ...agyArgs(opts, resumeId, conductor ? 'bypass' : permission)
       ]
       this.parsers.set(tabId, new ProgramStatusParser())
       const handle = this.deps.pty.create({
@@ -554,12 +559,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         resumeKey: opts.resumeSessionId,
         permission,
         account: pick.account,
-        home: pick.home,
         pid,
         api: pid ? new AgyApi(pid, token) : undefined,
         dir,
         log: new LineTail(log, (line) => bound && this.onLogLine(bound, line)),
-        startedAt: handle.startedAt,
         touched: new Map(),
         liveWrites: 0,
         releaseTools: () => {
@@ -568,8 +571,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         }
       }
       bound = run
-      this.ticking ??= setInterval(() => this.tick(), TICK_MS)
-      this.ticking.unref?.()
+      this.startTicking()
       return run
     } catch (error) {
       this.parsers.delete(tabId)
@@ -586,8 +588,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const { remote } = this.deps
     const machine = remote.machine(where.host)
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
-    const apiKey = await this.deps.apiKeyOf(pick.account)
-    const config = await machine.readAgyConfig(pick.account)
+    if (
+      resumeId &&
+      !remote.alive(where.host).has(resumeId) &&
+      (await machine.agyHeldElsewhere(resumeId))
+    )
+      throw new Error(HELD_ELSEWHERE)
+    const [apiKey, config] = await Promise.all([
+      this.deps.apiKeyOf(pick.account),
+      machine.readAgyConfig(pick.account)
+    ])
     this.assertStarting()
     const tabId = this.deps.pty.nextId()
     const permission = opts.permission ?? 'default'
@@ -636,14 +646,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         account: pick.account,
         args: [
           `--csrf_token=${randomBytes(24).toString('hex')}`,
-          ...(opts.model ? ['--model', opts.model] : []),
-          ...(opts.effort ? ['--effort', opts.effort] : []),
-          ...permissionFlags(permission),
-          ...(resumeId
-            ? [`--conversation=${resumeId}`]
-            : opts.firstPrompt
-              ? ['-i', opts.firstPrompt]
-              : [])
+          ...agyArgs(opts, resumeId, permission)
         ],
         settings: agyJsonText(settings),
         hooks: agyJsonText(hooks),
@@ -654,12 +657,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       }),
       portOffset: name ? portOffset(name) : undefined
     }
-    if (
-      resumeId &&
-      !remote.alive(where.host).has(resumeId) &&
-      (await machine.agyHeldElsewhere(resumeId))
-    )
-      throw new Error(HELD_ELSEWHERE)
     const plan: AgyRemotePlan = await machine.launchAgy(spec)
     const handle = this.deps.pty.create({
       id: tabId,
@@ -684,10 +681,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       resumeKey: opts.resumeSessionId,
       permission,
       account: pick.account,
-      home: pick.home,
       remote: { host: where.host, startedAs: resumeId ?? tabId },
       log: new LineTail(path.join(mirror, logName), (line) => bound && this.onLogLine(bound, line)),
-      startedAt: handle.startedAt,
       touched: new Map(),
       liveWrites: 0,
       releaseTools: () => undefined
@@ -697,10 +692,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       setImmediate(() => this.runs.get(run.tabId) === run && this.bindTo(run, resumeId))
     }
     bound = run
-    this.ticking ??= setInterval(() => this.tick(), TICK_MS)
-    this.ticking.unref?.()
+    this.startTicking()
     void remote.nextPull(where.host)
     return run
+  }
+
+  private startTicking(): void {
+    this.ticking ??= setInterval(() => this.tick(), TICK_MS)
+    this.ticking.unref?.()
   }
 
   protected async endRun(run: AgyRun): Promise<void> {
@@ -889,10 +888,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§8 AGY§11
   private async takeListedTitle(run: AgyRun, id: string, again = false): Promise<void> {
-    const key = agySessionKey(id)
-    await this.refreshHistory().catch(() => undefined)
-    if (!this.history.get(key)?.name) await this.refreshHistory().catch(() => undefined)
-    const name = this.history.get(key)?.name
+    const listed = run.remote
+      ? this.deps.remote
+          .machine(run.remote.host)
+          .agyConversations()
+          .then((rows) => historyEntries(rows))
+      : listAgyConversations(this.gemini)
+    const name = (await listed.catch(() => [])).find((e) => e.id === id)?.name
     if (!name && again) this.takeListedTitleSoon(run, id)
     if (name && run.info?.nativeSessionId === id && name !== run.info.title)
       this.retitle(run.info, name)
@@ -911,7 +913,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const stream = run.api.streamState(id, (message) => {
       const hook = activeHookName(message)
       if (hook === CONTEXT_SUMMARY && !run.compacting) {
-        const compacting: AgyRun['compacting'] = { since: Date.now(), shown: false }
+        const compacting: AgyRun['compacting'] = { shown: false }
         compacting.timer = setTimeout(() => {
           compacting.shown = true
           this.deps.events(run.tabId, { type: 'compacting' })
@@ -935,8 +937,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const id = run.info?.nativeSessionId
     if (!id) return
     if (status.msg === 'Approve plan') return this.readPlan(run)
-    const since = Date.now()
-    const fromHook = this.askFromHook(run, status, since)
+    const fromHook = this.askFromHook(run, status)
     run.waiting = fromHook
     const pending = await run.api?.pending(id).catch(() => undefined)
     if (!pending || run.waiting !== fromHook) return
@@ -944,7 +945,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const question = pending.questions?.[0]
     run.waiting = {
       id: askId,
-      since,
       pending,
       ...(pending.kind === 'question' && question
         ? {
@@ -965,8 +965,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§12 AGY§13
-  private askFromHook(run: AgyRun, status: ProgramStatus, since: number): AgyAsk {
-    const id = `hook:${since}`
+  private askFromHook(run: AgyRun, status: ProgramStatus): AgyAsk {
+    const id = `hook:${Date.now()}`
     const tool = run.lastTool
     if (status.kind === 'question' && tool?.name === 'ask_question') {
       const raw = record(tool.args).questions
@@ -974,7 +974,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       const options = Array.isArray(first.options) ? first.options : []
       return {
         id,
-        since,
         question: {
           id,
           question: typeof first.question === 'string' ? first.question : (status.msg ?? ''),
@@ -983,7 +982,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       }
     }
     const target = tool && (argOf(tool.args, 'CommandLine') ?? argOf(tool.args, 'TargetFile'))
-    return { id, since, approval: { id, command: target ?? status.msg } }
+    return { id, approval: { id, command: target ?? status.msg } }
   }
 
   // AGY§19
@@ -997,7 +996,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       names = fs.readdirSync(brain).filter((n) => n.endsWith('.md.metadata.json'))
     } catch {}
     const waiting = names
-      .map((n) => ({ n, meta: record(safeJson(path.join(brain, n))) }))
+      .map((n) => ({ n, meta: readJson(path.join(brain, n)) }))
       .filter((x) => x.meta.requestFeedback === true)
       .map((x) => x.n.replace(/\.metadata\.json$/, ''))
     const plan = waiting[0]
@@ -1005,7 +1004,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const askId = `plan:${id}:${plan}`
     run.waiting = {
       id: askId,
-      since: Date.now(),
       plan,
       approval: { id: askId, command: plan, reason: 'Approve the plan' }
     }
@@ -1075,13 +1073,5 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const id = run?.info?.nativeSessionId
     if (!run?.api || !id) return false
     return run.api.send(id, text).catch(() => false)
-  }
-}
-
-function safeJson(file: string): unknown {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
-  } catch {
-    return undefined
   }
 }

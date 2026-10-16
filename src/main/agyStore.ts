@@ -93,25 +93,23 @@ export async function listAgyConversations(geminiDir: string): Promise<HistoryEn
   } finally {
     sqlite.close()
   }
-  return historyEntries(rows, (row) => {
-    const born = fs.statSync(conversationDb(geminiDir, row.conversation_id), {
+  for (const row of rows) {
+    if (typeof row.conversation_id !== 'string') continue
+    const st = fs.statSync(conversationDb(geminiDir, row.conversation_id), {
       throwIfNoEntry: false
     })
-    return born && (born.birthtimeMs || born.ctimeMs)
-  })
+    if (st) row.born = st.birthtimeMs || st.ctimeMs
+  }
+  return historyEntries(rows)
 }
 
-export function historyEntries(
-  rows: SummaryRow[],
-  bornMs: (row: SummaryRow & { conversation_id: string }) => number | undefined = (row) =>
-    typeof row.born === 'number' ? row.born : undefined
-): HistoryEntry[] {
+export function historyEntries(rows: SummaryRow[]): HistoryEntry[] {
   return rows.flatMap((row) => {
     const id = row.conversation_id
     const cwd = firstFolder(row.workspace_uris)
     if (typeof id !== 'string' || !id || !cwd) return []
     const updatedAt = timeOf(row.last_modified_time)
-    const born = bornMs({ ...row, conversation_id: id })
+    const born = typeof row.born === 'number' ? row.born : undefined
     const entry: HistoryEntry = {
       id,
       cwd,

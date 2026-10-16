@@ -11,8 +11,7 @@ import {
   mergeAgySettings,
   oneShotAgyHome,
   prepareAgyHome,
-  setAgyApiKeyRoute,
-  trustAgyFolder
+  setAgyApiKeyRoute
 } from '../../src/main/agyAccounts'
 
 let root: string
@@ -240,7 +239,7 @@ describe('agyQuotaFrom (/usage as JSON, AGY§20 AGY§23)', () => {
   })
 })
 
-describe('setAgyApiKeyRoute and trustAgyFolder (AGY§5 AGY§6)', () => {
+describe('setAgyApiKeyRoute and agyTrustsFolder (AGY§5 AGY§6)', () => {
   it("switches the account's folder to the API key and back, keeping its other settings", () => {
     writeJson(settingsOf(home), { colorScheme: 'dark' })
     setAgyApiKeyRoute(home, true)
@@ -249,13 +248,8 @@ describe('setAgyApiKeyRoute and trustAgyFolder (AGY§5 AGY§6)', () => {
     expect(readJson(settingsOf(home))).toEqual({ colorScheme: 'dark' })
   })
 
-  it('adds folders to the trust list and keeps the ones agy already trusts', () => {
-    writeJson(settingsOf(home), { trustedWorkspaces: ['/w/a'], colorScheme: 'dark' })
-    trustAgyFolder(home, ['/w/b', '/w/a'])
-    expect(readJson(settingsOf(home))).toEqual({
-      colorScheme: 'dark',
-      trustedWorkspaces: ['/w/a', '/w/b']
-    })
+  it("reads a folder as trusted only when it is in the account folder's trust list", () => {
+    writeJson(settingsOf(home), { trustedWorkspaces: ['/w/a', '/w/b'], colorScheme: 'dark' })
     expect(agyTrustsFolder(home, '/w/b')).toBe(true)
     expect(agyTrustsFolder(home, '/w/c')).toBe(false)
   })

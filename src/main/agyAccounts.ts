@@ -72,7 +72,7 @@ export function prepareAgyHome(home: string, ownersGemini: string): void {
 
 // AGY§5 AGY§6
 export function agySignedIn(home: string, apiKey: boolean): boolean {
-  const onboarded = record(readJson(agyOnboardingFile(home)))
+  const onboarded = readJson(agyOnboardingFile(home))
   const done =
     onboarded.onboardingComplete === true || onboarded.consumerOnboardingComplete === true
   return done && (apiKey || fs.existsSync(agyTokenFile(home)))
@@ -225,16 +225,6 @@ export function mergedAgyHooks(
   const rest = { ...owners }
   delete rest[KOLOFT_HOOK_ENTRY]
   return { ...rest, [KOLOFT_HOOK_ENTRY]: koloft }
-}
-
-// AGY§5
-export function trustAgyFolder(home: string, dirs: string[]): void {
-  const own = readJson(settingsFile(home))
-  const list = Array.isArray(own.trustedWorkspaces)
-    ? own.trustedWorkspaces.filter((p): p is string => typeof p === 'string')
-    : []
-  if (dirs.every((d) => list.includes(d))) return
-  writeAgyJson(settingsFile(home), { ...own, trustedWorkspaces: [...new Set([...list, ...dirs])] })
 }
 
 // AGY§6 AGY§8 AGY§20

@@ -613,6 +613,10 @@ const attention = new AttentionTracker((pending, event) => {
 }, loadLastRunAttention())
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
+function machineOf(tabId: string): string | undefined {
+  return tracker.remoteOf(tabId)?.host ?? agySessions?.remoteHostOf(tabId)
+}
+
 function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
 }
@@ -1126,7 +1130,7 @@ function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
   open: (tabId, target, view) => {
-    const machine = tracker.remoteOf(tabId)?.host
+    const machine = machineOf(tabId)
     return machine && !schemeOf(target)
       ? openOnMachine(tabId, machine, target, view)
       : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
@@ -1360,7 +1364,7 @@ const agentRequests = new AgentRequests({
   session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    return !!backend && agentToolsFor(backend, tracker.remoteOf(tabId) ? 'ssh' : 'local')
+    return !!backend && agentToolsFor(backend, machineOf(tabId) ? 'ssh' : 'local')
   },
   alive: pidAlive
 })
@@ -1715,7 +1719,7 @@ const homeLogin: Record<
   },
   // AGY§5 AGY§7
   'agy-home': async (name) => {
-    const binary = (await agySessions?.availability())?.available && agySessions?.cliBinary
+    const binary = await agyBinary()
     if (!binary) return undefined
     const home = agyHomeFor(name)
     const apiKey = await agyApiKeyOf(name)
@@ -1858,8 +1862,12 @@ async function probeAgyAccount(name: string): Promise<void> {
   pushAccounts()
 }
 
+async function agyBinary(): Promise<string | undefined> {
+  return ((await agySessions?.availability())?.available && agySessions?.cliBinary) || undefined
+}
+
 async function agyUsage(home: string): Promise<QuotaBucket[] | undefined> {
-  const binary = (await agySessions?.availability())?.available && agySessions?.cliBinary
+  const binary = await agyBinary()
   if (!binary) return undefined
   return readAgyQuota(binary, { ...agySessions?.defaultEnv, ...agyAccountEnv() }, home)
 }
@@ -1889,7 +1897,7 @@ async function addAgyKey(name: string, key: string): Promise<AccountAddResult> {
 // AGY§6 AGY§20
 async function agyOneShotTarget(): Promise<AssistTarget | null> {
   const picked = agyPicker.pick(accountViews())
-  const binary = (await agySessions?.availability())?.available && agySessions?.cliBinary
+  const binary = await agyBinary()
   if (!picked || !binary) return null
   const apiKey = await agyApiKeyOf(picked.name)
   const shot = oneShotAgyHome(
@@ -2356,7 +2364,10 @@ app.whenReady().then(() => {
   const storedDeps = {
     pty: ptyMgr,
     runtime: tracker,
-    projectInfo: projectInfoFor,
+    projectInfo: (p: string) =>
+      parseRemoteKey(p)
+        ? (workspaceMgr?.remoteProjectInfo(p) ?? { root: p, treeRoot: p })
+        : projectInfoFor(p),
     changed: () => {
       const all = onSessionsChanged()
       sendToRenderer('sessions:update', all)
@@ -2428,10 +2439,6 @@ app.whenReady().then(() => {
   try {
     agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
       ...storedDeps,
-      projectInfo: (p) =>
-        parseRemoteKey(p)
-          ? (workspaceMgr?.remoteProjectInfo(p) ?? { root: p, treeRoot: p })
-          : projectInfoFor(p),
       remote: {
         machine: (host) => hosts.machine(host),
         hosts: () => (workspaceMgr?.remoteTargets() ?? []).map((t) => t.host),
@@ -2785,7 +2792,7 @@ app.whenReady().then(() => {
       ]),
     conductorChannelOf,
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
-    remote: (tabId) => !!tracker.remoteOf(tabId),
+    remote: (tabId) => !!machineOf(tabId),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId) => tracker.statusOf(tabId),
@@ -3472,7 +3479,7 @@ function ptyTabIds(): string[] {
       (p) =>
         !p.util &&
         (p.kind === 'shell' ||
-          capabilitiesFor(p.kind, tracker.remoteOf(p.id) ? 'ssh' : 'local').browserControl === true)
+          capabilitiesFor(p.kind, machineOf(p.id) ? 'ssh' : 'local').browserControl === true)
     )
     .map((p) => p.id)
 }
@@ -4394,7 +4401,7 @@ const claudeBackend = new ClaudeBackend({
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   error: (message) => sendToRenderer('cron:toast', message),
   assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-  machineOfOtherTab: (tabId) => agySessions?.remoteHostOf(tabId)
+  machineOf
 })
 sessionBackends.register(claudeBackend)
 

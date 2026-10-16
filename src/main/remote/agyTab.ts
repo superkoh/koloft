@@ -1,4 +1,5 @@
 import { shq } from '@shared/shellQuote'
+import { record } from '../codexObservation'
 import { AGY_APP_DIR, TOP_LEVEL_ROWS } from '../agyStore'
 import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
 import { AGY_LOG_ENV, AGY_START_ENV } from '../agyHooks'
@@ -127,16 +128,15 @@ export interface RemoteAgyConfig {
 export function parseAgyConfig(stdout: string): RemoteAgyConfig {
   const [ownersSettings, ownersHooks, ownSettings] = stdout.split(CONFIG_SPLIT).map((text) => {
     try {
-      const v: unknown = JSON.parse(text)
-      return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
+      return record(JSON.parse(text))
     } catch {
       return {}
     }
   })
   return {
-    ownersSettings: ownersSettings ?? {},
-    ownersHooks: ownersHooks ?? {},
-    ownSettings: ownSettings ?? {}
+    ownersSettings: record(ownersSettings),
+    ownersHooks: record(ownersHooks),
+    ownSettings: record(ownSettings)
   }
 }
 

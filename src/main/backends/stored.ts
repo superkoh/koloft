@@ -1,5 +1,6 @@
 import type { ResumePlan } from '@shared/types'
 import { parseRemoteKey } from '@shared/remoteKey'
+import { SUPPORTED_PAIRS } from '@shared/sessionBackend'
 import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import type { MuseSessions } from '../museSessions'
@@ -18,7 +19,7 @@ export function storedBackend(
     forgetAvailability: () => sessions.forgetAvailability(),
     list: () => sessions.list(),
     historyRows: async (workspacePath) =>
-      (parseRemoteKey(workspacePath) && !sessions.runsOnRemoteMachines) ||
+      (parseRemoteKey(workspacePath) && !SUPPORTED_PAIRS[sessions.id].ssh) ||
       !(await sessions.availability()).available
         ? []
         : sessions.historyRows(workspacePath),

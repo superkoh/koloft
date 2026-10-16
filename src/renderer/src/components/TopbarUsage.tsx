@@ -35,6 +35,7 @@ import {
 import { useStore } from '../store'
 import {
   Meter,
+  QuotaMeters,
   ageLabel,
   codexBalanceLabel,
   probeErrorLabel,
@@ -329,16 +330,7 @@ function QuotaRow({ a, now }: { a: AccountView; now: number }): JSX.Element {
           <span className="acct-note">Not signed in — sign in again from Settings</span>
         </div>
       ) : (
-        <div className="acct-meters">
-          {(a.quota ?? []).map((q) => (
-            <Meter key={q.label} label={q.label} v={q.used} win="" />
-          ))}
-          {a.quota?.[0]?.resetsAt ? (
-            <span className="acct-note">
-              {a.quota[0].label} resets {resetLabel(a.quota[0].resetsAt, now)}
-            </span>
-          ) : null}
-        </div>
+        <QuotaMeters quota={a.quota ?? []} now={now} />
       )}
     </div>
   )
