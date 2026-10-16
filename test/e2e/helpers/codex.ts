@@ -14,8 +14,8 @@ export interface CodexCall {
   codexHome: string | null
 }
 
-export function codexCalls(env: E2EEnv): CodexCall[] {
-  const file = path.join(env.home, 'fake-codex-calls.jsonl')
+export function fakeCodexLog<T>(env: E2EEnv, name: string): T[] {
+  const file = path.join(env.home, name)
   if (!fs.existsSync(file)) return []
   return fs
     .readFileSync(file, 'utf8')
@@ -23,25 +23,35 @@ export function codexCalls(env: E2EEnv): CodexCall[] {
     .filter(Boolean)
     .flatMap((line) => {
       try {
-        return [JSON.parse(line) as CodexCall]
+        return [JSON.parse(line) as T]
       } catch {
         return []
       }
     })
 }
 
-export function codexRows(page: Page, ws = 'ws-a'): Locator {
-  return wsRows(page, ws).filter({
+export function codexCalls(env: E2EEnv): CodexCall[] {
+  return fakeCodexLog<CodexCall>(env, 'fake-codex-calls.jsonl')
+}
+
+export function codexRows(page: Page): Locator {
+  return wsRows(page, 'ws-a').filter({
     hasNot: page.getByRole('img', { name: 'Claude', exact: true })
   })
 }
 
-export async function startCodex(page: Page, env: E2EEnv, ws = 'ws-a'): Promise<CodexCall> {
+export function claudeRows(page: Page): Locator {
+  return wsRows(page, 'ws-a').filter({
+    has: page.getByRole('img', { name: 'Claude', exact: true })
+  })
+}
+
+export async function startCodex(page: Page, env: E2EEnv): Promise<CodexCall> {
   const before = codexCalls(env).length
-  await newSessionInWith(page, ws, 'Codex')
+  await newSessionInWith(page, 'ws-a', 'Codex')
   await expect.poll(() => codexCalls(env).length).toBe(before + 1)
-  await expect(codexRows(page, ws).filter({ hasText: 'Starting…' })).toHaveCount(0)
-  await expect(codexRows(page, ws).and(page.locator('.active'))).toHaveClass(/st-waiting/)
+  await expect(codexRows(page).filter({ hasText: 'Starting…' })).toHaveCount(0)
+  await expect(codexRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
   return codexCalls(env)[before]
 }
 
@@ -50,6 +60,7 @@ export async function startLocalSession(
   env: E2EEnv,
   backend: 'claude' | 'codex'
 ): Promise<void> {
-  if (backend === 'claude') await startSessionIn(page, 'ws-a')
-  else await startCodex(page, env)
+  if (backend === 'codex') return void (await startCodex(page, env))
+  await startSessionIn(page, 'ws-a')
+  await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
 }

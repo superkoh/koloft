@@ -7,6 +7,7 @@ const { execFile, spawnSync } = require('child_process')
 const WebSocket = require('ws')
 
 const VERSION_AT_KOLOFTS_MINIMUM = '0.161.0'
+const FLAGS_FOLLOWED_BY_A_VALUE = ['--remote', '-C', '-c', '-m', '-a', '-s']
 
 const argv = process.argv.slice(2)
 const home = process.env.HOME
@@ -236,8 +237,8 @@ if (argv[0] === 'app-server') {
         }
       })
     }
-    if (text.startsWith('write ')) {
-      const target = path.join(thread.cwd, text.slice('write '.length).trim())
+    if (text.startsWith('/write ')) {
+      const target = path.join(thread.cwd, text.slice('/write '.length).trim())
       const diff = 'written by Codex\n'
       fs.writeFileSync(target, diff)
       // CODEX§12
@@ -606,6 +607,11 @@ async function startTui() {
   }
   const url = value('--remote')
   const cwd = value('-C') || process.cwd()
+  // CODEX§14
+  let firstPrompt = argv.find(
+    (arg, i) => !arg.startsWith('-') && !FLAGS_FOLLOWED_BY_A_VALUE.includes(argv[i - 1])
+  )
+  if (argv.includes('resume')) firstPrompt = undefined
   if (!url) {
     console.error('fake-codex needs --remote')
     process.exit(2)
@@ -644,8 +650,10 @@ async function startTui() {
       cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null
     })
     process.stdout.write('\r\nCodex fixture ready ' + thread.id + '\r\n> ')
+    const first = firstPrompt
+    firstPrompt = undefined
     if (method === 'thread/start' && !flag('fake-codex-lazy'))
-      await prompt(read('fake-codex-next-title', 'Codex fixture session'))
+      await prompt(first ?? read('fake-codex-next-title', 'Codex fixture session'))
   }
   const exit = async () => {
     if (thread) await send('thread/unsubscribe', { threadId: thread.id }).catch(() => {})

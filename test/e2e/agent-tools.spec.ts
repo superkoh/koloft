@@ -112,9 +112,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        if (backend === 'claude') await startSessionIn(page, 'ws-a')
-        else await newSessionInWith(page, 'ws-a', 'Codex')
-        await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        await startLocalSession(page, env, backend)
 
         expect(
           await koloftInSession(page, 'cron add --name "Nightly tests" --daily 09:00 -- say hi')
@@ -153,15 +151,12 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         const page = await app.firstWindow()
         await waitBooted(page)
         await startLocalSession(page, env, backend)
-        await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
 
         expect(await koloftInSession(page, 'open README.md')).toBe('0')
         await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('README.md')
         await expect(page.locator(WORKBENCH.readingBody)).toContainText('koloft-e2e-alpha')
 
-        const viewMode = page.locator(
-          `${WORKBENCH.panel} .fv-artifact-hd .seg[aria-label="View mode"] .on`
-        )
+        const viewMode = page.locator(WORKBENCH.viewSegOn)
         await expect(viewMode).toHaveText('Rendered')
         expect(await koloftInSession(page, 'diff README.md')).toBe('0')
         await expect(viewMode).toHaveText('Diff')

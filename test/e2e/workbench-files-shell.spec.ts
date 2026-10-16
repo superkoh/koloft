@@ -1,8 +1,8 @@
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { installCodex, seedSettings } from './helpers/env'
-import { codexRows, startCodex } from './helpers/codex'
-import { clickAppMenuItem, startSessionIn, waitBooted, wsRows } from './helpers/p1'
+import { claudeRows, codexRows, startCodex } from './helpers/codex'
+import { clickAppMenuItem, startSessionIn, waitBooted } from './helpers/p1'
 import { layoutState, workbenchPanel } from './helpers/workbench'
 
 async function toggleFull(app: ElectronApplication, page: Page): Promise<void> {
@@ -188,9 +188,7 @@ test.describe('Workbench files tab shell: view switch, base picker, filter menu 
       await waitBooted(page)
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
       await startCodex(page, env)
-      const claudeRow = wsRows(page, 'ws-a').filter({
-        has: page.getByRole('img', { name: 'Claude', exact: true })
-      })
+      const claudeRow = claudeRows(page)
       const codexRow = codexRows(page)
       const browseBtn = (): Locator => viewSwitch(page).locator('button').nth(1)
       const changesBtn = (): Locator => viewSwitch(page).locator('button').first()

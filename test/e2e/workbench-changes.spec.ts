@@ -764,7 +764,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       await showChanges(page)
       await waitStream(page, 1)
 
-      await runIn(page, centerTerm(page), 'write src/codex-notes.ts')
+      await runIn(page, centerTerm(page), '/write src/codex-notes.ts')
       await expect
         .poll(() => shownPaths(page), { timeout: 30_000 })
         .toEqual(['src/change-1.ts', 'src/codex-notes.ts'])

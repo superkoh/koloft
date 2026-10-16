@@ -35,7 +35,14 @@ import {
   wbUnreadTabs
 } from './helpers/workbench'
 import { setupChangeFixture } from './helpers/filesFixture'
-import { codexCalls, codexRows, startCodex, type CodexCall } from './helpers/codex'
+import {
+  claudeRows,
+  codexCalls,
+  codexRows,
+  fakeCodexLog,
+  startCodex,
+  type CodexCall
+} from './helpers/codex'
 import { portOffset } from '../../src/shared/worktreeName'
 import {
   addWorkspace,
@@ -97,21 +104,6 @@ function codexPrompts(env: E2EEnv): string[] {
       }
     })
 }
-function fakeCodexLog<T>(env: E2EEnv, name: string): T[] {
-  const file = path.join(env.home, name)
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line) as T]
-      } catch {
-        return []
-      }
-    })
-}
 async function startCodexInWorktree(page: Page, env: E2EEnv, name: string): Promise<CodexCall> {
   const before = codexCalls(env).length
   await newIn(page, true)
@@ -120,11 +112,6 @@ async function startCodexInWorktree(page: Page, env: E2EEnv, name: string): Prom
   await expect.poll(() => codexCalls(env).length).toBe(before + 1)
   await expect(codexRows(page).filter({ hasText: 'Starting…' })).toHaveCount(0)
   return codexCalls(env)[before]
-}
-function claudeRows(page: Page): Locator {
-  return wsRows(page, 'ws-a').filter({
-    has: page.getByRole('img', { name: 'Claude', exact: true })
-  })
 }
 async function restoreFromTheFirstMenuOpenedAfterLaunch(page: Page): Promise<void> {
   await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))

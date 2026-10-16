@@ -66,6 +66,17 @@ function git(cwd: string, ...args: string[]): string {
   ).trim()
 }
 
+function pushPrOnlyOnGithub(env: E2EEnv, ws: string): string {
+  const origin = path.join(env.home, 'origin.git')
+  git(env.home, 'init', '-q', '--bare', origin)
+  git(ws, 'remote', 'add', 'origin', origin)
+  git(ws, 'commit', '-q', '--allow-empty', '-m', 'the pull request')
+  git(ws, 'push', '-q', 'origin', `HEAD:refs/pull/${PR_ONLY_ON_GITHUB.number}/head`)
+  const prHead = git(ws, 'rev-parse', 'HEAD')
+  git(ws, 'reset', '-q', '--hard', 'HEAD~1')
+  return prHead
+}
+
 function itemRow(dlg: Locator, n: number): Locator {
   return dlg.locator('.gh-items .cb-row', { hasText: `#${n} ` })
 }
@@ -156,13 +167,7 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
     fs.writeFileSync(path.join(ws, '.env'), 'PORT=3000\n')
     const onBranch = path.join(ws, '.claude', 'worktrees', 'fix-190')
     git(ws, 'worktree', 'add', '-q', '-b', 'fix/restart', onBranch)
-    const origin = path.join(env.home, 'origin.git')
-    git(env.home, 'init', '-q', '--bare', origin)
-    git(ws, 'remote', 'add', 'origin', origin)
-    git(ws, 'commit', '-q', '--allow-empty', '-m', 'the pull request')
-    git(ws, 'push', '-q', 'origin', 'HEAD:refs/pull/330/head')
-    const prHead = git(ws, 'rev-parse', 'HEAD')
-    git(ws, 'reset', '-q', '--hard', 'HEAD~1')
+    const prHead = pushPrOnlyOnGithub(env, ws)
     feedGithub(env, ws)
 
     const app = await launchApp(env)
@@ -242,13 +247,7 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
     installCodex(env)
     const ws = env.workspaces.a
     gitInit(ws)
-    const origin = path.join(env.home, 'origin.git')
-    git(env.home, 'init', '-q', '--bare', origin)
-    git(ws, 'remote', 'add', 'origin', origin)
-    git(ws, 'commit', '-q', '--allow-empty', '-m', 'the pull request')
-    git(ws, 'push', '-q', 'origin', 'HEAD:refs/pull/330/head')
-    const prHead = git(ws, 'rev-parse', 'HEAD')
-    git(ws, 'reset', '-q', '--hard', 'HEAD~1')
+    const prHead = pushPrOnlyOnGithub(env, ws)
     feedGithub(env, ws)
     const app = await launchApp(env)
     try {

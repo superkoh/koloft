@@ -3,7 +3,7 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
-import { codexCalls } from './helpers/codex'
+import { startCodex } from './helpers/codex'
 import {
   newSessionInWith,
   settingsOnDisk,
@@ -256,9 +256,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     const fake = await startFakeDiscord(env)
     const { app, page } = await connected(env, fake)
     try {
-      await newSessionInWith(page, 'ws-a', 'Codex')
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const child = codexCalls(env)[0].sessionId
+      const { sessionId: child } = await startCodex(page, env)
       const tab = (await wsRows(page, 'ws-a').getAttribute('data-tab-id'))!
       await page.evaluate((id) => window.api.terminal.write(id, 'spawn child\r'), tab)
       await expect(oneStillRunning(wsRows(page, 'ws-a'))).toBeVisible({ timeout: 30_000 })
@@ -283,9 +281,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     const fake = await startFakeDiscord(env)
     const { app, page } = await connected(env, fake)
     try {
-      await newSessionInWith(page, 'ws-a', 'Codex')
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const child = codexCalls(env)[0].sessionId
+      const { sessionId: child } = await startCodex(page, env)
 
       fake.say(OWNER, `/koloft session command ${child} /compact`)
       await expect

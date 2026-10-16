@@ -562,7 +562,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     installCodex(env)
     gitInit(env.workspaces.a)
     env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
-    fs.writeFileSync(path.join(env.home, 'fake-codex-next-title'), 'write report.md')
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -571,7 +570,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       const dlg = await openCron(page, 'ws-a')
       await dlg.locator('button.mini', { hasText: 'New job' }).click()
       await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
-      await fillForm(dlg, { name: 'Nightly report', task: 'write the report' })
+      await fillForm(dlg, { name: 'Nightly report', task: '/write report.md' })
       await dlg.locator('.chip', { hasText: 'Close it' }).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await clickRunNow(page, 'Nightly report')

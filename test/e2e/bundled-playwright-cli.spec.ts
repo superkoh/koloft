@@ -33,7 +33,7 @@ test.describe('the playwright-cli Koloft ships, run from a Claude Code or Codex 
 
         expect(
           await run(
-            `found=$(command -v playwright-cli); { echo "$found"; readlink "$found"; } | grep -c '/commands/[0-9a-f]*/bin/playwright-cli$'`
+            `realpath "$(command -v playwright-cli)" | grep -c '/commands/[0-9a-f]*/bin/playwright-cli$'`
           )
         ).toMatch(/^(> )?1$/m)
         expect(await run(`playwright-cli open ${url}`)).toContain(`Page Title: ${title}`)
