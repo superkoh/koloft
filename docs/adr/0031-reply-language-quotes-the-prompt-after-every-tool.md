@@ -106,7 +106,10 @@ script. A prompt that shows no language — fewer than three words and none of t
 characters: «A», «1», «merge», a bare path — keeps the earlier saved words, so «A» after
 a Chinese question still names Chinese. Measured only for Chinese; Japanese and Korean
 follow the same rule unmeasured. In the runs the model noticed it had been restarted and
-that its folder was a fresh repository; the original turn had neither.
+that its folder was a fresh repository; the original turn had neither. A Codex tab runs
+the same check on its rollout; in a real Codex 0.162 tab, asked in Chinese to copy an
+English sentence as a note, it wrote that note in Chinese twice out of twice under "The
+user writes Chinese" — how far Codex drifts in a long session was still not measured.
 **Rejected**: repeating a generic sentence (above: it barely helped — the quote is what
 works). Naming the language alone ("Reply in Chinese") — 13 / 16 above, no better than
 the quote; it is used only with the check of the last note, and only where the

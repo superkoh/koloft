@@ -649,19 +649,21 @@ test.describe('KOLOFT_PORT_OFFSET reaches the REAL agent’s own shell in a work
 
 // ADR-0031 CODEX§27
 test.describe('a REAL Codex tab, as a Claude tab: opt-in case; it spends real money', () => {
-  test("in a real Codex tab Koloft's reply-language hooks keep the owner's words, and a note written in English is quoted back after the next tool call", async ({
+  test("in a real Codex tab Koloft's reply-language hooks keep the owner's words, quote back a last note in the wrong language, and read a note written before a tool call", async ({
     env
   }) => {
     test.skip(
       !HAVE_REAL_CODEX,
       'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
     )
-    test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
-    const words =
-      '先单独发一句英文短句 "Now listing the files in this folder."，然后用 shell 运行一次 ls，最后只回复 OK。'
+    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 180_000)
+    const english = 'Reply with exactly these words and nothing else: All quiet in this folder.'
+    const words = '先用一句中文告诉我你要做什么，再用 shell 运行一次 ls，最后只回复「好」。'
     await inARealWorktreeSession(env, 'other', useRealCodex, [], async ({ page, rows }) => {
-      await ask(page, rows, words)
-      await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+      for (const prompt of [english, words]) {
+        await ask(page, rows, prompt)
+        await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+      }
       const shims = path.join(env.userData, 'codex-open')
       const said = fs
         .readdirSync(shims)
@@ -669,11 +671,26 @@ test.describe('a REAL Codex tab, as a Claude tab: opt-in case; it spends real mo
         .filter((file) => fs.existsSync(file))
         .map((file) => JSON.parse(`"${fs.readFileSync(file, 'utf8').trim()}"`) as string)
       expect(said).toEqual([words])
-      const rollouts = fs
-        .readdirSync(env.home, { recursive: true, encoding: 'utf8' })
-        .filter((rel) => /rollout-.*\.jsonl$/.test(rel))
-        .map((rel) => fs.readFileSync(path.join(env.home, rel), 'utf8'))
-      expect(rollouts.join('\n')).toContain('Your last note to the user, «Now listing the files')
+      const rollouts = new Set(
+        fs
+          .readdirSync(env.home, { recursive: true, encoding: 'utf8' })
+          .filter((rel) => /rollout-.*\.jsonl$/.test(rel))
+          .map((rel) => fs.realpathSync(path.join(env.home, rel)))
+      )
+      const handed = [...rollouts]
+        .flatMap((file) => fs.readFileSync(file, 'utf8').split('\n'))
+        .filter(Boolean)
+        .map(
+          (line) =>
+            JSON.parse(line) as { payload?: { role?: string; content?: { text?: string }[] } }
+        )
+        .filter((r) => r.payload?.role === 'developer')
+        .map((r) => r.payload!.content?.[0]?.text ?? '')
+        .filter((text) => /^(The user writes|Your last note)/.test(text))
+      expect(handed[0]).toMatch(/^Your last note to the user, «All quiet in this folder/)
+      expect(handed.slice(1)).not.toHaveLength(0)
+      for (const afterATool of handed.slice(1))
+        expect(afterATool).toMatch(/^The user writes Chinese\. /)
     })
   })
 })
