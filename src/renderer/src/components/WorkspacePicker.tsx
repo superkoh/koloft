@@ -23,10 +23,9 @@ import {
   type PickerMode
 } from '../workspacePicker'
 import { PullConfirm } from './PullConfirm'
+import { enterHint, enterMethod } from '../agentChoice'
 import {
   BusyLine,
-  enterMethod,
-  otherMethods,
   SessionLaunchButtons,
   SessionLaunchStatus,
   useSessionLaunch
@@ -37,6 +36,7 @@ export function WorkspacePicker({
   rows,
   lastWsPath,
   pinned,
+  chosen,
   onClose,
   onConfirm,
   launchLock
@@ -45,6 +45,7 @@ export function WorkspacePicker({
   rows: WorkspaceRows[]
   lastWsPath: string | null
   pinned?: WorkspaceRows
+  chosen?: BackendId
   onClose: () => void
   onConfirm: (ws: WorkspaceRows, backend: BackendId) => Promise<void>
   launchLock: { current: boolean }
@@ -72,10 +73,9 @@ export function WorkspacePicker({
     },
     onClose
   )
-  const confirmBackend = useRef<BackendId>(sessionLaunch.methods.defaultBackend)
-  const backends = sessionLaunch.usable
-  const others = otherMethods(backends, sessionLaunch.methods.defaultBackend)
-  const [other, third] = others
+  const choice = sessionLaunch.choice(undefined, undefined, chosen)
+  const [listOpen, setListOpen] = useState(false)
+  const confirmBackend = useRef<BackendId>(choice.lead)
   const locked = phase === 'pulling' || sessionLaunch.starting
   useEffect(() => {
     launchLock.current = locked
@@ -111,11 +111,10 @@ export function WorkspacePicker({
     void sessionLaunch.launch({ cwd: ws.workspace.path }, backend)
   }
 
-  const submit = (
-    ws: WorkspaceRows | undefined,
-    backend = sessionLaunch.methods.defaultBackend
-  ): void => {
+  const submit = (ws: WorkspaceRows | undefined, picked?: BackendId): void => {
     if (!ws || locked || confirm !== null) return
+    const backend =
+      picked ?? sessionLaunch.choice(hostOf(ws.workspace.path), undefined, chosen).lead
     if (mode === 'worktree') {
       void onConfirm(ws, backend)
       return
@@ -148,13 +147,14 @@ export function WorkspacePicker({
         else onClose()
         return
       }
-      const ctrlEnter = e.ctrlKey && e.key === 'Enter' && !!third
-      if (locked || confirm !== null || e.metaKey || (e.ctrlKey && !ctrlEnter) || e.altKey) return
+      if (locked || confirm !== null || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.isComposing || e.keyCode === 229) return
       if (e.key === 'Enter' && e.target instanceof HTMLButtonElement) return
       if (e.key === 'Enter') {
         e.preventDefault()
-        submit(target, enterMethod(e, others))
+        const method = mode === 'main' ? enterMethod(e, choice) : undefined
+        if (method !== 'list') submit(target, method)
+        else if (target) setListOpen(true)
         return
       }
       if (pinned) return
@@ -271,9 +271,8 @@ export function WorkspacePicker({
             {mode === 'main' && <SessionLaunchStatus launch={sessionLaunch} />}
             {!pinned && (
               <p className="field-hint">
-                ↓↑ move · digit picks · ⏎ confirm
-                {other && ` · ⇧⏎ ${BACKEND_LABEL[other]}`}
-                {third && ` · ⌃⏎ ${BACKEND_LABEL[third]}`} · Esc cancel
+                ↓↑ move · digit picks · {(mode === 'main' && enterHint(choice)) || '⏎ confirm'} ·
+                Esc cancel
               </p>
             )}
           </div>
@@ -297,16 +296,15 @@ export function WorkspacePicker({
               </button>
             ) : (
               <SessionLaunchButtons
-                launch={sessionLaunch}
-                backends={backends}
+                choice={choice}
+                open={listOpen}
+                onOpen={setListOpen}
                 busy={locked}
                 disabled={!target || locked || confirm !== null}
-                label={(backend, isDefault) => {
+                label={(backend) => {
                   if (sessionLaunch.starting) return 'Starting…'
-                  if (kind === 'pulling' || backends.length === 1) return primaryLabel(kind)
-                  return isDefault
-                    ? primaryLabel(kind, undefined, BACKEND_LABEL[backend])
-                    : `${primaryLabel(kind)} ${BACKEND_LABEL[backend]}`
+                  if (kind === 'pulling' || choice.listed.length === 1) return primaryLabel(kind)
+                  return primaryLabel(kind, undefined, BACKEND_LABEL[backend])
                 }}
                 onStart={(backend) => submit(target, backend)}
               />

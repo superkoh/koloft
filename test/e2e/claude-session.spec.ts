@@ -16,7 +16,7 @@ import {
 } from './helpers/p1'
 import { WORKBENCH, showBrowse } from './helpers/workbench'
 
-test('with no Codex and a slow Codex check, the first ⌘N picker after launch never shows a Codex button, before or after the check answers', async ({
+test('with no Codex and a slow Codex check, the first ⌘N picker after launch never offers another agent, before or after the check answers', async ({
   env
 }) => {
   const letTheCheckAnswer = codexMissingWhoseCheckAnswersOnlyWhenLetGo(env)
@@ -26,7 +26,7 @@ test('with no Codex and a slow Codex check, the first ⌘N picker after launch n
     await waitBooted(page)
     const picker = await openPicker(app, page)
     await expect(picker.locator('.modal-foot button[data-default="true"]')).toBeVisible()
-    const codexButtons = picker.locator('.modal-foot button[data-default="false"]')
+    const codexButtons = picker.getByRole('button', { name: 'Pick an agent' })
 
     await expectNoCodexWhileTheCheckIsOutNorAfter(
       page,
