@@ -259,7 +259,10 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       const { sessionId: child } = await startCodex(page, env)
       const tab = (await wsRows(page, 'ws-a').getAttribute('data-tab-id'))!
       await page.evaluate((id) => window.api.terminal.write(id, 'spawn child\r'), tab)
-      await expect(oneStillRunning(wsRows(page, 'ws-a'))).toBeVisible({ timeout: 30_000 })
+      const row = wsRows(page, 'ws-a')
+      await expect(row).toHaveClass(/\bst-bg-run\b/, { timeout: 30_000 })
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(oneStillRunning(row)).toBeVisible()
 
       const asked = fake.interact(OWNER, 'run', { command: '/compact', session: child })
       await expect.poll(() => replyTo(fake, asked)).toMatch(/^Typing \/compact into /)
