@@ -9,6 +9,8 @@ import {
   centerTerm,
   newSessionInWith,
   notesIsland,
+  notesOnDisk,
+  notesPath,
   openMenu,
   readCalls,
   runIn,
@@ -30,8 +32,10 @@ import {
   mirrorProjectDir,
   REMOTE_WS_NAME,
   remoteDir,
+  remoteKey,
   seedRemoteWorkspace
 } from './helpers/remote'
+import { GLOBAL_SCOPE } from '../../src/shared/conductors'
 import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
 
 const GATE_HOOK_ON_THE_COMMAND_LINE =
@@ -165,14 +169,23 @@ function shownTermText(page: Page): Promise<string> {
   })
 }
 
-async function koloftSays(page: Page, args: string): Promise<string> {
-  const exits = async (): Promise<number> =>
-    (await shownTermText(page)).split('[fake-claude] koloft exit=').length
+async function koloftSays(
+  page: Page,
+  args: string,
+  fake: 'fake-claude' | 'fake-codex' = 'fake-claude'
+): Promise<string> {
+  const exitLine = `[${fake}] koloft exit=`
+  const exits = async (): Promise<number> => (await shownTermText(page)).split(exitLine).length
   const before = await exits()
   await runIn(page, centerTerm(page), `/koloft ${args}`)
   await expect.poll(exits, { timeout: KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS }).toBe(before + 1)
-  const parts = (await shownTermText(page)).split('[fake-claude] koloft exit=')
+  const parts = (await shownTermText(page)).split(exitLine)
   return parts[parts.length - 2]
+}
+
+function seedNote(env: E2EEnv, scope: string, text: string): void {
+  fs.mkdirSync(path.dirname(notesPath(env, scope)), { recursive: true })
+  fs.writeFileSync(notesPath(env, scope), text)
 }
 
 async function launched(
@@ -258,9 +271,10 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     }
   })
 
-  test('the global conductor runs in the conductors folder under userData, shows no workspace note, and its koloft note says it has no workspace', async ({
+  test('the global conductor runs in the conductors folder under userData, shows its own Global note, which its koloft note reads and adds to, and its koloft cron says it has no workspace', async ({
     env
   }) => {
+    seedNote(env, GLOBAL_SCOPE, 'from the owner')
     const { page, close } = await launched(env)
     try {
       await bindFromWorkspaceMenu(page, 'ws-a', { scope: 'Global', channel: CHANNEL_A })
@@ -268,14 +282,64 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await openConductor(page, 'Global')
       const call = (await waitForCalls(env, 1))[0]
       expect(call.cwd).toBe(path.join(env.userData, 'conductors', 'global'))
-      await expect(notesIsland(page)).toHaveCount(0)
+      await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · Global')
+      await expect(notesIsland(page)).toContainText('from the owner')
 
-      await runIn(page, centerTerm(page), '/koloft note')
-      await expect
-        .poll(() => shownTermText(page), { timeout: KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS })
-        .toContain('The global Assist has no workspace.')
+      expect(await koloftSays(page, 'note')).toContain('from the owner')
+      expect(await koloftSays(page, 'note append from the Assist')).toContain('Added')
+      expect(notesOnDisk(env, GLOBAL_SCOPE)).toBe('from the owner\nfrom the Assist\n')
+      expect(await koloftSays(page, 'cron list')).toContain('The global Assist has no workspace.')
     } finally {
       await close()
+    }
+  })
+
+  test('a Codex global Assist reads and adds to the same Global note', async ({ env }) => {
+    installCodex(env)
+    seedNote(env, GLOBAL_SCOPE, 'from the owner')
+    const { page, close } = await launched(env, {
+      assist: { on: true, backend: 'codex' },
+      conductorsFolded: false
+    })
+    try {
+      await openConductor(page, 'Global')
+      await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · Global')
+      expect(await koloftSays(page, 'note', 'fake-codex')).toContain('from the owner')
+      expect(await koloftSays(page, 'note append from Codex', 'fake-codex')).toContain('Added')
+      expect(notesOnDisk(env, GLOBAL_SCOPE)).toBe('from the owner\nfrom Codex\n')
+    } finally {
+      await close()
+    }
+  })
+
+  test('a remote workspace’s Assist shows that workspace’s note and its koloft note adds to it, while its koloft cron says it has no workspace', async ({
+    env
+  }) => {
+    installFakeRemote(env)
+    seedRemoteWorkspace(env)
+    seedNote(env, remoteKey(env), 'build machine todo')
+    const { page, close } = await launched(env, {
+      assist: { on: true, backend: 'claude' },
+      conductorsFolded: false
+    })
+    try {
+      await expect(page.locator('.ws-head', { hasText: REMOTE_WS_NAME })).toBeVisible({
+        timeout: 30_000
+      })
+      await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
+      await page.locator('.menu .mi', { hasText: 'Talk to Assist' }).click()
+      await expect(conductorRow(page, REMOTE_WS_NAME)).toHaveClass(/st-waiting/, {
+        timeout: 60_000
+      })
+      await expect(notesIsland(page).locator('.wb-title')).toHaveText(`Notes · ${REMOTE_WS_NAME}`)
+      await expect(notesIsland(page)).toContainText('build machine todo')
+
+      expect(await koloftSays(page, 'note append from the Assist')).toContain('Added')
+      expect(notesOnDisk(env, remoteKey(env))).toBe('build machine todo\nfrom the Assist\n')
+      expect(await koloftSays(page, 'cron list')).toContain('outside its remote workspace')
+    } finally {
+      await close()
+      killFakeRemote(env)
     }
   })
 
