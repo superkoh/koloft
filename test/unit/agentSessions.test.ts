@@ -487,11 +487,16 @@ describe('koloft session send', () => {
     session('cc', 'claude', { title: 'Planner' })
   ]
 
-  it('queues the message on the Codex session found by id, tab id or title, a title with spaces quoted or not', async () => {
+  it('queues the message, marked with who sent it, on the Codex session found by id, tab id or title, a title with spaces quoted or not', async () => {
     const { verb, queued } = harness(sessions())
     for (const ref of [[OTHER_THREAD], ['cx'], ['Test runner'], ['Test', 'runner']])
       expect((await verb(['send', ...ref, 'What', 'did you find?'], from('me'))).exit).toBe(0)
-    expect(queued).toEqual(Array(4).fill({ tabId: 'cx', text: 'What did you find?' }))
+    expect(queued.map((q) => [q.tabId, q.text])).toEqual(
+      Array(4).fill([
+        'cx',
+        expect.stringMatching(/^\(From the session "me title".*\) What did you find\?$/)
+      ])
+    )
   })
 
   it('points a Claude caller, or a Claude target, to SendMessage and sends nothing', async () => {
@@ -604,7 +609,9 @@ describe('koloft session send', () => {
       session('kid', 'codex', { nativeSessionId: OTHER_THREAD, cwd: OTHER_WS })
     ])
     expect((await verb(['send', CODEX_THREAD, 'done'], from('kid'))).exit).toBe(0)
-    expect(queued).toEqual([{ tabId: 'me', text: 'done' }])
+    expect(queued.map((q) => [q.tabId, q.text])).toEqual([
+      ['me', expect.stringMatching(/^\(From the session .*\) done$/)]
+    ])
   })
 
   it('refuses a session that is not open anywhere, and a missing message', async () => {

@@ -8,6 +8,7 @@ import { StringDecoder } from 'string_decoder'
 import { promisify } from 'util'
 import WebSocket, { WebSocketServer } from 'ws'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
+import { CODEX_TMP_DIR, ownedByThisRun } from './leftovers'
 
 export type CodexFrame = Record<string, unknown>
 
@@ -353,10 +354,7 @@ export interface CodexTransport {
 export async function createCodexTransport(
   options: CodexTransportOptions
 ): Promise<CodexTransport> {
-  // PLATFORM§3
-  const directory = await fs.mkdtemp(
-    path.join(process.platform === 'darwin' ? '/tmp' : os.tmpdir(), 'koloft-cx-')
-  )
+  const directory = await fs.mkdtemp(path.join(CODEX_TMP_DIR, `koloft-cx-${ownedByThisRun('')}`))
   await fs.chmod(directory, 0o700)
   const socketPath = path.join(directory, 'rpc.sock')
   const server = http.createServer((_req, res) => {

@@ -153,7 +153,12 @@ import {
   validateNewAccount
 } from './accounts'
 import { probeAccount, shouldSkipFable } from './usageProbe'
-import { AccountPicker, PROBE_TIMEOUT_MS, type PickResponse } from './accountPicker'
+import {
+  AccountPicker,
+  PROBE_TIMEOUT_MS,
+  codexAllLimitedNotice,
+  type PickResponse
+} from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
@@ -951,7 +956,7 @@ async function codexAskOf(tabId: string): Promise<CodexApproval | CodexQuestion 
   for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
     const ask = codexSessions?.openApproval(tabId) ?? codexSessions?.openQuestion(tabId)
     if (ask || !polls || !codexSessions?.hasTab(tabId)) return ask
-    if (tracker.statusOf(tabId) !== 'approval' && !tracker.awaitsInput(tabId)) return undefined
+    if (tracker.statusOf(tabId) !== 'approval') return undefined
     await sleep(CODEX_REQUEST_POLL_MS)
   }
 }
@@ -1539,7 +1544,9 @@ function codexSharedConfig(): string {
 }
 
 // CODEX§15
-function pickCodexHome(resumeSessionId?: string): { account: string; home: string } | undefined {
+function pickCodexHome(
+  resumeSessionId?: string
+): { account: string; home: string; notice?: string } | undefined {
   const views = accountViews()
   const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
   if (!picked) return undefined
@@ -1552,7 +1559,7 @@ function pickCodexHome(resumeSessionId?: string): { account: string; home: strin
   if (stale) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home }
+  return { account: picked.name, home, notice: codexAllLimitedNotice(picked) }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {
@@ -2097,6 +2104,7 @@ app.whenReady().then(() => {
         script: hookPaths.codexGate,
         writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
       },
+      replyLanguageScript: hookPaths.codexReplyLanguage,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
@@ -2312,7 +2320,6 @@ app.whenReady().then(() => {
       return { name, backend: s.backendId, workspace: sessionBackends.workspaceOfTab(tabId) }
     },
     status: (tabId) => tracker.statusOf(tabId),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
     unknown: (tabId) => statusUnavailable(sessionOfTab(tabId)),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
@@ -2455,7 +2462,6 @@ app.whenReady().then(() => {
         : undefined
     },
     shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     commandRunning: (tabId) => slash.running(tabId),
     dialog: dialogOf
   })
@@ -3439,8 +3445,10 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
         : undefined
     return (resource ? removeUntouchedCodexWorktree(resource) : Promise.resolve()).then(() => true)
   }
-  discordNotices?.closed(tabId)
-  discordLive?.closed(tabId)
+  if (ptyMgr.get(tabId)?.alive) {
+    discordNotices?.closed(tabId)
+    discordLive?.closed(tabId)
+  }
   return stopTabProcess(tabId, restarting)
 }
 

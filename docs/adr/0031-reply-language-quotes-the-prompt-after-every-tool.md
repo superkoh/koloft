@@ -42,6 +42,10 @@ before they were skipped, 63% of the reminders over six days quoted a
 `<task-notification>` instead of the owner, and in Chinese turns the notes under such a
 quote were English 30% of the time against 13% under the owner's own words (67% against
 1% once the turn had been compacted, 37% against 15% past 60 tool calls).
+A Codex tab gets the same quote, at the prompt and after every tool, through Codex's own
+`UserPromptSubmit` and `PostToolUse` hooks (CODEX§27); a message another session sends it
+starts "(From the session …" and keeps the owner's quote. How far Codex's models drift
+was not measured: the rule is carried over because the owner reads both kinds of tab.
 A session another session starts (`koloft session new`) is quoted by the owner's words,
 not by its task: the task is written by an AI, often in English (a path to a brief, or
 "Build PR 1: …") while the owner wrote Chinese, and a child quoting it answered the
@@ -52,7 +56,7 @@ parent's last message from the owner that is neither a session's report nor Assi
 wrapper, or, when another session started it, that session's words) into the handover preamble as "The owner last wrote: «…»", the hook
 quotes those words for a handover prompt that carries them, and the child's title is
 asked for in their language. A Codex child gets the same sentence in its developer
-instructions but no reminder after each tool, since Codex runs no Claude Code hook.
+instructions, and its hooks start from the owner's words and skip its handed-over task.
 Measured 2026-10-16 with fresh sessions, an English task and the shipped hook: Opus 5.5
 (`claude -p`) answered in Chinese 0 / 2 without the owner's words and 2 / 2 with them,
 its notes, its reply and the result it sent back alike; Codex 0.162 (`codex exec`, the

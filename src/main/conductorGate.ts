@@ -1,9 +1,8 @@
 import { shq } from '@shared/shellQuote'
+import { CODEX_WAITING_QUESTION_TOOL } from '@shared/agentGuide'
 
 const CONDUCTOR_DENIED =
   'Koloft: Assist only passes work on. It may read files, write its own memory folder, ask the owner a question and run one plain koloft command per Bash call (no ;, &&, |, >, $ or backticks outside quotes). To get anything else done, start a session with koloft session new or message one with koloft session send.'
-
-export const CODEX_WAITING_QUESTION_TOOL = 'request_user_input'
 
 const CODEX_CONDUCTOR_DENIED = `Koloft: Assist only passes work on. It may run shell commands, change files inside its own folder and ask the owner a question with ${CODEX_WAITING_QUESTION_TOOL} (it waits for the answer; ${CODEX_WAITING_QUESTION_TOOL}_async does not). It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.`
 
@@ -139,7 +138,9 @@ export const ASSIST_ALLOW_ENV = 'KOLOFT_ASSIST_ALLOW'
 
 // CODEX§27
 export const CODEX_GATE_HOOK_COMMAND = `sh "$${CODEX_GATE_ENV}"`
-export const CODEX_GATE_OVERRIDE = `hooks.PreToolUse=[{hooks=[{type="command",command=${JSON.stringify(CODEX_GATE_HOOK_COMMAND)}}]}]`
+export const codexHookOverride = (event: string, command: string): string =>
+  `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(command)}}]}]`
+export const CODEX_GATE_OVERRIDE = codexHookOverride('PreToolUse', CODEX_GATE_HOOK_COMMAND)
 
 // CODEX§20
 export const CODEX_ASKS_AND_WAITS = 'features.default_mode_request_user_input=true'

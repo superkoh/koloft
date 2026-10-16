@@ -27,6 +27,14 @@ export function handoverPreamble(caller: SessionCaller): string {
   return `${HANDOVER_OPENING}${who} asked it to, for the owner (the person you both work for). ${trust}${language} When you finish a task it gives you, send the result back by running: koloft session send ${caller.id} ${RESULT_PLACEHOLDER}`
 }
 
+export function ownerWordsIn(preamble: string): string | undefined {
+  const start = preamble.indexOf(OWNER_WORDS_BEFORE_QUOTE)
+  const end = preamble.lastIndexOf(OWNER_WORDS_END)
+  return start >= 0 && end > start
+    ? preamble.slice(start + OWNER_WORDS_BEFORE_QUOTE.length, end)
+    : undefined
+}
+
 export function withHandover(caller: SessionCaller, prompt: string): string {
   return `${handoverPreamble(caller)}\n\n${prompt}`
 }

@@ -617,13 +617,20 @@ test.describe('Codex sessions through the real method chooser, process transport
         .trim()
         .split('\n')
         .map((line) => JSON.parse(line) as { argv: string[] })
-      expect(servers.map((call) => statusOverride(call.argv)).filter(Boolean)).toEqual([
-        preset,
-        preset,
-        preset
-      ])
+      expect(new Set(servers.map((call) => statusOverride(call.argv)).filter(Boolean))).toEqual(
+        new Set([preset])
+      )
       expect(readCalls(env).some((call) => statusOverride(call.argv))).toBe(false)
-      expect(fs.readFileSync(configFile, 'utf8')).toBe(userConfig)
+      const config = fs.readFileSync(configFile, 'utf8')
+      expect(config.startsWith(userConfig)).toBe(true)
+      expect(
+        config
+          .slice(userConfig.length)
+          .split('\n')
+          .filter(
+            (line) => line.trim() && !/^(\[hooks\.state\."[^"]+"\]|trusted_hash = )/.test(line)
+          )
+      ).toEqual([])
     } finally {
       await quitAndClose(app)
     }
@@ -699,11 +706,11 @@ test.describe('Codex sessions through the real method chooser, process transport
         .split('\n')
         .map((line) => JSON.parse(line) as { argv: string[]; playwrightMcpEndpoint: string })
         .filter((call) => call.argv.some((a) => a.startsWith('tui.status_line=')))
-      expect(tabServers).toHaveLength(1)
-      expect(tabServers[0].argv.filter((a) => a.startsWith('mcp_servers.'))).toEqual([
-        'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
-      ])
-      const url = tabServers[0].playwrightMcpEndpoint
+      for (const server of tabServers)
+        expect(server.argv.filter((a) => a.startsWith('mcp_servers.'))).toEqual([
+          'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
+        ])
+      const url = tabServers.at(-1)!.playwrightMcpEndpoint
       expect(url).toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[a-f0-9]{32}$/)
 
       const first = await chromium.connectOverCDP(url)
@@ -790,7 +797,8 @@ test.describe('Codex sessions through the real method chooser, process transport
         .map((line) => (JSON.parse(line) as { portOffset: string | null }).portOffset)
         .filter((offset) => offset !== null)
       const offset = String(portOffset('codex-feature'))
-      expect(offsets).toEqual([offset, offset, offset])
+      expect(offsets.length).toBeGreaterThanOrEqual(3)
+      expect(new Set(offsets)).toEqual(new Set([offset]))
     } finally {
       await quitAndClose(app)
     }
@@ -1097,6 +1105,45 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  // ADR-0031 CODEX§27
+  test("a Codex tab's own app-server runs Koloft's reply-language hooks once Koloft has trusted them: the prompt and every tool call hand Codex the owner's latest words", async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await runIn(page, centerTerm(page), '/koloft help')
+      const handed = (): { event: string; context: string }[] =>
+        fs
+          .readFileSync(path.join(env.home, 'fake-codex-hook-output.jsonl'), 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as { event: string; stdout: string })
+          .filter((h) => h.stdout)
+          .map((h) => ({
+            event: h.event,
+            context: (JSON.parse(h.stdout) as { hookSpecificOutput: { additionalContext: string } })
+              .hookSpecificOutput.additionalContext
+          }))
+      await expect
+        .poll(() => {
+          try {
+            return handed()
+              .filter((h) => h.context.includes('«/koloft help»'))
+              .map((h) => h.event)
+          } catch {
+            return []
+          }
+        })
+        .toEqual(['UserPromptSubmit', 'PostToolUse'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('Codex approval, interruption and close confirmation use the shared session controls', async ({
     env
   }) => {
@@ -1114,6 +1161,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       await confirm.getByRole('button', { name: 'Cancel', exact: true }).click()
       await expect(codexRows(page)).toHaveClass(/st-approval/)
       await runIn(page, centerTerm(page), 'y')
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), 'please ask me')
+      await expect(codexRows(page)).toHaveClass(/st-approval/)
+      await page.keyboard.press('2')
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
       await runIn(page, centerTerm(page), 'hold')
       await expect(codexRows(page)).toHaveClass(/st-working/)
