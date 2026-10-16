@@ -5,9 +5,9 @@ import {
   clueText,
   countLabel,
   headAge,
-  pullNote,
-  pullToast
+  pullNote
 } from '../../src/renderer/src/freshnessView'
+import { pullToast } from '../../src/shared/freshnessOps'
 
 const NOW = 1_700_000_000_000
 const MIN = 60_000

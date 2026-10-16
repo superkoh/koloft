@@ -296,6 +296,7 @@ export interface Settings {
   // CC§6
   statuslineBuiltin: boolean
   gitAutoFetch: boolean
+  gitAutoPull: boolean
   // PLATFORM§17
   browserControl: boolean
   agentTools: boolean
@@ -429,6 +430,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showUsage: true,
   statuslineBuiltin: true,
   gitAutoFetch: true,
+  gitAutoPull: false,
   browserControl: true,
   agentTools: true,
   notesHeight: 260,

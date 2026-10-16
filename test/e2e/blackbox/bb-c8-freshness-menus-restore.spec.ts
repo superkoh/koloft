@@ -15,6 +15,7 @@ import {
 import type { E2EEnv } from '../helpers/env'
 import { fetchedAtMs } from '../helpers/gitFixture'
 import {
+  centerTerm,
   closeMenu,
   FAKE_SESSION_TITLE,
   fetchNowInGitPanel,
@@ -22,6 +23,7 @@ import {
   menuItemTexts,
   openMenu,
   resumedId,
+  runIn,
   startSessionIn,
   waitForCalls,
   wsRows
@@ -409,7 +411,7 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
     }
   })
 
-  test('BB-C33: C8-side pull under a running root session (started before origin moved) asks first', async ({
+  test('BB-C33: C8-side pull under a root session mid-task (started before origin moved) asks first', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -422,6 +424,9 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
       pinned.git['repo-run'].originAhead(3)
       await fetchNowInGitPanel(page, 'repo-run')
       await waitForBehindBadge(page, 'repo-run', 3)
+      await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+      await runIn(page, centerTerm(page), '/busy')
+      await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
 
       await openWorktreeDialog(page, 'repo-run')
       await page.keyboard.type('x')
@@ -432,7 +437,7 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
       await page.keyboard.press('Enter')
       const confirm = page
         .locator('div')
-        .filter({ hasText: /running in this checkout/ })
+        .filter({ hasText: /working on a task in this checkout/ })
         .filter({ has: page.getByRole('button', { name: 'Pull anyway' }) })
         .last()
       await expect(confirm).toBeVisible({ timeout: 15_000 })

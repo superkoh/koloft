@@ -14,12 +14,11 @@ import {
 import type {
   GitAccountSuggestion,
   GitAccountView,
-  SessionRow,
   WorkspaceFreshness,
   WorkspaceGitAccount,
   WorkspaceGithub
 } from '@shared/types'
-import { canPull } from '@shared/freshnessOps'
+import { busyInCheckout, canPull, pullToast } from '@shared/freshnessOps'
 import { basename } from '@shared/preview'
 import { gitAccountId, gitPlatformName } from '@shared/gitAccountOps'
 import { useStore } from '../store'
@@ -30,11 +29,9 @@ import {
   openIssuesLabel,
   openPullsLabel,
   pullNote,
-  pullToast,
   suggestionText,
   type PullNote
 } from '../freshnessView'
-import { mainRunningCount } from '../newSession'
 import { PullConfirm } from './PullConfirm'
 
 const BLANK_ICON = <svg width={14} height={14} viewBox="0 0 24 24" />
@@ -359,7 +356,6 @@ export function FreshnessPopover({
   wsPath,
   f,
   github,
-  rows,
   left,
   top,
   onClose,
@@ -370,7 +366,6 @@ export function FreshnessPopover({
   wsPath: string
   f?: WorkspaceFreshness
   github?: WorkspaceGithub
-  rows: SessionRow[]
   left: number
   top: number
   onClose: () => void
@@ -447,7 +442,6 @@ export function FreshnessPopover({
   const fitTop = Math.min(top, Math.max(4, window.innerHeight - height - 4))
 
   const { acct, notes: gitNotes, block: gitBlock } = useGitAccountView(wsPath, !!github, onClose)
-  const inMain = mainRunningCount(rows)
   const eligible = !!f && canPull(f)
   const note: PullNote | null = failed ? { text: failed, tone: 'alarm' } : f ? pullNote(f) : null
 
@@ -489,6 +483,7 @@ export function FreshnessPopover({
                 className="tbu-act pull"
                 disabled={!eligible || pulling}
                 onClick={() => {
+                  const inMain = busyInCheckout(useStore.getState().sessions, wsPath)
                   if (inMain > 0) {
                     setConfirm(inMain)
                     return
