@@ -1,16 +1,18 @@
 import { test, expect, launchApp } from './helpers/app'
 import { setupGitFixture } from './helpers/gitFixture'
 import {
+  centerTerm,
   dialogPrimary,
   fetchNowInGitPanel,
   openPicker,
+  runIn,
   snap,
   startSessionIn,
   wsRows
 } from './helpers/p1'
 
-test.describe('Git freshness · Pull & Start confirms over a running root session (a reminder, not a veto)', () => {
-  test('T-GP-05: a running root session makes Pull & Start confirm once — Cancel restores the picker, Pull anyway pulls and launches', async ({
+test.describe('Git freshness · Pull & Start confirms only over a root session mid-task (a reminder, not a veto)', () => {
+  test('T-GP-05: a root session working on a task makes Pull & Start confirm once — Cancel restores the picker, Pull anyway pulls and launches', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -28,6 +30,9 @@ test.describe('Git freshness · Pull & Start confirms over a running root sessio
       fx.originAhead(3)
       await fetchNowInGitPanel(page, 'repo')
       await expect(page.locator('.ws-behind')).toHaveText('3', { timeout: 30_000 })
+      await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+      await runIn(page, centerTerm(page), '/busy')
+      await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
 
       const dlg = await openPicker(app, page)
       await expect(dialogPrimary(dlg)).toContainText('Pull & Start', { timeout: 30_000 })
@@ -39,7 +44,7 @@ test.describe('Git freshness · Pull & Start confirms over a running root sessio
       await expect(confirm).toBeVisible()
       await expect(confirm.locator('.modal-header')).toContainText('Pull into main?')
       await expect(confirm.locator('.field-hint')).toContainText(
-        '1 Koloft session is running in this checkout'
+        '1 Koloft session is working on a task in this checkout'
       )
       await expect(confirm.locator('.field-hint')).toContainText(
         'Worktree sessions are not affected.'
@@ -71,6 +76,40 @@ test.describe('Git freshness · Pull & Start confirms over a running root sessio
       await expect(rows).toHaveCount(2, { timeout: 40_000 })
       await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
       await snap(page, 'T-GP-05-pulled')
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('T-GP-09: a root session waiting at its prompt does not make Pull & Start ask — it pulls and launches straight away', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const fx = setupGitFixture(env)
+
+    const app = await launchApp(env)
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    try {
+      await expect(page.locator('.ws-head')).toHaveCount(1, { timeout: 20_000 })
+      await startSessionIn(page, 'repo')
+      const rows = wsRows(page, 'repo')
+      await expect(rows).toHaveCount(1)
+      await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+
+      fx.originAhead(3)
+      await fetchNowInGitPanel(page, 'repo')
+      await expect(page.locator('.ws-behind')).toHaveText('3', { timeout: 30_000 })
+
+      const dlg = await openPicker(app, page)
+      await expect(dialogPrimary(dlg)).toContainText('Pull & Start', { timeout: 30_000 })
+      await dialogPrimary(dlg).click()
+      await expect(page.locator('.toast')).toHaveText(/^repo · main: fast-forwarded 3 commits/, {
+        timeout: 30_000
+      })
+      await expect(page.locator('.modal-header', { hasText: 'Pull into main?' })).toHaveCount(0)
+      await expect(page.locator('.ws-behind')).toHaveCount(0)
+      await expect(rows).toHaveCount(2, { timeout: 40_000 })
     } finally {
       await app.close().catch(() => {})
     }

@@ -63,6 +63,9 @@ interface Harness {
 function harness(
   opts: {
     autoFetch?: () => boolean
+    autoPull?: () => boolean
+    busy?: (wsPath: string) => boolean
+    pulled?: (wsPath: string) => void
     paths?: string[]
     missing?: string[]
     gitBin?: string
@@ -79,6 +82,9 @@ function harness(
           missing: opts.missing ? opts.missing.includes(p) : !fs.existsSync(p)
         })),
       autoFetch: opts.autoFetch ?? ((): boolean => true),
+      autoPull: opts.autoPull,
+      busy: opts.busy,
+      pulled: opts.pulled,
       onChange: (p) => changed.push(p),
       now: () => now
     },
@@ -412,6 +418,27 @@ describe('sweep throttle, backoff and the gitAutoFetch switch', () => {
     expect(h.engine.get(work)).toBeUndefined()
     await h.engine.fetchNow(work)
     expect(f(h.engine.get(work)).lastAttemptAt).toBe(T0)
+  })
+
+  it('gitAutoPull fast-forwards a clean default branch right after the sweep fetches it, and says so', async () => {
+    const pulled: string[] = []
+    const h = harness({ autoPull: () => true, pulled: (p) => pulled.push(p) })
+    publish(2)
+    await h.engine.sweep()
+    expect(f(h.engine.get(work)).behind).toBe(0)
+    expect(git(work, 'rev-parse', 'HEAD')).toBe(git(work, 'rev-parse', 'origin/main'))
+    expect(pulled).toEqual([work])
+  })
+
+  it('gitAutoPull leaves the checkout alone while a session there is mid-task, or when the switch is off', async () => {
+    publish(2)
+    for (const h of [
+      harness({ autoPull: () => true, busy: () => true }),
+      harness({ autoPull: () => false })
+    ]) {
+      await h.engine.sweep()
+      expect(f(h.engine.get(work)).behind).toBe(2)
+    }
   })
 
   it('skips a workspace whose directory is gone', async () => {

@@ -713,7 +713,6 @@ export function WorkspaceSidebar({
         wsPath={fresh.path}
         f={f}
         github={w.workspace.github}
-        rows={w.rows}
         left={fresh.left}
         top={fresh.top}
         onClose={() => setFresh(null)}
