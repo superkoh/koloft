@@ -424,9 +424,11 @@
             closed.
           </li>
           <li>
-            A row hangs under its starter only while the starter is in the same folder's list.
-            Otherwise it sits at the top of that list: when its starter is gone from the list, when
-            it was started into another folder with <code class="nowrap">--workspace</code>, when a
+            A row hangs under its starter only while the starter is in the same folder's list. When
+            its starter closes itself for good, it moves up under the session that started the
+            starter. Otherwise it sits at the top of that list: when its starter is gone from the
+            list, when it was started into another folder with
+            <code class="nowrap">--workspace</code>, when a
             <a href="../accounts/#assist">Assist</a> started it, and always for a session on another
             machine.
           </li>
@@ -525,8 +527,9 @@
           </li>
           <li>
             Account: which <a href="../accounts/#git-accounts">git account</a> this folder pushes
-            as. Shown for a folder on github.com or another host Koloft knows git accounts for; not
-            on a remote folder.
+            as. Shown for a folder on github.com or another host Koloft knows git accounts for. On a
+            remote folder it lists the accounts kept on that machine (see
+            <a href="../accounts/#machine-accounts">git accounts on another machine</a>).
           </li>
         </ul>
         <figure class="shot" style="--ar: 740 / 612; --w: min(370px, 100cqw)">
@@ -550,8 +553,22 @@
           <code>Fetch now</code> still works.
         </p>
         <p>
-          On a <a href="../remote/">remote folder</a> the panel shows only the GitHub part: the
-          issue and pull request counts, but no Pull, no Fetch now and no behind number.
+          Under it, <code>Auto-pull the default branch</code> (off at first, and greyed out while
+          Auto-fetch is off) lets Koloft pull by itself: after each background fetch, a folder that
+          sits on its default branch with a clean tree and no local commits is fast-forwarded, and a
+          small message names the folder, the branch and how many commits came in. It waits while a
+          session in that checkout is working on a task, and tries again on the next fetch. The same
+          for Claude Code and Codex sessions; a remote folder is never pulled.
+        </p>
+        <p>
+          A Pull you click yourself asks <code>Pull into main?</code> first only while a session in
+          that checkout is working on a task, since pulling changes files under it mid-task.
+          Worktree sessions are not affected.
+        </p>
+        <p>
+          On a <a href="../remote/">remote folder</a> the panel shows the GitHub part, the issue and
+          pull request counts, and the Account part for that machine's git accounts, but no Pull, no
+          Fetch now and no behind number.
         </p>
 
         <p class="next">Next page → <a href="../workbench/">The Workbench</a></p>
