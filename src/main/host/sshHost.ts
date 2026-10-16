@@ -28,7 +28,8 @@ import {
 import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
-import { remoteShCommand } from '../remote/install'
+import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
+import { FINGERPRINT, remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
   resizeStandInCmd,
@@ -80,6 +81,8 @@ export interface SshHostDeps {
   run(cmd: string, opts?: { timeoutMs?: number; input?: Buffer }): Promise<BytesResult>
   sshEnvReady?(): Promise<void>
   shell(dir: string): Omit<ShellLaunch, 'cwd'>
+  watch(path: string, onChange: (stamp: string) => void): void
+  unwatch(path: string): void
   github: GithubOptions
   claude: MachineClaudeDeps
 }
@@ -147,8 +150,7 @@ node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
-// PLATFORM§37
-const FINGERPRINT = `fp() { stat -c '%.9Y %s' "$1" 2>/dev/null || stat -f '%Fm %z' "$1"; }`
+const GONE_FROM_DISK = { mtimeMs: 0, size: 0 }
 
 const EXIT_GONE = 44
 const EXIT_NOT_FILE = 45
@@ -309,16 +311,21 @@ fp "$t"`
 
 const GIT = `GIT_OPTIONAL_LOCKS=0 git "$@"`
 
-const DIFF_BASE = `r=$1
-g() { GIT_OPTIONAL_LOCKS=0 git -C "$r" "$@" 2>/dev/null; }
-def=
-ref=$(g symbolic-ref --quiet refs/remotes/origin/HEAD) && ref=\${ref#refs/remotes/} &&
-  g rev-parse --verify --quiet "$ref" >/dev/null && def=$ref
-if [ -z "$def" ]; then
-  for c in origin/main origin/master main master; do
-    g rev-parse --verify --quiet "$c" >/dev/null && { def=$c; break; }
+const GIT_IN_REPO = `g() { GIT_OPTIONAL_LOCKS=0 git -C "$r" "$@" 2>/dev/null; }`
+
+const DEFAULT_REF = `dr() {
+  ref=$(g symbolic-ref --quiet refs/remotes/origin/HEAD) && ref=\${ref#refs/remotes/} &&
+    g rev-parse --verify --quiet "$ref" >/dev/null && { printf '%s' "$ref"; return 0; }
+  for c in "$@"; do
+    g rev-parse --verify --quiet "$c" >/dev/null && { printf '%s' "$c"; return 0; }
   done
-fi
+  return 1
+}`
+
+const DIFF_BASE = `r=$1
+${GIT_IN_REPO}
+${DEFAULT_REF}
+def=$(dr origin/main origin/master main master)
 if [ -n "$def" ]; then
   mb=$(g merge-base HEAD "$def") && [ -n "$mb" ] && { printf '%s' "$mb"; exit 0; }
 fi
@@ -355,8 +362,70 @@ function skillFsOf(files: Map<string, string>): SkillFs {
   }
 }
 
-const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
-SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
+const NETWORK_ENV = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
+SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes"`
+
+const NETWORK_GIT = `${NETWORK_ENV} git "$@"`
+
+// PLATFORM§30
+const FRESHNESS = `r=$1
+${GIT_IN_REPO}
+${DEFAULT_REF}
+${FINGERPRINT}
+br=$(g rev-parse --abbrev-ref HEAD) && head=$(g rev-parse HEAD) || exit 1
+def=$(dr origin/main origin/master)
+l=0; [ -f "$r/.git" ] && l=1
+s=0; [ -e "$r/.gitmodules" ] && s=1
+fh=$(fp "$r/.git/FETCH_HEAD" 2>/dev/null) || fh=-
+printf '%s\\n%s\\n%s\\n%s %s\\n%s\\n' "$br" "$head" "$def" "$l" "$s" "$fh"
+[ "$br" != HEAD ] && [ -n "$def" ] || exit 0
+f=-
+if [ "$2" = 1 ]; then
+  if ${NETWORK_ENV} git -C "$r" fetch --quiet --no-auto-maintenance origin "\${def#origin/}" >/dev/null 2>&1
+  then f=1; else f=0; fi
+fi
+c=$(g rev-list --left-right --count "HEAD...$def") && d=$(g status --porcelain -uno --ignore-submodules=all) || exit 1
+printf '%s\\n%s\\n%s\\n' "$f" "$c" "\${d:+dirty}"`
+
+const PULLED = 'KOLOFT_PULLED'
+
+const FAST_FORWARD = `r=$1 from=$3
+${NETWORK_ENV} git -C "$r" -c advice.diverging=false pull --ff-only --no-recurse-submodules origin "$2"
+ok=$?
+n=$(git -C "$r" rev-list --count "$from..HEAD" 2>/dev/null) || n=0
+printf '\\n${PULLED} %s\\n' "$n"
+( set -- "$r" 0
+${FRESHNESS}
+)
+exit $ok`
+
+export function parseFreshness(stdout: string): GitSnapshot | null {
+  const [branch, head, defRef, flags, fetchHead, fetched, counts, dirty] = stdout.split('\n')
+  if (!branch || !head || fetchHead === undefined) return null
+  const [linked, subs] = flags.split(' ')
+  const snapshot: GitSnapshot = {
+    branch,
+    head,
+    defRef,
+    linked: linked === '1',
+    hasSubmodules: subs === '1',
+    tracking: null
+  }
+  if (fetched === undefined || fetched === '') return snapshot
+  const lr = parseLeftRight(counts ?? '')
+  if (!lr) return null
+  return {
+    ...snapshot,
+    tracking: {
+      fetched: fetched === '-' ? null : fetched === '1',
+      fetchHeadAt: parseFingerprint(fetchHead)?.mtimeMs ?? null,
+      ...lr,
+      dirty: dirty === 'dirty'
+    }
+  }
+}
+
+const PULLED_TAIL = new RegExp(`\\n${PULLED} (\\d+)\\n([\\s\\S]*)$`)
 
 const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
@@ -426,6 +495,32 @@ export class SshHost implements Host {
   ): Promise<string | null> {
     const r = await this.sh(script, ['-C', this.bare(root), ...args], { timeoutMs })
     return r.code === 0 ? r.stdout.toString('utf8') : null
+  }
+
+  readonly freshness: FreshnessRunner = {
+    measure: async (root, fetchTimeoutMs) => {
+      const r = await this.sh(FRESHNESS, [this.bare(root), fetchTimeoutMs === null ? '0' : '1'], {
+        timeoutMs: (fetchTimeoutMs ?? 0) + GIT_TIMEOUT_MS
+      })
+      return {
+        snapshot: r.code === 0 ? parseFreshness(r.stdout.toString('utf8')) : null,
+        enoent: false
+      }
+    },
+    pull: async (root, defBranch, from, timeoutMs) => {
+      const r = await this.sh(FAST_FORWARD, [this.bare(root), defBranch, from], { timeoutMs })
+      const stdout = r.stdout.toString('utf8')
+      const tail = PULLED_TAIL.exec(stdout)
+      return {
+        ok: r.code === 0,
+        stdout: tail ? stdout.slice(0, tail.index) : stdout,
+        stderr: r.stderr,
+        timedOut: r.code === null,
+        enoent: false,
+        count: tail ? Number(tail[1]) : 0,
+        after: tail ? parseFreshness(tail[2]) : null
+      }
+    }
   }
 
   async gitRun(root: string, args: string[], network = false): Promise<GitRunResult> {
@@ -613,15 +708,28 @@ export class SshHost implements Host {
     return { path: this.keyed(created), mtimeMs: fp.mtimeMs, size: fp.size }
   }
 
-  watchDir(): boolean {
+  // PLATFORM§57
+  watchDir(dir: string, onChange: (dir: string) => void): boolean {
+    this.deps.watch(this.bare(dir), () => onChange(dir))
     return false
   }
 
-  unwatchDir(): void {}
+  unwatchDir(dir: string): void {
+    this.deps.unwatch(this.bare(dir))
+  }
 
-  watchFile(): void {}
+  watchFile(
+    file: string,
+    onChange: (file: string, fp: { mtimeMs: number; size: number }) => void
+  ): void {
+    this.deps.watch(this.bare(file), (stamp) =>
+      onChange(file, parseFingerprint(stamp) ?? GONE_FROM_DISK)
+    )
+  }
 
-  unwatchFile(): void {}
+  unwatchFile(file: string): void {
+    this.deps.unwatch(this.bare(file))
+  }
 
   shell(cwd: string): ShellLaunch {
     return { ...this.deps.shell(this.bare(cwd)), cwd, resized: this.resized }
@@ -692,6 +800,9 @@ export class SshHost implements Host {
     const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
     // ADR-0030
     if (pickKey && !account) throw new Error(NO_USABLE_ACCOUNT.claude)
+    // CC§9
+    const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
+    const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -710,7 +821,7 @@ export class SshHost implements Host {
           portOffset: worktree ? portOffset(worktree) : undefined,
           settings: d.hookSettings(tabId, machineDir, agentTools),
           agentPlugin: agentTools,
-          claudeArgs: args.args
+          claudeArgs
         })
         return launchLine({
           host: this.machine,

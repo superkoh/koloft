@@ -8,10 +8,15 @@ export function whenLine(job: CronJob, now: Date): string {
 }
 
 export function histText(h: HistoryLine): string {
+  const base = histBase(h)
+  return h.note ? `${base} — ${h.note}` : base
+}
+
+function histBase(h: HistoryLine): string {
   if (h.state === 'closed') return 'Closed by you'
   if (h.state === 'finished') return 'Done — closed itself'
   if (h.state === 'ended') return 'Ended — Koloft quit'
-  if (h.state === 'failed') return h.note ? `Could not start — ${h.note}` : 'Could not start'
+  if (h.state === 'failed') return 'Could not start'
   const n = h.count ?? 1
   if (h.state === 'missed') {
     return n > 1

@@ -1,4 +1,6 @@
-import { test, expect, osOutlets, pendingAttention } from './helpers/app'
+import { test, expect, launchApp, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
+import { installCodex } from './helpers/env'
+import { codexRows, startCodex } from './helpers/codex'
 import {
   centerTerm,
   FAKE_SESSION_TITLE,
@@ -127,5 +129,35 @@ test.describe('attention markers come from real session-status transitions (shim
       title: FAKE_SESSION_TITLE,
       body: 'session exited unexpectedly · ws-a'
     })
+  })
+
+  test('a local Codex that dies after it bound raises the same “exited” mark, drawn as a red dot on its cold row and said in an OS notification naming its folder', async ({
+    env
+  }) => {
+    test.setTimeout(150_000)
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const { pid } = await startCodex(page, env)
+      const row = codexRows(page)
+      await row.click()
+      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+
+      killSession(pid, env)
+
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect
+        .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 10_000 })
+        .toEqual(['exited'])
+      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+      expect((await osOutlets(app)).notifications).toContainEqual({
+        title: 'Codex fixture session',
+        body: 'session exited unexpectedly · ws-a'
+      })
+    } finally {
+      await quitAndClose(app)
+    }
   })
 })

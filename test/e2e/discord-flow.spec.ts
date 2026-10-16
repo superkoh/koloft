@@ -460,6 +460,46 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
+  test('the conductor stops a local Codex session — it stays on the sidebar, so its thread is only archived, after one "closed" card — and resumes the same thread with a first message, queued with a conductor message id', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const [{ sessionId: codexId }] = codexCalls(env)
+
+      fake.say(OWNER, `/koloft session send ${codexId} check the docs`)
+      await expect
+        .poll(() => codexQueued(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual([['koloft-conductor-1', ownerSays('check the docs')]])
+      await expect.poll(() => notices(fake)).toEqual([expect.stringMatching(/^🔔 .+ finished\.$/)])
+
+      fake.say(OWNER, `/koloft session stop ${codexId}`)
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
+      await expect
+        .poll(() => notices(fake))
+        .toEqual([expect.stringMatching(/^🔔 /), expect.stringMatching(/^⏹ .+ closed\.$/)])
+      await expect.poll(() => fake.threads[0].archived).toBe(true)
+      await expect
+        .poll(() => openerNow(fake, CHANNEL, fake.threads[0].id))
+        .toMatch(/^⏹ \*\*.+\*\* · closed <t:\d+:R>\n-# ws-a · Codex$/)
+      expect(fake.deleted).toEqual([])
+
+      fake.say(OWNER, `/koloft session resume ${codexId} -- carry on`)
+      await expect
+        .poll(() => codexQueued(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContainEqual(['koloft-conductor-2', ownerSays('carry on')])
+      await expect(wsRows(page, 'ws-a')).not.toHaveClass(/cold/)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
   test('the conductor queues a message on a Codex session with a conductor message id, and the reply that ends that turn is handed to the conductor; a session it starts with --backend codex is announced and touched, and its thread takes the session’s sidebar title once it has one; once the conductor closes it for good, its thread and the card it hangs from are deleted', async ({
     env
   }) => {

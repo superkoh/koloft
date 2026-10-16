@@ -129,6 +129,7 @@ function makeHarness(
     accountUsable: () => flags.account,
     trusted: () => true,
     ready: () => flags.ready,
+    endpointAccountWithModelOf: () => undefined,
     launch,
     killTab,
     stillWorking: async () => flags.busy,
@@ -701,6 +702,20 @@ describe('CronRunner — a live run growing up', () => {
     await h.fireTimers(T0 + 5 * MIN)
     expect(h.killTab).not.toHaveBeenCalled()
     expect(h.jobs[0].history).toEqual([])
+  })
+
+  it('a job that names a model, landing on an endpoint account that pins its own, says so on its History line; a job with no model never does', async () => {
+    const endpointAccountWithModelOf = (): string => 'glm'
+    for (const [model, note] of [
+      ['opus', 'model set by the endpoint account glm'],
+      [undefined, undefined]
+    ] as const) {
+      const h = makeHarness([makeJob(model ? { model } : {})], { endpointAccountWithModelOf })
+      await h.runner.runNow('j1')
+      h.runner.onBound('tab-1', 'sess-1')
+      h.runner.onPtyExit('tab-1')
+      expect(h.jobs[0].history[0]?.note, String(model)).toBe(note)
+    }
   })
 
   it('working → waiting means the turn ended', async () => {

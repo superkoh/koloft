@@ -311,6 +311,10 @@ export async function runOnTargetWhileServing(
   return stdout
 }
 
+export function runOnBastion(lab: SshLab, user: string, script: string): string {
+  return dk(['exec', '-u', user, '-w', `/home/${user}`, lab.bastion, 'sh', '-c', script])
+}
+
 export function installOnTarget(lab: SshLab, file: string, at: string): void {
   dk(['cp', file, `${lab.target}:${at}`])
   dk(['exec', lab.target, 'chmod', '755', at])
@@ -366,7 +370,6 @@ export function installClaudeOnTheMachine(
     `printf '%s' ${JSON.stringify(
       JSON.stringify({
         hasCompletedOnboarding: true,
-        bypassPermissionsModeAccepted: true,
         projects: Object.fromEntries(
           ['/home/kuser/proj', ...alsoTrusted].map((dir) => [dir, { hasTrustDialogAccepted: true }])
         )

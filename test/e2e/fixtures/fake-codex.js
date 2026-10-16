@@ -7,6 +7,7 @@ const { execFile, spawnSync } = require('child_process')
 const WebSocket = require('ws')
 
 const VERSION_AT_KOLOFTS_MINIMUM = '0.161.0'
+const FLAGS_FOLLOWED_BY_A_VALUE = ['--remote', '-C', '-c', '-m', '-a', '-s']
 
 const argv = process.argv.slice(2)
 const home = process.env.HOME
@@ -113,45 +114,48 @@ if (argv[0] === 'app-server') {
       .map((k) => process.env[k])
   })
   // CODEX§27
-  const GATE_KEY = '/<session-flags>/config.toml:pre_tool_use:0:0'
-  const gateCommand = argv
-    .map((value) => /^hooks\.PreToolUse=.*command=("(?:[^"\\]|\\.)*")/.exec(value)?.[1])
-    .find(Boolean)
+  const sessionHooks = argv.flatMap((value) => {
+    const m = /^hooks\.(\w+)=.*command=("(?:[^"\\]|\\.)*")/.exec(value)
+    return m ? [{ event: m[1], command: JSON.parse(m[2]) }] : []
+  })
+  const snakeCase = (event) => event.replace(/[A-Z]/g, (c, i) => (i ? '_' : '') + c.toLowerCase())
   const gateHooks = () => {
-    if (!gateCommand) return { hooks: [], errors: [] }
-    const command = JSON.parse(gateCommand)
-    const currentHash = 'sha256:' + crypto.createHash('sha256').update(command).digest('hex')
     let config = ''
     try {
       config = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8')
     } catch {}
     const lines = config.split('\n')
-    const tables = lines.filter((line) => line.trim() === `[hooks.state."${GATE_KEY}"]`).length
-    if (tables > 1)
-      return { hooks: [], errors: [{ path: process.cwd(), message: 'duplicate key' }] }
-    const at = lines.findIndex((line) => line.trim() === `[hooks.state."${GATE_KEY}"]`)
-    const saved =
-      at < 0 ? undefined : /^trusted_hash = "(.*)"$/.exec(lines[at + 1]?.trim() ?? '')?.[1]
-    const trustStatus = flag('fake-codex-hook-untrusted')
-      ? 'untrusted'
-      : saved === currentHash
-        ? 'trusted'
-        : saved
-          ? 'modified'
-          : 'untrusted'
-    return {
-      hooks: [
-        {
-          key: GATE_KEY,
-          eventName: 'preToolUse',
-          command,
-          source: 'sessionFlags',
-          currentHash,
-          trustStatus
-        }
-      ],
-      errors: []
+    const hooks = []
+    for (const { event, command } of sessionHooks) {
+      const key = `/<session-flags>/config.toml:${snakeCase(event)}:0:0`
+      const table = `[hooks.state."${key}"]`
+      const currentHash = 'sha256:' + crypto.createHash('sha256').update(command).digest('hex')
+      if (lines.filter((line) => line.trim() === table).length > 1)
+        return { hooks: [], errors: [{ path: process.cwd(), message: 'duplicate key' }] }
+      const at = lines.findIndex((line) => line.trim() === table)
+      const saved =
+        at < 0 ? undefined : /^trusted_hash = "(.*)"$/.exec(lines[at + 1]?.trim() ?? '')?.[1]
+      const trustStatus = flag('fake-codex-hook-untrusted')
+        ? 'untrusted'
+        : saved === currentHash
+          ? 'trusted'
+          : saved
+            ? 'modified'
+            : 'untrusted'
+      const eventName = event.charAt(0).toLowerCase() + event.slice(1)
+      hooks.push({ key, eventName, command, source: 'sessionFlags', currentHash, trustStatus })
     }
+    return { hooks, errors: [] }
+  }
+  const runHook = (event, payload) => {
+    const eventName = event.charAt(0).toLowerCase() + event.slice(1)
+    const hook = gateHooks().hooks.find((h) => h.eventName === eventName)
+    if (hook?.trustStatus !== 'trusted') return
+    const ran = spawnSync('/bin/sh', ['-c', hook.command], {
+      input: JSON.stringify({ ...payload, hook_event_name: event }),
+      encoding: 'utf8'
+    })
+    append('fake-codex-hook-output.jsonl', { event, stdout: ran.stdout })
   }
   let initialized = false
   let active
@@ -219,6 +223,7 @@ if (argv[0] === 'app-server') {
     }
     turn.items.push(asked)
     event('item/completed', { threadId: thread.id, turnId: turn.id, item: asked })
+    runHook('UserPromptSubmit', { session_id: thread.id, cwd: thread.cwd, prompt: text })
     if (text.startsWith('open ')) {
       const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
       event('item/completed', {
@@ -236,8 +241,26 @@ if (argv[0] === 'app-server') {
         }
       })
     }
-    if (text.startsWith('/koloft ')) {
-      const command = `koloft ${text.slice('/koloft '.length).trim()}`
+    if (text.startsWith('/write ')) {
+      const target = path.join(thread.cwd, text.slice('/write '.length).trim())
+      const diff = 'written by Codex\n'
+      fs.writeFileSync(target, diff)
+      // CODEX§12
+      event('item/completed', {
+        threadId: thread.id,
+        turnId: turn.id,
+        item: {
+          type: 'fileChange',
+          id: 'write-' + turn.id,
+          status: 'completed',
+          changes: [{ path: target, kind: { type: 'add' }, diff }]
+        }
+      })
+    }
+    const ran = /^\/(koloft|sh) (.+)$/s.exec(text)
+    if (ran) {
+      const [, tool, rest] = ran
+      const command = tool === 'koloft' ? `koloft ${rest.trim()}` : rest.trim()
       execFile('/bin/zsh', ['-lc', command], { cwd: thread.cwd }, (e, out, err) => {
         const exitCode = e ? (typeof e.code === 'number' ? e.code : 1) : 0
         event('item/completed', {
@@ -245,7 +268,7 @@ if (argv[0] === 'app-server') {
           turnId: turn.id,
           item: {
             type: 'commandExecution',
-            id: 'koloft-' + turn.id,
+            id: `${tool}-${turn.id}`,
             status: exitCode === 0 ? 'completed' : 'failed',
             exitCode,
             aggregatedOutput: `${out}${err}`,
@@ -254,6 +277,7 @@ if (argv[0] === 'app-server') {
             commandActions: [{ type: 'unknown', command }]
           }
         })
+        runHook('PostToolUse', { session_id: thread.id, cwd: thread.cwd, tool_name: 'Bash' })
         complete(thread, turn)
       })
       return
@@ -588,6 +612,11 @@ async function startTui() {
   }
   const url = value('--remote')
   const cwd = value('-C') || process.cwd()
+  // CODEX§14
+  let firstPrompt = argv.find(
+    (arg, i) => !arg.startsWith('-') && !FLAGS_FOLLOWED_BY_A_VALUE.includes(argv[i - 1])
+  )
+  if (argv.includes('resume')) firstPrompt = undefined
   if (!url) {
     console.error('fake-codex needs --remote')
     process.exit(2)
@@ -626,8 +655,10 @@ async function startTui() {
       cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null
     })
     process.stdout.write('\r\nCodex fixture ready ' + thread.id + '\r\n> ')
+    const first = firstPrompt
+    firstPrompt = undefined
     if (method === 'thread/start' && !flag('fake-codex-lazy'))
-      await prompt(read('fake-codex-next-title', 'Codex fixture session'))
+      await prompt(first ?? read('fake-codex-next-title', 'Codex fixture session'))
   }
   const exit = async () => {
     if (thread) await send('thread/unsubscribe', { threadId: thread.id }).catch(() => {})
@@ -662,10 +693,11 @@ async function startTui() {
       const [q] = frame.params.questions
       question = { id: frame.id, key: q.id, labels: q.options.map((o) => o.label) }
       process.stdout.write('\r\n' + q.question + ' ' + question.labels.join(' / ') + ' ')
-    } else if (frame.method === 'item/completed' && frame.params.item.id.startsWith('koloft-')) {
-      const { aggregatedOutput, exitCode } = frame.params.item
+    } else if (frame.method === 'item/completed' && /^(koloft|sh)-/.test(frame.params.item.id)) {
+      const { aggregatedOutput, exitCode, id } = frame.params.item
       const said = aggregatedOutput.replace(/\r?\n/g, '\r\n')
-      process.stdout.write(`\r\n${said}[fake-codex] koloft exit=${exitCode}\r\n> `)
+      const tool = id.slice(0, id.indexOf('-'))
+      process.stdout.write(`\r\n${said}[fake-codex] ${tool} exit=${exitCode}\r\n> `)
     } else if (frame.method === 'turn/started') {
       working = true
       turnId = frame.params.turn.id

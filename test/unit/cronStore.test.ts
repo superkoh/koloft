@@ -193,13 +193,19 @@ describe('sanitizeCron (BB-E29: the history lines)', () => {
     expect(history[1].worktree).toBe('nightly-260902-2100')
   })
 
-  it('keeps count and until on a folding line only, and a note on a failed line only', () => {
+  it('keeps count and until on a folding line only, and a note on any line', () => {
     const lines = one({
       history: [
         { dueAt: 6, state: 'missed', count: 85, until: 9 },
         { dueAt: 5, state: 'skipped', count: 3, until: 9 },
         { dueAt: 4, state: 'skipped', count: 0, until: 9 },
-        { dueAt: 3, state: 'closed', count: 2, until: 9, note: 'made up' },
+        {
+          dueAt: 3,
+          state: 'closed',
+          count: 2,
+          until: 9,
+          note: 'model set by the endpoint account glm'
+        },
         { dueAt: 2, state: 'failed', note: 'no usable account' },
         { dueAt: 1, state: 'missed', manual: 'yes' }
       ]
@@ -207,7 +213,11 @@ describe('sanitizeCron (BB-E29: the history lines)', () => {
     expect(lines[0]).toEqual({ dueAt: 6, state: 'missed', count: 85, until: 9 })
     expect(lines[1]).toEqual({ dueAt: 5, state: 'skipped', count: 3, until: 9 })
     expect(lines[2]).toEqual({ dueAt: 4, state: 'skipped', count: 1 })
-    expect(lines[3]).toEqual({ dueAt: 3, state: 'closed' })
+    expect(lines[3]).toEqual({
+      dueAt: 3,
+      state: 'closed',
+      note: 'model set by the endpoint account glm'
+    })
     expect(lines[4]).toEqual({ dueAt: 2, state: 'failed', note: 'no usable account' })
     expect(lines[5]).toEqual({ dueAt: 1, state: 'missed' })
   })
