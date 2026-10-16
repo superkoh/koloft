@@ -172,7 +172,8 @@ body {
   padding-left: 10px;
 }
 .app.sb-off .center-top {
-  padding-left: calc(var(--sb-toggle-left) + 22px);
+  --center-top-pad-l: calc(var(--sb-toggle-left) + 22px);
+  padding-left: var(--center-top-pad-l);
 }
 .app.sb-off .wb-col.full {
   margin-top: var(--titlebar-h);
@@ -1145,6 +1146,8 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  --term-gutter-l: 24px;
+  --term-gutter-r: 14px;
 }
 .center-top {
   flex: 0 0 var(--titlebar-h);
@@ -1159,7 +1162,14 @@ body {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  margin: 12px 56px 0 20px;
+  margin: 12px 56px 0
+    max(
+      var(--term-gutter-l),
+      calc(
+        var(--term-gutter-l) - var(--center-top-pad-l, 0px) / 2 +
+          (100% - var(--term-gutter-l) - var(--term-gutter-r) - var(--term-cap-w, 100%)) / 2
+      )
+    );
   -webkit-app-region: no-drag;
 }
 .wc-chip {
@@ -1361,11 +1371,14 @@ body {
 .term-wrap {
   position: absolute;
   inset: 0;
-  padding: 4px 12px 12px 20px;
+  padding: 4px var(--term-gutter-r) 12px var(--term-gutter-l);
 }
 .term {
   width: 100%;
   height: 100%;
+}
+.term-wrap > .term {
+  margin: 0 auto;
 }
 /* PLATFORM§21 */
 .xterm .composition-view {
