@@ -9,7 +9,7 @@ import {
   codexGateShell,
   conductorGateCommand
 } from './conductorGate'
-import { HANDOVER_OPENING } from './handover'
+import { HANDOVER_OPENING, OWNER_WORDS_BEFORE_QUOTE, OWNER_WORDS_END } from './handover'
 import { FROM_A_SESSION, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
@@ -45,7 +45,8 @@ const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
 const QUOTE_PROMPT_FN = `quote_prompt() {
   printf '%s' "$input" |
     LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' |
-    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
+    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*${OWNER_WORDS_BEFORE_QUOTE}(.*)${OWNER_WORDS_END}.*$/\\1/' \\
+      -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
       -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n\\[Discord\\] //' \\
       -e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//' |
     head -c ${QUOTED_PROMPT_BYTES} |
@@ -54,6 +55,7 @@ const QUOTE_PROMPT_FN = `quote_prompt() {
 }`
 
 export const CODEX_SAID_ENV = 'KOLOFT_CODEX_SAID'
+const HANDED_OVER_TASK_COMES_FIRST = '.task-first'
 export const CODEX_REPLY_LANGUAGE_ENV = 'KOLOFT_CODEX_REPLY_LANGUAGE'
 const codexReplyLanguageHook = (event: string): string =>
   `sh "$${CODEX_REPLY_LANGUAGE_ENV}" ${event}`
@@ -76,11 +78,21 @@ input="$(cat | tr -d '\\n')"
 ${QUOTE_PROMPT_FN}
 case "$input" in
   *'"prompt":"${FROM_A_SESSION}'*) ;;
-  *) quote_prompt > "$said" ;;
+  *) if [ -f "$said${HANDED_OVER_TASK_COMES_FIRST}" ]; then
+       rm -f "$said${HANDED_OVER_TASK_COMES_FIRST}"
+     else
+       quote_prompt > "$said"
+     fi ;;
 esac
 remind_reply_language UserPromptSubmit
 exit 0
 `
+
+// ADR-0031
+export function seedCodexOwnerWords(said: string, ownerWords: string): void {
+  fs.writeFileSync(said, JSON.stringify(ownerWords).slice(1, -1))
+  fs.writeFileSync(said + HANDED_OVER_TASK_COMES_FIRST, '')
+}
 
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
@@ -396,6 +408,21 @@ function allowFile(regDir: string, tabId: string): string {
 
 export function discordIdsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.discord-ids`)
+}
+
+// ADR-0031
+export function quotedPrompt(regDir: string, tabId: string): string | undefined {
+  let escaped: string
+  try {
+    escaped = fs.readFileSync(path.join(regDir, `${tabId}.said`), 'utf8').trimEnd()
+  } catch {
+    return undefined
+  }
+  try {
+    return JSON.parse(`"${escaped}"`) || undefined
+  } catch {
+    return undefined
+  }
 }
 
 export function writeAllowFile(regDir: string, tabId: string, allow: readonly string[]): string {

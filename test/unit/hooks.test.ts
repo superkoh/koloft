@@ -19,6 +19,8 @@ import {
   writeConductorMarker,
   removeConductorMarker,
   markAnswerable,
+  quotedPrompt,
+  seedCodexOwnerWords,
   writeAllowFile
 } from '../../src/main/hooks'
 import { CODEX_GATE_HOOK_COMMAND } from '../../src/main/conductorGate'
@@ -494,7 +496,7 @@ describe('injected hook script', () => {
     })
 
     // CODEX§27
-    it('a Codex tab gets the same reminder from its own hook script: the owner’s prompt is quoted at the prompt and after every tool, and a message from another session keeps it', () => {
+    it('a Codex tab gets the same reminder from its own hook script: the owner’s prompt is quoted at the prompt and after every tool, a message from another session keeps it, and a Codex child starts from the owner’s words its parent handed over, not from its English task', () => {
       const said = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-said-')), 'said')
       const codex = (event: string, payload: unknown): string => {
         const res = spawnSync('bash', [codexReplyLanguage, event], {
@@ -516,6 +518,34 @@ describe('injected hook script', () => {
       )
       const report = '(From the session "Fix docs", id abc:) Done: PR #12 is open.'
       expect(remindedQuote(codexPrompt(report), 'UserPromptSubmit')).toBe('先看看测试为什么挂')
+
+      const seeded = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-said-')), 'said')
+      seedCodexOwnerWords(seeded, '帮我看看侧栏')
+      const child = (event: string, payload: unknown): string =>
+        spawnSync('bash', [codexReplyLanguage, event], {
+          input: JSON.stringify(payload),
+          encoding: 'utf8',
+          env: { ...process.env, KOLOFT_CODEX_SAID: seeded }
+        }).stdout
+      const englishTask = { hook_event_name: 'UserPromptSubmit', prompt: 'Fix the sidebar width.' }
+      expect(remindedQuote(child('prompt', englishTask), 'UserPromptSubmit')).toBe('帮我看看侧栏')
+      expect(remindedQuote(child('tool', {}), 'PostToolUse')).toBe('帮我看看侧栏')
+      expect(
+        remindedQuote(child('prompt', { ...englishTask, prompt: '再改一下' }), 'UserPromptSubmit')
+      ).toBe('再改一下')
+    })
+
+    // ADR-0031
+    it('a task handed over with the owner’s last words is quoted by those words, not by the task another AI wrote in English, and Koloft reads them back whole for the next child down', () => {
+      const ownerWords = '帮我看看 "侧栏" 为什么\n变宽了 « » \\ 😀'
+      const task = withHandover(
+        { name: 'planner', id: 'abc-123', ownerWords },
+        'Read the brief at /tmp/brief.md and fix the sidebar width.'
+      )
+      expect(remindedQuote(prompt('tabLangOW', task), 'UserPromptSubmit')).toBe(ownerWords)
+      expect(remindedQuote(tool('tabLangOW'), 'PostToolUse')).toBe(ownerWords)
+      expect(quotedPrompt(regDir, 'tabLangOW')).toBe(ownerWords)
+      expect(quotedPrompt(regDir, 'tabLangNoPrompt')).toBeUndefined()
     })
 
     // CC§19

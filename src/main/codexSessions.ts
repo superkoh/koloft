@@ -39,7 +39,13 @@ import {
   codexHookOverride,
   CODEX_ASKS_AND_WAITS
 } from './conductorGate'
-import { CODEX_REPLY_LANGUAGE_ENV, CODEX_REPLY_LANGUAGE_HOOKS, CODEX_SAID_ENV } from './hooks'
+import {
+  CODEX_REPLY_LANGUAGE_ENV,
+  CODEX_REPLY_LANGUAGE_HOOKS,
+  CODEX_SAID_ENV,
+  seedCodexOwnerWords
+} from './hooks'
+import { ownerWordsIn } from './handover'
 import { acceptCodexHookTrust, codexConfigFile, codexHookTrusted } from './codexTrust'
 import {
   CODEX_OPEN_SHIM_FOLDER,
@@ -1016,6 +1022,9 @@ export class CodexSessions {
       agent && ((dir, name, raw) => agent.answer(run?.tabId, dir, name, raw))
     )
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
+    const said = path.join(openShim.shimDir, 'said')
+    const ownerWords = role && opts.firstPrompt ? ownerWordsIn(role) : undefined
+    if (ownerWords) seedCodexOwnerWords(said, ownerWords)
     const observer = new CodexObservation(observe)
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('codex')] : []),
@@ -1034,7 +1043,7 @@ export class CodexSessions {
           [ASSIST_ALLOW_ENV]: this.deps.conductorGate.writeAllow(tabId, allow)
         }),
         [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
-        [CODEX_SAID_ENV]: path.join(openShim.shimDir, 'said')
+        [CODEX_SAID_ENV]: said
       },
       cwd,
       configOverrides: [

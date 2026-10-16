@@ -28,6 +28,13 @@ describe('the title behind koloft session new', () => {
     expect(await nameForTask('修一个问题并发 PR：…', assist, new Set())).toBe('tok 的标题')
   })
 
+  it('a task another AI wrote in English is titled in the language of the owner’s words it was handed', async () => {
+    const bin = fakeClaude('grep -q "«把侧栏修好»" && echo "修侧栏"')
+    expect(await nameForTask('Fix the sidebar.', claudeAssist(bin), new Set(), '把侧栏修好')).toBe(
+      '修侧栏'
+    )
+  })
+
   it('an error claude prints before exiting non-zero is never taken as a name — the task’s first line is', async () => {
     const bin = fakeClaude(
       'cat >/dev/null\necho "Failed to authenticate: OAuth session expired and could not be refreshed"\nexit 1'
