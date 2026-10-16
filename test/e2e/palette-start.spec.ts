@@ -124,7 +124,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       const page = await app.firstWindow()
       await waitBooted(page)
       await ask(app, page, PROMPT)
-      await expect(palette(page).getByRole('button', { name: /^Codex/ })).toContainText('⇧⏎')
+      await expect(palette(page).getByRole('button', { name: 'Pick an agent' })).toBeVisible()
       await page.keyboard.press('Shift+Enter')
 
       await expect.poll(() => codexCalls(env).length, { timeout: 40_000 }).toBe(1)

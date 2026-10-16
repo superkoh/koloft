@@ -7,7 +7,7 @@ import {
 } from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
 import { useStore } from '../../store'
-import { SessionBackendIcon } from '../SessionBackendIcon'
+import { AgentSelect } from '../SessionLaunchButtons'
 import { Switch } from './Switch'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
@@ -57,30 +57,22 @@ export function SessionMethodsSection() {
       <div className="set-row">
         <div className="set-lab">
           <b>Default method</b>
-          <small>
-            New session starts with this method. With several workspaces, Enter picks it, ⇧⏎ the
-            next one and ⌃⏎ the third.
-          </small>
+          <small>New session starts with this method. ⏎ starts it; ⇧⏎ picks another.</small>
         </div>
-        <div className="seg" role="group" aria-label="Default session method">
-          {SESSION_BACKENDS.map((backend) => (
-            <button
-              key={backend}
-              className={methods.defaultBackend === backend ? 'on' : ''}
-              aria-pressed={methods.defaultBackend === backend}
-              aria-label={`Use ${BACKEND_LABEL[backend]} by default`}
-              disabled={!methods.enabled[backend]}
-              onClick={() =>
-                update({
-                  sessionMethods: normalizeSessionMethods({ ...methods, defaultBackend: backend })
-                })
-              }
-            >
-              <SessionBackendIcon backend={backend} size={14} decorative />
-              {BACKEND_LABEL[backend]}
-            </button>
-          ))}
-        </div>
+        <AgentSelect
+          value={methods.defaultBackend}
+          ariaLabel="Default session method"
+          choice={{
+            listed: SESSION_BACKENDS,
+            issue: (b) => (methods.enabled[b] ? '' : `${BACKEND_LABEL[b]} is switched off below.`),
+            note: () => 'Off'
+          }}
+          onPick={(backend) =>
+            update({
+              sessionMethods: normalizeSessionMethods({ ...methods, defaultBackend: backend })
+            })
+          }
+        />
       </div>
       {SESSION_BACKENDS.map((backend) => (
         <div className="set-row" key={backend}>

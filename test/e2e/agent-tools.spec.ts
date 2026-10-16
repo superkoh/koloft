@@ -281,7 +281,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await waitBooted(page)
       const dlg = await openWorktreeSession(page, 'ws-a')
       await dlg.locator('input').fill('reports-here')
-      await chooseBackend(page, 'other')
+      await chooseBackend(page, 'Codex')
       const parentRow = wsRows(page, 'ws-a').first()
       await expect(parentRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       const parentTab = (await parentRow.getAttribute('data-tab-id'))!

@@ -27,6 +27,7 @@ import {
   liveTmuxSessions
 } from './helpers/remote'
 import {
+  agentRow,
   auxIcon,
   boundSessionId,
   centerTerm,
@@ -412,7 +413,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   })
 
   // ADR-0030 CODEX§16
-  test('E-RW-30: with no Claude account, a remote workspace’s empty panel shuts "New Claude session" under a line that says why, while Codex stays refused there with no account line', async ({
+  test('E-RW-30: with no Claude account, a remote workspace’s empty panel shuts "New Claude session" under a line that says why, while Codex stays refused there — "Local only" under the button and in its agent list — with no account line', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -429,10 +430,13 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       const empty = page.locator('.w-empty')
       await expect(empty.locator('.big')).toHaveText(REMOTE_WS_NAME, { timeout: 20_000 })
       await expect(empty.getByRole('button', { name: /New Claude session/ })).toBeDisabled()
-      await expect(empty.getByRole('button', { name: 'New Codex session' })).toBeDisabled()
       await expect(empty.locator('.field-hint.bad')).toHaveText(
         /^No Claude account yet — add one in Settings ▸ Accounts\.$/
       )
+      await expect(empty.locator('.field-hint:not(.bad)')).toHaveText('Codex: Local only')
+      await empty.getByRole('button', { name: 'Pick an agent' }).click()
+      await expect(agentRow(page, 'Codex')).toHaveAttribute('aria-disabled', 'true')
+      await expect(agentRow(page, 'Codex')).toContainText('Local only')
       await snap(page, 'E-RW-30')
     } finally {
       await quitAndClose(app)

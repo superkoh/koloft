@@ -1,19 +1,30 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { LuLoaderCircle } from 'react-icons/lu'
 import {
-  ALWAYS_ON_BACKEND,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode
+} from 'react'
+import { createPortal } from 'react-dom'
+import { LuChevronDown, LuLoaderCircle } from 'react-icons/lu'
+import {
   BACKEND_LABEL,
-  SESSION_BACKENDS,
+  backendAvailable,
   byBackend,
-  shownAsInstalled,
+  effectiveBackend,
+  listedBackends,
   unsupportedPairMessage
 } from '@shared/sessionBackend'
 import { ACCOUNTS_PANE, noUsableAccountLead } from '@shared/accountUsage'
 import type { BackendId, CreateTabOptions, HostId } from '@shared/types'
+import { firstHot, type AgentChoice } from '../agentChoice'
 import { launchErrorMessage } from '../agentUi'
+import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { useInstalledBackends } from '../useInstalledBackends'
 import { SessionBackendIcon } from './SessionBackendIcon'
+import { dropPosFor } from './WorkspaceSidebar'
 
 export type SessionLaunchOptions = Pick<
   CreateTabOptions,
@@ -21,10 +32,51 @@ export type SessionLaunchOptions = Pick<
 > & { cwd: string }
 export type StartSession = (opts: SessionLaunchOptions, backend: BackendId) => Promise<void>
 
-export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: () => void) {
+export function useLaunchChoice(host: HostId) {
   const methods = useStore((s) => s.settings.sessionMethods)
   const [retry, setRetry] = useState(0)
   const { installed: detected, checkFailed } = useInstalledBackends(retry)
+  const accountIssue = useAccountIssue()
+  const found = (backend: BackendId) => detected?.find((b) => b.id === backend)
+  const listed = listedBackends(methods, detected && ((b) => backendAvailable(detected, b)))
+  const setupIssue = (backend: BackendId, on = host): string => {
+    if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
+    const refusal = unsupportedPairMessage(backend, on)
+    if (refusal || on === 'ssh') return refusal ?? ''
+    const result = found(backend)
+    return !detected || result?.available ? '' : result?.reason || 'Not installed'
+  }
+  const issue = (backend: BackendId, on = host): string =>
+    setupIssue(backend, on) || accountIssue(backend)
+  const note = (backend: BackendId, on = host): string =>
+    unsupportedPairMessage(backend, on)
+      ? 'Local only'
+      : setupIssue(backend, on)
+        ? 'Unavailable'
+        : accountIssue(backend)
+          ? 'No account'
+          : ''
+  const choice = (on = host, backends = listed, chosen?: BackendId): AgentChoice => ({
+    listed: backends,
+    lead: chosen ?? effectiveBackend(methods, new Set(backends.filter((b) => !setupIssue(b, on)))),
+    defaultBackend: methods.defaultBackend,
+    issue: (b) => issue(b, on),
+    note: (b) => note(b, on)
+  })
+  return {
+    host,
+    listed,
+    setupIssue,
+    issue,
+    note,
+    choice,
+    retry: () => setRetry((n) => n + 1),
+    checkFailed
+  }
+}
+
+export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: () => void) {
+  const options = useLaunchChoice(host)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
   const submitting = useRef(false)
@@ -35,21 +87,6 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
       live.current = false
     }
   }, [])
-  const accountIssue = useAccountIssue()
-  const found = (backend: BackendId) => detected?.find((b) => b.id === backend)
-  const usable = (backend: BackendId, on = host): boolean =>
-    methods.enabled[backend] &&
-    !unsupportedPairMessage(backend, on) &&
-    shownAsInstalled(detected, backend)
-  const setupIssue = (backend: BackendId, on = host): string => {
-    if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
-    const refusal = unsupportedPairMessage(backend, on)
-    if (refusal || on === 'ssh') return refusal ?? ''
-    const result = found(backend)
-    return !detected || result?.available ? '' : result?.reason || 'Not installed'
-  }
-  const issue = (backend: BackendId, on = host): string =>
-    setupIssue(backend, on) || accountIssue(backend)
   const launch = async (
     opts: SessionLaunchOptions | (() => Promise<SessionLaunchOptions>),
     backend: BackendId
@@ -68,83 +105,218 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
       if (live.current) setStarting(false)
     }
   }
-  return {
-    host,
-    methods,
-    usable: SESSION_BACKENDS.filter((b) => b === ALWAYS_ON_BACKEND || usable(b)),
-    setupIssue,
-    issue,
-    launch,
-    close: onClose,
-    starting,
-    error,
-    retry: () => setRetry((n) => n + 1),
-    checkFailed
-  }
+  return { ...options, launch, close: onClose, starting, error }
 }
 
-export function otherMethods(backends: BackendId[], defaultBackend: BackendId): BackendId[] {
-  return backends.length > 1 ? backends.filter((b) => b !== defaultBackend) : []
-}
-
-export function enterMethod(
-  e: { shiftKey: boolean; ctrlKey: boolean },
-  [shiftEnterBackend, ctrlEnterBackend]: BackendId[]
-): BackendId | undefined {
-  if (e.ctrlKey && ctrlEnterBackend) return ctrlEnterBackend
-  return e.shiftKey ? shiftEnterBackend : undefined
-}
+const keepFocus = (e: MouseEvent): void => e.preventDefault()
 
 export function SessionLaunchButtons({
-  launch,
-  backends,
-  disabled,
-  busy,
+  choice,
+  open,
+  onOpen,
   label,
   onStart,
-  issue = launch.issue
+  disabled,
+  busy,
+  className = 'btn-primary',
+  icon = true,
+  keyHint = true
 }: {
-  launch: ReturnType<typeof useSessionLaunch>
-  backends: BackendId[]
+  choice: AgentChoice
+  open: boolean
+  onOpen: (open: boolean) => void
+  label: (backend: BackendId) => ReactNode
+  onStart: (backend: BackendId) => void
   disabled: boolean
   busy: boolean
-  label: (backend: BackendId, isDefault: boolean) => string
-  onStart: (backend: BackendId) => void
-  issue?: (backend: BackendId) => string
+  className?: string
+  icon?: boolean
+  keyHint?: boolean
 }) {
-  const ordered = [...backends].sort(
-    (a, b) =>
-      Number(a === launch.methods.defaultBackend) - Number(b === launch.methods.defaultBackend)
+  const [caret, setCaret] = useState<HTMLButtonElement | null>(null)
+  const { listed, lead } = choice
+  const many = listed.length > 1
+  const reason = choice.issue(lead)
+  const start = (
+    <button
+      className={className}
+      data-default="true"
+      disabled={disabled || !!reason}
+      title={reason || undefined}
+      onMouseDown={keepFocus}
+      onClick={() => onStart(lead)}
+    >
+      {icon && many && <SessionBackendIcon backend={lead} size={14} decorative />}
+      {label(lead)}
+      {!busy && keyHint && <span className="k">⏎</span>}
+    </button>
   )
-  const [shiftEnterBackend, ctrlEnterBackend] = otherMethods(ordered, launch.methods.defaultBackend)
+  if (!many) return start
   return (
-    <>
-      {ordered.map((backend) => {
-        const isDefault = backend === launch.methods.defaultBackend || ordered.length === 1
-        const key = isDefault
-          ? '⏎'
-          : backend === shiftEnterBackend
-            ? '⇧⏎'
-            : backend === ctrlEnterBackend
-              ? '⌃⏎'
-              : undefined
+    <div className="split">
+      {start}
+      <button
+        ref={setCaret}
+        className={className}
+        aria-label="Pick an agent"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onMouseDown={keepFocus}
+        onClick={() => onOpen(!open)}
+      >
+        <LuChevronDown size={14} />
+      </button>
+      {open && caret && (
+        <AgentList
+          anchor={caret}
+          choice={choice}
+          hotAt={firstHot(choice)}
+          numbered
+          onPick={onStart}
+          onClose={() => onOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+const AGENT_ROW_H = 30
+const AGENT_LIST_W = 240
+
+export function AgentList({
+  anchor,
+  choice,
+  hotAt,
+  numbered,
+  onPick,
+  onClose
+}: {
+  anchor: HTMLElement
+  choice: Pick<AgentChoice, 'listed' | 'defaultBackend' | 'issue' | 'note'>
+  hotAt: number
+  numbered: boolean
+  onPick: (backend: BackendId) => void
+  onClose: () => void
+}) {
+  const { listed, issue } = choice
+  const [hot, setHot] = useState(hotAt)
+  const [pos] = useState(() => dropPosFor(anchor, listed.length, AGENT_ROW_H, AGENT_LIST_W))
+  const box = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const back = document.activeElement
+    box.current?.focus()
+    return () => {
+      if (back instanceof HTMLElement && document.activeElement === document.body) back.focus()
+    }
+  }, [])
+
+  useEffect(() => {
+    const outside = (e: PointerEvent): void => {
+      const t = e.target
+      if (t instanceof Node && !box.current?.contains(t) && !anchor.contains(t)) onClose()
+    }
+    window.addEventListener('pointerdown', outside, true)
+    return () => window.removeEventListener('pointerdown', outside, true)
+  }, [anchor, onClose])
+
+  const pick = (i: number): void => {
+    const backend = listed[i]
+    if (!backend || issue(backend)) return
+    onClose()
+    onPick(backend)
+  }
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    e.stopPropagation()
+    if (isComposing(e)) return
+    if (e.key === 'Escape') onClose()
+    else if (e.key === 'ArrowDown') setHot((h) => Math.min(h + 1, listed.length - 1))
+    else if (e.key === 'ArrowUp') setHot((h) => Math.max(h - 1, 0))
+    else if (e.key === 'Enter') pick(hot)
+    else if (numbered && /^[1-9]$/.test(e.key)) pick(Number(e.key) - 1)
+    else return
+    e.preventDefault()
+  }
+
+  return createPortal(
+    // ADR-0013
+    <div
+      ref={box}
+      className="menu wt-list"
+      role="listbox"
+      aria-label="Agents"
+      tabIndex={-1}
+      style={pos}
+      onKeyDown={onKeyDown}
+      onBlur={onClose}
+    >
+      {listed.map((backend, i) => {
         const reason = issue(backend)
         return (
-          <button
+          <div
             key={backend}
-            className={isDefault ? 'btn-primary' : 'mini'}
-            data-default={isDefault}
-            disabled={disabled || !!reason}
+            className={'cb-row' + (reason ? ' dim' : '') + (i === hot ? ' hot' : '')}
+            role="option"
+            aria-selected={i === hot}
+            aria-disabled={!!reason || undefined}
             title={reason || undefined}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onStart(backend)}
+            onMouseDown={keepFocus}
+            onClick={() => pick(i)}
           >
-            {ordered.length > 1 && <SessionBackendIcon backend={backend} size={14} decorative />}
-            {label(backend, isDefault)}
-            {!busy && key && <span className="k">{key}</span>}
-          </button>
+            {numbered && <span className="wsp-num">{i + 1}</span>}
+            <SessionBackendIcon backend={backend} size={14} decorative />
+            <span className="wsp-name">{BACKEND_LABEL[backend]}</span>
+            <span className="note">
+              {reason ? choice.note(backend) : backend === choice.defaultBackend ? 'default' : ''}
+            </span>
+          </div>
         )
       })}
+    </div>,
+    document.body
+  )
+}
+
+export function AgentSelect({
+  value,
+  choice,
+  ariaLabel,
+  onPick
+}: {
+  value: BackendId
+  choice: Pick<AgentChoice, 'listed' | 'issue' | 'note'>
+  ariaLabel: string
+  onPick: (backend: BackendId) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
+  return (
+    <>
+      <button
+        ref={setAnchor}
+        className="mini"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onMouseDown={keepFocus}
+        onClick={() => setOpen(!open)}
+      >
+        <SessionBackendIcon backend={value} size={14} decorative />
+        {BACKEND_LABEL[value]}
+        <LuChevronDown size={14} />
+      </button>
+      {open && anchor && (
+        <AgentList
+          anchor={anchor}
+          choice={{ ...choice, defaultBackend: value }}
+          hotAt={Math.max(0, choice.listed.indexOf(value))}
+          numbered={false}
+          onPick={onPick}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </>
   )
 }
@@ -205,25 +377,24 @@ export function BusyLine({ children }: { children: ReactNode }) {
   )
 }
 
-export function SessionLaunchStatus({ launch }: { launch: ReturnType<typeof useSessionLaunch> }) {
-  const watched = [...new Set([ALWAYS_ON_BACKEND, launch.methods.defaultBackend])]
-  const issues = watched.flatMap((b) => {
-    const reason = launch.methods.enabled[b] ? launch.setupIssue(b) : ''
-    return reason ? [{ backend: b, reason }] : []
-  })
+export function SessionLaunchStatus({
+  launch
+}: {
+  launch: ReturnType<typeof useLaunchChoice> & { error?: string; close?: () => void }
+}) {
+  const refused = launch.listed.filter((b) => launch.setupIssue(b))
   return (
     <>
       <NoAccountLines
-        backends={launch.usable.filter((b) => !launch.setupIssue(b))}
+        backends={launch.listed.filter((b) => !launch.setupIssue(b))}
         onOpenSettings={launch.close}
       />
-      {issues.length > 0 && (
+      {refused.length > 0 && (
         <p className="field-hint">
-          {issues.map(({ backend, reason }, index) => (
-            <span key={backend} title={reason}>
+          {refused.map((backend, index) => (
+            <span key={backend} title={launch.setupIssue(backend)}>
               {index > 0 && ' · '}
-              {BACKEND_LABEL[backend]}:{' '}
-              {unsupportedPairMessage(backend, launch.host) ? 'Local only' : 'Unavailable'}
+              {BACKEND_LABEL[backend]}: {launch.note(backend)}
             </span>
           ))}
         </p>
