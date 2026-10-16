@@ -601,6 +601,17 @@ export class ClaudeBackend implements SessionBackend {
     return !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId)
   }
 
+  async waitRemoteGone(host: string, sessionId: string): Promise<'gone' | 'alive' | 'unreachable'> {
+    this.d.remoteSync()?.pokeNow(host)
+    const deadline = Date.now() + REMOTE_EXIT_WAIT_MS
+    while (!this.remoteSessionGone(host, sessionId)) {
+      if (Date.now() >= deadline)
+        return this.d.remoteSync()?.connected(host) ? 'alive' : 'unreachable'
+      await new Promise((r) => setTimeout(r, REMOTE_EXIT_POLL_MS))
+    }
+    return 'gone'
+  }
+
   noticeRemoteExits(host: string, sessionIds: string[]): void {
     const { tracker } = this.d
     for (const s of tracker.list()) {

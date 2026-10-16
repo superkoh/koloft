@@ -101,6 +101,18 @@ function setup(scope = WS, fail = false, refuseDelete = false) {
 const settled = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
 describe('one Discord thread per session', () => {
+  it('a thread Discord no longer has is dropped from the record and from its tab, so the next notice opens a new thread', async () => {
+    const { b, threads, kept } = setup()
+    const s = { tabId: 't1', key: 'k1', name: 'fix-login', backend: 'claude' as const }
+    expect(await threads.place(b, s)).toBe('101')
+
+    threads.threadGone('101')
+
+    expect(kept).toEqual([])
+    expect(await threads.place(b, s)).toBe('102')
+    expect(kept).toEqual([{ threadId: '102', keys: ['k1'], name: 'fix-login' }])
+  })
+
   it('a session first heard from gets an opener card in the channel and a thread on it, with the owner added; later notices reuse it', async () => {
     const { b, threads, kept, openers, names, members } = setup()
     const s = {

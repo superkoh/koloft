@@ -185,6 +185,11 @@ export class SessionThreads {
     this.wanted.delete(threadId)
   }
 
+  threadGone(threadId: string): void {
+    for (const [tabId, t] of this.byTab) if (t.threadId === threadId) this.byTab.delete(tabId)
+    this.d.conductors.dropThread(threadId)
+  }
+
   archive(threadId: string): void {
     void this.d.link.archiveThread(threadId).catch(() => undefined)
   }

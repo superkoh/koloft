@@ -104,7 +104,10 @@
             <a href="../workbench/#web-tabs">web tabs</a>)
           </li>
           <li><code>koloft diff</code> — show you what changed in a file since the last commit</li>
-          <li><code>koloft note</code> — read the folder's note, or add a line to the end of it</li>
+          <li>
+            <code>koloft note</code> — read the <a href="../workbench/#note">note</a> it shows (its
+            folder's, or the Global Assist's own), or add a line to the end of it
+          </li>
         </ul>
 
         <h3>Scheduled jobs</h3>
@@ -120,8 +123,11 @@
         <h3>Sessions</h3>
         <ul class="dash">
           <li>
-            <code>koloft session list</code> — see this folder's sessions, and whether each is
-            working, asking you a question, finished its turn, or idle
+            <code>koloft session list</code> — see every session the folder shows in the sidebar:
+            the open ones first, and whether each is working, asking you a question, finished its
+            turn, or idle; then the closed and sleeping ones, with when each was last active and its
+            id. A session started with <code class="nowrap">session new</code> also says who started
+            it: <code class="nowrap">started by: you</code>, or the starter's name
           </li>
           <li>
             <code>koloft session new</code> — start a session of the same kind (Claude starts
@@ -153,9 +159,10 @@
             <code class="nowrap">session send</code> is not sent twice.
           </li>
           <li>
-            <code>koloft session close</code> — close itself, or a session it started, for good: its
-            tab, its row in the sidebar, and its worktree and branches if it had one. Koloft says
-            no, and lists what is left, while:
+            <code>koloft session close</code> — close itself, or any session started under it with
+            <code class="nowrap">session new</code> (by it, by one it started, and so on down the
+            chain), for good: its tab, its row in the sidebar, and its worktree and branches if it
+            had one. Koloft says no, and lists what is left, while:
             <ul class="dash">
               <li>a file is not committed</li>
               <li>a commit is not on the remote yet</li>
@@ -373,7 +380,7 @@
           <b>Project</b>
           <a href="../changelog/">Changelog</a>
           <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
-          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>
           <a href="https://github.com/superkoh/koloft/issues">Issues</a>
         </nav>
       </div>

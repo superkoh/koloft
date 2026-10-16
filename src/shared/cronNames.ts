@@ -34,6 +34,14 @@ export function worktreeBase(name: string, at: number): string {
   return `${slugOf(name)}-${stamp}`
 }
 
+export function worktreeHomeOf(root: string): string {
+  return `${root}/.claude/worktrees`
+}
+
+export function isRunFolderOf(slug: string, name: string): boolean {
+  return new RegExp(`^${slug}-\\d{6}-\\d{4}(-.+)?$`).test(name)
+}
+
 export function cronBackend(job: { backend?: BackendId }): BackendId {
   return job.backend ?? 'claude'
 }

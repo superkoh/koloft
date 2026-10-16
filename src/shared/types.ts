@@ -1347,6 +1347,9 @@ export interface HistoryLine {
   until?: number
   worktree?: string
   note?: string
+  sessionId?: string
+  removed?: true
+  kept?: string
 }
 
 export interface CronFile {
@@ -1366,6 +1369,7 @@ export interface LiveRun {
   dueAt: number
   manual?: true
   kept?: string
+  note?: string
 }
 
 export interface CronState {

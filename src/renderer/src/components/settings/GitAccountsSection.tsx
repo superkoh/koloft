@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
-import { LuCopy, LuExternalLink, LuLoaderCircle, LuPlus, LuX } from 'react-icons/lu'
+import { IconClose, IconCopy, IconLoading, IconOpenOutside, IconPlus } from '../../icons'
 import {
   GIT_PLATFORMS,
   type GitAccountView,
@@ -276,7 +276,7 @@ export function GitAccountsSection(): JSX.Element {
             title="Pick a host, then sign in or paste a token"
             onClick={() => setAdding({ step: 'host', platform: 'github', url: '' })}
           >
-            <LuPlus size={14} /> Add account
+            <IconPlus size={14} /> Add account
           </button>
         </div>
         <span className="field-hint">
@@ -432,7 +432,7 @@ function GitAccountRow({
           </button>
         )}
         <button className="acct-x" title={`Remove account from ${where}`} onClick={onAskRemove}>
-          <LuX size={12} />
+          <IconClose size={12} />
         </button>
       </div>
       {confirming && (
@@ -513,17 +513,17 @@ function GitLoginBox({
                   className="mini"
                   onClick={() => navigator.clipboard?.writeText(progress.code).catch(() => {})}
                 >
-                  <LuCopy size={14} /> Copy
+                  <IconCopy size={14} /> Copy
                 </button>
                 <button className="mini" onClick={() => window.api.gitAccounts.loginBrowser()}>
-                  <LuExternalLink size={14} /> Open page again
+                  <IconOpenOutside size={14} /> Open page again
                 </button>
                 <button
                   className="mini"
                   title="Copies the sign-in page's address, to paste into a private window"
                   onClick={() => navigator.clipboard?.writeText(progress.url).catch(() => {})}
                 >
-                  <LuCopy size={14} /> Copy link
+                  <IconCopy size={14} /> Copy link
                 </button>
               </div>
               <span className="field-hint">
@@ -545,7 +545,7 @@ function GitLoginBox({
                   disabled={!progress.url}
                   onClick={() => window.api.gitAccounts.loginBrowser()}
                 >
-                  <LuExternalLink size={14} /> Open page again
+                  <IconOpenOutside size={14} /> Open page again
                 </button>
                 <button
                   className="mini"
@@ -554,7 +554,7 @@ function GitLoginBox({
                     progress.url && navigator.clipboard?.writeText(progress.url).catch(() => {})
                   }
                 >
-                  <LuCopy size={14} /> Copy link
+                  <IconCopy size={14} /> Copy link
                 </button>
               </div>
               <span className="field-hint">
@@ -564,7 +564,7 @@ function GitLoginBox({
             </>
           )}
           <div>
-            <LuLoaderCircle size={14} /> Waiting for {name}…
+            <IconLoading size={14} /> Waiting for {name}…
           </div>
           {useToken}
         </div>

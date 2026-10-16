@@ -17,7 +17,6 @@ export interface LiveStatusDeps {
   conductorChannelOf(tabId: string): string | undefined
   subject(tabId: string): Promise<StatusSubject | undefined>
   status(tabId: string): SessionStatus | undefined
-  awaitsInput(tabId: string): boolean
   turnOver(tabId: string): boolean
   unknown(tabId: string): boolean
   alive(tabId: string): boolean
@@ -43,13 +42,11 @@ const LOOK: Record<LiveState, { emoji: string; words: string; accent: number; af
 
 export function liveStateOf(
   status: SessionStatus | undefined,
-  awaitsInput: boolean,
   turnOver: boolean,
   unknown: boolean
 ): LiveState | undefined {
   if (unknown) return 'unknown'
-  if (status === 'approval' || ((status === 'waiting' || status === 'idle') && awaitsInput))
-    return 'needs-you'
+  if (status === 'approval') return 'needs-you'
   if (status === 'waiting') return 'turn-done'
   if (status === 'working' && turnOver) return 'still-running'
   return status
@@ -100,12 +97,7 @@ export class LiveStatus {
       if (subject) entry.subject = subject
     }
     if (entry.state === 'closed') return
-    const state = liveStateOf(
-      this.d.status(tabId),
-      this.d.awaitsInput(tabId),
-      this.d.turnOver(tabId),
-      this.d.unknown(tabId)
-    )
+    const state = liveStateOf(this.d.status(tabId), this.d.turnOver(tabId), this.d.unknown(tabId))
     if (state) this.enter(entry, state)
     this.typeWhile(tabId, !!state && TYPES_WHILE.has(state))
     this.show(tabId, entry)

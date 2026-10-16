@@ -1,4 +1,5 @@
-import { CODEX_WAITING_QUESTION_TOOL, PLAYWRIGHT_CLI_RULE } from '../conductorGate'
+import { PLAYWRIGHT_CLI_RULE } from '../conductorGate'
+import { CODEX_WAITING_QUESTION_TOOL } from '@shared/agentGuide'
 import type { AssistTask } from './conductors'
 import { channelLabel, ownedGuilds, scopeName } from '@shared/conductors'
 import type { DiscordSettings, DiscordStatus } from '@shared/types'

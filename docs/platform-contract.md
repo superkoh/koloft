@@ -847,6 +847,17 @@ inferred, not checked.
   tab scrambled the Claude TUI). A WebGL terminal taken out of the layout entirely,
   with no xterm mounting or disposing (seen: the Claude TUI behind a full-width
   Workbench), came back blank until the atlas was cleared and repainted (§20).
+- **`clearTextureAtlas()` silently does nothing when page 0 looks empty.**
+  `TextureAtlas.clearTexture()` returns early when `pages[0].currentRow` is at (0, 0),
+  meant as "nothing drawn yet". But a merged page never moves its `currentRow`, and a
+  cleared page 0 stays at (0, 0) when new glyphs land on a later page. After heavy CJK
+  output and one earlier clear, page 0 was an 8192-px merged page at (0, 0), so every
+  later clear kept the old cache: glyph textures wiped the way the GPU loses them stayed
+  blank (ink 73410 → 0 → 510 pixels after `webgl:repair`) until the app restarted. Making
+  page 0's `currentRow.x` non-zero before the call lets the clear run (ink back to
+  73410); one clear resets it to (0, 0), so the other owners of that atlas skip theirs.
+  Measured 2026-10-16, Electron 43.7.3, addon 0.20.0-beta.298, `webgl-repair.spec.ts`;
+  the same guard is still on xterm.js master that day.
 
 ## §24 DOM, CSS and form controls in Chromium
 
@@ -1052,7 +1063,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
   gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
-  existence and mtime show whether a fetch ran.
+  existence and mtime show whether a fetch ran. **A failed fetch writes it too** (0
+  bytes), so its mtime says a fetch was tried, not that one worked — read it before
+  fetching. With `BatchMode=yes` and no askpass, a fetch the machine has no credentials
+  for fails at once with exit 128 and never waits: `Host key verification failed.` (ssh
+  origin, host not in `known_hosts`, 0.4 s), `Permission denied (publickey).` (no key,
+  0.6 s), `could not read Username … terminal prompts disabled` (https needing a login,
+  0.3 s). (2026-10-06, git 2.39.5 on Debian 12 in the e2e sshd Docker image, reached
+  with `/usr/bin/ssh` and `SshHost`'s options; a public https origin fetched in 1.6 s.
+  The 0-byte `FETCH_HEAD` also came from a fetch of a missing local path with git 2.54.0
+  on macOS 27, 2026-10-11.)
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
   own config is enough), and git splits its command on spaces.
 
@@ -2004,3 +2024,22 @@ server unless a line says so.
 - Inside a colima container `host.docker.internal` (and `host.lima.internal`) resolve to
   `192.168.5.2`, and a server listening on the Mac's `127.0.0.1` answered there.
 - Measured 2026-10-13, colima on macOS 27.0, `node:22-bookworm-slim`.
+
+## §57 A folder's last-modified time on Linux and macOS
+
+- **Adding, renaming or removing a file right inside a folder moves the folder's
+  last-modified time.** So does creating a file inside a subfolder for that subfolder.
+- **Writing into a file already there does not move its folder's time, and a change
+  inside a subfolder does not reach the parent folder.** Watching a folder this way sees
+  its own list of names change, nothing deeper.
+- On Linux the folder's size stays `4096` through all of it; on macOS (APFS) the size
+  changes with the number of entries (`96` → `128` → `96`).
+- A missing path prints nothing to stdout from either `stat` dialect (§37).
+- Measured 2026-10-11 with one script that ran the §37 `fp()` (`stat -c '%.9Y %s'`, falling
+  back to `stat -f '%Fm %z'`) on a fresh folder after each step, one second apart: add a
+  file, append to it, rename it, remove it, add a file in a subfolder. Run in a Docker
+  `ubuntu:24.04` container (Linux 6.8.0, GNU coreutils) and on this Mac (macOS 27.0, BSD
+  `stat`). Linux output: `start 1791720666.973637444 4096`, `add file 1791720667.980639518`,
+  `edit file 1791720667.980639518` (unchanged), `rename 1791720670.010643717`,
+  `remove 1791720671.024645823`, `add in sub 1791720671.024645823` (unchanged; the
+  subfolder moved to `1791720672.028647913`).

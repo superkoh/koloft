@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
-import { LuArrowUpRight, LuPlus, LuX } from 'react-icons/lu'
+import { IconClose, IconLinkOut, IconPlus } from '../icons'
 import {
   channelLabel,
   GLOBAL_SCOPE,
@@ -119,7 +119,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
         <div className="modal-header">
           <span>{title}</span>
           <span className="modal-close" onClick={close} aria-label="Close">
-            <LuX size={16} />
+            <IconClose size={16} />
           </span>
         </div>
         <div className="modal-body">
@@ -163,7 +163,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
                   }}
                 >
                   <span className="wt-name">
-                    <LuPlus size={14} /> New channel #{newName}
+                    <IconPlus size={14} /> New channel #{newName}
                   </span>
                   <span className="note">
                     {picked === GLOBAL_SCOPE
@@ -207,7 +207,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
                       className="ob-link"
                       onClick={() => window.api.browser.openExternal(inviteLink(appId))}
                     >
-                      Invite the bot again <LuArrowUpRight size={13} />
+                      Invite the bot again <IconLinkOut size={13} />
                     </button>
                   </>
                 )}

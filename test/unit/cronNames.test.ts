@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { hasWordChar, isValidModelName, slugOf, worktreeBase } from '@shared/cronNames'
+import {
+  hasWordChar,
+  isRunFolderOf,
+  isValidModelName,
+  slugOf,
+  worktreeBase
+} from '@shared/cronNames'
 import { isValidWorktreeName } from '@shared/worktreeName'
 
 describe('slugOf', () => {
@@ -66,5 +72,16 @@ describe('worktreeBase', () => {
   it('pads every part to two digits', () => {
     const due = new Date(2026, 0, 5, 9, 7, 0, 0)
     expect(worktreeBase('x', due.getTime())).toBe('x-260105-0907')
+  })
+})
+
+describe('isRunFolderOf', () => {
+  it('knows a run folder by its date stamp, so a job whose name begins with another job’s is never mistaken for it', () => {
+    expect(isRunFolderOf('nightly-report', 'nightly-report-260902-2100')).toBe(true)
+    expect(isRunFolderOf('nightly-report', 'nightly-report-260902-2100-2')).toBe(true)
+    expect(isRunFolderOf('nightly-report', 'nightly-report-260902-2100-a3f9')).toBe(true)
+    expect(isRunFolderOf('nightly-report', 'nightly-report-v2-260902-2100')).toBe(false)
+    expect(isRunFolderOf('nightly-report', 'nightly-report-notes')).toBe(false)
+    expect(isRunFolderOf('nightly-report', 'nightly-report-260902')).toBe(false)
   })
 })

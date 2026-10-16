@@ -4,7 +4,7 @@
 
 # Koloft
 
-[![Latest release](https://img.shields.io/github/v/release/superkoh/koloft-releases?label=release&color=blue)](https://github.com/superkoh/koloft-releases/releases)
+[![Latest release](https://img.shields.io/github/v/release/superkoh/koloft?label=release&color=blue)](https://github.com/superkoh/koloft/releases)
 [![Licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
 [![Platform: macOS arm64](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)](#install-macos-apple-silicon)
 [![CI](https://github.com/superkoh/koloft/actions/workflows/ci.yml/badge.svg)](https://github.com/superkoh/koloft/actions/workflows/ci.yml)
@@ -128,7 +128,7 @@ shell.
 ## Install (macOS, Apple Silicon)
 
 Download the `.dmg` from
-[Releases](https://github.com/superkoh/koloft-releases/releases), open it, and drag Koloft
+[Releases](https://github.com/superkoh/koloft/releases), open it, and drag Koloft
 to Applications. The app is signed with an Apple Developer ID and notarized by Apple, so
 it opens with a normal double-click.
 
@@ -136,7 +136,7 @@ Or in one line from the terminal, which fetches the latest dmg and copies `Kolof
 into `/Applications`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/superkoh/koloft/main/install.sh | bash
 ```
 
 ## How it works
@@ -282,8 +282,8 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
     or Gitea / Forgejo / Codeberg (sign in on the site), your own GitLab or Azure DevOps
     (a pasted token), or any other server (its address, your username and a token, kept
     without checking). Tokens live in the Keychain. Pick one per repository in its git
-    panel's `Account` part; a folder with no pick, and a remote (SSH) folder, keeps the
-    machine's own git and gh setup.
+    panel's `Account` part; a folder with no pick keeps the machine's own git and gh
+    setup.
 
   With the mode off, sessions run a bare `claude` or `codex` on whatever login the
   machine already has.
@@ -326,7 +326,7 @@ and approvals go to your own bot. The only hosts it ever reaches on its own are:
 | Host | Why |
 | --- | --- |
 | `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, as a session starts and every 5 minutes, so the balancer can pick the least-loaded one; an API key or custom endpoint is only checked that it still works |
-| `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request; downloads `gh` itself for a **remote** workspace's machine that has none; signs in a GitHub git account and checks its token |
+| `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request; for a **remote** workspace's machine that lacks them, downloads `gh` itself and Git Credential Manager; signs in a GitHub git account and checks its token |
 | `gitlab.com`, `api.bitbucket.org`, `dev.azure.com`, `codeberg.org`, or your own git server | the server of a git account you add, only after you add one there. To check the token and read the username: when it is added, when Koloft starts, every 6 hours, when `Settings ▸ Accounts` opens, and when the server turns the token down during a git call (an account added as "Other server" is never checked). To see whether the account can push to a workspace's repository: when a workspace is added, and when the git panel's Account list opens. Bitbucket also reaches `bitbucket.org` for the browser sign-in |
 | your workspace's git remote (often `github.com`) | every 5 minutes, to see whether the branch is behind — `Settings ▸ Appearance` turns auto-fetch off |
 | `claude.ai`, `chatgpt.com` | the official installers of `claude` and `codex`, only when you click a tool's card on the welcome steps to install it |

@@ -164,6 +164,7 @@ export interface DiscordLinkDeps {
   onInteraction(i: DiscordInteraction): void
   onReady(): void
   postFailed(channelId: string, error: string): void
+  channelGone(channelId: string): void
 }
 
 interface Author {
@@ -484,6 +485,8 @@ export class DiscordLink {
       if (this.failing.delete(channelId)) this.d.push(this.status())
       return sent
     } catch (error) {
+      if (error instanceof DiscordHttpError && error.status === NOT_FOUND)
+        this.d.channelGone(channelId)
       if (error instanceof DiscordHttpError && !this.failing.has(channelId)) {
         this.failing.set(channelId, error.message)
         this.d.push(this.status())

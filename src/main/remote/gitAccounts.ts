@@ -23,6 +23,7 @@ ldd --version 2>&1 | grep -qi musl && echo musl
 g="$HOME/${REMOTE_GCM_DIR}/${GCM_BIN_NAME}"
 [ -x "$g" ] && ${GCM_QUIET_ENV} "$g" --version </dev/null >/dev/null 2>&1 && echo gcm
 command -v timeout >/dev/null 2>&1 && echo timeout
+{ command -v curl || command -v wget; } >/dev/null 2>&1 && echo fetch
 exit 0`
 
 export interface MachineFacts {
@@ -32,6 +33,7 @@ export interface MachineFacts {
   gcmAsset: string | null
   gcm: boolean
   timeout: boolean
+  fetch: boolean
 }
 
 const GCM_ASSET: Record<string, string> = {
@@ -58,7 +60,8 @@ export function parsePreflight(stdout: string): MachineFacts | null {
     gitTooOld: !!version && (major < needMajor || (major === needMajor && minor < needMinor)),
     gcmAsset: lines.includes('musl') ? null : (GCM_ASSET[field('platform') ?? ''] ?? null),
     gcm: lines.includes('gcm'),
-    timeout: lines.includes('timeout')
+    timeout: lines.includes('timeout'),
+    fetch: lines.includes('fetch')
   }
 }
 

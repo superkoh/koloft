@@ -64,6 +64,7 @@ interface Conducting {
   scopes?: Record<string, string>
   sidebar?: WorkspaceRows[]
   turns?: Record<string, Turn[]>
+  quotedPrompts?: Record<string, string>
   conductors?: Record<string, Target>
   ready?: (tabId: string, turnEnded: boolean, ms: number) => boolean | Promise<boolean>
   bypass?: string[]
@@ -146,6 +147,7 @@ function harness(
       reads.push({ key, n })
       return (conducting.turns?.[key] ?? []).slice(-n)
     },
+    quotedPrompt: (tabId) => conducting.quotedPrompts?.[tabId],
     touch: (tabId, key) => {
       if (conducting.scopes?.[tabId]) touched.push({ tabId, key })
     },
@@ -401,6 +403,48 @@ describe('koloft session new', () => {
     expect(reply.text).toContain('new-tab')
   })
 
+  // ADR-0031
+  it('a child is handed the owner’s last words to its parent, so it talks to the owner in their language even when its task is in English: a Claude parent’s quoted prompt, a Codex parent’s last message from the owner (not a session’s report or Assist’s wrapper), and a Codex child the words of the session that started it', async () => {
+    const { verb, launched } = harness(
+      [
+        session('me', 'claude'),
+        session('cx', 'codex', { nativeSessionId: CODEX_THREAD }),
+        session('new-tab', 'codex', { nativeSessionId: OTHER_THREAD })
+      ],
+      {},
+      [],
+      {
+        quotedPrompts: { me: '先把侧栏修好' },
+        turns: {
+          'cx-session': [
+            {
+              said: [{ who: 'owner', text: '[Discord] 帮我跑一下测试', at: 1 }],
+              reply: 'ok',
+              at: 1
+            },
+            {
+              said: [
+                { who: 'owner', text: '(From the session "kid", id k:) All green.', at: 2 },
+                { who: 'owner', text: ownerSays('Rerun «the flaky one».'), at: 2 }
+              ],
+              reply: 'ok',
+              at: 2
+            }
+          ],
+          'new-tab-session': [
+            { said: [{ who: 'owner', text: 'Run the tests.', at: 3 }], reply: '', at: 3 }
+          ]
+        }
+      }
+    )
+    await verb(['new', '--', 'Fix the sidebar.'], from('me'))
+    await verb(['new', '--', 'Run the tests.'], from('cx'))
+    await verb(['new', '--', 'Run the flaky one again.'], from('new-tab'))
+    expect(launched[0].firstPrompt).toContain('«先把侧栏修好»')
+    expect(launched[1].role).toContain('«帮我跑一下测试»')
+    expect(launched[2].role).toContain('«帮我跑一下测试»')
+  })
+
   it('--workspace starts the sibling in another sidebar workspace, found by full path or folder name', async () => {
     const { verb, launched } = harness([session('me', 'claude')])
     for (const ref of [OTHER_WS, 'app'])
@@ -443,11 +487,16 @@ describe('koloft session send', () => {
     session('cc', 'claude', { title: 'Planner' })
   ]
 
-  it('queues the message on the Codex session found by id, tab id or title, a title with spaces quoted or not', async () => {
+  it('queues the message, marked with who sent it, on the Codex session found by id, tab id or title, a title with spaces quoted or not', async () => {
     const { verb, queued } = harness(sessions())
     for (const ref of [[OTHER_THREAD], ['cx'], ['Test runner'], ['Test', 'runner']])
       expect((await verb(['send', ...ref, 'What', 'did you find?'], from('me'))).exit).toBe(0)
-    expect(queued).toEqual(Array(4).fill({ tabId: 'cx', text: 'What did you find?' }))
+    expect(queued.map((q) => [q.tabId, q.text])).toEqual(
+      Array(4).fill([
+        'cx',
+        expect.stringMatching(/^\(From the session "me title".*\) What did you find\?$/)
+      ])
+    )
   })
 
   it('points a Claude caller, or a Claude target, to SendMessage and sends nothing', async () => {
@@ -560,7 +609,9 @@ describe('koloft session send', () => {
       session('kid', 'codex', { nativeSessionId: OTHER_THREAD, cwd: OTHER_WS })
     ])
     expect((await verb(['send', CODEX_THREAD, 'done'], from('kid'))).exit).toBe(0)
-    expect(queued).toEqual([{ tabId: 'me', text: 'done' }])
+    expect(queued.map((q) => [q.tabId, q.text])).toEqual([
+      ['me', expect.stringMatching(/^\(From the session .*\) done$/)]
+    ])
   })
 
   it('refuses a session that is not open anywhere, and a missing message', async () => {

@@ -8,7 +8,7 @@ import {
   type JSX,
   type MouseEvent as ReactMouseEvent
 } from 'react'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 import type { ArtifactView } from '@shared/types'
 import { opensAsWebTab } from '@shared/browserRoute'
 import { basename, previewKindForPath, stateAfterReadError } from '@shared/preview'
@@ -630,7 +630,7 @@ export function ArtifactPane({
             title="Dismiss"
             aria-label="Dismiss"
           >
-            <LuX size={14} />
+            <IconClose size={14} />
           </button>
         </div>
       )}

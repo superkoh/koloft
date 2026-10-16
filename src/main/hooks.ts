@@ -9,14 +9,15 @@ import {
   codexGateShell,
   conductorGateCommand
 } from './conductorGate'
-import { HANDOVER_OPENING } from './handover'
-import type { ModeClass } from './crossSessionMessage'
+import { HANDOVER_OPENING, OWNER_WORDS_BEFORE_QUOTE, OWNER_WORDS_END } from './handover'
+import { FROM_A_SESSION, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
 export interface HookPaths {
   hookScript: string
   gateScript: string
   codexGate: string
+  codexReplyLanguage: string
   settingsDir: string
   regDir: string
 }
@@ -31,6 +32,68 @@ const NOT_FROM_THE_RELAY = `Koloft: this ${DISCORD_PREFIX} message was not sent 
 const fromTheRelay = (mode: ModeClass): string =>
   `*'"prompt":"<cross-session-message from-mode=\\"${mode}\\">\\n${DISCORD_PREFIX} '*`
 
+// CC§17 CC§19 CODEX§27
+const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
+  quote="$(cat "$said" 2>/dev/null)"
+  context="$2"
+  [ -n "$quote" ] && context="$context"${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$quote"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+  [ -n "$context" ] || return 0
+  printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\\n' "$1" "$context"
+}`
+
+// CC§19
+const QUOTE_PROMPT_FN = `quote_prompt() {
+  printf '%s' "$input" |
+    LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' |
+    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*${OWNER_WORDS_BEFORE_QUOTE}(.*)${OWNER_WORDS_END}.*$/\\1/' \\
+      -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
+      -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n\\[Discord\\] //' \\
+      -e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//' |
+    head -c ${QUOTED_PROMPT_BYTES} |
+    LC_ALL=C sed -E -e $'s/([\\xc0-\\xdf]|[\\xe0-\\xef][\\x80-\\xbf]?|[\\xf0-\\xf7][\\x80-\\xbf]{0,2})$//' \\
+      -e 's/\\\\u[0-9a-fA-F]{0,3}$//' -e 's/(^|[^\\\\])((\\\\\\\\)*)\\\\$/\\1\\2/'
+}`
+
+export const CODEX_SAID_ENV = 'KOLOFT_CODEX_SAID'
+const HANDED_OVER_TASK_COMES_FIRST = '.task-first'
+export const CODEX_REPLY_LANGUAGE_ENV = 'KOLOFT_CODEX_REPLY_LANGUAGE'
+const codexReplyLanguageHook = (event: string): string =>
+  `sh "$${CODEX_REPLY_LANGUAGE_ENV}" ${event}`
+export const CODEX_REPLY_LANGUAGE_HOOKS = [
+  { event: 'UserPromptSubmit', command: codexReplyLanguageHook('prompt') },
+  { event: 'PostToolUse', command: codexReplyLanguageHook('tool') }
+]
+
+// ADR-0031 CODEX§27
+export const CODEX_REPLY_LANGUAGE_SCRIPT = `#!/usr/bin/env bash
+said="$${CODEX_SAID_ENV}"
+[ -n "$said" ] || exit 0
+${REMIND_REPLY_LANGUAGE_FN}
+if [ "$1" = "tool" ]; then
+  cat >/dev/null
+  remind_reply_language PostToolUse
+  exit 0
+fi
+input="$(cat | tr -d '\\n')"
+${QUOTE_PROMPT_FN}
+case "$input" in
+  *'"prompt":"${FROM_A_SESSION}'*) ;;
+  *) if [ -f "$said${HANDED_OVER_TASK_COMES_FIRST}" ]; then
+       rm -f "$said${HANDED_OVER_TASK_COMES_FIRST}"
+     else
+       quote_prompt > "$said"
+     fi ;;
+esac
+remind_reply_language UserPromptSubmit
+exit 0
+`
+
+// ADR-0031
+export function seedCodexOwnerWords(said: string, ownerWords: string): void {
+  fs.writeFileSync(said, JSON.stringify(ownerWords).slice(1, -1))
+  fs.writeFileSync(said + HANDED_OVER_TASK_COMES_FIRST, '')
+}
+
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
 reg="$1"; tab="$2"; event="$3"
@@ -39,14 +102,7 @@ reg="$1"; tab="$2"; event="$3"
 # CC§14
 [ "$event" = "ask" ] && { [ ! -f "$reg/$tab.answerable" ] || [ -f "$reg/$tab.typed" ]; } && event="asked"
 said="$reg/$tab.said"
-# CC§17 CC§19
-remind_reply_language() {
-  quote="$(cat "$said" 2>/dev/null)"
-  context="$2"
-  [ -n "$quote" ] && context="$context"${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$quote"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
-  [ -n "$context" ] || return 0
-  printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\\n' "$1" "$context"
-}
+${REMIND_REPLY_LANGUAGE_FN}
 if [ "$event" = "tool" ]; then
   cat >/dev/null
   remind_reply_language PostToolUse
@@ -65,17 +121,7 @@ session_id() {
     sed 's/.*"\\([^"]*\\)"$/\\1/' |
     tr -d '"\\\\[:cntrl:]'
 }
-# CC§19
-quote_prompt() {
-  printf '%s' "$input" |
-    LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' |
-    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
-      -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n\\[Discord\\] //' \\
-      -e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//' |
-    head -c ${QUOTED_PROMPT_BYTES} |
-    LC_ALL=C sed -E -e $'s/([\\xc0-\\xdf]|[\\xe0-\\xef][\\x80-\\xbf]?|[\\xf0-\\xf7][\\x80-\\xbf]{0,2})$//' \\
-      -e 's/\\\\u[0-9a-fA-F]{0,3}$//' -e 's/(^|[^\\\\])((\\\\\\\\)*)\\\\$/\\1\\2/'
-}
+${QUOTE_PROMPT_FN}
 case "$event" in
   start|end)
     sid="$(session_id)"
@@ -277,8 +323,10 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   fs.writeFileSync(codexGateScript, CODEX_CONDUCTOR_GATE_SCRIPT)
   const codexGate = path.join(hookDir, 'codex-conductor-gate.sh')
   fs.writeFileSync(codexGate, codexGateShell(codexGateScript))
+  const codexReplyLanguage = path.join(hookDir, 'codex-reply-language.sh')
+  fs.writeFileSync(codexReplyLanguage, CODEX_REPLY_LANGUAGE_SCRIPT)
 
-  return { hookScript, gateScript, codexGate, settingsDir, regDir }
+  return { hookScript, gateScript, codexGate, codexReplyLanguage, settingsDir, regDir }
 }
 
 // CC§8
@@ -292,7 +340,7 @@ const NOTIFICATIONS_WAITING_ON_THE_PERSON = [
 
 const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
 
-// CC§6 CC§14
+// CC§6 CC§9 CC§14
 export function hookSettings(
   hookScript: string,
   regDir: string,
@@ -304,6 +352,7 @@ export function hookSettings(
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
   const settings: Record<string, unknown> = {
+    skipDangerousModePermissionPrompt: true,
     env: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' },
     hooks: {
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
@@ -360,6 +409,21 @@ function allowFile(regDir: string, tabId: string): string {
 
 export function discordIdsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.discord-ids`)
+}
+
+// ADR-0031
+export function quotedPrompt(regDir: string, tabId: string): string | undefined {
+  let escaped: string
+  try {
+    escaped = fs.readFileSync(path.join(regDir, `${tabId}.said`), 'utf8').trimEnd()
+  } catch {
+    return undefined
+  }
+  try {
+    return JSON.parse(`"${escaped}"`) || undefined
+  } catch {
+    return undefined
+  }
 }
 
 export function writeAllowFile(regDir: string, tabId: string, allow: readonly string[]): string {

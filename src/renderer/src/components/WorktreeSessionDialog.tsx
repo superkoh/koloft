@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
   type ReactNode
 } from 'react'
-import { LuCheck, LuTriangleAlert, LuX } from 'react-icons/lu'
+import { IconCheck, IconClose, IconWarning } from '../icons'
 import type {
   BackendId,
   GithubItem,
@@ -372,9 +372,7 @@ export function WorktreeSessionDialog({
     const good = line === 'ok'
     return (
       <div className={'fresh-line ' + (good ? 'okv' : 'stale')}>
-        <span className="fico-l">
-          {good ? <LuCheck size={14} /> : <LuTriangleAlert size={14} />}
-        </span>
+        <span className="fico-l">{good ? <IconCheck size={14} /> : <IconWarning size={14} />}</span>
         <span>
           <b>{copy.strong}</b>
           {copy.rest}
@@ -463,7 +461,7 @@ export function WorktreeSessionDialog({
           <div className="modal-header">
             <span>{title}</span>
             <span className="modal-close" onClick={close} aria-label="Close">
-              <LuX size={16} />
+              <IconClose size={16} />
             </span>
           </div>
           <div className="modal-body">

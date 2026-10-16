@@ -1,6 +1,6 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
-import { LuSparkles, LuX } from 'react-icons/lu'
+import { IconAiStart, IconClose } from '../icons'
 import type { BackendId } from '@shared/types'
 import { LOCAL_MACHINE } from '@shared/sessionRoute'
 import { isValidWorktreeName } from '@shared/worktreeName'
@@ -115,12 +115,12 @@ export function NewProjectDialog({
         <div className="modal-header">
           <span>New Project</span>
           <span className="modal-close" onClick={() => !locked && onClose()} aria-label="Close">
-            <LuX size={16} />
+            <IconClose size={16} />
           </span>
         </div>
         <div className="modal-body">
           <p className="field-hint assist-why">
-            <LuSparkles size={13} className="assist-glyph" />
+            <IconAiStart size={13} className="assist-glyph" />
             <span>{seed.why || 'No workspace fits — make a new one.'}</span>
             <button
               className="ob-link"

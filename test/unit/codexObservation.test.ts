@@ -171,17 +171,16 @@ describe('CodexObservation', () => {
     expect(f.attention.list().map((e) => e.kind)).toEqual(['approval'])
   })
 
-  it('keeps tool questions distinct from permission approvals across status updates, and the question marks the row as needing you', () => {
+  it('a tool question holds across status updates and marks the row as needing you, as an approval or a Claude question does, until it is answered', () => {
     const f = fixture()
     f.bind()
     f.server('turn/started', { turn: { id: 'turn' } })
     f.server('item/tool/requestUserInput', {}, 50)
     f.server('thread/status/changed', { status: { type: 'active' } })
-    expect(f.status()).toBe('waiting')
+    expect(f.status()).toBe('approval')
     expect(f.attention.list()).toHaveLength(1)
     f.observer.receive('client', { id: 50, result: { answers: {} } })
     expect(f.status()).toBe('working')
-    expect(f.raised).not.toContain('approval')
   })
 
   // CODEX§20
@@ -262,7 +261,7 @@ describe('CodexObservation', () => {
       5
     )
     expect(f.observer.openQuestion()).toBeUndefined()
-    expect(f.status()).toBe('waiting')
+    expect(f.status()).toBe('approval')
   })
 
   it('notifies once per live turn that ends, interrupted or completed, and never for a replayed completion', () => {
@@ -444,7 +443,7 @@ describe('CodexObservation', () => {
     f.server('thread/status/changed', {
       status: { type: 'active', activeFlags: ['waitingOnUserInput'] }
     })
-    expect(f.status()).toBe('waiting')
+    expect(f.status()).toBe('approval')
   })
 
   const patch = (status: string, changes: object[]) => ({

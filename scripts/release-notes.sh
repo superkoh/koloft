@@ -100,6 +100,6 @@ Koloft into Applications.
 Or install from the terminal in one line:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/superkoh/koloft/main/install.sh | bash
 ```
 EOF

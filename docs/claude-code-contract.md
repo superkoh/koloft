@@ -200,8 +200,9 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   a re-write is not probed). In a `-w` session on 2.1.300 the pair was re-written twice
   inside the first turn (before and after the API call) and not at all in the second.
   Since 2.1.300 a tool result is on disk twice (the `api-request` records, below), so a
-  few turns after a move can push the last pair past any fixed window (Koloft's rescan
-  in `workspaces.ts` reads a 64 KB tail).
+  few turns after a move can push the last pair past any fixed window; Koloft's rescan
+  in `workspaces.ts` reads the tail in doubling chunks until one holds a
+  `worktree-state` or `relocated` line.
 - **Auto-memory lives beside the transcripts, in `~/.claude/projects/<slug>/memory/`**
   (`MEMORY.md` plus one `.md` per memory), and CC writes it with the ordinary
   Write/Edit tools, so memory files land in the transcript's file writes like any
@@ -380,6 +381,14 @@ Unless a bullet below says more, it is inferred, not checked.
   several times — 3 times in real transcripts, with the same `message.id` and
   `requestId`. Some records carry neither id and each must count; records with model
   `<synthetic>` carry no real spend.
+- **In a sub-agent transcript the repeats are not the same: they grow.** Swept
+  2026-10-16 on this Mac, every `*.jsonl` under `~/.claude/projects` (3825 files, CC
+  2.1.111–2.1.301, field names and numbers only): in main transcripts all 52,548
+  `message.id` + `requestId` keys repeat the same usage object; in the
+  `<session>/subagents/**` transcripts 32,181 of 44,412 keys have lines with different
+  usage, the later ones holding the larger `output_tokens` (a streamed-so-far count),
+  in every CC version present. Summing the largest value per key gives 71.3 M output
+  tokens across both kinds; summing the first line gives 37.8 M.
 - **Some CC versions mix subagent turns (`isSidechain: true`) into the main jsonl**,
   their usage records and Esc interrupts included; their spend is the session's, their
   context window and model are not. Which versions was not recorded.
@@ -1088,6 +1097,18 @@ other bullets of §9 were not re-measured on this build.
   older `bypassPermissionsModeAccepted: true` in `~/.claude.json` is still honored as a
   gate (a throwaway `$HOME` carrying only that key started with no screen), so anything
   that wants to know whether this Mac will stall must check BOTH.
+- **The same key inside a `--settings` file skips the screen too.** With
+  `{"skipDangerousModePermissionPrompt": true}` in a file passed as `--settings <file>`,
+  both `--dangerously-skip-permissions` and `--permission-mode bypassPermissions` open
+  straight at the prompt (footer `⏵⏵ bypass permissions on`); without it both show the
+  warning. A launch with no bypass flag is unchanged by the key: Shift+Tab cycles auto →
+  manual → accept edits → plan → auto and never offers bypass. Measured 2026-10-15 on
+  2.1.300 and again 2026-10-16 on 2.1.301 (macOS arm64), a scratch `CLAUDE_CONFIG_DIR`
+  with onboarding done and the folder trusted, a python pty, 20 s per run; and the same
+  on Linux, 2.1.301 linux-arm64 in Docker `node:22-bookworm` as a plain user (the screen
+  without the key, none with it). As root on Linux the flag is refused outright:
+  `--dangerously-skip-permissions cannot be used with root/sudo privileges for security
+  reasons`, key or not.
 - **`--name <title>` is a real title, written before any message.** The transcript's
   first two records are `{"type":"custom-title","customTitle":"<title>"}` and
   `{"type":"agent-name","agentName":"<title>"}`, and the `claude --resume` picker

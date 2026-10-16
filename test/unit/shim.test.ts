@@ -464,6 +464,29 @@ describe('claude shim (multi-account pick section — U5)', () => {
     expect(r.realEnv?.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBeUndefined()
   })
 
+  it('a --model Koloft put on the line (a scheduled job, koloft session new) yields to a custom endpoint that pins its own model, and stays for one that does not', async () => {
+    token('glm', 'endpoint-key-fixture')
+    const pinned = await runShimPick(['-w', 'job-1', '--model', 'opus', '--effort', 'high'], {
+      account: 'glm',
+      kind: 'custom',
+      banner: 'koloft: → glm (custom endpoint · glm-5.2)',
+      baseUrl: 'https://example.test/api/anthropic',
+      model: 'glm-5.2'
+    })
+    expect(pinned.realArgs).not.toContain('--model')
+    expect(pinned.realArgs).not.toContain('opus')
+    expect(pinned.realArgs).toEqual(expect.arrayContaining(['-w', 'job-1', '--effort', 'high']))
+
+    token('proxy', 'proxy-key')
+    const open = await runShimPick(['--model', 'opus'], {
+      account: 'proxy',
+      kind: 'custom',
+      banner: 'koloft: → proxy (custom endpoint)',
+      baseUrl: 'https://proxy.test'
+    })
+    expect(open.realArgs).toEqual(expect.arrayContaining(['--model', 'opus']))
+  })
+
   it('-p gets the token but NEVER the flag, and still does not register', async () => {
     token('bravo', 'tok-bravo')
     const r = await runShimPick(['-p', 'hi'], {

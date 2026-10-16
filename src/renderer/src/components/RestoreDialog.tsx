@@ -1,6 +1,6 @@
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { useEffect, useState, type JSX } from 'react'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 import type { SessionRow } from '@shared/types'
 import { basename } from '@shared/preview'
 import { mixesBackends, relTime } from '../sessionRows'
@@ -51,7 +51,7 @@ export function RestoreDialog({
         <div className="modal-header">
           <span>Restore session · {basename(wsPath)}</span>
           <span className="modal-close" onClick={onClose} aria-label="Close">
-            <LuX size={16} />
+            <IconClose size={16} />
           </span>
         </div>
         <div className="modal-body">

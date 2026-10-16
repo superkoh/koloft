@@ -11,7 +11,7 @@ import type {
 import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { TurnLog, type SaidLine, type Turn as TalkTurn } from '@shared/turns'
-import { costUsdOf, resolvePricing } from '@shared/pricing'
+import { costUsdOf, resolvePricing, type TokenCounts } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
 import { projectInfoFor, realpathSafe } from './projectInfo'
@@ -53,6 +53,14 @@ export { encodeCwd }
 
 function num(x: unknown): number {
   return typeof x === 'number' && isFinite(x) && x > 0 ? x : 0
+}
+
+const TOKEN_FIELDS = ['inTok', 'outTok', 'cacheWriteTok', 'cacheReadTok'] as const
+
+function growthOver(booked: TokenCounts, line: TokenCounts): TokenCounts {
+  const grown = { ...line }
+  for (const f of TOKEN_FIELDS) grown[f] = Math.max(0, line[f] - booked[f])
+  return grown
 }
 
 const BG_PROMOTED = '\x00promoted'
@@ -474,7 +482,7 @@ interface Tracked {
   jsonlListener?: () => void
   titleListener?: () => void
   sidecarTitle: string | null
-  usageSeen: Set<string>
+  usageSeen: Map<string, TokenCounts>
   usageAny: boolean
   usageInTok: number
   usageOutTok: number
@@ -598,7 +606,7 @@ export class SessionTracker extends SessionRuntime {
       parseAgain: false,
       statusSeq: 0,
       caughtUp: false,
-      usageSeen: new Set(),
+      usageSeen: new Map(),
       usageAny: false,
       usageInTok: 0,
       usageOutTok: 0,
@@ -1100,7 +1108,7 @@ export class SessionTracker extends SessionRuntime {
     t.info.lastTouched = undefined
     t.info.lastWritten = undefined
     t.caughtUp = false
-    t.usageSeen = new Set()
+    t.usageSeen = new Map()
     t.usageAny = false
     t.usageInTok = 0
     t.usageOutTok = 0
@@ -1676,35 +1684,40 @@ export class SessionTracker extends SessionRuntime {
     const msg = obj.message
     const model = typeof msg.model === 'string' ? msg.model : ''
     if (model === '<synthetic>') return
+    const u = msg.usage || {}
+    const line: TokenCounts = {
+      inTok: num(u.input_tokens),
+      outTok: num(u.output_tokens),
+      cacheWriteTok: num(u.cache_creation_input_tokens),
+      cacheReadTok: num(u.cache_read_input_tokens)
+    }
+    let add = line
     const id = typeof msg.id === 'string' ? msg.id : ''
     const reqId = typeof obj.requestId === 'string' ? obj.requestId : ''
     if (id || reqId) {
       const key = id + ' ' + reqId
-      if (t.usageSeen.has(key)) return
-      t.usageSeen.add(key)
+      const booked = t.usageSeen.get(key)
+      // CC§2
+      if (booked) {
+        add = growthOver(booked, line)
+        if (TOKEN_FIELDS.every((f) => add[f] === 0)) return
+        for (const f of TOKEN_FIELDS) booked[f] += add[f]
+      } else {
+        t.usageSeen.set(key, { ...line })
+      }
     }
     t.usageAny = true
 
-    const u = msg.usage || {}
-    const inTok = num(u.input_tokens)
-    const outTok = num(u.output_tokens)
-    const cacheWrite = num(u.cache_creation_input_tokens)
-    const cacheRead = num(u.cache_read_input_tokens)
-    t.usageInTok += inTok
-    t.usageOutTok += outTok
-    t.usageCacheWriteTok += cacheWrite
-    t.usageCacheReadTok += cacheRead
+    t.usageInTok += add.inTok
+    t.usageOutTok += add.outTok
+    t.usageCacheWriteTok += add.cacheWriteTok
+    t.usageCacheReadTok += add.cacheReadTok
 
     const pricing = model ? resolvePricing(model) : undefined
     if (!pricing) {
       t.usageUnknownModel = true
     } else {
-      const cost = costUsdOf(pricing, {
-        inTok,
-        outTok,
-        cacheWriteTok: cacheWrite,
-        cacheReadTok: cacheRead
-      })
+      const cost = costUsdOf(pricing, add)
       t.usageCostUsd += cost
       const recDay = localDayKey(obj.timestamp)
       if (recDay) {
@@ -1717,7 +1730,7 @@ export class SessionTracker extends SessionRuntime {
     }
     if (updateContext) {
       if (model) t.usageModel = model
-      t.usageCtxTokens = inTok + cacheRead + cacheWrite
+      t.usageCtxTokens = line.inTok + line.cacheReadTok + line.cacheWriteTok
       if (typeof obj.version === 'string' && obj.version) t.usageCcVersion = obj.version
     }
   }

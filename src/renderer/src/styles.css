@@ -1169,6 +1169,8 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  --term-gutter-l: 24px;
+  --term-gutter-r: 14px;
 }
 .center-top {
   flex: 0 0 var(--titlebar-h);
@@ -1183,7 +1185,7 @@ body {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  margin: 12px 56px 0 20px;
+  margin: 12px 56px 0 var(--term-gutter-l);
   -webkit-app-region: no-drag;
 }
 .wc-chip {
@@ -1385,11 +1387,14 @@ body {
 .term-wrap {
   position: absolute;
   inset: 0;
-  padding: 4px 12px 12px 20px;
+  padding: 4px var(--term-gutter-r) 12px var(--term-gutter-l);
 }
 .term {
   width: 100%;
   height: 100%;
+}
+.term-wrap > .term {
+  margin: 0 auto;
 }
 /* PLATFORM§21 */
 .xterm .composition-view {
@@ -5568,7 +5573,8 @@ input.switch:focus-visible {
 .hist-state .dot.bad {
   background: var(--red);
 }
-.hist-wt {
+.hist-wt,
+.hist-folder {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--fg-faint);
