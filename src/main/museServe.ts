@@ -88,14 +88,26 @@ const seconds = (iso: unknown): number | undefined => {
   return Number.isFinite(ms) ? ms / 1000 : undefined
 }
 
-function museSession(raw: unknown): HistoryEntry | undefined {
+// MUSE§5
+function museSession(
+  raw: unknown,
+  rootOf: (sessionId: string) => string | undefined
+): HistoryEntry | undefined {
   const s = record(raw)
-  if (typeof s.sessionId !== 'string' || typeof s.workspaceRoot !== 'string') return undefined
+  if (typeof s.sessionId !== 'string') return undefined
   if (s.kind !== undefined && s.kind !== 'root') return undefined
+  const parent = record(s.forkedFrom).sessionId
+  const cwd =
+    typeof s.workspaceRoot === 'string'
+      ? s.workspaceRoot
+      : typeof parent === 'string'
+        ? rootOf(parent)
+        : undefined
+  if (!cwd) return undefined
   const title = typeof s.title === 'string' && s.title ? s.title : undefined
   return {
     id: s.sessionId,
-    cwd: s.workspaceRoot,
+    cwd,
     name: title ?? (typeof s.name === 'string' ? s.name : null),
     preview: typeof s.firstUserPrompt === 'string' ? s.firstUserPrompt : undefined,
     createdAt: seconds(s.createdAt),
@@ -106,23 +118,28 @@ function museSession(raw: unknown): HistoryEntry | undefined {
 // MUSE§5
 export async function listMuseSessions(options: ServeOptions): Promise<HistoryEntry[]> {
   return withServe(options, async (request) => {
-    const found: HistoryEntry[] = []
+    const listed: unknown[] = []
     const seen = new Set<string>()
     let cursor: string | undefined
     do {
       const reply = record(await request('session/list', { limit: LIST_PAGE, cursor }))
       if (!Array.isArray(reply.sessions))
         throw new Error('Muse history returned an unsupported response.')
-      for (const raw of reply.sessions) {
-        const session = museSession(raw)
-        if (session) found.push(session)
-      }
+      listed.push(...reply.sessions)
       cursor =
         typeof reply.nextCursor === 'string' && reply.nextCursor ? reply.nextCursor : undefined
       if (cursor && seen.has(cursor)) throw new Error('Muse history repeated a page.')
       if (cursor) seen.add(cursor)
     } while (cursor)
-    return found
+    const roots = new Map(
+      listed.flatMap((raw) => {
+        const s = record(raw)
+        return typeof s.sessionId === 'string' && typeof s.workspaceRoot === 'string'
+          ? [[s.sessionId, s.workspaceRoot] as const]
+          : []
+      })
+    )
+    return listed.flatMap((raw) => museSession(raw, (id) => roots.get(id)) ?? [])
   })
 }
 

@@ -40,7 +40,9 @@ import {
   finishedWork,
   museHome,
   museSessionLog,
+  firedJob,
   renamedTo,
+  startsATurnByItself,
   saidInLog,
   type LogRecord
 } from './museSessionLog'
@@ -93,6 +95,7 @@ interface MuseRun extends StoredRun {
   prompt?: { turnId: string; text: string; at: number }
   children: Set<string>
   background: Map<string, BackgroundItem>
+  jobs: Map<string, boolean>
   touched: Map<string, FileAcc>
   liveWrites: number
   log?: { sessionId: string; tail: SessionLogTail }
@@ -141,6 +144,7 @@ const REGISTRY_WRITE_LEEWAY_MS = 1000
 // MUSE§9
 const BACKGROUND_RUNNING = 'background_running'
 const WRITING_TOOLS = new Set(['write_file', 'edit_file'])
+const SCHEDULED_JOB = /^Scheduled ([0-9a-f]{8})\b/
 
 // MUSE§4
 function registryDir(env: NodeJS.ProcessEnv): string {
@@ -245,6 +249,8 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
   private sweeping?: ReturnType<typeof setInterval>
   private registrySeenAt?: number
   private unreadable = new Set<string>()
+  // MUSE§2
+  protected readonly keepsItsOwnTitle = true
   // MUSE§14
   protected readonly cli = {
     product: 'Muse Code',
@@ -447,6 +453,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
         sinceClear: [],
         children: new Set(),
         background: new Map(),
+        jobs: new Map(),
         touched: new Map(),
         liveWrites: 0,
         endedTurns: new Set(),
@@ -601,7 +608,33 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
         state: 'working'
       })
       this.publishBackground(run)
+    } else if (tool === 'monitor' && typeof response.work_id === 'string') {
+      const id = response.work_id
+      const what = record(input.tool_input)
+      run.background.set(id, {
+        id,
+        kind: 'monitor',
+        label: String(what.description ?? what.command ?? 'Monitor').slice(0, 160),
+        state: 'waiting'
+      })
+      this.publishBackground(run)
+      if (response.persistent !== true && typeof response.timeout_ms === 'number')
+        setTimeout(() => {
+          if (run.background.delete(id)) this.publishBackground(run)
+        }, response.timeout_ms).unref?.()
+    } else if (tool === 'cron_create') {
+      const job = SCHEDULED_JOB.exec(String(input.tool_response))?.[1]
+      if (job) run.jobs.set(job, record(input.tool_input).recurring === true)
+      this.holdForJobs(run)
+    } else if (tool === 'cron_delete') {
+      run.jobs.delete(String(record(input.tool_input).id))
+      this.holdForJobs(run)
     }
+  }
+
+  // MUSE§9
+  private holdForJobs(run: MuseRun): void {
+    this.deps.runtime.setWakeupPending(run.tabId, run.jobs.size > 0)
   }
 
   private publishBackground(run: MuseRun): void {
@@ -625,6 +658,13 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     if (name && run.info) return this.retitle(run.info, name)
     const work = finishedWork(r)
     if (work && run.background.delete(work)) this.publishBackground(run)
+    const job = firedJob(r)
+    if (job && run.jobs.get(job) === false) {
+      run.jobs.delete(job)
+      this.holdForJobs(run)
+    }
+    if (startsATurnByItself(r) && (r.atMs ?? 0) >= run.boundAt)
+      this.emitState(run, { state: 'working' })
   }
 
   // MUSE§3
@@ -691,6 +731,8 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     run.prompt = undefined
     run.children.clear()
     run.background.clear()
+    run.jobs.clear()
+    this.holdForJobs(run)
     run.endedTurns.clear()
     run.log = undefined
     this.bind(run, known ?? { id: sessionId, cwd: run.cwd }, switched ? 'switch' : 'replace')

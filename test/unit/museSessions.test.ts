@@ -509,6 +509,74 @@ describe('MuseSessions turns from hooks', () => {
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
   })
 
+  it('shows a monitor as waiting in the background until its timeout ends it', async () => {
+    const id = await boundTab()
+    hook(id, 'PostToolUse', {
+      session_id: A,
+      tool_name: 'monitor',
+      tool_input: { command: 'tail -f log', description: 'Watch the log' },
+      tool_response: JSON.stringify({
+        work_id: 'work.v2.monitor.x',
+        timeout_ms: 300,
+        persistent: false
+      })
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toHaveLength(1))
+    expect(sessions.list()[0].background![0]).toMatchObject({
+      kind: 'monitor',
+      label: 'Watch the log',
+      state: 'waiting'
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+
+  it('keeps the session counted as still working while a job muse scheduled for itself is due, until a one-time job fires or a job is deleted', async () => {
+    const id = await boundTab()
+    logRecord(A, { payload_type: 'session.opened.observed', payload: {} })
+    const create = (cron: string, recurring: boolean, job: string): void =>
+      hook(id, 'PostToolUse', {
+        session_id: A,
+        tool_name: 'cron_create',
+        tool_input: { cron, prompt: 'check', recurring },
+        tool_response: `Scheduled ${job} (Every minute, once)`
+      })
+    create('* * * * *', false, '73ded10e')
+    hook(id, 'Stop', { session_id: A, last_assistant_message: 'scheduled', turn_id: 't1' })
+    await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(true))
+    logRecord(A, {
+      payload_type: 'runtime.session',
+      payload: {
+        event: { kind: 'inbox_item_queued', source: { source: 'scheduled', job_id: '73ded10e' } }
+      }
+    })
+    hook(id, 'Stop', { session_id: A, last_assistant_message: 'checked', turn_id: 't2' })
+    await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(false))
+    create('*/5 * * * *', true, '7a328cdd')
+    await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(true))
+    hook(id, 'PostToolUse', {
+      session_id: A,
+      tool_name: 'cron_delete',
+      tool_input: { id: '7a328cdd' },
+      tool_response: 'Deleted 7a328cdd'
+    })
+    await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(false))
+  })
+
+  // MUSE§3
+  it('shows a turn muse starts by itself as working, from the session log since such a turn sends no status, but not one logged before this tab bound', async () => {
+    const queued = (atMs: number): Record<string, unknown> => ({
+      recorded_at: atMs * 1000,
+      payload_type: 'runtime.session',
+      payload: { event: { kind: 'inbox_item_queued', source: { source: 'scheduled' } } }
+    })
+    logRecord(A, queued(started - 60_000))
+    await boundTab()
+    await new Promise((r) => setTimeout(r, 1200))
+    expect(events('prompt')).toHaveLength(0)
+    logRecord(A, queued(Date.now()))
+    await vi.waitFor(() => expect(events('prompt')).toHaveLength(1))
+  })
+
   it('retitles the row when the owner renames the session in muse, not when muse names it itself', async () => {
     const id = await boundTab()
     logRecord(A, {

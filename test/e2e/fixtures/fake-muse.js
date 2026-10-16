@@ -71,7 +71,10 @@ const sessionLog = (id) => {
   return path.join(dir, 'session.jsonl')
 }
 const logRecord = (id, payloadType, payload) =>
-  fs.appendFileSync(sessionLog(id), JSON.stringify({ payload_type: payloadType, payload }) + '\n')
+  fs.appendFileSync(
+    sessionLog(id),
+    JSON.stringify({ recorded_at: Date.now() * 1000, payload_type: payloadType, payload }) + '\n'
+  )
 
 const pendingFile = (id) => path.join(pendingDir, id + '.json')
 const pendingOf = (id) => {
@@ -146,7 +149,8 @@ function serve() {
           status: 'notLoaded',
           createdAt: s.createdAt,
           updatedAt: s.updatedAt,
-          workspaceRoot: s.cwd,
+          workspaceRoot: s.forkedFrom ? null : s.cwd,
+          ...(s.forkedFrom && { forkedFrom: { sessionId: s.forkedFrom } }),
           kind: 'root',
           name: 'fake-name',
           title: s.title,
@@ -438,6 +442,18 @@ function tui() {
         },
         Number(read('fake-muse-bg-ms', '2000'))
       )
+    }
+    if (text === '/fork') {
+      const child = {
+        ...session,
+        id: uuidv7(),
+        forkedFrom: session.id,
+        createdAt: now(),
+        updatedAt: now()
+      }
+      save(child)
+      process.stdout.write(`Fork created: ${child.id}\r\nSource session stays active.\r\n`)
+      return
     }
     if (text.startsWith('/rename ')) {
       logRecord(session.id, 'session.name.changed', {

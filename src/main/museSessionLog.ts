@@ -31,13 +31,19 @@ export function museSessionLog(env: NodeJS.ProcessEnv, sessionId: string): strin
   return undefined
 }
 
-export type LogRecord = { payloadType: string; payload: Record<string, unknown> }
+export type LogRecord = { payloadType: string; payload: Record<string, unknown>; atMs?: number }
+
+const MICROSECONDS_PER_MS = 1000
 
 const logRecord = (line: string): LogRecord | undefined => {
   try {
     const r = record(JSON.parse(line))
     return typeof r.payload_type === 'string'
-      ? { payloadType: r.payload_type, payload: record(r.payload) }
+      ? {
+          payloadType: r.payload_type,
+          payload: record(r.payload),
+          ...(typeof r.recorded_at === 'number' && { atMs: r.recorded_at / MICROSECONDS_PER_MS })
+        }
       : undefined
   } catch {
     return undefined
@@ -62,6 +68,21 @@ export const renamedTo = (r: LogRecord): string | undefined =>
   typeof r.payload.new_name === 'string'
     ? r.payload.new_name
     : undefined
+
+// MUSE§3 MUSE§9
+export const startsATurnByItself = (r: LogRecord): boolean =>
+  r.payloadType === 'runtime.session' && record(r.payload.event).kind === 'inbox_item_queued'
+
+// MUSE§9
+export function firedJob(r: LogRecord): string | undefined {
+  const event = record(r.payload.event)
+  const source = record(event.source)
+  return startsATurnByItself(r) &&
+    source.source === 'scheduled' &&
+    typeof source.job_id === 'string'
+    ? source.job_id
+    : undefined
+}
 
 // MUSE§9
 export function finishedWork(r: LogRecord): string | undefined {

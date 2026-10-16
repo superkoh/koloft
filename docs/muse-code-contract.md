@@ -191,6 +191,15 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `"execution_state":"background_running"` and a `work_id`. A real subagent has a UUID
   `subagent_id`; muse's own reminder helpers say `skill-reminder`, `goal-reminder`,
   `verify-reminder`.
+- More tool shapes in 1.4.9 (fake model, Docker, 2026-10): `read_file {path}`, its
+  `tool_response` a plain string. `monitor {command, description, …}` →
+  `tool_response` a JSON string `{work_id: "work.v2.monitor.…", timeout_ms,
+  persistent, message}`. `cron_create {cron, prompt, recurring}` → `tool_response`
+  the plain string `Scheduled <8 hex id> (<when>)`; `cron_delete {id}`. When a
+  scheduled job fires, the session log gets a `runtime.session` record whose `event`
+  is `{kind: "inbox_item_queued", source: {source: "scheduled", job_id}}`; a finished
+  background command gets one with `source: "background_task_terminal"`
+  and `registered_work_id`.
 - `!cmd` is a tool named `shell`. `request_user_input` fires no `PreToolUse`.
 - A `PreToolUse` hook printing `{"hookSpecificOutput":{"hookEventName":"PreToolUse",
   "permissionDecision":"deny","permissionDecisionReason":"…"}}` or

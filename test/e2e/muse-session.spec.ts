@@ -198,6 +198,43 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
+  // MUSE§2 MUSE§5
+  test('a name given in Muse with /rename survives a Koloft restart, and a /fork copy is listed in the same workspace although Muse gives it no folder', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      await startMuse(page, env)
+      await runIn(page, centerTerm(page), 'first topic')
+      await expect(museRows(page).filter({ hasText: 'first topic' })).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), '/rename Docs cleanup')
+      await expect(museRows(page)).toContainText('Docs cleanup')
+      await runIn(page, centerTerm(page), '/fork')
+      await expect(page.locator('.term-wrap:visible')).toContainText('Fork created')
+      await quitAndClose(app)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => museCalls(env).length, { timeout: 30_000 }).toBe(2)
+      await expect(museRows(page).filter({ hasText: 'Docs cleanup' })).toHaveClass(
+        /st-(waiting|idle)/,
+        { timeout: 30_000 }
+      )
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
+      const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
+      await expect(history.getByRole('button').filter({ hasText: 'first topic' })).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('closing the tab ends muse; its row stays in the list, cold, and clicking it brings the same session back', async ({
     env
   }) => {
