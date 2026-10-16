@@ -387,6 +387,18 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   that request no user-gesture flag; its own transient user activation lasts 5 s.
 - **`setPermissionCheckHandler` is what `Notification.permission` and
   `navigator.permissions.query()` read**, on page load, with no user action behind it.
+- **The check handler can only say granted or denied, never "prompt".** Returning `false`
+  makes `query()` read `denied` for microphone, camera, geolocation and notifications, so
+  a page that checks before it asks gives up without asking; returning `true` (or setting
+  no check handler) reads `granted` and lets any page list device names before the person
+  said yes (7 of 7 named, against 0 of 3 with `false`). A main-world patch that reads
+  `denied` as `prompt` makes such a page ask, and the request handler runs. Measured
+  2026-10-13 on Electron 43.7.3 in a hidden `BrowserWindow` with the fake media switch,
+  one launch per variant, patching `Permissions.prototype.query`; and 2026-10-14 in this
+  app's own `<webview>` guest, patching the `PermissionStatus.prototype.state` getter
+  (BB-C72: `denied` ×4 without the patch, `prompt` ×4 with it). There `status.name` is
+  Chromium's own name, not the one the page queried: `audio_capture` for `microphone`,
+  `video_capture` for `camera`; `geolocation` and `notifications` keep theirs.
 - **With no audio or video input device, `getUserMedia` rejects with `NotFoundError`
   before the request handler is asked** (measured on a Mac mini whose guest reported
   only `audiooutput`), so no prompt can appear.

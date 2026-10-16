@@ -79,8 +79,10 @@ const FILE_SUFFIXES_KEPT_APART_FROM_HIGHLIGHTER_LANGS = new Set([
 
 const PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION =
   '[^\\s:"\'`<>()\\[\\]{}|,;/，。、；：！？（）《》「」【】…]'
+const NOT_CJK_PROSE_RUNNING_INTO_AN_ASCII_PATH =
+  '(?![\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}]+[A-Za-z0-9])'
 const REF_RE = new RegExp(
-  `(?<![\\w.~/-])(/?(?:${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+/)*${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+\\.([A-Za-z0-9]+)):(\\d+)(?::\\d+)?(?![\\w.-])`,
+  `(?<![\\w.~/-])${NOT_CJK_PROSE_RUNNING_INTO_AN_ASCII_PATH}(/?(?:${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+/)*${PATH_CHAR_STOPPING_AT_CJK_PUNCTUATION}+\\.([A-Za-z0-9]+)):(\\d+)(?::\\d+)?(?![\\w.-])`,
   'gu'
 )
 const URL_RE = /[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+/g

@@ -163,6 +163,13 @@ test.describe('S4: the centre with no session running — onboarding with nothin
       const calls = await waitForCalls(env, 2)
       expect(calls[1].cwd).toBe(env.workspaces.b)
       expect(calls[1].argv).not.toContain('-w')
+      await expect(
+        wsRows(page1, 'ws-b').and(page1.locator('.st-working, .st-waiting'))
+      ).toHaveCount(1, { timeout: 40_000 })
+      killSession(calls[1].pid, env)
+      await expect(wsRows(page1, 'ws-b').and(page1.locator('.cold'))).toHaveCount(2, {
+        timeout: 40_000
+      })
     } finally {
       await app1.close().catch(() => {})
     }
