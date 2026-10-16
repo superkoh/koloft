@@ -38,7 +38,7 @@ const osc = (body: string): string => `${ESC}]7501;${body}${ESC}\\`
 let home: string
 let repo: string
 let sessions: MuseSessions
-let pty: EventEmitter & { write: ReturnType<typeof vi.fn> }
+let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> }
 let runtime: SessionRuntime
 let pids: Map<string, number>
 let created: {
@@ -567,7 +567,7 @@ describe('MuseSessions turns from hooks', () => {
   it('keeps the session counted as still working while a job muse scheduled for itself is due, until a one-time job fires or a job is deleted', async () => {
     const id = await boundTab()
     logRecord(A, { payload_type: 'session.opened.observed', payload: {} })
-    const create = (cron: string, recurring: boolean, job: string): void =>
+    const create = (cron: string, recurring: boolean, job: string): string =>
       hook(id, 'PostToolUse', {
         session_id: A,
         tool_name: 'cron_create',
@@ -766,7 +766,8 @@ describe('a Muse session on a remote machine', () => {
         keyed: (host, p) => `ssh://${host}${p}`,
         mirrorDir: () => mirrorDir,
         gone: () => gone,
-        poke: () => {}
+        poke: () => {},
+        setupLine: () => undefined
       }
     })
   }

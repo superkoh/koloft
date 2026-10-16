@@ -1126,7 +1126,8 @@ const museOnMachines: MuseRemoteDeps = {
   mirrorDir: (host) => mirrorHookDir(app.getPath('userData'), host),
   gone: (host, sessionId) =>
     !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId),
-  poke: (host) => remoteSync?.pokeNow(host)
+  poke: (host) => remoteSync?.pokeNow(host),
+  setupLine: () => setupLine(playwrightCliBin)
 }
 
 function machineProbes(cwd: string): ResumeProbes {

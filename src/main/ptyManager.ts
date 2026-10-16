@@ -119,7 +119,7 @@ export class PtyManager extends EventEmitter {
     const login = userShell()
     const shell = args.shell || login.shell
 
-    const ownsItsTools = BRINGS_ITS_OWN_ENV[args.kind]
+    const ownsItsTools = BRINGS_ITS_OWN_ENV[args.kind] && !!args.executable
     let env: Record<string, string> = {
       ...((ownsItsTools ? (args.processEnv ?? process.env) : process.env) as Record<
         string,

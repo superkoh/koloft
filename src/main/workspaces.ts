@@ -722,19 +722,17 @@ export class WorkspaceManager {
         now: Date.now
       }).map(claudeRow)
       allRowsByWs.set(ws.path, [...allRows])
-      if (!key) {
-        const additional = (this.deps.additionalRows?.(ws.path) ?? []).map((r): SessionRow => ({
-          ...r,
-          ...sourceOf(r.backendId, ws.path)
-        }))
-        for (const r of additional) bucketDirById.set(r.id, r.cwd)
-        for (const r of additional) {
-          if (r.pending) continue
-          const at = allRows.findIndex((x) => (x.createdAt ?? 0) < (r.createdAt ?? 0))
-          allRows.splice(at < 0 ? allRows.length : at, 0, r)
-        }
-        allRows.unshift(...additional.filter((r) => r.pending))
+      const additional = (this.deps.additionalRows?.(ws.path) ?? []).map((r): SessionRow => ({
+        ...r,
+        ...sourceOf(r.backendId, ws.path)
+      }))
+      for (const r of additional) bucketDirById.set(r.id, r.cwd)
+      for (const r of additional) {
+        if (r.pending) continue
+        const at = allRows.findIndex((x) => (x.createdAt ?? 0) < (r.createdAt ?? 0))
+        allRows.splice(at < 0 ? allRows.length : at, 0, r)
       }
+      allRows.unshift(...additional.filter((r) => r.pending))
       for (const r of allRows) wsBySession.set(r.id, ws.path)
       const visible = allRows
         .filter((r) => !this.hidden(r.id))

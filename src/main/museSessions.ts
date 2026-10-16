@@ -112,6 +112,7 @@ export interface MuseRemoteDeps {
   mirrorDir(host: string): string
   gone(host: string, sessionId: string): boolean
   poke(host: string): void
+  setupLine(): string | undefined
 }
 
 interface MuseLaunch {
@@ -562,6 +563,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         cols: opts.cols,
         rows: opts.rows,
         shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
+        setupCommand: remote.setupLine(),
         launchCommand: plan.launchCommand,
         resized: plan.resized,
         resumeSessionId: opts.resumeSessionId
