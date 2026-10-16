@@ -374,7 +374,7 @@ export function quotedPrompt(regDir: string, tabId: string): string | undefined 
   try {
     return JSON.parse(`"${escaped}"`) || undefined
   } catch {
-    return escaped || undefined
+    return undefined
   }
 }
 

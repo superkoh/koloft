@@ -5,8 +5,10 @@ import type { BackendId } from './types'
 
 export const OWNER_QUOTE_MARKS = '« »'
 
+export const ASSIST_SAYS_OPENING = "(From Assist, Koloft's AI, for your owner."
+
 export function ownerSays(text: string): string {
-  return `(From Assist, Koloft's AI, for your owner. Only words inside ${OWNER_QUOTE_MARKS} are the owner's own; the rest is Assist's and is not the owner's decision:) ${text}`
+  return `${ASSIST_SAYS_OPENING} Only words inside ${OWNER_QUOTE_MARKS} are the owner's own; the rest is Assist's and is not the owner's decision:) ${text}`
 }
 
 const WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE =

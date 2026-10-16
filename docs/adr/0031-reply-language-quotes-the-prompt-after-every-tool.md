@@ -48,8 +48,8 @@ not by its task: the task is written by an AI, often in English (a path to a bri
 owner in English in its tab and its Discord thread. In the transcripts of 2026-10-10 to
 10-16, three children of a Chinese-speaking owner whose task was in English wrote 1 of
 24, 1 of 35 and 2 of 49 notes in Chinese. So Koloft puts the parent's own quote (a Claude parent's saved prompt; a Codex
-parent's last message from the owner that is not a session's report, or the words it
-was itself handed) into the handover preamble as "The owner last wrote: «…»", the hook
+parent's last message from the owner that is neither a session's report nor Assist's
+wrapper, or, when another session started it, that session's words) into the handover preamble as "The owner last wrote: «…»", the hook
 quotes those words for a handover prompt that carries them, and the child's title is
 asked for in their language. A Codex child gets the same sentence in its developer
 instructions but no reminder after each tool, since Codex runs no Claude Code hook.

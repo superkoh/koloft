@@ -404,7 +404,7 @@ describe('koloft session new', () => {
   })
 
   // ADR-0031
-  it('a child is handed the owner’s last words to its parent, so it talks to the owner in their language even when its task is in English: a Claude parent’s quoted prompt, a Codex parent’s last message from the owner (not a session’s report), and a Codex child passes on the words it was handed', async () => {
+  it('a child is handed the owner’s last words to its parent, so it talks to the owner in their language even when its task is in English: a Claude parent’s quoted prompt, a Codex parent’s last message from the owner (not a session’s report or Assist’s wrapper), and a Codex child the words of the session that started it', async () => {
     const { verb, launched } = harness(
       [
         session('me', 'claude'),
@@ -423,7 +423,10 @@ describe('koloft session new', () => {
               at: 1
             },
             {
-              said: [{ who: 'owner', text: '(From the session "kid", id k:) All green.', at: 2 }],
+              said: [
+                { who: 'owner', text: '(From the session "kid", id k:) All green.', at: 2 },
+                { who: 'owner', text: ownerSays('Rerun «the flaky one».'), at: 2 }
+              ],
               reply: 'ok',
               at: 2
             }

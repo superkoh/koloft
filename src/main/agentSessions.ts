@@ -7,7 +7,7 @@ import type {
   WorkspaceRows,
   WorktreeInfo
 } from '@shared/types'
-import { DISCORD_PREFIX, ownerSays } from '@shared/agentGuide'
+import { ASSIST_SAYS_OPENING, DISCORD_PREFIX, ownerSays } from '@shared/agentGuide'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { freshWorktreeName } from '@shared/sessionRoute'
@@ -708,12 +708,14 @@ export function sessionSays(from: SessionInfo, text: string): string {
 }
 
 const OWNER_WORDS_QUOTED_CHARS = 150
+const KOLOFT_ENVELOPES = [SESSION_SAYS_OPENING, ASSIST_SAYS_OPENING]
+
+type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?: string }
 
 export function lastOwnerWords(turns: Turn[]): string | undefined {
   const line = turns
     .flatMap((t) => t.said)
-    .reverse()
-    .find((l) => l.who === 'owner' && !l.text.startsWith(SESSION_SAYS_OPENING))
+    .findLast((l) => l.who === 'owner' && !KOLOFT_ENVELOPES.some((e) => l.text.startsWith(e)))
   if (!line) return undefined
   const relayed = `${DISCORD_PREFIX} `
   const words = line.text.startsWith(relayed) ? line.text.slice(relayed.length) : line.text
@@ -745,14 +747,26 @@ export function sessionVerb(d: SessionVerbDeps): {
   let queued = 0
   let lined = 0
   const replyOwed = new Map<string, OwedReply>()
-  const ownerWordsHandedTo = new Map<string, string>()
 
   // ADR-0031
-  const ownerWordsOf = async (me: SessionInfo): Promise<string | undefined> =>
-    me.backendId === 'claude'
-      ? d.quotedPrompt(me.tabId)
-      : (ownerWordsHandedTo.get(me.tabId) ??
-        lastOwnerWords(await d.readTurns(me.sessionId, MAX_READ_TURNS)))
+  const ownerWordsOf = async (
+    s: OwnerWordsHolder,
+    seen = new Set<string>()
+  ): Promise<string | undefined> => {
+    if (s.backendId === 'claude') return s.tabId ? d.quotedPrompt(s.tabId) : undefined
+    seen.add(s.sessionId)
+    const [parent] = d.startedSessions.startersOf(s)
+    const holder = parent && !seen.has(parent) ? holderOf(parent) : undefined
+    if (holder) return ownerWordsOf(holder, seen)
+    return lastOwnerWords(await d.readTurns(s.sessionId, MAX_READ_TURNS))
+  }
+
+  const holderOf = (sessionId: string): OwnerWordsHolder | undefined => {
+    const open = d.allSessions().find((s) => s.sessionId === sessionId)
+    if (open) return open
+    const assist = d.conductorOf(sessionId)
+    return assist && { sessionId, tabId: assist.tabId, backendId: assist.backend }
+  }
 
   const owing = async <T>(
     tab: string,
@@ -1003,10 +1017,7 @@ export function sessionVerb(d: SessionVerbDeps): {
           workspace,
           conductorTab,
           ownerWords,
-          (tab) => {
-            replyOwed.set(tab, { owner: caller.session.sessionId })
-            if (ownerWords) ownerWordsHandedTo.set(tab, ownerWords)
-          }
+          (tab) => replyOwed.set(tab, { owner: caller.session.sessionId })
         )
       }
       if (scope !== undefined) {
