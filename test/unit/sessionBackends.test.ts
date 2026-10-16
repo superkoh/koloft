@@ -244,11 +244,18 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
   })
 
-  it('supports every pair but Codex and Muse on a remote machine', () => {
+  it('supports every pair but Codex on a remote machine', () => {
     expect(SUPPORTED_PAIRS).toEqual({
       claude: { local: true, ssh: true },
       codex: { local: true, ssh: false },
-      muse: { local: true, ssh: false }
+      muse: { local: true, ssh: true }
+    })
+  })
+
+  it('gives a remote Muse tab what a remote Claude tab has, less the three-line statusline Muse cannot draw', () => {
+    expect(capabilitiesFor('muse', 'ssh')).toEqual({
+      ...capabilitiesFor('claude', 'ssh'),
+      statusline3: { unsupported: 'MUSE§3' }
     })
   })
 })

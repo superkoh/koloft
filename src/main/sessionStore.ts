@@ -2,6 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import type { LaunchPermission } from '@shared/types'
+import { isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
+import { SUPPORTED_PAIRS, sessionKey } from '@shared/sessionBackend'
 
 export interface StoredMember {
   id: string
@@ -35,33 +37,36 @@ interface SessionStoreData {
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const localSessionKey =
+const sessionKeyOn =
   (backend: 'codex' | 'muse', label: string) =>
-  (id: string): string => {
+  (id: string, host?: string): string => {
     if (!UUID.test(id)) throw new Error(`Invalid ${label} session ID`)
-    return `${backend}:local:${id}`
+    const onMachine = SUPPORTED_PAIRS[backend].ssh ? host : undefined
+    return sessionKey({ backendId: backend, sourceId: onMachine ?? 'local', nativeSessionId: id })
   }
 
-export const codexSessionKey = localSessionKey('codex', 'Codex')
-export const museSessionKey = localSessionKey('muse', 'Muse')
+export const codexSessionKey = sessionKeyOn('codex', 'Codex')
+export const museSessionKey = sessionKeyOn('muse', 'Muse')
 
-type KeyOf = (id: string) => string
+export type KeyOf = (id: string, host?: string) => string
+
+export const hostOfPath = (p: string): string | undefined => parseRemoteKey(p)?.host
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function absolute(value: unknown): value is string {
-  return typeof value === 'string' && path.isAbsolute(value)
+  return typeof value === 'string' && isAbsoluteOnHost(value)
 }
 
 function validMember(value: unknown, key: string, keyOf: KeyOf): value is StoredMember {
   if (!record(value) || typeof value.id !== 'string' || !UUID.test(value.id)) return false
   return (
     value.key === key &&
-    key === keyOf(value.id) &&
-    absolute(value.workspacePath) &&
     absolute(value.cwd) &&
+    key === keyOf(value.id, hostOfPath(value.cwd)) &&
+    absolute(value.workspacePath) &&
     typeof value.title === 'string' &&
     typeof value.createdAt === 'number' &&
     Number.isFinite(value.createdAt) &&
@@ -94,6 +99,7 @@ function validResource(value: unknown, id: string): value is WorktreeResource {
 }
 
 function parseData(value: unknown, keyOf: KeyOf): SessionStoreData {
+  // ADR-0025
   if (!record(value) || value.version !== 1) throw new Error('Unsupported session store version')
   if (!record(value.members) || !record(value.resources)) throw new Error('Invalid session store')
   for (const [id, resource] of Object.entries(value.resources)) {
