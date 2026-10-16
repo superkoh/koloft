@@ -8,6 +8,8 @@ import { EventEmitter } from 'events'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgySessions, type AgyHomePick, type AgySessionDeps } from '../../src/main/agySessions'
 import { agySessionKey } from '../../src/main/sessionStore'
+import { agyTranscript, type SummaryRow } from '../../src/main/agyStore'
+import type { AgyRemoteLaunch, RemoteAgyConfig } from '../../src/main/remote/agyTab'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import { AGY_CONDUCTOR_GATE_SCRIPT } from '../../src/main/conductorGate'
@@ -26,6 +28,7 @@ const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64
 const state = (s: string, extra = ''): string => osc(`state=${s}${extra}:app=antigravity`)
 const SERVICE = '/exa.language_server_pb.LanguageServerService/'
 const REAL_PATH = process.env.PATH
+const REMOTE_WS = 'ssh://devbox/home/me/proj'
 
 let home: string
 let repo: string
@@ -38,6 +41,16 @@ let agentTools: boolean
 let picked: AgyHomePick | undefined
 let apiKey: string | undefined
 let assist: { role: string; allow: string[] } | undefined
+let machine: {
+  launches: AgyRemoteLaunch[]
+  ended: string[]
+  config: RemoteAgyConfig
+  rows: unknown[]
+  held: boolean
+  alive: Set<string>
+  attach: boolean
+}
+let mirror: string
 
 let server: http.Server
 let apiAnswers: boolean
@@ -105,10 +118,11 @@ function title(tabId: string, input: Record<string, unknown>): void {
 }
 
 async function hooksTaken(tabId: string): Promise<void> {
-  const drops = tabEnv(tabId).KOLOFT_AGY_DROPS!
-  await vi.waitFor(() =>
-    expect(fs.readdirSync(drops).filter((n) => n.startsWith('agy-hook-'))).toEqual([])
-  )
+  const log = tabEnv(tabId).KOLOFT_AGY_LOG!
+  const size = fs.statSync(log).size
+  await vi.waitFor(() => expect(sessions['runs'].get(tabId)?.log['offset']).toBe(size), {
+    timeout: 2000
+  })
 }
 
 beforeEach(() => {
@@ -143,6 +157,17 @@ beforeEach(() => {
   apiAnswers = false
   trajectory = undefined
   apiCalls = []
+  machine = {
+    launches: [],
+    ended: [],
+    config: { ownersSettings: {}, ownersHooks: {}, ownSettings: {} },
+    rows: [],
+    held: false,
+    alive: new Set(),
+    attach: false
+  }
+  mirror = path.join(home, 'mirror-hooks')
+  fs.mkdirSync(mirror)
   const gateScript = path.join(home, 'agy-conductor-gate.js')
   fs.writeFileSync(gateScript, AGY_CONDUCTOR_GATE_SCRIPT)
   let tab = 0
@@ -161,7 +186,7 @@ beforeEach(() => {
   const deps: AgySessionDeps = {
     pty: pty as unknown as AgySessionDeps['pty'],
     runtime,
-    projectInfo: (p) => ({ root: repo, treeRoot: p }),
+    projectInfo: (p) => ({ root: p.startsWith('ssh://') ? REMOTE_WS : repo, treeRoot: p }),
     changed: vi.fn(),
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
@@ -183,7 +208,34 @@ beforeEach(() => {
       }
     },
     agent: { enabled: () => agentTools, answer: vi.fn() },
-    gitAccounts: { configEnv: (env) => env, ghWrapper: path.join(tools, 'gh') }
+    gitAccounts: { configEnv: (env) => env, ghWrapper: path.join(tools, 'gh') },
+    remote: {
+      machine: () => ({
+        launchAgy: async (spec) => {
+          machine.launches.push(spec)
+          return {
+            attach: machine.attach,
+            spawnCwd: home,
+            shell: '/bin/zsh',
+            launchCommand: () => 'ssh devbox',
+            resized: () => undefined
+          }
+        },
+        readAgyConfig: async () => machine.config,
+        agyHeldElsewhere: async () => machine.held,
+        agyConversations: async () => machine.rows as SummaryRow[],
+        endTmuxSession: async (name) => {
+          machine.ended.push(name)
+          return undefined
+        }
+      }),
+      hosts: () => ['devbox'],
+      alive: () => machine.alive,
+      nextPull: async () => undefined,
+      machineName: () => 'm-test',
+      mirrorHookDir: () => mirror,
+      mirrorGemini: () => path.join(home, 'mirror-gemini')
+    }
   }
   sessions = new AgySessions(path.join(home, 'agy-sessions.json'), deps)
 })
@@ -426,6 +478,21 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     ])
   })
 
+  it('names a new conversation with the title agy makes up for it in its list, without waiting for a /rename', async () => {
+    const id = await boundTab()
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'Tidy the readme',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    say(id, state('working'))
+    say(id, state('done'))
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'))
+    expect(sessions.rows(repo)[0].title).toBe('Tidy the readme')
+  })
+
   it("hands on a finished turn's reply with the owner's own words, and its tokens and cost for the model agy reports", async () => {
     const id = await boundTab()
     appendConversation(gemini, A, [
@@ -463,21 +530,20 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     appendConversation(gemini, A, [
       { type: 'USER_INPUT', content: ownerTyped('先别改代码，帮我查一下') }
     ])
-    say(id, state('working'))
-    let out = ''
-    await vi.waitFor(() => {
-      out = hook(id, 'PreInvocation')
-      expect(out).not.toBe('')
-    })
+    const out = hook(id, 'PreInvocation', { transcriptPath: agyTranscript(gemini, A) })
     expect(JSON.parse(out).injectSteps[0].ephemeralMessage).toContain('«先别改代码，帮我查一下»')
   })
 
   it('lists each file agy wrote or edited, with its added and removed lines, and not a file it only read', async () => {
     const id = await boundTab()
     const made = path.join(repo, 'new.md')
-    fs.writeFileSync(made, 'a\nb\nc\n')
     hook(id, 'PostToolUse', { toolCall: { name: 'view_file', args: { AbsolutePath: made } } })
-    hook(id, 'PostToolUse', { toolCall: { name: 'write_to_file', args: { TargetFile: made } } })
+    hook(id, 'PostToolUse', {
+      toolCall: {
+        name: 'write_to_file',
+        args: { TargetFile: made, CodeContent: JSON.stringify('a\nb\nc\n') }
+      }
+    })
     await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
     const edited = path.join(repo, 'old.md')
     appendConversation(gemini, A, [
@@ -687,5 +753,155 @@ describe('AgySessions search (AGY§8)', () => {
       { id: agySessionKey(A), snippet: 'The lantern is lit.' }
     ])
     expect(await sessions.searchSnippets('zebra')).toEqual([])
+  })
+})
+
+describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
+  const mirrored = (tabId: string, lines: unknown[]): void => {
+    fs.appendFileSync(
+      path.join(mirror, `${tabId}.agy.jsonl`),
+      lines.map((l) => JSON.stringify(l) + '\n').join('')
+    )
+    sessions['tick']()
+  }
+  const remoteMember = (id: string): void => {
+    sessions.store.upsertMember({
+      id,
+      key: agySessionKey(id),
+      workspacePath: REMOTE_WS,
+      cwd: REMOTE_WS,
+      title: 'Remote',
+      createdAt: 1,
+      updatedAt: 1
+    })
+  }
+  const shown = (): SessionEvent[] =>
+    vi
+      .mocked(sessions['deps'].events)
+      .mock.calls.map(([, e]) => e)
+      .filter((e) => ['prompt', 'notify', 'stop'].includes(e.type))
+
+  it("starts agy on that machine over ssh, on the account's own folder there with Koloft's title and hook scripts from its machine package, the owner's own settings and hooks kept, the API key in the tab's env, and a new worktree made there", async () => {
+    apiKey = 'key-1'
+    machine.config = {
+      ownersSettings: { theme: 'dark', trustedWorkspaces: ['/elsewhere'] },
+      ownersHooks: { mine: { Stop: [] } },
+      ownSettings: {}
+    }
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, worktree: 'feat', firstPrompt: 'hi' })
+    const [spec] = machine.launches
+    expect(created).toHaveLength(1)
+    expect(spec.cwd).toBe(`${REMOTE_WS}/.claude/worktrees/feat`)
+    expect(spec.env).toEqual({ ANT_ACCOUNT: 'work', GEMINI_API_KEY: 'key-1' })
+    const settings = JSON.parse(spec.agy.files['settings.json'])
+    expect(settings).toMatchObject({
+      theme: 'dark',
+      modelProvider: 'gemini',
+      title: { command: '/bin/sh "$HOME/.koloft/m-test/agy-title.sh"' }
+    })
+    expect(settings.trustedWorkspaces.sort()).toEqual([
+      '/elsewhere',
+      '/home/me/proj',
+      '/home/me/proj/.claude/worktrees/feat'
+    ])
+    const hooks = JSON.parse(spec.agy.files['hooks.json'])
+    expect(Object.keys(hooks).sort()).toEqual(['koloft', 'mine'])
+    expect(JSON.stringify(hooks.koloft)).toContain('$HOME/.koloft/m-test/agy-hook.sh')
+    expect(spec.agy.files.token).toBeUndefined()
+    expect(spec.agy.prepare).toContain(
+      "worktree add -b 'worktree-feat' '/home/me/proj/.claude/worktrees/feat'"
+    )
+    expect(spec.agy.run).toContain(`--gemini_dir="$HOME/.koloft/agy"/'work'`)
+    expect(spec.agy.run).toMatch(/'-i' 'hi'$/)
+  })
+
+  it('shows its state from the log the machine mirrors back: the first hook binds the tab, a model call is working, an open ask waits for approval and is answered by keys, Stop ends the turn', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [
+      { event: 'SessionStart', input: { conversationId: A } },
+      { event: 'PreInvocation', input: { conversationId: A } },
+      {
+        event: 'PreToolUse',
+        input: { conversationId: A, toolCall: { name: 'run_command', args: { CommandLine: 'ls' } } }
+      },
+      { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+    ])
+    expect(sessions.list()[0].nativeSessionId).toBe(A)
+    await vi.waitFor(() => expect(sessions.openApproval(id)).toMatchObject({ command: 'ls' }))
+    expect(await sessions.answer(id, 'yes')).toBeUndefined()
+    expect(pty.write).toHaveBeenCalledWith(id, '1')
+    mirrored(id, [
+      { conversation_id: A, agent_state: 'working' },
+      { event: 'Stop', input: { conversationId: A, fullyIdle: true } }
+    ])
+    expect(shown()).toEqual([
+      { type: 'prompt' },
+      { type: 'notify', need: 'approval' },
+      { type: 'prompt' },
+      { type: 'stop' }
+    ])
+  })
+
+  it("closing the tab ends the machine's tmux session named for the conversation it holds; quitting Koloft leaves it running to attach to again", async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [{ event: 'SessionStart', input: { conversationId: A } }])
+    await sessions.stop(id)
+    expect(machine.ended).toEqual([`k-${A}`])
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    await sessions.stopAll()
+    expect(machine.ended).toEqual([`k-${A}`])
+  })
+
+  it('resuming a conversation tmux still runs there attaches to it: the tab binds at once and follows the log its agy writes, found through the pointer the title script left', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    const old = path.join(mirror, 'pty-old.agy.jsonl')
+    fs.writeFileSync(old, JSON.stringify({ event: 'Stop', input: { conversationId: A } }) + '\n')
+    const { id } = await sessions.resume({ sessionId: agySessionKey(A), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
+    fs.appendFileSync(
+      old,
+      JSON.stringify({ event: 'PreInvocation', input: { conversationId: A } }) + '\n'
+    )
+    sessions['tick']()
+    expect(runtime.statusOf(id)).toBe('working')
+    expect(shown()).toEqual([{ type: 'prompt' }])
+  })
+
+  it('refuses to resume a conversation another agy on that machine holds', async () => {
+    machine.held = true
+    remoteMember(A)
+    await expect(sessions.resume({ sessionId: agySessionKey(A), cwd: REMOTE_WS })).rejects.toThrow(
+      /open in another agy window/
+    )
+    expect(machine.launches).toEqual([])
+  })
+
+  it("lists the conversations in the machine's own store under its remote workspace", async () => {
+    machine.rows = [
+      {
+        conversation_id: B,
+        title: 'Remote work',
+        preview: '',
+        workspace_uris: JSON.stringify(['file:///home/me/proj']),
+        last_modified_time: '2026-10-16 08:00:00+00:00',
+        step_count: 2,
+        born: 1_700_000_000_000
+      }
+    ]
+    await sessions.refreshHistory()
+    expect(sessions.rows(REMOTE_WS)).toEqual([
+      expect.objectContaining({
+        id: agySessionKey(B),
+        title: 'Remote work',
+        cwd: 'ssh://devbox/home/me/proj',
+        invalidCwd: false,
+        createdAt: 1_700_000_000_000
+      })
+    ])
+    expect(sessions.rows(repo)).toEqual([])
   })
 })

@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import type { BackendId, LaunchPermission } from '@shared/types'
+import { isRemoteKey } from '@shared/remoteKey'
 
 export interface StoredMember {
   id: string
@@ -56,13 +57,17 @@ function absolute(value: unknown): value is string {
   return typeof value === 'string' && path.isAbsolute(value)
 }
 
+function folder(value: unknown): value is string {
+  return absolute(value) || (typeof value === 'string' && isRemoteKey(value))
+}
+
 function validMember(value: unknown, key: string, keyOf: KeyOf): value is StoredMember {
   if (!record(value) || typeof value.id !== 'string' || !UUID.test(value.id)) return false
   return (
     value.key === key &&
     key === keyOf(value.id) &&
-    absolute(value.workspacePath) &&
-    absolute(value.cwd) &&
+    folder(value.workspacePath) &&
+    folder(value.cwd) &&
     typeof value.title === 'string' &&
     typeof value.createdAt === 'number' &&
     Number.isFinite(value.createdAt) &&

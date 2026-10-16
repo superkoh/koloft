@@ -24,6 +24,19 @@ function projectFlags(paths: string[]): string[] {
 }
 // PLATFORM§34
 const HOOK_FLAGS = ['-I', '--inplace', '--delete']
+// AGY§8 AGY§19
+const AGY_BRAIN_FLAGS = [
+  '--inplace',
+  '-m',
+  '--delete',
+  '--include=/*/',
+  '--include=/*/*.md.metadata.json',
+  '--include=/*/.system_generated/',
+  '--include=/*/.system_generated/logs/',
+  '--include=/*/.system_generated/logs/transcript.jsonl',
+  '--exclude=*'
+]
+export const AGY_REMOTE_BRAIN = '.gemini/antigravity-cli/brain'
 
 const FAST_INTERVAL_MS = 2000
 const IDLE_INTERVAL_MS = 20_000
@@ -34,6 +47,7 @@ export interface RemoteTarget {
   host: string
   mirrorProjectsRoot: string
   mirrorHookDir: string
+  agyBrain?: string
   paths: string[]
   hasTabs: boolean
 }
@@ -213,6 +227,8 @@ export class RemoteSync {
         const pulls = [transcripts, hooks]
         const failed = pulls.find((r) => r.code !== 0)
         st.problem = failed && problemOf(failed)
+        if (target.agyBrain)
+          await this.deps.rsync(host, AGY_REMOTE_BRAIN, target.agyBrain, AGY_BRAIN_FLAGS)
       }
       if (
         before.connected !== st.connected ||

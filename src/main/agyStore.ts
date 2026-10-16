@@ -35,13 +35,14 @@ export function agyTranscript(geminiDir: string, conversationId: string): string
 const conversationDb = (geminiDir: string, id: string): string =>
   path.join(geminiDir, AGY_APP_DIR, 'conversations', `${id}.db`)
 
-interface SummaryRow {
+export interface SummaryRow {
   conversation_id: unknown
   title: unknown
   preview: unknown
   workspace_uris: unknown
   last_modified_time: unknown
   step_count: unknown
+  born?: unknown
 }
 
 const seconds = (ms: number): number => Math.floor(ms / 1000)
@@ -75,7 +76,7 @@ function firstFolder(uris: unknown): string | undefined {
 }
 
 // AGY§8
-const TOP_LEVEL_ROWS = `select conversation_id, title, preview, workspace_uris, last_modified_time, step_count
+export const TOP_LEVEL_ROWS = `select conversation_id, title, preview, workspace_uris, last_modified_time, step_count
   from conversation_summaries
   where (parent_conversation_id is null or parent_conversation_id = '')
     and (app_data_dir is null or app_data_dir = '' or app_data_dir = '${AGY_APP_DIR}')
@@ -92,23 +93,58 @@ export async function listAgyConversations(geminiDir: string): Promise<HistoryEn
   } finally {
     sqlite.close()
   }
+  return historyEntries(rows, (row) => {
+    const born = fs.statSync(conversationDb(geminiDir, row.conversation_id), {
+      throwIfNoEntry: false
+    })
+    return born && (born.birthtimeMs || born.ctimeMs)
+  })
+}
+
+export function historyEntries(
+  rows: SummaryRow[],
+  bornMs: (row: SummaryRow & { conversation_id: string }) => number | undefined = (row) =>
+    typeof row.born === 'number' ? row.born : undefined
+): HistoryEntry[] {
   return rows.flatMap((row) => {
     const id = row.conversation_id
     const cwd = firstFolder(row.workspace_uris)
     if (typeof id !== 'string' || !id || !cwd) return []
     const updatedAt = timeOf(row.last_modified_time)
-    const born = fs.statSync(conversationDb(geminiDir, id), { throwIfNoEntry: false })
+    const born = bornMs({ ...row, conversation_id: id })
     const entry: HistoryEntry = {
       id,
       cwd,
       name: typeof row.title === 'string' && row.title ? row.title : null,
       preview: typeof row.preview === 'string' ? row.preview : undefined,
-      createdAt: born ? seconds(born.birthtimeMs || born.ctimeMs) : updatedAt,
+      createdAt: born ? seconds(born) : updatedAt,
       updatedAt
     }
     return [entry]
   })
 }
+
+// AGY§8
+export const AGY_LIST_JS = `import fs from 'fs'
+import { DatabaseSync } from 'node:sqlite'
+const [db, sql, conversations] = process.argv.slice(2)
+let rows = []
+if (fs.existsSync(db)) {
+  const sqlite = new DatabaseSync(db, { readOnly: true })
+  try {
+    rows = sqlite.prepare(sql).all()
+  } finally {
+    sqlite.close()
+  }
+}
+for (const row of rows) {
+  try {
+    const st = fs.statSync(conversations + '/' + row.conversation_id + '.db')
+    row.born = st.birthtimeMs || st.ctimeMs
+  } catch {}
+}
+process.stdout.write(JSON.stringify(rows))
+`
 
 const USER_REQUEST = /<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/
 

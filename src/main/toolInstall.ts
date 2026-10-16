@@ -2,12 +2,15 @@ import path from 'path'
 import type { BackendId } from '@shared/types'
 import { shq } from '@shared/shellQuote'
 
+// AGY§3
+export const AGY_INSTALLER_URL = 'https://antigravity.google/cli/install.sh'
+
 // CC§10 CODEX§22 MUSE§1 AGY§3
 const OFFICIAL_INSTALLER: Record<BackendId, string> = {
   claude: 'curl -fsSL https://claude.ai/install.sh | bash',
   codex: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
   muse: 'curl -fsSL https://dev.meta.ai/install.sh | bash',
-  agy: 'curl -fsSL https://antigravity.google/cli/install.sh | bash'
+  agy: `curl -fsSL ${AGY_INSTALLER_URL} | bash`
 }
 
 // CC§10

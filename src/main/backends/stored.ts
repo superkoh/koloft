@@ -18,7 +18,8 @@ export function storedBackend(
     forgetAvailability: () => sessions.forgetAvailability(),
     list: () => sessions.list(),
     historyRows: async (workspacePath) =>
-      parseRemoteKey(workspacePath) || !(await sessions.availability()).available
+      (parseRemoteKey(workspacePath) && !sessions.runsOnRemoteMachines) ||
+      !(await sessions.availability()).available
         ? []
         : sessions.historyRows(workspacePath),
     create: async (spec) => ({ ok: true, ...(await sessions.launch(spec)) }),
@@ -35,6 +36,7 @@ export function storedBackend(
     },
     resumePlan: async (key): Promise<ResumePlan> => {
       const row = sessions.findRow(key)
+      if (row && parseRemoteKey(row.cwd)) return { action: 'direct', cwd: row.cwd }
       if (row && !row.worktreeState && !dirExistsSync(row.cwd)) {
         return { action: 'unavailable', reason: 'no-cwd' }
       }

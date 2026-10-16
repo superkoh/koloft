@@ -5,21 +5,21 @@ import { spawnSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   LineTail,
-  agyHook,
+  agyLogLine,
   koloftHookEntry,
-  titleState,
+  runWithSh,
   writeAgyScripts,
   type AgyScripts
 } from '../../src/main/agyHooks'
+import { withHandover } from '../../src/main/handover'
 
 let dir: string
-let drops: string
+let log: string
 let scripts: AgyScripts
 
 beforeEach(() => {
   dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agy-hooks-')))
-  drops = path.join(dir, 'drops')
-  fs.mkdirSync(drops)
+  log = path.join(dir, 'agy.jsonl')
   scripts = writeAgyScripts(path.join(dir, 'scripts'))
 })
 
@@ -27,7 +27,7 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
-const BASE_ENV = { PATH: '/usr/bin:/bin', KOLOFT_AGY_DROPS: '' }
+const BASE_ENV = { PATH: '/usr/bin:/bin', KOLOFT_AGY_LOG: '' }
 
 function run(command: string, input: string, env: Record<string, string> = {}): string {
   const res = spawnSync('/bin/sh', ['-c', command], {
@@ -40,7 +40,7 @@ function run(command: string, input: string, env: Record<string, string> = {}): 
 }
 
 const entry = (): Record<string, unknown[]> =>
-  koloftHookEntry(scripts.hook) as Record<string, unknown[]>
+  koloftHookEntry(runWithSh(scripts.hook)) as Record<string, unknown[]>
 
 function commandFor(event: string): string {
   const [first] = entry()[event] as Record<string, unknown>[]
@@ -49,13 +49,35 @@ function commandFor(event: string): string {
 }
 
 const hook = (event: string, input: unknown, env: Record<string, string> = {}): string =>
-  run(commandFor(event), JSON.stringify(input), { KOLOFT_AGY_DROPS: drops, ...env })
+  run(commandFor(event), JSON.stringify(input), { KOLOFT_AGY_LOG: log, ...env })
 
-const dropped = (): unknown[] =>
+const logged = (): ReturnType<typeof agyLogLine>[] =>
   fs
-    .readdirSync(drops)
-    .filter((n) => n.endsWith('.json'))
-    .map((n) => JSON.parse(fs.readFileSync(path.join(drops, n), 'utf8')))
+    .readFileSync(log, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => agyLogLine(l))
+
+function transcriptWith(...prompts: string[]): string {
+  const file = path.join(dir, 'transcript_full.jsonl')
+  const lines = prompts.flatMap((p, i) => [
+    JSON.stringify({
+      step_index: 2 * i,
+      type: 'USER_INPUT',
+      content: `<USER_REQUEST>\n${p}\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: now.\n</ADDITIONAL_METADATA>`
+    }),
+    JSON.stringify({ step_index: 2 * i + 1, type: 'PLANNER_RESPONSE', content: 'ok' })
+  ])
+  fs.writeFileSync(file, lines.join('\n') + '\n')
+  return file
+}
+
+const quoteBeforeModelCall = (transcriptPath: string): string | undefined => {
+  const out = hook('PreInvocation', { conversationId: 'c1', transcriptPath })
+  if (!out) return undefined
+  const message = JSON.parse(out).injectSteps[0].ephemeralMessage as string
+  return /«(.*)»/s.exec(message)![1]
+}
 
 describe('the hook script agy runs for every hook (AGY§12)', () => {
   it('runs the plain events from a flat list and the tool events behind a "*" matcher, as agy reads them', () => {
@@ -68,43 +90,63 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       ])
   })
 
-  it('hands Koloft session start, tool use and stop, each with what agy sent, and not the call before every model request', () => {
+  it('appends every event with what agy sent, one line each in the order they ran, even when agy pretty-prints its input', () => {
     const input = { conversationId: 'c1', workspacePaths: ['/w'], toolCall: { name: 'view_file' } }
-    for (const event of ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'])
-      hook(event, input)
-    const got = dropped().map((d) => agyHook(d))
-    expect(got.map((h) => h?.event).sort()).toEqual([
-      'PostToolUse',
-      'PreToolUse',
-      'SessionStart',
-      'Stop'
-    ])
-    for (const h of got) expect(h).toMatchObject({ conversationId: 'c1', input })
+    const events = ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop']
+    for (const event of events)
+      run(commandFor(event), JSON.stringify(input, null, 2), { KOLOFT_AGY_LOG: log })
+    expect(logged()).toEqual(
+      events.map((event) => ({ hook: { event, conversationId: 'c1', input } }))
+    )
   })
 
-  it('drops nothing when the tab gave it no folder, and still answers agy', () => {
+  it('writes nothing when the tab gave it no log, and still answers agy', () => {
     const start = path.join(dir, 'start.json')
     fs.writeFileSync(start, '{"injectSteps":[]}')
     expect(
       hook(
         'SessionStart',
         { conversationId: 'c1' },
-        { KOLOFT_AGY_DROPS: '', KOLOFT_AGY_START: start }
+        { KOLOFT_AGY_LOG: '', KOLOFT_AGY_START: start }
       )
     ).toBe('{"injectSteps":[]}')
-    expect(fs.readdirSync(drops)).toEqual([])
+    expect(fs.existsSync(log)).toBe(false)
   })
 
-  it('prints the session-start words at SessionStart and the every-turn words before each model call, from the files the tab names', () => {
+  it('prints the session-start words at SessionStart from the file the tab names, and nothing at Stop', () => {
     const start = path.join(dir, 'start.json')
-    const turn = path.join(dir, 'turn.json')
     fs.writeFileSync(start, 'START')
-    const env = { KOLOFT_AGY_START: start, KOLOFT_AGY_TURN: turn }
-    expect(hook('SessionStart', { conversationId: 'c1' }, env)).toBe('START')
-    expect(hook('PreInvocation', { conversationId: 'c1' }, env)).toBe('')
-    fs.writeFileSync(turn, 'TURN')
-    expect(hook('PreInvocation', { conversationId: 'c1' }, env)).toBe('TURN')
-    expect(hook('Stop', { conversationId: 'c1' }, env)).toBe('')
+    expect(hook('SessionStart', { conversationId: 'c1' }, { KOLOFT_AGY_START: start })).toBe(
+      'START'
+    )
+    expect(hook('Stop', { conversationId: 'c1' })).toBe('')
+  })
+
+  // ADR-0031
+  it("before each model call quotes the owner's newest message from the transcript agy names, already this turn's", () => {
+    expect(
+      quoteBeforeModelCall(transcriptWith('first words', '第二句 "quoted"\n\nnext line'))
+    ).toBe('第二句 "quoted" next line')
+  })
+
+  // ADR-0031
+  it('leaves out the handover Koloft puts before a task it hands to a new session', () => {
+    const task = withHandover({ name: 'Global-conductor', id: 'abc-123' }, '评估管家的权限范围')
+    expect(quoteBeforeModelCall(transcriptWith(task))).toBe('评估管家的权限范围')
+  })
+
+  // ADR-0031
+  it('quotes at most 300 bytes, cut only between whole characters, and says nothing without a transcript', () => {
+    for (let pad = 0; pad < 6; pad++) {
+      for (const body of ['中文'.repeat(100), '😀é'.repeat(80)]) {
+        const text = 'x'.repeat(pad) + body
+        const quote = quoteBeforeModelCall(transcriptWith(text))!
+        expect(text.startsWith(quote), JSON.stringify({ pad, quote })).toBe(true)
+        expect(Buffer.byteLength(quote)).toBeLessThanOrEqual(300)
+        expect(Buffer.byteLength(quote)).toBeGreaterThan(296)
+      }
+    }
+    expect(quoteBeforeModelCall(path.join(dir, 'missing.jsonl'))).toBeUndefined()
   })
 
   it("passes a tool call to the tab's gate on stdin and prints the gate's verdict", () => {
@@ -125,17 +167,17 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
 })
 
 describe('the title script agy runs on every state change (AGY§9 AGY§11)', () => {
-  const titleCommand = (): string => `/bin/sh ${JSON.stringify(scripts.title)}`
+  const titleCommand = (): string => runWithSh(scripts.title)
 
-  it('appends what agy sent as one line per run, even when agy pretty-prints it', () => {
-    const log = path.join(dir, 'title.jsonl')
+  it('appends what agy sent to the same log as one line per run, even when agy pretty-prints it', () => {
     const first = { conversation_id: 'c1', agent_state: 'idle' }
     const second = { conversation_id: 'c2', agent_state: 'working' }
-    run(titleCommand(), JSON.stringify(first, null, 2), { KOLOFT_AGY_TITLE_LOG: log })
-    run(titleCommand(), JSON.stringify(second), { KOLOFT_AGY_TITLE_LOG: log })
-    const lines = fs.readFileSync(log, 'utf8').split('\n')
-    expect(lines.pop()).toBe('')
-    expect(lines.map((l) => JSON.parse(l))).toEqual([first, second])
+    run(titleCommand(), JSON.stringify(first, null, 2), { KOLOFT_AGY_LOG: log })
+    run(titleCommand(), JSON.stringify(second), { KOLOFT_AGY_LOG: log })
+    expect(logged()).toEqual([
+      { title: { conversationId: 'c1', agentState: 'idle', confirmationPending: false } },
+      { title: { conversationId: 'c2', agentState: 'working', confirmationPending: false } }
+    ])
   })
 
   it("runs the owner's own title command with the same input and shows its output, and shows nothing without one", () => {
@@ -148,30 +190,34 @@ describe('the title script agy runs on every state change (AGY§9 AGY§11)', () 
   })
 })
 
-describe('reading what the scripts left', () => {
-  it("reads agy's state, title, context use and model from a title line", () => {
+describe('reading the log the scripts leave', () => {
+  it("reads agy's state, an open ask, title, context use and model from a title line", () => {
     expect(
-      titleState(
+      agyLogLine(
         JSON.stringify({
           conversation_id: 'c1',
-          agent_state: 'reviewing',
+          agent_state: 'tool_use',
+          tool_confirmation_pending: true,
           conversation_title: 'Docs',
           context_window: { used_percentage: 12.5 },
           model: { id: 'gemini-3.1-pro-low' }
         })
       )
     ).toEqual({
-      conversationId: 'c1',
-      agentState: 'reviewing',
-      title: 'Docs',
-      contextUsed: 12.5,
-      model: 'gemini-3.1-pro-low'
+      title: {
+        conversationId: 'c1',
+        agentState: 'tool_use',
+        confirmationPending: true,
+        title: 'Docs',
+        contextUsed: 12.5,
+        model: 'gemini-3.1-pro-low'
+      }
     })
   })
 
   it('reads the empty id and null model and title agy sends before the first prompt, and nothing from a broken line', () => {
     expect(
-      titleState(
+      agyLogLine(
         JSON.stringify({
           conversation_id: '',
           agent_state: 'authenticating',
@@ -179,18 +225,27 @@ describe('reading what the scripts left', () => {
           conversation_title: null
         })
       )
-    ).toEqual({ conversationId: '', agentState: 'authenticating' })
-    expect(titleState('{"agent_state":"idle"}')).toBeUndefined()
-    expect(titleState('not json')).toBeUndefined()
+    ).toEqual({
+      title: { conversationId: '', agentState: 'authenticating', confirmationPending: false }
+    })
+    expect(agyLogLine('{"agent_state":"idle"}')).toBeUndefined()
+    expect(agyLogLine('not json')).toBeUndefined()
   })
 
-  it('takes a hook drop only for an event it knows and with a conversation id', () => {
-    expect(agyHook({ event: 'PostInvocation', input: { conversationId: 'c1' } })).toBeUndefined()
-    expect(agyHook({ event: 'Stop', input: {} })).toBeUndefined()
-    expect(agyHook({ event: 'Stop', input: { conversationId: 'c1', fullyIdle: true } })).toEqual({
-      event: 'Stop',
-      conversationId: 'c1',
-      input: { conversationId: 'c1', fullyIdle: true }
+  it('takes a hook line only for an event it knows and with a conversation id', () => {
+    const line = (v: unknown): string => JSON.stringify(v)
+    expect(agyLogLine(line({ event: 'PostInvocation', input: { conversationId: 'c1' } }))).toBe(
+      undefined
+    )
+    expect(agyLogLine(line({ event: 'Stop', input: {} }))).toBeUndefined()
+    expect(
+      agyLogLine(line({ event: 'Stop', input: { conversationId: 'c1', fullyIdle: true } }))
+    ).toEqual({
+      hook: {
+        event: 'Stop',
+        conversationId: 'c1',
+        input: { conversationId: 'c1', fullyIdle: true }
+      }
     })
   })
 

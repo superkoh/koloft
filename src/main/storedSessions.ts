@@ -11,6 +11,7 @@ import type {
 } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
 import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
+import { isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
@@ -26,6 +27,8 @@ import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 
 const AVAILABILITY_FAILURE_MS = 60_000
 const EMIT_THROTTLE_MS = 500
+
+const folderExists = (p: string): boolean => isRemoteKey(p) || dirExists(p)
 
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
@@ -141,6 +144,8 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       this.changedSoon()
     })
   }
+
+  readonly runsOnRemoteMachines: boolean = false
 
   protected abstract readonly cli: {
     product: string
@@ -360,11 +365,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         cwd: m.cwd,
         worktree: 'main',
         running: false,
-        invalidCwd: !dirExists(m.cwd),
+        invalidCwd: !folderExists(m.cwd),
         mtime: m.updatedAt
       }
       r.cwd = m.cwd
-      r.invalidCwd = !dirExists(m.cwd)
+      r.invalidCwd = !folderExists(m.cwd)
       r.nativeSessionId = m.id
       r.createdAt = m.createdAt
       r.running = this.readsRunning(m.key)
@@ -410,7 +415,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? this.deps.projectInfo(t.cwd).worktreeName ?? 'main',
       running: this.readsRunning(key),
-      invalidCwd: !dirExists(t.cwd),
+      invalidCwd: !folderExists(t.cwd),
       mtime: (t.updatedAt ?? t.createdAt ?? 0) * 1000,
       ...(resource
         ? { worktreeState: { ...resource, worktreeBranch: resource.worktreeBranch ?? '' } }
@@ -577,14 +582,19 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.assertStarting()
     if (!available.available) throw new Error(available.reason)
     let cwd = opts.cwd
-    if (typeof cwd !== 'string' || !path.isAbsolute(cwd) || !dirExists(cwd))
+    const remote = typeof cwd === 'string' && isRemoteKey(cwd)
+    if (remote && !this.runsOnRemoteMachines)
+      throw new Error(`${this.label} sessions cannot run on a remote machine yet.`)
+    if (typeof cwd !== 'string' || (!remote && (!path.isAbsolute(cwd) || !dirExists(cwd))))
       throw new Error('The session folder is missing.')
     const workspace = this.workspaceFor(cwd)
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error(`This ${this.label} session is already open.`)
     const prepared = this.prepare(opts)
     let freshWorktree = false
-    if (opts.worktreeResourceId) {
+    if (remote) {
+      freshWorktree = !!opts.worktree && !opts.scheduled
+    } else if (opts.worktreeResourceId) {
       const saved = this.store.getResource(opts.worktreeResourceId)
       if (!saved || saved.originalCwd !== workspace || opts.worktree || opts.resumeSessionId)
         throw new Error('Invalid worktree recovery request.')

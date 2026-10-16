@@ -395,19 +395,12 @@ export function agentRow(page: Page, method: AgentName): Locator {
     .filter({ hasText: new RegExp(`^\\d?${method}`) })
 }
 
-export async function pickAgent(
-  page: Page,
-  from: Locator,
-  method: AgentName
-): Promise<void> {
+export async function pickAgent(page: Page, from: Locator, method: AgentName): Promise<void> {
   await from.getByRole('button', { name: 'Pick an agent' }).click()
   await agentRow(page, method).click()
 }
 
-export async function chooseBackend(
-  page: Page,
-  which: 'default' | AgentName
-): Promise<void> {
+export async function chooseBackend(page: Page, which: 'default' | AgentName): Promise<void> {
   const dialog = page.locator('.modal.wspicker, .modal.worktreesess')
   if (which === 'default') {
     const start = dialog.locator('.modal-foot button[data-default="true"]')

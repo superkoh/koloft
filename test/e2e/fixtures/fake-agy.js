@@ -64,9 +64,24 @@ const FULL_CASCADE_CONFIG = {
   toolConfig: { code: { applyEdits: true }, runCommand: { autoCommandConfig: {} } }
 }
 const MODEL_FAMILIES = [
-  { base: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', efforts: ['high', 'medium', 'low'], fallback: 'medium' },
-  { base: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash', efforts: ['high', 'medium', 'low'], fallback: 'medium' },
-  { base: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', efforts: ['high', 'medium', 'low'], fallback: 'medium' },
+  {
+    base: 'gemini-3.8-flash',
+    label: 'Gemini 3.8 Flash',
+    efforts: ['high', 'medium', 'low'],
+    fallback: 'medium'
+  },
+  {
+    base: 'gemini-3.7-flash',
+    label: 'Gemini 3.7 Flash',
+    efforts: ['high', 'medium', 'low'],
+    fallback: 'medium'
+  },
+  {
+    base: 'gemini-3.6-flash',
+    label: 'Gemini 3.6 Flash',
+    efforts: ['high', 'medium', 'low'],
+    fallback: 'medium'
+  },
   { base: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro', efforts: ['high', 'low'], fallback: 'low' }
 ]
 const MODEL_TOOLS = [
@@ -157,7 +172,8 @@ for (let i = 0; i < argv.length; i++) {
 const flag = (...names) => names.map((n) => flags[n]).find((v) => v !== undefined)
 
 const home = process.env.HOME || os.homedir()
-const geminiDir = typeof flags['--gemini_dir'] === 'string' ? flags['--gemini_dir'] : path.join(home, '.gemini')
+const geminiDir =
+  typeof flags['--gemini_dir'] === 'string' ? flags['--gemini_dir'] : path.join(home, '.gemini')
 const appDir = path.join(geminiDir, APP_DATA_DIR_NAME)
 const configDir = path.join(geminiDir, 'config')
 const paths = {
@@ -213,9 +229,14 @@ const sortKeys = (value) =>
   Array.isArray(value)
     ? value.map(sortKeys)
     : value && typeof value === 'object'
-      ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, sortKeys(value[k])]))
+      ? Object.fromEntries(
+          Object.keys(value)
+            .sort()
+            .map((k) => [k, sortKeys(value[k])])
+        )
       : value
-const dbTime = (date = new Date()) => date.toISOString().replace('T', ' ').replace('Z', '000000+00:00')
+const dbTime = (date = new Date()) =>
+  date.toISOString().replace('T', ' ').replace('Z', '000000+00:00')
 const stepTime = (date = new Date()) => date.toISOString().replace(/\.\d{3}Z$/, 'Z')
 const firstLine = (text) => (text.split('\n').find((l) => l.trim()) ?? '').trim()
 const turnDelayMs = () => Number(readSentinel('fake-agy-delay', '300'))
@@ -246,7 +267,13 @@ function writeReplacing(file, text, mode) {
   fs.renameSync(temporary, file)
 }
 function ensureSharedDirs() {
-  for (const dir of [paths.conversations, paths.brain, paths.annotations, paths.presence, paths.cache])
+  for (const dir of [
+    paths.conversations,
+    paths.brain,
+    paths.annotations,
+    paths.presence,
+    paths.cache
+  ])
     ensureDir(dir)
 }
 
@@ -305,7 +332,10 @@ function resolveModel(name, effortFlag) {
   let effort
   for (const f of MODEL_FAMILIES) {
     if (wanted === f.base) family = f
-    else if (wanted.startsWith(f.base + '-') && f.efforts.includes(wanted.slice(f.base.length + 1))) {
+    else if (
+      wanted.startsWith(f.base + '-') &&
+      f.efforts.includes(wanted.slice(f.base.length + 1))
+    ) {
       family = f
       effort = wanted.slice(f.base.length + 1)
     }
@@ -391,7 +421,9 @@ function updateSummary(id, fields) {
   const keys = Object.keys(fields)
   withSummaries((db) =>
     db
-      .prepare(`UPDATE conversation_summaries SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE conversation_id = ?`)
+      .prepare(
+        `UPDATE conversation_summaries SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE conversation_id = ?`
+      )
       .run(...keys.map((k) => fields[k]), id)
   )
 }
@@ -539,13 +571,16 @@ function writeStep(c, record) {
   if (record.content !== undefined) full.content = record.content
   if (record.toolCalls) full.tool_calls = record.toolCalls
   const flat = { ...full }
-  if (full.tool_calls) flat.tool_calls = full.tool_calls.map((t) => ({ name: t.name, args: stringArgs(t.args) }))
+  if (full.tool_calls)
+    flat.tool_calls = full.tool_calls.map((t) => ({ name: t.name, args: stringArgs(t.args) }))
   ensureDir(logsDir(c.id))
   fs.appendFileSync(transcriptPath(c.id), JSON.stringify(flat) + '\n')
   fs.appendFileSync(transcriptFullPath(c.id), JSON.stringify(full) + '\n')
   withDb(conversationDbPath(c.id), (db) => {
     db.exec(CONVERSATION_DDL)
-    db.prepare('INSERT OR REPLACE INTO steps (idx, step_type, status, step_payload) VALUES (?, ?, ?, ?)').run(
+    db.prepare(
+      'INSERT OR REPLACE INTO steps (idx, step_type, status, step_payload) VALUES (?, ?, ?, ?)'
+    ).run(
       index,
       CONVERSATION_DB_STEP_TYPES[full.type] ?? CONVERSATION_DB_GENERIC_STEP_TYPE,
       full.status === 'DONE' ? 3 : 4,
@@ -557,7 +592,9 @@ function writeStep(c, record) {
   const position = c.apiCount++
   const previous = position > 0 ? readTranscript(c.id)[position - 1] : undefined
   streamPush(c, {
-    mainTrajectoryUpdate: { stepsUpdate: { indices: [position], steps: [apiStepOf(c, full, previous)] } }
+    mainTrajectoryUpdate: {
+      stepsUpdate: { indices: [position], steps: [apiStepOf(c, full, previous)] }
+    }
   })
   return index
 }
@@ -580,7 +617,10 @@ function apiStepOf(c, record, previous) {
   else if (record.type === 'PLANNER_RESPONSE') {
     step.plannerResponse = {
       response: record.content ?? '',
-      toolCalls: (record.tool_calls ?? []).map((t) => ({ name: t.name, argumentsJson: JSON.stringify(t.args) }))
+      toolCalls: (record.tool_calls ?? []).map((t) => ({
+        name: t.name,
+        argumentsJson: JSON.stringify(t.args)
+      }))
     }
     step.metadata.modelUsage = {
       model: PLAN_MODEL,
@@ -679,7 +719,8 @@ function preToolVerdict(outputs) {
       return { denied: `pre-tool hook returned output that is not JSON: ${out}` }
     }
     const decision = parsed?.decision
-    if (decision === 'deny') return { denied: `tool call denied by pre-tool hook: ${parsed.reason ?? ''}` }
+    if (decision === 'deny')
+      return { denied: `tool call denied by pre-tool hook: ${parsed.reason ?? ''}` }
     if (decision === 'force_ask') return { forceAsk: true, reason: parsed.reason ?? '' }
     if (decision === 'allow' || decision === 'ask') continue
     return { denied: 'tool call denied by pre-tool hook: ' }
@@ -723,7 +764,8 @@ function sendFrame(state, kind, message) {
     if (state === 'done') text = BRIEF_MESSAGES.done
     else if (state === 'error') text = BRIEF_MESSAGES.error
     else if (kind === 'question') text = BRIEF_MESSAGES.question
-    else if (kind === 'permission' && String(message).startsWith('Approve RunCommand')) text = BRIEF_MESSAGES.command
+    else if (kind === 'permission' && String(message).startsWith('Approve RunCommand'))
+      text = BRIEF_MESSAGES.command
   }
   let frame = `${ESC}]7501;state=${state}`
   if (kind) frame += `:kind=${kind}`
@@ -763,7 +805,15 @@ function statusInput() {
     terminal_width: process.stdout.columns || 80,
     tool_confirmation_pending: Boolean(pendingAsk),
     transcript_path: c
-      ? path.join(geminiDir, 'antigravity', 'brain', c.id, '.system_generated', 'logs', 'transcript.jsonl')
+      ? path.join(
+          geminiDir,
+          'antigravity',
+          'brain',
+          c.id,
+          '.system_generated',
+          'logs',
+          'transcript.jsonl'
+        )
       : '',
     version: VERSION,
     workspace: { current_dir: workspace, project_dir: workspace }
@@ -774,7 +824,12 @@ function runScripts() {
   const settings = readSettings()
   const input = JSON.stringify(statusInput())
   const run = (command) =>
-    spawnSync('/bin/sh', ['-c', command], { input, encoding: 'utf8', env: process.env, timeout: 10000 })
+    spawnSync('/bin/sh', ['-c', command], {
+      input,
+      encoding: 'utf8',
+      env: process.env,
+      timeout: 10000
+    })
   if (typeof settings.title?.command === 'string') {
     const title = (run(settings.title.command).stdout ?? '').split('\n')[0].replace(/\r$/, '')
     if (title !== term.lastTitle) {
@@ -784,7 +839,8 @@ function runScripts() {
   }
   if (typeof settings.statusLine?.command === 'string') {
     const result = run(settings.statusLine.command)
-    if (result.status !== 0) say(`⚠ Statusline Error\n⎿ command failed: exit status ${result.status}`)
+    if (result.status !== 0)
+      say(`⚠ Statusline Error\n⎿ command failed: exit status ${result.status}`)
     else {
       const lines = (result.stdout ?? '').replace(/\n$/, '')
       if (lines !== term.lastStatusLine) {
@@ -909,7 +965,11 @@ function startSession(c) {
   c.needsSessionStart = false
   for (const text of injectedTexts(fireHook('SessionStart', c.id), 'system')) {
     c.systemMessages.push(text)
-    writeStep(c, { source: 'SYSTEM', type: 'SYSTEM_MESSAGE', content: SYSTEM_MESSAGE_PREFIX + text })
+    writeStep(c, {
+      source: 'SYSTEM',
+      type: 'SYSTEM_MESSAGE',
+      content: SYSTEM_MESSAGE_PREFIX + text
+    })
     appendJsonl(sentinel('fake-agy-injected.jsonl'), {
       event: 'SessionStart',
       conversationId: c.id,
@@ -958,7 +1018,12 @@ function fireStop(c, fields) {
   fireHook('Stop', c.id, { error: '', executionNum: c.executions++, fullyIdle: true, ...fields })
 }
 async function finishTurn(turn, reply, options = {}) {
-  const { fullyIdle = true, terminationReason = 'NO_TOOL_CALL', ending = 'done', agentState = 'idle' } = options
+  const {
+    fullyIdle = true,
+    terminationReason = 'NO_TOOL_CALL',
+    ending = 'done',
+    agentState = 'idle'
+  } = options
   const c = turn.conv
   await modelCall(turn, { content: reply })
   say(reply)
@@ -1016,7 +1081,9 @@ function askUser(turn, ask) {
     }
     say(ask.screen)
     updateSummary(c.id, { status: RUNNING, not_fully_idle: 1 })
-    streamPush(c, { mainTrajectoryUpdate: { stepsUpdate: { indices: [position], steps: [waitingStep] } } })
+    streamPush(c, {
+      mainTrajectoryUpdate: { stepsUpdate: { indices: [position], steps: [waitingStep] } }
+    })
     setAgentState('tool_use')
     sendFrame('blocked', ask.frame[0], ask.frame[1])
   })
@@ -1028,7 +1095,13 @@ async function useTool(turn, tool) {
   const toolCall = { args: tool.args, name: tool.name }
   const verdict = preToolVerdict(fireHook('PreToolUse', c.id, { stepIdx, toolCall }))
   if (verdict.denied) {
-    writeStep(c, { source: 'MODEL', type: 'GENERIC', status: 'ERROR', error: verdict.denied, content: stamped('') })
+    writeStep(c, {
+      source: 'MODEL',
+      type: 'GENERIC',
+      status: 'ERROR',
+      error: verdict.denied,
+      content: stamped('')
+    })
     if (tool.name === 'write_to_file' || tool.name === 'replace_file_content') say('Edited 1 file')
     return { denied: verdict.denied }
   }
@@ -1072,14 +1145,16 @@ async function useTool(turn, tool) {
     error: result.error,
     content: stamped(result.content)
   })
-  if (!result.error && !result.background) fireHook('PostToolUse', c.id, { error: '', stepIdx, toolCall })
+  if (!result.error && !result.background)
+    fireHook('PostToolUse', c.id, { error: '', stepIdx, toolCall })
   return result
 }
 async function endToolTurn(turn, result, success, failure) {
   if (result.denied) return finishTurn(turn, `Denied: ${result.denied}`)
   if (result.apiDenied) return finishTurn(turn, `Denied: ${failure}`)
   if (result.notRun) return finishTurn(turn, `Not run: ${failure}`)
-  if (result.declined) return declineTurn(turn, result.declined === 'key' ? 'User declined the tool call' : '')
+  if (result.declined)
+    return declineTurn(turn, result.declined === 'key' ? 'User declined the tool call' : '')
   return finishTurn(turn, success)
 }
 
@@ -1096,7 +1171,10 @@ function fileAsk(turn, file, kind) {
         triggerSource: { type: 'TYPE_DEFAULT_GRANT', detail: 'write_file(/)' }
       }
     },
-    frame: ['permission', `Approve ${create ? 'WriteToFile' : 'ReplaceFileContent'}: Write: ${file}`],
+    frame: [
+      'permission',
+      `Approve ${create ? 'WriteToFile' : 'ReplaceFileContent'}: Write: ${file}`
+    ],
     screen: create
       ? `${file}\n+ ${WRITTEN_BY_FAKE.trim()}\nAllow creation of this file?\n> 1. Yes, allow creation\n  2. No, deny creation`
       : `${file}\nAccept this file edit?\n> 1. Yes, accept this change\n  2. No, reject this change\nshift+tab to auto-approve file edits`,
@@ -1146,7 +1224,9 @@ function commandAsk(cmd) {
     },
     fromApi: (interaction) => {
       if (interaction.permission)
-        return interaction.permission.allow ? { allow: true, fromApi: true } : { allow: false, via: 'api' }
+        return interaction.permission.allow
+          ? { allow: true, fromApi: true }
+          : { allow: false, via: 'api' }
       if (interaction.runCommand) return { allow: false, via: 'confirm-only' }
       return undefined
     }
@@ -1169,7 +1249,11 @@ function runCommandEnv(c, stepIdx, toolCall) {
     ANTIGRAVITY_CONVERSATION_ID: c.id,
     ANTIGRAVITY_TRAJECTORY_ID: trajectoryIdOf(c.id),
     ANTIGRAVITY_PROJECT_ID: PROJECT_ID,
-    ANTIGRAVITY_SOURCE_METADATA: JSON.stringify({ conversationId: c.id, stepIndex: stepIdx, toolCall }),
+    ANTIGRAVITY_SOURCE_METADATA: JSON.stringify({
+      conversationId: c.id,
+      stepIndex: stepIdx,
+      toolCall
+    }),
     ANTIGRAVITY_LS_ADDRESS: `localhost:${api.port}`,
     ANTIGRAVITY_CSRF_TOKEN: internalToken,
     ANTIGRAVITY_APP_DATA_DIR: appDir,
@@ -1178,7 +1262,11 @@ function runCommandEnv(c, stepIdx, toolCall) {
 }
 function runShell(shell, cmd, env, logFile) {
   return new Promise((resolve) => {
-    const child = spawn(shell, ['-c', cmd], { cwd: process.cwd(), env, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(shell, ['-c', cmd], {
+      cwd: process.cwd(),
+      env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
     let output = ''
     const collect = (chunk) => {
       output += chunk
@@ -1279,10 +1367,14 @@ async function bashScenario(turn, command) {
   return endToolTurn(turn, result, `Ran: ${cmd}`, cmd)
 }
 async function askScenario(turn, spec) {
-  const parts = (spec || '').split('|').map((s) => s.trim()).filter(Boolean)
+  const parts = (spec || '')
+    .split('|')
+    .map((s) => s.trim())
+    .filter(Boolean)
   const question = parts[0] || 'Which one?'
   const options = parts.length > 1 ? parts.slice(1) : ['Apple', 'Banana']
-  const pick = (index) => (index >= 0 && index < options.length ? { allow: true, option: options[index] } : undefined)
+  const pick = (index) =>
+    index >= 0 && index < options.length ? { allow: true, option: options[index] } : undefined
   const args = {
     questions: [{ question, options, is_multi_select: false }],
     toolAction: 'Asking a question',
@@ -1296,7 +1388,9 @@ async function askScenario(turn, spec) {
       stepType: 'CORTEX_STEP_TYPE_ASK_QUESTION',
       requestedInteraction: {
         askQuestion: {
-          questions: [{ question, options: options.map((text, i) => ({ id: String(i + 1), text })) }]
+          questions: [
+            { question, options: options.map((text, i) => ({ id: String(i + 1), text })) }
+          ]
         }
       },
       frame: ['question', question],
@@ -1328,7 +1422,13 @@ async function askScenario(turn, spec) {
 async function backgroundScenario(turn, command) {
   const c = turn.conv
   const cmd = command || 'sleep 2'
-  const args = { CommandLine: cmd, Cwd: process.cwd(), WaitMsBeforeAsync: 0, toolAction: 'Running command', toolSummary: cmd }
+  const args = {
+    CommandLine: cmd,
+    Cwd: process.cwd(),
+    WaitMsBeforeAsync: 0,
+    toolAction: 'Running command',
+    toolSummary: cmd
+  }
   const result = await useTool(turn, {
     name: 'run_command',
     args,
@@ -1401,7 +1501,11 @@ async function planScenario(turn) {
     CodeContent: plan,
     Overwrite: fs.existsSync(file),
     Description: 'Write the plan',
-    ArtifactMetadata: { ArtifactType: 'implementation_plan', RequestFeedback: true, Summary: 'A plan to review' },
+    ArtifactMetadata: {
+      ArtifactType: 'implementation_plan',
+      RequestFeedback: true,
+      Summary: 'A plan to review'
+    },
     toolAction: 'Writing plan',
     toolSummary: PLAN_ARTIFACT
   }
@@ -1424,7 +1528,10 @@ async function planScenario(turn) {
   })
   if (result.denied) return finishTurn(turn, `Denied: ${result.denied}`)
   review = { conv: c, name: PLAN_ARTIFACT }
-  await finishTurn(turn, 'The plan is ready for review.', { ending: 'plan', agentState: 'reviewing' })
+  await finishTurn(turn, 'The plan is ready for review.', {
+    ending: 'plan',
+    agentState: 'reviewing'
+  })
   say('1 artifact · /artifact to review')
 }
 async function busyScenario(turn) {
@@ -1436,7 +1543,11 @@ async function compactScenario(turn) {
   writeStep(c, { source: 'USER_EXPLICIT', type: 'USER_INPUT', content: '/compact' })
   say('Compacting conversation… (1s · esc to cancel)')
   streamPush(c, {
-    activeHook: { hookType: 'HOOK_TYPE_PRE_INVOCATION', hookName: 'context_summary', startedAt: new Date().toISOString() }
+    activeHook: {
+      hookType: 'HOOK_TYPE_PRE_INVOCATION',
+      hookName: 'context_summary',
+      startedAt: new Date().toISOString()
+    }
   })
   fireHook('PreInvocation', c.id, { initialNumSteps: c.nextStep, invocationNum: 0 })
   await pause(Number(readSentinel('fake-agy-compact-ms', '1500')))
@@ -1565,7 +1676,8 @@ function usageData() {
 const usageRows = (data) =>
   (data.groups ?? []).flatMap((g) =>
     (g.buckets ?? []).map(
-      (b) => `${g.name}\t${b.name}\t${Math.round((b.remaining_fraction ?? 0) * 100)}%\t${b.reset_time ?? ''}`
+      (b) =>
+        `${g.name}\t${b.name}\t${Math.round((b.remaining_fraction ?? 0) * 100)}%\t${b.reset_time ?? ''}`
     )
   )
 function helpText() {
@@ -1614,7 +1726,9 @@ function slashCommand(command, argument) {
               .all()
           )
         : []
-      return say(rows.map((r) => `${r.conversation_id}  ${r.title}`).join('\n') || 'No conversations')
+      return say(
+        rows.map((r) => `${r.conversation_id}  ${r.title}`).join('\n') || 'No conversations'
+      )
     }
     if (!conversationExists(argument)) return say(`Conversation not found: ${argument}`)
     const previous = conversation
@@ -1643,11 +1757,15 @@ function slashCommand(command, argument) {
   if (command === '/model')
     return openPanel(
       'model',
-      ['Select model', ...modelRows().map((r) => `${r.startsWith(model.id + '\t') ? '> ' : '  '}${r.split('\t')[1]}`)].join('\n')
+      [
+        'Select model',
+        ...modelRows().map(
+          (r) => `${r.startsWith(model.id + '\t') ? '> ' : '  '}${r.split('\t')[1]}`
+        )
+      ].join('\n')
     )
   if (command === '/help') return openPanel('help', helpText())
-  if (command === '/config')
-    return openPanel('config', JSON.stringify(readSettings(), null, 2))
+  if (command === '/config') return openPanel('config', JSON.stringify(readSettings(), null, 2))
   if (command === '/artifact') {
     if (!review) return say('No artifacts to review')
     const pending = review
@@ -1748,14 +1866,18 @@ function showSignInUrl() {
   const url = `https://accounts.google.com/o/oauth2/auth?${query}`
   const overSsh = ['SSH_CONNECTION', 'SSH_TTY', 'SSH_CLIENT'].some((k) => process.env[k])
   if (!overSsh) fs.appendFileSync(sentinel('fake-agy-browser-opens.txt'), url + '\n')
-  say(`Sign in with Google\nOpen this URL in your browser:\n${url}\n\nPaste the authorization code here:`)
+  say(
+    `Sign in with Google\nOpen this URL in your browser:\n${url}\n\nPaste the authorization code here:`
+  )
 }
 function finishSignIn(code) {
   if (!code.startsWith('code-')) return say('Invalid authorization code. Try again.')
   const email = readSentinel('fake-agy-email', 'fake-user@example.com')
   const idToken = [
     base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' })),
-    base64url(JSON.stringify({ email, sub: crypto.createHash('sha1').update(email).digest('hex') })),
+    base64url(
+      JSON.stringify({ email, sub: crypto.createHash('sha1').update(email).digest('hex') })
+    ),
     base64url('fake-signature')
   ].join('.')
   const token = {
@@ -1774,7 +1896,9 @@ function finishSignIn(code) {
 }
 function showColorScheme() {
   phase = 'color'
-  say('Welcome to Antigravity CLI! Choose your color scheme\n> Dark\n  Light\n  Dark (high contrast)')
+  say(
+    'Welcome to Antigravity CLI! Choose your color scheme\n> Dark\n  Light\n  Dark (high contrast)'
+  )
   sendFrame('blocked', 'question', 'Finish setup')
 }
 function showTerms() {
@@ -1785,7 +1909,9 @@ function showTerms() {
 function showTrust() {
   phase = 'trust'
   trustCursor = 0
-  say(`Do you trust the contents of this project?\n${workspace}\n> Yes, I trust this folder\n  No, exit`)
+  say(
+    `Do you trust the contents of this project?\n${workspace}\n> Yes, I trust this folder\n  No, exit`
+  )
   sendFrame('blocked', 'permission', 'Trust this folder?')
 }
 function trustWorkspace() {
@@ -1815,7 +1941,11 @@ function setupKey(key) {
     if (key !== ENTER) return
     writeReplacing(
       paths.onboarding,
-      JSON.stringify({ consumerOnboardingComplete: true, enterpriseOnboardingComplete: false, onboardingComplete: true })
+      JSON.stringify({
+        consumerOnboardingComplete: true,
+        enterpriseOnboardingComplete: false,
+        onboardingComplete: true
+      })
     )
     return nextPhase()
   }
@@ -1921,7 +2051,8 @@ function reply(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json' })
   res.end(JSON.stringify(body))
 }
-const notFound = (res, id) => reply(res, 404, { code: 'not_found', message: `cascade ${id} not found` })
+const notFound = (res, id) =>
+  reply(res, 404, { code: 'not_found', message: `cascade ${id} not found` })
 const API_METHODS = {
   GetStatus: (body, res) => reply(res, 200, {}),
   RetrieveUserQuotaSummary: (body, res) => reply(res, 200, { response: {} }),
@@ -1957,11 +2088,20 @@ const API_METHODS = {
   HandleCascadeUserInteraction: (body, res) => {
     const interaction = body.interaction ?? {}
     const waiting =
-      pendingAsk && pendingAsk.conv.id === body.cascadeId && interaction.stepIndex === pendingAsk.position
+      pendingAsk &&
+      pendingAsk.conv.id === body.cascadeId &&
+      interaction.stepIndex === pendingAsk.position
     if (!waiting)
-      return reply(res, 500, { code: 'internal', message: `input not registered for step ${interaction.stepIndex}` })
+      return reply(res, 500, {
+        code: 'internal',
+        message: `input not registered for step ${interaction.stepIndex}`
+      })
     const answer = pendingAsk.fromApi(interaction)
-    if (!answer) return reply(res, 400, { code: 'invalid_argument', message: 'interaction does not fit the waiting step' })
+    if (!answer)
+      return reply(res, 400, {
+        code: 'invalid_argument',
+        message: 'interaction does not fit the waiting step'
+      })
     reply(res, 200, {})
     pendingAsk.resolve(answer)
   },
@@ -1979,9 +2119,11 @@ const API_METHODS = {
     reply(res, 200, {})
   },
   WaitForConversationFullyIdle: (body, res) => {
-    if (!body.conversationId) return reply(res, 400, { code: 'invalid_argument', message: 'conversationId is required' })
+    if (!body.conversationId)
+      return reply(res, 400, { code: 'invalid_argument', message: 'conversationId is required' })
     const check = () => {
-      if (conversation?.id === body.conversationId && (turnRunning || pendingAsk)) return setTimeout(check, 100)
+      if (conversation?.id === body.conversationId && (turnRunning || pendingAsk))
+        return setTimeout(check, 100)
       reply(res, 200, {})
     }
     check()
@@ -2001,7 +2143,8 @@ const API_METHODS = {
   },
   StreamAgentStateUpdates: (body, res) => {
     const id = body.conversationId
-    if (!id) return reply(res, 400, { code: 'invalid_argument', message: 'conversationId is required' })
+    if (!id)
+      return reply(res, 400, { code: 'invalid_argument', message: 'conversationId is required' })
     const live = conversation?.id === id
     const status = live && turnRunning ? RUNNING : IDLE
     const steps = conversationExists(id) ? trajectorySteps(id) : []
@@ -2028,7 +2171,9 @@ function handleApi(req, res) {
   const chunks = []
   req.on('data', (chunk) => chunks.push(chunk))
   req.on('end', () => {
-    const method = req.url.startsWith(SERVICE_PREFIX) ? req.url.slice(SERVICE_PREFIX.length) : req.url
+    const method = req.url.startsWith(SERVICE_PREFIX)
+      ? req.url.slice(SERVICE_PREFIX.length)
+      : req.url
     const token = req.headers['x-codeium-csrf-token']
     let body = {}
     try {
@@ -2039,9 +2184,11 @@ function handleApi(req, res) {
     const authorized = Boolean(token) && (token === csrfToken || token === internalToken)
     appendJsonl(sentinel('fake-agy-api.jsonl'), { pid: process.pid, method, body, authorized })
     if (!token) return reply(res, 401, { code: 'unauthenticated', message: 'missing CSRF token' })
-    if (!authorized) return reply(res, 401, { code: 'unauthenticated', message: 'invalid CSRF token' })
+    if (!authorized)
+      return reply(res, 401, { code: 'unauthenticated', message: 'invalid CSRF token' })
     const handler = API_METHODS[method]
-    if (!handler) return reply(res, 404, { code: 'unimplemented', message: `${method} is not implemented` })
+    if (!handler)
+      return reply(res, 404, { code: 'unimplemented', message: `${method} is not implemented` })
     try {
       handler(body, res)
     } catch (error) {
@@ -2055,7 +2202,9 @@ function startApi() {
     const tlsLookalike = net.createServer((socket) => {
       socket.on('error', () => {})
       socket.once('data', () =>
-        socket.end('HTTP/1.0 400 Bad Request\r\n\r\nClient sent an HTTP request to an HTTPS server.\n')
+        socket.end(
+          'HTTP/1.0 400 Bad Request\r\n\r\nClient sent an HTTP request to an HTTPS server.\n'
+        )
       )
     })
     let waiting = 2
@@ -2088,7 +2237,11 @@ async function startTui() {
   if (!fs.existsSync(paths.onboarding))
     writeReplacing(
       paths.onboarding,
-      JSON.stringify({ consumerOnboardingComplete: false, enterpriseOnboardingComplete: false, onboardingComplete: false })
+      JSON.stringify({
+        consumerOnboardingComplete: false,
+        enterpriseOnboardingComplete: false,
+        onboardingComplete: false
+      })
     )
   nextPhase()
 }
@@ -2105,14 +2258,22 @@ function oneShotResponse(input) {
     const [asked, written] = input.split(WRITTEN_LIST)
     const answer = asked.split('Agent replied:\n').pop()
     const picks = [
-      ...written.split('\n').filter((l) => l.startsWith('/') && !path.basename(l).startsWith('draft-')),
+      ...written
+        .split('\n')
+        .filter((l) => l.startsWith('/') && !path.basename(l).startsWith('draft-')),
       ...(answer.match(/(?<![\w.~-])\/[^\s`'"]+\.(?:md|html)\b/g) ?? [])
     ]
     return [...new Set(picks)].join('\n') || 'NONE'
   }
   return `${firstLine(input.split('Task:\n').pop())} (titled)`
 }
-const zeroUsage = () => ({ input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 0 })
+const zeroUsage = () => ({
+  input_tokens: 0,
+  output_tokens: 0,
+  thinking_tokens: 0,
+  cache_read_tokens: 0,
+  total_tokens: 0
+})
 function printResult(format, result, extraEvents = []) {
   if (format === 'json') process.stdout.write(JSON.stringify(result) + '\n')
   else if (format === 'stream-json') {
@@ -2158,9 +2319,33 @@ async function headless() {
   }
   if (/^\/(usage|quota)\b/.test(trimmed)) return printCommand('usage', usageData(), format)
   if (/^\/model\b/.test(trimmed))
-    return printCommand('model', { id: model.id, label: model.display_name, effort: model.effort, is_default: !flag('--model') }, format)
+    return printCommand(
+      'model',
+      {
+        id: model.id,
+        label: model.display_name,
+        effort: model.effort,
+        is_default: !flag('--model')
+      },
+      format
+    )
   if (/^\/help\b/.test(trimmed))
-    return printCommand('help', { commands: ['/help', '/usage', '/model', '/config', '/effort', '/hooks', '/permissions', '/skills'] }, format)
+    return printCommand(
+      'help',
+      {
+        commands: [
+          '/help',
+          '/usage',
+          '/model',
+          '/config',
+          '/effort',
+          '/hooks',
+          '/permissions',
+          '/skills'
+        ]
+      },
+      format
+    )
   if (/^\/config\b/.test(trimmed)) return printCommand('config', { config: readSettings() }, format)
   const wanted = flag('--conversation')
   if (typeof wanted === 'string' && wanted) {
@@ -2226,7 +2411,15 @@ async function headless() {
           permission_mode: skipPermissions ? 'bypass-permissions' : 'request-review'
         }
       },
-      { event: 'step_update', step_update: { conversation_id: c.id, step_index: 0, state: 'DONE', step_type: 'user_input' } },
+      {
+        event: 'step_update',
+        step_update: {
+          conversation_id: c.id,
+          step_index: 0,
+          state: 'DONE',
+          step_type: 'user_input'
+        }
+      },
       {
         event: 'step_update',
         step_update: {
@@ -2250,7 +2443,10 @@ function main() {
     process.exit(1)
   }
   const wantedEffort = flag('--effort')
-  model = resolveModel(typeof flag('--model') === 'string' ? flag('--model') : undefined, typeof wantedEffort === 'string' ? wantedEffort : undefined)
+  model = resolveModel(
+    typeof flag('--model') === 'string' ? flag('--model') : undefined,
+    typeof wantedEffort === 'string' ? wantedEffort : undefined
+  )
   if (model.error) {
     process.stderr.write(model.error + '\n')
     process.exit(1)
@@ -2264,10 +2460,14 @@ if (argv[0] === '--version') {
   process.exit(0)
 } else if (positional[0] === 'version') process.exit(2)
 else if (positional[0] === 'update') {
-  process.stdout.write('Checking for updates…\nFound new version…\nUpdate successful! Please restart agy.\n')
+  process.stdout.write(
+    'Checking for updates…\nFound new version…\nUpdate successful! Please restart agy.\n'
+  )
   process.exit(0)
 } else if (positional[0] === 'install') {
-  process.stdout.write(`Add agy to your PATH:\n  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc\n`)
+  process.stdout.write(
+    `Add agy to your PATH:\n  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc\n`
+  )
   process.exit(0)
 } else if (positional[0] === 'models') {
   process.stdout.write(modelRows().join('\n') + '\n')

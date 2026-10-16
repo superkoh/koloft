@@ -137,15 +137,17 @@ const NOTHING_YET: Capabilities = {
   rename: PENDING
 }
 
+const OVER_SSH: Capabilities = {
+  ...EVERYTHING,
+  agentOpen: PENDING,
+  browserControl: PENDING,
+  rename: PENDING
+}
+
 const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> = {
   claude: {
     local: EVERYTHING,
-    ssh: {
-      ...EVERYTHING,
-      agentOpen: PENDING,
-      browserControl: PENDING,
-      rename: PENDING
-    }
+    ssh: OVER_SSH
   },
   codex: {
     local: {
@@ -167,7 +169,7 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
   },
   agy: {
     local: EVERYTHING,
-    ssh: 'refused'
+    ssh: OVER_SSH
   }
 }
 

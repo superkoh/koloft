@@ -37,7 +37,15 @@ import {
   readAgyQuota,
   setAgyApiKeyRoute
 } from './agyAccounts'
-import { ownersGeminiDir } from './agyStore'
+import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from './agyStore'
+import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'
+import {
+  AGY_HOOK_FILE,
+  AGY_LIST_FILE,
+  AGY_STATUSLINE_FILE,
+  AGY_TITLE_FILE,
+  agyStatuslineScript
+} from './remote/agyTab'
 import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museSignedIn, storeMuseKey } from './museServe'
@@ -116,7 +124,12 @@ import {
   CLAUDE_AUTH_ENV_VARS,
   type MachinePackage
 } from './remote/launch'
-import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
+import {
+  machinePackageBase,
+  mirrorAgyGemini,
+  mirrorHookDir,
+  mirrorProjectsRoot
+} from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { REMOTE_AGENT_SHIM } from './agentShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
@@ -128,6 +141,7 @@ import {
   writeWholeBeforeVisible
 } from './jsonDrops'
 import {
+  AGY_STATUSLINE_JS,
   bundlePath,
   DEFAULT_THEME,
   remoteWrapperScript,
@@ -941,7 +955,10 @@ function machinePackage(): MachinePackage {
     'util.sh': UTIL_SH,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
-    [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM
+    [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
+    [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
+    [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
+    [AGY_LIST_FILE]: AGY_LIST_JS
   }
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
@@ -950,6 +967,8 @@ function machinePackage(): MachinePackage {
     pkgFiles['statusline/package.json'] = '{"type":"module"}\n'
     pkgFiles['statusline/theme.json'] = JSON.stringify(DEFAULT_THEME, null, 2)
     pkgFiles['statusline/run.sh'] = remoteWrapperScript()
+    pkgFiles['statusline/agy.js'] = AGY_STATUSLINE_JS
+    pkgFiles[AGY_STATUSLINE_FILE] = agyStatuslineScript()
   } catch (err) {
     console.error('[koloft] remote statusline bundle unreadable:', err)
   }
@@ -2409,6 +2428,24 @@ app.whenReady().then(() => {
   try {
     agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
       ...storedDeps,
+      projectInfo: (p) =>
+        parseRemoteKey(p)
+          ? (workspaceMgr?.remoteProjectInfo(p) ?? { root: p, treeRoot: p })
+          : projectInfoFor(p),
+      remote: {
+        machine: (host) => hosts.machine(host),
+        hosts: () => (workspaceMgr?.remoteTargets() ?? []).map((t) => t.host),
+        alive: (host) => remoteSync?.alive(host) ?? new Set(),
+        nextPull: (host) => {
+          if (!remoteSync) return Promise.resolve()
+          const pulled = remoteSync.nextPullDone(host)
+          remoteSync.pokeNow(host)
+          return pulled
+        },
+        machineName: () => machinePackage().name,
+        mirrorHookDir: (host) => mirrorHookDir(userData, host),
+        mirrorGemini: (host) => mirrorAgyGemini(userData, host)
+      },
       leftWorktree: (resource) => removeUntouchedWorktree(agySessions, resource),
       openShimRoot: path.join(userData, 'agy-open'),
       scriptsDir: path.join(userData, 'agy-scripts'),
@@ -2831,8 +2868,11 @@ app.whenReady().then(() => {
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
+        ...(agySessions?.usesHost(t.host)
+          ? { agyBrain: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain') }
+          : {}),
         paths: t.paths,
-        hasTabs: live.has(t.host)
+        hasTabs: live.has(t.host) || !!agySessions?.hasTabsOn(t.host)
       }))
     },
     onChange: (host) => {
@@ -4352,7 +4392,8 @@ const claudeBackend = new ClaudeBackend({
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   error: (message) => sendToRenderer('cron:toast', message),
-  assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey)
+  assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
+  machineOfOtherTab: (tabId) => agySessions?.remoteHostOf(tabId)
 })
 sessionBackends.register(claudeBackend)
 

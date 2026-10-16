@@ -276,11 +276,13 @@ describe('koloft session new: reading the command line', () => {
 })
 
 describe('the handover put before the first message', () => {
-  it('tells a child who started it and to treat its messages as the owner’s', () => {
+  it('tells a child who started it, by id and without naming a tool when the caller has no title, and to treat its messages as the owner’s', () => {
     const text = handoverPreamble({ name: 'planner', id: 'planner-id' })
     expect(text).toContain('the session "planner"')
     expect(text).toContain("the owner's instructions")
-    expect(handoverPreamble({ id: CODEX_THREAD })).toContain(`the Codex session ${CODEX_THREAD}`)
+    const untitled = handoverPreamble({ id: CODEX_THREAD })
+    expect(untitled).toContain(`the session ${CODEX_THREAD} asked`)
+    expect(untitled).not.toMatch(/Codex|Claude|Muse|Antigravity/)
   })
 
   it('tells a child Assist started that only the words Assist quotes in « » are the owner’s, so Assist’s own guesses never pass as the owner’s orders', () => {

@@ -292,7 +292,10 @@ export function installAgy(env: E2EEnv): void {
 export function addAgyAccount(env: E2EEnv, name = E2E_AGY_ACCOUNT): void {
   const cache = path.join(env.userData, 'agy-homes', name, 'antigravity-cli', 'cache')
   fs.mkdirSync(cache, { recursive: true })
-  fs.writeFileSync(path.join(cache, 'onboarding.json'), JSON.stringify({ onboardingComplete: true }))
+  fs.writeFileSync(
+    path.join(cache, 'onboarding.json'),
+    JSON.stringify({ onboardingComplete: true })
+  )
   addKeychainEntry(env, UNPACKAGED_BUILD_AGY_SVC, name, 'fake-gemini-key')
   const file = path.join(env.userData, 'settings.json')
   const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }

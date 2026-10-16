@@ -60,6 +60,9 @@ function fileLines(file: string): Record<string, unknown>[] {
     .map((l) => JSON.parse(l) as Record<string, unknown>)
 }
 
+const sessionCalls = (env: E2EEnv): AgyCall[] =>
+  agyCalls(env).filter((c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p'))
+
 const apiCalls = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-api.jsonl'))
 const injected = (env: E2EEnv): Record<string, unknown>[] =>
@@ -78,10 +81,10 @@ function transcriptOf(env: E2EEnv, conversationId: string): string {
 }
 
 async function startAgy(page: Page, env: E2EEnv): Promise<AgyCall> {
-  const before = agyCalls(env).length
+  const before = sessionCalls(env).length
   await newSessionInWith(page, 'ws-a', 'Antigravity')
-  await expect.poll(() => agyCalls(env).length).toBe(before + 1)
-  return agyCalls(env)[before]
+  await expect.poll(() => sessionCalls(env).length).toBe(before + 1)
+  return sessionCalls(env)[before]
 }
 
 async function boundAgy(page: Page): Promise<{ tabId: string; id: string }> {
@@ -188,7 +191,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     const PROMPT = 'Tidy the agy readme'
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
-    seedSettings(env, { hintsOff: true })
+    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
     fs.writeFileSync(
       path.join(env.home, 'fake-claude-assist-reply'),
       JSON.stringify({ workspace: 1, worktree: 'main', title: 'Agy readme', why: 'ws-a.' })
@@ -206,8 +209,8 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await palette.getByRole('button', { name: 'Pick an agent' }).click()
       await agentRow(page, 'Antigravity').click()
 
-      await expect.poll(() => agyCalls(env).length, { timeout: 40_000 }).toBe(1)
-      const [call] = agyCalls(env)
+      await expect.poll(() => sessionCalls(env).length, { timeout: 40_000 }).toBe(1)
+      const [call] = sessionCalls(env)
       expect(fs.realpathSync(call.cwd)).toBe(env.workspaces.a)
       expect(call.argv[0]).toBe(`--gemini_dir=${accountHome(env)}`)
       expect(call.argv[1]).toMatch(/^--csrf_token=[0-9a-f]{48}$/)
@@ -319,15 +322,15 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const now = await boundAgy(page)
       expect(now.tabId).toBe(old.tabId)
       expect(now.id).not.toBe(old.id)
-      expect(agyCalls(env)).toHaveLength(1)
-      expect(agyCalls(env)[0].pid).toBe(first.pid)
+      expect(sessionCalls(env)).toHaveLength(1)
+      expect(sessionCalls(env)[0].pid).toBe(first.pid)
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
       const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
       await history.getByRole('button').filter({ hasText: 'first topic' }).click()
-      await expect.poll(() => agyCalls(env).length).toBe(2)
-      expect(agyCalls(env)[1].argv.slice(2)).toEqual([`--conversation=${old.id}`])
+      await expect.poll(() => sessionCalls(env).length).toBe(2)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([`--conversation=${old.id}`])
     } finally {
       await quitAndClose(app)
     }
@@ -352,9 +355,15 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await page.evaluate((t) => window.api.terminal.write(t, '/write agy-notes.txt\r'), tabId)
       const target = path.join(env.workspaces.a, 'agy-notes.txt')
       await expect
-        .poll(() => threadPosts(fake).map((p) => p.content).join('\n\n'), {
-          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
-        })
+        .poll(
+          () =>
+            threadPosts(fake)
+              .map((p) => p.content)
+              .join('\n\n'),
+          {
+            timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+          }
+        )
         .toContain(target)
       expect(fs.existsSync(target)).toBe(false)
 
@@ -414,7 +423,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const kidTab = (await kidRow.getAttribute('data-tab-id'))!
       await page.evaluate(
         ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
-        [kidTab, `/koloft session send ${parent.id} all done`]
+        [kidTab, `!koloft session send ${parent.id} all done`]
       )
 
       const sent = (): string[] =>
@@ -500,7 +509,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
 
       await agyRows(page).click()
       await expect(page.getByText(/open in another agy window/)).toBeVisible({ timeout: 20_000 })
-      expect(agyCalls(env).filter((c) => c.pid !== other!.pid)).toHaveLength(1)
+      expect(sessionCalls(env).filter((c) => c.pid !== other!.pid)).toHaveLength(1)
     } finally {
       other?.kill('SIGTERM')
       await quitAndClose(app)
@@ -526,8 +535,8 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect.poll(() => processAlive(first.pid)).toBe(false)
       await expect(agyRows(page)).toHaveClass(/cold/)
       await agyRows(page).click()
-      await expect.poll(() => agyCalls(env).length).toBe(2)
-      expect(agyCalls(env)[1].argv.slice(2)).toEqual([`--conversation=${id}`])
+      await expect.poll(() => sessionCalls(env).length).toBe(2)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([`--conversation=${id}`])
       await expect.poll(async () => (await boundAgy(page)).id).toBe(id)
     } finally {
       await quitAndClose(app)
@@ -554,8 +563,8 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       app = await launchApp(env)
       page = await app.firstWindow()
       await waitBooted(page)
-      await expect.poll(() => agyCalls(env).length, { timeout: 30_000 }).toBe(2)
-      expect(agyCalls(env)[1].argv.slice(2)).toEqual([`--conversation=${id}`])
+      await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([`--conversation=${id}`])
       await expect(agyRows(page)).toHaveCount(1)
       await expect(agyRows(page)).toContainText('survive a restart')
       await expect(agyRows(page)).toHaveClass(/st-(waiting|idle)/, { timeout: 30_000 })
@@ -578,9 +587,9 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
       const enable = page.getByRole('switch', { name: 'Enable Antigravity', exact: true })
       await expect(enable).toBeChecked()
-      await expect(
-        page.locator('.set-row', { has: enable }).locator('.set-lab')
-      ).toContainText('1.4.0 · found')
+      await expect(page.locator('.set-row', { has: enable }).locator('.set-lab')).toContainText(
+        '1.4.0 · found'
+      )
 
       await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
       const seeded = page.locator('.acct-row', { hasText: E2E_AGY_ACCOUNT })
@@ -633,7 +642,9 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
 
       await expect.poll(() => readCalls(env).length, { timeout: 40_000 }).toBe(1)
       const shots = path.join(env.userData, 'agy-one-shots')
-      const oneShots = agyCalls(env).filter((c) => c.argv.includes('-p'))
+      const oneShots = agyCalls(env).filter(
+        (c) => c.argv.includes('-p') && !c.argv.includes('/usage')
+      )
       expect(oneShots.length).toBeGreaterThanOrEqual(1)
       for (const shot of oneShots) {
         expect(shot.argv[0].startsWith(`--gemini_dir=${shots}${path.sep}agy-`)).toBe(true)
@@ -642,7 +653,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         expect(shot.env.GEMINI_API_KEY).toBe(true)
       }
       expect(oneShots.some((c) => c.argv[2].includes(PROMPT))).toBe(true)
-      expect(agyCalls(env).filter((c) => !c.argv.includes('-p'))).toHaveLength(0)
+      expect(sessionCalls(env)).toHaveLength(0)
       await expect.poll(() => fs.readdirSync(shots)).toEqual([])
       await expect(wsRows(page, 'ws-a')).toHaveCount(1)
       await expect(agyRows(page)).toHaveCount(0)

@@ -205,7 +205,7 @@ export function setupStatusline(): StatuslinePaths {
 }
 
 // AGY§11
-const AGY_STATUSLINE_JS = `const fs = require('fs')
+export const AGY_STATUSLINE_JS = `const fs = require('fs')
 const { spawnSync } = require('child_process')
 const [bundle, config] = process.argv.slice(2)
 let input = {}

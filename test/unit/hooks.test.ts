@@ -19,8 +19,7 @@ import {
   writeConductorMarker,
   removeConductorMarker,
   markAnswerable,
-  writeAllowFile,
-  replyLanguageReminder
+  writeAllowFile
 } from '../../src/main/hooks'
 import { CODEX_GATE_HOOK_COMMAND, conductorGateCommand } from '../../src/main/conductorGate'
 import { withHandover } from '../../src/main/handover'
@@ -496,22 +495,6 @@ describe('injected hook script', () => {
           expect(text.startsWith(quote), JSON.stringify({ pad, quote })).toBe(true)
           expect(Buffer.byteLength(JSON.stringify(quote))).toBeLessThanOrEqual(302)
           expect(Buffer.byteLength(JSON.stringify(quote))).toBeGreaterThan(290)
-        }
-      }
-    })
-
-    // AGY§12
-    it('the reminder an Antigravity tab gets before each model call quotes at most 300 bytes of the prompt, its spaces folded, cut only between whole characters', () => {
-      const quoted = (prompt: string): string => /«(.*)»/s.exec(replyLanguageReminder(prompt))![1]
-      expect(quoted('  先别改\n\n代码  ')).toBe('先别改 代码')
-      for (let pad = 0; pad < 6; pad++) {
-        for (const body of ['中文'.repeat(100), '😀é'.repeat(80)]) {
-          const text = 'x'.repeat(pad) + body
-          const quote = quoted(text)
-          expect(text.startsWith(quote), JSON.stringify({ pad, quote })).toBe(true)
-          expect(quote).not.toContain('�')
-          expect(Buffer.byteLength(quote)).toBeLessThanOrEqual(300)
-          expect(Buffer.byteLength(quote)).toBeGreaterThan(296)
         }
       }
     })

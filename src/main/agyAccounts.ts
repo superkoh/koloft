@@ -22,7 +22,7 @@ export function agyAccountEnv(apiKey?: string): Record<string, string> {
 }
 
 // AGY§4
-const SHARED_FOLDERS = [
+export const SHARED_FOLDERS = [
   `${AGY_APP_DIR}/conversations`,
   `${AGY_APP_DIR}/brain`,
   `${AGY_APP_DIR}/annotations`,
@@ -34,7 +34,7 @@ const SHARED_FOLDERS = [
 ]
 
 // AGY§4
-const SHARED_FILES = [
+export const SHARED_FILES = [
   `${AGY_APP_DIR}/conversation_summaries.db`,
   'config/GEMINI.md',
   'config/AGENTS.md',
@@ -47,7 +47,7 @@ const settingsFile = (dir: string): string => path.join(dir, AGY_APP_DIR, 'setti
 const hooksFile = (dir: string): string => path.join(dir, 'config', 'hooks.json')
 export const agyTokenFile = (dir: string): string =>
   path.join(dir, AGY_APP_DIR, 'antigravity-oauth-token')
-const onboardingFile = (dir: string): string =>
+export const agyOnboardingFile = (dir: string): string =>
   path.join(dir, AGY_APP_DIR, 'cache', 'onboarding.json')
 
 function linkTo(own: string, owners: string): void {
@@ -72,7 +72,7 @@ export function prepareAgyHome(home: string, ownersGemini: string): void {
 
 // AGY§5 AGY§6
 export function agySignedIn(home: string, apiKey: boolean): boolean {
-  const onboarded = record(readJson(onboardingFile(home)))
+  const onboarded = record(readJson(agyOnboardingFile(home)))
   const done =
     onboarded.onboardingComplete === true || onboarded.consumerOnboardingComplete === true
   return done && (apiKey || fs.existsSync(agyTokenFile(home)))
@@ -89,9 +89,13 @@ const sortedDeep = (value: unknown): unknown =>
         )
       : value
 
+export function agyJsonText(value: Record<string, unknown>): string {
+  return `${JSON.stringify(sortedDeep(value), null, 2)}\n`
+}
+
 // AGY§4
 function writeAgyJson(file: string, value: Record<string, unknown>): void {
-  const text = `${JSON.stringify(sortedDeep(value), null, 2)}\n`
+  const text = agyJsonText(value)
   try {
     if (fs.readFileSync(file, 'utf8') === text) return
   } catch {}
@@ -111,8 +115,18 @@ const KOLOFT_KEYS = ['title', 'statusLine', 'modelProvider'] as const
 
 // AGY§4 AGY§5 AGY§11
 export function mergeAgySettings(home: string, ownersGemini: string, k: KoloftSettings): void {
-  const own = readJson(settingsFile(home))
-  const owners = readJson(settingsFile(ownersGemini))
+  writeAgyJson(
+    settingsFile(home),
+    mergedAgySettings(readJson(settingsFile(home)), readJson(settingsFile(ownersGemini)), k)
+  )
+}
+
+// AGY§4 AGY§5 AGY§11
+export function mergedAgySettings(
+  own: Record<string, unknown>,
+  owners: Record<string, unknown>,
+  k: KoloftSettings
+): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...own, ...owners }
   for (const key of KOLOFT_KEYS) delete merged[key]
   const trusted = [own.trustedWorkspaces, owners.trustedWorkspaces].flatMap((list) =>
@@ -124,7 +138,7 @@ export function mergeAgySettings(home: string, ownersGemini: string, k: KoloftSe
     merged.statusLine = { type: 'command', command: k.statusLine, stack_with_default: true }
   else if (owners.statusLine) merged.statusLine = owners.statusLine
   if (k.apiKey) merged.modelProvider = 'gemini'
-  writeAgyJson(settingsFile(home), merged)
+  return merged
 }
 
 const AGY_USAGE_TIMEOUT_MS = 20_000
@@ -184,7 +198,11 @@ export function setAgyApiKeyRoute(home: string, on: boolean): void {
 }
 
 export function ownersTitleCommand(ownersGemini: string): string | undefined {
-  const command = record(readJson(settingsFile(ownersGemini)).title).command
+  return titleCommandIn(readJson(settingsFile(ownersGemini)))
+}
+
+export function titleCommandIn(settings: Record<string, unknown>): string | undefined {
+  const command = record(settings.title).command
   return typeof command === 'string' && command ? command : undefined
 }
 
@@ -196,9 +214,17 @@ export function mergeAgyHooks(
   ownersGemini: string,
   koloft: Record<string, unknown>
 ): void {
-  const owners = readJson(hooksFile(ownersGemini))
-  delete owners[KOLOFT_HOOK_ENTRY]
-  writeAgyJson(hooksFile(home), { ...owners, [KOLOFT_HOOK_ENTRY]: koloft })
+  writeAgyJson(hooksFile(home), mergedAgyHooks(readJson(hooksFile(ownersGemini)), koloft))
+}
+
+// AGY§12
+export function mergedAgyHooks(
+  owners: Record<string, unknown>,
+  koloft: Record<string, unknown>
+): Record<string, unknown> {
+  const rest = { ...owners }
+  delete rest[KOLOFT_HOOK_ENTRY]
+  return { ...rest, [KOLOFT_HOOK_ENTRY]: koloft }
 }
 
 // AGY§5
