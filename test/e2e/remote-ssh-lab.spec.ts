@@ -7,6 +7,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   HAVE_REAL_GH,
   NEEDS_REAL_GH,
+  addCodexAccount,
   installCodex,
   installRealGhThatOnlyReads,
   seedSettings,
@@ -56,8 +57,10 @@ import {
   HAVE_LINUX_CLAUDE,
   NEEDS_LINUX_CLAUDE,
   dockerAvailable,
+  FAKE_RESPONSES_PORT,
   installFakeCodexOnTarget,
   installLabSsh,
+  startFakeResponsesOnTarget,
   LAB_PASSWORD,
   loginsAccepted,
   remoteKeyFor,
@@ -88,6 +91,22 @@ const COMMIT_THE_PROJECT_THEN_EDIT_THE_README =
   ' && printf "edited\\n" >> README.md'
 
 const KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS = 45_000
+const REAL_CODEX = process.env.KOLOFT_SMOKE_CODEX ?? ''
+const A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS = 300_000
+const PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS = 1_000
+const STAND_IN_MODEL_CONFIG = [
+  'model = "gpt-5.5"',
+  'model_provider = "stand-in"',
+  'sandbox_mode = "danger-full-access"',
+  'approval_policy = "never"',
+  '[model_providers.stand-in]',
+  'name = "stand-in"',
+  `base_url = "http://127.0.0.1:${FAKE_RESPONSES_PORT}/v1"`,
+  'wire_api = "responses"',
+  '[projects."/home/kuser/proj"]',
+  'trust_level = "trusted"',
+  ''
+].join('\n')
 const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
   ['kt-key', 'kuser'],
   ['kt-few', 'muser'],
@@ -789,6 +808,66 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect.poll(() => [listening(), pidFiles()], { timeout: 30_000 }).toEqual(['0', '0'])
       },
       (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
+  // ADR-0038 CODEX§16
+  test('E-SSH-20: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, no account) runs koloft with its own shell tool and gets this Koloft’s answer (opt-in, spends nothing)', async ({
+    env
+  }) => {
+    test.skip(
+      !fs.existsSync(REAL_CODEX),
+      'set KOLOFT_SMOKE_CODEX (absolute path of the real codex binary on this Mac)'
+    )
+    test.setTimeout(A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS + 300_000)
+    const binary = path.join(env.fakeBin, 'codex')
+    fs.symlinkSync(REAL_CODEX, binary)
+    env.launchEnv.KOLOFT_CODEX_CMD = binary
+    env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
+    addCodexAccount(
+      env,
+      JSON.stringify({ tokens: { access_token: 'not-a-real-token', account_id: 'lab' } })
+    )
+    const turns = '/home/kuser/stand-in-model.jsonl'
+    const config = Buffer.from(STAND_IN_MODEL_CONFIG).toString('base64')
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await newSessionInWith(page, 'kt-key', 'Codex')
+        const codexTab = async (): Promise<string | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.backendId === 'codex' && s.alive && s.sessionId
+          )?.tabId
+        await expect
+          .poll(async () => !!(await codexTab()), {
+            timeout: A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS
+          })
+          .toBe(true)
+        const tabId = (await codexTab())!
+        const asked = (): string => runOnTarget(lab, 'kuser', `cat ${turns} 2>/dev/null || true`)
+        await page.evaluate(([id, text]) => window.api.terminal.write(id, text), [tabId, 'run it'])
+        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP && !asked(); i++) {
+          await page.waitForTimeout(PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS)
+          await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+          await expect
+            .poll(asked, { timeout: 15_000 })
+            .not.toBe('')
+            .catch(() => {})
+        }
+        await expect
+          .poll(asked, { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS })
+          .toContain('koloft lets you ask Koloft')
+      },
+      (lab) => {
+        startFakeResponsesOnTarget(lab, 'koloft help', turns)
+        runOnTarget(
+          lab,
+          'kuser',
+          `mkdir -p .koloft/codex-home && echo ${config} | base64 -d > .koloft/codex-home/config.toml`
+        )
+      }
     )
   })
 

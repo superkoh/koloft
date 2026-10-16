@@ -334,6 +334,25 @@ export function installFakeCodexOnTarget(lab: SshLab): void {
   ])
 }
 
+export const FAKE_RESPONSES_PORT = 8090
+
+export function startFakeResponsesOnTarget(lab: SshLab, command: string, log: string): void {
+  const at = '/usr/local/lib/fake-responses.js'
+  dk(['cp', path.join(FIXTURES, 'fake-responses.js'), `${lab.target}:${at}`])
+  dk([
+    'exec',
+    '-d',
+    '-u',
+    'kuser',
+    lab.target,
+    'node',
+    at,
+    String(FAKE_RESPONSES_PORT),
+    command,
+    log
+  ])
+}
+
 export function loginsAccepted(lab: SshLab, user: string): number {
   const r = spawnSync(docker(), ['logs', lab.target], { encoding: 'utf8' })
   return `${r.stdout}${r.stderr}`

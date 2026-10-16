@@ -9,6 +9,10 @@ http
     let body = ''
     req.on('data', (d) => (body += d))
     req.on('end', () => {
+      if (!req.url.endsWith('/responses')) {
+        res.writeHead(404).end()
+        return
+      }
       let request = {}
       try {
         request = JSON.parse(body)
