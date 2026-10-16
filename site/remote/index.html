@@ -130,9 +130,11 @@
         <h2>What happens there</h2>
         <p>
           Claude Code runs on the other machine. The account it uses comes from
-          <a href="../accounts/">the pool on your Mac</a>. Its transcripts (the written record of
-          each session) stay there, and <code>rsync</code> (a tool that copies files) brings copies
-          back, so the sessions list reads like a folder on your Mac.
+          <a href="../accounts/">the pool on your Mac</a>. Its git and <code>gh</code> use a
+          <a href="../accounts/#machine-accounts">git account kept on that machine</a>, once you
+          pick one. Its transcripts (the written record of each session) stay there, and
+          <code>rsync</code> (a tool that copies files) brings copies back, so the sessions list
+          reads like a folder on your Mac.
         </p>
 
         <figure class="shot is-narrow" style="--ar: 558 / 526">
@@ -222,8 +224,12 @@ your Mac                     the other machine
             package manager, which may ask for its sudo password (the admin password)
           </li>
           <li>
-            <code>gh</code>, GitHub's command-line tool, if the machine has none (about 40 MB,
-            once); you still sign in to it there yourself
+            <code>gh</code>, GitHub's command-line tool, if the machine has none (about 40 MB, once)
+          </li>
+          <li>
+            the sign-in tool (Git Credential Manager), if the machine has none, when you add a
+            <a href="../accounts/#machine-accounts">git account</a> for it by signing in on a site
+            in your browser
           </li>
           <li>
             a small <code>koloft</code> script, and the guide that tells the agent how to use it
@@ -266,7 +272,7 @@ your Mac                     the other machine
           <li>
             A session row's menu offers Copy path (<code>machine:/path</code>) instead of Reveal in
             Finder. The panel you get by hovering the small branch icon beside the folder's name
-            shows no Pull, no Fetch now and no Account.
+            shows no Pull and no Fetch now.
           </li>
           <li>
             Koloft does not check whether the folder's branch is behind its git remote. The open
