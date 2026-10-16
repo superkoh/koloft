@@ -775,7 +775,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  // PLATFORM§54
+  // PLATFORM§57
   test("E-RW-34: Browse's Reload lists the remote tree again, catching a change no folder's time shows (a file .gitignore stops hiding)", async ({
     env
   }) => {

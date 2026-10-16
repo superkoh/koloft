@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { LuChevronDown, LuChevronUp, LuConciergeBell, LuPlus, LuX } from 'react-icons/lu'
+import { IconAssist, IconChevronDown, IconChevronUp, IconClose, IconPlus } from '../icons'
 import { channelLabel, conductorName, GLOBAL_SCOPE, scopeName } from '@shared/conductors'
 import { ATTENTION_REASON, type AssistTaskRow, type SessionInfo } from '@shared/types'
 import { useStore } from '../store'
@@ -153,7 +153,7 @@ export function ConductorsIsland(): JSX.Element {
         <div className="wb-bar">
           <span className="wb-title" title="Assist">
             <span className="ic">
-              <LuConciergeBell size={14} />
+              <IconAssist size={14} />
             </span>
             <span className="nm">Assist</span>
           </span>
@@ -169,7 +169,7 @@ export function ConductorsIsland(): JSX.Element {
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setBindConductor({})}
           >
-            <LuPlus size={14} />
+            <IconPlus size={14} />
           </button>
           <button
             className="icobtn"
@@ -178,7 +178,7 @@ export function ConductorsIsland(): JSX.Element {
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setFolded(!folded)}
           >
-            {folded ? <LuChevronUp size={14} /> : <LuChevronDown size={14} />}
+            {folded ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
           </button>
         </div>
         {!folded && (
@@ -245,7 +245,7 @@ export function ConductorsIsland(): JSX.Element {
                         void window.api.conductors.closeTask(task.tabId)
                       }}
                     >
-                      <LuX size={12} />
+                      <IconClose size={12} />
                     </button>
                   </div>
                   <div className="ws-tab-sub">

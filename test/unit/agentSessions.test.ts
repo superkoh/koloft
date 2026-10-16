@@ -610,6 +610,26 @@ describe('koloft session close', () => {
     expect(closed).toEqual(['kid-session'])
   })
 
+  it('closes a session one of its own sessions started, since the sidebar shows it under the caller, while that session is there and after it is closed', async () => {
+    const grandkid: ClosableSession = {
+      sessionId: 'grand-session',
+      backendId: 'claude',
+      title: 'Grand task',
+      treeRoot: WS
+    }
+    const { verb, closed, startedSessions } = harness([session('me', 'claude')], {}, [], {}, [
+      grandkid
+    ])
+    startedSessions.started('kid-tab', 'me-session')
+    startedSessions.bound('kid-tab', 'kid-session')
+    startedSessions.started('grand-tab', 'kid-session')
+    startedSessions.bound('grand-tab', 'grand-session')
+    expect((await verb(['close', 'Grand task'], from('me'))).exit).toBe(0)
+    startedSessions.forget('kid-session')
+    expect((await verb(['close', 'grand-session'], from('me'))).exit).toBe(0)
+    expect(closed).toEqual(['grand-session', 'grand-session'])
+  })
+
   it('refuses, closing nothing, a session it did not start — open or ended', async () => {
     const someoneElses: ClosableSession = {
       sessionId: 'cold-session',
@@ -718,9 +738,30 @@ describe('a conductor’s view of sessions: its binding sets the scope', () => {
     )
   })
 
-  it('a session that is not a conductor keeps listing only the open sessions of a workspace', async () => {
-    const { verb } = harness(live, {}, [], conducting)
-    expect((await verb(['list'], from('fix'))).text).toBe('fix-login (you) · Claude · working')
+  it('a session that is not a conductor sees every session its workspace shows in the sidebar: the open ones, then the asleep and closed ones with last active and id, each with who started it', async () => {
+    const { verb, startedSessions } = harness(live, {}, [], {
+      ...conducting,
+      sidebar: sidebar([
+        [
+          WS,
+          [
+            ...rows[0].rows,
+            row('nap-id', { title: 'nap', running: true }),
+            row('grand-id', { title: 'grandkid', mtime: Date.now() - 3 * 86_400_000 })
+          ]
+        ]
+      ])
+    })
+    startedSessions.started('docs-tab', 'fix-id')
+    startedSessions.bound('docs-tab', CODEX_KEY)
+    startedSessions.started('grand-tab', CODEX_KEY)
+    startedSessions.bound('grand-tab', 'grand-id')
+    expect((await verb(['list'], from('fix'))).text.split('\n')).toEqual([
+      'fix-login (you) · Claude · working',
+      `docs-links · Codex · local · closed · last active 2 h ago · id: ${CODEX_THREAD} · started by: you`,
+      'nap · Claude · local · idle · last active just now · id: nap-id',
+      'grandkid · Claude · local · closed · last active 3 days ago · id: grand-id · started by: docs-links'
+    ])
   })
 
   it('session read prints what the owner, a peer and the session said in the last N turns, found by name or id, and marks the session touched', async () => {
@@ -1189,27 +1230,31 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     ])
   })
 
-  it('a session Assist starts in a git workspace never runs in its main checkout: -w names the worktree, else Koloft picks a free one; a session another session starts stays where it is told', async () => {
+  it('a session Assist starts in a git workspace never runs in its main checkout: -w names the worktree, else Koloft picks a free one; a session another session starts stays where it is told; no -w ever reuses a worktree that exists, its name gets the next free -N', async () => {
     const { verb, launched } = harness(
       live,
       {},
       [],
-      conducting({ worktrees: ['session-261013-2321'] })
+      conducting({ worktrees: ['session-261013-2321', 'docs'] })
     )
     vi.useFakeTimers({ now: new Date(2026, 9, 13, 23, 21), toFake: ['Date'] })
     try {
       await verb(['new', '--workspace', WS, '--backend', 'codex', '--', 'go'], from('global'))
       await verb(['new', '--', 'go'], from('wsCond'))
+      await verb(['new', '-w', 'links', '--', 'go'], from('wsCond'))
       await verb(['new', '-w', 'docs', '--', 'go'], from('wsCond'))
       await verb(['new', '--', 'go'], from('fix'))
+      await verb(['new', '-w', 'docs', '--', 'go'], from('fix'))
     } finally {
       vi.useRealTimers()
     }
     expect(launched.map((l) => [l.kind, l.cwd, l.worktree])).toEqual([
       ['codex', WS, 'session-261013-2321-2'],
       ['claude', WS, 'session-261013-2321-2'],
-      ['claude', WS, 'docs'],
-      ['claude', WS, undefined]
+      ['claude', WS, 'links'],
+      ['claude', WS, 'docs-2'],
+      ['claude', WS, undefined],
+      ['claude', WS, 'docs-2']
     ])
   })
 
