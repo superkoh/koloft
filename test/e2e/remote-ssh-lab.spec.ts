@@ -7,6 +7,8 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   HAVE_REAL_GH,
   NEEDS_REAL_GH,
+  addCodexAccount,
+  installCodex,
   installRealGhThatOnlyReads,
   seedSettings,
   setGithubFixture,
@@ -39,11 +41,15 @@ import {
   closeMenu,
   FAKE_SESSION_TITLE,
   menuItemTexts,
+  newSessionInWith,
   notesOnDisk,
   openMenu,
   openWorktreeSession,
   runIn,
+  sendShortcut,
   startSessionIn,
+  terminalText,
+  termIds,
   waitBooted,
   wsGroup,
   wsRows
@@ -52,7 +58,10 @@ import {
   HAVE_LINUX_CLAUDE,
   NEEDS_LINUX_CLAUDE,
   dockerAvailable,
+  FAKE_RESPONSES_PORT,
+  installFakeCodexOnTarget,
   installLabSsh,
+  startFakeResponsesOnTarget,
   LAB_PASSWORD,
   loginsAccepted,
   remoteKeyFor,
@@ -83,6 +92,26 @@ const COMMIT_THE_PROJECT_THEN_EDIT_THE_README =
   ' && printf "edited\\n" >> README.md'
 
 const KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS = 45_000
+const REAL_CODEX = process.env.KOLOFT_SMOKE_CODEX ?? ''
+const A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS = 300_000
+const PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS = 1_000
+const KEEP_THE_MODEL_CHOICE = '2. Use existing model'
+// CODEX§16
+const NO_SANDBOX_DOCKER_CANNOT_MAKE_ONE =
+  'sandbox_mode = "danger-full-access"\napproval_policy = "never"\n'
+const STAND_IN_MODEL_CONFIG = [
+  'model = "gpt-5.5"',
+  'model_provider = "stand-in"',
+  'sandbox_mode = "danger-full-access"',
+  'approval_policy = "never"',
+  '[model_providers.stand-in]',
+  'name = "stand-in"',
+  `base_url = "http://127.0.0.1:${FAKE_RESPONSES_PORT}/v1"`,
+  'wire_api = "responses"',
+  '[projects."/home/kuser/proj"]',
+  'trust_level = "trusted"',
+  ''
+].join('\n')
 const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
   ['kt-key', 'kuser'],
   ['kt-few', 'muser'],
@@ -739,6 +768,125 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   // PLATFORM§34
+  // ADR-0038 CODEX§16
+  test('E-SSH-19: a Codex session on a Linux machine behind the jump host runs its app-server there, signed in from this Mac; koloft run by it there answers from this Koloft, though a login shell there would drop the koloft command from PATH; and closing its tab ends that server', async ({
+    env
+  }) => {
+    installCodex(
+      env,
+      JSON.stringify({ tokens: { access_token: 'mac-token-for-the-lab', account_id: 'lab' } })
+    )
+    await withLab(
+      env,
+      async ({ app, page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await newSessionInWith(page, 'kt-key', 'Codex')
+        await expect(
+          wsRows(page, 'kt-key').filter({ hasText: 'Codex fixture session' })
+        ).toHaveClass(/st-waiting/, { timeout: 120_000 })
+        expect(runOnTarget(lab, 'kuser', 'cat fake-codex-logins.jsonl')).toContain(
+          '"accessToken":"mac-token-for-the-lab"'
+        )
+        const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.backendId === 'codex' && s.alive
+        )!.tabId
+        await page.evaluate(
+          ([id, line]) => window.api.terminal.write(id, line),
+          [tabId, '/koloft help\r']
+        )
+        await expect
+          .poll(async () => /koloft exit=(\d+)/.exec(await terminalText(page, tabId))?.[1], {
+            timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+          })
+          .toBe('0')
+        const listening = (): string =>
+          runOnTarget(lab, 'kuser', 'ps -eo args | grep -c "[-]-listen" || true').trim()
+        const pidFiles = (): string =>
+          runOnTarget(
+            lab,
+            'kuser',
+            'ls .koloft/cx/*/ 2>/dev/null | grep -c "[.]pid$" || true'
+          ).trim()
+        expect([listening(), pidFiles()]).toEqual(['1', '1'])
+        await sendShortcut(app, 'shortcut:close-tab')
+        await expect.poll(() => [listening(), pidFiles()], { timeout: 30_000 }).toEqual(['0', '0'])
+      },
+      (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
+  // ADR-0038 CODEX§16
+  test('E-SSH-20: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, no account) runs koloft with its own shell tool and gets this Koloft’s answer (opt-in, spends nothing)', async ({
+    env
+  }) => {
+    test.skip(
+      !fs.existsSync(REAL_CODEX),
+      'set KOLOFT_SMOKE_CODEX (absolute path of the real codex binary on this Mac)'
+    )
+    test.setTimeout(A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS + 300_000)
+    const binary = path.join(env.fakeBin, 'codex')
+    fs.symlinkSync(REAL_CODEX, binary)
+    env.launchEnv.KOLOFT_CODEX_CMD = binary
+    env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
+    fs.mkdirSync(env.launchEnv.CODEX_HOME, { recursive: true })
+    fs.writeFileSync(
+      path.join(env.launchEnv.CODEX_HOME, 'config.toml'),
+      NO_SANDBOX_DOCKER_CANNOT_MAKE_ONE
+    )
+    addCodexAccount(
+      env,
+      JSON.stringify({ tokens: { access_token: 'not-a-real-token', account_id: 'lab' } })
+    )
+    const turns = '/home/kuser/stand-in-model.jsonl'
+    const config = Buffer.from(STAND_IN_MODEL_CONFIG).toString('base64')
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await newSessionInWith(page, 'kt-key', 'Codex')
+        await expect.poll(() => termIds(page), { timeout: 30_000 }).toHaveLength(1)
+        const [tabId] = await termIds(page)
+        const bound = async (): Promise<boolean> =>
+          (await page.evaluate(() => window.api.sessions.list())).some(
+            (s) => s.tabId === tabId && s.alive && !!s.sessionId
+          )
+        await expect
+          .poll(
+            async () => {
+              if ((await terminalText(page, tabId)).includes(KEEP_THE_MODEL_CHOICE))
+                await page.evaluate((id) => window.api.terminal.write(id, '2\r'), tabId)
+              return bound()
+            },
+            { timeout: A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS }
+          )
+          .toBe(true)
+        const asked = (): string => runOnTarget(lab, 'kuser', `cat ${turns} 2>/dev/null || true`)
+        await page.evaluate(([id, text]) => window.api.terminal.write(id, text), [tabId, 'run it'])
+        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP && !asked(); i++) {
+          await page.waitForTimeout(PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS)
+          await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+          await expect
+            .poll(asked, { timeout: 15_000 })
+            .not.toBe('')
+            .catch(() => {})
+        }
+        await expect
+          .poll(asked, { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS })
+          .toContain('koloft lets you ask Koloft')
+      },
+      (lab) => {
+        startFakeResponsesOnTarget(lab, 'koloft help', turns)
+        runOnTarget(
+          lab,
+          'kuser',
+          `mkdir -p .koloft/codex-home && echo ${config} | base64 -d > .koloft/codex-home/config.toml`
+        )
+      }
+    )
+  })
+
   test('E-SSH-08: a machine whose shell prints a greeting at login: the dot says so instead of never syncing in silence', async ({
     env
   }) => {

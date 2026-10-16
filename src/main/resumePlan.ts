@@ -42,11 +42,19 @@ export function worktreeHomeRoot(worktreePath: string): string | null {
   return path.join(root, '.claude', 'worktrees') === home ? root : null
 }
 
-export function worktreeNameAround(dir: string): string | undefined {
+// CC§3
+export function worktreeAround(
+  dir: string
+): { root: string; treeRoot: string; name: string } | undefined {
   for (let d = dir; path.dirname(d) !== d; d = path.dirname(d)) {
-    if (worktreeHomeRoot(d)) return path.basename(d)
+    const root = worktreeHomeRoot(d)
+    if (root) return { root, treeRoot: d, name: path.basename(d) }
   }
   return undefined
+}
+
+export function worktreeNameAround(dir: string): string | undefined {
+  return worktreeAround(dir)?.name
 }
 
 const RENAME_SUFFIX_CAP = 100
@@ -56,7 +64,7 @@ async function freeWorktreeName(base: string, home: string, probes: ResumeProbes
   const taken = async (dir: string): Promise<boolean> =>
     !!probes.recorded?.(dir) || (await probes.dirExists(dir))
   let n = 2
-  while (n < RENAME_SUFFIX_CAP && (await taken(path.join(home, `${base}-${n}`)))) n++
+  while (n < RENAME_SUFFIX_CAP && (await taken(`${home}/${base}-${n}`))) n++
   return `${base}-${n}`
 }
 

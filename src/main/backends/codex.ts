@@ -5,7 +5,7 @@ import { listAccounts } from '../accounts'
 import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import { acceptCodexTrust, codexConfigFile, codexTrustsFolder } from '../codexTrust'
-import { dirExistsSync, planResume, type ResumeProbes } from '../resumePlan'
+import { planResume, type ResumeProbes } from '../resumePlan'
 
 export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefined): void {
   try {
@@ -22,9 +22,7 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
     forgetAvailability: () => sessions.forgetAvailability(),
     list: () => sessions.list(),
     historyRows: async (workspacePath) =>
-      parseRemoteKey(workspacePath) || !(await sessions.availability()).available
-        ? []
-        : sessions.historyRows(workspacePath),
+      (await sessions.availability()).available ? sessions.historyRows(workspacePath) : [],
     create: async (spec) => ({ ok: true, ...(await sessions.launch(spec)) }),
     resume: async (req) => {
       try {
@@ -39,7 +37,7 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
     },
     resumePlan: async (key): Promise<ResumePlan> => {
       const row = sessions.findRow(key)
-      if (row && !row.worktreeState && !dirExistsSync(row.cwd)) {
+      if (row && !row.worktreeState && !(await resumeProbes.dirExists(row.cwd))) {
         return { action: 'unavailable', reason: 'no-cwd' }
       }
       return planResume(row, resumeProbes, row?.worktreeState?.worktreePath)
@@ -53,7 +51,12 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
     observe: (tabId, event) => sessions.observe(tabId, event),
     occupantOf: (dir) => sessions.occupantOf(dir),
     accountUsable: () => hasUsableAccount(listAccounts(), 'codex'),
-    trustsFolder: (dir) => codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir),
+    trustsFolder: (dir) => {
+      const onMachine = parseRemoteKey(dir)
+      return onMachine
+        ? sessions.machineTrusts(onMachine)
+        : codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir)
+    },
     turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n),
     // ADR-0028
     permissionClass: (tabId) => (sessions.launchedBypassingChecks(tabId) ? 'bypass' : 'prompting')

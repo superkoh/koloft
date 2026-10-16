@@ -89,9 +89,17 @@ exit 0
 `
 
 // ADR-0031
+export function codexOwnerWordsFiles(ownerWords: string): Record<string, string> {
+  return {
+    '': JSON.stringify(ownerWords).slice(1, -1),
+    [HANDED_OVER_TASK_COMES_FIRST]: ''
+  }
+}
+
+// ADR-0031
 export function seedCodexOwnerWords(said: string, ownerWords: string): void {
-  fs.writeFileSync(said, JSON.stringify(ownerWords).slice(1, -1))
-  fs.writeFileSync(said + HANDED_OVER_TASK_COMES_FIRST, '')
+  for (const [suffix, text] of Object.entries(codexOwnerWordsFiles(ownerWords)))
+    fs.writeFileSync(said + suffix, text)
 }
 
 // CC§1

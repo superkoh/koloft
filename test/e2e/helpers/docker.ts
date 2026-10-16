@@ -316,6 +316,43 @@ export function installOnTarget(lab: SshLab, file: string, at: string): void {
   dk(['exec', lab.target, 'chmod', '755', at])
 }
 
+export function installFakeCodexOnTarget(lab: SshLab): void {
+  const dir = '/usr/local/lib/fake-codex'
+  dk(['exec', lab.target, 'mkdir', '-p', `${dir}/node_modules`])
+  dk(['cp', path.join(FIXTURES, 'fake-codex.js'), `${lab.target}:${dir}/fake-codex.js`])
+  dk([
+    'cp',
+    path.dirname(require.resolve('ws/package.json')),
+    `${lab.target}:${dir}/node_modules/ws`
+  ])
+  dk([
+    'exec',
+    lab.target,
+    'sh',
+    '-c',
+    `printf '#!/bin/sh\\nexec node ${dir}/fake-codex.js "$@"\\n' > /usr/local/bin/codex && chmod 755 /usr/local/bin/codex`
+  ])
+}
+
+export const FAKE_RESPONSES_PORT = 8090
+
+export function startFakeResponsesOnTarget(lab: SshLab, command: string, log: string): void {
+  const at = '/usr/local/lib/fake-responses.js'
+  dk(['cp', path.join(FIXTURES, 'fake-responses.js'), `${lab.target}:${at}`])
+  dk([
+    'exec',
+    '-d',
+    '-u',
+    'kuser',
+    lab.target,
+    'node',
+    at,
+    String(FAKE_RESPONSES_PORT),
+    command,
+    log
+  ])
+}
+
 export function loginsAccepted(lab: SshLab, user: string): number {
   const r = spawnSync(docker(), ['logs', lab.target], { encoding: 'utf8' })
   return `${r.stdout}${r.stderr}`

@@ -2,8 +2,10 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
+import { spawn } from 'child_process'
 import type {
   CreateTabOptions,
+  HostId,
   LaunchPermission,
   ProjectInfo,
   BackendSessionInfo,
@@ -13,6 +15,14 @@ import type {
 } from '@shared/types'
 import { CODEX_PLACEHOLDER_TITLE, CODEX_RESET_OUTCOMES } from '@shared/types'
 import { identityOf, sourceOf } from '@shared/sessionBackend'
+import {
+  barePath,
+  formatRemoteKey,
+  isAbsoluteOnHost,
+  keyedOn,
+  parseRemoteKey,
+  type RemoteKey
+} from '@shared/remoteKey'
 import type { SearchCandidate } from './sessionSearch'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
@@ -27,9 +37,27 @@ import {
 import {
   CodexRpc,
   createCodexTransport,
+  DEFAULT_MAX_FRAME,
   type CodexProcessOptions,
   type CodexTransport
 } from './codexTransport'
+import {
+  codexLaunchLine,
+  codexTabScript,
+  HAS_CODEX_HOME_CMD,
+  machineAppServerCmd,
+  MachineCodexUpstream,
+  proxyCmd,
+  realDirAndConfigCmd,
+  stopCodexServerCmd,
+  sweepCodexServersCmd,
+  type CodexTabSpec,
+  type LoginParams,
+  type MachineLogin,
+  type MachineUpstreamOptions
+} from './remote/codexMachine'
+import type { MachinePackage } from './remote/launch'
+import { problemOf, sshLinkBroke, type RunResult } from './remote/ssh'
 import {
   allowsTheBrowser,
   ASSIST_ALLOW_ENV,
@@ -46,7 +74,7 @@ import {
   seedCodexOwnerWords
 } from './hooks'
 import { ownerWordsIn } from './handover'
-import { acceptCodexHookTrust, codexConfigFile, codexHookTrusted } from './codexTrust'
+import { acceptCodexHookTrust, codexConfigFile, codexHookTrusted, configTrusts } from './codexTrust'
 import {
   CODEX_OPEN_SHIM_FOLDER,
   CODEX_TMP_DIR,
@@ -55,12 +83,17 @@ import {
   ownedByThisRun,
   removeFoldersLeftByEndedRuns
 } from './leftovers'
-import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
-import { SessionWorktrees } from './sessionWorktrees'
+import {
+  SessionStore,
+  codexSessionKey,
+  machineOfCodexKey,
+  type WorktreeResource
+} from './sessionStore'
+import { LOCAL_TREE_OPS, SessionWorktrees, type TreeOps } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
 import { codexTooOld, resolveCodexRuntime, updateCodex, type CodexRuntime } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
-import { occupantName } from './resumePlan'
+import { occupantName, worktreeAround } from './resumePlan'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 import { watchJsonDrops } from './jsonDrops'
 import { openDropTarget, type OpenDrop } from './openDrop'
@@ -80,6 +113,23 @@ const exists = (p: string): boolean => {
     return false
   }
 }
+
+const missingHere = (p: string): boolean => !parseRemoteKey(p) && !exists(p)
+
+const samePlace = (a: string, b: string): boolean =>
+  parseRemoteKey(a) || parseRemoteKey(b) ? a === b : path.resolve(a) === path.resolve(b)
+
+function machineProjectInfo(cwd: string, machine: string): ProjectInfo {
+  const tree = worktreeAround(barePath(cwd))
+  if (!tree) return { root: cwd, treeRoot: cwd }
+  return {
+    root: formatRemoteKey(machine, tree.root),
+    treeRoot: formatRemoteKey(machine, tree.treeRoot),
+    worktreeName: tree.name
+  }
+}
+
+const MACHINE_HISTORY_FRESH_MS = 15_000
 
 const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
   'context-used',
@@ -273,7 +323,41 @@ async function* everyPage(
   } while (cursor)
 }
 
+interface ListedThread {
+  thread: CodexThread
+  archived: boolean
+}
+
+// CODEX§15
+async function listThreads(rpc: CodexRpc): Promise<ListedThread[]> {
+  const threads: ListedThread[] = []
+  for (const archived of [false, true]) {
+    for await (const value of everyPage(rpc, 'thread/list', { archived, sourceKinds })) {
+      const thread = userThread(value)
+      if (thread) threads.push({ thread, archived })
+    }
+  }
+  return threads
+}
+
+export interface CodexMachineHost {
+  dirExists(p: string): Promise<boolean>
+  fileExists(p: string): Promise<boolean>
+  treeOps: TreeOps
+}
+
+export interface CodexMachineDeps {
+  instance: string
+  ready(): Promise<void>
+  run(machine: string, cmd: string): Promise<RunResult>
+  sshArgs(background: boolean): string[]
+  machinePackage(): MachinePackage
+  tabDir(tabId: string): string
+  host(machine: string): CodexMachineHost
+}
+
 export interface CodexSessionDeps {
+  machine?: CodexMachineDeps
   pty: PtyManager
   runtime: SessionRuntime
   projectInfo(p: string): ProjectInfo
@@ -294,7 +378,7 @@ export interface CodexSessionDeps {
   fallbackBin?: string
   gitBin?: string
   agent: {
-    enabled(): boolean
+    enabled(host: HostId): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
   }
   gitAccounts: {
@@ -322,6 +406,7 @@ interface Run {
   resumeKey?: string
   account: string
   permission: LaunchPermission
+  machine?: string
   releaseOpenShim(): void
 }
 
@@ -346,6 +431,11 @@ export class CodexSessions {
   private shuttingDown = false
   private emitTimer?: ReturnType<typeof setTimeout>
   private lastEmitMs = 0
+  private machineHistory = new Map<
+    string,
+    { at: number; reading?: Promise<void>; error?: unknown }
+  >()
+  private machinesSwept = new Map<string, Promise<void>>()
   readonly store: SessionStore
   readonly worktrees: SessionWorktrees
 
@@ -354,7 +444,10 @@ export class CodexSessions {
     private deps: CodexSessionDeps
   ) {
     this.store = new SessionStore(file)
-    this.worktrees = new SessionWorktrees(this.store)
+    this.worktrees = new SessionWorktrees(this.store, (p) => {
+      const machine = parseRemoteKey(p)?.host
+      return machine ? this.machineDeps().host(machine).treeOps : LOCAL_TREE_OPS
+    })
     deps.runtime.on('status', ({ tabId, next }: StatusEdge) => {
       const run = this.runs.get(tabId)
       if (!run?.info || run.explicitStop || run.stopping) return
@@ -362,6 +455,29 @@ export class CodexSessions {
       run.info.updatedAt = Date.now()
       this.changedSoon()
     })
+  }
+
+  private machineDeps(): CodexMachineDeps {
+    if (!this.deps.machine) throw new Error('Codex cannot reach remote machines here.')
+    return this.deps.machine
+  }
+
+  private infoOf(cwd: string): ProjectInfo {
+    const machine = parseRemoteKey(cwd)?.host
+    return machine ? machineProjectInfo(cwd, machine) : this.deps.projectInfo(cwd)
+  }
+
+  private async dirThere(p: string): Promise<boolean> {
+    const machine = parseRemoteKey(p)?.host
+    return machine ? this.machineDeps().host(machine).dirExists(p) : exists(p)
+  }
+
+  machineOfTab(tabId: string): string | undefined {
+    return this.runs.get(tabId)?.machine
+  }
+
+  machinesWithTabs(): string[] {
+    return [...this.runs.values()].flatMap((r) => (r.machine ? [r.machine] : []))
   }
 
   private changed(): void {
@@ -509,6 +625,26 @@ export class CodexSessions {
     )
   }
 
+  // ADR-0038 CODEX§27
+  private async koloftHookStates(wanted: KoloftHook[]): Promise<ListedHook[]> {
+    const known = wanted.flatMap((w) => this.listedHooks.get(w.command) ?? [])
+    if (known.length === wanted.length) return known
+    const rpc = new CodexRpc({
+      binary: this.binary!,
+      env: this.processEnv,
+      cwd: os.homedir(),
+      configOverrides: hookOverrides(wanted)
+    })
+    try {
+      const reply = await rpc.request('hooks/list', { cwds: [os.homedir()] }).catch(() => undefined)
+      const hooks = koloftHooksIn(reply, wanted)
+      for (const hook of hooks) this.listedHooks.set(hook.command, hook)
+      return hooks
+    } finally {
+      await rpc.close().catch(() => {})
+    }
+  }
+
   // CODEX§27
   private async askHookTrust(
     launch: CodexProcessOptions,
@@ -556,6 +692,67 @@ export class CodexSessions {
       throw error
     } finally {
       await rpc.close()
+    }
+  }
+
+  // CODEX§16
+  private async withMachineRpc<T>(machine: string, use: (rpc: CodexRpc) => Promise<T>): Promise<T> {
+    const m = this.machineDeps()
+    await m.ready()
+    const rpc = new CodexRpc({
+      binary: 'ssh',
+      args: [...m.sshArgs(true), machine, machineAppServerCmd()],
+      cwd: os.homedir()
+    })
+    try {
+      return await use(rpc)
+    } finally {
+      await rpc.close()
+    }
+  }
+
+  private withRpcFor<T>(key: string, use: (rpc: CodexRpc) => Promise<T>): Promise<T> {
+    const machine = machineOfCodexKey(key)
+    return machine ? this.withMachineRpc(machine, use) : this.withRpc(undefined, use)
+  }
+
+  // ADR-0038 CODEX§16
+  private machineLogin(home: string): MachineLogin {
+    const read = (): LoginParams | undefined => {
+      let auth: Record<string, unknown>
+      try {
+        auth = record(JSON.parse(fs.readFileSync(path.join(home, 'auth.json'), 'utf8')))
+      } catch {
+        return undefined
+      }
+      const tokens = record(auth.tokens)
+      if (typeof tokens.access_token === 'string' && typeof tokens.account_id === 'string')
+        return {
+          type: 'chatgptAuthTokens',
+          accessToken: tokens.access_token,
+          chatgptAccountId: tokens.account_id,
+          chatgptPlanType: null
+        }
+      return typeof auth.OPENAI_API_KEY === 'string'
+        ? { type: 'apiKey', apiKey: auth.OPENAI_API_KEY }
+        : undefined
+    }
+    return {
+      params: async () => read(),
+      refreshed: async (stale) => {
+        let now = read()
+        if (!now?.accessToken || now.accessToken === stale) {
+          await this.withRpc(home, (rpc) => rpc.request('account/read', { refreshToken: true }))
+          now = read()
+        }
+        if (!now?.accessToken || now.accessToken === stale)
+          throw new Error('The Codex account on this Mac could not renew its sign-in.')
+        return {
+          accessToken: now.accessToken,
+          chatgptAccountId: now.chatgptAccountId,
+          chatgptPlanType: now.chatgptPlanType
+        }
+      }
     }
   }
 
@@ -620,16 +817,15 @@ export class CodexSessions {
     return !!this.aliveTabFor(key) || this.relaunchingKeys.has(key)
   }
   occupantOf(dir: string): string | null {
-    const target = path.resolve(dir)
     for (const run of this.runs.values()) {
       const info = run.info
       if (!info) {
-        if (path.resolve(run.cwd) === target) return 'a starting Codex session'
+        if (samePlace(run.cwd, dir)) return 'a starting Codex session'
         continue
       }
-      if (path.resolve(info.treeRoot) === target) return occupantName(info)
+      if (samePlace(info.treeRoot, dir)) return occupantName(info)
       const bound = this.findRow(info.sessionId)?.worktreeState
-      if (bound && path.resolve(bound.worktreePath) === target) return occupantName(info)
+      if (bound && samePlace(bound.worktreePath, dir)) return occupantName(info)
     }
     return null
   }
@@ -673,11 +869,11 @@ export class CodexSessions {
         cwd: m.cwd,
         worktree: 'main',
         running: false,
-        invalidCwd: !exists(m.cwd),
+        invalidCwd: missingHere(m.cwd),
         mtime: m.updatedAt
       }
       r.cwd = m.cwd
-      r.invalidCwd = !exists(m.cwd)
+      r.invalidCwd = missingHere(m.cwd)
       r.nativeSessionId = m.id
       r.createdAt = m.createdAt
       r.running = this.readsRunning(m.key)
@@ -713,7 +909,7 @@ export class CodexSessions {
   }
 
   private row(t: CodexThread, scope: RowScope): BackendSessionRow {
-    const key = codexSessionKey(t.id)
+    const key = codexSessionKey(t.id, parseRemoteKey(t.cwd)?.host)
     const resource = scope.byPath.get(t.cwd)
     return {
       id: key,
@@ -721,9 +917,9 @@ export class CodexSessions {
       createdAt: (t.createdAt ?? 0) * 1000,
       title: t.name || t.preview?.slice(0, 100) || CODEX_PLACEHOLDER_TITLE,
       cwd: t.cwd,
-      worktree: resource?.worktreeName ?? this.deps.projectInfo(t.cwd).worktreeName ?? 'main',
+      worktree: resource?.worktreeName ?? this.infoOf(t.cwd).worktreeName ?? 'main',
       running: this.readsRunning(key),
-      invalidCwd: !exists(t.cwd),
+      invalidCwd: missingHere(t.cwd),
       mtime: (t.updatedAt ?? t.createdAt ?? 0) * 1000,
       ...(resource
         ? { worktreeState: { ...resource, worktreeBranch: resource.worktreeBranch ?? '' } }
@@ -738,7 +934,7 @@ export class CodexSessions {
     if (resource) return resource.originalCwd
     const known = scope?.roots.get(cwd)
     if (known !== undefined) return known
-    const root = this.deps.projectInfo(cwd).root
+    const root = this.infoOf(cwd).root
     scope?.roots.set(cwd, root)
     return root
   }
@@ -761,42 +957,69 @@ export class CodexSessions {
       }
     }
     if (this.shuttingDown) return
-    let threads: { key: string; thread: CodexThread; archived: boolean }[]
+    let threads: ListedThread[]
     try {
-      threads = await this.listThreads()
+      const rpc = this.rpc(undefined)
+      threads = await listThreads(rpc).finally(() => rpc.close())
     } catch (error) {
       if (binaryGone(error)) this.forgetProbe()
       this.historyError = error instanceof Error ? error : new Error(String(error))
       return
     }
-    const seen = new Map<string, CodexThread>()
-    const archivedIds = new Set<string>()
-    for (const { key, thread, archived } of threads) {
-      seen.set(key, thread)
-      if (archived) archivedIds.add(key)
-    }
-    this.history = seen
-    this.archivedIds = archivedIds
+    this.replaceHistory(undefined, threads)
     this.listed = true
     this.historyError = undefined
     this.changed()
   }
 
-  // CODEX§15
-  private async listThreads(): Promise<{ key: string; thread: CodexThread; archived: boolean }[]> {
-    const rpc = this.rpc(undefined)
-    const threads: { key: string; thread: CodexThread; archived: boolean }[] = []
-    try {
-      for (const archived of [false, true]) {
-        for await (const value of everyPage(rpc, 'thread/list', { archived, sourceKinds })) {
-          const thread = userThread(value)
-          if (thread) threads.push({ key: codexSessionKey(thread.id), thread, archived })
-        }
-      }
-      return threads
-    } finally {
-      await rpc.close()
+  private replaceHistory(machine: string | undefined, threads: ListedThread[]): void {
+    const others = (key: string): boolean => machineOfCodexKey(key) !== machine
+    this.history = new Map([...this.history].filter(([key]) => others(key)))
+    this.archivedIds = new Set([...this.archivedIds].filter(others))
+    for (const { thread, archived } of threads) {
+      const key = codexSessionKey(thread.id, machine)
+      this.history.set(
+        key,
+        machine ? { ...thread, cwd: formatRemoteKey(machine, thread.cwd) } : thread
+      )
+      if (archived) this.archivedIds.add(key)
     }
+  }
+
+  // CODEX§16
+  async refreshMachineHistory(machine: string, force = false): Promise<void> {
+    const state = this.machineHistory.get(machine) ?? { at: 0 }
+    this.machineHistory.set(machine, state)
+    if (state.reading) return state.reading
+    if (!force && Date.now() - state.at < MACHINE_HISTORY_FRESH_MS) {
+      if (state.error) throw state.error
+      return
+    }
+    state.reading = this.readMachineHistory(machine)
+      .then(
+        () => {
+          state.error = undefined
+        },
+        (error: unknown) => {
+          state.error = error
+          throw error
+        }
+      )
+      .finally(() => {
+        state.reading = undefined
+        state.at = Date.now()
+      })
+    return state.reading
+  }
+
+  private async readMachineHistory(machine: string): Promise<void> {
+    const home = await this.machineDeps().run(machine, HAS_CODEX_HOME_CMD)
+    if (sshLinkBroke(home)) throw new Error(problemOf(home))
+    const threads =
+      home.code === 0 ? await this.withMachineRpc(machine, (rpc) => listThreads(rpc)) : []
+    if (this.shuttingDown) return
+    this.replaceHistory(machine, threads)
+    this.changed()
   }
 
   searchable(workspaces: string[]): SearchCandidate[] {
@@ -832,8 +1055,12 @@ export class CodexSessions {
   }
 
   async historyRows(workspace: string): Promise<BackendSessionRow[]> {
-    await this.refreshHistory()
-    if (this.historyError) throw this.historyError
+    const machine = parseRemoteKey(workspace)?.host
+    if (machine) await this.refreshMachineHistory(machine)
+    else {
+      await this.refreshHistory()
+      if (this.historyError) throw this.historyError
+    }
     return this.rows(workspace).filter(
       (r) => !r.running && !this.members().has(r.id) && !this.archivedIds.has(r.id)
     )
@@ -842,11 +1069,15 @@ export class CodexSessions {
   async transcriptExists(key: string): Promise<boolean> {
     const id = this.nativeId(key)
     if (this.archivedIds.has(key)) return false
-    return this.withRpc(undefined, async (rpc) => {
+    const machine = machineOfCodexKey(key)
+    const file = await this.withRpcFor(key, async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
-      const t = userThread(reply.thread)
-      return !!t?.path && fs.existsSync(t.path)
+      return userThread(reply.thread)?.path
     })
+    if (!file) return false
+    return machine
+      ? this.machineDeps().host(machine).fileExists(formatRemoteKey(machine, file))
+      : fs.existsSync(file)
   }
 
   openApproval(tabId: string): CodexApproval | undefined {
@@ -872,7 +1103,7 @@ export class CodexSessions {
   // CODEX§19
   async readTurns(key: string, n: number): Promise<Turn[]> {
     const id = this.nativeId(key)
-    return this.withRpc(undefined, async (rpc) => {
+    return this.withRpcFor(key, async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
       return codexTurns(record(reply.thread).turns).last(n)
     })
@@ -907,10 +1138,9 @@ export class CodexSessions {
     const identity = identityOf(key)
     if (
       identity.backendId !== 'codex' ||
-      identity.sourceId !== 'local' ||
-      codexSessionKey(identity.nativeSessionId) !== key
+      codexSessionKey(identity.nativeSessionId, machineOfCodexKey(key)) !== key
     ) {
-      throw new Error('A local Codex session is required.')
+      throw new Error('A Codex session is required.')
     }
     return identity.nativeSessionId
   }
@@ -963,8 +1193,9 @@ export class CodexSessions {
     const binary = this.binary!,
       processEnv = this.processEnv
     let cwd = opts.cwd
-    if (typeof cwd !== 'string' || !path.isAbsolute(cwd) || !exists(cwd))
+    if (typeof cwd !== 'string' || !isAbsoluteOnHost(cwd) || !(await this.dirThere(cwd)))
       throw new Error('The session folder is missing.')
+    const machine = parseRemoteKey(cwd)?.host
     const workspace = this.workspaceFor(cwd)
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error('This Codex session is already open.')
@@ -973,6 +1204,11 @@ export class CodexSessions {
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
     if (picked.notice) this.deps.error(picked.notice)
     const home = picked.home
+    const trustedOnMachine: string[] = []
+    const trust = (dir: string, env: NodeJS.ProcessEnv | undefined): void => {
+      if (machine) trustedOnMachine.push(barePath(dir))
+      else this.deps.trustFolder(dir, env)
+    }
     if (opts.worktreeResourceId) {
       const saved = this.store.getResource(opts.worktreeResourceId)
       if (!saved || saved.originalCwd !== workspace || opts.worktree || opts.resumeSessionId)
@@ -983,22 +1219,22 @@ export class CodexSessions {
       resource = await this.worktrees.create(workspace, opts.worktree)
       cwd = resource.worktreePath
       // ADR-0026 CODEX§11
-      if (!opts.scheduled)
-        for (const dir of [workspace, cwd]) this.deps.trustFolder(dir, processEnv)
-    } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
-      resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
+      if (!opts.scheduled) for (const dir of [workspace, cwd]) trust(dir, processEnv)
+    } else if (!resource && this.infoOf(cwd).worktreeName) {
+      resource = await this.worktrees.adopt(workspace, this.infoOf(cwd).treeRoot)
     }
     this.assertStarting()
     // ADR-0029
-    const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
-    const conductor = opts.conductor || !!assist
+    const assist = machine ? undefined : this.deps.assistOf(cwd, opts.resumeSessionId)
+    const conductor = !machine && (opts.conductor || !!assist)
     const role = opts.role ?? assist?.role
     const allow = opts.allow ?? assist?.allow ?? []
-    if (opts.trustFolder || assist) this.deps.trustFolder(cwd, this.envFor(home))
+    if (opts.trustFolder || assist) trust(cwd, this.envFor(home))
     if (conductor && (opts.trustFolder || assist)) seedAssistMemory(cwd)
     const tabId = this.deps.pty.nextId()
     // ADR-0029
-    const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
+    const endpoint =
+      machine || (conductor && !allowsTheBrowser(allow)) ? '' : this.deps.browserEndpoint(tabId)
     const browser = endpoint ? await this.browserOverrides(home, cwd, conductor) : []
     // CODEX§29
     const gitNetwork = (await this.deps.gitAccounts.picked(cwd))
@@ -1008,6 +1244,7 @@ export class CodexSessions {
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
       if (event.type !== 'bound') {
+        if (machine && event.type === 'open') return
         if (run) this.deps.events(run.tabId, event)
         else if (event.type === 'degraded') this.deps.error(event.message)
         return
@@ -1015,16 +1252,18 @@ export class CodexSessions {
       if (run && !run.explicitStop && !run.stopping)
         this.bindThread(run, event.thread, event.change)
     }
-    const agent = this.deps.agent.enabled() ? this.deps.agent : undefined
-    const openShim = this.startOpenShim(
-      processEnv?.ZDOTDIR,
-      (target) => observe({ type: 'open', target }),
-      agent && ((dir, name, raw) => agent.answer(run?.tabId, dir, name, raw))
-    )
-    const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
-    const said = path.join(openShim.shimDir, 'said')
+    const agent = this.deps.agent.enabled(machine ? 'ssh' : 'local') ? this.deps.agent : undefined
+    const openShim = machine
+      ? undefined
+      : this.startOpenShim(
+          processEnv?.ZDOTDIR,
+          (target) => observe({ type: 'open', target }),
+          agent && ((dir, name, raw) => agent.answer(run?.tabId, dir, name, raw))
+        )
+    const env = openShim ? { ...this.envFor(home), ZDOTDIR: openShim.zdotDir } : this.envFor(home)
     const ownerWords = role && opts.firstPrompt ? ownerWordsIn(role) : undefined
-    if (ownerWords) seedCodexOwnerWords(said, ownerWords)
+    const said = openShim && path.join(openShim.shimDir, 'said')
+    if (said && ownerWords) seedCodexOwnerWords(said, ownerWords)
     const observer = new CodexObservation(observe)
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('codex')] : []),
@@ -1037,13 +1276,15 @@ export class CodexSessions {
       env,
       sessionEnv: {
         ...(resource && { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }),
-        ...browserControlEnv(tabId, endpoint),
+        ...(machine ? { KOLOFT_TAB_ID: tabId } : browserControlEnv(tabId, endpoint)),
         ...(conductor && {
           [CODEX_GATE_ENV]: this.deps.conductorGate.script,
           [ASSIST_ALLOW_ENV]: this.deps.conductorGate.writeAllow(tabId, allow)
         }),
-        [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
-        [CODEX_SAID_ENV]: said
+        ...(said && {
+          [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
+          [CODEX_SAID_ENV]: said
+        })
       },
       cwd,
       configOverrides: [
@@ -1058,20 +1299,31 @@ export class CodexSessions {
     const hooks = [...(conductor ? [GATE_HOOK] : []), ...CODEX_REPLY_LANGUAGE_HOOKS]
     let transport: CodexTransport | undefined
     try {
+      const [hookTrust] = machine
+        ? await Promise.all([this.koloftHookStates(hooks), this.machineReady(machine)])
+        : [[]]
       // ADR-0029 ADR-0031
-      const trusted = await this.trustKoloftHooks(
-        processOptions,
-        codexConfigFile(this.envFor(home)),
-        hooks
-      )
+      const trusted = machine
+        ? new Set(hookTrust.map((h) => h.command))
+        : await this.trustKoloftHooks(processOptions, codexConfigFile(this.envFor(home)), hooks)
       if (conductor && !trusted.has(GATE_HOOK.command)) throw new Error(CODEX_GATE_NOT_TRUSTED)
       this.assertStarting()
+      const serverConfig = [
+        ...processOptions.configOverrides!,
+        ...hookOverrides(hooks.filter((h) => trusted.has(h.command)))
+      ]
+      const launchedIn = cwd
       transport = await this.startTransport({
         ...processOptions,
-        configOverrides: [
-          ...processOptions.configOverrides!,
-          ...hookOverrides(hooks.filter((h) => trusted.has(h.command)))
-        ],
+        ...(machine && {
+          upstream: (frame, failure) =>
+            new MachineCodexUpstream(
+              this.machineUpstream(machine, tabId, home, () => run?.cwd ?? launchedIn),
+              frame,
+              failure
+            )
+        }),
+        configOverrides: serverConfig,
         onFrame: (direction, frame) => observer.receive(direction, frame),
         onDisconnect: () => this.markDegraded(run),
         onError: (error) => {
@@ -1084,7 +1336,7 @@ export class CodexSessions {
         '--remote',
         transport.url,
         '-C',
-        cwd,
+        barePath(cwd),
         '-c',
         STATUS_LINE_CONFIG,
         '-c',
@@ -1094,14 +1346,31 @@ export class CodexSessions {
       ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
       else if (opts.firstPrompt) argv.push(opts.firstPrompt)
+      const launch = machine
+        ? {
+            cwd: os.homedir(),
+            executable: '/bin/sh',
+            argv: [
+              '-c',
+              this.machineLaunchLine(machine, tabId, [binary, ...argv], {
+                version: available.version ?? '',
+                cwd: barePath(cwd),
+                trust: trustedOnMachine,
+                env: processOptions.sessionEnv ?? {},
+                config: serverConfig,
+                hookTrust: hookTrust.map((h) => ({ key: h.key, hash: h.currentHash })),
+                ownerWords,
+                agentTools: !!agent
+              })
+            ]
+          }
+        : { cwd, executable: binary, argv }
       const handle = this.deps.pty.create({
         id: tabId,
         kind: 'codex',
-        cwd,
+        ...launch,
         cols: opts.cols,
         rows: opts.rows,
-        executable: binary,
-        argv,
         processEnv: env,
         resumeSessionId: opts.resumeSessionId
       })
@@ -1116,7 +1385,8 @@ export class CodexSessions {
         resumeKey: opts.resumeSessionId,
         account: picked.account,
         permission,
-        releaseOpenShim: openShim.release
+        machine,
+        releaseOpenShim: openShim?.release ?? ((): void => {})
       }
       this.runs.set(handle.id, run)
       this.changed()
@@ -1124,11 +1394,82 @@ export class CodexSessions {
       return { id: handle.id, cwd }
     } catch (error) {
       await transport?.stop()
-      openShim.release()
+      openShim?.release()
+      if (machine) fs.rmSync(this.machineDeps().tabDir(tabId), { recursive: true, force: true })
       const allowFile = processOptions.sessionEnv?.[ASSIST_ALLOW_ENV]
       if (allowFile) fs.rmSync(allowFile, { force: true })
       throw error
     }
+  }
+
+  // CODEX§11
+  // CODEX§11
+  async machineTrusts(dir: RemoteKey): Promise<boolean> {
+    const r = await this.machineDeps().run(dir.host, realDirAndConfigCmd(dir.path))
+    if (r.code !== 0) return false
+    const newline = r.stdout.indexOf('\n')
+    return configTrusts(r.stdout.slice(newline + 1), r.stdout.slice(0, newline).trim())
+  }
+
+  // ADR-0038
+  private machineReady(machine: string): Promise<void> {
+    const m = this.machineDeps()
+    let swept = this.machinesSwept.get(machine)
+    if (!swept) {
+      swept = m.run(machine, sweepCodexServersCmd(m.instance)).then(
+        () => {},
+        () => {}
+      )
+      this.machinesSwept.set(machine, swept)
+    }
+    return swept
+  }
+
+  // ADR-0038 CODEX§16
+  private machineUpstream(
+    machine: string,
+    tabId: string,
+    home: string,
+    cwdNow: () => string
+  ): MachineUpstreamOptions {
+    const m = this.machineDeps()
+    return {
+      connect: () =>
+        spawn('ssh', [...m.sshArgs(true), machine, proxyCmd(m.instance, tabId)], { stdio: 'pipe' }),
+      login: this.machineLogin(home),
+      macCwd: os.homedir(),
+      machineCwd: () => barePath(cwdNow()),
+      stopServer: async () => {
+        await m.run(machine, stopCodexServerCmd(m.instance, tabId))
+      },
+      maxFrameBytes: DEFAULT_MAX_FRAME,
+      report: (error) => this.deps.error(String(error))
+    }
+  }
+
+  private machineLaunchLine(
+    machine: string,
+    tabId: string,
+    tui: string[],
+    spec: Omit<CodexTabSpec, 'tabId' | 'instance' | 'machineName'>
+  ): string {
+    const m = this.machineDeps()
+    const pkg = m.machinePackage()
+    const tabDir = m.tabDir(tabId)
+    fs.mkdirSync(tabDir, { recursive: true, mode: 0o700 })
+    fs.writeFileSync(
+      path.join(tabDir, `${tabId}.sh`),
+      codexTabScript({ ...spec, tabId, instance: m.instance, machineName: pkg.name }),
+      { mode: 0o700 }
+    )
+    return codexLaunchLine({
+      host: machine,
+      sshOptions: m.sshArgs(false),
+      machine: pkg,
+      tabDir,
+      tabId,
+      tui
+    })
   }
 
   // CODEX§12
@@ -1197,12 +1538,14 @@ export class CodexSessions {
         return this.changedSoon()
       case 'title':
         return this.retitle(info, event.title)
-      case 'files-changed':
-        info.files = event.files
-        info.lastTouched = event.lastTouched
-        info.lastWritten = event.lastWritten
+      case 'files-changed': {
+        const at = (p: string | undefined): string | undefined => keyedOn(run.machine, p)
+        info.files = event.files.map((f) => ({ ...f, src: at(f.src) ?? f.src }))
+        info.lastTouched = at(event.lastTouched)
+        info.lastWritten = at(event.lastWritten)
         info.liveWrites = event.liveWrites
         return this.changedSoon()
+      }
     }
   }
 
@@ -1243,12 +1586,12 @@ export class CodexSessions {
   }
 
   private bindThread(run: Run, thread: CodexThread, change: 'replace' | 'switch'): void {
-    const key = codexSessionKey(thread.id),
+    const key = codexSessionKey(thread.id, run.machine),
       old = run.info?.sessionId
     if (run.info) {
-      run.cwd = thread.cwd
-      run.workspace = this.workspaceFor(thread.cwd)
-      const treeRoot = this.deps.projectInfo(thread.cwd).treeRoot
+      run.cwd = run.machine ? formatRemoteKey(run.machine, thread.cwd) : thread.cwd
+      run.workspace = this.workspaceFor(run.cwd)
+      const treeRoot = this.infoOf(run.cwd).treeRoot
       run.resource = this.store.listResources().find((r) => r.worktreePath === treeRoot)
     }
     const m = this.store.getMember(key),
@@ -1327,7 +1670,7 @@ export class CodexSessions {
       ? this.store.getResource(m.worktreeResourceId)
       : this.store.listResources().find((r) => r.worktreePath === t?.cwd)
     let cwd = m?.cwd ?? t!.cwd
-    const treeRemoved = !req.mode && !!resource && !exists(resource.worktreePath)
+    const treeRemoved = !req.mode && !!resource && !(await this.dirThere(resource.worktreePath))
     if (req.mode === 'rebuild' || treeRemoved) {
       if (!resource) throw new Error('The worktree has no saved recovery record.')
       resource = await this.worktrees.rebuild(resource.id)
@@ -1390,7 +1733,9 @@ export class CodexSessions {
           await this.deps.leftWorktree?.(run.resource)
         this.changed()
         if (!this.shuttingDown)
-          void this.refreshHistory().catch((error) => this.deps.error(String(error)))
+          void (
+            run.machine ? this.refreshMachineHistory(run.machine, true) : this.refreshHistory()
+          ).catch((error) => this.deps.error(String(error)))
       })
       .catch((error) => {
         run.stopping = undefined

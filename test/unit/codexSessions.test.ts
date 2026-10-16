@@ -1255,10 +1255,12 @@ describe('CodexSessions', () => {
     gate.resolve()
   })
 
-  it('rejects a Claude or remote identity at the Codex resume boundary', async () => {
-    await expect(sessions.resume({ sessionId: A, cwd: repo })).rejects.toThrow('local Codex')
+  it('rejects a Claude identity, or a Codex one from a source it does not know, at the Codex resume boundary', async () => {
+    await expect(sessions.resume({ sessionId: A, cwd: repo })).rejects.toThrow(
+      'A Codex session is required'
+    )
     await expect(sessions.resume({ sessionId: `codex:ssh:${A}`, cwd: repo })).rejects.toThrow(
-      'local Codex'
+      'A Codex session is required'
     )
     expect(mocks.create).not.toHaveBeenCalled()
   })
