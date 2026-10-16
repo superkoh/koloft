@@ -5,30 +5,45 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Page not found — Koloft</title>
     <meta name="robots" content="noindex" />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="icon" href="__SITE_URL__/favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="__SITE_URL__/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="__SITE_URL__/apple-touch-icon.png" />
-    <link
-      rel="preload"
-      href="__SITE_URL__/fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="stylesheet" href="__SITE_URL__/style.css" />
   </head>
-  <body>
+  <body class="doc">
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="__SITE_URL__/"
+          ><img src="__SITE_URL__/icon.svg" alt="" width="26" height="26" />Koloft</a
+        >
+        <nav class="links" aria-label="Site">
+          <a href="__SITE_URL__/#palette">⌘P</a>
+          <a href="__SITE_URL__/#sessions">Sessions</a>
+          <a href="__SITE_URL__/#workbench">Workbench</a>
+          <a href="__SITE_URL__/#assist">Assist</a>
+          <a href="__SITE_URL__/features/">Features</a>
+          <a href="__SITE_URL__/sessions/">Docs</a>
+          <a href="__SITE_URL__/changelog/">Changelog</a>
+        </nav>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="__SITE_URL__/icons.svg#github" /></svg
+          >GitHub</a
+        >
+        <a class="btn primary" href="__SITE_URL__/install/"
+          ><svg class="icon" aria-hidden="true"><use href="__SITE_URL__/icons.svg#download" /></svg
+          >Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="__SITE_URL__/icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
+
     <div class="sheet">
       <header class="masthead">
-        <p class="brand">
-          <a href="__SITE_URL__/"
-            ><img src="__SITE_URL__/icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
-          >
-        </p>
-        <nav class="contents" aria-label="Pages">
-          <a href="__SITE_URL__/">home</a>
+        <nav class="contents" aria-label="Docs">
           <a href="__SITE_URL__/sessions/">sessions</a>
           <a href="__SITE_URL__/workbench/">workbench</a>
           <a href="__SITE_URL__/agents/">agents</a>
@@ -42,24 +57,42 @@
 
       <main>
         <h1 class="title">Not found</h1>
-        <p>This page is not in the note. Maybe it moved, or the link has a typo.</p>
-        <p class="next">back to -&gt; <a href="__SITE_URL__/">the first page</a></p>
+        <p>This page isn't here. Maybe it moved, or the link has a typo.</p>
+        <p class="next">Back to → <a href="__SITE_URL__/">the home page</a></p>
       </main>
-
-      <footer class="signoff">
-        <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="__SITE_URL__/changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
-        </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
-        </p>
-      </footer>
     </div>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="__SITE_URL__/"
+            ><img src="__SITE_URL__/icon.svg" alt="" width="26" height="26" />Koloft</a
+          >
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="__SITE_URL__/features/">All features</a>
+          <a href="__SITE_URL__/sessions/">Folders and their sessions</a>
+          <a href="__SITE_URL__/workbench/">The Workbench</a>
+          <a href="__SITE_URL__/agents/">Agents can use Koloft too</a>
+          <a href="__SITE_URL__/scheduled/">Sessions on a timer</a>
+          <a href="__SITE_URL__/accounts/">Several accounts, one pool</a>
+          <a href="__SITE_URL__/remote/">Remote folders</a>
+          <a href="__SITE_URL__/discord/">A butler on Discord</a>
+          <a href="__SITE_URL__/install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="__SITE_URL__/changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
+    <script src="__SITE_URL__/script.js"></script>
   </body>
 </html>

@@ -1173,7 +1173,7 @@ export default function App(): JSX.Element {
       path: route.path,
       worktree: route.worktree
     }
-    if (pullable(ws) && pending.worktree?.kind !== 'existing') {
+    if (pullable(ws)) {
       requestNew('main', ws.workspace.path, pending)
       return
     }
