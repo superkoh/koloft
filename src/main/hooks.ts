@@ -9,12 +9,7 @@ import {
   codexGateShell,
   conductorGateCommand
 } from './conductorGate'
-import {
-  HANDOVER_OPENING,
-  OWNER_WORDS_BEFORE_QUOTE,
-  OWNER_WORDS_END,
-  OWNER_WORDS_QUOTED_CHARS
-} from './handover'
+import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
 import { FROM_A_SESSION, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
@@ -102,8 +97,7 @@ const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
 const QUOTE_PROMPT_FN = `quote_prompt() {
   printf '%s' "$input" |
     LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"${JSON_STRING_BODY}".*/\\1/p' |
-    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*${OWNER_WORDS_BEFORE_QUOTE}(.*)${OWNER_WORDS_END}.*$/\\1/' \\
-      -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
+    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
       -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n\\[Discord\\] //' \\
       -e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//' |
     head -c ${QUOTED_PROMPT_BYTES} | whole_chars
@@ -113,8 +107,15 @@ save_quote() {
   if [ ! -s "$said" ] || shows_language "$q"; then printf '%s\\n' "$q" > "$said"; fi
 }`
 
-export const CODEX_SAID_ENV = 'KOLOFT_CODEX_SAID'
 const HANDED_OVER_TASK_COMES_FIRST = '.task-first'
+// ADR-0031
+const QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS = `if [ -f "$said${HANDED_OVER_TASK_COMES_FIRST}" ]; then
+       rm -f "$said${HANDED_OVER_TASK_COMES_FIRST}"
+     else
+       save_quote
+     fi`
+
+export const CODEX_SAID_ENV = 'KOLOFT_CODEX_SAID'
 export const CODEX_REPLY_LANGUAGE_ENV = 'KOLOFT_CODEX_REPLY_LANGUAGE'
 const codexReplyLanguageHook = (event: string): string =>
   `sh "$${CODEX_REPLY_LANGUAGE_ENV}" ${event}`
@@ -139,11 +140,7 @@ input="$(cat | tr -d '\\n')"
 ${QUOTE_PROMPT_FN}
 case "$input" in
   *'"prompt":"${FROM_A_SESSION}'*) ;;
-  *) if [ -f "$said${HANDED_OVER_TASK_COMES_FIRST}" ]; then
-       rm -f "$said${HANDED_OVER_TASK_COMES_FIRST}"
-     else
-       save_quote
-     fi ;;
+  *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
 esac
 remind_reply_language UserPromptSubmit
 exit 0
@@ -155,7 +152,7 @@ export function seedOwnerWords(said: string, ownerWords: string): void {
 }
 
 // ADR-0031
-export function seedCodexOwnerWords(said: string, ownerWords: string): void {
+export function seedHandedOverOwnerWords(said: string, ownerWords: string): void {
   seedOwnerWords(said, ownerWords)
   fs.writeFileSync(said + HANDED_OVER_TASK_COMES_FIRST, '')
 }
@@ -323,7 +320,7 @@ case "$event" in
           ;;
         *'"prompt":"<cross-session-message '*|*'"prompt":"<task-notification>'*|*'"prompt":"<agent-message '*) ;;
         *)
-          save_quote
+          ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS}
           [ -f "$reg/$tab.conductor" ] && : > "$reg/$tab.typed"
           ;;
       esac
@@ -354,7 +351,7 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor|said|allow|typed|discord-ids)$/
+const TAB_MARKER = /^(.+)\.(answerable|conductor|said|said\.task-first|allow|typed|discord-ids)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {

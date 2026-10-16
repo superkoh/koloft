@@ -21,12 +21,17 @@ import {
   markAnswerable,
   quotedPrompt,
   saidFile,
-  seedCodexOwnerWords,
+  seedHandedOverOwnerWords,
   seedOwnerWords,
   writeAllowFile
 } from '../../src/main/hooks'
 import { CODEX_GATE_HOOK_COMMAND } from '../../src/main/conductorGate'
-import { OWNER_WORDS_QUOTED_CHARS, withHandover } from '../../src/main/handover'
+import {
+  OWNER_WORDS_QUOTED_CHARS,
+  handoverInOwnersLanguage,
+  handoverPreamble,
+  withHandover
+} from '../../src/main/handover'
 import { crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
@@ -586,7 +591,7 @@ describe('injected hook script', () => {
 
     it('a task Koloft hands over is quoted without the English preamble in front of it', () => {
       const task = withHandover(
-        { name: 'Global-conductor', id: 'abc-123' },
+        handoverPreamble({ name: 'Global-conductor', id: 'abc-123' }),
         'review what Assist may do'
       )
       expect(remindedQuote(prompt('tabLangHO', task), 'UserPromptSubmit')).toBe(
@@ -625,7 +630,7 @@ describe('injected hook script', () => {
       expect(reminder(codexPrompt('先看看侧栏'), 'UserPromptSubmit')).toMatch(writesIn('Chinese'))
 
       const seeded = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-said-')), 'said')
-      seedCodexOwnerWords(seeded, 'have a look at the sidebar')
+      seedHandedOverOwnerWords(seeded, 'have a look at the sidebar')
       const child = (event: string, payload: unknown): string =>
         spawnSync('bash', [codexReplyLanguage, event], {
           input: JSON.stringify(payload),
@@ -646,15 +651,28 @@ describe('injected hook script', () => {
     })
 
     // ADR-0031
-    it('a task handed over with the owner’s last words is quoted by those words, not by the task another AI wrote in English, and Koloft reads them back whole for the next child down', () => {
+    it('a Claude child Koloft saved the owner’s last words for is quoted by those words, not by its handed-over task in whatever language, Koloft reads them back whole for the next child down, and the owner’s next prompt replaces them', async () => {
       const ownerWords = '帮我看看 "侧栏" 为什么\n变宽了 « » \\ 😀'
-      const task = withHandover(
-        { name: 'planner', id: 'abc-123', ownerWords },
-        'Read the brief at /tmp/brief.md and fix the sidebar width.'
+      const caller = { name: 'planner', id: 'abc-123', ownerWords }
+      const translated = await handoverInOwnersLanguage(
+        caller,
+        async () =>
+          'Japanese\nKoloft が起動したのは、会話 {caller} が頼んだからです。持ち主が最後に書いたのは {owner} です。終わったら次を実行して結果を返してください：'
       )
-      expect(reminder(prompt('tabLangOW', task), 'UserPromptSubmit')).toMatch(writesIn('Chinese'))
-      expect(reminder(tool('tabLangOW'), 'PostToolUse')).toMatch(writesIn('Chinese'))
-      expect(quotedPrompt(regDir, 'tabLangOW')).toBe(ownerWords)
+      const brief = 'Read the brief at /tmp/brief.md and fix the sidebar width.'
+      for (const [tab, preamble] of [
+        ['tabLangOW', handoverPreamble(caller)],
+        ['tabLangOWJa', translated]
+      ]) {
+        seedHandedOverOwnerWords(saidFile(regDir, tab), ownerWords)
+        expect(reminder(prompt(tab, withHandover(preamble, brief)), 'UserPromptSubmit')).toMatch(
+          writesIn('Chinese')
+        )
+        expect(reminder(tool(tab), 'PostToolUse')).toMatch(writesIn('Chinese'))
+        expect(quotedPrompt(regDir, tab)).toBe(ownerWords)
+        prompt(tab, '再改一下')
+        expect(quotedPrompt(regDir, tab)).toBe('再改一下')
+      }
       expect(quotedPrompt(regDir, 'tabLangNoPrompt')).toBeUndefined()
     })
 
