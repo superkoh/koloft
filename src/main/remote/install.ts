@@ -200,6 +200,7 @@ ${REMOTE_ENV_LINES}
 PATH="${CODEX_CLI_DIR}/bin:$PATH"; export PATH
 want="$1"
 ${INSTALL_PKG}
+have bash || install_pkg bash || exit 4
 ca_ok() {
   for f in ${CA_BUNDLES.join(' ')}; do [ -s "$f" ] && return 0; done
   return 1

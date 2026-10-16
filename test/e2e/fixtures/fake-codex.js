@@ -137,45 +137,48 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       .map((k) => process.env[k])
   })
   // CODEX§27
-  const GATE_KEY = '/<session-flags>/config.toml:pre_tool_use:0:0'
-  const gateCommand = argv
-    .map((value) => /^hooks\.PreToolUse=.*command=("(?:[^"\\]|\\.)*")/.exec(value)?.[1])
-    .find(Boolean)
+  const sessionHooks = argv.flatMap((value) => {
+    const m = /^hooks\.(\w+)=.*command=("(?:[^"\\]|\\.)*")/.exec(value)
+    return m ? [{ event: m[1], command: JSON.parse(m[2]) }] : []
+  })
+  const snakeCase = (event) => event.replace(/[A-Z]/g, (c, i) => (i ? '_' : '') + c.toLowerCase())
   const gateHooks = () => {
-    if (!gateCommand) return { hooks: [], errors: [] }
-    const command = JSON.parse(gateCommand)
-    const currentHash = 'sha256:' + crypto.createHash('sha256').update(command).digest('hex')
     let config = ''
     try {
       config = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8')
     } catch {}
     const lines = config.split('\n')
-    const tables = lines.filter((line) => line.trim() === `[hooks.state."${GATE_KEY}"]`).length
-    if (tables > 1)
-      return { hooks: [], errors: [{ path: process.cwd(), message: 'duplicate key' }] }
-    const at = lines.findIndex((line) => line.trim() === `[hooks.state."${GATE_KEY}"]`)
-    const saved =
-      at < 0 ? undefined : /^trusted_hash = "(.*)"$/.exec(lines[at + 1]?.trim() ?? '')?.[1]
-    const trustStatus = flag('fake-codex-hook-untrusted')
-      ? 'untrusted'
-      : saved === currentHash
-        ? 'trusted'
-        : saved
-          ? 'modified'
-          : 'untrusted'
-    return {
-      hooks: [
-        {
-          key: GATE_KEY,
-          eventName: 'preToolUse',
-          command,
-          source: 'sessionFlags',
-          currentHash,
-          trustStatus
-        }
-      ],
-      errors: []
+    const hooks = []
+    for (const { event, command } of sessionHooks) {
+      const key = `/<session-flags>/config.toml:${snakeCase(event)}:0:0`
+      const table = `[hooks.state."${key}"]`
+      const currentHash = 'sha256:' + crypto.createHash('sha256').update(command).digest('hex')
+      if (lines.filter((line) => line.trim() === table).length > 1)
+        return { hooks: [], errors: [{ path: process.cwd(), message: 'duplicate key' }] }
+      const at = lines.findIndex((line) => line.trim() === table)
+      const saved =
+        at < 0 ? undefined : /^trusted_hash = "(.*)"$/.exec(lines[at + 1]?.trim() ?? '')?.[1]
+      const trustStatus = flag('fake-codex-hook-untrusted')
+        ? 'untrusted'
+        : saved === currentHash
+          ? 'trusted'
+          : saved
+            ? 'modified'
+            : 'untrusted'
+      const eventName = event.charAt(0).toLowerCase() + event.slice(1)
+      hooks.push({ key, eventName, command, source: 'sessionFlags', currentHash, trustStatus })
     }
+    return { hooks, errors: [] }
+  }
+  const runHook = (event, payload) => {
+    const eventName = event.charAt(0).toLowerCase() + event.slice(1)
+    const hook = gateHooks().hooks.find((h) => h.eventName === eventName)
+    if (hook?.trustStatus !== 'trusted') return
+    const ran = spawnSync('/bin/sh', ['-c', hook.command], {
+      input: JSON.stringify({ ...payload, hook_event_name: event }),
+      encoding: 'utf8'
+    })
+    append('fake-codex-hook-output.jsonl', { event, stdout: ran.stdout })
   }
   const serve = (write) => {
     let initialized = false
@@ -244,6 +247,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       }
       turn.items.push(asked)
       event('item/completed', { threadId: thread.id, turnId: turn.id, item: asked })
+      runHook('UserPromptSubmit', { session_id: thread.id, cwd: thread.cwd, prompt: text })
       if (text.startsWith('open ')) {
         const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
         event('item/completed', {
@@ -279,6 +283,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
               commandActions: [{ type: 'unknown', command }]
             }
           })
+          runHook('PostToolUse', { session_id: thread.id, cwd: thread.cwd, tool_name: 'Bash' })
           complete(thread, turn)
         })
         return
@@ -610,12 +615,11 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       const receive = serve((line) => ws.send(line))
       ws.on('message', (data) => receive(String(data)))
     })
-    const leave = () => {
+    process.on('SIGTERM', () => {
       fs.rmSync(short, { force: true })
       fs.rmSync(requested, { force: true })
       process.exit(0)
-    }
-    process.on('SIGTERM', leave)
+    })
     process.on('SIGHUP', () => {})
     server.listen(short, () => {
       fs.rmSync(requested, { force: true })

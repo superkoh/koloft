@@ -15,6 +15,7 @@ import {
 import { REMOTE_HOOK_DIR } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { parseFrame, type CodexFrame, type CodexUpstream } from '../codexTransport'
+import { CODEX_REPLY_LANGUAGE_ENV, CODEX_SAID_ENV } from '../hooks'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
 
@@ -38,10 +39,38 @@ export interface CodexTabSpec {
   trust: string[]
   env: Record<string, string>
   config: readonly string[]
+  hookTrust: { key: string; hash: string }[]
   agentTools: boolean
 }
 
 const SERVER_START_TRIES = 150
+
+const REPLY_LANGUAGE_FILE = 'codex-reply-language.sh'
+const REPLY_LANGUAGE_IN_BASH = 'codex-reply-language.bash'
+
+// CODEX§27
+export function replyLanguageFiles(script: string): Record<string, string> {
+  return {
+    [REPLY_LANGUAGE_FILE]: `exec bash "$(dirname "$0")/${REPLY_LANGUAGE_IN_BASH}" "$@"\n`,
+    [REPLY_LANGUAGE_IN_BASH]: script
+  }
+}
+
+// CODEX§27
+function hookTrustLines(hooks: { key: string; hash: string }[]): string {
+  return hooks
+    .map(({ key, hash }) => {
+      const header = `[hooks.state.${JSON.stringify(key)}]`
+      const table = `\\n${header}\\ntrusted_hash = ${JSON.stringify(hash)}\\n`
+      return (
+        `touch "$H/config.toml"\n` +
+        `awk -v h=${shq(header)} '$0==h{s=1;next} s&&/^\\[/{s=0} !s' "$H/config.toml" > "$H/config.toml.koloft" && ` +
+        `mv "$H/config.toml.koloft" "$H/config.toml"\n` +
+        `printf '%b' ${shq(table)} >> "$H/config.toml"\n`
+      )
+    })
+    .join('')
+}
 
 // ADR-0038 CODEX§16
 export function codexTabScript(s: CodexTabSpec): string {
@@ -70,10 +99,12 @@ ${CODEX_FIRST_ON_PATH}
 H="${REMOTE_CODEX_HOME}"
 mkdir -p "$H" "${serversDir(s.instance)}" && chmod 700 "$H" || exit 3
 cd ${shq(s.cwd)} || exit 3
-${trust}S="${serversDir(s.instance)}/${s.tabId}"
+${trust}${hookTrustLines(s.hookTrust)}S="${serversDir(s.instance)}/${s.tabId}"
 rm -f "$S.sock"
 (
 ${exports}  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
+  ${CODEX_REPLY_LANGUAGE_ENV}="$M/${REPLY_LANGUAGE_FILE}"; ${CODEX_SAID_ENV}="$S.said"
+  export ${CODEX_REPLY_LANGUAGE_ENV} ${CODEX_SAID_ENV}
   command -v setsid >/dev/null 2>&1 && exec setsid nohup ${serve}
   exec nohup ${serve}
 ) </dev/null >"$S.log" 2>&1 &
@@ -119,7 +150,7 @@ const STOP_SERVER_FN = `stop_one() {
         if [ "$(ps -p "$pid" -o pgid= 2>/dev/null | tr -d ' ')" = "$pid" ]; then kill -- "-$pid"; else kill "$pid"; fi ;;
     esac
   fi
-  rm -f "$D/$1.pid" "$D/$1.sock" "$D/$1.log"
+  rm -f "$D/$1.pid" "$D/$1.sock" "$D/$1.log" "$D/$1.said"
 }`
 
 export function stopCodexServerCmd(instance: string, tabId: string): string {

@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { scanLeftovers, stopLeftover } from '../../src/main/leftovers'
+import { spawnSync } from 'child_process'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import {
+  CODEX_TMP_FOLDER,
+  ownedByThisRun,
+  removeFoldersLeftByEndedRuns,
+  scanLeftovers,
+  stopLeftover
+} from '../../src/main/leftovers'
 
 const SID = '1b6fa18b-8f8d-44ae-8ff1-718bb0f9556d'
 const OTHER = 'bfa0a674-0000-4000-8000-000000000000'
@@ -61,5 +71,35 @@ describe('programs a session left running on their own', () => {
     expect(await stopLeftover(SID, 8000, exec, kill)).toBe(false)
     expect(await stopLeftover(SID, 9999, exec, kill)).toBe(false)
     expect(killed).toEqual([7541])
+  })
+})
+
+describe('Codex tab folders left by a Koloft run that has ended are removed, a live run’s are kept', () => {
+  it('removes only a folder named after a run that is gone; an older Koloft’s folder, which names no run, is kept even when its id starts with digits', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'leftover-folders-'))
+    const endedRun = spawnSync('true').pid
+    const names = {
+      live: `koloft-cx-${ownedByThisRun('AbC123')}`,
+      liveOpen: `koloft-cx-open-${ownedByThisRun('0f0e')}`,
+      ended: `koloft-cx-${endedRun}-AbC123`,
+      endedOpen: `koloft-cx-open-${endedRun}-0f0e`,
+      olderKoloft: 'koloft-cx-ZzOld1',
+      olderKoloftOpen: 'koloft-cx-open-12345678-1234-4abc-8def-1234567890ab',
+      someoneElse: 'other-folder'
+    }
+    for (const name of Object.values(names)) fs.mkdirSync(path.join(tmp, name))
+
+    removeFoldersLeftByEndedRuns(tmp, CODEX_TMP_FOLDER)
+
+    expect(fs.readdirSync(tmp).sort()).toEqual(
+      [
+        names.live,
+        names.liveOpen,
+        names.olderKoloft,
+        names.olderKoloftOpen,
+        names.someoneElse
+      ].sort()
+    )
+    fs.rmSync(tmp, { recursive: true, force: true })
   })
 })

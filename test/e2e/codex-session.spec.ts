@@ -1097,6 +1097,45 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  // ADR-0031 CODEX§27
+  test("a Codex tab's own app-server runs Koloft's reply-language hooks once Koloft has trusted them: the prompt and every tool call hand Codex the owner's latest words", async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await runIn(page, centerTerm(page), '/koloft help')
+      const handed = (): { event: string; context: string }[] =>
+        fs
+          .readFileSync(path.join(env.home, 'fake-codex-hook-output.jsonl'), 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as { event: string; stdout: string })
+          .filter((h) => h.stdout)
+          .map((h) => ({
+            event: h.event,
+            context: (JSON.parse(h.stdout) as { hookSpecificOutput: { additionalContext: string } })
+              .hookSpecificOutput.additionalContext
+          }))
+      await expect
+        .poll(() => {
+          try {
+            return handed()
+              .filter((h) => h.context.includes('«/koloft help»'))
+              .map((h) => h.event)
+          } catch {
+            return []
+          }
+        })
+        .toEqual(['UserPromptSubmit', 'PostToolUse'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('Codex approval, interruption and close confirmation use the shared session controls', async ({
     env
   }) => {
@@ -1114,6 +1153,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       await confirm.getByRole('button', { name: 'Cancel', exact: true }).click()
       await expect(codexRows(page)).toHaveClass(/st-approval/)
       await runIn(page, centerTerm(page), 'y')
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), 'please ask me')
+      await expect(codexRows(page)).toHaveClass(/st-approval/)
+      await page.keyboard.press('2')
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
       await runIn(page, centerTerm(page), 'hold')
       await expect(codexRows(page)).toHaveClass(/st-working/)
@@ -1600,7 +1643,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
-  test('with two Codex accounts, once both show their weekly use in Settings ▸ Accounts, every new Codex session runs in the one with more room left, even though it is listed second', async ({
+  test('with two Codex accounts, once both show their weekly use in Settings ▸ Accounts, every new Codex session runs in the one with more room left, even though it is listed second, and its terminal names that account first, as a Claude tab does', async ({
     env
   }) => {
     installCodex(env)
@@ -1632,6 +1675,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await page.keyboard.press('Escape')
 
       await startCodex(page, env)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText('koloft: → roomy')
       await startCodex(page, env)
       expect(codexCalls(env).map((c) => c.codexHome)).toEqual([roomy, roomy])
     } finally {

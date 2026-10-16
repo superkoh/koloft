@@ -42,6 +42,10 @@ before they were skipped, 63% of the reminders over six days quoted a
 `<task-notification>` instead of the owner, and in Chinese turns the notes under such a
 quote were English 30% of the time against 13% under the owner's own words (67% against
 1% once the turn had been compacted, 37% against 15% past 60 tool calls).
+A Codex tab gets the same quote, at the prompt and after every tool, through Codex's own
+`UserPromptSubmit` and `PostToolUse` hooks (CODEX§27); a message another session sends it
+starts "(From the session …" and keeps the owner's quote. How far Codex's models drift
+was not measured: the rule is carried over because the owner reads both kinds of tab.
 **Rejected**: repeating a generic sentence (above: it barely helped — the quote is what
 works). Naming the language ("Reply in Chinese") — Koloft would have to guess the
 language in a shell script, for every language; the quote lets the model see it.

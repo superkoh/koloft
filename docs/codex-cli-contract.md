@@ -254,8 +254,7 @@ turn on another login, and the read-after-resume limit, issue #486), 17 (the han
 note naming the thread), 19 (message phases), 21 (auto-compaction), 23 (paste), 24, 25
 and 26 were measured again, and the real-binary e2e specs that stand on 10, 11, 17, 23
 and 26 passed on 0.162.1. Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+:
-section 1's update-notice key, 2, 3 (the approval keys), 4, 8 (status-line item ids),
-9 (the trust question before connecting), 12 (`fileChange` / `commandActions` shapes,
+section 1's update-notice key, 2, 3 (the approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` / `commandActions` shapes,
 the `open` shim), 13 (token-usage fields) and 14 (first prompt, `-m`,
 `model_reasoning_effort`).
 
@@ -265,34 +264,64 @@ tests cannot replace these external checks.
 
 ## 8. Native status line
 
-**Checked on 2026-09-10 with standalone Codex CLI 0.153.4, without a model call.**
-The real TUI ran in a temporary Git repository with an isolated `CODEX_HOME` and
-an unauthenticated test provider pointing at an unused localhost port. Both ordinary
-startup and `--remote unix://…` against a separate real app-server were checked.
-The PTY output was decoded with pyte at 120 and 55 columns.
+**Checked on 2026-10-16 with standalone Codex CLI 0.162.0** (`~/.local/bin/codex` →
+`~/.codex/packages/standalone/current/bin/codex`), **without a model call.** The real TUI
+ran in a temporary Git repository with an isolated `CODEX_HOME` and an unauthenticated
+test provider pointing at an unused localhost port, both on its own and as
+`--remote ws://…` against a separate `codex app-server --listen ws://…` given the same
+`-c` overrides. The PTY output was decoded with pyte at 220, 160, 120, 100 and 55
+columns. First measured on 2026-09-10 with 0.153.4; the findings below hold on both
+unless marked.
 
-- `tui.status_line` selects ordered built-in item IDs. Passing it with `-c` to the
-  server and remote TUI displayed the selected items. A separate `config/read`
-  probe confirmed that server startup overrides supersede the file's list without
-  rewriting that file.
-- The footer occupied one line. Long content ended in an ellipsis at both widths;
-  shrinking the terminal did not wrap it. A `"\n"` item produced an invalid-item
-  warning and was ignored. The picker had no `newline` item. These checks establish
-  that the tested native configuration cannot reproduce a three-line footer.
-- The TUI displayed `context-used`, `git-branch`, `codex-version`, `model`,
-  `reasoning`, `model-with-reasoning` and `current-dir` from the empty test session.
-- `account` and `git-worktree` produced invalid-item warnings; searching the picker
-  for account and worktree returned no matches.
-- The picker describes `branch-changes` as **committed** changes against the
-  default branch. It is not a substitute for working-directory change counts.
-- The picker describes `pull-request-number` as the open PR number for the current
-  branch, omitted when unavailable. It does not describe review or check status.
-- The picker describes `estimated-thread-cost` as an estimate in USD for
-  **Enterprise workspaces only**, omitted when unavailable. Its preview contains
-  sample cost and PR values; those are not evidence of actual account data.
+- `[tui]` has three keys for this, and only three: `status_line`,
+  `status_line_use_colors` and `terminal_title` (binary strings). `tui.status_line` is a
+  flat, ordered list of built-in item IDs. Passing it with `-c` to the app-server and to
+  the remote TUI displayed the selected items. A list of lists stops startup:
+  `invalid type: sequence, expected a string in tui.status_line`. That server startup
+  overrides supersede the file's list without rewriting it was checked by `config/read`
+  on 0.153.4 only.
+- The footer is one line. Long content ends in an ellipsis at every width tried;
+  shrinking the terminal does not wrap it. `"\n"`, `newline`, `line-break`, `separator`
+  and `spacer` each produce an "Ignored invalid status line items" warning (F2). The
+  native configuration cannot reproduce a three-line footer.
+- No item runs a user command or reads a file: `custom-command`, `command` and `custom`
+  are rejected, and a picker search for "command" returns no matches.
+- The `/statusline` picker offers 31 IDs: `model`, `model-with-reasoning`, `reasoning`,
+  `current-dir`, `project-name`, `hostname`, `git-branch`, `pull-request-number`,
+  `branch-changes`, `run-state`, `permissions`, `approval-mode`, `context-remaining`,
+  `context-used`, `five-hour-limit`, `weekly-limit`, `codex-version`,
+  `context-window-size`, `used-tokens`, `total-input-tokens`, `total-output-tokens`,
+  `thread-credits`, `estimated-thread-cost`, `thread-id`, `fast-mode`, `daybreak`,
+  `raw-output`, `thread-name`, `thread-title`, `workspace-headline`, `task-progress`.
+  With no `tui.status_line` set, `model-with-reasoning`, `current-dir` and `thread-name`
+  are ticked. The binary also carries descriptions for `daily-limit`, `monthly-limit`,
+  `annual-limit`, `usage-limit` and `secondary-usage-limit`, but 0.162.0 rejects all
+  five as invalid items.
+- `account`, `account-email`, `plan`, `rate-limits`, `git-worktree`, `git-changes`,
+  `git-review` and `session-cost` produce invalid-item warnings; picker searches for
+  account, worktree, plan and usage return no matches.
+- `five-hour-limit` and `weekly-limit` are described as **remaining** usage on the
+  primary and secondary limit. On the unauthenticated home both are omitted; the
+  picker preview's `primary 0% · secondary 0%` is sample text. What they show on a
+  signed-in home was not checked.
+- `branch-changes` counts **committed** changes against the default branch only: an
+  uncommitted edit showed `No changes`, the same edit committed showed `+2 -0`. It is
+  not a substitute for working-directory change counts.
+- `pull-request-number` is the open PR number for the current branch, omitted when
+  unavailable; it carries no review or check status. `estimated-thread-cost`,
+  `thread-credits` and `workspace-headline` are Enterprise-only and were omitted. The
+  preview's `PR #123`, `~$1.82` and `5.2 credits` are sample values, not account data.
+- `tui.terminal_title` (picker: `/title`) takes 25 IDs, `activity`, `thread-name` and
+  `project-name` ticked by default. The title is written as OSC 0 with items joined by
+  ` | ` (e.g. `ESC]0;Ready | gpt-5.2-codex default | feat/probe-branch | Context 0% used
+  BEL`), rewritten as state changes, cleared with an empty OSC 0 on exit, and also
+  emitted under `--remote`.
+- A plain `codex -c …` shows a startup warning that command-line overrides require
+  embedded mode instead of the shared background server; without `-c`, the TUI
+  starts a managed `codex app-server --listen unix:// --managed-daemon` under
+  `$CODEX_HOME/packages/app-server-daemon/`. The `--remote` launch showed no warning.
 - The picker offers `Use theme colors` (`tui.status_line_use_colors`). No per-item
-  background colors or Powerline separator settings were exposed by the tested
-  configuration or picker.
+  background colors or Powerline separator settings are exposed.
 
 ## 9. Confirmation before remote resume
 
@@ -432,6 +461,18 @@ the sandbox bypassed, resumed after its tab closed, …" (before the change: `tu
 app-server alone, and no `-a`/`-s` on the TUI, is not probed yet. The resume case
 passed again on 0.162.1 (2026-10-11; its `turn_context` read still finds
 `approval_policy` and `sandbox_policy`, §10).
+
+**The trust table decides the sandbox of a thread started with no sandbox flag.**
+2026-10-16, codex-cli 0.162.0, `codex app-server --stdio` driven by a Node script, a
+throwaway `CODEX_HOME`, no model turn: `thread/start {cwd}` with no `sandbox` and no
+`approvalPolicy` answered `sandbox: {type:"workspaceWrite", networkAccess:true,
+writableRoots:[…]}` / `approvalPolicy: "on-request"` for a folder with a
+`[projects."<realpath>"] trust_level = "trusted"` table, and `sandbox: {type:"readOnly",
+networkAccess:false}` / `"on-request"` for a folder without one — with the same `-c
+sandbox_workspace_write.*` on the app-server, and whichever folder the app-server itself
+started in. `config/read {cwd}` answered `sandbox_mode: null` for both. Not probed yet:
+what the TUI over `--remote` sends after the owner answers its trust question in an
+untrusted folder.
 
 ## 12. Files a turn touched, and a command that opens a file
 
@@ -882,6 +923,46 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   note, not the task (`agent-tools-real-smoke.spec.ts`). That the title thread never
   reads the developer instructions is inferred, not checked, beyond that spec passing
   (again on 0.162.1, 2026-10-11).
+- **A resume never takes new developer instructions; a start's own instructions replace
+  the `-c` ones.** 2026-10-16, Codex CLI 0.162.0, `gpt-6.1-sol`, an app-server client as in
+  section 27. With `-c developer_instructions=` naming codeword ZEBRA: two turns, and a
+  second `thread/start` on the same server, answered ZEBRA. A `thread/start` there with
+  `developerInstructions: <OTTER text>`, or `config: {developer_instructions: <FALCON
+  text>}`, answered OTTER / FALCON, and those rollouts held no ZEBRA. A thread started
+  under ZEBRA that never named the word was then `thread/resume`d on a server with
+  `-c …YAK`, and another with the `developerInstructions: <HERON>` param: both answered
+  ZEBRA, and neither YAK nor HERON reached the rollout. So a newer Koloft prompt does not
+  reach a resumed older session.
+- **`$CODEX_HOME/AGENTS.md` reaches the model** as a `user` message
+  `# AGENTS.md instructions\n\n<INSTRUCTIONS>…`: its codeword came back (same run).
+  **Skills reach it only as a list**: a `developer` message `<skills_instructions>` holds
+  `- <name>: <description> (file: r0/<name>/SKILL.md)`; asked for something only the body
+  held, the model ran `cat <path>/SKILL.md` and answered it. `skills/list` gave `{name,
+  description, path, scope: "user", enabled, pluginId}`; a fresh home was seeded with
+  `skills/.system/` (imagegen, openai-docs, skill-creator, skill-installer).
+- **The folder's AGENTS.md is a memory that survives a restart and a resume.** 2026-10-16,
+  Codex CLI 0.162.0, real turns (`gpt-6.1-sol`, low effort), `codex app-server --stdio`
+  with `approval_policy="never"`, `sandbox_mode="workspace-write"`, non-git scratch
+  folders. The cwd's `AGENTS.md` reaches the model as a user message `# AGENTS.md
+  instructions for <cwd>` before `<environment_context>`, untrusted folders too. With
+  Koloft's Assist rule "Do not write or change files (your own memory folder aside)" as
+  developer instructions and no `AGENTS.md`, a model told "Remember for next time: …"
+  said it could not save across sessions and wrote nothing. With an `AGENTS.md` seeded
+  beforehand saying "This file is your memory folder. When the owner asks you to remember
+  something, add it here as one short line", the same rule plus Koloft's conductor gate
+  (section 27): a thread started before the seed and resumed after it wrote the fact into
+  `AGENTS.md` with `apply_patch` (`*** Add File: <absolute path>`), and a new thread on a
+  new app-server answered it; on resume Codex adds a fresh AGENTS.md message before the
+  new turn. `features.memories` (stable, off by default) was tried too: per `CODEX_HOME`,
+  run by a background consolidation agent at app-server start, its notes outside the cwd,
+  and after two startups a new thread did not recall the fact.
+- **`$CODEX_HOME/rules/*.rules` applies to a turn's commands.** 2026-10-16, Codex CLI
+  0.162.0, a real turn in a trusted folder of a throwaway `CODEX_HOME` whose
+  `rules/default.rules` held `prefix_rule(pattern=["touch"], decision="forbidden")`:
+  asked to run `touch made-by-probe.txt`, the command was refused (`policy forbids
+  commands starting with \`touch\``) and no file appeared. So a home Koloft makes per
+  account sees the owner's own global instructions, skills and command rules only if it
+  links them from the owner's home.
 - **Developer instructions do not count as the owner asking for sub-agents.** Codex
   ships sub-agents on (`codex features list`: `multi_agent stable true`) but tells the
   model, last in its developer message, `Do not spawn sub-agents unless the user or
@@ -1098,9 +1179,20 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   still allowed a plain-text question, the model asked in plain text instead; told to
   ask every question with that tool, it did. Not probed: what `isBlocking: false`
   changes.
-- Not probed: several questions in one request, a free-text answer (`N+1` and notes),
-  `isSecret`, a form with several fields or a field that is not an enum, and an
-  elicitation `mode` other than `form`. Koloft refuses those from Discord.
+- **Several questions and free text, with the flag on.** 2026-10-16, Codex CLI 0.162.0,
+  `gpt-6.1-sol`, `features.default_mode_request_user_input=true`, an app-server client as
+  in section 27. Asked for two questions in one call, the model sent one request with
+  `questions: [{id: "colour", …}, {id: "size", …}]`, each `isOther: true`, two options,
+  `isBlocking: false`; `{answers: {colour: {answers: ["Blue"]}, size: {answers:
+  ["Large"]}}}` gave "You prefer blue and large." A string that is not an option,
+  `{colour: {answers: ["Purple with green stripes"]}}`, was repeated back word for word.
+  `["Red", "user_note: but only dark red, like wine"]` came back as "Red but only dark
+  red, like wine". That the TUI's notes field sends that `user_note: ` prefix is inferred
+  from a string in the binary, not seen on the wire. Each time: `waitingOnUserInput`,
+  then `serverRequest/resolved`, then the turn went on.
+- Not probed: `isSecret`, what `isBlocking: false` changes, a form with several fields or
+  a field that is not an enum, and an elicitation `mode` other than `form`. Koloft refuses
+  several questions, free text and those from Discord.
 
 ## 21. Slash commands typed into the TUI
 
@@ -1431,8 +1523,24 @@ so its folders were not writable by default.
   the CLI is refused there — **inferred, not checked**), and a user on the newer
   `default_permissions` profiles, which the `-P` result suggests ignore these legacy keys
   — **inferred, not checked**.
+- **MCP tool approval, and `approve`.** 2026-10-16, codex-cli 0.162.0, app-server driven by
+  a Node script, a tiny stdio MCP server (one tool `ping`) given as `-c
+  mcp_servers.probe.command=…`/`args=[…]`, real model turns asked to call it:
+  - `on-request`: the first call in each new thread sent `mcpServer/elicitation/request`
+    with `mode: "form"`, `message: "Allow the probe MCP server to run tool \"ping\"?"`,
+    `_meta: {codex_approval_kind: "mcp_tool_call", persist: ["session","always"], …}`;
+    `{action:"accept"}` ran it. A second thread on the same app-server asked again.
+  - `never` (an Assist): no request; the call failed with `MCP tool call requires
+    approval, but approval policy is never`.
+  - `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (values `auto`, `prompt`,
+    `writes`, `approve`): the call ran with no request under `on-request` and under
+    `never`.
+- **A failed `config/read` drops every browser setting at once**: Koloft builds
+  `network_access`, the Playwright cache root and the `env_vars` passthrough from one
+  `config/read`, so a read lost to section 28's race leaves a tab with no network (unless
+  a git account's pick gives it, section 29) and no CDP endpoint for the MCP server.
 
-## 27. A PreToolUse hook on one app-server, and its trust
+## 27. Hooks on one app-server, and their trust
 
 **Checked on 2026-10-11 with standalone Codex CLI 0.162.0.** Node scripts drove
 `codex app-server --stdio` (`initialize` with `experimentalApi: true`, `initialized`,
@@ -1496,6 +1604,46 @@ command line. The hook command was a small Node script that logged its stdin.
 - Not probed yet: a real TUI connected over `--remote` to the hooked app-server, and
   whether both PreToolUse hooks run in one turn (each needs a model turn, so a signed-in
   account).
+
+**All twelve events, checked on 2026-10-16 with standalone Codex CLI 0.162.0, real model
+turns (`gpt-6.1-sol`, `effort: "low"`).** A Node client drove `codex app-server --stdio`
+(`initialize` with `experimentalApi: true`) in a throwaway `CODEX_HOME` (a copy of this
+Mac's login, deleted afterwards; the folder trusted), each hook given as
+`-c hooks.<Event>=[{hooks=[{type="command",command="node <script> <Event>"}]}]` and
+trusted with its `[hooks.state."<key>"] trusted_hash` table. The event list and the
+stdin/stdout shapes were also read from the binary, which embeds a JSON schema per event
+(`<event>.command.input` / `.command.output`).
+
+- **The events are exactly** `PreToolUse`, `PermissionRequest`, `PostToolUse`,
+  `PreCompact`, `PostCompact`, `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
+  `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt` (no `Notification`). Each lists in
+  `hooks/list` as `/<session-flags>/config.toml:<snake_case event>:0:0` and needs its own
+  trust table.
+- **Every stdin carries** `session_id`, `transcript_path`, `cwd`, `hook_event_name`,
+  `model`; all but `SessionStart`/`SessionEnd` add `turn_id`. `UserPromptSubmit` adds
+  `prompt`; `PostToolUse` adds `tool_name`, `tool_input`, `tool_use_id`, `tool_response`
+  (for `Bash` the output as one string); `Stop` adds `stop_hook_active`,
+  `last_assistant_message`.
+- **When each fires:** `SessionStart` at the first turn after `thread/start`,
+  `thread/resume` or a compaction, not at `thread/start` itself. `UserPromptSubmit`, then
+  `PreToolUse`/`PostToolUse` around each tool, then `Stop` at the end of each turn.
+  `SessionEnd` ran when the app-server exited, not on `thread/unsubscribe`. A sub-agent's
+  tool calls ran `PreToolUse`/`PostToolUse` with the parent's `session_id` plus
+  `agent_id`/`agent_type`; no `SessionStart`, `UserPromptSubmit` or `Stop` ran for the
+  child.
+- **`hookSpecificOutput.additionalContext` reaches the model** from `SessionStart`,
+  `UserPromptSubmit`, `PreToolUse`, `PostToolUse` and `SubagentStart`: "Always end your
+  reply with the word X" made the reply end with X each time. It is saved in the rollout
+  as a `developer` message.
+- **`Stop` with `{"decision":"block","reason":"…"}` makes the model go on**, and
+  **`PermissionRequest`** answering `{"decision":{"behavior":"allow"}}` runs the command with
+  no request reaching the client (`deny` stops it).
+- **An owner's own `UserPromptSubmit` hook in `config.toml` stays next to one given with
+  `-c`**, as for PreToolUse above (2026-10-16, no model turn: `hooks/list` listed both).
+- **Hooks run outside the sandbox.** 2026-10-16, a real turn in an untrusted folder
+  (`sandbox: {type: "readOnly"}`, `exclude_slash_tmp`): the `UserPromptSubmit` and
+  `PostToolUse` hooks appended to a file under `~/Library/Caches`, and the reply ended
+  with the word the prompt hook asked for.
 
 ## 28. Two app-servers starting at once in a home no app-server has used
 
@@ -1562,5 +1710,17 @@ the configured sandbox.
   Operation not permitted`. In both runs git could not write inside the repository's
   `.git` (`index.lock`, `refs/remotes/origin/main.lock`: `Operation not permitted`), so the
   push went out but the remote-tracking ref was not updated.
+- **`.git` is read-only inside a writable root, and a model turn asks before it commits.**
+  2026-10-16, codex-cli 0.162.0, real model turns through an app-server with the
+  parameters Koloft's TUI sends for each tab kind (folder trusted; `exclude_slash_tmp`
+  because the scratch repositories sat under `/tmp`), asked to `git add -A && git commit
+  -m probe && git push origin HEAD` to a local bare repository:
+  - A ＋ tab (`on-request`/`workspace-write`): `fatal: Unable to create
+    '<repo>/.git/index.lock': Operation not permitted`; one run then sent
+    `item/commandExecution/requestApproval` to rerun it outside the sandbox, another only
+    reported the failure. A worktree tab: the same on `<repo>/.git/worktrees/<name>/
+    index.lock`. An Assist (`never`): the same error, exit 128, no request.
+  - With `<repo>/.git` (and for a worktree also `<repo>/.git/worktrees/<name>`) added to
+    `sandbox_workspace_write.writable_roots`, commit and push ran with no question.
 - Not probed yet: a push to the real github.com from a Codex turn.
 

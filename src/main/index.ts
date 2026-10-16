@@ -70,6 +70,7 @@ import {
 import { directoryListingHtml } from './dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
+  CODEX_REPLY_LANGUAGE_SCRIPT,
   HOOK_SCRIPT,
   forgetAssistMarkers,
   markAnswerable,
@@ -88,7 +89,7 @@ import {
   sshOptions
 } from './remote/ssh'
 import { ENSURE_CODEX_SH, ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
-import { codexMachineInstance, ENSURE_CODEX_FILE } from './remote/codexMachine'
+import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
 import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
   AGENT_PLUGIN_DIR,
@@ -158,7 +159,12 @@ import {
   validateNewAccount
 } from './accounts'
 import { probeAccount, shouldSkipFable } from './usageProbe'
-import { AccountPicker, PROBE_TIMEOUT_MS, type PickResponse } from './accountPicker'
+import {
+  AccountPicker,
+  PROBE_TIMEOUT_MS,
+  codexLaunchBanner,
+  type PickResponse
+} from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
@@ -910,6 +916,7 @@ function machinePackage(): MachinePackage {
   const pkgFiles: Record<string, string | Buffer> = {
     'ensure.sh': ENSURE_SH,
     [ENSURE_CODEX_FILE]: ENSURE_CODEX_SH,
+    ...replyLanguageFiles(CODEX_REPLY_LANGUAGE_SCRIPT),
     'hook.sh': HOOK_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
@@ -957,7 +964,7 @@ async function codexAskOf(tabId: string): Promise<CodexApproval | CodexQuestion 
   for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
     const ask = codexSessions?.openApproval(tabId) ?? codexSessions?.openQuestion(tabId)
     if (ask || !polls || !codexSessions?.hasTab(tabId)) return ask
-    if (tracker.statusOf(tabId) !== 'approval' && !tracker.awaitsInput(tabId)) return undefined
+    if (tracker.statusOf(tabId) !== 'approval') return undefined
     await sleep(CODEX_REQUEST_POLL_MS)
   }
 }
@@ -1544,7 +1551,9 @@ function codexSharedConfig(): string {
 }
 
 // CODEX§15
-function pickCodexHome(resumeSessionId?: string): { account: string; home: string } | undefined {
+function pickCodexHome(
+  resumeSessionId?: string
+): { account: string; home: string; banner: string } | undefined {
   const views = accountViews()
   const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
   if (!picked) return undefined
@@ -1557,7 +1566,7 @@ function pickCodexHome(resumeSessionId?: string): { account: string; home: strin
   if (stale) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home }
+  return { account: picked.name, home, banner: codexLaunchBanner(picked, Date.now()) }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {
@@ -2116,6 +2125,7 @@ app.whenReady().then(() => {
         script: hookPaths.codexGate,
         writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
       },
+      replyLanguageScript: hookPaths.codexReplyLanguage,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
@@ -2331,7 +2341,6 @@ app.whenReady().then(() => {
       return { name, backend: s.backendId, workspace: sessionBackends.workspaceOfTab(tabId) }
     },
     status: (tabId) => tracker.statusOf(tabId),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
     unknown: (tabId) => statusUnavailable(sessionOfTab(tabId)),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
@@ -2474,7 +2483,6 @@ app.whenReady().then(() => {
         : undefined
     },
     shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     commandRunning: (tabId) => slash.running(tabId),
     dialog: dialogOf
   })
@@ -3459,8 +3467,10 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
         : undefined
     return (resource ? removeUntouchedCodexWorktree(resource) : Promise.resolve()).then(() => true)
   }
-  discordNotices?.closed(tabId)
-  discordLive?.closed(tabId)
+  if (ptyMgr.get(tabId)?.alive) {
+    discordNotices?.closed(tabId)
+    discordLive?.closed(tabId)
+  }
   return stopTabProcess(tabId, restarting)
 }
 

@@ -42,6 +42,16 @@ export function acceptCodexTrust(configFile: string, dir: string): void {
 }
 
 // CODEX§27
+export function codexHookTrusted(configFile: string, key: string, hash: string): boolean {
+  const lines = readConfig(configFile).split('\n')
+  const start = lines.findIndex((line) => line.trim() === hookStateHeader(key))
+  if (start < 0) return false
+  const trusted = `trusted_hash = ${JSON.stringify(hash)}`
+  for (let i = start + 1; i < lines.length && !lines[i].trim().startsWith('['); i++)
+    if (lines[i].trim() === trusted) return true
+  return false
+}
+
 export function acceptCodexHookTrust(configFile: string, key: string, hash: string): void {
   const header = hookStateHeader(key)
   const trusted = `trusted_hash = ${JSON.stringify(hash)}`

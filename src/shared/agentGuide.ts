@@ -31,6 +31,17 @@ const HELPER_RULES: Record<BackendId, string[]> = {
   ]
 }
 
+export const CODEX_WAITING_QUESTION_TOOL = 'request_user_input'
+
+const QUESTION_RULE: Record<BackendId, string> = {
+  claude: '',
+  codex: `
+
+QUESTIONS
+
+When the owner has to choose or answer something, ask with ${CODEX_WAITING_QUESTION_TOOL}, called as a tool of its own (not inside exec): it shows the owner a box with choices and waits for the answer. Never use ${CODEX_WAITING_QUESTION_TOOL}_async, which does not wait, and never sleep or poll while you wait.`
+}
+
 export function koloftPrompt(backend: BackendId): string {
   return `You are running inside Koloft, an app that runs and manages coding sessions for its owner (the person you work for). Run "koloft help" in your shell to see what Koloft lets you do, including how to drive the web pages in this session's Workbench with the playwright-cli command.
 
@@ -38,7 +49,7 @@ HELPERS
 
 When you hand work to a helper, take the first rule that fits:
 
-${HELPER_RULES[backend].map((rule, i) => `${i + 1}. ${rule}`).join('\n')}`
+${HELPER_RULES[backend].map((rule, i) => `${i + 1}. ${rule}`).join('\n')}${QUESTION_RULE[backend]}`
 }
 
 export const AGENT_GUIDE = `koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.

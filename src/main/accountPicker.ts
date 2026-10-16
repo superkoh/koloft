@@ -1,10 +1,19 @@
-import type { AccountKind, AccountMeta, SessionInfo, UsageSnapshot } from '@shared/types'
+import type {
+  AccountKind,
+  AccountMeta,
+  AccountView,
+  SessionInfo,
+  UsageSnapshot
+} from '@shared/types'
 import {
+  codexBackAt,
+  codexWalled,
   fableExhausted,
   keepsResumedSession,
   resetElapsed,
   STALE_MS,
-  usableAccounts
+  usableAccounts,
+  windowLabel
 } from '@shared/accountUsage'
 import { ageLabel } from '@shared/freshnessOps'
 import {
@@ -78,6 +87,19 @@ function bannerFor(
   if (hasOi) s += ` · fable ${pct(u.uoi)}`
   if (nowMs - u.at > STALE_MS) s += ` · ${ageLabel(u.at, nowMs)}`
   return s
+}
+
+export function codexLaunchBanner(a: AccountView, nowMs: number): string {
+  const l = a.limits
+  if (!l) return `koloft: → ${a.name}`
+  if (codexWalled(l))
+    return `koloft: every account rate-limited → ${a.name} (${fmtReset(codexBackAt(l))})`
+  const parts = [
+    `koloft: → ${a.name}`,
+    ...l.windows.map((w) => `${windowLabel(w.minutes)} ${pct(w.used)}`)
+  ]
+  if (nowMs - l.at > STALE_MS) parts.push(ageLabel(l.at, nowMs))
+  return parts.join(' · ')
 }
 
 function fallbackTag(a: AccountMeta): string {

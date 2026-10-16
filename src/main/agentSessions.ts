@@ -31,7 +31,7 @@ import {
   type Parsed
 } from './agentRequests'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
-import { crossSessionLine, type ModeClass } from './crossSessionMessage'
+import { FROM_A_SESSION, crossSessionLine, type ModeClass } from './crossSessionMessage'
 import { handoverPreamble, withHandover, type SessionCaller } from './handover'
 import { nameForTask } from './sessionTitle'
 import type { Assist } from './assist'
@@ -694,7 +694,7 @@ function readsItAfterTheQuestion(name: string): string {
 }
 
 export function sessionSays(from: SessionInfo, text: string): string {
-  return `(From the session "${from.title}", id ${idToReach(from)}:) ${text}`
+  return `${FROM_A_SESSION}"${from.title}", id ${idToReach(from)}:) ${text}`
 }
 
 function isMe(
@@ -1002,7 +1002,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
       const target = findCodexTarget(open, ref)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
-      await d.queue(target.value.tabId, text)
+      await d.queue(target.value.tabId, sessionSays(caller.session, text))
       return answered(`Sent to ${target.value.title}.`)
     }
     if (Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
