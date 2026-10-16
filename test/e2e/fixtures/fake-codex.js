@@ -7,6 +7,7 @@ const { execFile, spawnSync } = require('child_process')
 const WebSocket = require('ws')
 
 const VERSION_AT_KOLOFTS_MINIMUM = '0.161.0'
+const FLAGS_FOLLOWED_BY_A_VALUE = ['--remote', '-C', '-c', '-m', '-a', '-s']
 
 const argv = process.argv.slice(2)
 const home = process.env.HOME
@@ -240,8 +241,26 @@ if (argv[0] === 'app-server') {
         }
       })
     }
-    if (text.startsWith('/koloft ')) {
-      const command = `koloft ${text.slice('/koloft '.length).trim()}`
+    if (text.startsWith('/write ')) {
+      const target = path.join(thread.cwd, text.slice('/write '.length).trim())
+      const diff = 'written by Codex\n'
+      fs.writeFileSync(target, diff)
+      // CODEX§12
+      event('item/completed', {
+        threadId: thread.id,
+        turnId: turn.id,
+        item: {
+          type: 'fileChange',
+          id: 'write-' + turn.id,
+          status: 'completed',
+          changes: [{ path: target, kind: { type: 'add' }, diff }]
+        }
+      })
+    }
+    const ran = /^\/(koloft|sh) (.+)$/s.exec(text)
+    if (ran) {
+      const [, tool, rest] = ran
+      const command = tool === 'koloft' ? `koloft ${rest.trim()}` : rest.trim()
       execFile('/bin/zsh', ['-lc', command], { cwd: thread.cwd }, (e, out, err) => {
         const exitCode = e ? (typeof e.code === 'number' ? e.code : 1) : 0
         event('item/completed', {
@@ -249,7 +268,7 @@ if (argv[0] === 'app-server') {
           turnId: turn.id,
           item: {
             type: 'commandExecution',
-            id: 'koloft-' + turn.id,
+            id: `${tool}-${turn.id}`,
             status: exitCode === 0 ? 'completed' : 'failed',
             exitCode,
             aggregatedOutput: `${out}${err}`,
@@ -593,6 +612,11 @@ async function startTui() {
   }
   const url = value('--remote')
   const cwd = value('-C') || process.cwd()
+  // CODEX§14
+  let firstPrompt = argv.find(
+    (arg, i) => !arg.startsWith('-') && !FLAGS_FOLLOWED_BY_A_VALUE.includes(argv[i - 1])
+  )
+  if (argv.includes('resume')) firstPrompt = undefined
   if (!url) {
     console.error('fake-codex needs --remote')
     process.exit(2)
@@ -631,8 +655,10 @@ async function startTui() {
       cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null
     })
     process.stdout.write('\r\nCodex fixture ready ' + thread.id + '\r\n> ')
+    const first = firstPrompt
+    firstPrompt = undefined
     if (method === 'thread/start' && !flag('fake-codex-lazy'))
-      await prompt(read('fake-codex-next-title', 'Codex fixture session'))
+      await prompt(first ?? read('fake-codex-next-title', 'Codex fixture session'))
   }
   const exit = async () => {
     if (thread) await send('thread/unsubscribe', { threadId: thread.id }).catch(() => {})
@@ -667,10 +693,11 @@ async function startTui() {
       const [q] = frame.params.questions
       question = { id: frame.id, key: q.id, labels: q.options.map((o) => o.label) }
       process.stdout.write('\r\n' + q.question + ' ' + question.labels.join(' / ') + ' ')
-    } else if (frame.method === 'item/completed' && frame.params.item.id.startsWith('koloft-')) {
-      const { aggregatedOutput, exitCode } = frame.params.item
+    } else if (frame.method === 'item/completed' && /^(koloft|sh)-/.test(frame.params.item.id)) {
+      const { aggregatedOutput, exitCode, id } = frame.params.item
       const said = aggregatedOutput.replace(/\r?\n/g, '\r\n')
-      process.stdout.write(`\r\n${said}[fake-codex] koloft exit=${exitCode}\r\n> `)
+      const tool = id.slice(0, id.indexOf('-'))
+      process.stdout.write(`\r\n${said}[fake-codex] ${tool} exit=${exitCode}\r\n> `)
     } else if (frame.method === 'turn/started') {
       working = true
       turnId = frame.params.turn.id

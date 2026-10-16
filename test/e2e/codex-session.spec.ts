@@ -35,6 +35,14 @@ import {
   wbUnreadTabs
 } from './helpers/workbench'
 import { setupChangeFixture } from './helpers/filesFixture'
+import {
+  claudeRows,
+  codexCalls,
+  codexRows,
+  fakeCodexLog,
+  startCodex,
+  type CodexCall
+} from './helpers/codex'
 import { portOffset } from '../../src/shared/worktreeName'
 import {
   addWorkspace,
@@ -71,13 +79,6 @@ const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const A_REMOVAL_WOULD_HAVE_FINISHED_MS = 3000
 
-interface CodexCall {
-  pid: number
-  argv: string[]
-  cwd: string
-  sessionId: string
-  codexHome: string | null
-}
 function codexOpenOutputs(env: E2EEnv): string[] {
   return fs
     .readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
@@ -103,24 +104,6 @@ function codexPrompts(env: E2EEnv): string[] {
       }
     })
 }
-function fakeCodexLog<T>(env: E2EEnv, name: string): T[] {
-  const file = path.join(env.home, name)
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line) as T]
-      } catch {
-        return []
-      }
-    })
-}
-function codexCalls(env: E2EEnv): CodexCall[] {
-  return fakeCodexLog<CodexCall>(env, 'fake-codex-calls.jsonl')
-}
 async function startCodexInWorktree(page: Page, env: E2EEnv, name: string): Promise<CodexCall> {
   const before = codexCalls(env).length
   await newIn(page, true)
@@ -129,16 +112,6 @@ async function startCodexInWorktree(page: Page, env: E2EEnv, name: string): Prom
   await expect.poll(() => codexCalls(env).length).toBe(before + 1)
   await expect(codexRows(page).filter({ hasText: 'Starting…' })).toHaveCount(0)
   return codexCalls(env)[before]
-}
-function codexRows(page: Page): Locator {
-  return wsRows(page, 'ws-a').filter({
-    hasNot: page.getByRole('img', { name: 'Claude', exact: true })
-  })
-}
-function claudeRows(page: Page): Locator {
-  return wsRows(page, 'ws-a').filter({
-    has: page.getByRole('img', { name: 'Claude', exact: true })
-  })
 }
 async function restoreFromTheFirstMenuOpenedAfterLaunch(page: Page): Promise<void> {
   await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
@@ -155,14 +128,6 @@ async function newIn(
   const item = worktree ? 'New worktree session' : method ? `New ${method} session` : 'New session'
   await page.locator('.menu .mi', { hasText: item }).click()
 }
-async function startCodex(page: Page, env: E2EEnv): Promise<void> {
-  const before = codexCalls(env).length
-  await newSessionInWith(page, 'ws-a', 'Codex')
-  await expect.poll(() => codexCalls(env).length).toBe(before + 1)
-  await expect(codexRows(page).filter({ hasText: 'Starting…' })).toHaveCount(0)
-  await expect(codexRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
-}
-
 test.describe('Codex sessions through the real method chooser, process transport, saved history and UI lifecycle, with only the external CLI faked', () => {
   test('two saved Codex sessions remain switchable through native startup prompts and a new session', async ({
     env
@@ -225,6 +190,48 @@ test.describe('Codex sessions through the real method chooser, process transport
       }
       expect(await termIds(page)).toHaveLength(3)
       expect(codexCalls(env).filter((call) => call.argv.includes('resume'))).toHaveLength(2)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('/new in a Codex tab binds its one row to the new thread, as /clear does in Claude, and the old thread waits in Restore session, which resumes it', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      fs.writeFileSync(path.join(env.home, 'fake-codex-next-title'), 'Before new')
+      const before = await startCodex(page, env)
+      await expect(codexRows(page).filter({ hasText: 'Before new' })).toHaveCount(1)
+      const tabs = await termIds(page)
+
+      fs.writeFileSync(path.join(env.home, 'fake-codex-next-title'), 'After new')
+      await runIn(page, centerTerm(page), '/new')
+      await expect.poll(() => codexCalls(env).length).toBe(2)
+      const after = codexCalls(env)[1]
+      expect(after.method).toBe('thread/start')
+      expect(after.sessionId).not.toBe(before.sessionId)
+
+      await expect(codexRows(page)).toHaveText(/After new/)
+      await expect(codexRows(page)).toHaveClass(/\bactive\b/)
+      await expect(codexRows(page)).toHaveCount(1)
+      expect(await termIds(page)).toEqual(tabs)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
+      const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
+      await expect(history.getByRole('button').filter({ hasText: 'After new' })).toHaveCount(0)
+      await history.getByRole('button').filter({ hasText: 'Before new' }).click()
+      await expect.poll(() => codexCalls(env).length).toBe(3)
+      expect(codexCalls(env)[2]).toMatchObject({
+        method: 'thread/resume',
+        sessionId: before.sessionId
+      })
+      await expect(codexRows(page)).toHaveCount(2)
     } finally {
       await quitAndClose(app)
     }
