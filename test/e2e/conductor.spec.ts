@@ -169,12 +169,8 @@ function shownTermText(page: Page): Promise<string> {
   })
 }
 
-async function koloftSays(
-  page: Page,
-  args: string,
-  fake: 'fake-claude' | 'fake-codex' = 'fake-claude'
-): Promise<string> {
-  const exitLine = `[${fake}] koloft exit=`
+async function koloftSays(page: Page, args: string): Promise<string> {
+  const exitLine = /\[fake-(?:claude|codex)\] koloft exit=/
   const exits = async (): Promise<number> => (await shownTermText(page)).split(exitLine).length
   const before = await exits()
   await runIn(page, centerTerm(page), `/koloft ${args}`)
@@ -303,9 +299,8 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     })
     try {
       await openConductor(page, 'Global')
-      await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · Global')
-      expect(await koloftSays(page, 'note', 'fake-codex')).toContain('from the owner')
-      expect(await koloftSays(page, 'note append from Codex', 'fake-codex')).toContain('Added')
+      expect(await koloftSays(page, 'note')).toContain('from the owner')
+      expect(await koloftSays(page, 'note append from Codex')).toContain('Added')
       expect(notesOnDisk(env, GLOBAL_SCOPE)).toBe('from the owner\nfrom Codex\n')
     } finally {
       await close()

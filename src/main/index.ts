@@ -376,6 +376,7 @@ import {
   conductorName,
   GLOBAL_SCOPE,
   inviteLink,
+  isAssistScope,
   isDiscordId,
   scopeName
 } from '@shared/conductors'
@@ -1053,7 +1054,7 @@ function pinnedWorkspaceOfTab(tabId: string): string | undefined {
 }
 
 function notesFileOfScope(scope: string): string | undefined {
-  return scope === GLOBAL_SCOPE || workspaceMgr?.isPinned(scope)
+  return isAssistScope(scope, (s) => !!workspaceMgr?.isPinned(s))
     ? ensureNotesFile(notesBaseDir(), scope)
     : undefined
 }
@@ -1218,7 +1219,6 @@ const agentRequests = new AgentRequests({
       })
     ),
     ...notesAndWorkbenchVerbs,
-    note: notesAndWorkbenchVerbs.note,
     session: sessionCommand.verb,
     workspace: workspaceVerb({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
