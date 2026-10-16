@@ -1,7 +1,6 @@
 import fs from 'node:fs'
 
 const REPO = 'https://github.com/superkoh/koloft'
-const RELEASES = 'https://github.com/superkoh/koloft-releases/releases/tag/'
 const PLACEHOLDER = '<!-- releases -->'
 const INSTALL_MARKER = '<!-- koloft:install -->'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -53,14 +52,23 @@ function renderRelease(release) {
     )
   return [
     `<h2 id="${tag}">${tag}</h2>`,
-    `<p class="why">${day} · <a href="${RELEASES}${tag}">download page</a></p>`,
+    `<p class="why">${day} · <a href="${escapeHtml(release.html_url)}">download page</a></p>`,
     ...(lists.length ? lists : ['<p>No change notes for this version.</p>'])
   ].join('\n')
 }
 
 function renderChangelog(template, releasePages) {
   if (!template.includes(PLACEHOLDER)) throw new Error(`the page has no ${PLACEHOLDER} line`)
-  const releases = releasePages.flat().sort((a, b) => b.published_at.localeCompare(a.published_at))
+  // ADR-0037
+  const firstOfEachTag = [
+    ...new Map(
+      releasePages
+        .flat()
+        .reverse()
+        .map((r) => [r.tag_name, r])
+    ).values()
+  ]
+  const releases = firstOfEachTag.sort((a, b) => b.published_at.localeCompare(a.published_at))
   if (!releases.length) throw new Error('no published releases to list')
   const list = releases.map(renderRelease).join('\n\n')
   return template.replace(PLACEHOLDER, () => list)

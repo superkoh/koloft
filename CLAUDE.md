@@ -13,8 +13,9 @@ A session tab is not a session: the tab is the terminal `claude` or `codex` runs
 `/clear`, a resume or a restart swaps the session inside it while the tab stays —
 the Workbench, its web pages and the shim's env are keyed by the tab.
 Judge every trade-off against that one idea.
-(Source lives in `superkoh/koloft`; installers in `superkoh/koloft-releases`, the list
-`install.sh` and the in-app updater read.)
+(Source and installers both live in `superkoh/koloft`, whose release list `install.sh`
+and the in-app updater read; `superkoh/koloft-releases` is the bridge older apps update
+through, and is never deleted — ADR-0037.)
 
 How each feature behaves is not written here — the code and its tests are the source
 of truth.
