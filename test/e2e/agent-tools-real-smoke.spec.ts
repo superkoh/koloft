@@ -647,52 +647,86 @@ test.describe('KOLOFT_PORT_OFFSET reaches the REAL agent’s own shell in a work
   })
 })
 
-// ADR-0031 CODEX§27
-test.describe('a REAL Codex tab, as a Claude tab: opt-in case; it spends real money', () => {
-  test("in a real Codex tab Koloft's reply-language hooks keep the owner's words, quote back a last note in the wrong language, and read a note written before a tool call", async ({
-    env
-  }) => {
-    test.skip(
-      !HAVE_REAL_CODEX,
-      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
-    )
-    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 180_000)
-    const english = 'Reply with exactly these words and nothing else: All quiet in this folder.'
-    const words = '先用一句中文告诉我你要做什么，再用 shell 运行一次 ls，最后只回复「好」。'
-    await inARealWorktreeSession(env, 'other', useRealCodex, [], async ({ page, rows }) => {
-      for (const prompt of [english, words]) {
-        await ask(page, rows, prompt)
-        await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
-      }
-      const shims = path.join(env.userData, 'codex-open')
-      const said = fs
-        .readdirSync(shims)
-        .map((dir) => path.join(shims, dir, 'said'))
-        .filter((file) => fs.existsSync(file))
-        .map((file) => JSON.parse(`"${fs.readFileSync(file, 'utf8').trim()}"`) as string)
-      expect(said).toEqual([words])
-      const rollouts = new Set(
-        fs
-          .readdirSync(env.home, { recursive: true, encoding: 'utf8' })
-          .filter((rel) => /rollout-.*\.jsonl$/.test(rel))
-          .map((rel) => fs.realpathSync(path.join(env.home, rel)))
-      )
-      const handed = [...rollouts]
-        .flatMap((file) => fs.readFileSync(file, 'utf8').split('\n'))
-        .filter(Boolean)
-        .map(
-          (line) =>
-            JSON.parse(line) as { payload?: { role?: string; content?: { text?: string }[] } }
+const savedWords = (files: string[]): string[] =>
+  files
+    .filter((file) => fs.existsSync(file))
+    .map((file) => JSON.parse(`"${fs.readFileSync(file, 'utf8').trim()}"`) as string)
+
+function claudeHookContexts(env: E2EEnv): string[] {
+  const projects = path.join(env.home, '.claude', 'projects')
+  return fs
+    .readdirSync(projects, { recursive: true, encoding: 'utf8' })
+    .filter((rel) => rel.endsWith('.jsonl'))
+    .flatMap((rel) => jsonLines(path.join(projects, rel)))
+    .map((r) => r.attachment as { type?: string; content?: string[] } | undefined)
+    .filter((a) => a?.type === 'hook_additional_context')
+    .map((a) => (a!.content ?? []).join(' '))
+}
+
+function codexHookContexts(env: E2EEnv): string[] {
+  return codexRollouts(env)
+    .flatMap(jsonLines)
+    .map((r) => r.payload as { role?: string; content?: { text?: string }[] } | undefined)
+    .filter((p) => p?.role === 'developer')
+    .map((p) => p!.content?.[0]?.text ?? '')
+}
+
+// ADR-0031 CC§19 CODEX§27
+test.describe('REAL Claude Code and Codex tabs keep the owner’s language: opt-in cases; they spend real money', () => {
+  const cases = [
+    {
+      name: 'Claude Code',
+      backend: 'default' as const,
+      useReal: useRealClaude,
+      have: HAVE_REAL_CLAUDE,
+      skip: 'set KOLOFT_SMOKE_CLAUDE (absolute path of a real claude binary) and a token',
+      said: (env: E2EEnv) => {
+        const reg = path.join(env.userData, 'hook-sessions')
+        return savedWords(
+          fs
+            .readdirSync(reg)
+            .filter((f) => f.endsWith('.said'))
+            .map((f) => path.join(reg, f))
         )
-        .filter((r) => r.payload?.role === 'developer')
-        .map((r) => r.payload!.content?.[0]?.text ?? '')
-        .filter((text) => /^(The user writes|Your last note)/.test(text))
-      expect(handed[0]).toMatch(/^Your last note to the user, «All quiet in this folder/)
-      expect(handed.slice(1)).not.toHaveLength(0)
-      for (const afterATool of handed.slice(1))
-        expect(afterATool).toMatch(/^The user writes Chinese\. /)
+      },
+      handed: claudeHookContexts
+    },
+    {
+      name: 'Codex',
+      backend: 'other' as const,
+      useReal: useRealCodex,
+      have: HAVE_REAL_CODEX,
+      skip: 'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)',
+      said: (env: E2EEnv) => {
+        const shims = path.join(env.userData, 'codex-open')
+        return savedWords(fs.readdirSync(shims).map((dir) => path.join(shims, dir, 'said')))
+      },
+      handed: codexHookContexts
+    }
+  ]
+  for (const c of cases)
+    test(`in a real ${c.name} tab Koloft's reply-language hooks keep the owner's words, quote back a last note in the wrong language, and read a note written before a tool call`, async ({
+      env
+    }) => {
+      test.skip(!c.have, c.skip)
+      test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 180_000)
+      const english = 'Reply with exactly these words and nothing else: All quiet in this folder.'
+      const words = '先用一句中文告诉我你要做什么，再用 shell 运行一次 ls，最后只回复「好」。'
+      await inARealWorktreeSession(env, c.backend, c.useReal, [], async ({ page, rows }) => {
+        for (const prompt of [english, words]) {
+          await ask(page, rows, prompt)
+          await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, {
+            timeout: A_REAL_MODEL_TURN_MS
+          })
+        }
+        expect(c.said(env)).toEqual([words])
+        const named = c.handed(env).filter((text) => /^(The user writes|Your last note)/.test(text))
+        expect(named[0]).toMatch(/^Your last note to the user, «All quiet in this folder/)
+        expect(named.slice(1)).not.toHaveLength(0)
+        for (const afterATool of named.slice(1))
+          expect(afterATool).toMatch(/^The user writes Chinese\. /)
+      })
     })
-  })
 })
 
 const LIST_THE_REMOTE =
