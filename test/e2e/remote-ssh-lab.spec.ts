@@ -49,6 +49,7 @@ import {
   sendShortcut,
   startSessionIn,
   terminalText,
+  termIds,
   waitBooted,
   wsGroup,
   wsRows
@@ -94,6 +95,10 @@ const KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS = 45_000
 const REAL_CODEX = process.env.KOLOFT_SMOKE_CODEX ?? ''
 const A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS = 300_000
 const PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS = 1_000
+const KEEP_THE_MODEL_CHOICE = '2. Use existing model'
+// CODEX§16
+const NO_SANDBOX_DOCKER_CANNOT_MAKE_ONE =
+  'sandbox_mode = "danger-full-access"\napproval_policy = "never"\n'
 const STAND_IN_MODEL_CONFIG = [
   'model = "gpt-5.5"',
   'model_provider = "stand-in"',
@@ -824,6 +829,11 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     fs.symlinkSync(REAL_CODEX, binary)
     env.launchEnv.KOLOFT_CODEX_CMD = binary
     env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
+    fs.mkdirSync(env.launchEnv.CODEX_HOME, { recursive: true })
+    fs.writeFileSync(
+      path.join(env.launchEnv.CODEX_HOME, 'config.toml'),
+      NO_SANDBOX_DOCKER_CANNOT_MAKE_ONE
+    )
     addCodexAccount(
       env,
       JSON.stringify({ tokens: { access_token: 'not-a-real-token', account_id: 'lab' } })
@@ -836,16 +846,22 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await addMachine(page, 'kt-key', 'kuser')
         await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
         await newSessionInWith(page, 'kt-key', 'Codex')
-        const codexTab = async (): Promise<string | undefined> =>
-          (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => s.backendId === 'codex' && s.alive && s.sessionId
-          )?.tabId
+        await expect.poll(() => termIds(page), { timeout: 30_000 }).toHaveLength(1)
+        const [tabId] = await termIds(page)
+        const bound = async (): Promise<boolean> =>
+          (await page.evaluate(() => window.api.sessions.list())).some(
+            (s) => s.tabId === tabId && s.alive && !!s.sessionId
+          )
         await expect
-          .poll(async () => !!(await codexTab()), {
-            timeout: A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS
-          })
+          .poll(
+            async () => {
+              if ((await terminalText(page, tabId)).includes(KEEP_THE_MODEL_CHOICE))
+                await page.evaluate((id) => window.api.terminal.write(id, '2\r'), tabId)
+              return bound()
+            },
+            { timeout: A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS }
+          )
           .toBe(true)
-        const tabId = (await codexTab())!
         const asked = (): string => runOnTarget(lab, 'kuser', `cat ${turns} 2>/dev/null || true`)
         await page.evaluate(([id, text]) => window.api.terminal.write(id, text), [tabId, 'run it'])
         for (let i = 0; i < ENTERS_BEFORE_GIVING_UP && !asked(); i++) {
