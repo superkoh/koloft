@@ -2280,6 +2280,7 @@ body {
 }
 .menu.wt-list {
   width: 240px;
+  outline: none;
 }
 .split {
   display: inline-flex;
