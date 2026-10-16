@@ -12,6 +12,11 @@ export function museHome(env: NodeJS.ProcessEnv): string {
   return path.join(data, 'muse')
 }
 
+// MUSE§2
+export function museConfigHome(env: NodeJS.ProcessEnv): string {
+  return env.XDG_CONFIG_HOME || path.join(env.HOME || os.homedir(), '.config')
+}
+
 const uuidV7Ms = (id: string): number => parseInt(id.replace(/-/g, '').slice(0, 12), 16)
 
 const dateDir = (ms: number): string => {
@@ -127,12 +132,12 @@ export function finishedWork(r: LogRecord): string | undefined {
 }
 
 export class LineTail {
-  private offset = 0
   private rest = ''
 
   constructor(
     readonly file: string,
-    private onLine: (line: string) => void
+    private onLine: (line: string) => void,
+    private offset = 0
   ) {}
 
   read(): void {
@@ -159,11 +164,15 @@ export class LineTail {
 }
 
 export class SessionLogTail extends LineTail {
-  constructor(file: string, onRecord: (r: LogRecord) => void) {
-    super(file, (line) => {
-      const r = logRecord(line)
-      if (r) onRecord(r)
-    })
+  constructor(file: string, onRecord: (r: LogRecord) => void, offset = 0) {
+    super(
+      file,
+      (line) => {
+        const r = logRecord(line)
+        if (r) onRecord(r)
+      },
+      offset
+    )
   }
 }
 

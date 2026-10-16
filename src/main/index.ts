@@ -31,6 +31,7 @@ import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } fro
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
+import { museConfigHome } from './museSessionLog'
 import { museSignedIn, storeMuseKey } from './museServe'
 import type { SessionsWithStore } from './storedSessions'
 import type { SessionEvent } from '@shared/sessionEvent'
@@ -424,6 +425,7 @@ import {
   workspaceVerb,
   type ClosableSession,
   type SessionScreen,
+  type PeerNameOf,
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
@@ -469,6 +471,9 @@ const startupErrors: Partial<Record<BackendId, string>> = {}
 
 function storedSessions(): SessionsWithStore[] {
   return [codexSessions, museSessions].filter((s): s is CodexSessions | MuseSessions => !!s)
+}
+function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
+  return storedSessions().find((s) => s.hasTab(tabId))
 }
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
@@ -526,10 +531,10 @@ const slash = new SlashCommands({
   turnOver: (tabId) => tracker.turnOver(tabId),
   asking: asksTheOwner,
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
-  panelOpen: async (tabId) => {
+  panelOpen: async (tabId, screen) => {
     const s = sessionOfTab(tabId)
     if (s?.backendId === 'muse') {
-      const lines = await screenLines(tabId)
+      const lines = screen ?? (await screenLines(tabId))
       return lines && !museShowsAnEmptyInputBox(lines)
     }
     if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
@@ -755,7 +760,16 @@ function writeToTab(id: string, data: string): void {
 async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
   const title = s && sidebarTitle(s)
   if (title) return title
-  return s?.backendId === 'claude' && s.sessionId ? claudePeerNames()(s.sessionId) : null
+  return s?.sessionId ? peerNameOf()(s) : null
+}
+function peerNameOf(): PeerNameOf {
+  const claudeName = claudePeerNames()
+  return async ({ backendId, sessionId }) =>
+    backendId === 'claude'
+      ? claudeName(sessionId)
+      : backendId === 'muse'
+        ? (museSessions?.peerName(sessionId) ?? null)
+        : null
 }
 function retitleDiscordThreads(sessions: SessionInfo[]): void {
   if (!discordThreads) return
@@ -994,12 +1008,9 @@ const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
 // CODEX§3 CODEX§20 MUSE§5
 async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
   for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
-    const stored = storedSessions()
-    const ask =
-      stored.map((s) => s.openApproval(tabId)).find(Boolean) ??
-      stored.map((s) => s.openQuestion(tabId)).find(Boolean)
-    const keyed = stored.some((s) => s.hasTab(tabId))
-    if (ask || !polls || !keyed) return ask
+    const owner = storedOwnerOf(tabId)
+    const ask = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
+    if (ask || !polls || !owner) return ask
     if (tracker.statusOf(tabId) !== 'approval' && !tracker.awaitsInput(tabId)) return undefined
     await sleep(CODEX_REQUEST_POLL_MS)
   }
@@ -1287,15 +1298,7 @@ const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.conductor),
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
-  peerNames: () => {
-    const claudeName = claudePeerNames()
-    return async ({ backendId, sessionId }) =>
-      backendId === 'claude'
-        ? claudeName(sessionId)
-        : backendId === 'muse'
-          ? (museSessions?.peerName(sessionId) ?? null)
-          : null
-  },
+  peerNames: peerNameOf,
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
@@ -1806,7 +1809,7 @@ function museHomeFor(name: string): string {
   const home = museHomeOf(app.getPath('userData'), name)
   if (preparedMuseHomes.has(home)) return home
   const env = museSessions?.defaultEnv ?? process.env
-  prepareMuseHome(home, env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'))
+  prepareMuseHome(home, museConfigHome(env))
   preparedMuseHomes.add(home)
   return home
 }
@@ -1814,15 +1817,9 @@ function museHomeFor(name: string): string {
 // ADR-0030 MUSE§13
 function pickMuseHome(
   resumeSessionId?: string
-): { account: string; env: Record<string, string>; notice?: string } | undefined {
+): { account: string; env: Record<string, string> } | undefined {
   const picked = musePicker.pick(accountViews(), sessionAccounts?.of('muse', resumeSessionId))
-  return (
-    picked && {
-      account: picked.name,
-      env: museAccountEnv(museHomeFor(picked.name)),
-      notice: codexAllLimitedNotice(picked, 'Muse')
-    }
-  )
+  return picked && { account: picked.name, env: museAccountEnv(museHomeFor(picked.name)) }
 }
 
 async function museServeFor(
@@ -2279,11 +2276,9 @@ app.whenReady().then(() => {
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
     tracker.setAlive(e.id, false)
-    for (const stored of storedSessions())
-      if (stored.hasTab(e.id))
-        void stored
-          .stop(e.id, e.signal ? -1 : e.exitCode)
-          .catch((error) => sendToRenderer('cron:toast', String(error)))
+    void storedOwnerOf(e.id)
+      ?.stop(e.id, e.signal ? -1 : e.exitCode)
+      .catch((error) => sendToRenderer('cron:toast', String(error)))
     workspaceMgr?.launchEnded(e.id)
     cronRunner?.onPtyExit(e.id)
     conductors?.onPtyExit(e.id, sleepers.has(e.id))
@@ -2735,16 +2730,10 @@ app.whenReady().then(() => {
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
     modeOf: (tabId) => sessionBackends.permissionClass(tabId),
-    pendingApproval: (tabId) =>
-      storedSessions()
-        .map((s) => s.openApproval(tabId))
-        .find(Boolean),
-    pendingQuestion: (tabId) =>
-      storedSessions()
-        .map((s) => s.openQuestion(tabId))
-        .find(Boolean),
+    pendingApproval: (tabId) => storedOwnerOf(tabId)?.openApproval(tabId),
+    pendingQuestion: (tabId) => storedOwnerOf(tabId)?.openQuestion(tabId),
     answerable: async (tabId) => {
-      await Promise.all(storedSessions().map((s) => s.answerable?.(tabId)))
+      await storedOwnerOf(tabId)?.answerable?.(tabId)
     },
     regDir: hookPaths.regDir,
     attachmentsDir
@@ -3442,11 +3431,7 @@ function cdpOp(
 function relayDeps(): RelayDeps {
   return {
     sessionForTab: (tabId) =>
-      claudeBackend.sessionIdOf(tabId) ??
-      storedSessions()
-        .map((s) => s.sessionIdOf(tabId))
-        .find(Boolean) ??
-      null,
+      claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
     mount: async (sessionId, targetId) => {
       const r = await cdpOp('mount', sessionId, { targetId })
       if (!r.ok || typeof r.guestId !== 'number')

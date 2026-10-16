@@ -29,7 +29,6 @@ const mocks = vi.hoisted(() => ({
   rpcOptions: [] as CodexProcessOptions[]
 }))
 vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
-  codexTooOld: (await importOriginal<typeof import('../../src/main/codexRuntime')>()).codexTooOld,
   resolveCodexRuntime: mocks.runtime,
   updateCodex: mocks.update
 }))

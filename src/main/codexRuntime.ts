@@ -3,7 +3,6 @@ import { promisify } from 'util'
 import { codexEnvironment } from './codexTransport'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
-import { isNewer } from './releaseNotes'
 
 const exec = promisify(execFile)
 
@@ -26,9 +25,6 @@ export function resolveCodexRuntime(
 ): Promise<CodexRuntime> {
   return resolveCliRuntime(CODEX, options)
 }
-
-export const codexTooOld = (runtime: CodexRuntime): boolean =>
-  isNewer(MIN_CODEX_VERSION, runtime.version)
 
 const CODEX_UPDATE_TIMEOUT_MS = 5 * 60_000
 
