@@ -63,7 +63,7 @@ export type PickResponse =
     }
   | { account: null; reason: 'no-accounts' | 'no-usable' }
 
-function pct(v: number): string {
+export function pct(v: number): string {
   return `${Math.round(v * 100)}%`
 }
 
@@ -90,7 +90,7 @@ function fallbackBanner(a: AccountMeta): string {
   return `koloft: → ${fallbackTag(a)}`
 }
 
-function fmtReset(epoch: number): string {
+export function fmtReset(epoch: number): string {
   if (epoch <= 0) return '?'
   const d = new Date(epoch * 1000)
   const hh = String(d.getHours()).padStart(2, '0')

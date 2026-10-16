@@ -170,6 +170,7 @@ import {
 import {
   CodexAccountPicker,
   codexHomeOf,
+  codexLaunchBanner,
   codexHomes,
   limitsFrom,
   prepareCodexHome
@@ -1533,7 +1534,9 @@ function codexSharedConfig(): string {
 }
 
 // CODEX§15
-function pickCodexHome(resumeSessionId?: string): { account: string; home: string } | undefined {
+function pickCodexHome(
+  resumeSessionId?: string
+): { account: string; home: string; banner: string } | undefined {
   const views = accountViews()
   const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
   if (!picked) return undefined
@@ -1546,7 +1549,7 @@ function pickCodexHome(resumeSessionId?: string): { account: string; home: strin
   if (stale) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home }
+  return { account: picked.name, home, banner: codexLaunchBanner(picked, Date.now()) }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {

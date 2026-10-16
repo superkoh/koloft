@@ -1115,6 +1115,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(codexRows(page)).toHaveClass(/st-approval/)
       await runIn(page, centerTerm(page), 'y')
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), 'please ask me')
+      await expect(codexRows(page)).toHaveClass(/st-approval/)
+      await page.keyboard.press('2')
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
       await runIn(page, centerTerm(page), 'hold')
       await expect(codexRows(page)).toHaveClass(/st-working/)
       await page.keyboard.press('Control+C')
@@ -1600,7 +1604,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
-  test('with two Codex accounts, once both show their weekly use in Settings ▸ Accounts, every new Codex session runs in the one with more room left, even though it is listed second', async ({
+  test('with two Codex accounts, once both show their weekly use in Settings ▸ Accounts, every new Codex session runs in the one with more room left, even though it is listed second, and its terminal names that account first, as a Claude tab does', async ({
     env
   }) => {
     installCodex(env)
@@ -1632,6 +1636,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await page.keyboard.press('Escape')
 
       await startCodex(page, env)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText('koloft: → roomy')
       await startCodex(page, env)
       expect(codexCalls(env).map((c) => c.codexHome)).toEqual([roomy, roomy])
     } finally {

@@ -40,6 +40,7 @@ interface CreateArgs {
   resumeSessionId?: string
   ownerTabId?: string
   conductor?: boolean
+  banner?: string
   resized?: (id: string, cols: number, rows: number) => void
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
@@ -250,6 +251,7 @@ export class PtyManager extends EventEmitter {
     )
 
     const cwdParser = args.util ? new OscCwdParser() : undefined
+    if (args.banner) this.emit('data', { id, data: `${args.banner}\r\n` })
     proc.onData((data) => {
       watchForReadyShell(data)
       this.emit('data', { id, data })

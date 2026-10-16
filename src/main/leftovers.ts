@@ -1,3 +1,6 @@
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import type { LeftoverProcess } from '@shared/types'
 import { makeExec, type Exec } from './taskProcs'
 
@@ -46,6 +49,36 @@ export async function endCodexAppServersLeftByACrash(
   const until = Date.now() + WAIT_FOR_LEFTOVER_EXIT_MS
   while (leftovers.some(pidAlive) && Date.now() < until)
     await new Promise((r) => setTimeout(r, LEFTOVER_EXIT_POLL_MS))
+}
+
+// PLATFORM§3
+export const CODEX_TMP_DIR = process.platform === 'darwin' ? '/tmp' : os.tmpdir()
+export const CODEX_TMP_FOLDER = /^koloft-cx-(?:open-)?(?:(\d+)-)?/
+export const CODEX_OPEN_SHIM_FOLDER = /^(?:(\d+)-)?[0-9a-f-]{36}$/
+
+export const ownedByThisRun = (name: string): string => `${process.pid}-${name}`
+
+const UNOWNED_FOLDER_KEPT_MS = 24 * 60 * 60 * 1000
+
+export function removeFoldersLeftByEndedRuns(dir: string, ours: RegExp, now = Date.now()): void {
+  let names: string[]
+  try {
+    names = fs.readdirSync(dir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    const match = ours.exec(name)
+    if (!match) continue
+    const owner = match[1]
+    const full = path.join(dir, name)
+    try {
+      const ended = owner
+        ? !pidAlive(Number(owner))
+        : now - fs.statSync(full).mtimeMs > UNOWNED_FOLDER_KEPT_MS
+      if (ended) fs.rmSync(full, { recursive: true, force: true })
+    } catch {}
+  }
 }
 
 // CC§9 PLATFORM§3

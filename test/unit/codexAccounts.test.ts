@@ -2,7 +2,12 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { describe, expect, it } from 'vitest'
-import { CodexAccountPicker, limitsFrom, prepareCodexHome } from '../../src/main/codexAccounts'
+import {
+  CodexAccountPicker,
+  codexLaunchBanner,
+  limitsFrom,
+  prepareCodexHome
+} from '../../src/main/codexAccounts'
 import { windowLabel } from '../../src/shared/accountUsage'
 import type { AccountView } from '../../src/shared/types'
 
@@ -105,6 +110,32 @@ describe('CodexAccountPicker', () => {
       'a'
     ])
     expect(picker.pick([account('claude', { kind: 'oauth' })])).toBeUndefined()
+  })
+
+  it('when every account is used up, starts on the one whose limit resets soonest and says so; otherwise names the account and its usage', () => {
+    const picker = new CodexAccountPicker()
+    const walledUntil = (resetsAt: number): AccountView['limits'] => ({
+      windows: [
+        { minutes: 300, used: 1, resetsAt },
+        { minutes: 10080, used: 0.4, resetsAt: resetsAt + 99_999 }
+      ],
+      at: Date.now()
+    })
+    const late = account('late', { limits: walledUntil(2_000_000_000) })
+    const soon = account('soon', { limits: walledUntil(1_900_000_000) })
+    const picked = picker.pick([late, soon])
+    expect(picked?.name).toBe('soon')
+    expect(codexLaunchBanner(picked!, Date.now())).toMatch(/rate-limited.*soon.*\d\d:\d\d/)
+    const light = account('light', {
+      limits: {
+        windows: [
+          { minutes: 300, used: 0.25, resetsAt: 0 },
+          { minutes: 10080, used: 0.5, resetsAt: 0 }
+        ],
+        at: Date.now()
+      }
+    })
+    expect(codexLaunchBanner(light, Date.now())).toMatch(/light.*5h 25%.*7d 50%/)
   })
 
   it('a resumed session keeps the account it ran on until that account is past 95% used, and is never stuck on one that cannot run', () => {

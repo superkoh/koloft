@@ -2,10 +2,15 @@ import fs from 'fs'
 import path from 'path'
 import {
   RESUME_KEEPS_ACCOUNT_UP_TO,
+  STALE_MS,
+  codexBackAt,
   codexHeaviest,
   codexWalled,
-  usableAccounts
+  usableAccounts,
+  windowLabel
 } from '@shared/accountUsage'
+import { ageLabel } from '@shared/freshnessOps'
+import { fmtReset, pct } from './accountPicker'
 import type { AccountView, CodexLimits, CodexLimitWindow } from '@shared/types'
 
 const CODEX_HOMES = 'codex-homes'
@@ -146,6 +151,21 @@ export class CodexAccountPicker {
       return measured.reduce((best, a) =>
         codexHeaviest(a.limits!) < codexHeaviest(best.limits!) ? a : best
       )
-    return pool[this.turn++ % pool.length]
+    const unmeasured = pool.filter((a) => !a.limits)
+    if (unmeasured.length > 0) return unmeasured[this.turn++ % unmeasured.length]
+    return pool.reduce((best, a) => (codexBackAt(a.limits!) < codexBackAt(best.limits!) ? a : best))
   }
+}
+
+export function codexLaunchBanner(a: AccountView, nowMs: number): string {
+  const l = a.limits
+  if (!l) return `koloft: → ${a.name}`
+  if (codexWalled(l))
+    return `koloft: every account rate-limited → ${a.name} (${fmtReset(codexBackAt(l))})`
+  const parts = [
+    `koloft: → ${a.name}`,
+    ...l.windows.map((w) => `${windowLabel(w.minutes)} ${pct(w.used)}`)
+  ]
+  if (nowMs - l.at > STALE_MS) parts.push(ageLabel(l.at, nowMs))
+  return parts.join(' · ')
 }

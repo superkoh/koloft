@@ -160,7 +160,7 @@ beforeEach(() => {
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
     trustFolder: vi.fn(),
-    pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
+    pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work', banner: 'koloft: → work' })),
     assistOf: () => undefined,
     conductorGate: {
       script: '/koloft/codex-conductor-gate.sh',
@@ -345,7 +345,11 @@ describe('CodexSessions', () => {
     expect(sessions.list()[0].pickedAccount).toBe('work')
     await sessions.stop(first.id)
 
-    vi.mocked(deps.pickHome).mockReturnValue({ account: 'home', home: '/homes/home' })
+    vi.mocked(deps.pickHome).mockReturnValue({
+      account: 'home',
+      home: '/homes/home',
+      banner: 'koloft: → home'
+    })
     await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
     expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/home')
   })
@@ -601,7 +605,7 @@ describe('CodexSessions', () => {
     expect(zdot?.startsWith(path.join(directory, 'codex-open') + path.sep)).toBe(true)
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.ZDOTDIR).toBe(zdot)
     const script = fs.readFileSync(path.join(path.dirname(zdot!), 'open'), 'utf8')
-    expect(script).toMatch(/\/tmp\/koloft-cx-open-[0-9a-f-]{36}/)
+    expect(script).toMatch(/\/tmp\/koloft-cx-open-\d+-[0-9a-f-]{36}/)
     expect(script).not.toContain('KOLOFT_')
   })
 
@@ -609,7 +613,7 @@ describe('CodexSessions', () => {
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
     const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
-    const requestDir = /\/tmp\/koloft-cx-open-[0-9a-f-]{36}/.exec(
+    const requestDir = /\/tmp\/koloft-cx-open-\d+-[0-9a-f-]{36}/.exec(
       fs.readFileSync(path.join(shimDir, 'open'), 'utf8')
     )![0]
     fs.writeFileSync(
@@ -635,7 +639,7 @@ describe('CodexSessions', () => {
     expect(hint).toContain('koloft help')
     expect(hint).toContain('koloft session new -w')
     const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
-    const requestDir = /\/tmp\/koloft-cx-open-[0-9a-f-]{36}/.exec(
+    const requestDir = /\/tmp\/koloft-cx-open-\d+-[0-9a-f-]{36}/.exec(
       fs.readFileSync(path.join(shimDir, 'koloft'), 'utf8')
     )![0]
     const request = { argv: ['help'], cwd: repo }
@@ -752,7 +756,11 @@ describe('CodexSessions', () => {
       worktreeName: 'w1',
       worktreeBranch: 'worktree-w1'
     } as WorktreeResource)
-    vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
+    vi.mocked(deps.pickHome).mockReturnValue({
+      account: 'work',
+      home: '/homes/work',
+      banner: 'koloft: → work'
+    })
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', permission: 'bypass' })
     expect(vi.mocked(deps.trustFolder).mock.calls.map(([dir]) => dir)).toEqual([repo, worktree])
     for (const [, env] of vi.mocked(deps.trustFolder).mock.calls)
@@ -976,7 +984,7 @@ describe('CodexSessions', () => {
       `model = "gpt-5"\n\n[hooks.state."${GATE_KEY}"]\ntrusted_hash = "sha256:old"\n`
     )
     fs.symlinkSync(shared, path.join(home, 'config.toml'))
-    vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home })
+    vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home, banner: 'koloft: → work' })
     const trustedOnDisk = (): boolean => fs.readFileSync(shared, 'utf8').includes(GATE_HASH)
     mocks.request.mockImplementation(async (method: string) =>
       method === 'hooks/list'

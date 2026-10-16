@@ -41,7 +41,14 @@ import {
   CODEX_ASKS_AND_WAITS
 } from './conductorGate'
 import { acceptCodexHookTrust, codexConfigFile } from './codexTrust'
-import { endCodexAppServersLeftByACrash } from './leftovers'
+import {
+  CODEX_OPEN_SHIM_FOLDER,
+  CODEX_TMP_DIR,
+  CODEX_TMP_FOLDER,
+  endCodexAppServersLeftByACrash,
+  ownedByThisRun,
+  removeFoldersLeftByEndedRuns
+} from './leftovers'
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
@@ -241,7 +248,7 @@ export interface CodexSessionDeps {
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
-  pickHome(resumeSessionId?: string): { account: string; home: string } | undefined
+  pickHome(resumeSessionId?: string): { account: string; home: string; banner: string } | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
   browserEndpoint(tabId: string): string
@@ -411,9 +418,12 @@ export class CodexSessions {
     options: Parameters<typeof createCodexTransport>[0]
   ): Promise<CodexTransport> {
     // CODEX§5
-    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG).catch(
-      () => {}
-    ))
+    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG)
+      .catch(() => {})
+      .then(() => {
+        removeFoldersLeftByEndedRuns(CODEX_TMP_DIR, CODEX_TMP_FOLDER)
+        removeFoldersLeftByEndedRuns(this.deps.openShimRoot, CODEX_OPEN_SHIM_FOLDER)
+      }))
     try {
       return await createCodexTransport(options)
     } catch (error) {
@@ -1018,7 +1028,8 @@ export class CodexSessions {
         executable: binary,
         argv,
         processEnv: env,
-        resumeSessionId: opts.resumeSessionId
+        resumeSessionId: opts.resumeSessionId,
+        banner: picked.banner
       })
       run = {
         tabId: handle.id,
@@ -1052,7 +1063,11 @@ export class CodexSessions {
     open: (target: string) => void,
     agent?: (dir: string, name: string, raw: unknown) => void
   ): { zdotDir: string; release(): void } {
-    const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), userZdotdir)
+    const shim = writeCodexOpenShim(
+      this.deps.openShimRoot,
+      ownedByThisRun(randomUUID()),
+      userZdotdir
+    )
     fs.symlinkSync(
       path.join(this.deps.playwrightBin, 'playwright-cli'),
       path.join(shim.shimDir, 'playwright-cli')
