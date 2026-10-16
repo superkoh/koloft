@@ -15,6 +15,7 @@ import {
   type TabSpec
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
+import { museRunLines } from '../../src/main/museRemote'
 
 const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
 const tmpRoots: string[] = []
@@ -478,6 +479,60 @@ describe('U-TAB-*: the tab script on the machine', () => {
     ])
     expect(b.env().PATH.split(':')[0]).toBe(`${m}/bin/`)
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
+  })
+
+  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings there, runs muse through the wrapper, and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
+    const s = spec({
+      tmuxName: 'm-T',
+      muse: {
+        run: museRunLines({
+          tabId: 'T',
+          account: "o'brien",
+          args: ['--approval-judge', 'off', 'say hi'],
+          trust: []
+        }),
+        files: { 'T.auth.json': '{"providers":{}}', 'T.hooks.json': '{"hooks":{}}' }
+      }
+    })
+    const b = box(s)
+    const own = path.join(b.home, '.config', 'muse')
+    fs.mkdirSync(own, { recursive: true })
+    fs.writeFileSync(path.join(own, 'settings.json'), '{"schema_version":1}')
+    fs.writeFileSync(
+      path.join(b.home, '.local', 'bin', 'python3'),
+      `#!/bin/sh\nenv > ${JSON.stringify(path.join(b.logs, 'env'))}\nprintf '%s\\n' "$@" > ${JSON.stringify(path.join(b.logs, 'argv'))}\n`,
+      { mode: 0o755 }
+    )
+    expect(b.run().status).toBe(0)
+    expect(b.tmux().join(' ')).toContain('new-session -A -D -s m-T')
+    const m = path.join(b.home, '.koloft', 'm-0000000000000000')
+    expect(b.argv()).toEqual([
+      `${m}/muse-wrap.py`,
+      `${b.home}/.koloft/hook-sessions`,
+      'T',
+      '--',
+      'muse',
+      '--approval-judge',
+      'off',
+      'say hi'
+    ])
+    const account = path.join(b.home, '.koloft', 'muse-homes', "o'brien")
+    expect(b.env()).toMatchObject({
+      XDG_CONFIG_HOME: account,
+      TBH_CREDENTIAL_BACKEND: 'file',
+      TBH_MANAGED_HOOKS_PATH: `${b.home}/.koloft/tabs/T.hooks.json`
+    })
+    expect(fs.readFileSync(path.join(account, 'muse', 'auth.json'), 'utf8')).toBe(
+      '{"providers":{}}'
+    )
+    expect(fs.statSync(path.join(account, 'muse', 'auth.json')).mode & 0o777).toBe(0o600)
+    expect(fs.existsSync(path.join(b.tabs, 'T.auth.json'))).toBe(false)
+    expect(fs.readlinkSync(path.join(account, 'muse', 'settings.json'))).toBe(
+      path.join(own, 'settings.json')
+    )
+    fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
+    b.run('attach')
+    expect(b.tmux().slice(-6)).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess9'])
   })
 
   it('a reconnect attaches to the running session and installs nothing', () => {

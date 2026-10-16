@@ -9,6 +9,7 @@ import {
   museShowsAnEmptyInputBox,
   museTrustsFolder,
   trustMuseFolder,
+  type MuseMachine,
   type MuseSessionDeps
 } from '../../src/main/museSessions'
 import { museSessionKey } from '../../src/main/sessionStore'
@@ -715,5 +716,206 @@ describe('muse trust list', () => {
     trustMuseFolder({ HOME: home }, link)
     expect(museTrustsFolder({ HOME: home }, repo)).toBe(true)
     expect(museTrustsFolder({ HOME: home }, other)).toBe(true)
+  })
+})
+
+describe('a Muse session on a remote machine', () => {
+  const KEY = 'ssh://box/srv/proj'
+  let mirrorDir: string
+  let launches: Parameters<MuseMachine['launchMuse']>[0][]
+  let attach: boolean
+  let killed: string[]
+  let gone: boolean
+
+  function onMachine(): void {
+    mirrorDir = path.join(home, 'mirror')
+    fs.mkdirSync(mirrorDir)
+    launches = []
+    attach = false
+    killed = []
+    gone = false
+    const acct = path.join(home, 'acct')
+    fs.mkdirSync(path.join(acct, 'muse'), { recursive: true })
+    fs.writeFileSync(path.join(acct, 'muse', 'auth.json'), '{"providers":{"meta":{}}}')
+    picked = { account: 'work', env: { XDG_CONFIG_HOME: acct, TBH_CREDENTIAL_BACKEND: 'file' } }
+    const machine: MuseMachine = {
+      launchMuse: async (spec) => {
+        launches.push(spec)
+        return {
+          attach,
+          tmuxName: (tabId) => (spec.resumeSessionId ? `k-${spec.resumeSessionId}` : `m-${tabId}`),
+          launchCommand: () => 'ssh box',
+          resized: () => {}
+        }
+      },
+      museServe: () => ({ binary: 'ssh', args: [] }),
+      museTrusts: async () => false,
+      endTmuxSession: async (name) => {
+        killed.push(name)
+        return undefined
+      },
+      runScript: async () => null
+    }
+    sessions = new MuseSessions(path.join(home, 'remote-sessions.json'), {
+      ...sessions['deps'],
+      projectInfo: (p) => ({ root: KEY, treeRoot: p }),
+      remoteDirExists: async () => true,
+      remote: {
+        machine: () => machine,
+        hosts: () => [],
+        keyed: (host, p) => `ssh://${host}${p}`,
+        mirrorDir: () => mirrorDir,
+        gone: () => gone,
+        poke: () => {}
+      }
+    })
+  }
+
+  const mirror = (runId: string, ...lines: Record<string, unknown>[]): void =>
+    fs.appendFileSync(
+      path.join(mirrorDir, `${runId}.muse.jsonl`),
+      lines.map((l) => JSON.stringify(l) + '\n').join('')
+    )
+
+  async function boundRemote(): Promise<string> {
+    const { id } = await sessions.launch({ kind: 'muse', cwd: KEY })
+    mirror(id, { t: 'bound', sessionId: A })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
+    return id
+  }
+
+  it('starts muse on the machine with the picked account carried along, the local ssh line in its tab, and binds from the bound line the wrapper writes', async () => {
+    onMachine()
+    const { id } = await sessions.launch({ kind: 'muse', cwd: KEY, firstPrompt: 'hi' })
+    expect(launches[0]).toMatchObject({
+      cwd: KEY,
+      account: { name: 'work', auth: '{"providers":{"meta":{}}}' },
+      args: ['--approval-judge', 'off', 'hi'],
+      trust: []
+    })
+    expect(vi.mocked(pty.create).mock.calls[0][0]).toMatchObject({
+      kind: 'muse',
+      cwd: os.homedir(),
+      launchCommand: expect.any(Function)
+    })
+    mirror(id, { t: 'bound', sessionId: A })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
+    expect(sessions.list()[0]).toMatchObject({ sessionId: museSessionKey(A, 'box'), cwd: KEY })
+    expect(sessions.store.getMember(museSessionKey(A, 'box'))).toMatchObject({ cwd: KEY })
+  })
+
+  it('refuses to start when the picked account keeps no credential file to carry to the machine', async () => {
+    onMachine()
+    picked = { account: 'work', env: { XDG_CONFIG_HOME: path.join(home, 'empty') } }
+    await expect(sessions.launch({ kind: 'muse', cwd: KEY })).rejects.toThrow(
+      'keeps no credential file'
+    )
+  })
+
+  it('ends a turn from the hook lines in the mirror, and keys the files Muse writes to the machine', async () => {
+    onMachine()
+    const id = await boundRemote()
+    mirror(
+      id,
+      {
+        t: 'hook',
+        event: 'UserPromptSubmit',
+        input: { session_id: A, prompt: 'go', turn_id: 't1' }
+      },
+      {
+        t: 'hook',
+        event: 'PostToolUse',
+        input: {
+          session_id: A,
+          tool_name: 'write_file',
+          tool_response: { filePath: 'src/a.ts', structuredPatch: [{ lines: ['+x'] }] }
+        }
+      },
+      {
+        t: 'hook',
+        event: 'Stop',
+        input: { session_id: A, turn_id: 't1', last_assistant_message: 'done' }
+      }
+    )
+    await vi.waitFor(() => expect(events('turn-ended')).toHaveLength(1))
+    expect(events('files-changed')[0]).toMatchObject({ lastWritten: `${KEY}/src/a.ts` })
+  })
+
+  it('never lets a state that came late through the mirror roll back a newer one the terminal already showed', async () => {
+    onMachine()
+    const id = await boundRemote()
+    say(id, osc('state=working:app=muse:seq=1') + osc('state=done:app=muse:seq=2'))
+    expect(events('prompt')).toHaveLength(1)
+    expect(events('stop')).toHaveLength(1)
+    mirror(
+      id,
+      { t: 'state', seq: 1, state: 'working', kind: null },
+      { t: 'state', seq: 2, state: 'done', kind: null },
+      { t: 'state', seq: 3, state: 'working', kind: null }
+    )
+    await vi.waitFor(() => expect(events('prompt')).toHaveLength(2))
+    expect(events('stop')).toHaveLength(1)
+  })
+
+  it('after a Koloft restart it attaches to the session still running there, finds its wrapper through the pointer, and takes only the latest state, not the old turns', async () => {
+    onMachine()
+    attach = true
+    sessions.store.upsertMember({
+      id: A,
+      key: museSessionKey(A, 'box'),
+      workspacePath: KEY,
+      cwd: KEY,
+      title: 'Saved',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    fs.writeFileSync(path.join(mirrorDir, `k-${A}.muse.run`), 'pty-old')
+    mirror(
+      'pty-old',
+      { t: 'bound', sessionId: A },
+      { t: 'state', seq: 1, state: 'working', kind: null },
+      {
+        t: 'hook',
+        event: 'Stop',
+        input: { session_id: A, turn_id: 'old', last_assistant_message: 'old' }
+      },
+      { t: 'state', seq: 2, state: 'blocked', kind: 'permission' }
+    )
+    await sessions.resume({ sessionId: museSessionKey(A, 'box'), cwd: KEY })
+    expect(launches[0]).toMatchObject({ resumeSessionId: A })
+    await vi.waitFor(() => expect(events('notify')).toHaveLength(1))
+    expect(sessions.list()[0].nativeSessionId).toBe(A)
+    expect(events('turn-ended')).toHaveLength(0)
+    expect(events('prompt')).toHaveLength(0)
+    mirror('pty-old', { t: 'state', seq: 3, state: 'done', kind: null })
+    await vi.waitFor(() => expect(events('stop')).toHaveLength(1))
+  })
+
+  it('closing the tab ends the tmux session on the machine under its bound name; quitting Koloft leaves it running', async () => {
+    onMachine()
+    const id = await boundRemote()
+    await sessions.stop(id)
+    expect(killed).toEqual([`k-${A}`])
+    const { id: second } = await sessions.launch({ kind: 'muse', cwd: KEY })
+    expect(second).toBeTruthy()
+    await sessions.stopAll()
+    expect(killed).toEqual([`k-${A}`])
+  })
+
+  it('a session that ends on the machine while the link is down closes its tab once the machine confirms it is gone', async () => {
+    onMachine()
+    const id = await boundRemote()
+    vi.useFakeTimers()
+    try {
+      sessions.noticeRemoteExits('box', [A])
+      gone = true
+      vi.advanceTimersByTime(10_000)
+    } finally {
+      vi.useRealTimers()
+    }
+    await vi.waitFor(() =>
+      expect(events('exited')).toEqual([expect.objectContaining({ clean: false })])
+    )
+    expect(sessions.hasTab(id)).toBe(false)
   })
 })
