@@ -69,10 +69,19 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   the `idle_prompt` Notification, then about 55 minutes later PreCompact and SessionStart
   `compact`; the transcript gets `compact_boundary` (`trigger: "auto"`), the summary
   record below, and a `system`/`informational` record "Compacted while idle, before the
-  prompt cache expired". When it fires was read off the 2.1.295 binary's strings, not
-  probed: a server-side flag, at least 100 000 context tokens
-  (`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` can raise it), at a fraction (0.5–0.95, default
-  0.9) of the prompt cache's lifetime, and only after 60 s with nothing typed.
+  prompt cache expired". When it fires is read from the binaries, not probed (2.1.293,
+  2.1.296 and 2.1.299 carry the same code; `strings`, 2026-10-14, correcting a 2.1.295
+  reading that took the floor for the default): a server-side flag
+  (`tengu_sunny_locket`; with none the mode is `off`), a conversation of at least
+  **200 000** context tokens by default — `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` sets
+  another minimum, never below 100 000 — armed only while the last request's prompt
+  cache TTL is `1h`, fired at a fraction of that hour counted from the last activity
+  (0.5–0.95, default 0.9, so about 54 minutes), skipped when the timer wakes more than
+  60 s late or the person typed within the last 60 s, and `"idleCompaction": false` in a
+  settings file turns it off (`true` turns nothing on). The 2.1.299 changelog announces
+  it with these numbers and says the setting needs 2.1.290 or later. The same two
+  binaries from 2.1.296 on also hold a second idle path behind `CLAUDE_CODE_SLEEP_COMPACT`
+  (default 150 000 tokens, floor 60 000) — a pointer only.
 - **Every compaction ends by writing a summary record**, at about the moment SessionStart
   `compact` fires (2026-10-09, CC 2.1.295, manual and automatic): `type: "user"`, string
   content "This session is being continued from a previous conversation that ran out of
@@ -81,11 +90,21 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   transcript on a 500 ms poll, so the summary is usually read after the compaction has
   ended: two dev-build runs of `/compact` with the real binary, read before this rule,
   both showed the row go back to working about 0.5 s after it went back to waiting.
-- **On exit CC prints a resume hint, and what it quotes depends on the session**:
-  `Resume this session with: claude --resume <id>` for a session with no name, but
-  `claude --resume "<name>"` once the session was given a `--name`, and
-  `claude --worktree <name> --resume "<name>"` after a keep-the-worktree exit
-  (measured 2026-09-03 on 2.1.259 — four exits, named and unnamed, §4).
+- **On exit CC prints a resume hint, and since 2.1.299 it names the session by its id,
+  never by its `--name`**: `Resume this session with:` / `claude --resume <id>`, named or
+  not; after a keep-the-worktree exit `claude --worktree "<worktree>" --resume <id>`
+  (the worktree name quoted, the id bare); when that line does not fit the terminal,
+  `claude -w "<worktree>" -r <id>`; when neither fits, three rows above it (`This
+  session ran in a worktree` / `In its folder, run the command below to resume in it` /
+  `To find that folder, try git worktree list`) and then the bare `claude --resume
+  <id>`. Through 2.1.296 it quoted the name instead: `claude --resume "<name>"` once the
+  session had a `--name`, and `claude --worktree <name> --resume "<name>"` after a
+  keep-the-worktree exit (measured 2026-09-03 on 2.1.259 and again 2026-10-14 on
+  2.1.296, §4). **A session that never took a message prints no hint at all** (both
+  versions). Measured 2026-10-14 on 2.1.296 and 2.1.299, python pty 120, 60 and 50
+  columns, scratch `HOME`, no login (one `hello` typed first), named and unnamed, plain
+  folder and a `-w` keep exit; the lines come dim right after the screen reset, since the
+  default (not fullscreen) mode uses no alternate screen. Koloft does not read this hint.
 - **A resumed session's SessionStart hook reports the LAUNCH directory as cwd, not the
   worktree** — the re-enter happens after the hook (E8). Seen again 2026-10-09 on CC
   2.1.295, real sessions on the dev Mac that Koloft resumed from the repo root after a
@@ -307,7 +326,10 @@ Unless a bullet below says more, it is inferred, not checked.
   has no SDK url (a cloud worker path falls back to a server flag, also off). When on,
   a file over 5 MiB that gained 20 MiB since the last pass is rewritten into
   `<file>.compact.tmp.<hex>` and renamed over the original, so its inode changes and
-  it gets shorter.
+  it gets shorter. The same gate in 2.1.299 (`strings`, 2026-10-14); the binary's own
+  changelog adds that since 2.1.296 a file is left alone when the rewrite would free
+  under 10 % of it, and a managed-policy settings tier may be allowed to set the
+  variable (a set naming it next to `policySettings`; not resolved).
 - **`ai-title` records repeat.** CC writes the session's `ai-title` again every few
   turns with the same value, so the first one is enough (one 2.1.281 transcript,
   2026-09-24: 56 `ai-title` records).
@@ -427,6 +449,13 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   ("configure WorktreeCreate and WorktreeRemove hooks in settings.json for another
   version-control system"; "Provides the absolute path to the created worktree
   directory"); that the copy is then off was not re-read there.
+- **A `-w` session's Bash tool has an isolation guard that refuses a command it cannot
+  prove stays inside the worktree**, awk programs included: it already refused
+  `system(`, a `| "cmd"`, `| getline`, `@load`/`@include` and `/inet/`; 2.1.299 also
+  refuses a `|` after `print`/`printf` or before `getline` anywhere in the program, a
+  regex or string included ("runs … inside a construct too complex to verify, so what it
+  runs cannot be shown not to be git"), behind `tengu_rustling_lighthouse`, on by
+  default (read from the 2.1.296 and 2.1.299 binaries, `strings`, 2026-10-14; not run).
 - **CC's Bash tool runs its commands with the env `claude` was started with**, so a
   variable set on the launch reaches the model's shell in a `-w` worktree session:
   `KOLOFT_PORT_OFFSET` set in the pty env on this Mac, and exported by the remote tab
@@ -438,10 +467,10 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   with its Bash tool, the port offset of that worktree’s name" and
   `remote-ssh-lab.spec.ts` › "E-SSH-11: a REAL claude on the machine, in a worktree
   session made there through ssh and tmux, echoes with its Bash tool the port offset of
-  that worktree’s name (opt-in, spends real money)". Both passed again on 2.1.296,
-  2026-10-11, as did E-SSH-15 (`koloft help` and `koloft note append` from the Bash
-  tool on the machine) and E-SSH-C2 (a conductor's typed message answered, its question
-  answered by `koloft session answer`).
+  that worktree’s name (opt-in, spends real money)". Both passed again on 2.1.296
+  (2026-10-11) and 2.1.299 (2026-10-14), as did E-SSH-15 (`koloft help` and `koloft
+  note append` from the Bash tool on the machine) and E-SSH-C2 (a conductor's typed
+  message answered, its question answered by `koloft session answer`).
 - **CC's background retention sweep leaves hand-made worktrees under
   `.claude/worktrees/` alone from 2.1.246 on** (changelog, read 2026-09-18, not
   measured). Before that it could remove them.
@@ -723,7 +752,8 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   managed-policy tier set it, so one a person exports is ignored. The same binary also
   names `ANTHROPIC_SMALL_FAST_MODEL`, `CLAUDE_CODE_AUTO_MODE_MODEL` and
   `CLAUDE_CODE_BG_CLASSIFIER_MODEL` — pointers only; the diff of `*_MODEL` names
-  between 2.1.293 and 2.1.296 is the one workflow variable.
+  between 2.1.293 and 2.1.296 is the one workflow variable, and between 2.1.296 and
+  2.1.299 it is empty (`strings`, 2026-10-14; no `ANTHROPIC_*` name changed either).
   `CLAUDE_CONFIG_DIR` does NOT isolate credentials on macOS (official docs —
   credentials always go through the system Keychain). `claude setup-token` is the
   official login flow: it prints the authorization URL and, on success, the token on
@@ -964,7 +994,8 @@ SessionEnd` with millisecond stamps, and the resulting
 `~/.claude/projects/<slug>/<id>.jsonl` read back record by record.
 Probes P1–P7. Flag spellings quoted from `claude --help` of the same build. The launch
 line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is pinned by
-`cron-real-smoke.spec.ts` › BB-R01, green on 2.1.296 (2026-10-11).
+`cron-real-smoke.spec.ts` › BB-R01, green on 2.1.296 (2026-10-11) and 2.1.299
+(2026-10-14).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1085,8 +1116,16 @@ other bullets of §9 were not re-measured on this build.
   `--max-turns` works the same as a shown flag is inferred, not checked. `-n` really is
   CC's short form of `--name`. From `claude --help` on 2.1.281 (2026-09-24):
   `--permission-prompts` takes `host` or `none`; `--effort` takes exactly `low`,
-  `medium`, `high`, `xhigh`, `max`. The `--help` flag set of 2.1.293 and 2.1.296 is
-  identical (both run in a scratch `HOME` with stdin closed, 2026-10-11).
+  `medium`, `high`, `xhigh`, `max`. The `--help` text of 2.1.293, 2.1.296 and 2.1.299 is
+  byte-identical, 311 lines (run with stdin closed, 2026-10-11 and 2026-10-14). The
+  `CLAUDE_CODE_*` names the 2.1.299 binary adds over 2.1.296 (`strings`, 2026-10-14;
+  pointers, none read): `ARTIFACT_PUBLISH_EDITS`, `AUTO_MODE_COMPACT_THREAD_RULE`,
+  `CCR_WORKER_SOCKET`, `DISABLE_FILE_MENTIONS`, `ENABLE_SHARE_BUNDLE`,
+  `JIT_POLICY_AFTER_STARTUP`, `LAZY_ENV_GETTERS`, `MCP_ALWAYS_LOAD_JOIN_BEFORE_INPUT`,
+  `MCP_SERVE_INTERFACE_MIN_VERSION`, `REMOTE_MCP_CONFIG`,
+  `SANDBOX_LEAVE_DENIES_TO_SRT_WIN`, `SANDBOX_LEAVE_PARENT_FOLDERS_ALONE`,
+  `SETTLE_TOUCHED_FILES`, `STRICT_INLINE_SHELL_RM_PROMPT`, `TRANSCRIPT_SLIM_TOOL_RESULTS`;
+  gone: `WEBSEARCH_CITATIONS_DECLARED`.
 - **A new directory always asks for trust on its first launch**, and
   `--dangerously-skip-permissions` does not skip that question ("Quick safety check: Is
   this a project you created or one you trust?", default answer "No, exit"). A worktree
@@ -1096,6 +1135,14 @@ other bullets of §9 were not re-measured on this build.
   `projects[<absolute path>].hasTrustDialogAccepted: true` (key name read off the
   2.1.263 binary with `strings`, 2026-09-06), and ancestors count. `claude --help`
   (2.1.281) adds that `-p`, or a stdout that is not a TTY, skips the trust dialog.
+  **An older `<config dir>/.config.json` can stand in for `~/.claude.json`** (the config
+  dir is `CLAUDE_CONFIG_DIR`, else `~/.claude`): through 2.1.296 its mere existence made
+  CC read it instead, so an empty one left by a sandboxed command hid the trust and the
+  login (the 2.1.299 changelog's Linux fix); 2.1.299 takes it only when it is non-empty,
+  or empty but writable while no `~/.claude.json` exists. Read from the 2.1.296 and
+  2.1.299 binaries, macOS and linux-arm64 alike (`strings`, 2026-10-14). So the trust
+  Koloft writes into `~/.claude.json` on a remote machine holds unless that machine has
+  such a file.
 - **`-w` in a never-trusted repo does not ask — it refuses and exits.** `claude -w <name>`
   prints `Error creating worktree: Workspace trust not yet accepted. Run \`claude\` once
   in this directory and accept the trust dialog, then retry with --worktree.` and exits
@@ -1335,7 +1382,8 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   their own `id`, a gone one gets `state=clear:id=<id>`, and exit writes a bare
   `state=clear`. The sequence is not wrapped for tmux (the DCS passthrough wrapper is
   not applied), so whether it crosses tmux to the outer terminal is not probed; in or
-  out of fullscreen alike (read, not run).
+  out of fullscreen alike (read, not run). The 2.1.299 binary carries the same builder,
+  states, kinds and startup probe (`strings`, 2026-10-14).
 - **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle
   processes about two days old (date and CC version not recorded). On 2026-09-24, CC
   2.1.281, four live sessions (not idle, 20 min to 4 h old) held 196–403 MB each
@@ -1420,6 +1468,12 @@ sessions.
     (attributes in a fixed order, a newline right after `>` and right before `</`).
   - It is switched by the internal gate `tengu_harbor_kite_mode_emit`, default on
     (`T("tengu_harbor_kite_mode_emit",!0)` in the 2.1.288 binary); recheck on upgrade.
+    Still on in 2.1.299, and the pattern there allows, in this order and each optional,
+    `from`, `from-session`, `hop-chain`, `from-name`, `from-mode` (`bypass` or
+    `prompting`) and `from-plugin`, then `\n`, the body, `\n</cross-session-message>`;
+    the receiver's limits read `bucketCapacity:30, refillPerSecond:0.5,
+    dedupWindowMs:30000, maxSelfHops:10, maxChainLength:28, maxTrackedSenders:256`, the
+    same as 2.1.296 (`strings`, 2026-10-14).
   - A busy receiver with a mismatched mode, and a receiver not in bypass mode, were not
     tried.
 - **A message reaches a receiver whose turn ended with background work still running.**
@@ -1535,6 +1589,13 @@ below was one run.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
   runs), also for a plan in `bypassPermissions`.
+- **Plan mode in a session that has bypass permissions prints a notice, not a dialog.**
+  2.1.299 adds the line "Session was started with bypass permissions, so plan mode won't
+  ask before most edits or commands. Start a new session without bypass permissions for
+  prompts in plan mode.", appended to the conversation 800 ms after plan mode starts,
+  once per process, not written to the transcript, with no options and nothing to press
+  (read from the 2.1.299 binary, `strings`, 2026-10-14; not run). So a run nobody watches
+  does not stall on it.
 - **An open `AskUserQuestion` sends one `permission_prompt` Notification and nothing
   after it while it stays open.** 2026-10-11, CC 2.1.296, an interactive claude in a pty
   (python `pty.fork`), haiku, `--dangerously-skip-permissions`, a `--settings` file with
@@ -1613,7 +1674,11 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   guarded tool call, permission request or prompt is blocked (a `PermissionRequest`
   gets `behavior: "deny"`). Ignored for async hooks and on Stop, SubagentStop,
   TaskCompleted and TeammateIdle. Koloft's hook entries set nothing, so a gate hook
-  that fails to start fails open.
+  that fails to start fails open. The same in 2.1.299 (`strings`, 2026-10-14), plus a
+  Windows-only case; the 2.1.299 changelog's "actions a plugin hook can block are
+  refused when the hook cannot be handed them" is about a plugin's hooks module
+  (strings keyed `tool.call`, `tool.check`, `classic.PreToolUse`), not a settings-file
+  command hook.
 
 ## §16 `claude --version` and `claude update`
 
@@ -1624,7 +1689,13 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
 - **`claude --version` prints `2.1.294 (Claude Code)`** — the version first, then a
   space — and returns at once (`time` shows 0.00 s native, 0.12 s for the npm install),
   so a check on every launch costs next to nothing. The same shape on 2.1.296
-  (`2.1.296 (Claude Code)`, the darwin-arm64 download, 2026-10-11).
+  (`2.1.296 (Claude Code)`, the darwin-arm64 download, 2026-10-11) and 2.1.299
+  (`2.1.299 (Claude Code)`, 2026-10-14).
+- **A downloaded binary updates itself into its `HOME`, not in place.** A 2.1.296
+  scratch copy run with a scratch `HOME` printed "✔ Update installed" during a session
+  and put the new version under that `HOME`'s `.local/share/claude/versions/`; the copy
+  it was started from stayed 2.1.296 and `~/.local/share/claude` was untouched.
+  `DISABLE_AUTOUPDATER=1` in the env stopped it (2026-10-14, pty probes of §1).
 - **`claude update` asks nothing and exits 0.** Native: 2.1.250 → 2.1.294; the
   `~/.local/bin/claude` link moves to `versions/2.1.294` and `versions/2.1.250` stays,
   so a session already running on the old file keeps going. npm: 2.1.250 → **2.1.293**,
@@ -1641,12 +1712,14 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   (`downloads.claude.ai/claude-code-releases/latest` said 2.1.294; npm dist-tags said
   `latest` 2.1.293, `next` 2.1.294, `stable` 2.1.285). A minimum above npm's `latest`
   would leave an npm install that `claude update` cannot lift to it. On 2026-10-11 both
-  channels offered 2.1.296 (`latest` and `next` 2.1.296, `stable` 2.1.287).
+  channels offered 2.1.296 (`latest` and `next` 2.1.296, `stable` 2.1.287); on
+  2026-10-14 both offered 2.1.299 (`latest` and `next` 2.1.299, `stable` 2.1.287).
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
   256,434,168 bytes, and that file ran as the remote `claude` in the Docker SSH lab
-  (aarch64). `linux-x64` is inferred from the same shape, not checked.
+  (aarch64); on 2026-10-14 `2.1.299/linux-arm64/claude` answered 200 with 264,626,168
+  bytes. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
 
@@ -1667,6 +1740,20 @@ unset), its prompt both typed and given as the launch argument.
 - **The interactive screen does not show the text.** While the hook runs, the spinner line
   reads `(running UserPromptSubmit hook · 0s)`; after that only the prompt and the reply
   are drawn.
+- **A custom slash command fires the hook once, with `prompt` holding the typed
+  `/<name>`, not the command's body, and the hook's text still reaches the model.**
+  2026-10-14, CC 2.1.296 and 2.1.299 alike (the 2.1.299 changelog says the hook now runs
+  before a skill or custom command expands), interactive claude in a pty through
+  Koloft's shim, haiku, a scratch `CLAUDE_CONFIG_DIR` holding `commands/probe-cmd.md`:
+  `/probe-cmd` typed, Esc to close the menu, Enter. The hook's input held
+  `"prompt":"/probe-cmd"` and the same keys as a typed prompt (`session_id,
+  transcript_path, cwd, scratchpad_dir, prompt_id, permission_mode, hook_event_name,
+  prompt`); the reply held the hook's word. The turn's records, in order:
+  `file-history-snapshot`; the `user` record `<command-message>probe-cmd</command-message>
+  <command-name>/probe-cmd</command-name>` (`origin.kind` `human`); the body as a `user`
+  `isMeta` record; an `attachment` `command_permissions` (`allowedTools: []`); the
+  `hook_additional_context` attachment; the reply. A hook that blocks a command whose
+  body runs a shell line was not run.
 
 ## §18 A bracketed paste lands in the input box unsent
 
@@ -1681,7 +1768,8 @@ sends path, diff fence, hunk and note as one message" (4 runs) and
 `remote-ssh-lab.spec.ts` › "E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL
 claude on the machine through ssh and tmux …" (3 runs; one of them failed only on an
 earlier assertion that the model obey the note, the paste facts held in all three).
-Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11.
+Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, and on
+2.1.299, 2026-10-14.
 
 - **claude turns bracketed paste on at startup** (it writes `ESC[?2004h`; 2.1.287 notes).
 - **A write wrapped in `ESC[200~` … `ESC[201~` lands as one block and is not sent.** On
@@ -1748,6 +1836,11 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   `"prompt":"<cross-session-message from-mode=\"bypass\">\n<body>\n</cross-session-message>"`.
   In one project's transcripts on this Mac since 2026-10-09, 10 of 12 such messages were followed by the
   prompt hook's context.
+- **A background task's finish report (§8) and a subagent's message fire `UserPromptSubmit`
+  too, its `prompt` the text as delivered**: `<task-notification>\n<task-id>…` and
+  `<agent-message from=\"<name>\">\n…`. Swept 2026-10-16 from the transcripts on this Mac
+  since 10-11: the prompt hook's context followed 1,224 `<task-notification>` prompts on
+  2.1.296, 2.1.299, 2.1.300 and 2.1.301, and 4 `<agent-message>` prompts on 2.1.296.
 - **A `PostToolBatch` event also exists** (once per batch of tool calls; its
   `additionalContext` reached the model on 2.1.296; its name is in the 2.1.294 binary).
   It is not in the CHANGELOG; the 2.1.293 binary, the oldest Koloft supports, carries

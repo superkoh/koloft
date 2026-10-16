@@ -40,5 +40,10 @@ export async function routeSession(
       }))
   )
   if (signal.aborted) return null
-  return parseRoute(await deps.assist({ ...routeJob(list, message), signal }), list)
+  const reply = await deps.assist({ ...routeJob(list, message), signal })
+  const route = parseRoute(reply, list)
+  if (!route && reply !== null) {
+    console.error('[koloft] ⌘P router reply named no usable route:', reply.slice(0, 2000))
+  }
+  return route
 }

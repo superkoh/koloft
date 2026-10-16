@@ -37,6 +37,7 @@ describe('buildResetPatch (FR-12)', () => {
         'fontFamily',
         'fontSize',
         'gitAutoFetch',
+        'gitAutoPull',
         'hintsOff',
         'hintsSeen',
         'keepAwake',

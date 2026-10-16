@@ -5,6 +5,7 @@ import path from 'path'
 import type { WorkspaceFreshness, WorkspacePullResult } from '@shared/types'
 import { defaultBranch } from './gitStatus'
 import { isRemoteKey } from '@shared/remoteKey'
+import { canPull, pullToast } from '@shared/freshnessOps'
 
 const execFile = promisify(execFileCb)
 
@@ -186,6 +187,9 @@ function sameFreshness(a: WorkspaceFreshness, b: WorkspaceFreshness): boolean {
 export interface FreshnessDeps {
   workspaces(): { path: string; missing: boolean }[]
   autoFetch(): boolean
+  autoPull?(): boolean
+  busy?(wsPath: string): boolean
+  toast?(text: string): void
   onChange(wsPath: string): void
   fetchFailed?(wsPath: string, stderr: string): void
   now?(): number
@@ -249,7 +253,7 @@ export class GitFreshnessEngine {
   }
 
   fetchNow(wsPath: string): Promise<WorkspaceFreshness | null> {
-    if (this.gitUnavailable || this.stopped) return Promise.resolve(null)
+    if (this.gitUnavailable || this.stopped || isRemoteKey(wsPath)) return Promise.resolve(null)
     this.backoffUntil.delete(wsPath)
     this.errors.delete(wsPath)
     return this.runFetch(wsPath)
@@ -309,6 +313,7 @@ export class GitFreshnessEngine {
       await Promise.all(
         Array.from({ length: Math.min(SWEEP_CONCURRENCY, due.length) }, () => worker())
       )
+      for (const p of due) await this.fastForwardAfterFetch(p)
     } finally {
       this.sweeping = false
     }
@@ -383,6 +388,13 @@ export class GitFreshnessEngine {
       if (this.inflight.get(wsPath) === gate) this.inflight.delete(wsPath)
       release(this.cache.get(wsPath) ?? null)
     }
+  }
+
+  private async fastForwardAfterFetch(wsPath: string): Promise<void> {
+    const f = this.cache.get(wsPath)
+    if (!f || !canPull(f) || !this.deps.autoPull?.() || this.deps.busy?.(wsPath)) return
+    const r = await this.pull(wsPath, { branch: f.branch, head: f.head })
+    if (r.ok) this.deps.toast?.(pullToast(wsPath, f.branch, r.summary))
   }
 
   private runFetch(wsPath: string): Promise<WorkspaceFreshness | null> {

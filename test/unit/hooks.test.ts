@@ -435,15 +435,21 @@ describe('injected hook script', () => {
       expect(tool('tabLangNone')).toBe('')
     })
 
-    // CC§13
-    it('a message from another session keeps the quote of the person’s own last prompt', () => {
+    // CC§13 CC§19
+    it('a message from another session, a background task’s finish report or a subagent’s message keeps the quote of the person’s own last prompt', () => {
       prompt('tabLangPeer', '查一下子会话做完没有')
       const report = JSON.parse(crossSessionLine('bypass', 'Done: PR #12 is open.', 'k-1')!).message
         .content
-      expect(remindedQuote(prompt('tabLangPeer', report), 'UserPromptSubmit')).toBe(
-        '查一下子会话做完没有'
-      )
-      expect(remindedQuote(tool('tabLangPeer'), 'PostToolUse')).toBe('查一下子会话做完没有')
+      for (const notPersonal of [
+        report,
+        '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command "npm test" completed</summary>\n</task-notification>',
+        '<agent-message from="fix-agent">\nDone: the fix is on its branch.\n</agent-message>'
+      ]) {
+        expect(remindedQuote(prompt('tabLangPeer', notPersonal), 'UserPromptSubmit')).toBe(
+          '查一下子会话做完没有'
+        )
+        expect(remindedQuote(tool('tabLangPeer'), 'PostToolUse')).toBe('查一下子会话做完没有')
+      }
     })
 
     const fromDiscord = (tab: string, words: string, id: string, mode: 'bypass' | 'prompting') =>

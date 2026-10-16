@@ -42,7 +42,14 @@ export class StartedSessions {
   }
 
   startedBy(target: { sessionId: string; tabId?: string }, caller: { sessionId: string }): boolean {
-    return this.startersOf(target).includes(caller.sessionId)
+    return this.startersOf(target).some((starter) => {
+      const seen = new Set<string>()
+      for (let at: string | undefined = starter; at && !seen.has(at); at = this.parentOfRow(at)) {
+        if (at === caller.sessionId) return true
+        seen.add(at)
+      }
+      return false
+    })
   }
 
   startersOf(target: { sessionId: string; tabId?: string }): string[] {
@@ -62,7 +69,17 @@ export class StartedSessions {
   }
 
   forget(sessionId: string): void {
-    this.parentOf.forget(sessionId)
+    const parents = this.parents()
+    const grandparent = parents[sessionId]
+    let changed = Object.hasOwn(parents, sessionId)
+    delete parents[sessionId]
+    for (const [child, parent] of Object.entries(parents)) {
+      if (parent !== sessionId) continue
+      if (grandparent === undefined) delete parents[child]
+      else parents[child] = grandparent
+      changed = true
+    }
+    if (changed) this.save()
   }
 
   private parents(): ParentBySession {

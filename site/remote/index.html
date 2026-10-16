@@ -8,8 +8,7 @@
       name="description"
       content="Open a folder on another machine you reach by ssh. Claude Code runs there; Koloft shows its sessions and a Workbench here. Alpha, with its gaps listed."
     />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/remote/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -27,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+      content="Koloft's icon and the line “Built for you. And for your agents.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Remote folders (alpha) — Koloft" />
@@ -36,25 +35,38 @@
       content="Open a folder on another machine you reach by ssh. Claude Code runs there; Koloft shows its sessions and a Workbench here. Alpha, with its gaps listed."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
-    <link
-      rel="preload"
-      href="../fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="stylesheet" href="../style.css" />
   </head>
-  <body>
+  <body class="doc">
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="../"><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a>
+        <nav class="links" aria-label="Site">
+          <a href="../#palette">⌘P</a>
+          <a href="../#sessions">Sessions</a>
+          <a href="../#workbench">Workbench</a>
+          <a href="../#assist">Assist</a>
+          <a href="../features/">Features</a>
+          <a href="../sessions/" aria-current="page">Docs</a>
+          <a href="../changelog/">Changelog</a>
+        </nav>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="../install/"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#download" /></svg
+          >Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="../icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
+
     <div class="sheet">
       <header class="masthead">
-        <p class="brand">
-          <a href="../"
-            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
-          >
-        </p>
-        <nav class="contents" aria-label="Pages">
-          <a href="../">home</a>
+        <nav class="contents" aria-label="Docs">
           <a href="../sessions/">sessions</a>
           <a href="../workbench/">workbench</a>
           <a href="../agents/">agents</a>
@@ -98,7 +110,6 @@
               height="549"
               alt="The Remote directory dialog, marked alpha: Machine is dev@build-box, Path on the machine is /home/dev/projects/tidewatch, with Cancel and Add buttons"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>the Remote directory dialog: a machine, and a full path on it</figcaption>
         </figure>
@@ -119,9 +130,11 @@
         <h2>What happens there</h2>
         <p>
           Claude Code runs on the other machine. The account it uses comes from
-          <a href="../accounts/">the pool on your Mac</a>. Its transcripts (the written record of
-          each session) stay there, and <code>rsync</code> (a tool that copies files) brings copies
-          back, so the sessions list reads like a folder on your Mac.
+          <a href="../accounts/">the pool on your Mac</a>. Its git and <code>gh</code> use a
+          <a href="../accounts/#machine-accounts">git account kept on that machine</a>, once you
+          pick one. Its transcripts (the written record of each session) stay there, and
+          <code>rsync</code> (a tool that copies files) brings copies back, so the sessions list
+          reads like a folder on your Mac.
         </p>
 
         <figure class="shot is-narrow" style="--ar: 558 / 526">
@@ -133,7 +146,6 @@
               loading="lazy"
               alt="The sessions list: a local folder, harbor-site, and below it a remote folder, tidewatch, tagged dev@build-box with a green dot and two sessions under it, each with a small red dot"
             />
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             a remote folder in the list: the machine's name beside it, a dot lit while connected,
@@ -212,8 +224,12 @@ your Mac                     the other machine
             package manager, which may ask for its sudo password (the admin password)
           </li>
           <li>
-            <code>gh</code>, GitHub's command-line tool, if the machine has none (about 40 MB,
-            once); you still sign in to it there yourself
+            <code>gh</code>, GitHub's command-line tool, if the machine has none (about 40 MB, once)
+          </li>
+          <li>
+            the sign-in tool (Git Credential Manager), if the machine has none, when you add a
+            <a href="../accounts/#machine-accounts">git account</a> for it by signing in on a site
+            in your browser
           </li>
           <li>
             a small <code>koloft</code> script, and the guide that tells the agent how to use it
@@ -256,7 +272,7 @@ your Mac                     the other machine
           <li>
             A session row's menu offers Copy path (<code>machine:/path</code>) instead of Reveal in
             Finder. The panel you get by hovering the small branch icon beside the folder's name
-            shows no Pull, no Fetch now and no Account.
+            shows no Pull and no Fetch now.
           </li>
           <li>
             Koloft does not check whether the folder's branch is behind its git remote. The open
@@ -264,24 +280,41 @@ your Mac                     the other machine
           </li>
         </ul>
 
-        <p class="next">next page -&gt; <a href="../discord/">A butler on Discord</a></p>
+        <p class="next">Next page → <a href="../discord/">A butler on Discord</a></p>
       </main>
-
-      <footer class="signoff">
-        <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="../changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
-        </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
-        </p>
-      </footer>
     </div>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="../"
+            ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
+          >
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="../features/">All features</a>
+          <a href="../sessions/">Folders and their sessions</a>
+          <a href="../workbench/">The Workbench</a>
+          <a href="../agents/">Agents can use Koloft too</a>
+          <a href="../scheduled/">Sessions on a timer</a>
+          <a href="../accounts/">Several accounts, one pool</a>
+          <a href="../remote/">Remote folders</a>
+          <a href="../discord/">A butler on Discord</a>
+          <a href="../install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="../changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
 
     <script src="../script.js"></script>
   </body>

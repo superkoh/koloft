@@ -174,7 +174,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('an issue Assist names starts in that issue’s worktree, and the first prompt carries the issue first, then a blank line, then what was typed', async ({
+  test('an issue Assist names starts in a new worktree named for it, and the first prompt carries the issue first, then a blank line, then what was typed; the same issue again never reuses that worktree, it starts in issue-218-2', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -210,6 +210,13 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       expect(sent.endsWith('--comments), then work on it.\n\nhandle #218 and add a test')).toBe(
         true
       )
+
+      const made = path.join(env.workspaces.a, '.claude', 'worktrees', 'issue-218')
+      await expect.poll(() => fs.existsSync(made), { timeout: 30_000 }).toBe(true)
+      await ask(app, page, 'more on #218')
+      await page.keyboard.press('Enter')
+      const calls = await waitForCalls(env, 2, 30_000)
+      expect(calls[1].argv.join(' ')).toContain('-w issue-218-2 ')
     } finally {
       await quitAndClose(app)
     }

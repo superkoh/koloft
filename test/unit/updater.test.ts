@@ -116,7 +116,7 @@ function release(tag: string, extra: Record<string, unknown> = {}): Record<strin
   return {
     tag_name: tag,
     body: `## What's Changed\n\n- feat: landed in ${tag}\n\n<!-- koloft:install -->\ncurl … | bash`,
-    html_url: `https://github.com/superkoh/koloft-releases/releases/tag/${tag}`,
+    html_url: `https://github.com/superkoh/koloft/releases/tag/${tag}`,
     assets: [
       {
         name: `Koloft-${bare}-arm64.dmg`,
@@ -500,7 +500,7 @@ describe('confirming a download that another route installed while the modal sat
 
 describe('releasePageUrl (R3): the url the in-app release overlay loads — fallback and scheme guard are unreachable from e2e', () => {
   it('falls back to the public releases index before any check has run', () => {
-    expect(up.releasePageUrl()).toBe('https://github.com/superkoh/koloft-releases/releases')
+    expect(up.releasePageUrl()).toBe('https://github.com/superkoh/koloft/releases')
   })
 
   it('points at the same releases repo that install.sh downloads from', () => {
@@ -515,9 +515,7 @@ describe('releasePageUrl (R3): the url the in-app release overlay loads — fall
     h.running = '0.4.4'
     publishRelease('v0.5.0')
     await up.checkForUpdates()
-    expect(up.releasePageUrl()).toBe(
-      'https://github.com/superkoh/koloft-releases/releases/tag/v0.5.0'
-    )
+    expect(up.releasePageUrl()).toBe('https://github.com/superkoh/koloft/releases/tag/v0.5.0')
   })
 
   it('refuses a non-http(s) cached url — a tampered API field never reaches a loader', async () => {
@@ -525,7 +523,7 @@ describe('releasePageUrl (R3): the url the in-app release overlay loads — fall
     h.running = '0.4.4'
     publishReleases(release('v0.5.0', { html_url: 'file:///Applications/Evil.app' }))
     await up.checkForUpdates()
-    expect(up.releasePageUrl()).toBe('https://github.com/superkoh/koloft-releases/releases')
+    expect(up.releasePageUrl()).toBe('https://github.com/superkoh/koloft/releases')
   })
 })
 
