@@ -566,7 +566,7 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
     repoOn(env.workspaces.a, `${forge.url}/acme/app.git`)
     repoOn(env.workspaces.b, `${forge.url}/acme/other.git`)
     seedGcmAccount(env, 'gitea', forge.url, 'bob', GITEA_BOB_TOKEN, [env.workspaces.a])
-    seedSettings(env, { browserControl: false })
+    seedSettings(env, { browserControl: false, hintsOff: true })
     const { app, page } = await launched(env)
     try {
       await startSessionIn(page, 'ws-a', { method: 'Codex' })
