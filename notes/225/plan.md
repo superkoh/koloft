@@ -1,5 +1,7 @@
 ## Plan: Settings ▸ Usage — cost history by day, session, workspace and model
 
+Checked against `main` by an independent reviewer on 2026-10-16 (13 points). Folded in: the Claude de-dup key keeps the largest value per field, not the first line (point 1); the empty state uses `.acct-empty`, the header stays `.set-ph` (2); file names fixed (3); the CSS prefix is `.costs-*`, so `usage.spec.ts`'s `.usage-card` check stays meaningful (4); Codex `cache_write_input_tokens` is booked (5); across-file key counts stated (6); remote reach stated (7); the worker finishes once started and errors end "reading" (8); lines are streamed and filtered before `JSON.parse` (9); cache size stated (10); tests listed (11); `workspaceFor` gets one scope per batch (13). Not taken: dropping the "Day" list view (12) — the mockup the owner saw has it.
+
 ### What the user sees and does
 
 A new **Usage** page in Settings (⌘, or the palette: "Settings ▸ Usage"). On it:
@@ -9,49 +11,68 @@ A new **Usage** page in Settings (⌘, or the palette: "Settings ▸ Usage"). On
 3. One bar chart, one bar per day, one colour (so no legend). Hovering a bar shows that day's total and its Claude Code / Codex parts — the only place the split is shown.
 4. A switch — Day · Session · Workspace · Model — that changes the list under the chart. Each row shows a name, a small line of context (workspace · model · days), tokens, and cost. A Codex row wears a CODEX badge, a remote row an SSH badge. A model Koloft has no price for shows its tokens and "no price" instead of a dollar figure. Money and tokens are written the way the status line already writes them (`formatCost`, `formatTokens` in `src/shared/usageFormat.ts`): `$6.40`, `$31.4`, `$132`; `410k`, `2.41M`.
 5. One line of small print: the figures are API list price for the same tokens — a subscription is not billed per token, so this is a yardstick, not a bill.
+6. While the files are still being read, the chart and list are replaced by the Settings empty-state box (`.acct-empty`, as in Settings ▸ Accounts) saying "Reading usage…"; the pane header stays the usual `.set-ph`. It is swapped for the numbers the moment the read ends. On this Mac the first read takes about 10 s; later opens re-read only files that changed, so they take well under a second.
 
 Nothing else in Koloft changes: no badge, card or row in the sidebar or the terminal area (`test/e2e/usage.spec.ts` keeps those out).
 
-What is reused and what is new on the screen: the Settings modal, nav, `.set-ph`, the `.seg` switches (as in Settings ▸ Sessions), the `.acct-list` / `.acct-row` rows, the `.acct-badge` and `.acct-meter` pieces are the app's own. New: the CODEX and SSH badge variants (the CODEX one on the `--fable` theme tokens), the `.usage-*` chart rules, and the bar tooltip, which goes to `body` through a portal like every other floating layer (ADR-0013), never a fixed box inside the modal. The page plugs in where the other panes do: one id in `SettingsPaneId` and one entry in `SETTINGS_PANES` (`src/shared/paletteFeatures.ts`, which also feeds ⌘P), one icon in `PANE_ICONS` and one pane branch in `SettingsModal.tsx`.
+What is reused and what is new on the screen: the Settings modal, nav, `.set-ph`, the `.seg` switches (as in Settings ▸ Sessions), the `.acct-list` / `.acct-row` rows, the `.acct-badge` and `.acct-meter` pieces are the app's own. New: the CODEX and SSH badge variants (the CODEX one on the `--fable` theme tokens), the `.costs-*` chart rules (not `.usage-*`: `usage.spec.ts` asserts no `.usage-card` exists), and the bar tooltip, which goes to `body` through a portal like every other floating layer (ADR-0013), never a fixed box inside the modal. The page plugs in where the other panes do: one id in `SettingsPaneId` and one entry in `SETTINGS_PANES` (`src/shared/paletteFeatures.ts`, which also feeds ⌘P), one icon in `PANE_ICONS` and one pane branch in `SettingsModal.tsx`.
 
 ### Where the numbers come from
 
-Koloft already works out a session's tokens and cost today (`src/main/sessionTracker.ts` for Claude Code, `src/main/codexObservation.ts` for Codex, prices in `src/shared/pricing.ts`), but keeps only one running total per live tab and starts it from zero on every bind — `/clear`, a resume, a restart — and drops it when the tab closes. This feature keeps it: one record per **session per day per model**, holding four token counts. Cost is worked out when the page is read, from the price table — so a price-table update re-prices old days too.
+Both tools write one file per session, and both files hold the tokens of every model call with its time. So the page reads **files**, the same way for Claude Code and Codex, and never the live frames. (Koloft's live per-tab numbers in `src/main/sessionTracker.ts` and `src/main/codexObservation.ts` stay as they are, for the status line only; they start from zero on every bind and are the wrong source for history.) The result is one record per **session per day per model**, holding four token counts. Cost is worked out when the page is read, from the price table in `src/shared/pricing.ts` — so a price-table update re-prices old days too.
 
-| Tab kind | Where the tokens come from | Day it lands on |
+| Tab kind | Which files, and which lines | Day · model · workspace |
 |---|---|---|
-| Local Claude Code | Each `assistant` line in the session's transcript (`~/.claude/projects/…/*.jsonl`), which the tracker already reads from byte 0 every time a tab binds; sub-agent transcripts fold into the parent session | The line's own timestamp |
-| Remote Claude Code (SSH) | The same lines, from the copy of the machine's `~/.claude/projects` that Koloft already pulls with rsync into its userData folder; the tracker already reads that copy | The line's own timestamp |
-| Local Codex | `thread/tokenUsage/updated` frames from the app-server, which carry the thread's running total; Koloft keeps the last total it saw per thread and books the difference. A thread Koloft starts books from zero; a thread it resumes with no saved total takes the first frame as the starting point and books nothing until the next one, so an old thread never dumps its past onto today. The record carries the model learned once when the thread binds; a model change in the middle of a thread is not probed yet | The moment the frame arrives |
-| Remote Codex | Does not exist as a tab kind (Codex contract §16); nothing to do |
+| Local Claude Code | The transcripts the sidebar already lists (`~/.claude/projects/<slug>/<id>.jsonl`: expose the per-workspace `transcriptFileById` that `readBuckets`/`listJsonl` in `src/main/workspaces.ts` already build, instead of walking again), plus each session's sub-agent transcripts (`<slug>/<sessionId>/subagents/**/*.jsonl`, CC§8, no file cap), which fold into the parent. One `assistant` line with `message.usage` = one call. One record per `message.id` + `requestId`, keeping the **largest value of each token field** across its lines — measured here: in 462 of 5611 keys the lines differ and the last has the bigger `output_tokens` (streamed-so-far counts), so the tracker's first-line rule is ~15 % low on output (filed separately; CC§2's "the same usage object is written several times" gets a dated correction). A line with no `message.id` counts each time (CC§2); `isSidechain` lines count; a `<synthetic>` model line is skipped | The line's `timestamp` through `localDayKey` · `message.model` · the workspace the walk found the file under |
+| Remote Claude Code (SSH) | The same lines, from the copy of the machine's `~/.claude/projects` that Koloft already pulls with rsync (`src/main/remote/sync.ts`; root from `mirrorProjectsRoot` in `src/main/remote/paths.ts`). The pull includes `<slug>*/*.jsonl` and `<slug>*/*/**` with `--delete`, so sub-agent folders come too; only slugs of pinned remote workspaces are mirrored | Same · same · `ssh://machine/path` |
+| Local Codex | Every `rollout-*.jsonl` under the default Codex home's `sessions/` **and** `archived_sessions/`. One `token_usage_record` line = one request to the model; its `payload.usage` block is booked once per `payload.response_id`. Never `turn_token_usage` or `thread_token_usage`: those are running sums that repeat. Tokens map as the live frame does today (CODEX§13, as `codexObservation.ts` books them: input = `input_tokens − cached_input_tokens`, cache read = `cached_input_tokens`, cache write = `cache_write_input_tokens`, output = `output_tokens`; `reasoning_output_tokens` is inside `output_tokens`, see Measured). A child-agent rollout (`session_meta.payload.source.subagent.thread_spawn.parent_thread_id`) folds into its parent thread, like a Claude sub-agent | The record's own `timestamp` (ISO, through `localDayKey`) · the `turn_context` line with the same `turn_id` — so a thread that changes model mid-way prices each turn right · `session_meta.payload.cwd` through `CodexSessions.workspaceFor` (private today; expose it) |
+| Remote Codex | Does not exist as a tab kind (#99, Codex contract §16); nothing to do | — |
 
-The workspace of a record is the tab's workspace key (a local path, or `ssh://machine/path`), which main already knows per tab.
+**Every Codex account is covered by one read.** `prepareCodexHome` (`src/main/codexAccounts.ts`, CODEX§15) makes every account home's `sessions/` and `archived_sessions/` a link into the default home's (`$CODEX_HOME` or `~/.codex`), and moved the files an older home already had into the shared folder. So reading the default home's two folders once covers every account. Per-account cost is not shown (Left out).
 
-Store: one JSON file in userData, like `started-sessions.json`. Claude Code records for a session are rebuilt whenever its transcript is read, with the tracker's own two de-dup rules (one record per `message.id` + `requestId`; a `<synthetic>` model line is skipped), so a resume or restart never double-counts. Codex records are append-only and keep the last-seen total per thread beside them, or the first frame after a Koloft restart would book the whole thread again.
+**No double counting.** A resume repeats the last live frame (see Measured), but in the files no `response_id` repeats — 0 in 4467 records across all 46 files here, within a file or across files, the 11 files with more than one `session_meta` (resumed threads) included; 0 null `response_id`. So within a file the key is `response_id`; across reads a file's records are rebuilt from scratch each time it is re-read. Claude Code keeps the tracker's `message.id` + `requestId` key.
+
+**Store = a cache of parsed files.** One JSON file in userData, like `started-sessions.json`: per file path → `mtime`, `size`, and that file's records. A file whose `mtime` or `size` changed is parsed whole again and replaces its entry; a file that is gone drops out. Nothing is appended to or counted live.
+
+**The read runs off the main thread.** A new worker `src/main/usageScanWorker.ts`, imported as `'./usageScanWorker?nodeWorker'` exactly like `transcriptSearchWorker` (`src/main/index.ts`, `// PLATFORM§4`). Main lists the files (both tools, local and mirror) and their `mtime`/`size`, keeps the cache entries that still match, and hands the rest to the worker as `workerData: { files }`. The worker reads each file as a stream line by line (`readline`), skips a line without `"usage"` (Claude) or `token_usage_record` / `turn_context` / `session_meta` (Codex) before `JSON.parse`, wraps each file in try/catch so one bad file loses only itself, and posts one message per parsed file; main merges it into the cache as it arrives. On the worker's `exit` or `error` the cache is saved, "reading" ends and the renderer gets `usage:changed` once. Only one worker runs at a time and it finishes once started (closing the modal does not stop it, so a short peek still completes the first read); a `usage:read` while it runs returns the cache plus `reading: true` and starts nothing. The two scanners are pure functions (`scanClaudeLines`, `scanCodexLines`) the 5-line worker wraps. Cache size: records are per session·day·model, so ~250k usage lines here collapse to roughly 5–10k records, a JSON file of a few MB. `workspaceFor` is called with one scope per batch. IPC: `usage:read` (the cache's records plus `reading: true|false`) and `usage:changed`. This Mac: 3809 Claude files, 3.7 GB, ~9–11 s and ~300 MB peak for the first read; Codex 46 files, 89 MB, 0.6 s.
 
 ### Existing users after upgrading
 
-- **Claude Code history fills itself in.** When the Usage page opens, Koloft reads the transcripts the sidebar already lists — it walks the same enumeration (`src/main/workspaces.ts` → `aggregateSessions`), so a record's workspace and the session count match the sidebar. How far that reaches is fixed by what is on disk: locally, what `~/.claude/projects` holds for Koloft's workspaces and their worktree buckets; for a remote machine, what the mirror holds for those projects — and the mirror pulls only while the machine is connected and mirrors deletions, so a session deleted on the machine is gone here too.
-- **Codex starts at zero.** Codex has no transcript Koloft reads, so the chart counts Codex from the day this version is installed. Old Codex sessions do not show.
+- **Claude Code history fills itself in**, as far as what is on disk: locally `~/.claude/projects` for Koloft's workspaces and their worktree buckets; for a remote machine what the mirror holds (it pulls only while the machine is connected and mirrors deletions).
+- **Codex history fills itself in too**, back to the oldest rollout file in the shared `sessions/` and `archived_sessions/` folders.
 - Settings, accounts, sessions, bindings: untouched.
 
 ### Left out
 
 - A separate Workbench tab: the Workbench belongs to one session; this page is across sessions, workspaces and days.
-- Cost per account, per turn, or per hour.
-- Budgets, alerts, exports.
-- Back-filling Codex from its own rollout files under `CODEX_HOME/sessions` — not probed yet.
-- A split chart (Claude Code vs Codex as two colours): the app's muted palette fails the chart colour checks (every pair reads too grey), so the split lives in the hover only.
+- Cost per account, per turn, or per hour. Budgets, alerts, exports.
+- A split chart (Claude Code vs Codex as two colours): the app's muted palette fails the chart colour checks, so the split lives in the hover only.
+- Watching the folders while the page is open: it re-reads on open and on every `usage:changed`.
+
+### Tests (which test goes red if it breaks)
+
+- `scanClaudeLines` unit cases on fixture lines: a key whose lines grow (`output_tokens` 3 → 1231) books 1231; `<synthetic>` skipped; a no-id line counted each time; `isSidechain` counted; a sub-agent file folds into its parent.
+- `scanCodexLines` unit cases: model from each turn's `turn_context` (a mid-thread switch prices both turns right); `turn_token_usage` / `thread_token_usage` never booked; a child rollout folds into its parent thread; the four token fields map as `codexObservation.ts` does.
+- Cache unit cases: same `mtime`/`size` → not re-parsed; changed → replaced; gone → dropped; a second read during a run starts no second worker.
+- E2E in `settings.spec.ts`'s pattern (`openSettings`, `.set-ni` "Usage"): seeded Claude transcripts with `message.usage` (`seedJsonl` in `test/e2e/helpers/p1.ts` gains a usage option) and a seeded Codex rollout with `token_usage_record` lines under the e2e `CODEX_HOME` — the page shows the right totals per day / session / workspace / model; `usage.spec.ts` stays green.
 
 ### Not probed yet (said as such, nothing built on them)
 
-- That `thread/tokenUsage/updated`'s `total` carries the turns before a resume (if it does not, a resumed thread's first delta is just its first turn, which is fine either way).
-- Whether a Codex frame has its own timestamp — if not, the day is the moment it arrives on the Mac.
-- Whether a Codex thread can change model mid-way, and what the frame says then.
-- How long a first back-fill takes on a big `~/.claude/projects` — if slow, it runs in the background and the page shows "reading…" until done.
+- 11 of the 46 rollout files hold more than one `session_meta` line; a resume appending a new one is the likely reason — inferred, not checked; it does not affect the counting.
+- A `codex exec` rollout (`source: "exec"`) counts as a session of its cwd's workspace. Koloft's own Assist one-shots run `codex exec --ephemeral`, which writes no rollout — inferred, not checked (CODEX§4).
+- Whether a Codex thread resumed from an account home writes its new turns into the same shared file — inferred, not checked from the shared-folder link.
+- The ~300 MB peak during the first read sits in the worker, not main — expected, not measured.
+
+### Measured (goes to `docs/codex-cli-contract.md` §13)
+
+Checked 2026-10-16 on this Mac, `codex-cli 0.162.0` (the live probe used a throwaway `CODEX_HOME`, real tiny turns, then deleted; the file scan read 46 rollouts written by 0.149.0-alpha through 0.162.0, printing field names and numbers only).
+
+- **Live frames.** `thread/tokenUsage/updated` is `{method, params, emittedAtMs}`, `params` = `threadId, turnId, tokenUsage{total, last, modelContextWindow}`. `total` carries the turns before a resume (13147 before; after a fresh app-server's `thread/resume` and one turn of 13800, `total` = 26947). Right after `thread/resume`, before any new turn, the new app-server sends the old last turn's frame again — same `turnId`, same `total`. `emittedAtMs` is the send time, not the turn's. No frame, and no `Turn`, carries a model; a thread can change model mid-way (`turn/start` with `model`; `thread/settings/updated` says so; `thread/read` shows only the current one).
+- **Rollout file** (`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`, archived ones under `archived_sessions/`). One `token_usage_record` line per request: `timestamp` (ISO), `ordinal`, `payload{thread_id, turn_id, session_id, root_turn_id, response_id, usage, turn_token_usage, thread_token_usage}`; each usage block has `input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens, reasoning_output_tokens, total_tokens`. One `turn_context` line per turn: `payload{turn_id, root_turn_id, model, effort, approval_policy, sandbox_policy, …}`. `session_meta` has `payload{id, cwd, timestamp, source, thread_source, cli_version, creator_account_id, …}`; `source` is `"vscode"`, `"exec"`, or `{subagent: {thread_spawn: {parent_thread_id, depth, …}}}`.
+- **Three rules that held on every file** (46 files, 273 turns, 4467 records): a `turn_id`'s `turn_context` is written before that turn's first record; `response_id` never repeats; the sum of a turn's `usage.total_tokens` equals its last `turn_token_usage.total_tokens`.
+- **`reasoning_output_tokens` is inside `output_tokens`**: in all 3753 records where it was above 0, `total_tokens = input_tokens + output_tokens` and reasoning ≤ output.
+- **Size and speed.** Codex: 46 files, 89 MB, 0.6 s. Claude Code: 3809 `*.jsonl`, 3.7 GB, 1.01 M lines (247,810 with usage); 11.2 s then 8.7 s, ~300 MB peak.
 
 ### The one decision
 
-**Where it lives**
-1. **Settings pane "Usage" (my pick).** One id and one entry in `SETTINGS_PANES` plus an icon gets ⌘P routing for free; touches none of the selectors `usage.spec.ts` forbids. Cost: it is a modal — you cannot keep it open while working.
-2. Workbench tab. Always on screen beside the session. Cost: the Workbench is one session's; a cross-session, cross-workspace, cross-day view does not belong to one tab, and every tab would carry a copy.
+**Where it lives** — decided 2026-10-15: **A, a Settings pane "Usage".**
