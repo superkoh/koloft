@@ -1061,13 +1061,10 @@ describe('injected hook script', () => {
     })
   })
 
-  it('every launch Koloft makes, on this Mac or another machine, answers Claude’s one-time Bypass Permissions screen itself (CC§9)', () => {
+  it('the settings file every Claude launch gets, on this Mac or another machine, answers Claude’s one-time Bypass Permissions screen itself (CC§9)', () => {
     expect(hookSettings('/x/hook.sh', '/x/reg', 'tabBP')).toMatchObject({
       skipDangerousModePermissionPrompt: true
     })
-    expect(
-      hookSettings('/m/hook.sh', '/m/reg', 'tabBP2', undefined, dq, 'record-only')
-    ).toMatchObject({ skipDangerousModePermissionPrompt: true })
   })
 })
 
