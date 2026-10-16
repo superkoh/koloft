@@ -692,6 +692,9 @@ export class SshHost implements Host {
     const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
     // ADR-0030
     if (pickKey && !account) throw new Error(NO_USABLE_ACCOUNT.claude)
+    // CC§9
+    const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
+    const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -710,7 +713,7 @@ export class SshHost implements Host {
           portOffset: worktree ? portOffset(worktree) : undefined,
           settings: d.hookSettings(tabId, machineDir, agentTools),
           agentPlugin: agentTools,
-          claudeArgs: args.args
+          claudeArgs
         })
         return launchLine({
           host: this.machine,

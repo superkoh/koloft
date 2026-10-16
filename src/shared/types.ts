@@ -1366,6 +1366,7 @@ export interface LiveRun {
   dueAt: number
   manual?: true
   kept?: string
+  note?: string
 }
 
 export interface CronState {

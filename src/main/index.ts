@@ -2550,6 +2550,10 @@ app.whenReady().then(() => {
     notify: notifyPlain,
     push: (state) => sendToRenderer('cron:state', state),
     killed: (tabId) => sendToRenderer('tab:killedByMain', tabId),
+    endpointAccountWithModelOf: (tabId) => {
+      const name = tracker.infoOf(tabId)?.pickedAccount
+      return name && findAccount(name, 'custom')?.model ? name : undefined
+    },
     bindDeadlineMs: cronBindDeadlineMs(),
     closeRecheckMs: cronTestMs('KOLOFT_CRON_CLOSE_RECHECK_MS', CRON_CLOSE_RECHECK_MS),
     setInterval,
