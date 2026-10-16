@@ -113,35 +113,40 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
-  test('a Muse tab still open when Koloft quits comes back running the same session after a restart', async ({
-    env
-  }) => {
-    installMuse(env)
-    trustInMuse(env, env.workspaces.a)
-    seedSettings(env, { hintsOff: true })
-    let app = await launchApp(env)
-    try {
-      let page = await app.firstWindow()
-      await waitBooted(page)
-      const first = await startMuse(page, env)
-      await quitAndClose(app)
-      await expect.poll(() => processAlive(first.pid)).toBe(false)
+  for (const ends of ['quits', 'crashes'] as const)
+    test(`a Muse tab still open when Koloft ${ends} comes back running the same session after a restart`, async ({
+      env
+    }) => {
+      installMuse(env)
+      trustInMuse(env, env.workspaces.a)
+      seedSettings(env, { hintsOff: true })
+      let app = await launchApp(env)
+      try {
+        let page = await app.firstWindow()
+        await waitBooted(page)
+        const first = await startMuse(page, env)
+        if (ends === 'quits') await quitAndClose(app)
+        else {
+          process.kill(app.process().pid!, 'SIGKILL')
+          await app.close().catch(() => {})
+        }
+        await expect.poll(() => processAlive(first.pid)).toBe(false)
 
-      app = await launchApp(env)
-      page = await app.firstWindow()
-      await waitBooted(page)
-      await expect.poll(() => museCalls(env).length, { timeout: 30_000 }).toBe(2)
-      expect(museCalls(env)[1].argv).toEqual([
-        ...ASKS_THE_OWNER_WITH_THE_BROWSER,
-        'resume',
-        first.sessionId
-      ])
-      await expect(museRows(page)).toHaveCount(1)
-      await expect(museRows(page)).toHaveClass(/st-(waiting|idle)/, { timeout: 30_000 })
-    } finally {
-      await quitAndClose(app)
-    }
-  })
+        app = await launchApp(env)
+        page = await app.firstWindow()
+        await waitBooted(page)
+        await expect.poll(() => museCalls(env).length, { timeout: 30_000 }).toBe(2)
+        expect(museCalls(env)[1].argv).toEqual([
+          ...ASKS_THE_OWNER_WITH_THE_BROWSER,
+          'resume',
+          first.sessionId
+        ])
+        await expect(museRows(page)).toHaveCount(1)
+        await expect(museRows(page)).toHaveClass(/st-(waiting|idle)/, { timeout: 30_000 })
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
   test('a Muse worktree session runs in its own worktree folder, trusted for that run because its workspace is', async ({
     env
@@ -282,9 +287,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await dlg.locator('.chip', { hasText: 'Other…' }).click()
       await dlg.locator('input[aria-label="Model name"]').fill('muse-large')
       await dlg.locator('.chip', { hasText: /^High$/ }).click()
-      await expect(dlg.locator('.chip.on', { hasText: 'Same as my other sessions' })).toHaveCount(
-        1
-      )
+      await expect(dlg.locator('.chip.on', { hasText: 'Same as my other sessions' })).toHaveCount(1)
       await dlg.locator('.modal-foot .btn-primary').click()
       await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
 
