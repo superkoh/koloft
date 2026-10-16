@@ -376,8 +376,10 @@ git ls-files -z --others --ignored --exclude-from=.worktreeinclude | git check-i
   done
 exit 0`
 
-const SAME_FILE_IN_ROOT = `for f in "$1/$3" "$2/$3"; do [ -f "$f" ] && [ ! -L "$f" ] || exit 1; done
-cmp -s "$1/$3" "$2/$3"`
+const SAME_FILES_IN_ROOT = `tr '\\0' '\\n' | while IFS= read -r f; do
+  for p in "$1/$f" "$2/$f"; do [ -f "$p" ] && [ ! -L "$p" ] || exit 1; done
+  cmp -s "$1/$f" "$2/$f" || exit 1
+done`
 
 export class SshHost implements Host {
   readonly github: GithubLookup
@@ -505,12 +507,12 @@ export class SshHost implements Host {
   }
 
   get treeOps(): TreeOps {
-    const fail = (r: BytesResult): Error =>
+    const fail = (r: { code: number | null; stderr: string }): Error =>
       Object.assign(new Error(r.stderr.trim() || problemOf(r)), { code: r.code ?? undefined })
     return {
       git: async (cwd, args) => {
         const r = await this.gitRun(cwd, args)
-        if (r.code !== 0) throw Object.assign(new Error(r.stderr.trim()), { code: r.code })
+        if (r.code !== 0) throw fail(r)
         return r.stdout.trimEnd()
       },
       realpath: async (p) => {
@@ -520,13 +522,19 @@ export class SshHost implements Host {
       },
       exists: (p) => this.dirExistsOrThrow(p),
       keyed: (p) => this.keyed(p),
+      bare: (p) => this.bare(p),
       copyIncludes: async (root, tree) => {
         await this.sh(COPY_WORKTREE_INCLUDES, [this.bare(root), this.bare(tree)], {
           timeoutMs: GIT_STEP_TIMEOUT_MS
         })
       },
-      sameFileInRoot: async (root, tree, rel) =>
-        (await this.sh(SAME_FILE_IN_ROOT, [this.bare(root), this.bare(tree), rel])).code === 0
+      sameFilesInRoot: async (root, tree, rels) =>
+        (
+          await this.sh(SAME_FILES_IN_ROOT, [this.bare(root), this.bare(tree)], {
+            input: Buffer.from(rels.map((rel) => rel + '\0').join('')),
+            timeoutMs: GIT_STEP_TIMEOUT_MS
+          })
+        ).code === 0
     }
   }
 

@@ -4,12 +4,9 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { parseRemoteKey } from '@shared/remoteKey'
 import { SessionStore, type WorktreeResource } from './sessionStore'
 
 const execFileAsync = promisify(execFile)
-
-const bare = (p: string): string => parseRemoteKey(p)?.path ?? p
 
 interface Checkout {
   path: string
@@ -23,8 +20,9 @@ export interface TreeOps {
   realpath(p: string): Promise<string>
   exists(p: string): Promise<boolean>
   keyed(p: string): string
+  bare(p: string): string
   copyIncludes(root: string, worktreePath: string): Promise<void>
-  sameFileInRoot(root: string, tree: string, rel: string): Promise<boolean>
+  sameFilesInRoot(root: string, tree: string, rels: string[]): Promise<boolean>
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -90,8 +88,12 @@ export const LOCAL_TREE_OPS: TreeOps = {
   realpath: async (p) => fs.realpathSync(p),
   exists: async (p) => fs.existsSync(p),
   keyed: (p) => path.resolve(p),
+  bare: (p) => p,
   copyIncludes: copyWorktreeIncludes,
-  sameFileInRoot
+  sameFilesInRoot: async (root, tree, rels) => {
+    for (const rel of rels) if (!(await sameFileInRoot(root, tree, rel))) return false
+    return true
+  }
 }
 
 async function checkouts(ops: TreeOps, cwd: string): Promise<Checkout[]> {
@@ -202,10 +204,11 @@ export class SessionWorktrees {
         changes
       )
         return false
-      for (const rel of ignored.split('\0').filter(Boolean)) {
-        if (!(await ops.sameFileInRoot(resource.originalCwd, tree, rel))) return false
-      }
-      return true
+      return await ops.sameFilesInRoot(
+        resource.originalCwd,
+        tree,
+        ignored.split('\0').filter(Boolean)
+      )
     } catch {
       return false
     }
@@ -299,10 +302,10 @@ export class SessionWorktrees {
       if (stale) {
         if (stale.locked)
           throw new Error('The missing worktree is locked; unlock it before rebuilding')
-        await ops.git(root, ['worktree', 'remove', bare(resource.worktreePath)])
+        await ops.git(root, ['worktree', 'remove', ops.bare(resource.worktreePath)])
       }
       const branch = resource.worktreeBranch
-      const tree = bare(resource.worktreePath)
+      const tree = ops.bare(resource.worktreePath)
       const args = branch
         ? reuseBranch && (await branchExists(ops, root, branch))
           ? ['worktree', 'add', tree, branch]

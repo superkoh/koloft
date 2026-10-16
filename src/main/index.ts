@@ -169,7 +169,7 @@ import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
-import { dirExistsSync, gitProbes, type GitOut, type ResumeProbes } from './resumePlan'
+import { gitProbes, type GitOut, type ResumeProbes } from './resumePlan'
 import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { codexConfigFile } from './codexTrust'
@@ -210,7 +210,7 @@ import { fullscreenOption, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
 import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
-import { localGitOut, localHost } from './host/localHost'
+import { localHost } from './host/localHost'
 import { SshHost } from './host/sshHost'
 import { projectInfoFor, realpathSafe } from './projectInfo'
 import { whatsNewDecision } from './releaseNotes'
@@ -2101,8 +2101,7 @@ app.whenReady().then(() => {
         },
         machinePackage,
         tabDir: (tabId) => tabPackageDir(userData, tabId),
-        host: (machine) => hosts.machine(machine),
-        machines: () => [...new Set((workspaceMgr?.remoteTargets() ?? []).map((t) => t.host))]
+        host: (machine) => hosts.machine(machine)
       },
       pty: ptyMgr,
       runtime: tracker,
@@ -2145,7 +2144,7 @@ app.whenReady().then(() => {
     codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
   }
   if (codexSessions) {
-    sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineResumeProbes))
+    sessionBackends.register(codexBackend(codexSessions, resumeProbes))
     void codexSessions
       .availability()
       .then((codex) => {
@@ -3921,18 +3920,10 @@ function cronBindDeadlineMs(): number {
 }
 
 const resumeProbes: ResumeProbes = {
-  dirExists: dirExistsSync,
+  dirExists: (p) => hosts.of(p).dirExists(p),
   occupantOf: (dir) => sessionBackends.occupantOf(dir),
   recorded: (dir) => codexSessions?.worktrees.recorded(dir) ?? false,
-  ...gitProbes(localGitOut)
-}
-
-function machineResumeProbes(machine: string): ResumeProbes {
-  return {
-    ...resumeProbes,
-    dirExists: (p) => hosts.machine(machine).dirExists(p),
-    ...gitProbes(hostGitOut)
-  }
+  ...gitProbes(hostGitOut)
 }
 
 function commitSettings(patch: Partial<Settings>): Settings {
@@ -4030,7 +4021,7 @@ const claudeBackend = new ClaudeBackend({
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   error: (message) => sendToRenderer('cron:toast', message),
   assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-  machineOfOtherTab: (tabId) => codexSessions?.machineOfTab(tabId)
+  machineOfTab
 })
 sessionBackends.register(claudeBackend)
 

@@ -95,7 +95,7 @@ function machineBackend(): {
       get: (id: string) => (MACHINE_TABS[id] || CODEX_TABS[id] ? {} : undefined),
       clearResumeIntent: () => {}
     },
-    machineOfOtherTab: (id: string) => CODEX_TABS[id],
+    machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
     hosts: {
       machine: (host: string) => ({
         answerAgent: async (id: string, reply: string) => void sent.push([host, id, reply])

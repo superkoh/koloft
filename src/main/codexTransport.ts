@@ -304,7 +304,12 @@ class CodexProcess implements CodexUpstream {
   }
 }
 
-function asError(error: unknown): Error {
+export const KOLOFT_INITIALIZE = {
+  clientInfo: { name: 'koloft', title: 'Koloft', version: '1' },
+  capabilities: { experimentalApi: true }
+}
+
+export function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
 }
 
@@ -568,10 +573,7 @@ export class CodexRpc {
 
   private async handshake(): Promise<void> {
     await this.process.ready
-    await this.send('initialize', {
-      clientInfo: { name: 'koloft', title: 'Koloft', version: '1' },
-      capabilities: { experimentalApi: true }
-    })
+    await this.send('initialize', KOLOFT_INITIALIZE)
     this.process.write(JSON.stringify({ method: 'initialized' }))
   }
 

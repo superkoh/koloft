@@ -6,7 +6,6 @@ import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import { acceptCodexTrust, codexConfigFile, codexTrustsFolder } from '../codexTrust'
 import { planResume, type ResumeProbes } from '../resumePlan'
-import { machineOfCodexKey } from '../sessionStore'
 
 export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefined): void {
   try {
@@ -16,11 +15,7 @@ export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefine
   }
 }
 
-export function codexBackend(
-  sessions: CodexSessions,
-  resumeProbes: ResumeProbes,
-  machineProbes: (machine: string) => ResumeProbes
-): SessionBackend {
+export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes): SessionBackend {
   return {
     id: 'codex',
     availability: () => sessions.availability(),
@@ -42,12 +37,10 @@ export function codexBackend(
     },
     resumePlan: async (key): Promise<ResumePlan> => {
       const row = sessions.findRow(key)
-      const machine = machineOfCodexKey(key)
-      const probes = machine ? machineProbes(machine) : resumeProbes
-      if (row && !row.worktreeState && !(await probes.dirExists(row.cwd))) {
+      if (row && !row.worktreeState && !(await resumeProbes.dirExists(row.cwd))) {
         return { action: 'unavailable', reason: 'no-cwd' }
       }
-      return planResume(row, probes, row?.worktreeState?.worktreePath)
+      return planResume(row, resumeProbes, row?.worktreeState?.worktreePath)
     },
     hasTab: (tabId) => sessions.hasTab(tabId),
     workspaceOfTab: (tabId) => sessions.workspaceOfTab(tabId),
@@ -58,10 +51,12 @@ export function codexBackend(
     observe: (tabId, event) => sessions.observe(tabId, event),
     occupantOf: (dir) => sessions.occupantOf(dir),
     accountUsable: () => hasUsableAccount(listAccounts(), 'codex'),
-    trustsFolder: (dir) =>
-      parseRemoteKey(dir)
-        ? sessions.machineTrusts(dir)
-        : codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir),
+    trustsFolder: (dir) => {
+      const onMachine = parseRemoteKey(dir)
+      return onMachine
+        ? sessions.machineTrusts(onMachine)
+        : codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir)
+    },
     turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n),
     // ADR-0028
     permissionClass: (tabId) => (sessions.launchedBypassingChecks(tabId) ? 'bypass' : 'prompting')

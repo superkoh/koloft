@@ -185,7 +185,9 @@ have rsync || install_pkg rsync || exit 4
 exit 0
 `
 
-export const CODEX_CLI_DIR = '$HOME/.koloft/codex-cli'
+const CODEX_CLI_DIR = '$HOME/.koloft/codex-cli'
+
+export const CODEX_FIRST_ON_PATH = `PATH="${CODEX_CLI_DIR}/bin:$PATH"; export PATH`
 
 const CA_BUNDLES = [
   '/etc/ssl/certs/ca-certificates.crt',
@@ -197,7 +199,7 @@ const CA_BUNDLES = [
 // CODEX§16
 export const ENSURE_CODEX_SH = `#!/bin/sh
 ${REMOTE_ENV_LINES}
-PATH="${CODEX_CLI_DIR}/bin:$PATH"; export PATH
+${CODEX_FIRST_ON_PATH}
 want="$1"
 ${INSTALL_PKG}
 have bash || install_pkg bash || exit 4

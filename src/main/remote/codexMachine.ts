@@ -4,7 +4,7 @@ import type { ChildProcessWithoutNullStreams } from 'child_process'
 import type { Socket } from 'net'
 import WebSocket from 'ws'
 import { shq } from '@shared/shellQuote'
-import { CODEX_CLI_DIR, REMOTE_ENV_LINES, remoteShCommand } from './install'
+import { CODEX_FIRST_ON_PATH, REMOTE_ENV_LINES, remoteShCommand } from './install'
 import {
   assertSafeNames,
   COULD_NOT_CONNECT,
@@ -12,23 +12,29 @@ import {
   pushTabDir,
   type MachinePackage
 } from './launch'
-import { REMOTE_HOOK_DIR } from './paths'
+import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
-import { parseFrame, type CodexFrame, type CodexUpstream } from '../codexTransport'
+import {
+  asError,
+  KOLOFT_INITIALIZE,
+  parseFrame,
+  type CodexFrame,
+  type CodexUpstream
+} from '../codexTransport'
+import { record } from '../codexObservation'
+import { hookStateHeader } from '../codexTrust'
 import { CODEX_REPLY_LANGUAGE_ENV, CODEX_SAID_ENV } from '../hooks'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
 
 // ADR-0038
-export const REMOTE_CODEX_HOME = '$HOME/.koloft/codex-home'
-
-const CODEX_FIRST_ON_PATH = `PATH="${CODEX_CLI_DIR}/bin:$PATH"; export PATH`
+export const REMOTE_CODEX_HOME = `${REMOTE_HOME}/codex-home`
 
 export function codexMachineInstance(userData: string): string {
   return crypto.createHash('sha256').update(userData).digest('hex').slice(0, 12)
 }
 
-const serversDir = (instance: string): string => `$HOME/.koloft/cx/${instance}`
+const serversDir = (instance: string): string => `${REMOTE_HOME}/cx/${instance}`
 
 export interface CodexTabSpec {
   tabId: string
@@ -67,7 +73,7 @@ export function replyLanguageFiles(script: string): Record<string, string> {
 function hookTrustLines(hooks: { key: string; hash: string }[]): string {
   return hooks
     .map(({ key, hash }) => {
-      const header = `[hooks.state.${JSON.stringify(key)}]`
+      const header = hookStateHeader(key)
       const table = `\\n${header}\\ntrusted_hash = ${JSON.stringify(hash)}\\n`
       return (
         `touch "$H/config.toml"\n` +
@@ -99,7 +105,7 @@ export function codexTabScript(s: CodexTabSpec): string {
   ].join(' ')
   const serve = `codex app-server --listen "unix://$S.sock" ${config}`
   return `#!/bin/sh
-M="$HOME/.koloft/${s.machineName}"
+M="${remoteMachineDir(s.machineName)}"
 ${REMOTE_ENV_LINES}
 sh "$M/${ENSURE_CODEX_FILE}" ${shq(s.version)} || exit $?
 ${CODEX_FIRST_ON_PATH}
@@ -226,14 +232,8 @@ const LOGIN_ANSWERS_WITHIN_MS = 20_000
 const OWN_REQUEST_ANSWERS_WITHIN_MS = 15_000
 const STDERR_KEPT_BYTES = 2000
 
-const asError = (error: unknown): Error =>
-  error instanceof Error ? error : new Error(String(error))
-
-const fieldsOf = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
-
 const isInitialized = (line: string): boolean =>
-  line.includes('"initialized"') && fieldsOf(JSON.parse(line)).method === 'initialized'
+  line.includes('"initialized"') && record(JSON.parse(line)).method === 'initialized'
 
 // ADR-0038 CODEX§16
 export class MachineCodexUpstream implements CodexUpstream {
@@ -273,11 +273,18 @@ export class MachineCodexUpstream implements CodexUpstream {
       this.connect()
       return
     }
+    this.sendSigningInAfterInitialized(line)
+  }
+
+  private sendSigningInAfterInitialized(line: string): boolean {
     this.send(line)
-    if (!this.signedIn && isInitialized(line)) {
-      this.tuiJoined = true
-      void this.signInThenRelease()
-    }
+    if (this.signedIn || !isInitialized(line)) return false
+    this.tuiJoined = true
+    this.queue ??= []
+    void this.signIn().then(() => {
+      if (!this.stopping && this.ws) this.release()
+    })
+    return true
   }
 
   stop(): Promise<void> {
@@ -294,8 +301,8 @@ export class MachineCodexUpstream implements CodexUpstream {
   // CODEX§16
   private withMachineCwd(raw: string): string {
     if (!raw.includes('"command/exec"')) return raw
-    const frame = fieldsOf(JSON.parse(raw))
-    const params = fieldsOf(frame.params)
+    const frame = record(JSON.parse(raw))
+    const params = record(frame.params)
     if (frame.method !== 'command/exec' || params.cwd !== this.o.macCwd) return raw
     return JSON.stringify({ ...frame, params: { ...params, cwd: this.o.machineCwd() } })
   }
@@ -317,20 +324,11 @@ export class MachineCodexUpstream implements CodexUpstream {
         this.queue = queued.slice(i)
         return
       }
-      this.send(queued[i])
-      if (!this.signedIn && isInitialized(queued[i])) {
-        this.tuiJoined = true
+      if (this.sendSigningInAfterInitialized(queued[i])) {
         this.queue = queued.slice(i + 1)
-        void this.signInThenRelease()
         return
       }
     }
-  }
-
-  private async signInThenRelease(): Promise<void> {
-    this.queue ??= []
-    await this.signIn()
-    if (!this.stopping && this.ws) this.release()
   }
 
   private async signIn(): Promise<void> {
@@ -372,10 +370,7 @@ export class MachineCodexUpstream implements CodexUpstream {
   }
 
   private async rejoin(): Promise<void> {
-    await this.ownRequest('initialize', {
-      clientInfo: { name: 'koloft', title: 'Koloft', version: '1' },
-      capabilities: { experimentalApi: true }
-    })
+    await this.ownRequest('initialize', KOLOFT_INITIALIZE)
     this.send(JSON.stringify({ method: 'initialized' }))
     await this.signIn()
     if (this.threadId) await this.ownRequest('thread/resume', { threadId: this.threadId })
@@ -406,7 +401,7 @@ export class MachineCodexUpstream implements CodexUpstream {
     }
     if (frame.method === 'account/login/completed') this.loginCompleted?.()
     if (frame.method === 'thread/started') {
-      const id = fieldsOf(fieldsOf(frame.params).thread).id
+      const id = record(record(frame.params).thread).id
       if (typeof id === 'string') this.threadId = id
     }
     try {

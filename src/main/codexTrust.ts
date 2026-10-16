@@ -8,9 +8,11 @@ export function codexConfigFile(env: NodeJS.ProcessEnv | undefined): string {
   return path.join(env?.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml')
 }
 
-const projectHeader = (dir: string): string => `[projects.${JSON.stringify(fs.realpathSync(dir))}]`
+const projectHeaderOf = (realDir: string): string => `[projects.${JSON.stringify(realDir)}]`
 
-const hookStateHeader = (key: string): string => `[hooks.state.${JSON.stringify(key)}]`
+const projectHeader = (dir: string): string => projectHeaderOf(fs.realpathSync(dir))
+
+export const hookStateHeader = (key: string): string => `[hooks.state.${JSON.stringify(key)}]`
 
 function readConfig(configFile: string): string {
   try {
@@ -79,7 +81,7 @@ export function codexTrustsFolder(configFile: string, dir: string): boolean {
 
 // CODEX§11
 export function configTrusts(text: string, realDir: string): boolean {
-  const header = `[projects.${JSON.stringify(realDir)}]`
+  const header = projectHeaderOf(realDir)
   const lines = text.split(/\r?\n/).map((line) => line.trim())
   const start = lines.indexOf(header)
   if (start < 0) return false
