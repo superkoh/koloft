@@ -2,10 +2,12 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect } from '../helpers/app'
 import { seedSettings } from '../helpers/env'
 import {
+  centerTerm,
   dialogPrimary,
   fetchNowInGitPanel,
   openMenu,
   pickerDialog,
+  runIn,
   startSessionIn,
   wsGroup
 } from '../helpers/p1'
@@ -324,7 +326,7 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
     }
   })
 
-  test('BB-C22: pulling under a running root session (started before origin moved) asks first', async ({
+  test('BB-C22: pulling under a root session mid-task (started before origin moved) asks first', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -337,13 +339,18 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
       pinned.git['ws-repo'].originAhead(3)
       await fetchNowInGitPanel(page, 'ws-repo')
       await waitForBehindBadge(page, 'ws-repo', 3)
+      await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+      await runIn(page, centerTerm(page), '/busy')
+      await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
 
       await pressNewSession(app, page)
       await expect(pickerTitle(page).first()).toBeVisible({ timeout: 15_000 })
       await expect(pullAndStart(page)).toBeVisible()
 
       await page.keyboard.press('Enter')
-      const confirm = page.locator('.modal').filter({ hasText: 'running in this checkout' })
+      const confirm = page
+        .locator('.modal')
+        .filter({ hasText: 'working on a task in this checkout' })
       await expect(confirm).toBeVisible({ timeout: 20_000 })
       await confirm.getByRole('button', { name: 'Cancel' }).click()
 

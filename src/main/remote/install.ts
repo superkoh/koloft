@@ -6,9 +6,22 @@ import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
 
+export const REMOTE_GIT_DIR = '.koloft/git-accounts'
+
+export const FETCH_FN =
+  'fetch() { if command -v curl >/dev/null 2>&1; then curl -fsSL -o "$2" "$1"; else wget -qO "$2" "$1"; fi; }'
+
+// PLATFORM§54 ADR-0036
+const GIT_ACCOUNTS_INCLUDE_LINE =
+  `koloft_git="'include.path=$HOME/${REMOTE_GIT_DIR}/config'"; ` +
+  'case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; ' +
+  '*) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; ' +
+  'export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git'
+
 // PLATFORM§33
-export const REMOTE_PATH_LINE =
-  'export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
+export const REMOTE_ENV_LINES =
+  'export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"\n' +
+  GIT_ACCOUNTS_INCLUDE_LINE
 
 // PLATFORM§38
 export function onATerminalEvenWhenSshGaveNone(
@@ -27,17 +40,17 @@ fi`
 
 // PLATFORM§33 PLATFORM§37
 export function remoteShCommand(script: string, args: string[] = []): string {
-  const body = `set -- ${args.map(shq).join(' ')}\n${REMOTE_PATH_LINE}\n${script}`
+  const body = `set -- ${args.map(shq).join(' ')}\n${REMOTE_ENV_LINES}\n${script}`
   return `sh -c 'eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`
 }
 
 // PLATFORM§37 PLATFORM§44
 export const ENSURE_SH = `#!/bin/sh
-${REMOTE_PATH_LINE}
+${REMOTE_ENV_LINES}
 NODE_VERSION=${NODE_VERSION}
 say() { printf '[Koloft] %s\\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
-fetch() { if have curl; then curl -fsSL -o "$2" "$1"; else wget -qO "$2" "$1"; fi; }
+${FETCH_FN}
 
 pm=""
 for c in apt-get dnf yum apk brew; do
@@ -254,7 +267,7 @@ export function parseHeartbeat(stdout: string): {
 // PLATFORM§37
 export const UTIL_SH = `#!/bin/sh
 M=$(cd "$(dirname "$0")" && pwd)
-${REMOTE_PATH_LINE}
+${REMOTE_ENV_LINES}
 KOLOFT_UTIL=1
 export KOLOFT_UTIL
 PATH="$M/util-bin:$PATH"

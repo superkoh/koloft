@@ -4,7 +4,7 @@
 
 # Koloft
 
-[![Latest release](https://img.shields.io/github/v/release/superkoh/koloft-releases?label=release&color=blue)](https://github.com/superkoh/koloft-releases/releases)
+[![Latest release](https://img.shields.io/github/v/release/superkoh/koloft?label=release&color=blue)](https://github.com/superkoh/koloft/releases)
 [![Licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
 [![Platform: macOS arm64](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)](#install-macos-apple-silicon)
 [![CI](https://github.com/superkoh/koloft/actions/workflows/ci.yml/badge.svg)](https://github.com/superkoh/koloft/actions/workflows/ci.yml)
@@ -128,7 +128,7 @@ shell.
 ## Install (macOS, Apple Silicon)
 
 Download the `.dmg` from
-[Releases](https://github.com/superkoh/koloft-releases/releases), open it, and drag Koloft
+[Releases](https://github.com/superkoh/koloft/releases), open it, and drag Koloft
 to Applications. The app is signed with an Apple Developer ID and notarized by Apple, so
 it opens with a normal double-click.
 
@@ -136,7 +136,7 @@ Or in one line from the terminal, which fetches the latest dmg and copies `Kolof
 into `/Applications`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/superkoh/koloft/main/install.sh | bash
 ```
 
 ## How it works

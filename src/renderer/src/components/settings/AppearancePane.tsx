@@ -1,5 +1,5 @@
 import { useEffect, useState, type JSX } from 'react'
-import { LuMinus, LuPlus } from 'react-icons/lu'
+import { IconMinus, IconPlus } from '../../icons'
 import { clampFontSize } from '@shared/settingsOps'
 import { useStore } from '../../store'
 import { Switch } from './Switch'
@@ -66,7 +66,7 @@ export function AppearancePane(): JSX.Element {
         </div>
         <div className="set-stepper">
           <button aria-label="Smaller" onClick={() => commitSize(settings.fontSize - 1)}>
-            <LuMinus size={13} />
+            <IconMinus size={13} />
           </button>
           <input
             type="number"
@@ -81,7 +81,7 @@ export function AppearancePane(): JSX.Element {
             }}
           />
           <button aria-label="Larger" onClick={() => commitSize(settings.fontSize + 1)}>
-            <LuPlus size={13} />
+            <IconPlus size={13} />
           </button>
         </div>
       </div>
@@ -138,6 +138,21 @@ export function AppearancePane(): JSX.Element {
           </small>
         </div>
         <Switch checked={settings.gitAutoFetch} onChange={(on) => update({ gitAutoFetch: on })} />
+      </div>
+      <div className={'set-row child' + (settings.gitAutoFetch ? '' : ' off')}>
+        <div className="set-lab">
+          <b>Auto-pull the default branch</b>
+          <small>
+            After each background fetch, fast-forwards a workspace that sits on its default branch
+            with a clean tree and no local commits. Skipped while a session in that checkout is
+            working on a task, and tried again on the next fetch.
+          </small>
+        </div>
+        <Switch
+          checked={settings.gitAutoPull}
+          disabled={!settings.gitAutoFetch}
+          onChange={(on) => update({ gitAutoPull: on })}
+        />
       </div>
     </>
   )
