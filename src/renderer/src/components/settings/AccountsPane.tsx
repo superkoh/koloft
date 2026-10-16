@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
-import { LuGlobe, LuPlus, LuRefreshCw, LuX } from 'react-icons/lu'
+import { IconClose, IconPlus, IconReload, IconWebPage } from '../../icons'
 import type { AccountKind, AccountView, SignInFolderKind } from '@shared/types'
 import { SIGN_IN_FOLDER_KINDS } from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
@@ -161,10 +161,10 @@ export function AccountsPane(): JSX.Element {
             onClick={() => beginLogin()}
             title="Runs claude setup-token in the background and stores the token for you"
           >
-            <LuGlobe size={14} /> Sign in
+            <IconWebPage size={14} /> Sign in
           </button>
           <button className="mini" onClick={() => setAdding('oauth')}>
-            <LuPlus size={14} /> Paste token
+            <IconPlus size={14} /> Paste token
           </button>
           <button
             className="mini acct-refresh"
@@ -172,7 +172,7 @@ export function AccountsPane(): JSX.Element {
             onClick={() => void runRefresh()}
             title="Probe every enabled account now"
           >
-            <LuRefreshCw size={14} />{' '}
+            <IconReload size={14} />{' '}
             {refresh === 'busy'
               ? 'Refreshing…'
               : refresh === 'done'
@@ -191,7 +191,7 @@ export function AccountsPane(): JSX.Element {
           onClick={() => setSignIn({ backend: 'codex' })}
           title="Runs codex login in a terminal tab for a new Codex account"
         >
-          <LuGlobe size={14} /> Sign in to Codex
+          <IconWebPage size={14} /> Sign in to Codex
         </button>
       )}
       <div className="set-grp">Muse</div>
@@ -204,10 +204,10 @@ export function AccountsPane(): JSX.Element {
             onClick={() => setSignIn({ backend: 'muse' })}
             title="Runs muse login in a terminal tab for a new Muse account"
           >
-            <LuGlobe size={14} /> Sign in to Muse
+            <IconWebPage size={14} /> Sign in to Muse
           </button>
           <button className="mini" onClick={() => setAdding('muse-home')}>
-            <LuPlus size={14} /> Paste API key
+            <IconPlus size={14} /> Paste API key
           </button>
         </>
       )}
@@ -499,7 +499,7 @@ function AccountRow({
           </button>
         )}
         <button className="acct-x" title="Delete account" onClick={onAskRemove}>
-          <LuX size={12} />
+          <IconClose size={12} />
         </button>
       </div>
       {confirming && (

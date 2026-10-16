@@ -75,6 +75,35 @@ export const renamedTo = (r: LogRecord): string | undefined =>
 export const startsATurnByItself = (r: LogRecord): boolean =>
   r.payloadType === 'runtime.session' && record(r.payload.event).kind === 'inbox_item_queued'
 
+const runEvent = (r: LogRecord, kind: string): Record<string, unknown> | undefined => {
+  const event = record(r.payload.event)
+  return r.payloadType === 'runtime.session' &&
+    r.payload.kind === 'run' &&
+    typeof r.payload.run_id === 'string' &&
+    event.kind === kind
+    ? event
+    : undefined
+}
+
+// MUSE§9
+export function replyIn(r: LogRecord): { turnId: string; text: string } | undefined {
+  const text = runEvent(r, 'assistant_message_committed')?.text
+  return typeof text === 'string' ? { turnId: String(r.payload.run_id), text } : undefined
+}
+
+// MUSE§9
+export const turnEndedIn = (r: LogRecord): string | undefined =>
+  runEvent(r, 'terminal') ? String(r.payload.run_id) : undefined
+
+// MUSE§9
+export const compactionStarts = (r: LogRecord): boolean =>
+  r.payloadType === 'runtime.command.accepted' &&
+  r.payload.command_kind === 'context.compact.manual'
+
+// MUSE§9
+export const compactionEnds = (r: LogRecord): boolean =>
+  r.payloadType === 'context.compact.manual.outcome'
+
 // MUSE§9
 export function firedJob(r: LogRecord): string | undefined {
   const event = record(r.payload.event)

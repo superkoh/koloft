@@ -56,6 +56,7 @@ let picked: { account: string; env: Record<string, string> } | undefined
 let assist: { role: string; allow: string[] } | undefined
 let gateScript: string
 let skipPermissions: boolean
+let servers: Set<string>
 
 const registryDir = (): string =>
   path.join(home, '.local', 'share', 'muse', 'runtime', 'muse', 'sessions')
@@ -142,6 +143,7 @@ beforeEach(() => {
   picked = { account: 'work', env: { TBH_CREDENTIAL_BACKEND: 'file' } }
   assist = undefined
   skipPermissions = false
+  servers = new Set()
   gateScript = path.join(home, 'muse-conductor-gate.js')
   fs.writeFileSync(gateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
   let tab = 0
@@ -191,10 +193,10 @@ beforeEach(() => {
       }
     },
     skipPermissions: () => skipPermissions,
+    serversAmong: async () => servers,
     agent: { enabled: () => agentTools, answer: vi.fn() },
     gitAccounts: {
       configEnv: (env) => env,
-      picked: async () => false,
       ghWrapper: path.join(tools, 'gh')
     }
   }
@@ -245,11 +247,11 @@ describe('MuseSessions launch', () => {
     expect(created[1].argv).toEqual(['--permission-profile', ':unrestricted', 'resume', A])
   })
 
-  it('asks the owner instead of an AI reviewer by default, and "edit without asking" launches the same, since Muse never asks about edits', async () => {
+  it('asks the owner instead of an AI reviewer by default, with the sandbox network open so a dev server can listen on a port, and "edit without asking" launches the same, since Muse never asks about edits', async () => {
     await launch()
     await launch({ permission: 'acceptEdits' })
-    expect(created[0].argv).toEqual(['--approval-judge', 'off'])
-    expect(created[1].argv).toEqual(['--approval-judge', 'off'])
+    expect(created[0].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
+    expect(created[1].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
   })
 
   it('starts unrestricted when "Skip permission prompts" is on in Accounts, but never over a permission picked for this launch', async () => {
@@ -257,10 +259,10 @@ describe('MuseSessions launch', () => {
     await launch()
     await launch({ permission: 'acceptEdits' })
     expect(created[0].argv).toEqual(['--permission-profile', ':unrestricted'])
-    expect(created[1].argv).toEqual(['--approval-judge', 'off'])
+    expect(created[1].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
   })
 
-  it('opens the sandbox network only when the tab can drive the Workbench browser', async () => {
+  it('hands the Workbench browser to a tab that can drive it', async () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
     expect(created[0].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
@@ -341,14 +343,14 @@ describe('Assist on Muse', () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     assist = { role: 'You are the Assist of ws.', allow: [] }
     const { id } = await launch()
-    expect(created[0].argv).toEqual(['--approval-mode', 'never'])
+    expect(created[0].argv).toEqual(['--approval-mode', 'never', '--sandbox-network', 'enabled'])
     expect(created[0].env.KOLOFT_BROWSER_CDP).toBeUndefined()
     expect(museTrustsFolder({ HOME: home }, repo)).toBe(true)
     const told = JSON.parse(hook(id, 'SessionStart', { session_id: A, source: 'startup' }))
     expect(told.hookSpecificOutput.additionalContext).toBe('You are the Assist of ws.')
   })
 
-  it('an Assist task allowed the browser gets the Workbench browser and an open sandbox network to reach it', async () => {
+  it('an Assist task allowed the browser gets the Workbench browser', async () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     assist = { role: 'r', allow: ['Bash(playwright-cli *)'] }
     await launch()
@@ -476,6 +478,32 @@ describe('MuseSessions turns from hooks', () => {
     expect(ended.turn.said.map((s) => s.text)).toEqual(['fix the docs'])
   })
 
+  // MUSE§9
+  it('hands on the reply of a turn muse answers by itself without a Stop hook, like a bare first "hello", from the session log, and only once when Stop does come', async () => {
+    const id = await boundTab()
+    const run = (turnId: string, event: Record<string, unknown>): Record<string, unknown> => ({
+      payload_type: 'runtime.session',
+      payload: { kind: 'run', run_id: turnId, event }
+    })
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'hello', turn_id: 't1' })
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('hello'))
+    logRecord(A, run('t1', { kind: 'assistant_message_committed', text: 'Hi! How can I help?' }))
+    logRecord(A, run('t1', { kind: 'terminal', terminal: 'completed' }))
+    say(id, osc('?') + osc('state=done:app=muse'))
+    await vi.waitFor(() => expect(events('turn-ended')).toHaveLength(1))
+    expect(events('turn-ended')[0]).toMatchObject({
+      turn: { reply: 'Hi! How can I help?', said: [{ who: 'owner', text: 'hello' }] }
+    })
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'fix it', turn_id: 't2' })
+    logRecord(A, run('t2', { kind: 'assistant_message_committed', text: 'Fixed.' }))
+    logRecord(A, run('t2', { kind: 'terminal', terminal: 'completed' }))
+    hook(id, 'Stop', { session_id: A, last_assistant_message: 'Fixed.', turn_id: 't2' })
+    say(id, osc('state=done:app=muse'))
+    await vi.waitFor(() => expect(events('turn-ended')).toHaveLength(2))
+    await new Promise((r) => setTimeout(r, 300))
+    expect(events('turn-ended')).toHaveLength(2)
+  })
+
   it("ignores what a subagent or muse's own reminder helpers say", async () => {
     const id = await boundTab()
     hook(id, 'SubagentStart', {
@@ -545,6 +573,35 @@ describe('MuseSessions turns from hooks', () => {
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
   })
 
+  // MUSE§8
+  it('shows a background command that listens on a port as a server parked in the background, once its turn ends', async () => {
+    const id = await boundTab()
+    const work = 'work.v2.managed_bash.sha256.srv'
+    hook(id, 'PostToolUse', {
+      session_id: A,
+      tool_name: 'bash',
+      tool_input: { command: 'npm run dev' },
+      tool_response: JSON.stringify({ execution_state: 'background_running', work_id: work })
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        expect.objectContaining({ kind: 'command', state: 'working' })
+      ])
+    )
+    servers = new Set([work])
+    hook(id, 'Stop', { session_id: A, last_assistant_message: 'Started it', turn_id: 't1' })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        expect.objectContaining({
+          id: work,
+          kind: 'server',
+          label: 'npm run dev',
+          state: 'waiting'
+        })
+      ])
+    )
+  })
+
   it('shows a monitor as waiting in the background until its timeout ends it', async () => {
     const id = await boundTab()
     hook(id, 'PostToolUse', {
@@ -611,6 +668,25 @@ describe('MuseSessions turns from hooks', () => {
     expect(events('prompt')).toHaveLength(0)
     logRecord(A, queued(Date.now()))
     await vi.waitFor(() => expect(events('prompt')).toHaveLength(1))
+  })
+
+  // MUSE§9
+  it('shows /compact as working from the session log, since a manual compaction sends no status, until its outcome is logged', async () => {
+    const id = await boundTab()
+    say(id, osc('?') + osc('state=done:app=muse'))
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+    logRecord(A, {
+      recorded_at: Date.now() * 1000,
+      payload_type: 'runtime.command.accepted',
+      payload: { kind: 'command_accepted', command_kind: 'context.compact.manual' }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('working'), { timeout: 3000 })
+    logRecord(A, {
+      recorded_at: Date.now() * 1000,
+      payload_type: 'context.compact.manual.outcome',
+      payload: { kind: 'manual_compaction_outcome', terminal_outcome: 'compacted' }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'), { timeout: 3000 })
   })
 
   it('retitles the row when the owner renames the session in muse, not when muse names it itself, and answers to muse’s own name for it either way', async () => {
@@ -803,7 +879,7 @@ describe('a Muse session on a remote machine', () => {
     expect(launches[0]).toMatchObject({
       cwd: KEY,
       account: { name: 'work' },
-      args: ['--approval-judge', 'off', 'hi'],
+      args: ['--approval-judge', 'off', '--sandbox-network', 'enabled', 'hi'],
       trust: []
     })
     expect(launches[0].account.auth()).toBe('{"providers":{"meta":{}}}')

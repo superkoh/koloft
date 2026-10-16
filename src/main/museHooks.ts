@@ -3,6 +3,7 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
 import { QUOTE_PROMPT_FN, REMIND_REPLY_LANGUAGE_FN } from './replyLanguage'
+import { FROM_A_SESSION } from './crossSessionMessage'
 import { record } from './codexObservation'
 
 // MUSE§9
@@ -33,7 +34,12 @@ input="$(cat | tr -d '\\n')"
 ${keep}
 case "$event" in
   SessionStart) [ -f "$3" ] && cat "$3" ;;
-  UserPromptSubmit) quote_prompt > "$said"; remind_reply_language UserPromptSubmit ;;
+  UserPromptSubmit)
+    case "$input" in
+      *'"prompt":"${FROM_A_SESSION}'*) ;;
+      *) quote_prompt > "$said" ;;
+    esac
+    remind_reply_language UserPromptSubmit ;;
   PostToolUse) remind_reply_language PostToolUse ;;
 esac
 exit 0
@@ -99,7 +105,7 @@ function hooksJson(command: (event: MuseHookName) => string, gate?: string): str
   return JSON.stringify({ hooks })
 }
 
-// MUSE§9 MUSE§16
+// MUSE§9 MUSE§17
 export function remoteMuseHooks(script: string, runId: string, contextFile?: string): string {
   return hooksJson(
     (event) => `bash "${script}" ${runId} ${event}${contextFile ? ` "${contextFile}"` : ''}`

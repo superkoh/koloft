@@ -63,7 +63,7 @@ function cleanHistory(raw: unknown): HistoryLine[] {
     if (typeof item.worktree === 'string' && isValidWorktreeName(item.worktree)) {
       line.worktree = item.worktree
     }
-    if (state === 'failed' && typeof item.note === 'string') line.note = item.note
+    if (typeof item.note === 'string') line.note = item.note
     lines.push(line)
   }
   return lines

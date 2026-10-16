@@ -119,6 +119,7 @@ export interface RunnerDeps {
   notify(title: string, body: string): void
   push(state: CronState): void
   killed(tabId: string): void
+  endpointAccountWithModelOf(tabId: string): string | undefined
   bindDeadlineMs: number
   closeRecheckMs: number
   setInterval: typeof setInterval
@@ -211,11 +212,12 @@ function saveErrors(
 
 const MANUAL = { manual: true } as const
 
-function lineOf(run: LiveRun): Pick<HistoryLine, 'dueAt' | 'worktree' | 'manual'> {
+function lineOf(run: LiveRun): Pick<HistoryLine, 'dueAt' | 'worktree' | 'manual' | 'note'> {
   return {
     dueAt: run.dueAt,
     ...(run.worktree ? { worktree: run.worktree } : {}),
-    ...(run.manual ? MANUAL : {})
+    ...(run.manual ? MANUAL : {}),
+    ...(run.note ? { note: run.note } : {})
   }
 }
 
@@ -460,6 +462,8 @@ export class CronRunner {
     const run = this.live.get(tabId)
     if (!run) return
     run.sessionId = sessionId
+    const endpoint = this.byId(run.jobId)?.model && this.d.endpointAccountWithModelOf(tabId)
+    if (endpoint) run.note = `model set by the endpoint account ${endpoint}`
     // CC§1
     if (run.state === 'launching') {
       run.state = 'running'

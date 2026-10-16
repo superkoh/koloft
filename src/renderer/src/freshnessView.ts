@@ -2,11 +2,9 @@ import type {
   GitAccountSuggestion,
   GitClueReason,
   WorkspaceFreshness,
-  WorkspaceGitAccount,
-  WorkspacePullSummary
+  WorkspaceGitAccount
 } from '@shared/types'
 import { ageLabel } from '@shared/freshnessOps'
-import { basename } from '@shared/preview'
 
 function fetchAge(f: WorkspaceFreshness, now: number): string {
   return f.fetchedAt === null ? 'never' : ageLabel(f.fetchedAt, now)
@@ -62,11 +60,16 @@ export interface PullNote {
   extra?: string
 }
 
-export function pullNote(f: WorkspaceFreshness): PullNote {
+export function pullNote(f: WorkspaceFreshness, machine?: string): PullNote {
   const why = explainOnly(f)
   if (why) return { text: why, tone: 'plain' }
   if (f.state === 'error')
-    return { text: "can't reach origin — check network or credentials.", tone: 'alarm' }
+    return {
+      text: machine
+        ? `can't reach origin from ${machine} — check its network or credentials.`
+        : "can't reach origin — check network or credentials.",
+      tone: 'alarm'
+    }
   if (f.behind === 0) return { text: `Up to date with ${f.defRef}.`, tone: 'plain' }
   if (f.dirty)
     return {
@@ -132,10 +135,4 @@ export function authorLine(a: WorkspaceGitAccount): string {
   return a.author
     ? `Commits as ${a.author.name} <${a.author.email}>`
     : 'Commits keep your own name and email'
-}
-
-export function pullToast(wsPath: string, branch: string, s: WorkspacePullSummary): string {
-  return `${basename(wsPath)} · ${branch}: fast-forwarded ${s.count} commit${
-    s.count === 1 ? '' : 's'
-  } (${s.from} → ${s.to})`
 }

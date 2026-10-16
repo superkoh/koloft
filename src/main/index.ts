@@ -29,6 +29,7 @@ import { CodexSessions } from './codexSessions'
 import { MuseSessions, museShowsAnEmptyInputBox, type MuseRemoteDeps } from './museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
+import { museServersAmong } from './taskProcs'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museSignedIn, storeMuseKey } from './museServe'
 import type { SessionsWithStore } from './storedSessions'
@@ -82,11 +83,18 @@ import {
   forgetAssistMarkers,
   markAnswerable,
   pruneStale,
+  quotedPrompt,
   setupHooks,
   writeAllowFile,
   writeTabHookSettings
 } from './hooks'
-import { formatRemoteKey, hostOf, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import {
+  formatRemoteKey,
+  hostOf,
+  isAbsoluteOnHost,
+  isRemoteKey,
+  parseRemoteKey
+} from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -95,7 +103,8 @@ import {
   runSshBytes,
   sshOptions
 } from './remote/ssh'
-import { ENSURE_SH, TMUX_CONF, UTIL_SH } from './remote/install'
+import { ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
   AGENT_PLUGIN_DIR,
   buildMachinePackage,
@@ -159,7 +168,12 @@ import {
   validateNewAccount
 } from './accounts'
 import { probeAccount, shouldSkipFable } from './usageProbe'
-import { AccountPicker, PROBE_TIMEOUT_MS, type PickResponse } from './accountPicker'
+import {
+  AccountPicker,
+  PROBE_TIMEOUT_MS,
+  codexAllLimitedNotice,
+  type PickResponse
+} from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
@@ -198,6 +212,8 @@ import {
   GithubLookup,
   ghOpenCounts,
   ghRead,
+  openCountsArgs,
+  parseOpenCounts,
   parseGithubFixture,
   type GithubOptions
 } from './github'
@@ -225,6 +241,7 @@ import {
 } from './updater'
 import { currentOffer, startUpdateNotifier } from './updateNotifier'
 import { extOf } from '@shared/preview'
+import { busyInCheckout } from '@shared/freshnessOps'
 import {
   canOpenExternally,
   webPageReachesDiscordDesktopApp,
@@ -393,6 +410,7 @@ import {
   conductorName,
   GLOBAL_SCOPE,
   inviteLink,
+  isAssistScope,
   isDiscordId,
   scopeName
 } from '@shared/conductors'
@@ -935,6 +953,8 @@ function machinePackage(): MachinePackage {
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
     [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
+    [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
+    [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
     [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH
   }
@@ -963,7 +983,7 @@ let discordThreads: SessionThreads | null = null
 let discordLive: LiveStatus | null = null
 let askButtons: AskButtons | null = null
 const answerable = new Set<string>()
-let answerableRegDir: string | undefined
+let hookRegDir: string | undefined
 let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
@@ -991,14 +1011,14 @@ function watchedByDiscord(all: Conductors, s: { tabId: string; conductor?: strin
 }
 
 function syncAnswerable(): void {
-  if (!answerableRegDir || !conductors) return
+  if (!hookRegDir || !conductors) return
   for (const s of allSessions()) {
     if (s.backendId !== 'claude' || !s.alive || s.remote) continue
     const on = discordConnected && watchedByDiscord(conductors, s)
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
-    markAnswerable(answerableRegDir, s.tabId, on)
+    markAnswerable(hookRegDir, s.tabId, on)
   }
 }
 
@@ -1153,8 +1173,10 @@ function pinnedWorkspaceOfTab(tabId: string): string | undefined {
   return workspace && workspaceMgr?.isPinned(workspace) ? workspace : undefined
 }
 
-function notesFileOfPinned(workspace: string): string | undefined {
-  return workspaceMgr?.isPinned(workspace) ? ensureNotesFile(notesBaseDir(), workspace) : undefined
+function notesFileOfScope(scope: string): string | undefined {
+  return isAssistScope(scope, (s) => !!workspaceMgr?.isPinned(s))
+    ? ensureNotesFile(notesBaseDir(), scope)
+    : undefined
 }
 
 function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
@@ -1172,8 +1194,8 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
       : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
   },
   notesFileOf: (tabId) => {
-    const workspace = sessionBackends.workspaceOfTab(tabId)
-    return workspace ? notesFileOfPinned(workspace) : undefined
+    const scope = conductors?.scopeOfTab(tabId) ?? sessionBackends.workspaceOfTab(tabId)
+    return scope ? notesFileOfScope(scope) : undefined
   }
 })
 
@@ -1286,6 +1308,11 @@ const sessionDeps: SessionVerbDeps = {
   sidebar: () => workspaceMgr?.rows() ?? [],
   worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
+  quotedPrompt: (tabId) => {
+    const host = tracker.remoteOf(tabId)?.host
+    const dir = host ? mirrorHookDir(app.getPath('userData'), host) : hookRegDir
+    return dir ? quotedPrompt(dir, tabId) : undefined
+  },
   touch: (tabId, key) => conductors?.touch(tabId, key),
   conductorOf: conductorTarget,
   resume: async (row) => {
@@ -1342,7 +1369,6 @@ const agentRequests = new AgentRequests({
       })
     ),
     ...notesAndWorkbenchVerbs,
-    note: unlessWorkspacelessConductor(notesAndWorkbenchVerbs.note),
     session: sessionCommand.verb,
     workspace: workspaceVerb({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
@@ -1659,7 +1685,9 @@ function codexSharedConfig(): string {
 }
 
 // CODEX§15
-function pickCodexHome(resumeSessionId?: string): { account: string; home: string } | undefined {
+function pickCodexHome(
+  resumeSessionId?: string
+): { account: string; home: string; notice?: string } | undefined {
   const views = accountViews()
   const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
   if (!picked) return undefined
@@ -1672,7 +1700,7 @@ function pickCodexHome(resumeSessionId?: string): { account: string; home: strin
   if (stale) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home }
+  return { account: picked.name, home, notice: codexAllLimitedNotice(picked) }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {
@@ -1786,9 +1814,15 @@ function museHomeFor(name: string): string {
 // ADR-0030 MUSE§13
 function pickMuseHome(
   resumeSessionId?: string
-): { account: string; env: Record<string, string> } | undefined {
+): { account: string; env: Record<string, string>; notice?: string } | undefined {
   const picked = musePicker.pick(accountViews(), sessionAccounts?.of('muse', resumeSessionId))
-  return picked && { account: picked.name, env: museAccountEnv(museHomeFor(picked.name)) }
+  return (
+    picked && {
+      account: picked.name,
+      env: museAccountEnv(museHomeFor(picked.name)),
+      notice: codexAllLimitedNotice(picked, 'Muse')
+    }
+  )
 }
 
 async function museServeFor(
@@ -1920,6 +1954,7 @@ function rendererTeardown(): void {
   cronRunner?.onRendererTeardown()
   closeAllDirWatchers()
   closeAllFileWatchers()
+  remoteSync?.unwatchAll()
   resetAllFlow()
   overlayListenerLost()
   if (uiActiveTabId !== null) activeTabBeforeReload = uiActiveTabId
@@ -2012,7 +2047,7 @@ function createWindow(): void {
       consumeOutletDedupe(uiActiveTabId)
       attention.clear(uiActiveTabId)
     }
-    void freshness?.sweep()
+    void freshness?.sweep({ host: null })
   })
   mainWindow.on('blur', () => {
     sendToRenderer('window:focus', false)
@@ -2122,6 +2157,14 @@ app.whenReady().then(() => {
     picksChanged: () => {
       void githubCounts?.sweep()
       workspaceMgr?.restampLive()
+    },
+    runOnMachine: async (machine, script, args = [], opts = {}) => {
+      await loginEnvReady()
+      return runSsh(machine, remoteShCommand(script, args), {
+        controlDir: remoteControlDir,
+        timeoutMs: opts.timeoutMs,
+        ...(opts.input !== undefined && { input: Buffer.from(opts.input) })
+      })
     }
   })
   // ADR-0033
@@ -2135,7 +2178,7 @@ app.whenReady().then(() => {
       allowKoloft,
       conductor
     )
-  answerableRegDir = hookPaths.regDir
+  hookRegDir = hookPaths.regDir
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
   const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
@@ -2196,8 +2239,8 @@ app.whenReady().then(() => {
     discordRelay?.forget(e.id)
     discordThreads?.forget(e.id)
     askButtons?.forget(e.id)
-    if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
-    if (answerableRegDir) forgetAssistMarkers(answerableRegDir, e.id)
+    if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
+    if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
@@ -2312,6 +2355,7 @@ app.whenReady().then(() => {
         script: hookPaths.codexGate,
         writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
       },
+      replyLanguageScript: hookPaths.codexReplyLanguage,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
@@ -2346,6 +2390,7 @@ app.whenReady().then(() => {
         writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
       },
       skipPermissions: () => loadSettings().skipPermissions,
+      serversAmong: (pid, commands) => museServersAmong(pid, commands),
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,
@@ -2356,7 +2401,6 @@ app.whenReady().then(() => {
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),
-        picked: (cwd) => gitAccounts!.pickedAt(cwd),
         ghWrapper
       }
     })
@@ -2421,6 +2465,7 @@ app.whenReady().then(() => {
     freshness: (wsPath) => freshness?.get(wsPath),
     github: (wsPath) => githubCounts?.get(wsPath),
     gitAccount: (wsPath) => gitAccounts?.workspaceAccount(wsPath),
+    gitPickable: (wsPath) => !!gitAccounts?.pickableOnMachine(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
       void gitAccounts?.refreshRepoKeys(wsPaths).then(() => workspaceMgr?.restampLive())
@@ -2578,7 +2623,6 @@ app.whenReady().then(() => {
       return { name, backend: s.backendId, workspace: sessionBackends.workspaceOfTab(tabId) }
     },
     status: (tabId) => tracker.statusOf(tabId),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
     unknown: (tabId) => statusUnavailable(sessionOfTab(tabId)),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
@@ -2730,7 +2774,6 @@ app.whenReady().then(() => {
         : undefined
     },
     shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     commandRunning: (tabId) => slash.running(tabId),
     dialog: dialogOf
   })
@@ -2762,12 +2805,20 @@ app.whenReady().then(() => {
       claudeBackend.noticeRemoteExits(host, ids)
       museSessions?.noticeRemoteExits(host, ids)
     },
-    onHooksPulled: (host) => museSessions?.followMirrors(host)
+    onHooksPulled: (host) => museSessions?.followMirrors(host),
+    onConnected: (host) => void freshness?.machineUp(host)
   })
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
     autoFetch: () => loadSettings().gitAutoFetch,
+    autoPull: () => loadSettings().gitAutoPull,
+    busy: (wsPath) => busyInCheckout(allSessions(), wsPath) > 0,
+    toast: (text) => sendToRenderer('cron:toast', text),
     onChange: () => workspaceMgr?.restampLive(),
+    runner: (wsPath) => {
+      const key = parseRemoteKey(wsPath)
+      return key && !remoteSync?.connected(key.host) ? null : hosts.of(wsPath).freshness
+    },
     fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })
   githubCounts = new GithubCountsSweep({
@@ -2819,6 +2870,10 @@ app.whenReady().then(() => {
     notify: notifyPlain,
     push: (state) => sendToRenderer('cron:state', state),
     killed: (tabId) => sendToRenderer('tab:killedByMain', tabId),
+    endpointAccountWithModelOf: (tabId) => {
+      const name = tracker.infoOf(tabId)?.pickedAccount
+      return name && findAccount(name, 'custom')?.model ? name : undefined
+    },
     bindDeadlineMs: cronBindDeadlineMs(),
     closeRecheckMs: cronTestMs('KOLOFT_CRON_CLOSE_RECHECK_MS', CRON_CLOSE_RECHECK_MS),
     setInterval,
@@ -2886,7 +2941,7 @@ app.whenReady().then(() => {
   // PLATFORM§20
   powerMonitor.on('resume', requestWebglRepair)
   powerMonitor.on('unlock-screen', requestWebglRepair)
-  powerMonitor.on('resume', () => void freshness?.sweep())
+  powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3
   powerMonitor.on('resume', () => cronRunner?.onResume())
   screen.on('display-added', requestWebglRepair)
@@ -3728,8 +3783,10 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
       () => true
     )
   }
-  discordNotices?.closed(tabId)
-  discordLive?.closed(tabId)
+  if (ptyMgr.get(tabId)?.alive) {
+    discordNotices?.closed(tabId)
+    discordLive?.closed(tabId)
+  }
   return stopTabProcess(tabId, restarting)
 }
 
@@ -4209,11 +4266,13 @@ const githubOptions: GithubOptions = {
   countedAs: (root) => gitAccounts?.pickedAccount(root),
   openCounts: async (repo, root) => {
     await loginEnvReady()
+    const onMachine = await gitAccounts?.machineGh(root, openCountsArgs(repo))
+    if (onMachine) return onMachine.code === 0 ? parseOpenCounts(onMachine.stdout) : null
     return ghOpenCounts(repo, await gitAccounts?.ghEnv(root))
   },
   gh: async (args, root) => {
     await loginEnvReady()
-    return runGh(args, await gitAccounts?.ghEnv(root))
+    return (await gitAccounts?.machineGh(root, args)) ?? runGh(args, await gitAccounts?.ghEnv(root))
   },
   signedIn: async () => {
     try {
@@ -4239,6 +4298,8 @@ const hosts = new Hosts(
           runSshBytes(machine, cmd, { controlDir: remoteControlDir, ...opts })
         ),
       sshEnvReady: loginEnvReady,
+      watch: (p, onChange) => remoteSync?.watch(machine, p, onChange),
+      unwatch: (p) => remoteSync?.unwatch(machine, p),
       shell: (dir) => {
         ensureControlDir(remoteControlDir)
         return {
@@ -4559,10 +4620,13 @@ function registerIpc(): void {
   const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
   const isGitPlatform = (v: unknown): v is GitPlatform => GIT_PLATFORMS.includes(v as GitPlatform)
   ipcMain.handle('gitAccounts:list', () => gitAccounts?.views() ?? [])
-  ipcMain.handle('gitAccounts:login-start', (_e, platform: unknown, url: unknown) =>
-    gitAccounts && isGitPlatform(platform) && typeof url === 'string'
-      ? gitAccounts.loginStart(platform, url)
-      : { ok: false, error: 'bad-url' }
+  const machineOf = (v: unknown): string | undefined => (isText(v) ? v : undefined)
+  ipcMain.handle(
+    'gitAccounts:login-start',
+    (_e, platform: unknown, url: unknown, machine: unknown) =>
+      gitAccounts && isGitPlatform(platform) && typeof url === 'string'
+        ? gitAccounts.loginStart(platform, url, machineOf(machine))
+        : { ok: false, error: 'bad-url' }
   )
   ipcMain.on('gitAccounts:login-cancel', () => gitAccounts?.loginCancel())
   ipcMain.on('gitAccounts:login-browser', () => gitAccounts?.loginBrowser())
@@ -4572,15 +4636,16 @@ function registerIpc(): void {
           platform: add.platform,
           url: add.url,
           token: add.token.trim(),
-          ...(typeof add.username === 'string' && { username: add.username })
+          ...(typeof add.username === 'string' && { username: add.username }),
+          ...(machineOf(add.machine) && { machine: add.machine })
         })
       : { ok: false, error: 'rejected' }
   )
-  ipcMain.handle('gitAccounts:remove', (_e, id: unknown) =>
-    isText(id) ? gitAccounts?.remove(id) : undefined
+  ipcMain.handle('gitAccounts:remove', (_e, id: unknown, machine: unknown) =>
+    isText(id) ? gitAccounts?.remove(id, machineOf(machine)) : undefined
   )
-  ipcMain.handle('gitAccounts:make-default', (_e, id: unknown) =>
-    isText(id) ? gitAccounts?.makeDefault(id) : undefined
+  ipcMain.handle('gitAccounts:make-default', (_e, id: unknown, machine: unknown) =>
+    isText(id) ? gitAccounts?.makeDefault(id, machineOf(machine)) : undefined
   )
   ipcMain.handle('gitAccounts:check', () => gitAccounts?.checkAll())
   ipcMain.handle('gitAccounts:pick', (_e, wsPath: unknown, id: unknown) =>
@@ -5083,7 +5148,7 @@ function registerIpc(): void {
     if (typeof root === 'string' && root) hosts.of(root).unwatchDir(root)
   })
   ipcMain.on('fs:watchFile', (_e, p: string) => {
-    if (typeof p === 'string' && path.isAbsolute(p))
+    if (typeof p === 'string' && isAbsoluteOnHost(p))
       hosts.of(p).watchFile(p, (fp, st) => sendToRenderer('fs:file-changed', fp, st))
   })
   ipcMain.on('fs:unwatchFile', (_e, p: string) => {
@@ -5108,7 +5173,7 @@ function registerIpc(): void {
   )
   ipcMain.handle('notes:path', (_e, ws: unknown) => {
     if (typeof ws !== 'string' || !ws) return null
-    return notesFileOfPinned(ws) ?? null
+    return notesFileOfScope(ws) ?? null
   })
   ipcMain.handle('github:info', async (_e, root: unknown, force: unknown) => {
     if (typeof root !== 'string' || !root) return null

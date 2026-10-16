@@ -94,7 +94,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   back its result after the turn — sends **no** 7501 frames; its hooks fire (§11).
 - The first `idle` comes only after the trust question (§10) is answered, and it can
   arrive before the live-registry file (§4) is written.
-- Muse has no status-line hook and no setting for its own footer.
+- Muse has no status-line hook. Its footer (1.4.9, `/hud`) shows only built-in fields,
+  each switched by a boolean `tui.hud.<field>` in `settings.json` or `-c` (lost after
+  `/clear`): `model`, `effort`, `path`, `permissions` (on by default), `context`,
+  `branch`, `tokens`, `cost`, `quota`. No key takes text of its own: `tui.hud.custom`,
+  `tui.hud.command`, `tui.status_line`, `tui.footer` and the like refuse the run as
+  unknown (fake model, Docker).
 
 ## §4 Which session a process holds: the live registry
 
@@ -132,7 +137,7 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 
 - Inside tmux 3.3a (the multiplexer Koloft's remote tabs run in) the 7501 query never
   reaches the outer terminal, also with `allow-passthrough on`, so Muse on its own sends
-  no states at all. §16 has what makes them flow.
+  no states at all. §17 has what makes them flow.
 
 ## §7 No way to post into a live session from outside
 
@@ -171,6 +176,16 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `/tmp`, and a `gh` wrapper, work in all three; `playwright-cli` reaches the relay
   only with the network `enabled`. A token the model's command prints reaches the
   model as `[REDACTED]`.
+- Processes the `bash` tool starts (1.4.9, macOS VM, fake model, `ps` and `lsof` run
+  outside the sandbox): a command left running through `yield_time_ms` is a direct
+  child of the muse pid (`node srv.mjs …`, no shell or sandbox process between), and
+  carries `MUSE_SESSION_ID` and `MUSE_THREAD_ID` (the session's id) and
+  `CLAUDE_CODE_TOOL_USE_ID`, never `CLAUDE_CODE_SESSION_ID`. The tool refuses a
+  trailing `&`, `nohup` or `disown`. Listening on a port fails (`listen EPERM`) under
+  the default sandbox network; with `--sandbox-network enabled` or `:unrestricted` it
+  works and `lsof` shows the child listening. A clean `/exit` stops all of them, even
+  one a script started with `nohup` that launchd had already adopted; only when muse
+  itself is killed (`kill -9`) do they stay, under launchd, still listening.
 
 ## §9 Hooks
 
@@ -206,6 +221,21 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   is `{kind: "inbox_item_queued", source: {source: "scheduled", job_id}}`; a finished
   background command gets one with `source: "background_task_terminal"`
   and `registered_work_id`.
+- 1.4.9 answers a bare greeting (`hello`, `hi`, `Hello`, `hello!`, `HELLO`) by itself
+  when it is the first prompt of a session, with a fixed line such as "Hello! How can I
+  help you today?" and no model request. That turn fires `SessionStart` and
+  `UserPromptSubmit` but no `Stop`; the 7501 frames go `working` → `done` as usual
+  (fake model, Docker). Every turn, this one too, writes its replies to the session
+  log as `runtime.session` records `{kind: "run", run_id: <the turn_id of
+  UserPromptSubmit>, event: {kind: "assistant_message_committed", text}}` and ends
+  with one whose `event` is `{kind: "terminal", terminal: "completed"}`.
+- A manual `/compact` (1.4.9, fake model, Docker) sends no 7501 frame and fires no
+  `PreCompact`; when it is done, `PostCompact {trigger: "manual", turn_id}` and then
+  `SessionStart {source: "compact"}` fire. The session log marks its start with a
+  `runtime.command.accepted` record whose `command_kind` is
+  `context.compact.manual`, and its end with a `context.compact.manual.outcome`
+  record (`terminal_outcome: "compacted"`, or `"failed"` with a reason). Its summary
+  request carries no `stream` field and expects a plain JSON reply.
 - `!cmd` is a tool named `shell`. `request_user_input` fires no `PreToolUse`.
 - A `PreToolUse` hook printing `{"hookSpecificOutput":{"hookEventName":"PreToolUse",
   "permissionDecision":"deny","permissionDecisionReason":"…"}}` or
@@ -319,6 +349,13 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   On macOS 1.4.9 `write_file` and `edit_file` inside the folder no longer ask; a
   network fetch (without the network flag), a shell command of several stages (`a; b`),
   a command leaving the sandbox and a write outside it still do.
+- No 1.4.9 launch flag makes Muse ask before `write_file` or `edit_file` (macOS VM,
+  fake model, one tool per turn): not `--approval-mode untrusted` (with the judge on or
+  off), `on-request --approval-judge off`, `--permission-profile :ask-me` or the
+  default. `untrusted` asks before every shell command, a plain `echo` too, and
+  `PermissionRequest` carries its `tool_input.command`; `on-request` and `:ask-me` ask
+  only for a command leaving the sandbox and a network fetch; the default lets the
+  judge pass the fetch.
 - `--approval-mode never` (alone, with `--sandbox-network enabled` or with
   `--approval-judge off`): nothing ever asks the user and no judge runs; every tool
   runs inside the sandbox, `web_fetch` included, and a shell command asking to leave
@@ -327,7 +364,24 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - `--permission-profile :unrestricted`: no sandbox, no prompts; a command asking to
   leave the sandbox is refused rather than asked.
 
-## §16 Muse on another machine, inside tmux
+## §16 Skills
+
+- 1.4.9 loads a user skill from `$XDG_CONFIG_HOME/muse/skills/<id>/SKILL.md` and a
+  project skill from `<workspace>/.agents/skills/<id>/SKILL.md` (only in a trusted
+  folder). No `skills/.muse` folder is needed; `muse skills install` makes one. No
+  flag, `-c` key or environment variable points muse at another skills folder
+  (fake model, Docker).
+- A skill folder that is a symlink to a folder elsewhere loads like a real one; a real
+  folder whose `SKILL.md` alone is a symlink is not loaded and gives no diagnostic
+  (fake model, Docker).
+- The model is handed only each skill's frontmatter `description`, in the first
+  developer message of every session, `/clear` included; it reads the body with
+  `read_skill`. A `SKILL.md` over 262 144 bytes is not loaded.
+- A skill is switched off per user with `skills.activation.user` in `settings.json`,
+  keyed by its display path (`"$CONFIG_DIR/skills/<id>/SKILL.md": "off"`); the same
+  map given with `-c` holds only until `/clear`, and keyed by bare id it does nothing.
+
+## §17 Muse on another machine, inside tmux
 
 How established: muse 1.4.9 (`Muse Code 1.4.9 (1.4.9-R6297.1)`), official installer, in a
 Linux Docker container reached over a real `ssh`, inside tmux 3.3a, with the fake model

@@ -5,9 +5,14 @@ export interface SessionCaller {
   id: string
   label: string
   assist?: boolean
+  ownerWords?: string
 }
 
 export const HANDOVER_OPENING = 'Koloft started you because '
+// ADR-0031
+export const OWNER_WORDS_BEFORE_QUOTE = 'The owner last wrote: «'
+export const OWNER_WORDS_END = '». Write everything the owner reads'
+const OWNER_WORDS_AFTER_QUOTE = `${OWNER_WORDS_END} — your notes, your replies and the result you send back — in the language of those words, whatever language this task is written in.`
 const OLDER_SEND_MESSAGE_ENDING = 'with your SendMessage tool.'
 const RESULT_PLACEHOLDER = '"<your result>"'
 
@@ -19,7 +24,18 @@ export function handoverPreamble(caller: SessionCaller): string {
     ? `the session "${caller.name}"`
     : `the ${caller.label} session ${caller.id}`
   const trust = caller.assist ? TRUST_ONLY_THE_OWNERS_QUOTED_WORDS : TRUST_THE_CALLER
-  return `${HANDOVER_OPENING}${who} asked it to, for the owner (the person you both work for). ${trust} When you finish a task it gives you, send the result back by running: koloft session send ${caller.id} ${RESULT_PLACEHOLDER}`
+  const language = caller.ownerWords
+    ? ` ${OWNER_WORDS_BEFORE_QUOTE}${caller.ownerWords}${OWNER_WORDS_AFTER_QUOTE}`
+    : ''
+  return `${HANDOVER_OPENING}${who} asked it to, for the owner (the person you both work for). ${trust}${language} When you finish a task it gives you, send the result back by running: koloft session send ${caller.id} ${RESULT_PLACEHOLDER}`
+}
+
+export function ownerWordsIn(preamble: string): string | undefined {
+  const start = preamble.indexOf(OWNER_WORDS_BEFORE_QUOTE)
+  const end = preamble.lastIndexOf(OWNER_WORDS_END)
+  return start >= 0 && end > start
+    ? preamble.slice(start + OWNER_WORDS_BEFORE_QUOTE.length, end)
+    : undefined
 }
 
 export function withHandover(caller: SessionCaller, prompt: string): string {

@@ -404,6 +404,15 @@ if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
       export ANTHROPIC_DEFAULT_FABLE_MODEL="$pmodel"
       export CLAUDE_CODE_SUBAGENT_MODEL="$pmodel"
       export CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
+      # CC§9
+      kargs=()
+      kdrop=0
+      for a in "$@"; do
+        if [ "$kdrop" = "1" ]; then kdrop=0; continue; fi
+        if [ "$a" = "--model" ]; then kdrop=1; continue; fi
+        kargs+=("$a")
+      done
+      set -- "\${kargs[@]}"
     fi
   else
     export CLAUDE_CODE_OAUTH_TOKEN="$ptok"

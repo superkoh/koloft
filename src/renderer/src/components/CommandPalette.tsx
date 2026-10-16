@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
-import { LuFolder, LuSearch, LuSparkles } from 'react-icons/lu'
+import { IconAiStart, IconFolder, IconSearch } from '../icons'
 import type { BackendId, SearchSnippet, SessionSearchHit } from '@shared/types'
 import type { SessionRoute } from '@shared/sessionRoute'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
@@ -245,7 +245,7 @@ export function CommandPalette({
         {item.kind === 'workspace' && (
           <>
             <span className="fico">
-              <LuFolder size={15} />
+              <IconFolder size={15} />
             </span>
             <span className="wsp-name">{item.name}</span>
             <span className="note">{item.note}</span>
@@ -353,7 +353,7 @@ export function CommandPalette({
       >
         <div className={'pal-ask' + (mode === 'thinking' ? ' waiting' : '')}>
           <span className="pal-glyph">
-            {mode === 'search' ? <LuSearch size={18} /> : <LuSparkles size={18} />}
+            {mode === 'search' ? <IconSearch size={18} /> : <IconAiStart size={18} />}
           </span>
           <textarea
             ref={inputRef}
@@ -397,7 +397,7 @@ export function CommandPalette({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => start(primary)}
               >
-                <LuSparkles size={12} className="pal-pill-glyph" />{' '}
+                <IconAiStart size={12} className="pal-pill-glyph" />{' '}
                 {startLabel(assistOn, other && BACKEND_LABEL[primary])}
                 {startIsDefault && <span className="k">⏎</span>}
               </button>

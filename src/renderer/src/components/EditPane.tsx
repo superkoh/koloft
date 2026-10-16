@@ -8,7 +8,7 @@ import {
   useState,
   type JSX
 } from 'react'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 import {
   AUTOSAVE_DELAY_MS,
   autosaveAllowed,
@@ -361,7 +361,7 @@ export function EditPane({
             aria-label="Dismiss"
             onClick={() => clearConflict(ownerTab, tabId)}
           >
-            <LuX size={14} />
+            <IconClose size={14} />
           </button>
         </div>
       )}
@@ -414,7 +414,7 @@ export function EditPane({
               aria-label="Close"
               onClick={() => setShowConflict(false)}
             >
-              <LuX size={14} />
+              <IconClose size={14} />
             </button>
           </div>
           <div className="ed-conflict-body">

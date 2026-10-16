@@ -3,6 +3,7 @@ import { PROGRAM_STATUS_REPLY } from './programStatus'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SAID_MARKS } from './museSessionLog'
 import { museHookScript } from './museHooks'
+import { KOLOFT_SKILL } from './museAccounts'
 
 export const MUSE_WRAP_FILE = 'muse-wrap.py'
 export const MUSE_HOOK_FILE = 'muse-hook.sh'
@@ -13,7 +14,7 @@ export const RUN_POINTER_SUFFIX = '.muse.run'
 const pyBytes = (s: string): string =>
   "b'" + [...s].map((c) => (c === '\x1b' ? '\\x1b' : c === '\\' ? '\\\\' : c)).join('') + "'"
 
-// MUSE§3 MUSE§4 MUSE§16 PLATFORM§35
+// MUSE§3 MUSE§4 MUSE§17 PLATFORM§35
 export const MUSE_WRAP_PY = `#!/usr/bin/env python3
 import fcntl, json, os, pty, re, select, signal, subprocess, sys, termios, time, tty
 
@@ -303,7 +304,7 @@ _, status = os.waitpid(pid, 0)
 sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 128 + os.WTERMSIG(status))
 `
 
-// MUSE§9 MUSE§16 ADR-0031
+// MUSE§9 MUSE§17 ADR-0031
 export const REMOTE_MUSE_HOOK_SH = museHookScript(
   `f="${REMOTE_HOOK_DIR}/$1${MIRROR_SUFFIX}"
 event="$2"
@@ -343,7 +344,7 @@ export interface MuseRunSpec {
 
 const SHARED_WITH_THE_MACHINE_USER = ['settings.json', 'trust.json', 'AGENTS.md']
 
-// MUSE§2 MUSE§13 MUSE§16
+// MUSE§2 MUSE§13 MUSE§16 MUSE§17
 export function museRunLines(s: MuseRunSpec): string {
   const options = [
     ...s.trust.flatMap((dir) => ['--trust', dir]),
@@ -355,6 +356,11 @@ export function museRunLines(s: MuseRunSpec): string {
   [ -f "$T.auth.json" ] && mv -f "$T.auth.json" "$A/muse/auth.json"
   for f in ${SHARED_WITH_THE_MACHINE_USER.join(' ')}; do
     [ -e "$A/muse/$f" ] || [ -L "$A/muse/$f" ] || [ ! -e "$O/$f" ] || ln -s "$O/$f" "$A/muse/$f"
+  done
+  S="$A/muse/skills"; mkdir -p "$S"; rm -rf "$S/${KOLOFT_SKILL}"
+  [ -f "$T.skill.md" ] && mkdir -p "$S/${KOLOFT_SKILL}" && mv -f "$T.skill.md" "$S/${KOLOFT_SKILL}/SKILL.md"
+  for s in "$O/skills"/*; do
+    [ -e "$s" ] && [ ! -e "$S/\${s##*/}" ] && [ ! -L "$S/\${s##*/}" ] && ln -s "$s" "$S/"
   done
   XDG_CONFIG_HOME="$A"; TBH_CREDENTIAL_BACKEND=file; TBH_MANAGED_HOOKS_PATH="$T.hooks.json"
   export XDG_CONFIG_HOME TBH_CREDENTIAL_BACKEND TBH_MANAGED_HOOKS_PATH

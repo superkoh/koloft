@@ -21,7 +21,7 @@ export interface MuseHistoryEntry extends HistoryEntry {
   logPath?: string
 }
 
-// MUSE§5 MUSE§16
+// MUSE§5 MUSE§17
 export async function withServe<T>(
   options: ServeOptions,
   use: (request: (method: string, params: unknown) => Promise<unknown>) => Promise<T>

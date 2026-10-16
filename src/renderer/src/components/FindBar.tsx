@@ -1,5 +1,5 @@
 import type { JSX, RefObject } from 'react'
-import { LuChevronLeft, LuChevronRight, LuX } from 'react-icons/lu'
+import { IconChevronLeft, IconChevronRight, IconClose } from '../icons'
 import type { FindCount } from '../useDomFind'
 
 export function FindBar({
@@ -47,13 +47,13 @@ export function FindBar({
         disabled={!count.total}
         title="Previous (⇧Enter)"
       >
-        <LuChevronLeft size={14} />
+        <IconChevronLeft size={14} />
       </button>
       <button className="find-btn" onClick={onNext} disabled={!count.total} title="Next (Enter)">
-        <LuChevronRight size={14} />
+        <IconChevronRight size={14} />
       </button>
       <button className="find-btn find-close" onClick={onClose} title="Close (Esc)">
-        <LuX size={14} />
+        <IconClose size={14} />
       </button>
     </div>
   )

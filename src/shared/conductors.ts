@@ -104,6 +104,10 @@ export function bindingProblem(
   return undefined
 }
 
+export function isAssistScope(scope: string, isPinned: (scope: string) => boolean): boolean {
+  return scope === GLOBAL_SCOPE || isPinned(scope)
+}
+
 export function keepPinnedScopes<T extends { scope: string }>(items: T[], pinned: string[]): T[] {
   return items.filter((b) => b.scope === GLOBAL_SCOPE || pinned.includes(b.scope))
 }

@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { prepareMuseHome } from '../../src/main/museAccounts'
+import { placeKoloftSkill, prepareMuseHome } from '../../src/main/museAccounts'
 import { HomeAccountPicker } from '../../src/main/codexAccounts'
 import type { AccountView } from '../../src/shared/types'
 
@@ -50,6 +50,23 @@ describe("a Muse account's own settings folder", () => {
     prepareMuseHome(home, owner)
     expect(fs.lstatSync(mine).isSymbolicLink()).toBe(true)
     expect(trusted(path.join(owner, 'muse', 'trust.json')).sort()).toEqual(['/a', '/b'])
+  })
+
+  // MUSE§16
+  it("links in each of the owner's own skills, keeps Koloft's skill its own, and takes it away again when asked", () => {
+    fs.mkdirSync(path.join(owner, 'muse', 'skills', 'review'), { recursive: true })
+    fs.mkdirSync(path.join(owner, 'muse', 'skills', 'koloft'), { recursive: true })
+    prepareMuseHome(home, owner)
+    const skills = path.join(home, 'muse', 'skills')
+    expect(fs.readlinkSync(path.join(skills, 'review'))).toBe(
+      path.join(owner, 'muse', 'skills', 'review')
+    )
+    placeKoloftSkill(home, '---\nname: koloft\n---\n')
+    expect(fs.lstatSync(path.join(skills, 'koloft')).isSymbolicLink()).toBe(false)
+    expect(fs.readFileSync(path.join(skills, 'koloft', 'SKILL.md'), 'utf8')).toContain('koloft')
+    placeKoloftSkill(home, undefined)
+    expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
+    expect(fs.existsSync(path.join(owner, 'muse', 'skills', 'koloft'))).toBe(true)
   })
 })
 

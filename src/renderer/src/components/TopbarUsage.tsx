@@ -8,7 +8,7 @@ import {
   type ReactNode
 } from 'react'
 import { createPortal } from 'react-dom'
-import { LuRotateCw, LuSettings } from 'react-icons/lu'
+import { IconReload, IconSettings } from '../icons'
 import type { AccountView, CodexLimitWindow, CodexResetOutcome } from '@shared/types'
 import {
   accountWalled,
@@ -281,7 +281,7 @@ export function TopbarUsage(): JSX.Element | null {
             </div>
             <div className="tbu-sep" />
             <button className="tbu-act" disabled={probing} onClick={() => void probe()}>
-              <LuRotateCw size={14} />
+              <IconReload size={14} />
               {probing ? 'Probing…' : 'Probe now'}
               <span className="k">1–2 requests per account</span>
             </button>
@@ -292,7 +292,7 @@ export function TopbarUsage(): JSX.Element | null {
                 setSettingsOpen(true)
               }}
             >
-              <LuSettings size={14} />
+              <IconSettings size={14} />
               Account settings…
             </button>
           </div>,

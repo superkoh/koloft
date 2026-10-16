@@ -35,9 +35,12 @@
   --bg-2: #1c1c1f;
   --bg-3: #27272c;
   --bg-4: #34343a;
-  --bg-term: #0f0f11;
+  --bg-term: #070708;
+  --bg-side: #0f0f11;
+  --bg-panel: #121214;
+  --bg-panel-sunk: #0c0c0d;
   --term-ground: var(--bg-term);
-  --line-layout: rgba(255, 255, 255, 0.06);
+  --line-layout: rgba(255, 255, 255, 0.09);
 
   --line: rgba(255, 255, 255, 0.1);
   --line-2: rgba(255, 255, 255, 0.17);
@@ -140,7 +143,7 @@ body {
   min-width: 0;
   min-height: 0;
   position: relative;
-  background: var(--bg-0);
+  background: var(--bg-side);
   border-right: 1px solid var(--line-layout);
 }
 .titlebar {
@@ -525,13 +528,33 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 14px;
-  background: var(--bg-3);
-  border: 1px solid var(--line-2);
+  padding: 12px 16px;
+  background: var(--fg);
   border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  font-size: 13.5px;
-  color: var(--fg);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--bg-0);
+  animation: toastIn 0.2s var(--ease) both;
+}
+.toast::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-press);
+}
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
 }
 .toast .toast-msg {
   min-width: 0;
@@ -571,6 +594,7 @@ body {
   flex: 0 0 auto;
   margin: 0 6px;
   border-color: var(--line-layout);
+  --bg-2: var(--bg-1);
 }
 .upd-banner {
   flex: 0 0 auto;
@@ -1145,6 +1169,8 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  --term-gutter-l: 24px;
+  --term-gutter-r: 14px;
 }
 .center-top {
   flex: 0 0 var(--titlebar-h);
@@ -1159,7 +1185,7 @@ body {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  margin: 12px 56px 0 20px;
+  margin: 12px 56px 0 var(--term-gutter-l);
   -webkit-app-region: no-drag;
 }
 .wc-chip {
@@ -1361,11 +1387,14 @@ body {
 .term-wrap {
   position: absolute;
   inset: 0;
-  padding: 4px 12px 12px 20px;
+  padding: 4px var(--term-gutter-r) 12px var(--term-gutter-l);
 }
 .term {
   width: 100%;
   height: 100%;
+}
+.term-wrap > .term {
+  margin: 0 auto;
 }
 /* PLATFORM§21 */
 .xterm .composition-view {
@@ -5051,8 +5080,8 @@ input.switch:focus-visible {
   position: relative;
   margin-top: 10px;
   border-color: var(--line-layout);
-  --bg-2: #19191c;
-  --bg-1: #131315;
+  --bg-2: var(--bg-panel);
+  --bg-1: var(--bg-panel-sunk);
   --term-ground: var(--bg-1);
 }
 .wb-peek {
@@ -5113,37 +5142,15 @@ input.switch:focus-visible {
 
 .toast.link {
   cursor: pointer;
-  border-color: var(--accent-line);
-  background-image: linear-gradient(var(--accent-soft), var(--accent-soft));
-}
-.toast.link:hover {
-  border-color: var(--accent);
+  outline: 1px solid var(--accent-press);
 }
 .toast.link .toast-msg {
   text-decoration: underline;
-  text-decoration-color: var(--accent-line);
+  text-decoration-color: var(--accent-press);
   text-underline-offset: 3px;
 }
-.toast.link:hover .toast-msg {
-  text-decoration-color: var(--accent);
-}
-.toast-x {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-right: -4px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--fg-faint);
-  cursor: pointer;
-  transition: color 0.15s var(--ease);
-}
-.toast-x:hover {
-  color: var(--accent);
+.toast.link:hover {
+  outline-width: 3px;
 }
 
 .bperm {

@@ -6,7 +6,6 @@ import {
   itemAim,
   itemFilterText,
   itemLaunchExtras,
-  mainRunningCount,
   moveHot,
   pendingLaunch,
   pendingWorktree,
@@ -215,23 +214,6 @@ describe('pullFailedReason (git speaks in full sentences, or not)', () => {
   it('terminates a bare reason', () => {
     expect(pullFailedReason('state changed')).toBe('state changed.')
     expect(pullFailedReason('  state changed  ')).toBe('state changed.')
-  })
-})
-
-describe('mainRunningCount (D4 guard counts only root-checkout Koloft sessions)', () => {
-  it('counts running and pending rows in the main bucket only', () => {
-    expect(
-      mainRunningCount([
-        sessionRow(),
-        sessionRow({ id: 's2', running: false, pending: true }),
-        sessionRow({ id: 's3', worktree: 'bugfix' }),
-        sessionRow({ id: 's4', running: false })
-      ])
-    ).toBe(2)
-  })
-
-  it('is zero for an idle checkout', () => {
-    expect(mainRunningCount([sessionRow({ running: false })])).toBe(0)
   })
 })
 

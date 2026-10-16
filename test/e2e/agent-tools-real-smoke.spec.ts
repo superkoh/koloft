@@ -647,6 +647,31 @@ test.describe('KOLOFT_PORT_OFFSET reaches the REAL agent’s own shell in a work
   })
 })
 
+// ADR-0031 CODEX§27
+test.describe('a REAL Codex tab, as a Claude tab: opt-in case; it spends real money', () => {
+  test("in a real Codex tab Koloft's reply-language hooks keep the owner's words for every tool call", async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+    const words = '只回复两个字母 OK，别的都不要做。'
+    await inARealWorktreeSession(env, 'other', useRealCodex, [], async ({ page, rows }) => {
+      await ask(page, rows, words)
+      await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+      const shims = path.join(env.userData, 'codex-open')
+      const said = fs
+        .readdirSync(shims)
+        .map((dir) => path.join(shims, dir, 'said'))
+        .filter((file) => fs.existsSync(file))
+        .map((file) => JSON.parse(`"${fs.readFileSync(file, 'utf8').trim()}"`) as string)
+      expect(said).toEqual([words])
+    })
+  })
+})
+
 const LIST_THE_REMOTE =
   'Run this shell command exactly once with your shell tool: git ls-remote origin — then reply with only the word DONE. Do nothing else.'
 

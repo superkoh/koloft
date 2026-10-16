@@ -89,6 +89,7 @@ export interface WorkspaceManagerDeps {
   freshness?(wsPath: string): WorkspaceFreshness | undefined
   github?(wsPath: string): WorkspaceGithub | undefined
   gitAccount?(wsPath: string): WorkspaceGitAccount | undefined
+  gitPickable?(wsPath: string): boolean
   onRescanned?(wsPaths: string[]): void
   jobCountFor?(wsPath: string): number
   remoteProjectsRoot(host: string): string
@@ -898,7 +899,8 @@ export class WorkspaceManager {
         ...e.workspace,
         freshness: this.deps.freshness?.(e.workspace.path),
         github: this.deps.github?.(e.workspace.path),
-        gitAccount: this.deps.gitAccount?.(e.workspace.path)
+        gitAccount: this.deps.gitAccount?.(e.workspace.path),
+        ...(this.deps.gitPickable?.(e.workspace.path) && { gitPickable: true })
       },
       rows: e.rows.map((r) => {
         const live = liveById.get(r.id)

@@ -11,6 +11,7 @@ import type {
   SearchHit,
   SkillSuggestion
 } from '@shared/types'
+import type { FreshnessRunner } from '../gitFreshness'
 import type { DiffResult, GitDiffResult } from '../gitStatus'
 import type { GithubLookup } from '../github'
 import type { GitRunResult } from '../gitSteps'
@@ -115,4 +116,5 @@ export interface Host {
   reveal(p: string): void
   osOpen(p: string): void
   github: GithubLookup
+  freshness: FreshnessRunner
 }

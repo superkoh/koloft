@@ -847,6 +847,17 @@ inferred, not checked.
   tab scrambled the Claude TUI). A WebGL terminal taken out of the layout entirely,
   with no xterm mounting or disposing (seen: the Claude TUI behind a full-width
   Workbench), came back blank until the atlas was cleared and repainted (§20).
+- **`clearTextureAtlas()` silently does nothing when page 0 looks empty.**
+  `TextureAtlas.clearTexture()` returns early when `pages[0].currentRow` is at (0, 0),
+  meant as "nothing drawn yet". But a merged page never moves its `currentRow`, and a
+  cleared page 0 stays at (0, 0) when new glyphs land on a later page. After heavy CJK
+  output and one earlier clear, page 0 was an 8192-px merged page at (0, 0), so every
+  later clear kept the old cache: glyph textures wiped the way the GPU loses them stayed
+  blank (ink 73410 → 0 → 510 pixels after `webgl:repair`) until the app restarted. Making
+  page 0's `currentRow.x` non-zero before the call lets the clear run (ink back to
+  73410); one clear resets it to (0, 0), so the other owners of that atlas skip theirs.
+  Measured 2026-10-16, Electron 43.7.3, addon 0.20.0-beta.298, `webgl-repair.spec.ts`;
+  the same guard is still on xterm.js master that day.
 
 ## §24 DOM, CSS and form controls in Chromium
 
@@ -1052,7 +1063,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
   gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
-  existence and mtime show whether a fetch ran.
+  existence and mtime show whether a fetch ran. **A failed fetch writes it too** (0
+  bytes), so its mtime says a fetch was tried, not that one worked — read it before
+  fetching. With `BatchMode=yes` and no askpass, a fetch the machine has no credentials
+  for fails at once with exit 128 and never waits: `Host key verification failed.` (ssh
+  origin, host not in `known_hosts`, 0.4 s), `Permission denied (publickey).` (no key,
+  0.6 s), `could not read Username … terminal prompts disabled` (https needing a login,
+  0.3 s). (2026-10-06, git 2.39.5 on Debian 12 in the e2e sshd Docker image, reached
+  with `/usr/bin/ssh` and `SshHost`'s options; a public https origin fetched in 1.6 s.
+  The 0-byte `FETCH_HEAD` also came from a fetch of a missing local path with git 2.54.0
+  on macOS 27, 2026-10-11.)
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
   own config is enough), and git splits its command on spaces.
 
@@ -1952,3 +1972,82 @@ server unless a line says so.
 - Measured 2026-10-13 with Apple git 2.54 and OpenSSH 10.3p1 on macOS 27.0, a temp
   `HOME`, a 403 stub on 127.0.0.1, and a Gitea 1.24.6 and a GitLab CE 19.4.2 in Docker with
   throwaway users and keys.
+
+## §54 One included git config from the environment, on old git
+
+- **`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n` is ignored before git 2.31**: 2.13.7, 2.24.4 and
+  2.30.6 read nothing from it, silently; 2.43.0 does.
+- **`GIT_CONFIG_PARAMETERS="'include.path=<abs path>'"`** (the old one-quote form) loaded
+  the included file on 2.13.7, 2.24.4, 2.30.6 and 2.43.0 alike: an `includeIf
+  "gitdir:<real .git>"` / `"gitdir:<real .git>/"` pair in it matched the main checkout,
+  a subfolder and a linked worktree and no other repository; `credential.<url>.helper`
+  from it answered `git credential fill`; `url.insteadOf` rewrote `ls-remote --get-url`;
+  `user.email` showed; a `git -c alias.k='!git config …' k` child saw it too.
+- **The two-part form `'include.path'='<path>'`** (git ≥ 2.31's own) makes 2.13.7, 2.24.4
+  and 2.30.6 stop with `error: bogus format in GIT_CONFIG_PARAMETERS` / `fatal: unable to
+  parse command-line config` — every git command fails. 2.43.0 reads a value mixing both
+  forms in either order, and when the user runs `git -c core.y=2 …` it passes our
+  one-quote entry on to its children unchanged, with `'core.y'='2'` appended.
+- **An appended entry keeps the user's own**: `'core.x=1' 'include.path=…'` gave both
+  values on every version above.
+- **Below 2.13** `includeIf` does not exist (git's release notes; not run here).
+- `git rev-parse --git-common-dir` prints a path relative to the folder it ran in;
+  `--path-format=absolute` came with git 2.31, so `cd` into it and `pwd -P` works on all
+  of the above.
+- Measured 2026-10-13 in Docker (alpine:3.6 git 2.13.7, alpine:3.11 git 2.24.4,
+  alpine:3.13 git 2.30.6, ubuntu:24.04 git 2.43.0, linux/arm64), with a throwaway repo,
+  worktree and helper script under a plain user's `HOME`. (debian:bullseye-slim's own
+  security mirror answered 404 for git's packages that day, so Debian 11's 2.30.2 was not
+  run; Alpine's 2.30.6 stands in for it.)
+
+## §55 Git Credential Manager's plain-file store, moved to another machine
+
+- **Layout**: with `GCM_CREDENTIAL_STORE=plaintext` and `GCM_PLAINTEXT_STORE_PATH=<dir>`,
+  GCM 3.0.1 on macOS wrote `<dir>/<namespace>/<protocol>/<host>/<account>.credential`
+  holding the secret on line 1, then `service=<protocol>://<host>` and
+  `account=<account>`; for a Gitea refresh token the host folder is
+  `refresh_token.<host>` and the account `OAUTH_USER` (as §50's Keychain item). Nothing
+  reached the Keychain: it ran under a sandbox that denies `/usr/bin/security` and the
+  Security server's mach services.
+- **The folder copied to Linux works there**: GCM 3.0.1 `linux-arm64` with the same
+  namespace and store path, `GCM_PROVIDER=generic`, `GCM_INTERACTIVE=never`, no `DISPLAY`
+  or `WAYLAND_DISPLAY`, and a request carrying `wwwauth[]=Basic realm="Gitea"`, posted
+  `grant_type=refresh_token` with the copied refresh token and Gitea's built-in client id
+  to a stub's `/login/oauth/access_token`, printed the new access token with
+  `username=OAUTH_USER`, exit 0, and wrote the new refresh token back into the same file.
+- **Without libicu the Linux build aborts** (`Couldn't find a valid ICU package installed
+  on the system`, exit 134, core dump) on a Debian 12 slim image;
+  `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` in its environment makes it run.
+- **Release assets of 3.0.1**: `gcm-linux-x64-3.0.1.tar.gz` 31.6 MB,
+  `gcm-linux-arm64-3.0.1.tar.gz` 18.2 MB (44 MB unpacked: the executable, two
+  `.so` files and `NOTICE`), `gcm-osx-x64` and `gcm-osx-arm64` tarballs, no musl build and
+  no checksums file; the sha256 of each comes from the release API's asset `digest`, and
+  the arm64 Linux download matched it.
+- Measured 2026-10-13: the store on macOS 27.0 with the bundled GCM 3.0.1 (a `store` of a
+  fake refresh token, the same code path a sign-in uses to save it), the `get` in Docker
+  `node:22-bookworm-slim` (linux/arm64) with git 2.39.5 against a node stub.
+
+## §56 Reaching the Mac from a container under colima
+
+- Inside a colima container `host.docker.internal` (and `host.lima.internal`) resolve to
+  `192.168.5.2`, and a server listening on the Mac's `127.0.0.1` answered there.
+- Measured 2026-10-13, colima on macOS 27.0, `node:22-bookworm-slim`.
+
+## §57 A folder's last-modified time on Linux and macOS
+
+- **Adding, renaming or removing a file right inside a folder moves the folder's
+  last-modified time.** So does creating a file inside a subfolder for that subfolder.
+- **Writing into a file already there does not move its folder's time, and a change
+  inside a subfolder does not reach the parent folder.** Watching a folder this way sees
+  its own list of names change, nothing deeper.
+- On Linux the folder's size stays `4096` through all of it; on macOS (APFS) the size
+  changes with the number of entries (`96` → `128` → `96`).
+- A missing path prints nothing to stdout from either `stat` dialect (§37).
+- Measured 2026-10-11 with one script that ran the §37 `fp()` (`stat -c '%.9Y %s'`, falling
+  back to `stat -f '%Fm %z'`) on a fresh folder after each step, one second apart: add a
+  file, append to it, rename it, remove it, add a file in a subfolder. Run in a Docker
+  `ubuntu:24.04` container (Linux 6.8.0, GNU coreutils) and on this Mac (macOS 27.0, BSD
+  `stat`). Linux output: `start 1791720666.973637444 4096`, `add file 1791720667.980639518`,
+  `edit file 1791720667.980639518` (unchanged), `rename 1791720670.010643717`,
+  `remove 1791720671.024645823`, `add in sub 1791720671.024645823` (unchanged; the
+  subfolder moved to `1791720672.028647913`).

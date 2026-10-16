@@ -3,6 +3,7 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, installMuse, seedSettings, trustInMuse, type E2EEnv } from './helpers/env'
+import { startCodex } from './helpers/codex'
 import {
   newSessionInWith,
   settingsOnDisk,
@@ -266,6 +267,69 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
         .toEqual([expect.stringMatching(/ran \/context:\n## Context Usage/)])
       expect(await terminalText(page, tab)).not.toContain('bg-reported finished')
       await expect(oneStillRunning(wsRows(page, 'ws-a'))).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('D-CMD-5 in Codex: a slash command is typed into a Codex session at once when its turn is over, though a child agent it left running still shows ↻ on its row', async ({
+    env
+  }) => {
+    installCodex(env)
+    fs.writeFileSync(
+      path.join(env.home, 'fake-codex-child-ms'),
+      String(BACKGROUND_OUTLASTS_THE_CASE_MS)
+    )
+    seedConductor(env)
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      const { sessionId: child } = await startCodex(page, env)
+      const tab = (await wsRows(page, 'ws-a').getAttribute('data-tab-id'))!
+      await page.evaluate((id) => window.api.terminal.write(id, 'spawn child\r'), tab)
+      const row = wsRows(page, 'ws-a')
+      await expect(row).toHaveClass(/\bst-bg-run\b/, { timeout: 30_000 })
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(oneStillRunning(row)).toBeVisible()
+
+      const asked = fake.interact(OWNER, 'run', { command: '/compact', session: child })
+      await expect.poll(() => replyTo(fake, asked)).toMatch(/^Typing \/compact into /)
+      await expect
+        .poll(() => ran(fake), { timeout: 30_000 })
+        .toEqual([expect.stringMatching(/ran \/compact:\nDone\.$/)])
+      await expect(oneStillRunning(wsRows(page, 'ws-a'))).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('D-CMD-4 in Codex: the conductor runs koloft session command in a Codex session it looks after, and koloft session screen shows that session’s terminal', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedConductor(env)
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      const { sessionId: child } = await startCodex(page, env)
+
+      fake.say(OWNER, `/koloft session command ${child} /compact`)
+      await expect
+        .poll(() => ran(fake), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContainEqual(expect.stringMatching(/ran \/compact:\nDone\.$/))
+      const wire = fs.readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+      expect(wire).toContain('"method":"thread/compact/start"')
+
+      fake.say(OWNER, `/koloft session screen ${child}`)
+      const conductorTab =
+        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.conductor)?.tabId ??
+        ''
+      await expect
+        .poll(() => terminalText(page, conductorTab), { timeout: 30_000 })
+        .toContain('The screen of')
+      expect(await terminalText(page, conductorTab)).toContain(`Codex fixture ready ${child}`)
     } finally {
       await quitAndClose(app)
       await fake.close()

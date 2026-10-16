@@ -11,13 +11,14 @@ import {
   conductorGateCommand
 } from './conductorGate'
 import { QUOTE_PROMPT_FN, REMIND_REPLY_LANGUAGE_FN } from './replyLanguage'
-import type { ModeClass } from './crossSessionMessage'
+import { FROM_A_SESSION, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
 export interface HookPaths {
   hookScript: string
   gateScript: string
   codexGate: string
+  codexReplyLanguage: string
   museGateScript: string
   settingsDir: string
   regDir: string
@@ -27,6 +28,46 @@ export interface HookPaths {
 const NOT_FROM_THE_RELAY = `Koloft: this ${DISCORD_PREFIX} message was not sent by Koloft's Discord relay, so it is not the owner's words. `
 const fromTheRelay = (mode: ModeClass): string =>
   `*'"prompt":"<cross-session-message from-mode=\\"${mode}\\">\\n${DISCORD_PREFIX} '*`
+
+export const CODEX_SAID_ENV = 'KOLOFT_CODEX_SAID'
+const HANDED_OVER_TASK_COMES_FIRST = '.task-first'
+export const CODEX_REPLY_LANGUAGE_ENV = 'KOLOFT_CODEX_REPLY_LANGUAGE'
+const codexReplyLanguageHook = (event: string): string =>
+  `sh "$${CODEX_REPLY_LANGUAGE_ENV}" ${event}`
+export const CODEX_REPLY_LANGUAGE_HOOKS = [
+  { event: 'UserPromptSubmit', command: codexReplyLanguageHook('prompt') },
+  { event: 'PostToolUse', command: codexReplyLanguageHook('tool') }
+]
+
+// ADR-0031 CODEX§27
+export const CODEX_REPLY_LANGUAGE_SCRIPT = `#!/usr/bin/env bash
+said="$${CODEX_SAID_ENV}"
+[ -n "$said" ] || exit 0
+${REMIND_REPLY_LANGUAGE_FN}
+if [ "$1" = "tool" ]; then
+  cat >/dev/null
+  remind_reply_language PostToolUse
+  exit 0
+fi
+input="$(cat | tr -d '\\n')"
+${QUOTE_PROMPT_FN}
+case "$input" in
+  *'"prompt":"${FROM_A_SESSION}'*) ;;
+  *) if [ -f "$said${HANDED_OVER_TASK_COMES_FIRST}" ]; then
+       rm -f "$said${HANDED_OVER_TASK_COMES_FIRST}"
+     else
+       quote_prompt > "$said"
+     fi ;;
+esac
+remind_reply_language UserPromptSubmit
+exit 0
+`
+
+// ADR-0031
+export function seedCodexOwnerWords(said: string, ownerWords: string): void {
+  fs.writeFileSync(said, JSON.stringify(ownerWords).slice(1, -1))
+  fs.writeFileSync(said + HANDED_OVER_TASK_COMES_FIRST, '')
+}
 
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
@@ -187,7 +228,7 @@ case "$event" in
             flag=${shq(NOT_FROM_THE_RELAY)}
           fi
           ;;
-        *'"prompt":"<cross-session-message '*) ;;
+        *'"prompt":"<cross-session-message '*|*'"prompt":"<task-notification>'*|*'"prompt":"<agent-message '*) ;;
         *)
           quote_prompt > "$said"
           [ -f "$reg/$tab.conductor" ] && : > "$reg/$tab.typed"
@@ -257,10 +298,20 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   fs.writeFileSync(codexGateScript, CODEX_CONDUCTOR_GATE_SCRIPT)
   const codexGate = path.join(hookDir, 'codex-conductor-gate.sh')
   fs.writeFileSync(codexGate, codexGateShell(codexGateScript))
+  const codexReplyLanguage = path.join(hookDir, 'codex-reply-language.sh')
+  fs.writeFileSync(codexReplyLanguage, CODEX_REPLY_LANGUAGE_SCRIPT)
   const museGateScript = path.join(hookDir, 'muse-conductor-gate.js')
   fs.writeFileSync(museGateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
 
-  return { hookScript, gateScript, codexGate, museGateScript, settingsDir, regDir }
+  return {
+    hookScript,
+    gateScript,
+    codexGate,
+    codexReplyLanguage,
+    museGateScript,
+    settingsDir,
+    regDir
+  }
 }
 
 // CC§8
@@ -274,7 +325,7 @@ const NOTIFICATIONS_WAITING_ON_THE_PERSON = [
 
 const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
 
-// CC§6 CC§14
+// CC§6 CC§9 CC§14
 export function hookSettings(
   hookScript: string,
   regDir: string,
@@ -286,6 +337,7 @@ export function hookSettings(
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
   const settings: Record<string, unknown> = {
+    skipDangerousModePermissionPrompt: true,
     env: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' },
     hooks: {
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
@@ -342,6 +394,21 @@ function allowFile(regDir: string, tabId: string): string {
 
 export function discordIdsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.discord-ids`)
+}
+
+// ADR-0031
+export function quotedPrompt(regDir: string, tabId: string): string | undefined {
+  let escaped: string
+  try {
+    escaped = fs.readFileSync(path.join(regDir, `${tabId}.said`), 'utf8').trimEnd()
+  } catch {
+    return undefined
+  }
+  try {
+    return JSON.parse(`"${escaped}"`) || undefined
+  } catch {
+    return undefined
+  }
 }
 
 export function writeAllowFile(regDir: string, tabId: string, allow: readonly string[]): string {

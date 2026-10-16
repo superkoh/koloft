@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { AccountKind } from '@shared/types'
 import { shq } from '@shared/shellQuote'
-import { REMOTE_PATH_LINE, onATerminalEvenWhenSshGaveNone, remoteShCommand } from './install'
+import { REMOTE_ENV_LINES, onATerminalEvenWhenSshGaveNone, remoteShCommand } from './install'
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { AGENT_PROMPT_FILE } from '../agentPlugin'
@@ -151,7 +151,7 @@ export function tabScript(spec: TabSpec): string {
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
 T="${T}"
-${REMOTE_PATH_LINE}
+${REMOTE_ENV_LINES}
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
   KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
