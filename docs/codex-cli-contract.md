@@ -558,9 +558,45 @@ Protocol) relay) goes through an MCP server, never a sandboxed command: see sect
   55), with `cachedInputTokens` (11136) left out of the sum. So the cached tokens are a
   **part of** `inputTokens`, not extra to it. Koloft prices `inputTokens −
   cachedInputTokens` at the input price and the cached part at the cached price.
-- `reasoningOutputTokens` was 0 in every frame, so whether it is a part of
-  `outputTokens` (the way OpenAI's API counts it) is **inferred, not checked**. Koloft
-  does not add it on top.
+- `reasoningOutputTokens` is a part of `outputTokens`, so Koloft does not add it on top
+  (0 in every frame on 2026-09-24; measured from rollout files on 2026-10-16, below).
+
+**Token counts in the rollout files, checked on 2026-10-16 with `codex-cli 0.162.0`.** A
+live probe in a throwaway `CODEX_HOME` (real tiny turns, deleted after), and a read of
+the 46 rollout files on this Mac, written by 0.149.0-alpha through 0.162.0, printing
+field names and numbers only.
+
+- **Live frames.** `thread/tokenUsage/updated` is `{method, params, emittedAtMs}`, with
+  `params` = `threadId, turnId, tokenUsage{total, last, modelContextWindow}`. `total`
+  carries the turns from before a resume (13147 before; after a fresh app-server's
+  `thread/resume` and one turn of 13800, `total` = 26947). Right after `thread/resume`,
+  before any new turn, the new app-server sends the old last turn's frame again — same
+  `turnId`, same `total`. `emittedAtMs` is the send time, not the turn's. No frame and no
+  `Turn` carries a model; a thread can change model mid-way (`turn/start` with `model`;
+  `thread/settings/updated` says so; `thread/read` shows only the current one).
+- **Where.** `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`, archived
+  ones under `archived_sessions/`.
+- **`token_usage_record`**, one line per request to the model: `timestamp` (ISO),
+  `ordinal`, `payload{thread_id, turn_id, session_id, root_turn_id, response_id, usage,
+  turn_token_usage, thread_token_usage}`. Each usage block has `input_tokens,
+  cached_input_tokens, cache_write_input_tokens, output_tokens, reasoning_output_tokens,
+  total_tokens`. `turn_token_usage` and `thread_token_usage` are running sums that repeat;
+  only `usage` is one request's own.
+- **`turn_context`**, one line per turn: `payload{turn_id, root_turn_id, model, effort,
+  approval_policy, sandbox_policy, …}` — the only place a turn's model is written.
+- **`session_meta`**: `payload{id, cwd, timestamp, source, thread_source, cli_version,
+  creator_account_id, …}`; `source` is `"vscode"`, `"exec"`, or `{subagent: {thread_spawn:
+  {parent_thread_id, depth, …}}}`. A child agent's rollout holds two: its own first, then
+  a copy of its parent's (all 11 files with two here; the second's `id` is the first's
+  `forked_from_id` and `parent_thread_id`). Every `token_usage_record` in a file carries
+  the first one's `id` as `thread_id`.
+- **Rules that held on every file** (46 files, 273 turns, 4467 records): a `turn_id`'s
+  `turn_context` is written before that turn's first record; `response_id` never
+  repeats, within a file or across files, and is never null; the sum of a turn's
+  `usage.total_tokens` equals its last `turn_token_usage.total_tokens`.
+- **`reasoning_output_tokens` is inside `output_tokens`**: in all 3753 records where it
+  was above 0, `total_tokens = input_tokens + output_tokens` and reasoning ≤ output.
+- **Size.** 46 files, 89 MB, read in 0.6 s.
 
 **Price table.** Read on 2026-09-24 from OpenAI's pricing page
 (`developers.openai.com/api/docs/pricing`, reached from `platform.openai.com/docs/pricing`,

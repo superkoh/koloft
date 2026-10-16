@@ -336,7 +336,16 @@ Unless a bullet below says more, it is inferred, not checked.
 - **Streaming repeats the usage record.** The same assistant usage object is written
   several times — 3 times in real transcripts, with the same `message.id` and
   `requestId`. Some records carry neither id and each must count; records with model
-  `<synthetic>` carry no real spend.
+  `<synthetic>` carry no real spend. **The copies are not always the same** (2026-10-16,
+  the newest 400 main and 300 sub-agent transcripts on this Mac, field names and numbers
+  only): in 1426 of 8127 `message.id` + `requestId` keys the lines differ, the later ones
+  holding the streamed-so-far `output_tokens` (3 → 1231), and the last line always has
+  the largest; in 14 an input or cache field differs too. So the call's real count is
+  the largest value of each field across its lines, not the first line's.
+- **A sub-agent transcript names its parent.** Every usage line of
+  `<slug>/<sessionId>/subagents/**/*.jsonl` carries the parent's `sessionId` (5042 of
+  5042 lines, 2026-10-16), and every main transcript's lines carry its file name's id
+  (10867 of 10867).
 - **Some CC versions mix subagent turns (`isSidechain: true`) into the main jsonl**,
   their usage records and Esc interrupts included; their spend is the session's, their
   context window and model are not. Which versions was not recorded.
