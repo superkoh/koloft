@@ -58,6 +58,8 @@ const ASCII_SCREEN =
   )
 
 const INK_LUMINANCE_ABOVE_THE_DARK_BACKGROUND = 128
+const AT_MOST_THE_CURSOR_IS_LEFT_DRAWN = 0.1
+const NEARLY_ALL_INK_BACK_THE_CURSOR_MAY_BLINK = 0.9
 
 async function inkedPixels(page: Page, id: string): Promise<number> {
   const box = await page.evaluate((id) => {
@@ -147,9 +149,7 @@ test.describe('webgl:repair after OS resume or a display change: clear the share
       await runIn(page, panelTerm(page), `touch '${marker}.before'`)
       await expect.poll(() => fs.existsSync(`${marker}.before`), { timeout: 15_000 }).toBe(true)
 
-      await app.evaluate(({ BrowserWindow }) => {
-        for (const w of BrowserWindow.getAllWindows()) w.webContents.send('webgl:repair')
-      })
+      await sendWebglRepair(app)
 
       await runIn(page, panelTerm(page), `touch '${marker}.after'`)
       await expect.poll(() => fs.existsSync(`${marker}.after`), { timeout: 15_000 }).toBe(true)
@@ -211,18 +211,22 @@ test.describe('webgl:repair after OS resume or a display change: clear the share
       const [tui] = await termIds(page)
 
       // PLATFORM§23
-      await paintCjkColourStorm(page, tui, 3000)
+      await paintCjkColourStorm(page, tui, 0)
       await sendWebglRepair(app)
-      await paintCjkColourStorm(page, tui, 9000)
+      await paintCjkColourStorm(page, tui, CJK_PER_COLOUR)
       await writeAndPaint(page, tui, ASCII_SCREEN)
       const drawn = await inkedPixels(page, tui)
       expect(drawn).toBeGreaterThan(0)
 
       await wipeGlyphTexturesTheWayTheGpuLosesThem(page, tui)
-      await expect.poll(() => inkedPixels(page, tui)).toBeLessThan(drawn / 10)
+      await expect
+        .poll(() => inkedPixels(page, tui))
+        .toBeLessThan(drawn * AT_MOST_THE_CURSOR_IS_LEFT_DRAWN)
 
       await sendWebglRepair(app)
-      await expect.poll(() => inkedPixels(page, tui)).toBeGreaterThan(drawn * 0.9)
+      await expect
+        .poll(() => inkedPixels(page, tui))
+        .toBeGreaterThan(drawn * NEARLY_ALL_INK_BACK_THE_CURSOR_MAY_BLINK)
     } finally {
       await app.close().catch(() => {})
     }
