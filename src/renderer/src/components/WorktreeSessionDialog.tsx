@@ -21,7 +21,6 @@ import { basename } from '@shared/preview'
 import { hostOf } from '@shared/remoteKey'
 import { ageLabel, freshLineState } from '@shared/freshnessOps'
 import {
-  actionText,
   escPeel,
   freshLineCopy,
   isDimmed,
@@ -51,10 +50,9 @@ import { pullToast } from '../freshnessView'
 import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { PullConfirm } from './PullConfirm'
+import { startOrList } from '../agentChoice'
 import {
   BusyLine,
-  enterMethod,
-  otherMethods,
   SessionLaunchButtons,
   SessionLaunchStatus,
   useSessionLaunch,
@@ -90,7 +88,7 @@ export function WorktreeSessionDialog({
   const showToast = useStore((s) => s.showToast)
   const gitAutoFetch = useStore((s) => s.settings.gitAutoFetch)
   const sessionLaunch = useSessionLaunch(hostOf(wsPath), onStart, onClose)
-  const confirmBackend = useRef<BackendId>(sessionLaunch.methods.defaultBackend)
+  const [listOpen, setListOpen] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -185,11 +183,11 @@ export function WorktreeSessionDialog({
       launchLock.current = false
     }
   }, [locked, launchLock])
-  const backends =
+  const choice =
     aim.kind === 'recover'
-      ? sessionLaunch.usable.filter((b) => b === aim.backend)
-      : sessionLaunch.usable
-  const others = otherMethods(backends, sessionLaunch.methods.defaultBackend)
+      ? sessionLaunch.choice({ backends: [aim.backend], chosen: aim.backend })
+      : sessionLaunch.choice()
+  const confirmBackend = useRef<BackendId>(choice.lead)
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
@@ -219,9 +217,9 @@ export function WorktreeSessionDialog({
     if (!locked) onClose()
   }
 
-  const launch = (target: WtAim, backend = sessionLaunch.methods.defaultBackend): void => {
-    if (locked || sessionLaunch.issue(backend)) return
+  const launch = (target: WtAim, backend = choice.lead): void => {
     const method = target.kind === 'recover' ? target.backend : backend
+    if (locked || sessionLaunch.issue(method)) return
     if (target.kind === 'recover') {
       void sessionLaunch.launch(resolveLaunch(target, wsPath), method)
     } else if (target.kind === 'open') {
@@ -270,7 +268,7 @@ export function WorktreeSessionDialog({
     launch(aim, backend)
   }
 
-  const submit = (backend = sessionLaunch.methods.defaultBackend): void => {
+  const submit = (backend = choice.lead): void => {
     if (!actionable || locked || confirm !== null || sessionLaunch.issue(backend)) return
     if (primary !== 'pull') {
       launch(aim, backend)
@@ -292,7 +290,7 @@ export function WorktreeSessionDialog({
       setHot((h) => moveHot(h, names, query, 'up'))
     } else if (e.key === 'Enter' && !isComposing(e)) {
       e.preventDefault()
-      submit(enterMethod(e, others))
+      startOrList(e, choice, submit, () => actionable && setListOpen(true))
     }
   }
 
@@ -535,22 +533,21 @@ export function WorktreeSessionDialog({
               Cancel
             </button>
             <SessionLaunchButtons
-              launch={sessionLaunch}
-              backends={backends}
+              choice={choice}
+              open={listOpen}
+              onOpen={setListOpen}
               busy={locked}
               disabled={!actionable || locked || confirm !== null}
-              label={(backend, isDefault) => {
+              label={(backend) => {
                 if (sessionLaunch.starting) return 'Starting…'
                 if (primary === 'pulling') return primaryLabel(primary, action)
-                if (isDefault)
-                  return primaryLabel(
-                    primary,
-                    action,
-                    backends.length > 1 || aim.kind === 'recover'
-                      ? BACKEND_LABEL[backend]
-                      : undefined
-                  )
-                return `${primary === 'pull' ? 'Pull & ' : ''}${actionText(action, false)} · ${BACKEND_LABEL[backend]}`
+                return primaryLabel(
+                  primary,
+                  action,
+                  choice.listed.length > 1 || aim.kind === 'recover'
+                    ? BACKEND_LABEL[backend]
+                    : undefined
+                )
               }}
               onStart={submit}
             />

@@ -148,6 +148,23 @@ export function menuPosFor(el: HTMLElement, itemCount: number): { left: number; 
   return { left, top }
 }
 
+const DROP_GAP = 4
+
+export function dropPosFor(
+  el: HTMLElement,
+  itemCount: number,
+  itemH: number,
+  width: number
+): { left: number; top: number } {
+  const r = el.getBoundingClientRect()
+  const estH = itemCount * itemH + MENU_PAD_H
+  const below = r.bottom + DROP_GAP
+  return {
+    left: Math.max(4, r.right - width),
+    top: below + estH <= window.innerHeight - 4 ? below : Math.max(4, r.top - DROP_GAP - estH)
+  }
+}
+
 function cardPosFor(el: HTMLElement): { left: number; top: number } {
   const r = el.getBoundingClientRect()
   return {
