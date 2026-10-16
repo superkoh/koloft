@@ -62,12 +62,14 @@ export function lastCompletedText(stdout: string): string | null {
 }
 
 // MUSE§2
-export const renamedTo = (r: LogRecord): string | undefined =>
-  r.payloadType === 'session.name.changed' &&
-  r.payload.source === 'user' &&
-  typeof r.payload.new_name === 'string'
+export const museNameOf = (r: LogRecord): string | undefined =>
+  r.payloadType === 'session.name.changed' && typeof r.payload.new_name === 'string'
     ? r.payload.new_name
     : undefined
+
+// MUSE§2
+export const renamedTo = (r: LogRecord): string | undefined =>
+  r.payload.source === 'user' ? museNameOf(r) : undefined
 
 // MUSE§3 MUSE§9
 export const startsATurnByItself = (r: LogRecord): boolean =>

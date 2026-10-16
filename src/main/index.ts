@@ -1180,7 +1180,15 @@ const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.conductor),
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
-  peerNames: () => claudePeerNames(),
+  peerNames: () => {
+    const claudeName = claudePeerNames()
+    return async ({ backendId, sessionId }) =>
+      backendId === 'claude'
+        ? claudeName(sessionId)
+        : backendId === 'muse'
+          ? (museSessions?.peerName(sessionId) ?? null)
+          : null
+  },
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
@@ -2248,6 +2256,7 @@ app.whenReady().then(() => {
         script: hookPaths.museGateScript,
         writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
       },
+      skipPermissions: () => loadSettings().skipPermissions,
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,

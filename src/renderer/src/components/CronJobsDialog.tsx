@@ -396,7 +396,7 @@ export function CronJobsDialog({
   const modelChips = MODEL_CHIPS_OF[fields.backend]
 
   const permissionHint =
-    (fields.backend === 'claude' && settings.skipPermissions
+    (fields.backend !== 'codex' && settings.skipPermissions
       ? 'Today that means: skips all permission checks (your Accounts setting).'
       : `Today that means: ${label} asks before risky steps, like your other sessions.`) +
     ' ' +

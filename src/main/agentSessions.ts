@@ -172,9 +172,7 @@ function inScope(scope: string | undefined, workspace: string): boolean {
 
 function peerNamesOf(d: SessionVerbDeps, placed: PlacedRow[]): Promise<(string | null)[]> {
   const nameOf = d.peerNames()
-  return Promise.all(
-    placed.map((p) => (p.live?.backendId === 'claude' ? nameOf(p.live.sessionId) : null))
-  )
+  return Promise.all(placed.map((p) => (p.live ? nameOf(p.live) : null)))
 }
 
 function rowLines(
@@ -293,14 +291,14 @@ export interface ClosableSession {
   tabId?: string
 }
 
+export type PeerNameOf = (s: { backendId: BackendId; sessionId: string }) => Promise<string | null>
+
 export async function findClosable(
   sessions: ClosableSession[],
   ref: string,
-  nameOf: (sessionId: string) => Promise<string | null>
+  nameOf: PeerNameOf
 ): Promise<Parsed<ClosableSession>> {
-  const names = await Promise.all(
-    sessions.map((s) => (s.backendId === 'claude' ? nameOf(s.sessionId) : null))
-  )
+  const names = await Promise.all(sessions.map((s) => nameOf(s)))
   const hit = matchRef(
     sessions,
     ref,
@@ -321,7 +319,7 @@ export interface SessionVerbDeps {
   workspaceOf(tabId: string): string | undefined
   allSessions(): SessionInfo[]
   pinnedWorkspaces(): PinnedWorkspace[]
-  peerNames(): (sessionId: string) => Promise<string | null>
+  peerNames(): PeerNameOf
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
   assist: Assist
   queue(tabId: string, text: string, clientId?: string): Promise<void>
@@ -416,8 +414,7 @@ async function listSessions(
   const listed = await Promise.all(
     sessions.map(async (info) => ({
       info,
-      peerName:
-        info.backendId === 'claude' ? ((await peerName(info.sessionId)) ?? undefined) : undefined,
+      peerName: (await peerName(info)) ?? undefined,
       starter: starterOf(info)
     }))
   )
@@ -441,7 +438,7 @@ async function startSibling(
   const backend = args.backend ?? me.backendId
   if (backend === 'codex' && args.name !== undefined) return refused(hasNoName(backend), EXIT_USAGE)
   const caller: SessionCaller = {
-    name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
+    name: (await d.peerNames()(me)) ?? (me.backendId === 'claude' ? me.title : undefined),
     id: idToReach(me),
     label: BACKEND_LABEL[me.backendId],
     assist: conductorTab !== undefined

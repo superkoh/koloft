@@ -41,6 +41,7 @@ import {
   museHome,
   museSessionLog,
   firedJob,
+  museNameOf,
   renamedTo,
   startsATurnByItself,
   saidInLog,
@@ -48,7 +49,13 @@ import {
 } from './museSessionLog'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { UUID, museSessionKey } from './sessionStore'
-import { listMuseSessions, readMuseAsk, readMuseTurns, type MuseAsk } from './museServe'
+import {
+  listMuseSessions,
+  readMuseAsk,
+  readMuseTurns,
+  type MuseAsk,
+  type MuseHistoryEntry
+} from './museServe'
 import { sleep } from './codexTransport'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
@@ -70,6 +77,7 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   browserEndpoint(tabId: string): string
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
+  skipPermissions(): boolean
   agent: {
     enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -243,7 +251,7 @@ function patchDelta(response: Record<string, unknown>): { added: number; removed
   return { added, removed }
 }
 
-export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaunch> {
+export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, MuseLaunch> {
   readonly id = 'muse'
   private parsers = new Map<string, ProgramStatusParser>()
   private sweeping?: ReturnType<typeof setInterval>
@@ -326,7 +334,7 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
   }
 
   protected async listHistory(): Promise<
-    { key: string; entry: HistoryEntry; archived: boolean }[]
+    { key: string; entry: MuseHistoryEntry; archived: boolean }[]
   > {
     const sessions = await listMuseSessions(this.serveOptions())
     return sessions.map((entry) => ({ key: museSessionKey(entry.id), entry, archived: false }))
@@ -388,7 +396,8 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     // MUSE§8
     const networkOpen = !!endpoint || (await this.deps.gitAccounts.picked(cwd))
     this.assertStarting()
-    const permission = opts.permission ?? 'default'
+    const asked = opts.permission ?? 'default'
+    const permission = asked === 'default' && this.deps.skipPermissions() ? 'bypass' : asked
     const agent = this.deps.agent.enabled() ? this.deps.agent : undefined
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('muse')] : []),
@@ -653,7 +662,15 @@ export class MuseSessions extends StoredSessions<MuseRun, HistoryEntry, MuseLaun
     run.log.tail.read()
   }
 
+  // MUSE§2 MUSE§5
+  peerName(key: string): string | null {
+    return this.history.get(key)?.museName ?? null
+  }
+
   private onLogRecord(run: MuseRun, r: LogRecord): void {
+    const named = museNameOf(r)
+    const entry = run.info && named && this.history.get(run.info.sessionId)
+    if (entry) entry.museName = named
     const name = renamedTo(r)
     if (name && run.info) return this.retitle(run.info, name)
     const work = finishedWork(r)

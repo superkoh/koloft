@@ -125,7 +125,10 @@ function harness(
     workspaceOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.cwd,
     allSessions: () => sessions,
     pinnedWorkspaces: () => PINNED,
-    peerNames: () => async (sessionId) => peerNames[sessionId] ?? null,
+    peerNames:
+      () =>
+      async ({ sessionId }) =>
+        peerNames[sessionId] ?? null,
     launch: async (spec) => {
       launched.push(spec)
       return 'new-tab'
@@ -313,7 +316,7 @@ describe('the handover put before the first message', () => {
 })
 
 describe('koloft session list', () => {
-  it('shows each session’s state, a Claude session’s name and transcript, a Codex session’s id, and marks the caller; a session showing a question reads apart from one that only finished its turn', async () => {
+  it('shows each session’s state, a Claude or Muse session’s name, a Claude transcript, a Codex session’s id, and marks the caller; a session showing a question reads apart from one that only finished its turn', async () => {
     const { verb } = harness(
       [
         session('me', 'claude', {
@@ -323,9 +326,10 @@ describe('koloft session list', () => {
         session('cx', 'codex', { status: 'approval', nativeSessionId: CODEX_THREAD }),
         session('q', 'codex', { status: 'waiting', nativeSessionId: OTHER_THREAD }),
         session('done', 'claude', { status: 'waiting' }),
-        session('idle', 'claude', { status: 'idle' })
+        session('idle', 'claude', { status: 'idle' }),
+        session('mu', 'muse', { status: 'working', nativeSessionId: MUSE_ID })
       ],
-      { 'me-session': 'planner' },
+      { 'me-session': 'planner', 'mu-session': 'iron-libra' },
       [],
       { asking: ['q'] }
     )
@@ -336,7 +340,8 @@ describe('koloft session list', () => {
       `cx title · Codex · asking the owner a question · id: ${CODEX_THREAD}`,
       `q title · Codex · asking the owner a question · id: ${OTHER_THREAD}`,
       'done title · Claude · finished its turn',
-      'idle title · Claude · idle'
+      'idle title · Claude · idle',
+      `mu title · Muse · working · id: ${MUSE_ID} · name: iron-libra`
     ])
   })
 

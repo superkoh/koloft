@@ -260,7 +260,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
-  test('a scheduled job set to run in Muse starts Muse in its own worktree with its task, model and thinking level, never asking, trusted for that run', async ({
+  test('a scheduled job set to run in Muse starts Muse in its own worktree with its task, model and thinking level, on the permission of my other sessions — with Skip permission prompts on, never asking — trusted for that run', async ({
     env
   }) => {
     const TASK = '/daily-report now'
@@ -282,7 +282,9 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await dlg.locator('.chip', { hasText: 'Other…' }).click()
       await dlg.locator('input[aria-label="Model name"]').fill('muse-large')
       await dlg.locator('.chip', { hasText: /^High$/ }).click()
-      await expect(dlg.locator('.chip.on', { hasText: 'Never ask' })).toHaveCount(1)
+      await expect(dlg.locator('.chip.on', { hasText: 'Same as my other sessions' })).toHaveCount(
+        1
+      )
       await dlg.locator('.modal-foot .btn-primary').click()
       await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
 

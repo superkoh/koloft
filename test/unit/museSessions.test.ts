@@ -51,6 +51,7 @@ let endpoint: string
 let picked: { account: string; env: Record<string, string> } | undefined
 let assist: { role: string; allow: string[] } | undefined
 let gateScript: string
+let skipPermissions: boolean
 
 const registryDir = (): string =>
   path.join(home, '.local', 'share', 'muse', 'runtime', 'muse', 'sessions')
@@ -136,6 +137,7 @@ beforeEach(() => {
   endpoint = ''
   picked = { account: 'work', env: { TBH_CREDENTIAL_BACKEND: 'file' } }
   assist = undefined
+  skipPermissions = false
   gateScript = path.join(home, 'muse-conductor-gate.js')
   fs.writeFileSync(gateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
   let tab = 0
@@ -184,6 +186,7 @@ beforeEach(() => {
         return file
       }
     },
+    skipPermissions: () => skipPermissions,
     agent: { enabled: () => agentTools, answer: vi.fn() },
     gitAccounts: {
       configEnv: (env) => env,
@@ -245,6 +248,14 @@ describe('MuseSessions launch', () => {
     expect(created[1].argv).toEqual(['--approval-judge', 'off'])
   })
 
+  it('starts unrestricted when "Skip permission prompts" is on in Accounts, but never over a permission picked for this launch', async () => {
+    skipPermissions = true
+    await launch()
+    await launch({ permission: 'acceptEdits' })
+    expect(created[0].argv).toEqual(['--permission-profile', ':unrestricted'])
+    expect(created[1].argv).toEqual(['--approval-judge', 'off'])
+  })
+
   it('opens the sandbox network only when the tab can drive the Workbench browser', async () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
@@ -283,6 +294,27 @@ describe('MuseSessions launch', () => {
     expect(hook(off.id, 'SessionStart', { session_id: B, source: 'startup' })).toBe('')
     const first = created[0].env.PATH!.split(':')[0]
     expect(fs.existsSync(path.join(first, 'koloft'))).toBe(true)
+  })
+
+  // ADR-0031
+  it("reminds muse at each prompt and after every tool to write in the language of the owner's latest message, quoting it", async () => {
+    const id = await boundTab()
+    const context = (out: string): string =>
+      JSON.parse(out).hookSpecificOutput.additionalContext as string
+    expect(hook(id, 'PostToolUse', { session_id: A, tool_name: 'read_file' })).toBe('')
+    const atPrompt = hook(id, 'UserPromptSubmit', {
+      session_id: A,
+      prompt: '现在在做什么',
+      turn_id: 't1'
+    })
+    expect(context(atPrompt)).toContain('«现在在做什么»')
+    const afterTool = hook(id, 'PostToolUse', { session_id: A, tool_name: 'read_file' })
+    expect(JSON.parse(afterTool).hookSpecificOutput.hookEventName).toBe('PostToolUse')
+    expect(context(afterTool)).toContain('«现在在做什么»')
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'merge it', turn_id: 't2' })
+    expect(context(hook(id, 'PostToolUse', { session_id: A, tool_name: 'bash' }))).toContain(
+      '«merge it»'
+    )
   })
 })
 
@@ -577,13 +609,15 @@ describe('MuseSessions turns from hooks', () => {
     await vi.waitFor(() => expect(events('prompt')).toHaveLength(1))
   })
 
-  it('retitles the row when the owner renames the session in muse, not when muse names it itself', async () => {
+  it('retitles the row when the owner renames the session in muse, not when muse names it itself, and answers to muse’s own name for it either way', async () => {
     const id = await boundTab()
     logRecord(A, {
       payload_type: 'session.name.changed',
       payload: { new_name: 'iron-libra', source: 'automatic' }
     })
     hook(id, 'Stop', { session_id: A, last_assistant_message: 'x', turn_id: 't1' })
+    await vi.waitFor(() => expect(sessions.peerName(museSessionKey(A))).toBe('iron-libra'))
+    expect(sessions.list()[0].title).not.toBe('iron-libra')
     logRecord(A, {
       payload_type: 'session.name.changed',
       payload: { new_name: 'Docs cleanup', source: 'user' }
@@ -591,6 +625,7 @@ describe('MuseSessions turns from hooks', () => {
     await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Docs cleanup'), {
       timeout: 3000
     })
+    expect(sessions.peerName(museSessionKey(A))).toBe('Docs cleanup')
   })
 })
 

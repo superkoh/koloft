@@ -131,8 +131,9 @@ export function AccountsPane(): JSX.Element {
         <div className="set-lab">
           <b>Skip permission prompts</b>
           <small>
-            Adds <code>--dangerously-skip-permissions</code> when Koloft injects an account — never
-            overrides permission flags you pass yourself.
+            Adds <code>--dangerously-skip-permissions</code> when Koloft injects an account, and
+            starts Muse with <code>:unrestricted</code> — never overrides permission flags you pass
+            yourself.
           </small>
         </div>
         <Switch

@@ -250,6 +250,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   puts that text into the developer message of the model request (fake model: read
   from the request body). It fires again after `/clear`; after `muse resume` the text
   comes back from the session log without the hook firing.
+- The same shape with `"hookEventName":"UserPromptSubmit"` lands as a developer message
+  in that turn's request, and with `"PostToolUse"` in the next request after the tool
+  (1.4.9, fake model, Docker, 2026-10: read from the request body).
 
 ## §13 Credentials
 

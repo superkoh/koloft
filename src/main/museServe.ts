@@ -88,11 +88,15 @@ const seconds = (iso: unknown): number | undefined => {
   return Number.isFinite(ms) ? ms / 1000 : undefined
 }
 
+export interface MuseHistoryEntry extends HistoryEntry {
+  museName?: string
+}
+
 // MUSE§5
 function museSession(
   raw: unknown,
   rootOf: (sessionId: string) => string | undefined
-): HistoryEntry | undefined {
+): MuseHistoryEntry | undefined {
   const s = record(raw)
   if (typeof s.sessionId !== 'string') return undefined
   if (s.kind !== undefined && s.kind !== 'root') return undefined
@@ -109,6 +113,7 @@ function museSession(
     id: s.sessionId,
     cwd,
     name: title ?? (typeof s.name === 'string' ? s.name : null),
+    ...(typeof s.name === 'string' && s.name && { museName: s.name }),
     preview: typeof s.firstUserPrompt === 'string' ? s.firstUserPrompt : undefined,
     createdAt: seconds(s.createdAt),
     updatedAt: seconds(s.updatedAt)
@@ -116,7 +121,7 @@ function museSession(
 }
 
 // MUSE§5
-export async function listMuseSessions(options: ServeOptions): Promise<HistoryEntry[]> {
+export async function listMuseSessions(options: ServeOptions): Promise<MuseHistoryEntry[]> {
   return withServe(options, async (request) => {
     const listed: unknown[] = []
     const seen = new Set<string>()
