@@ -54,15 +54,15 @@ function useRealClaudeBehindTheShim(env: E2EEnv): void {
 }
 
 // CC§9 CC§10
-function seedClaudeConfig(env: E2EEnv): void {
+function seedClaudeConfigThatNeverAcceptedTheBypassWarning(env: E2EEnv): void {
   fs.writeFileSync(
     path.join(env.home, '.claude.json'),
     JSON.stringify({
       hasCompletedOnboarding: true,
-      bypassPermissionsModeAccepted: true,
       projects: { [env.workspaces.a]: { hasTrustDialogAccepted: true } }
     })
   )
+  fs.rmSync(path.join(env.home, '.claude', 'settings.json'), { force: true })
 }
 
 interface Rec {
@@ -142,13 +142,13 @@ async function createSmokeJob(page: Page): Promise<void> {
 }
 
 test.describe('Scheduled jobs on the REAL claude: the one opt-in case proving the launch line (--model, --name, the task after --) still works; one shot, it spends real money', () => {
-  test('BB-R01: a scheduled job runs on the real claude — it binds, it finishes, and the transcript holds the task, the title and the model', async ({
+  test('BB-R01: a scheduled job runs on the real claude — on a Mac that never accepted Claude’s Bypass Permissions warning, it binds, it finishes, and the transcript holds the task, the title and the model', async ({
     env
   }) => {
     test.setTimeout(300_000)
     gitInit(env.workspaces.a)
     useRealClaudeBehindTheShim(env)
-    seedClaudeConfig(env)
+    seedClaudeConfigThatNeverAcceptedTheBypassWarning(env)
     seedSettings(env, {
       skipPermissions: true,
       accounts: [
