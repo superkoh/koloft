@@ -367,7 +367,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
       const [call] = museCalls(env)
       expect(path.dirname(call.cwd)).toBe(path.join(env.userData, 'conductors'))
-      expect(call.argv).toEqual(['--approval-mode', 'never'])
+      expect(call.argv).toEqual(['--approval-mode', 'never', '--sandbox-network', 'enabled'])
       const tabId = await conductorTabId(page, env)
       const type = (line: string): Promise<void> =>
         page.evaluate(([id, text]) => window.api.terminal.write(id, text + '\r'), [tabId, line])

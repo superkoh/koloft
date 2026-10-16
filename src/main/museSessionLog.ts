@@ -96,6 +96,15 @@ export const turnEndedIn = (r: LogRecord): string | undefined =>
   runEvent(r, 'terminal') ? String(r.payload.run_id) : undefined
 
 // MUSE§9
+export const compactionStarts = (r: LogRecord): boolean =>
+  r.payloadType === 'runtime.command.accepted' &&
+  r.payload.command_kind === 'context.compact.manual'
+
+// MUSE§9
+export const compactionEnds = (r: LogRecord): boolean =>
+  r.payloadType === 'context.compact.manual.outcome'
+
+// MUSE§9
 export function firedJob(r: LogRecord): string | undefined {
   const event = record(r.payload.event)
   const source = record(event.source)

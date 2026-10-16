@@ -41,6 +41,8 @@ import {
   finishedWork,
   museHome,
   museSessionLog,
+  compactionEnds,
+  compactionStarts,
   firedJob,
   museNameOf,
   replyIn,
@@ -86,10 +88,7 @@ export interface MuseSessionDeps extends StoredSessionDeps {
     enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
   }
-  gitAccounts: StoredSessionDeps['gitAccounts'] & {
-    picked(cwd: string): Promise<boolean>
-    ghWrapper: string
-  }
+  gitAccounts: StoredSessionDeps['gitAccounts'] & { ghWrapper: string }
 }
 
 interface MuseLaunch {
@@ -145,12 +144,13 @@ const MUSE: CliSpec = {
 // MUSE§14
 const MUSE_UPDATE_TIMEOUT_MS = 5 * 60_000
 
-// ADR-0029 MUSE§15
-function approvalFlags(permission: LaunchPermission | 'conductor', networkOpen: boolean): string[] {
+// ADR-0029 ADR-0038 MUSE§15
+function approvalFlags(permission: LaunchPermission | 'conductor'): string[] {
   if (permission === 'bypass') return ['--permission-profile', ':unrestricted']
   return [
     ...(permission === 'conductor' ? ['--approval-mode', 'never'] : ['--approval-judge', 'off']),
-    ...(networkOpen ? ['--sandbox-network', 'enabled'] : [])
+    '--sandbox-network',
+    'enabled'
   ]
 }
 
@@ -409,8 +409,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const trust = !!resource && this.trustsFolder(workspace)
     const tabId = this.deps.pty.nextId()
     const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
-    // MUSE§8
-    const networkOpen = !!endpoint || (await this.deps.gitAccounts.picked(cwd))
     this.assertStarting()
     const asked = opts.permission ?? 'default'
     const permission = asked === 'default' && this.deps.skipPermissions() ? 'bypass' : asked
@@ -437,7 +435,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const argv = [
       ...(opts.model ? ['--model', opts.model] : []),
       ...(opts.effort ? ['--reasoning-effort', opts.effort] : []),
-      ...approvalFlags(conductor ? 'conductor' : permission, networkOpen),
+      ...approvalFlags(conductor ? 'conductor' : permission),
       ...(trust ? ['--trust-workspace'] : []),
       ...(opts.resumeSessionId
         ? ['resume', this.nativeId(opts.resumeSessionId)]
@@ -723,8 +721,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       run.jobs.delete(job)
       this.holdForJobs(run)
     }
-    if (startsATurnByItself(r) && (r.atMs ?? 0) >= run.boundAt)
-      this.emitState(run, { state: 'working' })
+    if ((r.atMs ?? 0) < run.boundAt) return
+    if (startsATurnByItself(r) || compactionStarts(r)) this.emitState(run, { state: 'working' })
+    else if (compactionEnds(r)) this.emitState(run, { state: 'done' })
   }
 
   // MUSE§3

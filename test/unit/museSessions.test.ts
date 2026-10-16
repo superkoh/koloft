@@ -194,7 +194,6 @@ beforeEach(() => {
     agent: { enabled: () => agentTools, answer: vi.fn() },
     gitAccounts: {
       configEnv: (env) => env,
-      picked: async () => false,
       ghWrapper: path.join(tools, 'gh')
     }
   }
@@ -245,11 +244,11 @@ describe('MuseSessions launch', () => {
     expect(created[1].argv).toEqual(['--permission-profile', ':unrestricted', 'resume', A])
   })
 
-  it('asks the owner instead of an AI reviewer by default, and "edit without asking" launches the same, since Muse never asks about edits', async () => {
+  it('asks the owner instead of an AI reviewer by default, with the sandbox network open so a dev server can listen on a port, and "edit without asking" launches the same, since Muse never asks about edits', async () => {
     await launch()
     await launch({ permission: 'acceptEdits' })
-    expect(created[0].argv).toEqual(['--approval-judge', 'off'])
-    expect(created[1].argv).toEqual(['--approval-judge', 'off'])
+    expect(created[0].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
+    expect(created[1].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
   })
 
   it('starts unrestricted when "Skip permission prompts" is on in Accounts, but never over a permission picked for this launch', async () => {
@@ -257,10 +256,10 @@ describe('MuseSessions launch', () => {
     await launch()
     await launch({ permission: 'acceptEdits' })
     expect(created[0].argv).toEqual(['--permission-profile', ':unrestricted'])
-    expect(created[1].argv).toEqual(['--approval-judge', 'off'])
+    expect(created[1].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
   })
 
-  it('opens the sandbox network only when the tab can drive the Workbench browser', async () => {
+  it('hands the Workbench browser to a tab that can drive it', async () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
     expect(created[0].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
@@ -341,14 +340,14 @@ describe('Assist on Muse', () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     assist = { role: 'You are the Assist of ws.', allow: [] }
     const { id } = await launch()
-    expect(created[0].argv).toEqual(['--approval-mode', 'never'])
+    expect(created[0].argv).toEqual(['--approval-mode', 'never', '--sandbox-network', 'enabled'])
     expect(created[0].env.KOLOFT_BROWSER_CDP).toBeUndefined()
     expect(museTrustsFolder({ HOME: home }, repo)).toBe(true)
     const told = JSON.parse(hook(id, 'SessionStart', { session_id: A, source: 'startup' }))
     expect(told.hookSpecificOutput.additionalContext).toBe('You are the Assist of ws.')
   })
 
-  it('an Assist task allowed the browser gets the Workbench browser and an open sandbox network to reach it', async () => {
+  it('an Assist task allowed the browser gets the Workbench browser', async () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     assist = { role: 'r', allow: ['Bash(playwright-cli *)'] }
     await launch()
@@ -666,6 +665,25 @@ describe('MuseSessions turns from hooks', () => {
     expect(events('prompt')).toHaveLength(0)
     logRecord(A, queued(Date.now()))
     await vi.waitFor(() => expect(events('prompt')).toHaveLength(1))
+  })
+
+  // MUSE§9
+  it('shows /compact as working from the session log, since a manual compaction sends no status, until its outcome is logged', async () => {
+    const id = await boundTab()
+    say(id, osc('?') + osc('state=done:app=muse'))
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+    logRecord(A, {
+      recorded_at: Date.now() * 1000,
+      payload_type: 'runtime.command.accepted',
+      payload: { kind: 'command_accepted', command_kind: 'context.compact.manual' }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('working'), { timeout: 3000 })
+    logRecord(A, {
+      recorded_at: Date.now() * 1000,
+      payload_type: 'context.compact.manual.outcome',
+      payload: { kind: 'manual_compaction_outcome', terminal_outcome: 'compacted' }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'), { timeout: 3000 })
   })
 
   it('retitles the row when the owner renames the session in muse, not when muse names it itself, and answers to muse’s own name for it either way', async () => {

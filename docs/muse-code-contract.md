@@ -229,6 +229,13 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   log as `runtime.session` records `{kind: "run", run_id: <the turn_id of
   UserPromptSubmit>, event: {kind: "assistant_message_committed", text}}` and ends
   with one whose `event` is `{kind: "terminal", terminal: "completed"}`.
+- A manual `/compact` (1.4.9, fake model, Docker) sends no 7501 frame and fires no
+  `PreCompact`; when it is done, `PostCompact {trigger: "manual", turn_id}` and then
+  `SessionStart {source: "compact"}` fire. The session log marks its start with a
+  `runtime.command.accepted` record whose `command_kind` is
+  `context.compact.manual`, and its end with a `context.compact.manual.outcome`
+  record (`terminal_outcome: "compacted"`, or `"failed"` with a reason). Its summary
+  request carries no `stream` field and expects a plain JSON reply.
 - `!cmd` is a tool named `shell`. `request_user_input` fires no `PreToolUse`.
 - A `PreToolUse` hook printing `{"hookSpecificOutput":{"hookEventName":"PreToolUse",
   "permissionDecision":"deny","permissionDecisionReason":"…"}}` or
