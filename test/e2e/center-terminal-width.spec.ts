@@ -18,11 +18,11 @@ import {
 } from './helpers/p1'
 import { seedWorkbenchDefault } from './helpers/workbench'
 
-const CENTER_MAX_COLS = 100
+const CENTER_MAX_COLS = 120
 const MIN_SIDE_GUTTER_PX = 24
 const SUBPIXEL_PX = 2
 const BELOW_THE_WINDOW_MIN_WIDTH_PX = 900
-const WIDE_WINDOW_PX = 1440
+const WIDE_WINDOW_PX = 1720
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -56,8 +56,7 @@ function shownPanelCols(page: Page): Promise<number | undefined> {
 function centerLayout(page: Page): Promise<{
   leftGap: number
   rightGap: number
-  termLeft: number
-  clockLeft: number
+  clockGap: number
   termMaxWidth: string
 }> {
   return page.evaluate(() => {
@@ -74,11 +73,11 @@ function centerLayout(page: Page): Promise<{
     const row = document.querySelector('.center-row')!.getBoundingClientRect()
     const rightEdge = rightNeighbour ? rightNeighbour.getBoundingClientRect().left : row.right
     const clock = document.querySelector('.center-top .wc')!.getBoundingClientRect()
+    const colLeft = col.getBoundingClientRect().left
     return {
-      leftGap: term.left - col.getBoundingClientRect().left,
+      leftGap: term.left - colLeft,
       rightGap: rightEdge - term.right,
-      termLeft: term.left,
-      clockLeft: clock.left,
+      clockGap: clock.left - colLeft,
       termMaxWidth: termEl.style.maxWidth
     }
   })
@@ -101,8 +100,8 @@ async function launchWithPanelShut(env: E2EEnv): Promise<{ app: ElectronApplicat
   return { app, page }
 }
 
-test.describe('the center session terminal stops at 100 columns and sits centred, with at least 24 px on each side; the Workbench terminal still fills its pane', () => {
-  test('a narrow window fills the Claude tab 24 px in from each side; widened, it holds at 100 columns, centred under the world clock, the pty told so, at any font size; a click in the margin lands in the terminal; the Workbench terminal goes past 100', async ({
+test.describe('the center session terminal stops at 120 columns and sits centred, with at least 24 px on each side; the Workbench terminal still fills its pane', () => {
+  test('a narrow window fills the Claude tab 24 px in from each side; widened, it holds at 120 columns, centred, the pty told so, while the world clock stays at the left edge, at any font size; a click in the margin lands in the terminal; the Workbench terminal goes past 120', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -115,7 +114,7 @@ test.describe('the center session terminal stops at 100 columns and sits centred
       const narrow = await centerLayout(page)
       expect(Math.abs(narrow.leftGap - MIN_SIDE_GUTTER_PX)).toBeLessThanOrEqual(SUBPIXEL_PX)
       expect(Math.abs(narrow.rightGap - MIN_SIDE_GUTTER_PX)).toBeLessThanOrEqual(SUBPIXEL_PX)
-      expect(Math.abs(narrow.clockLeft - narrow.termLeft)).toBeLessThanOrEqual(SUBPIXEL_PX)
+      expect(Math.abs(narrow.clockGap - MIN_SIDE_GUTTER_PX)).toBeLessThanOrEqual(SUBPIXEL_PX)
 
       await setWindowWidth(app, WIDE_WINDOW_PX)
       await expect.poll(() => shownCenterCols(page), { timeout: 30_000 }).toBe(CENTER_MAX_COLS)
@@ -125,7 +124,7 @@ test.describe('the center session terminal stops at 100 columns and sits centred
       const wide = await centerLayout(page)
       expect(wide.leftGap).toBeGreaterThan(MIN_SIDE_GUTTER_PX + SUBPIXEL_PX)
       expect(Math.abs(wide.leftGap - wide.rightGap)).toBeLessThanOrEqual(SUBPIXEL_PX)
-      expect(Math.abs(wide.clockLeft - wide.termLeft)).toBeLessThanOrEqual(SUBPIXEL_PX)
+      expect(Math.abs(wide.clockGap - MIN_SIDE_GUTTER_PX)).toBeLessThanOrEqual(SUBPIXEL_PX)
 
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
       expect(await focusOwner(page)).not.toBe('tui')
@@ -145,7 +144,7 @@ test.describe('the center session terminal stops at 100 columns and sits centred
       const smaller = await centerLayout(page)
       expect(smaller.leftGap).toBeGreaterThan(wide.leftGap)
       expect(Math.abs(smaller.leftGap - smaller.rightGap)).toBeLessThanOrEqual(SUBPIXEL_PX)
-      expect(Math.abs(smaller.clockLeft - smaller.termLeft)).toBeLessThanOrEqual(SUBPIXEL_PX)
+      expect(Math.abs(smaller.clockGap - MIN_SIDE_GUTTER_PX)).toBeLessThanOrEqual(SUBPIXEL_PX)
 
       await clickAppMenuItem(app, page, 'toggle-sidebar')
       await expect(page.locator('.app.sb-off')).toHaveCount(1)
@@ -154,7 +153,8 @@ test.describe('the center session terminal stops at 100 columns and sits centred
         .toBeGreaterThan(smaller.leftGap)
       const noSidebar = await centerLayout(page)
       expect(Math.abs(noSidebar.leftGap - noSidebar.rightGap)).toBeLessThanOrEqual(SUBPIXEL_PX)
-      expect(Math.abs(noSidebar.clockLeft - noSidebar.termLeft)).toBeLessThanOrEqual(SUBPIXEL_PX)
+      expect(noSidebar.clockGap).toBeGreaterThan(MIN_SIDE_GUTTER_PX + SUBPIXEL_PX)
+      expect(noSidebar.clockGap).toBeLessThan(noSidebar.leftGap)
 
       await openSessionTerminal(app, page)
       await clickAppMenuItem(app, page, 'toggle-focus-mode')
@@ -166,11 +166,12 @@ test.describe('the center session terminal stops at 100 columns and sits centred
     }
   })
 
-  test('a local Codex tab stops at 100 columns too', async ({ env }) => {
+  test('a local Codex tab stops at 120 columns too', async ({ env }) => {
     test.setTimeout(180_000)
     installCodex(env)
     const { app, page } = await launchWithPanelShut(env)
     try {
+      await setWindowWidth(app, WIDE_WINDOW_PX)
       await startSessionIn(page, 'ws-a', { method: 'Codex' })
       await expect.poll(() => shownCenterCols(page), { timeout: 20_000 }).toBe(CENTER_MAX_COLS)
     } finally {
@@ -178,12 +179,13 @@ test.describe('the center session terminal stops at 100 columns and sits centred
     }
   })
 
-  test('a remote Claude tab stops at 100 columns too', async ({ env }) => {
+  test('a remote Claude tab stops at 120 columns too', async ({ env }) => {
     test.setTimeout(240_000)
     seedWorkbenchDefault(env, false)
     seedSettings(env, { hintsOff: true })
     const { app, page } = await launchWithRemote(env)
     try {
+      await setWindowWidth(app, WIDE_WINDOW_PX)
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       await expect.poll(() => shownCenterCols(page), { timeout: 30_000 }).toBe(CENTER_MAX_COLS)

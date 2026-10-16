@@ -151,7 +151,7 @@ import {
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
-const CENTER_TERMINAL_MAX_COLS = 100
+const CENTER_TERMINAL_MAX_COLS = 120
 
 const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch arguments'
 
@@ -326,7 +326,6 @@ export default function App(): JSX.Element {
   }, [])
 
   const [tuiFocus, setTuiFocus] = useState(0)
-  const [termCapWidth, setTermCapWidth] = useState(0)
   const focusTuiFromMargin = useCallback((e: MouseEvent<HTMLDivElement>): void => {
     if (e.target !== e.currentTarget) return
     e.preventDefault()
@@ -1610,13 +1609,7 @@ export default function App(): JSX.Element {
       <div className="center" ref={centerRef}>
         <div className="center-row">
           {sidebarHidden && panelFull && <div className="wb-full-drag" />}
-          <div
-            className="term-col"
-            style={{
-              display: panelFull ? 'none' : undefined,
-              ['--term-cap-w' as string]: termCapWidth ? `${termCapWidth}px` : undefined
-            }}
-          >
+          <div className="term-col" style={{ display: panelFull ? 'none' : undefined }}>
             <div className="center-top">
               <WorldClock />
             </div>
@@ -1648,7 +1641,6 @@ export default function App(): JSX.Element {
                         scrollbar={false}
                         focusSignal={tuiFocus}
                         maxCols={CENTER_TERMINAL_MAX_COLS}
-                        onCapWidth={setTermCapWidth}
                       />
                     </div>
                   ),
@@ -1666,7 +1658,6 @@ export default function App(): JSX.Element {
                       active={t.id === shown.id && !t.ghost}
                       scrollbar={false}
                       maxCols={CENTER_TERMINAL_MAX_COLS}
-                      onCapWidth={setTermCapWidth}
                       onUserInput={
                         isSessionKind(t.kind)
                           ? () => window.api.sessions.noteActivity(t.id)

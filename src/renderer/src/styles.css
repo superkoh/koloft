@@ -175,7 +175,7 @@ body {
   padding-left: 10px;
 }
 .app.sb-off .center-top {
-  --sb-toggle-room: calc(var(--sb-toggle-left) + 22px);
+  padding-left: calc(var(--sb-toggle-left) + 22px);
 }
 .app.sb-off .wb-col.full {
   margin-top: var(--titlebar-h);
@@ -1185,14 +1185,7 @@ body {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  margin: 12px 56px 0
-    max(
-      calc(var(--sb-toggle-room, 0px) + var(--term-gutter-l)),
-      calc(
-        var(--term-gutter-l) +
-          (100% - var(--term-gutter-l) - var(--term-gutter-r) - var(--term-cap-w, 100%)) / 2
-      )
-    );
+  margin: 12px 56px 0 var(--term-gutter-l);
   -webkit-app-region: no-drag;
 }
 .wc-chip {
