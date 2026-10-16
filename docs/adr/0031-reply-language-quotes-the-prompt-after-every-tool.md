@@ -53,6 +53,14 @@ wrapper, or, when another session started it, that session's words) into the han
 quotes those words for a handover prompt that carries them, and the child's title is
 asked for in their language. A Codex child gets the same sentence in its developer
 instructions but no reminder after each tool, since Codex runs no Claude Code hook.
+Measured 2026-10-16 with fresh sessions, an English task and the shipped hook: Opus 5.5
+(`claude -p`) answered in Chinese 0 / 2 without the owner's words and 2 / 2 with them,
+its notes, its reply and the result it sent back alike; Codex 0.162 (`codex exec`, the
+preamble as developer instructions) 0 / 2 and 2 / 2, notes and reply alike. The parent's side — a sentence in
+Koloft's prompt and Assist's role asking for tasks and messages in the owner's language —
+is not measured where it matters: fresh Opus 5.5 parents given a Chinese request wrote
+their child's task in Chinese 4 / 4 with and without it, and a drifted long session was
+not reproduced.
 **Rejected**: repeating a generic sentence (above: it barely helped — the quote is what
 works). Naming the language ("Reply in Chinese") — Koloft would have to guess the
 language in a shell script, for every language; the quote lets the model see it.
