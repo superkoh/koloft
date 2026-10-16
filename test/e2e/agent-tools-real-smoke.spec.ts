@@ -705,13 +705,14 @@ test.describe('REAL Claude Code and Codex tabs keep the owner’s language: opt-
     }
   ]
   for (const c of cases)
-    test(`in a real ${c.name} tab Koloft's reply-language hooks keep the owner's words, quote back a last note in the wrong language, and read a note written before a tool call`, async ({
+    test(`in a real ${c.name} tab Koloft's reply-language hooks keep the owner's words, quote back a last note in the wrong language, and stop once a note in the owner's language reaches the transcript`, async ({
       env
     }) => {
       test.skip(!c.have, c.skip)
       test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 180_000)
       const english = 'Reply with exactly these words and nothing else: All quiet in this folder.'
-      const words = '先用一句中文告诉我你要做什么，再用 shell 运行一次 ls，最后只回复「好」。'
+      const words =
+        '用 shell 先运行 ls，看完结果再单独运行 pwd，每次运行前先用一句中文告诉我你要做什么，最后只回复「好」。'
       await inARealWorktreeSession(env, c.backend, c.useReal, [], async ({ page, rows }) => {
         for (const prompt of [english, words]) {
           await ask(page, rows, prompt)
@@ -722,9 +723,8 @@ test.describe('REAL Claude Code and Codex tabs keep the owner’s language: opt-
         expect(c.said(env)).toEqual([words])
         const named = c.handed(env).filter((text) => /^(The user writes|Your last note)/.test(text))
         expect(named[0]).toMatch(/^Your last note to the user, «All quiet in this folder/)
-        expect(named.slice(1)).not.toHaveLength(0)
-        for (const afterATool of named.slice(1))
-          expect(afterATool).toMatch(/^The user writes Chinese\. /)
+        expect(named.length).toBeGreaterThan(2)
+        expect(named.at(-1)).toMatch(/^The user writes Chinese\. /)
       })
     })
 })

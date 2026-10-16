@@ -1113,7 +1113,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // ADR-0031 CODEX§27
-  test("a Codex tab's own app-server runs Koloft's reply-language hooks once Koloft has trusted them: the prompt and every tool call hand Codex the owner's latest words", async ({
+  test("a Codex tab's own app-server runs Koloft's reply-language hooks once Koloft has trusted them: the prompt and every tool call hand Codex the owner's words, which a slash command alone does not replace", async ({
     env
   }) => {
     installCodex(env)
@@ -1139,13 +1139,13 @@ test.describe('Codex sessions through the real method chooser, process transport
         .poll(() => {
           try {
             return handed()
-              .filter((h) => h.context.includes('«/koloft help»'))
-              .map((h) => h.event)
+              .slice(1)
+              .map((h) => `${h.event} ${h.context.includes('«Codex fixture session»')}`)
           } catch {
             return []
           }
         })
-        .toEqual(['UserPromptSubmit', 'PostToolUse'])
+        .toEqual(['UserPromptSubmit true', 'PostToolUse true'])
     } finally {
       await quitAndClose(app)
     }
