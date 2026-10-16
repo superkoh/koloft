@@ -2226,7 +2226,6 @@ async function startTui() {
       crash(error)
     }
   })
-  process.on('SIGHUP', () => quit(0, false))
   process.on('SIGTERM', () => quit(0, false))
   await startApi()
   if (!term.statusOn && !term.statusOff) write(STATUS_QUERY)

@@ -967,7 +967,7 @@ function machinePackage(): MachinePackage {
     pkgFiles['statusline/package.json'] = '{"type":"module"}\n'
     pkgFiles['statusline/theme.json'] = JSON.stringify(DEFAULT_THEME, null, 2)
     pkgFiles['statusline/run.sh'] = remoteWrapperScript()
-    pkgFiles['statusline/agy.js'] = AGY_STATUSLINE_JS
+    pkgFiles['statusline/agy.cjs'] = AGY_STATUSLINE_JS
     pkgFiles[AGY_STATUSLINE_FILE] = agyStatuslineScript()
   } catch (err) {
     console.error('[koloft] remote statusline bundle unreadable:', err)
@@ -2442,6 +2442,7 @@ app.whenReady().then(() => {
           remoteSync.pokeNow(host)
           return pulled
         },
+        setupLine: () => setupLine(playwrightCliBin),
         machineName: () => machinePackage().name,
         mirrorHookDir: (host) => mirrorHookDir(userData, host),
         mirrorGemini: (host) => mirrorAgyGemini(userData, host)

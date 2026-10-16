@@ -656,7 +656,9 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       expect(sessionCalls(env)).toHaveLength(0)
       await expect.poll(() => fs.readdirSync(shots)).toEqual([])
       await expect(wsRows(page, 'ws-a')).toHaveCount(1)
-      await expect(agyRows(page)).toHaveCount(0)
+      await expect(
+        wsRows(page, 'ws-a').getByRole('img', { name: 'Antigravity', exact: true })
+      ).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }

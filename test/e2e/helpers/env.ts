@@ -312,8 +312,8 @@ export interface AgyCall {
   geminiDir: string
 }
 
-export function agyCalls(env: E2EEnv): AgyCall[] {
-  const file = path.join(env.home, 'fake-agy-calls.jsonl')
+export function agyCalls(env: E2EEnv, home = env.home): AgyCall[] {
+  const file = path.join(home, 'fake-agy-calls.jsonl')
   if (!fs.existsSync(file)) return []
   return fs
     .readFileSync(file, 'utf8')

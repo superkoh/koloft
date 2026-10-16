@@ -244,13 +244,14 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
   })
 
-  it('supports every pair but Codex, Muse and Antigravity on a remote machine', () => {
+  it('supports every pair but Codex and Muse on a remote machine, and Antigravity there with what remote Claude Code has', () => {
     expect(SUPPORTED_PAIRS).toEqual({
       claude: { local: true, ssh: true },
       codex: { local: true, ssh: false },
       muse: { local: true, ssh: false },
-      agy: { local: true, ssh: false }
+      agy: { local: true, ssh: true }
     })
+    expect(capabilitiesFor('agy', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
   })
 })
 

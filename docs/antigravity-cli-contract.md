@@ -923,3 +923,44 @@ Nothing ran against Google's real servers.
   tmux sends OSC 0 out).
 - Over SSH: the SSH variables switch the token to a file (§6, §7) and sign-in works by
   pasting the code, with no browser on that machine.
+- (1.4.0, a Koloft-style tab: real OpenSSH 10.3p1 into a Debian 12 sshd container,
+  tmux 3.3a, Node 22.12.0 at `~/.koloft/node`, the fake Gemini server on that machine)
+  A `--gemini_dir` folder holding `settings.json` (`modelProvider`, `trustedWorkspaces`
+  with the folder, a `title` command) and `cache/onboarding.json`, with
+  `GEMINI_API_KEY` from a sourced env file, opens straight on the prompt. agy rewrites
+  `settings.json` in its own form and keeps the `title` block.
+- Inside that tab `SSH_CONNECTION`, `SSH_TTY` and `SSH_CLIENT` reach agy; its log says
+  "Using file-based token storage because SSH session detected". A non-tty `ssh host
+  cmd` gives "no D-Bus session bus detected" instead — a token file either way.
+- The title script and the hooks inherit the launch environment (`KOLOFT_TAB_ID`,
+  `TMUX`, `TMUX_PANE`); the title script runs in the workspace, the hooks in
+  `<gemini_dir>/config`. `tmux rename-session -t "$TMUX_PANE" k-<id>` from the title
+  script works at the first prompt and after `/clear`.
+- Over one prompt the order is: title `authenticating` twice and `idle` twice (no id),
+  hook SessionStart, PreInvocation, Stop, then the first title line carrying the
+  conversation id. A turn of about 50 ms never shows the title `working` state; a 4 s
+  one does. An ask: PreToolUse (the whole `toolCall`), then title `tool_use` with
+  `tool_confirmation_pending:true`; after `1`: title `working`, PostToolUse,
+  PreInvocation, Stop, `idle`.
+- Keys typed into the Mac side of `ssh -tt` answer a command ask (`1`) and a question
+  (`2` picked option 2); so does `tmux send-keys`.
+- `node --no-warnings --experimental-sqlite` (22.12.0) run over ssh reads the shared
+  `conversation_summaries.db` read-only while agy is idle, waits on an ask, or is
+  mid-turn; `workspace_uris` hold the remote folder.
+- `--conversation=<id>` in a tmux session named `k-<id>` shows the history; its first
+  title line already carries the id. Two tabs in one account folder hold their own
+  `presence/<id>.lock` (FLOCK WRITE in `/proc/locks`); `flock -n <lock> true` exits 1
+  while a conversation is open and 0 once it is free.
+- `/exit` ends the tmux session and `ssh -tt` returns 0; no hook fires at exit. A
+  dropped ssh client leaves tmux detached with agy running and the lock held;
+  `tmux attach -d -t k-<id>` over a new `ssh -tt` redraws it and keys work.
+- No OSC 7501 and no OSC 0/2 reach the Mac side through tmux (`set-titles` off); the
+  title script's output lands in `#{pane_title}`.
+- `rsync -a -m --inplace --delete` with includes `/*/`, `/*/.system_generated/`,
+  `/*/.system_generated/logs/` and `/*/.system_generated/logs/transcript.jsonl` pulls
+  just the per-conversation transcripts out of `brain/`.
+- A copied token file in a folder without `modelProvider`, run over ssh: agy loads it
+  ("authenticated via keyring") and calls Google with it. What Google does with one
+  `refresh_token` used from two machines: not probed (no real account).
+- The slim lab image has no `jq`, `python`, `xz` or `gawk`: scripts that run there are
+  `sh` with `sed` and `printf`.

@@ -232,6 +232,7 @@ beforeEach(() => {
       hosts: () => ['devbox'],
       alive: () => machine.alive,
       nextPull: async () => undefined,
+      setupLine: () => undefined,
       machineName: () => 'm-test',
       mirrorHookDir: () => mirror,
       mirrorGemini: () => path.join(home, 'mirror-gemini')

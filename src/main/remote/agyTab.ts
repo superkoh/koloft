@@ -142,10 +142,11 @@ export function parseAgyConfig(stdout: string): RemoteAgyConfig {
 
 // AGY§8
 export function listAgyCmd(machineName: string): string {
+  const script = `${REMOTE_HOME}/$1/${AGY_LIST_FILE}`
   return remoteShCommand(
-    `[ -x "${REMOTE_NODE}" ] && [ -f "$1" ] || { printf '[]'; exit 0; }
-exec "${REMOTE_NODE}" --no-warnings --experimental-sqlite "$1" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversation_summaries.db" "$2" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversations"`,
-    [`${remoteMachineDir(machineName)}/${AGY_LIST_FILE}`, TOP_LEVEL_ROWS]
+    `[ -x "${REMOTE_NODE}" ] && [ -f "${script}" ] || { printf '[]'; exit 0; }
+exec "${REMOTE_NODE}" --no-warnings --experimental-sqlite "${script}" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversation_summaries.db" "$2" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversations"`,
+    [machineName, TOP_LEVEL_ROWS]
   )
 }
 
@@ -168,6 +169,6 @@ D="$(cd "$(dirname "$0")" && pwd)"
 node="${REMOTE_NODE}"
 [ -x "$node" ] || exit 0
 [ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
-exec "$node" "$D/agy.js" "$D/ccstatusline.js" "$D/theme.json"
+exec "$node" "$D/agy.cjs" "$D/ccstatusline.js" "$D/theme.json"
 `
 }

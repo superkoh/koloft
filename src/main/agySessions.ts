@@ -140,6 +140,7 @@ export interface AgyRemoteDeps {
   hosts(): string[]
   alive(host: string): ReadonlySet<string>
   nextPull(host: string): Promise<void>
+  setupLine(): string | undefined
   machineName(): string
   mirrorHookDir(host: string): string
   mirrorGemini(host: string): string
@@ -667,6 +668,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       cols: opts.cols,
       rows: opts.rows,
       shell: plan.shell,
+      setupCommand: remote.setupLine(),
       launchCommand: () => plan.launchCommand(),
       resumeSessionId: opts.resumeSessionId,
       resized: plan.resized
@@ -697,6 +699,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     bound = run
     this.ticking ??= setInterval(() => this.tick(), TICK_MS)
     this.ticking.unref?.()
+    void remote.nextPull(where.host)
     return run
   }
 
@@ -759,10 +762,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.stream = undefined
     this.bind(run, known ?? { id: conversationId, cwd: run.cwd }, switched ? 'switch' : 'replace')
     void this.refreshHistory().catch(() => undefined)
-    setTimeout(
-      () => void this.takeListedTitle(run, conversationId),
-      LISTED_TITLE_AFTER_PROMPT_MS
-    ).unref?.()
   }
 
   // AGY§12
@@ -845,7 +844,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   private emitState(run: AgyRun, status: ProgramStatus): void {
     if (status.state === 'blocked' && status.kind !== 'auth') void this.readAsk(run, status)
     else if (!run.waiting?.plan) run.waiting = undefined
-    if (status.state === 'working') this.watchCompaction(run)
+    if (status.state === 'working') this.turnStarted(run)
     if (status.state === 'done') void this.turnDone(run)
     const event = statusEvent(status)
     if (event) this.deps.events(run.tabId, event)
@@ -856,7 +855,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.endCompaction(run)
     const id = run.info?.nativeSessionId
     if (!id) return
-    void this.takeListedTitle(run, id)
+    void this.takeListedTitle(run, id, true)
     if (run.remote) await this.mirrored(run.remote.host)
     const file = agyTranscript(this.geminiOf(run.cwd), id)
     const [turn] = await readAgyTurns(file, 1).catch(() => [] as Turn[])
@@ -881,14 +880,27 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     })
   }
 
+  // AGY§8 AGY§17
+  private turnStarted(run: AgyRun): void {
+    this.watchCompaction(run)
+    const id = run.info?.nativeSessionId
+    if (id && !this.history.get(agySessionKey(id))?.name) this.takeListedTitleSoon(run, id)
+  }
+
   // AGY§8 AGY§11
-  private async takeListedTitle(run: AgyRun, id: string): Promise<void> {
+  private async takeListedTitle(run: AgyRun, id: string, again = false): Promise<void> {
     const key = agySessionKey(id)
     await this.refreshHistory().catch(() => undefined)
     if (!this.history.get(key)?.name) await this.refreshHistory().catch(() => undefined)
     const name = this.history.get(key)?.name
+    if (!name && again) this.takeListedTitleSoon(run, id)
     if (name && run.info?.nativeSessionId === id && name !== run.info.title)
       this.retitle(run.info, name)
+  }
+
+  // AGY§8
+  private takeListedTitleSoon(run: AgyRun, id: string): void {
+    setTimeout(() => void this.takeListedTitle(run, id), LISTED_TITLE_AFTER_PROMPT_MS).unref?.()
   }
 
   // AGY§17

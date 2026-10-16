@@ -206,6 +206,17 @@ export function installFakeRemote(env: E2EEnv): void {
   env.launchEnv.KOLOFT_FAKE_SSH_STATE = state
 }
 
+// AGY§3 AGY§5
+export function installRemoteAgy(env: E2EEnv): void {
+  const bin = path.join(machineHome(env), '.local', 'bin')
+  fs.mkdirSync(bin, { recursive: true })
+  fs.copyFileSync(path.join(__dirname, '..', 'fixtures', 'fake-agy.js'), path.join(bin, 'agy'))
+  fs.chmodSync(path.join(bin, 'agy'), 0o755)
+  const settings = path.join(machineHome(env), '.gemini', 'antigravity-cli', 'settings.json')
+  fs.mkdirSync(path.dirname(settings), { recursive: true })
+  fs.writeFileSync(settings, JSON.stringify({ trustedWorkspaces: [remoteDir(env)] }))
+}
+
 export async function launchWithRemote(
   env: E2EEnv
 ): Promise<{ app: ElectronApplication; page: Page }> {
