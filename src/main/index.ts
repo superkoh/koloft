@@ -3439,8 +3439,10 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
         : undefined
     return (resource ? removeUntouchedCodexWorktree(resource) : Promise.resolve()).then(() => true)
   }
-  discordNotices?.closed(tabId)
-  discordLive?.closed(tabId)
+  if (ptyMgr.get(tabId)?.alive) {
+    discordNotices?.closed(tabId)
+    discordLive?.closed(tabId)
+  }
   return stopTabProcess(tabId, restarting)
 }
 
