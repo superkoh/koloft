@@ -502,6 +502,59 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
+  test('BB-M29: a job that names a model, run on a custom endpoint account that pins its own model, starts without --model, and its History line says the endpoint set the model', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    seedSettings(env, {
+      accounts: [
+        {
+          name: 'glm',
+          kind: 'custom',
+          enabled: true,
+          fable: 'unknown',
+          status: 'ok',
+          addedAt: 1,
+          baseUrl: 'https://custom-endpoint.invalid/api',
+          model: 'glm-5.2'
+        }
+      ]
+    })
+    fs.writeFileSync(
+      env.keychainFile,
+      JSON.stringify({ 'koloft-dev-custom-endpoint': { glm: 'custom-endpoint-fixture-token' } })
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await createJob(page, dlg, { name: 'Nightly report', task: '/daily-report', model: 'Sonnet' })
+      await clickRunNow(page, 'Nightly report')
+
+      const call = await waitNewCall(env, 0)
+      expect(call.argv).not.toContain('--model')
+      const row = cronRows(page, 'ws-a')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await closeCron(page)
+
+      await row.click()
+      await expect(row).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+
+      await openCron(page, 'ws-a')
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
+        .toBe('Closed by you — model set by the endpoint account glm')
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
   test('BB-M18: with "Close it" on, a run that left a file uncommitted stays open and says so; once the file is gone it closes for good: tab, row, worktree and branch', async ({
     env
   }) => {

@@ -5,6 +5,7 @@ import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
 import { killSessionCmd } from '../../src/main/remote/launch'
+import { tabPackageDir } from '../../src/main/remote/paths'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { utilTerminalGuard } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
@@ -397,6 +398,19 @@ describe('accounts for remote launches started together', () => {
     })
     await Promise.all([host.launch({ root: keyed('/w') }), host.launch({ root: keyed('/w') })])
     expect(handed.sort()).toEqual(['a', 'b'])
+  })
+
+  it('a --model asked of a remote launch yields to a custom endpoint account that pins its own model, and stays on any other account', async () => {
+    const tabScript = async (env: Record<string, string>, tabId: string): Promise<string> => {
+      const plan = await machine(runOnMachine, {
+        pickAccount: async () => ({ env, banner: '' })
+      }).launch({ root: keyed('/w'), model: 'opus' })
+      if (!plan.ok) throw new Error('launch refused')
+      plan.launchCommand(tabId)
+      return fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8')
+    }
+    expect(await tabScript({ ANTHROPIC_MODEL: 'glm-5.2' }, 'tab-pinned')).not.toContain('--model')
+    expect(await tabScript({}, 'tab-plain')).toMatch(/'--model' 'opus'|--model opus/)
   })
 
   it('a remote session resumed after its tmux ended is picked with its own id, so it can stay on the account it ran on', async () => {
