@@ -67,7 +67,13 @@ import {
   codexHookOverride,
   CODEX_ASKS_AND_WAITS
 } from './conductorGate'
-import { CODEX_REPLY_LANGUAGE_ENV, CODEX_REPLY_LANGUAGE_HOOKS, CODEX_SAID_ENV } from './hooks'
+import {
+  CODEX_REPLY_LANGUAGE_ENV,
+  CODEX_REPLY_LANGUAGE_HOOKS,
+  CODEX_SAID_ENV,
+  seedCodexOwnerWords
+} from './hooks'
+import { ownerWordsIn } from './handover'
 import { acceptCodexHookTrust, codexConfigFile, codexHookTrusted, configTrusts } from './codexTrust'
 import {
   CODEX_OPEN_SHIM_FOLDER,
@@ -1255,6 +1261,9 @@ export class CodexSessions {
           agent && ((dir, name, raw) => agent.answer(run?.tabId, dir, name, raw))
         )
     const env = openShim ? { ...this.envFor(home), ZDOTDIR: openShim.zdotDir } : this.envFor(home)
+    const ownerWords = role && opts.firstPrompt ? ownerWordsIn(role) : undefined
+    const said = openShim && path.join(openShim.shimDir, 'said')
+    if (said && ownerWords) seedCodexOwnerWords(said, ownerWords)
     const observer = new CodexObservation(observe)
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('codex')] : []),
@@ -1272,9 +1281,9 @@ export class CodexSessions {
           [CODEX_GATE_ENV]: this.deps.conductorGate.script,
           [ASSIST_ALLOW_ENV]: this.deps.conductorGate.writeAllow(tabId, allow)
         }),
-        ...(openShim && {
+        ...(said && {
           [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
-          [CODEX_SAID_ENV]: path.join(openShim.shimDir, 'said')
+          [CODEX_SAID_ENV]: said
         })
       },
       cwd,
@@ -1350,6 +1359,7 @@ export class CodexSessions {
                 env: processOptions.sessionEnv ?? {},
                 config: serverConfig,
                 hookTrust: hookTrust.map((h) => ({ key: h.key, hash: h.currentHash })),
+                ownerWords,
                 agentTools: !!agent
               })
             ]

@@ -75,6 +75,7 @@ import {
   forgetAssistMarkers,
   markAnswerable,
   pruneStale,
+  quotedPrompt,
   setupHooks,
   writeAllowFile,
   writeTabHookSettings
@@ -951,7 +952,7 @@ let discordThreads: SessionThreads | null = null
 let discordLive: LiveStatus | null = null
 let askButtons: AskButtons | null = null
 const answerable = new Set<string>()
-let answerableRegDir: string | undefined
+let hookRegDir: string | undefined
 let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
@@ -975,14 +976,14 @@ function watchedByDiscord(all: Conductors, s: { tabId: string; conductor?: strin
 }
 
 function syncAnswerable(): void {
-  if (!answerableRegDir || !conductors) return
+  if (!hookRegDir || !conductors) return
   for (const s of allSessions()) {
     if (s.backendId !== 'claude' || !s.alive || s.remote) continue
     const on = discordConnected && watchedByDiscord(conductors, s)
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
-    markAnswerable(answerableRegDir, s.tabId, on)
+    markAnswerable(hookRegDir, s.tabId, on)
   }
 }
 
@@ -1182,6 +1183,11 @@ const sessionDeps: SessionVerbDeps = {
   sidebar: () => workspaceMgr?.rows() ?? [],
   worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
+  quotedPrompt: (tabId) => {
+    const host = tracker.remoteOf(tabId)?.host
+    const dir = host ? mirrorHookDir(app.getPath('userData'), host) : hookRegDir
+    return dir ? quotedPrompt(dir, tabId) : undefined
+  },
   touch: (tabId, key) => conductors?.touch(tabId, key),
   conductorOf: conductorTarget,
   resume: async (row) => {
@@ -1938,7 +1944,7 @@ app.whenReady().then(() => {
       allowKoloft,
       conductor
     )
-  answerableRegDir = hookPaths.regDir
+  hookRegDir = hookPaths.regDir
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
   const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
@@ -1999,8 +2005,8 @@ app.whenReady().then(() => {
     discordRelay?.forget(e.id)
     discordThreads?.forget(e.id)
     askButtons?.forget(e.id)
-    if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
-    if (answerableRegDir) forgetAssistMarkers(answerableRegDir, e.id)
+    if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
+    if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()

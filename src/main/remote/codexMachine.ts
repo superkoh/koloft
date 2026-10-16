@@ -23,7 +23,7 @@ import {
 } from '../codexTransport'
 import { record } from '../codexObservation'
 import { hookStateHeader } from '../codexTrust'
-import { CODEX_REPLY_LANGUAGE_ENV, CODEX_SAID_ENV } from '../hooks'
+import { CODEX_REPLY_LANGUAGE_ENV, CODEX_SAID_ENV, codexOwnerWordsFiles } from '../hooks'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
 
@@ -46,6 +46,7 @@ export interface CodexTabSpec {
   env: Record<string, string>
   config: readonly string[]
   hookTrust: { key: string; hash: string }[]
+  ownerWords?: string
   agentTools: boolean
 }
 
@@ -104,6 +105,10 @@ export function codexTabScript(s: CodexTabSpec): string {
       : [])
   ].join(' ')
   const serve = `codex app-server --listen "unix://$S.sock" ${config}`
+  // ADR-0031
+  const ownerWords = Object.entries(s.ownerWords ? codexOwnerWordsFiles(s.ownerWords) : {})
+    .map(([suffix, text]) => `printf '%s' ${shq(text)} > "$S.said${suffix}"\n`)
+    .join('')
   return `#!/bin/sh
 M="${remoteMachineDir(s.machineName)}"
 ${REMOTE_ENV_LINES}
@@ -113,8 +118,8 @@ H="${REMOTE_CODEX_HOME}"
 mkdir -p "$H" "${serversDir(s.instance)}" && chmod 700 "$H" || exit 3
 cd ${shq(s.cwd)} || exit 3
 ${trust}${hookTrustLines(s.hookTrust)}S="${serversDir(s.instance)}/${s.tabId}"
-rm -f "$S.sock"
-${LOGIN_PATH_TOO}
+rm -f "$S".*
+${ownerWords}${LOGIN_PATH_TOO}
 (
 ${exports}  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
   ${CODEX_REPLY_LANGUAGE_ENV}="$M/${REPLY_LANGUAGE_FILE}"; ${CODEX_SAID_ENV}="$S.said"
@@ -164,7 +169,7 @@ const STOP_SERVER_FN = `stop_one() {
         if [ "$(ps -p "$pid" -o pgid= 2>/dev/null | tr -d ' ')" = "$pid" ]; then kill -- "-$pid"; else kill "$pid"; fi ;;
     esac
   fi
-  rm -f "$D/$1.pid" "$D/$1.sock" "$D/$1.log" "$D/$1.said"
+  rm -f "$D/$1".*
 }`
 
 export function stopCodexServerCmd(instance: string, tabId: string): string {
