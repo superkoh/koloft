@@ -28,6 +28,11 @@ function histBase(h: HistoryLine): string {
     : 'Skipped — the last run was still open'
 }
 
+export function histFolder(h: HistoryLine): string {
+  if (h.removed) return 'folder removed'
+  return h.kept ? `folder kept: ${h.kept}` : ''
+}
+
 export function histWhen(h: HistoryLine, now: Date): string {
   const from = describeWhen(new Date(h.dueAt), now)
   if (h.until === undefined || h.until <= h.dueAt) return from

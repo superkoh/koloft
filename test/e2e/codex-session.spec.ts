@@ -1794,6 +1794,80 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('a Codex job left open loses its folder and branch when you close its tab, though the run left an ignored build file Codex itself would keep; its line says so, and clicking its cold row makes the folder again for the same thread', async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    fs.writeFileSync(path.join(env.workspaces.a, '.gitignore'), 'build/\n')
+    gitCommitAll(env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    fs.mkdirSync(path.join(env.home, '.codex'), { recursive: true })
+    fs.writeFileSync(
+      path.join(env.home, '.codex', 'config.toml'),
+      `[projects.${JSON.stringify(fs.realpathSync(env.workspaces.a))}]\ntrust_level = "trusted"\n`
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      const dlg = page.locator('.modal.cronjobs')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
+      await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
+      await dlg.locator('[aria-label="What to run"]').fill('/daily-report now')
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
+
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(1)
+      const first = codexCalls(env)[0]
+      const tree = first.cwd
+      expect(path.basename(path.dirname(tree))).toBe('worktrees')
+      const branch = `worktree-${path.basename(tree)}`
+      const branchListed = (): string =>
+        execFileSync('git', ['branch', '--list', branch], {
+          cwd: env.workspaces.a,
+          encoding: 'utf8'
+        }).trim()
+      fs.mkdirSync(path.join(tree, 'build'))
+      fs.writeFileSync(path.join(tree, 'build', 'out.txt'), 'made by the run')
+      await expect(dlg.locator('.job-last')).toContainText('done — waiting for you', {
+        timeout: 30_000
+      })
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0)
+
+      await codexRows(page).click()
+      await expect(codexRows(page)).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(branchListed()).toBe('')
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      await expect(dlg.locator('.hist-row').first().locator('.hist-folder')).toHaveText(
+        ' · folder removed',
+        { timeout: 30_000 }
+      )
+      await expect(dlg.locator('.hist-row').first().locator('.hist-state')).toHaveText(
+        'Closed by you'
+      )
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0)
+
+      await codexRows(page).click()
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(2)
+      await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+      expect(codexCalls(env)[1]).toMatchObject({ cwd: tree, sessionId: first.sessionId })
+      expect(fs.existsSync(tree)).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('✎ comment on a Changes hunk lands in the Codex composer as a paste with the note typed after it, unsent until the person presses Enter', async ({
     env
   }) => {

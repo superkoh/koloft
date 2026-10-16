@@ -97,6 +97,25 @@ describe('what Koloft reads about a machine before it keeps an account there', (
       parsePreflight(answer('git version 2.30.6', 'Linux x86_64', 'musl\n'))?.gcmAsset
     ).toBeNull()
   })
+
+  it('says a machine with neither curl nor wget cannot fetch the sign-in tool, and tries no install', async () => {
+    const scripts: string[] = []
+    const ready = (extra: string): ReturnType<GitMachineAccounts['ready']> =>
+      new GitMachineAccounts(async (_m, script) => {
+        scripts.push(script)
+        return { code: 0, stdout: answer('git version 2.43.0', 'Linux x86_64', extra), stderr: '' }
+      }).ready('kt-x', true)
+
+    expect(await ready('')).toEqual({
+      ok: false,
+      error: 'machine',
+      message: expect.stringMatching(/^kt-x has neither curl nor wget/)
+    })
+    expect(scripts).toHaveLength(1)
+    expect(parsePreflight(answer('git version 2.43.0', 'Linux x86_64', 'fetch\n'))?.fetch).toBe(
+      true
+    )
+  })
 })
 
 describe('a token sent to a machine', () => {

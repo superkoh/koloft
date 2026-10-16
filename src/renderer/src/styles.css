@@ -5573,7 +5573,8 @@ input.switch:focus-visible {
 .hist-state .dot.bad {
   background: var(--red);
 }
-.hist-wt {
+.hist-wt,
+.hist-folder {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--fg-faint);

@@ -55,7 +55,7 @@ const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
 const JSONL_SCAN_CAP = 256 * 1024
 // CC§2
-const JSONL_TAIL_BYTES = 64 * 1024
+const JSONL_TAIL_FIRST_READ_BYTES = 64 * 1024
 const DISCOVER_MAX = 8
 const TRANSCRIPTS_OPEN_AT_ONCE = 16
 
@@ -148,7 +148,7 @@ async function readJsonlHeadMeta(
   }
 }
 
-async function readJsonlTailLines(file: string): Promise<string[]> {
+async function readJsonlTailLines(file: string, untilWorktreeRecord: boolean): Promise<string[]> {
   let fh: fs.promises.FileHandle
   try {
     fh = await fs.promises.open(file, 'r')
@@ -156,12 +156,22 @@ async function readJsonlTailLines(file: string): Promise<string[]> {
     return []
   }
   try {
-    const size = (await fh.stat()).size
-    const start = Math.max(0, size - JSONL_TAIL_BYTES)
-    const buf = Buffer.allocUnsafe(size - start)
-    await fh.read(buf, 0, buf.length, start)
-    const lines = buf.toString('utf8').split('\n')
-    return start > 0 ? lines.slice(1) : lines
+    let start = (await fh.stat()).size
+    let tail = Buffer.alloc(0)
+    for (let chunk = JSONL_TAIL_FIRST_READ_BYTES; ; chunk *= 2) {
+      const from = Math.max(0, start - chunk)
+      const head = Buffer.alloc(start - from)
+      await fh.read(head, 0, head.length, from)
+      tail = Buffer.concat([head, tail])
+      start = from
+      const lines = tail.toString('utf8').split('\n')
+      const whole = start === 0 ? lines : lines.slice(1)
+      if (start === 0 || !untilWorktreeRecord) return whole
+      const holdsWorktreeRecord = whole.some(
+        (l) => l.includes('"type":"worktree-state"') || l.includes('"type":"relocated"')
+      )
+      if (holdsWorktreeRecord) return whole
+    }
   } finally {
     await fh.close()
   }
@@ -1086,12 +1096,12 @@ export class WorkspaceManager {
     return meta
   }
 
-  private async scanTail(file: string): Promise<JsonlTail> {
+  private async scanTail(file: string, untilWorktreeRecord: boolean): Promise<JsonlTail> {
     const st = this.statByFile.get(file)
     const head = this.headScans.get(file)
     const prev = head?.tail
     if (prev && st && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return prev.tail
-    const tail = extractJsonlTail(await readJsonlTailLines(file))
+    const tail = extractJsonlTail(await readJsonlTailLines(file, untilWorktreeRecord))
     if (head && st) head.tail = { ...st, tail }
     return tail
   }
@@ -1120,7 +1130,7 @@ export class WorkspaceManager {
     const partial: Partial<SessionMeta> = { ...(await this.scanHead(file)) }
     // CC§4
     if (partial.worktreeState) {
-      const tail = await this.scanTail(file)
+      const tail = await this.scanTail(file, true)
       if (tail.worktreeState === null) {
         partial.worktreeState = undefined
         partial.cwd = tail.relocatedCwd
@@ -1133,7 +1143,7 @@ export class WorkspaceManager {
     if (sidecar) partial.customTitle = sidecar
     // CC§9
     else if (partial.customTitle && this.headScans.get(file)?.final) {
-      const renamed = (await this.scanTail(file)).customTitle
+      const renamed = (await this.scanTail(file, false)).customTitle
       if (renamed) partial.customTitle = renamed
     }
     let timestamp = partial.timestamp
