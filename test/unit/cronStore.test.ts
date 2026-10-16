@@ -221,6 +221,24 @@ describe('sanitizeCron (BB-E29: the history lines)', () => {
     expect(lines[4]).toEqual({ dueAt: 2, state: 'failed', note: 'no usable account' })
     expect(lines[5]).toEqual({ dueAt: 1, state: 'missed' })
   })
+
+  it('keeps the session, and what became of the folder, on a closed, ended or failed line, and drops them when they are not the right kind of value', () => {
+    const wt = 'nightly-260902-2100'
+    const lines = one({
+      history: [
+        { dueAt: 4, state: 'closed', worktree: wt, sessionId: 's-4', removed: true },
+        { dueAt: 3, state: 'ended', worktree: wt, sessionId: 's-3', kept: 'Changes not committed' },
+        { dueAt: 2, state: 'failed', worktree: wt, removed: true },
+        { dueAt: 1, state: 'closed', worktree: wt, sessionId: 7, removed: 'yes', kept: '' }
+      ]
+    })?.history as HistoryLine[]
+    expect(lines).toEqual([
+      { dueAt: 4, state: 'closed', worktree: wt, sessionId: 's-4', removed: true },
+      { dueAt: 3, state: 'ended', worktree: wt, sessionId: 's-3', kept: 'Changes not committed' },
+      { dueAt: 2, state: 'failed', worktree: wt, removed: true },
+      { dueAt: 1, state: 'closed', worktree: wt }
+    ])
+  })
 })
 
 describe('loadCron / saveCron (BB-E29: reading and writing the file)', () => {

@@ -28,7 +28,7 @@ import {
 
 test.setTimeout(120_000)
 
-const ASKS_THE_OWNER = ['--approval-judge', 'off', '--sandbox-network', 'enabled']
+const SKIPS_PERMISSION_PROMPTS_AS_SHIPPED = ['--permission-profile', ':unrestricted']
 
 function museRows(page: Page): Locator {
   return wsRows(page, 'ws-a').filter({
@@ -60,7 +60,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await runIn(page, centerTerm(page), '')
       await expect.poll(() => museCalls(env).length).toBe(1)
       const call = museCalls(env)[0]
-      expect(call.argv).toEqual(ASKS_THE_OWNER)
+      expect(call.argv).toEqual(SKIPS_PERMISSION_PROMPTS_AS_SHIPPED)
       expect(fs.existsSync(path.join(call.pathHead, 'open'))).toBe(true)
       expect(call.configHome).toBe(path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT))
       expect(call.credentials).toBe('file')
@@ -102,7 +102,11 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
       await history.getByRole('button').filter({ hasText: 'first topic' }).click()
       await expect.poll(() => museCalls(env).length).toBe(3)
-      expect(museCalls(env)[2].argv).toEqual([...ASKS_THE_OWNER, 'resume', first.sessionId])
+      expect(museCalls(env)[2].argv).toEqual([
+        ...SKIPS_PERMISSION_PROMPTS_AS_SHIPPED,
+        'resume',
+        first.sessionId
+      ])
       expect(museCalls(env)[2].sessionId).toBe(first.sessionId)
     } finally {
       await quitAndClose(app)
@@ -132,7 +136,11 @@ test.describe('Muse Code sessions through the real method chooser, status signal
         page = await app.firstWindow()
         await waitBooted(page)
         await expect.poll(() => museCalls(env).length, { timeout: 30_000 }).toBe(2)
-        expect(museCalls(env)[1].argv).toEqual([...ASKS_THE_OWNER, 'resume', first.sessionId])
+        expect(museCalls(env)[1].argv).toEqual([
+          ...SKIPS_PERMISSION_PROMPTS_AS_SHIPPED,
+          'resume',
+          first.sessionId
+        ])
         await expect(museRows(page)).toHaveCount(1)
         await expect(museRows(page)).toHaveClass(/st-(waiting|idle)/, { timeout: 30_000 })
       } finally {
@@ -157,7 +165,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await chooseBackend(page, 'other')
       await expect.poll(() => museCalls(env).length).toBe(1)
       const call = museCalls(env)[0]
-      expect(call.argv).toEqual([...ASKS_THE_OWNER, '--trust-workspace'])
+      expect(call.argv).toEqual([...SKIPS_PERMISSION_PROMPTS_AS_SHIPPED, '--trust-workspace'])
       expect(fs.realpathSync(call.cwd)).not.toBe(fs.realpathSync(env.workspaces.a))
       expect(path.basename(call.cwd)).toBe('muse-tree')
       await expect(museRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)

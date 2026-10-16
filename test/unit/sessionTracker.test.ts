@@ -1174,6 +1174,34 @@ describe('SessionTracker — per-session usage', () => {
     expect(s.usage!.costUsd).toBeCloseTo(expected, 10)
   })
 
+  // CC§2
+  it('books the largest count of a streamed call whose repeated lines grow, as a sub-agent transcript writes them', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    tracker.track('tabUG', cwd)
+    const line = (out: number): Record<string, unknown> =>
+      asst({
+        id: 'msg_g',
+        req: 'req_g',
+        model: 'claude-opus-4-8',
+        in: 100,
+        out,
+        cw: 1000,
+        cr: 5000,
+        cwd
+      })
+    const file = writeJsonl(cwd, SID, [line(3), line(600), line(1231), line(1231)])
+    tracker.bindSession('tabUG', file, SID, cwd)
+
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabUG' && !!x.usage)
+    expect(s.usage!.inTok).toBe(100)
+    expect(s.usage!.outTok).toBe(1231)
+    expect(s.usage!.cacheWriteTok).toBe(1000)
+    expect(s.usage!.cacheReadTok).toBe(5000)
+    const expected = (100 * 5 + 1231 * 25 + 1000 * 6.25 + 5000 * 0.5) / 1_000_000
+    expect(s.usage!.costUsd).toBeCloseTo(expected, 10)
+  })
+
   it('captures the CLI version and the hook-reported account (info-card metadata)', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
