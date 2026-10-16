@@ -28,8 +28,7 @@ export function TerminalView({
   scrollbar = true,
   focusSignal,
   onRepainted,
-  maxCols,
-  onCapWidth
+  maxCols
 }: {
   id: string
   active: boolean
@@ -39,15 +38,12 @@ export function TerminalView({
   focusSignal?: number
   onRepainted?: () => void
   maxCols?: number
-  onCapWidth?: (px: number) => void
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const onUserInputRef = useRef(onUserInput)
   onUserInputRef.current = onUserInput
   const onRepaintedRef = useRef(onRepainted)
   onRepaintedRef.current = onRepainted
-  const onCapWidthRef = useRef(onCapWidth)
-  onCapWidthRef.current = onCapWidth
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const webglRef = useRef<WebglAddon | null>(null)
@@ -92,9 +88,7 @@ export function TerminalView({
       exitSyncWindow(term)
       const cellWidth = term.dimensions?.css.cell.width
       if (maxCols && cellWidth) {
-        const capPx = Math.ceil(maxCols * cellWidth) + CAP_SLACK_AGAINST_FIT_ROUNDING_PX
-        el.style.maxWidth = `${capPx}px`
-        onCapWidthRef.current?.(capPx)
+        el.style.maxWidth = `${Math.ceil(maxCols * cellWidth) + CAP_SLACK_AGAINST_FIT_ROUNDING_PX}px`
       }
       fit.fit()
       window.api.terminal.resize(id, term.cols, term.rows)
