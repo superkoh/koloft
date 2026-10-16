@@ -87,7 +87,8 @@ import {
   runSshBytes,
   sshOptions
 } from './remote/ssh'
-import { ENSURE_SH, TMUX_CONF, UTIL_SH } from './remote/install'
+import { ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
   AGENT_PLUGIN_DIR,
   buildMachinePackage,
@@ -182,6 +183,8 @@ import {
   GithubLookup,
   ghOpenCounts,
   ghRead,
+  openCountsArgs,
+  parseOpenCounts,
   parseGithubFixture,
   type GithubOptions
 } from './github'
@@ -903,7 +906,9 @@ function machinePackage(): MachinePackage {
     'util.sh': UTIL_SH,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
-    [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM
+    [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
+    [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
+    [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript()
   }
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
@@ -1889,6 +1894,14 @@ app.whenReady().then(() => {
     picksChanged: () => {
       void githubCounts?.sweep()
       workspaceMgr?.restampLive()
+    },
+    runOnMachine: async (machine, script, args = [], opts = {}) => {
+      await loginEnvReady()
+      return runSsh(machine, remoteShCommand(script, args), {
+        controlDir: remoteControlDir,
+        timeoutMs: opts.timeoutMs,
+        ...(opts.input !== undefined && { input: Buffer.from(opts.input) })
+      })
     }
   })
   // ADR-0033
@@ -2140,6 +2153,7 @@ app.whenReady().then(() => {
     freshness: (wsPath) => freshness?.get(wsPath),
     github: (wsPath) => githubCounts?.get(wsPath),
     gitAccount: (wsPath) => gitAccounts?.workspaceAccount(wsPath),
+    gitPickable: (wsPath) => !!gitAccounts?.pickableOnMachine(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
       void gitAccounts?.refreshRepoKeys(wsPaths).then(() => workspaceMgr?.restampLive())
@@ -3889,11 +3903,13 @@ const githubOptions: GithubOptions = {
   countedAs: (root) => gitAccounts?.pickedAccount(root),
   openCounts: async (repo, root) => {
     await loginEnvReady()
+    const onMachine = await gitAccounts?.machineGh(root, openCountsArgs(repo))
+    if (onMachine) return onMachine.code === 0 ? parseOpenCounts(onMachine.stdout) : null
     return ghOpenCounts(repo, await gitAccounts?.ghEnv(root))
   },
   gh: async (args, root) => {
     await loginEnvReady()
-    return runGh(args, await gitAccounts?.ghEnv(root))
+    return (await gitAccounts?.machineGh(root, args)) ?? runGh(args, await gitAccounts?.ghEnv(root))
   },
   signedIn: async () => {
     try {
@@ -4232,10 +4248,13 @@ function registerIpc(): void {
   const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
   const isGitPlatform = (v: unknown): v is GitPlatform => GIT_PLATFORMS.includes(v as GitPlatform)
   ipcMain.handle('gitAccounts:list', () => gitAccounts?.views() ?? [])
-  ipcMain.handle('gitAccounts:login-start', (_e, platform: unknown, url: unknown) =>
-    gitAccounts && isGitPlatform(platform) && typeof url === 'string'
-      ? gitAccounts.loginStart(platform, url)
-      : { ok: false, error: 'bad-url' }
+  const machineOf = (v: unknown): string | undefined => (isText(v) ? v : undefined)
+  ipcMain.handle(
+    'gitAccounts:login-start',
+    (_e, platform: unknown, url: unknown, machine: unknown) =>
+      gitAccounts && isGitPlatform(platform) && typeof url === 'string'
+        ? gitAccounts.loginStart(platform, url, machineOf(machine))
+        : { ok: false, error: 'bad-url' }
   )
   ipcMain.on('gitAccounts:login-cancel', () => gitAccounts?.loginCancel())
   ipcMain.on('gitAccounts:login-browser', () => gitAccounts?.loginBrowser())
@@ -4245,15 +4264,16 @@ function registerIpc(): void {
           platform: add.platform,
           url: add.url,
           token: add.token.trim(),
-          ...(typeof add.username === 'string' && { username: add.username })
+          ...(typeof add.username === 'string' && { username: add.username }),
+          ...(machineOf(add.machine) && { machine: add.machine })
         })
       : { ok: false, error: 'rejected' }
   )
-  ipcMain.handle('gitAccounts:remove', (_e, id: unknown) =>
-    isText(id) ? gitAccounts?.remove(id) : undefined
+  ipcMain.handle('gitAccounts:remove', (_e, id: unknown, machine: unknown) =>
+    isText(id) ? gitAccounts?.remove(id, machineOf(machine)) : undefined
   )
-  ipcMain.handle('gitAccounts:make-default', (_e, id: unknown) =>
-    isText(id) ? gitAccounts?.makeDefault(id) : undefined
+  ipcMain.handle('gitAccounts:make-default', (_e, id: unknown, machine: unknown) =>
+    isText(id) ? gitAccounts?.makeDefault(id, machineOf(machine)) : undefined
   )
   ipcMain.handle('gitAccounts:check', () => gitAccounts?.checkAll())
   ipcMain.handle('gitAccounts:pick', (_e, wsPath: unknown, id: unknown) =>

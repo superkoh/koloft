@@ -108,11 +108,14 @@ function gcmCalls(env: E2EEnv): GcmCall[] {
     .map((l) => JSON.parse(l) as GcmCall)
 }
 
+function fakeGcmStoreFile(env: E2EEnv): string {
+  const dir = path.join(path.dirname(env.keychainFile), 'gcm-store')
+  fs.mkdirSync(dir, { recursive: true })
+  return path.join(dir, 'fake-gcm-store.json')
+}
+
 function gcmStore(env: E2EEnv): Record<string, unknown> {
-  return JSON.parse(fs.readFileSync(path.join(env.home, 'fake-gcm-store.json'), 'utf8')) as Record<
-    string,
-    unknown
-  >
+  return JSON.parse(fs.readFileSync(fakeGcmStoreFile(env), 'utf8')) as Record<string, unknown>
 }
 
 function seedGcmAccount(
@@ -125,7 +128,7 @@ function seedGcmAccount(
 ): void {
   const namespace = `koloft-dev-git-e2e-${login}`
   fs.writeFileSync(
-    path.join(env.home, 'fake-gcm-store.json'),
+    fakeGcmStoreFile(env),
     JSON.stringify({ [namespace]: { username: 'OAUTH_USER', password: token } })
   )
   const id = `${new URL(url).host}/${login}`

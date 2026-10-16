@@ -249,7 +249,7 @@ export class GitFreshnessEngine {
   }
 
   fetchNow(wsPath: string): Promise<WorkspaceFreshness | null> {
-    if (this.gitUnavailable || this.stopped) return Promise.resolve(null)
+    if (this.gitUnavailable || this.stopped || isRemoteKey(wsPath)) return Promise.resolve(null)
     this.backoffUntil.delete(wsPath)
     this.errors.delete(wsPath)
     return this.runFetch(wsPath)

@@ -71,9 +71,16 @@ export type WorkspaceGitSsh =
   | { kind: 'https-refused'; sshOnly: boolean }
   | { kind: 'key'; publicKey: string; keysPage: string; notTakenYet: boolean }
 
+export interface GitMachine {
+  accounts: GitAccount[]
+  picks: GitRepoPick[]
+  dismissed: string[]
+}
+
 export interface GitAccountView extends GitAccount {
   usedBy: string[]
   checkError?: 'offline'
+  machine?: string
 }
 
 export type GitLoginProgress =
@@ -84,13 +91,16 @@ export type GitLoginProgress =
   | { phase: 'failed'; message: string }
 
 export type GitLoginStart =
-  { ok: true } | { ok: false; error: 'no-sandbox' | 'no-gh' | 'no-gcm' | 'busy' | 'bad-url' }
+  | { ok: true }
+  | { ok: false; error: 'no-sandbox' | 'no-gh' | 'no-gcm' | 'busy' | 'bad-url' }
+  | { ok: false; error: 'machine'; message: string }
 
 export interface GitTokenAdd {
   platform: GitPlatform
   url: string
   token: string
   username?: string
+  machine?: string
 }
 
 export type GitTokenAddResult =
@@ -100,6 +110,7 @@ export type GitTokenAddResult =
       error: 'rejected' | 'offline' | 'failed' | 'missing-scope' | 'bad-url'
       scope?: string
     }
+  | { ok: false; error: 'machine'; message: string }
 
 export type GitClueReason = 'url-user' | 'config-user' | 'gh-user' | 'ssh-greeting' | 'commit-email'
 
@@ -304,6 +315,7 @@ export interface Settings {
   gitAccounts: GitAccount[]
   gitPicks: GitRepoPick[]
   gitSuggestionsDismissed: string[]
+  gitMachines: Record<string, GitMachine>
 }
 
 export type AssistSetting = { on: boolean; backend: BackendId } | null
@@ -434,7 +446,8 @@ export const DEFAULT_SETTINGS: Settings = {
   assistSessions: [],
   gitAccounts: [],
   gitPicks: [],
-  gitSuggestionsDismissed: []
+  gitSuggestionsDismissed: [],
+  gitMachines: {}
 }
 
 export type BackendId = 'claude' | 'codex'
@@ -1200,13 +1213,13 @@ export interface KoloftApi {
   gitAccounts: {
     list(): Promise<GitAccountView[]>
     onUpdate(cb: (accounts: GitAccountView[]) => void): () => void
-    loginStart(platform: GitPlatform, url: string): Promise<GitLoginStart>
+    loginStart(platform: GitPlatform, url: string, machine?: string): Promise<GitLoginStart>
     loginCancel(): void
     loginBrowser(): void
     onLoginProgress(cb: (p: GitLoginProgress) => void): () => void
     addToken(add: GitTokenAdd): Promise<GitTokenAddResult>
-    remove(id: string): Promise<void>
-    makeDefault(id: string): Promise<void>
+    remove(id: string, machine?: string): Promise<void>
+    makeDefault(id: string, machine?: string): Promise<void>
     check(): Promise<void>
     pick(wsPath: string, id: string | null): Promise<void>
     suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion>
@@ -1528,6 +1541,7 @@ export interface WorkspaceRows {
     freshness?: WorkspaceFreshness
     github?: WorkspaceGithub
     gitAccount?: WorkspaceGitAccount
+    gitPickable?: boolean
     remote?: { host: string; path: string; connected: boolean; problem?: string }
   }
   rows: SessionRow[]
