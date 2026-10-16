@@ -75,6 +75,8 @@ import {
   markAnswerable,
   pruneStale,
   quotedPrompt,
+  saidFile,
+  seedOwnerWords,
   setupHooks,
   writeAllowFile,
   writeTabHookSettings
@@ -3804,7 +3806,8 @@ function paletteTask(title: string, text: string): AssistTask {
   return {
     name: title || firstLineName(text),
     brief: `${text}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
-    staysOpen: true
+    staysOpen: true,
+    ownerWords: text
   }
 }
 
@@ -3842,6 +3845,8 @@ async function sendPaletteText(
     else {
       const line = crossSessionLine('prompting', `The owner typed this in ⌘P: ${text}`, id)
       if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }
+      // ADR-0031
+      if (hookRegDir) seedOwnerWords(saidFile(hookRegDir, tabId), text)
       await sendPeerLine(tabId, line, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS)
     }
   } catch (error) {

@@ -88,9 +88,16 @@ remind_reply_language UserPromptSubmit
 exit 0
 `
 
+const OWNER_WORDS_SEEDED_CHARS = 150
+
+// ADR-0031
+export function seedOwnerWords(said: string, ownerWords: string): void {
+  fs.writeFileSync(said, JSON.stringify(ownerWords.slice(0, OWNER_WORDS_SEEDED_CHARS)).slice(1, -1))
+}
+
 // ADR-0031
 export function seedCodexOwnerWords(said: string, ownerWords: string): void {
-  fs.writeFileSync(said, JSON.stringify(ownerWords).slice(1, -1))
+  seedOwnerWords(said, ownerWords)
   fs.writeFileSync(said + HANDED_OVER_TASK_COMES_FIRST, '')
 }
 
@@ -411,11 +418,15 @@ export function discordIdsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.discord-ids`)
 }
 
+export function saidFile(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}.said`)
+}
+
 // ADR-0031
 export function quotedPrompt(regDir: string, tabId: string): string | undefined {
   let escaped: string
   try {
-    escaped = fs.readFileSync(path.join(regDir, `${tabId}.said`), 'utf8').trimEnd()
+    escaped = fs.readFileSync(saidFile(regDir, tabId), 'utf8').trimEnd()
   } catch {
     return undefined
   }
