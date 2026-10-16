@@ -9,7 +9,7 @@ import {
   codexGateShell,
   conductorGateCommand
 } from './conductorGate'
-import { HANDOVER_OPENING } from './handover'
+import { HANDOVER_OPENING, OWNER_WORDS_BEFORE_QUOTE, OWNER_WORDS_END } from './handover'
 import type { ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
@@ -69,7 +69,8 @@ session_id() {
 quote_prompt() {
   printf '%s' "$input" |
     LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' |
-    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
+    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*${OWNER_WORDS_BEFORE_QUOTE}(.*)${OWNER_WORDS_END}.*$/\\1/' \\
+      -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
       -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n\\[Discord\\] //' \\
       -e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//' |
     head -c ${QUOTED_PROMPT_BYTES} |
@@ -360,6 +361,21 @@ function allowFile(regDir: string, tabId: string): string {
 
 export function discordIdsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.discord-ids`)
+}
+
+// ADR-0031
+export function quotedPrompt(regDir: string, tabId: string): string | undefined {
+  let escaped: string
+  try {
+    escaped = fs.readFileSync(path.join(regDir, `${tabId}.said`), 'utf8').trimEnd()
+  } catch {
+    return undefined
+  }
+  try {
+    return JSON.parse(`"${escaped}"`) || undefined
+  } catch {
+    return escaped || undefined
+  }
 }
 
 export function writeAllowFile(regDir: string, tabId: string, allow: readonly string[]): string {

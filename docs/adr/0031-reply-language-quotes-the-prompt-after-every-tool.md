@@ -42,6 +42,17 @@ before they were skipped, 63% of the reminders over six days quoted a
 `<task-notification>` instead of the owner, and in Chinese turns the notes under such a
 quote were English 30% of the time against 13% under the owner's own words (67% against
 1% once the turn had been compacted, 37% against 15% past 60 tool calls).
+A session another session starts (`koloft session new`) is quoted by the owner's words,
+not by its task: the task is written by an AI, often in English (a path to a brief, or
+"Build PR 1: …") while the owner wrote Chinese, and a child quoting it answered the
+owner in English in its tab and its Discord thread. In the transcripts of 2026-10-10 to
+10-16, three children of a Chinese-speaking owner whose task was in English wrote 1 of
+24, 1 of 35 and 2 of 49 notes in Chinese. So Koloft puts the parent's own quote (a Claude parent's saved prompt; a Codex
+parent's last message from the owner that is not a session's report, or the words it
+was itself handed) into the handover preamble as "The owner last wrote: «…»", the hook
+quotes those words for a handover prompt that carries them, and the child's title is
+asked for in their language. A Codex child gets the same sentence in its developer
+instructions but no reminder after each tool, since Codex runs no Claude Code hook.
 **Rejected**: repeating a generic sentence (above: it barely helped — the quote is what
 works). Naming the language ("Reply in Chinese") — Koloft would have to guess the
 language in a shell script, for every language; the quote lets the model see it.

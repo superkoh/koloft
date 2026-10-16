@@ -64,6 +64,7 @@ interface Conducting {
   scopes?: Record<string, string>
   sidebar?: WorkspaceRows[]
   turns?: Record<string, Turn[]>
+  quotedPrompts?: Record<string, string>
   conductors?: Record<string, Target>
   ready?: (tabId: string, turnEnded: boolean, ms: number) => boolean | Promise<boolean>
   bypass?: string[]
@@ -146,6 +147,7 @@ function harness(
       reads.push({ key, n })
       return (conducting.turns?.[key] ?? []).slice(-n)
     },
+    quotedPrompt: (tabId) => conducting.quotedPrompts?.[tabId],
     touch: (tabId, key) => {
       if (conducting.scopes?.[tabId]) touched.push({ tabId, key })
     },
@@ -399,6 +401,45 @@ describe('koloft session new', () => {
     })
     expect(launched[0].role).toContain(`koloft session send ${CODEX_THREAD}`)
     expect(reply.text).toContain('new-tab')
+  })
+
+  // ADR-0031
+  it('a child is handed the owner’s last words to its parent, so it talks to the owner in their language even when its task is in English: a Claude parent’s quoted prompt, a Codex parent’s last message from the owner (not a session’s report), and a Codex child passes on the words it was handed', async () => {
+    const { verb, launched } = harness(
+      [
+        session('me', 'claude'),
+        session('cx', 'codex', { nativeSessionId: CODEX_THREAD }),
+        session('new-tab', 'codex', { nativeSessionId: OTHER_THREAD })
+      ],
+      {},
+      [],
+      {
+        quotedPrompts: { me: '先把侧栏修好' },
+        turns: {
+          'cx-session': [
+            {
+              said: [{ who: 'owner', text: '[Discord] 帮我跑一下测试', at: 1 }],
+              reply: 'ok',
+              at: 1
+            },
+            {
+              said: [{ who: 'owner', text: '(From the session "kid", id k:) All green.', at: 2 }],
+              reply: 'ok',
+              at: 2
+            }
+          ],
+          'new-tab-session': [
+            { said: [{ who: 'owner', text: 'Run the tests.', at: 3 }], reply: '', at: 3 }
+          ]
+        }
+      }
+    )
+    await verb(['new', '--', 'Fix the sidebar.'], from('me'))
+    await verb(['new', '--', 'Run the tests.'], from('cx'))
+    await verb(['new', '--', 'Run the flaky one again.'], from('new-tab'))
+    expect(launched[0].firstPrompt).toContain('«先把侧栏修好»')
+    expect(launched[1].role).toContain('«帮我跑一下测试»')
+    expect(launched[2].role).toContain('«帮我跑一下测试»')
   })
 
   it('--workspace starts the sibling in another sidebar workspace, found by full path or folder name', async () => {
