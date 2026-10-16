@@ -380,8 +380,9 @@
             GitLab.com, Bitbucket, Gitea / Forgejo / Codeberg: you sign in on the site in your
             browser on the Mac, and what the sign-in tool saved is moved whole to the machine and
             deleted from the Mac. If the machine has no sign-in tool (Git Credential Manager),
-            Koloft installs it there first when it can (Linux or macOS, with curl or wget);
-            otherwise it asks you for a token instead
+            Koloft installs it there first when it can (Linux or macOS with curl or wget, not a musl
+            Linux such as Alpine); otherwise it asks you for a token instead, and Bitbucket, which
+            has no token path, cannot be added for such a machine
           </li>
           <li>
             the remote folder's <a href="../sessions/#git-panel">git panel</a> gets an
