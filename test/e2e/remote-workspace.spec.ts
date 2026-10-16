@@ -1,8 +1,11 @@
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
+import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
 import {
+  type E2EEnv,
   installCodex,
   installFakeGh,
   seedNoClaudeAccountButStillSetUp,
@@ -61,11 +64,30 @@ import {
   expectOnePromptFromTheComment,
   sendFailingChecks,
   openInBrowse,
+  rowMenu,
   showBrowse
 } from './helpers/workbench'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
+
+const heartbeatsStamping = (env: E2EEnv, bare: string): number =>
+  sshCommands(env, 'end').filter((c) => c.includes('tmux -L koloft ls') && c.includes(`'${bare}'`))
+    .length
+
+async function untilTheMachineHasStamped(env: E2EEnv, bare: string): Promise<void> {
+  const before = heartbeatsStamping(env, bare)
+  await expect
+    .poll(() => heartbeatsStamping(env, bare), { timeout: 30_000 })
+    .toBeGreaterThanOrEqual(before + 2)
+}
+
+async function openRemoteSessionWorkbench(page: Page, env: E2EEnv): Promise<void> {
+  await addRemoteWorkspace(page, env)
+  await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+  await wsRows(page, REMOTE_WS_NAME).first().click()
+  await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
+}
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -669,6 +691,118 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await rows.first().click()
       await sendShortcut(app, 'shortcut:close-tab')
       await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-31: a file changed on the machine reloads by itself in the reading area, with no Reload pressed', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const doc = path.join(remoteDir(env), 'doc.md')
+      fs.writeFileSync(doc, '# Doc\n\nfirst line\n')
+      await openRemoteSessionWorkbench(page, env)
+
+      await openInBrowse(page, `${remoteKey(env)}/doc.md`)
+      const body = page.locator(`${WORKBENCH.readingBody} .md-body`)
+      await expect(body).toContainText('first line', { timeout: 30_000 })
+
+      await untilTheMachineHasStamped(env, doc)
+      fs.writeFileSync(doc, '# Doc\n\nsecond line, written on the machine\n')
+      await expect(body).toContainText('second line, written on the machine', { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-32: the editor of a remote file with unsaved edits shows "Changed on disk" as soon as the machine changes the file, before any save', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const file = path.join(remoteDir(env), 'settings.env')
+      fs.writeFileSync(file, 'KOLOFT_E2E_REMOTE_EDIT=1\n')
+      await openRemoteSessionWorkbench(page, env)
+
+      await showBrowse(page)
+      const row = browseRow(page, `${remoteKey(env)}/settings.env`)
+      await expect(row).toBeVisible({ timeout: 30_000 })
+      await row.click({ button: 'right' })
+      await rowMenu(page).getByText('Edit', { exact: true }).click()
+      await editReady(page, 'KOLOFT_E2E_REMOTE_EDIT=1')
+      await typeAtEnd(page, 'MINE=1')
+      await expect(page.locator(EDIT.dirty)).toBeVisible()
+
+      await untilTheMachineHasStamped(env, file)
+      fs.writeFileSync(file, 'KOLOFT_E2E_REMOTE_EDIT=1\nTHEIRS=2\n')
+      await expect(page.locator(EDIT.stale)).toContainText(EDIT.staleText, { timeout: 30_000 })
+      expect(fs.readFileSync(file, 'utf8')).toBe('KOLOFT_E2E_REMOTE_EDIT=1\nTHEIRS=2\n')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-33: a file made on the machine appears in Browse by itself, at the top and inside an open folder', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      const src = path.join(dir, 'src')
+      fs.mkdirSync(src)
+      fs.writeFileSync(path.join(src, 'a.ts'), 'export const a = 1\n')
+      await openRemoteSessionWorkbench(page, env)
+
+      await showBrowse(page)
+      const srcRow = browseRow(page, `${remoteKey(env)}/src`)
+      await expect(srcRow).toBeVisible({ timeout: 30_000 })
+      await srcRow.click()
+      await expect(browseRow(page, `${remoteKey(env)}/src/a.ts`)).toBeVisible({ timeout: 30_000 })
+
+      await untilTheMachineHasStamped(env, src)
+      await untilTheMachineHasStamped(env, dir)
+      fs.writeFileSync(path.join(src, 'b.ts'), 'export const b = 2\n')
+      fs.writeFileSync(path.join(dir, 'top.txt'), 'new at the top\n')
+      await expect(browseRow(page, `${remoteKey(env)}/src/b.ts`)).toBeVisible({ timeout: 30_000 })
+      await expect(browseRow(page, `${remoteKey(env)}/top.txt`)).toBeVisible({ timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // PLATFORM§57
+  test("E-RW-34: Browse's Reload lists the remote tree again, catching a change no folder's time shows (a file .gitignore stops hiding)", async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'secret.txt\n')
+      fs.writeFileSync(path.join(dir, 'secret.txt'), 'hidden at first\n')
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      await openRemoteSessionWorkbench(page, env)
+
+      await showBrowse(page)
+      await expect(browseRow(page, `${remoteKey(env)}/tracked.txt`)).toBeVisible({
+        timeout: 30_000
+      })
+      const secret = browseRow(page, `${remoteKey(env)}/secret.txt`)
+      await expect(secret).toHaveCount(0)
+
+      fs.writeFileSync(path.join(dir, '.gitignore'), '')
+      await untilTheMachineHasStamped(env, dir)
+      await expect(secret).toHaveCount(0)
+
+      await page.locator(WORKBENCH.reload).click()
+      await expect(secret).toBeVisible({ timeout: 30_000 })
     } finally {
       await quitAndClose(app)
     }

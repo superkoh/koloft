@@ -79,7 +79,7 @@ import {
   writeAllowFile,
   writeTabHookSettings
 } from './hooks'
-import { formatRemoteKey, hostOf, parseRemoteKey } from '@shared/remoteKey'
+import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -1708,6 +1708,7 @@ function rendererTeardown(): void {
   cronRunner?.onRendererTeardown()
   closeAllDirWatchers()
   closeAllFileWatchers()
+  remoteSync?.unwatchAll()
   resetAllFlow()
   overlayListenerLost()
   if (uiActiveTabId !== null) activeTabBeforeReload = uiActiveTabId
@@ -3959,6 +3960,8 @@ const hosts = new Hosts(
           runSshBytes(machine, cmd, { controlDir: remoteControlDir, ...opts })
         ),
       sshEnvReady: loginEnvReady,
+      watch: (p, onChange) => remoteSync?.watch(machine, p, onChange),
+      unwatch: (p) => remoteSync?.unwatch(machine, p),
       shell: (dir) => {
         ensureControlDir(remoteControlDir)
         return {
@@ -4790,7 +4793,7 @@ function registerIpc(): void {
     if (typeof root === 'string' && root) hosts.of(root).unwatchDir(root)
   })
   ipcMain.on('fs:watchFile', (_e, p: string) => {
-    if (typeof p === 'string' && path.isAbsolute(p))
+    if (typeof p === 'string' && isAbsoluteOnHost(p))
       hosts.of(p).watchFile(p, (fp, st) => sendToRenderer('fs:file-changed', fp, st))
   })
   ipcMain.on('fs:unwatchFile', (_e, p: string) => {

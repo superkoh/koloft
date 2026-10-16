@@ -38,6 +38,8 @@ const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): S
   new SshHost(MACHINE, {
     run,
     shell: () => ({ spawnCwd: '/' }),
+    watch: () => {},
+    unwatch: () => {},
     github: {},
     claude: {
       userData: home,
@@ -378,6 +380,8 @@ describe('accounts for remote launches started together', () => {
     const host = new SshHost(MACHINE, {
       run: runOnMachine,
       shell: () => ({ spawnCwd: '/' }),
+      watch: () => {},
+      unwatch: () => {},
       github: {},
       claude: {
         userData: home,
@@ -430,6 +434,8 @@ describe('accounts for remote launches started together', () => {
     const host = new SshHost(MACHINE, {
       run: runOnMachine,
       shell: () => ({ spawnCwd: '/' }),
+      watch: () => {},
+      unwatch: () => {},
       github: {},
       claude: {
         userData: home,
