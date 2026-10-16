@@ -1,5 +1,5 @@
 import { useState, type JSX } from 'react'
-import { LuPlus } from 'react-icons/lu'
+import { IconPlus } from '../../icons'
 import { channelLabel, scopeName, SET_UP_WITH_ASSIST } from '@shared/conductors'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '../../store'
@@ -139,7 +139,7 @@ export function DiscordPane(): JSX.Element {
             </div>
             <div className="acct-foot">
               <button className="mini" onClick={() => setBindConductor({})}>
-                <LuPlus size={14} /> Bind a channel…
+                <IconPlus size={14} /> Bind a channel…
               </button>
             </div>
           </div>

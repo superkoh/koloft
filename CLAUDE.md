@@ -53,6 +53,18 @@ Working principles:
   interactions, state treatments and CSS classes exactly; never invent a parallel
   version or replace a screen for another session backend. A plan that changes a
   screen shows it as a local HTML mockup built from the app's CSS.
+- Icons are Koloft's own, one style ("soft line"), all from `src/renderer/src/icons`.
+  A new icon is never taken or copied from an icon library and never hand-drawn as
+  SVG code: it is made with an image generation tool (Codex's `image_gen`), with
+  `src/renderer/src/icons/sheet-1.png` given as the style reference image, as a new
+  6 × 4 sheet of white glyphs on black, each glyph drawn from its purpose in the
+  app. Every glyph is designed near-square and fills its square — no strip-shaped
+  icon (a thin symbol such as a minus or an arrow sits inside a circle); the
+  script sizes each glyph so its larger side is 22 of the 24 units and evens its
+  line to 2 units. Commit the sheet next to the others, name its cells in
+  `sheets.json` (`null` for a cell left unused), run `node scripts/trace-icons.mjs` to rewrite
+  `paths.ts`, export the icon from `index.tsx`, and look at it at its real size.
+  Only brand marks (Claude, Codex, Discord, GitHub) come from `react-icons/bs`.
 - Every feature covers every kind of session tab: Claude Code and Codex, each in a
   local workspace and in a remote one reached over SSH (Secure Shell) — four kinds.
   A plan, design or PR says what each of the four does: the same thing, a named

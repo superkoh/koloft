@@ -1,16 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import {
-  LuCheck,
-  LuChevronDown,
-  LuCopy,
-  LuDownload,
-  LuExternalLink,
-  LuLogIn,
-  LuPlus,
-  LuRefreshCw,
-  LuUsers,
-  LuX
-} from 'react-icons/lu'
+  IconAccounts,
+  IconCheck,
+  IconChevronDown,
+  IconClose,
+  IconCopy,
+  IconDownload,
+  IconOpenOutside,
+  IconPlus,
+  IconReload,
+  IconSignIn
+} from '../icons'
 import type {
   GitAccountSuggestion,
   GitAccountView,
@@ -174,18 +174,18 @@ function useGitAccountView(
           .filter((a) => a.host === host && a.machine === machine)
           .map((a) => (
             <button key={a.id} className="tbu-act" onClick={() => pick(a.id)}>
-              {a.id === picked ? <LuCheck size={14} /> : BLANK_ICON}
+              {a.id === picked ? <IconCheck size={14} /> : BLANK_ICON}
               {a.login}
               {a.default && <span className="k">default</span>}
             </button>
           ))}
         <button className="tbu-act" onClick={() => pick(null)}>
-          {picked ? BLANK_ICON : <LuCheck size={14} />}
+          {picked ? BLANK_ICON : <IconCheck size={14} />}
           Use my own git setup
         </button>
         <div className="tbu-sep" />
         <button className="tbu-act" onClick={toSettings}>
-          <LuPlus size={14} />
+          <IconPlus size={14} />
           Add account…<span className="k">Settings ▸ Accounts</span>
         </button>
       </>
@@ -217,15 +217,15 @@ function useGitAccountView(
           className="tbu-act"
           onClick={() => navigator.clipboard?.writeText(publicKey).catch(() => {})}
         >
-          <LuCopy size={14} />
+          <IconCopy size={14} />
           Copy key
         </button>
         <button className="tbu-act" onClick={() => window.api.browser.openExternal(keysPage)}>
-          <LuExternalLink size={14} />
+          <IconOpenOutside size={14} />
           Open SSH keys page
         </button>
         <button className="tbu-act" disabled={checking} onClick={check}>
-          <LuRefreshCw size={14} />
+          <IconReload size={14} />
           {checking ? 'Checking…' : 'Check again'}
         </button>
       </>
@@ -246,21 +246,21 @@ function useGitAccountView(
           title="Change the account this workspace uses"
           onClick={openList}
         >
-          <LuUsers size={14} />
+          <IconAccounts size={14} />
           {acct.login} · {acct.host}
           <span className="k">
             {expired ? (
               'needs sign-in'
             ) : (
               <>
-                change <LuChevronDown size={14} />
+                change <IconChevronDown size={14} />
               </>
             )}
           </span>
         </button>
         {expired ? (
           <button className="tbu-act" onClick={toSettings}>
-            <LuLogIn size={14} />
+            <IconSignIn size={14} />
             Sign in again
           </button>
         ) : refused ? (
@@ -269,7 +269,7 @@ function useGitAccountView(
             title={`Makes an SSH key on this Mac for ${acct.login} only`}
             onClick={() => void window.api.gitAccounts.makeSshKey(wsPath)}
           >
-            <LuPlus size={14} />
+            <IconPlus size={14} />
             Make a key for {acct.login}
           </button>
         ) : (
@@ -294,7 +294,7 @@ function useGitAccountView(
     )
   const pickAccount = (
     <button className="tbu-act" onClick={openList}>
-      <LuUsers size={14} />
+      <IconAccounts size={14} />
       Pick account
     </button>
   )
@@ -304,7 +304,7 @@ function useGitAccountView(
       title="Keep your own git setup; ask again next time this changes"
       onClick={notNow}
     >
-      <LuX size={14} />
+      <IconClose size={14} />
       Not now
     </button>
   )
@@ -329,7 +329,7 @@ function useGitAccountView(
       return offer(
         <>
           <button className="tbu-act" onClick={toSettings}>
-            <LuPlus size={14} />
+            <IconPlus size={14} />
             Add {suggestion.login}
           </button>
           {notNowBtn}
@@ -344,7 +344,7 @@ function useGitAccountView(
         title={`This workspace’s git and gh use ${login} from now on`}
         onClick={() => pick(gitAccountId(on, login))}
       >
-        <LuCheck size={14} />
+        <IconCheck size={14} />
         Use {login}
       </button>
       {notNowBtn}
@@ -491,7 +491,7 @@ export function FreshnessPopover({
                   void doPull()
                 }}
               >
-                <LuDownload size={14} />
+                <IconDownload size={14} />
                 {pulling ? 'Pulling…' : 'Pull · fast-forward'}
                 {eligible && !pulling && (
                   <span className="k">
@@ -500,7 +500,7 @@ export function FreshnessPopover({
                 )}
               </button>
               <button className="tbu-act" disabled={fetching} onClick={() => void doFetch()}>
-                <LuRefreshCw size={14} />
+                <IconReload size={14} />
                 {fetching ? 'Fetching…' : 'Fetch now'}
               </button>
             </>

@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 
 export function PullConfirm({
   count,
@@ -16,7 +16,7 @@ export function PullConfirm({
         <div className="modal-header">
           Pull into main?
           <span className="modal-close" onClick={onCancel} aria-label="Close">
-            <LuX size={16} />
+            <IconClose size={16} />
           </span>
         </div>
         <div className="modal-body">
