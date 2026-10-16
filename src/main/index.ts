@@ -155,7 +155,7 @@ import { probeAccount, shouldSkipFable } from './usageProbe'
 import {
   AccountPicker,
   PROBE_TIMEOUT_MS,
-  codexLaunchBanner,
+  codexAllLimitedNotice,
   type PickResponse
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
@@ -1540,7 +1540,7 @@ function codexSharedConfig(): string {
 // CODEX§15
 function pickCodexHome(
   resumeSessionId?: string
-): { account: string; home: string; banner: string } | undefined {
+): { account: string; home: string; notice?: string } | undefined {
   const views = accountViews()
   const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
   if (!picked) return undefined
@@ -1553,7 +1553,7 @@ function pickCodexHome(
   if (stale) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home, banner: codexLaunchBanner(picked, Date.now()) }
+  return { account: picked.name, home, notice: codexAllLimitedNotice(picked) }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {

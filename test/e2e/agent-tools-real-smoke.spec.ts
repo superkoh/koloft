@@ -649,7 +649,7 @@ test.describe('KOLOFT_PORT_OFFSET reaches the REAL agent’s own shell in a work
 
 // ADR-0031 CODEX§27
 test.describe('a REAL Codex tab, as a Claude tab: opt-in case; it spends real money', () => {
-  test("a real Codex tab names the account it runs on above its screen, and Koloft's reply-language hooks keep the owner's words for every tool call", async ({
+  test("in a real Codex tab Koloft's reply-language hooks keep the owner's words for every tool call", async ({
     env
   }) => {
     test.skip(
@@ -659,7 +659,6 @@ test.describe('a REAL Codex tab, as a Claude tab: opt-in case; it spends real mo
     test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
     const words = '只回复两个字母 OK，别的都不要做。'
     await inARealWorktreeSession(env, 'other', useRealCodex, [], async ({ page, rows }) => {
-      await expect(page.locator('.term-wrap:visible .xterm')).toContainText('koloft: →')
       await ask(page, rows, words)
       await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
       const shims = path.join(env.userData, 'codex-open')
