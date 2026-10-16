@@ -42,6 +42,8 @@ import {
   museSessionLog,
   firedJob,
   museNameOf,
+  replyIn,
+  turnEndedIn,
   renamedTo,
   startsATurnByItself,
   saidInLog,
@@ -100,7 +102,7 @@ interface MuseRun extends StoredRun {
   startedAt: number
   boundAt: number
   sinceClear: ProgramStatus[]
-  prompt?: { turnId: string; text: string; at: number }
+  prompt?: { turnId: string; text: string; at: number; reply?: string }
   children: Set<string>
   background: Map<string, BackgroundItem>
   jobs: Map<string, boolean>
@@ -686,6 +688,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     if (name && run.info) return this.retitle(run.info, name)
     const work = finishedWork(r)
     if (work && run.background.delete(work)) this.publishBackground(run)
+    const prompt = run.prompt
+    const reply = replyIn(r)
+    if (prompt && reply?.turnId === prompt.turnId) prompt.reply = reply.text
+    if (prompt && turnEndedIn(r) === prompt.turnId)
+      this.endTurn(run, { turn_id: prompt.turnId, last_assistant_message: prompt.reply })
     const job = firedJob(r)
     if (job && run.jobs.get(job) === false) {
       run.jobs.delete(job)

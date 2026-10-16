@@ -473,6 +473,32 @@ describe('MuseSessions turns from hooks', () => {
     expect(ended.turn.said.map((s) => s.text)).toEqual(['fix the docs'])
   })
 
+  // MUSE§9
+  it('hands on the reply of a turn muse answers by itself without a Stop hook, like a bare first "hello", from the session log, and only once when Stop does come', async () => {
+    const id = await boundTab()
+    const run = (turnId: string, event: Record<string, unknown>): Record<string, unknown> => ({
+      payload_type: 'runtime.session',
+      payload: { kind: 'run', run_id: turnId, event }
+    })
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'hello', turn_id: 't1' })
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('hello'))
+    logRecord(A, run('t1', { kind: 'assistant_message_committed', text: 'Hi! How can I help?' }))
+    logRecord(A, run('t1', { kind: 'terminal', terminal: 'completed' }))
+    say(id, osc('?') + osc('state=done:app=muse'))
+    await vi.waitFor(() => expect(events('turn-ended')).toHaveLength(1))
+    expect(events('turn-ended')[0]).toMatchObject({
+      turn: { reply: 'Hi! How can I help?', said: [{ who: 'owner', text: 'hello' }] }
+    })
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'fix it', turn_id: 't2' })
+    logRecord(A, run('t2', { kind: 'assistant_message_committed', text: 'Fixed.' }))
+    logRecord(A, run('t2', { kind: 'terminal', terminal: 'completed' }))
+    hook(id, 'Stop', { session_id: A, last_assistant_message: 'Fixed.', turn_id: 't2' })
+    say(id, osc('state=done:app=muse'))
+    await vi.waitFor(() => expect(events('turn-ended')).toHaveLength(2))
+    await new Promise((r) => setTimeout(r, 300))
+    expect(events('turn-ended')).toHaveLength(2)
+  })
+
   it("ignores what a subagent or muse's own reminder helpers say", async () => {
     const id = await boundTab()
     hook(id, 'SubagentStart', {
@@ -566,7 +592,7 @@ describe('MuseSessions turns from hooks', () => {
   it('keeps the session counted as still working while a job muse scheduled for itself is due, until a one-time job fires or a job is deleted', async () => {
     const id = await boundTab()
     logRecord(A, { payload_type: 'session.opened.observed', payload: {} })
-    const create = (cron: string, recurring: boolean, job: string): void =>
+    const create = (cron: string, recurring: boolean, job: string): string =>
       hook(id, 'PostToolUse', {
         session_id: A,
         tool_name: 'cron_create',

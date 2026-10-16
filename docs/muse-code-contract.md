@@ -94,7 +94,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   back its result after the turn — sends **no** 7501 frames; its hooks fire (§11).
 - The first `idle` comes only after the trust question (§10) is answered, and it can
   arrive before the live-registry file (§4) is written.
-- Muse has no status-line hook and no setting for its own footer.
+- Muse has no status-line hook. Its footer (1.4.9, `/hud`) shows only built-in fields,
+  each switched by a boolean `tui.hud.<field>` in `settings.json` or `-c` (lost after
+  `/clear`): `model`, `effort`, `path`, `permissions` (on by default), `context`,
+  `branch`, `tokens`, `cost`, `quota`. No key takes text of its own: `tui.hud.custom`,
+  `tui.hud.command`, `tui.status_line`, `tui.footer` and the like refuse the run as
+  unknown (fake model, Docker).
 
 ## §4 Which session a process holds: the live registry
 
@@ -206,6 +211,14 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   is `{kind: "inbox_item_queued", source: {source: "scheduled", job_id}}`; a finished
   background command gets one with `source: "background_task_terminal"`
   and `registered_work_id`.
+- 1.4.9 answers a bare greeting (`hello`, `hi`, `Hello`, `hello!`, `HELLO`) by itself
+  when it is the first prompt of a session, with a fixed line such as "Hello! How can I
+  help you today?" and no model request. That turn fires `SessionStart` and
+  `UserPromptSubmit` but no `Stop`; the 7501 frames go `working` → `done` as usual
+  (fake model, Docker). Every turn, this one too, writes its replies to the session
+  log as `runtime.session` records `{kind: "run", run_id: <the turn_id of
+  UserPromptSubmit>, event: {kind: "assistant_message_committed", text}}` and ends
+  with one whose `event` is `{kind: "terminal", terminal: "completed"}`.
 - `!cmd` is a tool named `shell`. `request_user_input` fires no `PreToolUse`.
 - A `PreToolUse` hook printing `{"hookSpecificOutput":{"hookEventName":"PreToolUse",
   "permissionDecision":"deny","permissionDecisionReason":"…"}}` or
@@ -319,6 +332,13 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   On macOS 1.4.9 `write_file` and `edit_file` inside the folder no longer ask; a
   network fetch (without the network flag), a shell command of several stages (`a; b`),
   a command leaving the sandbox and a write outside it still do.
+- No 1.4.9 launch flag makes Muse ask before `write_file` or `edit_file` (macOS VM,
+  fake model, one tool per turn): not `--approval-mode untrusted` (with the judge on or
+  off), `on-request --approval-judge off`, `--permission-profile :ask-me` or the
+  default. `untrusted` asks before every shell command, a plain `echo` too, and
+  `PermissionRequest` carries its `tool_input.command`; `on-request` and `:ask-me` ask
+  only for a command leaving the sandbox and a network fetch; the default lets the
+  judge pass the fetch.
 - `--approval-mode never` (alone, with `--sandbox-network enabled` or with
   `--approval-judge off`): nothing ever asks the user and no judge runs; every tool
   runs inside the sandbox, `web_fetch` included, and a shell command asking to leave
