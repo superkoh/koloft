@@ -95,7 +95,7 @@ test.describe('Git freshness · Pull & Start confirms only over a root session m
       await page.waitForLoadState('domcontentloaded')
       try {
         await expect(page.locator('.ws-head')).toHaveCount(1, { timeout: 20_000 })
-        await startSessionIn(page, 'repo', { method })
+        await startSessionIn(page, 'repo', method === 'Codex' ? { method } : {})
         const rows = wsRows(page, 'repo')
         await expect(rows).toHaveCount(1)
         await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
