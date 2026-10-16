@@ -7,6 +7,7 @@ import {
   type RunnerDeps
 } from '../../src/main/cronRunner'
 import { sanitizeCron } from '../../src/main/cronStore'
+import type { TidyResult } from '../../src/main/sessionClose'
 import { slugOf } from '../../src/shared/cronNames'
 import { isValidWorktreeName } from '../../src/shared/worktreeName'
 import type { CronJob, CronSaveInput, CronState } from '../../src/shared/types'
@@ -50,10 +51,15 @@ function makeHarness(
     git: boolean
     account: boolean
     pinned: boolean
-    folders: number
+    folders: string[]
+    branches: string[] | null
     busy: boolean
     left: string[]
+    quitting: boolean
+    inUse: string[]
   }
+  tidied: Map<string, TidyResult>
+  tidyRun: ReturnType<typeof vi.fn>
   toasts: string[]
   launches: LaunchRequest[]
   states: CronState[]
@@ -78,10 +84,18 @@ function makeHarness(
     git: true,
     account: true,
     pinned: true,
-    folders: 0,
+    folders: [] as string[],
+    branches: null as string[] | null,
     busy: false,
-    left: [] as string[]
+    left: [] as string[],
+    quitting: false,
+    inUse: [] as string[]
   }
+  const tidied = new Map<string, TidyResult>()
+  const tidyRun = vi.fn(
+    async (_root: string, name: string): Promise<TidyResult> =>
+      tidied.get(name) ?? { removed: false, kept: [] }
+  )
   const toasts: string[] = []
   const launches: LaunchRequest[] = []
   const states: CronState[] = []
@@ -107,7 +121,11 @@ function makeHarness(
     worktreeDirExists: () => false,
     worktreeRecorded: () => false,
     branchExists,
-    countRunFolders: () => flags.folders,
+    listRunFolders: () => flags.folders,
+    runLeftovers: async () => ({ folders: flags.folders, branched: flags.branches }),
+    tidyRun,
+    foldersInUse: () => new Set(flags.inUse),
+    quitting: () => flags.quitting,
     accountUsable: () => flags.account,
     trusted: () => true,
     ready: () => flags.ready,
@@ -154,6 +172,8 @@ function makeHarness(
     deps,
     jobs,
     flags,
+    tidied,
+    tidyRun,
     toasts,
     launches,
     states,
@@ -264,6 +284,18 @@ describe('CronRunner — starting one run', () => {
     })
     h.runner.start()
     await h.tick(at(10, 0, 20))
+    expect(h.launches.map((l) => l.worktree)).toEqual(['nightly-report-260902-1000-2'])
+  })
+
+  it('BB-E03: steps past a name a History line still names, though Koloft tidied its folder, branch and record away, so that run’s row never resumes into a new run', async () => {
+    const h = makeHarness([
+      makeJob({
+        history: [
+          { dueAt: T0, state: 'closed', worktree: 'nightly-report-260902-1000', removed: true }
+        ]
+      })
+    ])
+    await h.runner.runNow('j1')
     expect(h.launches.map((l) => l.worktree)).toEqual(['nightly-report-260902-1000-2'])
   })
 
@@ -727,7 +759,7 @@ describe('CronRunner — a live run growing up', () => {
     expect(h.runner.state().live[0].state).toBe('running')
   })
 
-  it('a pty exit after the run was working is closed, with its folder written down', async () => {
+  it('a pty exit after the run was working is closed, with its folder and its session written down', async () => {
     const h = await started()
     h.runner.onBound('tab-1', 'sess-1')
     h.runner.onStatus('tab-1', 'working', 'waiting')
@@ -737,7 +769,8 @@ describe('CronRunner — a live run growing up', () => {
         dueAt: T0,
         state: 'closed',
         worktree: 'nightly-report-260902-1000',
-        manual: true
+        manual: true,
+        sessionId: 'sess-1'
       }
     ])
     expect(h.runner.state().live).toEqual([])
@@ -769,7 +802,13 @@ describe('CronRunner — a live run growing up', () => {
     expect(h.closeForGood.mock.calls).toEqual([['tab-1', '/ws/a', 'nightly-report-260902-1000']])
     expect(h.killTab).not.toHaveBeenCalled()
     expect(h.jobs[0].history).toEqual([
-      { dueAt: T0, state: 'finished', worktree: 'nightly-report-260902-1000', manual: true }
+      {
+        dueAt: T0,
+        state: 'finished',
+        worktree: 'nightly-report-260902-1000',
+        manual: true,
+        sessionId: 'sess-1'
+      }
     ])
     expect(h.runner.state().live).toEqual([])
     expect(h.toasts.at(-1)).toBe('⏰ Nightly report finished and closed')
@@ -962,7 +1001,8 @@ describe('CronRunner — quitting', () => {
         dueAt: T0,
         state: 'ended',
         worktree: 'nightly-report-260902-1000',
-        manual: true
+        manual: true,
+        sessionId: 's1'
       }
     ])
     expect(h.runner.state().live).toEqual([])
@@ -990,6 +1030,201 @@ describe('CronRunner — quitting', () => {
     await h.fireTimers(at(10, 5, 0))
     expect(h.killTab).not.toHaveBeenCalled()
     expect(h.launch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses it', () => {
+  const RUN = 'nightly-report-260902-1000'
+  const OLD = 'nightly-report-260901-1000'
+  const OLDER = 'nightly-report-260831-1000'
+  const folderOf = (name: string): string => `/ws/a/.claude/worktrees/${name}`
+  const REMOVED: TidyResult = { removed: true, kept: [] }
+  const DAY = 24 * 60 * MIN
+
+  it('a run you close loses its folder, and its line says "folder removed"', async () => {
+    const h = makeHarness([makeJob()])
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.tidied.set(RUN, REMOVED)
+    h.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN), sessionId: 'sess-1' })
+    await flush()
+    expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, 'sess-1']])
+    expect(h.jobs[0].history[0]).toMatchObject({ state: 'closed', removed: true })
+  })
+
+  it('a folder that would lose work stays and its line says why; once a later sweep removes it, the reason goes', async () => {
+    const h = makeHarness([makeJob()])
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.tidied.set(RUN, { removed: false, kept: ['Changes not committed:\n?? report.md'] })
+    h.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN), sessionId: 'sess-1' })
+    await flush()
+    expect(h.jobs[0].history[0].kept).toBe('Changes not committed')
+    expect(h.jobs[0].history[0].removed).toBeUndefined()
+
+    h.tidied.set(RUN, REMOVED)
+    h.runner.sweepLeftFolders()
+    await flush()
+    expect(h.jobs[0].history[0].kept).toBeUndefined()
+    expect(h.jobs[0].history[0].removed).toBe(true)
+  })
+
+  it('a run the start deadline killed is swept when its tab’s process is gone, though it never bound to a folder; a folder that was never made gets no word', async () => {
+    const h = makeHarness([makeJob()], { bindDeadlineMs: 5 * SEC })
+    await h.runner.runNow('j1')
+    await h.fireTimers(T0 + 5 * SEC)
+    expect(h.tidyRun).not.toHaveBeenCalled()
+
+    h.runner.onPtyExit('tab-1', { treeRoot: '/ws/a' })
+    await flush()
+    expect(h.tidyRun.mock.calls).toEqual([['/ws/a', RUN, undefined]])
+    expect(h.jobs[0].history).toEqual([
+      {
+        dueAt: T0,
+        state: 'failed',
+        note: 'Claude did not start',
+        worktree: RUN,
+        manual: true
+      }
+    ])
+  })
+
+  it('sweeps nothing while Koloft quits, though the run still gets its line', async () => {
+    const h = makeHarness([makeJob()])
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.flags.quitting = true
+    h.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN), sessionId: 'sess-1' })
+    await flush()
+    expect(h.tidyRun).not.toHaveBeenCalled()
+    expect(h.jobs[0].history[0].state).toBe('closed')
+  })
+
+  it('the start sweep leaves a folder in use alone without a word, never touches an open run’s folder, and removes a folder no History line names without a word', async () => {
+    const ended = { dueAt: T0 - DAY, state: 'ended' as const, worktree: OLD }
+    const h = makeHarness([makeJob({ history: [{ ...ended }] })])
+    await h.runner.runNow('j1')
+    h.flags.folders = [RUN, OLD, OLDER]
+    h.flags.inUse = [folderOf(OLD)]
+    h.tidied.set(OLDER, REMOVED)
+    const saves = h.save.mock.calls.length
+    h.runner.sweepLeftFolders()
+    await flush()
+    expect(h.tidyRun.mock.calls.map((c) => c[1])).toEqual([OLDER])
+    expect(h.jobs[0].history).toEqual([ended])
+    expect(h.save.mock.calls).toHaveLength(saves)
+  })
+
+  it('a line whose folder and branch are both gone is not tidied again, unless it still shows a reason', async () => {
+    const LEFT_BRANCH = 'nightly-report-260830-1000'
+    const h = makeHarness([
+      makeJob({
+        history: [
+          { dueAt: T0 - DAY, state: 'ended', worktree: OLD, removed: true },
+          { dueAt: T0 - 2 * DAY, state: 'ended', worktree: OLDER, kept: 'machine unreachable' },
+          { dueAt: T0 - 3 * DAY, state: 'ended', worktree: LEFT_BRANCH }
+        ]
+      })
+    ])
+    h.flags.branches = [LEFT_BRANCH]
+    h.runner.sweepLeftFolders()
+    await flush()
+    expect(h.tidyRun.mock.calls.map((c) => c[1])).toEqual([OLDER, LEFT_BRANCH])
+  })
+
+  it('closing a resumed row in a run folder sweeps that job and writes its session onto the line; a tab in a folder of no job sweeps nothing', async () => {
+    const h = makeHarness([
+      makeJob({ history: [{ dueAt: T0 - DAY, state: 'ended', worktree: OLD }] })
+    ])
+    h.runner.onPtyExit('tab-8', { treeRoot: folderOf('my-feature'), sessionId: 'sess-8' })
+    await flush()
+    expect(h.tidyRun).not.toHaveBeenCalled()
+
+    h.tidied.set(OLD, REMOVED)
+    h.runner.onPtyExit('tab-9', { treeRoot: folderOf(OLD), sessionId: 'sess-old' })
+    await flush()
+    expect(h.tidyRun.mock.calls).toEqual([['/ws/a', OLD, 'sess-old']])
+    expect(h.jobs[0].history).toEqual([
+      { dueAt: T0 - DAY, state: 'ended', worktree: OLD, sessionId: 'sess-old', removed: true }
+    ])
+  })
+
+  it('with "Close it" on, the tab that closing for good kills never sweeps the folder being removed', async () => {
+    let finish = (): void => {}
+    const closeForGood = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          finish = r
+        })
+    )
+    const h = makeHarness([makeJob({ autoClose: true })], { closeForGood })
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'waiting')
+    await flush()
+    expect(closeForGood).toHaveBeenCalledTimes(1)
+
+    h.flags.folders = [RUN]
+    h.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN), sessionId: 'sess-1' })
+    await flush()
+    expect(h.tidyRun).not.toHaveBeenCalled()
+    finish()
+    await flush()
+    expect(h.jobs[0].history[0]).toEqual({
+      dueAt: T0,
+      state: 'finished',
+      worktree: RUN,
+      manual: true,
+      sessionId: 'sess-1'
+    })
+  })
+
+  describe('in a remote workspace', () => {
+    const REMOTE = 'ssh://devbox/home/me/app'
+    const A = 'nightly-report-260901-1000'
+    const B = 'nightly-report-260831-1000'
+    const NO_ID = 'nightly-report-260830-1000'
+    function remoteJob(): CronJob {
+      return makeJob({
+        workspacePath: REMOTE,
+        history: [
+          { dueAt: T0 - DAY, state: 'closed', worktree: A, sessionId: 'sa' },
+          { dueAt: T0 - 2 * DAY, state: 'closed', worktree: B, sessionId: 'sb' },
+          { dueAt: T0 - 3 * DAY, state: 'closed', worktree: NO_ID }
+        ]
+      })
+    }
+
+    it('sweeps only folders a History line ties to a session, never the listing, and says when claude still runs there', async () => {
+      const h = makeHarness([remoteJob()])
+      h.flags.folders = ['nightly-report-260829-1000']
+      h.tidied.set(A, { removed: false, kept: ['still running on the machine'] })
+      h.tidied.set(B, REMOVED)
+      h.runner.sweepLeftFolders()
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([
+        [REMOTE, A, 'sa'],
+        [REMOTE, B, 'sb']
+      ])
+      expect(h.jobs[0].history.map((l) => [l.kept, l.removed])).toEqual([
+        ['still running on the machine', undefined],
+        [undefined, true],
+        [undefined, undefined]
+      ])
+    })
+
+    it('one "machine unreachable" ends the job’s sweep and marks its other folders the same', async () => {
+      const h = makeHarness([remoteJob()])
+      h.tidied.set(A, { removed: false, kept: ['machine unreachable'], unreachable: true })
+      h.runner.sweepLeftFolders()
+      await flush()
+      expect(h.tidyRun.mock.calls).toEqual([[REMOTE, A, 'sa']])
+      expect(h.jobs[0].history.map((l) => l.kept)).toEqual([
+        'machine unreachable',
+        'machine unreachable',
+        undefined
+      ])
+    })
   })
 })
 
@@ -1231,7 +1466,7 @@ describe('CronRunner — switching off, deleting, and losing a workspace', () =>
 describe('CronRunner — the state it hands the dialog', () => {
   it('counts run folders per job for a git workspace only', async () => {
     const h = makeHarness([makeJob()])
-    h.flags.folders = 3
+    h.flags.folders = ['a', 'b', 'c']
     expect(h.runner.state().folders).toEqual({ j1: 3 })
     h.flags.git = false
     expect(h.runner.state().folders).toEqual({})
@@ -1239,23 +1474,23 @@ describe('CronRunner — the state it hands the dialog', () => {
 
   it('counts the folders again after the deadline kills a run', async () => {
     const h = makeHarness([makeJob()], { bindDeadlineMs: 5 * SEC })
-    h.flags.folders = 1
+    h.flags.folders = ['a']
     await h.runner.runNow('j1')
-    h.flags.folders = 2
+    h.flags.folders = ['a', 'b']
     await h.fireTimers(T0 + 5 * SEC)
     expect(h.states.at(-1)?.folders).toEqual({ j1: 2 })
   })
 
   it('keeps the last run-folder count while a slow host counts again, then sends the new count', async () => {
     const hostAnswers = (): Promise<void> => new Promise((r) => setImmediate(r))
-    let onDisk = 3
+    let onDisk = ['a', 'b', 'c']
     const h = makeHarness([makeJob()], {
       gitDirExists: async () => true,
-      countRunFolders: async () => onDisk
+      listRunFolders: async () => onDisk
     })
     await hostAnswers()
     expect(h.runner.state().folders).toEqual({ j1: 3 })
-    onDisk = 4
+    onDisk = ['a', 'b', 'c', 'd']
     expect(h.runner.state().folders).toEqual({ j1: 3 })
     await hostAnswers()
     expect(h.states.at(-1)?.folders).toEqual({ j1: 4 })

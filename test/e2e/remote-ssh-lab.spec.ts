@@ -45,6 +45,7 @@ import {
   openMenu,
   openWorktreeSession,
   runIn,
+  sendShortcut,
   startSessionIn,
   waitBooted,
   wsGroup,
@@ -80,10 +81,12 @@ const ECHO_THE_PORT_OFFSET_WITH_BASH =
 const ENTERS_BEFORE_GIVING_UP = 3
 const TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS = 1_000
 const A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS = 15_000
-const COMMIT_THE_PROJECT_THEN_EDIT_THE_README =
+const COMMIT_THE_PROJECT =
   'cd proj && printf "NOTES.md\\n" > .gitignore && git init -q && git add -A' +
-  ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base' +
-  ' && printf "edited\\n" >> README.md'
+  ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base'
+const COMMIT_THE_PROJECT_THEN_EDIT_THE_README = `${COMMIT_THE_PROJECT} && printf "edited\\n" >> README.md`
+const RUN_FOLDERS = 'proj/.claude/worktrees'
+const A_CLOSED_RUN_LEAVES_THE_MACHINE_AND_IS_TIDIED_MS = 90_000
 const COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN = [
   'set -e',
   'G="git -c user.email=lab@koloft.test -c user.name=lab"',
@@ -547,6 +550,73 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await expect
         .poll(() => runOnTarget(lab, 'kuser', 'ls proj/.claude/worktrees'), { timeout: 30_000 })
         .toContain('lab-child')
+    })
+  })
+
+  test('E-SSH-21: closing a scheduled run’s tab on the machine takes its worktree folder and branch away there once its claude has left, History says "folder removed", and its row stays', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ app, page, lab }) => {
+      runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT)
+      // CC§9 ADR-0026
+      runOnTarget(
+        lab,
+        'kuser',
+        `printf '%s' '{"projects":{"/home/kuser/proj":{"hasTrustDialogAccepted":true}}}' > .claude.json`
+      )
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+
+      const dlg = page.locator('.modal.cronjobs')
+      const jobCard = dlg.locator('.job-row', { hasText: 'Lab report' })
+      await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('input[aria-label="Name"]').fill('Lab report')
+      await dlg.locator('[aria-label="What to run"]').fill('/answer ok')
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await jobCard.locator('button.mini', { hasText: 'Run now' }).click()
+
+      const folders = (): string[] =>
+        runOnTarget(lab, 'kuser', `ls ${RUN_FOLDERS} 2>/dev/null || true`)
+          .split('\n')
+          .filter(Boolean)
+      await expect.poll(() => folders().length, { timeout: 90_000 }).toBe(1)
+      const [wt] = folders()
+      const branch = (): string =>
+        runOnTarget(
+          lab,
+          'kuser',
+          `git -C proj branch --list worktree-${wt} --format='%(refname:short)'`
+        ).trim()
+      await expect.poll(branch, { timeout: 30_000 }).toBe(`worktree-${wt}`)
+      await expect
+        .poll(() => jobCard.locator('.job-last').innerText(), { timeout: 90_000 })
+        .toContain('done — waiting for you')
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0)
+
+      const row = wsRows(page, 'kt-key').filter({ has: page.locator('.ws-tab-cron') })
+      await expect(row).toHaveClass(/\bst-(working|waiting)\b/, { timeout: 60_000 })
+      await row.click()
+      await expect(row).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:close-tab')
+
+      await expect
+        .poll(() => folders(), { timeout: A_CLOSED_RUN_LEAVES_THE_MACHINE_AND_IS_TIDIED_MS })
+        .toEqual([])
+      expect(branch()).toBe('')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect(row.locator('.ws-tab-cron')).toHaveCount(1)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      await expect
+        .poll(() => dlg.locator('.hist-row .hist-folder').first().textContent(), {
+          timeout: 30_000
+        })
+        .toBe(' · folder removed')
     })
   })
 

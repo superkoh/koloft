@@ -1347,6 +1347,9 @@ export interface HistoryLine {
   until?: number
   worktree?: string
   note?: string
+  sessionId?: string
+  removed?: true
+  kept?: string
 }
 
 export interface CronFile {

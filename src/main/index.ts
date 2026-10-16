@@ -181,7 +181,8 @@ import {
   prepareCodexHome
 } from './codexAccounts'
 import { shq } from '@shared/shellQuote'
-import { CronRunner, type LaunchRequest } from './cronRunner'
+import { CronRunner, type LaunchRequest, type LeftTab, type RunLeftovers } from './cronRunner'
+import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
@@ -406,7 +407,14 @@ import { ReaderDocs } from './readerDocs'
 import { koloftAssist } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
-import { closingTree, removeTree, whatIsLeft } from './sessionClose'
+import {
+  closingTree,
+  machineUnreachable,
+  removeTree,
+  tidyTree,
+  whatIsLeft,
+  type TidyResult
+} from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
@@ -545,6 +553,7 @@ interface ClaudeTabExit {
 }
 const claudeTabExits = new Map<string, ClaudeTabExit>()
 const sessionsLeavingTheirWorktree = new Set<string>()
+const closedTabs = new Map<string, LeftTab | null>()
 
 function watchForWorktreeRemoval(tabId: string, data: string): void {
   let exit = claudeTabExits.get(tabId)
@@ -1979,6 +1988,8 @@ app.whenReady().then(() => {
     sendToRenderer('terminal:cwd', c)
   })
   ptyMgr.on('exit', (e) => {
+    const left = closedTabs.has(e.id) ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
+    closedTabs.delete(e.id)
     slash.closed(e.id)
     if (!sleepers.has(e.id)) {
       discordNotices?.closed(e.id)
@@ -2038,7 +2049,7 @@ app.whenReady().then(() => {
         .stop(e.id, e.signal ? -1 : e.exitCode)
         .catch((error) => sendToRenderer('cron:toast', String(error)))
     workspaceMgr?.launchEnded(e.id)
-    cronRunner?.onPtyExit(e.id)
+    cronRunner?.onPtyExit(e.id, left ?? undefined)
     conductors?.onPtyExit(e.id, sleepers.has(e.id))
     sendToRenderer('terminal:exit', e)
   })
@@ -2543,7 +2554,11 @@ app.whenReady().then(() => {
     worktreeRecorded: (root, name) =>
       codexSessions?.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`) ?? false,
     branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
-    countRunFolders,
+    listRunFolders,
+    runLeftovers,
+    tidyRun,
+    foldersInUse,
+    quitting: () => quitCommitted,
     accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
@@ -3453,6 +3468,7 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
       sleeper.kind === 'codex' && !restarting
         ? codexSessions?.store.listResources().find((r) => r.worktreePath === tree)
         : undefined
+    if (!restarting) cronRunner?.onTabGone({ treeRoot: tree, sessionId: sleeper.sessionId })
     return (resource ? removeUntouchedCodexWorktree(resource) : Promise.resolve()).then(() => true)
   }
   if (ptyMgr.get(tabId)?.alive) {
@@ -3463,6 +3479,8 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
 }
 
 function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
+  if (ptyMgr.get(tabId)?.alive)
+    closedTabs.set(tabId, restarting ? null : leftTabOf(sessionOfTab(tabId)))
   const owner = sessionBackends.ownerOfTab(tabId)
   const stopped = owner
     ? Promise.resolve(owner.stop(tabId, restarting))
@@ -3509,16 +3527,27 @@ function closableSessions(): ClosableSession[] {
 
 const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
 
+function treeRootOf(s: SessionInfo): string {
+  return projectInfoFor(s.remote ? formatRemoteKey(s.remote.host, s.treeRoot) : s.treeRoot).treeRoot
+}
+
+function leftTabOf(s: SessionInfo | undefined): LeftTab {
+  return s ? { treeRoot: treeRootOf(s), sessionId: s.sessionId || undefined } : {}
+}
+
+function aliveSessionsIn(treeRoot: string, exceptTabId?: string): SessionInfo[] {
+  return allSessions().filter(
+    (s) => s.tabId !== exceptTabId && s.alive && treeRootOf(s) === treeRoot
+  )
+}
+
 async function whatClosingWouldLose(
   target: ClosableSession,
   info = projectInfoFor(target.treeRoot)
 ): Promise<string[]> {
   const tree = await closingTree(hostGitOut, info)
   if (!tree) return []
-  const sharing = allSessions().filter(
-    (s) =>
-      s.tabId !== target.tabId && s.alive && projectInfoFor(s.treeRoot).treeRoot === tree.treeRoot
-  )
+  const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
     ...(await whatIsLeft(hostGitOut, tree))
@@ -3551,7 +3580,7 @@ async function closeSessionFully(
 
 async function removeUntouchedCodexWorktree(resource: WorktreeResource): Promise<void> {
   const tree = resource.worktreePath
-  if ([...sleepers.values()].some((t) => projectInfoFor(t.cwd).treeRoot === tree)) return
+  if (sleeperTrees().includes(tree)) return
   if (sessionBackends.occupantOf(tree) || !(await codexSessions?.worktrees.untouched(resource)))
     return
   const problem = await removeTree(hostGitOut, {
@@ -3560,11 +3589,7 @@ async function removeUntouchedCodexWorktree(resource: WorktreeResource): Promise
     worktreeName: resource.worktreeName,
     branches: [`worktree-${resource.worktreeName}`]
   })
-  if (problem) sendToRenderer('cron:toast', problem)
-}
-
-function worktreeHomeOf(root: string): string {
-  return `${root}/.claude/worktrees`
+  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer('cron:toast', problem)
 }
 
 function cronRunTree(root: string, worktree?: string): ProjectInfo {
@@ -3592,9 +3617,54 @@ async function closeTheRunFully(tabId: string, root: string, worktree?: string):
   if (session) await closeSessionFully(session, cronRunTree(root, worktree))
 }
 
-async function countRunFolders(root: string, slug: string): Promise<number> {
+async function worktreeFolders(root: string): Promise<string[]> {
   const entries = await hosts.of(root).listDir(worktreeHomeOf(root), { showIgnored: true })
-  return entries.filter((e) => e.isDir && e.name.startsWith(`${slug}-`)).length
+  return entries.filter((e) => e.isDir).map((e) => e.name)
+}
+
+async function listRunFolders(root: string, slug: string): Promise<string[]> {
+  return (await worktreeFolders(root)).filter((name) => isRunFolderOf(slug, name))
+}
+
+const WORKTREE_BRANCH = 'worktree-'
+
+async function runLeftovers(root: string): Promise<RunLeftovers> {
+  const [folders, branches] = await Promise.all([
+    worktreeFolders(root),
+    hostGitOut(root, ['branch', '--list', `${WORKTREE_BRANCH}*`, '--format=%(refname:short)'])
+  ])
+  const branched =
+    branches === null
+      ? null
+      : branches
+          .split('\n')
+          .filter((b) => b.startsWith(WORKTREE_BRANCH))
+          .map((b) => b.slice(WORKTREE_BRANCH.length))
+  return { folders, branched }
+}
+
+const STILL_RUNNING_ON_THE_MACHINE = 'still running on the machine'
+
+async function tidyRun(root: string, worktree: string, sessionId?: string): Promise<TidyResult> {
+  const host = parseRemoteKey(root)?.host
+  if (host && sessionId) {
+    const after = await claudeBackend.waitRemoteGone(host, sessionId)
+    if (after === 'alive') return { removed: false, kept: [STILL_RUNNING_ON_THE_MACHINE] }
+    if (after === 'unreachable') return machineUnreachable()
+  }
+  const info = cronRunTree(root, worktree)
+  const result = await tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d))
+  if (result.removed) codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
+  return result
+}
+
+function sleeperTrees(): string[] {
+  return [...sleepers.values()].map((t) => projectInfoFor(t.cwd).treeRoot)
+}
+
+function foldersInUse(leavingTabId?: string): Set<string> {
+  const alive = allSessions().filter((s) => s.tabId !== leavingTabId && s.alive)
+  return new Set([...alive.map(treeRootOf), ...sleeperTrees()])
 }
 
 async function launchQuietTab(
@@ -3627,6 +3697,7 @@ function restoreOpenTabs(): string | undefined {
   ).finally(() => {
     openTabsRestored = true
     rememberOpenTabs()
+    cronRunner?.sweepLeftFolders()
   })
   workspaceMgr.onTrackerUpdate()
   return activeAsleep
