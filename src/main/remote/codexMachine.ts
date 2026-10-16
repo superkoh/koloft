@@ -86,6 +86,13 @@ function hookTrustLines(hooks: { key: string; hash: string }[]): string {
     .join('')
 }
 
+// ADR-0031
+export function ownerWordsLines(ownerWords: string): string {
+  return Object.entries(codexOwnerWordsFiles(ownerWords))
+    .map(([suffix, text]) => `printf '%s' ${shq(text)} > "$S.said${suffix}"\n`)
+    .join('')
+}
+
 // ADR-0038 CODEX§16
 export function codexTabScript(s: CodexTabSpec): string {
   assertSafeNames(s.tabId, s.instance, s.machineName, ...Object.keys(s.env))
@@ -105,10 +112,7 @@ export function codexTabScript(s: CodexTabSpec): string {
       : [])
   ].join(' ')
   const serve = `codex app-server --listen "unix://$S.sock" ${config}`
-  // ADR-0031
-  const ownerWords = Object.entries(s.ownerWords ? codexOwnerWordsFiles(s.ownerWords) : {})
-    .map(([suffix, text]) => `printf '%s' ${shq(text)} > "$S.said${suffix}"\n`)
-    .join('')
+  const ownerWords = s.ownerWords ? ownerWordsLines(s.ownerWords) : ''
   return `#!/bin/sh
 M="${remoteMachineDir(s.machineName)}"
 ${REMOTE_ENV_LINES}

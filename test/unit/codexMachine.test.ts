@@ -2,10 +2,11 @@ import fs from 'fs'
 import http from 'http'
 import os from 'os'
 import path from 'path'
-import { spawn } from 'child_process'
+import { spawn, spawnSync } from 'child_process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocketServer, type WebSocket } from 'ws'
-import { MachineCodexUpstream } from '../../src/main/remote/codexMachine'
+import { MachineCodexUpstream, ownerWordsLines } from '../../src/main/remote/codexMachine'
+import { CODEX_REPLY_LANGUAGE_SCRIPT } from '../../src/main/hooks'
 
 const FAKE_CODEX = path.join(__dirname, '..', 'e2e', 'fixtures', 'fake-codex.js')
 
@@ -43,6 +44,34 @@ async function machineServer(): Promise<{
 const stops: (() => Promise<void> | void)[] = []
 afterEach(async () => {
   for (const stop of stops.splice(0)) await stop()
+})
+
+describe('a Codex session that another session starts on a machine', () => {
+  // ADR-0031
+  it('has its reply-language hook there quote the owner’s own words, not the English task another session handed it, whatever characters they hold', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kcm-said-'))
+    const ownerWords = '帮我看看 "侧栏" 为什么\n变宽了 \'« » \\ 😀'
+    const seed = path.join(dir, 'seed.sh')
+    fs.writeFileSync(
+      seed,
+      `S=${JSON.stringify(path.join(dir, 'tab'))}\n${ownerWordsLines(ownerWords)}`
+    )
+    expect(spawnSync('/bin/sh', [seed]).status).toBe(0)
+    const script = path.join(dir, 'reply-language.bash')
+    fs.writeFileSync(script, CODEX_REPLY_LANGUAGE_SCRIPT)
+    const hook = (event: string, payload: unknown): string => {
+      const out = spawnSync('bash', [script, event], {
+        input: JSON.stringify(payload),
+        encoding: 'utf8',
+        env: { ...process.env, KOLOFT_CODEX_SAID: path.join(dir, 'tab.said') }
+      }).stdout
+      return (JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } })
+        .hookSpecificOutput.additionalContext
+    }
+    expect(hook('prompt', { prompt: 'Fix the sidebar width.' })).toContain(`«${ownerWords}»`)
+    expect(hook('tool', {})).toContain(`«${ownerWords}»`)
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
 })
 
 describe('MachineCodexUpstream: the relay between a Codex TUI on this Mac and its app-server on a machine', () => {
