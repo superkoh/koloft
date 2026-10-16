@@ -11,6 +11,7 @@ export const HANDOVER_OPENING = 'Koloft started you because '
 // ADR-0031
 export const OWNER_WORDS_BEFORE_QUOTE = 'The owner last wrote: «'
 export const OWNER_WORDS_END = '». Write everything the owner reads'
+export const OWNER_WORDS_QUOTED_CHARS = 150
 const OWNER_WORDS_AFTER_QUOTE = `${OWNER_WORDS_END} — your notes, your replies and the result you send back — in the language of those words, whatever language this task is written in.`
 const OLDER_SEND_MESSAGE_ENDING = 'with your SendMessage tool.'
 const RESULT_PLACEHOLDER = '"<your result>"'

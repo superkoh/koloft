@@ -26,7 +26,7 @@ import {
   writeAllowFile
 } from '../../src/main/hooks'
 import { CODEX_GATE_HOOK_COMMAND } from '../../src/main/conductorGate'
-import { withHandover } from '../../src/main/handover'
+import { OWNER_WORDS_QUOTED_CHARS, withHandover } from '../../src/main/handover'
 import { crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
@@ -562,7 +562,7 @@ describe('injected hook script', () => {
       expect(quotedPrompt(regDir, 'tabLangPalette')).toBe(typed)
 
       seedOwnerWords(saidFile(regDir, 'tabLangPalette'), '长'.repeat(4000))
-      expect(quotedPrompt(regDir, 'tabLangPalette')!.length).toBeLessThan(300)
+      expect(quotedPrompt(regDir, 'tabLangPalette')).toBe('长'.repeat(OWNER_WORDS_QUOTED_CHARS))
     })
 
     // CC§19

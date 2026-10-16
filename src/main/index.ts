@@ -3736,9 +3736,9 @@ async function saveDiscordToken(token: string): Promise<boolean> {
   return saved
 }
 
-function openDiscordSetup(): Promise<ConductorOpenResult> {
+function openDiscordSetup(ownerWords?: string): Promise<ConductorOpenResult> {
   if (!conductors) return Promise.resolve({ ok: false, error: STILL_STARTING })
-  return conductors.openTask(GLOBAL_SCOPE, DISCORD_SETUP_TASK)
+  return conductors.openTask(GLOBAL_SCOPE, { ...DISCORD_SETUP_TASK, ownerWords })
 }
 
 async function bindWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult> {
@@ -4405,7 +4405,9 @@ function registerIpc(): void {
     if (owner) conductors?.setOwner(owner)
   })
   ipcMain.handle('discord:channels', () => discordLink?.channels() ?? [])
-  ipcMain.handle('discord:setUpWithAssist', () => openDiscordSetup())
+  ipcMain.handle('discord:setUpWithAssist', (_e, ownerWords?: string) =>
+    openDiscordSetup(ownerWords)
+  )
   ipcMain.handle('workspace:move', (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
   )

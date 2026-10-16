@@ -9,7 +9,12 @@ import {
   codexGateShell,
   conductorGateCommand
 } from './conductorGate'
-import { HANDOVER_OPENING, OWNER_WORDS_BEFORE_QUOTE, OWNER_WORDS_END } from './handover'
+import {
+  HANDOVER_OPENING,
+  OWNER_WORDS_BEFORE_QUOTE,
+  OWNER_WORDS_END,
+  OWNER_WORDS_QUOTED_CHARS
+} from './handover'
 import { FROM_A_SESSION, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
@@ -88,11 +93,9 @@ remind_reply_language UserPromptSubmit
 exit 0
 `
 
-const OWNER_WORDS_SEEDED_CHARS = 150
-
 // ADR-0031
 export function seedOwnerWords(said: string, ownerWords: string): void {
-  fs.writeFileSync(said, JSON.stringify(ownerWords.slice(0, OWNER_WORDS_SEEDED_CHARS)).slice(1, -1))
+  fs.writeFileSync(said, JSON.stringify(ownerWords.slice(0, OWNER_WORDS_QUOTED_CHARS)).slice(1, -1))
 }
 
 // ADR-0031

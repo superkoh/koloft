@@ -314,7 +314,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect
         .poll(tasks)
         .toContainEqual({ tabId: expect.any(String), scope: 'global', name: 'Discord setup' })
-      await waitForCalls(env, 2, 30_000)
+      expect(textAfterDashes((await waitForCalls(env, 2, 30_000))[1])).toBe('set up Discord')
 
       const opened = await page.evaluate((p) => window.api.conductors.open(p), env.workspaces.a)
       expect(opened.ok).toBe(true)
