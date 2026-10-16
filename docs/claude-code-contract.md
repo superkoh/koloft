@@ -1985,3 +1985,10 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   `"turnReminder":"Be concise: lead with the result, skip preamble and narration, keep
   only what the user needs."` (style "Concise") after the prompt and after every tool
   result (2.1.29x).
+- **A note written before a tool call is already in the transcript when that call's
+  `PostToolUse` runs**, as a line holding
+  `"role":"assistant","content":[{"type":"text","text":"<note>"}…` (2.1.301, 2026-10-16:
+  `claude -p` resuming a copy of a long session, Opus 5.5, the shipped hook reading the
+  last such line from `transcript_path`; in one run all 7 notes it quoted back were the
+  note written right before that tool call). Older lines in the same transcript hold the
+  text block and the `tool_use` block in one record, the text first.

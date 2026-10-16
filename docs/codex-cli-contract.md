@@ -1744,6 +1744,11 @@ stdin/stdout shapes were also read from the binary, which embeds a JSON schema p
   (`sandbox: {type: "readOnly"}`, `exclude_slash_tmp`): the `UserPromptSubmit` and
   `PostToolUse` hooks appended to a file under `~/Library/Caches`, and the reply ended
   with the word the prompt hook asked for.
+- **The rollout `transcript_path` names keeps each note the model writes as one line
+  holding** `"role":"assistant","content":[{"type":"output_text","text":"<note>"}],"phase":"commentary"`
+  (`"final_answer"` for the reply), read off a 0.162 TUI rollout of 2026-10-15 on this
+  Mac. Whether a note is in the file when the next tool's `PostToolUse` runs is not
+  probed yet.
 
 ## 28. Two app-servers starting at once in a home no app-server has used
 

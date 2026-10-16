@@ -71,9 +71,48 @@ Koloft's prompt and Assist's role asking for tasks and messages in the owner's l
 is not measured where it matters: fresh Opus 5.5 parents given a Chinese request wrote
 their child's task in Chinese 4 / 4 with and without it, and a drifted long session was
 not reproduced.
+Far from the owner's words a turn still drifts under the quote, and more so when those
+words are short. In the transcripts of 2026-10-11 to 10-16, notes under a Chinese quote
+of a normal sentence were English 9% within 20 tool calls of it, 17% at 21–60 and 29%
+past 60; under a quote of six characters or fewer («继续», «合并») 8%, 25% and 54% (such
+turns are long continuations by nature, so part of that is their length). One session,
+compacted, held Chinese for about 220 tool calls under «继续» and then wrote mostly
+English for over an hour; 12 reminders in the Global Assist quoted only «A» or «1»; a
+child handed «请先读 <path>» before the owner's words reached children wrote 150 of 164
+blocks in English. Measured on a copy of the first session cut where its English had set
+in (its last ~60 notes mostly English, about 775K tokens of context), given the real
+(Chinese) review report that came next while the quote stayed «继续», Opus 5.5, up to 30
+tool calls, the tree at that commit in a scratch folder, 4–5 runs each (English notes /
+all notes; the original turn wrote 4 / 7 in that stretch):
+
+| what each reminder said | English |
+| --- | --- |
+| the quote «继续» | 14 / 18 |
+| the quote, and the owner's last longer message | 9 / 12 |
+| "The user writes Chinese. Write everything … in Chinese" | 13 / 16 |
+| the quote, and Claude's own last note quoted back: "if it is not in the language of the user's message, write the next one in that language" | 11 / 22 |
+| "The user writes Chinese", or, when the last note has no Chinese and three English words, "Your last note to the user, «…», is not in Chinese" | 6 / 23 |
+| the same, as the shipped shell script (3 runs) | 4 / 11, each followed by a Chinese note |
+
+Only telling the model that its own last note was in the wrong language moved it;
+restating the rule in any form did not. So when the owner's saved words carry Chinese,
+Japanese (kana) or Korean (Hangul) characters — which tell the language apart without a
+guess — the reminder names that language, reads the last assistant text from the
+transcript the hook is handed (Claude's and Codex's both keep it as an assistant message
+whose first part is text, CC§19 CODEX§27), and when that note has none of those
+characters but three English words, quotes it back and says so. Any other language keeps
+the quote: languages written in Latin letters cannot be told from English by a shell
+script. A prompt that shows no language — fewer than three words and none of those
+characters: «A», «1», «merge», a bare path — keeps the earlier saved words, so «A» after
+a Chinese question still names Chinese. Measured only for Chinese; Japanese and Korean
+follow the same rule unmeasured. In the runs the model noticed it had been restarted and
+that its folder was a fresh repository; the original turn had neither.
 **Rejected**: repeating a generic sentence (above: it barely helped — the quote is what
-works). Naming the language ("Reply in Chinese") — Koloft would have to guess the
-language in a shell script, for every language; the quote lets the model see it.
+works). Naming the language alone ("Reply in Chinese") — 13 / 16 above, no better than
+the quote; it is used only with the check of the last note, and only where the
+characters tell the language. Keeping the owner's last longer message in the quote — 9 /
+12, no better. Asking the model to judge its own last note — 11 / 22, half the effect of
+telling it.
 Skipping prompts written in plain ASCII to save tokens — a short "ok" or "merge" is
 exactly the prompt that starts a long turn. Claude Code's `language` setting — read off
 the 2.1.296 binary, it is sent once at session start or when it changes, not after

@@ -649,7 +649,7 @@ test.describe('KOLOFT_PORT_OFFSET reaches the REAL agent’s own shell in a work
 
 // ADR-0031 CODEX§27
 test.describe('a REAL Codex tab, as a Claude tab: opt-in case; it spends real money', () => {
-  test("in a real Codex tab Koloft's reply-language hooks keep the owner's words for every tool call", async ({
+  test("in a real Codex tab Koloft's reply-language hooks keep the owner's words, and a note written in English is quoted back after the next tool call", async ({
     env
   }) => {
     test.skip(
@@ -657,7 +657,8 @@ test.describe('a REAL Codex tab, as a Claude tab: opt-in case; it spends real mo
       'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
     )
     test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
-    const words = '只回复两个字母 OK，别的都不要做。'
+    const words =
+      '先单独发一句英文短句 "Now listing the files in this folder."，然后用 shell 运行一次 ls，最后只回复 OK。'
     await inARealWorktreeSession(env, 'other', useRealCodex, [], async ({ page, rows }) => {
       await ask(page, rows, words)
       await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
@@ -668,6 +669,11 @@ test.describe('a REAL Codex tab, as a Claude tab: opt-in case; it spends real mo
         .filter((file) => fs.existsSync(file))
         .map((file) => JSON.parse(`"${fs.readFileSync(file, 'utf8').trim()}"`) as string)
       expect(said).toEqual([words])
+      const rollouts = fs
+        .readdirSync(env.home, { recursive: true, encoding: 'utf8' })
+        .filter((rel) => /rollout-.*\.jsonl$/.test(rel))
+        .map((rel) => fs.readFileSync(path.join(env.home, rel), 'utf8'))
+      expect(rollouts.join('\n')).toContain('Your last note to the user, «Now listing the files')
     })
   })
 })
