@@ -1116,6 +1116,12 @@ describe('injected hook script', () => {
       expect(fs.readFileSync(log, 'utf8')).toBe('{"a":1}\n{"a":2}\n')
     })
   })
+
+  it('the settings file every Claude launch gets, on this Mac or another machine, answers Claude’s one-time Bypass Permissions screen itself (CC§9)', () => {
+    expect(hookSettings('/x/hook.sh', '/x/reg', 'tabBP')).toMatchObject({
+      skipDangerousModePermissionPrompt: true
+    })
+  })
 })
 
 describe('setupHooks at startup', () => {

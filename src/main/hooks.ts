@@ -340,7 +340,7 @@ const NOTIFICATIONS_WAITING_ON_THE_PERSON = [
 
 const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
 
-// CC§6 CC§14
+// CC§6 CC§9 CC§14
 export function hookSettings(
   hookScript: string,
   regDir: string,
@@ -352,6 +352,7 @@ export function hookSettings(
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
   const settings: Record<string, unknown> = {
+    skipDangerousModePermissionPrompt: true,
     env: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' },
     hooks: {
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
