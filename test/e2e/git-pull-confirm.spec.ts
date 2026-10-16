@@ -1,4 +1,5 @@
 import { test, expect, launchApp } from './helpers/app'
+import { installCodex } from './helpers/env'
 import { setupGitFixture } from './helpers/gitFixture'
 import {
   centerTerm,
@@ -81,37 +82,39 @@ test.describe('Git freshness · Pull & Start confirms only over a root session m
     }
   })
 
-  test('T-GP-09: a root session waiting at its prompt does not make Pull & Start ask — it pulls and launches straight away', async ({
-    env
-  }) => {
-    test.setTimeout(180_000)
-    const fx = setupGitFixture(env)
+  for (const method of ['Claude', 'Codex'] as const)
+    test(`T-GP-09 (${method}): a root ${method} session waiting at its prompt does not make Pull & Start ask — it pulls and launches straight away`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      const fx = setupGitFixture(env)
+      if (method === 'Codex') installCodex(env)
 
-    const app = await launchApp(env)
-    const page = await app.firstWindow()
-    await page.waitForLoadState('domcontentloaded')
-    try {
-      await expect(page.locator('.ws-head')).toHaveCount(1, { timeout: 20_000 })
-      await startSessionIn(page, 'repo')
-      const rows = wsRows(page, 'repo')
-      await expect(rows).toHaveCount(1)
-      await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+      const app = await launchApp(env)
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      try {
+        await expect(page.locator('.ws-head')).toHaveCount(1, { timeout: 20_000 })
+        await startSessionIn(page, 'repo', { method })
+        const rows = wsRows(page, 'repo')
+        await expect(rows).toHaveCount(1)
+        await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
 
-      fx.originAhead(3)
-      await fetchNowInGitPanel(page, 'repo')
-      await expect(page.locator('.ws-behind')).toHaveText('3', { timeout: 30_000 })
+        fx.originAhead(3)
+        await fetchNowInGitPanel(page, 'repo')
+        await expect(page.locator('.ws-behind')).toHaveText('3', { timeout: 30_000 })
 
-      const dlg = await openPicker(app, page)
-      await expect(dialogPrimary(dlg)).toContainText('Pull & Start', { timeout: 30_000 })
-      await dialogPrimary(dlg).click()
-      await expect(page.locator('.toast')).toHaveText(/^repo · main: fast-forwarded 3 commits/, {
-        timeout: 30_000
-      })
-      await expect(page.locator('.modal-header', { hasText: 'Pull into main?' })).toHaveCount(0)
-      await expect(page.locator('.ws-behind')).toHaveCount(0)
-      await expect(rows).toHaveCount(2, { timeout: 40_000 })
-    } finally {
-      await app.close().catch(() => {})
-    }
-  })
+        const dlg = await openPicker(app, page)
+        await expect(dialogPrimary(dlg)).toContainText('Pull & Start', { timeout: 30_000 })
+        await dialogPrimary(dlg).click()
+        await expect(page.locator('.toast')).toHaveText(/^repo · main: fast-forwarded 3 commits/, {
+          timeout: 30_000
+        })
+        await expect(page.locator('.modal-header', { hasText: 'Pull into main?' })).toHaveCount(0)
+        await expect(page.locator('.ws-behind')).toHaveCount(0)
+        await expect(rows).toHaveCount(2, { timeout: 40_000 })
+      } finally {
+        await app.close().catch(() => {})
+      }
+    })
 })
