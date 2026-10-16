@@ -58,7 +58,7 @@ Both tools write one file per session, and both files hold the tokens of every m
 
 ### Not probed yet (said as such, nothing built on them)
 
-- 11 of the 46 rollout files hold more than one `session_meta` line; a resume appending a new one is the likely reason — inferred, not checked; it does not affect the counting.
+- (Checked 2026-10-16, now in CODEX§13:) the 11 rollout files with more than one `session_meta` line are all sub-agent rollouts — their own line first, then a copy of the parent's — not resumes.
 - A `codex exec` rollout (`source: "exec"`) counts as a session of its cwd's workspace. Koloft's own Assist one-shots run `codex exec --ephemeral`, which writes no rollout — inferred, not checked (CODEX§4).
 - Whether a Codex thread resumed from an account home writes its new turns into the same shared file — inferred, not checked from the shared-folder link.
 - The ~300 MB peak during the first read sits in the worker, not main — expected, not measured.
