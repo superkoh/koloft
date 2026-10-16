@@ -12,7 +12,8 @@ const sheets = JSON.parse(fs.readFileSync(path.join(iconDir, 'sheets.json'), 'ut
 const COLUMNS = 6
 const ROWS = 4
 const VIEWBOX = 24
-const CROP_SIDE_IN_STROKES = 15
+const GLYPH_EXTENT = 20
+const STROKE = 2
 const LIT = 128
 
 function readSheet(file) {
@@ -89,21 +90,57 @@ function glyphBoxes(sheet) {
   const ys = bands(rowCounts, ROWS)
   if (xs.length !== COLUMNS || ys.length !== ROWS)
     throw new Error(`found a ${xs.length}×${ys.length} grid, want ${COLUMNS}×${ROWS}`)
-  const boxes = []
-  for (const [y0, y1] of ys)
-    for (const [x0, x1] of xs) {
-      const box = { x0: width, y0: height, x1: -1, y1: -1 }
-      for (let y = y0; y <= y1; y++)
-        for (let x = x0; x <= x1; x++)
-          if (lit[y * width + x]) {
-            box.x0 = Math.min(box.x0, x)
-            box.x1 = Math.max(box.x1, x)
-            box.y0 = Math.min(box.y0, y)
-            box.y1 = Math.max(box.y1, y)
+  return ys.flatMap(([y0, y1]) => xs.map(([x0, x1]) => litBox(sheet, x0, y0, x1, y1)))
+}
+
+function litBox({ width, height, lit }, left = 0, top = 0, right = width - 1, bottom = height - 1) {
+  const box = { x0: width, y0: height, x1: -1, y1: -1 }
+  for (let y = top; y <= bottom; y++)
+    for (let x = left; x <= right; x++)
+      if (lit[y * width + x]) {
+        box.x0 = Math.min(box.x0, x)
+        box.x1 = Math.max(box.x1, x)
+        box.y0 = Math.min(box.y0, y)
+        box.y1 = Math.max(box.y1, y)
+      }
+  return box
+}
+
+function extent(box) {
+  return Math.max(box.x1 - box.x0, box.y1 - box.y0) + 1
+}
+
+function reweigh(sheet, box, radius) {
+  const pad = Math.ceil(Math.abs(radius)) + 1
+  const width = box.x1 - box.x0 + 1 + 2 * pad
+  const height = box.y1 - box.y0 + 1 + 2 * pad
+  const source = new Uint8Array(width * height)
+  for (let y = box.y0; y <= box.y1; y++)
+    for (let x = box.x0; x <= box.x1; x++)
+      source[(y - box.y0 + pad) * width + x - box.x0 + pad] = sheet.lit[y * sheet.width + x]
+  const reach = Math.ceil(Math.abs(radius))
+  const disk = []
+  for (let dy = -reach; dy <= reach; dy++)
+    for (let dx = -reach; dx <= reach; dx++)
+      if ((dx || dy) && dx * dx + dy * dy <= radius * radius) disk.push([dx, dy])
+  const grow = radius > 0
+  const lit = new Uint8Array(width * height)
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      let on = source[y * width + x] === 1
+      if (on !== grow)
+        for (const [dx, dy] of disk) {
+          const nx = x + dx
+          const ny = y + dy
+          const near = nx >= 0 && ny >= 0 && nx < width && ny < height && source[ny * width + nx]
+          if (grow ? near : !near) {
+            on = grow
+            break
           }
-      boxes.push(box)
+        }
+      lit[y * width + x] = on ? 1 : 0
     }
-  return boxes
+  return { width, height, lit }
 }
 
 function crop({ width, height, lit }, box, side) {
@@ -143,17 +180,19 @@ const paths = {}
 for (const [file, names] of Object.entries(sheets)) {
   const sheet = readSheet(path.join(iconDir, file))
   const stroke = strokeWidth(sheet)
-  const side = stroke * CROP_SIDE_IN_STROKES
   const boxes = glyphBoxes(sheet)
   for (const [i, name] of names.entries()) {
     if (!name) continue
     const box = boxes[i]
     if (box.x1 < 0) throw new Error(`${name} in ${file} is an empty cell`)
-    if (Math.max(box.x1 - box.x0, box.y1 - box.y0) >= side)
-      throw new Error(`${name} in ${file} is wider than its ${side}px crop`)
-    paths[name] = await trace(crop(sheet, box, side), side)
+    const strokeAtExtent = (STROKE * extent(box)) / GLYPH_EXTENT
+    const radius = (strokeAtExtent - stroke) / (2 * (1 - STROKE / GLYPH_EXTENT))
+    const glyph = reweigh(sheet, box, radius)
+    const glyphBox = litBox(glyph)
+    const side = Math.round((extent(glyphBox) * VIEWBOX) / GLYPH_EXTENT)
+    paths[name] = await trace(crop(glyph, glyphBox, side), side)
   }
-  console.log(`${file}: stroke ${stroke}px, crop ${side}px`)
+  console.log(`${file}: stroke ${stroke}px`)
 }
 
 const out = path.join(iconDir, 'paths.ts')
