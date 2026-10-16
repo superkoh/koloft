@@ -13,14 +13,14 @@ export function canPull(f: WorkspaceFreshness): boolean {
 }
 
 export function busyInCheckout(
-  sessions: Pick<SessionInfo, 'alive' | 'treeRoot' | 'status' | 'details'>[],
+  sessions: Pick<SessionInfo, 'alive' | 'treeRoot' | 'status' | 'turnOver' | 'details'>[],
   root: string
 ): number {
   return sessions.filter(
     (s) =>
       s.alive &&
       s.treeRoot === root &&
-      (s.status === 'working' || s.status === 'approval' || statusUnavailable(s))
+      ((s.status === 'working' && !s.turnOver) || s.status === 'approval' || statusUnavailable(s))
   ).length
 }
 

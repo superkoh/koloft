@@ -34,6 +34,10 @@ describe('busyInCheckout (a pull asks first only while a root-checkout session i
     ).toBe(0)
   })
 
+  it('a parked session whose turn is over but a background task still runs is waiting, not busy', () => {
+    expect(busyInCheckout([live({ status: 'working', turnOver: true })], '/repo')).toBe(0)
+  })
+
   it('counts a Codex session whose status cannot be seen — unknown means ask', () => {
     expect(
       busyInCheckout(
