@@ -2304,6 +2304,9 @@ app.whenReady().then(() => {
         ?.bindings()
         .find((b) => b.channel.channelId !== channelId && !failing[b.channel.channelId])
       if (other) void link.post(other.channel.channelId, text).catch(() => undefined)
+    },
+    channelGone: (channelId) => {
+      if (conductors?.threadOfChannel(channelId)) discordThreads?.threadGone(channelId)
     }
   })
   discordLink = link
