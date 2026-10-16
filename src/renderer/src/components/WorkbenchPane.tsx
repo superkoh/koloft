@@ -1678,9 +1678,9 @@ export function WorkbenchPane({
       }
       data-wb-tab-id={t.id}
       onMouseDown={() => activate(t.id)}
-      draggable={t.kind !== 'files' && t.kind !== 'terminal'}
+      draggable={t.kind !== 'files'}
       onDragStart={(e) => {
-        if (t.kind === 'files' || t.kind === 'terminal') return
+        if (t.kind === 'files') return
         e.dataTransfer.effectAllowed = 'move'
         // PLATFORM§10
         e.dataTransfer.setData('text/plain', t.id)
