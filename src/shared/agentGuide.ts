@@ -34,6 +34,12 @@ const HELPER_RULES: Record<BackendId, string[]> = {
     'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
     'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a subagent (subagent_spawn) when the owner asked for subagents or for work in the background; otherwise do it yourself. Your subagents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
     'Anything else: do it yourself, in this session.'
+  ],
+  agy: [
+    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE}`,
+    'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
+    'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a subagent (invoke_subagent) when the owner asked for subagents or for work in the background; otherwise do it yourself. Your subagents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
+    'Anything else: do it yourself, in this session.'
   ]
 }
 

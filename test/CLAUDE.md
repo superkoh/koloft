@@ -169,6 +169,13 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   (helpers/env.ts, sets `KOLOFT_MUSE_CMD`); without it `KOLOFT_MUSE_CMD` is a bare name, so
   Muse reads as not installed. It asks Muse's trust question unless `trust.json` under
   `<home>/.config/muse` trusts the folder or it got `--trust-workspace`.
+- Antigravity sessions: the `agy` is fixtures/fake-agy.js, installed per case by
+  `installAgy` (helpers/env.ts, sets `KOLOFT_AGY_CMD` and adds an API-key account);
+  without it agy reads as not installed. It asks agy's trust question unless the owner's
+  `~/.gemini` settings trust the folder (`trustInAgy`), logs every launch to
+  `<home>/fake-agy-calls.jsonl` (the account probe's `-p /usage` and `--version` too),
+  and serves agy's local API. On the fake remote machine `installRemoteAgy`
+  (helpers/remote.ts) puts it at `.local/bin/agy` and trusts the remote folder.
 
 ### Keys, focus and the hidden window
 
@@ -255,7 +262,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `src/preload/index.ts` for the renderer — so grep its name. All are inert in
   production.
 - Always on (set by `helpers/env.ts`): `KOLOFT_TEST_BACKGROUND`, `KOLOFT_DOM_RENDERER`,
-  `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_MUSE_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
+  `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_MUSE_CMD`, `KOLOFT_AGY_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
   `KOLOFT_SUPPRESS_OS_OPEN`, `KOLOFT_EXTERNAL_OPENS_FILE`, `KOLOFT_DOWNLOAD_DIR`,
   `KOLOFT_CDP_LOG`, `KOLOFT_FILE_DIALOG_FILE`.
 - Per spec, read once at startup, so set in `env.launchEnv` before launching by hand:

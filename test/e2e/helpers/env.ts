@@ -39,10 +39,12 @@ const E2E_CLAUDE_ACCOUNT = 'e2e-key'
 const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
 const E2E_CODEX_ACCOUNT = 'e2e-codex'
 export const E2E_MUSE_ACCOUNT = 'e2e-muse'
+export const E2E_AGY_ACCOUNT = 'e2e-agy'
+export const UNPACKAGED_BUILD_AGY_SVC = 'koloft-dev-agy-home'
 
 export function seededAccount(
   name: string,
-  kind: 'oauth' | 'apikey' | 'codex-home' | 'muse-home' = 'oauth'
+  kind: 'oauth' | 'apikey' | 'codex-home' | 'muse-home' | 'agy-home' = 'oauth'
 ): Record<string, unknown> {
   return { name, kind, enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
 }
@@ -172,6 +174,7 @@ export function setupE2EEnv(): E2EEnv {
     KOLOFT_CLAUDE_CMD: 'claude',
     KOLOFT_CODEX_CMD: 'codex-not-installed',
     KOLOFT_MUSE_CMD: 'muse-not-installed',
+    KOLOFT_AGY_CMD: 'agy-not-installed',
     KOLOFT_KEYCHAIN_FILE: keychainFile,
     // CC§2
     KOLOFT_SCRATCHPAD_BASE: scratchpadBase,
@@ -276,6 +279,61 @@ export function addMuseAccount(env: E2EEnv, name = E2E_MUSE_ACCOUNT): void {
   seedSettings(env, {
     accounts: [...(current.accounts ?? []), seededAccount(name, 'muse-home')]
   })
+}
+
+export function installAgy(env: E2EEnv): void {
+  const binary = path.join(env.fakeBin, 'agy')
+  fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-agy.js'), binary)
+  env.launchEnv.KOLOFT_AGY_CMD = binary
+  addAgyAccount(env)
+}
+
+// AGY§5 AGY§6
+export function addAgyAccount(env: E2EEnv, name = E2E_AGY_ACCOUNT): void {
+  const cache = path.join(env.userData, 'agy-homes', name, 'antigravity-cli', 'cache')
+  fs.mkdirSync(cache, { recursive: true })
+  fs.writeFileSync(
+    path.join(cache, 'onboarding.json'),
+    JSON.stringify({ onboardingComplete: true })
+  )
+  addKeychainEntry(env, UNPACKAGED_BUILD_AGY_SVC, name, 'fake-gemini-key')
+  const file = path.join(env.userData, 'settings.json')
+  const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }
+  seedSettings(env, {
+    accounts: [...(current.accounts ?? []), seededAccount(name, 'agy-home')]
+  })
+}
+
+export interface AgyCall {
+  pid: number
+  argv: string[]
+  cwd: string
+  env: Record<string, string | boolean | undefined> & { GEMINI_API_KEY: boolean }
+  geminiDir: string
+}
+
+export function agyCalls(env: E2EEnv, home = env.home): AgyCall[] {
+  const file = path.join(home, 'fake-agy-calls.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as AgyCall)
+}
+
+export function ownersGemini(env: E2EEnv): string {
+  return path.join(env.home, '.gemini')
+}
+
+// AGY§4 AGY§5
+export function trustInAgy(env: E2EEnv, dir: string): void {
+  const app = path.join(ownersGemini(env), 'antigravity-cli')
+  fs.mkdirSync(app, { recursive: true })
+  fs.writeFileSync(
+    path.join(app, 'settings.json'),
+    JSON.stringify({ trustedWorkspaces: [fs.realpathSync(dir)] })
+  )
 }
 
 export interface MuseCall {

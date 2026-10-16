@@ -21,7 +21,7 @@ import {
   markAnswerable,
   writeAllowFile
 } from '../../src/main/hooks'
-import { CODEX_GATE_HOOK_COMMAND } from '../../src/main/conductorGate'
+import { CODEX_GATE_HOOK_COMMAND, conductorGateCommand } from '../../src/main/conductorGate'
 import { withHandover } from '../../src/main/handover'
 import { crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
@@ -746,6 +746,74 @@ describe('injected hook script', () => {
       writeAllowFile(regDir, 'pty-cx', ['mcp__playwright__browser_navigate'])
       expect(gate(tool('mcp__playwright__browser_navigate'))).toBe('allow')
       expect(gate(tool('mcp__playwright__browser_evaluate'))).toBe('deny')
+    })
+  })
+
+  // ADR-0029 AGY§12 AGY§13
+  describe("the Antigravity gate, run by the command Koloft hands agy, lets an Assist run commands, read, ask the owner and write inside its own folder, plus the tools its tab's allow file names, and denies the rest in the form agy obeys", () => {
+    const own = '/u/Koloft/conductors/global'
+    let command: string
+    beforeAll(() => {
+      command = conductorGateCommand(
+        setupHooks(noPeerInstance).agyGateScript,
+        path.join(regDir, 'pty-agy.allow')
+      )
+    })
+    const gate = (event: unknown): 'allow' | 'deny' => {
+      const res = spawnSync('/bin/sh', ['-c', command], {
+        input: typeof event === 'string' ? event : JSON.stringify(event),
+        encoding: 'utf8'
+      })
+      if (res.status !== 0) throw new Error(`gate exited ${res.status}: ${res.stderr}`)
+      if (res.stdout === '') return 'allow'
+      expect(JSON.parse(res.stdout)).toEqual({
+        decision: 'deny',
+        reason: expect.stringMatching(/^Koloft: Assist only passes work on\./)
+      })
+      return 'deny'
+    }
+    const call = (
+      name: string,
+      args: Record<string, unknown> = {},
+      workspacePaths: unknown = [own]
+    ): unknown => ({ conversationId: 'c1', workspacePaths, toolCall: { name, args } })
+
+    it.each([
+      ['any shell command', call('run_command', { CommandLine: 'cat /x | wc -l' })],
+      ['reading any file', call('view_file', { AbsolutePath: '/etc/hosts' })],
+      ['a question to the owner', call('ask_question', { questions: [] })],
+      ['a new file named from its folder', call('write_to_file', { TargetFile: 'note.md' })],
+      [
+        'an edit by absolute path inside its folder',
+        call('replace_file_content', { TargetFile: `${own}/a/b.md` })
+      ]
+    ])('allows %s', (_name, event) => {
+      expect(gate(event)).toBe('allow')
+    })
+
+    it.each([
+      ['a file elsewhere', call('write_to_file', { TargetFile: '/ws/a/src/x.ts' })],
+      ['a file that climbs out', call('write_to_file', { TargetFile: '../x.md' })],
+      [
+        'a folder whose name only starts like its own',
+        call('replace_file_content', { TargetFile: `${own}-x/a.md` })
+      ],
+      [
+        'a write when agy names no workspace',
+        call('write_to_file', { TargetFile: `${own}/a.md` }, [])
+      ],
+      ['starting a subagent', call('invoke_subagent', { Subagents: [] })],
+      ['a web fetch', call('read_url_content', { Url: 'https://x' })],
+      ['a tool the gate has no rule for', call('search_web', { query: 'x' })],
+      ['input that is not JSON', 'not json']
+    ])('denies %s', (_name, event) => {
+      expect(gate(event)).toBe('deny')
+    })
+
+    it("also lets through a tool the tab's allow file names, and no other", () => {
+      writeAllowFile(regDir, 'pty-agy', ['search_web'])
+      expect(gate(call('search_web', { query: 'x' }))).toBe('allow')
+      expect(gate(call('read_url_content', { Url: 'https://x' }))).toBe('deny')
     })
   })
 

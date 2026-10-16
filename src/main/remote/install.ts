@@ -2,6 +2,7 @@ import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { remotePtsFile } from './paths'
 import { ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'
+import { AGY_INSTALLER_URL } from '../toolInstall'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
@@ -81,17 +82,26 @@ install_pkg() {
 
 have bash || install_pkg bash || exit 4
 
-if ! have claude; then
-  say "installing claude (official installer)"
-  if have curl; then curl -fsSL https://claude.ai/install.sh | bash
-  elif have wget; then wget -qO- https://claude.ai/install.sh | bash
-  else say "need curl or wget to install claude"; exit 4; fi
-  have claude || { say "claude did not install; see the output above"; exit 4; }
+program="\${1:-claude}"
+official_install() {
+  say "installing $1 (official installer)"
+  if have curl; then curl -fsSL "$2" | bash
+  elif have wget; then wget -qO- "$2" | bash
+  else say "need curl or wget to install $1"; exit 4; fi
+  have "$1" || { say "$1 did not install; see the output above"; exit 4; }
+}
+if [ "$program" = agy ]; then
+  # AGY§3
+  have agy || official_install agy ${AGY_INSTALLER_URL}
+else
+  have claude || official_install claude https://claude.ai/install.sh
+  ${ENSURE_CLAUDE_MINIMUM_FN.split('\n').join('\n  ')}
+  ensure_claude_minimum claude || exit 4
 fi
-${ENSURE_CLAUDE_MINIMUM_FN}
-ensure_claude_minimum claude || exit 4
 
 node_ok() {
+  # AGY§8
+  [ "$program" = agy ] && { node_runs; return; }
   have node || return 1
   v="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
   [ "\${v:-0}" -ge 20 ] 2>/dev/null

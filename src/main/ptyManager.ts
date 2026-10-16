@@ -54,7 +54,8 @@ const BRINGS_ITS_OWN_ENV: Record<TabKind, boolean> = {
   shell: false,
   claude: false,
   codex: true,
-  muse: true
+  muse: true,
+  agy: true
 }
 
 const UTIL_TITLE_POLL_MS = 1500

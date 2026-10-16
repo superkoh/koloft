@@ -244,12 +244,14 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
   })
 
-  it('supports every pair but Codex and Muse on a remote machine', () => {
+  it('supports every pair but Codex and Muse on a remote machine, and Antigravity there with what remote Claude Code has', () => {
     expect(SUPPORTED_PAIRS).toEqual({
       claude: { local: true, ssh: true },
       codex: { local: true, ssh: false },
-      muse: { local: true, ssh: false }
+      muse: { local: true, ssh: false },
+      agy: { local: true, ssh: true }
     })
+    expect(capabilitiesFor('agy', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
   })
 })
 
@@ -269,7 +271,7 @@ describe('shownAsInstalled (which tools a dialog offers while the installed-tool
 describe('effectiveBackend (what every direct entrance starts on a Mac that may have only one of the two CLIs)', () => {
   const methods = (defaultBackend: BackendId, codex = true) => ({
     defaultBackend,
-    enabled: { claude: true, codex, muse: true }
+    enabled: { claude: true, codex, muse: true, agy: true }
   })
   const have = (...ids: BackendId[]): ReadonlySet<BackendId> => new Set(ids)
 
@@ -281,6 +283,11 @@ describe('effectiveBackend (what every direct entrance starts on a Mac that may 
   it('starts the only method there is when the default is not installed', () => {
     expect(effectiveBackend(methods('claude'), have('codex'))).toBe('codex')
     expect(effectiveBackend(methods('codex'), have('claude'))).toBe('claude')
+  })
+
+  it('starts the first method that can run when the default cannot and several can', () => {
+    expect(effectiveBackend(methods('claude'), have('codex', 'muse'))).toBe('codex')
+    expect(effectiveBackend(methods('muse'), have('claude', 'codex'))).toBe('claude')
   })
 
   it('ignores an installed method the user switched off', () => {
