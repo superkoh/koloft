@@ -19,6 +19,7 @@ import {
   writeConductorMarker,
   removeConductorMarker,
   markAnswerable,
+  quotedPrompt,
   writeAllowFile
 } from '../../src/main/hooks'
 import { CODEX_GATE_HOOK_COMMAND } from '../../src/main/conductorGate'
@@ -490,6 +491,19 @@ describe('injected hook script', () => {
       expect(remindedQuote(prompt('tabLangHO', task), 'UserPromptSubmit')).toBe(
         '评估管家的权限范围'
       )
+    })
+
+    // ADR-0031
+    it('a task handed over with the owner’s last words is quoted by those words, not by the task another AI wrote in English, and Koloft reads them back whole for the next child down', () => {
+      const ownerWords = '帮我看看 "侧栏" 为什么\n变宽了 « » \\ 😀'
+      const task = withHandover(
+        { name: 'planner', id: 'abc-123', ownerWords },
+        'Read the brief at /tmp/brief.md and fix the sidebar width.'
+      )
+      expect(remindedQuote(prompt('tabLangOW', task), 'UserPromptSubmit')).toBe(ownerWords)
+      expect(remindedQuote(tool('tabLangOW'), 'PostToolUse')).toBe(ownerWords)
+      expect(quotedPrompt(regDir, 'tabLangOW')).toBe(ownerWords)
+      expect(quotedPrompt(regDir, 'tabLangNoPrompt')).toBeUndefined()
     })
 
     // CC§19

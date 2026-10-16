@@ -42,6 +42,25 @@ before they were skipped, 63% of the reminders over six days quoted a
 `<task-notification>` instead of the owner, and in Chinese turns the notes under such a
 quote were English 30% of the time against 13% under the owner's own words (67% against
 1% once the turn had been compacted, 37% against 15% past 60 tool calls).
+A session another session starts (`koloft session new`) is quoted by the owner's words,
+not by its task: the task is written by an AI, often in English (a path to a brief, or
+"Build PR 1: …") while the owner wrote Chinese, and a child quoting it answered the
+owner in English in its tab and its Discord thread. In the transcripts of 2026-10-10 to
+10-16, three children of a Chinese-speaking owner whose task was in English wrote 1 of
+24, 1 of 35 and 2 of 49 notes in Chinese. So Koloft puts the parent's own quote (a Claude parent's saved prompt; a Codex
+parent's last message from the owner that is neither a session's report nor Assist's
+wrapper, or, when another session started it, that session's words) into the handover preamble as "The owner last wrote: «…»", the hook
+quotes those words for a handover prompt that carries them, and the child's title is
+asked for in their language. A Codex child gets the same sentence in its developer
+instructions but no reminder after each tool, since Codex runs no Claude Code hook.
+Measured 2026-10-16 with fresh sessions, an English task and the shipped hook: Opus 5.5
+(`claude -p`) answered in Chinese 0 / 2 without the owner's words and 2 / 2 with them,
+its notes, its reply and the result it sent back alike; Codex 0.162 (`codex exec`, the
+preamble as developer instructions) 0 / 2 and 2 / 2, notes and reply alike. The parent's side — a sentence in
+Koloft's prompt and Assist's role asking for tasks and messages in the owner's language —
+is not measured where it matters: fresh Opus 5.5 parents given a Chinese request wrote
+their child's task in Chinese 4 / 4 with and without it, and a drifted long session was
+not reproduced.
 **Rejected**: repeating a generic sentence (above: it barely helped — the quote is what
 works). Naming the language ("Reply in Chinese") — Koloft would have to guess the
 language in a shell script, for every language; the quote lets the model see it.
