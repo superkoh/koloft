@@ -20,6 +20,11 @@ real model were used, neither needing a Meta account:
   muse call its tools). Its runs were in Docker, where muse's Linux sandbox
   (bubblewrap) cannot start, so a plain sandboxed shell command fails there.
 
+Re-checked on 1.4.9 (`Muse Code 1.4.9 (1.4.9-R6297.1)`) the same ways, October 2026:
+the 7501 frames, the hook events and their fields, `approval/listPending`, the session
+log's prompts, replies and renames, the live registry and `exec --json` are
+unchanged; what changed is in the bullets that name 1.4.9.
+
 A bullet measured only with `!cmd` (a shell command the user types into the TUI) says
 so; the model's own shell tool was checked against those on macOS with the fake model
 (§8). Nothing has been run against Meta's real API.
@@ -37,7 +42,8 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `-c run.developer_prompt="…"` reaches the model, but only until `/clear` (macOS
   measured: the second session's request carried no developer prompt). Koloft hands
   instructions over through a hook instead (§12).
-- `muse --version` prints `Muse Code 1.4.7 (1.4.7-R6101.1)`.
+- `muse --version` prints `Muse Code 1.4.7 (1.4.7-R6101.1)`; 1.4.9 prints
+  `Muse Code 1.4.9 (1.4.9-R6297.1)`.
 - `muse exec --json` prints one session-stream record per line; the answer is the
   `text` of the last `run.terminal.completed` record. `--no-session-log` keeps the run
   out of the session list; `--disable-reminders` skips muse's own reminder helpers. Both
@@ -215,6 +221,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `edit_file {path, find, replace}` take a `path` relative to `cwd` or absolute. The
   reminder helpers answer through a tool `submit_reminder_decision`, which fires
   `PreToolUse` too (fake model).
+- A `PreToolUse` hook cannot spare the user a question. 1.4.9 rejects a bare
+  `"permissionDecision":"allow"` ("requires updatedInput"); with `updatedInput` it is
+  taken, that object replaces the tool's input (`{}` empties it), and the question is
+  still asked as before (macOS VM, fake model).
+- `PermissionRequest` fires for a shell command's question, not for a network fetch's
+  (1.4.9).
 - A `PermissionRequest` hook can deny with `{"hookSpecificOutput":{"hookEventName":
   "PermissionRequest","decision":{"behavior":"deny","message":"…"}}}` but never
   approve (fake model).
@@ -303,7 +315,10 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - `--approval-judge off` with `--sandbox-network enabled` (no profile): no judge, a
   shell command leaving the sandbox still asks the user, a network fetch runs without
   asking (fake model). Without the network flag a network fetch asks the user too, and
-  on macOS so did file writes and other commands the judge would have reviewed.
+  on macOS 1.4.7 so did file writes and other commands the judge would have reviewed.
+  On macOS 1.4.9 `write_file` and `edit_file` inside the folder no longer ask; a
+  network fetch (without the network flag), a shell command of several stages (`a; b`),
+  a command leaving the sandbox and a write outside it still do.
 - `--approval-mode never` (alone, with `--sandbox-network enabled` or with
   `--approval-judge off`): nothing ever asks the user and no judge runs; every tool
   runs inside the sandbox, `web_fetch` included, and a shell command asking to leave
