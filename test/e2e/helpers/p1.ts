@@ -386,7 +386,9 @@ export function dialogPrimary(dlg: Locator): Locator {
   return dlg.locator('.modal-foot .btn-primary:not([aria-haspopup])')
 }
 
-export function agentRow(page: Page, method: 'Claude' | 'Codex' | 'Muse'): Locator {
+export type AgentName = 'Claude' | 'Codex' | 'Muse' | 'Antigravity'
+
+export function agentRow(page: Page, method: AgentName): Locator {
   return page
     .getByRole('listbox', { name: 'Agents' })
     .getByRole('option')
@@ -396,7 +398,7 @@ export function agentRow(page: Page, method: 'Claude' | 'Codex' | 'Muse'): Locat
 export async function pickAgent(
   page: Page,
   from: Locator,
-  method: 'Claude' | 'Codex' | 'Muse'
+  method: AgentName
 ): Promise<void> {
   await from.getByRole('button', { name: 'Pick an agent' }).click()
   await agentRow(page, method).click()
@@ -404,7 +406,7 @@ export async function pickAgent(
 
 export async function chooseBackend(
   page: Page,
-  which: 'default' | 'Claude' | 'Codex' | 'Muse'
+  which: 'default' | AgentName
 ): Promise<void> {
   const dialog = page.locator('.modal.wspicker, .modal.worktreesess')
   if (which === 'default') {
@@ -418,7 +420,7 @@ export async function chooseBackend(
 export async function newSessionInWith(
   page: Page,
   wsName: string,
-  method: 'Claude' | 'Codex' | 'Muse'
+  method: AgentName
 ): Promise<void> {
   await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
   await page.locator('.menu .mi', { hasText: `New ${method} session` }).click()
