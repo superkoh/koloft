@@ -30,10 +30,22 @@ function onMergeSignal(): void {
   armRepair(false)
 }
 
+type AtlasPageRow = { currentRow: { x: number; y: number } }
+
+// PLATFORM§23
+function letClearRunOnAFirstPageThatLooksEmpty(addon: WebglAddon): void {
+  const firstPage = (addon as unknown as { _renderer?: { _charAtlas?: { pages: AtlasPageRow[] } } })
+    ._renderer?._charAtlas?.pages[0]
+  if (firstPage && firstPage.currentRow.x === 0 && firstPage.currentRow.y === 0) {
+    firstPage.currentRow.x = 1
+  }
+}
+
 // PLATFORM§20 PLATFORM§23
 export function repairAllWebgl(): void {
   for (const e of live.values()) {
     try {
+      letClearRunOnAFirstPageThatLooksEmpty(e.addon)
       e.addon.clearTextureAtlas()
     } catch {}
   }
