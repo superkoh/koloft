@@ -43,7 +43,7 @@ import {
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_REPLY_LANGUAGE_HOOKS,
   CODEX_SAID_ENV,
-  seedCodexOwnerWords
+  seedHandedOverOwnerWords
 } from './hooks'
 import { acceptCodexHookTrust, codexConfigFile, codexHookTrusted } from './codexTrust'
 import {
@@ -1022,7 +1022,7 @@ export class CodexSessions {
     )
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const said = path.join(openShim.shimDir, 'said')
-    if (opts.ownerWords) seedCodexOwnerWords(said, opts.ownerWords)
+    if (opts.ownerWords) seedHandedOverOwnerWords(said, opts.ownerWords)
     const observer = new CodexObservation(observe)
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('codex')] : []),

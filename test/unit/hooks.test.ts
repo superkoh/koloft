@@ -21,7 +21,7 @@ import {
   markAnswerable,
   quotedPrompt,
   saidFile,
-  seedCodexOwnerWords,
+  seedHandedOverOwnerWords,
   seedOwnerWords,
   writeAllowFile
 } from '../../src/main/hooks'
@@ -530,7 +530,7 @@ describe('injected hook script', () => {
       expect(remindedQuote(codexPrompt(report), 'UserPromptSubmit')).toBe('先看看测试为什么挂')
 
       const seeded = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-said-')), 'said')
-      seedCodexOwnerWords(seeded, '帮我看看侧栏')
+      seedHandedOverOwnerWords(seeded, '帮我看看侧栏')
       const child = (event: string, payload: unknown): string =>
         spawnSync('bash', [codexReplyLanguage, event], {
           input: JSON.stringify(payload),
@@ -546,24 +546,26 @@ describe('injected hook script', () => {
     })
 
     // ADR-0031
-    it('a task handed over with the owner’s last words is quoted by those words, not by the task another AI wrote in English, whatever language the handover is in, and Koloft reads them back whole for the next child down', async () => {
+    it('a Claude child Koloft saved the owner’s last words for is quoted by those words, not by its handed-over task in whatever language, Koloft reads them back whole for the next child down, and the owner’s next prompt replaces them', async () => {
       const ownerWords = '帮我看看 "侧栏" 为什么\n变宽了 « » \\ 😀'
       const caller = { name: 'planner', id: 'abc-123', ownerWords }
       const translated = await handoverInOwnersLanguage(
         caller,
         async () =>
-          'Japanese\nKoloft が起動したのは、会話 {caller} が頼んだからです。« » の中の言葉だけが持ち主のものです。終わったら »\\n 次を実行して結果を返してください：'
+          'Japanese\nKoloft が起動したのは、会話 {caller} が頼んだからです。持ち主が最後に書いたのは {owner} です。終わったら次を実行して結果を返してください：'
       )
-      const brief =
-        'Read the brief at /tmp/brief.md and fix the sidebar width.\n«quoted»\n\nThen test.'
+      const brief = 'Read the brief at /tmp/brief.md and fix the sidebar width.'
       for (const [tab, preamble] of [
         ['tabLangOW', handoverPreamble(caller)],
         ['tabLangOWJa', translated]
       ]) {
-        const task = withHandover(preamble, brief)
-        expect(remindedQuote(prompt(tab, task), 'UserPromptSubmit')).toBe(ownerWords)
+        seedHandedOverOwnerWords(saidFile(regDir, tab), ownerWords)
+        expect(remindedQuote(prompt(tab, withHandover(preamble, brief)), 'UserPromptSubmit')).toBe(
+          ownerWords
+        )
         expect(remindedQuote(tool(tab), 'PostToolUse')).toBe(ownerWords)
         expect(quotedPrompt(regDir, tab)).toBe(ownerWords)
+        expect(remindedQuote(prompt(tab, '再改一下'), 'UserPromptSubmit')).toBe('再改一下')
       }
       expect(quotedPrompt(regDir, 'tabLangNoPrompt')).toBeUndefined()
     })

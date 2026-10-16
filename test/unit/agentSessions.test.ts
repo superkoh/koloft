@@ -450,15 +450,16 @@ describe('koloft session new', () => {
   // ADR-0031
   it.each([
     [
-      'Chinese\n\nKoloft 启动了你，因为会话 {caller} 请它这么做。做完后运行这条命令发回结果：\n',
+      'Chinese\n\nKoloft 启动了你，因为会话 {caller} 请它这么做。主人最后写的是 {owner}。做完后运行这条命令发回结果：\n',
       true
     ],
-    ['Chinese\nKoloft 启动了你，因为会话请它这么做。', false],
-    ['Chinese\nKoloft 启动了你，因为会话 {caller} 请它这么做。\n做完后发回结果：', false],
-    ['Koloft 启动了你，因为会话 {caller} 请它这么做。做完后运行这条命令发回结果：', false],
+    ['Chinese\nKoloft 启动了你，因为会话 {caller} 请它这么做。做完后运行：', false],
+    ['Chinese\nKoloft 启动了你，因为会话请它这么做。主人最后写的是 {owner}。', false],
+    ['Chinese\nKoloft 启动了你，因为会话 {caller} 请它这么做。\n主人最后写的是 {owner}。', false],
+    ['Koloft 启动了你，因为会话 {caller} 请它这么做。主人最后写的是 {owner}。', false],
     [null, false]
   ])(
-    'a child’s handover is written in the language of the owner’s words, keeping those words, the caller and the koloft session send command exact, and stays English when the model’s reply %j is not the language’s name and then one line with the caller in it',
+    'a child’s handover is written in the language of the owner’s words, keeping those words, the caller and the koloft session send command exact, Koloft hands the words to the launch for the child’s reply-language hook, and the note stays English when the model’s reply %j is not the language’s name and then one line holding the caller and the owner’s words once each',
     async (translation, translated) => {
       const { verb, launched } = harness(
         [session('me', 'claude'), session('cx', 'codex', { nativeSessionId: CODEX_THREAD })],
@@ -487,16 +488,16 @@ describe('koloft session new', () => {
           ]
       expect(launched[0].firstPrompt).toMatch(
         new RegExp(
-          `^«先把侧栏修好»\\n${claudeCaller}[^\\n]* koloft session send me-session "<your result>"\\n\\nFix the sidebar\\.$`
+          `^${claudeCaller}[^\\n]*«先把侧栏修好»[^\\n]* koloft session send me-session "<your result>"\\n\\nFix the sidebar\\.$`
         )
       )
       expect(launched[1].firstPrompt).toBe('Fix the sidebar.')
-      expect(launched[1].ownerWords).toBe('先把侧栏修好')
       expect(launched[1].role).toMatch(
         new RegExp(
-          `^«先把侧栏修好»\\n${codexCaller}[^\\n]* koloft session send ${CODEX_THREAD} "<your result>"$`
+          `^${codexCaller}[^\\n]*«先把侧栏修好»[^\\n]* koloft session send ${CODEX_THREAD} "<your result>"$`
         )
       )
+      expect(launched.map((l) => l.ownerWords)).toEqual(['先把侧栏修好', '先把侧栏修好'])
     }
   )
 

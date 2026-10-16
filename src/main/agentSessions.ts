@@ -460,9 +460,10 @@ async function startSibling(
     model: args.model,
     // ADR-0028
     permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
+    ownerWords,
     // CODEX§17
     ...(backend === 'codex'
-      ? { role: preamble, firstPrompt: args.prompt, ownerWords }
+      ? { role: preamble, firstPrompt: args.prompt }
       : { firstPrompt: withHandover(preamble, args.prompt) })
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')

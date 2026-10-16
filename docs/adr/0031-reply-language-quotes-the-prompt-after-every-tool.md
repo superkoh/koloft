@@ -53,32 +53,35 @@ owner in English in its tab and its Discord thread. In the transcripts of 2026-1
 10-16, three children of a Chinese-speaking owner whose task was in English wrote 1 of
 24, 1 of 35 and 2 of 49 notes in Chinese. So Koloft puts the parent's own quote (a Claude parent's saved prompt; a Codex
 parent's last message from the owner that is neither a session's report nor Assist's
-wrapper, or, when another session started it, that session's words) at the top of the handover preamble, on a line of its own inside « », the hook
-quotes those words for a handover prompt that starts that way, and the child's title is
-asked for in their language.
+wrapper, or, when another session started it, that session's words) into the handover preamble as "The owner last wrote: «…»", Koloft writes those words as the child's
+saved words before it starts, local or on a remote machine (through the tab package), so
+its hook quotes them and skips its handed-over task, and the child's title is asked for in
+their language.
 The rest of the preamble is in the owner's language too: an owner reading a child's tab
 met a paragraph of English before the task (2026-10-16). Assist's one-shot model
 translates Koloft's English sentence into the language of the owner's words; Koloft
 puts the owner's words, the caller's name and the `koloft session send` command in
 itself, so the model cannot change them, and keeps the English sentence when the call
-fails or the reply is not the language's name followed by one line holding the caller's
-slot. The owner's words open the preamble on a line of their own because that is the one
-spot the hook (sed, for any language) and the title code can still find once the words
-around them are not English. The model names the language before it translates, and is
-told to keep the text when the owner wrote English: asked only to translate "into the
-language of these words", gpt-6-luna wrote Spanish or Italian for Chinese and Japanese
-words 3 times in 10, and both models turned English text into French 3 times in 8. With
-the shipped prompt, measured 2026-10-16 (Haiku through `claude -p` and gpt-6-luna through
-`codex exec`, Assist's own one-shot arguments, owner words in Chinese, Japanese, Korean,
-Spanish and English, 5 runs each per model): every reply was in the owner's language or,
-for English, stayed English (0 of 50 in a wrong language), and each took 3.4–10.5 s,
-run beside the title call. Then fresh children read those preambles with an
-English task (read a file of English feedback, count it, report back), 2 Chinese and 2
-Japanese owners × 3 translated and 1 English-fallback preamble: Opus 5.5 (`claude -p`, the
-shipped hook) and Codex 0.162 (`codex exec`, the preamble as developer instructions, no
-hook) each answered and ran `koloft session send` with a result in the owner's language
-8 / 8; Opus wrote one short English note mid-turn in each Chinese run, translated or not
-(4 of its 8 notes and replies there), and none in Japanese; Codex none. What the owner types in ⌘P counts as their words too: a
+fails or the reply is not the language's name followed by one line holding each slot once.
+The hook no longer reads the owner's words out of the preamble, since a translated one has
+no fixed words to find them by. They stay inside the sentence: put alone on the first line,
+they read as an order — Sonnet 5.5 children ran their parent's "Run these shell commands…
+koloft session new …" again and again, 13 sessions where one was asked for. The model names
+the language before it translates, and is told to keep the text when the owner wrote
+English: asked only to translate "into the language of these words", gpt-6-luna wrote
+Spanish or Italian for Chinese and Japanese words 3 times in 10, and both models turned
+English text into French 3 times in 8. With the shipped prompt, measured 2026-10-16 (Haiku
+through `claude -p` and gpt-6-luna through `codex exec`, Assist's own one-shot arguments,
+owner words in Chinese, Japanese, Korean, Spanish and English, 5 runs each per model): 0 of
+50 replies in a wrong language; English stayed English 10 / 10; the other 40 came back
+translated 37 times and fell back to English 3 times; each call took 3.3–7.9 s, run beside
+the title call. Then fresh children read those preambles with an English task (read a file
+of English feedback, count it, report back), 2 Chinese and 2 Japanese owners × 3 translated
+and 1 English preamble: Opus 5.5 (`claude -p`, the shipped hook, its words saved as Koloft
+saves them) and Codex 0.162 (`codex exec`, the preamble as developer instructions, no hook)
+each replied and ran `koloft session send` with a result in the owner's language 8 / 8;
+Opus wrote one short English note mid-turn in 7 of its 8 runs, translated or not, Codex
+none. What the owner types in ⌘P counts as their words too: a
 new Assist task starts with them as its first prompt, not the English "Do the task in
 your instructions now." the hook would otherwise quote (a ⌘P task's saved words read
 just that, so its children were told the owner wrote English), and when they reach a

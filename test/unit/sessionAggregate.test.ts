@@ -620,7 +620,7 @@ describe('extractJsonlMeta', () => {
       const task = 'Look into why the sidebar is slow.\n\nStart with the profiler.'
       for (const translation of [
         null,
-        'Chinese\nKoloft 启动了你，因为 {caller} 请它这么做。做完后运行：'
+        'Chinese\nKoloft 启动了你，因为 {caller} 请它这么做。主人最后写的是 {owner}。做完后运行：'
       ]) {
         const preamble = await handoverInOwnersLanguage(caller, async () => translation)
         expect(extractJsonlMeta([userLine(withHandover(preamble, task))]).firstUserText).toBe(task)

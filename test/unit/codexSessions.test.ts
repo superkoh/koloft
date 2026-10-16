@@ -695,7 +695,7 @@ describe('CodexSessions', () => {
     await sessions.launch({
       kind: 'codex',
       cwd: repo,
-      role: '«把侧栏修好»\nKoloft 启动了你。',
+      role: 'Koloft 启动了你。主人最后写的是 «把侧栏修好»。',
       firstPrompt: 'Fix the sidebar.',
       ownerWords: '把侧栏修好'
     })
