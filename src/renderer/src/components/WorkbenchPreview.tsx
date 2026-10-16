@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type JSX } from 'react'
-import { LuFileText, LuGlobe, LuListTree } from 'react-icons/lu'
+import { IconFile, IconFiles, IconWebPage } from '../icons'
 import { routeFor } from '@shared/browserRoute'
 import { basename, dirname } from '@shared/preview'
 import type { SessionInfo } from '@shared/types'
@@ -75,7 +75,7 @@ export function WorkbenchPreview({
             onClick={() => useStore.getState().openChanges(tabId)}
           >
             <span className="ic">
-              <LuListTree size={13} />
+              <IconFiles size={13} />
             </span>
             <FilesTabLabel totals={totals} />
           </span>
@@ -94,7 +94,7 @@ export function WorkbenchPreview({
               onClick={() => openDoc(tabId, d)}
             >
               <span className="ft-icon">
-                {d.kind === 'page' ? <LuGlobe size={13} /> : <LuFileText size={13} />}
+                {d.kind === 'page' ? <IconWebPage size={13} /> : <IconFile size={13} />}
               </span>
               <span className="ft-name">{basename(d.src)}</span>
               <span className="wb-peek-dir">{docDir(d.src, root)}</span>
