@@ -138,7 +138,9 @@ export const ASSIST_ALLOW_ENV = 'KOLOFT_ASSIST_ALLOW'
 
 // CODEX§27
 export const CODEX_GATE_HOOK_COMMAND = `sh "$${CODEX_GATE_ENV}"`
-export const CODEX_GATE_OVERRIDE = `hooks.PreToolUse=[{hooks=[{type="command",command=${JSON.stringify(CODEX_GATE_HOOK_COMMAND)}}]}]`
+export const codexHookOverride = (event: string, command: string): string =>
+  `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(command)}}]}]`
+export const CODEX_GATE_OVERRIDE = codexHookOverride('PreToolUse', CODEX_GATE_HOOK_COMMAND)
 
 // CODEX§20
 export const CODEX_ASKS_AND_WAITS = 'features.default_mode_request_user_input=true'

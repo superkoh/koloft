@@ -152,7 +152,12 @@ import {
   validateNewAccount
 } from './accounts'
 import { probeAccount, shouldSkipFable } from './usageProbe'
-import { AccountPicker, PROBE_TIMEOUT_MS, type PickResponse } from './accountPicker'
+import {
+  AccountPicker,
+  PROBE_TIMEOUT_MS,
+  codexLaunchBanner,
+  type PickResponse
+} from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
@@ -170,7 +175,6 @@ import {
 import {
   CodexAccountPicker,
   codexHomeOf,
-  codexLaunchBanner,
   codexHomes,
   limitsFrom,
   prepareCodexHome
@@ -951,7 +955,7 @@ async function codexAskOf(tabId: string): Promise<CodexApproval | CodexQuestion 
   for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
     const ask = codexSessions?.openApproval(tabId) ?? codexSessions?.openQuestion(tabId)
     if (ask || !polls || !codexSessions?.hasTab(tabId)) return ask
-    if (tracker.statusOf(tabId) !== 'approval' && !tracker.awaitsInput(tabId)) return undefined
+    if (tracker.statusOf(tabId) !== 'approval') return undefined
     await sleep(CODEX_REQUEST_POLL_MS)
   }
 }
@@ -2310,7 +2314,6 @@ app.whenReady().then(() => {
       return { name, backend: s.backendId, workspace: sessionBackends.workspaceOfTab(tabId) }
     },
     status: (tabId) => tracker.statusOf(tabId),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
     unknown: (tabId) => statusUnavailable(sessionOfTab(tabId)),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
@@ -2453,7 +2456,6 @@ app.whenReady().then(() => {
         : undefined
     },
     shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
-    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     commandRunning: (tabId) => slash.running(tabId),
     dialog: dialogOf
   })

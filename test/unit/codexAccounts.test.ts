@@ -2,12 +2,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { describe, expect, it } from 'vitest'
-import {
-  CodexAccountPicker,
-  codexLaunchBanner,
-  limitsFrom,
-  prepareCodexHome
-} from '../../src/main/codexAccounts'
+import { CodexAccountPicker, limitsFrom, prepareCodexHome } from '../../src/main/codexAccounts'
+import { codexLaunchBanner } from '../../src/main/accountPicker'
 import { windowLabel } from '../../src/shared/accountUsage'
 import type { AccountView } from '../../src/shared/types'
 

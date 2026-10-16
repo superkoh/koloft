@@ -1,5 +1,4 @@
 import fs from 'fs'
-import { realpathSafe } from './projectInfo'
 import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
@@ -37,10 +36,11 @@ import {
   CODEX_GATE_ENV,
   CODEX_GATE_HOOK_COMMAND,
   CODEX_GATE_NOT_TRUSTED,
+  codexHookOverride,
   CODEX_ASKS_AND_WAITS
 } from './conductorGate'
 import { CODEX_REPLY_LANGUAGE_ENV, CODEX_REPLY_LANGUAGE_HOOKS, CODEX_SAID_ENV } from './hooks'
-import { acceptCodexHookTrust, codexConfigFile } from './codexTrust'
+import { acceptCodexHookTrust, codexConfigFile, codexHookTrusted } from './codexTrust'
 import {
   CODEX_OPEN_SHIM_FOLDER,
   CODEX_TMP_DIR,
@@ -140,7 +140,7 @@ export function playwrightEnvOverrides(mcpServers: unknown, approveTools = false
   })
 }
 
-interface GateHook {
+interface ListedHook {
   key: string
   command: string
   currentHash: string
@@ -167,14 +167,11 @@ interface KoloftHook {
 const GATE_HOOK: KoloftHook = { event: 'PreToolUse', command: CODEX_GATE_HOOK_COMMAND }
 
 const hookOverrides = (hooks: KoloftHook[]): string[] =>
-  hooks.map(
-    ({ event, command }) =>
-      `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(command)}}]}]`
-  )
+  hooks.map(({ event, command }) => codexHookOverride(event, command))
 
 // CODEX§27
-function koloftHooksIn(reply: unknown, wanted: KoloftHook[]): GateHook[] {
-  const found: GateHook[] = []
+function koloftHooksIn(reply: unknown, wanted: KoloftHook[]): ListedHook[] {
+  const found: ListedHook[] = []
   const lists = record(reply).data
   for (const list of Array.isArray(lists) ? lists : []) {
     const hooks = record(list).hooks
@@ -325,7 +322,7 @@ interface Run {
 export class CodexSessions {
   private crashLeftoversEnded?: Promise<void>
   private runs = new Map<string, Run>()
-  private hooksTrustedAt = new Map<string, { at: number | undefined; trusted: Set<string> }>()
+  private listedHooks = new Map<string, ListedHook>()
   private history = new Map<string, CodexThread>()
   private archivedIds = new Set<string>()
   private binary?: string
@@ -494,21 +491,16 @@ export class CodexSessions {
     configFile: string,
     wanted: KoloftHook[]
   ): Promise<Set<string>> {
-    const file = realpathSafe(configFile)
-    const key = [file, ...wanted.map((w) => w.command)].join('\n')
-    const changedAt = (): number | undefined => {
-      try {
-        return fs.statSync(file).mtimeMs
-      } catch {
-        return undefined
-      }
-    }
-    const known = this.hooksTrustedAt.get(key)
-    if (known && known.at === changedAt()) return known.trusted
-    const trusted = await this.askHookTrust(launch, configFile, wanted)
-    const at = changedAt()
-    if (at !== undefined) this.hooksTrustedAt.set(key, { at, trusted })
-    return trusted
+    const onDisk = wanted.filter((w) => {
+      const hook = this.listedHooks.get(w.command)
+      return !!hook && codexHookTrusted(configFile, hook.key, hook.currentHash)
+    })
+    if (onDisk.length === wanted.length) return new Set(wanted.map((w) => w.command))
+    return this.askHookTrust(
+      { ...launch, configOverrides: [...(launch.configOverrides ?? []), ...hookOverrides(wanted)] },
+      configFile,
+      wanted
+    )
   }
 
   // CODEX§27
@@ -519,11 +511,14 @@ export class CodexSessions {
   ): Promise<Set<string>> {
     const rpc = new CodexRpc(launch)
     try {
-      const listed = async (): Promise<GateHook[]> =>
-        koloftHooksIn(
+      const listed = async (): Promise<ListedHook[]> => {
+        const hooks = koloftHooksIn(
           await rpc.request('hooks/list', { cwds: [launch.cwd] }).catch(() => undefined),
           wanted
         )
+        for (const hook of hooks) this.listedHooks.set(hook.command, hook)
+        return hooks
+      }
       const first = await listed()
       const untrusted = first.filter((h) => h.trustStatus !== 'trusted')
       for (const h of untrusted)
@@ -1054,19 +1049,19 @@ export class CodexSessions {
     let transport: CodexTransport | undefined
     try {
       // ADR-0029 ADR-0031
-      const withHooks = (some: KoloftHook[]): CodexProcessOptions => ({
-        ...processOptions,
-        configOverrides: [...processOptions.configOverrides!, ...hookOverrides(some)]
-      })
       const trusted = await this.trustKoloftHooks(
-        withHooks(hooks),
+        processOptions,
         codexConfigFile(this.envFor(home)),
         hooks
       )
       if (conductor && !trusted.has(GATE_HOOK.command)) throw new Error(CODEX_GATE_NOT_TRUSTED)
       this.assertStarting()
       transport = await this.startTransport({
-        ...withHooks(hooks.filter((h) => trusted.has(h.command))),
+        ...processOptions,
+        configOverrides: [
+          ...processOptions.configOverrides!,
+          ...hookOverrides(hooks.filter((h) => trusted.has(h.command)))
+        ],
         onFrame: (direction, frame) => observer.receive(direction, frame),
         onDisconnect: () => this.markDegraded(run),
         onError: (error) => {

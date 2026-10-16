@@ -1,10 +1,19 @@
-import type { AccountKind, AccountMeta, SessionInfo, UsageSnapshot } from '@shared/types'
+import type {
+  AccountKind,
+  AccountMeta,
+  AccountView,
+  SessionInfo,
+  UsageSnapshot
+} from '@shared/types'
 import {
+  codexBackAt,
+  codexWalled,
   fableExhausted,
   keepsResumedSession,
   resetElapsed,
   STALE_MS,
-  usableAccounts
+  usableAccounts,
+  windowLabel
 } from '@shared/accountUsage'
 import { ageLabel } from '@shared/freshnessOps'
 import {
@@ -63,7 +72,7 @@ export type PickResponse =
     }
   | { account: null; reason: 'no-accounts' | 'no-usable' }
 
-export function pct(v: number): string {
+function pct(v: number): string {
   return `${Math.round(v * 100)}%`
 }
 
@@ -80,6 +89,19 @@ function bannerFor(
   return s
 }
 
+export function codexLaunchBanner(a: AccountView, nowMs: number): string {
+  const l = a.limits
+  if (!l) return `koloft: → ${a.name}`
+  if (codexWalled(l))
+    return `koloft: every account rate-limited → ${a.name} (${fmtReset(codexBackAt(l))})`
+  const parts = [
+    `koloft: → ${a.name}`,
+    ...l.windows.map((w) => `${windowLabel(w.minutes)} ${pct(w.used)}`)
+  ]
+  if (nowMs - l.at > STALE_MS) parts.push(ageLabel(l.at, nowMs))
+  return parts.join(' · ')
+}
+
 function fallbackTag(a: AccountMeta): string {
   return a.kind === 'custom'
     ? `${a.name} (custom endpoint${a.model ? ` · ${a.model}` : ''})`
@@ -90,7 +112,7 @@ function fallbackBanner(a: AccountMeta): string {
   return `koloft: → ${fallbackTag(a)}`
 }
 
-export function fmtReset(epoch: number): string {
+function fmtReset(epoch: number): string {
   if (epoch <= 0) return '?'
   const d = new Date(epoch * 1000)
   const hh = String(d.getHours()).padStart(2, '0')

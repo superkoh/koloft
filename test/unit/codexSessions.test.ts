@@ -1035,15 +1035,21 @@ describe('CodexSessions', () => {
     const trustedOnDisk = (): boolean => fs.readFileSync(shared, 'utf8').includes(GATE_HASH)
     mocks.request.mockImplementation(async (method: string) =>
       method === 'hooks/list'
-        ? gateListing(trustedOnDisk() ? 'trusted' : 'modified')
+        ? gateListing(trustedOnDisk() ? 'trusted' : 'modified', [
+            GATE_LISTED,
+            ...REPLY_LANGUAGE_LISTED
+          ])
         : { data: [], nextCursor: null }
     )
 
     await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })
     expect(fs.lstatSync(path.join(home, 'config.toml')).isSymbolicLink()).toBe(true)
-    expect(fs.readFileSync(shared, 'utf8')).toBe(
-      `model = "gpt-5"\n\n[hooks.state."${GATE_KEY}"]\ntrusted_hash = "${GATE_HASH}"\n`
-    )
+    const written = fs.readFileSync(shared, 'utf8')
+    expect(written.startsWith('model = "gpt-5"\n')).toBe(true)
+    expect(written.split(`[hooks.state."${GATE_KEY}"]\n`)).toHaveLength(2)
+    expect(written).toContain(`[hooks.state."${GATE_KEY}"]\ntrusted_hash = "${GATE_HASH}"\n`)
+    for (const { key } of REPLY_LANGUAGE_LISTED)
+      expect(written).toContain(`[hooks.state."${key}"]\ntrusted_hash = "${GATE_HASH}"\n`)
     expect(transports).toHaveLength(1)
 
     const asks = (): number =>
