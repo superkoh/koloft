@@ -356,3 +356,20 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   approval prompts are disabled" (fake model, Docker and macOS).
 - `--permission-profile :unrestricted`: no sandbox, no prompts; a command asking to
   leave the sandbox is refused rather than asked.
+
+## §16 Skills
+
+- 1.4.9 loads a user skill from `$XDG_CONFIG_HOME/muse/skills/<id>/SKILL.md` and a
+  project skill from `<workspace>/.agents/skills/<id>/SKILL.md` (only in a trusted
+  folder). No `skills/.muse` folder is needed; `muse skills install` makes one. No
+  flag, `-c` key or environment variable points muse at another skills folder
+  (fake model, Docker).
+- A skill folder that is a symlink to a folder elsewhere loads like a real one; a real
+  folder whose `SKILL.md` alone is a symlink is not loaded and gives no diagnostic
+  (fake model, Docker).
+- The model is handed only each skill's frontmatter `description`, in the first
+  developer message of every session, `/clear` included; it reads the body with
+  `read_skill`. A `SKILL.md` over 262 144 bytes is not loaded.
+- A skill is switched off per user with `skills.activation.user` in `settings.json`,
+  keyed by its display path (`"$CONFIG_DIR/skills/<id>/SKILL.md": "off"`); the same
+  map given with `-c` holds only until `/clear`, and keyed by bare id it does nothing.

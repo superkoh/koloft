@@ -49,6 +49,30 @@ function linkBack(own: string, owners: string): void {
   fs.symlinkSync(owners, own)
 }
 
+const KOLOFT_SKILL = 'koloft'
+
+// MUSE§16
+function linkOwnersSkills(own: string, owners: string): void {
+  fs.mkdirSync(own, { recursive: true })
+  let skills: string[] = []
+  try {
+    skills = fs.readdirSync(owners)
+  } catch {}
+  for (const skill of skills) {
+    const mine = path.join(own, skill)
+    if (skill === KOLOFT_SKILL || fs.lstatSync(mine, { throwIfNoEntry: false })) continue
+    fs.symlinkSync(path.join(owners, skill), mine)
+  }
+}
+
+// MUSE§16
+export function placeKoloftSkill(home: string, skill: string | undefined): void {
+  const dir = path.join(home, 'muse', 'skills', KOLOFT_SKILL)
+  if (!skill) return fs.rmSync(dir, { recursive: true, force: true })
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'SKILL.md'), skill)
+}
+
 // MUSE§2 MUSE§13
 export function prepareMuseHome(home: string, ownersConfig: string): void {
   const own = path.join(home, 'muse')
@@ -56,6 +80,7 @@ export function prepareMuseHome(home: string, ownersConfig: string): void {
   fs.mkdirSync(path.join(ownersConfig, 'muse'), { recursive: true })
   for (const name of SHARED_WITH_THE_OWNER)
     linkBack(path.join(own, name), path.join(ownersConfig, 'muse', name))
+  linkOwnersSkills(path.join(own, 'skills'), path.join(ownersConfig, 'muse', 'skills'))
   let entries: string[] = []
   try {
     entries = fs.readdirSync(ownersConfig)
