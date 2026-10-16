@@ -28,15 +28,17 @@ const translateInstructions = (ownerWords: string): string =>
   `Keep ${CALLER_SLOT}, ${OWNER_WORDS_SLOT}, the name Koloft and the marks ${OWNER_QUOTE_MARKS} exactly as they are. ` +
   'Reply with two lines and nothing else: first the English name of the language the person wrote in, then the text.\n\nText:\n'
 
+const namedSession = (caller: SessionCaller): boolean => !!caller.name
+
 function englishProse(caller: SessionCaller): string {
-  const who = caller.name ? `the session ${CALLER_SLOT}` : `the Codex session ${CALLER_SLOT}`
+  const who = `${namedSession(caller) ? 'the session' : 'the Codex session'} ${CALLER_SLOT}`
   const trust = caller.assist ? TRUST_ONLY_THE_OWNERS_QUOTED_WORDS : TRUST_THE_CALLER
   const language = caller.ownerWords ? ` ${ANSWER_IN_THE_OWNERS_LANGUAGE}` : ''
   return `${HANDOVER_OPENING}${who} asked it to, for the owner (the person you both work for). ${trust}${language} When you finish a task it gives you, send the result back by running:`
 }
 
 function preambleFrom(caller: SessionCaller, prose: string): string {
-  const callerRef = caller.name ? `"${caller.name}"` : caller.id
+  const callerRef = namedSession(caller) ? `"${caller.name}"` : caller.id
   const filled = prose
     .replace(CALLER_SLOT, () => callerRef)
     .replace(OWNER_WORDS_SLOT, () => `«${caller.ownerWords}»`)
