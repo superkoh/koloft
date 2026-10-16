@@ -383,7 +383,7 @@ export function worktreeDialog(page: Page): Locator {
 }
 
 export function dialogPrimary(dlg: Locator): Locator {
-  return dlg.locator('.modal-foot .btn-primary')
+  return dlg.locator('.modal-foot .btn-primary:not([aria-haspopup])')
 }
 
 export function agentRow(page: Page, method: 'Claude' | 'Codex' | 'Muse'): Locator {
