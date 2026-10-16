@@ -1097,6 +1097,45 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  // ADR-0031 CODEX§27
+  test("a Codex tab's own app-server runs Koloft's reply-language hooks once Koloft has trusted them: the prompt and every tool call hand Codex the owner's latest words", async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await runIn(page, centerTerm(page), '/koloft help')
+      const handed = (): { event: string; context: string }[] =>
+        fs
+          .readFileSync(path.join(env.home, 'fake-codex-hook-output.jsonl'), 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as { event: string; stdout: string })
+          .filter((h) => h.stdout)
+          .map((h) => ({
+            event: h.event,
+            context: (JSON.parse(h.stdout) as { hookSpecificOutput: { additionalContext: string } })
+              .hookSpecificOutput.additionalContext
+          }))
+      await expect
+        .poll(() => {
+          try {
+            return handed()
+              .filter((h) => h.context.includes('«/koloft help»'))
+              .map((h) => h.event)
+          } catch {
+            return []
+          }
+        })
+        .toEqual(['UserPromptSubmit', 'PostToolUse'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('Codex approval, interruption and close confirmation use the shared session controls', async ({
     env
   }) => {
