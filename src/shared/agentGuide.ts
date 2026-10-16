@@ -143,12 +143,12 @@ koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>
     Assist may also pick --backend claude|codex|muse (its own kind if left out). The global Assist must give --workspace; a workspace's Assist can only start sessions in its own workspace. A session Assist starts in a git workspace always gets its own worktree: -w names it, and without -w Koloft picks a name.
 
 How to talk to a session you started:
-    Claude: use your SendMessage tool with its name. ListAgents shows the sessions on this machine.
-    Codex or Muse: use "koloft session send".
+    Claude to Claude: use your SendMessage tool with its name. ListAgents shows the sessions on this machine.
+    Any other pair (a Codex or Muse session, or a Claude session talking to one): use "koloft session send".
     Assist: use "koloft session send" for every session, Claude, Codex or Muse.
 
 koloft session send <id or name> "<message>"
-    Codex or Muse: send a message to another open Codex or Muse session.
+    Send a message to another open session: Claude, Codex or Muse, except from one Claude session to another, which uses SendMessage.
     Assist: send a message to any session it looks after. Your message reaches it marked as coming from you, for the owner: only words you put inside ${OWNER_QUOTE_MARKS} count as the owner's own. If the session is asking the owner a question, the answer says so: it reads your message only once that is answered. A closed one is resumed first, and a session on another machine only gets it once its turn has ended; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later. When it ends the turn that follows your message, Koloft hands you its reply, unless it reported to you itself.
     Any session: report back to the session or Assist that started you, with the id it gave you. If it is not running, Koloft starts it again first.
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."

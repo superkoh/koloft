@@ -239,7 +239,7 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'this is for Codex and Muse sessions, and for reporting to the session or Assist that started you, by the id in your first message. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
+  'a Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names. This command reaches Codex and Muse sessions, and the session or Assist that started you.'
 
 function matchRef<T>(
   items: T[],
@@ -265,10 +265,16 @@ function matchOpen(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> | 
   )
 }
 
-export function findSiblingTarget(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> {
+export function findSiblingTarget(
+  sessions: SessionInfo[],
+  ref: string,
+  from: BackendId
+): Parsed<SessionInfo> {
   const hit = matchOpen(sessions, ref)
   if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
-  return !hit.ok || hit.value.backendId !== 'claude' ? hit : fail(CLAUDE_USES_SEND_MESSAGE)
+  return hit.ok && hit.value.backendId === 'claude' && from === 'claude'
+    ? fail(CLAUDE_USES_SEND_MESSAGE)
+    : hit
 }
 
 function openTarget(s: SessionInfo & { tabId: string }): Target {
@@ -276,7 +282,7 @@ function openTarget(s: SessionInfo & { tabId: string }): Target {
     key: s.sessionId,
     name: s.title,
     backend: s.backendId,
-    remote: false,
+    remote: !!s.remote,
     tabId: s.tabId,
     open: async () => s.tabId
   }
@@ -1023,9 +1029,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       const to = starter(ref)
       if (to) replyOwed.delete(caller.tabId)
       if (to) return deliver('send', to, sessionSays(caller.session, text), caller, false)
-      if (caller.session.backendId === 'claude')
-        return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
-      const target = findSiblingTarget(open, ref)
+      const target = findSiblingTarget(open, ref, caller.session.backendId)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
       if (caller.session.backendId === 'codex' && target.value.backendId === 'codex') {
         await d.queue(target.value.tabId, text)

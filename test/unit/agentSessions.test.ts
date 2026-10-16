@@ -502,15 +502,31 @@ describe('koloft session send', () => {
     ])
   })
 
-  it('points a Claude caller, or a Claude target, to SendMessage and sends nothing', async () => {
-    const { verb, queued } = harness(sessions())
-    const toClaude = await verb(['send', 'Planner', 'hi'], from('me'))
-    const fromClaude = await verb(['send', OTHER_THREAD, 'hi'], from('cc'))
-    for (const reply of [toClaude, fromClaude]) {
-      expect(reply.exit).not.toBe(0)
-      expect(reply.text).toContain('SendMessage')
-    }
-    expect(queued).toEqual([])
+  it('points a Claude caller to SendMessage for a Claude target and sends nothing', async () => {
+    const { verb, lines } = harness([
+      ...sessions(),
+      session('cc2', 'claude', { title: 'Reviewer' })
+    ])
+    const reply = await verb(['send', 'Reviewer', 'hi'], from('cc'))
+    expect(reply.exit).not.toBe(0)
+    expect(reply.text).toContain('SendMessage')
+    expect(lines).toEqual([])
+  })
+
+  it('a Codex or Muse session reaches an open Claude session on its message line, marked with who sent it, and the Claude session answers it with koloft session send', async () => {
+    const { verb, lines, queued, pressed } = harness([
+      ...sessions(),
+      session('mu', 'muse', { nativeSessionId: MUSE_ID, title: 'Docs fixer' })
+    ])
+    expect((await verb(['send', 'Planner', 'Check', 'it'], from('mu'))).exit).toBe(0)
+    expect((await verb(['send', 'Planner', 'Lint', 'it'], from('me'))).exit).toBe(0)
+    expect(lines.map((l) => l.tabId)).toEqual(['cc', 'cc'])
+    expect(lines[0].line).toContain('from-mode=')
+    expect(lines[0].line).toContain(`(From the session \\"Docs fixer\\", id ${MUSE_ID}:) Check it`)
+    expect((await verb(['send', MUSE_ID, 'Done'], from('cc'))).exit).toBe(0)
+    expect((await verb(['send', CODEX_THREAD, 'Done'], from('cc'))).exit).toBe(0)
+    expect(pressed.map((p) => p.tabId)).toEqual(['mu'])
+    expect(queued.map((q) => q.tabId)).toEqual(['me'])
   })
 
   it('a Claude or Codex child reports to the session that started it by its id or name, starting it again first if it is closed or asleep, marked with who sent it; any other Claude session stays out of reach', async () => {
