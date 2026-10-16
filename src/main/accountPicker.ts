@@ -88,9 +88,9 @@ function bannerFor(
   return s
 }
 
-export function codexAllLimitedNotice(a: AccountView, product = 'Codex'): string | undefined {
+export function codexAllLimitedNotice(a: AccountView): string | undefined {
   if (!a.limits || !codexWalled(a.limits)) return undefined
-  return `Every ${product} account is at its limit, so this session runs on ${a.name}, the first to reset (${fmtReset(codexBackAt(a.limits))}).`
+  return `Every Codex account is at its limit, so this session runs on ${a.name}, the first to reset (${fmtReset(codexBackAt(a.limits))}).`
 }
 
 function fallbackTag(a: AccountMeta): string {

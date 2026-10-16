@@ -12,6 +12,11 @@ export function museHome(env: NodeJS.ProcessEnv): string {
   return path.join(data, 'muse')
 }
 
+// MUSE§2
+export function museConfigHome(env: NodeJS.ProcessEnv): string {
+  return env.XDG_CONFIG_HOME || path.join(env.HOME || os.homedir(), '.config')
+}
+
 const uuidV7Ms = (id: string): number => parseInt(id.replace(/-/g, '').slice(0, 12), 16)
 
 const dateDir = (ms: number): string => {
@@ -127,12 +132,12 @@ export function finishedWork(r: LogRecord): string | undefined {
 }
 
 export class SessionLogTail {
-  private offset = 0
   private rest = ''
 
   constructor(
     private file: string,
-    private onRecord: (r: LogRecord) => void
+    private onRecord: (r: LogRecord) => void,
+    private offset = 0
   ) {}
 
   read(): void {

@@ -16,6 +16,7 @@ import {
   messagingOf
 } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import { withoutBlankEdges } from './messageText'
 import { freshWorktreeName } from '@shared/sessionRoute'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { basename } from '@shared/preview'
@@ -719,9 +720,7 @@ const CONDUCTOR_ACT_USAGE: Record<string, string> = {
 
 export function formatScreen(name: string, screen: SessionScreen): string {
   if ('error' in screen) return `${name}: ${screen.error}`
-  const lines = [...screen.lines]
-  while (lines.length && !lines[lines.length - 1].trim()) lines.pop()
-  while (lines.length && !lines[0].trim()) lines.shift()
+  const lines = withoutBlankEdges(screen.lines)
   const shown = lines.length ? `\`\`\`\n${lines.join('\n')}\n\`\`\`` : '(the screen is empty)'
   return [`The screen of ${name} right now:`, shown, ...screen.notes].join('\n')
 }

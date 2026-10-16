@@ -19,6 +19,7 @@ import { record } from './codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import { startToolShim } from './toolShim'
 import { placeKoloftSkill, readJson } from './museAccounts'
+import { mapAtMost } from './mapAtMost'
 import { agentSkillMarkdown } from './agentPlugin'
 import { pidAlive } from './leftovers'
 import { browserControlEnv } from './browserControlEnv'
@@ -39,6 +40,7 @@ import {
 import {
   SessionLogTail,
   finishedWork,
+  museConfigHome,
   museHome,
   museSessionLog,
   compactionEnds,
@@ -76,9 +78,7 @@ const exec = promisify(execFile)
 
 export interface MuseSessionDeps extends StoredSessionDeps {
   openShimRoot: string
-  pickHome(
-    resumeSessionId?: string
-  ): { account: string; env: Record<string, string>; notice?: string } | undefined
+  pickHome(resumeSessionId?: string): { account: string; env: Record<string, string> } | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
@@ -168,6 +168,7 @@ const REGISTRY_WRITE_LEEWAY_MS = 1000
 
 // MUSE§9
 const BACKGROUND_RUNNING = 'background_running'
+const LOGS_SEARCHED_AT_ONCE = 8
 const WRITING_TOOLS = new Set(['write_file', 'edit_file'])
 const SCHEDULED_JOB = /^Scheduled ([0-9a-f]{8})\b/
 
@@ -178,8 +179,7 @@ function registryDir(env: NodeJS.ProcessEnv): string {
 
 // MUSE§2 MUSE§10
 function trustFile(env: NodeJS.ProcessEnv): string {
-  const config = env.XDG_CONFIG_HOME || path.join(env.HOME || '', '.config')
-  return path.join(config, 'muse', 'trust.json')
+  return path.join(museConfigHome(env), 'muse', 'trust.json')
 }
 
 const readTrust = (env: NodeJS.ProcessEnv): Record<string, unknown> => readJson(trustFile(env))
@@ -312,11 +312,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     signal?: AbortSignal
   ): Promise<{ id: string; snippet: string }[]> {
     const wanted = term.toLowerCase()
-    const found: { id: string; snippet: string }[] = []
-    for (const key of this.history.keys()) {
-      if (signal?.aborted) break
-      const file = museSessionLog(this.env, this.nativeId(key))
-      if (!file) continue
+    const hits = await mapAtMost([...this.history.keys()], LOGS_SEARCHED_AT_ONCE, async (key) => {
+      const file = !signal?.aborted && museSessionLog(this.env, this.nativeId(key))
+      if (!file) return undefined
       let hit: string | undefined
       await saidInLog(file, (text) => {
         if (signal?.aborted) return true
@@ -324,9 +322,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         hit = text
         return true
       }).catch(() => undefined)
-      if (hit) found.push({ id: key, snippet: hit })
-    }
-    return found
+      return hit && { id: key, snippet: hit }
+    })
+    return hits.filter((h): h is { id: string; snippet: string } => !!h)
   }
 
   trustsFolder(dir: string): boolean {
@@ -335,14 +333,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   // MUSE§4
   runningElsewhere(key: string): boolean {
-    const file = path.join(registryDir(this.env), `${this.nativeId(key)}.json`)
-    try {
-      const pid = registryPid(record(JSON.parse(fs.readFileSync(file, 'utf8'))))
-      const ours = [...this.runs.values()].some((r) => r.pid === pid)
-      return pid > 0 && !ours && pidAlive(pid)
-    } catch {
-      return false
-    }
+    const pid = registryPid(
+      readJson(path.join(registryDir(this.env), `${this.nativeId(key)}.json`))
+    )
+    const ours = [...this.runs.values()].some((r) => r.pid === pid)
+    return pid > 0 && !ours && pidAlive(pid)
   }
 
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {
@@ -388,7 +383,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     // ADR-0030 MUSE§13
     const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.muse)
-    if (picked.notice) this.deps.error(picked.notice)
     return { binary: this.binary!, account: picked.account, env: { ...this.env, ...picked.env } }
   }
 
@@ -582,18 +576,19 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       case 'Stop':
       case 'StopFailure':
         this.readLog(run)
-        return this.endTurn(run, input)
+        return this.endTurn(
+          run,
+          typeof input.turn_id === 'string' ? input.turn_id : '',
+          typeof input.last_assistant_message === 'string' ? input.last_assistant_message : ''
+        )
       case 'PostToolUse':
         return this.afterTool(run, input)
     }
   }
 
-  private endTurn(run: MuseRun, input: Record<string, unknown>): void {
-    const turnId = typeof input.turn_id === 'string' ? input.turn_id : ''
+  private endTurn(run: MuseRun, turnId: string, reply: string): void {
     if (!turnId || run.endedTurns.has(turnId)) return
     run.endedTurns.add(turnId)
-    const reply =
-      typeof input.last_assistant_message === 'string' ? input.last_assistant_message : ''
     const prompt = run.prompt?.turnId === turnId ? run.prompt : undefined
     const at = Date.now()
     const turn: Turn = {
@@ -614,6 +609,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       .catch(() => new Set<string>())
     let changed = false
     for (const id of servers) {
+      run.commands.delete(id)
       const item = run.background.get(id)
       if (item?.kind !== 'command') continue
       run.background.set(item.id, { ...item, kind: 'server', state: 'waiting' })
@@ -694,7 +690,13 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     if (run.log?.sessionId !== id) {
       const file = museSessionLog(this.env, id)
       if (!file) return
-      run.log = { sessionId: id, tail: new SessionLogTail(file, (r) => this.onLogRecord(run, r)) }
+      const createdAt = this.history.get(run.info!.sessionId)?.createdAt
+      const resumed = createdAt !== undefined && createdAt * 1000 < run.boundAt
+      const from = resumed ? (fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0) : 0
+      run.log = {
+        sessionId: id,
+        tail: new SessionLogTail(file, (r) => this.onLogRecord(run, r), from)
+      }
     }
     run.log.tail.read()
   }
@@ -717,7 +719,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const reply = replyIn(r)
     if (prompt && reply?.turnId === prompt.turnId) prompt.reply = reply.text
     if (prompt && turnEndedIn(r) === prompt.turnId)
-      this.endTurn(run, { turn_id: prompt.turnId, last_assistant_message: prompt.reply })
+      this.endTurn(run, prompt.turnId, prompt.reply ?? '')
     const job = firedJob(r)
     if (job && run.jobs.get(job) === false) {
       run.jobs.delete(job)
@@ -798,6 +800,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     run.endedTurns.clear()
     run.log = undefined
     this.bind(run, known ?? { id: sessionId, cwd: run.cwd }, switched ? 'switch' : 'replace')
+    this.readLog(run)
     for (const status of run.sinceClear) this.emitState(run, status)
     return true
   }

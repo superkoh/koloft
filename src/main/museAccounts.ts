@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { record } from './codexObservation'
+import { writeWholeBeforeVisible } from './jsonDrops'
 
 const MUSE_HOMES = 'muse-homes'
 
@@ -32,7 +33,10 @@ function keepTrustOf(own: string, owners: string): void {
   const theirs = readJson(owners)
   const projects = { ...record(mine.projects), ...record(theirs.projects) }
   fs.mkdirSync(path.dirname(owners), { recursive: true })
-  fs.writeFileSync(owners, JSON.stringify({ schema_version: 1, ...theirs, projects }, null, 2))
+  writeWholeBeforeVisible(
+    owners,
+    JSON.stringify({ schema_version: 1, ...theirs, projects }, null, 2)
+  )
 }
 
 function linkBack(own: string, owners: string): void {

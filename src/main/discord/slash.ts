@@ -4,6 +4,7 @@ import { waitingForAnswer } from '@shared/slashCommands'
 import type { CommandOutput } from '../claudeCommandOutput'
 import { sleep } from '../codexTransport'
 import { errorText } from '../agentRequests'
+import { withoutBlankEdges } from '../messageText'
 import { accentOf, CONDUCTOR_ACCENT, type Card } from './cards'
 
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
@@ -33,7 +34,7 @@ export interface SlashDeps {
   turnOver(tabId: string): boolean
   asking(tabId: string): boolean
   takesTyping(tabId: string): boolean
-  panelOpen(tabId: string): Promise<boolean | undefined>
+  panelOpen(tabId: string, screen?: string[]): Promise<boolean | undefined>
   screen(tabId: string): Promise<string[] | undefined>
   nextMirrorPull(tabId: string): Promise<void> | undefined
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
@@ -69,9 +70,7 @@ export function commandKeys(text: string, backend: BackendId | undefined): strin
 const SCREEN_LINES_IN_A_RESULT = 40
 
 function screenShot(lines: string[] | undefined): string | undefined {
-  const shown = [...(lines ?? [])]
-  while (shown.length && !shown[shown.length - 1].trim()) shown.pop()
-  while (shown.length && !shown[0].trim()) shown.shift()
+  const shown = withoutBlankEdges(lines ?? [])
   if (!shown.length) return undefined
   return `It printed nothing Koloft can read, so here is its screen:\n\`\`\`\n${shown.slice(-SCREEN_LINES_IN_A_RESULT).join('\n')}\n\`\`\``
 }
@@ -177,7 +176,7 @@ export class SlashCommands {
       this.d.turnOver(tab)
     if (!quiet()) return
     p.screen = await this.d.screen(tab).catch(() => undefined)
-    let panel = await this.d.panelOpen(tab)
+    let panel = await this.d.panelOpen(tab, p.screen)
     if (!quiet()) return
     if (panel !== false) {
       p.pressedEsc = true
