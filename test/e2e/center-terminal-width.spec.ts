@@ -56,8 +56,6 @@ function shownPanelCols(page: Page): Promise<number | undefined> {
 function centerLayout(page: Page): Promise<{
   leftGap: number
   rightGap: number
-  termLeft: number
-  clockLeft: number
   clockGap: number
   termMaxWidth: string
 }> {
@@ -79,8 +77,6 @@ function centerLayout(page: Page): Promise<{
     return {
       leftGap: term.left - colLeft,
       rightGap: rightEdge - term.right,
-      termLeft: term.left,
-      clockLeft: clock.left,
       clockGap: clock.left - colLeft,
       termMaxWidth: termEl.style.maxWidth
     }
@@ -118,7 +114,7 @@ test.describe('the center session terminal stops at 100 columns and sits centred
       const narrow = await centerLayout(page)
       expect(Math.abs(narrow.leftGap - MIN_SIDE_GUTTER_PX)).toBeLessThanOrEqual(SUBPIXEL_PX)
       expect(Math.abs(narrow.rightGap - MIN_SIDE_GUTTER_PX)).toBeLessThanOrEqual(SUBPIXEL_PX)
-      expect(Math.abs(narrow.clockLeft - narrow.termLeft)).toBeLessThanOrEqual(SUBPIXEL_PX)
+      expect(Math.abs(narrow.clockGap - MIN_SIDE_GUTTER_PX)).toBeLessThanOrEqual(SUBPIXEL_PX)
 
       await setWindowWidth(app, WIDE_WINDOW_PX)
       await expect.poll(() => shownCenterCols(page), { timeout: 30_000 }).toBe(CENTER_MAX_COLS)
@@ -158,7 +154,7 @@ test.describe('the center session terminal stops at 100 columns and sits centred
       const noSidebar = await centerLayout(page)
       expect(Math.abs(noSidebar.leftGap - noSidebar.rightGap)).toBeLessThanOrEqual(SUBPIXEL_PX)
       expect(noSidebar.clockGap).toBeGreaterThan(MIN_SIDE_GUTTER_PX + SUBPIXEL_PX)
-      expect(noSidebar.clockLeft).toBeLessThan(noSidebar.termLeft)
+      expect(noSidebar.clockGap).toBeLessThan(noSidebar.leftGap)
 
       await openSessionTerminal(app, page)
       await clickAppMenuItem(app, page, 'toggle-focus-mode')
