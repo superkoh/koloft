@@ -151,6 +151,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     })
   }
 
+  protected readonly keepsItsOwnTitle: boolean = false
   protected abstract readonly cli: {
     product: string
     minVersion: string
@@ -675,6 +676,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         cwd: run.cwd,
         title:
           run.launchName ||
+          (this.keepsItsOwnTitle && m?.title !== PLACEHOLDER_TITLES[this.id] ? m?.title : '') ||
           entry.name ||
           entry.preview?.slice(0, 100) ||
           m?.title ||

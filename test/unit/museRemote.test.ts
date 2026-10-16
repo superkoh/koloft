@@ -189,8 +189,10 @@ describe('muse-hook.sh, the hook a remote Muse tab runs', () => {
     const ctx = path.join(m.home, 'ctx.json')
     fs.writeFileSync(ctx, '{"hookSpecificOutput":{}}')
     const run = (event: string, input: string): string =>
-      spawnSync('sh', [script, 'pty-1', event, ctx], { env: m.env, input, encoding: 'utf8' }).stdout
+      spawnSync('bash', [script, 'pty-1', event, ctx], { env: m.env, input, encoding: 'utf8' })
+        .stdout
     fs.mkdirSync(path.join(m.home, '.koloft', 'hook-sessions'), { recursive: true })
+    fs.mkdirSync(path.join(m.home, '.koloft', 'tabs'), { recursive: true })
     expect(run('SessionStart', '{"session_id":"a",\n"source":"startup"}\n')).toBe(
       '{"hookSpecificOutput":{}}'
     )
@@ -199,5 +201,19 @@ describe('muse-hook.sh, the hook a remote Muse tab runs', () => {
       { t: 'hook', event: 'SessionStart', input: { session_id: 'a', source: 'startup' } },
       { t: 'hook', event: 'Stop', input: { session_id: 'a', last_assistant_message: 'hi' } }
     ])
+  })
+
+  it("reminds Muse of the language of the owner's last message after every tool, as a local tab's hook does", () => {
+    const m = machine()
+    const script = path.join(m.home, 'muse-hook.sh')
+    fs.writeFileSync(script, REMOTE_MUSE_HOOK_SH)
+    for (const dir of ['hook-sessions', 'tabs'])
+      fs.mkdirSync(path.join(m.home, '.koloft', dir), { recursive: true })
+    const run = (event: string, input: string): string =>
+      spawnSync('bash', [script, 'pty-1', event], { env: m.env, input, encoding: 'utf8' }).stdout
+    run('UserPromptSubmit', JSON.stringify({ session_id: 'a', prompt: '请看一下这个文件' }))
+    const said = JSON.parse(run('PostToolUse', '{"session_id":"a","tool_name":"read_file"}'))
+    expect(said.hookSpecificOutput.hookEventName).toBe('PostToolUse')
+    expect(said.hookSpecificOutput.additionalContext).toContain('«请看一下这个文件»')
   })
 })

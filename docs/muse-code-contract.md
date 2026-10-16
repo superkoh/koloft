@@ -20,6 +20,11 @@ real model were used, neither needing a Meta account:
   muse call its tools). Its runs were in Docker, where muse's Linux sandbox
   (bubblewrap) cannot start, so a plain sandboxed shell command fails there.
 
+Re-checked on 1.4.9 (`Muse Code 1.4.9 (1.4.9-R6297.1)`) the same ways, October 2026:
+the 7501 frames, the hook events and their fields, `approval/listPending`, the session
+log's prompts, replies and renames, the live registry and `exec --json` are
+unchanged; what changed is in the bullets that name 1.4.9.
+
 A bullet measured only with `!cmd` (a shell command the user types into the TUI) says
 so; the model's own shell tool was checked against those on macOS with the fake model
 (§8). Nothing has been run against Meta's real API.
@@ -37,7 +42,8 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `-c run.developer_prompt="…"` reaches the model, but only until `/clear` (macOS
   measured: the second session's request carried no developer prompt). Koloft hands
   instructions over through a hook instead (§12).
-- `muse --version` prints `Muse Code 1.4.7 (1.4.7-R6101.1)`.
+- `muse --version` prints `Muse Code 1.4.7 (1.4.7-R6101.1)`; 1.4.9 prints
+  `Muse Code 1.4.9 (1.4.9-R6297.1)`.
 - `muse exec --json` prints one session-stream record per line; the answer is the
   `text` of the last `run.terminal.completed` record. `--no-session-log` keeps the run
   out of the session list; `--disable-reminders` skips muse's own reminder helpers. Both
@@ -191,6 +197,15 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `"execution_state":"background_running"` and a `work_id`. A real subagent has a UUID
   `subagent_id`; muse's own reminder helpers say `skill-reminder`, `goal-reminder`,
   `verify-reminder`.
+- More tool shapes in 1.4.9 (fake model, Docker, 2026-10): `read_file {path}`, its
+  `tool_response` a plain string. `monitor {command, description, …}` →
+  `tool_response` a JSON string `{work_id: "work.v2.monitor.…", timeout_ms,
+  persistent, message}`. `cron_create {cron, prompt, recurring}` → `tool_response`
+  the plain string `Scheduled <8 hex id> (<when>)`; `cron_delete {id}`. When a
+  scheduled job fires, the session log gets a `runtime.session` record whose `event`
+  is `{kind: "inbox_item_queued", source: {source: "scheduled", job_id}}`; a finished
+  background command gets one with `source: "background_task_terminal"`
+  and `registered_work_id`.
 - `!cmd` is a tool named `shell`. `request_user_input` fires no `PreToolUse`.
 - A `PreToolUse` hook printing `{"hookSpecificOutput":{"hookEventName":"PreToolUse",
   "permissionDecision":"deny","permissionDecisionReason":"…"}}` or
@@ -206,6 +221,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `edit_file {path, find, replace}` take a `path` relative to `cwd` or absolute. The
   reminder helpers answer through a tool `submit_reminder_decision`, which fires
   `PreToolUse` too (fake model).
+- A `PreToolUse` hook cannot spare the user a question. 1.4.9 rejects a bare
+  `"permissionDecision":"allow"` ("requires updatedInput"); with `updatedInput` it is
+  taken, that object replaces the tool's input (`{}` empties it), and the question is
+  still asked as before (macOS VM, fake model).
+- `PermissionRequest` fires for a shell command's question, not for a network fetch's
+  (1.4.9).
 - A `PermissionRequest` hook can deny with `{"hookSpecificOutput":{"hookEventName":
   "PermissionRequest","decision":{"behavior":"deny","message":"…"}}}` but never
   approve (fake model).
@@ -233,6 +254,13 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   after it, at once.
 - Network approvals fire no hook at all; only the 7501 frame and
   `approval/listPending` (§5) show them.
+- The input box is the one row between the last two full-width `────` rules, starting
+  with `❯` (bare when empty, `❯ <draft>` with text in it); the status row, and any
+  background-task rows, come below the second rule. An approval box takes its place:
+  several rows between the rules and no `❯` row (1.4.9, fake model, Docker, 2026-10,
+  read from the rendered screen). Slash-command menus were not looked at.
+- What a slash command prints (`/usage`, `/status`, …) is drawn on the screen only; the
+  session log holds none of it (1.4.9, fake model).
 
 ## §12 Handing muse instructions
 
@@ -241,6 +269,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   puts that text into the developer message of the model request (fake model: read
   from the request body). It fires again after `/clear`; after `muse resume` the text
   comes back from the session log without the hook firing.
+- The same shape with `"hookEventName":"UserPromptSubmit"` lands as a developer message
+  in that turn's request, and with `"PostToolUse"` in the next request after the tool
+  (1.4.9, fake model, Docker, 2026-10: read from the request body).
 
 ## §13 Credentials
 
@@ -284,7 +315,10 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - `--approval-judge off` with `--sandbox-network enabled` (no profile): no judge, a
   shell command leaving the sandbox still asks the user, a network fetch runs without
   asking (fake model). Without the network flag a network fetch asks the user too, and
-  on macOS so did file writes and other commands the judge would have reviewed.
+  on macOS 1.4.7 so did file writes and other commands the judge would have reviewed.
+  On macOS 1.4.9 `write_file` and `edit_file` inside the folder no longer ask; a
+  network fetch (without the network flag), a shell command of several stages (`a; b`),
+  a command leaving the sandbox and a write outside it still do.
 - `--approval-mode never` (alone, with `--sandbox-network enabled` or with
   `--approval-judge off`): nothing ever asks the user and no judge runs; every tool
   runs inside the sandbox, `web_fetch` included, and a shell command asking to leave

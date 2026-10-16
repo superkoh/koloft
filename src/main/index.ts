@@ -26,7 +26,7 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
-import { MuseSessions, type MuseRemoteDeps } from './museSessions'
+import { MuseSessions, museShowsAnEmptyInputBox, type MuseRemoteDeps } from './museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
@@ -503,9 +503,14 @@ const slash = new SlashCommands({
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId) => {
     const s = sessionOfTab(tabId)
+    if (s?.backendId === 'muse') {
+      const lines = await screenLines(tabId)
+      return lines && !museShowsAnEmptyInputBox(lines)
+    }
     if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
     return claudeShowsAPanel(s.sessionId)
   },
+  screen: screenLines,
   nextMirrorPull: (tabId) => {
     const host = remoteHostOfTab(tabId)
     return host ? remoteSync?.nextPullDone(host) : undefined
@@ -1254,7 +1259,15 @@ const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.conductor),
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
-  peerNames: () => claudePeerNames(),
+  peerNames: () => {
+    const claudeName = claudePeerNames()
+    return async ({ backendId, sessionId }) =>
+      backendId === 'claude'
+        ? claudeName(sessionId)
+        : backendId === 'muse'
+          ? (museSessions?.peerName(sessionId) ?? null)
+          : null
+  },
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
@@ -2326,6 +2339,7 @@ app.whenReady().then(() => {
         script: hookPaths.museGateScript,
         writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
       },
+      skipPermissions: () => loadSettings().skipPermissions,
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,
@@ -3296,6 +3310,11 @@ const boundSessions = new Map<string, string>()
 const screenAsks = new Map<string, (a: ScreenAnswer) => void>()
 let windowOpenedAt = 0
 const SCREEN_ANSWER_BUDGET_MS = 3000
+
+async function screenLines(tabId: string): Promise<string[] | undefined> {
+  const screen = await screenOf(tabId)
+  return 'lines' in screen ? screen.lines : undefined
+}
 
 async function screenOf(tabId: string): Promise<SessionScreen> {
   const handle = ptyMgr.get(tabId)

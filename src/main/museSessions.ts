@@ -42,7 +42,10 @@ import {
   finishedWork,
   museHome,
   museSessionLog,
+  firedJob,
+  museNameOf,
   renamedTo,
+  startsATurnByItself,
   saidInLog,
   textOfLogLine,
   type LogRecord
@@ -82,6 +85,7 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   browserEndpoint(tabId: string): string
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
+  skipPermissions(): boolean
   agent: {
     enabled(remote: boolean): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -125,6 +129,7 @@ interface MuseRun extends StoredRun {
   prompt?: { turnId: string; text: string; at: number }
   children: Set<string>
   background: Map<string, BackgroundItem>
+  jobs: Map<string, boolean>
   touched: Map<string, FileAcc>
   liveWrites: number
   log?: { sessionId: string; tail: SessionLogTail }
@@ -166,6 +171,17 @@ function mirrorLine(raw: string): Record<string, unknown> | undefined {
 // MUSE§11
 const KEYS_TAKE_AFTER_A_DIALOG_SHOWS_MS = 2000
 
+const INPUT_BOX_RULE = /^─{8,}$/
+const EMPTY_INPUT_ROW = '❯'
+
+// MUSE§11
+export function museShowsAnEmptyInputBox(lines: string[]): boolean {
+  const rules = lines.flatMap((line, i) => (INPUT_BOX_RULE.test(line.trim()) ? [i] : []))
+  if (rules.length < 2) return false
+  const [above, below] = rules.slice(-2)
+  return below === above + 2 && lines[above + 1].trim() === EMPTY_INPUT_ROW
+}
+
 // MUSE§1
 const MUSE: CliSpec = {
   command: 'muse',
@@ -204,6 +220,7 @@ const REGISTRY_WRITE_LEEWAY_MS = 1000
 // MUSE§9
 const BACKGROUND_RUNNING = 'background_running'
 const WRITING_TOOLS = new Set(['write_file', 'edit_file'])
+const SCHEDULED_JOB = /^Scheduled ([0-9a-f]{8})\b/
 
 // MUSE§4
 function registryDir(env: NodeJS.ProcessEnv): string {
@@ -309,6 +326,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   private registrySeenAt?: number
   private unreadable = new Set<string>()
   private remoteHistory = new Map<string, MuseHistoryEntry[]>()
+  // MUSE§2
+  protected readonly keepsItsOwnTitle = true
   // MUSE§14
   protected readonly cli = {
     product: 'Muse Code',
@@ -490,6 +509,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     return isRemoteKey(ctx.cwd) ? this.startRemoteRun(ctx, launch) : this.startLocalRun(ctx, launch)
   }
 
+  private permissionOf(opts: CreateTabOptions): LaunchPermission {
+    const asked = opts.permission ?? 'default'
+    return asked === 'default' && this.deps.skipPermissions() ? 'bypass' : asked
+  }
+
   // ADR-0030 MUSE§13 MUSE§16
   private credentialFor(account: string, env: NodeJS.ProcessEnv, host: string): string {
     try {
@@ -509,7 +533,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const remote = this.deps.remote
     const host = hostOfPath(cwd)
     if (!remote || !host) throw new Error('Koloft cannot reach this machine.')
-    const permission = opts.permission ?? 'default'
+    const permission = this.permissionOf(opts)
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
     const plan = await remote.machine(host).launchMuse({
       cwd,
@@ -560,6 +584,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         touched: new Map(),
         liveWrites: 0,
         endedTurns: new Set(),
+        jobs: new Map(),
         host,
         tmuxName: plan.tmuxName(handle.id),
         attachTo: plan.attach ? resumeId : undefined,
@@ -611,7 +636,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     // MUSE§8
     const networkOpen = !!endpoint || (await this.deps.gitAccounts.picked(cwd))
     this.assertStarting()
-    const permission = opts.permission ?? 'default'
+    const permission = this.permissionOf(opts)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('muse')] : []),
@@ -676,6 +701,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         sinceClear: [],
         children: new Set(),
         background: new Map(),
+        jobs: new Map(),
         touched: new Map(),
         liveWrites: 0,
         endedTurns: new Set(),
@@ -827,7 +853,33 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         state: 'working'
       })
       this.publishBackground(run)
+    } else if (tool === 'monitor' && typeof response.work_id === 'string') {
+      const id = response.work_id
+      const what = record(input.tool_input)
+      run.background.set(id, {
+        id,
+        kind: 'monitor',
+        label: String(what.description ?? what.command ?? 'Monitor').slice(0, 160),
+        state: 'waiting'
+      })
+      this.publishBackground(run)
+      if (response.persistent !== true && typeof response.timeout_ms === 'number')
+        setTimeout(() => {
+          if (run.background.delete(id)) this.publishBackground(run)
+        }, response.timeout_ms).unref?.()
+    } else if (tool === 'cron_create') {
+      const job = SCHEDULED_JOB.exec(String(input.tool_response))?.[1]
+      if (job) run.jobs.set(job, record(input.tool_input).recurring === true)
+      this.holdForJobs(run)
+    } else if (tool === 'cron_delete') {
+      run.jobs.delete(String(record(input.tool_input).id))
+      this.holdForJobs(run)
     }
+  }
+
+  // MUSE§9
+  private holdForJobs(run: MuseRun): void {
+    this.deps.runtime.setWakeupPending(run.tabId, run.jobs.size > 0)
   }
 
   private publishBackground(run: MuseRun): void {
@@ -846,11 +898,26 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     run.log.tail.read()
   }
 
+  // MUSE§2 MUSE§5
+  peerName(key: string): string | null {
+    return this.history.get(key)?.museName ?? null
+  }
+
   private onLogRecord(run: MuseRun, r: LogRecord): void {
+    const named = museNameOf(r)
+    const entry = run.info && named && this.history.get(run.info.sessionId)
+    if (entry) entry.museName = named
     const name = renamedTo(r)
     if (name && run.info) return this.retitle(run.info, name)
     const work = finishedWork(r)
     if (work && run.background.delete(work)) this.publishBackground(run)
+    const job = firedJob(r)
+    if (job && run.jobs.get(job) === false) {
+      run.jobs.delete(job)
+      this.holdForJobs(run)
+    }
+    if (startsATurnByItself(r) && (r.atMs ?? 0) >= run.boundAt)
+      this.emitState(run, { state: 'working' })
   }
 
   // MUSE§3
@@ -937,7 +1004,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       const hook = museHook(line)
       if (hook) this.onHook(run, hook)
     } else if (line.t === 'log' && typeof line.payloadType === 'string') {
-      this.onLogRecord(run, { payloadType: line.payloadType, payload: record(line.payload) })
+      this.onLogRecord(run, {
+        payloadType: line.payloadType,
+        payload: record(line.payload),
+        atMs: Date.now()
+      })
     }
   }
 
@@ -1022,6 +1093,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     run.prompt = undefined
     run.children.clear()
     run.background.clear()
+    run.jobs.clear()
+    this.holdForJobs(run)
     run.endedTurns.clear()
     run.log = undefined
     this.bind(run, known ?? { id: sessionId, cwd: run.cwd }, switched ? 'switch' : 'replace')

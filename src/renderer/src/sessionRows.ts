@@ -59,7 +59,9 @@ export function parkedBadge(
       ? 'Programs this session started keep running on their own. Stop any you no longer need.'
       : backend === 'codex'
         ? 'Stop these tasks in the Codex session to free the resources.'
-        : 'Stop them in the session (ctrl+b lists background tasks) to free the resources.'
+        : backend === 'muse'
+          ? 'Stop them in the Muse session (/tasks lists them) to free the resources.'
+          : 'Stop them in the session (ctrl+b lists background tasks) to free the resources.'
   }
 }
 

@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
+import { QUOTE_PROMPT_FN, REMIND_REPLY_LANGUAGE_FN } from './replyLanguage'
 import { record } from './codexObservation'
 
 // MUSE§9
@@ -22,17 +23,26 @@ type MuseHookName = (typeof EVENTS)[number]
 
 export const HOOK_DROP_PREFIX = 'hook-'
 
-const HOOK_SCRIPT = `#!/bin/sh
+// MUSE§12 ADR-0031
+const HOOK_SCRIPT = `#!/bin/bash
 : koloft muse hook
 dir="$1"
 event="$2"
+said="$4"
 [ -d "$dir" ] || exit 0
 ${NEWID_FN}
+${REMIND_REPLY_LANGUAGE_FN}
+${QUOTE_PROMPT_FN}
+input="$(cat | tr -d '\\n')"
 id="$(newid)"
 [ -n "$id" ] || id="$$-$(date +%s)"
 part="$dir/${HOOK_DROP_PREFIX}$id.part"
-{ printf '{"event":"%s","input":' "$event"; cat; printf '}\\n'; } > "$part" 2>/dev/null && mv "$part" "$dir/${HOOK_DROP_PREFIX}$id.json" 2>/dev/null
-if [ "$event" = SessionStart ] && [ -f "$3" ]; then cat "$3"; fi
+printf '{"event":"%s","input":%s}\\n' "$event" "$input" > "$part" 2>/dev/null && mv "$part" "$dir/${HOOK_DROP_PREFIX}$id.json" 2>/dev/null
+case "$event" in
+  SessionStart) [ -f "$3" ] && cat "$3" ;;
+  UserPromptSubmit) quote_prompt > "$said"; remind_reply_language UserPromptSubmit ;;
+  PostToolUse) remind_reply_language PostToolUse ;;
+esac
 exit 0
 `
 
@@ -60,11 +70,13 @@ export function writeMuseHooks(
   fs.writeFileSync(script, HOOK_SCRIPT, { mode: 0o755 })
   const contextFile = path.join(shimDir, 'session-start.json')
   if (context) fs.writeFileSync(contextFile, sessionStartContext(context))
+  const saidFile = path.join(shimDir, 'said')
   const file = path.join(shimDir, 'hooks.json')
   fs.writeFileSync(
     file,
     hooksJson(
-      (event) => `/bin/sh ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)}`,
+      (event) =>
+        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)}`,
       gate
     )
   )
@@ -83,7 +95,7 @@ function hooksJson(command: (event: MuseHookName) => string, gate?: string): str
 // MUSE§9 MUSE§16
 export function remoteMuseHooks(script: string, runId: string, contextFile?: string): string {
   return hooksJson(
-    (event) => `sh "${script}" ${runId} ${event}${contextFile ? ` "${contextFile}"` : ''}`
+    (event) => `bash "${script}" ${runId} ${event}${contextFile ? ` "${contextFile}"` : ''}`
   )
 }
 

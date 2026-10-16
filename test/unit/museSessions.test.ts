@@ -6,6 +6,7 @@ import { EventEmitter } from 'events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   MuseSessions,
+  museShowsAnEmptyInputBox,
   museTrustsFolder,
   trustMuseFolder,
   type MuseSessionDeps
@@ -51,6 +52,7 @@ let endpoint: string
 let picked: { account: string; env: Record<string, string> } | undefined
 let assist: { role: string; allow: string[] } | undefined
 let gateScript: string
+let skipPermissions: boolean
 
 const registryDir = (): string =>
   path.join(home, '.local', 'share', 'muse', 'runtime', 'muse', 'sessions')
@@ -136,6 +138,7 @@ beforeEach(() => {
   endpoint = ''
   picked = { account: 'work', env: { TBH_CREDENTIAL_BACKEND: 'file' } }
   assist = undefined
+  skipPermissions = false
   gateScript = path.join(home, 'muse-conductor-gate.js')
   fs.writeFileSync(gateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
   let tab = 0
@@ -184,6 +187,7 @@ beforeEach(() => {
         return file
       }
     },
+    skipPermissions: () => skipPermissions,
     agent: { enabled: () => agentTools, answer: vi.fn() },
     gitAccounts: {
       configEnv: (env) => env,
@@ -245,6 +249,14 @@ describe('MuseSessions launch', () => {
     expect(created[1].argv).toEqual(['--approval-judge', 'off'])
   })
 
+  it('starts unrestricted when "Skip permission prompts" is on in Accounts, but never over a permission picked for this launch', async () => {
+    skipPermissions = true
+    await launch()
+    await launch({ permission: 'acceptEdits' })
+    expect(created[0].argv).toEqual(['--permission-profile', ':unrestricted'])
+    expect(created[1].argv).toEqual(['--approval-judge', 'off'])
+  })
+
   it('opens the sandbox network only when the tab can drive the Workbench browser', async () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
@@ -283,6 +295,27 @@ describe('MuseSessions launch', () => {
     expect(hook(off.id, 'SessionStart', { session_id: B, source: 'startup' })).toBe('')
     const first = created[0].env.PATH!.split(':')[0]
     expect(fs.existsSync(path.join(first, 'koloft'))).toBe(true)
+  })
+
+  // ADR-0031
+  it("reminds muse at each prompt and after every tool to write in the language of the owner's latest message, quoting it", async () => {
+    const id = await boundTab()
+    const context = (out: string): string =>
+      JSON.parse(out).hookSpecificOutput.additionalContext as string
+    expect(hook(id, 'PostToolUse', { session_id: A, tool_name: 'read_file' })).toBe('')
+    const atPrompt = hook(id, 'UserPromptSubmit', {
+      session_id: A,
+      prompt: '现在在做什么',
+      turn_id: 't1'
+    })
+    expect(context(atPrompt)).toContain('«现在在做什么»')
+    const afterTool = hook(id, 'PostToolUse', { session_id: A, tool_name: 'read_file' })
+    expect(JSON.parse(afterTool).hookSpecificOutput.hookEventName).toBe('PostToolUse')
+    expect(context(afterTool)).toContain('«现在在做什么»')
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'merge it', turn_id: 't2' })
+    expect(context(hook(id, 'PostToolUse', { session_id: A, tool_name: 'bash' }))).toContain(
+      '«merge it»'
+    )
   })
 })
 
@@ -509,13 +542,83 @@ describe('MuseSessions turns from hooks', () => {
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
   })
 
-  it('retitles the row when the owner renames the session in muse, not when muse names it itself', async () => {
+  it('shows a monitor as waiting in the background until its timeout ends it', async () => {
+    const id = await boundTab()
+    hook(id, 'PostToolUse', {
+      session_id: A,
+      tool_name: 'monitor',
+      tool_input: { command: 'tail -f log', description: 'Watch the log' },
+      tool_response: JSON.stringify({
+        work_id: 'work.v2.monitor.x',
+        timeout_ms: 300,
+        persistent: false
+      })
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toHaveLength(1))
+    expect(sessions.list()[0].background![0]).toMatchObject({
+      kind: 'monitor',
+      label: 'Watch the log',
+      state: 'waiting'
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+
+  it('keeps the session counted as still working while a job muse scheduled for itself is due, until a one-time job fires or a job is deleted', async () => {
+    const id = await boundTab()
+    logRecord(A, { payload_type: 'session.opened.observed', payload: {} })
+    const create = (cron: string, recurring: boolean, job: string): void =>
+      hook(id, 'PostToolUse', {
+        session_id: A,
+        tool_name: 'cron_create',
+        tool_input: { cron, prompt: 'check', recurring },
+        tool_response: `Scheduled ${job} (Every minute, once)`
+      })
+    create('* * * * *', false, '73ded10e')
+    hook(id, 'Stop', { session_id: A, last_assistant_message: 'scheduled', turn_id: 't1' })
+    await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(true))
+    logRecord(A, {
+      payload_type: 'runtime.session',
+      payload: {
+        event: { kind: 'inbox_item_queued', source: { source: 'scheduled', job_id: '73ded10e' } }
+      }
+    })
+    hook(id, 'Stop', { session_id: A, last_assistant_message: 'checked', turn_id: 't2' })
+    await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(false))
+    create('*/5 * * * *', true, '7a328cdd')
+    await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(true))
+    hook(id, 'PostToolUse', {
+      session_id: A,
+      tool_name: 'cron_delete',
+      tool_input: { id: '7a328cdd' },
+      tool_response: 'Deleted 7a328cdd'
+    })
+    await vi.waitFor(async () => expect(await runtime.stillWorking(id)).toBe(false))
+  })
+
+  // MUSE§3
+  it('shows a turn muse starts by itself as working, from the session log since such a turn sends no status, but not one logged before this tab bound', async () => {
+    const queued = (atMs: number): Record<string, unknown> => ({
+      recorded_at: atMs * 1000,
+      payload_type: 'runtime.session',
+      payload: { event: { kind: 'inbox_item_queued', source: { source: 'scheduled' } } }
+    })
+    logRecord(A, queued(started - 60_000))
+    await boundTab()
+    await new Promise((r) => setTimeout(r, 1200))
+    expect(events('prompt')).toHaveLength(0)
+    logRecord(A, queued(Date.now()))
+    await vi.waitFor(() => expect(events('prompt')).toHaveLength(1))
+  })
+
+  it('retitles the row when the owner renames the session in muse, not when muse names it itself, and answers to muse’s own name for it either way', async () => {
     const id = await boundTab()
     logRecord(A, {
       payload_type: 'session.name.changed',
       payload: { new_name: 'iron-libra', source: 'automatic' }
     })
     hook(id, 'Stop', { session_id: A, last_assistant_message: 'x', turn_id: 't1' })
+    await vi.waitFor(() => expect(sessions.peerName(museSessionKey(A))).toBe('iron-libra'))
+    expect(sessions.list()[0].title).not.toBe('iron-libra')
     logRecord(A, {
       payload_type: 'session.name.changed',
       payload: { new_name: 'Docs cleanup', source: 'user' }
@@ -523,6 +626,7 @@ describe('MuseSessions turns from hooks', () => {
     await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Docs cleanup'), {
       timeout: 3000
     })
+    expect(sessions.peerName(museSessionKey(A))).toBe('Docs cleanup')
   })
 })
 
@@ -550,6 +654,39 @@ describe('MuseSessions search', () => {
       { id: museSessionKey(A), snippet: 'The lantern is lit.' }
     ])
     expect(await sessions.searchSnippets('zebra')).toEqual([])
+  })
+})
+
+describe('reading the Muse screen before typing into it', () => {
+  const RULE = '─'.repeat(60)
+  const STATUS = '  fake-model · high · ~/ws · Auto-review'
+
+  // MUSE§11
+  it('takes typing only while the input box between the last two rules is empty, with or without background tasks listed under it', () => {
+    expect(museShowsAnEmptyInputBox(['Muse Code 1.4.9', RULE, '❯', RULE, STATUS])).toBe(true)
+    expect(
+      museShowsAnEmptyInputBox([
+        RULE,
+        '❯ ',
+        RULE,
+        'main · ↓ to select',
+        '└ ◆ Background sleep',
+        STATUS
+      ])
+    ).toBe(true)
+    expect(museShowsAnEmptyInputBox([RULE, '❯ half a draft', RULE, STATUS])).toBe(false)
+    expect(
+      museShowsAnEmptyInputBox([
+        '◇ Calling tools (1s · esc to interrupt)',
+        RULE,
+        'Approval request · keys active in a moment',
+        '⟩ 1. Yes, proceed (y)',
+        '  4. No, and tell Muse Code what to do differently (esc)',
+        RULE,
+        STATUS
+      ])
+    ).toBe(false)
+    expect(museShowsAnEmptyInputBox(['❯'])).toBe(false)
   })
 })
 

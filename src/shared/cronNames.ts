@@ -5,7 +5,7 @@ export const CRON_PERMISSIONS: CronPermission[] = ['same', 'acceptEdits', 'skipA
 export const NEW_JOB_PERMISSION: Record<BackendId, CronPermission> = {
   claude: 'same',
   codex: 'skipAll',
-  muse: 'skipAll'
+  muse: 'same'
 }
 
 const SLUG_CAP_LEAVING_ROOM_FOR_STAMP_IN_64_CHAR_WORKTREE_NAME = 48

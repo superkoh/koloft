@@ -2,6 +2,7 @@ import { shq } from '@shared/shellQuote'
 import { PROGRAM_STATUS_REPLY } from './programStatus'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SAID_MARKS } from './museSessionLog'
+import { QUOTE_PROMPT_FN, REMIND_REPLY_LANGUAGE_FN } from './replyLanguage'
 
 export const MUSE_WRAP_FILE = 'muse-wrap.py'
 export const MUSE_HOOK_FILE = 'muse-hook.sh'
@@ -275,13 +276,21 @@ _, status = os.waitpid(pid, 0)
 sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 128 + os.WTERMSIG(status))
 `
 
-// MUSE§9 MUSE§16
-export const REMOTE_MUSE_HOOK_SH = `#!/bin/sh
+// MUSE§9 MUSE§16 ADR-0031
+export const REMOTE_MUSE_HOOK_SH = `#!/bin/bash
 f="${REMOTE_HOOK_DIR}/$1${MIRROR_SUFFIX}"
+said="$HOME/.koloft/tabs/$1.said"
+${REMIND_REPLY_LANGUAGE_FN}
+${QUOTE_PROMPT_FN}
+input="$(cat | tr -d '\\n')"
 p="$(mktemp 2>/dev/null)" || exit 0
-{ printf '{"t":"hook","event":"%s","input":' "$2"; tr -d '\\n'; printf '}\\n'; } > "$p" && cat "$p" >> "$f"
+printf '{"t":"hook","event":"%s","input":%s}\\n' "$2" "$input" > "$p" && cat "$p" >> "$f"
 rm -f "$p"
-if [ "$2" = SessionStart ] && [ -f "$3" ]; then cat "$3"; fi
+case "$2" in
+  SessionStart) [ -f "$3" ] && cat "$3" ;;
+  UserPromptSubmit) quote_prompt > "$said"; remind_reply_language UserPromptSubmit ;;
+  PostToolUse) remind_reply_language PostToolUse ;;
+esac
 exit 0
 `
 

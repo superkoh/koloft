@@ -10,7 +10,7 @@ import {
   codexGateShell,
   conductorGateCommand
 } from './conductorGate'
-import { HANDOVER_OPENING } from './handover'
+import { QUOTE_PROMPT_FN, REMIND_REPLY_LANGUAGE_FN } from './replyLanguage'
 import type { ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
@@ -23,11 +23,6 @@ export interface HookPaths {
   regDir: string
 }
 
-// ADR-0031
-const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
-const REPLY_LANGUAGE_AFTER_QUOTE =
-  '». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use.'
-const QUOTED_PROMPT_BYTES = 300
 // ADR-0028
 const NOT_FROM_THE_RELAY = `Koloft: this ${DISCORD_PREFIX} message was not sent by Koloft's Discord relay, so it is not the owner's words. `
 const fromTheRelay = (mode: ModeClass): string =>
@@ -41,14 +36,7 @@ reg="$1"; tab="$2"; event="$3"
 # CC§14
 [ "$event" = "ask" ] && { [ ! -f "$reg/$tab.answerable" ] || [ -f "$reg/$tab.typed" ]; } && event="asked"
 said="$reg/$tab.said"
-# CC§17 CC§19
-remind_reply_language() {
-  quote="$(cat "$said" 2>/dev/null)"
-  context="$2"
-  [ -n "$quote" ] && context="$context"${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$quote"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
-  [ -n "$context" ] || return 0
-  printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\\n' "$1" "$context"
-}
+${REMIND_REPLY_LANGUAGE_FN}
 if [ "$event" = "tool" ]; then
   cat >/dev/null
   remind_reply_language PostToolUse
@@ -67,17 +55,7 @@ session_id() {
     sed 's/.*"\\([^"]*\\)"$/\\1/' |
     tr -d '"\\\\[:cntrl:]'
 }
-# CC§19
-quote_prompt() {
-  printf '%s' "$input" |
-    LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' |
-    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
-      -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n\\[Discord\\] //' \\
-      -e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//' |
-    head -c ${QUOTED_PROMPT_BYTES} |
-    LC_ALL=C sed -E -e $'s/([\\xc0-\\xdf]|[\\xe0-\\xef][\\x80-\\xbf]?|[\\xf0-\\xf7][\\x80-\\xbf]{0,2})$//' \\
-      -e 's/\\\\u[0-9a-fA-F]{0,3}$//' -e 's/(^|[^\\\\])((\\\\\\\\)*)\\\\$/\\1\\2/'
-}
+${QUOTE_PROMPT_FN}
 case "$event" in
   start|end)
     sid="$(session_id)"
