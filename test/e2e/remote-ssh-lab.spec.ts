@@ -866,7 +866,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   // PLATFORM§34
-  test('E-SSH-19: a REAL muse 1.4.9 on the echo model (no account) on a Linux machine, inside real tmux through the wrapper and real hooks: the session binds, its light and title follow its turn, /clear follows the new session, and closing the tab ends it there', async ({
+  test('E-SSH-21: a REAL muse 1.4.9 on the echo model (no account) on a Linux machine, inside real tmux through the wrapper and real hooks: the session binds, its light and title follow its turn, /clear follows the new session, and closing the tab ends it there', async ({
     env
   }) => {
     test.skip(!HAVE_LINUX_MUSE, NEEDS_LINUX_MUSE)
