@@ -26,6 +26,7 @@ import {
   type ProgramStatus
 } from './programStatus'
 import {
+  AGY_COST_ENV,
   AGY_DROPS_ENV,
   AGY_GATE_ENV,
   AGY_HOOK_DROP_PREFIX,
@@ -413,6 +414,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           [AGY_TITLE_LOG_ENV]: titleLog,
           ...(instructions ? { [AGY_START_ENV]: startFile } : {}),
           [AGY_TURN_ENV]: turnFile,
+          [AGY_COST_ENV]: path.join(dir, 'agy-cost'),
+          ANT_ACCOUNT: pick.account,
           ...(gate ? { [AGY_GATE_ENV]: gate } : {}),
           ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
           ...agyAccountEnv(apiKey),
@@ -605,11 +608,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const model = run.title?.model
     const pricing = model ? resolvePricing(model) : undefined
     const used = run.title?.contextUsed
+    const costUsd = pricing ? costUsdOf(pricing, tokens) : undefined
+    if (costUsd !== undefined)
+      fs.writeFile(path.join(run.dir, 'agy-cost'), String(costUsd), () => {})
     this.deps.events(run.tabId, {
       type: 'usage',
       usage: {
         ...tokens,
-        ...(pricing ? { costUsd: costUsdOf(pricing, tokens) } : {}),
+        ...(costUsd !== undefined ? { costUsd } : {}),
         ...(used !== undefined ? { ctxPct: used / 100 } : {}),
         model
       }

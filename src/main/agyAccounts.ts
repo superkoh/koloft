@@ -1,5 +1,8 @@
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
+import { execFile } from 'child_process'
+import type { QuotaBucket } from '@shared/types'
 import { record } from './codexObservation'
 import { readJson } from './museAccounts'
 import { writeWholeBeforeVisible } from './jsonDrops'
@@ -122,6 +125,53 @@ export function mergeAgySettings(home: string, ownersGemini: string, k: KoloftSe
   else if (owners.statusLine) merged.statusLine = owners.statusLine
   if (k.apiKey) merged.modelProvider = 'gemini'
   writeAgyJson(settingsFile(home), merged)
+}
+
+const AGY_USAGE_TIMEOUT_MS = 20_000
+
+// AGY§20 AGY§23
+export function readAgyQuota(
+  binary: string,
+  env: NodeJS.ProcessEnv,
+  home: string
+): Promise<QuotaBucket[] | undefined> {
+  return new Promise((resolve) => {
+    execFile(
+      binary,
+      [`--gemini_dir=${home}`, '-p', '/usage', '--output-format', 'json'],
+      { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS },
+      (error, stdout) => resolve(error ? undefined : agyQuotaFrom(stdout))
+    ).stdin?.end()
+  })
+}
+
+// AGY§20 AGY§23
+export function agyQuotaFrom(stdout: string): QuotaBucket[] | undefined {
+  let groups: unknown
+  try {
+    groups = record(record(record(JSON.parse(stdout)).command).data).groups
+  } catch {
+    return undefined
+  }
+  if (!Array.isArray(groups)) return undefined
+  return groups.flatMap((g) => {
+    const group = record(g)
+    const buckets = Array.isArray(group.buckets) ? group.buckets : []
+    return buckets.flatMap((b) => {
+      const bucket = record(b)
+      const left = bucket.remaining_fraction
+      if (typeof left !== 'number') return []
+      const reset = typeof bucket.reset_time === 'string' ? Date.parse(bucket.reset_time) : NaN
+      const label = [group.name, bucket.name].filter((n) => typeof n === 'string' && n).join(' · ')
+      return [
+        {
+          label: label || 'Quota',
+          used: Math.max(0, Math.min(1, 1 - left)),
+          ...(Number.isFinite(reset) ? { resetsAt: reset } : {})
+        }
+      ]
+    })
+  })
 }
 
 // AGY§6

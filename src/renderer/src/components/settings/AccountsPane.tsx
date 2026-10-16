@@ -580,6 +580,17 @@ function AccountRow({
           ) : null}
           {codexBalance && <span className="acct-note">{codexBalance}</span>}
         </div>
+      ) : a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (
+        <div className="acct-meters">
+          {a.quota.map((q) => (
+            <Meter key={q.label} label={q.label} v={q.used} win="" />
+          ))}
+          {a.quota[0].resetsAt ? (
+            <span className="acct-note">
+              {a.quota[0].label} resets {resetLabel(a.quota[0].resetsAt, now)}
+            </span>
+          ) : null}
+        </div>
       ) : a.kind === 'muse-home' || a.kind === 'agy-home' ? (
         <div className="acct-meters">
           <span className="acct-note">

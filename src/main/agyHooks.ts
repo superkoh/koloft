@@ -10,6 +10,7 @@ export const AGY_START_ENV = 'KOLOFT_AGY_START'
 export const AGY_TURN_ENV = 'KOLOFT_AGY_TURN'
 export const AGY_GATE_ENV = 'KOLOFT_AGY_GATE'
 export const AGY_OWNER_TITLE_ENV = 'KOLOFT_AGY_OWNER_TITLE'
+export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
 
 export const AGY_HOOK_DROP_PREFIX = 'agy-hook-'
 

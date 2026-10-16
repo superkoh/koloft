@@ -34,6 +34,7 @@ import {
   agySignedIn,
   oneShotAgyHome,
   prepareAgyHome,
+  readAgyQuota,
   setAgyApiKeyRoute
 } from './agyAccounts'
 import { ownersGeminiDir } from './agyStore'
@@ -131,6 +132,7 @@ import {
   DEFAULT_THEME,
   remoteWrapperScript,
   setupStatusline,
+  setupAgyStatusline,
   statusLineSetting
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
@@ -296,6 +298,7 @@ import {
 import type {
   AccountAddResult,
   AccountKind,
+  QuotaBucket,
   AccountMeta,
   AccountView,
   ArtifactView,
@@ -524,6 +527,11 @@ const slash = new SlashCommands({
   ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
   exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
   typeNow: (tabId, keys) => typeKeys((data) => ptyMgr.write(tabId, data), keys),
+  // AGY§23
+  outputOnlyOnScreen: (tabId) =>
+    backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
+      ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
+      : undefined,
   post: (channelId, text) => discordRelay?.say(channelId, text),
   card: (channelId, card) => discordRelay?.card(channelId, card)
 })
@@ -1006,7 +1014,12 @@ let rendererReady = false
 // CC§7
 const usageViews = new Map<
   string,
-  { usage?: UsageSnapshot; limits?: CodexLimits; probeError?: ProbeErrorKind }
+  {
+    usage?: UsageSnapshot
+    limits?: CodexLimits
+    quota?: QuotaBucket[]
+    probeError?: ProbeErrorKind
+  }
 >()
 
 function viewKey(name: string, kind: AccountKind): string {
@@ -1813,10 +1826,23 @@ function pickAgyHome(resumeSessionId?: string): { account: string; home: string 
 async function probeAgyAccount(name: string): Promise<void> {
   const acct = findAccount(name, 'agy-home')
   if (!acct) return
-  const signedIn = agySignedIn(agyHomeFor(name), !!(await agyApiKeyOf(name)))
+  const home = agyHomeFor(name)
+  const apiKey = await agyApiKeyOf(name)
+  const signedIn = agySignedIn(home, !!apiKey)
   const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
   if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+  const key = viewKey(name, 'agy-home')
+  if (signedIn && !apiKey) {
+    const quota = await agyUsage(home)
+    usageViews.set(key, quota ? { quota } : { ...usageViews.get(key), probeError: 'network' })
+  }
   pushAccounts()
+}
+
+async function agyUsage(home: string): Promise<QuotaBucket[] | undefined> {
+  const binary = (await agySessions?.availability())?.available && agySessions?.cliBinary
+  if (!binary) return undefined
+  return readAgyQuota(binary, { ...agySessions?.defaultEnv, ...agyAccountEnv() }, home)
 }
 
 function probeAgyAccounts(): Promise<void> {
@@ -2115,6 +2141,7 @@ app.whenReady().then(() => {
 
   const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
   const statusline = setupStatusline()
+  const agyStatusline = setupAgyStatusline(statusline)
   const playwrightBin = setupPlaywrightCli()
   playwrightCliBin = playwrightBin
   fallbackBin = bundledGhDir()
@@ -2388,7 +2415,7 @@ app.whenReady().then(() => {
       ownersGemini,
       pickHome: pickAgyHome,
       apiKeyOf: agyApiKeyOf,
-      builtInStatusLine: () => undefined,
+      builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),
       assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
       conductorGate: {
         script: hookPaths.agyGateScript,

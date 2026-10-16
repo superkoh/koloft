@@ -256,9 +256,16 @@ export const CODEX_RESET_OUTCOMES = [
 
 export type CodexResetOutcome = (typeof CODEX_RESET_OUTCOMES)[number] | 'failed'
 
+export interface QuotaBucket {
+  label: string
+  used: number
+  resetsAt?: number
+}
+
 export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
   limits?: CodexLimits
+  quota?: QuotaBucket[]
   probeError?: ProbeErrorKind
 }
 
