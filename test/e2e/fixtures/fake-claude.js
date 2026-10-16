@@ -1411,7 +1411,7 @@ function handleLine(line) {
     return
   }
   if (!text) return void process.stdout.write('> ')
-  fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+  fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: text })
   const meta = usageMeta()
   append([
     { type: 'user', message: { role: 'user', content: text }, cwd },

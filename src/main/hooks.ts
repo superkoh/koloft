@@ -9,7 +9,12 @@ import {
   codexGateShell,
   conductorGateCommand
 } from './conductorGate'
-import { HANDOVER_OPENING, OWNER_WORDS_BEFORE_QUOTE, OWNER_WORDS_END } from './handover'
+import {
+  HANDOVER_OPENING,
+  OWNER_WORDS_BEFORE_QUOTE,
+  OWNER_WORDS_END,
+  OWNER_WORDS_QUOTED_CHARS
+} from './handover'
 import { FROM_A_SESSION, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
@@ -89,8 +94,13 @@ exit 0
 `
 
 // ADR-0031
+export function seedOwnerWords(said: string, ownerWords: string): void {
+  fs.writeFileSync(said, JSON.stringify(ownerWords.slice(0, OWNER_WORDS_QUOTED_CHARS)).slice(1, -1))
+}
+
+// ADR-0031
 export function seedCodexOwnerWords(said: string, ownerWords: string): void {
-  fs.writeFileSync(said, JSON.stringify(ownerWords).slice(1, -1))
+  seedOwnerWords(said, ownerWords)
   fs.writeFileSync(said + HANDED_OVER_TASK_COMES_FIRST, '')
 }
 
@@ -411,11 +421,15 @@ export function discordIdsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.discord-ids`)
 }
 
+export function saidFile(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}.said`)
+}
+
 // ADR-0031
 export function quotedPrompt(regDir: string, tabId: string): string | undefined {
   let escaped: string
   try {
-    escaped = fs.readFileSync(path.join(regDir, `${tabId}.said`), 'utf8').trimEnd()
+    escaped = fs.readFileSync(saidFile(regDir, tabId), 'utf8').trimEnd()
   } catch {
     return undefined
   }

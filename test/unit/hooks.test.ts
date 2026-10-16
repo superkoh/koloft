@@ -20,11 +20,13 @@ import {
   removeConductorMarker,
   markAnswerable,
   quotedPrompt,
+  saidFile,
   seedCodexOwnerWords,
+  seedOwnerWords,
   writeAllowFile
 } from '../../src/main/hooks'
 import { CODEX_GATE_HOOK_COMMAND } from '../../src/main/conductorGate'
-import { withHandover } from '../../src/main/handover'
+import { OWNER_WORDS_QUOTED_CHARS, withHandover } from '../../src/main/handover'
 import { crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
@@ -546,6 +548,21 @@ describe('injected hook script', () => {
       expect(remindedQuote(tool('tabLangOW'), 'PostToolUse')).toBe(ownerWords)
       expect(quotedPrompt(regDir, 'tabLangOW')).toBe(ownerWords)
       expect(quotedPrompt(regDir, 'tabLangNoPrompt')).toBeUndefined()
+    })
+
+    // ADR-0031
+    it('owner words Koloft writes for a tab itself (typed in ⌘P) are quoted by the next reminder and read back whole for a child, the ⌘P message after them does not replace them, and a long text is cut short', () => {
+      const typed = '把 "侧栏" 调暗\n一点 \\ 😀'
+      seedOwnerWords(saidFile(regDir, 'tabLangPalette'), typed)
+      const palette = JSON.parse(
+        crossSessionLine('prompting', `The owner typed this in ⌘P: ${typed}`, 'koloft-palette-1')!
+      ).message.content
+      expect(remindedQuote(prompt('tabLangPalette', palette), 'UserPromptSubmit')).toBe(typed)
+      expect(remindedQuote(tool('tabLangPalette'), 'PostToolUse')).toBe(typed)
+      expect(quotedPrompt(regDir, 'tabLangPalette')).toBe(typed)
+
+      seedOwnerWords(saidFile(regDir, 'tabLangPalette'), '长'.repeat(4000))
+      expect(quotedPrompt(regDir, 'tabLangPalette')).toBe('长'.repeat(OWNER_WORDS_QUOTED_CHARS))
     })
 
     // CC§19

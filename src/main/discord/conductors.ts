@@ -51,6 +51,7 @@ export interface AssistTask {
   brief: string
   allow?: string[]
   staysOpen?: true
+  ownerWords?: string
 }
 
 export interface AssistIdentity {
@@ -641,7 +642,8 @@ export class Conductors {
       role,
       allow: task.allow ?? [],
       title,
-      firstPrompt: TASK_KICKOFF
+      // ADR-0031
+      firstPrompt: task.ownerWords ?? TASK_KICKOFF
     }
     const placeholder: RunningTask = { ...task, scope, role, tabId: '' }
     this.tasks.push(placeholder)

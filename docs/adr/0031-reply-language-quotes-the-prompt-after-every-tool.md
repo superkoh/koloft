@@ -55,7 +55,13 @@ owner in English in its tab and its Discord thread. In the transcripts of 2026-1
 parent's last message from the owner that is neither a session's report nor Assist's
 wrapper, or, when another session started it, that session's words) into the handover preamble as "The owner last wrote: «…»", the hook
 quotes those words for a handover prompt that carries them, and the child's title is
-asked for in their language. A Codex child gets the same sentence in its developer
+asked for in their language. What the owner types in ⌘P counts as their words too: a
+new Assist task starts with them as its first prompt, not the English "Do the task in
+your instructions now." the hook would otherwise quote (a ⌘P task's saved words read
+just that, so its children were told the owner wrote English), and when they reach a
+running Claude Assist as a message from another session, which the hook never quotes,
+Koloft writes them as its saved words itself — trusting a "typed in ⌘P" prefix instead
+would let any session forge the owner's words. A Codex child gets the same sentence in its developer
 instructions, and its hooks start from the owner's words and skip its handed-over task.
 Measured 2026-10-16 with fresh sessions, an English task and the shipped hook: Opus 5.5
 (`claude -p`) answered in Chinese 0 / 2 without the owner's words and 2 / 2 with them,

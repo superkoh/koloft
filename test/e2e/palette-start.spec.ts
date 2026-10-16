@@ -270,7 +270,8 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('words about Koloft itself go to a global Assist task with them as its brief — a second such request under the title of a task still open reaches that task as a message — and "set up Discord" to the global Assist’s Discord setup task; "ask <workspace> …" reaches that workspace’s running Assist as a message, or opens a task of it when none runs', async ({
+  // ADR-0031
+  test('words about Koloft itself go to a global Assist task with them as its brief and its first prompt, so its reply language and its children quote the owner’s words — a second such request under the title of a task still open reaches that task as a message — and "set up Discord" to the global Assist’s Discord setup task; "ask <workspace> …" reaches that workspace’s running Assist as a message, or opens a task of it when none runs', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -278,7 +279,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      const tasks = (): Promise<{ scope: string; name: string }[]> =>
+      const tasks = (): Promise<{ tabId: string; scope: string; name: string }[]> =>
         page.evaluate(() => window.api.conductors.tasks())
 
       assistAnswers(env, { hand: 'koloft', title: 'Dark mode', why: 'A Koloft setting.' })
@@ -290,12 +291,20 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect
         .poll(tasks)
         .toEqual([{ tabId: expect.any(String), scope: 'global', name: 'Dark mode' }])
+      expect(textAfterDashes(global)).toBe('turn on dark mode')
+      const [{ tabId: darkMode }] = await tasks()
+      const ownerWords = (): string => {
+        const f = path.join(env.userData, 'hook-sessions', `${darkMode}.said`)
+        return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim() : ''
+      }
+      await expect.poll(ownerWords, { timeout: 30_000 }).toBe('turn on dark mode')
 
       await ask(app, page, 'and dim the sidebar too')
       await page.keyboard.press('Enter')
       await expect
         .poll(() => peerLines(env), { timeout: 30_000 })
         .toContain('The owner typed this in ⌘P: and dim the sidebar too')
+      expect(ownerWords()).toBe('and dim the sidebar too')
       expect(readCalls(env)).toHaveLength(1)
       expect(await tasks()).toHaveLength(1)
 
@@ -305,7 +314,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect
         .poll(tasks)
         .toContainEqual({ tabId: expect.any(String), scope: 'global', name: 'Discord setup' })
-      await waitForCalls(env, 2, 30_000)
+      expect(textAfterDashes((await waitForCalls(env, 2, 30_000))[1])).toBe('set up Discord')
 
       const opened = await page.evaluate((p) => window.api.conductors.open(p), env.workspaces.a)
       expect(opened.ok).toBe(true)

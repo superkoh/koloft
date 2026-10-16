@@ -26,8 +26,8 @@ export async function openConductor(scope: string, fresh = false): Promise<void>
   st.activateTab(r.tabId)
 }
 
-export async function setUpDiscordWithAssist(): Promise<string | null> {
-  const r = await window.api.discord.setUpWithAssist()
+export async function setUpDiscordWithAssist(ownerWords?: string): Promise<string | null> {
+  const r = await window.api.discord.setUpWithAssist(ownerWords)
   if (!r.ok) return r.error
   const st = useStore.getState()
   st.setSettingsOpen(false)

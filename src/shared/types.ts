@@ -1304,7 +1304,7 @@ export interface KoloftApi {
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
     channels(): Promise<DiscordChannel[]>
-    setUpWithAssist(): Promise<ConductorOpenResult>
+    setUpWithAssist(ownerWords?: string): Promise<ConductorOpenResult>
   }
 }
 
