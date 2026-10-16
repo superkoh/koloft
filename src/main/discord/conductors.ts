@@ -20,6 +20,7 @@ import {
   assistTaskName,
   bindingProblem,
   GLOBAL_SCOPE,
+  isAssistScope,
   keepPinnedScopes,
   newerSnowflake,
   conductorName,
@@ -426,7 +427,7 @@ export class Conductors {
   }
 
   private canHaveAssist(scope: string): boolean {
-    return scope === GLOBAL_SCOPE || this.d.isPinned(scope)
+    return isAssistScope(scope, (s) => this.d.isPinned(s))
   }
 
   private saveProblem(input: NewChannelInput, channelId?: string): string | undefined {

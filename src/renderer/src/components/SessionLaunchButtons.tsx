@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { LuLoaderCircle } from 'react-icons/lu'
+import { IconLoading } from '../icons'
 import {
   BACKEND_LABEL,
   SESSION_BACKENDS,
@@ -177,7 +177,7 @@ export function BusyLine({ children }: { children: ReactNode }) {
   return (
     <div className="fresh-line busy">
       <span className="fico-l">
-        <LuLoaderCircle size={14} />
+        <IconLoading size={14} />
       </span>
       <span>{children}</span>
     </div>

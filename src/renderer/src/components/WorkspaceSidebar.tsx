@@ -17,20 +17,22 @@ import {
   type MouseEvent
 } from 'react'
 import { createPortal } from 'react-dom'
-import { GoGitBranch, GoGitPullRequest, GoIssueOpened } from 'react-icons/go'
 import {
-  LuAlarmClock,
-  LuCheck,
-  LuChevronDown,
-  LuChevronRight,
-  LuFileText,
-  LuFolder,
-  LuFolderOpen,
-  LuGitBranchPlus,
-  LuPin,
-  LuPlus,
-  LuX
-} from 'react-icons/lu'
+  IconBranch,
+  IconCheck,
+  IconChevronDown,
+  IconChevronRight,
+  IconClose,
+  IconFile,
+  IconFolder,
+  IconFolderOpen,
+  IconIssue,
+  IconNewWorktree,
+  IconPin,
+  IconPlus,
+  IconPullRequest,
+  IconScheduled
+} from '../icons'
 import type { BackendId, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
 import { ATTENTION_REASON } from '@shared/types'
@@ -164,7 +166,7 @@ function UnseenFileMark({ tabId }: { tabId: string }): JSX.Element | null {
       className="ws-tab-opened"
       title={`${basename(src)} was opened here — select this session to see it`}
     >
-      <LuFileText size={12} />
+      <IconFile size={12} />
     </span>
   )
 }
@@ -474,7 +476,7 @@ export function WorkspaceSidebar({
       Keep running
       {row.resident && (
         <span className="k on">
-          <LuCheck size={14} />
+          <IconCheck size={14} />
         </span>
       )}
     </div>
@@ -706,7 +708,7 @@ export function WorkspaceSidebar({
     const w = rows.find((r) => r.workspace.path === fresh.path)
     if (!w) return null
     const f = freshnessShown(w.workspace.freshness) ? w.workspace.freshness : undefined
-    if (!f && !w.workspace.github) return null
+    if (!f && !w.workspace.github && !w.workspace.gitPickable) return null
     return (
       <FreshnessPopover
         key={fresh.path}
@@ -714,7 +716,6 @@ export function WorkspaceSidebar({
         f={f}
         github={w.workspace.github}
         remote={w.workspace.remote}
-        rows={w.rows}
         left={fresh.left}
         top={fresh.top}
         onClose={() => setFresh(null)}
@@ -752,15 +753,15 @@ export function WorkspaceSidebar({
               isGit: ws.isGit
             }
             const badge = behindBadge(ws.freshness, Date.now())
-            const gitPanel = freshnessShown(ws.freshness) || !!ws.github
+            const gitPanel = freshnessShown(ws.freshness) || !!ws.github || !!ws.gitPickable
             const nameMq = `ws:${ws.path}`
             const door = ws.isGit
               ? {
                   title: 'New worktree session · ⇧⌘N',
                   label: 'New worktree…',
-                  Icon: LuGitBranchPlus
+                  Icon: IconNewWorktree
                 }
-              : { title: 'New session', label: 'New session', Icon: LuPlus }
+              : { title: 'New session', label: 'New session', Icon: IconPlus }
             const openDoor = (): void => {
               clearTimers()
               setMenu(null)
@@ -832,7 +833,7 @@ export function WorkspaceSidebar({
                     <div className="ws-tab-main">
                       {isCronRow && (
                         <span className="ws-tab-cron" title="started by a scheduled job">
-                          <LuAlarmClock size={12} />
+                          <IconScheduled size={12} />
                         </span>
                       )}
                       {row.resident && (
@@ -840,7 +841,7 @@ export function WorkspaceSidebar({
                           className="ws-tab-resident"
                           title="Keep running — never sleeps, and starts again each time Koloft opens"
                         >
-                          <LuPin size={12} />
+                          <IconPin size={12} />
                         </span>
                       )}
                       <span className={'ws-tab-title' + (mq?.id === row.id ? ' mq' : '')}>
@@ -893,7 +894,7 @@ export function WorkspaceSidebar({
                             setFoldedRows((f) => ({ ...f, [row.id]: !f[row.id] }))
                           }}
                         >
-                          {folded ? <LuChevronRight size={12} /> : <LuChevronDown size={12} />}
+                          {folded ? <IconChevronRight size={12} /> : <IconChevronDown size={12} />}
                         </button>
                       )}
                     </div>
@@ -951,7 +952,7 @@ export function WorkspaceSidebar({
                       setCollapsed((c) => ({ ...c, [ws.path]: !c[ws.path] }))
                     }}
                   >
-                    {open ? <LuFolderOpen size={15} /> : <LuFolder size={15} />}
+                    {open ? <IconFolderOpen size={15} /> : <IconFolder size={15} />}
                   </span>
                   <span className={'ws-name' + (mq?.id === nameMq ? ' mq' : '')}>
                     <i ref={mq?.id === nameMq ? mqRef : undefined}>{workspaceName(ws)}</i>
@@ -987,7 +988,7 @@ export function WorkspaceSidebar({
                           : undefined
                       }
                     >
-                      <GoGitBranch size={12} />
+                      <IconBranch size={12} />
                       {badge && (
                         <button
                           className={badge.cls}
@@ -1004,13 +1005,13 @@ export function WorkspaceSidebar({
                         <span className="ws-gh">
                           {ws.github.issues > 0 && (
                             <span aria-label={openIssuesLabel(ws.github.issues)}>
-                              <GoIssueOpened size={12} />
+                              <IconIssue size={12} />
                               {countLabel(ws.github.issues)}
                             </span>
                           )}
                           {ws.github.prs > 0 && (
                             <span aria-label={openPullsLabel(ws.github.prs)}>
-                              <GoGitPullRequest size={12} />
+                              <IconPullRequest size={12} />
                               {countLabel(ws.github.prs)}
                             </span>
                           )}
@@ -1054,7 +1055,7 @@ export function WorkspaceSidebar({
                           onScheduledJobs(ws.path, soon.id)
                         }}
                       >
-                        <LuAlarmClock size={12} className="ws-next-ico" />
+                        <IconScheduled size={12} className="ws-next-ico" />
                         <span className="ws-next-name">{soon.name}</span>
                         {soon.more > 0 && <span className="ws-next-more">{`+${soon.more}`}</span>}
                         <span className="ws-next-dot">·</span>
@@ -1095,7 +1096,7 @@ export function WorkspaceSidebar({
                     onClick={() => !removing && setConfirmRemove(null)}
                     aria-label="Close"
                   >
-                    <LuX size={16} />
+                    <IconClose size={16} />
                   </span>
                 </div>
                 <div className="modal-body">
@@ -1158,7 +1159,7 @@ export function WorkspaceSidebar({
                     onClick={() => setConfirmOrphan(null)}
                     aria-label="Close"
                   >
-                    <LuX size={16} />
+                    <IconClose size={16} />
                   </span>
                 </div>
                 <div className="modal-body">

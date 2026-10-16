@@ -64,6 +64,9 @@ interface Harness {
 function harness(
   opts: {
     autoFetch?: () => boolean
+    autoPull?: () => boolean
+    busy?: (wsPath: string) => boolean
+    toast?: (text: string) => void
     paths?: string[]
     missing?: string[]
     gitBin?: string
@@ -82,6 +85,9 @@ function harness(
           missing: opts.missing ? opts.missing.includes(p) : !fs.existsSync(p)
         })),
       autoFetch: opts.autoFetch ?? ((): boolean => true),
+      autoPull: opts.autoPull,
+      busy: opts.busy,
+      toast: opts.toast,
       onChange: (p) => changed.push(p),
       runner: (p) => {
         const key = parseRemoteKey(p)
@@ -419,6 +425,26 @@ describe('sweep throttle, backoff and the gitAutoFetch switch', () => {
     expect(h.engine.get(work)).toBeUndefined()
     await h.engine.fetchNow(work)
     expect(f(h.engine.get(work)).lastAttemptAt).toBe(T0)
+  })
+
+  it('gitAutoPull fast-forwards a clean default branch right after the sweep fetches it, and says so', async () => {
+    const toasts: string[] = []
+    const h = harness({ autoPull: () => true, toast: (t) => toasts.push(t) })
+    publish(2)
+    await h.engine.sweep()
+    expect(f(h.engine.get(work)).behind).toBe(0)
+    expect(git(work, 'rev-parse', 'HEAD')).toBe(git(work, 'rev-parse', 'origin/main'))
+    expect(toasts).toEqual([expect.stringMatching(/^work · main: fast-forwarded 2 commits/)])
+  })
+
+  it.each([
+    ['a session there is mid-task', { autoPull: (): boolean => true, busy: (): boolean => true }],
+    ['the switch is off', { autoPull: (): boolean => false }]
+  ])('gitAutoPull leaves the checkout alone when %s', async (_, opts) => {
+    publish(2)
+    const h = harness(opts)
+    await h.engine.sweep()
+    expect(f(h.engine.get(work)).behind).toBe(2)
   })
 
   it('skips a workspace whose directory is gone', async () => {

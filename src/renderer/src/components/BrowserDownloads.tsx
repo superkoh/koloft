@@ -1,5 +1,5 @@
 import { useEffect, useRef, type JSX } from 'react'
-import { LuFileText, LuTrash2 } from 'react-icons/lu'
+import { IconDelete, IconFile } from '../icons'
 import type { DownloadItem, DownloadList } from './downloadList'
 
 const OPENER_BUTTON_IS_NOT_OUTSIDE = '[data-panel-toggle="downloads"]'
@@ -57,7 +57,7 @@ export function BrowserDownloads({
       <div className="bdl-head">
         Downloads
         <button className="bdl-clear" onClick={onClear} title="Clear finished downloads">
-          <LuTrash2 size={12} />
+          <IconDelete size={12} />
           Clear
         </button>
       </div>
@@ -65,7 +65,7 @@ export function BrowserDownloads({
       {list.items.map((item) => (
         <div className="bdl-row" key={item.id} data-state={item.state}>
           <span className="bdl-ico">
-            <LuFileText size={14} />
+            <IconFile size={14} />
           </span>
           <span className="bdl-nm">
             <b title={item.name}>{item.name}</b>

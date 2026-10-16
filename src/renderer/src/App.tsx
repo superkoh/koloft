@@ -25,15 +25,15 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  LuSettings,
-  LuFolderPlus,
-  LuPanelRight,
-  LuPanelLeft,
-  LuAppWindow,
-  LuCoffee,
-  LuCircleArrowUp,
-  LuChevronRight
-} from 'react-icons/lu'
+  IconAddProject,
+  IconChevronRight,
+  IconKeepAwake,
+  IconOpenedPage,
+  IconSettings,
+  IconSidebarLeft,
+  IconSidebarRight,
+  IconUpdate
+} from './icons'
 import type {
   BrowserAuthChallenge,
   BrowserCdpOp,
@@ -114,7 +114,7 @@ import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
 import { ConductorsIsland, setUpDiscordWithAssist } from './components/ConductorsIsland'
 import { BindConductorDialog } from './components/BindConductorDialog'
-import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
+import { conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
@@ -151,6 +151,7 @@ import {
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
+const CENTER_TERMINAL_MAX_COLS = 120
 
 const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch arguments'
 
@@ -325,6 +326,11 @@ export default function App(): JSX.Element {
   }, [])
 
   const [tuiFocus, setTuiFocus] = useState(0)
+  const focusTuiFromMargin = useCallback((e: MouseEvent<HTMLDivElement>): void => {
+    if (e.target !== e.currentTarget) return
+    e.preventDefault()
+    setTuiFocus((n) => n + 1)
+  }, [])
 
   const returnFocus = useCallback((): void => {
     const st = useStore.getState()
@@ -1078,7 +1084,7 @@ export default function App(): JSX.Element {
     selectedWs,
     lastWsPath
   )
-  const notesWs = activeConductor ? conductorNotesWorkspace(activeConductor) : currentWs
+  const notesWs = activeConductor ?? currentWs
   notesWsRef.current = notesWs
   const [notesFocusWs, setNotesFocusWs] = useState(notesWs)
   if (notesFocusWs !== notesWs) {
@@ -1174,7 +1180,7 @@ export default function App(): JSX.Element {
       path: route.path,
       worktree: route.worktree
     }
-    if (pullable(ws) && pending.worktree?.kind !== 'existing') {
+    if (pullable(ws)) {
       requestNew('main', ws.workspace.path, pending)
       return
     }
@@ -1474,7 +1480,7 @@ export default function App(): JSX.Element {
               title="Page Koloft opened for you"
               aria-label="Opened page"
             >
-              <LuAppWindow size={20} />
+              <IconOpenedPage size={20} />
             </button>
           )}
           {window.api.isDev && (
@@ -1494,7 +1500,7 @@ export default function App(): JSX.Element {
             title="Add workspace (⇧⌘O)"
             aria-label="Add workspace"
           >
-            <LuFolderPlus size={20} />
+            <IconAddProject size={20} />
           </button>
           {addMenu && (
             <div
@@ -1536,13 +1542,13 @@ export default function App(): JSX.Element {
               className="btn-primary upd-banner"
               onClick={() => useStore.getState().openUpdateCheck()}
             >
-              <LuCircleArrowUp size={15} />
+              <IconUpdate size={15} />
               <span>
                 {updateOffer.status === 'restart-required'
                   ? `Koloft ${updateOffer.installed} installed · restart`
                   : `Koloft ${updateOffer.latest} available`}
               </span>
-              <LuChevronRight size={15} />
+              <IconChevronRight size={15} />
             </button>
           )}
           <ConductorsIsland />
@@ -1581,7 +1587,7 @@ export default function App(): JSX.Element {
             aria-label="Keep Mac awake"
             aria-pressed={keepAwake}
           >
-            <LuCoffee size={20} />
+            <IconKeepAwake size={20} />
           </button>
           <button
             className="tb-ico"
@@ -1589,7 +1595,7 @@ export default function App(): JSX.Element {
             title="Settings"
             aria-label="Settings"
           >
-            <LuSettings size={20} />
+            <IconSettings size={20} />
           </button>
         </div>
         <div
@@ -1627,12 +1633,14 @@ export default function App(): JSX.Element {
                       style={{
                         display: t.id === shown.id || t.ghost === shown.id ? 'block' : 'none'
                       }}
+                      onMouseDown={focusTuiFromMargin}
                     >
                       <TerminalView
                         id={t.ghost}
                         active={t.id === shown.id || t.ghost === shown.id}
                         scrollbar={false}
                         focusSignal={tuiFocus}
+                        maxCols={CENTER_TERMINAL_MAX_COLS}
                       />
                     </div>
                   ),
@@ -1643,11 +1651,13 @@ export default function App(): JSX.Element {
                       display: t.id === shown.id ? 'block' : 'none',
                       visibility: t.ghost ? 'hidden' : undefined
                     }}
+                    onMouseDown={focusTuiFromMargin}
                   >
                     <TerminalView
                       id={t.id}
                       active={t.id === shown.id && !t.ghost}
                       scrollbar={false}
+                      maxCols={CENTER_TERMINAL_MAX_COLS}
                       onUserInput={
                         isSessionKind(t.kind)
                           ? () => window.api.sessions.noteActivity(t.id)
@@ -1857,7 +1867,7 @@ export default function App(): JSX.Element {
                 title="Workbench (⇧⌘B)"
                 aria-label="Workbench"
               >
-                <LuPanelRight size={18} />
+                <IconSidebarRight size={18} />
               </button>
             )}
           </div>
@@ -1871,7 +1881,7 @@ export default function App(): JSX.Element {
         aria-label="Sidebar"
         aria-pressed={!sidebarHidden}
       >
-        <LuPanelLeft size={18} />
+        <IconSidebarLeft size={18} />
         {callingCount > 0 && <span className="ws-tab-parked ws-unread-count">{callingCount}</span>}
       </button>
       {/* ADR-0013 */}

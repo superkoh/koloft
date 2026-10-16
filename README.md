@@ -4,7 +4,7 @@
 
 # Koloft
 
-[![Latest release](https://img.shields.io/github/v/release/superkoh/koloft-releases?label=release&color=blue)](https://github.com/superkoh/koloft-releases/releases)
+[![Latest release](https://img.shields.io/github/v/release/superkoh/koloft?label=release&color=blue)](https://github.com/superkoh/koloft/releases)
 [![Licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
 [![Platform: macOS arm64](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)](#install-macos-apple-silicon)
 [![CI](https://github.com/superkoh/koloft/actions/workflows/ci.yml/badge.svg)](https://github.com/superkoh/koloft/actions/workflows/ci.yml)
@@ -52,6 +52,11 @@ shell.
 - **Git panel** — hover a folder's branch sign: how far it is behind `origin` (also a
   badge on the row), `Fetch now`, a fast-forward `Pull`, and the repository's open issue
   and pull request counts.
+- **Git accounts per repository** — add git logins for GitHub, GitHub Enterprise, GitLab,
+  Bitbucket, Azure DevOps, Gitea / Forgejo / Codeberg or any other git server, and pick
+  one per repository in its git panel. Every Claude Code and Codex session there pushes
+  and fetches as that account (on GitHub and GitHub Enterprise, `gh` runs as it too). A
+  folder with no pick keeps your own git and gh setup.
 - **⌘P** — type what a session should do and ⏎ starts it where Assist picks; the same
   box jumps to any session and searches every chat.
 - **Assist** — Koloft's own AI, run by one of your accounts. It does small jobs for
@@ -123,7 +128,7 @@ shell.
 ## Install (macOS, Apple Silicon)
 
 Download the `.dmg` from
-[Releases](https://github.com/superkoh/koloft-releases/releases), open it, and drag Koloft
+[Releases](https://github.com/superkoh/koloft/releases), open it, and drag Koloft
 to Applications. The app is signed with an Apple Developer ID and notarized by Apple, so
 it opens with a normal double-click.
 
@@ -131,7 +136,7 @@ Or in one line from the terminal, which fetches the latest dmg and copies `Kolof
 into `/Applications`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/superkoh/koloft/main/install.sh | bash
 ```
 
 ## How it works
@@ -272,6 +277,13 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
     its own Codex home folder inside Koloft's app data, holding that login; all of them
     share your Codex settings and trusted folders. New Codex sessions start on the
     least-used one.
+  - Git accounts: add one for GitHub or GitHub Enterprise (a one-time code and the
+    server's sign-in page in your own browser, or a pasted token), GitLab.com, Bitbucket
+    or Gitea / Forgejo / Codeberg (sign in on the site), your own GitLab or Azure DevOps
+    (a pasted token), or any other server (its address, your username and a token, kept
+    without checking). Tokens live in the Keychain. Pick one per repository in its git
+    panel's `Account` part; a folder with no pick, and a remote (SSH) folder, keeps the
+    machine's own git and gh setup.
 
   With the mode off, sessions run a bare `claude` or `codex` on whatever login the
   machine already has.

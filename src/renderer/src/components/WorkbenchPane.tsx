@@ -9,29 +9,29 @@ import {
   type JSX
 } from 'react'
 import {
-  LuAlignLeft,
-  LuCloudUpload,
-  LuDownload,
-  LuEllipsis,
-  LuFileText,
-  LuGitCommitHorizontal,
-  LuGitPullRequest,
-  LuGitPullRequestCreate,
-  LuGithub,
-  LuGlobe,
-  LuLink,
-  LuListTree,
-  LuMaximize2,
-  LuMinimize2,
-  LuPencil,
-  LuPlus,
-  LuRotateCw,
-  LuSend,
-  LuTerminal,
-  LuVolume2,
-  LuVolumeX,
-  LuX
-} from 'react-icons/lu'
+  IconClose,
+  IconCommit,
+  IconCopyLink,
+  IconDownload,
+  IconEdit,
+  IconExpand,
+  IconFile,
+  IconFiles,
+  IconMore,
+  IconNewPullRequest,
+  IconOutline,
+  IconPlus,
+  IconPullRequest,
+  IconPush,
+  IconReload,
+  IconSend,
+  IconShrink,
+  IconSoundOff,
+  IconSoundOn,
+  IconTerminal,
+  IconWebPage
+} from '../icons'
+import { BsGithub } from 'react-icons/bs'
 import { routeFor } from '@shared/browserRoute'
 import {
   CDP_GUEST_ID_RETRIES,
@@ -56,7 +56,8 @@ import type {
   SessionInfo
 } from '@shared/types'
 import { CommitDialog } from './CommitDialog'
-import { commentBlocked } from './changesModel'
+import { CHANGES_MSG, commentBlocked } from './changesModel'
+import { FilesTabLabel, useChangeTotals } from './FilesTabLabel'
 import { checksDot, checksLine, failingChecks, type ChecksDot } from './prChecksView'
 import { BrowserActions } from './BrowserActions'
 import { BrowserAddressBar } from './BrowserAddressBar'
@@ -1578,6 +1579,7 @@ export function WorkbenchPane({
     return out
   }, [states, liveTabs])
   const changedCount = Object.keys(git).length
+  const totals = useChangeTotals(git, numstat, treeRoot, base)
   const backlink =
     activeTab?.sourceTabId && set.tabs.some((t) => t.id === activeTab.sourceTabId)
       ? activeTab.sourceTabId
@@ -1585,13 +1587,13 @@ export function WorkbenchPane({
 
   const iconFor = (t: WorkbenchTab): JSX.Element =>
     t.kind === 'files' ? (
-      <LuListTree size={13} />
+      <IconFiles size={13} />
     ) : t.kind === 'terminal' ? (
-      <LuTerminal size={12} />
+      <IconTerminal size={12} />
     ) : t.kind === 'web' ? (
-      <LuGlobe size={12} />
+      <IconWebPage size={12} />
     ) : (
-      <LuFileText size={12} />
+      <IconFile size={12} />
     )
 
   const fail = activeRuntime.fail
@@ -1669,12 +1671,16 @@ export function WorkbenchPane({
         (drag?.id === t.id ? ' dragging' : '') +
         (drag && drag.over === i && drag.id !== t.id ? ' dropbefore' : '')
       }
-      title={t.url || t.path || undefined}
+      title={
+        t.kind === 'files' && totals?.files
+          ? CHANGES_MSG.totals(totals)
+          : t.url || t.path || undefined
+      }
       data-wb-tab-id={t.id}
       onMouseDown={() => activate(t.id)}
-      draggable={t.kind !== 'files' && t.kind !== 'terminal'}
+      draggable={t.kind !== 'files'}
       onDragStart={(e) => {
-        if (t.kind === 'files' || t.kind === 'terminal') return
+        if (t.kind === 'files') return
         e.dataTransfer.effectAllowed = 'move'
         // PLATFORM§10
         e.dataTransfer.setData('text/plain', t.id)
@@ -1693,8 +1699,11 @@ export function WorkbenchPane({
       onDragEnd={() => setDrag(null)}
     >
       <span className="ic">{iconFor(t)}</span>
-      <span className="lb">{tabLabel(set, t)}</span>
-      {t.kind === 'files' && changedCount > 0 && <span className="cnt">{changedCount}</span>}
+      {t.kind === 'files' ? (
+        <FilesTabLabel totals={totals} />
+      ) : (
+        <span className="lb">{tabLabel(set, t)}</span>
+      )}
       {(audio[t.id]?.audible || audio[t.id]?.muted) && (
         <span
           className={'btab-spk' + (audio[t.id]?.muted ? ' muted' : '')}
@@ -1703,7 +1712,7 @@ export function WorkbenchPane({
           onMouseDown={pressOnTabControl}
           onClick={() => toggleMute(t.id)}
         >
-          {audio[t.id]?.muted ? <LuVolumeX size={13} /> : <LuVolume2 size={13} />}
+          {audio[t.id]?.muted ? <IconSoundOff size={13} /> : <IconSoundOn size={13} />}
         </span>
       )}
       {t.kind !== 'files' && (
@@ -1718,11 +1727,11 @@ export function WorkbenchPane({
             <>
               <span className="dirty" title="Unsaved changes" />
               <span className="xhov">
-                <LuX size={12} />
+                <IconClose size={12} />
               </span>
             </>
           ) : (
-            <LuX size={12} />
+            <IconClose size={12} />
           )}
         </span>
       )}
@@ -1801,7 +1810,7 @@ export function WorkbenchPane({
         refreshChecks()
       }}
     >
-      <LuGithub size={13} />
+      <BsGithub size={13} />
       {ghInfo.pr !== null && <span className="n">{`#${ghInfo.pr}`}</span>}
       {ghDot && <span className={'ci ' + ghDot} />}
     </button>
@@ -1815,7 +1824,7 @@ export function WorkbenchPane({
       title={full ? 'Restore ⌘⏎' : 'Full width ⌘⏎'}
       onClick={onToggleFull}
     >
-      {full ? <LuMinimize2 size={14} /> : <LuMaximize2 size={14} />}
+      {full ? <IconShrink size={14} /> : <IconExpand size={14} />}
     </button>
   )
 
@@ -1858,7 +1867,7 @@ export function WorkbenchPane({
               setNewMenuOpen((v) => !v)
             }}
           >
-            <LuPlus size={14} />
+            <IconPlus size={14} />
           </button>
           {session?.sessionId && (pinned[session.sessionId]?.length ?? 0) > 0 && (
             <span className="bdriven" title="A CDP client is driving tabs in this session">
@@ -1889,7 +1898,7 @@ export function WorkbenchPane({
               openGithub('repo')
             }}
           >
-            <LuGithub size={14} />
+            <BsGithub size={14} />
             Open repository
           </button>
           <button
@@ -1900,7 +1909,7 @@ export function WorkbenchPane({
               openGithub('pulls')
             }}
           >
-            <LuGitPullRequest size={14} />
+            <IconPullRequest size={14} />
             Open pull requests
           </button>
           {ghInfo.pr !== null && (
@@ -1912,7 +1921,7 @@ export function WorkbenchPane({
                 openGithub('pr')
               }}
             >
-              <LuGitPullRequest size={14} />
+              <IconPullRequest size={14} />
               {`Open pull request #${ghInfo.pr}`}
             </button>
           )}
@@ -1930,7 +1939,7 @@ export function WorkbenchPane({
                     void sendFailingChecks()
                   }}
                 >
-                  <LuSend size={14} />
+                  <IconSend size={14} />
                   Send failing checks
                 </button>
               )}
@@ -1945,7 +1954,7 @@ export function WorkbenchPane({
               setCommitOpen(true)
             }}
           >
-            <LuGitCommitHorizontal size={14} />
+            <IconCommit size={14} />
             Commit…
           </button>
           <button
@@ -1956,7 +1965,7 @@ export function WorkbenchPane({
               if (treeRoot) void gitStep(window.api.github.push(treeRoot), 'Pushed.')
             }}
           >
-            <LuCloudUpload size={14} />
+            <IconPush size={14} />
             Push
           </button>
           {ghInfo.pr === null && ghInfo.branch !== null && (
@@ -1971,7 +1980,7 @@ export function WorkbenchPane({
                 })
               }}
             >
-              <LuGitPullRequestCreate size={14} />
+              <IconNewPullRequest size={14} />
               Open pull request…
             </button>
           )}
@@ -1985,7 +1994,7 @@ export function WorkbenchPane({
               refreshChecks()
             }}
           >
-            <LuRotateCw size={14} />
+            <IconReload size={14} />
             Check again
           </button>
         </div>
@@ -2024,7 +2033,7 @@ export function WorkbenchPane({
               newWebTab()
             }}
           >
-            <LuGlobe size={14} />
+            <IconWebPage size={14} />
             New web tab
           </button>
           <button
@@ -2035,7 +2044,7 @@ export function WorkbenchPane({
               openFilePicker()
             }}
           >
-            <LuFileText size={14} />
+            <IconFile size={14} />
             Open file…
           </button>
           {!sessionCold && (
@@ -2047,7 +2056,7 @@ export function WorkbenchPane({
                 newTerminal()
               }}
             >
-              <LuTerminal size={14} />
+              <IconTerminal size={14} />
               New terminal
             </button>
           )}
@@ -2100,7 +2109,7 @@ export function WorkbenchPane({
                     setDlOpen((v) => !v)
                   }}
                 >
-                  <LuDownload size={16} />
+                  <IconDownload size={16} />
                 </button>
               )}
             </>
@@ -2116,7 +2125,7 @@ export function WorkbenchPane({
                   setMenuOpen((v) => !v)
                 }}
               >
-                <LuEllipsis size={16} />
+                <IconMore size={16} />
               </button>
               {fullBtn}
             </>
@@ -2179,7 +2188,7 @@ export function WorkbenchPane({
                 aria-label="Reload"
                 disabled={editingHere}
               >
-                <LuRotateCw size={14} />
+                <IconReload size={14} />
               </button>
               <button
                 className={'icobtn wb-edit' + (editingHere ? ' on' : '')}
@@ -2191,7 +2200,7 @@ export function WorkbenchPane({
                   editingHere ? exitEdit(activeTab.id) : enterEdit(activeTab.id, path)
                 }
               >
-                <LuPencil size={13} />
+                <IconEdit size={13} />
               </button>
               <button
                 ref={outlineBtnRef}
@@ -2203,7 +2212,7 @@ export function WorkbenchPane({
                   setOutlineOpen((prev) => ({ ...prev, [activeTab.id]: !prev[activeTab.id] }))
                 }
               >
-                <LuAlignLeft size={14} />
+                <IconOutline size={14} />
               </button>
               {fullBtn}
             </div>
@@ -2245,7 +2254,7 @@ export function WorkbenchPane({
               setMenuOpen(false)
             }}
           >
-            <LuLink size={14} />
+            <IconCopyLink size={14} />
             Copy current URL
           </button>
         </div>

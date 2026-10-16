@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
-import { LuExternalLink, LuX } from 'react-icons/lu'
+import { IconClose, IconOpenOutside } from '../../icons'
 import type { ExtensionInfo } from '@shared/types'
 import { CHROME_WEB_STORE_URL } from '@shared/types'
 import { ExtensionModal } from '../ExtensionConfirm'
@@ -101,7 +101,7 @@ export function ExtensionsPane(): JSX.Element {
             title="Uninstall"
             onClick={() => setRemoving(ext)}
           >
-            <LuX size={13} />
+            <IconClose size={13} />
           </button>
         </div>
       ))}
@@ -112,7 +112,7 @@ export function ExtensionsPane(): JSX.Element {
           <small>Opens right here — install from the store page, without leaving Koloft.</small>
         </div>
         <button className="mini" onClick={() => setStoreOpen(true)}>
-          Open Chrome Web Store <LuExternalLink size={13} />
+          Open Chrome Web Store <IconOpenOutside size={13} />
         </button>
       </div>
 

@@ -2,11 +2,9 @@ import type {
   GitAccountSuggestion,
   GitClueReason,
   WorkspaceFreshness,
-  WorkspaceGitAccount,
-  WorkspacePullSummary
+  WorkspaceGitAccount
 } from '@shared/types'
 import { ageLabel } from '@shared/freshnessOps'
-import { basename } from '@shared/preview'
 
 function fetchAge(f: WorkspaceFreshness, now: number): string {
   return f.fetchedAt === null ? 'never' : ageLabel(f.fetchedAt, now)
@@ -137,10 +135,4 @@ export function authorLine(a: WorkspaceGitAccount): string {
   return a.author
     ? `Commits as ${a.author.name} <${a.author.email}>`
     : 'Commits keep your own name and email'
-}
-
-export function pullToast(wsPath: string, branch: string, s: WorkspacePullSummary): string {
-  return `${basename(wsPath)} · ${branch}: fast-forwarded ${s.count} commit${
-    s.count === 1 ? '' : 's'
-  } (${s.from} → ${s.to})`
 }

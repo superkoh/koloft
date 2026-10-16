@@ -97,35 +97,38 @@ function stateWords(info: SessionInfo | undefined, asking: (tabId: string) => bo
   return info && asking(info.tabId) ? ASKING : STATE_WORDS[info?.status ?? 'idle']
 }
 
-export interface ListedSession {
+interface ListedSession {
   info: SessionInfo
   peerName?: string
+  starter?: string
 }
 
 function idToReach(s: SessionInfo): string {
   return s.nativeSessionId ?? s.sessionId
 }
 
-export function formatSessionList(
+function starterPart(starter: string | undefined): string[] {
+  return starter ? [`started by: ${starter}`] : []
+}
+
+function openSessionLines(
   sessions: ListedSession[],
   callerTabId: string,
   asking: (tabId: string) => boolean
-): string {
-  if (sessions.length === 0) return 'This workspace has no open sessions.'
-  return sessions
-    .map(({ info, peerName }) => {
-      const parts = [
-        `${info.title}${info.tabId === callerTabId ? ' (you)' : ''}`,
-        BACKEND_LABEL[info.backendId],
-        stateWords(info, asking)
-      ]
-      if (info.backendId === 'codex') parts.push(`id: ${idToReach(info)}`)
-      if (peerName) parts.push(`name: ${peerName}`)
-      const transcript = info.details?.claude?.jsonlPath
-      if (transcript) parts.push(`transcript: ${transcript}`)
-      return parts.join(' · ')
-    })
-    .join('\n')
+): string[] {
+  return sessions.map(({ info, peerName, starter }) => {
+    const parts = [
+      `${info.title}${info.tabId === callerTabId ? ' (you)' : ''}`,
+      BACKEND_LABEL[info.backendId],
+      stateWords(info, asking)
+    ]
+    if (info.backendId === 'codex') parts.push(`id: ${idToReach(info)}`)
+    if (peerName) parts.push(`name: ${peerName}`)
+    parts.push(...starterPart(starter))
+    const transcript = info.details?.claude?.jsonlPath
+    if (transcript) parts.push(`transcript: ${transcript}`)
+    return parts.join(' · ')
+  })
 }
 
 export interface PinnedWorkspace {
@@ -167,29 +170,28 @@ function peerNamesOf(d: SessionVerbDeps, placed: PlacedRow[]): Promise<(string |
   )
 }
 
-function formatConductorList(
+function rowLines(
   placed: PlacedRow[],
   names: (string | null)[],
+  starters: (string | undefined)[],
   withWorkspace: boolean,
   now: number,
   asking: (tabId: string) => boolean
-): string {
-  if (placed.length === 0) return 'There are no sessions to look after.'
-  return placed
-    .map(({ workspace, row, title, live: info }, i) => {
-      const parts = [
-        title,
-        BACKEND_LABEL[row.backendId],
-        parseRemoteKey(workspace)?.host ?? 'local',
-        info || row.running ? stateWords(info, asking) : 'closed',
-        `last active ${ageLabel(row.mtime, now)}`,
-        `id: ${row.nativeSessionId ?? row.id}`
-      ]
-      if (names[i]) parts.push(`name: ${names[i]}`)
-      if (withWorkspace) parts.push(`workspace: ${workspaceLabel(workspace)}`)
-      return parts.join(' · ')
-    })
-    .join('\n')
+): string[] {
+  return placed.map(({ workspace, row, title, live: info }, i) => {
+    const parts = [
+      title,
+      BACKEND_LABEL[row.backendId],
+      parseRemoteKey(workspace)?.host ?? 'local',
+      info || row.running ? stateWords(info, asking) : 'closed',
+      `last active ${ageLabel(row.mtime, now)}`,
+      `id: ${row.nativeSessionId ?? row.id}`
+    ]
+    if (names[i]) parts.push(`name: ${names[i]}`)
+    parts.push(...starterPart(starters[i]))
+    if (withWorkspace) parts.push(`workspace: ${workspaceLabel(workspace)}`)
+    return parts.join(' · ')
+  })
 }
 
 function formatTurns(turns: Turn[]): string {
@@ -292,7 +294,7 @@ export async function findClosable(
   return (
     hit ??
     fail(
-      `koloft session close: you did not start a session "${ref}". You can close only this session or one you started with koloft session new.`
+      `koloft session close: you did not start a session "${ref}". You can close only this session, or one started with koloft session new by you or by a session you started.`
     )
   )
 }
@@ -362,20 +364,52 @@ const LIST_USAGE =
 const CODEX_HAS_NO_NAME =
   'koloft session new: a Codex session has no name, so leave out --name. Koloft prints an id to reach it by.'
 
+function starterNamer(
+  d: SessionVerbDeps,
+  everyRow: PlacedRow[],
+  me: { sessionId: string }
+): (target: { sessionId: string; tabId?: string }) => string | undefined {
+  const titles = new Map(everyRow.map((p) => [p.row.id, p.title]))
+  return (target) => {
+    const [starter] = d.startedSessions.startersOf(target)
+    return starter === me.sessionId ? 'you' : starter && titles.get(starter)
+  }
+}
+
+function placedStarters(
+  d: SessionVerbDeps,
+  everyRow: PlacedRow[],
+  placed: PlacedRow[],
+  me: { sessionId: string }
+): (string | undefined)[] {
+  const starterOf = starterNamer(d, everyRow, me)
+  return placed.map((p) => starterOf({ sessionId: p.row.id, tabId: p.live?.tabId }))
+}
+
 async function listSessions(
   d: SessionVerbDeps,
   sessions: SessionInfo[],
-  callerTabId: string
+  me: SessionInfo,
+  workspace: string
 ): Promise<AgentReply> {
+  const everyRow = placedRows(d.sidebar(), sessions)
+  const starterOf = starterNamer(d, everyRow, me)
   const peerName = d.peerNames()
   const listed = await Promise.all(
     sessions.map(async (info) => ({
       info,
       peerName:
-        info.backendId === 'claude' ? ((await peerName(info.sessionId)) ?? undefined) : undefined
+        info.backendId === 'claude' ? ((await peerName(info.sessionId)) ?? undefined) : undefined,
+      starter: starterOf(info)
     }))
   )
-  return answered(formatSessionList(listed, callerTabId, d.asking))
+  const open = new Set(sessions.map((s) => s.sessionId))
+  const notOpen = everyRow.filter((p) => p.workspace === workspace && !open.has(p.row.id))
+  const lines = [
+    ...openSessionLines(listed, me.tabId, d.asking),
+    ...rowLines(notOpen, [], placedStarters(d, everyRow, notOpen, me), false, Date.now(), d.asking)
+  ]
+  return answered(lines.join('\n') || 'This workspace has no sessions.')
 }
 
 async function startSibling(
@@ -400,10 +434,9 @@ async function startSibling(
       : undefined
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
   const worktree =
-    args.worktree ??
-    (caller.assist && gitWorkspace
-      ? freshWorktreeName(await d.worktrees(workspace), Date.now())
-      : undefined)
+    gitWorkspace && (args.worktree || caller.assist)
+      ? freshWorktreeName(await d.worktrees(workspace), Date.now(), args.worktree)
+      : args.worktree
   const tabId = await d.launch({
     kind: backend,
     cwd: workspace,
@@ -902,17 +935,18 @@ export function sessionVerb(d: SessionVerbDeps): {
     const scope = d.conductorScope(caller.tabId)
     if (sub === 'list' && scope !== undefined) {
       if (rest.length > 0) return refused(CONDUCTOR_LIST_USAGE, EXIT_USAGE)
-      const placed = placedRows(d.sidebar(), d.allSessions()).filter((p) =>
-        inScope(scope, p.workspace)
-      )
+      const everyRow = placedRows(d.sidebar(), d.allSessions())
+      const placed = everyRow.filter((p) => inScope(scope, p.workspace))
+      if (placed.length === 0) return answered('There are no sessions to look after.')
       return answered(
-        formatConductorList(
+        rowLines(
           placed,
           await peerNamesOf(d, placed),
+          placedStarters(d, everyRow, placed, caller.session),
           scope === GLOBAL_SCOPE,
           Date.now(),
           d.asking
-        )
+        ).join('\n')
       )
     }
     if (sub === 'read') return readSession(d, rest, caller.tabId)
@@ -920,10 +954,10 @@ export function sessionVerb(d: SessionVerbDeps): {
       const listsOther = rest.length === 2 && rest[0] === '--workspace'
       if (rest.length > 0 && !listsOther) return refused(LIST_USAGE, EXIT_USAGE)
       if (!listsOther)
-        return ws ? listSessions(d, sessionsIn(ws), caller.tabId) : refused(NO_WORKSPACE)
+        return ws ? listSessions(d, sessionsIn(ws), caller.session, ws) : refused(NO_WORKSPACE)
       const found = resolveWorkspace(rest[1], d.pinnedWorkspaces())
       if (!found.ok) return refused(`koloft session list: ${found.error}`)
-      return listSessions(d, sessionsIn(found.value.path), caller.tabId)
+      return listSessions(d, sessionsIn(found.value.path), caller.session, found.value.path)
     }
     if (sub === 'new') {
       const parsed = parseNewSessionArgs(rest)

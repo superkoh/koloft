@@ -1,5 +1,5 @@
 import { useEffect, useMemo, type JSX } from 'react'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { useStore } from '../store'
@@ -75,7 +75,7 @@ export function UpdateModal(): JSX.Element | null {
           <span>{whatsNew ? `What’s new in Koloft ${update.current}` : 'Software Update'}</span>
           {!downloading && (
             <span className="modal-close" onClick={close} aria-label="Close">
-              <LuX size={16} />
+              <IconClose size={16} />
             </span>
           )}
         </div>

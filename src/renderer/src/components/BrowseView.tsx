@@ -8,7 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react'
-import { LuFile, LuFolder, LuFolderOpen, LuStar, LuX } from 'react-icons/lu'
+import { IconClose, IconFile, IconFolder, IconFolderOpen, IconStar } from '../icons'
 import type {
   ContentHit,
   DirEntry,
@@ -82,7 +82,7 @@ export interface BrowseViewProps {
 function FolderIcon({ open }: { open?: boolean }): JSX.Element {
   return (
     <span className="ft-icon" aria-hidden>
-      {open ? <LuFolderOpen size={13} /> : <LuFolder size={13} />}
+      {open ? <IconFolderOpen size={13} /> : <IconFolder size={13} />}
     </span>
   )
 }
@@ -90,7 +90,7 @@ function FolderIcon({ open }: { open?: boolean }): JSX.Element {
 function FileIcon(): JSX.Element {
   return (
     <span className="ft-icon" aria-hidden>
-      <LuFile size={13} />
+      <IconFile size={13} />
     </span>
   )
 }
@@ -620,7 +620,7 @@ export function BrowseView({
         {opts?.loc ? <span className="ft-loc">{midTruncate(opts.loc)}</span> : null}
         {bookmarkSet.has(p) && (
           <span className="bv-bm" title="Bookmarked" aria-label="Bookmarked">
-            <LuStar size={10} />
+            <IconStar size={10} />
           </span>
         )}
         {added || removed ? (
@@ -822,7 +822,7 @@ export function BrowseView({
               title="Clear query"
               aria-label="Clear query"
             >
-              <LuX size={14} />
+              <IconClose size={14} />
             </button>
           )}
           <div className="ft-mode" role="group" aria-label="Search mode">
