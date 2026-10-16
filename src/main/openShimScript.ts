@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { VIEWABLE_EXTENSIONS } from '@shared/preview'
 import { shq } from '@shared/shellQuote'
+import { CODEX_TMP_DIR } from './leftovers'
 
 const EXT_GLOBS = VIEWABLE_EXTENSIONS.map((e) => `*${e}`).join('|')
 
@@ -106,7 +107,7 @@ export function writeOpenShim(
 ): OpenShim {
   const shimDir = path.join(root, token)
   const zdotDir = path.join(shimDir, 'zdot')
-  const shim = { shimDir, zdotDir, requestDir: `/tmp/koloft-cx-open-${token}` }
+  const shim = { shimDir, zdotDir, requestDir: path.join(CODEX_TMP_DIR, `koloft-cx-open-${token}`) }
   try {
     fs.mkdirSync(zdotDir, { recursive: true })
     fs.writeFileSync(path.join(shimDir, 'open'), codexOpenShimScript(shim.requestDir), {

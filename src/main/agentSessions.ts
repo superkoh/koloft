@@ -7,7 +7,7 @@ import type {
   WorkspaceRows,
   WorktreeInfo
 } from '@shared/types'
-import { ownerSays } from '@shared/agentGuide'
+import { ASSIST_SAYS_OPENING, DISCORD_PREFIX, ownerSays } from '@shared/agentGuide'
 import {
   BACKEND_LABEL,
   SESSION_BACKENDS,
@@ -37,7 +37,7 @@ import {
   type Parsed
 } from './agentRequests'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
-import { crossSessionLine, type ModeClass } from './crossSessionMessage'
+import { FROM_A_SESSION, crossSessionLine, type ModeClass } from './crossSessionMessage'
 import { handoverPreamble, withHandover, type SessionCaller } from './handover'
 import { nameForTask } from './sessionTitle'
 import type { Assist } from './assist'
@@ -337,6 +337,7 @@ export interface SessionVerbDeps {
   sidebar(): WorkspaceRows[]
   worktrees(workspace: string): Promise<WorktreeInfo[]>
   readTurns(key: string, n: number): Promise<Turn[]>
+  quotedPrompt(tabId: string): string | undefined
   touch(tabId: string, key: string): void
   conductorOf(ref: string): Target | undefined
   resume(row: SessionRow): Promise<string>
@@ -439,6 +440,7 @@ async function startSibling(
   me: SessionInfo,
   workspace: string,
   conductorTab: string | undefined,
+  ownerWords: string | undefined,
   oweReply: (tabId: string) => void
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
@@ -447,13 +449,19 @@ async function startSibling(
     name: (await d.peerNames()(me)) ?? (me.backendId === 'claude' ? me.title : undefined),
     id: idToReach(me),
     label: BACKEND_LABEL[me.backendId],
-    assist: conductorTab !== undefined
+    assist: conductorTab !== undefined,
+    ownerWords
   }
   const name =
     backend === 'codex'
       ? undefined
       : (args.name ??
-        (await nameForTask(args.prompt, d.assist, new Set(d.allSessions().map((s) => s.title)))))
+        (await nameForTask(
+          args.prompt,
+          d.assist,
+          new Set(d.allSessions().map((s) => s.title)),
+          ownerWords
+        )))
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
   const worktree =
     gitWorkspace && (args.worktree || caller.assist)
@@ -723,8 +731,25 @@ function readsItAfterTheQuestion(name: string): string {
   return `But ${name} is asking the owner a question, so it reads your message only once that is answered. See the question with koloft session screen ${arg} and pass it on to the owner.`
 }
 
+const SESSION_SAYS_OPENING = `${FROM_A_SESSION}"`
+
 export function sessionSays(from: SessionInfo, text: string): string {
-  return `(From the session "${from.title}", id ${idToReach(from)}:) ${text}`
+  return `${SESSION_SAYS_OPENING}${from.title}", id ${idToReach(from)}:) ${text}`
+}
+
+const OWNER_WORDS_QUOTED_CHARS = 150
+const KOLOFT_ENVELOPES = [SESSION_SAYS_OPENING, ASSIST_SAYS_OPENING]
+
+type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?: string }
+
+export function lastOwnerWords(turns: Turn[]): string | undefined {
+  const line = turns
+    .flatMap((t) => t.said)
+    .findLast((l) => l.who === 'owner' && !KOLOFT_ENVELOPES.some((e) => l.text.startsWith(e)))
+  if (!line) return undefined
+  const relayed = `${DISCORD_PREFIX} `
+  const words = line.text.startsWith(relayed) ? line.text.slice(relayed.length) : line.text
+  return words.slice(0, OWNER_WORDS_QUOTED_CHARS)
 }
 
 function isMe(
@@ -752,6 +777,26 @@ export function sessionVerb(d: SessionVerbDeps): {
   let queued = 0
   let lined = 0
   const replyOwed = new Map<string, OwedReply>()
+
+  // ADR-0031
+  const ownerWordsOf = async (
+    s: OwnerWordsHolder,
+    seen = new Set<string>()
+  ): Promise<string | undefined> => {
+    if (s.backendId === 'claude') return s.tabId ? d.quotedPrompt(s.tabId) : undefined
+    seen.add(s.sessionId)
+    const [parent] = d.startedSessions.startersOf(s)
+    const holder = parent && !seen.has(parent) ? holderOf(parent) : undefined
+    if (holder) return ownerWordsOf(holder, seen)
+    return lastOwnerWords(await d.readTurns(s.sessionId, MAX_READ_TURNS))
+  }
+
+  const holderOf = (sessionId: string): OwnerWordsHolder | undefined => {
+    const open = d.allSessions().find((s) => s.sessionId === sessionId)
+    if (open) return open
+    const assist = d.conductorOf(sessionId)
+    return assist && { sessionId, tabId: assist.tabId, backendId: assist.backend }
+  }
 
   const owing = async <T>(
     tab: string,
@@ -994,10 +1039,18 @@ export function sessionVerb(d: SessionVerbDeps): {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
       const where = parsed.value.workspace
-      const start = (workspace: string, conductorTab?: string): Promise<AgentReply> =>
-        startSibling(d, parsed.value, caller.session, workspace, conductorTab, (tab) =>
-          replyOwed.set(tab, { owner: caller.session.sessionId })
+      const start = async (workspace: string, conductorTab?: string): Promise<AgentReply> => {
+        const ownerWords = await ownerWordsOf(caller.session)
+        return startSibling(
+          d,
+          parsed.value,
+          caller.session,
+          workspace,
+          conductorTab,
+          ownerWords,
+          (tab) => replyOwed.set(tab, { owner: caller.session.sessionId })
         )
+      }
       if (scope !== undefined) {
         if (scope === GLOBAL_SCOPE && where === undefined) return refused(GLOBAL_NEEDS_WORKSPACE)
         const target = startableWorkspace(where ?? scope, d.pinnedWorkspaces())
@@ -1031,10 +1084,6 @@ export function sessionVerb(d: SessionVerbDeps): {
       if (to) return deliver('send', to, sessionSays(caller.session, text), caller, false)
       const target = findSiblingTarget(open, ref, caller.session.backendId)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
-      if (caller.session.backendId === 'codex' && target.value.backendId === 'codex') {
-        await d.queue(target.value.tabId, text)
-        return answered(`Sent to ${target.value.title}.`)
-      }
       return deliver(
         'send',
         openTarget(target.value),

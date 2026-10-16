@@ -1,5 +1,13 @@
-import type { AccountKind, AccountMeta, SessionInfo, UsageSnapshot } from '@shared/types'
+import type {
+  AccountKind,
+  AccountMeta,
+  AccountView,
+  SessionInfo,
+  UsageSnapshot
+} from '@shared/types'
 import {
+  codexBackAt,
+  codexWalled,
   fableExhausted,
   keepsResumedSession,
   resetElapsed,
@@ -78,6 +86,11 @@ function bannerFor(
   if (hasOi) s += ` · fable ${pct(u.uoi)}`
   if (nowMs - u.at > STALE_MS) s += ` · ${ageLabel(u.at, nowMs)}`
   return s
+}
+
+export function codexAllLimitedNotice(a: AccountView, product = 'Codex'): string | undefined {
+  if (!a.limits || !codexWalled(a.limits)) return undefined
+  return `Every ${product} account is at its limit, so this session runs on ${a.name}, the first to reset (${fmtReset(codexBackAt(a.limits))}).`
 }
 
 function fallbackTag(a: AccountMeta): string {

@@ -3,12 +3,19 @@ const fs = require('fs')
 const path = require('path')
 
 const home = process.env.KOLOFT_FAKE_GCM_HOME || process.env.HOME
-const storeFile = path.join(home, 'fake-gcm-store.json')
+const plaintext =
+  process.env.GCM_CREDENTIAL_STORE === 'plaintext' && process.env.GCM_PLAINTEXT_STORE_PATH
+const storeFile = path.join(plaintext || home, 'fake-gcm-store.json')
 const POLL_MS = 50
 const op = process.argv[2]
+if (op === '--version') {
+  process.stdout.write('3.0.1+fake\n')
+  process.exit(0)
+}
 const namespace = process.env.GCM_NAMESPACE || ''
 
 function readStore() {
+  if (plaintext) fs.mkdirSync(plaintext, { recursive: true, mode: 0o700 })
   try {
     return JSON.parse(fs.readFileSync(storeFile, 'utf8'))
   } catch {

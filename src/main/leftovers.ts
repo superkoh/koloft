@@ -1,3 +1,6 @@
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import type { LeftoverProcess } from '@shared/types'
 import { makeExec, type Exec } from './taskProcs'
 import { museSessionKey, UUID } from './sessionStore'
@@ -55,6 +58,32 @@ export async function endCodexAppServersLeftByACrash(
   const until = Date.now() + WAIT_FOR_LEFTOVER_EXIT_MS
   while (leftovers.some(pidAlive) && Date.now() < until)
     await new Promise((r) => setTimeout(r, LEFTOVER_EXIT_POLL_MS))
+}
+
+// PLATFORM§3
+export const CODEX_TMP_DIR = process.platform === 'darwin' ? '/tmp' : os.tmpdir()
+const MACOS_PID_AT_MOST_FIVE_DIGITS = '\\d{1,5}'
+export const CODEX_TMP_FOLDER = new RegExp(
+  `^koloft-cx-(?:open-)?(${MACOS_PID_AT_MOST_FIVE_DIGITS})-`
+)
+export const CODEX_OPEN_SHIM_FOLDER = new RegExp(
+  `^(${MACOS_PID_AT_MOST_FIVE_DIGITS})-[0-9a-f-]{36}$`
+)
+
+export const ownedByThisRun = (name: string): string => `${process.pid}-${name}`
+
+export function removeFoldersLeftByEndedRuns(dir: string, ours: RegExp): void {
+  let names: string[]
+  try {
+    names = fs.readdirSync(dir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    const owner = ours.exec(name)?.[1]
+    if (owner && !pidAlive(Number(owner)))
+      fs.rmSync(path.join(dir, name), { recursive: true, force: true })
+  }
 }
 
 // CC§9 PLATFORM§3

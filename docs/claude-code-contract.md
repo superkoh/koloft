@@ -1033,6 +1033,18 @@ other bullets of §9 were not re-measured on this build.
   older `bypassPermissionsModeAccepted: true` in `~/.claude.json` is still honored as a
   gate (a throwaway `$HOME` carrying only that key started with no screen), so anything
   that wants to know whether this Mac will stall must check BOTH.
+- **The same key inside a `--settings` file skips the screen too.** With
+  `{"skipDangerousModePermissionPrompt": true}` in a file passed as `--settings <file>`,
+  both `--dangerously-skip-permissions` and `--permission-mode bypassPermissions` open
+  straight at the prompt (footer `⏵⏵ bypass permissions on`); without it both show the
+  warning. A launch with no bypass flag is unchanged by the key: Shift+Tab cycles auto →
+  manual → accept edits → plan → auto and never offers bypass. Measured 2026-10-15 on
+  2.1.300 and again 2026-10-16 on 2.1.301 (macOS arm64), a scratch `CLAUDE_CONFIG_DIR`
+  with onboarding done and the folder trusted, a python pty, 20 s per run; and the same
+  on Linux, 2.1.301 linux-arm64 in Docker `node:22-bookworm` as a plain user (the screen
+  without the key, none with it). As root on Linux the flag is refused outright:
+  `--dangerously-skip-permissions cannot be used with root/sudo privileges for security
+  reasons`, key or not.
 - **`--name <title>` is a real title, written before any message.** The transcript's
   first two records are `{"type":"custom-title","customTitle":"<title>"}` and
   `{"type":"agent-name","agentName":"<title>"}`, and the `claude --resume` picker
@@ -1836,6 +1848,11 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   `"prompt":"<cross-session-message from-mode=\"bypass\">\n<body>\n</cross-session-message>"`.
   In one project's transcripts on this Mac since 2026-10-09, 10 of 12 such messages were followed by the
   prompt hook's context.
+- **A background task's finish report (§8) and a subagent's message fire `UserPromptSubmit`
+  too, its `prompt` the text as delivered**: `<task-notification>\n<task-id>…` and
+  `<agent-message from=\"<name>\">\n…`. Swept 2026-10-16 from the transcripts on this Mac
+  since 10-11: the prompt hook's context followed 1,224 `<task-notification>` prompts on
+  2.1.296, 2.1.299, 2.1.300 and 2.1.301, and 4 `<agent-message>` prompts on 2.1.296.
 - **A `PostToolBatch` event also exists** (once per batch of tool calls; its
   `additionalContext` reached the model on 2.1.296; its name is in the 2.1.294 binary).
   It is not in the CHANGELOG; the 2.1.293 binary, the oldest Koloft supports, carries

@@ -1,5 +1,5 @@
 import { useState, type JSX, type KeyboardEvent } from 'react'
-import { LuX } from 'react-icons/lu'
+import { IconClose } from '../icons'
 import { remoteKeyFromForm } from '../remoteWorkspace'
 import { isComposing } from '../keys'
 
@@ -46,7 +46,7 @@ export function RemoteWorkspaceDialog({
             Remote directory<span className="tag">alpha</span>
           </span>
           <span className="modal-close" onClick={onClose} aria-label="Close">
-            <LuX size={16} />
+            <IconClose size={16} />
           </span>
         </div>
         <div className="modal-body">

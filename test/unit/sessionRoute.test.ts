@@ -82,12 +82,16 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     })
   })
 
-  it('reads a feature only by a key it was offered, and a session only by a ref it was shown', () => {
+  it('reads a feature only by a key it was offered, also when the answer leaves out its hand, and a session only by a ref it was shown', () => {
     expect(parseRoute(reply({ hand: 'feature', feature: 'check-update' }), LIST)).toEqual({
       kind: 'feature',
       key: 'check-update',
       title: '',
       why: ''
+    })
+    expect(parseRoute(reply({ feature: 'check-update' }), LIST)).toMatchObject({
+      kind: 'feature',
+      key: 'check-update'
     })
     expect(parseRoute(reply({ hand: 'feature', feature: 'restart-session' }), LIST)).toBeNull()
     expect(parseRoute(reply({ hand: 'feature', feature: 'nope' }), LIST)).toBeNull()

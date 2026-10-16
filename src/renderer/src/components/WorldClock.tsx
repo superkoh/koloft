@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { LuPlus, LuX } from 'react-icons/lu'
+import { IconClose, IconPlus } from '../icons'
 import { popoverX } from '@shared/accountUsage'
 import { WORLD_CLOCK_MAX } from '@shared/types'
 import { useStore } from '../store'
@@ -30,7 +30,7 @@ function Chip({
       {delta !== 0 && <span className="wc-day">{delta > 0 ? '+1' : '−1'}</span>}
       {onRemove && (
         <button className="wc-x" aria-label={`Remove ${cityOf(tz)}`} onClick={onRemove}>
-          <LuX size={10} />
+          <IconClose size={10} />
         </button>
       )}
     </span>
@@ -134,7 +134,7 @@ export const WorldClock = memo(function WorldClock(): JSX.Element {
             else open()
           }}
         >
-          <LuPlus size={14} />
+          <IconPlus size={14} />
         </button>
       )}
       {/* ADR-0013 */}

@@ -11,7 +11,8 @@ import {
   REMOTE_WS_NAME,
   remoteDir
 } from './helpers/remote'
-import { seedClaudeTrust, seedSettings, type E2EEnv } from './helpers/env'
+import { installCodex, seedClaudeTrust, seedSettings, type E2EEnv } from './helpers/env'
+import { codexCalls } from './helpers/codex'
 import { runGit } from './helpers/gitFixture'
 import {
   auxIcon,
@@ -502,6 +503,59 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
+  test('BB-M29: a job that names a model, run on a custom endpoint account that pins its own model, starts without --model, and its History line says the endpoint set the model', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    seedSettings(env, {
+      accounts: [
+        {
+          name: 'glm',
+          kind: 'custom',
+          enabled: true,
+          fable: 'unknown',
+          status: 'ok',
+          addedAt: 1,
+          baseUrl: 'https://custom-endpoint.invalid/api',
+          model: 'glm-5.2'
+        }
+      ]
+    })
+    fs.writeFileSync(
+      env.keychainFile,
+      JSON.stringify({ 'koloft-dev-custom-endpoint': { glm: 'custom-endpoint-fixture-token' } })
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await createJob(page, dlg, { name: 'Nightly report', task: '/daily-report', model: 'Sonnet' })
+      await clickRunNow(page, 'Nightly report')
+
+      const call = await waitNewCall(env, 0)
+      expect(call.argv).not.toContain('--model')
+      const row = cronRows(page, 'ws-a')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await closeCron(page)
+
+      await row.click()
+      await expect(row).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+
+      await openCron(page, 'ws-a')
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
+        .toBe('Closed by you — model set by the endpoint account glm')
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
   test('BB-M18: with "Close it" on, a run that left a file uncommitted stays open and says so; once the file is gone it closes for good: tab, row, worktree and branch', async ({
     env
   }) => {
@@ -551,6 +605,52 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       expect(runGit(env.workspaces.a, 'branch', '--list', `worktree-${wt}`).trim()).toBe('')
     } finally {
       await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-M18 in Codex: with "Close it" on, a Codex run that left a file uncommitted stays open and says so; once the file is gone it closes for good: tab, row, worktree and branch', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
+      await fillForm(dlg, { name: 'Nightly report', task: '/write report.md' })
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Nightly report')
+
+      await expect.poll(() => codexCalls(env).length, { timeout: 60_000 }).toBe(1)
+      const tree = codexCalls(env)[0].cwd
+      expect(tree).not.toBe(env.workspaces.a)
+      const report = path.join(tree, 'report.md')
+      await expect.poll(() => fs.existsSync(report), { timeout: 60_000 }).toBe(true)
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+        .toBe('Done — not closed: Changes not committed')
+      const row = cronRows(page, 'ws-a')
+      await expect(row).toHaveCount(1)
+      expect(await tabDisplays(page)).toHaveLength(1)
+      const branch = runGit(tree, 'rev-parse', '--abbrev-ref', 'HEAD').trim()
+
+      fs.rmSync(report)
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 30_000 })
+        .toBe('Done — closed itself')
+      await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
+      await expect(row).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(env.workspaces.a, 'branch', '--list', branch).trim()).toBe('')
+    } finally {
+      await quitAndClose(app)
     }
   })
 

@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { writeAgentShim } from './agentShim'
+import { ownedByThisRun } from './leftovers'
 import { oncePerName, watchJsonDrops, type DropHandlerFor } from './jsonDrops'
 import { openDropHandler } from './openDrop'
 import { removeOpenShim, writeOpenShim, type OpenShim } from './openShimScript'
@@ -28,7 +29,7 @@ export function startToolShim(
     drop?: DropHandlerFor
   }
 ): ToolShim {
-  const shim = writeOpenShim(deps.openShimRoot, randomUUID(), opts.userZdotdir)
+  const shim = writeOpenShim(deps.openShimRoot, ownedByThisRun(randomUUID()), opts.userZdotdir)
   try {
     fs.symlinkSync(
       path.join(deps.playwrightBin, 'playwright-cli'),

@@ -44,6 +44,7 @@ export interface RemoteSyncDeps {
   targets(): RemoteTarget[]
   onChange(host: string): void
   onLeft?(host: string, sessionIds: string[]): void
+  onConnected?(host: string): void
 }
 
 interface HostState {
@@ -60,12 +61,19 @@ interface HostState {
   waitingForNextPull: (() => void)[]
 }
 
+interface Watch {
+  count: number
+  stamp?: string
+  onChange: (stamp: string) => void
+}
+
 function gitKey(git: Map<string, RemoteGitInfo>): string {
   return JSON.stringify([...git])
 }
 
 export class RemoteSync {
   private hosts = new Map<string, HostState>()
+  private watches = new Map<string, Map<string, Watch>>()
   private stopped = true
 
   constructor(private deps: RemoteSyncDeps) {}
@@ -100,6 +108,36 @@ export class RemoteSync {
 
   problem(host: string): string | undefined {
     return this.hosts.get(host)?.problem
+  }
+
+  watch(host: string, path: string, onChange: (stamp: string) => void): void {
+    let paths = this.watches.get(host)
+    if (!paths) this.watches.set(host, (paths = new Map()))
+    const w = paths.get(path)
+    if (w) w.count++
+    else paths.set(path, { count: 1, onChange })
+  }
+
+  unwatch(host: string, path: string): void {
+    const paths = this.watches.get(host)
+    const w = paths?.get(path)
+    if (paths && w && --w.count <= 0) paths.delete(path)
+  }
+
+  unwatchAll(): void {
+    this.watches.clear()
+  }
+
+  private noticeStamps(host: string, asked: string[], stamps: string[]): void {
+    const paths = this.watches.get(host)
+    asked.forEach((path, i) => {
+      const w = paths?.get(path)
+      const stamp = stamps[i]
+      if (!w || stamp === undefined) return
+      const before = w.stamp
+      w.stamp = stamp
+      if (before !== undefined && before !== stamp) w.onChange(stamp)
+    })
   }
 
   nextPullDone(host: string): Promise<void> {
@@ -174,13 +212,15 @@ export class RemoteSync {
         git: gitKey(st.git)
       }
       const askGit = Date.now() - st.gitAt >= GIT_INTERVAL_MS
+      const watched = [...(this.watches.get(host)?.keys() ?? [])]
       const hb = await this.deps
-        .run(host, heartbeatCmd(askGit ? target.paths : []))
+        .run(host, heartbeatCmd(askGit ? target.paths : [], watched))
         .catch((e: unknown) => ({ code: null, stdout: '', stderr: String(e) }))
       if (hb.code === 0) {
         st.connected = true
         st.failures = 0
         const parsed = parseHeartbeat(hb.stdout)
+        this.noticeStamps(host, watched, parsed.stamps)
         st.tmp = parsed.tmp
         const prevAlive = st.alive
         st.alive = new Set(
@@ -222,6 +262,7 @@ export class RemoteSync {
       ) {
         this.deps.onChange(host)
       }
+      if (!before.connected && st.connected) this.deps.onConnected?.(host)
     } finally {
       st.running = false
       for (const done of waiting) done()

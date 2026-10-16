@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
   type ReactNode
 } from 'react'
-import { LuCheck, LuTriangleAlert, LuX } from 'react-icons/lu'
+import { IconCheck, IconClose, IconWarning } from '../icons'
 import type {
   BackendId,
   GithubItem,
@@ -29,7 +29,6 @@ import {
   itemFilterText,
   itemLabel,
   itemLaunchExtras,
-  mainRunningCount,
   moveHot,
   primaryKind,
   primaryLabel,
@@ -47,7 +46,7 @@ import {
 } from '../newSession'
 import { ipcErrorText } from '../agentUi'
 import { shortenHome } from '../browseModel'
-import { pullToast } from '../freshnessView'
+import { busyInCheckout, pullToast } from '@shared/freshnessOps'
 import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { PullConfirm } from './PullConfirm'
@@ -276,7 +275,7 @@ export function WorktreeSessionDialog({
       launch(aim, backend)
       return
     }
-    const count = mainRunningCount(ws.rows)
+    const count = busyInCheckout(useStore.getState().sessions, wsPath)
     confirmBackend.current = backend
     if (count > 0) setConfirm(count)
     else void doPull(backend)
@@ -372,9 +371,7 @@ export function WorktreeSessionDialog({
     const good = line === 'ok'
     return (
       <div className={'fresh-line ' + (good ? 'okv' : 'stale')}>
-        <span className="fico-l">
-          {good ? <LuCheck size={14} /> : <LuTriangleAlert size={14} />}
-        </span>
+        <span className="fico-l">{good ? <IconCheck size={14} /> : <IconWarning size={14} />}</span>
         <span>
           <b>{copy.strong}</b>
           {copy.rest}
@@ -463,7 +460,7 @@ export function WorktreeSessionDialog({
           <div className="modal-header">
             <span>{title}</span>
             <span className="modal-close" onClick={close} aria-label="Close">
-              <LuX size={16} />
+              <IconClose size={16} />
             </span>
           </div>
           <div className="modal-body">

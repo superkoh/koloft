@@ -315,6 +315,19 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     await expect(wbTabs(page).nth(0)).toHaveClass(/pinned/)
   })
 
+  test('WB-T25: a terminal tab drags like the rest', async ({ app, page }) => {
+    test.setTimeout(120_000)
+    await startSessionIn(page, 'ws-a')
+    await agentOpen(page, 'http://127.0.0.1:1/a')
+    await expect(wbTabs(page)).toHaveCount(2)
+    await openSessionTerminal(app, page)
+    await expect(wbTabs(page)).toHaveCount(3)
+    expect((await wbTabTitles(page))[1]).toBe('127.0.0.1:1/a')
+
+    await wbTabs(page).nth(2).dragTo(wbTabs(page).nth(1))
+    await expect.poll(async () => (await wbTabTitles(page))[2]).toBe('127.0.0.1:1/a')
+  })
+
   test.describe('the panel belongs to the conversation tab, not to the Claude session id', () => {
     async function webTabOn(page: Page, url: string): Promise<void> {
       await newWebTab(page)

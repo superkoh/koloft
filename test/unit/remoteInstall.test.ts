@@ -379,8 +379,8 @@ describe('the heartbeat question', () => {
 
   afterAll(() => fs.rmSync(dir, { recursive: true, force: true }))
 
-  const ask = (paths: string[]): ReturnType<typeof parseHeartbeat> => {
-    const cmd = heartbeatCmd(paths)
+  const ask = (paths: string[], watched: string[] = []): ReturnType<typeof parseHeartbeat> => {
+    const cmd = heartbeatCmd(paths, watched)
     const res = spawnSync('sh', ['-c', cmd], { encoding: 'utf8' })
     expect(res.status).toBe(0)
     return parseHeartbeat(res.stdout)
@@ -446,8 +446,22 @@ describe('the heartbeat question', () => {
     expect(onLinux({ TMPDIR: tmpdir, CLAUDE_CODE_TMPDIR: ccTmp })).toBe(fs.realpathSync(ccTmp))
   })
 
-  it('reads the lines before the first folder as tmux session names', () => {
-    const parsed = parseHeartbeat('k-aaa\nk-bbb\n== /home/koh/api\ngit\nworktree /home/koh/api\n\n')
+  it('stamps every watched file and folder in the order asked, a missing one with an empty stamp, and still answers the folders', () => {
+    const file = path.join(dir, 'watched.txt')
+    fs.writeFileSync(file, 'abc')
+    const info = ask([repo], [file, path.join(dir, 'gone.txt'), repo])
+    expect(info.stamps).toHaveLength(3)
+    expect(info.stamps[0]).toMatch(/^\d+\.\d+ 3$/)
+    expect(info.stamps[1]).toBe('')
+    expect(info.stamps[2]).toMatch(/^\d+\.\d+ \d+$/)
+    expect(info.git.get(repo)?.isGit).toBe(true)
+  })
+
+  it('reads the lines before the first folder as tmux session names, never a stamp line', () => {
+    const parsed = parseHeartbeat(
+      'stamp 1.5 3\nstamp \nk-aaa\nk-bbb\n== /home/koh/api\ngit\nworktree /home/koh/api\n\n'
+    )
+    expect(parsed.stamps).toEqual(['1.5 3', ''])
     expect(parsed.alive).toEqual(['k-aaa', 'k-bbb'])
     expect(parsed.git.get('/home/koh/api')?.worktrees).toEqual([{ dir: '/home/koh/api' }])
   })

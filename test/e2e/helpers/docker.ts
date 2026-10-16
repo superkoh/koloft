@@ -1,12 +1,14 @@
-import { execFileSync, spawnSync } from 'child_process'
+import { execFile, execFileSync, spawnSync } from 'child_process'
 import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
+import { promisify } from 'util'
 import { seedSettings, type E2EEnv } from './env'
 import { writeExec } from './remote'
 
 const FIXTURES = path.join(__dirname, '..', 'fixtures')
 const IMAGE_SOURCES = ['sshd.Dockerfile', 'sshd-entrypoint.sh', 'fake-claude.js']
+const OLD_GIT_IMAGE_SOURCES = ['sshd-oldgit.Dockerfile']
 const DOCKER_OFF_THE_PLAYWRIGHT_PATH = [
   'docker',
   '/opt/homebrew/bin/docker',
@@ -29,7 +31,8 @@ export const LAB_ALIASES = [
   'kt-remotecmd',
   'kt-newhost',
   'kt-proxycmd',
-  'kt-agent'
+  'kt-agent',
+  'kt-oldgit'
 ] as const
 export type LabAlias = (typeof LAB_ALIASES)[number]
 
@@ -39,6 +42,7 @@ export interface SshLab {
   network: string
   bastion: string
   target: string
+  oldGit: string
   port: number
   config: string
   key: string
@@ -76,19 +80,19 @@ function dk(args: string[]): string {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-function ensureImage(): string {
+function ensureImage(name: string, sources: string[]): string {
   const h = crypto.createHash('sha256')
-  for (const name of IMAGE_SOURCES) {
-    h.update(name)
+  for (const source of sources) {
+    h.update(source)
     h.update('\0')
-    h.update(fs.readFileSync(path.join(FIXTURES, name)))
+    h.update(fs.readFileSync(path.join(FIXTURES, source)))
     h.update('\0')
   }
-  const image = `koloft-e2e-sshd:${h.digest('hex').slice(0, 12)}`
+  const image = `${name}:${h.digest('hex').slice(0, 12)}`
   if (spawnSync(docker(), ['image', 'inspect', image], { stdio: 'ignore' }).status === 0) {
     return image
   }
-  dk(['build', '-q', '-t', image, '-f', path.join(FIXTURES, 'sshd.Dockerfile'), FIXTURES])
+  dk(['build', '-q', '-t', image, '-f', path.join(FIXTURES, sources[0]), FIXTURES])
   return image
 }
 
@@ -108,6 +112,9 @@ async function hostKeyOf(container: string): Promise<string> {
 function labConfig(lab: SshLab, emptyKnownHosts: string, agentOnlyPub: string): string {
   const q = (s: string): string => JSON.stringify(s)
   return [
+    'Host kt-oldgit',
+    `  HostName ${lab.oldGit}`,
+    '  User kuser',
     'Host kt-jump',
     '  HostName 127.0.0.1',
     `  Port ${lab.port}`,
@@ -160,15 +167,16 @@ function sshWorks(lab: SshLab, alias: LabAlias): boolean {
   )
 }
 
-export async function startSshLab(env: E2EEnv): Promise<SshLab> {
+export async function startSshLab(env: E2EEnv, opts: { oldGit?: boolean } = {}): Promise<SshLab> {
   const dir = path.join(env.home, 'ssh-lab')
   fs.mkdirSync(dir, { recursive: true })
-  const image = ensureImage()
+  const image = ensureImage('koloft-e2e-sshd', IMAGE_SOURCES)
   const id = `${process.pid}-${crypto.randomBytes(3).toString('hex')}`
   const lab: SshLab = {
     network: `koloft-lab-${id}`,
     bastion: `kl-bastion-${id}`,
     target: `kl-target-${id}`,
+    oldGit: `kl-oldgit-${id}`,
     port: 0,
     config: path.join(dir, 'config'),
     key: path.join(dir, 'id_lab'),
@@ -193,7 +201,7 @@ export async function startSshLab(env: E2EEnv): Promise<SshLab> {
   const pub = fs.readFileSync(`${lab.key}.pub`, 'utf8').trim()
   try {
     dk(['network', 'create', '--label', LAB_LABEL, lab.network])
-    const run = (name: string, extra: string[]): string =>
+    const run = (name: string, extra: string[], from = image): string =>
       dk([
         'run',
         '-d',
@@ -208,18 +216,21 @@ export async function startSshLab(env: E2EEnv): Promise<SshLab> {
         '-e',
         `LAB_PUBKEY=${pub}`,
         ...extra,
-        image
+        from
       ])
     run(lab.target, [])
+    if (opts.oldGit)
+      run(lab.oldGit, [], ensureImage('koloft-e2e-sshd-oldgit', OLD_GIT_IMAGE_SOURCES))
     run(lab.bastion, ['-p', '127.0.0.1::22'])
     lab.port = Number(/:(\d+)/.exec(dk(['port', lab.bastion, '22/tcp']))?.[1])
     const [bastionKey, targetKey] = await Promise.all([
       hostKeyOf(lab.bastion),
       hostKeyOf(lab.target)
     ])
+    const oldGitKey = opts.oldGit ? `${lab.oldGit} ${await hostKeyOf(lab.oldGit)}\n` : ''
     fs.writeFileSync(
       lab.knownHosts,
-      `[127.0.0.1]:${lab.port} ${bastionKey}\n${lab.target} ${targetKey}\n`
+      `[127.0.0.1]:${lab.port} ${bastionKey}\n${lab.target} ${targetKey}\n${oldGitKey}`
     )
     const emptyKnownHosts = path.join(dir, 'known_hosts_first_contact')
     fs.writeFileSync(emptyKnownHosts, '')
@@ -230,7 +241,7 @@ export async function startSshLab(env: E2EEnv): Promise<SshLab> {
       `#!/bin/sh\nexec ${SSH} -F ${JSON.stringify(lab.config)} -W "$1:$2" kt-jump\n`
     )
     const deadline = Date.now() + LAB_READY_DEADLINE_MS
-    while (!sshWorks(lab, 'kt-key')) {
+    while (!sshWorks(lab, 'kt-key') || (opts.oldGit && !sshWorks(lab, 'kt-oldgit'))) {
       if (Date.now() > deadline)
         throw new Error(`ssh lab never came up: ${dk(['logs', lab.target])}`)
       await sleep(LAB_POLL_MS)
@@ -267,12 +278,41 @@ export function closeLabMasters(lab: SshLab, controlDir: string): void {
 
 export function stopSshLab(lab: SshLab, controlDir?: string): void {
   if (controlDir) closeLabMasters(lab, controlDir)
-  spawnSync(docker(), ['rm', '-f', lab.bastion, lab.target], { stdio: 'ignore' })
+  spawnSync(docker(), ['rm', '-f', lab.bastion, lab.target, lab.oldGit], { stdio: 'ignore' })
   spawnSync(docker(), ['network', 'rm', lab.network], { stdio: 'ignore' })
 }
 
-export function runOnTarget(lab: SshLab, user: string, script: string): string {
-  return dk(['exec', '-u', user, '-w', `/home/${user}`, lab.target, 'sh', '-c', script])
+export function runOnTarget(
+  lab: SshLab,
+  user: string,
+  script: string,
+  container = lab.target
+): string {
+  return dk(['exec', '-u', user, '-w', `/home/${user}`, container, 'sh', '-c', script])
+}
+
+export async function runOnTargetWhileServing(
+  lab: SshLab,
+  user: string,
+  script: string,
+  container = lab.target
+): Promise<string> {
+  const { stdout } = await promisify(execFile)(docker(), [
+    'exec',
+    '-u',
+    user,
+    '-w',
+    `/home/${user}`,
+    container,
+    'sh',
+    '-c',
+    script
+  ])
+  return stdout
+}
+
+export function runOnBastion(lab: SshLab, user: string, script: string): string {
+  return dk(['exec', '-u', user, '-w', `/home/${user}`, lab.bastion, 'sh', '-c', script])
 }
 
 export function installOnTarget(lab: SshLab, file: string, at: string): void {
@@ -330,7 +370,6 @@ export function installClaudeOnTheMachine(
     `printf '%s' ${JSON.stringify(
       JSON.stringify({
         hasCompletedOnboarding: true,
-        bypassPermissionsModeAccepted: true,
         projects: Object.fromEntries(
           ['/home/kuser/proj', ...alsoTrusted].map((dir) => [dir, { hasTrustDialogAccepted: true }])
         )

@@ -19,6 +19,8 @@ import {
   writeConductorMarker,
   removeConductorMarker,
   markAnswerable,
+  quotedPrompt,
+  seedCodexOwnerWords,
   writeAllowFile
 } from '../../src/main/hooks'
 import { CODEX_GATE_HOOK_COMMAND } from '../../src/main/conductorGate'
@@ -28,12 +30,13 @@ import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/pat
 import { machineHookSettings } from '../../src/main/backends/claude'
 
 let hookScript: string
+let codexReplyLanguage: string
 let regDir: string
 let base: string
 const noPeerInstance = (): boolean => false
 
 beforeAll(() => {
-  ;({ hookScript, regDir } = setupHooks(noPeerInstance))
+  ;({ hookScript, codexReplyLanguage, regDir } = setupHooks(noPeerInstance))
   base = path.dirname(path.dirname(hookScript))
   stubBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-hook-stub-'))
   const answeringClaudeStub = path.join(stubBin, 'claude')
@@ -435,15 +438,21 @@ describe('injected hook script', () => {
       expect(tool('tabLangNone')).toBe('')
     })
 
-    // CC§13
-    it('a message from another session keeps the quote of the person’s own last prompt', () => {
+    // CC§13 CC§19
+    it('a message from another session, a background task’s finish report or a subagent’s message keeps the quote of the person’s own last prompt', () => {
       prompt('tabLangPeer', '查一下子会话做完没有')
       const report = JSON.parse(crossSessionLine('bypass', 'Done: PR #12 is open.', 'k-1')!).message
         .content
-      expect(remindedQuote(prompt('tabLangPeer', report), 'UserPromptSubmit')).toBe(
-        '查一下子会话做完没有'
-      )
-      expect(remindedQuote(tool('tabLangPeer'), 'PostToolUse')).toBe('查一下子会话做完没有')
+      for (const notPersonal of [
+        report,
+        '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command "npm test" completed</summary>\n</task-notification>',
+        '<agent-message from="fix-agent">\nDone: the fix is on its branch.\n</agent-message>'
+      ]) {
+        expect(remindedQuote(prompt('tabLangPeer', notPersonal), 'UserPromptSubmit')).toBe(
+          '查一下子会话做完没有'
+        )
+        expect(remindedQuote(tool('tabLangPeer'), 'PostToolUse')).toBe('查一下子会话做完没有')
+      }
     })
 
     const fromDiscord = (tab: string, words: string, id: string, mode: 'bypass' | 'prompting') =>
@@ -487,6 +496,59 @@ describe('injected hook script', () => {
       expect(remindedQuote(prompt('tabLangHO', task), 'UserPromptSubmit')).toBe(
         '评估管家的权限范围'
       )
+    })
+
+    // CODEX§27
+    it('a Codex tab gets the same reminder from its own hook script: the owner’s prompt is quoted at the prompt and after every tool, a message from another session keeps it, and a Codex child starts from the owner’s words its parent handed over, not from its English task', () => {
+      const said = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-said-')), 'said')
+      const codex = (event: string, payload: unknown): string => {
+        const res = spawnSync('bash', [codexReplyLanguage, event], {
+          input: JSON.stringify(payload),
+          encoding: 'utf8',
+          env: { ...process.env, KOLOFT_CODEX_SAID: said }
+        })
+        if (res.status !== 0) throw new Error(`hook exited ${res.status}: ${res.stderr}`)
+        return res.stdout
+      }
+      const codexPrompt = (text: string): string =>
+        codex('prompt', { session_id: 't1', hook_event_name: 'UserPromptSubmit', prompt: text })
+      expect(codex('tool', { hook_event_name: 'PostToolUse' })).toBe('')
+      expect(remindedQuote(codexPrompt('先看看测试为什么挂'), 'UserPromptSubmit')).toBe(
+        '先看看测试为什么挂'
+      )
+      expect(remindedQuote(codex('tool', { tool_name: 'Bash' }), 'PostToolUse')).toBe(
+        '先看看测试为什么挂'
+      )
+      const report = '(From the session "Fix docs", id abc:) Done: PR #12 is open.'
+      expect(remindedQuote(codexPrompt(report), 'UserPromptSubmit')).toBe('先看看测试为什么挂')
+
+      const seeded = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-said-')), 'said')
+      seedCodexOwnerWords(seeded, '帮我看看侧栏')
+      const child = (event: string, payload: unknown): string =>
+        spawnSync('bash', [codexReplyLanguage, event], {
+          input: JSON.stringify(payload),
+          encoding: 'utf8',
+          env: { ...process.env, KOLOFT_CODEX_SAID: seeded }
+        }).stdout
+      const englishTask = { hook_event_name: 'UserPromptSubmit', prompt: 'Fix the sidebar width.' }
+      expect(remindedQuote(child('prompt', englishTask), 'UserPromptSubmit')).toBe('帮我看看侧栏')
+      expect(remindedQuote(child('tool', {}), 'PostToolUse')).toBe('帮我看看侧栏')
+      expect(
+        remindedQuote(child('prompt', { ...englishTask, prompt: '再改一下' }), 'UserPromptSubmit')
+      ).toBe('再改一下')
+    })
+
+    // ADR-0031
+    it('a task handed over with the owner’s last words is quoted by those words, not by the task another AI wrote in English, and Koloft reads them back whole for the next child down', () => {
+      const ownerWords = '帮我看看 "侧栏" 为什么\n变宽了 « » \\ 😀'
+      const task = withHandover(
+        { name: 'planner', id: 'abc-123', label: 'Claude', ownerWords },
+        'Read the brief at /tmp/brief.md and fix the sidebar width.'
+      )
+      expect(remindedQuote(prompt('tabLangOW', task), 'UserPromptSubmit')).toBe(ownerWords)
+      expect(remindedQuote(tool('tabLangOW'), 'PostToolUse')).toBe(ownerWords)
+      expect(quotedPrompt(regDir, 'tabLangOW')).toBe(ownerWords)
+      expect(quotedPrompt(regDir, 'tabLangNoPrompt')).toBeUndefined()
     })
 
     // CC§19
@@ -1055,6 +1117,12 @@ describe('injected hook script', () => {
       fs.writeFileSync(log, '{"a":1}\n{"a":2}\n')
       build()
       expect(fs.readFileSync(log, 'utf8')).toBe('{"a":1}\n{"a":2}\n')
+    })
+  })
+
+  it('the settings file every Claude launch gets, on this Mac or another machine, answers Claude’s one-time Bypass Permissions screen itself (CC§9)', () => {
+    expect(hookSettings('/x/hook.sh', '/x/reg', 'tabBP')).toMatchObject({
+      skipDangerousModePermissionPrompt: true
     })
   })
 })

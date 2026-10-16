@@ -21,12 +21,11 @@ export const ANSWER_IN_THE_THREAD = '-# Answer with a button, or write the answe
 
 export function noticeKindOf(
   prev: SessionStatus | undefined,
-  next: SessionStatus,
-  awaitsInput: boolean
+  next: SessionStatus
 ): NoticeKind | undefined {
   const edge = edgeAttention(prev, next)
   if (edge === 'approval') return 'waiting'
-  if (edge === 'turn-done') return awaitsInput ? 'waiting' : 'finished'
+  if (edge === 'turn-done') return 'finished'
   return undefined
 }
 
@@ -60,7 +59,6 @@ export interface NoticeDeps {
   withButtons(tabId: string, view: DialogView, card: Card): Card
   subject(tabId: string): NoticeSubject | undefined
   shownName(tabId: string): Promise<string | null>
-  awaitsInput(tabId: string): boolean
   commandRunning(tabId: string): boolean
   dialog(tabId: string): Promise<DialogView | undefined>
 }
@@ -77,7 +75,7 @@ export class Notices {
   onStatus(tabId: string, prev: SessionStatus | undefined, next: SessionStatus): void {
     this.liveSubject(tabId)
     if (next === 'working') this.waitingNoticed.delete(tabId)
-    const kind = noticeKindOf(prev, next, this.d.awaitsInput(tabId))
+    const kind = noticeKindOf(prev, next)
     if (kind) void this.notice(tabId, kind)
   }
 

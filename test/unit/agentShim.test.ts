@@ -17,6 +17,7 @@ import {
 } from '../../src/main/agentRequests'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../../src/main/jsonDrops'
 import type { SessionInfo } from '../../src/shared/types'
+import { AGENT_GUIDE } from '../../src/shared/agentGuide'
 
 const TAB = `pty-${process.pid.toString(36)}-1`
 const AWKWARD = 'say "hi" to C:\\temp\\n\tand\n50% of 日本 ✓\n'
@@ -198,9 +199,14 @@ describe('koloft command in a Codex session', () => {
     expect(raws[0]).not.toHaveProperty('tabId')
   })
 
-  it('in a read-only sandbox it says it cannot run here and exits 1', async () => {
+  it('in a read-only sandbox it still prints its guide, and says any other command cannot run here and exits 1', async () => {
     fs.chmodSync(requestDir, 0o555)
-    const r = await run(path.join(shimDir, 'koloft'), ['help'], {})
+    for (const args of [['help'], [], ['--help']]) {
+      const guide = await run(path.join(shimDir, 'koloft'), args, {})
+      expect(guide.status).toBe(0)
+      expect(guide.stdout).toBe(AGENT_GUIDE + '\n')
+    }
+    const r = await run(path.join(shimDir, 'koloft'), ['note'], {})
     expect(r.status).toBe(1)
     expect(r.stderr).toMatch(/read-only/)
   })

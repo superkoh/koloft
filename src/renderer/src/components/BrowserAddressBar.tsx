@@ -1,5 +1,5 @@
 import { useState, type JSX, type ReactNode, type RefObject } from 'react'
-import { LuArrowLeft, LuArrowRight, LuExternalLink, LuRotateCw, LuX } from 'react-icons/lu'
+import { IconBack, IconClose, IconForward, IconOpenOutside, IconReload } from '../icons'
 import { loadHistory, match } from '../browserHistory'
 
 export function BrowserAddressBar({
@@ -55,7 +55,7 @@ export function BrowserAddressBar({
         disabled={!canBack}
         onClick={onBack}
       >
-        <LuArrowLeft size={16} />
+        <IconBack size={16} />
       </button>
       <button
         className={'bnav' + (canForward ? '' : ' dis')}
@@ -64,15 +64,15 @@ export function BrowserAddressBar({
         disabled={!canForward}
         onClick={onForward}
       >
-        <LuArrowRight size={16} />
+        <IconForward size={16} />
       </button>
       {loading ? (
         <button className="bnav" aria-label="Stop" title="Stop" onClick={onStop}>
-          <LuX size={16} />
+          <IconClose size={16} />
         </button>
       ) : (
         <button className="bnav" aria-label="Reload" title="Reload ⌘R" onClick={onReload}>
-          <LuRotateCw size={16} />
+          <IconReload size={16} />
         </button>
       )}
       <input
@@ -128,7 +128,7 @@ export function BrowserAddressBar({
         title="Open in system browser"
         onClick={onExternalOpen}
       >
-        <LuExternalLink size={16} />
+        <IconOpenOutside size={16} />
       </button>
       {overflow}
       {loading && <span className="prog" />}

@@ -3,7 +3,7 @@ import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { REMOTE_PATH_LINE } from './remote/install'
+import { REMOTE_ENV_LINES } from './remote/install'
 
 // CC§6
 export interface StatusLineSetting {
@@ -140,7 +140,7 @@ function localWrapperScript(config: string, cacheDir: string): string {
 
 export function remoteWrapperScript(): string {
   return wrapperScript({
-    head: `${REMOTE_PATH_LINE}
+    head: `${REMOTE_ENV_LINES}
 D="$(cd "$(dirname "$0")" && pwd)"
 node="$HOME/.koloft/node/bin/node"
 [ -x "$node" ] || node="$(command -v node 2>/dev/null)"

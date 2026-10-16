@@ -67,7 +67,6 @@ import { pathWithDirFirst } from './toolInstall'
 import { realpathSafe } from './projectInfo'
 import {
   StoredSessions,
-  type HistoryEntry,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
@@ -77,7 +76,9 @@ const exec = promisify(execFile)
 
 export interface MuseSessionDeps extends StoredSessionDeps {
   openShimRoot: string
-  pickHome(resumeSessionId?: string): { account: string; env: Record<string, string> } | undefined
+  pickHome(
+    resumeSessionId?: string
+  ): { account: string; env: Record<string, string>; notice?: string } | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
@@ -387,6 +388,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     // ADR-0030 MUSE§13
     const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.muse)
+    if (picked.notice) this.deps.error(picked.notice)
     return { binary: this.binary!, account: picked.account, env: { ...this.env, ...picked.env } }
   }
 

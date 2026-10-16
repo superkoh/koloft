@@ -341,6 +341,52 @@ it('a wait for the next pull ends only after a round that started after it, sinc
   expect(done).toBe(true)
 })
 
+it('a watched path is stamped on every heartbeat: the first stamp is only the baseline, a changed one fires once, and an unwatched path is no longer asked', async () => {
+  const file = '/home/koh/api/notes.md'
+  let stamp = '1.0 3'
+  answerWhenQueueEmpty = () => {
+    const asked = scriptSent(runsFull[runsFull.length - 1]).includes(file)
+    return Promise.resolve(ok(asked ? `stamp ${stamp}\nk-aaa\n` : 'k-aaa\n'))
+  }
+  const seen: string[] = []
+  sync.watch('devbox', file, (s) => seen.push(s))
+  sync.start()
+  await tick(1)
+  await tick(2000)
+  expect(seen).toEqual([])
+
+  stamp = '2.0 4'
+  await tick(2000)
+  expect(seen).toEqual(['2.0 4'])
+  await tick(2000)
+  expect(seen).toEqual(['2.0 4'])
+
+  stamp = ''
+  await tick(2000)
+  expect(seen).toEqual(['2.0 4', ''])
+
+  sync.unwatch('devbox', file)
+  await tick(2000)
+  expect(scriptSent(runsFull[runsFull.length - 1])).not.toContain(file)
+})
+
+it('unwatchAll drops every watched path at once, however many times each was watched, so a reloaded window leaves none stamped', async () => {
+  const file = '/home/koh/api/notes.md'
+  const dir = '/home/koh/api/src'
+  sync.watch('devbox', file, () => {})
+  sync.watch('devbox', file, () => {})
+  sync.watch('devbox', dir, () => {})
+  sync.start()
+  await tick(1)
+  expect(scriptSent(runsFull[runsFull.length - 1])).toContain(dir)
+
+  sync.unwatchAll()
+  await tick(2000)
+  const sent = scriptSent(runsFull[runsFull.length - 1])
+  expect(sent).not.toContain(file)
+  expect(sent).not.toContain(dir)
+})
+
 describe('pokeNow', () => {
   it('runs a round at once instead of waiting out the interval', async () => {
     target = { ...target, hasTabs: false }

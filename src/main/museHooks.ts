@@ -3,6 +3,7 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
 import { QUOTE_PROMPT_FN, REMIND_REPLY_LANGUAGE_FN } from './replyLanguage'
+import { FROM_A_SESSION } from './crossSessionMessage'
 import { record } from './codexObservation'
 
 // MUSE§9
@@ -40,7 +41,12 @@ part="$dir/${HOOK_DROP_PREFIX}$id.part"
 printf '{"event":"%s","input":%s}\\n' "$event" "$input" > "$part" 2>/dev/null && mv "$part" "$dir/${HOOK_DROP_PREFIX}$id.json" 2>/dev/null
 case "$event" in
   SessionStart) [ -f "$3" ] && cat "$3" ;;
-  UserPromptSubmit) quote_prompt > "$said"; remind_reply_language UserPromptSubmit ;;
+  UserPromptSubmit)
+    case "$input" in
+      *'"prompt":"${FROM_A_SESSION}'*) ;;
+      *) quote_prompt > "$said" ;;
+    esac
+    remind_reply_language UserPromptSubmit ;;
   PostToolUse) remind_reply_language PostToolUse ;;
 esac
 exit 0

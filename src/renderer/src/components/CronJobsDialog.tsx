@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
-import { LuPencil, LuPlay, LuTrash2, LuX } from 'react-icons/lu'
+import { IconClose, IconDelete, IconEdit, IconPlay } from '../icons'
 import type {
   BackendId,
   CronJob,
@@ -368,18 +368,18 @@ export function CronJobsDialog({
       ) : (
         <div className="job-acts">
           <button className="mini" onClick={() => void window.api.cron.runNow(job.id)}>
-            <LuPlay size={11} />
+            <IconPlay size={11} />
             Run now
           </button>
           <button className="ibtn" aria-label={`Edit ${job.name}`} onClick={() => edit(job)}>
-            <LuPencil size={15} />
+            <IconEdit size={15} />
           </button>
           <button
             className="ibtn danger"
             aria-label={`Delete ${job.name}`}
             onClick={() => setConfirmId(job.id)}
           >
-            <LuTrash2 size={15} />
+            <IconDelete size={15} />
           </button>
         </div>
       )}
@@ -753,7 +753,7 @@ export function CronJobsDialog({
         <div className="modal-header">
           <span>{header}</span>
           <span className="modal-close" onClick={onClose} aria-label="Close">
-            <LuX size={16} />
+            <IconClose size={16} />
           </span>
         </div>
         <div className="modal-body">
