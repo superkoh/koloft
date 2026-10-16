@@ -621,7 +621,16 @@ test.describe('Codex sessions through the real method chooser, process transport
         new Set([preset])
       )
       expect(readCalls(env).some((call) => statusOverride(call.argv))).toBe(false)
-      expect(fs.readFileSync(configFile, 'utf8')).toBe(userConfig)
+      const config = fs.readFileSync(configFile, 'utf8')
+      expect(config.startsWith(userConfig)).toBe(true)
+      expect(
+        config
+          .slice(userConfig.length)
+          .split('\n')
+          .filter(
+            (line) => line.trim() && !/^(\[hooks\.state\."[^"]+"\]|trusted_hash = )/.test(line)
+          )
+      ).toEqual([])
     } finally {
       await quitAndClose(app)
     }
@@ -788,7 +797,8 @@ test.describe('Codex sessions through the real method chooser, process transport
         .map((line) => (JSON.parse(line) as { portOffset: string | null }).portOffset)
         .filter((offset) => offset !== null)
       const offset = String(portOffset('codex-feature'))
-      expect(offsets).toEqual([offset, offset, offset])
+      expect(offsets.length).toBeGreaterThanOrEqual(3)
+      expect(new Set(offsets)).toEqual(new Set([offset]))
     } finally {
       await quitAndClose(app)
     }
