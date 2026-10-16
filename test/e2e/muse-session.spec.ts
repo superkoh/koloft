@@ -177,6 +177,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(dlg).toBeVisible()
 
       await page.keyboard.press('Shift+Enter')
+      await expect(list).toBeVisible()
       await page.keyboard.press('3')
       await expect.poll(() => museCalls(env).length).toBe(1)
       await expect(dlg).toHaveCount(0)

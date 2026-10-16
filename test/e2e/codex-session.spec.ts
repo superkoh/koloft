@@ -274,7 +274,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(agentRow(page, 'Codex')).toContainText('No account')
       await expect(empty.locator('.field-hint.bad')).toHaveText(line)
       await snap(page, 'codex-no-account-empty-workspace')
-      await agentRow(page, 'Codex').click()
+      await agentRow(page, 'Codex').click({ force: true })
       await page.keyboard.press('Escape')
       await expect(page.getByRole('listbox', { name: 'Agents' })).toHaveCount(0)
 
@@ -1456,8 +1456,9 @@ test.describe('Codex sessions through the real method chooser, process transport
       await sendShortcut(app, 'shortcut:open-settings')
       await expect(page.locator('.set-main')).toContainText('Sign in to Codex')
       await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
-      const defaultMethod = page.getByRole('button', { name: 'Default session method' })
-      await expect(defaultMethod).toHaveText('Claude')
+      const defaultMethod = (): Locator =>
+        page.getByRole('button', { name: 'Default session method' })
+      await expect(defaultMethod()).toHaveText('Claude')
       await expect(page.getByRole('switch', { name: 'Enable Claude', exact: true })).toBeDisabled()
       const screenshots = path.join(__dirname, '../../test-results/codex-ui')
       fs.mkdirSync(screenshots, { recursive: true })
@@ -1465,9 +1466,9 @@ test.describe('Codex sessions through the real method chooser, process transport
         path: path.join(screenshots, 'session-methods.png'),
         animations: 'disabled'
       })
-      await defaultMethod.click()
+      await defaultMethod().click()
       await agentRow(page, 'Codex').click()
-      await expect(defaultMethod).toHaveText('Codex')
+      await expect(defaultMethod()).toHaveText('Codex')
       await page.keyboard.press('Escape')
 
       await newIn(page, false, 'Codex')
@@ -1495,10 +1496,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(codexRows(page)).toHaveCount(2)
       await sendShortcut(app, 'shortcut:open-settings')
       await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
-      await expect(defaultMethod).toHaveText('Codex')
+      await expect(defaultMethod()).toHaveText('Codex')
       await page.getByRole('switch', { name: 'Enable Codex', exact: true }).uncheck()
-      await expect(defaultMethod).toHaveText('Claude')
-      await defaultMethod.click()
+      await expect(defaultMethod()).toHaveText('Claude')
+      await defaultMethod().click()
       await expect(agentRow(page, 'Codex')).toHaveAttribute('aria-disabled', 'true')
       await expect(agentRow(page, 'Codex')).toContainText('Off')
       await page.keyboard.press('Escape')
