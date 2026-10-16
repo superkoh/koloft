@@ -46,20 +46,7 @@ process.stdin.on('end', () => {
 })
 `
 
-// ADR-0029 CC§15
-export const CONDUCTOR_GATE_SCRIPT = `const path = require('path')
-const READ_OR_ASK_TOOLS = new Set(${JSON.stringify(READ_OR_ASK_TOOLS)})
-const WRITE_TOOLS = new Set(${JSON.stringify(WRITE_TOOLS)})
-
-function inOwnMemory(event) {
-  const transcript = event.transcript_path
-  const file = event.tool_input && event.tool_input.file_path
-  if (typeof transcript !== 'string' || typeof file !== 'string') return false
-  const memory = path.join(path.dirname(transcript), 'memory')
-  return path.resolve(file).startsWith(memory + path.sep)
-}
-
-function onePlainCall(command, program) {
+const ONE_PLAIN_CALL = `function onePlainCall(command, program) {
   const cmd = String(command).trim()
   if (cmd !== program && !cmd.startsWith(program + ' ')) return false
   let quote = ''
@@ -85,13 +72,31 @@ function allowedCommands(named) {
   })
 }
 
+function koloftOrNamed(command, named) {
+  if (allowedCommands(named).some((program) => onePlainCall(command, program))) return GRANTED
+  return onePlainCall(command, 'koloft')
+}`
+
+// ADR-0029 CC§15
+export const CONDUCTOR_GATE_SCRIPT = `const path = require('path')
+const READ_OR_ASK_TOOLS = new Set(${JSON.stringify(READ_OR_ASK_TOOLS)})
+const WRITE_TOOLS = new Set(${JSON.stringify(WRITE_TOOLS)})
+
+function inOwnMemory(event) {
+  const transcript = event.transcript_path
+  const file = event.tool_input && event.tool_input.file_path
+  if (typeof transcript !== 'string' || typeof file !== 'string') return false
+  const memory = path.join(path.dirname(transcript), 'memory')
+  return path.resolve(file).startsWith(memory + path.sep)
+}
+
+${ONE_PLAIN_CALL}
+
 function allowed(event, named) {
   if (READ_OR_ASK_TOOLS.has(event.tool_name)) return true
   if (WRITE_TOOLS.has(event.tool_name)) return inOwnMemory(event)
   if (event.tool_name !== 'Bash') return false
-  const command = event.tool_input && event.tool_input.command
-  if (allowedCommands(named).some((program) => onePlainCall(command, program))) return GRANTED
-  return onePlainCall(command, 'koloft')
+  return koloftOrNamed(event.tool_input && event.tool_input.command, named)
 }
 
 ${TOOLS_THE_ALLOW_FILE_NAMES}
@@ -131,22 +136,15 @@ ${TOOLS_THE_ALLOW_FILE_NAMES}
 ${DENY_AND_SAY(CODEX_CONDUCTOR_DENIED)}`
 
 const MUSE_CONDUCTOR_DENIED =
-  'Koloft: Assist only passes work on. It may run shell commands, read files, change files inside its own folder and ask the owner a question with request_user_input. It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
+  'Koloft: Assist only passes work on. It may read files, change files inside its own folder, ask the owner a question with request_user_input and run one plain koloft command per bash call (no ;, &&, |, >, $ or backticks outside quotes). It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
 
 // MUSE§9
-const MUSE_RUN_OR_READ_TOOLS = [
-  'bash',
-  'bash_input',
-  'work_status',
-  'read_file',
-  'search',
-  'submit_reminder_decision'
-]
+const MUSE_READ_TOOLS = ['read_file', 'search', 'work_status', 'submit_reminder_decision']
 const MUSE_WRITE_TOOLS = ['write_file', 'edit_file']
 
 // ADR-0029 MUSE§9
 export const MUSE_CONDUCTOR_GATE_SCRIPT = `const path = require('path')
-const RUN_OR_READ_TOOLS = new Set(${JSON.stringify(MUSE_RUN_OR_READ_TOOLS)})
+const READ_TOOLS = new Set(${JSON.stringify(MUSE_READ_TOOLS)})
 const WRITE_TOOLS = new Set(${JSON.stringify(MUSE_WRITE_TOOLS)})
 
 function inOwnFolder(event) {
@@ -156,10 +154,13 @@ function inOwnFolder(event) {
   return path.resolve(own, file).startsWith(own + path.sep)
 }
 
-function allowed(event) {
-  if (RUN_OR_READ_TOOLS.has(event.tool_name)) return true
+${ONE_PLAIN_CALL}
+
+function allowed(event, named) {
+  if (READ_TOOLS.has(event.tool_name)) return true
   if (WRITE_TOOLS.has(event.tool_name)) return inOwnFolder(event)
-  return false
+  if (event.tool_name !== 'bash') return false
+  return koloftOrNamed(event.tool_input && event.tool_input.command, named)
 }
 
 ${TOOLS_THE_ALLOW_FILE_NAMES}

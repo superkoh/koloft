@@ -480,7 +480,10 @@ describe('injected hook script', () => {
     })
 
     it('a task Koloft hands over is quoted without the English preamble in front of it', () => {
-      const task = withHandover({ name: 'Global-conductor', id: 'abc-123' }, '评估管家的权限范围')
+      const task = withHandover(
+        { name: 'Global-conductor', id: 'abc-123', label: 'Claude' },
+        '评估管家的权限范围'
+      )
       expect(remindedQuote(prompt('tabLangHO', task), 'UserPromptSubmit')).toBe(
         '评估管家的权限范围'
       )

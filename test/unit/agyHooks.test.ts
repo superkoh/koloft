@@ -131,7 +131,10 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
 
   // ADR-0031
   it('leaves out the handover Koloft puts before a task it hands to a new session', () => {
-    const task = withHandover({ name: 'Global-conductor', id: 'abc-123' }, '评估管家的权限范围')
+    const task = withHandover(
+      { name: 'Global-conductor', id: 'abc-123', label: 'Claude' },
+      '评估管家的权限范围'
+    )
     expect(quoteBeforeModelCall(transcriptWith(task))).toBe('评估管家的权限范围')
   })
 

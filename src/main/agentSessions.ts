@@ -241,7 +241,7 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'this is for Codex sessions, and for reporting to the session or Assist that started you, by the id in your first message. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
+  'this is for Codex and Muse sessions, and for reporting to the session or Assist that started you, by the id in your first message. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
 
 function matchRef<T>(
   items: T[],
@@ -267,10 +267,21 @@ function matchOpen(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> | 
   )
 }
 
-export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> {
+export function findSiblingTarget(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> {
   const hit = matchOpen(sessions, ref)
   if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
-  return !hit.ok || hit.value.backendId === 'codex' ? hit : fail(CLAUDE_USES_SEND_MESSAGE)
+  return !hit.ok || hit.value.backendId !== 'claude' ? hit : fail(CLAUDE_USES_SEND_MESSAGE)
+}
+
+function openTarget(s: SessionInfo & { tabId: string }): Target {
+  return {
+    key: s.sessionId,
+    name: s.title,
+    backend: s.backendId,
+    remote: false,
+    tabId: s.tabId,
+    open: async () => s.tabId
+  }
 }
 
 export interface ClosableSession {
@@ -429,18 +440,18 @@ async function startSibling(
   oweReply: (tabId: string) => void
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
-  if (backend !== 'claude' && args.name !== undefined)
-    return refused(hasNoName(backend), EXIT_USAGE)
+  if (backend === 'codex' && args.name !== undefined) return refused(hasNoName(backend), EXIT_USAGE)
   const caller: SessionCaller = {
     name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
     id: idToReach(me),
+    label: BACKEND_LABEL[me.backendId],
     assist: conductorTab !== undefined
   }
   const name =
-    backend === 'claude'
-      ? (args.name ??
+    backend === 'codex'
+      ? undefined
+      : (args.name ??
         (await nameForTask(args.prompt, d.assist, new Set(d.allSessions().map((s) => s.title)))))
-      : undefined
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
   const worktree =
     gitWorkspace && (args.worktree || caller.assist)
@@ -481,9 +492,9 @@ async function startSibling(
       ? 'koloft session list'
       : `koloft session list --workspace ${JSON.stringify(workspace)}`
   return answered(
-    name
+    backend === 'claude'
       ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
-      : `Started a Codex session in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
+      : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : `a ${BACKEND_LABEL[backend]} session`} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
   )
 }
 
@@ -1017,12 +1028,21 @@ export function sessionVerb(d: SessionVerbDeps): {
       const to = starter(ref)
       if (to) replyOwed.delete(caller.tabId)
       if (to) return deliver('send', to, sessionSays(caller.session, text), caller, false)
-      if (caller.session.backendId !== 'codex')
+      if (caller.session.backendId === 'claude')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
-      const target = findCodexTarget(open, ref)
+      const target = findSiblingTarget(open, ref)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
-      await d.queue(target.value.tabId, text)
-      return answered(`Sent to ${target.value.title}.`)
+      if (caller.session.backendId === 'codex' && target.value.backendId === 'codex') {
+        await d.queue(target.value.tabId, text)
+        return answered(`Sent to ${target.value.title}.`)
+      }
+      return deliver(
+        'send',
+        openTarget(target.value),
+        sessionSays(caller.session, text),
+        caller,
+        false
+      )
     }
     if (Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
       return refused(`koloft session ${sub}: ${ONLY_A_CONDUCTOR}`)
