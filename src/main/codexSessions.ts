@@ -147,6 +147,18 @@ interface GateHook {
   trustStatus: string
 }
 
+const ASSIST_MEMORY = `# Assist memory
+
+This file is your memory folder. When the owner asks you to remember something, add it here as one short line. Keep everything already here.
+`
+
+// CODEX§17
+function seedAssistMemory(folder: string): void {
+  try {
+    fs.writeFileSync(path.join(folder, 'AGENTS.md'), ASSIST_MEMORY, { flag: 'wx' })
+  } catch {}
+}
+
 interface KoloftHook {
   event: string
   command: string
@@ -981,6 +993,7 @@ export class CodexSessions {
     const role = opts.role ?? assist?.role
     const allow = opts.allow ?? assist?.allow ?? []
     if (opts.trustFolder || assist) this.deps.trustFolder(cwd, this.envFor(home))
+    if (conductor && (opts.trustFolder || assist)) seedAssistMemory(cwd)
     const tabId = this.deps.pty.nextId()
     // ADR-0029
     const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)

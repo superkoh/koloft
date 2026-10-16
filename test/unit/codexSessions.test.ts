@@ -1067,6 +1067,18 @@ describe('CodexSessions', () => {
     expect(deps.pty.create).toHaveBeenCalledTimes(2)
   })
 
+  // CODEX§17
+  it("an Assist's folder gets an AGENTS.md that tells Codex to keep what the owner teaches it there, so it remembers after a restart or a resume; one already there is kept, and a plain tab's folder gets none", async () => {
+    const memory = path.join(repo, 'AGENTS.md')
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(fs.existsSync(memory)).toBe(false)
+    await sessions.launch({ kind: 'codex', cwd: repo, conductor: true, trustFolder: true })
+    expect(fs.readFileSync(memory, 'utf8')).toMatch(/memory/)
+    fs.writeFileSync(memory, 'Favourite fruit: lychee.\n')
+    await sessions.launch({ kind: 'codex', cwd: repo, conductor: true, trustFolder: true })
+    expect(fs.readFileSync(memory, 'utf8')).toBe('Favourite fruit: lychee.\n')
+  })
+
   // ADR-0029 CODEX§26
   it('an Assist whose allow list names a Playwright tool reaches the Workbench browser like any tab, and its Playwright tools run without a question its never-ask policy would turn into a failure; every other Assist gets no browser', async () => {
     const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'c'.repeat(32)

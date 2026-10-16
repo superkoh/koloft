@@ -903,6 +903,22 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   held, the model ran `cat <path>/SKILL.md` and answered it. `skills/list` gave `{name,
   description, path, scope: "user", enabled, pluginId}`; a fresh home was seeded with
   `skills/.system/` (imagegen, openai-docs, skill-creator, skill-installer).
+- **The folder's AGENTS.md is a memory that survives a restart and a resume.** 2026-10-16,
+  Codex CLI 0.162.0, real turns (`gpt-6.1-sol`, low effort), `codex app-server --stdio`
+  with `approval_policy="never"`, `sandbox_mode="workspace-write"`, non-git scratch
+  folders. The cwd's `AGENTS.md` reaches the model as a user message `# AGENTS.md
+  instructions for <cwd>` before `<environment_context>`, untrusted folders too. With
+  Koloft's Assist rule "Do not write or change files (your own memory folder aside)" as
+  developer instructions and no `AGENTS.md`, a model told "Remember for next time: …"
+  said it could not save across sessions and wrote nothing. With an `AGENTS.md` seeded
+  beforehand saying "This file is your memory folder. When the owner asks you to remember
+  something, add it here as one short line", the same rule plus Koloft's conductor gate
+  (section 27): a thread started before the seed and resumed after it wrote the fact into
+  `AGENTS.md` with `apply_patch` (`*** Add File: <absolute path>`), and a new thread on a
+  new app-server answered it; on resume Codex adds a fresh AGENTS.md message before the
+  new turn. `features.memories` (stable, off by default) was tried too: per `CODEX_HOME`,
+  run by a background consolidation agent at app-server start, its notes outside the cwd,
+  and after two startups a new thread did not recall the fact.
 - **`$CODEX_HOME/rules/*.rules` applies to a turn's commands.** 2026-10-16, Codex CLI
   0.162.0, a real turn in a trusted folder of a throwaway `CODEX_HOME` whose
   `rules/default.rules` held `prefix_rule(pattern=["touch"], decision="forbidden")`:
