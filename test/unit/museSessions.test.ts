@@ -13,6 +13,7 @@ import {
   type MuseSessionDeps
 } from '../../src/main/museSessions'
 import { museSessionKey } from '../../src/main/sessionStore'
+import { MUSE_TMUX_NAME_SH } from '../../src/main/museRemote'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import { MUSE_CONDUCTOR_GATE_SCRIPT } from '../../src/main/conductorGate'
@@ -728,6 +729,7 @@ describe('a Muse session on a remote machine', () => {
   let killed: string[]
   let gone: boolean
   let reachable: boolean
+  let nameThere: string | null
 
   function onMachine(): void {
     mirrorDir = path.join(home, 'mirror')
@@ -737,6 +739,7 @@ describe('a Muse session on a remote machine', () => {
     killed = []
     gone = false
     reachable = true
+    nameThere = null
     const acct = path.join(home, 'acct')
     fs.mkdirSync(path.join(acct, 'muse'), { recursive: true })
     fs.writeFileSync(path.join(acct, 'muse', 'auth.json'), '{"providers":{"meta":{}}}')
@@ -758,7 +761,7 @@ describe('a Muse session on a remote machine', () => {
         killed.push(name)
         return undefined
       },
-      runScript: async () => null
+      runScript: async (script) => (script === MUSE_TMUX_NAME_SH ? nameThere : null)
     }
     sessions = new MuseSessions(path.join(home, 'remote-sessions.json'), {
       ...sessions['deps'],
@@ -928,6 +931,21 @@ describe('a Muse session on a remote machine', () => {
     expect(second).toBeTruthy()
     await sessions.stopAll()
     expect(killed).toEqual([`k-${A}`])
+  })
+
+  it('closing a tab before its bound line has come back ends the tmux session under the name the wrapper already gave it on the machine', async () => {
+    onMachine()
+    const { id } = await sessions.launch({ kind: 'muse', cwd: KEY })
+    nameThere = `k-${A}\n`
+    await sessions.stop(id)
+    expect(killed).toEqual([`k-${A}`])
+  })
+
+  it('a status the terminal shows without a number, cut where the wrapper could not number it, still lights the row', async () => {
+    onMachine()
+    const id = await boundRemote()
+    say(id, osc('state=working:app=muse'))
+    expect(events('prompt')).toHaveLength(1)
   })
 
   it('a session that ends on the machine while the link is down closes its tab once the machine confirms it is gone', async () => {

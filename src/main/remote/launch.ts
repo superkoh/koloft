@@ -160,13 +160,13 @@ if [ "$1" = run ]; then
 ${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}${muse ? muse.run : claudeRun(spec)}fi
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t ${attachTo}
-sh "$M/ensure.sh"${muse ? ' muse' : ''} || exit $?
+${muse ? `trap 'rm -f "$T.auth.json"' EXIT\n` : ''}sh "$M/ensure.sh"${muse ? ' muse' : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}.status.jsonl"
 ${muse ? 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n' : claudeFirstRun(spec)}tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 c=$?
-rm -f "${T}.env"${muse ? ` "${T}.auth.json"` : ''}
+rm -f "${T}.env"
 exit $c
 `
 }

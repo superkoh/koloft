@@ -386,6 +386,9 @@ cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm 
 
 const RESIZE_SETTLE_MS = 200
 
+// PLATFORM§35
+const NO_TAB_NAME_IS_ANOTHERS_PREFIX = '-t'
+
 export class SshHost implements Host {
   readonly github: GithubLookup
   private git: GitOps
@@ -686,7 +689,9 @@ export class SshHost implements Host {
     await this.sshReady()
     const sid = spec.resumeSessionId
     const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
-    const tmuxName = (tabId: string): string => (sid ? tmuxSessionName(sid) : `m-${tabId}`)
+    const auth = attach ? undefined : spec.account.auth()
+    const tmuxName = (tabId: string): string =>
+      sid ? tmuxSessionName(sid) : `m-${tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
     const pkg = d.machinePackage()
     const hookScript = `${remoteMachineDir(pkg.name)}/${MUSE_HOOK_FILE}`
     const bareOrNot = (p?: string): string | undefined => (p ? this.bare(p) : undefined)
@@ -700,7 +705,7 @@ export class SshHost implements Host {
           [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
         }
         if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
-        if (!attach) files[`${tabId}.auth.json`] = spec.account.auth()
+        if (auth !== undefined) files[`${tabId}.auth.json`] = auth
         writeTabPackage(tabDir, {
           tabId,
           tmuxName: tmuxName(tabId),

@@ -46,11 +46,19 @@ in_tmux = bool(os.environ.get('TMUX'))
 
 def read_json(path):
     try:
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             value = json.load(f)
         return value if isinstance(value, dict) else {}
     except Exception:
         return {}
+
+
+def readable_or_missing(path):
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding='utf-8') as f:
+        value = json.load(f)
+    return value if isinstance(value, dict) else None
 
 
 def write_whole(path, text):
@@ -70,8 +78,11 @@ def trusted(folder):
     return isinstance(entry, dict) and entry.get('decision') == 'trusted'
 
 
-if trust:
-    doc = read_json(trust_file)
+try:
+    doc = readable_or_missing(trust_file) if trust else None
+except Exception:
+    doc = None
+if doc is not None:
     projects = projects_of(doc)
     for folder in trust:
         projects[os.path.realpath(folder)] = {'decision': 'trusted'}
@@ -241,6 +252,16 @@ def follow_registry():
         bind(best[1])
 
 
+def held_back(chunk):
+    cut = chunk.rfind(OPEN)
+    if cut >= 0 and not FRAME.search(chunk, cut) and len(chunk) - cut < LONGEST_PARTIAL_FRAME:
+        return cut
+    for n in range(len(OPEN) - 1, 0, -1):
+        if chunk.endswith(OPEN[:n]):
+            return len(chunk) - n
+    return len(chunk)
+
+
 reading = [0, fd]
 pending = b''
 next_poll = 0.0
@@ -262,10 +283,8 @@ while True:
         if not chunk:
             break
         chunk = pending + chunk
-        pending = b''
-        cut = chunk.rfind(OPEN)
-        if cut >= 0 and not FRAME.search(chunk, cut) and len(chunk) - cut < LONGEST_PARTIAL_FRAME:
-            pending, chunk = chunk[cut:], chunk[:cut]
+        cut = held_back(chunk)
+        pending, chunk = chunk[cut:], chunk[:cut]
         write_all(1, translate(chunk))
     if 0 in ready:
         try:
@@ -277,6 +296,7 @@ while True:
         else:
             reading = [fd]
 
+write_all(1, pending)
 if saved_tty is not None:
     termios.tcsetattr(0, termios.TCSAFLUSH, saved_tty)
 _, status = os.waitpid(pid, 0)
@@ -300,6 +320,9 @@ export const MUSE_LOG_GREP = `t="$1"; shift
 for f in "$@"; do
   grep -F ${SAID_MARKS.map((m) => `-e ${shq(m)}`).join(' ')} "$f" 2>/dev/null | grep -i -F -- "$t" | head -n ${SAID_LINES_A_FILE_HANDS_BACK} | while IFS= read -r l; do printf '%s\\t%s\\n' "$f" "$l"; done
 done
+exit 0`
+
+export const MUSE_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
 // MUSE§10

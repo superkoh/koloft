@@ -63,7 +63,7 @@ import {
 import { isRemoteKey, resolveOnHost } from '@shared/remoteKey'
 import { POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE, tmuxSessionName } from './remote/launch'
 import type { MuseMachineLaunch, MuseMachinePlan } from './host/sshHost'
-import { MIRROR_SUFFIX, MUSE_LOG_GREP, RUN_POINTER_SUFFIX } from './museRemote'
+import { MIRROR_SUFFIX, MUSE_LOG_GREP, MUSE_TMUX_NAME_SH, RUN_POINTER_SUFFIX } from './museRemote'
 import { sleep } from './codexTransport'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
@@ -140,7 +140,7 @@ interface MuseRun extends StoredRun {
   host?: string
   tmuxName?: string
   attachTo?: string
-  mirror?: { tail: LineTail; replay?: string[] }
+  mirror?: { runId: string; tail: LineTail; replay?: string[] }
   lastSeq: number
 }
 
@@ -611,7 +611,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         attachTo: plan.attach ? resumeId : undefined,
         releaseTools: () => this.parsers.delete(handle.id)
       })
-      if (!plan.attach) run.mirror = { tail: this.mirrorTail(run, handle.id) }
+      if (!plan.attach) run.mirror = { runId: handle.id, tail: this.mirrorTail(run, handle.id) }
       remote.poke(host)
       return run
     } catch (error) {
@@ -928,7 +928,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   private freshStates(run: MuseRun, states: ProgramStatus[]): ProgramStatus[] {
     if (!run.host) return states
     return states.filter((status) => {
-      if (status.seq === undefined || status.seq <= run.lastSeq) return false
+      if (status.seq === undefined) return true
+      if (!(status.seq > run.lastSeq)) return false
       run.lastSeq = status.seq
       return true
     })
@@ -964,7 +965,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           tmuxSessionName(run.attachTo) + RUN_POINTER_SUFFIX
         )
         const runId = textOrEmpty(pointer)
-        if (runId) run.mirror = { tail: this.mirrorTail(run, runId), replay: [] }
+        if (runId) run.mirror = { runId, tail: this.mirrorTail(run, runId), replay: [] }
       }
       const mirror = run.mirror
       if (!mirror) continue
@@ -1008,7 +1009,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   protected async endRun(run: MuseRun): Promise<void> {
     if (!run.host || !run.tmuxName || this.shuttingDown) return
-    const problem = await this.deps.remote?.machine(run.host).endTmuxSession(run.tmuxName)
+    const machine = this.deps.remote?.machine(run.host)
+    const runId = run.mirror?.runId
+    const named = runId && (await machine?.runScript(MUSE_TMUX_NAME_SH, [runId]))
+    const problem = await machine?.endTmuxSession(named?.trim() || run.tmuxName)
     if (problem)
       this.deps.error(`Could not stop Muse on ${run.host}: ${problem}. It is still running there.`)
     this.deps.remote?.poke(run.host)
