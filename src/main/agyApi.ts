@@ -202,20 +202,6 @@ export class AgyApi {
     })
   }
 
-  // AGY§16
-  async rename(conversationId: string, title: string): Promise<void> {
-    await this.call('UpdateConversationAnnotations', {
-      cascadeId: conversationId,
-      annotations: { title },
-      mergeAnnotations: true
-    })
-  }
-
-  // AGY§16
-  async cancel(conversationId: string): Promise<void> {
-    await this.call('CancelCascadeInvocation', { cascadeId: conversationId })
-  }
-
   // AGY§16 AGY§17
   streamState(
     conversationId: string,

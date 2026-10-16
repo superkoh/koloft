@@ -178,6 +178,21 @@ export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   }
 }
 
+// AGY§23
+export function quotaGlyph(a: AccountView): CapsuleGlyph {
+  if (a.status !== 'ok') return { kind: 'grey' }
+  if (!a.quota?.length) return { kind: 'empty' }
+  const heaviest = Math.max(...a.quota.map((q) => q.used))
+  if (heaviest >= 1) return { kind: 'walled', stale: false }
+  return {
+    kind: 'bar',
+    frac: Math.min(heaviest, CAP),
+    level: meterLevel(heaviest),
+    stale: false,
+    fable: null
+  }
+}
+
 export function codexResetOffered(a: AccountView): boolean {
   return (
     a.status === 'ok' &&

@@ -26,6 +26,7 @@ import {
   poolGlyph,
   poolSnapshot,
   popoverX,
+  quotaGlyph,
   sublineFor,
   ACCOUNT_KINDS_OF,
   type CapsuleGlyph,
@@ -124,7 +125,8 @@ export function TopbarUsage(): JSX.Element | null {
 
   const members = accounts.filter((a) => a.kind === 'oauth' && a.enabled)
   const codex = accounts.filter((a) => a.kind === 'codex-home' && a.enabled)
-  if (members.length === 0 && codex.length === 0) return null
+  const agy = accounts.filter((a) => a.kind === 'agy-home' && a.enabled && a.quota)
+  if (members.length === 0 && codex.length === 0 && agy.length === 0) return null
 
   const claude = members.length > 0
   const enabled = accounts.filter((a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind))
@@ -204,6 +206,13 @@ export function TopbarUsage(): JSX.Element | null {
             ))}
           </span>
         )}
+        {agy.length > 0 && (
+          <span className="tbu-group">
+            {agy.map((a) => (
+              <CapsuleBar key={`${a.kind}:${a.name}`} glyph={quotaGlyph(a)} />
+            ))}
+          </span>
+        )}
       </button>
       {/* ADR-0013 */}
       {pop &&
@@ -278,6 +287,14 @@ export function TopbarUsage(): JSX.Element | null {
                   ))}
                 </Section>
               )}
+              {(claude || codex.length > 0) && agy.length > 0 && <div className="tbu-sep" />}
+              {agy.length > 0 && (
+                <Section title="Antigravity" columns={[]} pool={false}>
+                  {agy.map((a) => (
+                    <QuotaRow key={a.name} a={a} now={now} />
+                  ))}
+                </Section>
+              )}
             </div>
             <div className="tbu-sep" />
             <button className="tbu-act" disabled={probing} onClick={() => void probe()}>
@@ -298,6 +315,31 @@ export function TopbarUsage(): JSX.Element | null {
           </div>,
           document.body
         )}
+    </div>
+  )
+}
+
+function QuotaRow({ a, now }: { a: AccountView; now: number }): JSX.Element {
+  const dead = a.status !== 'ok'
+  return (
+    <div className={'tbu-row' + (dead ? ' dim' : '')}>
+      <RowHead a={a} walled={quotaGlyph(a).kind === 'walled'} stale={null} />
+      {dead ? (
+        <div className="tbu-row-note">
+          <span className="acct-note">Not signed in — sign in again from Settings</span>
+        </div>
+      ) : (
+        <div className="acct-meters">
+          {(a.quota ?? []).map((q) => (
+            <Meter key={q.label} label={q.label} v={q.used} win="" />
+          ))}
+          {a.quota?.[0]?.resetsAt ? (
+            <span className="acct-note">
+              {a.quota[0].label} resets {resetLabel(a.quota[0].resetsAt, now)}
+            </span>
+          ) : null}
+        </div>
+      )}
     </div>
   )
 }
