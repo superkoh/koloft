@@ -12,8 +12,7 @@ import {
   keepsResumedSession,
   resetElapsed,
   STALE_MS,
-  usableAccounts,
-  windowLabel
+  usableAccounts
 } from '@shared/accountUsage'
 import { ageLabel } from '@shared/freshnessOps'
 import {
@@ -89,17 +88,9 @@ function bannerFor(
   return s
 }
 
-export function codexLaunchBanner(a: AccountView, nowMs: number): string {
-  const l = a.limits
-  if (!l) return `koloft: → ${a.name}`
-  if (codexWalled(l))
-    return `koloft: every account rate-limited → ${a.name} (${fmtReset(codexBackAt(l))})`
-  const parts = [
-    `koloft: → ${a.name}`,
-    ...l.windows.map((w) => `${windowLabel(w.minutes)} ${pct(w.used)}`)
-  ]
-  if (nowMs - l.at > STALE_MS) parts.push(ageLabel(l.at, nowMs))
-  return parts.join(' · ')
+export function codexAllLimitedNotice(a: AccountView): string | undefined {
+  if (!a.limits || !codexWalled(a.limits)) return undefined
+  return `Every Codex account is at its limit, so this session runs on ${a.name}, the first to reset (${fmtReset(codexBackAt(a.limits))}).`
 }
 
 function fallbackTag(a: AccountMeta): string {

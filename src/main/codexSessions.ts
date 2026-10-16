@@ -377,7 +377,7 @@ export interface CodexSessionDeps {
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
-  pickHome(resumeSessionId?: string): { account: string; home: string; banner: string } | undefined
+  pickHome(resumeSessionId?: string): { account: string; home: string; notice?: string } | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
   replyLanguageScript: string
@@ -1185,6 +1185,7 @@ export class CodexSessions {
     // CODEX§15 ADR-0030
     const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
+    if (picked.notice) this.deps.error(picked.notice)
     const home = picked.home
     const trustedOnMachine: string[] = []
     const trust = (dir: string, env: NodeJS.ProcessEnv | undefined): void => {
@@ -1349,8 +1350,7 @@ export class CodexSessions {
         cols: opts.cols,
         rows: opts.rows,
         processEnv: env,
-        resumeSessionId: opts.resumeSessionId,
-        banner: picked.banner
+        resumeSessionId: opts.resumeSessionId
       })
       run = {
         tabId: handle.id,
