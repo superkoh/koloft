@@ -97,6 +97,7 @@ export interface ClaudeBackendDeps {
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
+  machineOfTab(tabId: string): string | undefined
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
 }
 
@@ -521,7 +522,7 @@ export class ClaudeBackend implements SessionBackend {
     const byTmux = typeof r.tmux === 'string' && r.tmux && this.tabRunningTmux(r.tmux, machine)
     if (byTmux) return byTmux
     const tabId = typeof r.tabId === 'string' ? r.tabId : ''
-    if (this.d.tracker.remoteOf(tabId)?.host === machine && this.d.pty.get(tabId)) return tabId
+    if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
     const other = this.d.otherTabOnMachine?.(
       machine,
       typeof r.tmux === 'string' ? r.tmux : '',

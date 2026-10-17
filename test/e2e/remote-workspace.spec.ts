@@ -435,7 +435,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   })
 
   // ADR-0030 CODEX§16
-  test('E-RW-30: with no Claude account, a remote workspace’s empty panel shuts "New Claude session" under a line that says why, while Codex stays refused there — "Local only" under the button and in its agent list — with no account line', async ({
+  test('E-RW-30: with no Claude account, a remote workspace’s empty panel shuts "New Claude session" under a line that says why, while Codex, whose account is there, stays open in its agent list', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -455,10 +455,9 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(empty.locator('.field-hint.bad')).toHaveText(
         /^No Claude account yet — add one in Settings ▸ Accounts\.$/
       )
-      await expect(empty.locator('.field-hint:not(.bad)')).toHaveText('Codex: Local only')
       await empty.getByRole('button', { name: 'Pick an agent' }).click()
-      await expect(agentRow(page, 'Codex')).toHaveAttribute('aria-disabled', 'true')
-      await expect(agentRow(page, 'Codex')).toContainText('Local only')
+      await expect(agentRow(page, 'Codex')).not.toHaveAttribute('aria-disabled', 'true')
+      await expect(agentRow(page, 'Codex')).not.toContainText(/Local only|Unavailable|No account/)
       await snap(page, 'E-RW-30')
     } finally {
       await quitAndClose(app)
