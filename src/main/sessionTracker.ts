@@ -526,7 +526,7 @@ interface Tracked {
   subagentTimer?: ReturnType<typeof setInterval>
 }
 
-const TRANSCRIPT_READ_CHUNK_BYTES = envMs('KOLOFT_TRANSCRIPT_CHUNK_BYTES', 256 * 1024)
+const APPEND_READ_CHUNK_BYTES = envMs('KOLOFT_APPEND_READ_CHUNK_BYTES', 256 * 1024)
 
 export async function readAppendedLines(
   file: string,
@@ -537,7 +537,7 @@ export async function readAppendedLines(
   let fh: fs.promises.FileHandle | undefined
   try {
     fh = await fs.promises.open(file, 'r')
-    const len = Math.min(size - cur.offset, TRANSCRIPT_READ_CHUNK_BYTES)
+    const len = Math.min(size - cur.offset, APPEND_READ_CHUNK_BYTES)
     newBytes = Buffer.allocUnsafe(len)
     const { bytesRead } = await fh.read(newBytes, 0, len, cur.offset)
     if (bytesRead < len) newBytes = newBytes.subarray(0, bytesRead)
@@ -550,7 +550,7 @@ export async function readAppendedLines(
   const buf = cur.tail.length ? Buffer.concat([cur.tail, newBytes]) : newBytes
   const lastNl = buf.lastIndexOf(0x0a)
   if (lastNl === -1) {
-    cur.tail = Buffer.from(buf)
+    cur.tail = buf
     return []
   }
   cur.tail = Buffer.from(buf.subarray(lastNl + 1))
@@ -1450,7 +1450,7 @@ export class SessionTracker extends SessionRuntime {
       const from = sst.offset
       const lines = await readAppendedLines(file, st.size, sst)
       if (this.tracked.get(t.info.tabId) !== t || t.subagentFiles.get(file) !== sst) return false
-      if (!lines || sst.offset === from) break
+      if (lines === null || sst.offset === from) break
       for (const line of lines) {
         if (!line) continue
         let obj: any

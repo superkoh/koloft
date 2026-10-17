@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, onTestFinished, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -23,7 +23,7 @@ beforeAll(async () => {
   process.env.HOME = home
   process.env.KOLOFT_RELOCATE_SETTLE_MS = RELOCATE_SETTLE_STRETCHED_PAST_THE_500MS_FILE_POLL_MS
   process.env.KOLOFT_TURN_TEXT_WAIT_MS = String(TURN_TEXT_WAIT_SHORTENED_MS)
-  process.env.KOLOFT_TRANSCRIPT_CHUNK_BYTES = READ_PIECE_SMALLER_THAN_ONE_RECORD_BYTES
+  process.env.KOLOFT_APPEND_READ_CHUNK_BYTES = READ_PIECE_SMALLER_THAN_ONE_RECORD_BYTES
   projectsRoot = path.join(home, '.claude', 'projects')
   ;({
     SessionTracker,
@@ -1363,43 +1363,46 @@ describe('SessionTracker — per-session usage', () => {
     expect(s.usage!.outTok).toBe(7)
   })
 
+  const spend = (cwd: string, who: string, n: number, tok: number): unknown[] =>
+    Array.from({ length: n }, (_, i) =>
+      asst({
+        id: `m${who}${i}`,
+        req: 'r',
+        model: 'claude-opus-4-8',
+        in: tok,
+        out: tok,
+        cw: 0,
+        cr: 0,
+        cwd
+      })
+    )
+
+  function swapWhenThirdPieceOfIsRead(file: string, swap: () => void): void {
+    const realOpen = fs.promises.open
+    let pieces = 0
+    const open = vi.spyOn(fs.promises, 'open').mockImplementation((...args) => {
+      if (args[0] === file && ++pieces === 3) swap()
+      return realOpen(...args)
+    })
+    onTestFinished(() => open.mockRestore())
+  }
+
   it('a session swapped in while a long transcript is still being read in pieces shows only the new session', async () => {
     const cwd = makeWorkspace({})
     const SID_A = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
     const SID_B = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
-    const records = (prompt: string, n: number, tok: number): unknown[] => [
-      { type: 'user', message: { content: prompt }, cwd },
-      ...Array.from({ length: n }, (_, i) =>
-        asst({
-          id: `m${prompt}${i}`,
-          req: 'r',
-          model: 'claude-opus-4-8',
-          in: tok,
-          out: tok,
-          cw: 0,
-          cr: 0,
-          cwd
-        })
-      )
-    ]
-    const fileA = writeJsonl(cwd, SID_A, records('about A', 20, 500))
-    const fileB = writeJsonl(cwd, SID_B, records('about B', 40, 7))
+    const prompt = (text: string): unknown => ({ type: 'user', message: { content: text }, cwd })
+    const fileA = writeJsonl(cwd, SID_A, [prompt('about A'), ...spend(cwd, 'a', 20, 500)])
+    const fileB = writeJsonl(cwd, SID_B, [prompt('about B'), ...spend(cwd, 'b', 40, 7)])
     const tracker = newTracker()
     tracker.track('tabU7', cwd)
-    const realOpen = fs.promises.open
-    let piecesOfA = 0
-    const open = vi.spyOn(fs.promises, 'open').mockImplementation((...args) => {
-      if (args[0] === fileA && ++piecesOfA === 3) tracker.bindSession('tabU7', fileB, SID_B, cwd)
-      return realOpen(...args)
-    })
+    swapWhenThirdPieceOfIsRead(fileA, () => tracker.bindSession('tabU7', fileB, SID_B, cwd))
     tracker.bindSession('tabU7', fileA, SID_A, cwd)
 
     const s = await waitFor(
       tracker,
       (x) => x.tabId === 'tabU7' && x.sessionId === SID_B && x.usage?.inTok === 7 * 40
     )
-    open.mockRestore()
-    expect(piecesOfA).toBeGreaterThanOrEqual(3)
     expect(s.title).toBe('about B')
     expect(s.usage!.outTok).toBe(7 * 40)
   })
@@ -1408,38 +1411,18 @@ describe('SessionTracker — per-session usage', () => {
     const cwd = makeWorkspace({})
     const SID_A = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
     const SID_B = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
-    const spend = (who: string, n: number, tok: number): unknown[] =>
-      Array.from({ length: n }, (_, i) =>
-        asst({
-          id: `m${who}${i}`,
-          req: 'r',
-          model: 'claude-opus-4-8',
-          in: tok,
-          out: tok,
-          cw: 0,
-          cr: 0,
-          cwd
-        })
-      )
-    const fileA = writeJsonl(cwd, SID_A, spend('a', 1, 1))
-    const subOfA = writeSubagentJsonl(cwd, SID_A, 'agent-long.jsonl', spend('sub', 20, 500))
-    const fileB = writeJsonl(cwd, SID_B, spend('b', 40, 7))
+    const fileA = writeJsonl(cwd, SID_A, spend(cwd, 'a', 1, 1))
+    const subOfA = writeSubagentJsonl(cwd, SID_A, 'agent-long.jsonl', spend(cwd, 'sub', 20, 500))
+    const fileB = writeJsonl(cwd, SID_B, spend(cwd, 'b', 40, 7))
     const tracker = newTracker()
     tracker.track('tabU8', cwd)
-    const realOpen = fs.promises.open
-    let piecesOfSub = 0
-    const open = vi.spyOn(fs.promises, 'open').mockImplementation((...args) => {
-      if (args[0] === subOfA && ++piecesOfSub === 3) tracker.bindSession('tabU8', fileB, SID_B, cwd)
-      return realOpen(...args)
-    })
+    swapWhenThirdPieceOfIsRead(subOfA, () => tracker.bindSession('tabU8', fileB, SID_B, cwd))
     tracker.bindSession('tabU8', fileA, SID_A, cwd)
 
     const s = await waitFor(
       tracker,
       (x) => x.tabId === 'tabU8' && x.sessionId === SID_B && x.usage?.inTok === 7 * 40
     )
-    open.mockRestore()
-    expect(piecesOfSub).toBeGreaterThanOrEqual(3)
     expect(s.usage!.outTok).toBe(7 * 40)
   })
 
