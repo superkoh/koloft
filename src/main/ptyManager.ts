@@ -22,6 +22,7 @@ export interface PtyHandle {
   ownerTabId?: string
   resized?: (id: string, cols: number, rows: number) => void
   startedAt: number
+  remoteHost?: string
 }
 
 interface CreateArgs {
@@ -41,6 +42,7 @@ interface CreateArgs {
   ownerTabId?: string
   conductor?: boolean
   resized?: (id: string, cols: number, rows: number) => void
+  remoteHost?: string
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
@@ -120,7 +122,7 @@ export class PtyManager extends EventEmitter {
     const login = userShell()
     const shell = args.shell || login.shell
 
-    const ownsItsTools = BRINGS_ITS_OWN_ENV[args.kind]
+    const ownsItsTools = BRINGS_ITS_OWN_ENV[args.kind] && !args.remoteHost
     let env: Record<string, string> = {
       ...((ownsItsTools ? (args.processEnv ?? process.env) : process.env) as Record<
         string,
@@ -230,7 +232,8 @@ export class PtyManager extends EventEmitter {
       resumeSessionId: args.resumeSessionId,
       ownerTabId: args.ownerTabId,
       resized: args.resized,
-      startedAt: Date.now()
+      startedAt: Date.now(),
+      remoteHost: args.remoteHost
     }
     this.ptys.set(id, handle)
 

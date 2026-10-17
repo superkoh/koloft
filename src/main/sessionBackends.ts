@@ -155,7 +155,7 @@ export class SessionBackends {
       backend.list().map((s): SessionInfo => ({
         ...s,
         backendId: backend.id,
-        host: s.remote ? 'ssh' : 'local',
+        host: s.remote ? 'ssh' : hostOf(s.cwd),
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
         conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId),
         assistTask: this.assistTaskOf(s.tabId),

@@ -1,11 +1,14 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { remotePtsFile } from './paths'
-import { ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'
+import { ENSURE_CLAUDE_MINIMUM_FN, ENSURE_MUSE_MINIMUM_FN } from '../cliMinimums'
 import { AGY_INSTALLER_URL } from '../toolInstall'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
+
+// MUSE§17
+const MUSE_INSTALLER = 'https://dev.meta.ai/install.sh'
 
 export const REMOTE_GIT_DIR = '.koloft/git-accounts'
 
@@ -96,21 +99,33 @@ install_pkg() {
 have bash || install_pkg bash || exit 4
 
 program="\${1:-claude}"
+${ENSURE_CLAUDE_MINIMUM_FN}
+${ENSURE_MUSE_MINIMUM_FN}
+python_has_pty() { python3 -c 'import pty, termios' >/dev/null 2>&1; }
 official_install() {
-  say "installing $1 (official installer)"
+  say "installing $1 (official installer$3)"
   if have curl; then curl -fsSL "$2" | bash
   elif have wget; then wget -qO- "$2" | bash
   else say "need curl or wget to install $1"; exit 4; fi
   have "$1" || { say "$1 did not install; see the output above"; exit 4; }
 }
-if [ "$program" = agy ]; then
+case "$program" in
+muse)
+  python_has_pty || install_pkg python3
+  python_has_pty || { say "Muse sessions need python3 on this machine, and python3 here does not run. Install python3, then start the session again."; exit 4; }
+  MUSE_NO_MODIFY_PATH=1; export MUSE_NO_MODIFY_PATH
+  have muse || official_install muse ${MUSE_INSTALLER} ", about 330 MB, once"
+  ensure_muse_minimum muse || exit 4
+  ;;
+agy)
   # AGY§3
   have agy || official_install agy ${AGY_INSTALLER_URL}
-else
+  ;;
+*)
   have claude || official_install claude https://claude.ai/install.sh
-  ${ENSURE_CLAUDE_MINIMUM_FN.split('\n').join('\n  ')}
   ensure_claude_minimum claude || exit 4
-fi
+  ;;
+esac
 
 node_ok() {
   # AGY§8
@@ -148,7 +163,7 @@ install_node() {
 }
 node_runs() { "$HOME/.koloft/node/bin/node" -v >/dev/null 2>&1; }
 no_build_runs="$HOME/.koloft/node-$NODE_VERSION.no-build-runs"
-if ! node_ok && [ ! -f "$no_build_runs" ]; then
+if [ "$program" != muse ] && ! node_ok && [ ! -f "$no_build_runs" ]; then
   say "installing node $NODE_VERSION for the statusline (about 30 MB, once)"
   if ! node_platform || ! install_node "https://nodejs.org/dist/v$NODE_VERSION" "node-v$NODE_VERSION-$os-$arch"; then
     rm -rf "$HOME/.koloft/node.tmp.$$"; say "node could not be installed: this machine gets no statusline"
@@ -201,6 +216,7 @@ set -g default-terminal tmux-256color
 set -asq terminal-features ',xterm*:RGB:hyperlinks'
 set -gq exit-empty on
 set -g mouse off
+set -gq allow-passthrough on
 `
 
 export interface MachineTmp {

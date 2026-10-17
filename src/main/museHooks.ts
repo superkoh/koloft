@@ -31,21 +31,14 @@ type MuseHookName = (typeof EVENTS)[number]
 export const HOOK_DROP_PREFIX = 'hook-'
 
 // MUSE§12 ADR-0031
-const HOOK_SCRIPT = `#!/bin/bash
-: koloft muse hook
-dir="$1"
-event="$2"
-said="$4"
-[ -d "$dir" ] || exit 0
-${NEWID_FN}
+export function museHookScript(head: string, keep: string): string {
+  return `#!/bin/bash
+${head}
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 ${QUOTE_PROMPT_FN}
 input="$(cat | tr -d '\\n')"
-id="$(newid)"
-[ -n "$id" ] || id="$$-$(date +%s)"
-part="$dir/${HOOK_DROP_PREFIX}$id.part"
-printf '{"event":"%s","input":%s}\\n' "$event" "$input" > "$part" 2>/dev/null && mv "$part" "$dir/${HOOK_DROP_PREFIX}$id.json" 2>/dev/null
+${keep}
 case "$event" in
   SessionStart) [ -f "$3" ] && cat "$3" ;;
   UserPromptSubmit)
@@ -58,6 +51,20 @@ case "$event" in
 esac
 exit 0
 `
+}
+
+const HOOK_SCRIPT = museHookScript(
+  `: koloft muse hook
+dir="$1"
+event="$2"
+said="$4"
+[ -d "$dir" ] || exit 0
+${NEWID_FN}`,
+  `id="$(newid)"
+[ -n "$id" ] || id="$$-$(date +%s)"
+part="$dir/${HOOK_DROP_PREFIX}$id.part"
+printf '{"event":"%s","input":%s}\\n' "$event" "$input" > "$part" 2>/dev/null && mv "$part" "$dir/${HOOK_DROP_PREFIX}$id.json" 2>/dev/null`
+)
 
 // MUSE§9 MUSE§12
 const SESSION_START_OUTPUT_LIMIT = 16_384
@@ -86,19 +93,32 @@ export function writeMuseHooks(
   if (context) fs.writeFileSync(contextFile, sessionStartContext(context))
   const saidFile = path.join(shimDir, 'said')
   if (ownerWords) seedHandedOverOwnerWords(saidFile, ownerWords)
-  const run = (command: string): unknown[] => [{ hooks: [{ type: 'command', command }] }]
+  const file = path.join(shimDir, 'hooks.json')
+  fs.writeFileSync(
+    file,
+    hooksJson(
+      (event) =>
+        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)}`,
+      gate
+    )
+  )
+  return file
+}
+
+function hooksJson(command: (event: MuseHookName) => string, gate?: string): string {
+  const run = (line: string): unknown[] => [{ hooks: [{ type: 'command', command: line }] }]
   const hooks = Object.fromEntries([
-    ...EVENTS.map((event) => [
-      event,
-      run(
-        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)}`
-      )
-    ]),
+    ...EVENTS.map((event) => [event, run(command(event))]),
     ...(gate ? [['PreToolUse', run(gate)]] : [])
   ])
-  const file = path.join(shimDir, 'hooks.json')
-  fs.writeFileSync(file, JSON.stringify({ hooks }))
-  return file
+  return JSON.stringify({ hooks })
+}
+
+// MUSE§9 MUSE§17
+export function remoteMuseHooks(script: string, runId: string, contextFile?: string): string {
+  return hooksJson(
+    (event) => `bash "${script}" ${runId} ${event}${contextFile ? ` "${contextFile}"` : ''}`
+  )
 }
 
 export interface MuseHook {

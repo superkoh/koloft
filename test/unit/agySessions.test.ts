@@ -9,7 +9,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { AgySessions, type AgyHomePick, type AgySessionDeps } from '../../src/main/agySessions'
 import { agySessionKey } from '../../src/main/sessionStore'
 import { agyTranscript, type SummaryRow } from '../../src/main/agyStore'
-import type { AgyRemoteLaunch, RemoteAgyConfig } from '../../src/main/remote/agyTab'
+import type { AgyMachineLaunch, RemoteAgyConfig } from '../../src/main/remote/agyTab'
+import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import { AGY_CONDUCTOR_GATE_SCRIPT } from '../../src/main/conductorGate'
@@ -42,13 +43,14 @@ let picked: AgyHomePick | undefined
 let apiKey: string | undefined
 let assist: { role: string; allow: string[] } | undefined
 let machine: {
-  launches: AgyRemoteLaunch[]
+  launches: AgyMachineLaunch[]
   ended: string[]
   config: RemoteAgyConfig
   rows: unknown[]
   held: boolean
   alive: Set<string>
   attach: boolean
+  tmuxThere: string | null
 }
 let mirror: string
 
@@ -164,7 +166,8 @@ beforeEach(() => {
     rows: [],
     held: false,
     alive: new Set(),
-    attach: false
+    attach: false,
+    tmuxThere: null
   }
   mirror = path.join(home, 'mirror-hooks')
   fs.mkdirSync(mirror)
@@ -187,6 +190,7 @@ beforeEach(() => {
     pty: pty as unknown as AgySessionDeps['pty'],
     runtime,
     projectInfo: (p) => ({ root: p.startsWith('ssh://') ? REMOTE_WS : repo, treeRoot: p }),
+    remoteDirExists: async () => true,
     changed: vi.fn(),
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
@@ -215,6 +219,7 @@ beforeEach(() => {
           machine.launches.push(spec)
           return {
             attach: machine.attach,
+            tmuxName: spec.resumeId ? `k-${spec.resumeId}` : `m-${spec.tabId}-t`,
             spawnCwd: home,
             shell: '/bin/zsh',
             launchCommand: () => 'ssh devbox',
@@ -227,15 +232,18 @@ beforeEach(() => {
         endTmuxSession: async (name) => {
           machine.ended.push(name)
           return undefined
-        }
+        },
+        runScript: async (script) => (script === TAB_TMUX_NAME_SH ? machine.tmuxThere : null)
       }),
       hosts: () => ['devbox'],
-      alive: () => machine.alive,
+      keyed: (host, p) => `ssh://${host}${p}`,
+      mirrorDir: () => mirror,
+      mirrorGemini: () => path.join(home, 'mirror-gemini'),
+      gone: (_host, id) => !machine.alive.has(id),
+      connected: () => true,
       nextPull: async () => undefined,
       setupLine: () => undefined,
-      machineName: () => 'm-test',
-      mirrorHookDir: () => mirror,
-      mirrorGemini: () => path.join(home, 'mirror-gemini')
+      machineName: () => 'm-test'
     }
   }
   sessions = new AgySessions(path.join(home, 'agy-sessions.json'), deps)
@@ -763,12 +771,12 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
       path.join(mirror, `${tabId}.agy.jsonl`),
       lines.map((l) => JSON.stringify(l) + '\n').join('')
     )
-    sessions['tick']()
+    sessions.followMirrors('devbox')
   }
   const remoteMember = (id: string): void => {
     sessions.store.upsertMember({
       id,
-      key: agySessionKey(id),
+      key: agySessionKey(id, 'devbox'),
       workspacePath: REMOTE_WS,
       cwd: REMOTE_WS,
       title: 'Remote',
@@ -782,38 +790,31 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
       .mock.calls.map(([, e]) => e)
       .filter((e) => ['prompt', 'notify', 'stop'].includes(e.type))
 
-  it("starts agy on that machine over ssh, on the account's own folder there with Koloft's title and hook scripts from its machine package, the owner's own settings and hooks kept, the API key in the tab's env, and a new worktree made there", async () => {
+  it("starts agy on that machine over ssh, on the account's own folder there with Koloft's title and hook scripts from its machine package, the owner's own settings and hooks kept, the API key in the tab's env, and the folder trusted when asked", async () => {
     apiKey = 'key-1'
     machine.config = {
       ownersSettings: { theme: 'dark', trustedWorkspaces: ['/elsewhere'] },
       ownersHooks: { mine: { Stop: [] } },
       ownSettings: {}
     }
-    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, worktree: 'feat', firstPrompt: 'hi' })
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, trustFolder: true, firstPrompt: 'hi' })
     const [spec] = machine.launches
     expect(created).toHaveLength(1)
-    expect(spec.cwd).toBe(`${REMOTE_WS}/.claude/worktrees/feat`)
-    expect(spec.env).toEqual({ ANT_ACCOUNT: 'work', GEMINI_API_KEY: 'key-1' })
-    const settings = JSON.parse(spec.agy.files['settings.json'])
+    expect(spec.cwd).toBe(REMOTE_WS)
+    expect(spec.env).toEqual({ ANT_ACCOUNT: 'work', KOLOFT_AGY_KEY: 'key-1' })
+    const settings = JSON.parse(spec.program.files['pty-1.settings.json'])
     expect(settings).toMatchObject({
       theme: 'dark',
       modelProvider: 'gemini',
       title: { command: '/bin/sh "$HOME/.koloft/m-test/agy-title.sh"' }
     })
-    expect(settings.trustedWorkspaces.sort()).toEqual([
-      '/elsewhere',
-      '/home/me/proj',
-      '/home/me/proj/.claude/worktrees/feat'
-    ])
-    const hooks = JSON.parse(spec.agy.files['hooks.json'])
+    expect(settings.trustedWorkspaces.sort()).toEqual(['/elsewhere', '/home/me/proj'])
+    const hooks = JSON.parse(spec.program.files['pty-1.hooks.json'])
     expect(Object.keys(hooks).sort()).toEqual(['koloft', 'mine'])
     expect(JSON.stringify(hooks.koloft)).toContain('$HOME/.koloft/m-test/agy-hook.sh')
-    expect(spec.agy.files.token).toBeUndefined()
-    expect(spec.agy.prepare).toContain(
-      "worktree add -b 'worktree-feat' '/home/me/proj/.claude/worktrees/feat'"
-    )
-    expect(spec.agy.run).toContain(`--gemini_dir="$HOME/.koloft/agy"/'work'`)
-    expect(spec.agy.run).toMatch(/'-i' 'hi'$/)
+    expect(spec.program.files['pty-1.auth.json']).toBeUndefined()
+    expect(spec.program.run).toContain(`--gemini_dir="$HOME/.koloft/agy"/'work'`)
+    expect(spec.program.run).toMatch(/'-i' 'hi'\n$/)
   })
 
   it('shows its state from the log the machine mirrors back: the first hook binds the tab, a model call is working, an open ask waits for approval and is answered by keys, Stop ends the turn', async () => {
@@ -843,14 +844,33 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     ])
   })
 
-  it("closing the tab ends the machine's tmux session named for the conversation it holds; quitting Koloft leaves it running to attach to again", async () => {
-    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
-    mirrored(id, [{ event: 'SessionStart', input: { conversationId: A } }])
-    await sessions.stop(id)
-    expect(machine.ended).toEqual([`k-${A}`])
+  it("closing the tab ends the machine's tmux session by the name agy's title script gave it, by the conversation's name before that, and by the tab's launch name before it binds; quitting Koloft leaves it running to attach to again", async () => {
+    const first = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    machine.tmuxThere = `k-${B}`
+    await sessions.stop(first.id)
+    machine.tmuxThere = null
+    const second = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(second.id, [{ event: 'SessionStart', input: { conversationId: A } }])
+    await sessions.stop(second.id)
+    const third = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    await sessions.stop(third.id)
+    expect(machine.ended).toEqual([`k-${B}`, `k-${A}`, `m-${third.id}-t`])
     await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
     await sessions.stopAll()
-    expect(machine.ended).toEqual([`k-${A}`])
+    expect(machine.ended).toHaveLength(3)
+  })
+
+  it('a tab whose tmux session left the machine closes once the machine still lacks it a moment later', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+      mirrored(id, [{ event: 'SessionStart', input: { conversationId: A } }])
+      sessions.noticeRemoteExits('devbox', [A])
+      await vi.runAllTimersAsync()
+      expect(sessions.list()).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('resuming a conversation tmux still runs there attaches to it: the tab binds at once and follows the log its agy writes, found through the pointer the title script left', async () => {
@@ -861,13 +881,16 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
     const old = path.join(mirror, 'pty-old.agy.jsonl')
     fs.writeFileSync(old, JSON.stringify({ event: 'Stop', input: { conversationId: A } }) + '\n')
-    const { id } = await sessions.resume({ sessionId: agySessionKey(A), cwd: REMOTE_WS })
+    const { id } = await sessions.resume({
+      sessionId: agySessionKey(A, 'devbox'),
+      cwd: REMOTE_WS
+    })
     await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
     fs.appendFileSync(
       old,
       JSON.stringify({ event: 'PreInvocation', input: { conversationId: A } }) + '\n'
     )
-    sessions['tick']()
+    sessions.followMirrors('devbox')
     expect(runtime.statusOf(id)).toBe('working')
     expect(shown()).toEqual([{ type: 'prompt' }])
   })
@@ -875,9 +898,9 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
   it('refuses to resume a conversation another agy on that machine holds', async () => {
     machine.held = true
     remoteMember(A)
-    await expect(sessions.resume({ sessionId: agySessionKey(A), cwd: REMOTE_WS })).rejects.toThrow(
-      /open in another agy window/
-    )
+    await expect(
+      sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    ).rejects.toThrow(/open in another agy window/)
     expect(machine.launches).toEqual([])
   })
 
@@ -896,7 +919,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     await sessions.refreshHistory()
     expect(sessions.rows(REMOTE_WS)).toEqual([
       expect.objectContaining({
-        id: agySessionKey(B),
+        id: agySessionKey(B, 'devbox'),
         title: 'Remote work',
         cwd: 'ssh://devbox/home/me/proj',
         invalidCwd: false,

@@ -7,6 +7,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   HAVE_REAL_GH,
   NEEDS_REAL_GH,
+  installMuse,
   installRealGhThatOnlyReads,
   seedSettings,
   setGithubFixture,
@@ -41,6 +42,7 @@ import {
   fetchNowInGitPanel,
   openGitPanel,
   menuItemTexts,
+  newSessionInWith,
   notesOnDisk,
   openMenu,
   openWorktreeSession,
@@ -53,8 +55,11 @@ import {
 } from './helpers/p1'
 import {
   HAVE_LINUX_CLAUDE,
+  HAVE_LINUX_MUSE,
   NEEDS_LINUX_CLAUDE,
+  NEEDS_LINUX_MUSE,
   dockerAvailable,
+  installRealMuseOnTheMachine,
   installLabSsh,
   LAB_PASSWORD,
   loginsAccepted,
@@ -958,6 +963,64 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   // PLATFORM§34
+  test('E-SSH-22: a REAL muse 1.4.9 on the echo model (no account) on a Linux machine, inside real tmux through the wrapper and real hooks: the session binds, its light and title follow its turn, /clear follows the new session, and closing the tab ends it there', async ({
+    env
+  }) => {
+    test.skip(!HAVE_LINUX_MUSE, NEEDS_LINUX_MUSE)
+    installMuse(env)
+    const tmuxThere = (lab: SshLab): string =>
+      runOnTarget(lab, 'kuser', 'tmux -L koloft ls -F "#S" 2>/dev/null; true').trim()
+    const boundMuse = async (page: Page): Promise<string> =>
+      (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.alive && s.backendId === 'muse' && s.nativeSessionId
+      )?.nativeSessionId ?? ''
+    await withLab(
+      env,
+      async ({ app, page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await newSessionInWith(page, 'kt-key', 'Muse')
+        const rows = wsRows(page, 'kt-key')
+        await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 180_000 })
+        await expect.poll(() => boundMuse(page), { timeout: 60_000 }).not.toBe('')
+        const first = await boundMuse(page)
+        expect(tmuxThere(lab)).toBe(`k-${first}`)
+        const tabId = (await rows.getAttribute('data-tab-id'))!
+        const write = (data: string): Promise<void> =>
+          page.evaluate(([id, d]) => window.api.terminal.write(id, d), [tabId, data])
+        const mirrorLines = (mark: string): number =>
+          runOnTarget(lab, 'kuser', 'cat .koloft/hook-sessions/*.muse.jsonl; true')
+            .split('\n')
+            .filter((l) => l.includes(mark)).length
+        const submit = async (text: string, mark: string): Promise<void> => {
+          const before = mirrorLines(mark)
+          await write(text)
+          for (let i = 0; i < ENTERS_BEFORE_GIVING_UP && mirrorLines(mark) === before; i++) {
+            await page.waitForTimeout(TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS)
+            await write('\r')
+            await expect
+              .poll(() => mirrorLines(mark), {
+                timeout: A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS
+              })
+              .toBeGreaterThan(before)
+              .catch(() => undefined)
+          }
+        }
+        await submit('hello from the lab', '"event":"UserPromptSubmit"')
+        await expect(rows).toContainText('hello from the lab', { timeout: 60_000 })
+        await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        await submit('/clear', '"t":"bound"')
+        await expect.poll(() => boundMuse(page), { timeout: 60_000 }).not.toBe(first)
+        const second = await boundMuse(page)
+        await expect.poll(() => tmuxThere(lab), { timeout: 30_000 }).toBe(`k-${second}`)
+        await page.locator('.ws-tab.active').first().click()
+        await sendShortcut(app, 'shortcut:close-tab')
+        await expect.poll(() => tmuxThere(lab), { timeout: 30_000 }).toBe('')
+      },
+      (lab) => installRealMuseOnTheMachine(lab, 'kuser')
+    )
+  })
+
   test('E-SSH-08: a machine whose shell prints a greeting at login: the dot says so instead of never syncing in silence', async ({
     env
   }) => {

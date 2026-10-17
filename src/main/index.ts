@@ -26,7 +26,9 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
-import { MuseSessions, museShowsItsInputBox } from './museSessions'
+import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museSessions'
+import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
+import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { AgySessions } from './agySessions'
 import {
@@ -109,7 +111,13 @@ import {
   writeAllowFile,
   writeTabHookSettings
 } from './hooks'
-import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
+import {
+  formatRemoteKey,
+  hostOf,
+  isAbsoluteOnHost,
+  isRemoteKey,
+  parseRemoteKey
+} from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -200,7 +208,14 @@ import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
-import { dirExistsSync, gitProbes, type GitOut, type ResumeProbes } from './resumePlan'
+import {
+  dirExistsSync,
+  gitProbes,
+  worktreeHomeRoot,
+  worktreeNameAround,
+  type GitOut,
+  type ResumeProbes
+} from './resumePlan'
 import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { museBackend } from './backends/muse'
@@ -568,8 +583,8 @@ const slash = new SlashCommands({
   },
   screen: screenLines,
   nextMirrorPull: (tabId) => {
-    const remote = tracker.remoteOf(tabId)
-    return remote && remoteSync?.nextPullDone(remote.host)
+    const host = remoteHostOfTab(tabId)
+    return host ? remoteSync?.nextPullDone(host) : undefined
   },
   ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
   exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
@@ -647,10 +662,6 @@ const attention = new AttentionTracker((pending, event) => {
 }, loadLastRunAttention())
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
-function machineOf(tabId: string): string | undefined {
-  return tracker.remoteOf(tabId)?.host ?? agySessions?.remoteHostOf(tabId)
-}
-
 function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
 }
@@ -685,12 +696,11 @@ function rememberOpenTabs(all = allSessions()): void {
   for (const h of ptyMgr.list()) {
     const kind = backendIdOf(h.kind)
     if (!h.alive || !h.resumeSessionId || !kind) continue
-    const remote = tracker.remoteOf(h.id)
     live.push({
       sessionId: h.resumeSessionId,
       kind,
       title: '',
-      cwd: remote ? formatRemoteKey(remote.host, h.cwd) : h.cwd
+      cwd: h.remoteHost ? formatRemoteKey(h.remoteHost, h.cwd) : h.cwd
     })
   }
   const activeTab = uiActiveTabId ?? activeTabBeforeReload
@@ -1002,9 +1012,12 @@ function machinePackage(): MachinePackage {
     'util.sh': UTIL_SH,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
+    [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
+    [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
+    [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH,
     [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
     [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
     [AGY_LIST_FILE]: AGY_LIST_JS
@@ -1154,6 +1167,75 @@ function agentToolsFor(backend: BackendId, host: HostId): boolean {
   return loadSettings().agentTools && capabilitiesFor(backend, host).agentTools === true
 }
 
+// CC§2
+function pinnedKeyOn(host: string, onMachine: string): string {
+  for (const pinned of workspaceMgr?.remoteTargets().find((t) => t.host === host)?.paths ?? []) {
+    const real = workspaceMgr?.realRemotePath({ host, path: pinned }) ?? pinned
+    if (onMachine === real || onMachine.startsWith(real + '/'))
+      return formatRemoteKey(host, pinned + onMachine.slice(real.length))
+  }
+  return formatRemoteKey(host, onMachine)
+}
+
+// ADR-0025 CC§3
+function projectInfoOnHost(cwd: string): ProjectInfo {
+  const key = parseRemoteKey(cwd)
+  if (!key) return projectInfoFor(cwd)
+  const worktreeName = worktreeNameAround(key.path)
+  let tree = key.path
+  while (worktreeName && !worktreeHomeRoot(tree)) tree = path.posix.dirname(tree)
+  const top = (worktreeName && worktreeHomeRoot(tree)) || key.path
+  const pinned = (workspaceMgr?.remoteTargets().find((t) => t.host === key.host)?.paths ?? [])
+    .filter((p) => top === p || top.startsWith(p + '/'))
+    .sort((a, b) => b.length - a.length)[0]
+  return {
+    root: formatRemoteKey(key.host, pinned ?? top),
+    treeRoot: formatRemoteKey(key.host, tree),
+    ...(worktreeName && { worktreeName })
+  }
+}
+
+function machineTreeIo(cwd: string): TreeIo {
+  const host = parseRemoteKey(cwd)!.host
+  const machine = hosts.machine(host)
+  return {
+    git: async (dir, args) => {
+      const r = await machine.gitRun(dir, args)
+      if (r.code === 0) return r.stdout.trimEnd()
+      throw Object.assign(new Error(r.stderr || 'git failed'), { code: r.code ?? undefined })
+    },
+    exists: (p) => machine.dirExists(p),
+    real: (p) => p,
+    keyed: (listed) => pinnedKeyOn(host, listed),
+    onThisMac: false
+  }
+}
+
+const museOnMachines: MuseRemoteDeps = {
+  machine: (host) => hosts.machine(host),
+  hosts: () => workspaceMgr?.remoteTargets().map((t) => t.host) ?? [],
+  keyed: pinnedKeyOn,
+  mirrorDir: (host) => mirrorHookDir(app.getPath('userData'), host),
+  gone: (host, sessionId) =>
+    !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId),
+  connected: (host) => !!remoteSync?.connected(host),
+  poke: (host) => remoteSync?.pokeNow(host),
+  setupLine: () => setupLine(playwrightCliBin)
+}
+
+function machineProbes(cwd: string): ResumeProbes {
+  const host = hosts.of(cwd)
+  return {
+    dirExists: (p) => host.dirExists(host.keyed(p)),
+    occupantOf: (dir) => sessionBackends.occupantOf(dir),
+    ...gitProbes(hostGitOut)
+  }
+}
+
+function remoteHostOfTab(tabId: string): string | undefined {
+  return ptyMgr.get(tabId)?.remoteHost
+}
+
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
   const workspace = sessionBackends.workspaceOfTab(tabId)
   return workspace && workspaceMgr?.isPinned(workspace) ? workspace : undefined
@@ -1174,7 +1256,7 @@ function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
   open: (tabId, target, view) => {
-    const machine = machineOf(tabId)
+    const machine = remoteHostOfTab(tabId)
     return machine && !schemeOf(target)
       ? openOnMachine(tabId, machine, target, view)
       : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
@@ -1412,7 +1494,7 @@ const agentRequests = new AgentRequests({
   session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    return !!backend && agentToolsFor(backend, machineOf(tabId) ? 'ssh' : 'local')
+    return !!backend && agentToolsFor(backend, remoteHostOfTab(tabId) ? 'ssh' : 'local')
   },
   alive: pidAlive
 })
@@ -2424,10 +2506,7 @@ app.whenReady().then(() => {
   const storedDeps = {
     pty: ptyMgr,
     runtime: tracker,
-    projectInfo: (p: string) =>
-      parseRemoteKey(p)
-        ? (workspaceMgr?.remoteProjectInfo(p) ?? { root: p, treeRoot: p })
-        : projectInfoFor(p),
+    projectInfo: projectInfoFor,
     changed: () => {
       const all = onSessionsChanged()
       sendToRenderer('sessions:update', all)
@@ -2472,6 +2551,10 @@ app.whenReady().then(() => {
   try {
     museSessions = new MuseSessions(path.join(userData, 'muse-sessions.json'), {
       ...storedDeps,
+      projectInfo: projectInfoOnHost,
+      remoteDirExists: (dir) => hosts.of(dir).dirExistsOrThrow(dir),
+      remoteTreeIo: machineTreeIo,
+      remote: museOnMachines,
       leftWorktree: (resource) => removeUntouchedWorktree(museSessions, resource),
       openShimRoot: path.join(userData, 'muse-open'),
       pickHome: pickMuseHome,
@@ -2487,7 +2570,7 @@ app.whenReady().then(() => {
       fallbackBin,
       gitBin: gitFirstBin,
       agent: {
-        enabled: () => agentToolsFor('muse', 'local'),
+        enabled: (remote) => agentToolsFor('muse', remote ? 'ssh' : 'local'),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
       },
       gitAccounts: {
@@ -2501,20 +2584,20 @@ app.whenReady().then(() => {
   try {
     agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
       ...storedDeps,
+      projectInfo: projectInfoOnHost,
+      remoteDirExists: (dir) => hosts.of(dir).dirExistsOrThrow(dir),
+      remoteTreeIo: machineTreeIo,
       remote: {
+        ...museOnMachines,
         machine: (host) => hosts.machine(host),
-        hosts: () => (workspaceMgr?.remoteTargets() ?? []).map((t) => t.host),
-        alive: (host) => remoteSync?.alive(host) ?? new Set(),
+        mirrorGemini: (host) => mirrorAgyGemini(userData, host),
         nextPull: (host) => {
           if (!remoteSync) return Promise.resolve()
           const pulled = remoteSync.nextPullDone(host)
           remoteSync.pokeNow(host)
           return pulled
         },
-        setupLine: () => setupLine(playwrightCliBin),
-        machineName: () => machinePackage().name,
-        mirrorHookDir: (host) => mirrorHookDir(userData, host),
-        mirrorGemini: (host) => mirrorAgyGemini(userData, host)
+        machineName: () => machinePackage().name
       },
       leftWorktree: (resource) => removeUntouchedWorktree(agySessions, resource),
       openShimRoot: path.join(userData, 'agy-open'),
@@ -2533,7 +2616,7 @@ app.whenReady().then(() => {
       fallbackBin,
       gitBin: gitFirstBin,
       agent: {
-        enabled: () => agentToolsFor('agy', 'local'),
+        enabled: (remote) => agentToolsFor('agy', remote ? 'ssh' : 'local'),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
       },
       gitAccounts: {
@@ -2545,14 +2628,14 @@ app.whenReady().then(() => {
     startupErrors.agy = `Antigravity session data could not be loaded; the original file is preserved. ${String(error)}`
   }
   if (agySessions) {
-    sessionBackends.register(agyBackend(agySessions, resumeProbes))
+    sessionBackends.register(agyBackend(agySessions, resumeProbes, machineProbes))
     void agySessions
       .availability()
       .then((agy) => (agy.available ? agySessions!.refreshHistory() : undefined))
       .catch((error) => sendToRenderer('cron:toast', String(error)))
   }
   if (museSessions) {
-    sessionBackends.register(museBackend(museSessions, resumeProbes))
+    sessionBackends.register(museBackend(museSessions, resumeProbes, machineProbes))
     void museSessions
       .availability()
       .then((muse) => (muse.available ? museSessions!.refreshHistory() : undefined))
@@ -2865,7 +2948,7 @@ app.whenReady().then(() => {
       ]),
     conductorChannelOf,
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
-    remote: (tabId) => !!machineOf(tabId),
+    remote: (tabId) => !!remoteHostOfTab(tabId),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId) => tracker.statusOf(tabId),
@@ -2933,10 +3016,7 @@ app.whenReady().then(() => {
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
       const live = new Set(
-        tracker
-          .list()
-          .filter((sess) => sess.alive && sess.remote)
-          .map((sess) => sess.remote!.host)
+        ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : []))
       )
       return (workspaceMgr?.remoteTargets() ?? []).map((t) => ({
         host: t.host,
@@ -2946,14 +3026,22 @@ app.whenReady().then(() => {
           ? { agyBrain: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain') }
           : {}),
         paths: t.paths,
-        hasTabs: live.has(t.host) || !!agySessions?.hasTabsOn(t.host)
+        hasTabs: live.has(t.host)
       }))
     },
     onChange: (host) => {
       tracker.fillMachineScratchpads(host)
       workspaceMgr?.onRemoteChanged()
     },
-    onLeft: (host, ids) => claudeBackend.noticeRemoteExits(host, ids),
+    onLeft: (host, ids) => {
+      claudeBackend.noticeRemoteExits(host, ids)
+      museSessions?.noticeRemoteExits(host, ids)
+      agySessions?.noticeRemoteExits(host, ids)
+    },
+    onHooksPulled: (host) => {
+      museSessions?.followMirrors(host)
+      agySessions?.followMirrors(host)
+    },
     onConnected: (host) => void freshness?.machineUp(host)
   })
   freshness = new GitFreshnessEngine({
@@ -3566,7 +3654,7 @@ function ptyTabIds(): string[] {
       (p) =>
         !p.util &&
         (p.kind === 'shell' ||
-          capabilitiesFor(p.kind, machineOf(p.id) ? 'ssh' : 'local').browserControl === true)
+          capabilitiesFor(p.kind, remoteHostOfTab(p.id) ? 'ssh' : 'local').browserControl === true)
     )
     .map((p) => p.id)
 }
@@ -4553,7 +4641,9 @@ const claudeBackend = new ClaudeBackend({
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   error: (message) => sendToRenderer('cron:toast', message),
   assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-  machineOf
+  otherTabOnMachine: (machine, tmuxName, launchTab) =>
+    museSessions?.tabOnMachine(machine, tmuxName, launchTab) ??
+    agySessions?.tabOnMachine(machine, tmuxName, launchTab)
 })
 sessionBackends.register(claudeBackend)
 
@@ -4659,9 +4749,9 @@ function registerIpc(): void {
     const cwdByTab = new Map(tracked.map((s) => [s.tabId, s.cwd]))
     const tabs = adoptableTabs(
       ptys.map((h) => {
-        const remote = tracker.remoteOf(h.id)
         const cwd = cwdByTab.get(h.id)
-        return remote && cwd ? { ...h, cwd: formatRemoteKey(remote.host, cwd) } : h
+        if (!h.remoteHost || !cwd) return h
+        return { ...h, cwd: isRemoteKey(cwd) ? cwd : formatRemoteKey(h.remoteHost, cwd) }
       }),
       tracked
     )
@@ -4967,12 +5057,12 @@ function registerIpc(): void {
     const trees = (await workspaceMgr?.worktrees(p)) ?? []
     for (const stored of storedSessions()) {
       if (!SUPPORTED_PAIRS[stored.id][hostOf(p)]) continue
-      for (const resource of stored.store.listResources()) {
-        if (
-          resource.originalCwd !== p ||
-          (resource.state === 'ready' && dirExistsSync(resource.worktreePath))
-        )
-          continue
+      const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
+      const there = await Promise.all(
+        mine.map((r) => r.state === 'ready' && hosts.of(r.worktreePath).dirExists(r.worktreePath))
+      )
+      for (const [i, resource] of mine.entries()) {
+        if (there[i]) continue
         const existing = trees.find((t) => t.dir === resource.worktreePath)
         if (existing) {
           existing.recoveryResourceId = resource.id

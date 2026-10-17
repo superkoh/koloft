@@ -58,6 +58,7 @@ export interface RemoteSyncDeps {
   targets(): RemoteTarget[]
   onChange(host: string): void
   onLeft?(host: string, sessionIds: string[]): void
+  onHooksPulled?(host: string): void
   onConnected?(host: string): void
 }
 
@@ -269,6 +270,7 @@ export class RemoteSync {
         st.problem = failed && problemOf(failed)
         if (target.agyBrain)
           await this.deps.rsync(host, AGY_REMOTE_BRAIN, target.agyBrain, AGY_BRAIN_FLAGS)
+        if (hooks.code === 0) this.deps.onHooksPulled?.(host)
       }
       if (
         before.connected !== st.connected ||

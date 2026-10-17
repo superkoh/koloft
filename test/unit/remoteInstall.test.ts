@@ -88,7 +88,7 @@ interface Machine {
   give(name: string, body: string): void
   giveLogger(name: string, code?: number): void
   calls(name: string): string[]
-  run(): { status: number | null; stdout: string; stderr: string }
+  run(arg?: string): { status: number | null; stdout: string; stderr: string }
 }
 
 function machine(): Machine {
@@ -111,8 +111,8 @@ function machine(): Machine {
       const f = path.join(logs, `${name}.log`)
       return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean) : []
     },
-    run: () =>
-      spawnSync('/bin/sh', [script], {
+    run: (arg) =>
+      spawnSync('/bin/sh', [script, ...(arg ? [arg] : [])], {
         encoding: 'utf8',
         env: { HOME: home, PATH: onlyRealUnixToolsDir, FIXTURES: fixtures },
         timeout: 60_000
@@ -351,6 +351,51 @@ exit 0`
     expect(res.status).toBe(4)
     expect(m.calls('claude')).toEqual(['update'])
     expect(res.stderr).toContain('Run "claude update" yourself')
+  })
+})
+
+describe('ensure.sh for a Muse tab', () => {
+  const MUSE_INSTALLER = `
+printf '%s\\n' "$*" >> "$LOGS/curl.log"
+printf '%s\\n' 'printf "#!/bin/sh\\necho Muse Code 1.4.9\\n" > "$HOME/.local/bin/muse"; chmod +x "$HOME/.local/bin/muse"'`
+
+  const forMuse = (m: Machine, python: 'runs' | 'is a stub'): void => {
+    m.give('bash', 'exec /bin/bash "$@"')
+    m.give('tmux', 'exit 0')
+    m.give('rsync', 'exit 0')
+    m.give('gh', 'exit 0')
+    m.give('python3', python === 'runs' ? 'exit 0' : 'exit 1')
+    m.give('curl', `LOGS=${JSON.stringify(m.logs)}\n${MUSE_INSTALLER}`)
+    m.giveLogger('sudo', 1)
+    m.giveLogger('apt-get')
+  }
+
+  it("installs muse with Meta's installer, and never claude or the statusline's node", () => {
+    const m = machine()
+    forMuse(m, 'runs')
+    const res = m.run('muse')
+    expect(res.status).toBe(0)
+    expect(m.calls('curl')).toEqual(['-fsSL https://dev.meta.ai/install.sh'])
+    expect(fs.existsSync(path.join(m.home, '.local', 'bin', 'muse'))).toBe(true)
+    expect(fs.existsSync(path.join(m.home, '.koloft', 'node'))).toBe(false)
+  })
+
+  it('stops with what is missing when python3 there does not run, as the macOS stand-in does', () => {
+    const m = machine()
+    forMuse(m, 'is a stub')
+    const res = m.run('muse')
+    expect(res.status).toBe(4)
+    expect(res.stdout).toContain('Muse sessions need python3 on this machine')
+    expect(m.calls('curl')).toEqual([])
+  })
+
+  it('a Claude tab never reaches for muse or python3', () => {
+    const m = machine()
+    complete(m)
+    m.giveLogger('python3')
+    expect(m.run().status).toBe(0)
+    expect(m.calls('python3')).toEqual([])
+    expect(m.calls('curl')).toEqual([])
   })
 })
 

@@ -1,5 +1,5 @@
 import type { ResumePlan } from '@shared/types'
-import { parseRemoteKey } from '@shared/remoteKey'
+import { hostOf, isRemoteKey } from '@shared/remoteKey'
 import { SUPPORTED_PAIRS } from '@shared/sessionBackend'
 import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
@@ -10,7 +10,8 @@ import { dirExistsSync, planResume, type ResumeProbes } from '../resumePlan'
 export function storedBackend(
   sessions: CodexSessions | MuseSessions | AgySessions,
   resumeProbes: ResumeProbes,
-  own: Pick<SessionBackend, 'accountUsable' | 'trustsFolder' | 'turns'>
+  own: Pick<SessionBackend, 'accountUsable' | 'trustsFolder' | 'turns'>,
+  machineProbes?: (cwd: string) => ResumeProbes
 ): SessionBackend {
   return {
     id: sessions.id,
@@ -19,7 +20,7 @@ export function storedBackend(
     forgetAvailability: () => sessions.forgetAvailability(),
     list: () => sessions.list(),
     historyRows: async (workspacePath) =>
-      (parseRemoteKey(workspacePath) && !SUPPORTED_PAIRS[sessions.id].ssh) ||
+      !SUPPORTED_PAIRS[sessions.id][hostOf(workspacePath)] ||
       !(await sessions.availability()).available
         ? []
         : sessions.historyRows(workspacePath),
@@ -39,11 +40,13 @@ export function storedBackend(
       if ('runningElsewhere' in sessions && sessions.runningElsewhere(key))
         return { action: 'unavailable', reason: 'running' }
       const row = sessions.findRow(key)
-      if (row && parseRemoteKey(row.cwd)) return { action: 'direct', cwd: row.cwd }
-      if (row && !row.worktreeState && !dirExistsSync(row.cwd)) {
+      const onMachine = !!row && isRemoteKey(row.cwd)
+      if (row && !onMachine && !row.worktreeState && !dirExistsSync(row.cwd)) {
         return { action: 'unavailable', reason: 'no-cwd' }
       }
-      return planResume(row, resumeProbes, row?.worktreeState?.worktreePath)
+      const probes = onMachine ? machineProbes?.(row.cwd) : resumeProbes
+      if (!probes) return { action: 'unavailable', reason: 'not-found' }
+      return planResume(row, probes, row?.worktreeState?.worktreePath)
     },
     hasTab: (tabId) => sessions.hasTab(tabId),
     workspaceOfTab: (tabId) => sessions.workspaceOfTab(tabId),

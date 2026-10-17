@@ -10,6 +10,7 @@ export const PROGRAM_STATUS_REPLY =
 export interface ProgramStatus {
   state: string
   kind?: string
+  seq?: number
   msg?: string
 }
 
@@ -44,7 +45,12 @@ export class ProgramStatusParser {
       }
       const f = fields(rest)
       if (f.state && f.id === undefined)
-        states.push({ state: f.state, kind: f.kind, msg: decodedMsg(f.msg) })
+        states.push({
+          state: f.state,
+          kind: f.kind,
+          ...(f.seq && { seq: Number(f.seq) }),
+          msg: decodedMsg(f.msg)
+        })
     }
     return { asked, states }
   }

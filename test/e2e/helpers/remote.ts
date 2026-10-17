@@ -217,6 +217,47 @@ export function installRemoteAgy(env: E2EEnv): void {
   fs.writeFileSync(settings, JSON.stringify({ trustedWorkspaces: [remoteDir(env)] }))
 }
 
+export function installMuseOnMachine(env: E2EEnv): void {
+  const machine = machineHome(env)
+  const bin = path.join(machine, '.local', 'bin')
+  fs.mkdirSync(bin, { recursive: true })
+  fs.copyFileSync(path.join(__dirname, '..', 'fixtures', 'fake-muse.js'), path.join(bin, 'muse'))
+  fs.chmodSync(path.join(bin, 'muse'), 0o755)
+  fs.mkdirSync(remoteDir(env), { recursive: true })
+  const config = path.join(machine, '.config', 'muse')
+  fs.mkdirSync(config, { recursive: true })
+  fs.writeFileSync(
+    path.join(config, 'trust.json'),
+    JSON.stringify({
+      schema_version: 1,
+      projects: { [fs.realpathSync(remoteDir(env))]: { decision: 'trusted' } }
+    })
+  )
+}
+
+export interface MachineMuseCall {
+  pid: number
+  argv: string[]
+  cwd: string
+  sessionId: string
+  configHome: string | null
+  credentials: string | null
+}
+
+export function machineMuseCalls(env: E2EEnv): MachineMuseCall[] {
+  const file = path.join(machineHome(env), 'fake-muse-calls.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as MachineMuseCall)
+}
+
+export function dropTmuxPassthrough(env: E2EEnv): void {
+  fs.writeFileSync(path.join(stateDir(env), 'no-passthrough'), '')
+}
+
 export async function launchWithRemote(
   env: E2EEnv
 ): Promise<{ app: ElectronApplication; page: Page }> {

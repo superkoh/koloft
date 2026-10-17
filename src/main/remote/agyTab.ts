@@ -4,8 +4,11 @@ import { AGY_APP_DIR, TOP_LEVEL_ROWS } from '../agyStore'
 import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
 import { AGY_LOG_ENV, AGY_START_ENV } from '../agyHooks'
 import { remoteShCommand } from './install'
-import { tabFilePrefix, type AgyTab } from './launch'
+import type { TabSpec } from './launch'
 import { REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
+
+const AGY_KEY_ENV = 'GEMINI_API_KEY'
+export const AGY_KEY_FROM_KOLOFT = 'KOLOFT_AGY_KEY'
 
 export const AGY_HOOK_FILE = 'agy-hook.sh'
 export const AGY_TITLE_FILE = 'agy-title.sh'
@@ -33,18 +36,19 @@ export function runMachineScript(machineName: string, file: string): string {
   return `/bin/sh "${remoteMachineDir(machineName)}/${file}"`
 }
 
-export interface AgyRemoteLaunch {
+export interface AgyMachineLaunch {
   tabId: string
   cwd: string
   resumeId?: string
   banner: string
   env: Record<string, string>
-  agy: AgyTab
   portOffset?: number
+  program: AgyProgram
 }
 
-export interface AgyRemotePlan {
+export interface AgyMachinePlan {
   attach: boolean
+  tmuxName: string
   spawnCwd: string
   shell: string
   launchCommand(): string
@@ -60,46 +64,42 @@ export interface AgyTabSpec {
   onboarding?: string
   token?: string
   start?: string
-  worktree?: { root: string; path: string; branch: string }
 }
 
+export type AgyProgram = NonNullable<TabSpec['program']>
+
 // AGY§4 AGY§5 AGY§6
-export function agyTab(s: AgyTabSpec): AgyTab {
-  const T = tabFilePrefix(s.tabId)
+export function agyTab(s: AgyTabSpec): AgyProgram {
   const own = `$A/${AGY_APP_DIR}`
   const link = (rel: string): string =>
     `[ "$(readlink "$A/${rel}")" = "$G/${rel}" ] || { rm -rf "$A/${rel}"; ln -s "$G/${rel}" "$A/${rel}"; }`
   const seed = (file: string, target: string): string =>
-    `[ -f "${T}.${file}" ] && { [ -f "${target}" ] || mv "${T}.${file}" "${target}"; rm -f "${T}.${file}"; }`
-  const prepare = [
+    `[ -f "$T.${file}" ] && { [ -f "${target}" ] || mv "$T.${file}" "${target}"; rm -f "$T.${file}"; }`
+  const exported = [AGY_LOG_ENV, ...(s.start ? [AGY_START_ENV] : [])]
+  const run = [
     `A=${remoteAgyHome(s.account)}; G="${REMOTE_GEMINI}"`,
     `mkdir -p "${own}/cache" "$A/config" "${REMOTE_HOOK_DIR}" && chmod 700 "${REMOTE_HOME}/agy" || exit 3`,
     ...SHARED_FOLDERS.map((d) => `mkdir -p "$G/${d}"; ${link(d)}`),
     ...SHARED_FILES.map((f) => `mkdir -p "$(dirname "$G/${f}")"; ${link(f)}`),
-    `mv -f "${T}.settings.json" "${own}/settings.json" && mv -f "${T}.hooks.json" "$A/config/hooks.json" || exit 3`,
+    `mv -f "$T.settings.json" "${own}/settings.json" && mv -f "$T.hooks.json" "$A/config/hooks.json" || exit 3`,
     seed('onboarding.json', `${own}/cache/onboarding.json`),
-    seed('token', `${own}/antigravity-oauth-token`),
-    ...(s.worktree
-      ? [
-          `[ -d ${shq(s.worktree.path)} ] || git -C ${shq(s.worktree.root)} worktree add -b ${shq(s.worktree.branch)} ${shq(s.worktree.path)} >/dev/null || exit 3`
-        ]
-      : [])
-  ].join('\n')
-  const env = [
+    seed('auth.json', `${own}/antigravity-oauth-token`),
+    `unset ${AGY_KEY_ENV}; [ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
     `${AGY_LOG_ENV}="${REMOTE_HOOK_DIR}/${agyLogName(s.tabId)}"`,
-    ...(s.start ? [`${AGY_START_ENV}="${T}.start.json"`] : [])
+    ...(s.start ? [`${AGY_START_ENV}="$T.start.json"`] : []),
+    `export ${exported.join(' ')}`,
+    `exec agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`
   ]
-  const run = `${env.join('; ')}; export ${[AGY_LOG_ENV, ...(s.start ? [AGY_START_ENV] : [])].join(' ')}
-  exec agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`
+  const file = (name: string): string => `${s.tabId}.${name}`
   return {
-    prepare,
-    run,
+    name: 'agy',
+    run: run.map((line) => `  ${line}\n`).join(''),
     files: {
-      'settings.json': s.settings,
-      'hooks.json': s.hooks,
-      ...(s.onboarding ? { 'onboarding.json': s.onboarding } : {}),
-      ...(s.token ? { token: s.token } : {}),
-      ...(s.start ? { 'start.json': s.start } : {})
+      [file('settings.json')]: s.settings,
+      [file('hooks.json')]: s.hooks,
+      ...(s.onboarding ? { [file('onboarding.json')]: s.onboarding } : {}),
+      ...(s.token ? { [file('auth.json')]: s.token } : {}),
+      ...(s.start ? { [file('start.json')]: s.start } : {})
     }
   }
 }
