@@ -75,6 +75,7 @@ export interface TranscriptRecord {
 }
 
 export function parseRecord(line: string): TranscriptRecord | null {
+  if (!line) return null
   try {
     const parsed: unknown = JSON.parse(line)
     return parsed && typeof parsed === 'object' ? (parsed as TranscriptRecord) : null

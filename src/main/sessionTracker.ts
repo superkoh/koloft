@@ -135,13 +135,12 @@ const TERMINAL_TASK_STATUSES = new Set([
 ])
 
 // CC§8
-function isBackgroundSpawnAck(tur: unknown): boolean {
+function isBackgroundSpawnAck(tur: ToolUseResult | undefined): tur is ToolUseResult {
   if (!tur || typeof tur !== 'object') return false
-  const r = tur as Record<string, unknown>
-  if (typeof r.status === 'string' && BG_SPAWN_STATUSES.has(r.status)) return true
-  if (r.status === 'forked' && r.background === true) return true
-  if (typeof r.backgroundTaskId === 'string' && r.backgroundTaskId) return true
-  return typeof r.taskId === 'string' && r.taskId !== '' && typeof r.timeoutMs === 'number'
+  if (typeof tur.status === 'string' && BG_SPAWN_STATUSES.has(tur.status)) return true
+  if (tur.status === 'forked' && tur.background === true) return true
+  if (typeof tur.backgroundTaskId === 'string' && tur.backgroundTaskId) return true
+  return typeof tur.taskId === 'string' && tur.taskId !== '' && typeof tur.timeoutMs === 'number'
 }
 
 // CC§8
@@ -155,13 +154,7 @@ function taskNotificationText(obj: TranscriptRecord): string | null {
     return typeof c === 'string' && c.startsWith('<task-notification>') ? c : null
   }
   if (obj.origin?.kind === 'task-notification') {
-    const c = obj.message?.content
-    if (typeof c === 'string') return c
-    if (Array.isArray(c))
-      return c
-        .map((b) => (b?.type === 'text' && typeof b.text === 'string' ? b.text : ''))
-        .join('\n')
-    return ''
+    return messageText(obj.message?.content) ?? ''
   }
   return null
 }
@@ -1512,18 +1505,20 @@ export class SessionTracker extends SessionRuntime {
         toolUseIds.push(b.tool_use_id)
       }
     }
-    const r = tur as ToolUseResult
     let task: ReportedTask | null = null
-    if (typeof r.backgroundTaskId === 'string') task = { id: r.backgroundTaskId, type: 'shell' }
-    else if (typeof r.taskId === 'string' && typeof r.timeoutMs === 'number') {
-      task = { id: r.taskId, type: 'shell' }
-      t.monitorIds.add(r.taskId)
-    } else if (r.status === 'teammate_spawned') {
+    if (typeof tur.backgroundTaskId === 'string') task = { id: tur.backgroundTaskId, type: 'shell' }
+    else if (typeof tur.taskId === 'string' && typeof tur.timeoutMs === 'number') {
+      task = { id: tur.taskId, type: 'shell' }
+      t.monitorIds.add(tur.taskId)
+    } else if (tur.status === 'teammate_spawned') {
       // CC§8
       if (toolUseIds[0]) task = { id: toolUseIds[0], type: 'teammate' }
       t.teammateActiveMs = Date.now()
-    } else if (typeof r.agentId === 'string') {
-      task = { id: r.agentId, type: r.status === 'remote_launched' ? 'cloud-session' : 'subagent' }
+    } else if (typeof tur.agentId === 'string') {
+      task = {
+        id: tur.agentId,
+        type: tur.status === 'remote_launched' ? 'cloud-session' : 'subagent'
+      }
     }
     if (task) {
       const cmd = toolUseIds.map((id) => t.toolLabels.get(id)).find((c) => c)
