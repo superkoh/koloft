@@ -1,6 +1,6 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
-import { remotePtsFile } from './paths'
+import { REMOTE_HOOK_DIR, remotePtsFile } from './paths'
 import { ENSURE_CLAUDE_MINIMUM_FN, ENSURE_MUSE_MINIMUM_FN } from '../cliMinimums'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
@@ -243,16 +243,15 @@ export function heartbeatCmd(
     `echo "${UID_LINE}$(id -u)"; ${CLAUDE_TMP_BASE}; echo "${TMP_LINE}$(cd "$b" && pwd -P)"; ` +
       `${FINGERPRINT}; n=$1; shift; ` +
       `while [ "$n" -gt 0 ]; do echo "${STAMP_LINE}$(fp "$1" 2>/dev/null)"; shift; n=$((n - 1)); done; ` +
-      `${EVERY_FILE_STAMPED}; n=$1; shift; ` +
-      `echo "${TRANSCRIPTS_LINE}$(i=0; for s in "$@"; do [ "$i" -lt "$n" ] || break; i=$((i + 1)); ` +
-      'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; ' +
-      'while [ "$n" -gt 0 ]; do shift; n=$((n - 1)); done; ' +
-      `echo "${HOOKS_LINE}$(stamped "$HOME/.koloft/hook-sessions" | cksum)"; ` +
+      `${EVERY_FILE_STAMPED}; ` +
+      `echo "${TRANSCRIPTS_LINE}$(for s in $1; do ` +
+      'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; shift; ' +
+      `echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
       'git -C "$p" worktree list --porcelain 2>/dev/null; done; exit 0',
-    [String(watched.length), ...watched, String(projectSlugs.length), ...projectSlugs, ...paths]
+    [String(watched.length), ...watched, projectSlugs.join(' '), ...paths]
   )
 }
 

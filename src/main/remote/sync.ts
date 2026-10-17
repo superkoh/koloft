@@ -243,9 +243,8 @@ export class RemoteSync {
       const askGit = Date.now() - st.gitAt >= GIT_INTERVAL_MS
       const watched = [...(this.watches.get(host)?.keys() ?? [])]
       const slugsNow = (): string[] => target.paths.map((p) => encodeCwd(st.git.get(p)?.real ?? p))
-      const stampedSlugs = slugsNow()
       const hb = await this.deps
-        .run(host, heartbeatCmd(askGit ? target.paths : [], watched, stampedSlugs))
+        .run(host, heartbeatCmd(askGit ? target.paths : [], watched, slugsNow()))
         .catch((e: unknown) => ({ code: null, stdout: '', stderr: String(e) }))
       let mirrors: MirrorStamps = {}
       if (hb.code === 0) {
@@ -274,20 +273,19 @@ export class RemoteSync {
         const pull = async (
           which: keyof MirrorStamps,
           stamp: string | undefined,
-          ...args: [string, string, string[]]
+          remoteDir: string,
+          localDir: string,
+          flags: string[]
         ): Promise<RunResult | undefined> => {
           if (stamp !== undefined && st.pulled[which] === stamp) return undefined
-          const r = await this.deps.rsync(host, ...args)
+          const r = await this.deps.rsync(host, remoteDir, localDir, flags)
           st.pulled[which] = r.code === 0 ? stamp : undefined
           return r
         }
         const slugs = slugsNow()
-        const sameFolders = slugs.join(' ') === stampedSlugs.join(' ')
         const transcripts = await pull(
           'transcripts',
-          mirrors.transcripts && sameFolders
-            ? `${slugs.join(' ')} ${mirrors.transcripts}`
-            : undefined,
+          mirrors.transcripts && `${slugs.join(' ')} ${mirrors.transcripts}`,
           '.claude/projects',
           target.mirrorProjectsRoot,
           projectFlags(slugs)

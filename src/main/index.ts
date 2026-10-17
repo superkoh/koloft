@@ -2794,9 +2794,8 @@ app.whenReady().then(() => {
     targets: () => {
       const busy = new Set(
         allSessions().flatMap((s) => {
-          const h = ptyMgr.get(s.tabId)
-          const working = s.status === 'working' || s.status === 'approval'
-          return working && h?.alive && h.remoteHost ? [h.remoteHost] : []
+          const host = s.alive && remoteHostOfTab(s.tabId)
+          return host && (s.status === 'working' || s.status === 'approval') ? [host] : []
         })
       )
       return (workspaceMgr?.remoteTargets() ?? []).map((t) => ({
