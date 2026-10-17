@@ -39,6 +39,7 @@ export interface ClaudeLaunch {
   effort?: CronEffort
   permission?: LaunchPermission
   firstPrompt?: string
+  ownerWords?: string
   name?: string
 }
 

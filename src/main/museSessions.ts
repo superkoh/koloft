@@ -431,7 +431,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
             this.deps.conductorGate.script,
             this.deps.conductorGate.writeAllow(tabId, allow)
           )
-        : undefined
+        : undefined,
+      opts.ownerWords
     )
     const argv = [
       ...(opts.model ? ['--model', opts.model] : []),
@@ -509,7 +510,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     hook: (hook: MuseHook) => void,
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
     context: string | undefined,
-    gate: string | undefined
+    gate: string | undefined,
+    ownerWords: string | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -535,7 +537,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(shimDir, requestDir, context, gate)
+      const hooksFile = writeMuseHooks(shimDir, requestDir, context, gate, ownerWords)
       return {
         dir: shimDir,
         env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },

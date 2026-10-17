@@ -2,7 +2,13 @@ import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
-import { QUOTE_PROMPT_FN, REMIND_REPLY_LANGUAGE_FN } from './replyLanguage'
+import {
+  LANGUAGE_FNS,
+  QUOTE_PROMPT_FN,
+  QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS,
+  REMIND_REPLY_LANGUAGE_FN
+} from './replyLanguage'
+import { seedHandedOverOwnerWords } from './hooks'
 import { FROM_A_SESSION } from './crossSessionMessage'
 import { record } from './codexObservation'
 
@@ -32,6 +38,7 @@ event="$2"
 said="$4"
 [ -d "$dir" ] || exit 0
 ${NEWID_FN}
+${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 ${QUOTE_PROMPT_FN}
 input="$(cat | tr -d '\\n')"
@@ -44,7 +51,7 @@ case "$event" in
   UserPromptSubmit)
     case "$input" in
       *'"prompt":"${FROM_A_SESSION}'*) ;;
-      *) quote_prompt > "$said" ;;
+      *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
     esac
     remind_reply_language UserPromptSubmit ;;
   PostToolUse) remind_reply_language PostToolUse ;;
@@ -70,13 +77,15 @@ export function writeMuseHooks(
   shimDir: string,
   requestDir: string,
   context?: string,
-  gate?: string
+  gate?: string,
+  ownerWords?: string
 ): string {
   const script = path.join(shimDir, 'muse-hook')
   fs.writeFileSync(script, HOOK_SCRIPT, { mode: 0o755 })
   const contextFile = path.join(shimDir, 'session-start.json')
   if (context) fs.writeFileSync(contextFile, sessionStartContext(context))
   const saidFile = path.join(shimDir, 'said')
+  if (ownerWords) seedHandedOverOwnerWords(saidFile, ownerWords)
   const run = (command: string): unknown[] => [{ hooks: [{ type: 'command', command }] }]
   const hooks = Object.fromEntries([
     ...EVENTS.map((event) => [

@@ -508,6 +508,7 @@ export interface CreateTabOptions {
   util?: boolean
   ownerTabId?: string
   role?: string
+  ownerWords?: string
   allow?: string[]
   conductor?: boolean
   trustFolder?: boolean
@@ -1328,7 +1329,7 @@ export interface KoloftApi {
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
     channels(): Promise<DiscordChannel[]>
-    setUpWithAssist(): Promise<ConductorOpenResult>
+    setUpWithAssist(ownerWords?: string): Promise<ConductorOpenResult>
   }
 }
 

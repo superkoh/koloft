@@ -91,6 +91,9 @@ function hook(tabId: string, event: string, input: Record<string, unknown>): str
   })
 }
 
+const context = (out: string): string =>
+  JSON.parse(out).hookSpecificOutput.additionalContext as string
+
 function logRecord(sessionId: string, record: Record<string, unknown>): void {
   const at = new Date(parseInt(sessionId.replace(/-/g, '').slice(0, 12), 16))
   const p2 = (n: number): string => String(n).padStart(2, '0')
@@ -300,23 +303,44 @@ describe('MuseSessions launch', () => {
   })
 
   // ADR-0031
-  it("reminds muse at each prompt and after every tool to write in the language of the owner's latest message, quoting it", async () => {
+  it("reminds muse at each prompt and after every tool to write in the language of the owner's latest message, keeping it through a reply too short to show one", async () => {
     const id = await boundTab()
-    const context = (out: string): string =>
-      JSON.parse(out).hookSpecificOutput.additionalContext as string
     expect(hook(id, 'PostToolUse', { session_id: A, tool_name: 'read_file' })).toBe('')
     const atPrompt = hook(id, 'UserPromptSubmit', {
       session_id: A,
       prompt: '现在在做什么',
       turn_id: 't1'
     })
-    expect(context(atPrompt)).toContain('«现在在做什么»')
+    expect(context(atPrompt)).toContain('The user writes Chinese')
     const afterTool = hook(id, 'PostToolUse', { session_id: A, tool_name: 'read_file' })
     expect(JSON.parse(afterTool).hookSpecificOutput.hookEventName).toBe('PostToolUse')
-    expect(context(afterTool)).toContain('«现在在做什么»')
-    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'merge it', turn_id: 't2' })
+    expect(context(afterTool)).toContain('The user writes Chinese')
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'ok', turn_id: 't2' })
     expect(context(hook(id, 'PostToolUse', { session_id: A, tool_name: 'bash' }))).toContain(
-      '«merge it»'
+      'The user writes Chinese'
+    )
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'merge it now', turn_id: 't3' })
+    expect(context(hook(id, 'PostToolUse', { session_id: A, tool_name: 'bash' }))).toContain(
+      '«merge it now»'
+    )
+  })
+
+  // ADR-0031
+  it('a Muse child is reminded in the language of the owner’s words its parent handed over, not of its English task, until the owner writes to it', async () => {
+    const { id } = await launch({
+      firstPrompt: 'Koloft started you because … Fix the sidebar.',
+      ownerWords: '把侧栏修好'
+    })
+    hook(id, 'SessionStart', { session_id: A, source: 'startup' })
+    const first = hook(id, 'UserPromptSubmit', {
+      session_id: A,
+      prompt: 'Koloft started you because … Fix the sidebar.',
+      turn_id: 't1'
+    })
+    expect(context(first)).toContain('The user writes Chinese')
+    hook(id, 'UserPromptSubmit', { session_id: A, prompt: 'now check the tests', turn_id: 't2' })
+    expect(context(hook(id, 'PostToolUse', { session_id: A, tool_name: 'bash' }))).toContain(
+      '«now check the tests»'
     )
   })
 })

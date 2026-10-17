@@ -40,6 +40,8 @@ import {
   hookSettings,
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
+  saidFile,
+  seedHandedOverOwnerWords,
   writeAllowFile,
   writeConductorMarker
 } from '../hooks'
@@ -790,6 +792,7 @@ export class ClaudeBackend implements SessionBackend {
       effort: opts.effort,
       permission: opts.permission,
       firstPrompt: opts.firstPrompt,
+      ownerWords: opts.ownerWords,
       name: opts.name,
       cols: opts.cols,
       rows: opts.rows,
@@ -959,6 +962,8 @@ export class ClaudeBackend implements SessionBackend {
         : plan.extraEnv
     })
     if (role && !machine) writeConductorMarker(this.hookRegDir, handle.id, role)
+    if (spec.ownerWords && !machine)
+      seedHandedOverOwnerWords(saidFile(this.hookRegDir, handle.id), spec.ownerWords)
     if (conductor && !machine)
       writeAllowFile(this.hookRegDir, handle.id, spec.allow ?? assist?.allow ?? [])
     if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)

@@ -83,6 +83,8 @@ import {
   markAnswerable,
   pruneStale,
   quotedPrompt,
+  saidFile,
+  seedOwnerWords,
   setupHooks,
   writeAllowFile,
   writeTabHookSettings
@@ -4033,9 +4035,9 @@ async function saveDiscordToken(token: string): Promise<boolean> {
   return saved
 }
 
-function openDiscordSetup(): Promise<ConductorOpenResult> {
+function openDiscordSetup(ownerWords?: string): Promise<ConductorOpenResult> {
   if (!conductors) return Promise.resolve({ ok: false, error: STILL_STARTING })
-  return conductors.openTask(GLOBAL_SCOPE, DISCORD_SETUP_TASK)
+  return conductors.openTask(GLOBAL_SCOPE, { ...DISCORD_SETUP_TASK, ownerWords })
 }
 
 async function bindWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult> {
@@ -4103,7 +4105,8 @@ function paletteTask(title: string, text: string): AssistTask {
   return {
     name: title || firstLineName(text),
     brief: `${text}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
-    staysOpen: true
+    staysOpen: true,
+    ownerWords: text
   }
 }
 
@@ -4144,6 +4147,8 @@ async function sendPaletteText(
     else {
       const line = crossSessionLine('prompting', `The owner typed this in ⌘P: ${text}`, id)
       if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }
+      // ADR-0031
+      if (hookRegDir) seedOwnerWords(saidFile(hookRegDir, tabId), text)
       await sendPeerLine(tabId, line, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS)
     }
   } catch (error) {
@@ -4712,7 +4717,9 @@ function registerIpc(): void {
     if (owner) conductors?.setOwner(owner)
   })
   ipcMain.handle('discord:channels', () => discordLink?.channels() ?? [])
-  ipcMain.handle('discord:setUpWithAssist', () => openDiscordSetup())
+  ipcMain.handle('discord:setUpWithAssist', (_e, ownerWords?: string) =>
+    openDiscordSetup(ownerWords)
+  )
   ipcMain.handle('workspace:move', (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
   )

@@ -1125,7 +1125,7 @@ export default function App(): JSX.Element {
       return
     }
     if (route?.kind === 'discord') {
-      void setUpDiscordWithAssist().then((error) => {
+      void setUpDiscordWithAssist(prompt).then((error) => {
         if (error) showToast(error)
       })
       return

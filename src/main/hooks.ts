@@ -10,7 +10,15 @@ import {
   codexGateShell,
   conductorGateCommand
 } from './conductorGate'
-import { QUOTE_PROMPT_FN, REMIND_REPLY_LANGUAGE_FN } from './replyLanguage'
+import {
+  HANDED_OVER_TASK_COMES_FIRST,
+  LANGUAGE_FNS,
+  QUOTE_PROMPT_FN,
+  QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS,
+  REMIND_REPLY_LANGUAGE_FN,
+  TRANSCRIPT_PATH_FIELD
+} from './replyLanguage'
+import { OWNER_WORDS_QUOTED_CHARS } from './handover'
 import { FROM_A_SESSION, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
@@ -30,7 +38,6 @@ const fromTheRelay = (mode: ModeClass): string =>
   `*'"prompt":"<cross-session-message from-mode=\\"${mode}\\">\\n${DISCORD_PREFIX} '*`
 
 export const CODEX_SAID_ENV = 'KOLOFT_CODEX_SAID'
-const HANDED_OVER_TASK_COMES_FIRST = '.task-first'
 export const CODEX_REPLY_LANGUAGE_ENV = 'KOLOFT_CODEX_REPLY_LANGUAGE'
 const codexReplyLanguageHook = (event: string): string =>
   `sh "$${CODEX_REPLY_LANGUAGE_ENV}" ${event}`
@@ -43,8 +50,10 @@ export const CODEX_REPLY_LANGUAGE_HOOKS = [
 export const CODEX_REPLY_LANGUAGE_SCRIPT = `#!/usr/bin/env bash
 said="$${CODEX_SAID_ENV}"
 [ -n "$said" ] || exit 0
+${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$1" = "tool" ]; then
+  input="$(grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1)"
   cat >/dev/null
   remind_reply_language PostToolUse
   exit 0
@@ -53,19 +62,20 @@ input="$(cat | tr -d '\\n')"
 ${QUOTE_PROMPT_FN}
 case "$input" in
   *'"prompt":"${FROM_A_SESSION}'*) ;;
-  *) if [ -f "$said${HANDED_OVER_TASK_COMES_FIRST}" ]; then
-       rm -f "$said${HANDED_OVER_TASK_COMES_FIRST}"
-     else
-       quote_prompt > "$said"
-     fi ;;
+  *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
 esac
 remind_reply_language UserPromptSubmit
 exit 0
 `
 
 // ADR-0031
-export function seedCodexOwnerWords(said: string, ownerWords: string): void {
-  fs.writeFileSync(said, JSON.stringify(ownerWords).slice(1, -1))
+export function seedOwnerWords(said: string, ownerWords: string): void {
+  fs.writeFileSync(said, JSON.stringify(ownerWords.slice(0, OWNER_WORDS_QUOTED_CHARS)).slice(1, -1))
+}
+
+// ADR-0031
+export function seedHandedOverOwnerWords(said: string, ownerWords: string): void {
+  seedOwnerWords(said, ownerWords)
   fs.writeFileSync(said + HANDED_OVER_TASK_COMES_FIRST, '')
 }
 
@@ -77,8 +87,10 @@ reg="$1"; tab="$2"; event="$3"
 # CC§14
 [ "$event" = "ask" ] && { [ ! -f "$reg/$tab.answerable" ] || [ -f "$reg/$tab.typed" ]; } && event="asked"
 said="$reg/$tab.said"
+${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$event" = "tool" ]; then
+  input="$(grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1)"
   cat >/dev/null
   remind_reply_language PostToolUse
   exit 0
@@ -223,14 +235,14 @@ case "$event" in
         ${fromTheRelay('bypass')}|${fromTheRelay('prompting')})
           id="$(printf '%s' "$input" | LC_ALL=C sed -n -E 's/.*\\\\n\\(Koloft message ([A-Za-z0-9-]+)\\)\\\\n<\\/cross-session-message>".*/\\1/p')"
           if [ -n "$id" ] && grep -qxF "$id" "$reg/$tab.discord-ids" 2>/dev/null; then
-            quote_prompt > "$said"
+            save_quote
           else
             flag=${shq(NOT_FROM_THE_RELAY)}
           fi
           ;;
         *'"prompt":"<cross-session-message '*|*'"prompt":"<task-notification>'*|*'"prompt":"<agent-message '*) ;;
         *)
-          quote_prompt > "$said"
+          ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS}
           [ -f "$reg/$tab.conductor" ] && : > "$reg/$tab.typed"
           ;;
       esac
@@ -261,7 +273,7 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor|said|allow|typed|discord-ids)$/
+const TAB_MARKER = /^(.+)\.(answerable|conductor|said|said\.task-first|allow|typed|discord-ids)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -396,11 +408,15 @@ export function discordIdsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.discord-ids`)
 }
 
+export function saidFile(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}.said`)
+}
+
 // ADR-0031
 export function quotedPrompt(regDir: string, tabId: string): string | undefined {
   let escaped: string
   try {
-    escaped = fs.readFileSync(path.join(regDir, `${tabId}.said`), 'utf8').trimEnd()
+    escaped = fs.readFileSync(saidFile(regDir, tabId), 'utf8').trimEnd()
   } catch {
     return undefined
   }
