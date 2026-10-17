@@ -366,6 +366,15 @@ function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
     : undefined
 }
 
+function keepUnchangedSessions(prev: SessionInfo[], pushed: SessionInfo[]): SessionInfo[] {
+  const before = new Map(prev.map((x) => [x.tabId, x]))
+  const next = pushed.map((x) => {
+    const old = before.get(x.tabId)
+    return old && JSON.stringify(old) === JSON.stringify(x) ? old : x
+  })
+  return next.length === prev.length && next.every((x, i) => x === prev[i]) ? prev : next
+}
+
 function tabIsWoken(s: Pick<AppState, 'sessions'>, tabId: string): boolean {
   return s.sessions.some((x) => x.tabId === tabId && !!x.sessionId && x.status !== undefined)
 }
@@ -538,7 +547,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (awaited) activateOnceSpawned = null
     set((s) =>
       s.tabs.some((x) => x.id === t.id)
-        ? {}
+        ? s
         : {
             tabs: [...s.tabs, t],
             ...(awaited && { activeTabId: t.id, resumeLaunch: null })
@@ -634,13 +643,13 @@ export const useStore = create<AppState>((set, get) => ({
   setTabTitle: (id, title) =>
     set((s) => {
       const cur = s.tabs.find((t) => t.id === id)
-      if (!cur || cur.title === title) return {}
+      if (!cur || cur.title === title) return s
       return { tabs: s.tabs.map((t) => (t.id === id ? { ...t, title } : t)) }
     }),
   setTabAlive: (id, alive) =>
     set((s) => {
       const cur = s.tabs.find((t) => t.id === id)
-      if (!cur || cur.alive === alive || cur.asleep) return {}
+      if (!cur || cur.alive === alive || cur.asleep) return s
       return { tabs: s.tabs.map((t) => (t.id === id ? { ...t, alive } : t)) }
     }),
   setTabAsleep: (id) =>
@@ -741,8 +750,9 @@ export const useStore = create<AppState>((set, get) => ({
       .catch(() => restarting.delete(oldId))
   },
 
-  setSessions: (sessions) => {
+  setSessions: (pushed) => {
     set((s) => {
+      const sessions = keepUnchangedSessions(s.sessions, pushed)
       const liveTabs = new Set(sessions.map((x) => x.tabId))
       for (const id of liveTabs) everBoundSession.add(id)
       for (const x of sessions) {
@@ -776,7 +786,7 @@ export const useStore = create<AppState>((set, get) => ({
         }
         return t
       })
-      if (!changed) return { sessions }
+      if (!changed) return sessions === s.sessions ? s : { sessions }
       if (!activeReverted) return { sessions, tabs }
       const openFiles = { ...s.openFiles }
       if (s.activeTabId) delete openFiles[s.activeTabId]
@@ -1054,7 +1064,7 @@ export const useStore = create<AppState>((set, get) => ({
       .check()
       .then((r) =>
         set((s) => {
-          if (!s.update.open) return {}
+          if (!s.update.open) return s
           if (r.status === 'available') {
             return {
               update: {

@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -319,7 +320,7 @@ function useGithubChecks(
   return { checks: got && got.key === key ? got.checks : null, refresh }
 }
 
-export function WorkbenchPane({
+function WorkbenchPaneView({
   tabId: ownerTab,
   states,
   liveTabs,
@@ -2406,3 +2407,5 @@ export function WorkbenchPane({
     </div>
   )
 }
+
+export const WorkbenchPane = memo(WorkbenchPaneView)
