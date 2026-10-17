@@ -611,6 +611,13 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
     const http = require('http')
     const { WebSocketServer } = require('ws')
     const requested = listen.replace(/^unix:\/\//, '')
+    // CODEX§16
+    if (fs.statSync(path.dirname(requested)).mode & 0o022) {
+      console.error(
+        'Error: socket parent must be owned by the user or root and prevent other users from replacing socket entries'
+      )
+      process.exit(1)
+    }
     const short = `/tmp/fcx-${crypto.createHash('sha1').update(requested).digest('hex').slice(0, 12)}.sock`
     fs.rmSync(short, { force: true })
     const server = http.createServer((_req, res) => res.writeHead(404).end())
@@ -619,11 +626,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       const receive = serve((line) => ws.send(line))
       ws.on('message', (data) => receive(String(data)))
     })
-    process.on('SIGTERM', () => {
-      fs.rmSync(short, { force: true })
-      fs.rmSync(requested, { force: true })
-      process.exit(0)
-    })
+    process.on('SIGTERM', () => {})
     process.on('SIGHUP', () => {})
     server.listen(short, () => {
       fs.rmSync(requested, { force: true })

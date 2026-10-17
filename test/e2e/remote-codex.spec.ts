@@ -119,6 +119,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       const tui = tuiCalls(env)
       expect(tui).toHaveLength(1)
       expect(tui[0]).toMatchObject({ cwd: remoteDir(env), effectiveCwd: remoteDir(env) })
+      expect(tui[0].argv).not.toContain('-s')
       expect(serverAlive(env, server.tabId!)).toBe(true)
       const replyLanguage = machineCodexLog<{ event: string; stdout: string }>(
         env,
@@ -226,6 +227,30 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
         cwd: fs.realpathSync(tree),
         portOffset: String(portOffset('rc-tree'))
       })
+      await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(1)
+      expect(tuiCalls(env)[0].argv.join(' ')).toContain('-a on-request -s workspace-write')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§11 CODEX§16
+  test('E-RC-04: a new Codex session in a folder the machine already trusts starts its screen on this Mac with the machine’s own choice for a trusted folder (ask first, write inside the folder), since that screen cannot see the machine’s trust', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    fs.mkdirSync(remoteDir(env), { recursive: true })
+    const codexHome = path.join(machineHome(env), '.koloft', 'codex-home')
+    fs.mkdirSync(codexHome, { recursive: true })
+    fs.writeFileSync(
+      path.join(codexHome, 'config.toml'),
+      `[projects."${fs.realpathSync(remoteDir(env))}"]\ntrust_level = "trusted"\n`
+    )
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startRemoteCodex(page, env)
+      expect(tuiCalls(env)[0].argv.join(' ')).toContain('-a on-request -s workspace-write')
     } finally {
       await quitAndClose(app)
     }

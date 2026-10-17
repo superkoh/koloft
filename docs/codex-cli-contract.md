@@ -895,6 +895,42 @@ was only read in help.
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
 
+**A `--listen` app-server shrugs off SIGTERM.** Measured 2026-10-17, `@openai/codex@0.162.0`
+installed by npm on Debian 12 (Docker, arm64), signed in with `chatgptAuthTokens`, idle
+after two real turns and with no client connected: the process tree was the npm `node`
+wrapper (process-group leader), the native `codex app-server --listen …` under it, and a
+`codex-code-mode` child in a process group of its own. `/proc/<pid>/status` showed SIGTERM
+caught (not ignored) by both `node` and `codex`. A SIGTERM to the group, and one to the
+native `codex` alone, left all three running 3–18 s later; while they lived, a new
+app-server on the same `CODEX_HOME` resuming the thread drew the TUI's "This conversation
+is open in another app" (§5). SIGKILL to every process of the tree ended them, and the
+resume then worked. Debian's `sh` (dash) refuses `kill -KILL -- -<pgid>` ("Illegal number:
+-"); `kill -- -<pgid>` and `kill -s KILL <pid> …` work.
+
+**`--listen` refuses a socket folder others can write.** Measured 2026-10-17 on an Ubuntu
+24.04.5 VM (tart, arm64, kernel 7.0), `@openai/codex@0.162.0` by npm, login umask `0002`:
+with the socket's folder made `drwxrwxr-x` by `mkdir -p`, `codex app-server --listen
+unix://<folder>/<name>.sock` exited at once with "Error: socket parent must be owned by
+the user or root and prevent other users from replacing socket entries". The same VM
+(AppArmor `kernel.apparmor_restrict_unprivileged_userns = 1`, no AppArmor profile for
+`bwrap`, `bubblewrap` 0.9.0 from apt) also logged at start "Codex's Linux sandbox uses
+bubblewrap and needs access to create user namespaces." Every sandboxed command then
+failed with "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted" — through
+Koloft, and the same from `codex sandbox -c sandbox_mode=workspace-write -- …` run
+directly on the VM. With an AppArmor profile for `/usr/bin/bwrap` granting `userns`
+(`apparmor_parser -r`), the direct run wrote inside the folder and got "Read-only file
+system" outside it.
+
+**The Mac's TUI starts a machine folder read-only.** Same VM, same day: with
+`[projects."/home/admin/proj"] trust_level = "trusted"` in the machine's `CODEX_HOME`, the
+machine's app-server alone answered `thread/start {cwd}` with `workspaceWrite` /
+`on-request`; but a thread the Mac's 0.162.0 TUI started over `--remote … -C
+/home/admin/proj` with no `-a`/`-s` ran `sandbox_policy: read-only` (its `turn_context`),
+and its `touch` inside the folder was refused. A trust table for that path in the TUI's
+own `CODEX_HOME` did not change it. Given `-a on-request -s workspace-write`, the thread
+wrote inside the folder, was refused outside it, and after a resume (no flags) still
+wrote inside and was refused outside.
+
 **A login shell drops the server's `PATH` on Linux.** Checked on 2026-10-16 with
 `@openai/codex@0.162.0` (`npm i -g`, `codex-linux-arm64`) in a plain
 `node:22-bookworm-slim` container, as a non-root user whose shell is bash, no login:
@@ -918,8 +954,7 @@ hooks.UserPromptSubmit=…` and `-c hooks.PostToolUse=…` gave keys
 `trusted_hash` into the machine's `CODEX_HOME/config.toml` with `awk` and `printf`, twice
 over, left one table each, and the machine's 0.162.0 then listed both hooks `trusted`.
 
-Not tried: `codex login --device-auth` on the machine; `workspace-write` on a host that
-allows user namespaces; a real refresh token on the machine.
+Not tried: `codex login --device-auth` on the machine; a real refresh token on the machine.
 
 ## 17. Handing a session context and a command, and queuing a message into it
 

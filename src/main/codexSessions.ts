@@ -269,6 +269,12 @@ const PERMISSIONS: Record<LaunchPermission, Permissions | undefined> = {
 // ADR-0029 CODEX§12
 const CONDUCTOR_PERMISSIONS: Permissions = { approval: 'never', sandbox: 'workspace-write' }
 
+// CODEX§11 CODEX§16
+const MACHINE_TRUSTED_FOLDER_DEFAULT: Permissions = {
+  approval: 'on-request',
+  sandbox: 'workspace-write'
+}
+
 // CODEX§11
 function permissionFlags(p: Permissions | undefined): string[] {
   return p ? ['-a', p.approval, '-s', p.sandbox] : []
@@ -1299,9 +1305,17 @@ export class CodexSessions {
     const hooks = [...(conductor ? [GATE_HOOK] : []), ...CODEX_REPLY_LANGUAGE_HOOKS]
     let transport: CodexTransport | undefined
     try {
-      const [hookTrust] = machine
-        ? await Promise.all([this.koloftHookStates(hooks), this.machineReady(machine)])
-        : [[]]
+      const askMachineTrust = !!machine && !permissions && !opts.resumeSessionId
+      const [hookTrust, , trustedThere] = machine
+        ? await Promise.all([
+            this.koloftHookStates(hooks),
+            this.machineReady(machine),
+            askMachineTrust &&
+              (trustedOnMachine.includes(barePath(cwd)) || this.machineTrusts(parseRemoteKey(cwd)!))
+          ])
+        : [[], undefined, false]
+      // CODEX§16
+      const launchPermissions = trustedThere ? MACHINE_TRUSTED_FOLDER_DEFAULT : permissions
       // ADR-0029 ADR-0031
       const trusted = machine
         ? new Set(hookTrust.map((h) => h.command))
@@ -1341,7 +1355,7 @@ export class CodexSessions {
         STATUS_LINE_CONFIG,
         '-c',
         NO_UPDATE_NOTICE_AT_START,
-        ...(opts.resumeSessionId ? [] : permissionFlags(permissions)),
+        ...(opts.resumeSessionId ? [] : permissionFlags(launchPermissions)),
         ...launchChoiceArgs(opts)
       ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
@@ -1402,7 +1416,6 @@ export class CodexSessions {
     }
   }
 
-  // CODEX§11
   // CODEX§11
   async machineTrusts(dir: RemoteKey): Promise<boolean> {
     const r = await this.machineDeps().run(dir.host, realDirAndConfigCmd(dir.path))

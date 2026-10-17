@@ -119,7 +119,7 @@ ${REMOTE_ENV_LINES}
 sh "$M/${ENSURE_CODEX_FILE}" ${shq(s.version)} || exit $?
 ${CODEX_FIRST_ON_PATH}
 H="${REMOTE_CODEX_HOME}"
-mkdir -p "$H" "${serversDir(s.instance)}" && chmod 700 "$H" || exit 3
+mkdir -p "$H" "${serversDir(s.instance)}" && chmod 700 "$H" "${serversDir(s.instance)}" || exit 3
 cd ${shq(s.cwd)} || exit 3
 ${trust}${hookTrustLines(s.hookTrust)}S="${serversDir(s.instance)}/${s.tabId}"
 rm -f "$S".*
@@ -164,13 +164,30 @@ export function codexLaunchLine(s: CodexLaunchLineSpec): string {
   )
 }
 
-const STOP_SERVER_FN = `stop_one() {
+// CODEX§16
+const STOP_SERVER_FN = `tree_of() {
+  ps -eo pid=,ppid= | awk -v r="$1" '{ p[$1] = $2 } END { s[r] = 1; do { c = 0; for (x in p) if (!(x in s) && (p[x] in s)) { s[x] = 1; c = 1 } } while (c); for (x in s) print x }'
+}
+any_alive() {
+  for x in $all; do
+    case "$(ps -o stat= -p "$x" 2>/dev/null | tr -d ' ')" in ''|Z*) ;; *) return 0 ;; esac
+  done
+  return 1
+}
+signal_and_wait() {
+  kill -s "$1" $all 2>/dev/null
+  n=0
+  while [ "$n" -lt "$2" ] && any_alive; do sleep 0.2; n=$((n+1)); done
+}
+stop_one() {
   p="$D/$1.pid"
   if [ -f "$p" ]; then
     pid=$(cat "$p")
     case "$(ps -p "$pid" -o args= 2>/dev/null)" in
       *app-server*)
-        if [ "$(ps -p "$pid" -o pgid= 2>/dev/null | tr -d ' ')" = "$pid" ]; then kill -- "-$pid"; else kill "$pid"; fi ;;
+        all=$(tree_of "$pid")
+        signal_and_wait TERM 6
+        signal_and_wait KILL 10 ;;
     esac
   fi
   rm -f "$D/$1".*
