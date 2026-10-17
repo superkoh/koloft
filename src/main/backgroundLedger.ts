@@ -4,6 +4,7 @@ import type { ToolUseResult } from './transcriptRecord'
 const PROMOTED = '\x00promoted'
 const TOOL_LABEL_CAP = 64
 const TOOL_LABEL_CHARS = 120
+const NOTHING_FINISHED: ReadonlySet<string> = new Set()
 
 // CC§8
 const BG_SPAWN_STATUSES = new Set(['async_launched', 'teammate_spawned', 'remote_launched'])
@@ -32,10 +33,9 @@ export class BackgroundLedger {
   private taskLabels = new Map<string, string>()
   private monitors = new Set<string>()
   private toolLabels = new Map<string, string>()
-  teammateActiveMs = 0
 
-  get size(): number {
-    return this.live.size
+  get held(): boolean {
+    return this.live.size > 0
   }
 
   clear(): void {
@@ -70,7 +70,6 @@ export class BackgroundLedger {
     } else if (tur.status === 'teammate_spawned') {
       // CC§8
       if (toolUseIds[0]) task = { id: toolUseIds[0], type: 'teammate' }
-      this.teammateActiveMs = Date.now()
     } else if (typeof tur.agentId === 'string') {
       task = {
         id: tur.agentId,
@@ -86,12 +85,12 @@ export class BackgroundLedger {
   }
 
   // CC§8
-  noteNotification(text: string): Set<string> {
+  noteNotification(text: string): ReadonlySet<string> {
     const st = text
       .match(/<status>([^<]*)<\/status>/)?.[1]
       ?.trim()
       .toLowerCase()
-    if (!st || !TERMINAL_TASK_STATUSES.has(st)) return new Set()
+    if (!st || !TERMINAL_TASK_STATUSES.has(st)) return NOTHING_FINISHED
     for (const m of text.matchAll(/<tool-use-id>([^<]+)<\/tool-use-id>/g)) this.live.delete(m[1])
     const gone = new Set([...text.matchAll(/<task-id>([^<]+)<\/task-id>/g)].map((m) => m[1]))
     for (const id of gone) {
