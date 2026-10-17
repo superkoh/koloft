@@ -29,7 +29,6 @@ const mocks = vi.hoisted(() => ({
   rpcOptions: [] as CodexProcessOptions[]
 }))
 vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
-  codexTooOld: (await importOriginal<typeof import('../../src/main/codexRuntime')>()).codexTooOld,
   resolveCodexRuntime: mocks.runtime,
   updateCodex: mocks.update
 }))
@@ -690,6 +689,19 @@ describe('CodexSessions', () => {
     expect(hint).not.toContain('HELPERS')
   })
 
+  // ADR-0031
+  it('a Codex child starts with the owner’s words its parent handed over already saved for its reply-language hook, whatever language its handover note is in', async () => {
+    await sessions.launch({
+      kind: 'codex',
+      cwd: repo,
+      role: 'Koloft 启动了你。主人最后写的是 «把侧栏修好»。',
+      firstPrompt: 'Fix the sidebar.',
+      ownerWords: '把侧栏修好'
+    })
+    const said = transports[0].options.sessionEnv!.KOLOFT_CODEX_SAID
+    expect(fs.readFileSync(said, 'utf8')).toBe('把侧栏修好')
+  })
+
   it('with agent tools off, a Codex tab gets neither the koloft command nor the Koloft hint', async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     expect(
@@ -1255,11 +1267,11 @@ describe('CodexSessions', () => {
     gate.resolve()
   })
 
-  it('rejects a Claude identity, or a Codex one from a source it does not know, at the Codex resume boundary', async () => {
+  it('rejects a Claude or a Muse identity at the Codex resume boundary', async () => {
     await expect(sessions.resume({ sessionId: A, cwd: repo })).rejects.toThrow(
       'A Codex session is required'
     )
-    await expect(sessions.resume({ sessionId: `codex:ssh:${A}`, cwd: repo })).rejects.toThrow(
+    await expect(sessions.resume({ sessionId: `muse:local:${A}`, cwd: repo })).rejects.toThrow(
       'A Codex session is required'
     )
     expect(mocks.create).not.toHaveBeenCalled()

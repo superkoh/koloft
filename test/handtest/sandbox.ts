@@ -9,6 +9,7 @@ import type { ReadableStream as WebReadableStream } from 'stream/web'
 import { parseArgs } from 'util'
 import {
   addCodexAccount,
+  addMuseAccount,
   addKeychainEntry,
   seededAccount,
   seedSettings,
@@ -36,7 +37,7 @@ import { keychainService } from '../../src/shared/types'
 
 const USAGE = `Starts a hidden dev build of Koloft with the real claude and codex, in a home of its own.
 
-  npm run handtest -- start [--account <name>] [--port <n>] [--remote]
+  npm run handtest -- start [--account <name>] [--port <n>] [--remote] [--muse]
   npm run handtest -- menu <home> <menu item id>
   npm run handtest -- stop <home>
 
@@ -48,6 +49,10 @@ stop quits it and deletes the home.
              (the first enabled one when left out)
   --remote   also start the Docker SSH lab with the real claude on it, as a remote workspace
              (a Linux claude from KOLOFT_SMOKE_CLAUDE_LINUX, or downloaded to match the local one)
+  --muse     also install the real muse with its official installer, into the sandbox home;
+             sign in to Muse from the sandbox's Settings ▸ Accounts
+  --muse-auth <file>  with --muse, start with a Muse account "meta" signed in by this
+             auth.json, kept from an earlier sandbox's muse-homes/meta/muse (never printed)
 Run npm run build first.`
 
 const REPO = path.resolve(__dirname, '..', '..')
@@ -68,6 +73,8 @@ const AMBIENT_ENV_THAT_WOULD_BYPASS_THE_ACCOUNT = [
 // CC§16
 const LINUX_CLAUDE_RELEASES = 'https://downloads.claude.ai/claude-code-releases'
 const LINUX_ARCH: Record<string, string> = { aarch64: 'arm64', x86_64: 'x64' }
+const MUSE_INSTALLER = 'https://dev.meta.ai/install.sh'
+const MUSE_SIGNED_IN_ACCOUNT = 'meta'
 const LAB_USER = 'kuser'
 const LAB_ALIAS = 'kt-key'
 const LAB_GIT_ID = '-c user.email=handtest@koloft.test -c user.name=handtest'
@@ -165,6 +172,22 @@ async function useRealCodex(env: E2EEnv): Promise<boolean> {
   return true
 }
 
+// MUSE§1
+async function useRealMuse(env: E2EEnv): Promise<string> {
+  const res = await fetch(MUSE_INSTALLER)
+  if (!res.ok) throw new Error(`${MUSE_INSTALLER} answered ${res.status}`)
+  const installer = path.join(env.home, 'install-muse.sh')
+  fs.writeFileSync(installer, await res.text(), { mode: 0o700 })
+  execFileSync('/bin/bash', [installer], {
+    env: { ...env.launchEnv, HOME: env.home, MUSE_NO_MODIFY_PATH: '1' },
+    stdio: 'ignore'
+  })
+  const muse = path.join(env.home, '.local', 'bin', 'muse')
+  if (!fs.existsSync(muse)) throw new Error(`the Muse installer left no ${muse}`)
+  env.launchEnv.KOLOFT_MUSE_CMD = muse
+  return muse
+}
+
 async function linuxClaude(env: E2EEnv, localClaude: string): Promise<string> {
   const given = process.env.KOLOFT_SMOKE_CLAUDE_LINUX
   if (given && fs.existsSync(given)) return given
@@ -218,7 +241,13 @@ async function koloftPage(port: string): Promise<{ webSocketDebuggerUrl: string 
   return targets.find((t) => t.type === 'page' && t.url.endsWith('/renderer/index.html'))
 }
 
-async function start(opt: { account?: string; port: string; remote: boolean }): Promise<void> {
+async function start(opt: {
+  account?: string
+  port: string
+  remote: boolean
+  muse: boolean
+  museAuth?: string
+}): Promise<void> {
   if (!fs.existsSync(MAIN_ENTRY)) throw new Error(`${MAIN_ENTRY} not found — run npm run build`)
   for (const port of [Number(opt.port), mainInspectorPort(opt.port)])
     if (!(await portIsFree(port))) throw new Error(`port ${port} is taken`)
@@ -238,6 +267,9 @@ async function start(opt: { account?: string; port: string; remote: boolean }): 
     })
     const claude = await useRealClaude(env, account)
     const codex = await useRealCodex(env)
+    const muse = opt.muse ? await useRealMuse(env) : undefined
+    if (opt.museAuth)
+      addMuseAccount(env, MUSE_SIGNED_IN_ACCOUNT, fs.readFileSync(opt.museAuth, 'utf8'))
     if (opt.remote) lab = await startRemote(env, claude)
     const remote = lab ? remoteKeyFor(LAB_ALIAS, LAB_USER) : undefined
     writeLayoutWithTheShippedWorkbenchDefault(env, remote)
@@ -274,6 +306,7 @@ async function start(opt: { account?: string; port: string; remote: boolean }): 
           home: env.home,
           account,
           codex,
+          muse,
           workspaces: { ...env.workspaces, ...(remote ? { remote } : {}) },
           log,
           stop: `npm run handtest -- stop ${env.home}`
@@ -379,13 +412,21 @@ const { positionals, values } = parseArgs({
   options: {
     account: { type: 'string' },
     port: { type: 'string', default: DEFAULT_PORT },
-    remote: { type: 'boolean', default: false }
+    remote: { type: 'boolean', default: false },
+    muse: { type: 'boolean', default: false },
+    'muse-auth': { type: 'string' }
   }
 })
 
 const [command, home, menuItem] = positionals
 if (command === 'start') {
-  await start({ account: values.account, port: values.port, remote: values.remote })
+  await start({
+    account: values.account,
+    port: values.port,
+    remote: values.remote,
+    muse: values.muse,
+    museAuth: values['muse-auth']
+  })
 } else if (command === 'stop' && home) {
   await stop(home)
 } else if (command === 'menu' && home && menuItem) {

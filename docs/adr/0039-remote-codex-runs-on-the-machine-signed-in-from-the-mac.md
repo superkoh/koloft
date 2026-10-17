@@ -1,4 +1,4 @@
-# 0038 A remote Codex tab runs its app-server on the machine, its screen on the Mac, and its login stays on the Mac
+# 0039 A remote Codex tab runs its app-server on the machine, its screen on the Mac, and its login stays on the Mac
 
 **Constraint**: Koloft reads every Codex tab through the frames its relay carries
 (CODEX§1), so the relay must sit between the TUI and the app-server. A remote session

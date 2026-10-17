@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { describe, expect, it } from 'vitest'
-import { CodexAccountPicker, limitsFrom, prepareCodexHome } from '../../src/main/codexAccounts'
+import { HomeAccountPicker, limitsFrom, prepareCodexHome } from '../../src/main/codexAccounts'
 import { codexAllLimitedNotice } from '../../src/main/accountPicker'
 import { windowLabel } from '../../src/shared/accountUsage'
 import type { AccountView } from '../../src/shared/types'
@@ -82,9 +82,9 @@ describe('limitsFrom (the rate-limit reply a Codex login gives)', () => {
   })
 })
 
-describe('CodexAccountPicker', () => {
+describe('picking a Codex account', () => {
   it('picks the enabled, signed-in account with the most room left, skipping one that is used up or that Codex says reached a limit', () => {
-    const picker = new CodexAccountPicker()
+    const picker = new HomeAccountPicker('codex-home')
     const pool = [
       account('full', { limits: used(1) }),
       account('busy', { limits: used(0.7) }),
@@ -98,7 +98,7 @@ describe('CodexAccountPicker', () => {
   })
 
   it('takes turns when no account has been measured yet, and picks none when there is no Codex account', () => {
-    const picker = new CodexAccountPicker()
+    const picker = new HomeAccountPicker('codex-home')
     const pool = [account('a'), account('b')]
     expect([picker.pick(pool)?.name, picker.pick(pool)?.name, picker.pick(pool)?.name]).toEqual([
       'a',
@@ -109,7 +109,7 @@ describe('CodexAccountPicker', () => {
   })
 
   it('when every account is used up, starts on the one whose limit resets soonest and says so; with room left it says nothing', () => {
-    const picker = new CodexAccountPicker()
+    const picker = new HomeAccountPicker('codex-home')
     const walledUntil = (resetsAt: number): AccountView['limits'] => ({
       windows: [
         { minutes: 300, used: 1, resetsAt },
@@ -126,7 +126,7 @@ describe('CodexAccountPicker', () => {
   })
 
   it('a resumed session keeps the account it ran on until that account is past 95% used, and is never stuck on one that cannot run', () => {
-    const picker = new CodexAccountPicker()
+    const picker = new HomeAccountPicker('codex-home')
     const pool = (sameUsed?: number, over: Partial<AccountView> = {}): AccountView[] => [
       account('same', { ...(sameUsed !== undefined && { limits: used(sameUsed) }), ...over }),
       account('idle', { limits: used(0) })

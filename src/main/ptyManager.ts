@@ -22,6 +22,7 @@ export interface PtyHandle {
   ownerTabId?: string
   resized?: (id: string, cols: number, rows: number) => void
   startedAt: number
+  remoteHost?: string
 }
 
 interface CreateArgs {
@@ -41,6 +42,7 @@ interface CreateArgs {
   ownerTabId?: string
   conductor?: boolean
   resized?: (id: string, cols: number, rows: number) => void
+  remoteHost?: string
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
@@ -48,6 +50,13 @@ interface CreateArgs {
     KOLOFT_AGENT_PROMPT?: string
     KOLOFT_PORT_OFFSET?: string
   }
+}
+
+const BRINGS_ITS_OWN_ENV: Record<TabKind, boolean> = {
+  shell: false,
+  claude: false,
+  codex: true,
+  muse: true
 }
 
 const UTIL_TITLE_POLL_MS = 1500
@@ -112,8 +121,9 @@ export class PtyManager extends EventEmitter {
     const login = userShell()
     const shell = args.shell || login.shell
 
+    const ownsItsTools = BRINGS_ITS_OWN_ENV[args.kind] && !args.remoteHost
     let env: Record<string, string> = {
-      ...((args.kind === 'codex' ? (args.processEnv ?? process.env) : process.env) as Record<
+      ...((ownsItsTools ? (args.processEnv ?? process.env) : process.env) as Record<
         string,
         string
       >),
@@ -165,11 +175,11 @@ export class PtyManager extends EventEmitter {
     if (this.openDir) env.KOLOFT_OPEN_DIR = this.openDir
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
     if (this.cdpDir && !args.util) env.KOLOFT_CDP_DIR = this.cdpDir
-    if (this.agentDir && args.kind !== 'codex') env.KOLOFT_AGENT_DIR = this.agentDir
+    if (this.agentDir && !ownsItsTools) env.KOLOFT_AGENT_DIR = this.agentDir
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
     const hookSettings =
-      args.util || args.kind === 'codex'
+      args.util || ownsItsTools
         ? undefined
         : this.makeHookSettings?.(
             id,
@@ -177,7 +187,7 @@ export class PtyManager extends EventEmitter {
             args.conductor === true
           )
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
-    if (this.shimDir && !isWin && args.kind !== 'codex')
+    if (this.shimDir && !isWin && !ownsItsTools)
       env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
     if (args.extraEnv) {
       for (const k of [
@@ -221,7 +231,8 @@ export class PtyManager extends EventEmitter {
       resumeSessionId: args.resumeSessionId,
       ownerTabId: args.ownerTabId,
       resized: args.resized,
-      startedAt: Date.now()
+      startedAt: Date.now(),
+      remoteHost: args.remoteHost
     }
     this.ptys.set(id, handle)
 

@@ -27,6 +27,7 @@ import type { ModeClass } from './crossSessionMessage'
 
 export interface SessionBackend {
   id: BackendId
+  recoversWorktrees?: true
   availability(): Promise<BackendAvailability>
   forgetAvailability(): void
   list(): BackendSessionInfo[]
@@ -197,7 +198,7 @@ export class SessionBackends {
     if (
       !SUPPORTED_PAIRS[options.kind] ||
       options.util ||
-      (options.worktreeResourceId && options.kind !== 'codex')
+      (options.worktreeResourceId && !this.adapters.get(options.kind)?.recoversWorktrees)
     ) {
       return Promise.resolve({ ok: false, code: 'invalid-args' })
     }

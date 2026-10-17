@@ -136,11 +136,13 @@ function resetsFrom(value: unknown): CodexLimits['resets'] {
   }
 }
 
-export class CodexAccountPicker {
+export class HomeAccountPicker {
   private turn = 0
 
+  constructor(private kind: 'codex-home' | 'muse-home') {}
+
   pick(accounts: AccountView[], resumedOn?: string): AccountView | undefined {
-    const pool = usableAccounts(accounts, ['codex-home'])
+    const pool = usableAccounts(accounts, [this.kind])
     if (pool.length === 0) return undefined
     const same = pool.find((a) => a.name === resumedOn)
     if (

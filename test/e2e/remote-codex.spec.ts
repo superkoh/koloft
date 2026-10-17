@@ -98,7 +98,7 @@ async function koloftExitsIn(page: Page, tabId: string): Promise<string[]> {
 test.describe('Codex on a remote workspace: its app-server runs on the machine, its screen on this Mac, signed in from this Mac', () => {
   test.afterEach(({ env }) => killFakeRemote(env))
 
-  // ADR-0038 CODEX§16
+  // ADR-0039 CODEX§16
   test("E-RC-01: a Codex session there starts its own app-server on the machine in Koloft's Codex home, signed in with the Mac account's token that never lands on the machine, with Koloft's reply-language hook trusted and run there; it binds in the sidebar, and closing its tab ends that server", async ({
     env
   }) => {
@@ -137,7 +137,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
   })
 
-  // ADR-0038 CODEX§16
+  // ADR-0039 CODEX§16
   test('E-RC-02: a closed remote Codex session resumes from its row on a new server there; koloft inside it answers from this Koloft; and when its ssh line drops, the next prompt still gets its answer', async ({
     env
   }) => {

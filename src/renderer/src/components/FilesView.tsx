@@ -567,6 +567,7 @@ export function FilesBody({
             recents={c.recents}
             bookmarks={c.bookmarks}
             sideWidth={shownSideWidth}
+            refreshNonce={c.refreshNonce}
             onOpen={openPath}
             onEdit={onEdit}
             newFileDir={newFileDir}

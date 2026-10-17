@@ -25,6 +25,8 @@ import {
 import { PullConfirm } from './PullConfirm'
 import {
   BusyLine,
+  enterMethod,
+  otherMethods,
   SessionLaunchButtons,
   SessionLaunchStatus,
   useSessionLaunch
@@ -72,10 +74,8 @@ export function WorkspacePicker({
   )
   const confirmBackend = useRef<BackendId>(sessionLaunch.methods.defaultBackend)
   const backends = sessionLaunch.usable
-  const other =
-    backends.length > 1
-      ? backends.find((b) => b !== sessionLaunch.methods.defaultBackend)
-      : undefined
+  const others = otherMethods(backends, sessionLaunch.methods.defaultBackend)
+  const [other, third] = others
   const locked = phase === 'pulling' || sessionLaunch.starting
   useEffect(() => {
     launchLock.current = locked
@@ -148,12 +148,13 @@ export function WorkspacePicker({
         else onClose()
         return
       }
-      if (locked || confirm !== null || e.metaKey || e.ctrlKey || e.altKey) return
+      const ctrlEnter = e.ctrlKey && e.key === 'Enter' && !!third
+      if (locked || confirm !== null || e.metaKey || (e.ctrlKey && !ctrlEnter) || e.altKey) return
       if (e.isComposing || e.keyCode === 229) return
       if (e.key === 'Enter' && e.target instanceof HTMLButtonElement) return
       if (e.key === 'Enter') {
         e.preventDefault()
-        submit(target, e.shiftKey && other ? other : undefined)
+        submit(target, enterMethod(e, others))
         return
       }
       if (pinned) return
@@ -271,7 +272,8 @@ export function WorkspacePicker({
             {!pinned && (
               <p className="field-hint">
                 ↓↑ move · digit picks · ⏎ confirm
-                {other && ` · ⇧⏎ ${BACKEND_LABEL[other]}`} · Esc cancel
+                {other && ` · ⇧⏎ ${BACKEND_LABEL[other]}`}
+                {third && ` · ⌃⏎ ${BACKEND_LABEL[third]}`} · Esc cancel
               </p>
             )}
           </div>

@@ -30,7 +30,7 @@ function harness(candidates: SearchCandidate[], overrides: Partial<SessionSearch
   }[] = []
   const deps: SessionSearchDeps = {
     candidates: () => candidates,
-    codexSnippets: async () => [],
+    backendSnippets: async () => [],
     hidden: () => false,
     scan: (files, _term, found) => {
       let finish!: () => void
@@ -103,7 +103,7 @@ describe('SessionSearch', () => {
       ],
       {
         hidden: (id) => id === 'conductor' || id === 'codex:hidden',
-        codexSnippets: async () => [
+        backendSnippets: async () => [
           { id: 'codex:said', snippet: '... the NEEDLE moved' },
           { id: 'codex:said', snippet: 'needle again from another home' },
           { id: 'codex:hidden', snippet: 'needle' },
@@ -125,7 +125,7 @@ describe('SessionSearch', () => {
   it('a Codex search that fails still ends the search with the Claude hits', async () => {
     const { search, sent, scans } = harness(
       [{ row: row('a', 'A', 1), workspacePath: '/repo', file: '/t/a.jsonl' }],
-      { codexSnippets: async () => Promise.reject(new Error('app-server gone')) }
+      { backendSnippets: async () => Promise.reject(new Error('app-server gone')) }
     )
     search.start(1, 'needle')
     scans[0].found('a', snippet('needle'))

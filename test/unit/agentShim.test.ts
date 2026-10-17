@@ -6,7 +6,7 @@ import { spawn } from 'child_process'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeCodexAgentShim } from '../../src/main/agentShim'
+import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeAgentShim } from '../../src/main/agentShim'
 import {
   AgentRequests,
   answered,
@@ -168,7 +168,7 @@ describe('koloft command in a Codex session', () => {
   beforeEach(() => {
     requestDir = path.join(base, 'codex-requests')
     fs.mkdirSync(requestDir)
-    writeCodexAgentShim(shimDir, requestDir)
+    writeAgentShim(shimDir, requestDir)
   })
 
   afterEach(() => {

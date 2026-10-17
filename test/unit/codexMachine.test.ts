@@ -6,7 +6,7 @@ import { spawn, spawnSync } from 'child_process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { MachineCodexUpstream, ownerWordsLines } from '../../src/main/remote/codexMachine'
-import { CODEX_REPLY_LANGUAGE_SCRIPT } from '../../src/main/hooks'
+import { CODEX_REPLY_LANGUAGE_SCRIPT, seedHandedOverOwnerWords } from '../../src/main/hooks'
 
 const FAKE_CODEX = path.join(__dirname, '..', 'e2e', 'fixtures', 'fake-codex.js')
 
@@ -48,34 +48,37 @@ afterEach(async () => {
 
 describe('a Codex session that another session starts on a machine', () => {
   // ADR-0031
-  it('has its reply-language hook there quote the owner’s own words, not the English task another session handed it, whatever characters they hold', () => {
+  it('gets the owner’s-words files a Codex session on this Mac gets, so its reply-language hook there answers the handed-over English task as one here does, whatever characters the words hold', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kcm-said-'))
     const ownerWords = '帮我看看 "侧栏" 为什么\n变宽了 \'« » \\ 😀'
     const seed = path.join(dir, 'seed.sh')
     fs.writeFileSync(
       seed,
-      `S=${JSON.stringify(path.join(dir, 'tab'))}\n${ownerWordsLines(ownerWords)}`
+      `S=${JSON.stringify(path.join(dir, 'machine'))}\n${ownerWordsLines(ownerWords)}`
     )
     expect(spawnSync('/bin/sh', [seed]).status).toBe(0)
+    seedHandedOverOwnerWords(path.join(dir, 'mac.said'), ownerWords)
     const script = path.join(dir, 'reply-language.bash')
     fs.writeFileSync(script, CODEX_REPLY_LANGUAGE_SCRIPT)
-    const hook = (event: string, payload: unknown): string => {
-      const out = spawnSync('bash', [script, event], {
+    const hook = (said: string, event: string, payload: unknown): string =>
+      spawnSync('bash', [script, event], {
         input: JSON.stringify(payload),
         encoding: 'utf8',
-        env: { ...process.env, KOLOFT_CODEX_SAID: path.join(dir, 'tab.said') }
+        env: { ...process.env, KOLOFT_CODEX_SAID: path.join(dir, said) }
       }).stdout
-      return (JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } })
-        .hookSpecificOutput.additionalContext
-    }
-    expect(hook('prompt', { prompt: 'Fix the sidebar width.' })).toContain(`«${ownerWords}»`)
-    expect(hook('tool', {})).toContain(`«${ownerWords}»`)
+    const answers = (said: string): string[] => [
+      hook(said, 'prompt', { prompt: 'Fix the sidebar width.' }),
+      hook(said, 'tool', {})
+    ]
+    const mac = answers('mac.said')
+    expect(mac[0]).toContain('Chinese')
+    expect(answers('machine.said')).toEqual(mac)
     fs.rmSync(dir, { recursive: true, force: true })
   })
 })
 
 describe('MachineCodexUpstream: the relay between a Codex TUI on this Mac and its app-server on a machine', () => {
-  // ADR-0038 CODEX§16
+  // ADR-0039 CODEX§16
   it("signs the server in with the Mac account's token once the TUI says initialized, holds the TUI's frames until that login completes, answers a token refresh itself, and runs the TUI's command in the machine's folder", async () => {
     const machine = await machineServer()
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kcm-home-'))

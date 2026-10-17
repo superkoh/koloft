@@ -394,7 +394,7 @@ describe('WorkspaceManager: which transcript writes rescan the list', () => {
       runningBindings: () => bindings,
       killTab: () => {},
       pushRows: (p) => pushed.push(p),
-      additionalRows: (ws) => (ws === repo ? [{ ...codexRow }] : []),
+      additionalRows: (ws) => (ws === repo ? [{ ...codexRow, backendId: 'codex' as const }] : []),
       additionalMembers: () => new Set([codexRow.id])
     })
     mgr.start()
@@ -1730,6 +1730,46 @@ describe('WorkspaceManager: a running session that moved', () => {
     await vi.waitFor(() => expect(latest(repo).rows.length).toBe(1))
     const row = latest(repo).rows[0]
     expect(row).toMatchObject({ worktree: 'main', cwd: repo, invalidCwd: false })
+    expect(row.worktreeState).toBeUndefined()
+  })
+
+  // CC§4
+  it('a session that left its worktree is listed at the root even when more than 64 KB of records follow the leaving record', async () => {
+    const wt = path.join(repo, '.claude', 'worktrees', 'left-far')
+    const dir = path.join(projectsRoot, encodeCwd(repo))
+    const id = 'exited-far'
+    fs.mkdirSync(dir, { recursive: true })
+    const records = [
+      { type: 'user', cwd: wt, timestamp: '2026-10-15T11:00:00.000Z', sessionId: id },
+      {
+        type: 'worktree-state',
+        sessionId: id,
+        worktreeSession: {
+          originalCwd: repo,
+          worktreePath: wt,
+          worktreeName: 'left-far',
+          worktreeBranch: 'worktree-left-far',
+          originalHeadCommit: 'abc123'
+        }
+      },
+      { type: 'relocated', sessionId: id, relocatedCwd: repo },
+      { type: 'worktree-state', worktreeSession: null, sessionId: id },
+      ...Array.from({ length: 100 }, () => ({
+        type: 'api-request-blob',
+        sessionId: id,
+        blob: 'x'.repeat(1000)
+      }))
+    ]
+    fs.writeFileSync(
+      path.join(dir, id + '.jsonl'),
+      records.map((r) => JSON.stringify(r)).join('\n') + '\n'
+    )
+    layout = { ...layout, workspaces: [{ path: repo }], members: [id], panels: { [id]: SEEDED } }
+    mgr = liveMgr()
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.length).toBe(1))
+    const row = latest(repo).rows[0]
+    expect(row).toMatchObject({ worktree: 'main', cwd: repo })
     expect(row.worktreeState).toBeUndefined()
   })
 

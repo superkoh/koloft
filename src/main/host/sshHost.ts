@@ -28,7 +28,8 @@ import {
 import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
-import { remoteShCommand } from '../remote/install'
+import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
+import { FINGERPRINT, remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
   resizeStandInCmd,
@@ -48,16 +49,18 @@ import {
 } from '../remote/paths'
 import { launchMode } from '../remote/sync'
 import {
+  backgroundOptions,
   ensureControlDir,
   problemOf,
   sshLinkBroke,
   sshOptions,
   type BytesResult
 } from '../remote/ssh'
+import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
+import { remoteMuseHooks, sessionStartContext } from '../museHooks'
 import { claudeArgv } from '../claudeArgs'
 import { listSkills, type SkillFs } from '../skillList'
 import { worktreeNameAround } from '../resumePlan'
-import type { TreeOps } from '../sessionWorktrees'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
@@ -77,10 +80,33 @@ export interface MachineClaudeDeps {
   hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
 }
 
+export interface MuseMachineLaunch {
+  cwd: string
+  fallbackCwd?: string
+  resumeSessionId?: string
+  account: { name: string; auth(): string }
+  args: string[]
+  trust: string[]
+  trustIf?: string
+  context?: string
+  skill?: string
+  portOffset?: number
+  ownerWords?: string
+}
+
+export interface MuseMachinePlan {
+  attach: boolean
+  tmuxName(tabId: string): string
+  launchCommand(tabId: string): string
+  resized(tabId: string, cols: number, rows: number): void
+}
+
 export interface SshHostDeps {
   run(cmd: string, opts?: { timeoutMs?: number; input?: Buffer }): Promise<BytesResult>
   sshEnvReady?(): Promise<void>
   shell(dir: string): Omit<ShellLaunch, 'cwd'>
+  watch(path: string, onChange: (stamp: string) => void): void
+  unwatch(path: string): void
   github: GithubOptions
   claude: MachineClaudeDeps
 }
@@ -148,8 +174,7 @@ node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
-// PLATFORM§37
-const FINGERPRINT = `fp() { stat -c '%.9Y %s' "$1" 2>/dev/null || stat -f '%Fm %z' "$1"; }`
+const GONE_FROM_DISK = { mtimeMs: 0, size: 0 }
 
 const EXIT_GONE = 44
 const EXIT_NOT_FILE = 45
@@ -310,16 +335,21 @@ fp "$t"`
 
 const GIT = `GIT_OPTIONAL_LOCKS=0 git "$@"`
 
-const DIFF_BASE = `r=$1
-g() { GIT_OPTIONAL_LOCKS=0 git -C "$r" "$@" 2>/dev/null; }
-def=
-ref=$(g symbolic-ref --quiet refs/remotes/origin/HEAD) && ref=\${ref#refs/remotes/} &&
-  g rev-parse --verify --quiet "$ref" >/dev/null && def=$ref
-if [ -z "$def" ]; then
-  for c in origin/main origin/master main master; do
-    g rev-parse --verify --quiet "$c" >/dev/null && { def=$c; break; }
+const GIT_IN_REPO = `g() { GIT_OPTIONAL_LOCKS=0 git -C "$r" "$@" 2>/dev/null; }`
+
+const DEFAULT_REF = `dr() {
+  ref=$(g symbolic-ref --quiet refs/remotes/origin/HEAD) && ref=\${ref#refs/remotes/} &&
+    g rev-parse --verify --quiet "$ref" >/dev/null && { printf '%s' "$ref"; return 0; }
+  for c in "$@"; do
+    g rev-parse --verify --quiet "$c" >/dev/null && { printf '%s' "$c"; return 0; }
   done
-fi
+  return 1
+}`
+
+const DIFF_BASE = `r=$1
+${GIT_IN_REPO}
+${DEFAULT_REF}
+def=$(dr origin/main origin/master main master)
 if [ -n "$def" ]; then
   mb=$(g merge-base HEAD "$def") && [ -n "$mb" ] && { printf '%s' "$mb"; exit 0; }
 fi
@@ -356,8 +386,70 @@ function skillFsOf(files: Map<string, string>): SkillFs {
   }
 }
 
-const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
-SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
+const NETWORK_ENV = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
+SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes"`
+
+const NETWORK_GIT = `${NETWORK_ENV} git "$@"`
+
+// PLATFORM§30
+const FRESHNESS = `r=$1
+${GIT_IN_REPO}
+${DEFAULT_REF}
+${FINGERPRINT}
+br=$(g rev-parse --abbrev-ref HEAD) && head=$(g rev-parse HEAD) || exit 1
+def=$(dr origin/main origin/master)
+l=0; [ -f "$r/.git" ] && l=1
+s=0; [ -e "$r/.gitmodules" ] && s=1
+fh=$(fp "$r/.git/FETCH_HEAD" 2>/dev/null) || fh=-
+printf '%s\\n%s\\n%s\\n%s %s\\n%s\\n' "$br" "$head" "$def" "$l" "$s" "$fh"
+[ "$br" != HEAD ] && [ -n "$def" ] || exit 0
+f=-
+if [ "$2" = 1 ]; then
+  if ${NETWORK_ENV} git -C "$r" fetch --quiet --no-auto-maintenance origin "\${def#origin/}" >/dev/null 2>&1
+  then f=1; else f=0; fi
+fi
+c=$(g rev-list --left-right --count "HEAD...$def") && d=$(g status --porcelain -uno --ignore-submodules=all) || exit 1
+printf '%s\\n%s\\n%s\\n' "$f" "$c" "\${d:+dirty}"`
+
+const PULLED = 'KOLOFT_PULLED'
+
+const FAST_FORWARD = `r=$1 from=$3
+${NETWORK_ENV} git -C "$r" -c advice.diverging=false pull --ff-only --no-recurse-submodules origin "$2"
+ok=$?
+n=$(git -C "$r" rev-list --count "$from..HEAD" 2>/dev/null) || n=0
+printf '\\n${PULLED} %s\\n' "$n"
+( set -- "$r" 0
+${FRESHNESS}
+)
+exit $ok`
+
+export function parseFreshness(stdout: string): GitSnapshot | null {
+  const [branch, head, defRef, flags, fetchHead, fetched, counts, dirty] = stdout.split('\n')
+  if (!branch || !head || fetchHead === undefined) return null
+  const [linked, subs] = flags.split(' ')
+  const snapshot: GitSnapshot = {
+    branch,
+    head,
+    defRef,
+    linked: linked === '1',
+    hasSubmodules: subs === '1',
+    tracking: null
+  }
+  if (fetched === undefined || fetched === '') return snapshot
+  const lr = parseLeftRight(counts ?? '')
+  if (!lr) return null
+  return {
+    ...snapshot,
+    tracking: {
+      fetched: fetched === '-' ? null : fetched === '1',
+      fetchHeadAt: parseFingerprint(fetchHead)?.mtimeMs ?? null,
+      ...lr,
+      dirty: dirty === 'dirty'
+    }
+  }
+}
+
+const PULLED_TAIL = new RegExp(`\\n${PULLED} (\\d+)\\n([\\s\\S]*)$`)
 
 const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
@@ -365,21 +457,8 @@ cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm 
 
 const RESIZE_SETTLE_MS = 200
 
-const REAL_PATH = 'cd "$1" 2>/dev/null && pwd -P'
-
-// CC§3
-const COPY_WORKTREE_INCLUDES = `cd "$1" 2>/dev/null && [ -f .worktreeinclude ] || exit 0
-git ls-files -z --others --ignored --exclude-from=.worktreeinclude | git check-ignore -z --stdin |
-  tr '\\0' '\\n' | while IFS= read -r f; do
-    [ -f "$f" ] && [ ! -L "$f" ] && [ ! -e "$2/$f" ] || continue
-    mkdir -p "$2/$(dirname "$f")" && cp "$f" "$2/$f"
-  done
-exit 0`
-
-const SAME_FILES_IN_ROOT = `tr '\\0' '\\n' | while IFS= read -r f; do
-  for p in "$1/$f" "$2/$f"; do [ -f "$p" ] && [ ! -L "$p" ] || exit 1; done
-  cmp -s "$1/$f" "$2/$f" || exit 1
-done`
+// PLATFORM§35
+const NO_TAB_NAME_IS_ANOTHERS_PREFIX = '-t'
 
 export class SshHost implements Host {
   readonly github: GithubLookup
@@ -445,6 +524,32 @@ export class SshHost implements Host {
     return r.code === 0 ? r.stdout.toString('utf8') : null
   }
 
+  readonly freshness: FreshnessRunner = {
+    measure: async (root, fetchTimeoutMs) => {
+      const r = await this.sh(FRESHNESS, [this.bare(root), fetchTimeoutMs === null ? '0' : '1'], {
+        timeoutMs: (fetchTimeoutMs ?? 0) + GIT_TIMEOUT_MS
+      })
+      return {
+        snapshot: r.code === 0 ? parseFreshness(r.stdout.toString('utf8')) : null,
+        enoent: false
+      }
+    },
+    pull: async (root, defBranch, from, timeoutMs) => {
+      const r = await this.sh(FAST_FORWARD, [this.bare(root), defBranch, from], { timeoutMs })
+      const stdout = r.stdout.toString('utf8')
+      const tail = PULLED_TAIL.exec(stdout)
+      return {
+        ok: r.code === 0,
+        stdout: tail ? stdout.slice(0, tail.index) : stdout,
+        stderr: r.stderr,
+        timedOut: r.code === null,
+        enoent: false,
+        count: tail ? Number(tail[1]) : 0,
+        after: tail ? parseFreshness(tail[2]) : null
+      }
+    }
+  }
+
   async gitRun(root: string, args: string[], network = false): Promise<GitRunResult> {
     const r = await this.sh(network ? NETWORK_GIT : GIT, ['-C', this.bare(root), ...args], {
       timeoutMs: GIT_STEP_TIMEOUT_MS
@@ -504,38 +609,6 @@ export class SshHost implements Host {
 
   async fileExists(file: string): Promise<boolean> {
     return (await this.sh('test -f "$1"', [this.bare(file)])).code === 0
-  }
-
-  get treeOps(): TreeOps {
-    const fail = (r: { code: number | null; stderr: string }): Error =>
-      Object.assign(new Error(r.stderr.trim() || problemOf(r)), { code: r.code ?? undefined })
-    return {
-      git: async (cwd, args) => {
-        const r = await this.gitRun(cwd, args)
-        if (r.code !== 0) throw fail(r)
-        return r.stdout.trimEnd()
-      },
-      realpath: async (p) => {
-        const r = await this.sh(REAL_PATH, [this.bare(p)])
-        if (r.code !== 0) throw fail(r)
-        return this.keyed(r.stdout.toString('utf8').trim())
-      },
-      exists: (p) => this.dirExistsOrThrow(p),
-      keyed: (p) => this.keyed(p),
-      bare: (p) => this.bare(p),
-      copyIncludes: async (root, tree) => {
-        await this.sh(COPY_WORKTREE_INCLUDES, [this.bare(root), this.bare(tree)], {
-          timeoutMs: GIT_STEP_TIMEOUT_MS
-        })
-      },
-      sameFilesInRoot: async (root, tree, rels) =>
-        (
-          await this.sh(SAME_FILES_IN_ROOT, [this.bare(root), this.bare(tree)], {
-            input: Buffer.from(rels.map((rel) => rel + '\0').join('')),
-            timeoutMs: GIT_STEP_TIMEOUT_MS
-          })
-        ).code === 0
-    }
   }
 
   async search(root: string, query: string, opts?: { showIgnored?: boolean }) {
@@ -662,15 +735,28 @@ export class SshHost implements Host {
     return { path: this.keyed(created), mtimeMs: fp.mtimeMs, size: fp.size }
   }
 
-  watchDir(): boolean {
+  // PLATFORM§57
+  watchDir(dir: string, onChange: (dir: string) => void): boolean {
+    this.deps.watch(this.bare(dir), () => onChange(dir))
     return false
   }
 
-  unwatchDir(): void {}
+  unwatchDir(dir: string): void {
+    this.deps.unwatch(this.bare(dir))
+  }
 
-  watchFile(): void {}
+  watchFile(
+    file: string,
+    onChange: (file: string, fp: { mtimeMs: number; size: number }) => void
+  ): void {
+    this.deps.watch(this.bare(file), (stamp) =>
+      onChange(file, parseFingerprint(stamp) ?? GONE_FROM_DISK)
+    )
+  }
 
-  unwatchFile(): void {}
+  unwatchFile(file: string): void {
+    this.deps.unwatch(this.bare(file))
+  }
 
   shell(cwd: string): ShellLaunch {
     return { ...this.deps.shell(this.bare(cwd)), cwd, resized: this.resized }
@@ -707,6 +793,115 @@ export class SshHost implements Host {
     return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
   }
 
+  // MUSE§17
+  async launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan> {
+    const d = this.deps.claude
+    await this.sshReady()
+    const sid = spec.resumeSessionId
+    const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
+    const auth = attach ? undefined : spec.account.auth()
+    const tmuxName = (tabId: string): string =>
+      sid ? tmuxSessionName(sid) : `m-${tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
+    const pkg = d.machinePackage()
+    const hookScript = `${remoteMachineDir(pkg.name)}/${MUSE_HOOK_FILE}`
+    const bareOrNot = (p?: string): string | undefined => (p ? this.bare(p) : undefined)
+    return {
+      attach,
+      tmuxName,
+      launchCommand: (tabId) => {
+        const tabDir = tabPackageDir(d.userData, tabId)
+        const contextFile = spec.context ? `$HOME/.koloft/tabs/${tabId}.ctx.json` : undefined
+        const files: Record<string, string> = {
+          [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
+        }
+        if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
+        if (spec.skill) files[`${tabId}.skill.md`] = spec.skill
+        if (auth !== undefined) files[`${tabId}.auth.json`] = auth
+        writeTabPackage(tabDir, {
+          tabId,
+          tmuxName: tmuxName(tabId),
+          machineName: pkg.name,
+          cwd: this.bare(spec.cwd),
+          fallbackCwd: bareOrNot(spec.fallbackCwd),
+          banner: '',
+          portOffset: spec.portOffset,
+          settings: {},
+          ownerWords: spec.ownerWords,
+          claudeArgs: [],
+          muse: {
+            run: museRunLines({
+              tabId,
+              account: spec.account.name,
+              args: spec.args,
+              trust: spec.trust.map((p) => this.bare(p)),
+              trustIf: bareOrNot(spec.trustIf)
+            }),
+            files
+          }
+        })
+        return this.tabLaunchLine(pkg, tabDir, tabId, attach ? 'attach' : 'start')
+      },
+      resized: this.resized
+    }
+  }
+
+  private async sshReady(): Promise<void> {
+    await this.deps.sshEnvReady?.()
+    ensureControlDir(this.deps.claude.controlDir)
+  }
+
+  // PLATFORM§35
+  private async attachOrStart(sid: string): Promise<'start' | 'attach'> {
+    const mode = launchMode({
+      alive: this.deps.claude.alive(),
+      killed: this.killedSessions,
+      sessionId: sid
+    })
+    this.killedSessions.delete(sid)
+    await this.kills.get(tmuxSessionName(sid))
+    return mode
+  }
+
+  private tabLaunchLine(
+    machine: MachinePackage,
+    tabDir: string,
+    tabId: string,
+    mode: 'start' | 'attach'
+  ): string {
+    return launchLine({
+      host: this.machine,
+      sshOptions: sshOptions(this.deps.claude.controlDir, false),
+      machine,
+      tabDir,
+      tabId,
+      mode
+    })
+  }
+
+  // MUSE§10
+  async museTrusts(dir: string): Promise<boolean> {
+    return (await this.sh(MUSE_TRUSTED_SH, [this.bare(dir)])).code === 0
+  }
+
+  async runScript(script: string, args: string[]): Promise<string | null> {
+    const r = await this.sh(script, args, { timeoutMs: GIT_TIMEOUT_MS })
+    return r.code === 0 ? r.stdout.toString('utf8') : null
+  }
+
+  // MUSE§5 MUSE§17
+  museServe(args: string[]): { binary: string; args: string[] } {
+    const d = this.deps.claude
+    ensureControlDir(d.controlDir)
+    return {
+      binary: 'ssh',
+      args: [
+        ...backgroundOptions(this.machine, d.controlDir),
+        this.machine,
+        remoteShCommand('MUSE_NO_AUTO_UPDATE=1 exec muse serve "$@"', args)
+      ]
+    }
+  }
+
   async listSkills(root: string): Promise<SkillSuggestion[]> {
     const bareRoot = this.bare(root)
     const r = await this.sh(SKILL_FILES, [bareRoot])
@@ -719,16 +914,14 @@ export class SshHost implements Host {
 
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
-    await this.deps.sshEnvReady?.()
-    ensureControlDir(d.controlDir)
+    await this.sshReady()
     const settings = d.settings()
     const agentTools = d.agentTools()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()
     const args = machineClaudeArgs(spec, sid, settings.skipPermissions)
     if (!args.ok) return args
     const tmuxName = tmuxSessionName(sid)
-    const mode = launchMode({ alive: d.alive(), killed: this.killedSessions, sessionId: sid })
-    this.killedSessions.delete(sid)
+    const mode = await this.attachOrStart(sid)
     // CC§2
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root
@@ -736,11 +929,13 @@ export class SshHost implements Host {
     const worktree = spec.worktree ?? worktreeNameAround(cwd)
     const pkg = d.machinePackage()
     const machineDir = remoteMachineDir(pkg.name)
-    await this.kills.get(tmuxName)
     const pickKey = mode === 'start' ? `launch-${sid}` : undefined
     const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
     // ADR-0030
     if (pickKey && !account) throw new Error(NO_USABLE_ACCOUNT.claude)
+    // CC§9
+    const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
+    const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -758,17 +953,11 @@ export class SshHost implements Host {
           env: account?.env,
           portOffset: worktree ? portOffset(worktree) : undefined,
           settings: d.hookSettings(tabId, machineDir, agentTools),
+          ownerWords: spec.ownerWords,
           agentPlugin: agentTools,
-          claudeArgs: args.args
+          claudeArgs
         })
-        return launchLine({
-          host: this.machine,
-          sshOptions: sshOptions(d.controlDir, false),
-          machine: pkg,
-          tabDir,
-          tabId,
-          mode
-        })
+        return this.tabLaunchLine(pkg, tabDir, tabId, mode)
       },
       resized: this.resized,
       machine: {

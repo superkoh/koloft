@@ -136,12 +136,14 @@ describe('session backend boundary', () => {
     await expect(registry.historyRows('/repo', () => {})).rejects.toThrow('app-server gone')
   })
 
-  it('keeps native ids from different backends separate and accepts legacy Claude references', () => {
+  it('keeps native ids from different backends separate, Muse included, and accepts legacy Claude references', () => {
     const nativeSessionId = '00000000-0000-4000-8000-000000000001'
     const claude = sessionKey({ backendId: 'claude', sourceId: 'local', nativeSessionId })
     const codex = sessionKey({ backendId: 'codex', sourceId: 'local', nativeSessionId })
     expect(claude).not.toBe(codex)
     expect(identityOf(codex)).toEqual({ backendId: 'codex', sourceId: 'local', nativeSessionId })
+    const muse = sessionKey({ backendId: 'muse', sourceId: 'local', nativeSessionId })
+    expect(identityOf(muse)).toEqual({ backendId: 'muse', sourceId: 'local', nativeSessionId })
     expect(identityOf(nativeSessionId).backendId).toBe('claude')
   })
 
@@ -163,7 +165,7 @@ describe('session backend boundary', () => {
     ).resolves.toMatchObject({ ok: true })
     expect(create).toHaveBeenCalledTimes(2)
     expect(registry.forSession('codex:local:id')).toBe(backend)
-    expect(registry.forSession('codex:ssh%3Aserver:id')).toBe(backend)
+    expect(registry.forSession('codex:server:id')).toBe(backend)
   })
 
   // ADR-0030
@@ -248,11 +250,19 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
   it('supports every pair, and Codex on a remote machine leaves pending what Claude there does, with no native three-line status bar', () => {
     expect(SUPPORTED_PAIRS).toEqual({
       claude: { local: true, ssh: true },
-      codex: { local: true, ssh: true }
+      codex: { local: true, ssh: true },
+      muse: { local: true, ssh: true }
     })
     expect(capabilitiesFor('codex', 'ssh')).toEqual({
       ...capabilitiesFor('claude', 'ssh'),
       statusline3: { unsupported: 'CODEX§8' }
+    })
+  })
+
+  it('gives a remote Muse tab what a remote Claude tab has, less the three-line statusline Muse cannot draw', () => {
+    expect(capabilitiesFor('muse', 'ssh')).toEqual({
+      ...capabilitiesFor('claude', 'ssh'),
+      statusline3: { unsupported: 'MUSE§3' }
     })
   })
 })
@@ -273,7 +283,7 @@ describe('shownAsInstalled (which tools a dialog offers while the installed-tool
 describe('effectiveBackend (what every direct entrance starts on a Mac that may have only one of the two CLIs)', () => {
   const methods = (defaultBackend: BackendId, codex = true) => ({
     defaultBackend,
-    enabled: { claude: true, codex }
+    enabled: { claude: true, codex, muse: true }
   })
   const have = (...ids: BackendId[]): ReadonlySet<BackendId> => new Set(ids)
 

@@ -23,11 +23,11 @@ import {
 } from '../codexTransport'
 import { record } from '../codexObservation'
 import { hookStateHeader } from '../codexTrust'
-import { CODEX_REPLY_LANGUAGE_ENV, CODEX_SAID_ENV, codexOwnerWordsFiles } from '../hooks'
+import { CODEX_REPLY_LANGUAGE_ENV, CODEX_SAID_ENV, handedOverOwnerWordsFiles } from '../hooks'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
 
-// ADR-0038
+// ADR-0039
 export const REMOTE_CODEX_HOME = `${REMOTE_HOME}/codex-home`
 
 export function codexMachineInstance(userData: string): string {
@@ -88,12 +88,12 @@ function hookTrustLines(hooks: { key: string; hash: string }[]): string {
 
 // ADR-0031
 export function ownerWordsLines(ownerWords: string): string {
-  return Object.entries(codexOwnerWordsFiles(ownerWords))
+  return Object.entries(handedOverOwnerWordsFiles(ownerWords))
     .map(([suffix, text]) => `printf '%s' ${shq(text)} > "$S.said${suffix}"\n`)
     .join('')
 }
 
-// ADR-0038 CODEX§16
+// ADR-0039 CODEX§16
 export function codexTabScript(s: CodexTabSpec): string {
   assertSafeNames(s.tabId, s.instance, s.machineName, ...Object.keys(s.env))
   const exports = Object.entries(s.env)
@@ -226,7 +226,7 @@ export function machineAppServerCmd(): string {
   )
 }
 
-// ADR-0038 CODEX§16
+// ADR-0039 CODEX§16
 export function proxyCmd(instance: string, tabId: string): string {
   assertSafeNames(instance, tabId)
   return remoteShCommand(
@@ -261,7 +261,7 @@ const STDERR_KEPT_BYTES = 2000
 const isInitialized = (line: string): boolean =>
   line.includes('"initialized"') && record(JSON.parse(line)).method === 'initialized'
 
-// ADR-0038 CODEX§16
+// ADR-0039 CODEX§16
 export class MachineCodexUpstream implements CodexUpstream {
   readonly ready = Promise.resolve()
   readonly limit: number

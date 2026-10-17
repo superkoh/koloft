@@ -285,10 +285,10 @@ describe('sanitizeLoadedSettings and worldClocks', () => {
 })
 
 describe('session methods', () => {
-  it('loads old settings with Claude as default and both methods enabled', () => {
+  it('loads old settings with Claude as default and every method enabled', () => {
     expect(sanitizeLoadedSettings({}).sessionMethods).toEqual({
       defaultBackend: 'claude',
-      enabled: { claude: true, codex: true }
+      enabled: { claude: true, codex: true, muse: true }
     })
     expect(buildResetPatch()).not.toHaveProperty('sessionMethods')
   })

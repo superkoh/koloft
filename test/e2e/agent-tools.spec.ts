@@ -5,11 +5,16 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings } from './helpers/env'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installStallingGit } from './helpers/gitSpawnLog'
+import { startLocalSession } from './helpers/codex'
+import { setupChangeFixture } from './helpers/filesFixture'
+import { WORKBENCH } from './helpers/workbench'
 import {
   centerTerm,
   chooseBackend,
   gitInit,
   newSessionInWith,
+  notesOnDisk,
+  notesPath,
   openMenu,
   openSessionTerminal,
   openWorktreeSession,
@@ -107,9 +112,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        if (backend === 'claude') await startSessionIn(page, 'ws-a')
-        else await newSessionInWith(page, 'ws-a', 'Codex')
-        await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        await startLocalSession(page, env, backend)
 
         expect(
           await koloftInSession(page, 'cron add --name "Nightly tests" --daily 09:00 -- say hi')
@@ -126,6 +129,43 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
             .locator('.job-row')
             .filter({ has: page.locator('.job-name', { hasText: /^Nightly tests$/ }) })
         ).toHaveCount(1)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+  for (const backend of ['claude', 'codex'] as const)
+    test(`koloft open and koloft diff from a ${backend} session show a file, then its change as a diff, in that session's Workbench, and koloft note reads and adds to its workspace note`, async ({
+      env
+    }) => {
+      test.setTimeout(120_000)
+      setupChangeFixture(env.workspaces.a)
+      fs.appendFileSync(path.join(env.workspaces.a, 'README.md'), 'a line the agent added\n')
+      const note = notesPath(env, env.workspaces.a)
+      fs.mkdirSync(path.dirname(note), { recursive: true })
+      fs.writeFileSync(note, 'from the owner')
+      if (backend === 'codex') installCodex(env)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startLocalSession(page, env, backend)
+
+        expect(await koloftInSession(page, 'open README.md')).toBe('0')
+        await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('README.md')
+        await expect(page.locator(WORKBENCH.readingBody)).toContainText('koloft-e2e-alpha')
+
+        const viewMode = page.locator(WORKBENCH.viewSegOn)
+        await expect(viewMode).toHaveText('Rendered')
+        expect(await koloftInSession(page, 'diff README.md')).toBe('0')
+        await expect(viewMode).toHaveText('Diff')
+        await expect(page.locator(WORKBENCH.readingBody)).toContainText('a line the agent added')
+
+        expect(await koloftInSession(page, 'note')).toBe('0')
+        expect(await shownTermText(page, CENTER)).toContain('from the owner')
+        expect(await koloftInSession(page, 'note append from the agent')).toBe('0')
+        expect(notesOnDisk(env, env.workspaces.a)).toBe('from the owner\nfrom the agent\n')
       } finally {
         await quitAndClose(app)
       }
@@ -175,6 +215,32 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     await caller.locator('.ws-tab-fold').click()
     await expect(nested).toHaveCount(1)
     await expect(caller.locator('.ws-tab-parked')).toHaveCount(0)
+  })
+
+  // ADR-0031
+  test('a Claude child started by koloft session new has its reply-language hook start from the owner’s last words to its starter, not from its own task', async ({
+    page,
+    env
+  }) => {
+    const ownerWords = 'make the sidebar a little darker'
+    const saidFiles = (): string[] => {
+      const dir = path.join(env.userData, 'hook-sessions')
+      return fs
+        .readdirSync(dir)
+        .filter((f) => f.endsWith('.said'))
+        .map((f) => fs.readFileSync(path.join(dir, f), 'utf8').trim())
+    }
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const callerTabId = await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')
+    const kid = wsGroup(page, 'ws-a').locator(
+      `.ws-tab[data-tab-id="${callerTabId}"] + .ws-subtabs > .ws-tab`
+    )
+    await runIn(page, centerTerm(page), ownerWords)
+    await expect.poll(saidFiles, { timeout: 30_000 }).toEqual([ownerWords])
+    expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
+    await expect(kid).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+    expect(saidFiles()).toEqual([ownerWords, ownerWords])
   })
 
   test('a Codex session started by koloft session new in a Codex session is nested under it, and the reply that ends its first turn, which it never sent back itself, is handed to its starter', async ({

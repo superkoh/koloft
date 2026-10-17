@@ -401,7 +401,7 @@ export async function chooseBackend(page: Page, which: 'default' | 'other'): Pro
 export async function newSessionInWith(
   page: Page,
   wsName: string,
-  method: 'Claude' | 'Codex'
+  method: 'Claude' | 'Codex' | 'Muse'
 ): Promise<void> {
   await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
   await page.locator('.menu .mi', { hasText: `New ${method} session` }).click()

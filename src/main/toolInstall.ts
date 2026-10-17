@@ -2,10 +2,11 @@ import path from 'path'
 import type { BackendId } from '@shared/types'
 import { shq } from '@shared/shellQuote'
 
-// CC§10 CODEX§22
+// CC§10 CODEX§22 MUSE§1
 const OFFICIAL_INSTALLER: Record<BackendId, string> = {
   claude: 'curl -fsSL https://claude.ai/install.sh | bash',
-  codex: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'
+  codex: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
+  muse: 'curl -fsSL https://dev.meta.ai/install.sh | bash'
 }
 
 // CC§10

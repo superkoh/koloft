@@ -1,10 +1,13 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { remotePtsFile } from './paths'
-import { ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'
+import { ENSURE_CLAUDE_MINIMUM_FN, ENSURE_MUSE_MINIMUM_FN } from '../cliMinimums'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
+
+// MUSE§17
+const MUSE_INSTALLER = 'https://dev.meta.ai/install.sh'
 
 export const REMOTE_GIT_DIR = '.koloft/git-accounts'
 
@@ -88,7 +91,11 @@ install_pkg() {
   return 1
 }`
 
-const installNode = (forWhat: string, without: string): string => `NODE_VERSION=${NODE_VERSION}
+const installNode = (
+  forWhat: string,
+  without: string,
+  only = ''
+): string => `NODE_VERSION=${NODE_VERSION}
 node_ok() {
   have node || return 1
   v="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
@@ -123,7 +130,7 @@ install_node() {
 }
 node_runs() { "$HOME/.koloft/node/bin/node" -v >/dev/null 2>&1; }
 no_build_runs="$HOME/.koloft/node-$NODE_VERSION.no-build-runs"
-if ! node_ok && [ ! -f "$no_build_runs" ]; then
+if ${only}! node_ok && [ ! -f "$no_build_runs" ]; then
   say "installing node $NODE_VERSION for ${forWhat} (about 30 MB, once)"
   if ! node_platform || ! install_node "https://nodejs.org/dist/v$NODE_VERSION" "node-v$NODE_VERSION-$os-$arch"; then
     rm -rf "$HOME/.koloft/node.tmp.$$"; say "node could not be installed: ${without}"
@@ -147,17 +154,32 @@ ${INSTALL_PKG}
 
 have bash || install_pkg bash || exit 4
 
-if ! have claude; then
-  say "installing claude (official installer)"
-  if have curl; then curl -fsSL https://claude.ai/install.sh | bash
-  elif have wget; then wget -qO- https://claude.ai/install.sh | bash
-  else say "need curl or wget to install claude"; exit 4; fi
-  have claude || { say "claude did not install; see the output above"; exit 4; }
-fi
 ${ENSURE_CLAUDE_MINIMUM_FN}
-ensure_claude_minimum claude || exit 4
+${ENSURE_MUSE_MINIMUM_FN}
+python_has_pty() { python3 -c 'import pty, termios' >/dev/null 2>&1; }
+if [ "$1" = muse ]; then
+  python_has_pty || install_pkg python3
+  python_has_pty || { say "Muse sessions need python3 on this machine, and python3 here does not run. Install python3, then start the session again."; exit 4; }
+  if ! have muse; then
+    say "installing muse (official installer, about 330 MB, once)"
+    if have curl; then curl -fsSL ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
+    elif have wget; then wget -qO- ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
+    else say "need curl or wget to install muse"; exit 4; fi
+    have muse || { say "muse did not install; see the output above"; exit 4; }
+  fi
+  ensure_muse_minimum muse || exit 4
+else
+  if ! have claude; then
+    say "installing claude (official installer)"
+    if have curl; then curl -fsSL https://claude.ai/install.sh | bash
+    elif have wget; then wget -qO- https://claude.ai/install.sh | bash
+    else say "need curl or wget to install claude"; exit 4; fi
+    have claude || { say "claude did not install; see the output above"; exit 4; }
+  fi
+  ensure_claude_minimum claude || exit 4
+fi
 
-${installNode('the statusline', 'this machine gets no statusline')}
+${installNode('the statusline', 'this machine gets no statusline', '[ "$1" != muse ] && ')}
 
 GH_VERSION=${VENDOR_RELEASE.gh.version}
 gh_platform() {
@@ -235,6 +257,7 @@ set -g default-terminal tmux-256color
 set -asq terminal-features ',xterm*:RGB:hyperlinks'
 set -gq exit-empty on
 set -g mouse off
+set -gq allow-passthrough on
 `
 
 export interface MachineTmp {
@@ -242,21 +265,27 @@ export interface MachineTmp {
   uid: number
 }
 
+// PLATFORM§37
+export const FINGERPRINT = `fp() { stat -c '%.9Y %s' "$1" 2>/dev/null || stat -f '%Fm %z' "$1"; }`
+
 const UID_LINE = 'uid '
 const TMP_LINE = 'tmp '
+const STAMP_LINE = 'stamp '
 const CLAUDE_TMP_BASE =
   'if [ "$(uname)" = Darwin ]; then b="${CLAUDE_CODE_TMPDIR:-/tmp}"; ' +
   'else b="${CLAUDE_CODE_TMPDIR:-${TMPDIR:-${TMP:-${TEMP:-/tmp}}}}"; fi'
 
 // CC§2
-export function heartbeatCmd(paths: string[]): string {
+export function heartbeatCmd(paths: string[], watched: string[] = []): string {
   return remoteShCommand(
     `echo "${UID_LINE}$(id -u)"; ${CLAUDE_TMP_BASE}; echo "${TMP_LINE}$(cd "$b" && pwd -P)"; ` +
+      `${FINGERPRINT}; n=$1; shift; ` +
+      `while [ "$n" -gt 0 ]; do echo "${STAMP_LINE}$(fp "$1" 2>/dev/null)"; shift; n=$((n - 1)); done; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
       'git -C "$p" worktree list --porcelain 2>/dev/null; done; exit 0',
-    paths
+    [String(watched.length), ...watched, ...paths]
   )
 }
 
@@ -270,8 +299,10 @@ export function parseHeartbeat(stdout: string): {
   alive: string[]
   git: Map<string, RemoteGitInfo>
   tmp?: MachineTmp
+  stamps: string[]
 } {
   const alive: string[] = []
+  const stamps: string[] = []
   const git = new Map<string, RemoteGitInfo>()
   let uid = NaN
   let tmpRoot = ''
@@ -294,6 +325,8 @@ export function parseHeartbeat(stdout: string): {
       uid = parseInt(line.slice(UID_LINE.length), 10)
     } else if (!current && line.startsWith(TMP_LINE)) {
       tmpRoot = line.slice(TMP_LINE.length)
+    } else if (!current && line.startsWith(STAMP_LINE)) {
+      stamps.push(line.slice(STAMP_LINE.length))
     } else if (!current) {
       if (line.trim()) alive.push(line.trim())
     } else if (line === 'git') {
@@ -305,7 +338,7 @@ export function parseHeartbeat(stdout: string): {
     }
   }
   flush()
-  return { alive, git, tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined }
+  return { alive, git, tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined, stamps }
 }
 
 // PLATFORM§37

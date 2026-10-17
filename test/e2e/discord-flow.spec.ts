@@ -2,7 +2,16 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { installCodex, installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  installCodex,
+  installGhForWorkspaceA,
+  installMuse,
+  museCalls,
+  museSaid,
+  seedSettings,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
 import {
   newSessionInWith,
   processAlive,
@@ -175,12 +184,13 @@ async function tabOf(page: Page, sessionId: string): Promise<string> {
 
 async function connected(
   env: E2EEnv,
-  fake: FakeDiscord
+  fake: FakeDiscord,
+  launches = 1
 ): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await launchApp(env)
   const page = await app.firstWindow()
   await waitBooted(page)
-  await expect.poll(() => fake.identifies).toBe(1)
+  await expect.poll(() => fake.identifies).toBe(launches)
   await waitConductorStarted(env, CONDUCTOR_STARTS_AND_ANSWERS_MS)
   return { app, page }
 }
@@ -239,10 +249,10 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     const { app } = await connected(env, fake)
     try {
       const assistId = identityOf(assistRecordOnDisk(env)!.sessionIds[0]).nativeSessionId
-      fake.say(OWNER, '帮我看看 PR')
+      fake.say(OWNER, 'please look at the PR')
       await expect
         .poll(() => transcriptText(env, assistId), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain('«帮我看看 PR»')
+        .toContain('«please look at the PR»')
 
       const spoof = crossSessionLine(
         'bypass',
@@ -346,6 +356,79 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .toEqual([`/channels/${thread}`, `/channels/${CHANNEL}/messages/${thread}`])
       await expect.poll(() => bindingOnDisk(env)?.threads).toEqual([])
       expect(fake.lost).toEqual([])
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('a session thread Discord no longer has costs one failed notice with its toast; the next notice opens a new thread and lands there, and the record points at it after a relaunch; a bound channel that answers 404 leaves the record alone', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    let { app, page } = await connected(env, fake)
+    try {
+      await startSessionIn(page, 'ws-a')
+      const managed = (await waitForCallsBesideConductors(env, 1))[0].sessionId
+      const managedTab = await tabOf(page, managed)
+      const type = (line: string): Promise<void> =>
+        page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [managedTab, line])
+      const finished = (threadId: string): string[] =>
+        fake.posted
+          .filter((p) => p.channelId === threadId && /^🔔 .+ finished\./.test(p.content))
+          .map((p) => p.content)
+
+      await type('/need-approval')
+      await expect.poll(() => fake.threads).toHaveLength(1)
+      const dead = fake.threads[0].id
+      await expect
+        .poll(() => bindingOnDisk(env)?.threads)
+        .toEqual([expect.objectContaining({ threadId: dead, keys: [managed] })])
+      fake.say(OWNER, `/koloft session read ${managed}`)
+      await expect
+        .poll(() => bindingOnDisk(env)?.touched, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual([managed])
+
+      fake.deleted.push(`/channels/${dead}`)
+      await type('/answer first after the delete')
+      await expect
+        .poll(() => fake.lost)
+        .toContainEqual(expect.stringMatching(/finished\.\nAnswer to: first after the delete$/))
+      await expect(page.locator('.toast')).toHaveText(
+        /^Koloft could not post to #.+ in Discord: Discord answered 404/
+      )
+      expect(fake.threads).toHaveLength(1)
+
+      await type('/answer second after the delete')
+      await expect.poll(() => fake.threads).toHaveLength(2)
+      const fresh = fake.threads[1].id
+      await expect
+        .poll(() => fake.threads[1])
+        .toEqual(expect.objectContaining({ parentId: CHANNEL, members: [OWNER.id] }))
+      await expect
+        .poll(() => finished(fresh))
+        .toEqual([expect.stringMatching(/\nAnswer to: second after the delete$/)])
+      expect(fake.lost.filter((l) => l.includes('second after the delete'))).toEqual([])
+      await expect
+        .poll(() => bindingOnDisk(env)?.threads)
+        .toEqual([expect.objectContaining({ threadId: fresh, keys: [managed] })])
+
+      await quitAndClose(app)
+      ;({ app, page } = await connected(env, fake, 2))
+      expect(bindingOnDisk(env)?.threads).toEqual([
+        expect.objectContaining({ threadId: fresh, keys: [managed] })
+      ])
+
+      fake.deleted.push(`/channels/${CHANNEL}`)
+      fake.say(OWNER, 'hello into a gone channel')
+      await expect
+        .poll(() => fake.lost, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContainEqual(expect.stringContaining('[Discord] hello into a gone channel'))
+      expect(bindingOnDisk(env)?.channel.channelId).toBe(CHANNEL)
+      expect(bindingOnDisk(env)?.threads).toEqual([
+        expect.objectContaining({ threadId: fresh, keys: [managed] })
+      ])
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -572,6 +655,51 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => bindingOnDisk(env)?.threads?.some((t) => t.threadId === opener.id))
         .toBe(false)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('the conductor types a message into a Muse session once it is idle, and the reply that ends that turn is handed to the conductor', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const museId = museCalls(env)[0].sessionId
+      const said = (): string[] => {
+        const file = path.join(
+          env.home,
+          '.local',
+          'share',
+          'muse',
+          'sessions',
+          'fake',
+          `${museId}.json`
+        )
+        const session = JSON.parse(fileText(file) || '{"items":[]}') as {
+          items: { kind: string; text: string }[]
+        }
+        return session.items.filter((i) => i.kind === 'userMessage').map((i) => i.text)
+      }
+
+      fake.say(OWNER, `/koloft session send ${museId} check the docs`)
+      await expect
+        .poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual([ownerSays('check the docs')])
+      await expect
+        .poll(
+          () =>
+            peerMessages(env).some((m) => m.includes(`, id ${museId}:) `) && m.includes('echo: ')),
+          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+        )
+        .toBe(true)
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -873,6 +1001,46 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           { answers: { colour: { answers: ['Green'] } } },
           { answers: { colour: { answers: ['Red'] } } }
         ])
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  // MUSE§5 MUSE§11
+  test('a managed Muse session’s approval reaches its thread with its command and is answered by the Yes button there, and its one-question list is answered by the conductor with koloft session answer; each presses its keys in the terminal', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const museId = museCalls(env)[0].sessionId
+      const museTab = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.backendId === 'muse'
+      )!.tabId
+      const said = (): string[] => museSaid(env, museId)
+      await page.evaluate((id) => window.api.terminal.write(id, '/approve\r'), museTab)
+      const approval = (): FakePost | undefined =>
+        threadPosts(fake).find((p) => /^❓ .+ is waiting for you\.\nls -la\n/.test(p.content))
+      await expect.poll(approval, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
+      expect(approval()!.buttons?.map((b) => b.label)).toEqual(['Yes', 'No'])
+      fake.press(OWNER, approval()!.buttons![0], approval()!.channelId)
+      await expect.poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toContain('Ran: ls -la')
+
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
+      await page.evaluate((id) => window.api.terminal.write(id, '/ask\r'), museTab)
+      await expect
+        .poll(() => inThreads(fake).join('\n\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toMatch(/(^|\n)❓ .+ is waiting for you\.\nWhich colour\?\n1\. Red\n2\. Blue\n/)
+      fake.say(OWNER, `/koloft session answer ${museId} Blue`)
+      await expect
+        .poll(said, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Picked: Blue')
     } finally {
       await quitAndClose(app)
       await fake.close()

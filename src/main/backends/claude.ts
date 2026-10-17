@@ -40,6 +40,8 @@ import {
   hookSettings,
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
+  saidFile,
+  seedHandedOverOwnerWords,
   writeAllowFile,
   writeConductorMarker
 } from '../hooks'
@@ -95,6 +97,7 @@ export interface ClaudeBackendDeps {
   error(message: string): void
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   machineOfTab(tabId: string): string | undefined
+  otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
 }
 
 // PLATFORM§28
@@ -516,7 +519,13 @@ export class ClaudeBackend implements SessionBackend {
     const byTmux = typeof r.tmux === 'string' && r.tmux && this.tabRunningTmux(r.tmux, machine)
     if (byTmux) return byTmux
     const tabId = typeof r.tabId === 'string' ? r.tabId : ''
-    return this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId) ? tabId : undefined
+    if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
+    const other = this.d.otherTabOnMachine?.(
+      machine,
+      typeof r.tmux === 'string' ? r.tmux : '',
+      tabId
+    )
+    return other && this.d.pty.get(other) ? other : undefined
   }
 
   private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
@@ -598,6 +607,17 @@ export class ClaudeBackend implements SessionBackend {
   private remoteSessionGone(host: string, sessionId: string): boolean {
     const remoteSync = this.d.remoteSync()
     return !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId)
+  }
+
+  async waitRemoteGone(host: string, sessionId: string): Promise<'gone' | 'alive' | 'unreachable'> {
+    this.d.remoteSync()?.pokeNow(host)
+    const deadline = Date.now() + REMOTE_EXIT_WAIT_MS
+    while (!this.remoteSessionGone(host, sessionId)) {
+      if (Date.now() >= deadline)
+        return this.d.remoteSync()?.connected(host) ? 'alive' : 'unreachable'
+      await new Promise((r) => setTimeout(r, REMOTE_EXIT_POLL_MS))
+    }
+    return 'gone'
   }
 
   noticeRemoteExits(host: string, sessionIds: string[]): void {
@@ -778,6 +798,7 @@ export class ClaudeBackend implements SessionBackend {
       effort: opts.effort,
       permission: opts.permission,
       firstPrompt: opts.firstPrompt,
+      ownerWords: opts.ownerWords,
       name: opts.name,
       cols: opts.cols,
       rows: opts.rows,
@@ -937,6 +958,7 @@ export class ClaudeBackend implements SessionBackend {
       resumeSessionId: spec.resumeSessionId,
       conductor,
       resized: plan.resized,
+      remoteHost: machine?.tracking.host,
       shell: plan.shell,
       extraEnv: agentPlugin
         ? {
@@ -947,6 +969,8 @@ export class ClaudeBackend implements SessionBackend {
         : plan.extraEnv
     })
     if (role && !machine) writeConductorMarker(this.hookRegDir, handle.id, role)
+    if (spec.ownerWords && !machine)
+      seedHandedOverOwnerWords(saidFile(this.hookRegDir, handle.id), spec.ownerWords)
     if (conductor && !machine)
       writeAllowFile(this.hookRegDir, handle.id, spec.allow ?? assist?.allow ?? [])
     if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)

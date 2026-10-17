@@ -7,10 +7,11 @@ import postcss from 'postcss'
 const ROOT = path.resolve(import.meta.dirname, '..')
 const ADR_DIR = 'docs/adr'
 const CODE_FILE = /\.(ts|tsx|js|mjs|cjs|css)$/
-const MARKERS = /^(?:(?:ADR-\d{4}|CC§\d+|CODEX§\d+|PLATFORM§\d+)(?: |$))+$/
+const MARKERS = /^(?:(?:ADR-\d{4}|CC§\d+|CODEX§\d+|MUSE§\d+|PLATFORM§\d+)(?: |$))+$/
 const LEDGERS = {
   CC: { file: 'docs/claude-code-contract.md', heading: /^## §(\d+) /gm },
   CODEX: { file: 'docs/codex-cli-contract.md', heading: /^## (\d+)\. /gm },
+  MUSE: { file: 'docs/muse-code-contract.md', heading: /^## §(\d+) /gm },
   PLATFORM: { file: 'docs/platform-contract.md', heading: /^## §(\d+) /gm }
 }
 const DIRECTIVES = [

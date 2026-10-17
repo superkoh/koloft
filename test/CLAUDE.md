@@ -106,7 +106,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
-    Stop. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
+    Stop, its UserPromptSubmit hook given the line as `prompt`. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
     so an Esc Koloft presses lands inside the next one). A bracketed paste
     (`ESC[200~` … `ESC[201~`) waits, as in the real input box, until the Enter after
     it, and is then one prompt together with what was typed after it; fake-codex
@@ -168,6 +168,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   needs `installCodexOnFakeRemote` (helpers/remote.ts), which also puts fake-codex on
   the machine and gives the Mac account a token; what the machine's app-server did lands
   in the machine home's `fake-codex-*.jsonl` (`machineCodexLog`).
+- Muse sessions: the `muse` is fixtures/fake-muse.js, installed per case by `installMuse`
+  (helpers/env.ts, sets `KOLOFT_MUSE_CMD`); without it `KOLOFT_MUSE_CMD` is a bare name, so
+  Muse reads as not installed. It asks Muse's trust question unless `trust.json` under
+  `<home>/.config/muse` trusts the folder or it got `--trust-workspace`.
 
 ### Keys, focus and the hidden window
 
@@ -254,7 +258,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `src/preload/index.ts` for the renderer — so grep its name. All are inert in
   production.
 - Always on (set by `helpers/env.ts`): `KOLOFT_TEST_BACKGROUND`, `KOLOFT_DOM_RENDERER`,
-  `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
+  `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_MUSE_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
   `KOLOFT_SUPPRESS_OS_OPEN`, `KOLOFT_EXTERNAL_OPENS_FILE`, `KOLOFT_DOWNLOAD_DIR`,
   `KOLOFT_CDP_LOG`, `KOLOFT_FILE_DIALOG_FILE`.
 - Per spec, read once at startup, so set in `env.launchEnv` before launching by hand:

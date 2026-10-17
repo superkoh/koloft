@@ -7,7 +7,24 @@ export interface ProjectInfo {
 }
 
 // CC§7 CODEX§15
-export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home'
+export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home' | 'muse-home'
+
+export const ACCOUNT_KINDS: readonly AccountKind[] = [
+  'oauth',
+  'apikey',
+  'custom',
+  'codex-home',
+  'muse-home'
+]
+
+export type SignInFolderKind = Extract<AccountKind, 'codex-home' | 'muse-home'>
+export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = [
+  'codex-home',
+  'muse-home'
+] satisfies SignInFolderKind[]
+
+export const isSignInFolderKind = (kind: unknown): kind is SignInFolderKind =>
+  SIGN_IN_FOLDER_KINDS.some((k) => k === kind)
 
 export type AccountStatus = 'ok' | 'expired' | 'unverified'
 
@@ -140,7 +157,7 @@ export interface WorkspaceGitAccount {
 
 export function keychainServiceSuffix(kind: AccountKind): string {
   if (kind === 'oauth') return '-claude-oauth'
-  if (kind === 'codex-home') return '-codex-home'
+  if (kind === 'codex-home' || kind === 'muse-home') return `-${kind}`
   return kind === 'apikey' ? '-anthropic-api' : '-custom-endpoint'
 }
 
@@ -175,8 +192,7 @@ export function sanitizeAccountList(raw: unknown): AccountMeta[] {
   const seen = new Set<string>()
   for (const a of raw as Partial<AccountMeta>[]) {
     if (!a || typeof a.name !== 'string' || !ACCOUNT_NAME_RE.test(a.name)) continue
-    if (a.kind !== 'oauth' && a.kind !== 'apikey' && a.kind !== 'custom' && a.kind !== 'codex-home')
-      continue
+    if (!a.kind || !ACCOUNT_KINDS.includes(a.kind)) continue
     if (a.kind === 'custom' && !isHttpUrl(a.baseUrl)) continue
     const key = `${a.kind}:${a.name.toLowerCase()}`
     if (seen.has(key)) continue
@@ -255,7 +271,7 @@ export interface AccountView extends AccountMeta {
   probeError?: ProbeErrorKind
 }
 
-export type CodexSignInResult =
+export type SignInResult =
   | { ok: true; tabId: string; cwd: string }
   | { ok: false; error: 'invalid-name' | 'duplicate' | 'unavailable' }
 
@@ -409,7 +425,10 @@ export type HintId = (typeof HINT_IDS)[number]
 export const WORLD_CLOCK_MAX = 3
 
 export const DEFAULT_SETTINGS: Settings = {
-  sessionMethods: { defaultBackend: 'claude', enabled: { claude: true, codex: true } },
+  sessionMethods: {
+    defaultBackend: 'claude',
+    enabled: { claude: true, codex: true, muse: true }
+  },
   fontFamily:
     '"JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", Menlo, Monaco, monospace',
   fontSize: 13,
@@ -452,7 +471,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gitMachines: {}
 }
 
-export type BackendId = 'claude' | 'codex'
+export type BackendId = 'claude' | 'codex' | 'muse'
 export type HostId = 'local' | 'ssh'
 export interface SessionMethods {
   defaultBackend: BackendId
@@ -489,6 +508,7 @@ export interface CreateTabOptions {
   util?: boolean
   ownerTabId?: string
   role?: string
+  ownerWords?: string
   allow?: string[]
   conductor?: boolean
   trustFolder?: boolean
@@ -657,7 +677,12 @@ export interface SessionUsage {
 }
 
 export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
-export const CODEX_PLACEHOLDER_TITLE = 'Codex session'
+
+export const PLACEHOLDER_TITLES: Record<BackendId, string> = {
+  claude: PLACEHOLDER_SESSION_TITLE,
+  codex: 'Codex session',
+  muse: 'Muse session'
+}
 
 export const PENDING_SESSION_TITLE = 'Starting…'
 
@@ -1205,8 +1230,8 @@ export interface KoloftApi {
       reauth?: boolean
     ): Promise<'ok' | 'invalid-name' | 'duplicate' | 'unknown'>
     cancelLogin(): void
-    // CODEX§15
-    codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult>
+    // CODEX§15 MUSE§13
+    signIn(kind: SignInFolderKind, name: string, again?: boolean): Promise<SignInResult>
     // CODEX§15
     codexUseReset(name: string): Promise<CodexResetOutcome>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
@@ -1304,7 +1329,7 @@ export interface KoloftApi {
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
     channels(): Promise<DiscordChannel[]>
-    setUpWithAssist(): Promise<ConductorOpenResult>
+    setUpWithAssist(ownerWords?: string): Promise<ConductorOpenResult>
   }
 }
 
@@ -1347,6 +1372,9 @@ export interface HistoryLine {
   until?: number
   worktree?: string
   note?: string
+  sessionId?: string
+  removed?: true
+  kept?: string
 }
 
 export interface CronFile {
@@ -1366,6 +1394,7 @@ export interface LiveRun {
   dueAt: number
   manual?: true
   kept?: string
+  note?: string
 }
 
 export interface CronState {
@@ -1557,6 +1586,7 @@ export interface WorkspaceGithub {
 
 export interface WorktreeInfo {
   recoveryResourceId?: string
+  recoveryBackend?: BackendId
   name: string
   dir: string
   branch?: string
