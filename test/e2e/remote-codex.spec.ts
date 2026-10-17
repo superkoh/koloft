@@ -12,6 +12,7 @@ import {
   newSessionInWith,
   openMenu,
   openWorktreeSession,
+  processAlive,
   sendShortcut,
   terminalText,
   worktreeDialog,
@@ -43,6 +44,7 @@ interface TuiCall {
 }
 
 interface ServerCall {
+  pid: number
   argv: string[]
   cwd: string
   codexHome: string
@@ -64,6 +66,24 @@ function machineServers(env: E2EEnv): ServerCall[] {
   return machineCodexLog<ServerCall>(env, 'fake-codex-server-calls.jsonl').filter((c) =>
     c.argv.includes('--listen')
   )
+}
+
+function sideServers(env: E2EEnv): ServerCall[] {
+  return machineCodexLog<ServerCall>(env, 'fake-codex-server-calls.jsonl').filter((c) =>
+    c.argv.includes('--stdio')
+  )
+}
+
+function historyListings(env: E2EEnv): number {
+  return machineCodexLog<{ direction: string; frame: { method?: string; params?: unknown } }>(
+    env,
+    'fake-codex-wire.jsonl'
+  ).filter(
+    ({ direction, frame }) =>
+      direction === 'client' &&
+      frame.method === 'thread/list' &&
+      (frame.params as { archived?: boolean }).archived === true
+  ).length
 }
 
 function serverAlive(env: E2EEnv, tabId: string): boolean {
@@ -232,6 +252,42 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     } finally {
       await quitAndClose(app)
     }
+  })
+
+  // CODEX§16
+  test('E-RC-05: closing a remote Codex tab, restarting its session and closing it again all ask one app-server on the machine, which ends when Koloft quits', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startRemoteCodex(page, env)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/cold/, { timeout: 30_000 })
+      await expect.poll(() => sideServers(env).length, { timeout: 30_000 }).toBe(1)
+      await wsRows(page, REMOTE_WS_NAME).click()
+      await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(2)
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/st-waiting|st-idle/, {
+        timeout: 30_000
+      })
+      await sendShortcut(app, 'shortcut:restart-session')
+      await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(3)
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/st-waiting|st-idle/, {
+        timeout: 30_000
+      })
+      const listedBeforeTheLastClose = historyListings(env)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/cold/, { timeout: 30_000 })
+      await expect
+        .poll(() => historyListings(env), { timeout: 30_000 })
+        .toBeGreaterThan(listedBeforeTheLastClose)
+      expect(sideServers(env)).toHaveLength(1)
+      expect(processAlive(sideServers(env)[0].pid)).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+    await expect.poll(() => processAlive(sideServers(env)[0].pid), { timeout: 10_000 }).toBe(false)
   })
 
   // CODEX§11 CODEX§16

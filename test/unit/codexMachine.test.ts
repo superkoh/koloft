@@ -5,7 +5,11 @@ import path from 'path'
 import { spawn, spawnSync } from 'child_process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocketServer, type WebSocket } from 'ws'
-import { MachineCodexUpstream, ownerWordsLines } from '../../src/main/remote/codexMachine'
+import {
+  MachineCodexUpstream,
+  machineAppServerCmd,
+  ownerWordsLines
+} from '../../src/main/remote/codexMachine'
 import { CODEX_REPLY_LANGUAGE_SCRIPT, seedHandedOverOwnerWords } from '../../src/main/hooks'
 
 const FAKE_CODEX = path.join(__dirname, '..', 'e2e', 'fixtures', 'fake-codex.js')
@@ -74,6 +78,51 @@ describe('a Codex session that another session starts on a machine', () => {
     expect(mac[0]).toContain('Chinese')
     expect(answers('machine.said')).toEqual(mac)
     fs.rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('the side app-server on a machine', () => {
+  // CODEX§16
+  it('ends the one a dropped ssh line left running there before it starts, so a machine keeps at most one per Koloft', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kcm-side-'))
+    const bin = path.join(home, '.koloft', 'codex-cli', 'bin')
+    fs.mkdirSync(bin, { recursive: true })
+    fs.writeFileSync(
+      path.join(bin, 'codex'),
+      `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} -e 'setInterval(() => {}, 1000)' "$@"\n`,
+      { mode: 0o755 }
+    )
+    const pidFile = path.join(home, '.koloft', 'cx', 'inst', 'side', 'side.pid')
+    const alive = (pid: number): boolean => {
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch {
+        return false
+      }
+    }
+    const start = async (): Promise<number> => {
+      const before = fs.existsSync(pidFile) ? fs.readFileSync(pidFile, 'utf8') : ''
+      const child = spawn('/bin/sh', ['-c', `exec ${machineAppServerCmd('inst')}`], {
+        env: { ...process.env, HOME: home },
+        stdio: 'ignore'
+      })
+      stops.push(() => void child.kill('SIGKILL'))
+      await vi.waitFor(
+        () => {
+          const now = fs.existsSync(pidFile) ? fs.readFileSync(pidFile, 'utf8') : ''
+          expect(now).not.toBe(before)
+          expect(now).toBe(`${child.pid}\n`)
+        },
+        { timeout: 10_000 }
+      )
+      return child.pid!
+    }
+    const left = await start()
+    const next = await start()
+    await vi.waitFor(() => expect(alive(left)).toBe(false))
+    expect(alive(next)).toBe(true)
+    fs.rmSync(home, { recursive: true, force: true })
   })
 })
 

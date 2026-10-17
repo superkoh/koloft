@@ -9,20 +9,20 @@ interface SideServer {
 }
 
 // CODEX§15
-export class CodexSideServers {
-  private open = new Map<string | undefined, SideServer>()
+export class CodexSideServers<Key = string | undefined> {
+  private open = new Map<Key, SideServer>()
 
-  constructor(private start: (home: string | undefined) => CodexRpc) {}
+  constructor(private start: (key: Key) => CodexRpc) {}
 
   get anyOpen(): boolean {
     return this.open.size > 0
   }
 
-  async ask<T>(home: string | undefined, use: (rpc: CodexRpc) => Promise<T>): Promise<T> {
-    let side = this.open.get(home)
+  async ask<T>(key: Key, use: (rpc: CodexRpc) => Promise<T>): Promise<T> {
+    let side = this.open.get(key)
     if (!side || side.rpc.isClosed) {
-      side = { rpc: this.start(home), asking: 0 }
-      this.open.set(home, side)
+      side = { rpc: this.start(key), asking: 0 }
+      this.open.set(key, side)
     }
     clearTimeout(side.idle)
     side.asking++
@@ -30,20 +30,20 @@ export class CodexSideServers {
       return await use(side.rpc)
     } finally {
       side.asking--
-      if (!side.asking && this.open.get(home) === side)
-        side.idle = setTimeout(() => void this.forget(home), SIDE_SERVER_IDLE_MS)
+      if (!side.asking && this.open.get(key) === side)
+        side.idle = setTimeout(() => void this.forget(key), SIDE_SERVER_IDLE_MS)
     }
   }
 
-  async forget(home: string | undefined): Promise<void> {
-    const side = this.open.get(home)
+  async forget(key: Key): Promise<void> {
+    const side = this.open.get(key)
     if (!side) return
-    this.open.delete(home)
+    this.open.delete(key)
     clearTimeout(side.idle)
     await side.rpc.close().catch(() => {})
   }
 
   async closeAll(): Promise<void> {
-    await Promise.all([...this.open.keys()].map((home) => this.forget(home)))
+    await Promise.all([...this.open.keys()].map((key) => this.forget(key)))
   }
 }
