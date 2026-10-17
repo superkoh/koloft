@@ -75,15 +75,11 @@ function sideServers(env: E2EEnv): ServerCall[] {
 }
 
 function historyListings(env: E2EEnv): number {
-  return machineCodexLog<{ direction: string; frame: { method?: string; params?: unknown } }>(
+  return machineCodexLog<{ direction: string; frame: { method?: string } }>(
     env,
     'fake-codex-wire.jsonl'
-  ).filter(
-    ({ direction, frame }) =>
-      direction === 'client' &&
-      frame.method === 'thread/list' &&
-      (frame.params as { archived?: boolean }).archived === true
-  ).length
+  ).filter(({ direction, frame }) => direction === 'client' && frame.method === 'thread/list')
+    .length
 }
 
 function serverAlive(env: E2EEnv, tabId: string): boolean {
@@ -287,7 +283,8 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     } finally {
       await quitAndClose(app)
     }
-    await expect.poll(() => processAlive(sideServers(env)[0].pid), { timeout: 10_000 }).toBe(false)
+    const [side] = sideServers(env)
+    await expect.poll(() => processAlive(side.pid), { timeout: 10_000 }).toBe(false)
   })
 
   // CODEX§11 CODEX§16

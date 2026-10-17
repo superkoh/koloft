@@ -1087,7 +1087,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           runOnTarget(
             lab,
             'kuser',
-            'ls .koloft/cx/*/ 2>/dev/null | grep -c "[.]pid$" || true'
+            'ls .koloft/cx/*/ 2>/dev/null | grep -v "^side[.]pid$" | grep -c "[.]pid$" || true'
           ).trim()
         expect([listening(), pidFiles()]).toEqual(['1', '1'])
         await sendShortcut(app, 'shortcut:close-tab')

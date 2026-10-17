@@ -92,36 +92,24 @@ describe('the side app-server on a machine', () => {
       `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} -e 'setInterval(() => {}, 1000)' "$@"\n`,
       { mode: 0o755 }
     )
-    const pidFile = path.join(home, '.koloft', 'cx', 'inst', 'side', 'side.pid')
-    const alive = (pid: number): boolean => {
-      try {
-        process.kill(pid, 0)
-        return true
-      } catch {
-        return false
-      }
-    }
+    const pidFile = path.join(home, '.koloft', 'cx', 'inst', 'side.pid')
     const start = async (): Promise<number> => {
-      const before = fs.existsSync(pidFile) ? fs.readFileSync(pidFile, 'utf8') : ''
       const child = spawn('/bin/sh', ['-c', `exec ${machineAppServerCmd('inst')}`], {
         env: { ...process.env, HOME: home },
         stdio: 'ignore'
       })
       stops.push(() => void child.kill('SIGKILL'))
       await vi.waitFor(
-        () => {
-          const now = fs.existsSync(pidFile) ? fs.readFileSync(pidFile, 'utf8') : ''
-          expect(now).not.toBe(before)
-          expect(now).toBe(`${child.pid}\n`)
-        },
+        () =>
+          expect(fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8')).toBe(`${child.pid}\n`),
         { timeout: 10_000 }
       )
       return child.pid!
     }
     const left = await start()
     const next = await start()
-    await vi.waitFor(() => expect(alive(left)).toBe(false))
-    expect(alive(next)).toBe(true)
+    await vi.waitFor(() => expect(() => process.kill(left, 0)).toThrow())
+    expect(() => process.kill(next, 0)).not.toThrow()
     fs.rmSync(home, { recursive: true, force: true })
   })
 })
