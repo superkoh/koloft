@@ -17,6 +17,7 @@ import { encodeCwd } from '@shared/cwdKey'
 import { projectInfoFor, realpathSafe } from './projectInfo'
 import { worktreeHomeRoot } from './resumePlan'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
+import { sharedProcessTable } from './processTable'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import type { LaunchedSession } from './accountPicker'
@@ -561,7 +562,16 @@ export class SessionTracker extends SessionRuntime {
   private emitTimer?: ReturnType<typeof setTimeout>
   private lastEmitMs = 0
   pidOf?: (tabId: string) => number | undefined
-  inspect: typeof inspectTaskProcs = inspectTaskProcs
+  inspect = async (
+    rootPid: number,
+    sessionId: string,
+    roundMs?: number
+  ): Promise<TaskProcs | null> =>
+    inspectTaskProcs(
+      await (roundMs ? sharedProcessTable.eachRound(roundMs) : sharedProcessTable.fresh()),
+      rootPid,
+      sessionId
+    )
   leftBehind?: (sessionId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
   dialogsWatched: (tabId: string) => boolean = () => true
@@ -866,10 +876,10 @@ export class SessionTracker extends SessionRuntime {
     if (!root || !sessionId) return
     t.procsPromise = (async () => {
       try {
-        const procs = await this.inspect(root, sessionId)
+        const procs = await this.inspect(root, sessionId, force ? undefined : PROCS_SCAN_MS)
         if (this.tracked.get(t.info.tabId) !== t) return
         t.procs = procs
-        t.procsAt = Date.now()
+        t.procsAt = procs?.at ?? Date.now()
         if (procs) this.sampleShellCpu(t, procs, t.procsAt)
       } finally {
         t.procsPromise = undefined

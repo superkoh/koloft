@@ -30,6 +30,7 @@ import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museS
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
+import { sharedProcessTable } from './processTable'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome } from './museSessionLog'
 import { museSignedIn, storeMuseKey } from './museServe'
@@ -580,7 +581,7 @@ let leftovers: Record<string, LeftoverProcess[]> = {}
 tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
 async function refreshLeftovers(): Promise<void> {
-  const next = await scanLeftovers()
+  const next = await scanLeftovers(await sharedProcessTable.eachRound(LEFTOVER_SCAN_MS))
   const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
   leftovers = next
   if (changed) sendToRenderer('sessions:leftovers', next)
@@ -2398,7 +2399,8 @@ app.whenReady().then(() => {
         writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
       },
       skipPermissions: () => loadSettings().skipPermissions,
-      serversAmong: (pid, commands) => museServersAmong(pid, commands),
+      serversAmong: async (pid, commands) =>
+        museServersAmong(await sharedProcessTable.fresh(), pid, commands),
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,
