@@ -78,10 +78,10 @@ export function agyTab(s: AgyTabSpec): AgyProgram {
   const exported = [AGY_LOG_ENV, ...(s.start ? [AGY_START_ENV] : [])]
   const run = [
     `A=${remoteAgyHome(s.account)}; G="${REMOTE_GEMINI}"`,
-    `mkdir -p "${own}/cache" "$A/config" "${REMOTE_HOOK_DIR}" && chmod 700 "${REMOTE_HOME}/agy" || exit 3`,
+    `mkdir -p "${own}/cache" "$A/config" "${REMOTE_HOOK_DIR}" && chmod 700 "${REMOTE_HOME}/agy"`,
     ...SHARED_FOLDERS.map((d) => `mkdir -p "$G/${d}"; ${link(d)}`),
     ...SHARED_FILES.map((f) => `mkdir -p "$(dirname "$G/${f}")"; ${link(f)}`),
-    `mv -f "$T.settings.json" "${own}/settings.json" && mv -f "$T.hooks.json" "$A/config/hooks.json" || exit 3`,
+    `mv -f "$T.settings.json" "${own}/settings.json" && mv -f "$T.hooks.json" "$A/config/hooks.json"`,
     seed('onboarding.json', `${own}/cache/onboarding.json`),
     seed('auth.json', `${own}/antigravity-oauth-token`),
     `unset ${AGY_KEY_ENV}; [ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
