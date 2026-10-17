@@ -1335,6 +1335,7 @@ export default function App(): JSX.Element {
   const [vDragging, setVDragging] = useState(false)
   const [sbDragging, setSbDragging] = useState(false)
   const dockRef = useRef<HTMLDivElement>(null)
+  const sideRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   // ADR-0011
   const shownWidth = useRef(0)
@@ -1394,20 +1395,21 @@ export default function App(): JSX.Element {
     beginLayoutDrag()
     setSbDragging(true)
     const left = dockRef.current?.getBoundingClientRect().left ?? 0
+    let live: number | null = null
     const onMove = (ev: globalThis.MouseEvent): void => {
-      setSidebarWidth(
-        Math.min(
-          Math.max(SIDEBAR_MIN, ev.clientX - left),
-          window.innerWidth - left - CENTER_ISLANDS_MIN_WIDTH - GUTTER_AND_CANVAS_RIGHT_PADDING
-        )
+      live = Math.min(
+        Math.max(SIDEBAR_MIN, ev.clientX - left),
+        window.innerWidth - left - CENTER_ISLANDS_MIN_WIDTH - GUTTER_AND_CANVAS_RIGHT_PADDING
       )
+      if (sideRef.current) sideRef.current.style.width = `${live}px`
     }
     const onUp = (): void => {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      if (live !== null) setSidebarWidth(live)
       setSbDragging(false)
       endLayoutDrag()
-      void window.api.settings.set({ sidebarWidth: useStore.getState().sidebarWidth })
+      void window.api.settings.set({ sidebarWidth: live ?? useStore.getState().sidebarWidth })
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
@@ -1470,7 +1472,7 @@ export default function App(): JSX.Element {
         </div>
       )}
 
-      <div className="side" style={{ width: sidebarWidth }}>
+      <div className="side" ref={sideRef} style={{ width: sidebarWidth }}>
         <div className="titlebar">
           {overlay && (
             <button
