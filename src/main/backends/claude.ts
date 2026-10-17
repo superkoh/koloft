@@ -28,7 +28,6 @@ import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
 import { AGENT_DROP_NAME, REQUEST_NAME, replyJson, type AgentReply } from '../agentRequests'
 import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../remote/launch'
-import { AGENT_PROMPT_FILE } from '../agentPlugin'
 import {
   dq,
   mirrorHookDir,
@@ -36,17 +35,8 @@ import {
   REMOTE_HOOK_DIR,
   tabPackageDir
 } from '../remote/paths'
-import {
-  hookSettings,
-  KOLOFT_ALLOW_RULE,
-  removeConductorMarker,
-  saidFile,
-  seedHandedOverOwnerWords,
-  writeAllowFile,
-  writeConductorMarker
-} from '../hooks'
+import { hookSettings, KOLOFT_ALLOW_RULE, removeConductorMarker } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
-import { loadSettings } from '../settings'
 import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
 import { SESSION_ID_RE } from '../claudeArgs'
@@ -95,7 +85,6 @@ export interface ClaudeBackendDeps {
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
-  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
 }
 
@@ -142,7 +131,6 @@ export class ClaudeBackend implements SessionBackend {
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
   private startsBeforeRegistration = new Map<string, unknown>()
-  agentPlugin?: string
   agentReply?: (tabId: string, raw: unknown) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -919,14 +907,7 @@ export class ClaudeBackend implements SessionBackend {
 
   private async createTab(
     host: Host,
-    spec: ClaudeLaunch & {
-      cols?: number
-      rows?: number
-      role?: string
-      allow?: string[]
-      conductor?: boolean
-      trustFolder?: boolean
-    }
+    spec: ClaudeLaunch & { cols?: number; rows?: number; trustFolder?: boolean }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const workspaces = this.d.workspaces()
@@ -938,42 +919,23 @@ export class ClaudeBackend implements SessionBackend {
     })
     if (!plan.ok) return plan
     const machine = plan.machine
-    // ADR-0029
-    const assist = machine ? undefined : this.d.assistOf(plan.cwd, spec.resumeSessionId)
-    const conductor = spec.conductor || !!assist
-    const role = spec.role ?? assist?.role
-    const agentPlugin =
-      !machine && this.agentPlugin && loadSettings().agentTools ? this.agentPlugin : undefined
     const handle = this.d.pty.create({
       kind: 'claude',
       cwd: plan.spawnCwd,
       cols: spec.cols,
       rows: spec.rows,
       setupCommand: this.d.setupLine(),
-      launchCommand: (tabId) => {
-        if (machine) this.forgetHookReports(machine.hookMirror, tabId)
-        return plan.launchCommand(tabId)
-      },
+      launchCommand: plan.launchCommand,
       resumeSessionId: spec.resumeSessionId,
-      conductor,
+      conductor: plan.conductor,
       resized: plan.resized,
       remoteHost: machine?.tracking.host,
       shell: plan.shell,
-      extraEnv: agentPlugin
-        ? {
-            ...plan.extraEnv,
-            KOLOFT_AGENT_PLUGIN: agentPlugin,
-            KOLOFT_AGENT_PROMPT: conductor ? undefined : path.join(agentPlugin, AGENT_PROMPT_FILE)
-          }
-        : plan.extraEnv
+      extraEnv: plan.extraEnv
     })
-    if (role && !machine) writeConductorMarker(this.hookRegDir, handle.id, role)
-    if (spec.ownerWords && !machine)
-      seedHandedOverOwnerWords(saidFile(this.hookRegDir, handle.id), spec.ownerWords)
-    if (conductor && !machine)
-      writeAllowFile(this.hookRegDir, handle.id, spec.allow ?? assist?.allow ?? [])
     if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)
     if (machine) {
+      this.forgetHookReports(machine.hookMirror, handle.id)
       tracker.track(handle.id, machine.cwd, machine.tracking)
       if (machine.pickKey) tracker.movePick(machine.pickKey, handle.id)
       if (machine.attachTo) {
