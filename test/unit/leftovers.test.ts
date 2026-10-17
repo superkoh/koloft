@@ -56,28 +56,33 @@ const exec = async (_cmd: string, args: string[]): Promise<string> => {
   )
 }
 
+const PYTHON_APP =
+  '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python'
+
 // MUSE§8
 describe('the servers a Muse session keeps running', () => {
-  it('are the background commands whose process, a child of muse, or anything under it, listens on a port', async () => {
+  it('are the background commands whose process, a child of muse, or anything under it, listens on a port, also when the program the command named runs as another file, like python3 as Python.app', async () => {
     const ps = [
       ' 2914 2913 00:10 0:01.00 /Users/me/.local/bin/muse-bin-1.4.9',
       ' 2936 2914 00:05 0:00.10 node srv.mjs 18081',
       ' 2950 2914 00:05 0:00.10 /bin/zsh -c npm run dev',
       ' 2951 2950 00:05 0:00.10 node vite',
-      ' 2960 2914 00:05 0:00.10 sleep 30'
+      ' 2960 2914 00:05 0:00.10 sleep 30',
+      ` 2970 2914 00:05 0:00.10 ${PYTHON_APP} -m http.server 8765`
     ].join('\n')
     const run = async (cmd: string, args: string[]): Promise<string> =>
-      cmd === 'ps' ? ps : args.some((a) => a.includes('2936')) ? 'p2936\np2951\n' : ''
+      cmd === 'ps' ? ps : args.some((a) => a.includes('2936')) ? 'p2936\np2951\np2970\n' : ''
     const found = await museServersAmong(
       2914,
       new Map([
         ['w-srv', 'node srv.mjs 18081'],
         ['w-dev', 'npm run dev'],
-        ['w-sleep', 'sleep 30']
+        ['w-sleep', 'sleep 30'],
+        ['w-py', 'python3 -m http.server 8765']
       ]),
       run
     )
-    expect([...found].sort()).toEqual(['w-dev', 'w-srv'])
+    expect([...found].sort()).toEqual(['w-dev', 'w-py', 'w-srv'])
   })
 })
 

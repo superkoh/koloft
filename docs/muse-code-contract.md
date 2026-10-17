@@ -192,6 +192,13 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   works and `lsof` shows the child listening. A clean `/exit` stops all of them, even
   one a script started with `nohup` that launchd had already adopted; only when muse
   itself is killed (`kill -9`) do they stay, under launchd, still listening.
+- On 1.4.10 (real Meta account, macOS, 2026-10): a background `python3 -m http.server
+  8765` is a direct child of the muse pid whose command line is the interpreter's own
+  file, `…/Python3.framework/…/Python.app/Contents/MacOS/Python -m http.server 8765`,
+  not the `python3` the model typed. Asked only to start a server "in the background",
+  the real model once launched it so that it ran under launchd (parent pid 1) while
+  muse kept running, with no background item for it; asked to keep it as the bash
+  tool's own background job, it did.
 
 ## §9 Hooks
 
@@ -344,9 +351,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   "loggedOut"|"apiKey"|"envKey"|"accountLogin"`; `account/loginStart {type}` returns
   the device code and URL.
 - How much of a Meta account's quota is used showed only inside a live session: the
-  TUI's `/usage` draws a Current and a Weekly bar (screen only, §11), while a fresh
-  `muse serve` answers `usage/read` with nothing in it and `muse exec --json` prints
-  no usage record (1.4.10, a real Meta account, macOS, 2026-10).
+  TUI's `/usage` draws a box (screen only, §11), while a fresh `muse serve` answers
+  `usage/read` with nothing in it and `muse exec --json` prints no usage record
+  (1.4.10, a real Meta account, macOS, 2026-10). The box needs no model call: typed as
+  the first thing in a fresh session (0 turns), it shows `Subscription · <plan>`,
+  `Current  4% used · Resets at 4:11 AM`, `Weekly  1% used · Resets Oct 18 at 5:00
+  PM` and `as of 12:31 AM`.
 - A rejected `META_API_KEY` ends the launch before the TUI: "failed to fetch model
   catalog: authentication failed: your API key from META_API_KEY was rejected".
 
