@@ -3,7 +3,7 @@ import { PROGRAM_STATUS_REPLY } from './programStatus'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SAID_MARKS } from './museSessionLog'
 import { museHookScript } from './museHooks'
-import { KOLOFT_SKILL } from './museAccounts'
+import { KOLOFT_SKILL, MUSE_STOPS_WHEN_THIS_LINK_DANGLES } from './museAccounts'
 
 export const MUSE_WRAP_FILE = 'muse-wrap.py'
 export const MUSE_HOOK_FILE = 'muse-hook.sh'
@@ -345,7 +345,7 @@ export interface MuseRunSpec {
   trustIf?: string
 }
 
-const SHARED_WITH_THE_MACHINE_USER = ['settings.json', 'trust.json', 'AGENTS.md']
+const MUSE_WRITES_THROUGH_THESE_LINKS = ['settings.json', 'trust.json']
 
 // MUSE§2 MUSE§13 MUSE§16 MUSE§17
 export function museRunLines(s: MuseRunSpec): string {
@@ -355,12 +355,14 @@ export function museRunLines(s: MuseRunSpec): string {
   ]
   return `  O="\${XDG_CONFIG_HOME:-$HOME/.config}/muse"
   A="$HOME/.koloft/muse-homes/"${shq(s.account)}
-  mkdir -p "$A/muse" && chmod 700 "$HOME/.koloft/muse-homes" "$A" "$A/muse"
+  mkdir -p "$A/muse" "$O" && chmod 700 "$HOME/.koloft/muse-homes" "$A" "$A/muse"
   [ -f "$T.auth.json" ] && mv -f "$T.auth.json" "$A/muse/auth.json"
-  for f in ${SHARED_WITH_THE_MACHINE_USER.join(' ')}; do
-    [ -L "$A/muse/$f" ] && [ ! -e "$A/muse/$f" ] && rm -f "$A/muse/$f"
-    [ -e "$A/muse/$f" ] || [ ! -e "$O/$f" ] || ln -s "$O/$f" "$A/muse/$f"
+  for f in ${MUSE_WRITES_THROUGH_THESE_LINKS.join(' ')}; do
+    [ -e "$A/muse/$f" ] || [ -L "$A/muse/$f" ] || ln -s "$O/$f" "$A/muse/$f"
   done
+  G="$A/muse/${MUSE_STOPS_WHEN_THIS_LINK_DANGLES}"
+  [ -L "$G" ] && [ ! -e "$G" ] && rm -f "$G"
+  [ -e "$G" ] || [ ! -e "$O/${MUSE_STOPS_WHEN_THIS_LINK_DANGLES}" ] || ln -s "$O/${MUSE_STOPS_WHEN_THIS_LINK_DANGLES}" "$G"
   S="$A/muse/skills"; mkdir -p "$S"; rm -rf "$S/${KOLOFT_SKILL}"
   [ -f "$T.skill.md" ] && mkdir -p "$S/${KOLOFT_SKILL}" && mv -f "$T.skill.md" "$S/${KOLOFT_SKILL}/SKILL.md"
   for s in "$O/skills"/*; do

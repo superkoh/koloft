@@ -481,7 +481,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
   })
 
-  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings there and drops a link whose file is gone, runs muse through the wrapper, and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
+  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper, and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
     const s = spec({
       tmuxName: 'm-T',
       muse: {
@@ -532,6 +532,9 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(fs.existsSync(path.join(b.tabs, 'T.auth.json'))).toBe(false)
     expect(fs.readlinkSync(path.join(account, 'muse', 'settings.json'))).toBe(
       path.join(own, 'settings.json')
+    )
+    expect(fs.readlinkSync(path.join(account, 'muse', 'trust.json'))).toBe(
+      path.join(own, 'trust.json')
     )
     expect(fs.lstatSync(path.join(account, 'muse', 'AGENTS.md'), { throwIfNoEntry: false })).toBe(
       undefined

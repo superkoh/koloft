@@ -19,7 +19,7 @@ export function museAccountEnv(home: string): Record<string, string> {
 
 const SHARED_WITH_THE_OWNER = ['settings.json', 'trust.json', 'AGENTS.md']
 // MUSE§13
-const MUSE_STOPS_WHEN_THIS_LINK_DANGLES = 'AGENTS.md'
+export const MUSE_STOPS_WHEN_THIS_LINK_DANGLES = 'AGENTS.md'
 
 export function readJson(file: string): Record<string, unknown> {
   try {
