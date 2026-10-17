@@ -1985,3 +1985,14 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   `"turnReminder":"Be concise: lead with the result, skip preamble and narration, keep
   only what the user needs."` (style "Concise") after the prompt and after every tool
   result (2.1.29x).
+- **A note lands in the transcript as a line holding**
+  `"role":"assistant","content":[{"type":"text","text":"<note>"}…` (older lines hold the
+  text block and the `tool_use` block in one record, the text first). **Under `claude -p`
+  it is there when the next tool's `PostToolUse` runs; in an interactive session it is
+  written only after that hook**, so the hook reading the last such line sees the note
+  from one tool call earlier. 2.1.301, 2026-10-16: `claude -p` resuming a copy of a long
+  session (Opus 5.5), all 7 notes the shipped hook quoted back were the one written right
+  before that tool call; an interactive Koloft tab (Sonnet 5.5, the opt-in case in
+  `agent-tools-real-smoke.spec.ts`), a Chinese note then `ls` (75 ms) or `sleep 2`: the
+  hook still read the previous turn's English reply both times, and saw the Chinese note
+  at the next tool call.

@@ -91,6 +91,7 @@ export interface MuseMachineLaunch {
   context?: string
   skill?: string
   portOffset?: number
+  ownerWords?: string
 }
 
 export interface MuseMachinePlan {
@@ -825,6 +826,7 @@ export class SshHost implements Host {
           banner: '',
           portOffset: spec.portOffset,
           settings: {},
+          ownerWords: spec.ownerWords,
           claudeArgs: [],
           muse: {
             run: museRunLines({
@@ -951,6 +953,7 @@ export class SshHost implements Host {
           env: account?.env,
           portOffset: worktree ? portOffset(worktree) : undefined,
           settings: d.hookSettings(tabId, machineDir, agentTools),
+          ownerWords: spec.ownerWords,
           agentPlugin: agentTools,
           claudeArgs
         })

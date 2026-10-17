@@ -165,7 +165,7 @@ function allowed(event, named) {
   if (READ_TOOLS.has(event.tool_name)) return true
   if (WRITE_TOOLS.has(event.tool_name)) return inOwnFolder(event)
   if (event.tool_name !== 'bash') return false
-  return koloftOrNamed(event.tool_input && event.tool_input.command, named)
+  return !!koloftOrNamed(event.tool_input && event.tool_input.command, named)
 }
 
 ${TOOLS_THE_ALLOW_FILE_NAMES}

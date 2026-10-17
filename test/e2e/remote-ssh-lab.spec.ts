@@ -90,6 +90,16 @@ const COMMIT_THE_PROJECT =
   'cd proj && printf "NOTES.md\\n" > .gitignore && git init -q && git add -A' +
   ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base'
 const COMMIT_THE_PROJECT_THEN_EDIT_THE_README = `${COMMIT_THE_PROJECT} && printf "edited\\n" >> README.md`
+const OWNER_LAST_WORDS = 'make the sidebar a little darker'
+
+function mirroredSaidFiles(env: E2EEnv): string[] {
+  const root = path.join(env.userData, 'remote')
+  if (!fs.existsSync(root)) return []
+  return fs
+    .readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .filter((f) => f.endsWith('.said'))
+    .map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
+}
 const RUN_FOLDERS = 'proj/.claude/worktrees'
 const A_CLOSED_RUN_LEAVES_THE_MACHINE_AND_IS_TIDIED_MS = 90_000
 const COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN = [
@@ -538,7 +548,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-16: koloft session new -w, run inside a session on the machine, starts a child session there in a worktree of its own, listed under the session that started it', async ({
+  test('E-SSH-16: koloft session new -w, run inside a session on the machine, starts a child session there in a worktree of its own, listed under the session that started it, whose reply-language hook starts from the owner’s last words, not from its task', async ({
     env
   }) => {
     seedSettings(env, { hintsOff: true })
@@ -546,6 +556,10 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
       await addMachine(page, 'kt-key', 'kuser')
       await startSessionIn(page, 'kt-key', { remote: true })
+      await runIn(page, centerTerm(page), OWNER_LAST_WORDS)
+      await expect
+        .poll(() => mirroredSaidFiles(env).join('\n'), { timeout: 30_000 })
+        .toContain(OWNER_LAST_WORDS)
       await runIn(page, centerTerm(page), '/koloft session new -w lab-child -- "/answer hi"')
       await expect(centerTerm(page)).toContainText('koloft exit=0', {
         timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
@@ -555,6 +569,20 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await expect
         .poll(() => runOnTarget(lab, 'kuser', 'ls proj/.claude/worktrees'), { timeout: 30_000 })
         .toContain('lab-child')
+      // ADR-0031
+      await expect
+        .poll(
+          () =>
+            runOnTarget(
+              lab,
+              'kuser',
+              'for f in .koloft/hook-sessions/*.said; do cat "$f"; echo; done'
+            )
+              .split('\n')
+              .filter(Boolean),
+          { timeout: 30_000 }
+        )
+        .toEqual([OWNER_LAST_WORDS, OWNER_LAST_WORDS])
     })
   })
 

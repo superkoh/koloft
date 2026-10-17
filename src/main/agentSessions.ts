@@ -8,13 +8,7 @@ import type {
   WorktreeInfo
 } from '@shared/types'
 import { ASSIST_SAYS_OPENING, DISCORD_PREFIX, ownerSays } from '@shared/agentGuide'
-import {
-  BACKEND_LABEL,
-  SESSION_BACKENDS,
-  backendIdOf,
-  capabilitiesFor,
-  messagingOf
-} from '@shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS, backendIdOf, messagingOf } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { withoutBlankEdges } from './messageText'
 import { freshWorktreeName } from '@shared/sessionRoute'
@@ -39,7 +33,12 @@ import {
 } from './agentRequests'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { FROM_A_SESSION, crossSessionLine, type ModeClass } from './crossSessionMessage'
-import { handoverPreamble, withHandover, type SessionCaller } from './handover'
+import {
+  OWNER_WORDS_QUOTED_CHARS,
+  handoverInOwnersLanguage,
+  withHandover,
+  type SessionCaller
+} from './handover'
 import { nameForTask } from './sessionTitle'
 import type { Assist } from './assist'
 import { keysFor } from './typeKeys'
@@ -385,8 +384,8 @@ const SEND_USAGE =
 const NO_WORKSPACE = 'koloft session: Koloft does not know which workspace this session is in.'
 const LIST_USAGE =
   'koloft session list: the only option is --workspace <folder name or path>, like: koloft session list --workspace koloft'
-const hasNoName = (backend: BackendId): string =>
-  `koloft session new: a ${BACKEND_LABEL[backend]} session has no name, so leave out --name. Koloft prints an id to reach it by.`
+const CODEX_HAS_NO_NAME =
+  'koloft session new: a Codex session has no name, so leave out --name. Koloft prints an id to reach it by.'
 
 function starterNamer(
   d: SessionVerbDeps,
@@ -445,7 +444,7 @@ async function startSibling(
   oweReply: (tabId: string) => void
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
-  if (backend === 'codex' && args.name !== undefined) return refused(hasNoName(backend), EXIT_USAGE)
+  if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
   const caller: SessionCaller = {
     name: (await d.peerNames()(me)) ?? (me.backendId === 'claude' ? me.title : undefined),
     id: idToReach(me),
@@ -453,16 +452,18 @@ async function startSibling(
     assist: conductorTab !== undefined,
     ownerWords
   }
-  const name =
+  const [name, preamble] = await Promise.all([
     backend === 'codex'
       ? undefined
       : (args.name ??
-        (await nameForTask(
+        nameForTask(
           args.prompt,
           d.assist,
           new Set(d.allSessions().map((s) => s.title)),
           ownerWords
-        )))
+        )),
+    handoverInOwnersLanguage(caller, d.assist)
+  ])
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
   const worktree =
     gitWorkspace && (args.worktree || caller.assist)
@@ -476,26 +477,19 @@ async function startSibling(
     model: args.model,
     // ADR-0028
     permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
+    ownerWords,
     // CODEX§17
     ...(backend === 'codex'
-      ? { role: handoverPreamble(caller), firstPrompt: args.prompt }
-      : capabilitiesFor(backend, 'local').agentTools === true
-        ? { firstPrompt: withHandover(caller, args.prompt) }
-        : { firstPrompt: args.prompt })
+      ? { role: preamble, firstPrompt: args.prompt }
+      : { firstPrompt: withHandover(preamble, args.prompt) })
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
   if (conductorTab) {
-    d.started(
-      conductorTab,
-      tabId,
-      name ?? `a ${BACKEND_LABEL[backend]} session`,
-      workspace,
-      backend
-    )
+    d.started(conductorTab, tabId, name ?? 'a Codex session', workspace, backend)
     return answered(
-      `Started ${name ? `session "${name}"` : `a ${BACKEND_LABEL[backend]} session`} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
+      `Started ${name ? `session "${name}"` : 'a Codex session'} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
     )
   }
   const listHint =
@@ -505,7 +499,7 @@ async function startSibling(
   return answered(
     backend === 'claude'
       ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
-      : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : `a ${BACKEND_LABEL[backend]} session`} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
+      : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : 'a Codex session'} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
   )
 }
 
@@ -736,7 +730,6 @@ export function sessionSays(from: SessionInfo, text: string): string {
   return `${SESSION_SAYS_OPENING}${from.title}", id ${idToReach(from)}:) ${text}`
 }
 
-const OWNER_WORDS_QUOTED_CHARS = 150
 const KOLOFT_ENVELOPES = [SESSION_SAYS_OPENING, ASSIST_SAYS_OPENING]
 
 type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?: string }

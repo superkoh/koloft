@@ -129,6 +129,7 @@ interface MuseLaunch {
 
 interface MuseRun extends StoredRun {
   account: string
+  bypassing: boolean
   pid?: number
   startedAt: number
   boundAt: number
@@ -431,6 +432,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     })
   }
 
+  launchedBypassingChecks(tabId: string): boolean {
+    return !!this.runs.get(tabId)?.bypassing
+  }
+
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {
     if (!this.binary) throw new Error('Muse Code is unavailable.')
     return { binary: this.binary, env: this.env }
@@ -562,7 +567,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       resource,
       explicitStop: false,
       resumeKey: opts.resumeSessionId,
-      permission,
+      permission: opts.permission ?? 'default',
+      bypassing: permission === 'bypass',
       launchName: opts.name,
       account,
       startedAt: handle.startedAt,
@@ -599,7 +605,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       trustIf: resource ? workspace : undefined,
       context: agentTools ? koloftPrompt('muse') : undefined,
       skill: agentTools ? agentSkillMarkdown() : undefined,
-      portOffset: resource ? portOffset(resource.worktreeName) : undefined
+      portOffset: resource ? portOffset(resource.worktreeName) : undefined,
+      ownerWords: opts.ownerWords
     })
     this.assertStarting()
     const tabId = this.deps.pty.nextId()
@@ -685,7 +692,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
             this.deps.conductorGate.script,
             this.deps.conductorGate.writeAllow(tabId, allow)
           )
-        : undefined
+        : undefined,
+      opts.ownerWords
     )
     const argv = this.museArgv(opts, approvalFlags(conductor ? 'conductor' : permission), trust)
     this.parsers.set(tabId, new ProgramStatusParser())
@@ -730,7 +738,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     hook: (hook: MuseHook) => void,
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
     context: string | undefined,
-    gate: string | undefined
+    gate: string | undefined,
+    ownerWords: string | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -756,7 +765,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(shimDir, requestDir, context, gate)
+      const hooksFile = writeMuseHooks(shimDir, requestDir, context, gate, ownerWords)
       return {
         dir: shimDir,
         env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },
@@ -1129,7 +1138,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     this.holdForJobs(run)
     run.endedTurns.clear()
     run.log = undefined
-    this.bind(run, known ?? { id: sessionId, cwd: run.cwd }, switched ? 'switch' : 'replace')
+    this.bind(
+      run,
+      known ?? { id: sessionId, cwd: run.cwd, updatedAt: Date.now() / 1000 },
+      switched ? 'switch' : 'replace'
+    )
     this.readLog(run)
     for (const status of run.sinceClear) this.emitState(run, status)
     return true
@@ -1154,9 +1167,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const changedAt = Math.max(...dirs.map((d) => d.changed))
     if (changedAt === this.registrySeenAt && live.every((r) => r.info)) return rebound
     const since = (run: MuseRun): number => run.startedAt - REGISTRY_WRITE_LEEWAY_MS
-    const read = dirs.map(({ dir }) =>
-      readRegistry(dir, new Set(live.map((r) => r.pid!)), Math.min(...live.map(since)))
-    )
+    const pids = new Set(live.map((r) => r.pid!))
+    const oldest = Math.min(...live.map(since))
+    const read = dirs.map(({ dir }) => readRegistry(dir, pids, oldest))
     const entries = read.flatMap((r) => r.entries)
     if (read.every((r) => r.whole)) this.registrySeenAt = changedAt
     for (const run of live) {

@@ -231,6 +231,7 @@ export function storeMuseKey(options: ServeOptions, key: string): Promise<void> 
     let said = ''
     child.stderr.on('data', (chunk) => (said += String(chunk)))
     child.on('error', reject)
+    child.stdin.on('error', reject)
     child.on('exit', (code) =>
       code === 0 ? resolve() : reject(new Error(said.trim() || 'muse auth set failed'))
     )

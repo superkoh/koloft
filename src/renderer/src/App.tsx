@@ -1125,7 +1125,7 @@ export default function App(): JSX.Element {
       return
     }
     if (route?.kind === 'discord') {
-      void setUpDiscordWithAssist().then((error) => {
+      void setUpDiscordWithAssist(prompt).then((error) => {
         if (error) showToast(error)
       })
       return
@@ -1667,8 +1667,8 @@ export default function App(): JSX.Element {
                         if (t.id === activeTabId) setPaintedGen(switchGen)
                       }}
                     />
-                    {/* CODEX§9 */}
-                    {t.resuming && t.kind !== 'codex' && <ResumingMask title={t.title} />}
+                    {/* CODEX§9 MUSE§10 */}
+                    {t.resuming && t.kind === 'claude' && <ResumingMask title={t.title} />}
                   </div>
                 ])}
                 {switching && activeTab && (

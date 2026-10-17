@@ -7,6 +7,7 @@ import { REMOTE_ENV_LINES, onATerminalEvenWhenSshGaveNone, remoteShCommand } fro
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { AGENT_PROMPT_FILE } from '../agentPlugin'
+import { saidFile, seedHandedOverOwnerWords } from '../hooks'
 
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -99,6 +100,7 @@ export interface TabSpec {
   env?: Record<string, string>
   portOffset?: number
   settings: Record<string, unknown>
+  ownerWords?: string
   agentPlugin?: boolean
   claudeArgs: string[]
   muse?: { run: string; files: Record<string, string> }
@@ -115,7 +117,7 @@ function claudeRun(spec: TabSpec): string {
 
 function claudeFirstRun(spec: TabSpec): string {
   const T = tabPath(spec.tabId)
-  return `# CC§10
+  return `${spec.ownerWords ? `mkdir -p "$HOME/.koloft/hook-sessions" && mv -f "${T}".said* "$HOME/.koloft/hook-sessions/"\n` : ''}# CC§10
 CJ="$HOME/.claude.json"
 if [ -f "${T}.env" ]; then
   if [ ! -f "$CJ" ]; then printf '{"hasCompletedOnboarding":true}\\n' > "$CJ"
@@ -177,6 +179,7 @@ export function writeTabPackage(dir: string, spec: TabSpec): void {
   for (const [name, text] of Object.entries(files))
     fs.writeFileSync(path.join(dir, name), text, { mode: 0o600 })
   fs.writeFileSync(path.join(dir, `${spec.tabId}.sh`), tabScript(spec), { mode: 0o700 })
+  if (spec.ownerWords) seedHandedOverOwnerWords(saidFile(dir, spec.tabId), spec.ownerWords)
   if (spec.env) {
     const lines = Object.entries(spec.env).map(([k, v]) => `${k}=${shq(v)}`)
     fs.writeFileSync(path.join(dir, `${spec.tabId}.env`), lines.join('\n') + '\n', { mode: 0o600 })

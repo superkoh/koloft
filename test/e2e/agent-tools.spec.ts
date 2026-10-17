@@ -217,6 +217,32 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     await expect(caller.locator('.ws-tab-parked')).toHaveCount(0)
   })
 
+  // ADR-0031
+  test('a Claude child started by koloft session new has its reply-language hook start from the owner’s last words to its starter, not from its own task', async ({
+    page,
+    env
+  }) => {
+    const ownerWords = 'make the sidebar a little darker'
+    const saidFiles = (): string[] => {
+      const dir = path.join(env.userData, 'hook-sessions')
+      return fs
+        .readdirSync(dir)
+        .filter((f) => f.endsWith('.said'))
+        .map((f) => fs.readFileSync(path.join(dir, f), 'utf8').trim())
+    }
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const callerTabId = await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')
+    const kid = wsGroup(page, 'ws-a').locator(
+      `.ws-tab[data-tab-id="${callerTabId}"] + .ws-subtabs > .ws-tab`
+    )
+    await runIn(page, centerTerm(page), ownerWords)
+    await expect.poll(saidFiles, { timeout: 30_000 }).toEqual([ownerWords])
+    expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
+    await expect(kid).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+    expect(saidFiles()).toEqual([ownerWords, ownerWords])
+  })
+
   test('a Codex session started by koloft session new in a Codex session is nested under it, and the reply that ends its first turn, which it never sent back itself, is handed to its starter', async ({
     env
   }) => {
