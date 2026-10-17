@@ -8,7 +8,13 @@ import type {
   WorktreeInfo
 } from '@shared/types'
 import { ASSIST_SAYS_OPENING, DISCORD_PREFIX, ownerSays } from '@shared/agentGuide'
-import { BACKEND_LABEL, SESSION_BACKENDS, backendIdOf, messagingOf } from '@shared/sessionBackend'
+import {
+  BACKEND_LABEL,
+  PEER_TRAITS,
+  SESSION_BACKENDS,
+  backendIdOf,
+  messagingOf
+} from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { withoutBlankEdges } from './messageText'
 import { freshWorktreeName } from '@shared/sessionRoute'
@@ -129,7 +135,7 @@ function openSessionLines(
       BACKEND_LABEL[info.backendId],
       stateWords(info, asking)
     ]
-    if (info.backendId !== 'claude') parts.push(`id: ${idToReach(info)}`)
+    if (!PEER_TRAITS[info.backendId].reachedBySendMessage) parts.push(`id: ${idToReach(info)}`)
     if (peerName) parts.push(`name: ${peerName}`)
     parts.push(...starterPart(starter))
     const transcript = info.details?.claude?.jsonlPath
@@ -272,7 +278,9 @@ export function findSiblingTarget(
 ): Parsed<SessionInfo> {
   const hit = matchOpen(sessions, ref)
   if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
-  return hit.ok && hit.value.backendId === 'claude' && from === 'claude'
+  return hit.ok &&
+    PEER_TRAITS[hit.value.backendId].reachedBySendMessage &&
+    PEER_TRAITS[from].reachedBySendMessage
     ? fail(CLAUDE_USES_SEND_MESSAGE)
     : hit
 }
@@ -444,16 +452,20 @@ async function startSibling(
   oweReply: (tabId: string) => void
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
-  if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
+  const traits = PEER_TRAITS[backend]
+  if (!traits.namedAtLaunch && args.name !== undefined)
+    return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
   const caller: SessionCaller = {
-    name: (await d.peerNames()(me)) ?? (me.backendId === 'claude' ? me.title : undefined),
+    name:
+      (await d.peerNames()(me)) ??
+      (PEER_TRAITS[me.backendId].reachedBySendMessage ? me.title : undefined),
     id: idToReach(me),
     label: BACKEND_LABEL[me.backendId],
     assist: conductorTab !== undefined,
     ownerWords
   }
   const [name, preamble] = await Promise.all([
-    backend === 'codex'
+    !traits.namedAtLaunch
       ? undefined
       : (args.name ??
         nameForTask(
@@ -479,7 +491,7 @@ async function startSibling(
     permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
     ownerWords,
     // CODEX§17
-    ...(backend === 'codex'
+    ...(traits.handoverAsRole
       ? { role: preamble, firstPrompt: args.prompt }
       : { firstPrompt: withHandover(preamble, args.prompt) })
   })
@@ -497,7 +509,7 @@ async function startSibling(
       ? 'koloft session list'
       : `koloft session list --workspace ${JSON.stringify(workspace)}`
   return answered(
-    backend === 'claude'
+    traits.reachedBySendMessage
       ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
       : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : 'a Codex session'} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
   )
@@ -775,7 +787,8 @@ export function sessionVerb(d: SessionVerbDeps): {
     s: OwnerWordsHolder,
     seen = new Set<string>()
   ): Promise<string | undefined> => {
-    if (s.backendId === 'claude') return s.tabId ? d.quotedPrompt(s.tabId) : undefined
+    if (PEER_TRAITS[s.backendId].quotesOwnerWordsInHooks)
+      return s.tabId ? d.quotedPrompt(s.tabId) : undefined
     seen.add(s.sessionId)
     const [parent] = d.startedSessions.startersOf(s)
     const holder = parent && !seen.has(parent) ? holderOf(parent) : undefined
@@ -834,7 +847,10 @@ export function sessionVerb(d: SessionVerbDeps): {
     const tab = t.tabId ?? (await openReady(t, until))
     if (!tab) throw new Error(`${t.name} was resumed but did not get ready in time.`)
     const owed = assist
-      ? { owner: assist, asked: t.backend === 'codex' ? text : undefined }
+      ? {
+          owner: assist,
+          asked: messagingOf(t.backend, !!t.remote) === 'queue' ? text : undefined
+        }
       : undefined
     return owing(tab, owed, () => sendInto(t, tab, text, line, until))
   }

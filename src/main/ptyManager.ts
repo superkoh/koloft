@@ -7,7 +7,6 @@ import type { TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { OscCwdParser } from './oscCwd'
-import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
 import { bracketedPaste, typeKeys, typedPieces } from './typeKeys'
 
@@ -30,6 +29,8 @@ interface CreateArgs {
   executable?: string
   argv?: string[]
   processEnv?: NodeJS.ProcessEnv
+  koloftShim: boolean
+  finishEnv?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   kind: TabKind
   cwd: string
   cols?: number
@@ -50,13 +51,6 @@ interface CreateArgs {
     KOLOFT_AGENT_PROMPT?: string
     KOLOFT_PORT_OFFSET?: string
   }
-}
-
-const BRINGS_ITS_OWN_ENV: Record<TabKind, boolean> = {
-  shell: false,
-  claude: false,
-  codex: true,
-  muse: true
 }
 
 const UTIL_TITLE_POLL_MS = 1500
@@ -121,12 +115,9 @@ export class PtyManager extends EventEmitter {
     const login = userShell()
     const shell = args.shell || login.shell
 
-    const ownsItsTools = BRINGS_ITS_OWN_ENV[args.kind] && !args.remoteHost
+    const shim = args.koloftShim
     let env: Record<string, string> = {
-      ...((ownsItsTools ? (args.processEnv ?? process.env) : process.env) as Record<
-        string,
-        string
-      >),
+      ...((args.processEnv ?? process.env) as Record<string, string>),
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
       KOLOFT_TAB_ID: id,
@@ -175,11 +166,11 @@ export class PtyManager extends EventEmitter {
     if (this.openDir) env.KOLOFT_OPEN_DIR = this.openDir
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
     if (this.cdpDir && !args.util) env.KOLOFT_CDP_DIR = this.cdpDir
-    if (this.agentDir && !ownsItsTools) env.KOLOFT_AGENT_DIR = this.agentDir
+    if (this.agentDir && shim) env.KOLOFT_AGENT_DIR = this.agentDir
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
     const hookSettings =
-      args.util || ownsItsTools
+      args.util || !shim
         ? undefined
         : this.makeHookSettings?.(
             id,
@@ -187,8 +178,7 @@ export class PtyManager extends EventEmitter {
             args.conductor === true
           )
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
-    if (this.shimDir && !isWin && !ownsItsTools)
-      env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
+    if (this.shimDir && !isWin && shim) env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
     if (args.extraEnv) {
       for (const k of [
         'KOLOFT_FIRST_PROMPT',
@@ -202,9 +192,9 @@ export class PtyManager extends EventEmitter {
       }
     }
 
-    if (args.kind === 'codex') {
+    if (args.finishEnv) {
       env = Object.fromEntries(
-        Object.entries(codexEnvironment(env)).filter(
+        Object.entries(args.finishEnv(env)).filter(
           (entry): entry is [string, string] => typeof entry[1] === 'string'
         )
       )

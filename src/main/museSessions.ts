@@ -615,6 +615,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       const handle = this.deps.pty.create({
         id: tabId,
         kind: 'muse',
+        koloftShim: true,
         cwd: os.homedir(),
         cols: opts.cols,
         rows: opts.rows,
@@ -701,6 +702,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       const handle = this.deps.pty.create({
         id: tabId,
         kind: 'muse',
+        koloftShim: false,
         cwd,
         cols: opts.cols,
         rows: opts.rows,

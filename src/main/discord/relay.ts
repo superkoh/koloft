@@ -52,13 +52,16 @@ const takesYesOrNo = (label: string): string => `a ${label} approval takes yes o
 const takesAnOption = (label: string): string =>
   `this ${label} question takes the number or the name of one option.`
 
-type KeyedBackend = 'codex' | 'muse'
-const answersByKeys = (backend: BackendId | undefined): backend is KeyedBackend =>
-  backend === 'codex' || backend === 'muse'
-
 // CODEX§20 MUSE§11
-const optionKeys = (backend: KeyedBackend, key: string): string[] =>
-  backend === 'muse' ? [key, '\r'] : [key]
+const OPTION_KEYS: Record<BackendId, ((key: string) => string[]) | undefined> = {
+  claude: undefined,
+  codex: (key) => [key],
+  muse: (key) => [key, '\r']
+}
+const answersByKeys = (backend: BackendId | undefined): backend is BackendId =>
+  !!backend && OPTION_KEYS[backend] !== undefined
+const optionKeys = (backend: BackendId, key: string): string[] =>
+  OPTION_KEYS[backend]?.(key) ?? [key]
 const ASK_SUFFIX = '.ask.json'
 const ANSWER_SUFFIX = '.answer.json'
 const QUEUED = '⏳'

@@ -18,6 +18,8 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
   return storedBackend(sessions, resumeProbes, {
     accountUsable: () => hasUsableAccount(listAccounts(), 'codex'),
     trustsFolder: (dir) => codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir),
-    turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n)
+    turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n),
+    peerNames: () => async () => null,
+    runningElsewhere: () => false
   })
 }

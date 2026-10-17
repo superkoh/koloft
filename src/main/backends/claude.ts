@@ -51,7 +51,7 @@ import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
 import { SESSION_ID_RE } from '../claudeArgs'
 import { forgetClaudeProbe, probeClaude } from '../claudeProbe'
-import { runningClaudePid } from '../claudeSessionRegistry'
+import { claudePeerNames, runningClaudePid } from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
 import {
   findTranscript,
@@ -195,6 +195,14 @@ export class ClaudeBackend implements SessionBackend {
 
   accountUsable(): boolean {
     return hasUsableAccount(listAccounts(), 'claude')
+  }
+
+  peerNames(): (key: string) => Promise<string | null> {
+    return claudePeerNames()
+  }
+
+  async runningElsewhere(key: string): Promise<boolean> {
+    return (await runningClaudePid(key)) !== null
   }
 
   trustsFolder(dir: string): Promise<boolean> {
@@ -946,6 +954,7 @@ export class ClaudeBackend implements SessionBackend {
       !machine && this.agentPlugin && loadSettings().agentTools ? this.agentPlugin : undefined
     const handle = this.d.pty.create({
       kind: 'claude',
+      koloftShim: true,
       cwd: plan.spawnCwd,
       cols: spec.cols,
       rows: spec.rows,

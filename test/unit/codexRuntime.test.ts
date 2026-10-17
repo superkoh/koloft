@@ -4,6 +4,7 @@ import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolveCodexRuntime } from '../../src/main/codexRuntime'
 import { PtyManager } from '../../src/main/ptyManager'
+import { CODEX_TAB_ENV } from '../../src/main/codexSessions'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 
 const fake = vi.hoisted(() => ({ spawn: vi.fn() }))
@@ -119,6 +120,7 @@ describe('Codex shell runtime', () => {
     manager.makeHookSettings = vi.fn(() => '/must-not-hook')
     manager.create({
       kind: 'codex',
+      ...CODEX_TAB_ENV,
       cwd: directory,
       executable: runtime.binary,
       argv: ['--remote', 'unix:///test/socket'],

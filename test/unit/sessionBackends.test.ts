@@ -37,7 +37,9 @@ function stubBackend(
     accountUsable: () => true,
     trustsFolder: () => true,
     turns: async () => [],
-    permissionClass: () => 'prompting' as const
+    permissionClass: () => 'prompting' as const,
+    peerNames: () => async () => null,
+    runningElsewhere: () => false
   } satisfies SessionBackend
 }
 
