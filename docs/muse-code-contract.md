@@ -447,3 +447,8 @@ server of the opening note and with `--provider echo`; October 2026.
   `--provider echo`) still writes the live registry of §4 under
   `museHome/runtime/muse/sessions`, with `process_generation_hint: "pid=<pid>"`; nothing
   appears under `/tmp/tbh-*`. Only macOS 1.4.10 moved it (§4).
+- The `auth.json` of a finished device-code login on macOS (§13: `providers.meta` with
+  `access_token`, `obtained_via`, `mechanism`), copied into a config folder on a Linux
+  machine, signs muse 1.4.9 in there with the real Meta model: it answered a prompt,
+  with `SubagentStart` and `SubagentStop` hooks around its work (Docker, real `ssh`,
+  tmux 3.3a, through Koloft, October 2026).
