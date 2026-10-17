@@ -439,3 +439,7 @@ server of the opening note and with `--provider echo`; October 2026.
   `/clear` writes the new session's registry file with the same pid, so the wrapper
   follows it. Typed text followed by Enter in one write lands in the input box unsent;
   an Enter sent a second later submits it.
+- On Linux, muse 1.4.10 (`Muse Code 1.4.10 (1.4.10-R6427.1)`, official installer, Docker,
+  `--provider echo`) still writes the live registry of §4 under
+  `museHome/runtime/muse/sessions`, with `process_generation_hint: "pid=<pid>"`; nothing
+  appears under `/tmp/tbh-*`. Only macOS 1.4.10 moved it (§4).

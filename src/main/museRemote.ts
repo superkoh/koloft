@@ -39,7 +39,7 @@ args = args[1:]
 home = os.path.expanduser('~')
 config = os.path.join(os.environ.get('XDG_CONFIG_HOME') or os.path.join(home, '.config'), 'muse')
 data = os.path.join(os.environ.get('XDG_DATA_HOME') or os.path.join(home, '.local', 'share'), 'muse')
-registry = os.path.join(data, 'runtime', 'muse', 'sessions')
+registries = [os.path.join(data, 'runtime', 'muse', 'sessions'), '/tmp/tbh-%d-rt/muse/sessions' % os.getuid()]
 trust_file = os.path.join(config, 'trust.json')
 tabs = os.path.join(os.path.dirname(hook_dir), 'tabs')
 in_tmux = bool(os.environ.get('TMUX'))
@@ -227,18 +227,21 @@ registry_seen = [None]
 def follow_registry():
     mine = 'pid=%d' % pid
     best = None
+    there = [folder for folder in registries if os.path.isdir(folder)]
     try:
-        changed = os.stat(registry).st_mtime
-        if bound and changed == registry_seen[0]:
-            return
-        registry_seen[0] = changed
-        names = os.listdir(registry)
+        changed = max(os.stat(folder).st_mtime for folder in there) if there else None
     except OSError:
         return
-    for name in names:
-        if not name.endswith('.json'):
-            continue
-        path = os.path.join(registry, name)
+    if changed is None or (bound and changed == registry_seen[0]):
+        return
+    registry_seen[0] = changed
+    paths = []
+    for folder in there:
+        try:
+            paths += [os.path.join(folder, name) for name in os.listdir(folder) if name.endswith('.json')]
+        except OSError:
+            pass
+    for path in paths:
         entry = read_json(path)
         sid = entry.get('session_id')
         if entry.get('process_generation_hint') != mine or not isinstance(sid, str):
@@ -355,7 +358,8 @@ export function museRunLines(s: MuseRunSpec): string {
   mkdir -p "$A/muse" && chmod 700 "$HOME/.koloft/muse-homes" "$A" "$A/muse"
   [ -f "$T.auth.json" ] && mv -f "$T.auth.json" "$A/muse/auth.json"
   for f in ${SHARED_WITH_THE_MACHINE_USER.join(' ')}; do
-    [ -e "$A/muse/$f" ] || [ -L "$A/muse/$f" ] || [ ! -e "$O/$f" ] || ln -s "$O/$f" "$A/muse/$f"
+    [ -L "$A/muse/$f" ] && [ ! -e "$A/muse/$f" ] && rm -f "$A/muse/$f"
+    [ -e "$A/muse/$f" ] || [ ! -e "$O/$f" ] || ln -s "$O/$f" "$A/muse/$f"
   done
   S="$A/muse/skills"; mkdir -p "$S"; rm -rf "$S/${KOLOFT_SKILL}"
   [ -f "$T.skill.md" ] && mkdir -p "$S/${KOLOFT_SKILL}" && mv -f "$T.skill.md" "$S/${KOLOFT_SKILL}/SKILL.md"

@@ -481,7 +481,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
   })
 
-  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings there, runs muse through the wrapper, and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
+  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings there and drops a link whose file is gone, runs muse through the wrapper, and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
     const s = spec({
       tmuxName: 'm-T',
       muse: {
@@ -498,6 +498,9 @@ describe('U-TAB-*: the tab script on the machine', () => {
     const own = path.join(b.home, '.config', 'muse')
     fs.mkdirSync(own, { recursive: true })
     fs.writeFileSync(path.join(own, 'settings.json'), '{"schema_version":1}')
+    const accountMuse = path.join(b.home, '.koloft', 'muse-homes', "o'brien", 'muse')
+    fs.mkdirSync(accountMuse, { recursive: true })
+    fs.symlinkSync(path.join(own, 'AGENTS.md'), path.join(accountMuse, 'AGENTS.md'))
     fs.writeFileSync(
       path.join(b.home, '.local', 'bin', 'python3'),
       `#!/bin/sh\nenv > ${JSON.stringify(path.join(b.logs, 'env'))}\nprintf '%s\\n' "$@" > ${JSON.stringify(path.join(b.logs, 'argv'))}\n`,
@@ -529,6 +532,9 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(fs.existsSync(path.join(b.tabs, 'T.auth.json'))).toBe(false)
     expect(fs.readlinkSync(path.join(account, 'muse', 'settings.json'))).toBe(
       path.join(own, 'settings.json')
+    )
+    expect(fs.lstatSync(path.join(account, 'muse', 'AGENTS.md'), { throwIfNoEntry: false })).toBe(
+      undefined
     )
     fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
     b.run('attach')
