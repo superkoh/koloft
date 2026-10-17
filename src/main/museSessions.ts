@@ -174,15 +174,15 @@ function mirrorLine(raw: string): Record<string, unknown> | undefined {
 // MUSE§11
 const KEYS_TAKE_AFTER_A_DIALOG_SHOWS_MS = 2000
 
-const INPUT_BOX_RULE = /^─{8,}$/
-const EMPTY_INPUT_ROW = '❯'
+const INPUT_BOX_RULE = /^─.*─{8,}$/
+const INPUT_ROW_MARK = '❯'
 
 // MUSE§11
-export function museShowsAnEmptyInputBox(lines: string[]): boolean {
+export function museShowsItsInputBox(lines: string[]): boolean {
   const rules = lines.flatMap((line, i) => (INPUT_BOX_RULE.test(line.trim()) ? [i] : []))
   if (rules.length < 2) return false
   const [above, below] = rules.slice(-2)
-  return below === above + 2 && lines[above + 1].trim() === EMPTY_INPUT_ROW
+  return below === above + 2 && lines[above + 1].trim().startsWith(INPUT_ROW_MARK)
 }
 
 // MUSE§1
@@ -228,8 +228,13 @@ const WRITING_TOOLS = new Set(['write_file', 'edit_file'])
 const SCHEDULED_JOB = /^Scheduled ([0-9a-f]{8})\b/
 
 // MUSE§4
-function registryDir(env: NodeJS.ProcessEnv): string {
-  return path.join(museHome(env), 'runtime', 'muse', 'sessions')
+function registryDirs(env: NodeJS.ProcessEnv): string[] {
+  return [
+    path.join(museHome(env), 'runtime', 'muse', 'sessions'),
+    ...(process.platform === 'darwin'
+      ? [path.join('/tmp', `tbh-${process.getuid?.()}-rt`, 'muse', 'sessions')]
+      : [])
+  ]
 }
 
 // MUSE§2 MUSE§10
@@ -419,11 +424,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   // MUSE§4
   runningElsewhere(key: string): boolean {
     if (hostOfKey(key)) return false
-    const pid = registryPid(
-      readJson(path.join(registryDir(this.env), `${this.nativeId(key)}.json`))
-    )
-    const ours = [...this.runs.values()].some((r) => r.pid === pid)
-    return pid > 0 && !ours && pidAlive(pid)
+    return registryDirs(this.env).some((dir) => {
+      const pid = registryPid(readJson(path.join(dir, `${this.nativeId(key)}.json`)))
+      const ours = [...this.runs.values()].some((r) => r.pid === pid)
+      return pid > 0 && !ours && pidAlive(pid)
+    })
   }
 
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {
@@ -1141,21 +1146,19 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       this.sweeping = undefined
       return rebound
     }
-    const dir = registryDir(this.env)
-    let changedAt: number
-    try {
-      changedAt = fs.statSync(dir).mtimeMs
-    } catch {
-      return rebound
-    }
+    const dirs = registryDirs(this.env).flatMap((dir) => {
+      const changed = fs.statSync(dir, { throwIfNoEntry: false })?.mtimeMs
+      return changed === undefined ? [] : [{ dir, changed }]
+    })
+    if (!dirs.length) return rebound
+    const changedAt = Math.max(...dirs.map((d) => d.changed))
     if (changedAt === this.registrySeenAt && live.every((r) => r.info)) return rebound
     const since = (run: MuseRun): number => run.startedAt - REGISTRY_WRITE_LEEWAY_MS
-    const { entries, whole } = readRegistry(
-      dir,
-      new Set(live.map((r) => r.pid!)),
-      Math.min(...live.map(since))
+    const read = dirs.map(({ dir }) =>
+      readRegistry(dir, new Set(live.map((r) => r.pid!)), Math.min(...live.map(since)))
     )
-    if (whole) this.registrySeenAt = changedAt
+    const entries = read.flatMap((r) => r.entries)
+    if (read.every((r) => r.whole)) this.registrySeenAt = changedAt
     for (const run of live) {
       const mine = entries
         .filter((e) => e.pid === run.pid && e.mtimeMs >= since(run))

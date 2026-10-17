@@ -138,7 +138,13 @@ const MUSE_CONDUCTOR_DENIED =
   'Koloft: Assist only passes work on. It may read files, change files inside its own folder, ask the owner a question with request_user_input and run one plain koloft command per bash call (no ;, &&, |, >, $ or backticks outside quotes). It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
 
 // MUSE§9
-const MUSE_READ_TOOLS = ['read_file', 'search', 'work_status', 'submit_reminder_decision']
+const MUSE_READ_TOOLS = [
+  'read_file',
+  'read_skill',
+  'search',
+  'work_status',
+  'submit_reminder_decision'
+]
 const MUSE_WRITE_TOOLS = ['write_file', 'edit_file']
 
 // ADR-0029 MUSE§9

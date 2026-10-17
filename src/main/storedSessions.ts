@@ -382,6 +382,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       r.invalidCwd = seenMissing(m.cwd)
       r.nativeSessionId = m.id
       r.createdAt = m.createdAt
+      r.mtime ||= m.updatedAt
       r.running = this.readsRunning(m.key)
       const resource = m.worktreeResourceId
         ? this.store.getResource(m.worktreeResourceId)

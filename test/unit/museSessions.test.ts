@@ -6,7 +6,7 @@ import { EventEmitter } from 'events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   MuseSessions,
-  museShowsAnEmptyInputBox,
+  museShowsItsInputBox,
   museTrustsFolder,
   trustMuseFolder,
   type MuseMachine,
@@ -371,6 +371,7 @@ describe('Assist on Muse', () => {
     expect(tool('bash', { command: 'rm -rf ../workspace' })).toBe('deny')
     expect(tool('bash', { command: 'koloft session list; rm -rf ..' })).toBe('deny')
     expect(tool('read_file', { path: '/etc/hosts' })).toBeUndefined()
+    expect(tool('read_skill', { name: 'koloft' })).toBeUndefined()
     expect(tool('write_file', { path: 'notes.md', content: 'x' })).toBeUndefined()
     expect(tool('edit_file', { path: path.join(repo, 'a', 'b.md') })).toBeUndefined()
     expect(tool('write_file', { path: '../outside.md', content: 'x' })).toBe('deny')
@@ -433,6 +434,12 @@ describe('MuseSessions status and binding', () => {
     say(id, osc('state=clear') + osc('state=idle:app=muse'))
     expect(sessions.list()[0].sessionId).toBe(museSessionKey(B))
     expect(sessions.store.getMember(museSessionKey(A))).toBeUndefined()
+  })
+
+  it('lists a session it just bound, before muse lists it, as active now', async () => {
+    await boundTab()
+    const [row] = sessions.rows(repo)
+    expect(Date.now() - row.mtime).toBeLessThan(60_000)
   })
 
   it("never creates muse's registry folder", async () => {
@@ -741,21 +748,19 @@ describe('reading the Muse screen before typing into it', () => {
   const STATUS = '  fake-model · high · ~/ws · Auto-review'
 
   // MUSE§11
-  it('takes typing only while the input box between the last two rules is empty, with or without background tasks listed under it', () => {
-    expect(museShowsAnEmptyInputBox(['Muse Code 1.4.9', RULE, '❯', RULE, STATUS])).toBe(true)
+  it('takes typing only while the input box shows between the last two rules, whatever hint it holds, with or without background tasks listed under it, and not while an approval box takes its place', () => {
+    expect(museShowsItsInputBox(['Muse Code 1.4.9', RULE, '❯', RULE, STATUS])).toBe(true)
     expect(
-      museShowsAnEmptyInputBox([
-        RULE,
-        '❯ ',
-        RULE,
-        'main · ↓ to select',
-        '└ ◆ Background sleep',
-        STATUS
-      ])
+      museShowsItsInputBox([`── Voice input (⌥ + v to start) ${RULE}`, '❯ ', RULE, STATUS])
     ).toBe(true)
-    expect(museShowsAnEmptyInputBox([RULE, '❯ half a draft', RULE, STATUS])).toBe(false)
     expect(
-      museShowsAnEmptyInputBox([
+      museShowsItsInputBox([RULE, '❯ ', RULE, 'main · ↓ to select', '└ ◆ Background sleep', STATUS])
+    ).toBe(true)
+    expect(
+      museShowsItsInputBox([RULE, '❯ Press Ctrl+O to expand collapsed tool output', RULE, STATUS])
+    ).toBe(true)
+    expect(
+      museShowsItsInputBox([
         '◇ Calling tools (1s · esc to interrupt)',
         RULE,
         'Approval request · keys active in a moment',
@@ -765,7 +770,7 @@ describe('reading the Muse screen before typing into it', () => {
         STATUS
       ])
     ).toBe(false)
-    expect(museShowsAnEmptyInputBox(['❯'])).toBe(false)
+    expect(museShowsItsInputBox(['❯'])).toBe(false)
   })
 })
 
