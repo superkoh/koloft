@@ -402,6 +402,7 @@ interface Tracked {
   subagentFiles: Map<string, SubagentFile>
   subagentScanMs: number
   ledger: BackgroundLedger
+  teammateActiveMs: number
   lastBgActivityTs: number
   lastMainActivityTs: number
   bindMs: number
@@ -516,6 +517,7 @@ export class SessionTracker extends SessionRuntime {
       subagentFiles: new Map(),
       subagentScanMs: 0,
       ledger: new BackgroundLedger(),
+      teammateActiveMs: 0,
       lastBgActivityTs: 0,
       lastMainActivityTs: 0,
       bindMs: Date.now(),
@@ -684,7 +686,7 @@ export class SessionTracker extends SessionRuntime {
     const reportedIds = new Set(list.map((x) => x.id))
     const toolCallInFlight = !!procs && [...procs.shells.keys()].some((id) => !reportedIds.has(id))
     const agentsFresh = now - Math.max(t.lastBgActivityTs, t.reportedAt) < BG_SILENCE_MAX_MS
-    const teammatesFresh = now - t.ledger.teammateActiveMs < TEAMMATE_QUIET_MS
+    const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
     let idleTeammates = 0
     for (const task of list) {
       if (task.type === 'shell') {
@@ -797,7 +799,7 @@ export class SessionTracker extends SessionRuntime {
 
   private bgBusy(t: Tracked): boolean {
     const quietMs = Date.now() - t.lastBgActivityTs
-    if (t.ledger.size > 0) return quietMs < BG_SILENCE_MAX_MS
+    if (t.ledger.held) return quietMs < BG_SILENCE_MAX_MS
     return t.lastBgActivityTs > t.lastMainActivityTs && quietMs < STOP_HOLD_MS
   }
 
@@ -1001,6 +1003,7 @@ export class SessionTracker extends SessionRuntime {
     t.subagentScanMs = 0
     t.info.usage = undefined
     t.ledger = new BackgroundLedger()
+    t.teammateActiveMs = 0
     t.openTools = new Map()
     t.lastBgActivityTs = 0
     t.lastMainActivityTs = 0
@@ -1315,7 +1318,7 @@ export class SessionTracker extends SessionRuntime {
     if (st.size === sst.offset) return false
     sst.activeMs = Date.now()
     if (sst.teammate === undefined) sst.teammate = readTeammateFlag(file)
-    if (sst.teammate) t.ledger.teammateActiveMs = sst.activeMs
+    if (sst.teammate) t.teammateActiveMs = sst.activeMs
     let folded = false
     while (sst.offset < st.size) {
       const from = sst.offset
@@ -1369,6 +1372,8 @@ export class SessionTracker extends SessionRuntime {
         toolUseIds.push(b.tool_use_id)
     }
     const task = t.ledger.noteSpawnAck(tur, toolUseIds)
+    // CC§8
+    if (tur.status === 'teammate_spawned') t.teammateActiveMs = Date.now()
     if (task && t.reported && !t.reported.some((x) => x.id === task.id)) {
       t.reported.push({ ...task, since: Date.now() })
     }
