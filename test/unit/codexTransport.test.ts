@@ -45,6 +45,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
    child.unref();
    out({id:f.id,result:{pid:process.pid,child:child.pid}});return;
  }
+ if(mode==='unread') {process.stdout.write('{"id":"plugin-list-1","result":not json}\\n');out({id:f.id,result:{}});return;}
  if(mode==='big') {process.stdout.write(JSON.stringify({id:f.id,result:{pad:'x'.repeat(f.params.bytes)}})+'\\n');return;}
  if(mode==='utf8') {
    const bytes=Buffer.from(JSON.stringify({id:f.id,result:{title:'会话🙂'}})+'\\n');
@@ -307,6 +308,35 @@ describe('Codex TUI transport', () => {
     socket.close()
     await done
     for (const pid of [result.pid, result.child]) expect(() => process.kill(pid, 0)).toThrow()
+    expect(errors).toEqual([])
+  })
+
+  it('a reply the observer does not want reaches the TUI as Codex wrote it, without being read, while one it wants is read', async () => {
+    const observed: CodexFrame[] = []
+    const errors: Error[] = []
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: (direction, frame) => {
+        if (direction === 'server') observed.push(frame)
+      },
+      observes: (_direction, head) => head.replyTo !== 'plugin-list-1',
+      onError: (error) => errors.push(error)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const raw: string[] = []
+    const both = new Promise<void>((resolve) =>
+      socket.on('message', (bytes) => {
+        if (raw.push(bytes.toString()) === 2) resolve()
+      })
+    )
+    socket.send(JSON.stringify({ id: 'mine', method: 'thread/read', params: { mode: 'unread' } }))
+    await both
+    expect(raw).toEqual(['{"id":"plugin-list-1","result":not json}', '{"id":"mine","result":{}}'])
+    expect(observed).toContainEqual({ id: 'mine', result: {} })
+    expect(observed.some((frame) => frame.id === 'plugin-list-1')).toBe(false)
     expect(errors).toEqual([])
   })
 

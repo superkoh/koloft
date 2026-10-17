@@ -587,6 +587,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
           ...hookOverrides(hooks.filter((h) => trusted.has(h.command)))
         ],
         onFrame: (direction, frame) => observer.receive(direction, frame),
+        observes: (direction, head) => observer.wants(direction, head),
         onDisconnect: () => this.markDegraded(bound),
         onError: (error) => {
           this.markDegraded(bound)
