@@ -18,6 +18,8 @@ export function museAccountEnv(home: string): Record<string, string> {
 }
 
 const SHARED_WITH_THE_OWNER = ['settings.json', 'trust.json', 'AGENTS.md']
+// MUSE§13
+const MUSE_STOPS_WHEN_THIS_LINK_DANGLES = 'AGENTS.md'
 
 export function readJson(file: string): Record<string, unknown> {
   try {
@@ -41,7 +43,11 @@ function keepTrustOf(own: string, owners: string): void {
 
 function linkBack(own: string, owners: string): void {
   const there = fs.lstatSync(own, { throwIfNoEntry: false })
-  if (there?.isSymbolicLink()) return
+  const mustExist = path.basename(own) === MUSE_STOPS_WHEN_THIS_LINK_DANGLES
+  if (there?.isSymbolicLink()) {
+    if (mustExist && !fs.existsSync(owners)) fs.unlinkSync(own)
+    return
+  }
   if (there) {
     if (path.basename(own) === 'trust.json') keepTrustOf(own, owners)
     else if (!fs.existsSync(owners)) {
@@ -50,8 +56,7 @@ function linkBack(own: string, owners: string): void {
     }
     fs.rmSync(own, { force: true })
   }
-  // MUSE§13
-  if (fs.existsSync(owners)) fs.symlinkSync(owners, own)
+  if (!mustExist || fs.existsSync(owners)) fs.symlinkSync(owners, own)
 }
 
 const KOLOFT_SKILL = 'koloft'

@@ -2405,7 +2405,8 @@ app.whenReady().then(() => {
       conductors?.forgetGone(
         (key) =>
           ids.has(key) ||
-          storedSessions().some((s) => s.id === identityOf(key).backendId && !s.threadGone(key))
+          (identityOf(key).backendId !== 'claude' &&
+            !storedSessions().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
       ),
     memberDropped: (sessionId, why) => {
       discordThreads?.left(sessionId)

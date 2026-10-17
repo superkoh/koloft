@@ -3,7 +3,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { writeAgentShim } from './agentShim'
 import { ownedByThisRun } from './leftovers'
-import { oncePerName, watchJsonDrops, type DropHandlerFor } from './jsonDrops'
+import { oncePerName, watchAndSweepJsonDrops, type DropHandlerFor } from './jsonDrops'
 import { openDropHandler } from './openDrop'
 import { removeOpenShim, writeOpenShim, type OpenShim } from './openShimScript'
 
@@ -41,12 +41,17 @@ export function startToolShim(
     const { agent } = opts
     if (agent) writeAgentShim(shim.shimDir, shim.requestDir)
     const opens = oncePerName(() => openDropHandler(opts.open))
-    const drops = watchJsonDrops(shim.requestDir, (name) => {
-      if (name.startsWith('req-'))
-        return agent ? (obj): void => agent(shim.requestDir, name, obj) : null
-      if (name.startsWith('res-')) return null
-      return opts.drop?.(name) ?? opens(name)
-    })
+    const dropped = opts.drop && oncePerName(opts.drop)
+    const drops = watchAndSweepJsonDrops(
+      shim.requestDir,
+      (name) => {
+        if (name.startsWith('req-'))
+          return agent ? (obj): void => agent(shim.requestDir, name, obj) : null
+        if (name.startsWith('res-')) return null
+        return dropped?.(name) ?? opens(name)
+      },
+      (name) => dropped?.(name) ?? null
+    )
     return {
       shim,
       release: () => {

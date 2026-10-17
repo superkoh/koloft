@@ -100,6 +100,7 @@ interface MuseLaunch {
 
 interface MuseRun extends StoredRun {
   account: string
+  bypassing: boolean
   pid?: number
   startedAt: number
   boundAt: number
@@ -345,6 +346,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     })
   }
 
+  launchedBypassingChecks(tabId: string): boolean {
+    return !!this.runs.get(tabId)?.bypassing
+  }
+
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {
     if (!this.binary) throw new Error('Muse Code is unavailable.')
     return { binary: this.binary, env: this.env }
@@ -471,7 +476,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         resource,
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
-        permission,
+        permission: asked,
+        bypassing: permission === 'bypass',
         launchName: opts.name,
         account,
         pid: this.deps.pty.pidOf(handle.id),
@@ -806,7 +812,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     this.holdForJobs(run)
     run.endedTurns.clear()
     run.log = undefined
-    this.bind(run, known ?? { id: sessionId, cwd: run.cwd }, switched ? 'switch' : 'replace')
+    this.bind(
+      run,
+      known ?? { id: sessionId, cwd: run.cwd, updatedAt: Date.now() / 1000 },
+      switched ? 'switch' : 'replace'
+    )
     this.readLog(run)
     for (const status of run.sinceClear) this.emitState(run, status)
     return true

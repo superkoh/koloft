@@ -254,12 +254,24 @@ describe('MuseSessions launch', () => {
     expect(created[1].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
   })
 
-  it('starts unrestricted when "Skip permission prompts" is on in Accounts, but never over a permission picked for this launch', async () => {
+  it('starts unrestricted when "Skip permission prompts" is on in Accounts, but never over a permission picked for this launch, and a session started that way asks again on resume once the setting is off', async () => {
     skipPermissions = true
-    await launch()
+    const id = await boundTab()
     await launch({ permission: 'acceptEdits' })
     expect(created[0].argv).toEqual(['--permission-profile', ':unrestricted'])
     expect(created[1].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
+    expect(sessions.launchedBypassingChecks(id)).toBe(true)
+    await sessions.stop(id)
+    skipPermissions = false
+    await sessions.resume({ sessionId: museSessionKey(A), cwd: repo })
+    expect(created[2].argv).toEqual([
+      '--approval-judge',
+      'off',
+      '--sandbox-network',
+      'enabled',
+      'resume',
+      A
+    ])
   })
 
   it('hands the Workbench browser to a tab that can drive it', async () => {
@@ -380,8 +392,8 @@ describe('Assist on Muse', () => {
   })
 
   // ADR-0029 MUSE§9
-  it('may read, write only inside its own folder and run one plain koloft command per bash call, like a Claude Assist; every other muse tool is stopped before it runs', async () => {
-    assist = { role: 'r', allow: [] }
+  it('may read, write only inside its own folder and run one plain koloft command or one its task names per bash call, like a Claude Assist, never answered with an allow muse refuses; every other muse tool is stopped before it runs', async () => {
+    assist = { role: 'r', allow: ['Bash(playwright-cli click)'] }
     const { id } = await launch()
     const tool = (
       tool_name: string,
@@ -389,6 +401,8 @@ describe('Assist on Muse', () => {
     ): string | undefined =>
       decision(hook(id, 'PreToolUse', { session_id: A, tool_name, tool_input }))
     expect(tool('bash', { command: 'koloft session list' })).toBeUndefined()
+    expect(tool('bash', { command: 'playwright-cli click e5' })).toBeUndefined()
+    expect(tool('bash', { command: 'playwright-cli eval x' })).toBe('deny')
     expect(tool('bash', { command: 'rm -rf ../workspace' })).toBe('deny')
     expect(tool('bash', { command: 'koloft session list; rm -rf ..' })).toBe('deny')
     expect(tool('read_file', { path: '/etc/hosts' })).toBeUndefined()

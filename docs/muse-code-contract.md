@@ -279,6 +279,10 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - An entry another program wrote first is honoured (no question), and muse keeps the
   other entries when it adds one (it rewrites the file pretty-printed).
 - `--trust-workspace` trusts the folder for that run only and saves nothing.
+- `muse resume <id>` asks the same question when the folder has no decision, and
+  writes no live-registry file (§4) until it is answered, so nothing tells which
+  session the tab holds while the question is on screen (1.4.10, a real Meta account,
+  macOS, 2026-10).
 
 ## §11 Approvals and questions in the terminal
 
