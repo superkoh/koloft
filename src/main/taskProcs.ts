@@ -110,6 +110,18 @@ async function listeningTrees(trees: Map<string, number[]>, exec: Exec): Promise
 }
 
 // MUSE§8
+function runsCommand(line: string, command: string): boolean {
+  if (line === command || line.endsWith(` ${command}`)) return true
+  const [program, ...args] = command.split(' ')
+  const [binary, ...lineArgs] = line.split(' ')
+  return (
+    args.length > 0 &&
+    args.join(' ') === lineArgs.join(' ') &&
+    program.toLowerCase().startsWith(path.basename(binary).toLowerCase())
+  )
+}
+
+// MUSE§8
 export async function museServersAmong(
   rootPid: number,
   commands: Map<string, string>,
@@ -121,7 +133,7 @@ export async function museServersAmong(
   for (const child of snap.childrenOf.get(rootPid) ?? []) {
     const line = snap.commandOf.get(child) ?? ''
     for (const [id, command] of commands)
-      if (line === command || line.endsWith(` ${command}`)) trees.set(id, descendants(snap, child))
+      if (runsCommand(line, command)) trees.set(id, descendants(snap, child))
   }
   return listeningTrees(trees, exec)
 }
