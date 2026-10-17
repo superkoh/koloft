@@ -101,7 +101,10 @@ export class RemoteSync {
 
   stop(): void {
     this.stopped = true
-    for (const st of this.hosts.values()) if (st.timer) clearTimeout(st.timer)
+    for (const st of this.hosts.values()) {
+      if (st.timer) clearTimeout(st.timer)
+      this.roundOver(st)
+    }
     this.hosts.clear()
   }
 
@@ -232,6 +235,7 @@ export class RemoteSync {
       for (const [host, st] of this.hosts) {
         if (hosts.has(host)) continue
         if (st.timer) clearTimeout(st.timer)
+        this.roundOver(st)
         this.hosts.delete(host)
       }
       for (const host of hosts) {

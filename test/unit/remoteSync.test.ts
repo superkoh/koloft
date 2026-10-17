@@ -484,6 +484,15 @@ it("the wait for a machine's first heartbeat ends when that first round ends, an
   expect(runs.length).toBe(before)
 })
 
+it('a wait for the first round ends when the sync stops before that round runs, so a launch waiting on it is not stuck', async () => {
+  let done = false
+  void sync.firstRoundDone('devbox').then(() => (done = true))
+  sync.stop()
+  await tick(1)
+  expect(runs).toEqual([])
+  expect(done).toBe(true)
+})
+
 describe('pokeNow', () => {
   it('runs a round at once instead of waiting out the interval', async () => {
     target = { ...target, busy: false }
