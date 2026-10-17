@@ -339,8 +339,8 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - `muse serve` (experimental capability) `account/read` → `state:
   "loggedOut"|"apiKey"|"envKey"|"accountLogin"`; `account/loginStart {type}` returns
   the device code and URL.
-- How much of a Meta account's quota is used shows only after a model call: in the
-  TUI `/usage` draws a Current and a Weekly bar (screen only, §11), while a fresh
+- How much of a Meta account's quota is used showed only inside a live session: the
+  TUI's `/usage` draws a Current and a Weekly bar (screen only, §11), while a fresh
   `muse serve` answers `usage/read` with nothing in it and `muse exec --json` prints
   no usage record (1.4.10, a real Meta account, macOS, 2026-10).
 - A rejected `META_API_KEY` ends the launch before the TUI: "failed to fetch model
