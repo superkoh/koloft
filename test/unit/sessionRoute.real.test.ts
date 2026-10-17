@@ -10,7 +10,8 @@ import {
 
 const BINARIES: Record<BackendId, string | undefined> = {
   claude: process.env.KOLOFT_REAL_ROUTE_CLAUDE,
-  codex: process.env.KOLOFT_REAL_ROUTE_CODEX
+  codex: process.env.KOLOFT_REAL_ROUTE_CODEX,
+  muse: process.env.KOLOFT_REAL_ROUTE_MUSE
 }
 
 const LIST: RouteWorkspace[] = [
@@ -84,16 +85,25 @@ const CASES: [string, string[]][] = [
   ['resume the session that was fixing login', [GLOBAL_ASSIST]],
   ['跳到修 Codex 账号余额那个会话', ['session:k-codex']],
   ['每天早上9点帮我跑一下 shop-api 的测试', [GLOBAL_ASSIST]],
-  ['set up Discord', ['discord']]
+  ['set up Discord', ['discord']],
+  [
+    'koloft里，我明明开了多个agent，为什么session list前没有展示agent对应的icon。只有assist里展示了',
+    ['workspace:koloft']
+  ],
+  ['training loss 第二个 epoch 就变 nan 了，是哪里的问题', ['workspace:ml-train']],
+  ['koloft 里怎么加一个远程工作区', ['feature:add-remote', GLOBAL_ASSIST]],
+  ['shop-api 那边 webhook 写完了吗', ['assist:shop-api', GLOBAL_ASSIST]],
+  ['让 shop-api 那边做 webhook 的时候顺手把重试也加上', ['assist:shop-api', GLOBAL_ASSIST]],
+  ["how's blog doing on the Electron article", ['assist:blog', GLOBAL_ASSIST]],
+  ['blog 写一篇 Rust 入门', ['workspace:blog']]
 ]
 
-for (const backend of ['claude', 'codex'] as const) {
+for (const backend of ['claude', 'codex', 'muse'] as const) {
   const binary = BINARIES[backend]
   const assist = koloftAssist({
     setting: () => ({ on: true, backend }),
     enabled: (b) => b === backend,
-    claude: async () => (binary ? { binary, env: process.env } : null),
-    codex: async () => (binary ? { binary, env: process.env } : null)
+    target: async () => (binary ? { binary, env: process.env } : null)
   })
 
   describe.skipIf(!binary)(

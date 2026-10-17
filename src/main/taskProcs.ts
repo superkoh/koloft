@@ -98,6 +98,46 @@ function parseLsofPids(stdout: string): Set<number> {
   return out
 }
 
+async function listeningTrees(trees: Map<string, number[]>, exec: Exec): Promise<Set<string>> {
+  const all = [...trees.values()].flat()
+  if (!all.length) return new Set()
+  const listening = parseLsofPids(
+    await exec('lsof', ['-a', '-p', all.join(','), '-iTCP', '-sTCP:LISTEN', '-Fp'])
+  )
+  return new Set(
+    [...trees].filter(([, pids]) => pids.some((p) => listening.has(p))).map(([id]) => id)
+  )
+}
+
+// MUSE§8
+function runsCommand(line: string, command: string): boolean {
+  if (line === command || line.endsWith(` ${command}`)) return true
+  const [program, ...args] = command.split(' ')
+  const [binary, ...lineArgs] = line.split(' ')
+  return (
+    args.length > 0 &&
+    args.join(' ') === lineArgs.join(' ') &&
+    program.toLowerCase().startsWith(path.basename(binary).toLowerCase())
+  )
+}
+
+// MUSE§8
+export async function museServersAmong(
+  rootPid: number,
+  commands: Map<string, string>,
+  exec: Exec = defaultExec
+): Promise<Set<string>> {
+  const snap = parsePs(await exec('ps', ['-Ao', 'pid=,ppid=,etime=,time=,command=']))
+  if (!snap) return new Set()
+  const trees = new Map<string, number[]>()
+  for (const child of snap.childrenOf.get(rootPid) ?? []) {
+    const line = snap.commandOf.get(child) ?? ''
+    for (const [id, command] of commands)
+      if (runsCommand(line, command)) trees.set(id, descendants(snap, child))
+  }
+  return listeningTrees(trees, exec)
+}
+
 // CC§2 CC§8
 export async function inspectTaskProcs(
   rootPid: number,
@@ -127,21 +167,8 @@ export async function inspectTaskProcs(
       cpuMs: descendants(snap, pid).reduce((sum, p) => sum + (snap.cpuOf.get(p) ?? 0), 0)
     })
   }
-  if (result.shells.size) {
-    const trees = new Map<string, number[]>()
-    for (const [id, sh] of result.shells) trees.set(id, descendants(snap, sh.pid))
-    const all = [...trees.values()].flat()
-    const listening = parseLsofPids(
-      await exec('lsof', ['-a', '-p', all.join(','), '-iTCP', '-sTCP:LISTEN', '-Fp'])
-    )
-    if (listening.size) {
-      for (const [id, pids] of trees) {
-        if (pids.some((p) => listening.has(p))) {
-          const sh = result.shells.get(id)
-          if (sh) sh.listening = true
-        }
-      }
-    }
-  }
+  const trees = new Map<string, number[]>()
+  for (const [id, sh] of result.shells) trees.set(id, descendants(snap, sh.pid))
+  for (const id of await listeningTrees(trees, exec)) result.shells.get(id)!.listening = true
   return result
 }

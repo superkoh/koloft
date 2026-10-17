@@ -8,8 +8,7 @@
       name="description"
       content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
     />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/accounts/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -27,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+      content="Koloft's icon and the line “Built for you. And for your agents.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Several accounts, one pool — Koloft" />
@@ -36,25 +35,38 @@
       content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
-    <link
-      rel="preload"
-      href="../fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="stylesheet" href="../style.css" />
   </head>
-  <body>
+  <body class="doc">
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="../"><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a>
+        <nav class="links" aria-label="Site">
+          <a href="../#palette">⌘P</a>
+          <a href="../#sessions">Sessions</a>
+          <a href="../#workbench">Workbench</a>
+          <a href="../#assist">Assist</a>
+          <a href="../features/">Features</a>
+          <a href="../sessions/" aria-current="page">Docs</a>
+          <a href="../changelog/">Changelog</a>
+        </nav>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="../install/"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#download" /></svg
+          >Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="../icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
+
     <div class="sheet">
       <header class="masthead">
-        <p class="brand">
-          <a href="../"
-            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
-          >
-        </p>
-        <nav class="contents" aria-label="Pages">
-          <a href="../">home</a>
+        <nav class="contents" aria-label="Docs">
           <a href="../sessions/">sessions</a>
           <a href="../workbench/">workbench</a>
           <a href="../agents/">agents</a>
@@ -97,7 +109,6 @@
                 alt="Koloft's Settings, Accounts page: the Skip permission prompts and Prefer accounts with fable allowance switches, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
               />
             </picture>
-            <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
             Settings ▸ Accounts: two Claude accounts and how much each has used
@@ -137,9 +148,9 @@
         <h3>How it picks</h3>
         <ul class="dash">
           <li>
-            Koloft asks each account how much is left as a session starts (a reading from the last
-            30 seconds is reused), every 5 minutes while it is open, and when you click Refresh
-            usage
+            Koloft asks each account how much is left when it opens, as a session starts (a reading
+            from the last 30 seconds is reused), when Settings opens, when the usage panel opens and
+            its last reading is over 5 minutes old, and when you click Refresh usage
           </li>
           <li>
             with "Prefer accounts with fable allowance" on, an account that still has fable
@@ -162,7 +173,11 @@
         <h3>Good to know</h3>
         <ul class="dash">
           <li>tokens and keys are kept in the macOS Keychain</li>
-          <li>the top bar shows how much room your Claude accounts have left</li>
+          <li>
+            the little bars at the bottom of the sidebar show how much room your Claude and Codex
+            accounts have left. Hover them for the <code>Account usage</code> panel: one part per
+            tool, each with its accounts and, with two or more accounts, a Pool row
+          </li>
           <li>
             with no account that can be used, the New session button is greyed out, and a line under
             it says why (the same for Codex); a scheduled job does not start either. The line is one
@@ -192,8 +207,16 @@
           Sign in to Codex runs <code>codex login</code> in a terminal tab. Each sign-in becomes its
           own Codex home, a folder that holds that one login. The sign-in tab says
           <code>Codex sign in: &lt;name&gt;</code> above the terminal, with a Cancel button. New
-          Codex sessions start on the least-used one. Each account's use, for each limit Codex
-          reports (such as 5 hours and a week), shows in Settings.
+          Codex sessions start on the least-used one, and skip one that has hit its limit while
+          another is free; when all have hit it, Koloft takes turns. Settings and the
+          <code>Account usage</code> panel show each account's use for each limit Codex reports
+          (such as 5 hours and a week), its credits, and the resets it has saved, like
+          <code>62,500 credits · 3 resets saved, first expires 10-21 09:00</code>.
+        </p>
+        <p>
+          An account that hit its limit shows <code>WALLED</code> in the panel. When it has a saved
+          reset, a <code>Use a reset</code> button is there too: say yes, and Koloft spends one
+          reset and reads the account's limits again.
         </p>
 
         <h2 id="assist">Assist</h2>
@@ -279,11 +302,13 @@
           <li>Other server: its address, your username there and a token, kept without checking</li>
         </ul>
         <p>
-          Each account is kept on this Mac only, in the Keychain like your other tokens. Its row
-          says how many folders use it; their names show when you click Remove.
-          <code>Make default</code> makes it the first choice when a folder on that host picks one;
-          <code>Remove</code> takes it off this Mac, and its folders go back to your own setup. When
-          the server turns its token down, the row says <code>NEEDS SIGN-IN AGAIN</code>.
+          An account for this Mac is kept on this Mac only, in the Keychain like your other tokens.
+          An account for another machine stays on that machine (see
+          <a href="#machine-accounts">On another machine</a>). Its row says how many folders use it;
+          their names show when you click Remove. <code>Make default</code> makes it the first
+          choice when a folder on that host picks one; <code>Remove</code> takes it off this Mac,
+          and its folders go back to your own setup. When the server turns its token down, the row
+          says <code>NEEDS SIGN-IN AGAIN</code>.
         </p>
         <h3>Picking one per folder</h3>
         <p>
@@ -319,10 +344,73 @@
             <a href="../agents/">agents</a>)
           </li>
           <li>
-            a <a href="../remote/">remote folder</a> has no Account part: its sessions use that
-            machine's own git setup
+            a pick works when the folder's remote is an SSH address too (<code class="nowrap"
+              >git@github.com:…</code
+            >, <code class="nowrap">ssh://…</code>, or an ssh alias of your own): inside a Koloft
+            session, git then goes over https with the picked account's token; your own git setup,
+            <code>~/.ssh</code> and the Keychain are left alone. An account added as Other server
+            does not do this
+          </li>
+          <li>
+            a <a href="../remote/">remote folder</a>'s Account part lists that machine's git
+            accounts; see <a href="#machine-accounts">On another machine</a>
           </li>
         </ul>
+        <h3 id="machine-accounts">On another machine</h3>
+        <p>
+          A <a href="../remote/">remote folder</a>'s machine keeps git accounts of its own. Once a
+          remote folder is in the list, Settings ▸ Accounts ▸ Git accounts gets a
+          <code>Machine</code> row: <code>This Mac</code>, and each machine. Pick a machine and the
+          list, <code>Add account</code>, <code>Make default</code> and <code>Remove</code> are that
+          machine's. Your Mac's accounts never go to a machine, and a machine's never come to the
+          Mac. Once a machine has an account, its remote folder's
+          <a href="../sessions/#git-panel">git panel</a> gets the same <code>Account</code> part as
+          a local one, and a pick there works as above: git follows it, and for a GitHub or GitHub
+          Enterprise account <code>gh</code>, the issue and pull request counts, and
+          <code>gh auth login</code> do too (a remote folder runs Claude Code only). What differs:
+        </p>
+        <ul class="dash">
+          <li>
+            a token you paste goes over SSH to the machine, into a folder under your home that only
+            you can read
+          </li>
+          <li>
+            GitHub and GitHub Enterprise: the one-time code and the sign-in page still show on your
+            Mac
+          </li>
+          <li>
+            GitLab.com, Bitbucket, Gitea / Forgejo / Codeberg: you sign in on the site in your
+            browser on the Mac, and what the sign-in tool (Git Credential Manager) saved is moved
+            whole to the machine. If the machine has no sign-in tool, Koloft installs it there first
+            when it can: on Linux or macOS that has curl or wget, not on a musl Linux such as
+            Alpine. When it cannot, it asks you for a token. Bitbucket has no token path, so it
+            cannot be added for such a machine
+          </li>
+          <li>
+            the machine needs git 2.13 or newer. With an older git, Koloft keeps no account and
+            says:
+            <code
+              >git on &lt;machine&gt; is 2.12.0; git accounts need git 2.13 or newer there. Update
+              git on &lt;machine&gt;, then add the account again.</code
+            >
+          </li>
+          <li>
+            Koloft does not check on a machine whether an account can push to the folder's
+            repository, so it picks or suggests one from the folder's address and git setup alone,
+            and never warns that an organization blocks the push
+          </li>
+          <li><code>Make a key</code> (below) is for this Mac only; there is none for a machine</li>
+        </ul>
+        <h3>Servers that allow SSH only</h3>
+        <p>
+          Some GitLab and Gitea servers allow SSH only. Then the
+          <a href="../sessions/#git-panel">git panel</a> says
+          <code>This server allows SSH only — bob has no SSH key on this Mac yet.</code> with a
+          <code>Make a key for bob</code> button. Press it, and Koloft makes the key, shows it with
+          <code>Copy key</code> and <code>Open SSH keys page</code>, and <code>Check again</code>
+          tells you whether the server knows it yet. Pushes and fetches in that folder then use that
+          key.
+        </p>
 
         <h2>Your own accounts</h2>
         <p>
@@ -330,24 +418,41 @@
           use them fits Anthropic's and OpenAI's terms. That is between you and them.
         </p>
 
-        <p class="next">next page -&gt; <a href="../remote/">Remote folders</a></p>
+        <p class="next">Next page → <a href="../remote/">Remote folders</a></p>
       </main>
-
-      <footer class="signoff">
-        <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="../changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
-        </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
-        </p>
-      </footer>
     </div>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="../"
+            ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
+          >
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="../features/">All features</a>
+          <a href="../sessions/">Folders and their sessions</a>
+          <a href="../workbench/">The Workbench</a>
+          <a href="../agents/">Agents can use Koloft too</a>
+          <a href="../scheduled/">Sessions on a timer</a>
+          <a href="../accounts/">Several accounts, one pool</a>
+          <a href="../remote/">Remote folders</a>
+          <a href="../discord/">A butler on Discord</a>
+          <a href="../install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="../changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
 
     <script src="../script.js"></script>
   </body>

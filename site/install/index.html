@@ -8,8 +8,7 @@
       name="description"
       content="Install Koloft from its dmg or with one Terminal line, how it updates, and every host it ever talks to."
     />
-    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/install/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -27,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+      content="Koloft's icon and the line “Built for you. And for your agents.” on a dark, glowing background"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Install, update, what it talks to — Koloft" />
@@ -36,25 +35,38 @@
       content="Install Koloft from its dmg or with one Terminal line, how it updates, and every host it ever talks to."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
-    <link
-      rel="preload"
-      href="../fonts/special-elite-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="stylesheet" href="../style.css" />
   </head>
-  <body>
+  <body class="doc">
+    <div class="bgfx"></div>
+    <header class="nav">
+      <div class="in">
+        <a class="logo" href="../"><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a>
+        <nav class="links" aria-label="Site">
+          <a href="../#palette">⌘P</a>
+          <a href="../#sessions">Sessions</a>
+          <a href="../#workbench">Workbench</a>
+          <a href="../#assist">Assist</a>
+          <a href="../features/">Features</a>
+          <a href="../sessions/" aria-current="page">Docs</a>
+          <a href="../changelog/">Changelog</a>
+        </nav>
+        <a class="btn ghost" href="https://github.com/superkoh/koloft"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#github" /></svg>GitHub</a
+        >
+        <a class="btn primary" href="../install/"
+          ><svg class="icon" aria-hidden="true"><use href="../icons.svg#download" /></svg
+          >Download</a
+        >
+        <button class="menu" type="button" aria-label="Menu" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="../icons.svg#menu" /></svg>
+        </button>
+      </div>
+    </header>
+
     <div class="sheet">
       <header class="masthead">
-        <p class="brand">
-          <a href="../"
-            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
-          >
-        </p>
-        <nav class="contents" aria-label="Pages">
-          <a href="../">home</a>
+        <nav class="contents" aria-label="Docs">
           <a href="../sessions/">sessions</a>
           <a href="../workbench/">workbench</a>
           <a href="../agents/">agents</a>
@@ -79,9 +91,9 @@
         <h2>Install</h2>
         <p>
           Get the <code>.dmg</code> (the disk image a Mac app comes in) from
-          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>. Open it and
-          drag Koloft to Applications. Koloft is signed with an Apple Developer ID and notarized, so
-          it opens with a normal double-click.
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>. Open it and drag
+          Koloft to Applications. Koloft is signed with an Apple Developer ID and notarized, so it
+          opens with a normal double-click.
         </p>
 
         <h3>Or one line in Terminal</h3>
@@ -91,8 +103,10 @@
         </p>
         <!-- prettier-ignore -->
         <p class="command">
-          <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>superkoh/<wbr>koloft-releases/<wbr>main/<wbr>install.sh | bash</code>
-          <button type="button" class="copy" data-copy="cmd-install">Copy</button>
+          <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>superkoh/<wbr>koloft/<wbr>main/<wbr>install.sh | bash</code>
+          <button type="button" class="copy" data-copy="cmd-install">
+              <span class="idle"><svg class="icon" aria-hidden="true"><use href="../icons.svg#copy" /></svg> Copy</span><span class="done"><svg class="icon" aria-hidden="true"><use href="../icons.svg#check" /></svg> Copied</span>
+            </button>
         </p>
 
         <h3>What you need</h3>
@@ -158,7 +172,8 @@
                   <code>api.anthropic.com</code>
                 </td>
                 <td>
-                  each account's room left, as a session starts and every 5 minutes. Through
+                  each account's room left, as Koloft opens, as a session starts, and when Settings
+                  or the usage panel opens. Through
                   <code>claude</code>, the small jobs of
                   <a href="../accounts/#assist">Assist</a> when it runs on Claude
                 </td>
@@ -168,9 +183,9 @@
                 <td>
                   a newer Koloft and its <code>.dmg</code>; through <code>gh</code>, issue and pull
                   request counts, a branch's checks, and what Assist asks with
-                  <code>koloft gh</code>; and <code>gh</code> itself, for a remote folder's machine
-                  that has none; a GitHub <a href="../accounts/#git-accounts">git account</a>'s
-                  sign-in, and its token check
+                  <code>koloft gh</code>; and, for a remote folder's machine that lacks them,
+                  <code>gh</code> itself and the sign-in tool (Git Credential Manager); a GitHub
+                  <a href="../accounts/#git-accounts">git account</a>'s sign-in, and its token check
                 </td>
               </tr>
               <tr>
@@ -328,24 +343,41 @@
           <a href="https://github.com/superkoh/koloft/blob/main/SECURITY.md">SECURITY.md</a> first.
         </p>
 
-        <p class="next">back to the start -&gt; <a href="../">home</a></p>
+        <p class="next">Back to the start → <a href="../">home</a></p>
       </main>
-
-      <footer class="signoff">
-        <p>
-          <a href="https://github.com/superkoh/koloft">source</a> ·
-          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
-          <a href="../changelog/">changelog</a> ·
-          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
-        </p>
-        <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span
-            class="caret"
-            aria-hidden="true"
-          ></span>
-        </p>
-      </footer>
     </div>
+
+    <footer class="foot">
+      <div class="in">
+        <div>
+          <a class="logo" href="../"
+            ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
+          >
+          <p>
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+          </p>
+        </div>
+        <nav aria-label="Docs">
+          <b>Docs</b>
+          <a href="../features/">All features</a>
+          <a href="../sessions/">Folders and their sessions</a>
+          <a href="../workbench/">The Workbench</a>
+          <a href="../agents/">Agents can use Koloft too</a>
+          <a href="../scheduled/">Sessions on a timer</a>
+          <a href="../accounts/">Several accounts, one pool</a>
+          <a href="../remote/">Remote folders</a>
+          <a href="../discord/">A butler on Discord</a>
+          <a href="../install/">Install, update, what it talks to</a>
+        </nav>
+        <nav aria-label="Project">
+          <b>Project</b>
+          <a href="../changelog/">Changelog</a>
+          <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
 
     <script src="../script.js"></script>
   </body>

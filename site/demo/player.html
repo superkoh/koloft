@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+    <title>Koloft, recorded</title>
+    <link rel="stylesheet" href="app.css" />
+    <style id="frame-styles"></style>
+    <style>
+      html,
+      body {
+        overflow: hidden;
+      }
+      * {
+        pointer-events: none !important;
+      }
+      .traffic {
+        position: fixed;
+        z-index: 99999;
+        left: 18px;
+        top: 18px;
+        display: flex;
+        gap: 8px;
+      }
+      .traffic i {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.25);
+      }
+      .traffic i:nth-child(1) {
+        background: #ff5f57;
+      }
+      .traffic i:nth-child(2) {
+        background: #febc2e;
+      }
+      .traffic i:nth-child(3) {
+        background: #28c840;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <script>
+      const params = new URLSearchParams(location.search)
+      const FILMS = ['pal-start', 'pal-jump', 'pal-search', 'tree', 'browser', 'assist']
+      const film = FILMS.find((f) => f === params.get('film')) || FILMS[0]
+      const startAt = Number(params.get('from') || 0)
+      const HOLD_LAST_FRAME_MS = 5000
+      const script = document.createElement('script')
+      script.src = film + '.frames.js'
+      script.onload = start
+      document.head.append(script)
+
+      function syncAttrs(from, to) {
+        for (const a of [...to.attributes])
+          if (!from.hasAttribute(a.name)) to.removeAttribute(a.name)
+        for (const a of from.attributes)
+          if (to.getAttribute(a.name) !== a.value) to.setAttribute(a.name, a.value)
+      }
+
+      function morph(to, from) {
+        const next = [...from.childNodes]
+        const have = [...to.childNodes]
+        for (let i = 0; i < next.length; i++) {
+          const n = next[i]
+          const h = have[i]
+          if (!h) to.append(n.cloneNode(true))
+          else if (h.nodeType !== n.nodeType || h.nodeName !== n.nodeName)
+            to.replaceChild(n.cloneNode(true), h)
+          else if (n.nodeType === 3 || n.nodeType === 8) {
+            if (h.nodeValue !== n.nodeValue) h.nodeValue = n.nodeValue
+          } else {
+            syncAttrs(n, h)
+            morph(h, n)
+          }
+        }
+        for (let i = have.length - 1; i >= next.length; i--) have[i].remove()
+      }
+
+      const portalBox = document.createElement('div')
+      portalBox.style.display = 'contents'
+      document.body.append(portalBox)
+      let lastStyles = ''
+      let doc = ''
+      let docAt = -1
+      function decode(frames, n) {
+        if (n < docAt) {
+          doc = ''
+          docAt = -1
+        }
+        while (docAt < n) {
+          const [p, s, mid] = frames[++docAt].d
+          doc = doc.slice(0, p) + mid + doc.slice(doc.length - s)
+        }
+        const [root, portals] = doc.split('\u0001')
+        return { root, portals: portals ? portals.split('\u0002') : [] }
+      }
+
+      function show(data, n) {
+        const f = data.frames[n]
+        const { root, portals } = decode(data.frames, n)
+        const html = document.documentElement
+        for (const a of [...html.attributes])
+          if (a.name !== 'lang' && !(a.name in f.html)) html.removeAttribute(a.name)
+        for (const [k, v] of Object.entries(f.html)) html.setAttribute(k, v)
+        for (const [k, v] of Object.entries(f.body)) document.body.setAttribute(k, v)
+        const css = f.s.map((i) => data.styles[i]).join('\n')
+        if (css !== lastStyles)
+          document.getElementById('frame-styles').textContent = lastStyles = css
+        const t = document.createElement('template')
+        t.innerHTML = root
+        morph(document.getElementById('root'), t.content)
+        const p = document.createElement('template')
+        p.innerHTML = portals.join('')
+        morph(portalBox, p.content)
+      }
+
+      function start() {
+        const data = window.KOLOFT_FRAMES
+        const frames = data.frames
+        const tell = (msg) => parent.postMessage({ film, ...msg }, '*')
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          show(data, frames.length - 1)
+          return tell({ koloftReady: true })
+        }
+        let i = startAt
+        let timer = 0
+        let playing = false
+        const step = () => {
+          show(data, i)
+          tell({ koloftFrame: i, of: frames.length })
+          const next = frames[i + 1]
+          const wait = next
+            ? Math.min(Math.max(next.t - frames[i].t, 90), 1600)
+            : HOLD_LAST_FRAME_MS
+          i = next ? i + 1 : startAt
+          timer = setTimeout(step, wait)
+        }
+        const play = () => {
+          if (playing) return
+          playing = true
+          step()
+        }
+        const pause = () => {
+          playing = false
+          clearTimeout(timer)
+        }
+        addEventListener('message', (e) => {
+          if (e.source !== parent) return
+          const cmd = e.data && e.data.koloft
+          if (cmd === 'play') play()
+          else if (cmd === 'pause') pause()
+          else if (cmd === 'restart') {
+            pause()
+            i = startAt
+            play()
+          }
+        })
+        show(data, startAt)
+        tell({ koloftReady: true })
+      }
+    </script>
+  </body>
+</html>

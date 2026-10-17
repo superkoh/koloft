@@ -52,10 +52,10 @@ describe('routeJob: what Koloft Assist is told', () => {
     expect(prompt).toContain('fix the login bug')
   })
 
-  it('lists the Koloft features it may pick by key, leaving out those that act on whichever session or workspace is current', () => {
+  it('lists the Koloft features it may pick by key with the words people use for each, leaving out those that act on whichever session or workspace is current', () => {
     const { prompt } = routeJob(LIST, 'open settings')
-    expect(prompt).toContain('open-settings | Settings…')
-    expect(prompt).toContain('settings-accounts | Settings ▸ Accounts')
+    expect(prompt).toContain('open-settings | Settings… | 设置, 偏好, preferences')
+    expect(prompt).toContain('settings-accounts | Settings ▸ Accounts | 账号, 账户, token')
     expect(prompt).not.toContain('restart-session')
     expect(prompt).not.toContain('scheduled-jobs')
   })
@@ -82,12 +82,16 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     })
   })
 
-  it('reads a feature only by a key it was offered, and a session only by a ref it was shown', () => {
+  it('reads a feature only by a key it was offered, also when the answer leaves out its hand, and a session only by a ref it was shown', () => {
     expect(parseRoute(reply({ hand: 'feature', feature: 'check-update' }), LIST)).toEqual({
       kind: 'feature',
       key: 'check-update',
       title: '',
       why: ''
+    })
+    expect(parseRoute(reply({ feature: 'check-update' }), LIST)).toMatchObject({
+      kind: 'feature',
+      key: 'check-update'
     })
     expect(parseRoute(reply({ hand: 'feature', feature: 'restart-session' }), LIST)).toBeNull()
     expect(parseRoute(reply({ hand: 'feature', feature: 'nope' }), LIST)).toBeNull()
@@ -110,8 +114,7 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     expect(tree({ new: 'Fix-Login' })).toEqual({ kind: 'new', name: 'Fix-Login-2' })
     expect(tree({ new: '../x' })).toBeNull()
     expect(tree({ new: 'main' })).toBeNull()
-    expect(tree({ existing: 'REDIS-CACHE' })).toEqual({ kind: 'existing', name: 'redis-cache' })
-    expect(tree({ existing: 'nope' })).toBeNull()
+    expect(tree({ existing: 'redis-cache' })).toBeNull()
     expect(tree({ issue: 433 })).toEqual({ kind: 'issue', number: 433 })
     expect(tree({ issue: -1 })).toBeNull()
     expect(tree('main')).toBeNull()

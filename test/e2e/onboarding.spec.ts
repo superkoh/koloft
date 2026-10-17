@@ -299,7 +299,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await advanceTo(page, 4)
 
       await expect(installCards(page)).toHaveText(
-        [/^Claude.*Not on this Mac/, /^Codex.*Not on this Mac/],
+        [/^Claude.*Not on this Mac/, /^Codex.*Not on this Mac/, /^Muse.*Not on this Mac/],
         { timeout: 20_000 }
       )
       await expect(welcome(page)).not.toContainText('npm')
@@ -426,7 +426,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
     }
   })
 
-  test('T-OB-11: with only Codex on this Mac step 3 offers to install Claude and to sign in to Codex, and Assist can run on Codex', async ({
+  test('T-OB-11: with only Codex on this Mac step 3 offers to install Claude and Muse and to sign in to Codex, and Assist can run on Codex', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -442,9 +442,12 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await advanceTo(page, 3)
 
       const cards = welcome(page).locator('.assist-setup .choice')
-      await expect(cards.locator('.choice-t')).toHaveText(['Claude', 'Codex'], { timeout: 20_000 })
+      await expect(cards.locator('.choice-t')).toHaveText(['Claude', 'Codex', 'Muse'], {
+        timeout: 20_000
+      })
       await expect(cards.nth(0)).toContainText('Not on this Mac')
       await expect(cards.nth(1)).toContainText('Signed in')
+      await expect(cards.nth(2)).toContainText('Not on this Mac')
       await cards.nth(1).click()
       await clickPrimary(page)
       await expectStep(page, 4)

@@ -15,7 +15,7 @@ export interface SdkPackage {
 const REPO = 'https://dl.google.com/android/repository/'
 const SYSTEM_IMAGE_DIR = 'system-images/android-36/google_apis/arm64-v8a'
 
-// PLATFORM§54
+// PLATFORM§58
 export const ANDROID_PACKAGES: SdkPackage[] = [
   {
     name: 'platform-tools',
@@ -117,7 +117,7 @@ export async function ensureAndroidSdk(
 export const AVD_NAME = 'koloft'
 export const SCREEN = { width: 1080, height: 2400 }
 
-// PLATFORM§54
+// PLATFORM§58
 function avdConfig(): string {
   return [
     'PlayStore.enabled=false',

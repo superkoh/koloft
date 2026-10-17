@@ -30,7 +30,7 @@ const NO_IPHONE =
 
 const QUICK_MS = 15_000
 const READ_UI_MS = 9_000
-// PLATFORM§55
+// PLATFORM§59
 const FIRST_BOOT_MS = 5 * 60_000
 const READ_UI_AFTER_BOOT_MS = 3 * 60_000
 const READ_UI_RETRY_PAUSE_MS = 1_000
@@ -129,7 +129,7 @@ export class IosPhone implements PhoneDevice {
     return JSON.parse(await this.axe(['describe-ui'], READ_UI_MS)) as AxNode[]
   }
 
-  // PLATFORM§55
+  // PLATFORM§59
   async readScreenOnceBooted(): Promise<void> {
     let lastError: unknown
     const end = Date.now() + READ_UI_AFTER_BOOT_MS

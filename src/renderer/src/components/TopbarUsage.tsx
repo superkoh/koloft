@@ -8,7 +8,7 @@ import {
   type ReactNode
 } from 'react'
 import { createPortal } from 'react-dom'
-import { LuRotateCw, LuSettings } from 'react-icons/lu'
+import { IconReload, IconSettings } from '../icons'
 import type { AccountView, CodexLimitWindow, CodexResetOutcome } from '@shared/types'
 import {
   accountWalled,
@@ -27,6 +27,7 @@ import {
   poolSnapshot,
   popoverX,
   sublineFor,
+  ACCOUNT_KINDS_OF,
   type CapsuleGlyph,
   type PoolSnapshot
 } from '@shared/accountUsage'
@@ -126,7 +127,7 @@ export function TopbarUsage(): JSX.Element | null {
   if (members.length === 0 && codex.length === 0) return null
 
   const claude = members.length > 0
-  const enabled = accounts.filter((a) => a.enabled && a.kind !== 'codex-home')
+  const enabled = accounts.filter((a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind))
   const armed = claude && meteredArmed(accounts, Math.floor(now / 1000))
   const total = claude ? poolGlyph(members, now) : null
   const codexGlyphs = codex.map((a) => codexGlyph(a, now))
@@ -280,7 +281,7 @@ export function TopbarUsage(): JSX.Element | null {
             </div>
             <div className="tbu-sep" />
             <button className="tbu-act" disabled={probing} onClick={() => void probe()}>
-              <LuRotateCw size={14} />
+              <IconReload size={14} />
               {probing ? 'Probing…' : 'Probe now'}
               <span className="k">1–2 requests per account</span>
             </button>
@@ -291,7 +292,7 @@ export function TopbarUsage(): JSX.Element | null {
                 setSettingsOpen(true)
               }}
             >
-              <LuSettings size={14} />
+              <IconSettings size={14} />
               Account settings…
             </button>
           </div>,

@@ -8,10 +8,15 @@ export function whenLine(job: CronJob, now: Date): string {
 }
 
 export function histText(h: HistoryLine): string {
+  const base = histBase(h)
+  return h.note ? `${base} — ${h.note}` : base
+}
+
+function histBase(h: HistoryLine): string {
   if (h.state === 'closed') return 'Closed by you'
   if (h.state === 'finished') return 'Done — closed itself'
   if (h.state === 'ended') return 'Ended — Koloft quit'
-  if (h.state === 'failed') return h.note ? `Could not start — ${h.note}` : 'Could not start'
+  if (h.state === 'failed') return 'Could not start'
   const n = h.count ?? 1
   if (h.state === 'missed') {
     return n > 1
@@ -21,6 +26,11 @@ export function histText(h: HistoryLine): string {
   return n > 1
     ? `Skipped ${n} times — the last run was still open`
     : 'Skipped — the last run was still open'
+}
+
+export function histFolder(h: HistoryLine): string {
+  if (h.removed) return 'folder removed'
+  return h.kept ? `folder kept: ${h.kept}` : ''
 }
 
 export function histWhen(h: HistoryLine, now: Date): string {

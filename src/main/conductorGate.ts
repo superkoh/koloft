@@ -1,9 +1,8 @@
 import { shq } from '@shared/shellQuote'
+import { CODEX_WAITING_QUESTION_TOOL } from '@shared/agentGuide'
 
 const CONDUCTOR_DENIED =
   'Koloft: Assist only passes work on. It may read files, write its own memory folder, ask the owner a question and run one plain koloft command per Bash call (no ;, &&, |, >, $ or backticks outside quotes). To get anything else done, start a session with koloft session new or message one with koloft session send.'
-
-export const CODEX_WAITING_QUESTION_TOOL = 'request_user_input'
 
 const CODEX_CONDUCTOR_DENIED = `Koloft: Assist only passes work on. It may run shell commands, change files inside its own folder and ask the owner a question with ${CODEX_WAITING_QUESTION_TOOL} (it waits for the answer; ${CODEX_WAITING_QUESTION_TOOL}_async does not). It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.`
 
@@ -46,20 +45,7 @@ process.stdin.on('end', () => {
 })
 `
 
-// ADR-0029 CC§15
-export const CONDUCTOR_GATE_SCRIPT = `const path = require('path')
-const READ_OR_ASK_TOOLS = new Set(${JSON.stringify(READ_OR_ASK_TOOLS)})
-const WRITE_TOOLS = new Set(${JSON.stringify(WRITE_TOOLS)})
-
-function inOwnMemory(event) {
-  const transcript = event.transcript_path
-  const file = event.tool_input && event.tool_input.file_path
-  if (typeof transcript !== 'string' || typeof file !== 'string') return false
-  const memory = path.join(path.dirname(transcript), 'memory')
-  return path.resolve(file).startsWith(memory + path.sep)
-}
-
-function onePlainCall(command, program) {
+const ONE_PLAIN_CALL = `function onePlainCall(command, program) {
   const cmd = String(command).trim()
   if (cmd !== program && !cmd.startsWith(program + ' ')) return false
   let quote = ''
@@ -85,13 +71,31 @@ function allowedCommands(named) {
   })
 }
 
+function koloftOrNamed(command, named) {
+  if (allowedCommands(named).some((program) => onePlainCall(command, program))) return GRANTED
+  return onePlainCall(command, 'koloft')
+}`
+
+// ADR-0029 CC§15
+export const CONDUCTOR_GATE_SCRIPT = `const path = require('path')
+const READ_OR_ASK_TOOLS = new Set(${JSON.stringify(READ_OR_ASK_TOOLS)})
+const WRITE_TOOLS = new Set(${JSON.stringify(WRITE_TOOLS)})
+
+function inOwnMemory(event) {
+  const transcript = event.transcript_path
+  const file = event.tool_input && event.tool_input.file_path
+  if (typeof transcript !== 'string' || typeof file !== 'string') return false
+  const memory = path.join(path.dirname(transcript), 'memory')
+  return path.resolve(file).startsWith(memory + path.sep)
+}
+
+${ONE_PLAIN_CALL}
+
 function allowed(event, named) {
   if (READ_OR_ASK_TOOLS.has(event.tool_name)) return true
   if (WRITE_TOOLS.has(event.tool_name)) return inOwnMemory(event)
   if (event.tool_name !== 'Bash') return false
-  const command = event.tool_input && event.tool_input.command
-  if (allowedCommands(named).some((program) => onePlainCall(command, program))) return GRANTED
-  return onePlainCall(command, 'koloft')
+  return koloftOrNamed(event.tool_input && event.tool_input.command, named)
 }
 
 ${TOOLS_THE_ALLOW_FILE_NAMES}
@@ -130,6 +134,44 @@ ${TOOLS_THE_ALLOW_FILE_NAMES}
 
 ${DENY_AND_SAY(CODEX_CONDUCTOR_DENIED)}`
 
+const MUSE_CONDUCTOR_DENIED =
+  'Koloft: Assist only passes work on. It may read files, change files inside its own folder, ask the owner a question with request_user_input and run one plain koloft command per bash call (no ;, &&, |, >, $ or backticks outside quotes). It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
+
+// MUSE§9
+const MUSE_READ_TOOLS = [
+  'read_file',
+  'read_skill',
+  'search',
+  'work_status',
+  'submit_reminder_decision'
+]
+const MUSE_WRITE_TOOLS = ['write_file', 'edit_file']
+
+// ADR-0029 MUSE§9
+export const MUSE_CONDUCTOR_GATE_SCRIPT = `const path = require('path')
+const READ_TOOLS = new Set(${JSON.stringify(MUSE_READ_TOOLS)})
+const WRITE_TOOLS = new Set(${JSON.stringify(MUSE_WRITE_TOOLS)})
+
+function inOwnFolder(event) {
+  const file = event.tool_input && event.tool_input.path
+  if (typeof event.cwd !== 'string' || typeof file !== 'string') return false
+  const own = path.resolve(event.cwd)
+  return path.resolve(own, file).startsWith(own + path.sep)
+}
+
+${ONE_PLAIN_CALL}
+
+function allowed(event, named) {
+  if (READ_TOOLS.has(event.tool_name)) return true
+  if (WRITE_TOOLS.has(event.tool_name)) return inOwnFolder(event)
+  if (event.tool_name !== 'bash') return false
+  return !!koloftOrNamed(event.tool_input && event.tool_input.command, named)
+}
+
+${TOOLS_THE_ALLOW_FILE_NAMES}
+
+${DENY_AND_SAY(MUSE_CONDUCTOR_DENIED)}`
+
 export function conductorGateCommand(gateScript: string, allowFile: string): string {
   return `ELECTRON_RUN_AS_NODE=1 ${shq(process.execPath)} ${shq(gateScript)} ${shq(allowFile)}`
 }
@@ -139,7 +181,9 @@ export const ASSIST_ALLOW_ENV = 'KOLOFT_ASSIST_ALLOW'
 
 // CODEX§27
 export const CODEX_GATE_HOOK_COMMAND = `sh "$${CODEX_GATE_ENV}"`
-export const CODEX_GATE_OVERRIDE = `hooks.PreToolUse=[{hooks=[{type="command",command=${JSON.stringify(CODEX_GATE_HOOK_COMMAND)}}]}]`
+export const codexHookOverride = (event: string, command: string): string =>
+  `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(command)}}]}]`
+export const CODEX_GATE_OVERRIDE = codexHookOverride('PreToolUse', CODEX_GATE_HOOK_COMMAND)
 
 // CODEX§20
 export const CODEX_ASKS_AND_WAITS = 'features.default_mode_request_user_input=true'

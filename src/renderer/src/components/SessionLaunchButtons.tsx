@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { LuLoaderCircle } from 'react-icons/lu'
+import { IconLoading } from '../icons'
 import {
+  ALWAYS_ON_BACKEND,
   BACKEND_LABEL,
   SESSION_BACKENDS,
+  byBackend,
   shownAsInstalled,
   unsupportedPairMessage
 } from '@shared/sessionBackend'
@@ -69,7 +71,7 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
   return {
     host,
     methods,
-    usable: SESSION_BACKENDS.filter((b) => b === 'claude' || usable(b)),
+    usable: SESSION_BACKENDS.filter((b) => b === ALWAYS_ON_BACKEND || usable(b)),
     setupIssue,
     issue,
     launch,
@@ -79,6 +81,18 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
     retry: () => setRetry((n) => n + 1),
     checkFailed
   }
+}
+
+export function otherMethods(backends: BackendId[], defaultBackend: BackendId): BackendId[] {
+  return backends.length > 1 ? backends.filter((b) => b !== defaultBackend) : []
+}
+
+export function enterMethod(
+  e: { shiftKey: boolean; ctrlKey: boolean },
+  [shiftEnterBackend, ctrlEnterBackend]: BackendId[]
+): BackendId | undefined {
+  if (e.ctrlKey && ctrlEnterBackend) return ctrlEnterBackend
+  return e.shiftKey ? shiftEnterBackend : undefined
 }
 
 export function SessionLaunchButtons({
@@ -102,10 +116,18 @@ export function SessionLaunchButtons({
     (a, b) =>
       Number(a === launch.methods.defaultBackend) - Number(b === launch.methods.defaultBackend)
   )
+  const [shiftEnterBackend, ctrlEnterBackend] = otherMethods(ordered, launch.methods.defaultBackend)
   return (
     <>
       {ordered.map((backend) => {
         const isDefault = backend === launch.methods.defaultBackend || ordered.length === 1
+        const key = isDefault
+          ? '⏎'
+          : backend === shiftEnterBackend
+            ? '⇧⏎'
+            : backend === ctrlEnterBackend
+              ? '⌃⏎'
+              : undefined
         const reason = issue(backend)
         return (
           <button
@@ -119,7 +141,7 @@ export function SessionLaunchButtons({
           >
             {ordered.length > 1 && <SessionBackendIcon backend={backend} size={14} decorative />}
             {label(backend, isDefault)}
-            {!busy && <span className="k">{isDefault ? '⏎' : '⇧⏎'}</span>}
+            {!busy && key && <span className="k">{key}</span>}
           </button>
         )
       })}
@@ -128,9 +150,8 @@ export function SessionLaunchButtons({
 }
 
 function useNoAccountLeads(): Record<BackendId, string> {
-  const claude = useStore((s) => (s.accounts ? noUsableAccountLead(s.accounts, 'claude') : ''))
-  const codex = useStore((s) => (s.accounts ? noUsableAccountLead(s.accounts, 'codex') : ''))
-  return { claude, codex }
+  const accounts = useStore((s) => s.accounts)
+  return byBackend((b) => (accounts ? noUsableAccountLead(accounts, b) : ''))
 }
 
 export function useAccountIssue(): (backend: BackendId) => string {
@@ -177,7 +198,7 @@ export function BusyLine({ children }: { children: ReactNode }) {
   return (
     <div className="fresh-line busy">
       <span className="fico-l">
-        <LuLoaderCircle size={14} />
+        <IconLoading size={14} />
       </span>
       <span>{children}</span>
     </div>
@@ -185,8 +206,7 @@ export function BusyLine({ children }: { children: ReactNode }) {
 }
 
 export function SessionLaunchStatus({ launch }: { launch: ReturnType<typeof useSessionLaunch> }) {
-  const watched =
-    launch.methods.defaultBackend === 'codex' ? SESSION_BACKENDS : (['claude'] as const)
+  const watched = [...new Set([ALWAYS_ON_BACKEND, launch.methods.defaultBackend])]
   const issues = watched.flatMap((b) => {
     const reason = launch.methods.enabled[b] ? launch.setupIssue(b) : ''
     return reason ? [{ backend: b, reason }] : []

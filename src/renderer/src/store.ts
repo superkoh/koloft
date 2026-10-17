@@ -182,7 +182,8 @@ interface AppState {
   setSettingsOpen: (open: boolean) => void
   openSettingsPane: (pane: SettingsPaneId) => void
   setSettingsFocus: (focus: SettingsFocus) => void
-  openGitAccounts: (focus?: 'git-token') => void
+  gitAccountsMachine: string | undefined
+  openGitAccounts: (focus?: 'git-token', machine?: string) => void
   setWelcomeActive: (on: boolean) => void
   setOnboardingStep: (step: number) => void
   setBypassAccepted: (accepted: boolean) => void
@@ -479,6 +480,7 @@ export const useStore = create<AppState>((set, get) => ({
   settingsOpen: false,
   settingsPane: null,
   settingsFocus: null,
+  gitAccountsMachine: undefined,
   welcomeActive: false,
   onboardingStep: 1,
   bypassAccepted: null,
@@ -788,7 +790,12 @@ export const useStore = create<AppState>((set, get) => ({
   setSettingsOpen: (settingsOpen) => set({ settingsOpen, settingsPane: null }),
   openSettingsPane: (settingsPane) => set({ settingsOpen: true, settingsPane }),
   setSettingsFocus: (settingsFocus) => set({ settingsFocus }),
-  openGitAccounts: (focus) => set({ settingsFocus: focus ?? 'git-accounts', settingsOpen: true }),
+  openGitAccounts: (focus, machine) =>
+    set({
+      settingsFocus: focus ?? 'git-accounts',
+      gitAccountsMachine: machine,
+      settingsOpen: true
+    }),
   setWelcomeActive: (welcomeActive) => set({ welcomeActive }),
   setOnboardingStep: (onboardingStep) => set({ onboardingStep }),
   setBypassAccepted: (bypassAccepted) => set({ bypassAccepted }),

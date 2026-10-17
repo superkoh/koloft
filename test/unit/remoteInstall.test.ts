@@ -88,7 +88,7 @@ interface Machine {
   give(name: string, body: string): void
   giveLogger(name: string, code?: number): void
   calls(name: string): string[]
-  run(): { status: number | null; stdout: string; stderr: string }
+  run(arg?: string): { status: number | null; stdout: string; stderr: string }
 }
 
 function machine(): Machine {
@@ -111,8 +111,8 @@ function machine(): Machine {
       const f = path.join(logs, `${name}.log`)
       return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean) : []
     },
-    run: () =>
-      spawnSync('/bin/sh', [script], {
+    run: (arg) =>
+      spawnSync('/bin/sh', [script, ...(arg ? [arg] : [])], {
         encoding: 'utf8',
         env: { HOME: home, PATH: onlyRealUnixToolsDir, FIXTURES: fixtures },
         timeout: 60_000
@@ -354,6 +354,51 @@ exit 0`
   })
 })
 
+describe('ensure.sh for a Muse tab', () => {
+  const MUSE_INSTALLER = `
+printf '%s\\n' "$*" >> "$LOGS/curl.log"
+printf '%s\\n' 'printf "#!/bin/sh\\necho Muse Code 1.4.9\\n" > "$HOME/.local/bin/muse"; chmod +x "$HOME/.local/bin/muse"'`
+
+  const forMuse = (m: Machine, python: 'runs' | 'is a stub'): void => {
+    m.give('bash', 'exec /bin/bash "$@"')
+    m.give('tmux', 'exit 0')
+    m.give('rsync', 'exit 0')
+    m.give('gh', 'exit 0')
+    m.give('python3', python === 'runs' ? 'exit 0' : 'exit 1')
+    m.give('curl', `LOGS=${JSON.stringify(m.logs)}\n${MUSE_INSTALLER}`)
+    m.giveLogger('sudo', 1)
+    m.giveLogger('apt-get')
+  }
+
+  it("installs muse with Meta's installer, and never claude or the statusline's node", () => {
+    const m = machine()
+    forMuse(m, 'runs')
+    const res = m.run('muse')
+    expect(res.status).toBe(0)
+    expect(m.calls('curl')).toEqual(['-fsSL https://dev.meta.ai/install.sh'])
+    expect(fs.existsSync(path.join(m.home, '.local', 'bin', 'muse'))).toBe(true)
+    expect(fs.existsSync(path.join(m.home, '.koloft', 'node'))).toBe(false)
+  })
+
+  it('stops with what is missing when python3 there does not run, as the macOS stand-in does', () => {
+    const m = machine()
+    forMuse(m, 'is a stub')
+    const res = m.run('muse')
+    expect(res.status).toBe(4)
+    expect(res.stdout).toContain('Muse sessions need python3 on this machine')
+    expect(m.calls('curl')).toEqual([])
+  })
+
+  it('a Claude tab never reaches for muse or python3', () => {
+    const m = machine()
+    complete(m)
+    m.giveLogger('python3')
+    expect(m.run().status).toBe(0)
+    expect(m.calls('python3')).toEqual([])
+    expect(m.calls('curl')).toEqual([])
+  })
+})
+
 describe('the heartbeat question', () => {
   let dir = ''
   let repo = ''
@@ -379,8 +424,8 @@ describe('the heartbeat question', () => {
 
   afterAll(() => fs.rmSync(dir, { recursive: true, force: true }))
 
-  const ask = (paths: string[]): ReturnType<typeof parseHeartbeat> => {
-    const cmd = heartbeatCmd(paths)
+  const ask = (paths: string[], watched: string[] = []): ReturnType<typeof parseHeartbeat> => {
+    const cmd = heartbeatCmd(paths, watched)
     const res = spawnSync('sh', ['-c', cmd], { encoding: 'utf8' })
     expect(res.status).toBe(0)
     return parseHeartbeat(res.stdout)
@@ -446,8 +491,22 @@ describe('the heartbeat question', () => {
     expect(onLinux({ TMPDIR: tmpdir, CLAUDE_CODE_TMPDIR: ccTmp })).toBe(fs.realpathSync(ccTmp))
   })
 
-  it('reads the lines before the first folder as tmux session names', () => {
-    const parsed = parseHeartbeat('k-aaa\nk-bbb\n== /home/koh/api\ngit\nworktree /home/koh/api\n\n')
+  it('stamps every watched file and folder in the order asked, a missing one with an empty stamp, and still answers the folders', () => {
+    const file = path.join(dir, 'watched.txt')
+    fs.writeFileSync(file, 'abc')
+    const info = ask([repo], [file, path.join(dir, 'gone.txt'), repo])
+    expect(info.stamps).toHaveLength(3)
+    expect(info.stamps[0]).toMatch(/^\d+\.\d+ 3$/)
+    expect(info.stamps[1]).toBe('')
+    expect(info.stamps[2]).toMatch(/^\d+\.\d+ \d+$/)
+    expect(info.git.get(repo)?.isGit).toBe(true)
+  })
+
+  it('reads the lines before the first folder as tmux session names, never a stamp line', () => {
+    const parsed = parseHeartbeat(
+      'stamp 1.5 3\nstamp \nk-aaa\nk-bbb\n== /home/koh/api\ngit\nworktree /home/koh/api\n\n'
+    )
+    expect(parsed.stamps).toEqual(['1.5 3', ''])
     expect(parsed.alive).toEqual(['k-aaa', 'k-bbb'])
     expect(parsed.git.get('/home/koh/api')?.worktrees).toEqual([{ dir: '/home/koh/api' }])
   })

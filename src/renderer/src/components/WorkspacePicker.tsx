@@ -1,19 +1,18 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { LuTriangleAlert, LuX } from 'react-icons/lu'
+import { IconClose, IconWarning } from '../icons'
 import type { BackendId, WorkspaceRows } from '@shared/types'
 import { basename } from '@shared/preview'
 import { hostOf } from '@shared/remoteKey'
 import {
   escPeel,
   freshLineCopy,
-  mainRunningCount,
   primaryLabel,
   pullFailedReason,
   type PullPhase
 } from '../newSession'
 import { ipcErrorText } from '../agentUi'
-import { pullToast } from '../freshnessView'
+import { busyInCheckout, pullToast } from '@shared/freshnessOps'
 import { useStore } from '../store'
 import {
   digitPick,
@@ -26,6 +25,8 @@ import {
 import { PullConfirm } from './PullConfirm'
 import {
   BusyLine,
+  enterMethod,
+  otherMethods,
   SessionLaunchButtons,
   SessionLaunchStatus,
   useSessionLaunch
@@ -73,10 +74,8 @@ export function WorkspacePicker({
   )
   const confirmBackend = useRef<BackendId>(sessionLaunch.methods.defaultBackend)
   const backends = sessionLaunch.usable
-  const other =
-    backends.length > 1
-      ? backends.find((b) => b !== sessionLaunch.methods.defaultBackend)
-      : undefined
+  const others = otherMethods(backends, sessionLaunch.methods.defaultBackend)
+  const [other, third] = others
   const locked = phase === 'pulling' || sessionLaunch.starting
   useEffect(() => {
     launchLock.current = locked
@@ -127,7 +126,7 @@ export function WorkspacePicker({
       void sessionLaunch.launch({ cwd: ws.workspace.path }, backend)
       return
     }
-    const count = mainRunningCount(ws.rows)
+    const count = busyInCheckout(useStore.getState().sessions, ws.workspace.path)
     if (count > 0) {
       confirmBackend.current = backend
       setConfirmWs(ws)
@@ -149,12 +148,13 @@ export function WorkspacePicker({
         else onClose()
         return
       }
-      if (locked || confirm !== null || e.metaKey || e.ctrlKey || e.altKey) return
+      const ctrlEnter = e.ctrlKey && e.key === 'Enter' && !!third
+      if (locked || confirm !== null || e.metaKey || (e.ctrlKey && !ctrlEnter) || e.altKey) return
       if (e.isComposing || e.keyCode === 229) return
       if (e.key === 'Enter' && e.target instanceof HTMLButtonElement) return
       if (e.key === 'Enter') {
         e.preventDefault()
-        submit(target, e.shiftKey && other ? other : undefined)
+        submit(target, enterMethod(e, others))
         return
       }
       if (pinned) return
@@ -207,7 +207,7 @@ export function WorkspacePicker({
     return (
       <div className="fresh-line stale">
         <span className="fico-l">
-          <LuTriangleAlert size={14} />
+          <IconWarning size={14} />
         </span>
         <span>
           <b>{copy.strong}</b>
@@ -233,7 +233,7 @@ export function WorkspacePicker({
           <div className="modal-header">
             <span>{title}</span>
             <span className="modal-close" onClick={close} aria-label="Close">
-              <LuX size={16} />
+              <IconClose size={16} />
             </span>
           </div>
           <div className="modal-body">
@@ -272,7 +272,8 @@ export function WorkspacePicker({
             {!pinned && (
               <p className="field-hint">
                 ↓↑ move · digit picks · ⏎ confirm
-                {other && ` · ⇧⏎ ${BACKEND_LABEL[other]}`} · Esc cancel
+                {other && ` · ⇧⏎ ${BACKEND_LABEL[other]}`}
+                {third && ` · ⌃⏎ ${BACKEND_LABEL[third]}`} · Esc cancel
               </p>
             )}
           </div>

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type JSX } from 'react'
-import { LuFileText, LuGlobe, LuListTree } from 'react-icons/lu'
+import { IconFile, IconFiles, IconWebPage } from '../icons'
 import { routeFor } from '@shared/browserRoute'
 import { basename, dirname } from '@shared/preview'
 import type { SessionInfo } from '@shared/types'
@@ -7,7 +7,8 @@ import { useStore } from '../store'
 import { CHANGES_MSG } from './changesModel'
 import { splitPath } from './filesModel'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
-import { changeTotals, docLanding, previewDocs, type PreviewDoc } from './workbenchPreviewModel'
+import { FilesTabLabel, useChangeTotals } from './FilesTabLabel'
+import { docLanding, previewDocs, type PreviewDoc } from './workbenchPreviewModel'
 
 const WATCHLESS_REFRESH_SPARING_SSH_MS = 10_000
 
@@ -51,10 +52,7 @@ export function WorkbenchPreview({
   const refresh = useCallback(() => setRefreshNonce((n) => n + 1), [])
   useWatchlessRefresh(watchDead, session?.updatedAt, WATCHLESS_REFRESH_SPARING_SSH_MS, refresh)
 
-  const totals = useMemo(
-    () => (root && base ? changeTotals(git, numstat, root) : null),
-    [git, numstat, root, base]
-  )
+  const totals = useChangeTotals(git, numstat, root, base)
   const docs = useMemo(
     () =>
       previewDocs({
@@ -65,12 +63,6 @@ export function WorkbenchPreview({
       }),
     [session?.files, session?.docVerdicts, webTabs, openFile]
   )
-
-  const label = !totals
-    ? 'Files'
-    : totals.files
-      ? `${totals.files} ${totals.files === 1 ? 'file' : 'files'}`
-      : 'No changes'
 
   return (
     <div className="island wb-peek" style={{ width }}>
@@ -83,15 +75,9 @@ export function WorkbenchPreview({
             onClick={() => useStore.getState().openChanges(tabId)}
           >
             <span className="ic">
-              <LuListTree size={13} />
+              <IconFiles size={13} />
             </span>
-            <span className="lb">{label}</span>
-            {totals && totals.files > 0 && (
-              <span className="ft-delta">
-                <span className="add">+{totals.added}</span>
-                <span className="del">−{totals.removed}</span>
-              </span>
-            )}
+            <FilesTabLabel totals={totals} />
           </span>
         </div>
         <div className="wb-drag" />
@@ -108,7 +94,7 @@ export function WorkbenchPreview({
               onClick={() => openDoc(tabId, d)}
             >
               <span className="ft-icon">
-                {d.kind === 'page' ? <LuGlobe size={13} /> : <LuFileText size={13} />}
+                {d.kind === 'page' ? <IconWebPage size={13} /> : <IconFile size={13} />}
               </span>
               <span className="ft-name">{basename(d.src)}</span>
               <span className="wb-peek-dir">{docDir(d.src, root)}</span>

@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import {
   RESUME_KEEPS_ACCOUNT_UP_TO,
+  codexBackAt,
   codexHeaviest,
   codexWalled,
   usableAccounts
@@ -29,7 +30,8 @@ export function codexHomes(userData: string): string[] {
   }
 }
 
-const FOLDERS_EVERY_HOME_SHARES = ['sessions', 'archived_sessions']
+const FOLDERS_EVERY_HOME_SHARES = ['sessions', 'archived_sessions', 'skills', 'rules']
+const OWNER_FILES_EVERY_HOME_READS = ['AGENTS.md']
 
 function newerThan(a: string, b: string): boolean {
   const there = fs.statSync(b, { throwIfNoEntry: false })
@@ -63,6 +65,12 @@ export function prepareCodexHome(home: string, sharedConfig: string): void {
   const sharedHome = path.dirname(sharedConfig)
   for (const folder of FOLDERS_EVERY_HOME_SHARES)
     shareFolder(path.join(home, folder), path.join(sharedHome, folder))
+  for (const file of OWNER_FILES_EVERY_HOME_READS) {
+    const theirs = path.join(sharedHome, file)
+    const own = path.join(home, file)
+    if (fs.existsSync(theirs) && !fs.lstatSync(own, { throwIfNoEntry: false }))
+      fs.symlinkSync(theirs, own)
+  }
   const config = path.join(home, 'config.toml')
   try {
     fs.lstatSync(config)
@@ -128,11 +136,13 @@ function resetsFrom(value: unknown): CodexLimits['resets'] {
   }
 }
 
-export class CodexAccountPicker {
+export class HomeAccountPicker {
   private turn = 0
 
+  constructor(private kind: 'codex-home' | 'muse-home') {}
+
   pick(accounts: AccountView[], resumedOn?: string): AccountView | undefined {
-    const pool = usableAccounts(accounts, ['codex-home'])
+    const pool = usableAccounts(accounts, [this.kind])
     if (pool.length === 0) return undefined
     const same = pool.find((a) => a.name === resumedOn)
     if (
@@ -146,6 +156,8 @@ export class CodexAccountPicker {
       return measured.reduce((best, a) =>
         codexHeaviest(a.limits!) < codexHeaviest(best.limits!) ? a : best
       )
-    return pool[this.turn++ % pool.length]
+    const unmeasured = pool.filter((a) => !a.limits)
+    if (unmeasured.length > 0) return unmeasured[this.turn++ % unmeasured.length]
+    return pool.reduce((best, a) => (codexBackAt(a.limits!) < codexBackAt(best.limits!) ? a : best))
   }
 }

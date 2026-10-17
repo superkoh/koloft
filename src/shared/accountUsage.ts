@@ -8,12 +8,13 @@ import type {
 } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
 
-const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
+export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
   claude: ['oauth', 'apikey', 'custom'],
-  codex: ['codex-home']
+  codex: ['codex-home'],
+  muse: ['muse-home']
 }
 
-const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home']
+const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home', 'muse-home']
 
 export function usableAccounts<A extends Pick<AccountMeta, 'kind' | 'enabled' | 'status'>>(
   accounts: readonly A[],
@@ -65,7 +66,8 @@ export const NO_USABLE_ACCOUNT: Record<BackendId, string> = {
   claude:
     'No Claude account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
   codex:
-    'No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
+    'No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
+  muse: 'No Muse account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
 }
 
 export const STALE_MS = 15 * 60_000
@@ -156,6 +158,11 @@ export function codexHeaviest(limits: CodexLimits): number {
 // CODEX§15
 export function codexWalled(limits: CodexLimits): boolean {
   return limits.reached === true || codexHeaviest(limits) >= 1
+}
+
+export function codexBackAt(limits: CodexLimits): number {
+  const full = limits.windows.filter((w) => w.used >= 1)
+  return Math.max(0, ...(full.length ? full : limits.windows).map((w) => w.resetsAt))
 }
 
 export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {

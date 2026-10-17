@@ -4,7 +4,15 @@ import { execFileSync } from 'child_process'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { addCodexAccount, installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
-import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
+import {
+  gitCommitAll,
+  gitInit,
+  seedJsonl,
+  startSessionIn,
+  terminalText,
+  waitBooted,
+  wsRows
+} from './helpers/p1'
 import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
@@ -985,6 +993,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         if (needs.includes('claude')) useRealClaude(env)
         if (needs.includes('codex')) useRealCodex(env)
         fs.writeFileSync(path.join(env.workspaces.a, 'secret.txt'), `${SECRET}\n`)
+        gitCommitAll(env.workspaces.a)
         const fake = await startFakeDiscord(env)
         if (needs.includes('claude')) addClaudeAccountToKeychain(env)
         await withConductor(env, fake, async (_app, page) => {

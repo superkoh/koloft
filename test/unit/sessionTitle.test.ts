@@ -16,8 +16,7 @@ function claudeAssist(bin: string, env: NodeJS.ProcessEnv = {}) {
   return koloftAssist({
     setting: () => ({ on: true, backend: 'claude' }),
     enabled: () => true,
-    claude: async () => ({ binary: bin, env }),
-    codex: async () => null
+    target: async (backend) => (backend === 'claude' ? { binary: bin, env } : null)
   })
 }
 
@@ -26,6 +25,13 @@ describe('the title behind koloft session new', () => {
     const bin = fakeClaude('cat >/dev/null\necho "「$CLAUDE_CODE_OAUTH_TOKEN 的标题」"')
     const assist = claudeAssist(bin, { CLAUDE_CODE_OAUTH_TOKEN: 'tok' })
     expect(await nameForTask('修一个问题并发 PR：…', assist, new Set())).toBe('tok 的标题')
+  })
+
+  it('a task another AI wrote in English is titled in the language of the owner’s words it was handed', async () => {
+    const bin = fakeClaude('grep -q "«把侧栏修好»" && echo "修侧栏"')
+    expect(await nameForTask('Fix the sidebar.', claudeAssist(bin), new Set(), '把侧栏修好')).toBe(
+      '修侧栏'
+    )
   })
 
   it('an error claude prints before exiting non-zero is never taken as a name — the task’s first line is', async () => {

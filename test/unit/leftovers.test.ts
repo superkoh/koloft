@@ -1,8 +1,20 @@
 import { describe, it, expect } from 'vitest'
-import { scanLeftovers, stopLeftover } from '../../src/main/leftovers'
+import { spawnSync } from 'child_process'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import {
+  CODEX_TMP_FOLDER,
+  ownedByThisRun,
+  removeFoldersLeftByEndedRuns,
+  scanLeftovers,
+  stopLeftover
+} from '../../src/main/leftovers'
+import { museServersAmong } from '../../src/main/taskProcs'
 
 const SID = '1b6fa18b-8f8d-44ae-8ff1-718bb0f9556d'
 const OTHER = 'bfa0a674-0000-4000-8000-000000000000'
+const MUSE = '01a145aa-f73e-78f0-ab8b-ed913d7b0176'
 const QEMU =
   '/Users/me/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64 -avd nb'
 
@@ -17,6 +29,12 @@ const PROCS: { pid: number; ppid: number; command: string; env: string }[] = [
     ppid: 1,
     command: 'adb -L tcp:5037 fork-server',
     env: `CLAUDE_CODE_SESSION_ID=${OTHER}`
+  },
+  {
+    pid: 8300,
+    ppid: 1,
+    command: 'node srv.mjs 18081',
+    env: `MUSE_SESSION_ID=${MUSE} MUSE_THREAD_ID=${MUSE} CLAUDE_CODE_TOOL_USE_ID=call_7`
   }
 ]
 
@@ -38,19 +56,50 @@ const exec = async (_cmd: string, args: string[]): Promise<string> => {
   )
 }
 
+const PYTHON_APP =
+  '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python'
+
+// MUSE§8
+describe('the servers a Muse session keeps running', () => {
+  it('are the background commands whose process, a child of muse, or anything under it, listens on a port, also when the program the command named runs as another file, like python3 as Python.app', async () => {
+    const ps = [
+      ' 2914 2913 00:10 0:01.00 /Users/me/.local/bin/muse-bin-1.4.9',
+      ' 2936 2914 00:05 0:00.10 node srv.mjs 18081',
+      ' 2950 2914 00:05 0:00.10 /bin/zsh -c npm run dev',
+      ' 2951 2950 00:05 0:00.10 node vite',
+      ' 2960 2914 00:05 0:00.10 sleep 30',
+      ` 2970 2914 00:05 0:00.10 ${PYTHON_APP} -m http.server 8765`
+    ].join('\n')
+    const run = async (cmd: string, args: string[]): Promise<string> =>
+      cmd === 'ps' ? ps : args.some((a) => a.includes('2936')) ? 'p2936\np2951\np2970\n' : ''
+    const found = await museServersAmong(
+      2914,
+      new Map([
+        ['w-srv', 'node srv.mjs 18081'],
+        ['w-dev', 'npm run dev'],
+        ['w-sleep', 'sleep 30'],
+        ['w-py', 'python3 -m http.server 8765']
+      ]),
+      run
+    )
+    expect([...found].sort()).toEqual(['w-dev', 'w-py', 'w-srv'])
+  })
+})
+
 describe('programs a session left running on their own', () => {
-  it('are the ones launchd adopted that still name the session, listed by their clean command line', async () => {
+  it('are the ones launchd adopted that still name the session, a Claude one by its id and a Muse one by its row key, listed by their clean command line', async () => {
     const found = await scanLeftovers(exec)
     expect(found).toEqual({
       [SID]: [{ pid: 7541, command: QEMU }],
-      [OTHER]: [{ pid: 8200, command: 'adb -L tcp:5037 fork-server' }]
+      [OTHER]: [{ pid: 8200, command: 'adb -L tcp:5037 fork-server' }],
+      [`muse:local:${MUSE}`]: [{ pid: 8300, command: 'node srv.mjs 18081' }]
     })
   })
 
   it('reads the environment only of the adopted processes, never the whole table', async () => {
     asked.length = 0
     await scanLeftovers(exec)
-    expect(asked[1]).toEqual(['eww', '-o', 'pid=,command=', '-p', '7541,8100,8200'])
+    expect(asked[1]).toEqual(['eww', '-o', 'pid=,command=', '-p', '7541,8100,8200,8300'])
   })
 
   it('stops one only while it is still that session’s leftover (a reused pid or another session is refused)', async () => {
@@ -61,5 +110,35 @@ describe('programs a session left running on their own', () => {
     expect(await stopLeftover(SID, 8000, exec, kill)).toBe(false)
     expect(await stopLeftover(SID, 9999, exec, kill)).toBe(false)
     expect(killed).toEqual([7541])
+  })
+})
+
+describe('Codex tab folders left by a Koloft run that has ended are removed, a live run’s are kept', () => {
+  it('removes only a folder named after a run that is gone; an older Koloft’s folder, which names no run, is kept even when its id starts with digits', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'leftover-folders-'))
+    const endedRun = spawnSync('true').pid
+    const names = {
+      live: `koloft-cx-${ownedByThisRun('AbC123')}`,
+      liveOpen: `koloft-cx-open-${ownedByThisRun('0f0e')}`,
+      ended: `koloft-cx-${endedRun}-AbC123`,
+      endedOpen: `koloft-cx-open-${endedRun}-0f0e`,
+      olderKoloft: 'koloft-cx-ZzOld1',
+      olderKoloftOpen: 'koloft-cx-open-12345678-1234-4abc-8def-1234567890ab',
+      someoneElse: 'other-folder'
+    }
+    for (const name of Object.values(names)) fs.mkdirSync(path.join(tmp, name))
+
+    removeFoldersLeftByEndedRuns(tmp, CODEX_TMP_FOLDER)
+
+    expect(fs.readdirSync(tmp).sort()).toEqual(
+      [
+        names.live,
+        names.liveOpen,
+        names.olderKoloft,
+        names.olderKoloftOpen,
+        names.someoneElse
+      ].sort()
+    )
+    fs.rmSync(tmp, { recursive: true, force: true })
   })
 })

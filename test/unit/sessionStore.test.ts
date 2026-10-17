@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   SessionStore,
   codexSessionKey,
-  type CodexMember,
+  type StoredMember,
   type WorktreeResource
 } from '../../src/main/sessionStore'
 
@@ -23,7 +23,7 @@ afterEach(() => {
   fs.rmSync(directory, { recursive: true, force: true })
 })
 
-function member(): CodexMember {
+function member(): StoredMember {
   const id = randomUUID()
   return {
     id,

@@ -49,7 +49,7 @@ const HELPER_INSTALL_MS = 3 * 60_000
 const READ_UI_TRIES_AFTER_BOOT = 4
 const INSTALL_MS = 5 * 60_000
 const STOP_GRACE_MS = 5_000
-// PLATFORM§54
+// PLATFORM§58
 const IDLE_GRPC_TIMEOUT_S = 300
 const HEARTBEAT_WELL_UNDER_IDLE_TIMEOUT_MS = 60_000
 const LIVE_FRAME = { width: SCREEN.width / 2, height: SCREEN.height / 2 }
@@ -99,7 +99,7 @@ export function tokenFor(iniTexts: string[], grpcPort: number): string | null {
   return null
 }
 
-// PLATFORM§54
+// PLATFORM§58
 function readDiscovery(): string[] {
   const dir = path.join(os.homedir(), 'Library', 'Caches', 'TemporaryItems', 'avd', 'running')
   try {
@@ -152,7 +152,7 @@ export async function startAndroid(
   }
   const log = fs.openSync(paths.log, 'w')
   progress('starting the Android emulator')
-  // PLATFORM§54
+  // PLATFORM§58
   const child = spawn(
     path.join(paths.sdk, 'emulator', 'emulator'),
     [
@@ -258,7 +258,7 @@ export class AndroidPhone implements PhoneDevice {
     await this.firstSnapshot()
   }
 
-  // PLATFORM§54
+  // PLATFORM§58
   private async firstSnapshot(): Promise<void> {
     for (let i = 1; ; i++) {
       try {

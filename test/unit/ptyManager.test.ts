@@ -103,7 +103,7 @@ describe('PtyManager per-tab environment', () => {
     expect(env.TERM_PROGRAM).toBe('Apple_Terminal')
   })
 
-  it('hands the koloft request folder to every tab but a Codex one, and the skill plugin and the koloft allow rule only to a launch that brings the plugin', () => {
+  it('hands the koloft request folder to every tab but a Codex or Muse one, and the skill plugin and the koloft allow rule only to a launch that brings the plugin', () => {
     const allowKoloft: boolean[] = []
     const envFor = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
       mocks.spawn.mockClear()
@@ -129,7 +129,21 @@ describe('PtyManager per-tab environment', () => {
     expect(envFor({ kind: 'shell', cwd: os.tmpdir(), util: true }).KOLOFT_AGENT_DIR).toBe(
       '/koloft/agent'
     )
-    expect(envFor({ kind: 'codex', cwd: os.tmpdir() }).KOLOFT_AGENT_DIR).toBeUndefined()
+    expect(
+      envFor({ kind: 'codex', cwd: os.tmpdir(), executable: '/bin/codex' }).KOLOFT_AGENT_DIR
+    ).toBeUndefined()
+    const muse = envFor({ kind: 'muse', cwd: os.tmpdir(), executable: '/bin/muse' })
+    expect(muse.KOLOFT_AGENT_DIR).toBeUndefined()
+    expect(muse.KOLOFT_HOOK_SETTINGS).toBeUndefined()
+    expect(allowKoloft).toEqual([false, true])
+  })
+
+  it('sets up a Muse tab that only runs the ssh line to another machine like a remote Claude tab, with the shim folder first on its PATH', () => {
+    mocks.spawn.mockClear()
+    const mgr = new PtyManager()
+    mgr.shimDir = '/koloft/shim'
+    mgr.create({ kind: 'muse', cwd: os.tmpdir(), launchCommand: 'ssh box', remoteHost: 'box' })
+    expect(spawnedEnv().PATH.split(':')[0]).toBe('/koloft/shim')
   })
 
   it('marks a global-terminal (utility) shell with KOLOFT_UTIL=1, the variable the shim hard block keys off', () => {

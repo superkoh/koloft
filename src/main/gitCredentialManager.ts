@@ -15,6 +15,10 @@ const PROVIDER: Partial<Record<GitPlatform, string>> = {
   gitea: 'generic'
 }
 
+export function gcmProviderOf(platform: GitPlatform): string {
+  return PROVIDER[platform] ?? 'generic'
+}
+
 export interface GcmAccount {
   platform: GitPlatform
   url: string
@@ -93,7 +97,8 @@ export class CredentialManager {
     a: GcmAccount,
     namespace: string,
     signIn: boolean,
-    provider = PROVIDER[a.platform] ?? 'generic'
+    provider = gcmProviderOf(a.platform),
+    plaintextStore?: string
   ): NodeJS.ProcessEnv {
     const out: NodeJS.ProcessEnv = {}
     for (const [k, v] of Object.entries(withoutConfigEntries(this.d.env())))
@@ -108,12 +113,14 @@ export class CredentialManager {
       GCM_OAUTH_AUTHMODES: 'browser',
       GIT_CONFIG_GLOBAL: this.configFile(),
       GIT_CONFIG_NOSYSTEM: '1',
-      ...(keychainFile
-        ? {
-            GCM_CREDENTIAL_STORE: 'plaintext',
-            GCM_PLAINTEXT_STORE_PATH: path.join(path.dirname(keychainFile), 'gcm-store')
-          }
-        : { GCM_CREDENTIAL_STORE: 'keychain' }),
+      ...(plaintextStore
+        ? { GCM_CREDENTIAL_STORE: 'plaintext', GCM_PLAINTEXT_STORE_PATH: plaintextStore }
+        : keychainFile
+          ? {
+              GCM_CREDENTIAL_STORE: 'plaintext',
+              GCM_PLAINTEXT_STORE_PATH: path.join(path.dirname(keychainFile), 'gcm-store')
+            }
+          : { GCM_CREDENTIAL_STORE: 'keychain' }),
       ...(signIn ? { GCM_TRACE: '1' } : { GCM_INTERACTIVE: 'never', GIT_TERMINAL_PROMPT: '0' })
     })
     if (process.env.KOLOFT_TEST_GCM) out.ELECTRON_RUN_AS_NODE = '1'
@@ -197,12 +204,16 @@ export class CredentialManager {
       await this.quiet('erase', a, at, 'generic')
   }
 
-  signIn(a: GcmAccount & { gcmNamespace: string }, onBrowser: (url: string) => void): GcmSignIn {
+  signIn(
+    a: GcmAccount & { gcmNamespace: string },
+    onBrowser: (url: string) => void,
+    plaintextStore?: string
+  ): GcmSignIn {
     let seen: string | undefined
     const run = this.spawnGcm(
       'get',
       credentialRequest(a),
-      this.env(a, a.gcmNamespace, true),
+      this.env(a, a.gcmNamespace, true, undefined, plaintextStore),
       GCM_SIGN_IN_TIMEOUT_MS,
       (stderr) => {
         const url = seen ? undefined : browserUrlIn(stderr)
