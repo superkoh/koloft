@@ -15,6 +15,7 @@ export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
 }
 
 const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home', 'muse-home']
+const HOME_KINDS: AccountKind[] = ['codex-home', 'muse-home']
 
 export function usableAccounts<A extends Pick<AccountMeta, 'kind' | 'enabled' | 'status'>>(
   accounts: readonly A[],
@@ -219,7 +220,7 @@ export function autoProbeDue(
 ): boolean {
   if (lastAttempt !== null && nowMs >= lastAttempt && nowMs - lastAttempt <= AUTO_PROBE_MS)
     return false
-  const rows = usableAccounts(views, ['oauth', 'codex-home'])
+  const rows = usableAccounts(views, ['oauth', ...HOME_KINDS])
   if (rows.length === 0) return false
   let oldest = Infinity
   for (const a of rows) {
@@ -314,7 +315,7 @@ export interface CodexPoolSnapshot {
 // CODEX§15
 export function codexPoolSnapshot(members: AccountView[], nowMs: number): CodexPoolSnapshot {
   const nowSec = Math.floor(nowMs / 1000)
-  const live = usableAccounts(members, ['codex-home'])
+  const live = usableAccounts(members, HOME_KINDS)
   const M = live.filter((a) => a.limits !== undefined)
   const limitsOf = (a: AccountView): CodexLimits => a.limits as CodexLimits
   const walledRows = M.filter((a) => codexWalled(limitsOf(a)))

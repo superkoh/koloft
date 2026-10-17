@@ -524,7 +524,7 @@ function AccountRow({
           </button>
         </div>
       )}
-      {a.kind === 'codex-home' ? (
+      {a.kind === 'codex-home' || a.kind === 'muse-home' ? (
         <div className="acct-meters">
           {a.status !== 'ok' ? (
             <span className="acct-note">Not signed in — use Sign in again</span>
@@ -539,7 +539,11 @@ function AccountRow({
             ))
           ) : (
             <span className="acct-note">
-              {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
+              {a.probeError
+                ? probeErrorLabel(a.probeError)
+                : a.kind === 'muse-home'
+                  ? 'Signed in'
+                  : 'Not probed yet'}
             </span>
           )}
           {a.status === 'ok' && a.limits?.windows[0]?.resetsAt ? (
@@ -549,16 +553,6 @@ function AccountRow({
             </span>
           ) : null}
           {codexBalance && <span className="acct-note">{codexBalance}</span>}
-        </div>
-      ) : a.kind === 'muse-home' ? (
-        <div className="acct-meters">
-          <span className="acct-note">
-            {a.status !== 'ok'
-              ? 'Not signed in — use Sign in again'
-              : a.probeError
-                ? probeErrorLabel(a.probeError)
-                : 'Signed in'}
-          </span>
         </div>
       ) : a.kind === 'custom' ? (
         <div className="acct-meters">

@@ -5,7 +5,13 @@ const OUTLASTS_SPEC_WAITFOR_BUDGETS_MS = 25000
 
 export default defineConfig({
   resolve: {
-    alias: { '@shared': resolve(__dirname, 'src/shared') }
+    alias: {
+      '@shared': resolve(__dirname, 'src/shared'),
+      '@xterm/headless': resolve(
+        __dirname,
+        'node_modules/@xterm/headless/lib-headless/xterm-headless.mjs'
+      )
+    }
   },
   test: {
     environment: 'node',

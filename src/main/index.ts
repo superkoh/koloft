@@ -32,7 +32,8 @@ import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome } from './museSessionLog'
-import { museSignedIn, storeMuseKey } from './museServe'
+import { museSignIn, storeMuseKey } from './museServe'
+import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { WorktreeResource } from './sessionStore'
@@ -1692,7 +1693,12 @@ async function addAccount(
 }
 
 const codexPicker = new HomeAccountPicker('codex-home')
-const CODEX_LIMITS_STALE_MS = 5 * 60_000
+const HOME_ACCOUNT_LIMITS_STALE_MS = 5 * 60_000
+const MUSE_QUOTA_FOLDER = 'muse-quota'
+
+function limitsStale(a: AccountView): boolean {
+  return !a.limits || Date.now() - a.limits.at > HOME_ACCOUNT_LIMITS_STALE_MS
+}
 
 function codexSharedConfig(): string {
   return codexConfigFile(codexSessions?.defaultEnv)
@@ -1705,13 +1711,8 @@ function pickCodexHome(
   const views = accountViews()
   const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
   if (!picked) return undefined
-  const stale = views.some(
-    (a) =>
-      a.kind === 'codex-home' &&
-      a.enabled &&
-      (!a.limits || Date.now() - a.limits.at > CODEX_LIMITS_STALE_MS)
-  )
-  if (stale) void probeCodexAccounts()
+  if (views.some((a) => a.kind === 'codex-home' && a.enabled && limitsStale(a)))
+    void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
   return { account: picked.name, home, notice: codexAllLimitedNotice(picked) }
@@ -1829,7 +1830,10 @@ function museHomeFor(name: string): string {
 function pickMuseHome(
   resumeSessionId?: string
 ): { account: string; env: Record<string, string> } | undefined {
-  const picked = musePicker.pick(accountViews(), sessionAccounts?.of('muse', resumeSessionId))
+  const views = accountViews()
+  const picked = musePicker.pick(views, sessionAccounts?.of('muse', resumeSessionId))
+  if (views.some((a) => a.kind === 'muse-home' && a.enabled && limitsStale(a)))
+    void probeMuseAccounts()
   return picked && { account: picked.name, env: museAccountEnv(museHomeFor(picked.name)) }
 }
 
@@ -1848,23 +1852,34 @@ async function probeMuseAccount(name: string): Promise<void> {
   if (!acct || !serve) return
   const key = viewKey(name, 'muse-home')
   try {
-    const signedIn = await museSignedIn(serve)
-    const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
+    const signIn = await museSignIn(serve)
+    const status = signIn !== 'none' ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
     if (status !== acct.status) upsertAccountMeta({ ...acct, status })
     if (status === 'expired' && acct.status !== 'expired') notifyExpired(name, 'Muse')
-    usageViews.delete(key)
+    if (signIn !== 'subscription') usageViews.delete(key)
+    else {
+      const dir = path.join(app.getPath('userData'), MUSE_QUOTA_FOLDER)
+      fs.mkdirSync(dir, { recursive: true })
+      const limits = await readMuseQuota(serve.binary, serve.env, dir)
+      usageViews.set(key, { limits: limits ?? usageViews.get(key)?.limits })
+    }
   } catch {
-    usageViews.set(key, { probeError: 'network' })
+    usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
   pushAccounts()
 }
 
+let museProbeRound: Promise<void> | null = null
+
 function probeMuseAccounts(): Promise<void> {
-  return Promise.all(
+  museProbeRound ??= Promise.all(
     listAccounts()
       .filter((a) => a.kind === 'muse-home' && a.enabled)
       .map((a) => probeMuseAccount(a.name))
-  ).then(() => undefined)
+  ).then(() => {
+    museProbeRound = null
+  })
+  return museProbeRound
 }
 
 // MUSE§13

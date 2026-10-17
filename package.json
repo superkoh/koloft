@@ -65,6 +65,7 @@
     "@xterm/addon-unicode11": "0.10.0-beta.299",
     "@xterm/addon-web-links": "0.13.0-beta.299",
     "@xterm/addon-webgl": "0.20.0-beta.298",
+    "@xterm/headless": "6.1.0-beta.302",
     "@xterm/xterm": "6.1.0-beta.302",
     "dompurify": "^3.4.16",
     "electron": "^43.7.3",
