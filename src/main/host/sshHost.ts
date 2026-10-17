@@ -820,6 +820,7 @@ export class SshHost implements Host {
           env: account?.env,
           portOffset: worktree ? portOffset(worktree) : undefined,
           settings: d.hookSettings(tabId, machineDir, agentTools),
+          ownerWords: spec.ownerWords,
           agentPlugin: agentTools,
           claudeArgs
         })

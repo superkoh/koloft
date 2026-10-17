@@ -14,7 +14,7 @@ import {
   type SessionMeta,
   type RescanState
 } from '../../src/main/sessionAggregate'
-import { withHandover } from '../../src/main/handover'
+import { handoverInOwnersLanguage, withHandover } from '../../src/main/handover'
 import { PENDING_SESSION_TITLE, PLACEHOLDER_SESSION_TITLE, type SessionRow } from '@shared/types'
 
 const WS = '/Users/dev/proj'
@@ -611,12 +611,20 @@ describe('extractJsonlMeta', () => {
   it.each([
     { name: 'Global-conductor', id: 'c1' },
     { id: '019a-codex-thread' },
-    { name: 'Fix login\n\nthen deploy', id: 'p2' }
+    { name: 'Fix login\n\nthen deploy', id: 'p2' },
+    { name: 'planner', id: 'p3', ownerWords: '侧栏为什么\n\n这么慢 «急»' },
+    { id: '019a-codex-thread', ownerWords: 'サイドバーが遅い' }
   ])(
-    'a session that %j started with koloft session new is titled by its task, not by the handover Koloft put before it',
-    (caller) => {
+    'a session that %j started with koloft session new is titled by its task, not by the handover Koloft put before it, in English or in the owner’s language',
+    async (caller) => {
       const task = 'Look into why the sidebar is slow.\n\nStart with the profiler.'
-      expect(extractJsonlMeta([userLine(withHandover(caller, task))]).firstUserText).toBe(task)
+      for (const translation of [
+        null,
+        'Chinese\nKoloft 启动了你，因为 {caller} 请它这么做。主人最后写的是 {owner}。做完后运行：'
+      ]) {
+        const preamble = await handoverInOwnersLanguage(caller, async () => translation)
+        expect(extractJsonlMeta([userLine(withHandover(preamble, task))]).firstUserText).toBe(task)
+      }
     }
   )
 
