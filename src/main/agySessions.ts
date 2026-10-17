@@ -874,7 +874,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.endCompaction(run)
     const id = run.info?.nativeSessionId
     if (!id) return
-    if (this.unnamed(run, id)) void this.takeListedTitle(run, id, true)
+    void this.takeListedTitle(run, id, true)
     if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     const file = agyTranscript(this.geminiOf(run.cwd), id)
     const [turn] = await readAgyTurns(file, 1).catch(() => [] as Turn[])
@@ -903,11 +903,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   private turnStarted(run: AgyRun): void {
     this.watchCompaction(run)
     const id = run.info?.nativeSessionId
-    if (id && this.unnamed(run, id)) this.takeListedTitleSoon(run, id)
-  }
-
-  private unnamed(run: AgyRun, id: string): boolean {
-    return !this.history.get(agySessionKey(id, run.remote?.host))?.name
+    if (id && !this.history.get(agySessionKey(id, run.remote?.host))?.name)
+      this.takeListedTitleSoon(run, id)
   }
 
   // AGY§8 AGY§11
