@@ -1013,6 +1013,7 @@ function machinePackage(): MachinePackage {
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
     [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
+    [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),

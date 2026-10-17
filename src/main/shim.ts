@@ -141,7 +141,8 @@ function utilTerminalRefusesInteractive(
   label: string,
   flagsFollowedByAValue: string,
   subcommandsWithoutATui: string,
-  hint: string
+  hint: string,
+  flagsWithoutATui = '-h|--help|-V|--version'
 ): string {
   return `if [ "$KOLOFT_UTIL" = "1" ]; then
   utilok=0
@@ -153,7 +154,7 @@ function utilTerminalRefusesInteractive(
       continue
     fi
     case "$a" in
-      -h|--help|-V|--version) utilok=1 ;;
+      ${flagsWithoutATui}) utilok=1 ;;
       ${flagsFollowedByAValue}) valflag=1 ;;
       -*) ;;
       *) [ -z "$sub" ] && sub="$a" ;;
@@ -212,6 +213,40 @@ const MUSE_SUBCOMMANDS_WITHOUT_A_TUI = [
   'help'
 ].join('|')
 
+// AGY§1
+const AGY_FLAGS_FOLLOWED_BY_A_VALUE = [
+  '--add-dir',
+  '--agent',
+  '--conversation',
+  '--effort',
+  '-i',
+  '--prompt-interactive',
+  '--input-format',
+  '--json-schema',
+  '--log-file',
+  '--mode',
+  '--model',
+  '--output-format',
+  '--print-timeout',
+  '--project'
+].join('|')
+
+// AGY§1
+const AGY_SUBCOMMANDS_WITHOUT_A_TUI = [
+  'agent',
+  'agents',
+  'changelog',
+  'help',
+  'install',
+  'mcp',
+  'mic-serve',
+  'models',
+  'plugin',
+  'plugins',
+  'remote-control',
+  'update'
+].join('|')
+
 const UTIL_TERMINAL_REFUSAL = {
   claude: UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE,
   codex: utilTerminalRefusesInteractive(
@@ -225,6 +260,13 @@ const UTIL_TERMINAL_REFUSAL = {
     MUSE_FLAGS_FOLLOWED_BY_A_VALUE,
     MUSE_SUBCOMMANDS_WITHOUT_A_TUI,
     'muse exec · --help · login'
+  ),
+  agy: utilTerminalRefusesInteractive(
+    'Antigravity',
+    AGY_FLAGS_FOLLOWED_BY_A_VALUE,
+    AGY_SUBCOMMANDS_WITHOUT_A_TUI,
+    'agy -p · --help · mcp',
+    '-h|--help|--version|-p|--print|--prompt'
   )
 }
 

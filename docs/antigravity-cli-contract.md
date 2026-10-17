@@ -40,6 +40,13 @@ Nothing ran against Google's real servers.
   `--sandbox`, `--model`, `--effort`, `--add-dir`, `--agent`, `-i`, `-p`,
   `--output-format`, `--input-format`, `--print-timeout`, `--json-schema`. `-p` with
   `-i` exits 2.
+- Subcommands (`agy --help`, 1.3.6, Linux, 2026-10-17): `agent`/`agents`, `changelog`,
+  `help`, `install`, `mcp`, `mic-serve`, `models`, `plugin`/`plugins`,
+  `remote-control`, `update` — none opens the TUI. Flags that take a value: `--add-dir`,
+  `--agent`, `--conversation`, `--effort`, `-i`/`--prompt-interactive`,
+  `--input-format`, `--json-schema`, `--log-file`, `--mode`, `--model`,
+  `--output-format`, `--print-timeout`, `--project`; `-p`/`--print`/`--prompt` run one
+  prompt without the TUI. Flags parse Go-style, so `--flag=value` works too.
 - Hidden flags, missing from `--help` but working: `--gemini_dir=<absolute path>`
   (§4) and `--csrf_token=<value>` (§16). `--app_data_dir` exists too: an absolute path
   fails with "must not be absolute", a relative one lands under the gemini dir.
