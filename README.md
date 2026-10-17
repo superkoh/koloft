@@ -187,12 +187,11 @@ src/
 
 Browser tools normally launch a Chromium of their own — a second browser, with its own
 empty cookie jar, that you cannot see. Koloft offers its own instead: every local Claude
-session is started with a Chrome debugging endpoint pointing at that session's web tabs.
-Codex sessions and Claude sessions in a remote workspace do not get one yet; an
-`open <url>` from a local Codex session still lands in its Workbench.
+and Codex session is started with a Chrome debugging endpoint pointing at that session's
+web tabs. Sessions in a remote workspace do not get one yet.
 
-Both variables below are set for the session's Claude, so the agent — and anything the
-agent runs — sees them. A terminal tab in the Workbench is not that environment and has
+Both variables below are set for the session's Claude or Codex, so the agent — and
+anything the agent runs — sees them. A terminal tab in the Workbench is not that environment and has
 neither.
 
 - **playwright-mcp and the Playwright CLI — nothing to configure.** Both read
@@ -331,7 +330,7 @@ and approvals go to your own bot. The only hosts it ever reaches on its own are:
 
 | Host | Why |
 | --- | --- |
-| `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, as a session starts and every 5 minutes, so the balancer can pick the least-loaded one; an API key or custom endpoint is only checked that it still works |
+| `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, so the balancer can pick the least-loaded one: when Koloft opens, as a session starts (a reading from the last 30 seconds is reused), when Settings opens, when the topbar usage panel opens and its last reading is over 5 minutes old, and on `Refresh usage`; an API key or custom endpoint is only checked that it still works |
 | `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request; for a **remote** workspace's machine that lacks them, downloads `gh` itself and Git Credential Manager; signs in a GitHub git account and checks its token |
 | `gitlab.com`, `api.bitbucket.org`, `dev.azure.com`, `codeberg.org`, or your own git server | the server of a git account you add, only after you add one there. To check the token and read the username: when it is added, when Koloft starts, every 6 hours, when `Settings ▸ Accounts` opens, and when the server turns the token down during a git call (an account added as "Other server" is never checked). To see whether the account can push to a workspace's repository: when a workspace is added, and when the git panel's Account list opens. Bitbucket also reaches `bitbucket.org` for the browser sign-in |
 | your workspace's git remote (often `github.com`) | every 5 minutes, to see whether the branch is behind — `Settings ▸ Appearance` turns auto-fetch off |
