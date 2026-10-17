@@ -219,7 +219,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
         .toContain('New worktree session')
       await openWorktreeSession(page, REMOTE_WS_NAME)
       await worktreeDialog(page).locator('input').fill('rc-tree')
-      await chooseBackend(page, 'other')
+      await chooseBackend(page, 'Codex')
       await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(1)
       const tree = path.join(remoteDir(env), '.claude', 'worktrees', 'rc-tree')
       expect(fs.existsSync(path.join(tree, '.git'))).toBe(true)

@@ -11,6 +11,7 @@ import {
   stopLeftover
 } from '../../src/main/leftovers'
 import { museServersAmong } from '../../src/main/taskProcs'
+import { parseProcessTable } from '../../src/main/processTable'
 
 const SID = '1b6fa18b-8f8d-44ae-8ff1-718bb0f9556d'
 const OTHER = 'bfa0a674-0000-4000-8000-000000000000'
@@ -40,10 +41,14 @@ const PROCS: { pid: number; ppid: number; command: string; env: string }[] = [
 
 const LINE_BREAKING_ENV = 'LESS_TERMCAP_mb=\u001b[1;31m\nPS2=> \n  1234 not-a-pid'
 
+const STARTED = 'Sat Oct 17 01:29:13 2026'
+const psRow = (pid: number, ppid: number, command: string): string =>
+  ` ${pid} ${ppid} ${pid} S 00:05 0:00.10 ${STARTED} ${command}`
+const TABLE = parseProcessTable(PROCS.map((p) => psRow(p.pid, p.ppid, p.command)).join('\n'), 0)
+
 const asked: string[][] = []
 const exec = async (_cmd: string, args: string[]): Promise<string> => {
   asked.push(args)
-  if (args[0] === '-Ao') return PROCS.map((p) => ` ${p.pid} ${p.ppid} ${p.command}`).join('\n')
   const pids = args[args.length - 1].split(',').map(Number)
   const withPpid = args[2] === 'ppid=,command='
   return (
@@ -56,34 +61,40 @@ const exec = async (_cmd: string, args: string[]): Promise<string> => {
   )
 }
 
+const PYTHON_APP =
+  '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python'
+
 // MUSE§8
 describe('the servers a Muse session keeps running', () => {
-  it('are the background commands whose process, a child of muse, or anything under it, listens on a port', async () => {
+  it('are the background commands whose process, a child of muse, or anything under it, listens on a port, also when the program the command named runs as another file, like python3 as Python.app', async () => {
     const ps = [
-      ' 2914 2913 00:10 0:01.00 /Users/me/.local/bin/muse-bin-1.4.9',
-      ' 2936 2914 00:05 0:00.10 node srv.mjs 18081',
-      ' 2950 2914 00:05 0:00.10 /bin/zsh -c npm run dev',
-      ' 2951 2950 00:05 0:00.10 node vite',
-      ' 2960 2914 00:05 0:00.10 sleep 30'
+      psRow(2914, 2913, '/Users/me/.local/bin/muse-bin-1.4.9'),
+      psRow(2936, 2914, 'node srv.mjs 18081'),
+      psRow(2950, 2914, '/bin/zsh -c npm run dev'),
+      psRow(2951, 2950, 'node vite'),
+      psRow(2960, 2914, 'sleep 30'),
+      psRow(2970, 2914, `${PYTHON_APP} -m http.server 8765`)
     ].join('\n')
-    const run = async (cmd: string, args: string[]): Promise<string> =>
-      cmd === 'ps' ? ps : args.some((a) => a.includes('2936')) ? 'p2936\np2951\n' : ''
+    const run = async (_cmd: string, args: string[]): Promise<string> =>
+      args.some((a) => a.includes('2936')) ? 'p2936\np2951\np2970\n' : ''
     const found = await museServersAmong(
+      parseProcessTable(ps, 0),
       2914,
       new Map([
         ['w-srv', 'node srv.mjs 18081'],
         ['w-dev', 'npm run dev'],
-        ['w-sleep', 'sleep 30']
+        ['w-sleep', 'sleep 30'],
+        ['w-py', 'python3 -m http.server 8765']
       ]),
       run
     )
-    expect([...found].sort()).toEqual(['w-dev', 'w-srv'])
+    expect([...found].sort()).toEqual(['w-dev', 'w-py', 'w-srv'])
   })
 })
 
 describe('programs a session left running on their own', () => {
   it('are the ones launchd adopted that still name the session, a Claude one by its id and a Muse one by its row key, listed by their clean command line', async () => {
-    const found = await scanLeftovers(exec)
+    const found = await scanLeftovers(TABLE, exec)
     expect(found).toEqual({
       [SID]: [{ pid: 7541, command: QEMU }],
       [OTHER]: [{ pid: 8200, command: 'adb -L tcp:5037 fork-server' }],
@@ -93,8 +104,8 @@ describe('programs a session left running on their own', () => {
 
   it('reads the environment only of the adopted processes, never the whole table', async () => {
     asked.length = 0
-    await scanLeftovers(exec)
-    expect(asked[1]).toEqual(['eww', '-o', 'pid=,command=', '-p', '7541,8100,8200,8300'])
+    await scanLeftovers(TABLE, exec)
+    expect(asked[0]).toEqual(['eww', '-o', 'pid=,command=', '-p', '7541,8100,8200,8300'])
   })
 
   it('stops one only while it is still that session’s leftover (a reused pid or another session is refused)', async () => {

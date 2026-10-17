@@ -1,14 +1,15 @@
-import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'child_process'
+import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { randomUUID } from 'crypto'
 import fs from 'fs/promises'
 import http from 'http'
 import os from 'os'
 import path from 'path'
 import { StringDecoder } from 'string_decoder'
-import { promisify } from 'util'
 import WebSocket, { WebSocketServer } from 'ws'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { CODEX_TMP_DIR, ownedByThisRun } from './leftovers'
+import { sharedProcessTable, type ProcessRow } from './processTable'
+import { envMs } from './sessionRuntime'
 
 export type CodexFrame = Record<string, unknown>
 
@@ -44,7 +45,6 @@ export interface CodexTransportOptions extends CodexProcessOptions {
 
 const DEFAULT_TIMEOUT = 15_000
 export const DEFAULT_MAX_FRAME = 32 * 1024 * 1024
-const execFileAsync = promisify(execFile)
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -83,49 +83,25 @@ export function parseFrame(text: string, limit: number): CodexFrame {
   return frame as CodexFrame
 }
 
-interface ProcessRow {
-  pid: number
-  parent: number
-  group: number
-  state: string
-  started: string
-}
-
 async function processRows(): Promise<ProcessRow[]> {
-  const { stdout } = await execFileAsync('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,stat=,lstart='], {
-    timeout: 2000,
-    maxBuffer: 4 * 1024 * 1024
-  })
-  return stdout.split('\n').flatMap((line) => {
-    const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/)
-    return match
-      ? [
-          {
-            pid: +match[1],
-            parent: +match[2],
-            group: +match[3],
-            state: match[4],
-            started: match[5]
-          }
-        ]
-      : []
-  })
+  const table = await sharedProcessTable.fresh()
+  if (!table) throw new Error('Could not read the process table')
+  return table.rows
 }
 
 const processObservers = new Set<(rows: ProcessRow[]) => void>()
 let processSampling = false
 // CODEX§5
-const PROCESS_SAMPLE_MS = 1000
+const PROCESS_SAMPLE_MS = envMs('KOLOFT_CODEX_PROCESS_SAMPLE_MS', 5000)
 
 function watchProcesses(observer: (rows: ProcessRow[]) => void): () => void {
   processObservers.add(observer)
   if (!processSampling) {
     processSampling = true
     const sample = async (): Promise<void> => {
-      try {
-        const rows = await processRows()
-        for (const receive of processObservers) receive(rows)
-      } catch {}
+      const watchingWhenTheLookBegan = [...processObservers]
+      const table = await sharedProcessTable.eachRound(PROCESS_SAMPLE_MS)
+      if (table) for (const receive of watchingWhenTheLookBegan) receive(table.rows)
       if (processObservers.size)
         setTimeout(() => {
           void sample()
@@ -260,8 +236,8 @@ class CodexProcess implements CodexUpstream {
     this.child.stdin.end()
     for (const phase of ['SIGTERM', 'SIGKILL'] as const) {
       if (alive.length) {
-        if (alive.some((row) => row.group === root)) signal(-root, phase)
-        for (const row of alive) if (row.group !== root) signal(row.pid, phase)
+        if (alive.some((row) => row.pgid === root)) signal(-root, phase)
+        for (const row of alive) if (row.pgid !== root) signal(row.pid, phase)
       }
       const deadline = Date.now() + (phase === 'SIGTERM' ? 1200 : 2000)
       while (alive.length && Date.now() < deadline) {
@@ -285,14 +261,14 @@ class CodexProcess implements CodexUpstream {
       if (current.get(pid)?.started !== started) this.owned.delete(pid)
     }
     for (const row of rows) {
-      if (row.group === root || (!this.exited && row.pid === root))
+      if (row.pgid === root || (!this.exited && row.pid === root))
         this.owned.set(row.pid, row.started)
     }
     let changed = true
     while (changed) {
       changed = false
       for (const row of rows) {
-        if (this.owned.has(row.parent) && !this.owned.has(row.pid)) {
+        if (this.owned.has(row.ppid) && !this.owned.has(row.pid)) {
           this.owned.set(row.pid, row.started)
           changed = true
         }

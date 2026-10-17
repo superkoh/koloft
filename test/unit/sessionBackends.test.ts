@@ -297,6 +297,11 @@ describe('effectiveBackend (what every direct entrance starts on a Mac that may 
     expect(effectiveBackend(methods('codex'), have('claude'))).toBe('claude')
   })
 
+  it('starts the first method that can run when the default cannot and several can', () => {
+    expect(effectiveBackend(methods('claude'), have('codex', 'muse'))).toBe('codex')
+    expect(effectiveBackend(methods('muse'), have('claude', 'codex'))).toBe('claude')
+  })
+
   it('ignores an installed method the user switched off', () => {
     expect(effectiveBackend(methods('claude', false), have('codex'))).toBe('claude')
   })

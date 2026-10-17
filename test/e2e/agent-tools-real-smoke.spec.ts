@@ -175,7 +175,7 @@ async function inARealWorktreeSession(
     await waitBooted(page)
     const dlg = await openWorktreeSession(page, 'repo')
     await dlg.locator('input').fill(WORKTREE)
-    await chooseBackend(page, backend)
+    await chooseBackend(page, backend === 'default' ? 'default' : 'Codex')
     const rows = wsRows(page, 'repo')
     await expect(rows).toHaveCount(1, { timeout: 60_000 })
     await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 90_000 })
