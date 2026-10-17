@@ -27,7 +27,7 @@ export class UsageMeter {
   private today = { dayKey: '', cost: 0 }
 
   // CC§2
-  add(obj: TranscriptRecord, updateContext = true): void {
+  add(obj: TranscriptRecord, updateContext: boolean): void {
     const msg = obj.message
     if (!msg) return
     const model = typeof msg.model === 'string' ? msg.model : ''

@@ -3,7 +3,7 @@ import type { TranscriptRecord } from './transcriptRecord'
 
 const PROMPT_TITLE_CHARS = 60
 
-export interface PromptTitles {
+interface PromptTitles {
   title: string | null
   commandArgs: string | null
   commandName: string | null

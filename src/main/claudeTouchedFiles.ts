@@ -1,7 +1,13 @@
 import { noteRead, noteWrite, type FileAcc } from './touchedFiles'
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
-const READ_TOOLS = new Set(['Read'])
+
+export function toolFilePath(input: unknown): string | null {
+  if (!input || typeof input !== 'object') return null
+  const i = input as Record<string, unknown>
+  const p = i.file_path ?? i.notebook_path ?? i.path
+  return typeof p === 'string' && p.length ? p : null
+}
 
 function countLines(s: unknown): number {
   if (typeof s !== 'string' || s.length === 0) return 0
@@ -35,17 +41,18 @@ export class ClaudeTouchedFiles {
   lastTouched: string | null = null
   lastWritten: string | null = null
 
-  noteToolCall(tool: string, input: unknown, abs: string, at: number): 'wrote' | 'read' | null {
+  noteToolCall(tool: string, input: unknown, abs: string, at: number): boolean {
     if (WRITE_TOOLS.has(tool)) {
       const { added, removed } = editDelta(tool, input)
       noteWrite(this.files, abs, added, removed, at)
       this.lastTouched = abs
       this.lastWritten = abs
-      return 'wrote'
+      return true
     }
-    if (!READ_TOOLS.has(tool)) return null
-    noteRead(this.files, abs)
-    this.lastTouched = abs
-    return 'read'
+    if (tool === 'Read') {
+      noteRead(this.files, abs)
+      this.lastTouched = abs
+    }
+    return false
   }
 }
