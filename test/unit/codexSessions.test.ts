@@ -1178,11 +1178,20 @@ describe('CodexSessions', () => {
     expect(deps.events).toHaveBeenCalledWith(id, bound)
   })
 
+  it('the app-server kept for history questions holds the quit until it is closed, also with no Codex tab open', async () => {
+    expect(sessions.hasProcesses()).toBe(false)
+    await sessions.historyRows(repo)
+    expect(sessions.hasProcesses()).toBe(true)
+    await sessions.stopAll()
+    expect(mocks.close).toHaveBeenCalledOnce()
+    expect(sessions.hasProcesses()).toBe(false)
+  })
+
   it('cancels launches waiting on availability when shutdown starts and performs no refresh', async () => {
     const gate = deferred<{ id: 'codex'; available: boolean }>()
     vi.mocked(sessions.availability).mockReturnValueOnce(gate.promise)
     const launch = sessions.launch({ kind: 'codex', cwd: repo })
-    expect(sessions.hasRuns()).toBe(true)
+    expect(sessions.hasProcesses()).toBe(true)
     const rejected = expect(launch).rejects.toThrow('shutting down')
     const shutdown = sessions.stopAll()
     gate.resolve({ id: 'codex', available: true })

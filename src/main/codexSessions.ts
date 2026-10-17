@@ -384,6 +384,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return this.sideServers.forget(home)
   }
 
+  hasProcesses(): boolean {
+    return super.hasProcesses() || this.sideServers.anyOpen
+  }
+
   async stopAll(deadlineMs?: number): Promise<void> {
     await Promise.all([super.stopAll(deadlineMs), this.sideServers.closeAll()])
   }

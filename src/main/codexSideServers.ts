@@ -14,6 +14,10 @@ export class CodexSideServers {
 
   constructor(private start: (home: string | undefined) => CodexRpc) {}
 
+  get anyOpen(): boolean {
+    return this.open.size > 0
+  }
+
   async ask<T>(home: string | undefined, use: (rpc: CodexRpc) => Promise<T>): Promise<T> {
     let side = this.open.get(home)
     if (!side || side.rpc.isClosed) {

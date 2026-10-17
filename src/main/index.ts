@@ -3013,7 +3013,7 @@ app.on('before-quit', (e) => {
   clearQuitFallback()
   if (!quitCommitted) rememberOpenTabs()
   quitCommitted = true
-  if (!storedQuitStopped && storedSessions().some((s) => s.hasRuns())) {
+  if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
     e.preventDefault()
     if (!storedQuitPending) {
       storedQuitPending = true
