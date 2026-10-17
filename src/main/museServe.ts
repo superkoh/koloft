@@ -210,14 +210,20 @@ export function readMuseAsk(options: ServeOptions, sessionId: string): Promise<M
   )
 }
 
-// MUSE§13
-const SIGNED_IN_STATES = ['apiKey', 'accountLogin']
+type MuseSignIn = 'subscription' | 'apiKey' | 'none'
 
 // MUSE§13
-export async function museSignedIn(options: ServeOptions): Promise<boolean> {
-  return withServe({ ...options, experimental: true }, async (request) =>
-    SIGNED_IN_STATES.includes(String(record(await request('account/read', {})).state))
-  )
+const SIGN_IN_OF_STATE: Record<string, MuseSignIn> = {
+  accountLogin: 'subscription',
+  apiKey: 'apiKey'
+}
+
+// MUSE§13
+export async function museSignIn(options: ServeOptions): Promise<MuseSignIn> {
+  return withServe({ ...options, experimental: true }, async (request) => {
+    const state = String(record(await request('account/read', {})).state)
+    return SIGN_IN_OF_STATE[state] ?? 'none'
+  })
 }
 
 // MUSE§13

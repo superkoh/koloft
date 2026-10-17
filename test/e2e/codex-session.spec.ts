@@ -47,6 +47,7 @@ import { portOffset } from '../../src/shared/worktreeName'
 import {
   addWorkspace,
   centerTerm,
+  agentRow,
   chooseBackend,
   clickAppMenuItem,
   dialogPrimary,
@@ -108,7 +109,7 @@ async function startCodexInWorktree(page: Page, env: E2EEnv, name: string): Prom
   const before = codexCalls(env).length
   await newIn(page, true)
   await worktreeDialog(page).locator('input').fill(name)
-  await chooseBackend(page, 'other')
+  await chooseBackend(page, 'Codex')
   await expect.poll(() => codexCalls(env).length).toBe(before + 1)
   await expect(codexRows(page).filter({ hasText: 'Starting…' })).toHaveCount(0)
   return codexCalls(env)[before]
@@ -243,9 +244,9 @@ test.describe('Codex sessions through the real method chooser, process transport
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await expect(
-        page.locator('.w-empty').getByRole('button', { name: 'New Codex session' })
-      ).toBeVisible()
+      const empty = page.locator('.w-empty')
+      await expect(empty.locator('button[data-default="true"]')).toHaveText('＋ New Claude session')
+      await expect(empty.getByRole('button', { name: 'Pick an agent' })).toBeVisible()
       const menu = await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       await expect(menu.locator('.mi', { hasText: 'New Codex session' })).toBeVisible()
       await menu.locator('.mi', { hasText: 'New Claude session' }).click()
@@ -262,7 +263,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // ADR-0030
-  test('with no Codex account, "New Codex session" is shut on the empty workspace and in the ⌘N picker, under a line that stays and whose Settings part opens Settings ▸ Accounts', async ({
+  test('with no Codex account, Codex is shut as "No account" in the agent list of the empty workspace and of the ⌘N picker, where ⇧⏎ opens that list and Esc shuts only the list, under a line that stays and whose Settings part opens Settings ▸ Accounts', async ({
     env
   }) => {
     installCodex(env)
@@ -274,18 +275,26 @@ test.describe('Codex sessions through the real method chooser, process transport
       await waitBooted(page)
       const empty = page.locator('.w-empty')
       const line = /^No Codex account yet — add one in Settings ▸ Accounts\.$/
-      await expect(empty.getByRole('button', { name: 'New Codex session' })).toBeDisabled()
       await expect(empty.getByRole('button', { name: /New Claude session/ })).toBeEnabled()
+      await empty.getByRole('button', { name: 'Pick an agent' }).click()
+      await expect(agentRow(page, 'Codex')).toHaveAttribute('aria-disabled', 'true')
+      await expect(agentRow(page, 'Codex')).toContainText('No account')
       await expect(empty.locator('.field-hint.bad')).toHaveText(line)
       await snap(page, 'codex-no-account-empty-workspace')
+      await agentRow(page, 'Codex').click({ force: true })
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('listbox', { name: 'Agents' })).toHaveCount(0)
 
       await clickAppMenuItem(app, page, 'new-session')
       const dlg = pickerDialog(page)
       await expect(dlg).toBeVisible({ timeout: 15_000 })
-      await expect(dlg.locator('.modal-foot button[data-default="false"]')).toBeDisabled()
       await expect(dlg.locator('.field-hint.bad')).toHaveText(line)
-      await snap(page, 'codex-no-account-picker')
       await page.keyboard.press('Shift+Enter')
+      await expect(agentRow(page, 'Codex')).toHaveAttribute('aria-disabled', 'true')
+      await snap(page, 'codex-no-account-picker')
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('listbox', { name: 'Agents' })).toHaveCount(0)
+      await expect(dlg).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(dlg).toHaveCount(0)
 
@@ -339,7 +348,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('the worktree dialog still asks, and its buttons name both methods', async ({ env }) => {
+  test('the worktree dialog still asks, and its agent list names both methods', async ({ env }) => {
     installCodex(env)
     gitInit(env.workspaces.a)
     const app = await launchApp(env)
@@ -354,9 +363,11 @@ test.describe('Codex sessions through the real method chooser, process transport
 
       await page.keyboard.type('feat-x')
       await expect(dialogPrimary(dialog)).toContainText('Create · Claude')
-      await expect(dialog.locator('.modal-foot button[data-default="false"]')).toHaveText(
-        'Create · Codex⇧⏎'
-      )
+      await dialog.getByRole('button', { name: 'Pick an agent' }).click()
+      await expect(page.getByRole('listbox', { name: 'Agents' }).getByRole('option')).toHaveText([
+        '1Claudedefault',
+        '2Codex'
+      ])
       const screenshots = path.join(__dirname, '../../test-results/codex-ui')
       fs.mkdirSync(screenshots, { recursive: true })
       await page.screenshot({
@@ -364,7 +375,8 @@ test.describe('Codex sessions through the real method chooser, process transport
         animations: 'disabled'
       })
 
-      await chooseBackend(page, 'other')
+      await agentRow(page, 'Codex').click()
+      await expect(dialog).toHaveCount(0)
       await expect.poll(() => codexCalls(env).length).toBe(1)
       expect(codexCalls(env)[0].cwd).toContain('feat-x')
       expect(readCalls(env)).toHaveLength(0)
@@ -383,9 +395,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await addWorkspace(page, env.workspaces.b)
       await clickAppMenuItem(app, page, 'new-session')
       await expect(pickerDialog(page)).toBeVisible({ timeout: 15_000 })
-      await expect(
-        pickerDialog(page).locator('.modal-foot button[data-default="false"]')
-      ).toHaveCount(0)
+      await expect(pickerDialog(page).getByRole('button', { name: 'Pick an agent' })).toHaveCount(0)
       await page.keyboard.press('Enter')
       await expect
         .poll(() => readCalls(env).length, { timeout: LAUNCH_MUST_NOT_WAIT_FOR_PROBE_MS })
@@ -406,7 +416,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await clickAppMenuItem(app, page, 'new-session')
       const dlg = pickerDialog(page)
       await expect(dlg).toBeVisible({ timeout: 15_000 })
-      await expect(dlg.locator('.modal-foot button[data-default=false]')).toBeVisible()
+      await expect(dlg.getByRole('button', { name: 'Pick an agent' })).toBeVisible()
       await page.keyboard.press('Shift+Enter')
       await expect.poll(() => codexCalls(env).length).toBe(1)
       await expect(dlg).toHaveCount(0)
@@ -764,7 +774,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       const dialog = worktreeDialog(page)
       await expect(dialog).toBeVisible()
       await dialog.locator('input').fill('codex-feature')
-      await chooseBackend(page, 'other')
+      await chooseBackend(page, 'Codex')
       await expect.poll(() => codexCalls(env).length).toBe(1)
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
       const first = codexCalls(env)[0]
@@ -1504,10 +1514,9 @@ test.describe('Codex sessions through the real method chooser, process transport
       await sendShortcut(app, 'shortcut:open-settings')
       await expect(page.locator('.set-main')).toContainText('Sign in to Codex')
       await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
-      await expect(page.getByRole('button', { name: 'Use Claude by default' })).toHaveAttribute(
-        'aria-pressed',
-        'true'
-      )
+      const defaultMethod = (): Locator =>
+        page.getByRole('button', { name: 'Default session method' })
+      await expect(defaultMethod()).toHaveText('Claude')
       await expect(page.getByRole('switch', { name: 'Enable Claude', exact: true })).toBeDisabled()
       const screenshots = path.join(__dirname, '../../test-results/codex-ui')
       fs.mkdirSync(screenshots, { recursive: true })
@@ -1515,7 +1524,9 @@ test.describe('Codex sessions through the real method chooser, process transport
         path: path.join(screenshots, 'session-methods.png'),
         animations: 'disabled'
       })
-      await page.getByRole('button', { name: 'Use Codex by default' }).click()
+      await defaultMethod().click()
+      await agentRow(page, 'Codex').click()
+      await expect(defaultMethod()).toHaveText('Codex')
       await page.keyboard.press('Escape')
 
       await newIn(page, false, 'Codex')
@@ -1543,16 +1554,14 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(codexRows(page)).toHaveCount(2)
       await sendShortcut(app, 'shortcut:open-settings')
       await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
-      await expect(page.getByRole('button', { name: 'Use Codex by default' })).toHaveAttribute(
-        'aria-pressed',
-        'true'
-      )
+      await expect(defaultMethod()).toHaveText('Codex')
       await page.getByRole('switch', { name: 'Enable Codex', exact: true }).uncheck()
-      await expect(page.getByRole('button', { name: 'Use Claude by default' })).toHaveAttribute(
-        'aria-pressed',
-        'true'
-      )
-      await expect(page.getByRole('button', { name: 'Use Codex by default' })).toBeDisabled()
+      await expect(defaultMethod()).toHaveText('Claude')
+      await defaultMethod().click()
+      await expect(agentRow(page, 'Codex')).toHaveAttribute('aria-disabled', 'true')
+      await expect(agentRow(page, 'Codex')).toContainText('Off')
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('listbox', { name: 'Agents' })).toHaveCount(0)
       await page.keyboard.press('Escape')
 
       const menu = await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
