@@ -19,17 +19,13 @@ import { capTouched, touchedItem } from './touchedFiles'
 import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
 import { TitleSources } from './titleSources'
 import { UsageMeter } from './usageMeter'
+import { BackgroundLedger, isBackgroundSpawnAck } from './backgroundLedger'
 import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 import { withoutHandover } from './handover'
 import { messageText } from './messageText'
-import {
-  parseRecord,
-  type TextBlock,
-  type ToolUseResult,
-  type TranscriptRecord
-} from './transcriptRecord'
+import { parseRecord, type TextBlock, type TranscriptRecord } from './transcriptRecord'
 
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -57,7 +53,6 @@ const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
 
 export { encodeCwd }
 
-const BG_PROMOTED = '\x00promoted'
 const UNLISTED_BACKGROUND_WORK: BackgroundItem = {
   id: 'unlisted',
   kind: 'command',
@@ -107,28 +102,6 @@ export function sessionEventFromHook(
 
 // CC§8
 const AGENT_TYPES = new Set(['subagent', 'workflow', 'mcp-task', 'cloud-session'])
-
-// CC§8
-const BG_SPAWN_STATUSES = new Set(['async_launched', 'teammate_spawned', 'remote_launched'])
-
-// CC§8
-const TERMINAL_TASK_STATUSES = new Set([
-  'completed',
-  'failed',
-  'killed',
-  'stopped',
-  'cancelled',
-  'canceled'
-])
-
-// CC§8
-function isBackgroundSpawnAck(tur: ToolUseResult | undefined): tur is ToolUseResult {
-  if (!tur || typeof tur !== 'object') return false
-  if (typeof tur.status === 'string' && BG_SPAWN_STATUSES.has(tur.status)) return true
-  if (tur.status === 'forked' && tur.background === true) return true
-  if (typeof tur.backgroundTaskId === 'string' && tur.backgroundTaskId) return true
-  return typeof tur.taskId === 'string' && tur.taskId !== '' && typeof tur.timeoutMs === 'number'
-}
 
 // CC§8
 function taskNotificationText(obj: TranscriptRecord): string | null {
@@ -427,22 +400,18 @@ interface Tracked {
   meter: UsageMeter
   subagentFiles: Map<string, SubagentFile>
   subagentScanMs: number
-  bgTasks: Set<string>
+  ledger: BackgroundLedger
   lastBgActivityTs: number
   lastMainActivityTs: number
   bindMs: number
   resetMs: number
   reported: ReportedTask[] | null
   reportedAt: number
-  taskLabels: Map<string, string>
-  monitorIds: Set<string>
-  toolLabels: Map<string, string>
   openTools: Map<string, ToolCall>
   procs: TaskProcs | null
   shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
   procsAt: number
   procsPromise?: Promise<void>
-  teammateActiveMs: number
   lastInterruptTs: number
   rootPinAwaitingCatchup: boolean
   turns: TurnLog
@@ -536,21 +505,17 @@ export class SessionTracker extends SessionRuntime {
       meter: new UsageMeter(),
       subagentFiles: new Map(),
       subagentScanMs: 0,
-      bgTasks: new Set(),
+      ledger: new BackgroundLedger(),
       lastBgActivityTs: 0,
       lastMainActivityTs: 0,
       bindMs: Date.now(),
       resetMs: Date.now(),
       reported: null,
       reportedAt: 0,
-      taskLabels: new Map(),
-      monitorIds: new Set(),
-      toolLabels: new Map(),
       openTools: new Map(),
       procs: null,
       shellCpu: new Map(),
       procsAt: 0,
-      teammateActiveMs: 0,
       lastInterruptTs: 0,
       rootPinAwaitingCatchup: false,
       turns: new TurnLog(),
@@ -660,7 +625,7 @@ export class SessionTracker extends SessionRuntime {
 
   private endTurnHeldByWhatRuns(t: Tracked): void {
     const busy = this.judgeHold(t)
-    if (!busy) t.bgTasks.clear()
+    if (!busy) t.ledger.clear()
     this.applyStatus(t, 'ended', busy)
   }
 
@@ -709,12 +674,12 @@ export class SessionTracker extends SessionRuntime {
     const reportedIds = new Set(list.map((x) => x.id))
     const toolCallInFlight = !!procs && [...procs.shells.keys()].some((id) => !reportedIds.has(id))
     const agentsFresh = now - Math.max(t.lastBgActivityTs, t.reportedAt) < BG_SILENCE_MAX_MS
-    const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
+    const teammatesFresh = now - t.ledger.teammateActiveMs < TEAMMATE_QUIET_MS
     let idleTeammates = 0
     for (const task of list) {
       if (task.type === 'shell') {
-        const label = t.taskLabels.get(task.id) ?? task.id
-        if (t.monitorIds.has(task.id)) {
+        const label = t.ledger.labelOf(task.id) ?? task.id
+        if (t.ledger.isMonitor(task.id)) {
           parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
         } else if (!procs) {
           trusted = true
@@ -744,7 +709,7 @@ export class SessionTracker extends SessionRuntime {
       } else if (AGENT_TYPES.has(task.type)) {
         if (agentsFresh || toolCallInFlight) {
           observed = true
-          run(task, 'agent', t.taskLabels.get(task.id) ?? task.type)
+          run(task, 'agent', t.ledger.labelOf(task.id) ?? task.type)
         }
       } else if (task.type === 'teammate') {
         if (teammatesFresh || toolCallInFlight) {
@@ -822,7 +787,7 @@ export class SessionTracker extends SessionRuntime {
 
   private bgBusy(t: Tracked): boolean {
     const quietMs = Date.now() - t.lastBgActivityTs
-    if (t.bgTasks.size > 0) return quietMs < BG_SILENCE_MAX_MS
+    if (t.ledger.size > 0) return quietMs < BG_SILENCE_MAX_MS
     return t.lastBgActivityTs > t.lastMainActivityTs && quietMs < STOP_HOLD_MS
   }
 
@@ -1025,12 +990,8 @@ export class SessionTracker extends SessionRuntime {
     t.subagentFiles = new Map()
     t.subagentScanMs = 0
     t.info.usage = undefined
-    t.bgTasks = new Set()
-    t.monitorIds = new Set()
-    t.taskLabels = new Map()
-    t.toolLabels = new Map()
+    t.ledger = new BackgroundLedger()
     t.openTools = new Map()
-    t.teammateActiveMs = 0
     t.lastBgActivityTs = 0
     t.lastMainActivityTs = 0
     t.lastInterruptTs = 0
@@ -1243,7 +1204,7 @@ export class SessionTracker extends SessionRuntime {
       t.lastBgActivityTs > this.statusSince(t.info.tabId) + RESUME_AFTER_STOP_MS
     ) {
       this.applyStatus(t, 'ended', true)
-      t.bgTasks.add(BG_PROMOTED)
+      t.ledger.promote()
       return
     }
     if (!this.isHeldByBackground(t.info.tabId)) {
@@ -1253,7 +1214,7 @@ export class SessionTracker extends SessionRuntime {
     const busy = this.judgeHold(t)
     if (!busy) {
       if (Date.now() - t.lastMainActivityTs < STOP_HOLD_MS) return
-      t.bgTasks.clear()
+      t.ledger.clear()
       this.applyStatus(t, 'ended')
     }
   }
@@ -1344,7 +1305,7 @@ export class SessionTracker extends SessionRuntime {
     if (st.size === sst.offset) return false
     sst.activeMs = Date.now()
     if (sst.teammate === undefined) sst.teammate = readTeammateFlag(file)
-    if (sst.teammate) t.teammateActiveMs = sst.activeMs
+    if (sst.teammate) t.ledger.teammateActiveMs = sst.activeMs
     let folded = false
     while (sst.offset < st.size) {
       const from = sst.offset
@@ -1394,34 +1355,13 @@ export class SessionTracker extends SessionRuntime {
     if (!live) return
     const toolUseIds: string[] = []
     for (const b of content) {
-      if (b?.type === 'tool_result' && typeof b.tool_use_id === 'string') {
-        t.bgTasks.add(b.tool_use_id)
+      if (b?.type === 'tool_result' && typeof b.tool_use_id === 'string')
         toolUseIds.push(b.tool_use_id)
-      }
     }
-    let task: ReportedTask | null = null
-    if (typeof tur.backgroundTaskId === 'string') task = { id: tur.backgroundTaskId, type: 'shell' }
-    else if (typeof tur.taskId === 'string' && typeof tur.timeoutMs === 'number') {
-      task = { id: tur.taskId, type: 'shell' }
-      t.monitorIds.add(tur.taskId)
-    } else if (tur.status === 'teammate_spawned') {
-      // CC§8
-      if (toolUseIds[0]) task = { id: toolUseIds[0], type: 'teammate' }
-      t.teammateActiveMs = Date.now()
-    } else if (typeof tur.agentId === 'string') {
-      task = {
-        id: tur.agentId,
-        type: tur.status === 'remote_launched' ? 'cloud-session' : 'subagent'
-      }
+    const task = t.ledger.noteSpawnAck(tur, toolUseIds)
+    if (task && t.reported && !t.reported.some((x) => x.id === task.id)) {
+      t.reported.push({ ...task, since: Date.now() })
     }
-    if (task) {
-      const cmd = toolUseIds.map((id) => t.toolLabels.get(id)).find((c) => c)
-      if (cmd) t.taskLabels.set(task.id, cmd)
-      if (t.reported && !t.reported.some((x) => x.id === task.id)) {
-        t.reported.push({ ...task, since: Date.now() })
-      }
-    }
-    for (const id of toolUseIds) t.toolLabels.delete(id)
     const at = Math.min(isFinite(ts) ? ts : Date.now(), Date.now())
     if (at > t.lastBgActivityTs) t.lastBgActivityTs = at
   }
@@ -1443,21 +1383,8 @@ export class SessionTracker extends SessionRuntime {
   private ingestTaskNotification(t: Tracked, obj: TranscriptRecord): void {
     const text = taskNotificationText(obj)
     if (text === null) return
-    const st = text
-      .match(/<status>([^<]*)<\/status>/)?.[1]
-      ?.trim()
-      .toLowerCase()
-    if (!st || !TERMINAL_TASK_STATUSES.has(st)) return
-    for (const m of text.matchAll(/<tool-use-id>([^<]+)<\/tool-use-id>/g)) {
-      t.bgTasks.delete(m[1])
-    }
-    const gone = new Set([...text.matchAll(/<task-id>([^<]+)<\/task-id>/g)].map((m) => m[1]))
+    const gone = t.ledger.noteNotification(text)
     if (t.reported && gone.size) t.reported = t.reported.filter((x) => !gone.has(x.id))
-    for (const id of gone) {
-      t.monitorIds.delete(id)
-      t.taskLabels.delete(id)
-    }
-    t.bgTasks.delete(BG_PROMOTED)
   }
 
   private ingestLine(t: Tracked, line: string): 'user' | 'assistant' | 'interrupt' | null {
@@ -1552,9 +1479,7 @@ export class SessionTracker extends SessionRuntime {
         const labelField = TASK_LABEL_FIELD[b.name]
         const label = labelField ? b.input?.[labelField] : undefined
         if (typeof label === 'string') {
-          if (t.toolLabels.size >= UNACKED_TOOL_CAP)
-            t.toolLabels.delete(t.toolLabels.keys().next().value as string)
-          t.toolLabels.set(b.id, label.replace(/\s+/g, ' ').trim().slice(0, 120))
+          t.ledger.noteToolLabel(b.id, label)
           if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) {
             t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
           }
