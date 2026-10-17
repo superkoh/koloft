@@ -7,7 +7,7 @@ import { newWebTab, activeKind } from './helpers/browser'
 
 const LAYOUT_STEP_CEILING_BETWEEN_MEASURED_17_FIXED_AND_73_UNFIXED_MS = 45
 const DRAG_FRAME_AVG_CEILING_BETWEEN_MEASURED_14_FIXED_AND_60_UNFIXED_MS = 35
-const SIDEBAR_DRAG_COMMITS_CEILING_BETWEEN_MEASURED_FIXED_AND_UNFIXED = 20
+const SIDEBAR_DRAG_COMMITS_CEILING_BETWEEN_MEASURED_7_FIXED_AND_127_UNFIXED = 20
 const SIDEBAR_DRAG_PX = 160
 
 test.describe('Sidebar edge drag writes the width, not the store, on each mouse move', () => {
@@ -62,7 +62,7 @@ test.describe('Sidebar edge drag writes the width, not the store, on each mouse 
       .poll(() => page.evaluate(() => window.api.settings.get().then((s) => s.sidebarWidth)))
       .toBeCloseTo(end, 0)
     expect(commits, 'the sidebar drag must write the DOM, not the store').toBeLessThan(
-      SIDEBAR_DRAG_COMMITS_CEILING_BETWEEN_MEASURED_FIXED_AND_UNFIXED
+      SIDEBAR_DRAG_COMMITS_CEILING_BETWEEN_MEASURED_7_FIXED_AND_127_UNFIXED
     )
   })
 })
