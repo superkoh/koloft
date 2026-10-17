@@ -70,6 +70,8 @@ interface HostState {
   running: boolean
   again: boolean
   waitingForNextPull: (() => void)[]
+  roundEnded: boolean
+  waitingForFirstRound: (() => void)[]
 }
 
 interface Watch {
@@ -155,6 +157,18 @@ export class RemoteSync {
     return new Promise((done) => this.state(host).waitingForNextPull.push(done))
   }
 
+  firstRoundDone(host: string): Promise<void> {
+    const st = this.state(host)
+    if (this.stopped || st.roundEnded) return Promise.resolve()
+    if (!st.running && !st.timer) this.next(host, st, 0)
+    return new Promise((done) => st.waitingForFirstRound.push(done))
+  }
+
+  private roundOver(st: HostState): void {
+    st.roundEnded = true
+    for (const done of st.waitingForFirstRound.splice(0)) done()
+  }
+
   pokeNow(host: string): void {
     if (this.stopped) return
     const st = this.state(host)
@@ -200,7 +214,9 @@ export class RemoteSync {
           pulled: {},
           running: false,
           again: false,
-          waitingForNextPull: []
+          waitingForNextPull: [],
+          roundEnded: false,
+          waitingForFirstRound: []
         })
       )
     return st
@@ -230,7 +246,7 @@ export class RemoteSync {
     st.timer = undefined
     if (this.stopped || st.running) return
     const target = this.deps.targets().find((t) => t.host === host)
-    if (!target) return
+    if (!target) return this.roundOver(st)
     st.running = true
     const waiting = st.waitingForNextPull.splice(0)
     try {
@@ -313,6 +329,7 @@ export class RemoteSync {
     } finally {
       st.running = false
       for (const done of waiting) done()
+      this.roundOver(st)
       if (this.stopped) return
       const again = st.again
       st.again = false

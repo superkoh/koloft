@@ -73,6 +73,7 @@ export interface MachineClaudeDeps {
   controlDir: string
   machinePackage(): MachinePackage
   alive(): ReadonlySet<string>
+  firstHeartbeatDone(): Promise<void>
   realPath(p: string): string
   settings(): { skipPermissions: boolean }
   agentTools(): boolean
@@ -852,6 +853,7 @@ export class SshHost implements Host {
 
   // PLATFORM§35
   private async attachOrStart(sid: string): Promise<'start' | 'attach'> {
+    await this.deps.claude.firstHeartbeatDone()
     const mode = launchMode({
       alive: this.deps.claude.alive(),
       killed: this.killedSessions,

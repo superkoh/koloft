@@ -457,6 +457,28 @@ it('unwatchAll drops every watched path at once, however many times each was wat
   expect(sent).not.toContain(dir)
 })
 
+it("the wait for a machine's first heartbeat ends when that first round ends, answered or not, and later waits end at once without a round of their own", async () => {
+  let answer = (): void => {}
+  answers.push(
+    () =>
+      new Promise<RunResult>(
+        (res) => (answer = () => res({ code: 255, stdout: '', stderr: 'down' }))
+      )
+  )
+  sync.start()
+  await tick(1)
+  let done = false
+  void sync.firstRoundDone('devbox').then(() => (done = true))
+  await tick(1)
+  expect(done).toBe(false)
+  answer()
+  await tick(1)
+  expect(done).toBe(true)
+  const before = runs.length
+  await sync.firstRoundDone('devbox')
+  expect(runs.length).toBe(before)
+})
+
 describe('pokeNow', () => {
   it('runs a round at once instead of waiting out the interval', async () => {
     target = { ...target, busy: false }
