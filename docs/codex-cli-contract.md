@@ -901,6 +901,9 @@ afterwards) and kept app-server A running while it asked:
   until it is restarted.
 - **`account/rateLimits/read` asks the network each time**: four calls on one app-server,
   1.5 s apart, took 377–851 ms each (a busy Mac; `initialize` took 3.5 s there).
+- **Questions sent together on one connection all get answered**: three `thread/search`,
+  a `thread/list` and a `config/read` written before any answer came back were each
+  answered, together in 16 ms (an empty home, no login).
 - **An app-server that only answers such questions still starts processes of its own**:
   right after `initialize`, and again after `thread/list`, `thread/search`, `config/read`
   and `account/read`, it had `git` and `git-remote-https` children fetching over https
