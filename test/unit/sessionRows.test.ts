@@ -16,8 +16,6 @@ import {
   relTime,
   rowLookups,
   rowStateClass,
-  attentionOnRow,
-  tabOfRow,
   selectionRoot,
   sessionTree,
   rowsUnder,
@@ -541,46 +539,45 @@ describe('nextWaitingTab (⌘J: the session that has waited longest for you)', (
   })
 })
 
-describe('rowLookups (the sidebar builds its lookups once per render)', () => {
+describe('rowLookups (which tab, live session and attention mark belong to a sidebar row)', () => {
   const sessions = [
     { sessionId: 's-dead', tabId: 'pty-old', alive: false },
     { sessionId: 's-1', tabId: 'pty-1', alive: true },
-    { sessionId: 's-1', tabId: 'pty-1b', alive: true },
-    { sessionId: 's-2', tabId: 'pty-2', alive: false }
+    { sessionId: 's-1', tabId: 'pty-1b', alive: true }
   ]
   const tabs = [
-    { id: 'pty-1', sessionId: 's-1', alive: true },
     { id: 'pty-9', sessionId: 's-2', alive: false, asleep: true as const },
     { id: 'pty-8', sessionId: 's-2', alive: true },
     { id: 'pty-7', sessionId: 's-cold', alive: true },
     { id: 'pty-6', alive: true }
   ]
-  const attention: AttentionEvent[] = [
-    { tabId: 'pty-2', kind: 'approval', at: 1 },
-    { tabId: 'pty-x', sessionId: 's-1', kind: 'turn-done', at: 2 },
-    { tabId: 'pty-1', kind: 'approval', at: 3 },
-    { tabId: 'pty-9', sessionId: 's-2', kind: 'turn-done', at: 4 }
-  ]
-  const rows = [
-    { id: 's-1', running: true },
-    { id: 's-2', running: true },
-    { id: 's-dead', running: true },
-    { id: 's-cold', running: false },
-    { id: 'pty-new', running: false, pending: true },
-    { id: 's-none', running: true }
-  ]
+  const bySession: AttentionEvent = { tabId: 'pty-x', sessionId: 's-1', kind: 'turn-done', at: 2 }
+  const byTab: AttentionEvent = { tabId: 'pty-1', kind: 'approval', at: 3 }
+  const look = rowLookups(sessions, tabs, [bySession, byTab])
 
-  it('answers each row exactly as the one-off lookups do, first match winning', () => {
-    const look = rowLookups(sessions, tabs, attention)
-    for (const row of rows) {
-      const tabId = tabOfRow(row, sessions, tabs)
-      expect(look.tabOf(row), row.id).toBe(tabId)
-      expect(look.attentionOn(row.id, tabId), row.id).toBe(attentionOnRow(row.id, tabId, attention))
-      expect(look.hasAliveTab(row.id), row.id).toBe(
-        tabs.some((t) => t.sessionId === row.id && t.alive)
-      )
-    }
-    for (const t of ['pty-1', 'pty-1b', 'pty-old', 'pty-none'])
-      expect(look.sessionOn(t), t).toBe(sessions.find((s) => s.tabId === t))
+  it('a running row shows in the tab of its first live session, else its first open or asleep tab', () => {
+    expect(look.tabOf({ id: 's-1', running: true })).toBe('pty-1')
+    expect(look.tabOf({ id: 's-2', running: true })).toBe('pty-9')
+    expect(look.tabOf({ id: 's-dead', running: true })).toBeUndefined()
+  })
+
+  it('a pending row is its own tab, and a cold row has none even when a tab carries its id', () => {
+    expect(look.tabOf({ id: 'pty-new', running: false, pending: true })).toBe('pty-new')
+    expect(look.tabOf({ id: 's-cold', running: false })).toBeUndefined()
+    expect(look.hasAliveTab('s-cold')).toBe(true)
+    expect(look.hasAliveTab('s-dead')).toBe(false)
+  })
+
+  it('the live session on a tab is the first one the stream names, dead or alive', () => {
+    expect(look.sessionOn('pty-1')).toBe(sessions[1])
+    expect(look.sessionOn('pty-old')).toBe(sessions[0])
+    expect(look.sessionOn('pty-none')).toBeUndefined()
+  })
+
+  it('a row’s attention mark is the earliest one naming its session or its tab', () => {
+    expect(look.attentionOn('s-1', 'pty-1')).toBe(bySession)
+    expect(look.attentionOn('s-other', 'pty-1')).toBe(byTab)
+    expect(look.attentionOn('s-other', undefined)).toBeUndefined()
+    expect(rowLookups([], [], [byTab, bySession]).attentionOn('s-1', 'pty-1')).toBe(byTab)
   })
 })

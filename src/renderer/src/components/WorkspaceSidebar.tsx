@@ -37,7 +37,7 @@ import {
   IconPullRequest,
   IconScheduled
 } from '../icons'
-import type { BackendId, SessionRow, WorkspaceRows } from '@shared/types'
+import type { BackendId, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
 import { ATTENTION_REASON } from '@shared/types'
 import { popoverX } from '@shared/accountUsage'
@@ -345,7 +345,17 @@ const SessionRowView = memo(function SessionRowView({
 })
 
 const WorkspaceHead = memo(function WorkspaceHead({
-  ws,
+  path,
+  name,
+  missing,
+  isGit,
+  remoteHost,
+  remoteTitle,
+  remoteConnected,
+  remoteDot,
+  gitPanel,
+  issues,
+  prs,
   open,
   active,
   callingInside,
@@ -354,7 +364,17 @@ const WorkspaceHead = memo(function WorkspaceHead({
   behindName,
   actions
 }: {
-  ws: WorkspaceRows['workspace']
+  path: string
+  name: string
+  missing: boolean
+  isGit: boolean
+  remoteHost: string | undefined
+  remoteTitle: string | undefined
+  remoteConnected: boolean
+  remoteDot: string | undefined
+  gitPanel: boolean
+  issues: number
+  prs: number
   open: boolean
   active: boolean
   callingInside: number
@@ -364,22 +384,21 @@ const WorkspaceHead = memo(function WorkspaceHead({
   actions: SidebarActions
 }): JSX.Element {
   const mq = useMarquee()
-  const gitPanel = freshnessShown(ws.freshness) || !!ws.github || !!ws.gitPickable
-  const door = doorFor(ws.isGit)
+  const door = doorFor(isGit)
   return (
     <div
-      className={'ws-head' + (ws.missing ? ' missing' : '') + (active ? ' active' : '')}
-      title={ws.missing ? 'folder deleted' : ws.path}
+      className={'ws-head' + (missing ? ' missing' : '') + (active ? ' active' : '')}
+      title={missing ? 'folder deleted' : path}
       draggable
-      onDragStart={(e) => actions.dragStart(e, ws.path)}
+      onDragStart={(e) => actions.dragStart(e, path)}
       onDragEnd={actions.dragEnd}
       onClick={() => {
-        if (ws.missing) return
-        actions.selectWs(ws.path)
+        if (missing) return
+        actions.selectWs(path)
       }}
-      onContextMenu={(e) => actions.headMenu(e, ws.path)}
+      onContextMenu={(e) => actions.headMenu(e, path)}
       onMouseEnter={(e) => {
-        actions.headEnter(e, ws.path)
+        actions.headEnter(e, path)
         mq.start()
       }}
       onMouseLeave={() => {
@@ -392,52 +411,49 @@ const WorkspaceHead = memo(function WorkspaceHead({
         title={open ? 'Fold' : 'Unfold'}
         onClick={(e) => {
           e.stopPropagation()
-          actions.toggleCollapsed(ws.path)
+          actions.toggleCollapsed(path)
         }}
       >
         {open ? <IconFolderOpen size={15} /> : <IconFolder size={15} />}
       </span>
       <span ref={mq.box} className={'ws-name' + (mq.on ? ' mq' : '')}>
-        <i ref={mq.text}>{workspaceName(ws)}</i>
+        <i ref={mq.text}>{name}</i>
       </span>
-      {ws.remote && (
-        <span className="ws-remote" title={remoteCopyText(ws.remote.host, ws.remote.path)}>
-          {ws.remote.host}
-          <span
-            className={'ws-conn' + (ws.remote.connected ? ' on' : '')}
-            title={remoteDotTitle(ws.remote)}
-          />
+      {remoteHost !== undefined && (
+        <span className="ws-remote" title={remoteTitle}>
+          {remoteHost}
+          <span className={'ws-conn' + (remoteConnected ? ' on' : '')} title={remoteDot} />
         </span>
       )}
-      {ws.isGit && !ws.missing && (
+      {isGit && !missing && (
         <span
           className="ws-git"
           title={gitPanel ? NO_INHERITED_TOOLTIP : 'git repository'}
-          onMouseEnter={gitPanel ? (e) => actions.gitEnter(e, ws.path) : undefined}
-          onMouseLeave={gitPanel ? (e) => actions.gitLeave(e, ws.path) : undefined}
+          onMouseEnter={gitPanel ? (e) => actions.gitEnter(e, path) : undefined}
+          onMouseLeave={gitPanel ? (e) => actions.gitLeave(e, path) : undefined}
         >
           <IconBranch size={12} />
           {behindCls !== undefined && (
             <button
               className={behindCls}
               aria-label={behindName}
-              onClick={(e) => actions.behindClick(e, ws.path)}
+              onClick={(e) => actions.behindClick(e, path)}
             >
               {behindLabel}
             </button>
           )}
-          {ws.github && (ws.github.issues > 0 || ws.github.prs > 0) && (
+          {(issues > 0 || prs > 0) && (
             <span className="ws-gh">
-              {ws.github.issues > 0 && (
-                <span aria-label={openIssuesLabel(ws.github.issues)}>
+              {issues > 0 && (
+                <span aria-label={openIssuesLabel(issues)}>
                   <IconIssue size={12} />
-                  {countLabel(ws.github.issues)}
+                  {countLabel(issues)}
                 </span>
               )}
-              {ws.github.prs > 0 && (
-                <span aria-label={openPullsLabel(ws.github.prs)}>
+              {prs > 0 && (
+                <span aria-label={openPullsLabel(prs)}>
                   <IconPullRequest size={12} />
-                  {countLabel(ws.github.prs)}
+                  {countLabel(prs)}
                 </span>
               )}
             </span>
@@ -449,14 +465,14 @@ const WorkspaceHead = memo(function WorkspaceHead({
           {callingInside}
         </span>
       )}
-      {!ws.missing && (
+      {!missing && (
         <button
           className="hact"
           title={door.title}
           aria-label={door.title}
           onClick={(e) => {
             e.stopPropagation()
-            actions.openDoor(ws.path, ws.isGit)
+            actions.openDoor(path, isGit)
           }}
         >
           <door.Icon size={16} />
@@ -467,7 +483,6 @@ const WorkspaceHead = memo(function WorkspaceHead({
 })
 
 interface FloatingCtl {
-  clearTimers: () => void
   armMenu: (e: MouseEvent, el: HTMLElement, target: MenuTarget) => void
   hoverMenu: (e: MouseEvent, target: MenuTarget) => void
   menuNow: (e: MouseEvent, target: MenuTarget) => void
@@ -481,7 +496,6 @@ interface FloatingCtl {
 
 function SidebarFloating({
   ctl,
-  rows,
   namedMethods,
   onNewSession,
   onNewWorktreeSession,
@@ -490,7 +504,6 @@ function SidebarFloating({
   onRemoveWorkspace
 }: {
   ctl: RefObject<FloatingCtl | null>
-  rows: WorkspaceRows[]
   namedMethods: BackendId[] | null
   onNewSession: (wsPath: string, backend?: BackendId) => void
   onNewWorktreeSession: (wsPath: string) => void
@@ -498,6 +511,7 @@ function SidebarFloating({
   onScheduledJobs: (wsPath: string, jobId?: string) => void
   onRemoveWorkspace: (wsPath: string) => void
 }): JSX.Element {
+  const rows = useStore((s) => s.workspaceRows)
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)
   const storeTabs = useStore((s) => s.tabs)
@@ -519,7 +533,15 @@ function SidebarFloating({
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cardTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const clearTimers = (): void => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    if (leaveTimer.current) clearTimeout(leaveTimer.current)
+    hoverTimer.current = null
+    leaveTimer.current = null
+  }
+
   const closeAll = (): void => {
+    clearTimers()
     setMenu(null)
     setParkedPop(null)
     if (!freshBusy.current) setFresh(null)
@@ -528,13 +550,6 @@ function SidebarFloating({
     if (sidebarHidden) closeAll()
   }, [sidebarHidden])
 
-  const clearTimers = (): void => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current)
-    if (leaveTimer.current) clearTimeout(leaveTimer.current)
-    hoverTimer.current = null
-    leaveTimer.current = null
-  }
-
   useDismissOnOutside(!!menu, setMenu)
   useDismissOnOutside(!!parkedPop, setParkedPop)
 
@@ -542,7 +557,8 @@ function SidebarFloating({
     liveTabOf(sessionId, sessions, storeTabs)
 
   const parkedFor = (row: SessionRow): ReturnType<typeof sessionActivityBadge> => {
-    const sess = row.running ? sessions.find((s) => s.tabId === tabIdFor(row.id)) : undefined
+    const tabId = row.running ? tabIdFor(row.id) : undefined
+    const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
     return sessionActivityBadge(sess, leftovers[row.id])
   }
 
@@ -603,7 +619,6 @@ function SidebarFloating({
   }
 
   useImperativeHandle(ctl, () => ({
-    clearTimers,
     armMenu,
     hoverMenu: (e, target) => {
       clearTimers()
@@ -996,6 +1011,7 @@ export function WorkspaceSidebar({
     return () => ro.disconnect()
   }, [fitHeads])
 
+  const now = new Date()
   const look = rowLookups(sessions, storeTabs, attention)
   const callingAmong = (list: SessionRow[]): number =>
     list.filter((r) => look.attentionOn(r.id, look.tabOf(r))).length
@@ -1007,35 +1023,22 @@ export function WorkspaceSidebar({
     list.push(slugOf(j.name) + '-')
     cronWorktreePrefixes.set(j.workspacePath, list)
   }
-  const { rowById, wsByPath } = useMemo(() => {
-    const rowById = new Map<string, { row: SessionRow; wsPath: string }>()
-    const wsByPath = new Map<string, WorkspaceRows['workspace']>()
-    for (const w of rows) {
-      wsByPath.set(w.workspace.path, w.workspace)
-      for (const r of w.rows) rowById.set(r.id, { row: r, wsPath: w.workspace.path })
-    }
-    return { rowById, wsByPath }
-  }, [rows])
-
-  const latest = { rowById, wsByPath, onNewSession, onNewWorktreeSession }
-  const live = useRef(latest)
-  useLayoutEffect(() => {
-    live.current = latest
-  })
+  const live = useRef({ onNewSession, onNewWorktreeSession })
+  live.current = { onNewSession, onNewWorktreeSession }
 
   const actions = useMemo<SidebarActions>(() => {
-    const rowTarget = (id: string): MenuTarget => {
-      const { row, wsPath } = live.current.rowById.get(id)!
-      return { kind: 'session', wsPath, row }
+    const rowTarget = (id: string): Extract<MenuTarget, { kind: 'session' }> => {
+      const w = useStore.getState().workspaceRows.find((w) => w.rows.some((r) => r.id === id))!
+      return { kind: 'session', wsPath: w.workspace.path, row: w.rows.find((r) => r.id === id)! }
     }
     const wsTarget = (path: string): MenuTarget => {
-      const ws = live.current.wsByPath.get(path)!
+      const ws = useStore.getState().workspaceRows.find((w) => w.workspace.path === path)!.workspace
       return { kind: 'workspace', wsPath: path, missing: ws.missing, isGit: ws.isGit }
     }
     return {
       openRow: (id) => {
-        floating.current?.clearTimers()
-        const { row, wsPath } = live.current.rowById.get(id)!
+        floating.current?.dismissMenu()
+        const { row, wsPath } = rowTarget(id)
         openSessionRow(row, wsPath)
       },
       rowMenu: (e, id) => floating.current?.menuNow(e, rowTarget(id)),
@@ -1051,7 +1054,6 @@ export function WorkspaceSidebar({
       headMenu: (e, path) => floating.current?.menuNow(e, wsTarget(path)),
       headEnter: (e, path) => floating.current?.hoverMenu(e, wsTarget(path)),
       dragStart: (e, path) => {
-        floating.current?.clearTimers()
         floating.current?.closeAll()
         e.dataTransfer.effectAllowed = 'move'
         // PLATFORM§10
@@ -1160,11 +1162,10 @@ export function WorkspaceSidebar({
 
           {rows.map(({ workspace: ws, rows: sessionRows }, wsIndex) => {
             const open = !collapsed[ws.path]
-            const behind = behindBadge(ws.freshness, Date.now())
+            const behind = behindBadge(ws.freshness, now.getTime())
             const door = doorFor(ws.isGit)
             const callingInside = open ? 0 : callingAmong(sessionRows)
-            const cronNow = new Date()
-            const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, cronNow)
+            const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, now)
             const showBackend = mixesBackends(sessionRows)
             const cronPrefixes = cronWorktreePrefixes.get(ws.path) ?? []
             const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
@@ -1197,7 +1198,7 @@ export function WorkspaceSidebar({
                     tooltip={
                       row.running || row.pending
                         ? undefined
-                        : relTime(row.mtime, Date.now()) +
+                        : relTime(row.mtime, now.getTime()) +
                           (row.invalidCwd
                             ? ' — worktree deleted; click to rebuild and resume'
                             : ' — click to resume')
@@ -1236,7 +1237,17 @@ export function WorkspaceSidebar({
                 data-ws-path={ws.path}
               >
                 <WorkspaceHead
-                  ws={ws}
+                  path={ws.path}
+                  name={workspaceName(ws)}
+                  missing={ws.missing}
+                  isGit={ws.isGit}
+                  remoteHost={ws.remote?.host}
+                  remoteTitle={ws.remote && remoteCopyText(ws.remote.host, ws.remote.path)}
+                  remoteConnected={!!ws.remote?.connected}
+                  remoteDot={ws.remote && remoteDotTitle(ws.remote)}
+                  gitPanel={freshnessShown(ws.freshness) || !!ws.github || !!ws.gitPickable}
+                  issues={ws.github?.issues ?? 0}
+                  prs={ws.github?.prs ?? 0}
                   open={open}
                   active={selectedWs === ws.path && activeTabId === null}
                   callingInside={callingInside}
@@ -1263,7 +1274,7 @@ export function WorkspaceSidebar({
                         {soon.more > 0 && <span className="ws-next-more">{`+${soon.more}`}</span>}
                         <span className="ws-next-dot">·</span>
                         <span className={'ws-next-at' + (soon.soon ? ' soon' : '')}>
-                          {describeWhen(soon.at, cronNow)}
+                          {describeWhen(soon.at, now)}
                         </span>
                       </div>
                     )}
@@ -1291,7 +1302,6 @@ export function WorkspaceSidebar({
         <>
           <SidebarFloating
             ctl={floating}
-            rows={rows}
             namedMethods={namedMethods}
             onNewSession={onNewSession}
             onNewWorktreeSession={onNewWorktreeSession}

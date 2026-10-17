@@ -165,14 +165,6 @@ export function rowsUnder<R extends { id: string; parentId?: string }>(node: Row
   return node.children.flatMap((child) => [child.row, ...rowsUnder(child)])
 }
 
-export function attentionOnRow(
-  rowId: string,
-  tabId: string | undefined,
-  pending: AttentionEvent[]
-): AttentionEvent | undefined {
-  return pending.find((e) => e.sessionId === rowId || e.tabId === tabId)
-}
-
 export function nextWaitingTab(
   pending: readonly AttentionEvent[],
   activeTabId: string | null,
@@ -193,15 +185,6 @@ export function liveTabOf(
     sessions.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
     tabs.find((t) => (t.alive || t.asleep) && t.sessionId === sessionId)?.id
   )
-}
-
-export function tabOfRow(
-  row: { id: string; running: boolean; pending?: boolean },
-  sessions: readonly { sessionId: string; tabId: string; alive: boolean }[],
-  tabs: readonly { id: string; sessionId?: string; alive: boolean; asleep?: true }[]
-): string | undefined {
-  if (row.pending) return row.id
-  return row.running ? liveTabOf(row.id, sessions, tabs) : undefined
 }
 
 export function shownTitle(rowTitle: string, liveTitle: string | undefined): string {
@@ -233,6 +216,7 @@ export interface RowLookups<S> {
   hasAliveTab: (sessionId: string) => boolean
 }
 
+// CODEX§9
 export function rowLookups<S extends { sessionId: string; tabId: string; alive: boolean }>(
   sessions: readonly S[],
   tabs: readonly { id: string; sessionId?: string; alive: boolean; asleep?: true }[],
