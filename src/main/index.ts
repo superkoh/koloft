@@ -30,6 +30,7 @@ import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museS
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
+import { sharedProcessTable } from './processTable'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome } from './museSessionLog'
 import { museSignIn, storeMuseKey } from './museServe'
@@ -81,6 +82,7 @@ import {
 import { directoryListingHtml } from './dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
+  CODEX_REPLY_LANGUAGE_SCRIPT,
   HOOK_SCRIPT,
   forgetAssistMarkers,
   markAnswerable,
@@ -103,11 +105,13 @@ import {
   defaultControlDir,
   ensureControlDir,
   rsyncPull,
+  backgroundOptions,
   runSsh,
   runSshBytes,
   sshOptions
 } from './remote/ssh'
-import { ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import { ENSURE_CODEX_SH, ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
 import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
   AGENT_PLUGIN_DIR,
@@ -120,7 +124,12 @@ import {
   CLAUDE_AUTH_ENV_VARS,
   type MachinePackage
 } from './remote/launch'
-import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
+import {
+  machinePackageBase,
+  mirrorHookDir,
+  mirrorProjectsRoot,
+  tabPackageDir
+} from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { REMOTE_AGENT_SHIM } from './agentShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
@@ -581,7 +590,7 @@ let leftovers: Record<string, LeftoverProcess[]> = {}
 tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
 async function refreshLeftovers(): Promise<void> {
-  const next = await scanLeftovers()
+  const next = await scanLeftovers(await sharedProcessTable.eachRound(LEFTOVER_SCAN_MS))
   const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
   leftovers = next
   if (changed) sendToRenderer('sessions:leftovers', next)
@@ -972,6 +981,8 @@ function machinePackage(): MachinePackage {
   if (machinePkg) return machinePkg
   const pkgFiles: Record<string, string | Buffer> = {
     'ensure.sh': ENSURE_SH,
+    [ENSURE_CODEX_FILE]: ENSURE_CODEX_SH,
+    ...replyLanguageFiles(CODEX_REPLY_LANGUAGE_SCRIPT),
     'hook.sh': HOOK_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
@@ -1118,6 +1129,10 @@ function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   )
 }
 
+function machineOfTab(tabId: string): string | undefined {
+  return remoteHostOfTab(tabId) ?? codexSessions?.machineOfTab(tabId)
+}
+
 function agentToolsFor(backend: BackendId, host: HostId): boolean {
   return loadSettings().agentTools && capabilitiesFor(backend, host).agentTools === true
 }
@@ -1211,7 +1226,7 @@ function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
   open: (tabId, target, view) => {
-    const machine = remoteHostOfTab(tabId)
+    const machine = machineOfTab(tabId)
     return machine && !schemeOf(target)
       ? openOnMachine(tabId, machine, target, view)
       : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
@@ -1439,7 +1454,7 @@ const agentRequests = new AgentRequests({
   session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    return !!backend && agentToolsFor(backend, remoteHostOfTab(tabId) ? 'ssh' : 'local')
+    return !!backend && agentToolsFor(backend, machineOfTab(tabId) ? 'ssh' : 'local')
   },
   alive: pidAlive
 })
@@ -2353,7 +2368,9 @@ app.whenReady().then(() => {
   const storedDeps = {
     pty: ptyMgr,
     runtime: tracker,
-    projectInfo: projectInfoFor,
+    projectInfo: projectInfoOnHost,
+    remoteDirExists: (dir: string) => hosts.of(dir).dirExistsOrThrow(dir),
+    remoteTreeIo: machineTreeIo,
     changed: () => {
       const all = onSessionsChanged()
       sendToRenderer('sessions:update', all)
@@ -2368,6 +2385,22 @@ app.whenReady().then(() => {
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
       ...storedDeps,
+      machine: {
+        instance: codexMachineInstance(userData),
+        ready: loginEnvReady,
+        run: (host, cmd) =>
+          loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
+        sshArgs: (machine, background) => {
+          ensureControlDir(remoteControlDir)
+          return background
+            ? backgroundOptions(machine, remoteControlDir)
+            : sshOptions(remoteControlDir, false)
+        },
+        machinePackage,
+        tabDir: (tabId) => tabPackageDir(userData, tabId),
+        fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
+        keyed: pinnedKeyOn
+      },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
@@ -2383,7 +2416,7 @@ app.whenReady().then(() => {
       fallbackBin,
       gitBin: gitFirstBin,
       agent: {
-        enabled: () => agentToolsFor('codex', 'local'),
+        enabled: (host) => agentToolsFor('codex', host),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
       },
       gitAccounts: {
@@ -2398,9 +2431,6 @@ app.whenReady().then(() => {
   try {
     museSessions = new MuseSessions(path.join(userData, 'muse-sessions.json'), {
       ...storedDeps,
-      projectInfo: projectInfoOnHost,
-      remoteDirExists: (dir) => hosts.of(dir).dirExistsOrThrow(dir),
-      remoteTreeIo: machineTreeIo,
       remote: museOnMachines,
       leftWorktree: (resource) => removeUntouchedWorktree(museSessions, resource),
       openShimRoot: path.join(userData, 'muse-open'),
@@ -2411,7 +2441,8 @@ app.whenReady().then(() => {
         writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
       },
       skipPermissions: () => loadSettings().skipPermissions,
-      serversAmong: (pid, commands) => museServersAmong(pid, commands),
+      serversAmong: async (pid, commands) =>
+        museServersAmong(await sharedProcessTable.fresh(), pid, commands),
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,
@@ -2436,7 +2467,7 @@ app.whenReady().then(() => {
       .catch((error) => sendToRenderer('cron:toast', String(error)))
   }
   if (codexSessions) {
-    sessionBackends.register(codexBackend(codexSessions, resumeProbes))
+    sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes))
     void codexSessions
       .availability()
       .then((codex) => {
@@ -2805,12 +2836,13 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
-      const live = new Set(
-        ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : []))
-      )
+      const live = new Set([
+        ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
+        ...(codexSessions?.machinesWithTabs() ?? [])
+      ])
       const busy = new Set(
         allSessions().flatMap((s) => {
-          const host = s.alive && remoteHostOfTab(s.tabId)
+          const host = s.alive && machineOfTab(s.tabId)
           return host && (s.status === 'working' || s.status === 'approval') ? [host] : []
         })
       )
@@ -2834,7 +2866,10 @@ app.whenReady().then(() => {
     onHooksPulled: (host) => museSessions?.followMirrors(host),
     onConnected: (host) => void freshness?.machineUp(host)
   })
-  ptyMgr.on('remote-typed', (host: string) => remoteSync?.typedInto(host))
+  ptyMgr.on('typed', (tabId: string) => {
+    const host = machineOfTab(tabId)
+    if (host) remoteSync?.typedInto(host)
+  })
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
     autoFetch: () => loadSettings().gitAutoFetch,
@@ -4433,6 +4468,7 @@ const claudeBackend = new ClaudeBackend({
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   error: (message) => sendToRenderer('cron:toast', message),
   assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
+  machineOfTab,
   otherTabOnMachine: (machine, tmuxName, launchTab) =>
     museSessions?.tabOnMachine(machine, tmuxName, launchTab)
 })

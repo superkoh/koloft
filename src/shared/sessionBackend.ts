@@ -151,8 +151,8 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
       // CODEX§8
       statusline3: { unsupported: 'CODEX§8' }
     },
-    // CODEX§16
-    ssh: 'refused'
+    // CODEX§8 CODEX§16
+    ssh: { ...ON_A_MACHINE, statusline3: { unsupported: 'CODEX§8' } }
   },
   muse: {
     local: {

@@ -340,19 +340,17 @@ describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted 
 })
 
 // CC§12
-it("tells which machine a remote tab's input went to, so its sync wakes, but not for a mouse move or a focus change, nor for a local tab", () => {
+it("tells which tab got input, so a remote tab's sync wakes, but not for a mouse move or a focus change", () => {
   const mgr = new PtyManager()
   const typed: string[] = []
-  mgr.on('remote-typed', (host: string) => typed.push(host))
-  const remote = mgr.create({ kind: 'claude', cwd: os.tmpdir(), remoteHost: 'devbox' })
-  const local = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
-  mgr.write(remote.id, '\x1b[<35;10;5M\x1b[<35;11;5M')
-  mgr.write(remote.id, '\x1b[I')
-  mgr.write(local.id, 'hi\r')
+  mgr.on('typed', (tabId: string) => typed.push(tabId))
+  const tab = mgr.create({ kind: 'codex', cwd: os.tmpdir() })
+  mgr.write(tab.id, '\x1b[<35;10;5M\x1b[<35;11;5M')
+  mgr.write(tab.id, '\x1b[I')
   expect(typed).toEqual([])
-  mgr.write(remote.id, 'h')
-  mgr.write(remote.id, '\x1b[<0;3;4Mx')
-  expect(typed).toEqual(['devbox', 'devbox'])
+  mgr.write(tab.id, 'h')
+  mgr.write(tab.id, '\x1b[<0;3;4Mx')
+  expect(typed).toEqual([tab.id, tab.id])
 })
 
 describe('PtyManager types the PATH line and the launch line once the login shell reads', () => {

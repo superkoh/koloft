@@ -300,8 +300,7 @@ export class PtyManager extends EventEmitter {
   write(id: string, data: string): void {
     const handle = this.ptys.get(id)
     handle?.proc.write(data)
-    if (handle?.remoteHost && withoutMouseAndFocusReports(data))
-      this.emit('remote-typed', handle.remoteHost)
+    if (handle && withoutMouseAndFocusReports(data)) this.emit('typed', id)
   }
 
   exclusive<T>(id: string, typing: () => Promise<T>): Promise<T> {
