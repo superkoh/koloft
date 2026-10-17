@@ -1228,8 +1228,8 @@ export default function App(): JSX.Element {
   }
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
-  const activeSession = useStore((s) =>
-    activeTab ? s.sessions.find((x) => x.tabId === activeTab.id) : undefined
+  const activeSessionTitle = useStore((s) =>
+    activeTab ? s.sessions.find((x) => x.tabId === activeTab.id)?.title : undefined
   )
   // ADR-0030
   const assistSetup = useAssistSetup()
@@ -1709,7 +1709,7 @@ export default function App(): JSX.Element {
                 ])}
                 {switching && activeTab && (
                   <ResumingMask
-                    title={activeSession?.title ?? activeTab.title}
+                    title={activeSessionTitle ?? activeTab.title}
                     label={activeTab.resuming ? undefined : 'Loading session…'}
                     late={!activeTab.resuming}
                   />
@@ -1866,7 +1866,7 @@ export default function App(): JSX.Element {
               />
               {switching && !staged && activeTab && (
                 <ResumingMask
-                  title={activeSession?.title ?? activeTab.title}
+                  title={activeSessionTitle ?? activeTab.title}
                   label="Loading session…"
                   late
                 />

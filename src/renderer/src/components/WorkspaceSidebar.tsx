@@ -172,7 +172,7 @@ function UnseenFileMark({ tabId }: { tabId: string }): JSX.Element | null {
   )
 }
 
-function WorkspaceSidebarView({
+export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onNewSession,
   namedMethods,
   onNewWorktreeSession,
@@ -1195,6 +1195,4 @@ function WorkspaceSidebarView({
       )}
     </>
   )
-}
-
-export const WorkspaceSidebar = memo(WorkspaceSidebarView)
+})

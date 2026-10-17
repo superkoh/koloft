@@ -320,7 +320,7 @@ function useGithubChecks(
   return { checks: got && got.key === key ? got.checks : null, refresh }
 }
 
-function WorkbenchPaneView({
+export const WorkbenchPane = memo(function WorkbenchPane({
   tabId: ownerTab,
   states,
   liveTabs,
@@ -2406,6 +2406,4 @@ function WorkbenchPaneView({
       {dialog && <BrowserModal dialog={dialog} onAnswer={onDialogAnswer} />}
     </div>
   )
-}
-
-export const WorkbenchPane = memo(WorkbenchPaneView)
+})
