@@ -49,12 +49,15 @@ import {
 } from '../remote/paths'
 import { launchMode } from '../remote/sync'
 import {
+  backgroundOptions,
   ensureControlDir,
   problemOf,
   sshLinkBroke,
   sshOptions,
   type BytesResult
 } from '../remote/ssh'
+import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
+import { remoteMuseHooks, sessionStartContext } from '../museHooks'
 import { claudeArgv } from '../claudeArgs'
 import { listSkills, type SkillFs } from '../skillList'
 import { worktreeNameAround } from '../resumePlan'
@@ -75,6 +78,27 @@ export interface MachineClaudeDeps {
   agentTools(): boolean
   pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
   hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
+}
+
+export interface MuseMachineLaunch {
+  cwd: string
+  fallbackCwd?: string
+  resumeSessionId?: string
+  account: { name: string; auth(): string }
+  args: string[]
+  trust: string[]
+  trustIf?: string
+  context?: string
+  skill?: string
+  portOffset?: number
+  ownerWords?: string
+}
+
+export interface MuseMachinePlan {
+  attach: boolean
+  tmuxName(tabId: string): string
+  launchCommand(tabId: string): string
+  resized(tabId: string, cols: number, rows: number): void
 }
 
 export interface SshHostDeps {
@@ -433,6 +457,9 @@ cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm 
 
 const RESIZE_SETTLE_MS = 200
 
+// PLATFORM§35
+const NO_TAB_NAME_IS_ANOTHERS_PREFIX = '-t'
+
 export class SshHost implements Host {
   readonly github: GithubLookup
   private git: GitOps
@@ -766,6 +793,115 @@ export class SshHost implements Host {
     return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
   }
 
+  // MUSE§17
+  async launchMuse(spec: MuseMachineLaunch): Promise<MuseMachinePlan> {
+    const d = this.deps.claude
+    await this.sshReady()
+    const sid = spec.resumeSessionId
+    const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
+    const auth = attach ? undefined : spec.account.auth()
+    const tmuxName = (tabId: string): string =>
+      sid ? tmuxSessionName(sid) : `m-${tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
+    const pkg = d.machinePackage()
+    const hookScript = `${remoteMachineDir(pkg.name)}/${MUSE_HOOK_FILE}`
+    const bareOrNot = (p?: string): string | undefined => (p ? this.bare(p) : undefined)
+    return {
+      attach,
+      tmuxName,
+      launchCommand: (tabId) => {
+        const tabDir = tabPackageDir(d.userData, tabId)
+        const contextFile = spec.context ? `$HOME/.koloft/tabs/${tabId}.ctx.json` : undefined
+        const files: Record<string, string> = {
+          [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
+        }
+        if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
+        if (spec.skill) files[`${tabId}.skill.md`] = spec.skill
+        if (auth !== undefined) files[`${tabId}.auth.json`] = auth
+        writeTabPackage(tabDir, {
+          tabId,
+          tmuxName: tmuxName(tabId),
+          machineName: pkg.name,
+          cwd: this.bare(spec.cwd),
+          fallbackCwd: bareOrNot(spec.fallbackCwd),
+          banner: '',
+          portOffset: spec.portOffset,
+          settings: {},
+          ownerWords: spec.ownerWords,
+          claudeArgs: [],
+          muse: {
+            run: museRunLines({
+              tabId,
+              account: spec.account.name,
+              args: spec.args,
+              trust: spec.trust.map((p) => this.bare(p)),
+              trustIf: bareOrNot(spec.trustIf)
+            }),
+            files
+          }
+        })
+        return this.tabLaunchLine(pkg, tabDir, tabId, attach ? 'attach' : 'start')
+      },
+      resized: this.resized
+    }
+  }
+
+  private async sshReady(): Promise<void> {
+    await this.deps.sshEnvReady?.()
+    ensureControlDir(this.deps.claude.controlDir)
+  }
+
+  // PLATFORM§35
+  private async attachOrStart(sid: string): Promise<'start' | 'attach'> {
+    const mode = launchMode({
+      alive: this.deps.claude.alive(),
+      killed: this.killedSessions,
+      sessionId: sid
+    })
+    this.killedSessions.delete(sid)
+    await this.kills.get(tmuxSessionName(sid))
+    return mode
+  }
+
+  private tabLaunchLine(
+    machine: MachinePackage,
+    tabDir: string,
+    tabId: string,
+    mode: 'start' | 'attach'
+  ): string {
+    return launchLine({
+      host: this.machine,
+      sshOptions: sshOptions(this.deps.claude.controlDir, false),
+      machine,
+      tabDir,
+      tabId,
+      mode
+    })
+  }
+
+  // MUSE§10
+  async museTrusts(dir: string): Promise<boolean> {
+    return (await this.sh(MUSE_TRUSTED_SH, [this.bare(dir)])).code === 0
+  }
+
+  async runScript(script: string, args: string[]): Promise<string | null> {
+    const r = await this.sh(script, args, { timeoutMs: GIT_TIMEOUT_MS })
+    return r.code === 0 ? r.stdout.toString('utf8') : null
+  }
+
+  // MUSE§5 MUSE§17
+  museServe(args: string[]): { binary: string; args: string[] } {
+    const d = this.deps.claude
+    ensureControlDir(d.controlDir)
+    return {
+      binary: 'ssh',
+      args: [
+        ...backgroundOptions(this.machine, d.controlDir),
+        this.machine,
+        remoteShCommand('MUSE_NO_AUTO_UPDATE=1 exec muse serve "$@"', args)
+      ]
+    }
+  }
+
   async listSkills(root: string): Promise<SkillSuggestion[]> {
     const bareRoot = this.bare(root)
     const r = await this.sh(SKILL_FILES, [bareRoot])
@@ -778,16 +914,14 @@ export class SshHost implements Host {
 
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
-    await this.deps.sshEnvReady?.()
-    ensureControlDir(d.controlDir)
+    await this.sshReady()
     const settings = d.settings()
     const agentTools = d.agentTools()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()
     const args = machineClaudeArgs(spec, sid, settings.skipPermissions)
     if (!args.ok) return args
     const tmuxName = tmuxSessionName(sid)
-    const mode = launchMode({ alive: d.alive(), killed: this.killedSessions, sessionId: sid })
-    this.killedSessions.delete(sid)
+    const mode = await this.attachOrStart(sid)
     // CC§2
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root
@@ -795,7 +929,6 @@ export class SshHost implements Host {
     const worktree = spec.worktree ?? worktreeNameAround(cwd)
     const pkg = d.machinePackage()
     const machineDir = remoteMachineDir(pkg.name)
-    await this.kills.get(tmuxName)
     const pickKey = mode === 'start' ? `launch-${sid}` : undefined
     const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
     // ADR-0030
@@ -824,14 +957,7 @@ export class SshHost implements Host {
           agentPlugin: agentTools,
           claudeArgs
         })
-        return launchLine({
-          host: this.machine,
-          sshOptions: sshOptions(d.controlDir, false),
-          machine: pkg,
-          tabDir,
-          tabId,
-          mode
-        })
+        return this.tabLaunchLine(pkg, tabDir, tabId, mode)
       },
       resized: this.resized,
       machine: {

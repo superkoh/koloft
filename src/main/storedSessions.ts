@@ -10,13 +10,14 @@ import type {
   SessionResumeRequest
 } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
-import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, SUPPORTED_PAIRS, identityOf, sourceOf } from '@shared/sessionBackend'
+import { hostOf, isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
-import { SessionStore, type WorktreeResource } from './sessionStore'
-import { SessionWorktrees } from './sessionWorktrees'
+import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
+import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
 import { dirExistsSync as dirExists, occupantName } from './resumePlan'
 import type { CliRuntime } from './cliRuntime'
@@ -29,6 +30,18 @@ const EMIT_THROTTLE_MS = 500
 
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+
+export const hostOfKey = (key: string): string | undefined => {
+  const { sourceId } = identityOf(key)
+  return sourceId === 'local' ? undefined : sourceId
+}
+
+// ADR-0025
+const seenMissing = (cwd: string): boolean => !isRemoteKey(cwd) && !dirExists(cwd)
+
+// ADR-0025
+const samePlace = (a: string, b: string): boolean =>
+  isRemoteKey(a) || isRemoteKey(b) ? a === b : path.resolve(a) === path.resolve(b)
 
 export interface HistoryEntry {
   id: string
@@ -67,6 +80,8 @@ export interface StoredSessionDeps {
   fallbackBin?: string
   gitBin?: string
   gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }
+  remoteDirExists?(dir: string): Promise<boolean>
+  remoteTreeIo?(cwd: string): TreeIo
 }
 
 export interface StartContext {
@@ -127,11 +142,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
 
   constructor(
     file: string,
-    protected keyOf: (nativeId: string) => string,
+    protected keyOf: KeyOf,
     protected deps: StoredSessionDeps
   ) {
     this.store = new SessionStore(file, keyOf)
-    this.worktrees = new SessionWorktrees(this.store)
+    this.worktrees = new SessionWorktrees(this.store, deps.remoteTreeIo)
     deps.runtime.on('status', ({ tabId, next }: StatusEdge) => {
       const run = this.runs.get(tabId)
       if (!run?.info || run.explicitStop || run.stopping) return
@@ -307,16 +322,15 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     return !!this.aliveTabFor(key) || this.relaunchingKeys.has(key)
   }
   occupantOf(dir: string): string | null {
-    const target = path.resolve(dir)
     for (const run of this.runs.values()) {
       const info = run.info
       if (!info) {
-        if (path.resolve(run.cwd) === target) return `a starting ${this.label} session`
+        if (samePlace(run.cwd, dir)) return `a starting ${this.label} session`
         continue
       }
-      if (path.resolve(info.treeRoot) === target) return occupantName(info)
+      if (samePlace(info.treeRoot, dir)) return occupantName(info)
       const bound = this.findRow(info.sessionId)?.worktreeState
-      if (bound && path.resolve(bound.worktreePath) === target) return occupantName(info)
+      if (bound && samePlace(bound.worktreePath, dir)) return occupantName(info)
     }
     return null
   }
@@ -343,6 +357,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   rows(workspace: string): BackendSessionRow[] {
+    if (!SUPPORTED_PAIRS[this.id][hostOf(workspace)]) return []
     const scope: RowScope = {
       byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
       roots: new Map()
@@ -360,11 +375,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         cwd: m.cwd,
         worktree: 'main',
         running: false,
-        invalidCwd: !dirExists(m.cwd),
+        invalidCwd: seenMissing(m.cwd),
         mtime: m.updatedAt
       }
       r.cwd = m.cwd
-      r.invalidCwd = !dirExists(m.cwd)
+      r.invalidCwd = seenMissing(m.cwd)
       r.nativeSessionId = m.id
       r.createdAt = m.createdAt
       r.running = this.readsRunning(m.key)
@@ -400,7 +415,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   private row(t: H, scope: RowScope): BackendSessionRow {
-    const key = this.keyOf(t.id)
+    const key = this.keyOf(t.id, hostOfPath(t.cwd))
     const resource = scope.byPath.get(t.cwd)
     return {
       id: key,
@@ -410,7 +425,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? this.deps.projectInfo(t.cwd).worktreeName ?? 'main',
       running: this.readsRunning(key),
-      invalidCwd: !dirExists(t.cwd),
+      invalidCwd: seenMissing(t.cwd),
       mtime: (t.updatedAt ?? t.createdAt ?? 0) * 1000,
       ...(resource
         ? { worktreeState: { ...resource, worktreeBranch: resource.worktreeBranch ?? '' } }
@@ -522,12 +537,19 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     const identity = identityOf(key)
     if (
       identity.backendId !== this.id ||
-      identity.sourceId !== 'local' ||
-      this.keyOf(identity.nativeSessionId) !== key
+      this.keyOf(identity.nativeSessionId, hostOfKey(key)) !== key
     ) {
-      throw new Error(`A local ${this.label} session is required.`)
+      throw new Error(
+        `A ${SUPPORTED_PAIRS[this.id].ssh ? '' : 'local '}${this.label} session is required.`
+      )
     }
     return identity.nativeSessionId
+  }
+
+  // ADR-0025
+  protected async dirThere(dir: string): Promise<boolean> {
+    if (!isRemoteKey(dir)) return dirExists(dir)
+    return (await this.deps.remoteDirExists?.(dir)) ?? false
   }
 
   private trackLaunch(
@@ -577,7 +599,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.assertStarting()
     if (!available.available) throw new Error(available.reason)
     let cwd = opts.cwd
-    if (typeof cwd !== 'string' || !path.isAbsolute(cwd) || !dirExists(cwd))
+    if (typeof cwd !== 'string' || !isAbsoluteOnHost(cwd) || !(await this.dirThere(cwd)))
       throw new Error('The session folder is missing.')
     const workspace = this.workspaceFor(cwd)
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
@@ -644,7 +666,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   protected bind(run: R, entry: H, change: 'replace' | 'switch'): void {
-    const key = this.keyOf(entry.id),
+    const key = this.keyOf(entry.id, hostOfPath(entry.cwd)),
       old = run.info?.sessionId
     if (run.info) {
       run.cwd = entry.cwd
@@ -729,7 +751,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       ? this.store.getResource(m.worktreeResourceId)
       : this.store.listResources().find((r) => r.worktreePath === t?.cwd)
     let cwd = m?.cwd ?? t!.cwd
-    const treeRemoved = !req.mode && !!resource && !dirExists(resource.worktreePath)
+    const treeRemoved = !req.mode && !!resource && !(await this.dirThere(resource.worktreePath))
     if (req.mode === 'rebuild' || treeRemoved) {
       if (!resource) throw new Error('The worktree has no saved recovery record.')
       resource = await this.worktrees.rebuild(resource.id)

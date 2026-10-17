@@ -1,10 +1,13 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { remotePtsFile } from './paths'
-import { ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'
+import { ENSURE_CLAUDE_MINIMUM_FN, ENSURE_MUSE_MINIMUM_FN } from '../cliMinimums'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
+
+// MUSE§17
+const MUSE_INSTALLER = 'https://dev.meta.ai/install.sh'
 
 export const REMOTE_GIT_DIR = '.koloft/git-accounts'
 
@@ -94,15 +97,30 @@ install_pkg() {
 
 have bash || install_pkg bash || exit 4
 
-if ! have claude; then
-  say "installing claude (official installer)"
-  if have curl; then curl -fsSL https://claude.ai/install.sh | bash
-  elif have wget; then wget -qO- https://claude.ai/install.sh | bash
-  else say "need curl or wget to install claude"; exit 4; fi
-  have claude || { say "claude did not install; see the output above"; exit 4; }
-fi
 ${ENSURE_CLAUDE_MINIMUM_FN}
-ensure_claude_minimum claude || exit 4
+${ENSURE_MUSE_MINIMUM_FN}
+python_has_pty() { python3 -c 'import pty, termios' >/dev/null 2>&1; }
+if [ "$1" = muse ]; then
+  python_has_pty || install_pkg python3
+  python_has_pty || { say "Muse sessions need python3 on this machine, and python3 here does not run. Install python3, then start the session again."; exit 4; }
+  if ! have muse; then
+    say "installing muse (official installer, about 330 MB, once)"
+    if have curl; then curl -fsSL ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
+    elif have wget; then wget -qO- ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
+    else say "need curl or wget to install muse"; exit 4; fi
+    have muse || { say "muse did not install; see the output above"; exit 4; }
+  fi
+  ensure_muse_minimum muse || exit 4
+else
+  if ! have claude; then
+    say "installing claude (official installer)"
+    if have curl; then curl -fsSL https://claude.ai/install.sh | bash
+    elif have wget; then wget -qO- https://claude.ai/install.sh | bash
+    else say "need curl or wget to install claude"; exit 4; fi
+    have claude || { say "claude did not install; see the output above"; exit 4; }
+  fi
+  ensure_claude_minimum claude || exit 4
+fi
 
 node_ok() {
   have node || return 1
@@ -138,7 +156,7 @@ install_node() {
 }
 node_runs() { "$HOME/.koloft/node/bin/node" -v >/dev/null 2>&1; }
 no_build_runs="$HOME/.koloft/node-$NODE_VERSION.no-build-runs"
-if ! node_ok && [ ! -f "$no_build_runs" ]; then
+if [ "$1" != muse ] && ! node_ok && [ ! -f "$no_build_runs" ]; then
   say "installing node $NODE_VERSION for the statusline (about 30 MB, once)"
   if ! node_platform || ! install_node "https://nodejs.org/dist/v$NODE_VERSION" "node-v$NODE_VERSION-$os-$arch"; then
     rm -rf "$HOME/.koloft/node.tmp.$$"; say "node could not be installed: this machine gets no statusline"
@@ -191,6 +209,7 @@ set -g default-terminal tmux-256color
 set -asq terminal-features ',xterm*:RGB:hyperlinks'
 set -gq exit-empty on
 set -g mouse off
+set -gq allow-passthrough on
 `
 
 export interface MachineTmp {

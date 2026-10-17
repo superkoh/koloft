@@ -133,15 +133,17 @@ const NOTHING_YET: Capabilities = {
   rename: PENDING
 }
 
+const ON_A_MACHINE: Capabilities = {
+  ...EVERYTHING,
+  agentOpen: PENDING,
+  browserControl: PENDING,
+  rename: PENDING
+}
+
 const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> = {
   claude: {
     local: EVERYTHING,
-    ssh: {
-      ...EVERYTHING,
-      agentOpen: PENDING,
-      browserControl: PENDING,
-      rename: PENDING
-    }
+    ssh: ON_A_MACHINE
   },
   codex: {
     local: {
@@ -158,8 +160,11 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
       // MUSE§3
       statusline3: { unsupported: 'MUSE§3' }
     },
-    // MUSE§6
-    ssh: 'refused'
+    ssh: {
+      ...ON_A_MACHINE,
+      // MUSE§3
+      statusline3: { unsupported: 'MUSE§3' }
+    }
   }
 }
 

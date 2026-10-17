@@ -142,8 +142,8 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 ## §6 tmux swallows OSC 7501
 
 - Inside tmux 3.3a (the multiplexer Koloft's remote tabs run in) the 7501 query never
-  reaches the outer terminal, also with `allow-passthrough on`, so Muse sends no states
-  at all.
+  reaches the outer terminal, also with `allow-passthrough on`, so Muse on its own sends
+  no states at all. §17 has what makes them flow.
 
 ## §7 No way to post into a live session from outside
 
@@ -403,3 +403,52 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - A skill is switched off per user with `skills.activation.user` in `settings.json`,
   keyed by its display path (`"$CONFIG_DIR/skills/<id>/SKILL.md": "off"`); the same
   map given with `-c` holds only until `/clear`, and keyed by bare id it does nothing.
+
+## §17 Muse on another machine, inside tmux
+
+How established: muse 1.4.9 (`Muse Code 1.4.9 (1.4.9-R6297.1)`), official installer, in a
+Linux Docker container reached over a real `ssh`, inside tmux 3.3a, with the fake model
+server of the opening note and with `--provider echo`; October 2026.
+
+- Hooks inside tmux fire exactly as outside it (§9). Their environment has no `TMUX`,
+  no `TMUX_PANE` and nothing Koloft put in muse's environment, so a hook cannot learn
+  which tab or tmux session it belongs to except from its own command line.
+- A process between tmux and muse that owns muse's terminal (a python3 `pty` wrapper)
+  and answers the 7501 query itself with the reply of §3 makes every state flow.
+  The wrapper must not pass the query on. Re-sent to tmux as a DCS passthrough
+  (`ESC P tmux;` + the frame with every ESC doubled + `ESC \`), the frames reach the
+  terminal outside tmux when tmux has `set -g allow-passthrough on`.
+- Attaching to the tmux session again replays no 7501 frame.
+- `TBH_TMUX_RUN_STATUS_PATH` writes nothing Koloft can use.
+- `ssh <machine> muse serve --provider echo` speaks §5 over the ssh pipe: `initialize`
+  answers in about 0.3 s, `session/list`, `session/read` and `approval/listPending` are
+  fast and need no login. In 1.4.9 `session/read` returns items only with
+  `excludeItems: false`. A session a TUI holds shows in the list after a few seconds,
+  `status: notLoaded`.
+- An `auth.json` copied from one config folder into another (§13) signs muse in there;
+  on Linux no keyring and no `TBH_CREDENTIAL_BACKEND` is needed. `META_API_KEY` shows
+  in `account/read` as `envKey`.
+- The installer (`curl -fsSL https://dev.meta.ai/install.sh | MUSE_NO_MODIFY_PATH=1 bash`)
+  takes about 18 s and 331 MB, puts a static binary under `~/.local/bin`, and has builds
+  for Linux and macOS on x86_64 and aarch64.
+- A recorded `trust.json` answer or `--trust-workspace` keeps the trust question away
+  in tmux too, and across `/clear`.
+- `muse session-message send` exits 1 with `external_agent_ingress_closed` in every
+  variant tried; the only way to put words into a running TUI is typing.
+- Measured end to end through Koloft (Docker lab, real `ssh`, tmux 3.3a with
+  `allow-passthrough on`, muse 1.4.9 on `--provider echo`): the wrapper's numbered
+  passthrough frames reach Koloft and light the row; `tmux rename-session -t $TMUX_PANE`
+  run by the wrapper renames the session the tab is in; a hook command written as
+  `bash "$HOME/…"` gets `$HOME` expanded, so muse runs hook commands through a shell;
+  `/clear` writes the new session's registry file with the same pid, so the wrapper
+  follows it. Typed text followed by Enter in one write lands in the input box unsent;
+  an Enter sent a second later submits it.
+- On Linux, muse 1.4.10 (`Muse Code 1.4.10 (1.4.10-R6427.1)`, official installer, Docker,
+  `--provider echo`) still writes the live registry of §4 under
+  `museHome/runtime/muse/sessions`, with `process_generation_hint: "pid=<pid>"`; nothing
+  appears under `/tmp/tbh-*`. Only macOS 1.4.10 moved it (§4).
+- The `auth.json` of a finished device-code login on macOS (§13: `providers.meta` with
+  `access_token`, `obtained_via`, `mechanism`), copied into a config folder on a Linux
+  machine, signs muse 1.4.9 in there with the real Meta model: it answered a prompt,
+  with `SubagentStart` and `SubagentStop` hooks around its work (Docker, real `ssh`,
+  tmux 3.3a, through Koloft, October 2026).

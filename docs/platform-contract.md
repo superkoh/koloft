@@ -1258,6 +1258,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **With `mouse off`, tmux 3.6b passes the pane's mouse-mode requests (1000/1002/1006)
   to the outer terminal untouched** (measured locally in a python pty).
 - **tmux sets `TMUX` and `TMUX_PANE`** for a command inside a session.
+- **`-t <name>` falls back to the start of a session name** when no session has that exact
+  name and only one starts with it (tmux manual, target-session), so a kill aimed at a
+  session that was renamed can hit another whose name it begins.
+- **`allow-passthrough on` lets a pane's `ESC P tmux; … ESC \` reach the terminal outside
+  tmux, and nothing else**: a bare OSC the pane prints stays inside. In tmux 3.3a `all` is
+  not a valid value (`bad value: all`, the option stays off), and that error in a `-f`
+  config file leaves the new pane in view-mode, eating every key (October 2026, tmux 3.3a
+  in Docker, probed for remote Muse tabs).
 - **tmux 2.6 does not know `terminal-features` or `exit-empty`**: each line of a `-f`
   config naming them is an `invalid option` error, shown over the first window. `set -q`
   drops the error and tmux runs on (2026-10-03, Ubuntu 18.04's tmux 2.6).

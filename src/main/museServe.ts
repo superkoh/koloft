@@ -13,14 +13,25 @@ export interface ServeOptions {
   env: NodeJS.ProcessEnv
   extraArgs?: string[]
   experimental?: boolean
+  over?(serveArgs: string[]): { binary: string; args: string[] }
 }
 
-// MUSE§5
+export interface MuseHistoryEntry extends HistoryEntry {
+  museName?: string
+  logPath?: string
+}
+
+// MUSE§5 MUSE§17
 export async function withServe<T>(
   options: ServeOptions,
   use: (request: (method: string, params: unknown) => Promise<unknown>) => Promise<T>
 ): Promise<T> {
-  const child = spawn(options.binary, ['serve', ...(options.extraArgs ?? [])], {
+  const serveArgs = options.extraArgs ?? []
+  const command = options.over?.(serveArgs) ?? {
+    binary: options.binary,
+    args: ['serve', ...serveArgs]
+  }
+  const child = spawn(command.binary, command.args, {
     cwd: os.homedir(),
     env: options.env,
     stdio: ['pipe', 'pipe', 'ignore']
@@ -88,10 +99,6 @@ const seconds = (iso: unknown): number | undefined => {
   return Number.isFinite(ms) ? ms / 1000 : undefined
 }
 
-export interface MuseHistoryEntry extends HistoryEntry {
-  museName?: string
-}
-
 // MUSE§5
 function museSession(
   raw: unknown,
@@ -116,7 +123,8 @@ function museSession(
     ...(typeof s.name === 'string' && s.name && { museName: s.name }),
     preview: typeof s.firstUserPrompt === 'string' ? s.firstUserPrompt : undefined,
     createdAt: seconds(s.createdAt),
-    updatedAt: seconds(s.updatedAt)
+    updatedAt: seconds(s.updatedAt),
+    ...(typeof s.path === 'string' && { logPath: s.path })
   }
 }
 
