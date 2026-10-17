@@ -9,10 +9,16 @@
 [![Platform: macOS arm64](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)](#install-macos-apple-silicon)
 [![CI](https://github.com/superkoh/koloft/actions/workflows/ci.yml/badge.svg)](https://github.com/superkoh/koloft/actions/workflows/ci.yml)
 
+**[Website](https://koloft.ai)** · **[Download for Mac](https://github.com/superkoh/koloft/releases/latest)** · [Features](https://koloft.ai/features/) · [Changelog](https://koloft.ai/changelog/)
+
 </div>
 
-A macOS desktop app that runs and manages **Claude Code** and **Codex** (the `claude` and
-`codex` command-line tools).
+A free Mac app for **Claude Code** and **Codex** (the `claude` and `codex` command-line
+tools). You start a session with one plain sentence and follow it in one window, or hear
+from it on your phone when it needs you. Your agents start sessions of their own, drive a
+browser of their own, and report back.
+
+![Koloft: ⌘P, one sentence typed, and a real Claude Code session starts in its own worktree](.github/assets/start-a-session.gif)
 
 You pick a **workspace** (a folder, usually a git checkout). Koloft lists every Claude
 Code and Codex session that folder already has, straight from each tool's own storage,
@@ -20,7 +26,7 @@ and lets you start new ones or resume old ones. Each session gets a **Workbench*
 beside its terminal: the files the agent changed, a file browser, web pages, and a
 shell.
 
-![Koloft: workspaces and their sessions on the left, the running session in the middle, and its Workbench on the right showing the changes the agent made](.github/assets/screenshot.png)
+![Koloft: workspaces and their sessions on the left, the running session in the middle, and its Workbench on the right with a web page the agent opened and clicked](.github/assets/screenshot.png)
 
 ## What you get
 
