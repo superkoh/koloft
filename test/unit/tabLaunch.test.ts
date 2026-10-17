@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { execFileSync } from 'child_process'
+import { seedRepo } from './helpers/gitShim'
 
 vi.mock('electron', async () => {
   const nfs = await import('node:fs')
@@ -117,7 +117,6 @@ async function claudeTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<
       localHost(new GithubLookup(), {
         hookRegDir: () => regDir,
         agentPlugin: () => '/koloft/agent-plugin',
-        agentTools: () => true,
         assistOf: () => undefined
       }),
       (machine) =>
@@ -151,15 +150,8 @@ async function claudeTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<
   return [handed, filesUnder(regDir), filesUnder(userData)].join('\n')
 }
 
-function makeRepoAGitCheckout(): void {
-  const git = (...args: string[]): string =>
-    execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' })
-  git('init', '-q')
-  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init')
-}
-
 async function codexTab(spec: Partial<CreateTabOptions>): Promise<string> {
-  if (spec.worktree) makeRepoAGitCheckout()
+  if (spec.worktree) seedRepo(repo)
   const allowed: string[][] = []
   const argv: string[][] = []
   const sessions = new CodexSessions(path.join(home, 'sessions.json'), {
@@ -361,15 +353,17 @@ const FEATURES: Record<
 
 describe('what each of the four kinds of session tab is handed for each launch feature, or why that kind takes nothing from it', () => {
   describe.each(Object.keys(KINDS) as Kind[])('%s', (kind) => {
+    let plainLaunch: Promise<string> | undefined
     it.each(Object.keys(FEATURES) as LaunchFeature[])('%s', async (feature) => {
       const { spec, marker, on } = FEATURES[feature]
       const landing = on[kind]
-      const plain = await KINDS[kind]({})
-      const withFeature = await KINDS[kind](spec)
       if ('takesNothing' in landing) {
-        expect(withFeature).not.toContain(marker)
+        expect(await KINDS[kind](spec)).not.toContain(marker)
         return
       }
+      plainLaunch ??= KINDS[kind]({})
+      const plain = await plainLaunch
+      const withFeature = await KINDS[kind](spec)
       for (const s of landing.handed) {
         expect(withFeature).toContain(s)
         expect(plain).not.toContain(s)

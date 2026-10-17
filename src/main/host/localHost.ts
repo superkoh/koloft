@@ -90,7 +90,6 @@ export function localGitRun(cwd: string, args: string[], network = false): Promi
 export interface LocalClaudeDeps {
   hookRegDir(): string
   agentPlugin(): string | undefined
-  agentTools(): boolean
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
 }
 
@@ -115,7 +114,7 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
   const assist = d.assistOf(cwd, spec.resumeSessionId)
   const conductor = !!spec.conductor || !!assist
   const role = spec.role ?? assist?.role
-  const agentPlugin = d.agentTools() ? d.agentPlugin() : undefined
+  const agentPlugin = d.agentPlugin()
   return {
     ok: true,
     spawnCwd: cwd,

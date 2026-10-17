@@ -4359,8 +4359,7 @@ const githubOptions: GithubOptions = {
 const hosts = new Hosts(
   localHost(new GithubLookup(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
-    agentPlugin: () => claudeAgentPlugin,
-    agentTools: () => agentToolsFor('claude', 'local'),
+    agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
     assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey)
   }),
   (machine) =>
