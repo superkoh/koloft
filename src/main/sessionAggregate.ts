@@ -12,6 +12,7 @@ import {
   INTERRUPT_TEXTS,
   whoTyped
 } from './sessionTracker'
+import { parseRecord, type TranscriptRecord } from './transcriptRecord'
 
 export interface Bucket {
   slug: string
@@ -65,7 +66,7 @@ export function resolveBuckets(wsPath: string, deps: ResolveBucketsDeps): Bucket
 }
 
 // CC§2
-function readWorktreeState(obj: Record<string, unknown>): WorktreeStateMeta | undefined {
+function readWorktreeState(obj: TranscriptRecord): WorktreeStateMeta | undefined {
   const s = obj.worktreeSession
   if (!s || typeof s !== 'object') return undefined
   const r = s as Record<string, unknown>
@@ -79,15 +80,6 @@ function readWorktreeState(obj: Record<string, unknown>): WorktreeStateMeta | un
     return undefined
   }
   return { originalCwd, worktreePath, worktreeName, worktreeBranch, originalHeadCommit }
-}
-
-function parseRecord(line: string): Record<string, unknown> | null {
-  try {
-    const parsed: unknown = JSON.parse(line)
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
-  } catch {
-    return null
-  }
 }
 
 export interface JsonlTail {
