@@ -43,8 +43,10 @@ import {
 import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from './agyStore'
 import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'
 import {
+  AGY_BRAIN_FLAGS,
   AGY_HOOK_FILE,
   AGY_LIST_FILE,
+  AGY_REMOTE_BRAIN,
   AGY_STATUSLINE_FILE,
   AGY_TITLE_FILE,
   agyStatuslineScript
@@ -1392,8 +1394,7 @@ const sessionDeps: SessionVerbDeps = {
   sendLine: sendPeerLine,
   press: (tabId, keys) => ptyMgr.type(tabId, keys),
   deliver: async (tabId, text) => {
-    const owner = storedSessions().find((s) => s.hasTab(tabId))
-    return owner?.deliver ? owner.deliver(tabId, text) : false
+    return storedOwnerOf(tabId)?.deliver?.(tabId, text) ?? false
   },
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
@@ -2973,8 +2974,7 @@ app.whenReady().then(() => {
       await storedOwnerOf(tabId)?.answerable?.(tabId)
     },
     answerInPlace: async (tabId, reply) => {
-      const owner = storedSessions().find((s) => s.hasTab(tabId))
-      return owner?.answer ? owner.answer(tabId, reply) : false
+      return storedOwnerOf(tabId)?.answer?.(tabId, reply) ?? false
     },
     regDir: hookPaths.regDir,
     attachmentsDir
@@ -3024,7 +3024,15 @@ app.whenReady().then(() => {
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
         ...(agySessions?.usesHost(t.host)
-          ? { agyBrain: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain') }
+          ? {
+              extraPulls: [
+                {
+                  from: AGY_REMOTE_BRAIN,
+                  to: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain'),
+                  flags: AGY_BRAIN_FLAGS
+                }
+              ]
+            }
           : {}),
         paths: t.paths,
         hasTabs: live.has(t.host)
@@ -3036,12 +3044,10 @@ app.whenReady().then(() => {
     },
     onLeft: (host, ids) => {
       claudeBackend.noticeRemoteExits(host, ids)
-      museSessions?.noticeRemoteExits(host, ids)
-      agySessions?.noticeRemoteExits(host, ids)
+      for (const s of storedSessions()) s.noticeRemoteExits?.(host, ids)
     },
     onHooksPulled: (host) => {
-      museSessions?.followMirrors(host)
-      agySessions?.followMirrors(host)
+      for (const s of storedSessions()) s.followMirrors?.(host)
     },
     onConnected: (host) => void freshness?.machineUp(host)
   })
@@ -4643,8 +4649,9 @@ const claudeBackend = new ClaudeBackend({
   error: (message) => sendToRenderer('cron:toast', message),
   assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
   otherTabOnMachine: (machine, tmuxName, launchTab) =>
-    museSessions?.tabOnMachine(machine, tmuxName, launchTab) ??
-    agySessions?.tabOnMachine(machine, tmuxName, launchTab)
+    storedSessions()
+      .map((s) => s.tabOnMachine?.(machine, tmuxName, launchTab))
+      .find(Boolean)
 })
 sessionBackends.register(claudeBackend)
 

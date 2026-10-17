@@ -2,13 +2,27 @@ import { shq } from '@shared/shellQuote'
 import { record } from '../codexObservation'
 import { AGY_APP_DIR, TOP_LEVEL_ROWS } from '../agyStore'
 import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
-import { AGY_LOG_ENV, AGY_START_ENV } from '../agyHooks'
+import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
 import { remoteShCommand } from './install'
 import type { TabSpec } from './launch'
 import { REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
 
 const AGY_KEY_ENV = 'GEMINI_API_KEY'
 export const AGY_KEY_FROM_KOLOFT = 'KOLOFT_AGY_KEY'
+
+// AGY§8 AGY§19
+export const AGY_BRAIN_FLAGS = [
+  '--inplace',
+  '-m',
+  '--delete',
+  '--include=/*/',
+  '--include=/*/*.md.metadata.json',
+  '--include=/*/.system_generated/',
+  '--include=/*/.system_generated/logs/',
+  '--include=/*/.system_generated/logs/transcript.jsonl',
+  '--exclude=*'
+]
+export const AGY_REMOTE_BRAIN = `.gemini/${AGY_APP_DIR}/brain`
 
 export const AGY_HOOK_FILE = 'agy-hook.sh'
 export const AGY_TITLE_FILE = 'agy-title.sh'
@@ -29,7 +43,7 @@ export function agyLogName(tabId: string): string {
 
 // AGY§11
 export function agyLogPointer(conversationId: string): string {
-  return `k-${conversationId}.agy-log`
+  return `k-${conversationId}${AGY_LOG_POINTER_SUFFIX}`
 }
 
 export function runMachineScript(machineName: string, file: string): string {

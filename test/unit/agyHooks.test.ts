@@ -4,7 +4,6 @@ import path from 'path'
 import { spawnSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  LineTail,
   agyLogLine,
   koloftHookEntry,
   runWithSh,
@@ -12,6 +11,7 @@ import {
   type AgyScripts
 } from '../../src/main/agyHooks'
 import { handoverPreamble, withHandover } from '../../src/main/handover'
+import { LineTail } from '../../src/main/museSessionLog'
 
 let dir: string
 let log: string

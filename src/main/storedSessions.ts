@@ -115,6 +115,9 @@ export interface SessionsWithStore {
   answerable?(tabId: string): Promise<void>
   answer?(tabId: string, reply: string): Promise<string | undefined | false>
   deliver?(tabId: string, text: string): Promise<boolean>
+  noticeRemoteExits?(host: string, sessionIds: string[]): void
+  followMirrors?(host: string): void
+  tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
 }
 
 interface RowScope {

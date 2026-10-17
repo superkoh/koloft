@@ -10,6 +10,7 @@ import {
 
 export const AGY_LOG_ENV = 'KOLOFT_AGY_LOG'
 export const AGY_START_ENV = 'KOLOFT_AGY_START'
+export const AGY_LOG_POINTER_SUFFIX = '.agy-log'
 export const AGY_GATE_ENV = 'KOLOFT_AGY_GATE'
 export const AGY_OWNER_TITLE_ENV = 'KOLOFT_AGY_OWNER_TITLE'
 export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
@@ -46,7 +47,7 @@ log="$${AGY_LOG_ENV}"
 if [ "$KOLOFT_TMUX_FOLLOW" = 1 ] && [ -n "$TMUX" ]; then
   id="$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"conversation_id" *: *"\\([0-9a-f-][0-9a-f-]*\\)".*/\\1/p')"
   [ -n "$id" ] && [ "$(tmux display-message -p '#S' 2>/dev/null)" != "k-$id" ] && tmux rename-session -t "$TMUX_PANE" "k-$id" 2>/dev/null
-  [ -n "$id" ] && [ -n "$log" ] && printf '%s' "$(basename "$log")" > "$(dirname "$log")/k-$id.agy-log"
+  [ -n "$id" ] && [ -n "$log" ] && printf '%s' "$(basename "$log")" > "$(dirname "$log")/k-$id${AGY_LOG_POINTER_SUFFIX}"
   [ -n "$id" ] && printf 'k-%s' "$id" > "$HOME/.koloft/tabs/$KOLOFT_TAB_ID.tmux"
 fi
 [ -n "$${AGY_OWNER_TITLE_ENV}" ] && printf '%s' "$input" | sh -c "$${AGY_OWNER_TITLE_ENV}"
@@ -150,40 +151,4 @@ export function agyLogLine(line: string): AgyLogLine | undefined {
   }
   const title = titleState(r)
   return title && { title }
-}
-
-export class LineTail {
-  private offset = 0
-  private rest = ''
-
-  constructor(
-    private file: string,
-    private onLine: (line: string) => void
-  ) {}
-
-  skipWhatIsThere(): void {
-    this.offset = fs.statSync(this.file, { throwIfNoEntry: false })?.size ?? 0
-  }
-
-  read(): void {
-    if ((fs.statSync(this.file, { throwIfNoEntry: false })?.size ?? 0) <= this.offset) return
-    let fd: number
-    try {
-      fd = fs.openSync(this.file, 'r')
-    } catch {
-      return
-    }
-    try {
-      const size = fs.fstatSync(fd).size
-      if (size <= this.offset) return
-      const buf = Buffer.alloc(size - this.offset)
-      fs.readSync(fd, buf, 0, buf.length, this.offset)
-      this.offset = size
-      const lines = (this.rest + buf.toString('utf8')).split('\n')
-      this.rest = lines.pop() ?? ''
-      for (const line of lines) if (line) this.onLine(line)
-    } finally {
-      fs.closeSync(fd)
-    }
-  }
 }

@@ -31,7 +31,6 @@ import {
   AGY_LOG_ENV,
   AGY_OWNER_TITLE_ENV,
   AGY_START_ENV,
-  LineTail,
   agyLogLine,
   koloftHookEntry,
   runWithSh,
@@ -68,6 +67,8 @@ import {
   titleCommandIn
 } from './agyAccounts'
 import { readJson } from './museAccounts'
+import { LineTail } from './museSessionLog'
+import { bracketedPaste } from './typeKeys'
 import { TAB_TMUX_NAME_SH, tmuxSessionName } from './remote/launch'
 import { AgyApi, activeHookName, type PendingInteraction } from './agyApi'
 import {
@@ -158,7 +159,6 @@ interface AgyLaunch {
 }
 
 interface AgyAsk {
-  id: string
   approval?: CodexApproval
   question?: CodexQuestion
   pending?: PendingInteraction
@@ -205,7 +205,7 @@ const CONTEXT_SUMMARY = 'context_summary'
 // AGY§8
 const LISTED_TITLE_AFTER_PROMPT_MS = 1000
 // AGY§14
-const KEYS = { yes: ['1'], noCommand: ['4'], noFile: ['2'] } as const
+const KEYS = { yes: '1', noCommand: '4', noFile: '2' } as const
 // AGY§9 AGY§24
 const HELD_ELSEWHERE =
   'This Antigravity session is open in another agy window. Close it there first: two windows on one conversation lose each other’s turns.'
@@ -332,10 +332,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   private transcriptOf(key: string): string {
     return agyTranscript(this.geminiOf(this.cwdOf(key)), this.nativeId(key))
-  }
-
-  private mirrored(host: string): Promise<void> {
-    return this.deps.remote.nextPull(host)
   }
 
   usesHost(host: string): boolean {
@@ -662,8 +658,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       remoteHost: where.host
     })
     const mirror = remote.mirrorDir(where.host)
-    const logName = (plan.attach && resumeId && attachedLog(mirror, resumeId)) || agyLogName(tabId)
-    let bound: AgyRun | undefined
+    const attachTo = plan.attach ? resumeId : undefined
+    const logFile = path.join(
+      mirror,
+      (attachTo && attachedLog(mirror, attachTo)) || agyLogName(tabId)
+    )
+    const alreadyThere = attachTo ? (fs.statSync(logFile, { throwIfNoEntry: false })?.size ?? 0) : 0
     const run: AgyRun = {
       tabId: handle.id,
       cwd,
@@ -674,16 +674,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       permission,
       account: pick.account,
       remote: { host: where.host, tmuxName: plan.tmuxName },
-      log: new LineTail(path.join(mirror, logName), (line) => bound && this.onLogLine(bound, line)),
+      log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere),
       touched: new Map(),
       liveWrites: 0,
       releaseTools: () => undefined
     }
-    if (plan.attach && resumeId) {
-      run.log.skipWhatIsThere()
-      setImmediate(() => this.runs.get(run.tabId) === run && this.bindTo(run, resumeId))
-    }
-    bound = run
+    if (attachTo) setImmediate(() => this.runs.get(run.tabId) === run && this.bindTo(run, attachTo))
     void remote.nextPull(where.host)
     return run
   }
@@ -708,7 +704,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   private tick(): void {
-    if (this.runs.size === 0 && this.ticking) {
+    if (![...this.runs.values()].some((r) => !r.remote) && this.ticking) {
       clearInterval(this.ticking)
       this.ticking = undefined
       return
@@ -818,7 +814,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (name === 'write_to_file')
       counts = { added: lineCount(argOf(record(call.args), 'CodeContent') ?? ''), removed: 0 }
     else if (run.info) {
-      if (run.remote) await this.mirrored(run.remote.host)
+      if (run.remote) await this.deps.remote.nextPull(run.remote.host)
       const transcript = agyTranscript(this.geminiOf(run.cwd), run.info.nativeSessionId!)
       const diff = await lastDiffFor(transcript, written)
       if (diff) counts = diffCounts(diff)
@@ -878,8 +874,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.endCompaction(run)
     const id = run.info?.nativeSessionId
     if (!id) return
-    void this.takeListedTitle(run, id, true)
-    if (run.remote) await this.mirrored(run.remote.host)
+    if (this.unnamed(run, id)) void this.takeListedTitle(run, id, true)
+    if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     const file = agyTranscript(this.geminiOf(run.cwd), id)
     const [turn] = await readAgyTurns(file, 1).catch(() => [] as Turn[])
     if (turn?.reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
@@ -907,8 +903,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   private turnStarted(run: AgyRun): void {
     this.watchCompaction(run)
     const id = run.info?.nativeSessionId
-    if (id && !this.history.get(agySessionKey(id, run.remote?.host))?.name)
-      this.takeListedTitleSoon(run, id)
+    if (id && this.unnamed(run, id)) this.takeListedTitleSoon(run, id)
+  }
+
+  private unnamed(run: AgyRun, id: string): boolean {
+    return !this.history.get(agySessionKey(id, run.remote?.host))?.name
   }
 
   // AGY§8 AGY§11
@@ -969,7 +968,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const askId = `${pending.trajectoryId}:${pending.stepIndex}`
     const question = pending.questions?.[0]
     run.waiting = {
-      id: askId,
       pending,
       ...(pending.kind === 'question' && question
         ? {
@@ -998,7 +996,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       const first = record(Array.isArray(raw) ? raw[0] : undefined)
       const options = Array.isArray(first.options) ? first.options : []
       return {
-        id,
         question: {
           id,
           question: typeof first.question === 'string' ? first.question : (status.msg ?? ''),
@@ -1007,14 +1004,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       }
     }
     const target = tool && (argOf(tool.args, 'CommandLine') ?? argOf(tool.args, 'TargetFile'))
-    return { id, approval: { id, command: target ?? status.msg } }
+    return { approval: { id, command: target ?? status.msg } }
   }
 
   // AGY§19
   private async readPlan(run: AgyRun): Promise<void> {
     const id = run.info?.nativeSessionId
     if (!id) return
-    if (run.remote) await this.mirrored(run.remote.host)
+    if (run.remote) await this.deps.remote.nextPull(run.remote.host)
     const brain = path.join(this.geminiOf(run.cwd), AGY_APP_DIR, 'brain', id)
     let names: string[] = []
     try {
@@ -1028,7 +1025,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!plan) return
     const askId = `plan:${id}:${plan}`
     run.waiting = {
-      id: askId,
       plan,
       approval: { id: askId, command: plan, reason: 'Approve the plan' }
     }
@@ -1080,8 +1076,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       : false
     if (!viaApi) {
       const file = ask.pending?.kind === 'file' || WRITING_TOOLS.has(run.lastTool?.name ?? '')
-      const keys = yes ? KEYS.yes : file ? KEYS.noFile : KEYS.noCommand
-      for (const k of keys) this.deps.pty.write(tabId, k)
+      this.deps.pty.write(tabId, yes ? KEYS.yes : file ? KEYS.noFile : KEYS.noCommand)
     }
     return undefined
   }
@@ -1089,7 +1084,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§15 AGY§16
   private async deliverText(run: AgyRun, conversationId: string, text: string): Promise<void> {
     const sent = await run.api?.send(conversationId, text).catch(() => false)
-    if (!sent) this.deps.pty.write(run.tabId, `\x1b[200~${text}\x1b[201~\r`)
+    if (!sent) this.deps.pty.write(run.tabId, bracketedPaste(text) + '\r')
   }
 
   // AGY§16
