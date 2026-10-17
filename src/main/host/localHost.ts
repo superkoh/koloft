@@ -151,9 +151,16 @@ export function localHost(github: GithubLookup): Host {
       ),
     search,
     searchContent,
-    diffBase,
-    gitStatus,
-    gitNumstat,
+    gitChanges: async (root, choice) => {
+      const base = choice === 'head' ? 'HEAD' : await diffBase(root).catch(() => null)
+      const arg = base ?? undefined
+      const [status, numstat, exists] = await Promise.all([
+        gitStatus(root, arg),
+        gitNumstat(root, arg),
+        dirExists(root)
+      ])
+      return { base, status, numstat, missing: !exists }
+    },
     gitDiff,
     gitFileDiff,
     gitFileDiffFull,

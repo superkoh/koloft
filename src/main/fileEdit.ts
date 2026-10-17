@@ -49,7 +49,7 @@ function eolOf(text: string): { eol: 'lf' | 'crlf'; mixed: boolean } {
   return { eol: crlf > 0 ? 'crlf' : 'lf', mixed: false }
 }
 
-function isFingerprint(v: unknown): v is EditFingerprint {
+export function isFingerprint(v: unknown): v is EditFingerprint {
   const fp = v as EditFingerprint | null
   return !!fp && typeof fp.mtimeMs === 'number' && typeof fp.size === 'number'
 }

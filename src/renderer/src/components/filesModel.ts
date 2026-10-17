@@ -1,8 +1,8 @@
 import type { GitFileStatus } from '@shared/types'
 
-export type FilesTab = 'changes' | 'browse'
+export type { BaseChoice } from '@shared/types'
 
-export type BaseChoice = 'merge-base' | 'head'
+export type FilesTab = 'changes' | 'browse'
 
 export interface ChangeFilters {
   status: GitFileStatus | 'all'

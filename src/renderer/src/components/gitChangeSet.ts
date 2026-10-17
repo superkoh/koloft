@@ -82,32 +82,20 @@ export function useGitChangeSet(
     let seq = 0
     const fetchGit = (): void => {
       const mine = ++seq
-      const resolve: Promise<string | null> =
-        baseChoice === 'head' ? Promise.resolve('HEAD') : window.api.fs.diffBase(dir)
-      resolve
-        .catch(() => null)
-        .then((b) => {
-          if (mine !== seq) return undefined
-          setBase(b)
-          const arg = b ?? undefined
-          return Promise.all([
-            window.api.fs.gitStatus(dir, arg),
-            window.api.fs.gitNumstat(dir, arg),
-            window.api.fs.dirExists(dir).then((ok) => !ok)
-          ])
-        })
+      window.api.fs
+        .gitChanges(dir, baseChoice)
         .then((r) => {
-          if (!r || mine !== seq) return
-          const [g, ns, missing] = r
-          setGit((prev) => (sameMap(prev, g, (x, y) => x === y) ? prev : g))
-          setNumstat((prev) =>
-            sameMap(prev, ns, (x, y) => x.added === y.added && x.removed === y.removed) ? prev : ns
-          )
-          setRootMissing(missing)
-        })
-        .catch(() => {
           if (mine !== seq) return
+          setBase(r.base)
+          setGit((prev) => (sameMap(prev, r.status, (x, y) => x === y) ? prev : r.status))
+          setNumstat((prev) =>
+            sameMap(prev, r.numstat, (x, y) => x.added === y.added && x.removed === y.removed)
+              ? prev
+              : r.numstat
+          )
+          setRootMissing(r.missing)
         })
+        .catch(() => {})
     }
     fetchGit()
     fetchNow.current = fetchGit
