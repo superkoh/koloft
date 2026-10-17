@@ -384,8 +384,8 @@ const SEND_USAGE =
 const NO_WORKSPACE = 'koloft session: Koloft does not know which workspace this session is in.'
 const LIST_USAGE =
   'koloft session list: the only option is --workspace <folder name or path>, like: koloft session list --workspace koloft'
-const hasNoName = (backend: BackendId): string =>
-  `koloft session new: a ${BACKEND_LABEL[backend]} session has no name, so leave out --name. Koloft prints an id to reach it by.`
+const CODEX_HAS_NO_NAME =
+  'koloft session new: a Codex session has no name, so leave out --name. Koloft prints an id to reach it by.'
 
 function starterNamer(
   d: SessionVerbDeps,
@@ -444,7 +444,7 @@ async function startSibling(
   oweReply: (tabId: string) => void
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
-  if (backend === 'codex' && args.name !== undefined) return refused(hasNoName(backend), EXIT_USAGE)
+  if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
   const caller: SessionCaller = {
     name: (await d.peerNames()(me)) ?? (me.backendId === 'claude' ? me.title : undefined),
     id: idToReach(me),
@@ -487,15 +487,9 @@ async function startSibling(
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
   if (conductorTab) {
-    d.started(
-      conductorTab,
-      tabId,
-      name ?? `a ${BACKEND_LABEL[backend]} session`,
-      workspace,
-      backend
-    )
+    d.started(conductorTab, tabId, name ?? 'a Codex session', workspace, backend)
     return answered(
-      `Started ${name ? `session "${name}"` : `a ${BACKEND_LABEL[backend]} session`} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
+      `Started ${name ? `session "${name}"` : 'a Codex session'} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
     )
   }
   const listHint =
@@ -505,7 +499,7 @@ async function startSibling(
   return answered(
     backend === 'claude'
       ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
-      : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : `a ${BACKEND_LABEL[backend]} session`} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
+      : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : 'a Codex session'} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
   )
 }
 

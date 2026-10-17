@@ -6,9 +6,9 @@ import {
   LANGUAGE_FNS,
   QUOTE_PROMPT_FN,
   QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS,
-  REMIND_REPLY_LANGUAGE_FN
-} from './replyLanguage'
-import { seedHandedOverOwnerWords } from './hooks'
+  REMIND_REPLY_LANGUAGE_FN,
+  seedHandedOverOwnerWords
+} from './hooks'
 import { FROM_A_SESSION } from './crossSessionMessage'
 import { record } from './codexObservation'
 

@@ -268,13 +268,8 @@ async function start(opt: {
     const claude = await useRealClaude(env, account)
     const codex = await useRealCodex(env)
     const muse = opt.muse ? await useRealMuse(env) : undefined
-    if (opt.museAuth) {
-      addMuseAccount(env, MUSE_SIGNED_IN_ACCOUNT)
-      fs.copyFileSync(
-        opt.museAuth,
-        path.join(env.userData, 'muse-homes', MUSE_SIGNED_IN_ACCOUNT, 'muse', 'auth.json')
-      )
-    }
+    if (opt.museAuth)
+      addMuseAccount(env, MUSE_SIGNED_IN_ACCOUNT, fs.readFileSync(opt.museAuth, 'utf8'))
     if (opt.remote) lab = await startRemote(env, claude)
     const remote = lab ? remoteKeyFor(LAB_ALIAS, LAB_USER) : undefined
     writeLayoutWithTheShippedWorkbenchDefault(env, remote)

@@ -832,9 +832,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       (r) => !r.explicitStop && !r.stopping && r.pid !== undefined
     )
     const since = (run: MuseRun): number => run.startedAt - REGISTRY_WRITE_LEEWAY_MS
-    const read = dirs.map(({ dir }) =>
-      readRegistry(dir, new Set(live.map((r) => r.pid!)), Math.min(...live.map(since)))
-    )
+    const pids = new Set(live.map((r) => r.pid!))
+    const oldest = Math.min(...live.map(since))
+    const read = dirs.map(({ dir }) => readRegistry(dir, pids, oldest))
     const entries = read.flatMap((r) => r.entries)
     if (read.every((r) => r.whole)) this.registrySeenAt = changedAt
     for (const run of live) {

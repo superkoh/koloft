@@ -263,14 +263,14 @@ export function installMuse(env: E2EEnv): void {
 }
 
 // MUSE§13
-export function addMuseAccount(env: E2EEnv, name = E2E_MUSE_ACCOUNT): void {
+export function addMuseAccount(
+  env: E2EEnv,
+  name = E2E_MUSE_ACCOUNT,
+  authJson = JSON.stringify({ schema_version: 1, providers: { meta: { api_key: 'fake' } } })
+): void {
   const config = path.join(env.userData, 'muse-homes', name, 'muse')
   fs.mkdirSync(config, { recursive: true })
-  fs.writeFileSync(
-    path.join(config, 'auth.json'),
-    JSON.stringify({ schema_version: 1, providers: { meta: { api_key: 'fake' } } }),
-    { mode: 0o600 }
-  )
+  fs.writeFileSync(path.join(config, 'auth.json'), authJson, { mode: 0o600 })
   const file = path.join(env.userData, 'settings.json')
   const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }
   seedSettings(env, {
