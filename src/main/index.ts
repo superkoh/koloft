@@ -2792,6 +2792,9 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
+      const live = new Set(
+        ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : []))
+      )
       const busy = new Set(
         allSessions().flatMap((s) => {
           const host = s.alive && remoteHostOfTab(s.tabId)
@@ -2803,6 +2806,7 @@ app.whenReady().then(() => {
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
         paths: t.paths,
+        hasTabs: live.has(t.host),
         busy: busy.has(t.host)
       }))
     },

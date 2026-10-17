@@ -62,6 +62,7 @@ beforeEach(() => {
     mirrorProjectsRoot: '/ud/remote/devbox/projects',
     mirrorHookDir: '/ud/remote/devbox/hook-sessions',
     paths: ['/home/koh/api'],
+    hasTabs: true,
     busy: true
   }
   sync = make()
@@ -289,7 +290,7 @@ it("U-HB-3: greys the dot when ssh's own timeout kills the command (code null)",
   expect([...sync.alive('devbox')]).toEqual(['aaa'])
 })
 
-it('U-HB-3: polls every 2s while a session on the machine works or waits for approval, still for 30s after it stops, then every 20s', async () => {
+it('U-HB-3: polls every 2s while a session on the machine works or waits for approval, still for 30s after it stops, then every 5s while a tab there is open, and every 20s with none', async () => {
   sync.start()
   await tick(1)
   const working = runs.length
@@ -301,10 +302,14 @@ it('U-HB-3: polls every 2s while a session on the machine works or waits for app
   await tick(30_000)
   expect(runs.length - stopped).toBe(15)
   const idleStart = runs.length
-  await tick(20_000)
-  expect(runs.length - idleStart).toBe(1)
-  await tick(20_000)
+  await tick(10_000)
   expect(runs.length - idleStart).toBe(2)
+
+  target = { ...target, hasTabs: false }
+  await tick(5000)
+  const noTabs = runs.length
+  await tick(40_000)
+  expect(runs.length - noTabs).toBe(2)
 })
 
 it('asks an idle machine at once when the person types into one of its tabs, then every 2s for 30s; typing between 2s rounds adds none', async () => {
@@ -323,7 +328,7 @@ it('asks an idle machine at once when the person types into one of its tabs, the
   expect(runs.length).toBe(idle + 2)
   await tick(30_000)
   const after = runs.length
-  await tick(20_000)
+  await tick(5000)
   expect(runs.length - after).toBe(1)
 })
 

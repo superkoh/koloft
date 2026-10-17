@@ -32,6 +32,7 @@ function projectFlags(slugs: string[]): string[] {
 const HOOK_FLAGS = ['-I', '--inplace', '--delete']
 
 const FAST_INTERVAL_MS = 2000
+const IDLE_TAB_INTERVAL_MS = 5000
 const IDLE_INTERVAL_MS = 20_000
 const GIT_INTERVAL_MS = 20_000
 const LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS = 60_000
@@ -42,6 +43,7 @@ export interface RemoteTarget {
   mirrorProjectsRoot: string
   mirrorHookDir: string
   paths: string[]
+  hasTabs: boolean
   busy: boolean
 }
 
@@ -334,7 +336,12 @@ export class RemoteSync {
       const again = st.again
       st.again = false
       if (target.busy) st.fastUntil = Date.now() + STAY_FAST_AFTER_WORK_OR_INPUT_MS
-      const steady = Date.now() < st.fastUntil ? FAST_INTERVAL_MS : IDLE_INTERVAL_MS
+      const steady =
+        Date.now() < st.fastUntil
+          ? FAST_INTERVAL_MS
+          : target.hasTabs
+            ? IDLE_TAB_INTERVAL_MS
+            : IDLE_INTERVAL_MS
       const backoff = st.failures
         ? Math.min(FAST_INTERVAL_MS * 2 ** (st.failures - 1), LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS)
         : 0
