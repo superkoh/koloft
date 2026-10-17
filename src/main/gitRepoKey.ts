@@ -1,6 +1,7 @@
 import { execFile } from 'child_process'
 import fs from 'fs'
 import { isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { isGitCheckoutAsync } from './projectInfo'
 import type { GitOut } from './resumePlan'
 
 const REPO_KEY_GIT_TIMEOUT_MS = 5000
@@ -75,11 +76,16 @@ export class GitRepoKeys {
   }
 
   async refresh(wsPaths: string[]): Promise<void> {
-    const keptRemote = (p: string): string | null => (isRemoteKey(p) && this.keys.get(p)) || null
-    const ask = wsPaths.filter((p) => !keptRemote(p))
+    const kept = async (p: string): Promise<boolean> => {
+      if (isRemoteKey(p)) return !!this.keys.get(p)
+      if (!this.keys.has(p)) return false
+      return this.keys.get(p) !== null || !(await isGitCheckoutAsync(p))
+    }
+    const keptAt = await Promise.all(wsPaths.map(kept))
+    const ask = wsPaths.filter((_, i) => !keptAt[i])
     const found = await this.keysOf(ask)
     const asked = new Map(ask.map((p, i) => [p, found[i]]))
-    this.keys = new Map(wsPaths.map((p) => [p, keptRemote(p) ?? asked.get(p) ?? null]))
+    this.keys = new Map(wsPaths.map((p) => [p, asked.get(p) ?? this.keys.get(p) ?? null]))
   }
 
   set(wsPath: string, repoKey: string): void {
