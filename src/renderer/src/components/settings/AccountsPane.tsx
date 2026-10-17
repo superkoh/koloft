@@ -6,14 +6,29 @@ import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useStore } from '../../store'
 import { ACCOUNT_KINDS_OF, measuredAt, needsSignInAgain, windowLabel } from '@shared/accountUsage'
 
-type SignInBackend = 'codex' | 'muse'
+type SignInBackend = 'codex' | 'muse' | 'agy'
 
-// CODEX§15 MUSE§13
+// CODEX§15 MUSE§13 AGY§5
 const SIGNS_IN_TO: Record<SignInBackend, SignInFolderKind> = {
   codex: 'codex-home',
-  muse: 'muse-home'
+  muse: 'muse-home',
+  agy: 'agy-home'
 }
-import { Meter, ageLabel, codexBalanceLabel, probeErrorLabel, resetLabel } from '../accountMeter'
+
+// AGY§5
+const SIGN_IN_COMMAND: Record<SignInBackend, string> = {
+  codex: 'codex login',
+  muse: 'muse login',
+  agy: 'agy'
+}
+import {
+  Meter,
+  QuotaMeters,
+  ageLabel,
+  codexBalanceLabel,
+  probeErrorLabel,
+  resetLabel
+} from '../accountMeter'
 import { GitAccountsSection } from './GitAccountsSection'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
@@ -37,6 +52,7 @@ export function AccountsPane(): JSX.Element {
   const claudeAccounts = accounts.filter((a) => ACCOUNT_KINDS_OF.claude.includes(a.kind))
   const codexAccounts = accounts.filter((a) => a.kind === 'codex-home')
   const museAccounts = accounts.filter((a) => a.kind === 'muse-home')
+  const agyAccounts = accounts.filter((a) => a.kind === 'agy-home')
 
   useEffect(() => {
     let alive = true
@@ -90,7 +106,9 @@ export function AccountsPane(): JSX.Element {
               ? () => setSignIn({ backend: 'codex', again: a.name })
               : a.kind === 'muse-home'
                 ? () => setSignIn({ backend: 'muse', again: a.name })
-                : undefined
+                : a.kind === 'agy-home'
+                  ? () => setSignIn({ backend: 'agy', again: a.name })
+                  : undefined
         }
       />
     )
@@ -208,6 +226,23 @@ export function AccountsPane(): JSX.Element {
           </button>
           <button className="mini" onClick={() => setAdding('muse-home')}>
             <IconPlus size={14} /> Paste API key
+          </button>
+        </>
+      )}
+      <div className="set-grp">Antigravity</div>
+      {section(
+        agyAccounts,
+        'No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key, and Antigravity sessions take turns between them.',
+        <>
+          <button
+            className="mini"
+            onClick={() => setSignIn({ backend: 'agy' })}
+            title="Runs agy in a terminal tab for a new Antigravity account"
+          >
+            <IconWebPage size={14} /> Sign in with Google
+          </button>
+          <button className="mini" onClick={() => setAdding('agy-home')}>
+            <IconPlus size={14} /> Paste Gemini API key
           </button>
         </>
       )}
@@ -376,8 +411,11 @@ export function SignInDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const label = BACKEND_LABEL[backend]
-  const command = `${backend} login`
-  const shared = `Your ${label} settings and trusted folders are shared by every account.`
+  const command = SIGN_IN_COMMAND[backend]
+  const shared =
+    backend === 'agy'
+      ? 'Sign in, then pick a colour scheme and answer Google’s Terms and data-use screen yourself, then type /exit. Your Antigravity conversations, rules, plugins and MCP servers are shared by every account.'
+      : `Your ${label} settings and trusted folders are shared by every account.`
 
   const start = async (): Promise<void> => {
     setBusy(true)
@@ -550,7 +588,9 @@ function AccountRow({
           ) : null}
           {codexBalance && <span className="acct-note">{codexBalance}</span>}
         </div>
-      ) : a.kind === 'muse-home' ? (
+      ) : a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (
+        <QuotaMeters quota={a.quota} now={now} />
+      ) : a.kind === 'muse-home' || a.kind === 'agy-home' ? (
         <div className="acct-meters">
           <span className="acct-note">
             {a.status !== 'ok'
@@ -641,7 +681,9 @@ export function AddAccountDialog({
         ? 'Add API key'
         : kind === 'muse-home'
           ? 'Add Muse API key'
-          : 'Add custom endpoint'
+          : kind === 'agy-home'
+            ? 'Add Gemini API key'
+            : 'Add custom endpoint'
 
   return (
     <div className="acct-add">
@@ -680,7 +722,9 @@ export function AddAccountDialog({
               ? 'sk-ant-api03-…'
               : kind === 'muse-home'
                 ? 'Meta API key'
-                : 'Key issued by that endpoint'
+                : kind === 'agy-home'
+                  ? 'Gemini API key'
+                  : 'Key issued by that endpoint'
         }
         value={secret}
         onChange={(e) => setSecret(e.target.value)}
@@ -703,7 +747,9 @@ export function AddAccountDialog({
       <span className="field-hint">
         {kind === 'muse-home'
           ? 'Koloft hands the key to muse, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. A key muse cannot use still saves the account, marked UNVERIFIED.'
-          : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
+          : kind === 'agy-home'
+            ? 'The key goes into your Keychain and is handed to agy when a session starts. The account stays UNVERIFIED until you use Sign in again once to pick a colour scheme and answer Google’s Terms screen in agy.'
+            : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
         {kind === 'custom' &&
           ' A custom endpoint exposes no quota to measure, so it is used only when every ' +
             'subscription is rate-limited — and it switches the session to that endpoint’s own model.'}

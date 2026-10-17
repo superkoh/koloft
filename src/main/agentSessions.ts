@@ -345,6 +345,7 @@ export interface SessionVerbDeps {
   asking(tabId: string): boolean
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   press(tabId: string, keys: string[]): Promise<void>
+  deliver(tabId: string, text: string): Promise<boolean>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
   answer(tabId: string, reply: string): Promise<string | undefined>
@@ -854,6 +855,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       await d.sendLine(tab, line, until - Date.now())
       return `Sent to ${t.name}.`
     }
+    if (await d.deliver(tab, text)) return `Sent to ${t.name}.`
     if (!(await d.ready(tab, until - Date.now(), true)))
       throw new Error(
         `${t.name} stayed busy. ${t.remote ? 'It runs on another machine, where Koloft' : 'Koloft'} can only type into it once its turn has ended and it shows no question.`

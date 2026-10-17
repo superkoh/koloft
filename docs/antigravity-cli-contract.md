@@ -45,6 +45,11 @@ Nothing ran against Google's real servers.
   fails with "must not be absolute", a relative one lands under the gemini dir.
   `--server_port`, `--language_server_port`, `--lsp_port`, `--http_server_port` and
   `--port` are unknown flags (agy prints its help).
+- A first message at launch (1.4.0): `-i "<text>"` and `--prompt-interactive "<text>"`
+  send it at once and stay interactive (SessionStart, PreInvocation, PostInvocation,
+  Stop fire as for a typed message; 7501 `idle` comes 30–50 ms before `working`).
+  `agy "<text>"` exits 2: `Error: unexpected argument "<text>". Prompts are read only
+  from -p/--print, -i/--prompt-interactive, or stdin…`.
 - No flag or environment variable adds a system prompt. `ANTIGRAVITY_CONVERSATION_ID`
   set at launch is ignored: there is no way to choose a new conversation's id.
 - `/exit` prints `Resume with -c (or command below):` and `agy --conversation=<id>`,
@@ -165,6 +170,19 @@ Nothing ran against Google's real servers.
   - two folders running 5 turns each at once (a write and a `/clear` per turn): all
     turns done, no lock or corruption errors in the logs, `pragma integrity_check` ok
     on every db.
+- **Links whose targets do not exist yet** (1.4.0, an owner with no `~/.gemini`): with
+  none of the targets made, the first message fails ("create projects dir …: file
+  exists", then "Failed to send message: no active conversation", `-p` too), agy logs
+  `mkdir … file exists` for `conversations`, `brain` and `config/projects`, and
+  replaces the `conversation_summaries.db` link with a plain file in the folder ("corrupt_on_open,
+  recreating"); agy never creates `~/.gemini`. With the target folders
+  `antigravity-cli/{conversations,brain,annotations,presence}` and
+  `config/{projects,rules,plugins}` made beforehand and no files, everything works: the
+  db is created through its link (WAL files beside the real file), `mcp_config.json`
+  is created empty through its link, dangling `GEMINI.md`, `AGENTS.md`, `config.json`
+  links log nothing, and every link survives. With only `conversations`, `brain` and
+  `config/projects` made, turns run but no presence lock is taken and the title is not
+  saved (`mkdir annotations: file exists`).
 - **"Invalid Project" banner.** Every conversation's project id is
   `default-cli-project`, kept in `config/projects/default-cli-project.json`
   (`{"id":"default-cli-project","name":"CLI Project","projectResources":{}}`). A
@@ -286,9 +304,32 @@ Nothing ran against Google's real servers.
   touched.
 - The variable must be set at every launch: a folder that has a token file, started
   without it, uses the Keychain item instead.
-- With the SSH variables agy does not open the browser for sign-in; it shows the URL
-  and the paste field only. With `WSL_DISTRO_NAME` it still runs `open`.
-- Side effects on commands the model runs: not probed yet.
+- `WSL_INTEROP` (any non-empty value) does the same (log: `… because WSL environment
+  detected`), on 1.3.6 and 1.4.0. An empty value (`SSH_CONNECTION=`,
+  `WSL_DISTRO_NAME=`) counts as not set.
+- Where each variable is read (disassembly of both versions, then checked by running):
+  the storage choice reads `SSH_TTY`, `SSH_CLIENT`, `SSH_CONNECTION`,
+  `WSL_DISTRO_NAME`, `WSL_INTEROP`; sign-in reads the three SSH variables and, with any
+  one set, does not open the browser (it shows the URL and the paste field only); copy
+  reads `SSH_CONNECTION` only and with it skips `pbcopy` and sends only OSC 52, so the
+  Mac clipboard is not changed; agy's terminal detection (`ssh=` in its log) reads the
+  three SSH variables; usage reports to Google read all five (they then say "SSH" or
+  "WSL"). With `WSL_DISTRO_NAME` or `WSL_INTEROP`, sign-in, copy, copy-on-select,
+  image paste and the escape codes agy sends were the same as with no variable. The
+  binary contains no `clip.exe`, `wslpath`, `powershell.exe` or `xclip`.
+- Commands the model runs inherit the variable. Under each of the five, a model-run
+  script doing git commit, push to a `file://` repo, `git credential fill` through a
+  `GIT_CONFIG_COUNT` helper, `gh auth status`, `open https://…`, `pbcopy`/`pbpaste`,
+  `ssh-add -l`, an `osascript` notification, node/npm, Python `webbrowser` and a
+  request-file/reply-file script behaved exactly as with no variable (whole-output
+  diffs differ only in the variable). No agy flag or setting strips variables from
+  model commands.
+- Storage choice and terminal detection read the variables once at start; the browser
+  decision at every sign-in; copy at every copy.
+- The Keychain item's value, decoded, is the token file's JSON: written unchanged to
+  `<gemini_dir>/antigravity-cli/antigravity-oauth-token` and launched with
+  `WSL_INTEROP`, agy used that account. With the variable set and no file, agy ignores
+  the Keychain and asks to sign in.
 
 ## §8 Storage: the conversation list and transcripts
 
@@ -298,6 +339,16 @@ Nothing ran against Google's real servers.
   JSON list of `file://` URIs), `status`, `not_fully_idle`, `killed`, `source`,
   `project_id`, `app_data_dir`, `agent_name`, `parent_conversation_id`,
   `nesting_depth`, `group_id`, `raw_summary` (protobuf).
+  - (1.4.0, `.schema`) Every column but `conversation_id` and `raw_summary` is `NOT
+    NULL`; text columns default to `""`, so a top-level row's
+    `parent_conversation_id` is `''`, never NULL. `last_modified_time` and
+    `last_user_input_time` are text in UTC with `+00:00` whatever `TZ` says, with up
+    to 9 decimals and trailing zeros dropped (`2026-10-16 08:04:16.1661826+00:00`);
+    "never" is `0001-01-01 00:00:00+00:00`. A subagent row has `agent_name` `self`, a
+    `''` title and `last_user_input_time` "never"; an unused `/new` row has
+    `step_count` 0 and "never" times. The row appears at the first message
+    (`RUNNING`, steps 0, both times "never") and gets its real values when the turn
+    ends.
   - The row appears 0.4–0.6 s after Enter, with the made-up title. `/rename` updates
     `title`. A `/new` that is never used stays as a row with `step_count` 0.
   - `status` (`CASCADE_RUN_STATUS_IDLE` / `RUNNING`) does not tell whether a process
@@ -323,6 +374,10 @@ Nothing ran against Google's real servers.
     3 unchanged lines around the change, so added and removed lines can be counted.
     `write_to_file` gives only `Created file file:///<path> with requested content.…`,
     no counts, whether it creates, overwrites or appends.
+  - `created_at` is UTC RFC 3339 in whole seconds (`2026-10-16T08:04:11Z`); times
+    written inside `content` are local with an offset. A `PLANNER_RESPONSE` that
+    ends a turn has `content` and no `tool_calls`. A subagent's transcript starts
+    with a `SYSTEM_MESSAGE` step and has no `USER_INPUT`.
   - Tool args are JSON-encoded strings here (`"Overwrite":"true"`); in
     `transcript_full.jsonl`, the path hooks receive, they are typed
     (`"Overwrite":true`). Both are also kept in `logs/chunks/{transcript,
@@ -355,6 +410,14 @@ Nothing ran against Google's real servers.
   has the conversation open (`/proc/locks`: `FLOCK ADVISORY WRITE`). The file stays
   after exit, unlocked, so a non-blocking `flock` try tells whether it is live. It
   holds no pid or path. Subagent conversations get none.
+- (1.4.0) The holder keeps the lock file open: `lsof <lock>` (also through a symlinked
+  folder, and when the holder is an agy using the default `~/.gemini`) lists the agy
+  pid with a `W` lock; `lsof -t` exits 0 when held, 1 when free; `fuser` too. After
+  `/exit` nothing holds it. The **second** process to open a conversation shows "⚠
+  Conversation already open" but never opens or locks the file, not even after the
+  first quits; so a held lock means a live agy has it, a free one does not prove none
+  has. An outside process taking the lock (`flock -x`) made an agy opening that
+  conversation show the same banner. macOS `lsof` flags: not probed.
 - `/clear`, `/new`, in-TUI `/resume` and `/fork` keep the process and swap the lock:
   the old one is released and the new id's lock taken at once. `-c` and
   `--conversation` take the resumed id's lock at start, before any prompt.
@@ -411,6 +474,11 @@ Nothing ran against Google's real servers.
   The title needs a hand-written `"title":{"type":"command","command":"<path>"}`;
   without it `/title on` says "No title command configured in settings.json. Please
   add a "title" block." Each works alone, and both run when both are set.
+- (1.4.0) Both run under `sh -c` with agy's launch environment (PATH included). Two
+  agy processes at once on one `--gemini_dir` (one `settings.json`), launched with
+  different values of one variable: every run of each process's scripts saw only its
+  own value. `session_id` always equals `conversation_id` (both `""` before the first
+  message); there is no separate per-process id.
 - Both scripts get the same JSON on stdin: `cwd`, `session_id`, `conversation_id`
   (§9), `transcript_path`, `model{id, display_name, effort}`,
   `workspace{current_dir, project_dir}`, `version`, `context_window{total_input_tokens,
@@ -855,3 +923,44 @@ Nothing ran against Google's real servers.
   tmux sends OSC 0 out).
 - Over SSH: the SSH variables switch the token to a file (§6, §7) and sign-in works by
   pasting the code, with no browser on that machine.
+- (1.4.0, a Koloft-style tab: real OpenSSH 10.3p1 into a Debian 12 sshd container,
+  tmux 3.3a, Node 22.12.0 at `~/.koloft/node`, the fake Gemini server on that machine)
+  A `--gemini_dir` folder holding `settings.json` (`modelProvider`, `trustedWorkspaces`
+  with the folder, a `title` command) and `cache/onboarding.json`, with
+  `GEMINI_API_KEY` from a sourced env file, opens straight on the prompt. agy rewrites
+  `settings.json` in its own form and keeps the `title` block.
+- Inside that tab `SSH_CONNECTION`, `SSH_TTY` and `SSH_CLIENT` reach agy; its log says
+  "Using file-based token storage because SSH session detected". A non-tty `ssh host
+  cmd` gives "no D-Bus session bus detected" instead — a token file either way.
+- The title script and the hooks inherit the launch environment (`KOLOFT_TAB_ID`,
+  `TMUX`, `TMUX_PANE`); the title script runs in the workspace, the hooks in
+  `<gemini_dir>/config`. `tmux rename-session -t "$TMUX_PANE" k-<id>` from the title
+  script works at the first prompt and after `/clear`.
+- Over one prompt the order is: title `authenticating` twice and `idle` twice (no id),
+  hook SessionStart, PreInvocation, Stop, then the first title line carrying the
+  conversation id. A turn of about 50 ms never shows the title `working` state; a 4 s
+  one does. An ask: PreToolUse (the whole `toolCall`), then title `tool_use` with
+  `tool_confirmation_pending:true`; after `1`: title `working`, PostToolUse,
+  PreInvocation, Stop, `idle`.
+- Keys typed into the Mac side of `ssh -tt` answer a command ask (`1`) and a question
+  (`2` picked option 2); so does `tmux send-keys`.
+- `node --no-warnings --experimental-sqlite` (22.12.0) run over ssh reads the shared
+  `conversation_summaries.db` read-only while agy is idle, waits on an ask, or is
+  mid-turn; `workspace_uris` hold the remote folder.
+- `--conversation=<id>` in a tmux session named `k-<id>` shows the history; its first
+  title line already carries the id. Two tabs in one account folder hold their own
+  `presence/<id>.lock` (FLOCK WRITE in `/proc/locks`); `flock -n <lock> true` exits 1
+  while a conversation is open and 0 once it is free.
+- `/exit` ends the tmux session and `ssh -tt` returns 0; no hook fires at exit. A
+  dropped ssh client leaves tmux detached with agy running and the lock held;
+  `tmux attach -d -t k-<id>` over a new `ssh -tt` redraws it and keys work.
+- No OSC 7501 and no OSC 0/2 reach the Mac side through tmux (`set-titles` off); the
+  title script's output lands in `#{pane_title}`.
+- `rsync -a -m --inplace --delete` with includes `/*/`, `/*/.system_generated/`,
+  `/*/.system_generated/logs/` and `/*/.system_generated/logs/transcript.jsonl` pulls
+  just the per-conversation transcripts out of `brain/`.
+- A copied token file in a folder without `modelProvider`, run over ssh: agy loads it
+  ("authenticated via keyring") and calls Google with it. What Google does with one
+  `refresh_token` used from two machines: not probed (no real account).
+- The slim lab image has no `jq`, `python`, `xz` or `gawk`: scripts that run there are
+  `sh` with `sed` and `printf`.

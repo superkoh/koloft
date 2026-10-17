@@ -45,7 +45,7 @@ import { encodeCwd } from './sessionTracker'
 import { dirExists } from './fileTree'
 import { isGitCheckoutAsync } from './projectInfo'
 import { replacesTheConversation } from './hookRouting'
-import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
+import { formatRemoteKey, isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
 import type { RemoteGitInfo } from './remote/install'
 import type { SearchCandidate } from './sessionSearch'
@@ -292,6 +292,30 @@ export class WorkspaceManager {
   // CC§2
   realRemotePath(key: RemoteKey): string {
     return this.deps.remoteGit?.(key.host, key.path)?.real ?? key.path
+  }
+
+  remoteProjectInfo(keyed: string): ProjectInfo {
+    const key = parseRemoteKey(keyed)
+    const inside = (p: string, dir: string): boolean => p === dir || p.startsWith(dir + '/')
+    for (const ws of this.layout.workspaces) {
+      const w = this.scope(ws.path).key
+      if (!key || !w || w.host !== key.host) continue
+      const git = this.deps.remoteGit?.(w.host, w.path)
+      const real = git?.real ?? w.path
+      const trees = [...(git?.worktrees ?? [])].sort((a, b) => b.dir.length - a.dir.length)
+      const tree = trees.find((e) => inside(key.path, e.dir))
+      if (tree && (inside(tree.dir, real) || inside(tree.dir, w.path))) {
+        const main = tree.dir === real || tree.dir === w.path
+        return {
+          root: ws.path,
+          treeRoot: formatRemoteKey(w.host, tree.dir),
+          ...(main ? {} : { worktreeName: path.basename(tree.dir) })
+        }
+      }
+      if (inside(key.path, w.path) || inside(key.path, real))
+        return { root: ws.path, treeRoot: keyed }
+    }
+    return { root: keyed, treeRoot: keyed }
   }
 
   onRemoteChanged(): void {
@@ -733,19 +757,17 @@ export class WorkspaceManager {
         now: Date.now
       }).map(claudeRow)
       allRowsByWs.set(ws.path, [...allRows])
-      if (!key) {
-        const additional = (this.deps.additionalRows?.(ws.path) ?? []).map((r): SessionRow => ({
-          ...r,
-          ...sourceOf(r.backendId, ws.path)
-        }))
-        for (const r of additional) bucketDirById.set(r.id, r.cwd)
-        for (const r of additional) {
-          if (r.pending) continue
-          const at = allRows.findIndex((x) => (x.createdAt ?? 0) < (r.createdAt ?? 0))
-          allRows.splice(at < 0 ? allRows.length : at, 0, r)
-        }
-        allRows.unshift(...additional.filter((r) => r.pending))
+      const additional = (this.deps.additionalRows?.(ws.path) ?? []).map((r): SessionRow => ({
+        ...r,
+        ...sourceOf(r.backendId, ws.path)
+      }))
+      for (const r of additional) bucketDirById.set(r.id, r.cwd)
+      for (const r of additional) {
+        if (r.pending) continue
+        const at = allRows.findIndex((x) => (x.createdAt ?? 0) < (r.createdAt ?? 0))
+        allRows.splice(at < 0 ? allRows.length : at, 0, r)
       }
+      allRows.unshift(...additional.filter((r) => r.pending))
       for (const r of allRows) wsBySession.set(r.id, ws.path)
       const visible = allRows
         .filter((r) => !this.hidden(r.id))

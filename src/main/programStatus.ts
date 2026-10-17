@@ -10,6 +10,14 @@ export const PROGRAM_STATUS_REPLY =
 export interface ProgramStatus {
   state: string
   kind?: string
+  msg?: string
+}
+
+// AGY§10
+function decodedMsg(base64: string | undefined): string | undefined {
+  if (!base64) return undefined
+  const text = Buffer.from(base64, 'base64').toString('utf8')
+  return text || undefined
 }
 
 function fields(body: string): Record<string, string> {
@@ -35,7 +43,8 @@ export class ProgramStatusParser {
         continue
       }
       const f = fields(rest)
-      if (f.state && f.id === undefined) states.push({ state: f.state, kind: f.kind })
+      if (f.state && f.id === undefined)
+        states.push({ state: f.state, kind: f.kind, msg: decodedMsg(f.msg) })
     }
     return { asked, states }
   }

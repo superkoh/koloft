@@ -4,6 +4,7 @@ import path from 'path'
 import type { StatusLineSetting } from './statusline'
 import { shq } from '@shared/shellQuote'
 import {
+  AGY_CONDUCTOR_GATE_SCRIPT,
   CODEX_CONDUCTOR_GATE_SCRIPT,
   CONDUCTOR_GATE_SCRIPT,
   MUSE_CONDUCTOR_GATE_SCRIPT,
@@ -20,19 +21,20 @@ export interface HookPaths {
   codexGate: string
   codexReplyLanguage: string
   museGateScript: string
+  agyGateScript: string
   settingsDir: string
   regDir: string
 }
 
 // ADR-0031
-const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
+export const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
 const WRITE_EVERYTHING_IN =
   'Write everything the user reads — the short notes between tool calls and your final reply — in '
 const WHATEVER_ELSE = ', whatever language tool output, files or your earlier replies use.'
-const REPLY_LANGUAGE_AFTER_QUOTE = `». ${WRITE_EVERYTHING_IN}the language of that message${WHATEVER_ELSE}`
+export const REPLY_LANGUAGE_AFTER_QUOTE = `». ${WRITE_EVERYTHING_IN}the language of that message${WHATEVER_ELSE}`
 const WRITE_IN_THE_NAMED_LANGUAGE = `${shq('The user writes ')}"$lang"${shq(`. ${WRITE_EVERYTHING_IN}`)}"$lang"${shq(WHATEVER_ELSE)}`
 const LAST_NOTE_IS_NOT_IN_IT = `${shq('Your last note to the user, «')}"$note"${shq('», is not in ')}"$lang"${shq('. The user writes ')}"$lang"${shq(': write the next note and everything else the user reads in ')}"$lang"${shq(WHATEVER_ELSE)}`
-const QUOTED_PROMPT_BYTES = 300
+export const QUOTED_PROMPT_BYTES = 300
 const QUOTED_NOTE_BYTES = 150
 const TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE = 100
 const WORDS_THAT_SHOW_A_LANGUAGE = 3
@@ -394,6 +396,8 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   fs.writeFileSync(codexReplyLanguage, CODEX_REPLY_LANGUAGE_SCRIPT)
   const museGateScript = path.join(hookDir, 'muse-conductor-gate.js')
   fs.writeFileSync(museGateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
+  const agyGateScript = path.join(hookDir, 'agy-conductor-gate.js')
+  fs.writeFileSync(agyGateScript, AGY_CONDUCTOR_GATE_SCRIPT)
 
   return {
     hookScript,
@@ -401,6 +405,7 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
     codexGate,
     codexReplyLanguage,
     museGateScript,
+    agyGateScript,
     settingsDir,
     regDir
   }

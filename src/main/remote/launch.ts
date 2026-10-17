@@ -9,6 +9,8 @@ import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { AGENT_PROMPT_FILE } from '../agentPlugin'
 import { saidFile, seedHandedOverOwnerWords } from '../hooks'
 
+export const AGY_KEY_ENV = 'GEMINI_API_KEY'
+
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
   'ANTHROPIC_API_KEY',
@@ -103,6 +105,13 @@ export interface TabSpec {
   ownerWords?: string
   agentPlugin?: boolean
   claudeArgs: string[]
+  agy?: AgyTab
+}
+
+export interface AgyTab {
+  prepare: string
+  run: string
+  files: Record<string, string>
 }
 
 export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
@@ -115,8 +124,11 @@ export function tabScript(spec: TabSpec): string {
   ) {
     throw new Error('unsafe tab/session name')
   }
-  const T = `$HOME/.koloft/tabs/${spec.tabId}`
+  const T = tabFilePrefix(spec.tabId)
   const H = `$HOME/.koloft/hook-sessions/${spec.tabId}`
+  const exec = spec.agy
+    ? spec.agy.run
+    : `exec claude --settings "${T}.json"${spec.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${spec.claudeArgs.map(shq).join(' ')}`
   // PLATFORM§35
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
@@ -124,17 +136,29 @@ ${REMOTE_ENV_LINES}
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
   KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
-  unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
+  unset ${[...CLAUDE_AUTH_ENV_VARS, ...(spec.agy ? [AGY_KEY_ENV] : [])].join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
-${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  exec claude --settings "${T}.json"${spec.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${spec.claudeArgs.map(shq).join(' ')}
+${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  ${exec}
 fi
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'
-sh "$M/ensure.sh" || exit $?
-cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
+sh "$M/ensure.sh"${spec.agy ? ' agy' : ''} || exit $?
+${spec.agy ? `${spec.agy.prepare}\n` : ''}cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}.status.jsonl"
-${spec.ownerWords ? `mkdir -p "$HOME/.koloft/hook-sessions" && mv -f "${T}".said* "$HOME/.koloft/hook-sessions/"\n` : ''}# CC§10
+${spec.ownerWords ? `mkdir -p "$HOME/.koloft/hook-sessions" && mv -f "${T}".said* "$HOME/.koloft/hook-sessions/"\n` : ''}${spec.agy ? '' : claudeFirstRun(T)}tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
+c=$?
+rm -f "${T}.env"
+exit $c
+`
+}
+
+export function tabFilePrefix(tabId: string): string {
+  return `$HOME/.koloft/tabs/${tabId}`
+}
+
+function claudeFirstRun(T: string): string {
+  return `# CC§10
 CJ="$HOME/.claude.json"
 if [ -f "${T}.env" ]; then
   if [ ! -f "$CJ" ]; then printf '{"hasCompletedOnboarding":true}\\n' > "$CJ"
@@ -148,10 +172,6 @@ if [ -f "${T}.env" ]; then
       if command -v timeout >/dev/null 2>&1; then timeout 60 claude -p ok --max-turns 1; else claude -p ok --max-turns 1; fi ) >/dev/null 2>&1
   fi
 fi
-tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
-c=$?
-rm -f "${T}.env"
-exit $c
 `
 }
 
@@ -162,6 +182,8 @@ export function writeTabPackage(dir: string, spec: TabSpec): void {
   })
   fs.writeFileSync(path.join(dir, `${spec.tabId}.sh`), tabScript(spec), { mode: 0o700 })
   if (spec.ownerWords) seedHandedOverOwnerWords(saidFile(dir, spec.tabId), spec.ownerWords)
+  for (const [name, text] of Object.entries(spec.agy?.files ?? {}))
+    fs.writeFileSync(path.join(dir, `${spec.tabId}.${name}`), text, { mode: 0o600 })
   if (spec.env) {
     const lines = Object.entries(spec.env).map(([k, v]) => `${k}=${shq(v)}`)
     fs.writeFileSync(path.join(dir, `${spec.tabId}.env`), lines.join('\n') + '\n', { mode: 0o600 })

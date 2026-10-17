@@ -288,7 +288,7 @@ describe('session methods', () => {
   it('loads old settings with Claude as default and every method enabled', () => {
     expect(sanitizeLoadedSettings({}).sessionMethods).toEqual({
       defaultBackend: 'claude',
-      enabled: { claude: true, codex: true, muse: true }
+      enabled: { claude: true, codex: true, muse: true, agy: true }
     })
     expect(buildResetPatch()).not.toHaveProperty('sessionMethods')
   })

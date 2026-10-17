@@ -11,7 +11,8 @@ import {
 const BINARIES: Record<BackendId, string | undefined> = {
   claude: process.env.KOLOFT_REAL_ROUTE_CLAUDE,
   codex: process.env.KOLOFT_REAL_ROUTE_CODEX,
-  muse: process.env.KOLOFT_REAL_ROUTE_MUSE
+  muse: process.env.KOLOFT_REAL_ROUTE_MUSE,
+  agy: process.env.KOLOFT_REAL_ROUTE_AGY
 }
 
 const LIST: RouteWorkspace[] = [
