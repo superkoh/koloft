@@ -1062,6 +1062,12 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   follows the folder's read order, not the name order: killed at 5 s, a tree of `.git`,
   `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
   gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
+- **The mtime of `<repo>/.git/worktrees` moves when a linked worktree is added, removed
+  or pruned, and only then**: a repo with none has no such folder, `git worktree add`
+  creates it, and the last `remove` or `prune` deletes it again. A checkout or a lock
+  inside a worktree, `git worktree move`, and an `rm -rf` of a worktree's folder (which
+  `git worktree list` then shows as `prunable`) leave it as it was. (Measured, git 2.54.0,
+  macOS APFS, 2026-10-17, on a throwaway repo.)
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
   existence and mtime show whether a fetch ran. **A failed fetch writes it too** (0
   bytes), so its mtime says a fetch was tried, not that one worked — read it before
