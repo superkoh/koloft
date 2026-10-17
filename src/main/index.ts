@@ -2844,12 +2844,19 @@ app.whenReady().then(() => {
         ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
         ...(codexSessions?.machinesWithTabs() ?? [])
       ])
+      const busy = new Set(
+        allSessions().flatMap((s) => {
+          const host = s.alive && machineOfTab(s.tabId)
+          return host && (s.status === 'working' || s.status === 'approval') ? [host] : []
+        })
+      )
       return (workspaceMgr?.remoteTargets() ?? []).map((t) => ({
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
         paths: t.paths,
-        hasTabs: live.has(t.host)
+        hasTabs: live.has(t.host),
+        busy: busy.has(t.host)
       }))
     },
     onChange: (host) => {
@@ -2862,6 +2869,10 @@ app.whenReady().then(() => {
     },
     onHooksPulled: (host) => museSessions?.followMirrors(host),
     onConnected: (host) => void freshness?.machineUp(host)
+  })
+  ptyMgr.on('typed', (tabId: string) => {
+    const host = machineOfTab(tabId)
+    if (host) remoteSync?.typedInto(host)
   })
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
@@ -4434,6 +4445,7 @@ const hosts = new Hosts(
         controlDir: remoteControlDir,
         machinePackage,
         alive: () => remoteSync?.alive(machine) ?? new Set(),
+        firstHeartbeatDone: () => remoteSync?.firstRoundDone(machine) ?? Promise.resolve(),
         realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
         settings: loadSettings,
         pickAccount: (launchKey, resumeSessionId) =>
