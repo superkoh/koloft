@@ -117,6 +117,16 @@ method. A recheck adds its date, version and command to the bullet.
   while `claude`, `qemu` and `adb` printed theirs (2026-09-23; rechecked 2026-09-24 on
   macOS 27.0: `ps eww` showed a set env word for `node` and none for `/bin/sleep`). So
   an env-based lookup never sees a leftover that is an Apple binary.
+- **`ps -o lstart` prints the start time in the locale's own date format**, and
+  `LC_ALL` beats `LC_TIME`. Measured 2026-10-17, macOS 27.0, one process each: C and
+  `en_US.UTF-8` print `Sat Oct 17 01:29:13 2026`; `zh_CN.UTF-8` `六 10月/17 01:29:13 2026`;
+  `ja_JP.UTF-8` `土 10/17 …`; `de_DE.UTF-8` `Sa. 17 Okt. …`; `LANG=zh_CN.UTF-8 LC_TIME=C`
+  prints the C form, `LC_ALL=zh_CN.UTF-8 LC_TIME=C` still the Chinese one. The command
+  column follows `LC_CTYPE`: under C (also an empty environment) a non-ASCII argument
+  prints as `M-dM-<…` escapes, under a UTF-8 `LC_CTYPE` as itself. So one `ps` that reads
+  `lstart` and `command` together has to drop `LC_ALL`, carry its value into `LC_CTYPE`
+  and set `LC_TIME=C`. `TZ` moves `lstart` too (`TZ=UTC` printed 08:38 for a local
+  01:38).
 - **macOS has no `timeout(1)`** (2026-09-24, macOS 27.0: `command -v timeout` found
   nothing), and `/usr/bin/security` waits on a GUI unlock or authorization dialog with
   no timeout of its own. A time limit in a shell script has to be a `kill -0` polling

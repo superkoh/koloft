@@ -4,17 +4,18 @@ import os from 'os'
 import path from 'path'
 import { once } from 'events'
 import WebSocket from 'ws'
-import {
-  CodexRpc,
-  codexEnvironment,
-  createCodexTransport,
-  type CodexFrame
-} from '../../src/main/codexTransport'
+import type { CodexFrame } from '../../src/main/codexTransport'
+
+const PROCESS_SAMPLE_MS = 1000
+process.env.KOLOFT_CODEX_PROCESS_SAMPLE_MS = String(PROCESS_SAMPLE_MS)
+const { CodexRpc, codexEnvironment, createCodexTransport } =
+  await import('../../src/main/codexTransport')
+type CodexRpc = InstanceType<typeof CodexRpc>
 
 let directory: string
 let binary: string
 const cleanups: (() => Promise<void>)[] = []
-const LONGER_THAN_ONE_PROCESS_SAMPLE_MS = 1500
+const LONGER_THAN_ONE_PROCESS_SAMPLE_MS = PROCESS_SAMPLE_MS * 1.5
 const CHILD_SIGTERM_HANDLER_INSTALL_MS = 100
 const LINEAR_SLACK_FAR_BELOW_THE_SQUARE_OF_THE_RATIO = 3
 
