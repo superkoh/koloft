@@ -360,15 +360,42 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§15
-  it('lists and reads history once, from the default home every account home shares', async () => {
+  it('lists history from the default home every account home shares, and tells a thread has a transcript from the file the listing named, asking Codex nothing more; a thread whose file is missing is listed once more first', async () => {
+    const rollout = path.join(directory, 'rollout-a.jsonl')
     mocks.request.mockImplementation(async (_method, params) =>
-      params.archived ? { data: [] } : { data: [{ id: A, cwd: repo }] }
+      params.archived
+        ? { data: [] }
+        : {
+            data: [
+              { id: A, cwd: repo, path: rollout },
+              { id: B, cwd: repo, path: path.join(directory, 'not-written-yet.jsonl') }
+            ]
+          }
     )
-    expect((await sessions.historyRows(repo)).map((row) => row.id)).toEqual([codexSessionKey(A)])
+    expect((await sessions.historyRows(repo)).map((row) => row.id).sort()).toEqual(
+      [codexSessionKey(A), codexSessionKey(B)].sort()
+    )
     expect(mocks.rpcHomes).toEqual([undefined])
-    mocks.request.mockResolvedValue({ thread: { id: A, cwd: repo, path: null } })
-    await sessions.transcriptExists(codexSessionKey(A))
-    expect(mocks.rpcHomes).toEqual([undefined, undefined])
+    const asked = mocks.request.mock.calls.length
+    fs.writeFileSync(rollout, '')
+    expect(await sessions.transcriptExists(codexSessionKey(A))).toBe(true)
+    expect(mocks.request.mock.calls.length).toBe(asked)
+    expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(false)
+    expect(mocks.request.mock.calls.map(([method]) => method).slice(asked)).toEqual([
+      'thread/list',
+      'thread/list'
+    ])
+    expect(mocks.rpcHomes).toEqual([undefined])
+  })
+
+  it('a thread the history has not listed yet is looked for in a fresh listing before it is called gone', async () => {
+    const rollout = path.join(directory, 'rollout-a.jsonl')
+    fs.writeFileSync(rollout, '')
+    mocks.request.mockImplementation(async (_method, params) =>
+      params.archived ? { data: [] } : { data: [{ id: A, cwd: repo, path: rollout }] }
+    )
+    expect(await sessions.transcriptExists(codexSessionKey(A))).toBe(true)
+    expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(false)
   })
 
   // CODEX§24

@@ -883,6 +883,25 @@ Not tried, because they need a second real login or would open a browser on this
 - that two homes with two different logins each use their own login, so moving new
   sessions between homes spreads use across the two accounts — **inferred, not checked**.
 
+**What one app-server that stays up sees, and what it keeps from its start.** Checked
+2026-10-17 with Codex CLI 0.162.0, one model turn. A Node script made a throwaway `HOME`
+and `CODEX_HOME` (a copied `auth.json`, a `config.toml` trusting one folder; deleted
+afterwards) and kept app-server A running while it asked:
+
+- **Threads another app-server writes show up at once.** A second app-server B ran
+  `thread/start` and one turn; A's next `thread/list` held the new thread, A's
+  `thread/search` found it by the word the model answered, and the `path` in A's list and
+  in A's `thread/read` were the one B's `thread/start` gave.
+- **`config/read` reads `config.toml` again each time**: an `[mcp_servers.probe]` table
+  appended to the file showed in A's next answer.
+- **The sign-in is read once, when the app-server starts.** With `auth.json` moved out of
+  the home, A still answered `account/read` with the account; a new app-server C started
+  then answered no account, and kept answering no account after `auth.json` was put back.
+  So an app-server started before a `codex login` in its home reports the old sign-in
+  until it is restarted.
+- **`account/rateLimits/read` asks the network each time**: four calls on one app-server,
+  1.5 s apart, took 377–851 ms each (a busy Mac; `initialize` took 3.5 s there).
+
 ## 16. Codex on a remote machine
 
 **Checked on 2026-09-24.** On the Mac: standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`).

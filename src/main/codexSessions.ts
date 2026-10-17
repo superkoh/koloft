@@ -40,6 +40,7 @@ import {
   seedHandedOverOwnerWords
 } from './hooks'
 import { acceptCodexHookTrust, codexConfigFile, codexHookTrusted } from './codexTrust'
+import { CodexSideServers } from './codexSideServers'
 import {
   CODEX_OPEN_SHIM_FOLDER,
   CODEX_TMP_DIR,
@@ -266,6 +267,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   readonly id = 'codex'
   private crashLeftoversEnded?: Promise<void>
   private listedHooks = new Map<string, ListedHook>()
+  private sideServers = new CodexSideServers((home) => this.rpc(home))
   protected readonly cli = {
     product: 'Codex CLI',
     minVersion: MIN_CODEX_VERSION,
@@ -369,15 +371,21 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   ): Promise<T> {
     if (!this.binary && !(await this.availability()).available)
       throw new Error('Codex CLI is unavailable.')
-    const rpc = this.rpc(home)
     try {
-      return await use(rpc)
+      return await this.sideServers.ask(home, use)
     } catch (error) {
       this.noteBinaryGone(error)
       throw error
-    } finally {
-      await rpc.close()
     }
+  }
+
+  // CODEX§15
+  rereadSignIn(home: string): Promise<void> {
+    return this.sideServers.forget(home)
+  }
+
+  async stopAll(deadlineMs?: number): Promise<void> {
+    await Promise.all([super.stopAll(deadlineMs), this.sideServers.closeAll()])
   }
 
   // CODEX§26
@@ -418,10 +426,9 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§15
-  protected async listHistory(): Promise<{ key: string; entry: CodexThread; archived: boolean }[]> {
-    const rpc = this.rpc(undefined)
-    const threads: { key: string; entry: CodexThread; archived: boolean }[] = []
-    try {
+  protected listHistory(): Promise<{ key: string; entry: CodexThread; archived: boolean }[]> {
+    return this.withRpc(undefined, async (rpc) => {
+      const threads: { key: string; entry: CodexThread; archived: boolean }[] = []
       for (const archived of [false, true]) {
         for await (const value of everyPage(rpc, 'thread/list', { archived, sourceKinds })) {
           const thread = userThread(value)
@@ -429,9 +436,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         }
       }
       return threads
-    } finally {
-      await rpc.close()
-    }
+    })
   }
 
   // CODEX§24
@@ -458,14 +463,15 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     })
   }
 
+  // CODEX§15
   async transcriptExists(key: string): Promise<boolean> {
-    const id = this.nativeId(key)
-    if (this.archivedIds.has(key)) return false
-    return this.withRpc(undefined, async (rpc) => {
-      const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
-      const t = userThread(reply.thread)
-      return !!t?.path && fs.existsSync(t.path)
-    })
+    this.nativeId(key)
+    const onDisk = (): boolean => {
+      const thread = this.history.get(key)
+      return !!thread?.path && fs.existsSync(thread.path)
+    }
+    if (!onDisk()) await this.refreshHistory()
+    return !this.archivedIds.has(key) && onDisk()
   }
 
   openApproval(tabId: string): CodexApproval | undefined {

@@ -583,6 +583,10 @@ export class CodexRpc {
     )
   }
 
+  get isClosed(): boolean {
+    return this.closed
+  }
+
   close(): Promise<void> {
     this.closed = true
     rejectAll(this.pending, new Error('Codex RPC connection is closed'))

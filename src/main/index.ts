@@ -1792,7 +1792,10 @@ const homeLogin: Record<
 }
 
 const probeHomeAccount: Record<HomeKind, (name: string) => Promise<void>> = {
-  'codex-home': (name) => probeCodexAccount(name),
+  'codex-home': async (name) => {
+    await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
+    await probeCodexAccount(name)
+  },
   'muse-home': (name) => probeMuseAccount(name)
 }
 
@@ -2964,7 +2967,7 @@ app.whenReady().then(() => {
   const capsuleShownSoLaunchProbeIsNotBilledForNothing = (): boolean =>
     listAccounts().some((a) => a.enabled && a.kind === 'oauth')
   if (capsuleShownSoLaunchProbeIsNotBilledForNothing()) {
-    void probeAllForPanel().catch(() => {})
+    mainWindow?.webContents.once('did-finish-load', () => void probeAllForPanel().catch(() => {}))
   }
 
   app.on('activate', () => {
