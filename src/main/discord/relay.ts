@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendId, SessionStatus } from '@shared/types'
-import { BACKEND_LABEL } from '@shared/sessionBackend'
+import { BACKEND_LABEL, messagingOf } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { newerSnowflake } from '@shared/conductors'
 import { safeDownloadName } from '@shared/downloadName'
@@ -262,12 +262,10 @@ export class DiscordRelay {
     const tab = await this.readyTab(dest)
     const text = await item.text(tab)
     if (item.command) return dest.typeCommand(tab, text)
-    if (this.d.backendOf(tab) === 'codex') {
-      await this.d.queue(tab, text, item.clientId)
-      return
-    }
-    if (dest.conductor && this.d.backendOf(tab) === 'claude')
-      return this.sendAsPeer(tab, text, item.clientId)
+    const backend = this.d.backendOf(tab)
+    const route = backend && messagingOf(backend, this.d.remote(tab))
+    if (route === 'queue') return this.d.queue(tab, text, item.clientId)
+    if (dest.conductor && route === 'peerLine') return this.sendAsPeer(tab, text, item.clientId)
     await this.d.type(tab, [text, '\r'])
   }
 
