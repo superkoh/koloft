@@ -526,6 +526,8 @@ interface Tracked {
   subagentTimer?: ReturnType<typeof setInterval>
 }
 
+const APPEND_READ_CHUNK_BYTES = envMs('KOLOFT_APPEND_READ_CHUNK_BYTES', 256 * 1024)
+
 export async function readAppendedLines(
   file: string,
   size: number,
@@ -535,7 +537,7 @@ export async function readAppendedLines(
   let fh: fs.promises.FileHandle | undefined
   try {
     fh = await fs.promises.open(file, 'r')
-    const len = size - cur.offset
+    const len = Math.min(size - cur.offset, APPEND_READ_CHUNK_BYTES)
     newBytes = Buffer.allocUnsafe(len)
     const { bytesRead } = await fh.read(newBytes, 0, len, cur.offset)
     if (bytesRead < len) newBytes = newBytes.subarray(0, bytesRead)
@@ -548,7 +550,7 @@ export async function readAppendedLines(
   const buf = cur.tail.length ? Buffer.concat([cur.tail, newBytes]) : newBytes
   const lastNl = buf.lastIndexOf(0x0a)
   if (lastNl === -1) {
-    cur.tail = Buffer.from(buf)
+    cur.tail = buf
     return []
   }
   cur.tail = Buffer.from(buf.subarray(lastNl + 1))
@@ -1357,26 +1359,29 @@ export class SessionTracker extends SessionRuntime {
   }
 
   private async ingestMainAppend(t: Tracked, p: string, st: fs.Stats): Promise<boolean> {
-    const cur = { offset: t.readOffset, tail: t.tailBuf }
-    const lines = await readAppendedLines(p, st.size, cur)
-    if (lines !== null) {
-      t.readOffset = cur.offset
-      t.tailBuf = cur.tail
-    }
-    if (!lines || !lines.length) return false
-
+    let sawLines = false
     let sawUserPrompt = false
     let sawAssistant = false
     let sawInterrupt = false
-    for (const line of lines) {
-      if (!line) continue
-      const activity = this.ingestLine(t, line)
-      if (activity === 'user') {
-        sawUserPrompt = true
-        sawInterrupt = false
-      } else if (activity === 'assistant') sawAssistant = true
-      else if (activity === 'interrupt') sawInterrupt = true
+    while (t.readOffset < st.size) {
+      const cur = { offset: t.readOffset, tail: t.tailBuf }
+      const lines = await readAppendedLines(p, st.size, cur)
+      if (this.tracked.get(t.info.tabId) !== t || t.info.jsonlPath !== p) return false
+      if (lines === null || cur.offset === t.readOffset) break
+      t.readOffset = cur.offset
+      t.tailBuf = cur.tail
+      if (lines.length) sawLines = true
+      for (const line of lines) {
+        if (!line) continue
+        const activity = this.ingestLine(t, line)
+        if (activity === 'user') {
+          sawUserPrompt = true
+          sawInterrupt = false
+        } else if (activity === 'assistant') sawAssistant = true
+        else if (activity === 'interrupt') sawInterrupt = true
+      }
     }
+    if (!sawLines) return false
     if (t.rootPinAwaitingCatchup) this.setTreeRoot(t, t.info.cwd)
     this.followWorktreeState(t)
     if (sawInterrupt) await this.interruptTurn(t)
@@ -1440,22 +1445,26 @@ export class SessionTracker extends SessionRuntime {
     sst.activeMs = Date.now()
     if (sst.teammate === undefined) sst.teammate = readTeammateFlag(file)
     if (sst.teammate) t.teammateActiveMs = sst.activeMs
-    const lines = await readAppendedLines(file, st.size, sst)
-    if (!lines) return false
     let folded = false
-    for (const line of lines) {
-      if (!line) continue
-      let obj: any
-      try {
-        obj = JSON.parse(line)
-      } catch {
-        continue
-      }
-      const ts = Math.min(Date.parse(obj?.timestamp), Date.now())
-      if (isFinite(ts) && ts > t.lastBgActivityTs) t.lastBgActivityTs = ts
-      if (obj && obj.type === 'assistant' && obj.message && obj.message.usage) {
-        this.accumulateUsage(t, obj, false)
-        folded = true
+    while (sst.offset < st.size) {
+      const from = sst.offset
+      const lines = await readAppendedLines(file, st.size, sst)
+      if (this.tracked.get(t.info.tabId) !== t || t.subagentFiles.get(file) !== sst) return false
+      if (lines === null || sst.offset === from) break
+      for (const line of lines) {
+        if (!line) continue
+        let obj: any
+        try {
+          obj = JSON.parse(line)
+        } catch {
+          continue
+        }
+        const ts = Math.min(Date.parse(obj?.timestamp), Date.now())
+        if (isFinite(ts) && ts > t.lastBgActivityTs) t.lastBgActivityTs = ts
+        if (obj && obj.type === 'assistant' && obj.message && obj.message.usage) {
+          this.accumulateUsage(t, obj, false)
+          folded = true
+        }
       }
     }
     return folded
