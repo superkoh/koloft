@@ -256,9 +256,10 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
       await waitBooted(page)
       const dlg = await openWorktreeSession(page, 'ws-a')
       await pickWithKeys(page, dlg, 330)
-      await expect(dlg.locator('.modal-foot button[data-default="false"]')).toHaveText(
-        'Create from #330 · Codex⇧⏎'
+      await expect(dlg.locator('.modal-foot button[data-default="true"]')).toHaveText(
+        'Create from #330 · Claude⏎'
       )
+      await expect(dlg.getByRole('button', { name: 'Pick an agent' })).toBeVisible()
       await page.keyboard.press('Shift+Enter')
       await expect(dlg).toHaveCount(0)
 
