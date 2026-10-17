@@ -226,22 +226,16 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(Object.values(capabilitiesFor('claude', 'local')).every((c) => c === true)).toBe(true)
   })
 
-  it('gives a remote Claude session a Workbench, scheduled tasks and the koloft command but keeps agent open and browser control off', () => {
+  it('gives a remote Claude session a Workbench, scheduled tasks and the koloft command but keeps browser control off', () => {
     const remote = capabilitiesFor('claude', 'ssh')
     expect(remote.workbench).toBe(true)
     expect(remote.scheduledTasks).toBe(true)
     expect(remote.agentTools).toBe(true)
-    expect(remote.agentOpen).not.toBe(true)
     expect(remote.browserControl).not.toBe(true)
   })
 
-  it('gives a Codex session on this Mac a Workbench, accounts, scheduled tasks, the koloft command and browser control, and marks the three-line status line unsupported, citing the ledger section that shows why', () => {
-    expect(capabilitiesFor('codex', 'local').workbench).toBe(true)
-    expect(capabilitiesFor('codex', 'local').scheduledTasks).toBe(true)
-    expect(capabilitiesFor('codex', 'local').accounts).toBe(true)
-    expect(capabilitiesFor('codex', 'local').agentTools).toBe(true)
-    expect(capabilitiesFor('codex', 'local').browserControl).toBe(true)
-    expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
+  it('gives a Codex session on this Mac a Workbench, scheduled tasks, the koloft command and browser control', () => {
+    expect(capabilitiesFor('codex', 'local')).toEqual(capabilitiesFor('claude', 'local'))
   })
 
   it('supports every pair but Codex on a remote machine', () => {
@@ -252,11 +246,8 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     })
   })
 
-  it('gives a remote Muse tab what a remote Claude tab has, less the three-line statusline Muse cannot draw', () => {
-    expect(capabilitiesFor('muse', 'ssh')).toEqual({
-      ...capabilitiesFor('claude', 'ssh'),
-      statusline3: { unsupported: 'MUSE§3' }
-    })
+  it('gives a remote Muse tab what a remote Claude tab has', () => {
+    expect(capabilitiesFor('muse', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
   })
 })
 
