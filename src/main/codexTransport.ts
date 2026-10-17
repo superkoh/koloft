@@ -19,18 +19,32 @@ export interface CodexProcessOptions {
   env?: NodeJS.ProcessEnv
   sessionEnv?: Record<string, string>
   configOverrides?: readonly string[]
+  args?: string[]
   timeoutMs?: number
   maxFrameBytes?: number
 }
 
+export interface CodexUpstream {
+  readonly ready: Promise<void>
+  readonly limit: number
+  write(raw: string): void
+  stop(): Promise<void>
+}
+
+export type CodexUpstreamFactory = (
+  frame: (raw: string, parsed: CodexFrame) => void,
+  failure: (error: Error) => void
+) => CodexUpstream
+
 export interface CodexTransportOptions extends CodexProcessOptions {
+  upstream?: CodexUpstreamFactory
   onFrame(direction: 'client' | 'server', frame: CodexFrame): void
   onDisconnect?(): void
   onError?(error: Error): void
 }
 
 const DEFAULT_TIMEOUT = 15_000
-const DEFAULT_MAX_FRAME = 32 * 1024 * 1024
+export const DEFAULT_MAX_FRAME = 32 * 1024 * 1024
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -60,7 +74,7 @@ export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessE
   return env
 }
 
-function parseFrame(text: string, limit: number): CodexFrame {
+export function parseFrame(text: string, limit: number): CodexFrame {
   if (Buffer.byteLength(text) > limit) throw new Error('Codex frame exceeds the size limit')
   const frame: unknown = JSON.parse(text)
   if (!frame || typeof frame !== 'object' || Array.isArray(frame)) {
@@ -109,7 +123,7 @@ function signal(pid: number, value: NodeJS.Signals): void {
   }
 }
 
-class CodexProcess {
+class CodexProcess implements CodexUpstream {
   readonly child: ChildProcessWithoutNullStreams
   readonly ready: Promise<void>
   private decoder = new StringDecoder('utf8')
@@ -127,7 +141,7 @@ class CodexProcess {
     private failure: (error: Error) => void
   ) {
     const configArgs = (options.configOverrides ?? []).flatMap((value) => ['-c', value])
-    this.child = spawn(options.binary, ['app-server', '--stdio', ...configArgs], {
+    this.child = spawn(options.binary, options.args ?? ['app-server', '--stdio', ...configArgs], {
       cwd: options.cwd,
       env: { ...codexEnvironment(options.env), ...options.sessionEnv },
       detached: true,
@@ -266,7 +280,12 @@ class CodexProcess {
   }
 }
 
-function asError(error: unknown): Error {
+export const KOLOFT_INITIALIZE = {
+  clientInfo: { name: 'koloft', title: 'Koloft', version: '1' },
+  capabilities: { experimentalApi: true }
+}
+
+export function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
 }
 
@@ -380,34 +399,32 @@ export async function createCodexTransport(
     report(error)
     void stop().catch(report)
   }
-  const upstream = new CodexProcess(
-    options,
-    (raw, frame) => {
-      observe('server', frame)
-      // CODEX§1
-      if (
-        frame.method === undefined &&
-        typeof frame.id === 'string' &&
-        frame.id.startsWith(OWN_REQUEST_ID_PREFIX)
-      ) {
-        settleRequest(own, frame.id, frame)
-        return
-      }
-      if (client?.readyState === WebSocket.OPEN) {
-        if (client.bufferedAmount > upstream.limit * 2)
-          throw new Error('Codex output queue exceeds the size limit')
-        client.send(raw, (error) => {
-          if (error) fail(error)
-        })
-      } else if (!accepted) {
-        pendingBytes += Buffer.byteLength(raw)
-        if (pendingBytes > upstream.limit * 2)
-          throw new Error('Codex output queue exceeds the size limit')
-        pending.push(raw)
-      }
-    },
-    fail
-  )
+  const upstreamOf: CodexUpstreamFactory =
+    options.upstream ?? ((frame, failure) => new CodexProcess(options, frame, failure))
+  const upstream = upstreamOf((raw, frame) => {
+    observe('server', frame)
+    // CODEX§1
+    if (
+      frame.method === undefined &&
+      typeof frame.id === 'string' &&
+      frame.id.startsWith(OWN_REQUEST_ID_PREFIX)
+    ) {
+      settleRequest(own, frame.id, frame)
+      return
+    }
+    if (client?.readyState === WebSocket.OPEN) {
+      if (client.bufferedAmount > upstream.limit * 2)
+        throw new Error('Codex output queue exceeds the size limit')
+      client.send(raw, (error) => {
+        if (error) fail(error)
+      })
+    } else if (!accepted) {
+      pendingBytes += Buffer.byteLength(raw)
+      if (pendingBytes > upstream.limit * 2)
+        throw new Error('Codex output queue exceeds the size limit')
+      pending.push(raw)
+    }
+  }, fail)
   server.on('error', fail)
   wss.on('error', fail)
   server.on('upgrade', (req, socket, head) => {
@@ -532,10 +549,7 @@ export class CodexRpc {
 
   private async handshake(): Promise<void> {
     await this.process.ready
-    await this.send('initialize', {
-      clientInfo: { name: 'koloft', title: 'Koloft', version: '1' },
-      capabilities: { experimentalApi: true }
-    })
+    await this.send('initialize', KOLOFT_INITIALIZE)
     this.process.write(JSON.stringify({ method: 'initialized' }))
   }
 

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/codexTransport'
+import type { MachineLogin } from '../../src/main/remote/codexMachine'
 import {
   CODEX_ASKS_AND_WAITS,
   CODEX_GATE_HOOK_COMMAND,
@@ -1187,6 +1188,29 @@ describe('CodexSessions', () => {
     expect(sessions.hasProcesses()).toBe(false)
   })
 
+  // CODEX§15
+  it("a remote tab's sign-in renewal asks an app-server that reads the account's sign-in afresh, not the one kept for its side questions", async () => {
+    const home = path.join(directory, 'work-home')
+    fs.mkdirSync(home)
+    const signIn = (token: string) =>
+      fs.writeFileSync(
+        path.join(home, 'auth.json'),
+        JSON.stringify({ tokens: { access_token: token, account_id: 'acct' } })
+      )
+    signIn('old')
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'account/read' && params.refreshToken) signIn('new')
+      return { account: {} }
+    })
+    await sessions.readAccount(home)
+    const login = (
+      sessions as unknown as { machineLogin(home: string): MachineLogin }
+    ).machineLogin(home)
+    await expect(login.refreshed('old')).resolves.toMatchObject({ accessToken: 'new' })
+    expect(mocks.rpcHomes).toEqual([home, home])
+    expect(mocks.close).toHaveBeenCalledOnce()
+  })
+
   it('cancels launches waiting on availability when shutdown starts and performs no refresh', async () => {
     const gate = deferred<{ id: 'codex'; available: boolean }>()
     vi.mocked(sessions.availability).mockReturnValueOnce(gate.promise)
@@ -1293,10 +1317,12 @@ describe('CodexSessions', () => {
     gate.resolve()
   })
 
-  it('rejects a Claude or remote identity at the Codex resume boundary', async () => {
-    await expect(sessions.resume({ sessionId: A, cwd: repo })).rejects.toThrow('local Codex')
-    await expect(sessions.resume({ sessionId: `codex:ssh:${A}`, cwd: repo })).rejects.toThrow(
-      'local Codex'
+  it('rejects a Claude or a Muse identity at the Codex resume boundary', async () => {
+    await expect(sessions.resume({ sessionId: A, cwd: repo })).rejects.toThrow(
+      'A Codex session is required'
+    )
+    await expect(sessions.resume({ sessionId: `muse:local:${A}`, cwd: repo })).rejects.toThrow(
+      'A Codex session is required'
     )
     expect(mocks.create).not.toHaveBeenCalled()
   })

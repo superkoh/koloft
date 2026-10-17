@@ -47,11 +47,7 @@ export function remoteShCommand(script: string, args: string[] = []): string {
   return `sh -c 'eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`
 }
 
-// PLATFORM§37 PLATFORM§44
-export const ENSURE_SH = `#!/bin/sh
-${REMOTE_ENV_LINES}
-NODE_VERSION=${NODE_VERSION}
-say() { printf '[Koloft] %s\\n' "$*"; }
+const INSTALL_PKG = `say() { printf '[Koloft] %s\\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 ${FETCH_FN}
 
@@ -93,35 +89,13 @@ install_pkg() {
   say "$1 is missing and installing it needs your password. Run this on the machine, then start the session again:"
   printf '  sudo %s\\n' "$cmd"
   return 1
-}
+}`
 
-have bash || install_pkg bash || exit 4
-
-${ENSURE_CLAUDE_MINIMUM_FN}
-${ENSURE_MUSE_MINIMUM_FN}
-python_has_pty() { python3 -c 'import pty, termios' >/dev/null 2>&1; }
-if [ "$1" = muse ]; then
-  python_has_pty || install_pkg python3
-  python_has_pty || { say "Muse sessions need python3 on this machine, and python3 here does not run. Install python3, then start the session again."; exit 4; }
-  if ! have muse; then
-    say "installing muse (official installer, about 330 MB, once)"
-    if have curl; then curl -fsSL ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
-    elif have wget; then wget -qO- ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
-    else say "need curl or wget to install muse"; exit 4; fi
-    have muse || { say "muse did not install; see the output above"; exit 4; }
-  fi
-  ensure_muse_minimum muse || exit 4
-else
-  if ! have claude; then
-    say "installing claude (official installer)"
-    if have curl; then curl -fsSL https://claude.ai/install.sh | bash
-    elif have wget; then wget -qO- https://claude.ai/install.sh | bash
-    else say "need curl or wget to install claude"; exit 4; fi
-    have claude || { say "claude did not install; see the output above"; exit 4; }
-  fi
-  ensure_claude_minimum claude || exit 4
-fi
-
+const installNode = (
+  forWhat: string,
+  without: string,
+  only = ''
+): string => `NODE_VERSION=${NODE_VERSION}
 node_ok() {
   have node || return 1
   v="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
@@ -156,10 +130,10 @@ install_node() {
 }
 node_runs() { "$HOME/.koloft/node/bin/node" -v >/dev/null 2>&1; }
 no_build_runs="$HOME/.koloft/node-$NODE_VERSION.no-build-runs"
-if [ "$1" != muse ] && ! node_ok && [ ! -f "$no_build_runs" ]; then
-  say "installing node $NODE_VERSION for the statusline (about 30 MB, once)"
+if ${only}! node_ok && [ ! -f "$no_build_runs" ]; then
+  say "installing node $NODE_VERSION for ${forWhat} (about 30 MB, once)"
   if ! node_platform || ! install_node "https://nodejs.org/dist/v$NODE_VERSION" "node-v$NODE_VERSION-$os-$arch"; then
-    rm -rf "$HOME/.koloft/node.tmp.$$"; say "node could not be installed: this machine gets no statusline"
+    rm -rf "$HOME/.koloft/node.tmp.$$"; say "node could not be installed: ${without}"
   elif node_runs; then
     :
   elif [ "$os-$arch" = linux-x64 ] \\
@@ -169,9 +143,43 @@ if [ "$1" != muse ] && ! node_ok && [ ! -f "$no_build_runs" ]; then
     :
   else
     rm -rf "$HOME/.koloft/node" "$HOME/.koloft/node.tmp.$$"; : > "$no_build_runs"
-    say "node $NODE_VERSION does not run on this machine (its C library is too old): this machine gets no statusline"
+    say "node $NODE_VERSION does not run on this machine (its C library is too old): ${without}"
   fi
+fi`
+
+// PLATFORM§37 PLATFORM§44
+export const ENSURE_SH = `#!/bin/sh
+${REMOTE_ENV_LINES}
+${INSTALL_PKG}
+
+have bash || install_pkg bash || exit 4
+
+${ENSURE_CLAUDE_MINIMUM_FN}
+${ENSURE_MUSE_MINIMUM_FN}
+python_has_pty() { python3 -c 'import pty, termios' >/dev/null 2>&1; }
+if [ "$1" = muse ]; then
+  python_has_pty || install_pkg python3
+  python_has_pty || { say "Muse sessions need python3 on this machine, and python3 here does not run. Install python3, then start the session again."; exit 4; }
+  if ! have muse; then
+    say "installing muse (official installer, about 330 MB, once)"
+    if have curl; then curl -fsSL ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
+    elif have wget; then wget -qO- ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
+    else say "need curl or wget to install muse"; exit 4; fi
+    have muse || { say "muse did not install; see the output above"; exit 4; }
+  fi
+  ensure_muse_minimum muse || exit 4
+else
+  if ! have claude; then
+    say "installing claude (official installer)"
+    if have curl; then curl -fsSL https://claude.ai/install.sh | bash
+    elif have wget; then wget -qO- https://claude.ai/install.sh | bash
+    else say "need curl or wget to install claude"; exit 4; fi
+    have claude || { say "claude did not install; see the output above"; exit 4; }
+  fi
+  ensure_claude_minimum claude || exit 4
 fi
+
+${installNode('the statusline', 'this machine gets no statusline', '[ "$1" != muse ] && ')}
 
 GH_VERSION=${VENDOR_RELEASE.gh.version}
 gh_platform() {
@@ -196,6 +204,46 @@ fi
 
 have tmux || install_pkg tmux || exit 4
 have rsync || install_pkg rsync || exit 4
+exit 0
+`
+
+const CODEX_CLI_DIR = '$HOME/.koloft/codex-cli'
+
+export const CODEX_FIRST_ON_PATH = `PATH="${CODEX_CLI_DIR}/bin:$PATH"; export PATH`
+
+const CA_BUNDLES = [
+  '/etc/ssl/certs/ca-certificates.crt',
+  '/etc/pki/tls/certs/ca-bundle.crt',
+  '/etc/ssl/cert.pem',
+  '/etc/ssl/ca-bundle.pem'
+]
+
+// CODEX§16
+export const ENSURE_CODEX_SH = `#!/bin/sh
+${REMOTE_ENV_LINES}
+${CODEX_FIRST_ON_PATH}
+want="$1"
+${INSTALL_PKG}
+have bash || install_pkg bash || exit 4
+ca_ok() {
+  for f in ${CA_BUNDLES.join(' ')}; do [ -s "$f" ] && return 0; done
+  return 1
+}
+if ! ca_ok; then
+  install_pkg ca-certificates && ca_ok || {
+    say "this machine has no CA certificates (the ca-certificates package), so Codex cannot reach OpenAI from here — it would only say \\"workspace routing discovery failed\\". Install ca-certificates there, then start the session again."
+    exit 4
+  }
+fi
+if ! have bwrap && [ "$(uname -s)" = Linux ] && { [ "$(id -u)" = 0 ] || sudo -n true >/dev/null 2>&1; }; then
+  install_pkg bubblewrap || :
+fi
+[ "$(codex --version 2>/dev/null)" = "codex-cli $want" ] && exit 0
+${installNode('Codex', 'Codex cannot be installed on this machine')}
+have npm || { say "Codex is installed with npm, and this machine has none: install Node.js 20 or newer there, then start the session again"; exit 4; }
+say "installing Codex $want on this machine (once per Codex version)"
+npm install -g --prefix "${CODEX_CLI_DIR}" "@openai/codex@$want" </dev/null || { say "Codex $want did not install; see the output above"; exit 4; }
+[ "$(codex --version 2>/dev/null)" = "codex-cli $want" ] || { say "Codex $want did not install; see the output above"; exit 4; }
 exit 0
 `
 
