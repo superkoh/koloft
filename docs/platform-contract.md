@@ -1242,6 +1242,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   pull), and even with it an unchanged file may be touched again, so a watcher can see
   it again.
 - **Mirrored files keep the source machine's mtime**, not the time they arrived.
+- **`--append` breaks a rewritten file, so it cannot go on the transcripts pull**, which
+  also carries the `.title` files: a title rewritten shorter ("Hello world title" →
+  "Hi") was never pulled, and one rewritten longer ("Hi" → "Jo, a longer title") arrived
+  as "Hi, a longer title" — the old head kept, only the new tail sent. On a 20 MB
+  append-only file it did skip the full re-read (`Matched data` 0 instead of ~27 MB a
+  pull). rsync's flags hold for a whole run, so `--append` for the transcripts alone, or
+  `-I` for the hook folder alone, each need a run of their own. (2026-10-17: this Mac's
+  openrsync, protocol 29, pulling from rsync 3.2.7 in the e2e sshd image through
+  `docker exec -i`, not ssh.)
 - **Filter rules anchored with a leading `/`, and `**`, work the same on both ends.**
   `--include=/<slug>*/`, `/<slug>*/*.jsonl`, `/<slug>*/*.title`, `/<slug>*/*/`,
   `/<slug>*/*/**` then `--exclude=*` pulled exactly the workspace's transcripts, their
@@ -1318,7 +1327,11 @@ command by hand:
 - **`stat` has two dialects.** GNU: `stat -c '%.9Y %s'` prints the last-modified time with
   nanoseconds and the size (`1748674639.260000000 16`). BSD (macOS): the same flags
   fail; `stat -f '%Fm %z'` prints the same shape (`1788431650.000000000 213`). Trying
-  GNU first and falling back to BSD works on both.
+  GNU first and falling back to BSD works on both. With a file name in front
+  (`stat -c %n:%.9Y:%s`, `stat -f %N:%Fm:%z`) and `find … -type f -exec … {} +` piped
+  into `cksum`, the stamp of a whole folder changed on an append, on a same-size rewrite
+  0.25 s apart and on a new file (2026-10-17: dash and GNU stat in the e2e sshd image,
+  and this Mac's BSD tools).
 - **`readlink -f` resolves a path on both** (GNU coreutils 9.4, and macOS 27).
 - **ripgrep (`rg`) was not installed on the Ubuntu box**, and neither was
   `inotifywait`; `git grep` is there with git. So content search needs the `git grep`
