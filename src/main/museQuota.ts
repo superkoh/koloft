@@ -2,6 +2,7 @@ import * as pty from 'node-pty'
 import { Terminal } from '@xterm/headless'
 import type { CodexLimits, CodexLimitWindow } from '@shared/types'
 import { museShowsItsInputBox } from './museSessions'
+import { typeKeys } from './typeKeys'
 
 // MUSE§13
 const QUOTA_ARGS = ['--no-session-log', '--trust-workspace']
@@ -14,8 +15,6 @@ const QUOTA_READ_DEADLINE_MS = 20_000
 const SCREEN_POLL_MS = 200
 // MUSE§13
 const RETYPE_AFTER_MS = 1500
-// MUSE§11
-const ENTER_AFTER_TYPING_MS = 300
 const DAY_MS = 24 * 60 * 60_000
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -67,13 +66,13 @@ export function readMuseQuota(
   cwd: string
 ): Promise<CodexLimits | undefined> {
   return new Promise((resolve) => {
-    const term = new Terminal({ cols: COLS, rows: ROWS, allowProposedApi: true })
+    const term = new Terminal({ cols: COLS, rows: ROWS })
     const proc = pty.spawn(binary, QUOTA_ARGS, {
       name: 'xterm-256color',
       cols: COLS,
       rows: ROWS,
       cwd,
-      env: { ...env, TERM: 'xterm-256color' }
+      env
     })
     let typedAt = 0
     let settled = false
@@ -95,8 +94,7 @@ export function readMuseQuota(
       if (limits) return finish(limits)
       if (Date.now() - typedAt > RETYPE_AFTER_MS && museShowsItsInputBox(lines)) {
         typedAt = Date.now()
-        proc.write('/usage')
-        setTimeout(() => !settled && proc.write('\r'), ENTER_AFTER_TYPING_MS)
+        void typeKeys((keys) => !settled && proc.write(keys), ['/usage', '\r'])
       }
     }, SCREEN_POLL_MS)
     const deadline = setTimeout(() => finish(undefined), QUOTA_READ_DEADLINE_MS)

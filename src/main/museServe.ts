@@ -210,7 +210,7 @@ export function readMuseAsk(options: ServeOptions, sessionId: string): Promise<M
   )
 }
 
-export type MuseSignIn = 'subscription' | 'apiKey' | 'none'
+type MuseSignIn = 'subscription' | 'apiKey' | 'none'
 
 // MUSE§13
 const SIGN_IN_OF_STATE: Record<string, MuseSignIn> = {

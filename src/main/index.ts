@@ -300,7 +300,7 @@ import {
   type GitPlatform,
   type GitTokenAdd
 } from '@shared/types'
-import { ACCOUNT_KINDS_OF } from '@shared/accountUsage'
+import { ACCOUNT_KINDS_OF, AUTO_PROBE_MS } from '@shared/accountUsage'
 import {
   answerPermissionRequest,
   awaitGuestFor,
@@ -1693,12 +1693,8 @@ async function addAccount(
 }
 
 const codexPicker = new HomeAccountPicker('codex-home')
-const HOME_ACCOUNT_LIMITS_STALE_MS = 5 * 60_000
 const MUSE_QUOTA_FOLDER = 'muse-quota'
-
-function limitsStale(a: AccountView): boolean {
-  return !a.limits || Date.now() - a.limits.at > HOME_ACCOUNT_LIMITS_STALE_MS
-}
+const museProbedAt = new Map<string, number>()
 
 function codexSharedConfig(): string {
   return codexConfigFile(codexSessions?.defaultEnv)
@@ -1711,8 +1707,8 @@ function pickCodexHome(
   const views = accountViews()
   const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
   if (!picked) return undefined
-  if (views.some((a) => a.kind === 'codex-home' && a.enabled && limitsStale(a)))
-    void probeCodexAccounts()
+  const stale = (a: AccountView): boolean => !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
+  if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
   return { account: picked.name, home, notice: codexAllLimitedNotice(picked) }
@@ -1832,8 +1828,9 @@ function pickMuseHome(
 ): { account: string; env: Record<string, string> } | undefined {
   const views = accountViews()
   const picked = musePicker.pick(views, sessionAccounts?.of('muse', resumeSessionId))
-  if (views.some((a) => a.kind === 'muse-home' && a.enabled && limitsStale(a)))
-    void probeMuseAccounts()
+  const stale = (a: AccountView): boolean =>
+    Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
+  if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
   return picked && { account: picked.name, env: museAccountEnv(museHomeFor(picked.name)) }
 }
 
@@ -1851,6 +1848,7 @@ async function probeMuseAccount(name: string): Promise<void> {
   const serve = acct && (await museServeFor(name))
   if (!acct || !serve) return
   const key = viewKey(name, 'muse-home')
+  museProbedAt.set(name, Date.now())
   try {
     const signIn = await museSignIn(serve)
     const status = signIn !== 'none' ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status

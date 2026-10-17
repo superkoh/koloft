@@ -30,7 +30,7 @@ describe('reading a Muse account’s quota from its /usage box', () => {
     })
   })
 
-  it('moves a reset time already past today to tomorrow, and a December reset seen in January to its own year', () => {
+  it('moves a reset time already past today to tomorrow, and a January reset seen in December to the next year', () => {
     const lateNight = new Date(2026, 9, 17, 23, 30)
     expect(museQuotaFrom(BOX, lateNight)!.windows[0].resetsAt).toBe(at('2026-10-18T04:11:00'))
     const box = [BOX[0], '│    Weekly         3% used · Resets Jan 2 at 9:00 AM │']

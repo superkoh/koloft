@@ -752,6 +752,12 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 
 ## §21 xterm.js
 
+- **`@xterm/headless` names an entry file it does not ship.** In 6.1.0-beta.302 its
+  `package.json` gives `"module": "lib/xterm.mjs"`, but the package holds only
+  `lib-headless/xterm-headless.js` and `.mjs`; Vite (electron-vite and vitest) picks
+  `module` and fails with "Failed to resolve entry for package" (seen 2026-10-17 on
+  `npm run build`).
+
 - **Write buffer**: xterm takes in about 5–35 MB/s and silently throws away written
   data past a hard cap of about 50 MB (`DISCARD_WATERMARK = 50000000` in
   `src/common/input/WriteBuffer.ts`, read 2026-09-24 in 6.1.0-beta.302). Its

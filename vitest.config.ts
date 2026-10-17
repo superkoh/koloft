@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared': resolve(__dirname, 'src/shared'),
+      // PLATFORM§21
       '@xterm/headless': resolve(
         __dirname,
         'node_modules/@xterm/headless/lib-headless/xterm-headless.mjs'

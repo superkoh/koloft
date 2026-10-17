@@ -37,6 +37,7 @@ import {
   Meter,
   ageLabel,
   codexBalanceLabel,
+  noLimitsLabel,
   probeErrorLabel,
   resetIn,
   resetLabel
@@ -230,7 +231,9 @@ export function TopbarUsage(): JSX.Element | null {
           >
             <div className="tbu-pop-head">
               <span>Account usage</span>
-              <span className="age">{headAge(oldestAt([...enabled, ...codex, ...muse]), now)}</span>
+              <span className="age">
+                {headAge(oldestAt(accounts.filter((a) => a.enabled)), now)}
+              </span>
             </div>
             <div className="tbu-rows">
               {claude && (
@@ -629,9 +632,7 @@ function RowHead({
 function NotProbedNote({ a }: { a: AccountView }): JSX.Element {
   return (
     <div className="tbu-row-note">
-      <span className="acct-note">
-        {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
-      </span>
+      <span className="acct-note">{noLimitsLabel(a)}</span>
     </div>
   )
 }

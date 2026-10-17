@@ -13,6 +13,7 @@ export default defineConfig({
     resolve: {
       alias: {
         ...alias,
+        // PLATFORM§21
         '@xterm/headless': resolve(
           __dirname,
           'node_modules/@xterm/headless/lib-headless/xterm-headless.mjs'
