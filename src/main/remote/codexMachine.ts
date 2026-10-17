@@ -408,8 +408,9 @@ export class MachineCodexUpstream implements CodexUpstream {
       typeof frame.id === 'string' &&
       frame.id.startsWith(OWN_ID_PREFIX)
     ) {
-      this.own.get(frame.id)?.(frame)
+      const answer = this.own.get(frame.id)
       this.own.delete(frame.id)
+      if (typeof answer === 'function') answer(frame)
       return
     }
     // CODEX§16
