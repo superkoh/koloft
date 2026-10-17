@@ -24,6 +24,12 @@ import type { MachineTmp } from './remote/install'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 import { withoutHandover } from './handover'
 import { messageText } from './messageText'
+import {
+  parseRecord,
+  type TextBlock,
+  type ToolUseResult,
+  type TranscriptRecord
+} from './transcriptRecord'
 
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -128,31 +134,26 @@ const TERMINAL_TASK_STATUSES = new Set([
 ])
 
 // CC§8
-function isBackgroundSpawnAck(tur: unknown): boolean {
+function isBackgroundSpawnAck(tur: ToolUseResult | undefined): tur is ToolUseResult {
   if (!tur || typeof tur !== 'object') return false
-  const r = tur as Record<string, unknown>
-  if (typeof r.status === 'string' && BG_SPAWN_STATUSES.has(r.status)) return true
-  if (r.status === 'forked' && r.background === true) return true
-  if (typeof r.backgroundTaskId === 'string' && r.backgroundTaskId) return true
-  return typeof r.taskId === 'string' && r.taskId !== '' && typeof r.timeoutMs === 'number'
+  if (typeof tur.status === 'string' && BG_SPAWN_STATUSES.has(tur.status)) return true
+  if (tur.status === 'forked' && tur.background === true) return true
+  if (typeof tur.backgroundTaskId === 'string' && tur.backgroundTaskId) return true
+  return typeof tur.taskId === 'string' && tur.taskId !== '' && typeof tur.timeoutMs === 'number'
 }
 
 // CC§8
-function taskNotificationText(obj: any): string | null {
-  if (obj?.type === 'attachment') {
+function taskNotificationText(obj: TranscriptRecord): string | null {
+  if (obj.type === 'attachment') {
     const a = obj.attachment
     return a?.commandMode === 'task-notification' && typeof a.prompt === 'string' ? a.prompt : null
   }
-  if (obj?.type === 'queue-operation') {
+  if (obj.type === 'queue-operation') {
     const c = obj.content
     return typeof c === 'string' && c.startsWith('<task-notification>') ? c : null
   }
-  if (obj?.origin?.kind === 'task-notification') {
-    const c = obj.message?.content
-    if (typeof c === 'string') return c
-    if (Array.isArray(c))
-      return c.map((b: any) => (typeof b?.text === 'string' ? b.text : '')).join('\n')
-    return ''
+  if (obj.origin?.kind === 'task-notification') {
+    return messageText(obj.message?.content) ?? ''
   }
   return null
 }
@@ -354,9 +355,9 @@ export function whoTyped(record: { origin?: unknown }, text: string): 'owner' | 
 type TurnPiece = { line: SaidLine; midTurn: boolean } | 'tool'
 
 // CC§2 CC§13
-function claudeTurnPieces(obj: any): TurnPiece[] {
+function claudeTurnPieces(obj: TranscriptRecord | null): TurnPiece[] {
   if (!obj || obj.isSidechain === true) return []
-  const ts = Date.parse(obj.timestamp)
+  const ts = Date.parse(obj.timestamp ?? '')
   const at = isFinite(ts) ? ts : Date.now()
   if (obj.type === 'user') {
     const raw = messageText(obj.message?.content)
@@ -382,8 +383,9 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
     const text = who === 'peer' ? peerText(a.prompt) : a.prompt.trim()
     return [{ line: { who, text, at }, midTurn: true }]
   }
-  if (obj.type !== 'assistant' || !Array.isArray(obj.message?.content)) return []
-  return obj.message.content.flatMap((b: any): TurnPiece[] => {
+  const content = obj.message?.content
+  if (obj.type !== 'assistant' || !Array.isArray(content)) return []
+  return content.flatMap((b): TurnPiece[] => {
     if (b?.type === 'tool_use') return ['tool']
     if (b?.type !== 'text' || typeof b.text !== 'string' || !b.text.trim()) return []
     return [{ line: { who: 'assistant', text: b.text.trim(), at }, midTurn: true }]
@@ -397,13 +399,7 @@ export function lastTurnsOfLines(
   const log = new TurnLog()
   let started = 0
   for (const line of lines) {
-    let obj: unknown
-    try {
-      obj = JSON.parse(line)
-    } catch {
-      continue
-    }
-    for (const piece of claudeTurnPieces(obj)) {
+    for (const piece of claudeTurnPieces(parseRecord(line))) {
       if (piece === 'tool') continue
       const before = log.open()
       log.add(piece.line, piece.midTurn)
@@ -1452,16 +1448,11 @@ export class SessionTracker extends SessionRuntime {
       if (this.tracked.get(t.info.tabId) !== t || t.subagentFiles.get(file) !== sst) return false
       if (lines === null || sst.offset === from) break
       for (const line of lines) {
-        if (!line) continue
-        let obj: any
-        try {
-          obj = JSON.parse(line)
-        } catch {
-          continue
-        }
-        const ts = Math.min(Date.parse(obj?.timestamp), Date.now())
+        const obj = parseRecord(line)
+        if (!obj) continue
+        const ts = Math.min(Date.parse(obj.timestamp ?? ''), Date.now())
         if (isFinite(ts) && ts > t.lastBgActivityTs) t.lastBgActivityTs = ts
-        if (obj && obj.type === 'assistant' && obj.message && obj.message.usage) {
+        if (obj.type === 'assistant' && obj.message?.usage) {
           this.accumulateUsage(t, obj, false)
           folded = true
         }
@@ -1490,31 +1481,34 @@ export class SessionTracker extends SessionRuntime {
     }
   }
 
-  private ingestSpawnAck(t: Tracked, obj: any): void {
+  private ingestSpawnAck(t: Tracked, obj: TranscriptRecord): void {
     const tur = obj.toolUseResult
-    if (!isBackgroundSpawnAck(tur) || !Array.isArray(obj.message?.content)) return
-    const ts = Date.parse(obj.timestamp)
+    const content = obj.message?.content
+    if (!isBackgroundSpawnAck(tur) || !Array.isArray(content)) return
+    const ts = Date.parse(obj.timestamp ?? '')
     const live = t.caughtUp || (isFinite(ts) && ts >= t.bindMs && ts <= Date.now())
     if (!live) return
     const toolUseIds: string[] = []
-    for (const b of obj.message.content) {
+    for (const b of content) {
       if (b?.type === 'tool_result' && typeof b.tool_use_id === 'string') {
         t.bgTasks.add(b.tool_use_id)
         toolUseIds.push(b.tool_use_id)
       }
     }
-    const r = tur as Record<string, unknown>
     let task: ReportedTask | null = null
-    if (typeof r.backgroundTaskId === 'string') task = { id: r.backgroundTaskId, type: 'shell' }
-    else if (typeof r.taskId === 'string' && typeof r.timeoutMs === 'number') {
-      task = { id: r.taskId, type: 'shell' }
-      t.monitorIds.add(r.taskId)
-    } else if (r.status === 'teammate_spawned') {
+    if (typeof tur.backgroundTaskId === 'string') task = { id: tur.backgroundTaskId, type: 'shell' }
+    else if (typeof tur.taskId === 'string' && typeof tur.timeoutMs === 'number') {
+      task = { id: tur.taskId, type: 'shell' }
+      t.monitorIds.add(tur.taskId)
+    } else if (tur.status === 'teammate_spawned') {
       // CC§8
       if (toolUseIds[0]) task = { id: toolUseIds[0], type: 'teammate' }
       t.teammateActiveMs = Date.now()
-    } else if (typeof r.agentId === 'string') {
-      task = { id: r.agentId, type: r.status === 'remote_launched' ? 'cloud-session' : 'subagent' }
+    } else if (typeof tur.agentId === 'string') {
+      task = {
+        id: tur.agentId,
+        type: tur.status === 'remote_launched' ? 'cloud-session' : 'subagent'
+      }
     }
     if (task) {
       const cmd = toolUseIds.map((id) => t.toolLabels.get(id)).find((c) => c)
@@ -1529,10 +1523,12 @@ export class SessionTracker extends SessionRuntime {
   }
 
   // CC§14
-  private ingestToolDone(t: Tracked, obj: any): void {
-    if (!Array.isArray(obj.message?.content)) return
-    for (const b of obj.message.content) {
-      const call = b?.type === 'tool_result' ? t.openTools.get(b.tool_use_id) : undefined
+  private ingestToolDone(t: Tracked, obj: TranscriptRecord): void {
+    const content = obj.message?.content
+    if (!Array.isArray(content)) return
+    for (const b of content) {
+      if (b?.type !== 'tool_result') continue
+      const call = t.openTools.get(b.tool_use_id)
       if (!call) continue
       t.openTools.delete(b.tool_use_id)
       if (t.caughtUp) this.emit('tool-done', { tabId: t.info.tabId, ...call })
@@ -1540,7 +1536,7 @@ export class SessionTracker extends SessionRuntime {
   }
 
   // CC§8
-  private ingestTaskNotification(t: Tracked, obj: any): void {
+  private ingestTaskNotification(t: Tracked, obj: TranscriptRecord): void {
     const text = taskNotificationText(obj)
     if (text === null) return
     const st = text
@@ -1561,127 +1557,122 @@ export class SessionTracker extends SessionRuntime {
   }
 
   private ingestLine(t: Tracked, line: string): 'user' | 'assistant' | 'interrupt' | null {
-    let obj: any = null
-    try {
-      obj = JSON.parse(line)
-    } catch {
-      return null
-    }
+    const obj = parseRecord(line)
+    if (!obj) return null
     let activity: 'user' | 'assistant' | 'interrupt' | null = null
-    if (obj) {
-      if (typeof obj.cwd === 'string' && obj.cwd && obj.cwd !== t.info.cwd) {
-        t.info.cwd = obj.cwd
-        // ADR-0025
-        if (!t.remote && !fs.existsSync(t.info.treeRoot)) this.setTreeRoot(t, obj.cwd)
+    if (typeof obj.cwd === 'string' && obj.cwd && obj.cwd !== t.info.cwd) {
+      t.info.cwd = obj.cwd
+      // ADR-0025
+      if (!t.remote && !fs.existsSync(t.info.treeRoot)) this.setTreeRoot(t, obj.cwd)
+    }
+    if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') t.title = obj.aiTitle
+    // CC§9
+    if (obj.type === 'custom-title' && typeof obj.customTitle === 'string' && obj.customTitle)
+      t.customTitle = obj.customTitle
+    // CC§2
+    if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
+      t.relocatedCwd = obj.relocatedCwd
+    }
+    if (obj.type === 'worktree-state') {
+      const bound = obj.worktreeSession?.worktreePath
+      t.lastWorktreeStateInBatch = typeof bound === 'string' && bound ? bound : undefined
+    }
+    // CC§2
+    const recTs = Math.min(Date.parse(obj.timestamp ?? ''), Date.now())
+    const mainThread = obj.isSidechain !== true
+    if (isFinite(recTs)) {
+      if (!mainThread) {
+        if (recTs > t.lastBgActivityTs) t.lastBgActivityTs = recTs
+      } else if (recTs > t.lastMainActivityTs) {
+        t.lastMainActivityTs = recTs
       }
-      if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') t.title = obj.aiTitle
-      // CC§9
-      if (obj.type === 'custom-title' && typeof obj.customTitle === 'string' && obj.customTitle)
-        t.customTitle = obj.customTitle
-      // CC§2
-      if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
-        t.relocatedCwd = obj.relocatedCwd
+    }
+    for (const piece of claudeTurnPieces(obj)) {
+      if (piece === 'tool') t.replyDone = false
+      else {
+        t.turns.add(piece.line, piece.midTurn)
+        t.replyDone = piece.line.who === 'assistant'
       }
-      if (obj.type === 'worktree-state') {
-        const bound = obj.worktreeSession?.worktreePath
-        t.lastWorktreeStateInBatch = typeof bound === 'string' && bound ? bound : undefined
+    }
+    const ending = t.endingTurn?.turn
+    if (ending && (t.replyDone || ending !== t.turns.open())) this.finishTurn(t, ending)
+    if (obj.type === 'user') {
+      this.ingestSpawnAck(t, obj)
+      this.ingestToolDone(t, obj)
+    }
+    this.ingestTaskNotification(t, obj)
+    const output = t.caughtUp ? commandOutputOf(obj) : null
+    if (output) this.emit('command-output', { tabId: t.info.tabId, ...output })
+    if (obj.type === 'user' && !obj.isMeta && !compactionSummary(obj)) {
+      const c = obj.message?.content
+      let raw: string | null = null
+      let hasImage = false
+      if (typeof c === 'string') raw = c
+      else if (Array.isArray(c)) {
+        const text = c.find((x): x is TextBlock => x?.type === 'text')
+        if (text?.text) raw = text.text
+        hasImage = c.some((x) => x?.type === 'image')
       }
-      // CC§2
-      const recTs = Math.min(Date.parse(obj.timestamp), Date.now())
-      const mainThread = obj.isSidechain !== true
-      if (isFinite(recTs)) {
-        if (!mainThread) {
-          if (recTs > t.lastBgActivityTs) t.lastBgActivityTs = recTs
-        } else if (recTs > t.lastMainActivityTs) {
-          t.lastMainActivityTs = recTs
+      if (raw !== null && INTERRUPT_TEXTS.has(raw) && mainThread) {
+        if (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) {
+          const at = isFinite(recTs) ? recTs : Date.now()
+          if (at > t.lastInterruptTs) t.lastInterruptTs = at
+          return 'interrupt'
+        }
+        return null
+      }
+      const cls = raw !== null ? classifyUserPrompt(raw) : null
+      const named = raw !== null && whoTyped(obj, raw) ? cls : null
+      if (named?.title && !t.firstPrompt) t.firstPrompt = named.title
+      if (named?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = named.commandArgs
+      if (named?.commandName && !t.commandTitle) t.commandTitle = named.commandName
+      if ((cls?.genuine || hasImage) && mainThread && !commandEcho(obj, raw)) {
+        activity = 'user'
+        if (
+          (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) &&
+          this.isHeldByBackground(t.info.tabId)
+        ) {
+          this.applyStatus(t, 'working')
         }
       }
-      for (const piece of claudeTurnPieces(obj)) {
-        if (piece === 'tool') t.replyDone = false
-        else {
-          t.turns.add(piece.line, piece.midTurn)
-          t.replyDone = piece.line.who === 'assistant'
+    }
+    if (obj.type === 'assistant' && obj.message?.usage) {
+      this.accumulateUsage(t, obj, mainThread)
+    }
+    const content = obj.message?.content
+    if (obj.type === 'assistant' && Array.isArray(content)) {
+      if (mainThread) activity = 'assistant'
+      const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
+      for (const b of content) {
+        if (!b || b.type !== 'tool_use') continue
+        if (liveNow && typeof b.id === 'string' && this.dialogsWatched(t.info.tabId)) {
+          if (t.openTools.size >= UNACKED_TOOL_CAP)
+            t.openTools.delete(t.openTools.keys().next().value as string)
+          t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })
         }
-      }
-      const ending = t.endingTurn?.turn
-      if (ending && (t.replyDone || ending !== t.turns.open())) this.finishTurn(t, ending)
-      if (obj.type === 'user') {
-        this.ingestSpawnAck(t, obj)
-        this.ingestToolDone(t, obj)
-      }
-      this.ingestTaskNotification(t, obj)
-      const output = t.caughtUp ? commandOutputOf(obj) : null
-      if (output) this.emit('command-output', { tabId: t.info.tabId, ...output })
-      if (obj.type === 'user' && !obj.isMeta && !compactionSummary(obj)) {
-        const c = obj.message?.content
-        let raw: string | null = null
-        let hasImage = false
-        if (typeof c === 'string') raw = c
-        else if (Array.isArray(c)) {
-          const text = c.find((x: any) => x?.type === 'text')
-          if (text?.text) raw = text.text
-          hasImage = c.some((x: any) => x?.type === 'image')
-        }
-        if (raw !== null && INTERRUPT_TEXTS.has(raw) && mainThread) {
-          if (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) {
-            const at = isFinite(recTs) ? recTs : Date.now()
-            if (at > t.lastInterruptTs) t.lastInterruptTs = at
-            return 'interrupt'
-          }
-          return null
-        }
-        const cls = raw !== null ? classifyUserPrompt(raw) : null
-        const named = raw !== null && whoTyped(obj, raw) ? cls : null
-        if (named?.title && !t.firstPrompt) t.firstPrompt = named.title
-        if (named?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = named.commandArgs
-        if (named?.commandName && !t.commandTitle) t.commandTitle = named.commandName
-        if ((cls?.genuine || hasImage) && mainThread && !commandEcho(obj, raw)) {
-          activity = 'user'
-          if (
-            (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) &&
-            this.isHeldByBackground(t.info.tabId)
-          ) {
-            this.applyStatus(t, 'working')
+        const labelField = TASK_LABEL_FIELD[b.name]
+        const label = labelField ? b.input?.[labelField] : undefined
+        if (typeof label === 'string') {
+          if (t.toolLabels.size >= UNACKED_TOOL_CAP)
+            t.toolLabels.delete(t.toolLabels.keys().next().value as string)
+          t.toolLabels.set(b.id, label.replace(/\s+/g, ' ').trim().slice(0, 120))
+          if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) {
+            t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
           }
         }
-      }
-      if (obj.type === 'assistant' && obj.message && obj.message.usage) {
-        this.accumulateUsage(t, obj, mainThread)
-      }
-      if (obj.type === 'assistant' && Array.isArray(obj.message?.content)) {
-        if (mainThread) activity = 'assistant'
-        const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
-        for (const b of obj.message.content) {
-          if (!b || b.type !== 'tool_use') continue
-          if (liveNow && typeof b.id === 'string' && this.dialogsWatched(t.info.tabId)) {
-            if (t.openTools.size >= UNACKED_TOOL_CAP)
-              t.openTools.delete(t.openTools.keys().next().value as string)
-            t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })
-          }
-          const labelField = TASK_LABEL_FIELD[b.name]
-          const label = labelField ? b.input?.[labelField] : undefined
-          if (typeof label === 'string') {
-            if (t.toolLabels.size >= UNACKED_TOOL_CAP)
-              t.toolLabels.delete(t.toolLabels.keys().next().value as string)
-            t.toolLabels.set(b.id, label.replace(/\s+/g, ' ').trim().slice(0, 120))
-            if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) {
-              t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
-            }
-          }
-          // CC§2
-          const raw = toolFilePath(b.input)
-          const fp = raw ? this.resolvePath(t, raw) : null
-          if (!fp) continue
-          if (WRITE_TOOLS.has(b.name)) {
-            const { added, removed } = editDelta(b.name, b.input)
-            noteWrite(t.candidates, fp, added, removed, isFinite(recTs) ? recTs : Date.now())
-            t.lastTouchedAbs = fp
-            t.lastWrittenAbs = fp
-            if (liveNow) t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
-          } else if (READ_TOOLS.has(b.name)) {
-            noteRead(t.candidates, fp)
-            t.lastTouchedAbs = fp
-          }
+        // CC§2
+        const raw = toolFilePath(b.input)
+        const fp = raw ? this.resolvePath(t, raw) : null
+        if (!fp) continue
+        if (WRITE_TOOLS.has(b.name)) {
+          const { added, removed } = editDelta(b.name, b.input)
+          noteWrite(t.candidates, fp, added, removed, isFinite(recTs) ? recTs : Date.now())
+          t.lastTouchedAbs = fp
+          t.lastWrittenAbs = fp
+          if (liveNow) t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
+        } else if (READ_TOOLS.has(b.name)) {
+          noteRead(t.candidates, fp)
+          t.lastTouchedAbs = fp
         }
       }
     }
@@ -1689,8 +1680,9 @@ export class SessionTracker extends SessionRuntime {
   }
 
   // CC§2
-  private accumulateUsage(t: Tracked, obj: any, updateContext = true): void {
+  private accumulateUsage(t: Tracked, obj: TranscriptRecord, updateContext = true): void {
     const msg = obj.message
+    if (!msg) return
     const model = typeof msg.model === 'string' ? msg.model : ''
     if (model === '<synthetic>') return
     const u = msg.usage || {}
