@@ -179,7 +179,7 @@ export function WorkspaceSidebar({
   onScheduledJobs
 }: {
   onNewSession: (wsPath: string, backend?: BackendId) => void
-  namedMethods: [BackendId, BackendId] | null
+  namedMethods: BackendId[] | null
   onNewWorktreeSession: (wsPath: string) => void
   onRestoreSession: (wsPath: string) => void
   onScheduledJobs: (wsPath: string, jobId?: string) => void
@@ -518,8 +518,11 @@ export function WorkspaceSidebar({
                     '⌘N'
                   )
                 : newSessionItem('New session', undefined, '⌘N')}
-              {namedMethods &&
-                newSessionItem(`New ${BACKEND_LABEL[namedMethods[1]]} session`, namedMethods[1])}
+              {namedMethods?.slice(1).map((other) => (
+                <Fragment key={other}>
+                  {newSessionItem(`New ${BACKEND_LABEL[other]} session`, other)}
+                </Fragment>
+              ))}
               {target.isGit && (
                 <div
                   className="mi"

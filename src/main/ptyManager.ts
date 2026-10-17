@@ -50,6 +50,13 @@ interface CreateArgs {
   }
 }
 
+const BRINGS_ITS_OWN_ENV: Record<TabKind, boolean> = {
+  shell: false,
+  claude: false,
+  codex: true,
+  muse: true
+}
+
 const UTIL_TITLE_POLL_MS = 1500
 
 const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
@@ -112,8 +119,9 @@ export class PtyManager extends EventEmitter {
     const login = userShell()
     const shell = args.shell || login.shell
 
+    const ownsItsTools = BRINGS_ITS_OWN_ENV[args.kind]
     let env: Record<string, string> = {
-      ...((args.kind === 'codex' ? (args.processEnv ?? process.env) : process.env) as Record<
+      ...((ownsItsTools ? (args.processEnv ?? process.env) : process.env) as Record<
         string,
         string
       >),
@@ -165,11 +173,11 @@ export class PtyManager extends EventEmitter {
     if (this.openDir) env.KOLOFT_OPEN_DIR = this.openDir
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
     if (this.cdpDir && !args.util) env.KOLOFT_CDP_DIR = this.cdpDir
-    if (this.agentDir && args.kind !== 'codex') env.KOLOFT_AGENT_DIR = this.agentDir
+    if (this.agentDir && !ownsItsTools) env.KOLOFT_AGENT_DIR = this.agentDir
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
     const hookSettings =
-      args.util || args.kind === 'codex'
+      args.util || ownsItsTools
         ? undefined
         : this.makeHookSettings?.(
             id,
@@ -177,7 +185,7 @@ export class PtyManager extends EventEmitter {
             args.conductor === true
           )
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
-    if (this.shimDir && !isWin && args.kind !== 'codex')
+    if (this.shimDir && !isWin && !ownsItsTools)
       env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
     if (args.extraEnv) {
       for (const k of [

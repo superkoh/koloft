@@ -394,7 +394,7 @@ describe('WorkspaceManager: which transcript writes rescan the list', () => {
       runningBindings: () => bindings,
       killTab: () => {},
       pushRows: (p) => pushed.push(p),
-      additionalRows: (ws) => (ws === repo ? [{ ...codexRow }] : []),
+      additionalRows: (ws) => (ws === repo ? [{ ...codexRow, backendId: 'codex' as const }] : []),
       additionalMembers: () => new Set([codexRow.id])
     })
     mgr.start()

@@ -6,6 +6,7 @@ import { shq } from '@shared/shellQuote'
 import {
   CODEX_CONDUCTOR_GATE_SCRIPT,
   CONDUCTOR_GATE_SCRIPT,
+  MUSE_CONDUCTOR_GATE_SCRIPT,
   codexGateShell,
   conductorGateCommand
 } from './conductorGate'
@@ -18,6 +19,7 @@ export interface HookPaths {
   gateScript: string
   codexGate: string
   codexReplyLanguage: string
+  museGateScript: string
   settingsDir: string
   regDir: string
 }
@@ -43,7 +45,7 @@ const fromTheRelay = (mode: ModeClass): string =>
   `*'"prompt":"<cross-session-message from-mode=\\"${mode}\\">\\n${DISCORD_PREFIX} '*`
 
 // ADR-0031
-const LANGUAGE_FNS = `whole_chars() {
+export const LANGUAGE_FNS = `whole_chars() {
   LC_ALL=C sed -E -e $'s/([\\xc0-\\xdf]|[\\xe0-\\xef][\\x80-\\xbf]?|[\\xf0-\\xf7][\\x80-\\xbf]{0,2})$//' \\
     -e 's/\\\\u[0-9a-fA-F]{0,3}$//' -e 's/(^|[^\\\\])((\\\\\\\\)*)\\\\$/\\1\\2/'
 }
@@ -73,7 +75,7 @@ last_note() {
 }`
 
 // CC§17 CC§19 CODEX§27
-const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
+export const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
   quote="$(cat "$said" 2>/dev/null)"
   context="$2"
   if [ -n "$quote" ]; then
@@ -94,7 +96,7 @@ const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
 }`
 
 // CC§19
-const QUOTE_PROMPT_FN = `quote_prompt() {
+export const QUOTE_PROMPT_FN = `quote_prompt() {
   printf '%s' "$input" |
     LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"${JSON_STRING_BODY}".*/\\1/p' |
     LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
@@ -109,7 +111,7 @@ save_quote() {
 
 const HANDED_OVER_TASK_COMES_FIRST = '.task-first'
 // ADR-0031
-const QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS = `if [ -f "$said${HANDED_OVER_TASK_COMES_FIRST}" ]; then
+export const QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS = `if [ -f "$said${HANDED_OVER_TASK_COMES_FIRST}" ]; then
        rm -f "$said${HANDED_OVER_TASK_COMES_FIRST}"
      else
        save_quote
@@ -390,8 +392,18 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   fs.writeFileSync(codexGate, codexGateShell(codexGateScript))
   const codexReplyLanguage = path.join(hookDir, 'codex-reply-language.sh')
   fs.writeFileSync(codexReplyLanguage, CODEX_REPLY_LANGUAGE_SCRIPT)
+  const museGateScript = path.join(hookDir, 'muse-conductor-gate.js')
+  fs.writeFileSync(museGateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
 
-  return { hookScript, gateScript, codexGate, codexReplyLanguage, settingsDir, regDir }
+  return {
+    hookScript,
+    gateScript,
+    codexGate,
+    codexReplyLanguage,
+    museGateScript,
+    settingsDir,
+    regDir
+  }
 }
 
 // CC§8

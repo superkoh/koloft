@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
+import { installCodex, installMuse, seedSettings, trustInMuse, type E2EEnv } from './helpers/env'
 import { startCodex } from './helpers/codex'
 import {
   newSessionInWith,
@@ -204,6 +204,35 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       await expect
         .poll(() => ran(fake).at(-1), { timeout: 30_000 })
         .toMatch(/ran \/clear:\nIt is a new conversation now/)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  // MUSE§11
+  test('D-CMD-6: in a Muse session, /run types the command once its input box is empty and posts its screen, since Muse draws a command’s output only there', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedConductor(env)
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+      const muse = (await choices(fake, 'Muse')).find((c) => c.value !== 'me')
+      expect(muse).toBeTruthy()
+
+      fake.interact(OWNER, 'run', { command: '/usage', session: muse!.value })
+      await expect
+        .poll(() => ran(fake), { timeout: 30_000 })
+        .toEqual([
+          expect.stringMatching(
+            /ran \/usage:\nIt printed nothing Koloft can read, so here is its screen:[\s\S]*5h window {3}12% used/
+          )
+        ])
     } finally {
       await quitAndClose(app)
       await fake.close()

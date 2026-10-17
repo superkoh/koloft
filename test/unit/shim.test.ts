@@ -31,7 +31,7 @@ beforeAll(() => {
   ;({ shimDir, regDir, pickDir, gitHelper, ghWrapper } = setupShim(gitAuthDir))
   base = path.dirname(shimDir)
   realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realbin-'))
-  for (const bin of ['claude', 'codex']) {
+  for (const bin of ['claude', 'codex', 'muse']) {
     fs.writeFileSync(
       path.join(realBin, bin),
       '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$KOLOFT_ARGS_OUT"\n' +
@@ -141,7 +141,7 @@ const NO_ACCOUNT_PICKED_YET = { KOLOFT_ACCOUNT_PICKED: '', CLAUDE_CODE_OAUTH_TOK
 function runShim(
   args: string[],
   extraEnv: Record<string, string> = {},
-  bin: 'claude' | 'codex' = 'claude'
+  bin: 'claude' | 'codex' | 'muse' = 'claude'
 ): ShimRun {
   const cwd = os.tmpdir()
   const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
@@ -727,6 +727,29 @@ describe('codex guard (Koloft terminal hard block — the same funnel as claude,
     expect(r.stderr).not.toContain('⛔')
     expect(r.realArgs).toEqual([])
   })
+})
+
+describe('muse guard (Koloft terminal hard block — the same funnel as claude and codex, MUSE§1)', () => {
+  const UTIL = { KOLOFT_UTIL: '1' }
+
+  it.each([[[]], [['fix the bug']], [['--approval-mode', 'never', 'resume', 'abc']]])(
+    'an interactive form %j in a Koloft terminal is refused before the real muse runs',
+    (args) => {
+      const r = runShim(args, UTIL, 'muse')
+      expect(r.status).toBe(1)
+      expect(r.stderr).toContain("Start interactive Muse from the sidebar's ＋ (⌘N).")
+      expect(r.realArgs).toBeNull()
+    }
+  )
+
+  it.each([[['exec', 'say hi']], [['--model', 'x', 'serve']], [['login']], [['--version']]])(
+    'a form that opens no TUI %j passes through untouched',
+    (args) => {
+      const r = runShim(args, UTIL, 'muse')
+      expect(r.status).toBe(0)
+      expect(r.realArgs).toEqual(args)
+    }
+  )
 })
 
 describe('claude shim (scheduled jobs: first prompt + session name ride env vars, never the typed command line — BB-E19 / §4.6)', () => {

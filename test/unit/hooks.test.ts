@@ -591,7 +591,7 @@ describe('injected hook script', () => {
 
     it('a task Koloft hands over is quoted without the English preamble in front of it', () => {
       const task = withHandover(
-        handoverPreamble({ name: 'Global-conductor', id: 'abc-123' }),
+        handoverPreamble({ name: 'Global-conductor', id: 'abc-123', label: 'Claude' }),
         'review what Assist may do'
       )
       expect(remindedQuote(prompt('tabLangHO', task), 'UserPromptSubmit')).toBe(
@@ -653,7 +653,7 @@ describe('injected hook script', () => {
     // ADR-0031
     it('a Claude child Koloft saved the owner’s last words for is quoted by those words, not by its handed-over task in whatever language, Koloft reads them back whole for the next child down, and the owner’s next prompt replaces them', async () => {
       const ownerWords = '帮我看看 "侧栏" 为什么\n变宽了 « » \\ 😀'
-      const caller = { name: 'planner', id: 'abc-123', ownerWords }
+      const caller = { name: 'planner', id: 'abc-123', label: 'Claude', ownerWords }
       const translated = await handoverInOwnersLanguage(
         caller,
         async () =>

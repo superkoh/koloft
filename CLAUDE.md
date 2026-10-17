@@ -78,7 +78,7 @@ Working principles:
   after-edit hook) rejects every comment except two kinds, each with nothing else in it:
   - a tool directive: `@ts-expect-error`, `prettier-ignore`, `@vite-ignore`,
     `#__PURE__`, `@vitest-environment <env>`, `/// <reference … />`;
-  - a marker: `// ADR-0007`, `// CC§9`, `// CODEX§5`, `// PLATFORM§3` — several may
+  - a marker: `// ADR-0007`, `// CC§9`, `// CODEX§5`, `// MUSE§4`, `// PLATFORM§3` — several may
     share one line;
     in CSS `/* ADR-0007 */`, in JSX `{/* ADR-0007 */}`. Each must resolve to a
     `docs/adr/` file or a `##` section of that contract ledger.
@@ -89,7 +89,8 @@ Working principles:
   2. a test whose title states the rule;
   3. a measured fact about an external system → its contract ledger, cited from the
      code with a marker: Claude Code `docs/claude-code-contract.md` (`CC§`), Codex
-     `docs/codex-cli-contract.md` (`CODEX§`), anything else — Electron, Node, macOS,
+     `docs/codex-cli-contract.md` (`CODEX§`), Muse Code `docs/muse-code-contract.md`
+     (`MUSE§`), anything else — Electron, Node, macOS,
      git, GitHub — `docs/platform-contract.md` (`PLATFORM§`);
   4. an ADR (architecture decision record), `docs/adr/NNNN-slug.md` — only when all
      four hold: it cannot be read from the code (names, types, tests); a smart

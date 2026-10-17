@@ -10,7 +10,8 @@ import {
 
 const BINARIES: Record<BackendId, string | undefined> = {
   claude: process.env.KOLOFT_REAL_ROUTE_CLAUDE,
-  codex: process.env.KOLOFT_REAL_ROUTE_CODEX
+  codex: process.env.KOLOFT_REAL_ROUTE_CODEX,
+  muse: process.env.KOLOFT_REAL_ROUTE_MUSE
 }
 
 const LIST: RouteWorkspace[] = [
@@ -97,13 +98,12 @@ const CASES: [string, string[]][] = [
   ['blog 写一篇 Rust 入门', ['workspace:blog']]
 ]
 
-for (const backend of ['claude', 'codex'] as const) {
+for (const backend of ['claude', 'codex', 'muse'] as const) {
   const binary = BINARIES[backend]
   const assist = koloftAssist({
     setting: () => ({ on: true, backend }),
     enabled: (b) => b === backend,
-    claude: async () => (binary ? { binary, env: process.env } : null),
-    codex: async () => (binary ? { binary, env: process.env } : null)
+    target: async () => (binary ? { binary, env: process.env } : null)
   })
 
   describe.skipIf(!binary)(

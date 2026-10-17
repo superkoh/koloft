@@ -52,6 +52,8 @@ import { useStore } from '../store'
 import { PullConfirm } from './PullConfirm'
 import {
   BusyLine,
+  enterMethod,
+  otherMethods,
   SessionLaunchButtons,
   SessionLaunchStatus,
   useSessionLaunch,
@@ -184,12 +186,9 @@ export function WorktreeSessionDialog({
   }, [locked, launchLock])
   const backends =
     aim.kind === 'recover'
-      ? sessionLaunch.usable.filter((b) => b === 'codex')
+      ? sessionLaunch.usable.filter((b) => b === aim.backend)
       : sessionLaunch.usable
-  const other =
-    backends.length > 1
-      ? backends.find((b) => b !== sessionLaunch.methods.defaultBackend)
-      : undefined
+  const others = otherMethods(backends, sessionLaunch.methods.defaultBackend)
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
@@ -221,7 +220,7 @@ export function WorktreeSessionDialog({
 
   const launch = (target: WtAim, backend = sessionLaunch.methods.defaultBackend): void => {
     if (locked || sessionLaunch.issue(backend)) return
-    const method = target.kind === 'recover' ? 'codex' : backend
+    const method = target.kind === 'recover' ? target.backend : backend
     if (target.kind === 'recover') {
       void sessionLaunch.launch(resolveLaunch(target, wsPath), method)
     } else if (target.kind === 'open') {
@@ -292,7 +291,7 @@ export function WorktreeSessionDialog({
       setHot((h) => moveHot(h, names, query, 'up'))
     } else if (e.key === 'Enter' && !isComposing(e)) {
       e.preventDefault()
-      submit(e.shiftKey && other ? other : undefined)
+      submit(enterMethod(e, others))
     }
   }
 

@@ -93,7 +93,7 @@ unwritable="koloft: this sandbox is read-only, so koloft cannot run here."
 ${body(AGENT_SHIM_WAITS_MS)}`
 }
 
-export function writeCodexAgentShim(shimDir: string, requestDir: string): void {
+export function writeAgentShim(shimDir: string, requestDir: string): void {
   const guide = path.join(shimDir, 'koloft-guide.txt')
   fs.writeFileSync(guide, AGENT_GUIDE + '\n')
   fs.writeFileSync(path.join(shimDir, 'koloft'), codexAgentShim(requestDir, guide), {

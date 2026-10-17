@@ -8,7 +8,36 @@ import type {
 } from './types'
 import { hostOf } from './remoteKey'
 
-export const SESSION_BACKENDS: BackendId[] = ['claude', 'codex']
+export const BACKEND_LABEL: Record<BackendId, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  muse: 'Muse'
+}
+
+export const BACKEND_PRODUCT: Record<BackendId, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  muse: 'Muse Code'
+}
+
+export const SESSION_BACKENDS = Object.keys(BACKEND_LABEL) as BackendId[]
+
+export const ALWAYS_ON_BACKEND: BackendId = 'claude'
+
+export function byBackend<T>(value: (backend: BackendId) => T): Record<BackendId, T> {
+  return Object.fromEntries(SESSION_BACKENDS.map((b) => [b, value(b)])) as Record<BackendId, T>
+}
+
+export function backendsFrom(preferred: BackendId): BackendId[] {
+  return [preferred, ...SESSION_BACKENDS.filter((b) => b !== preferred)]
+}
+
+export function productList(backends: readonly BackendId[], joiner: 'or' | 'and'): string {
+  const names = backends.map((b) => BACKEND_PRODUCT[b])
+  return names.length < 2
+    ? (names[0] ?? '')
+    : `${names.slice(0, -1).join(', ')} ${joiner} ${names[names.length - 1]}`
+}
 
 export function statusUnavailable(session?: Pick<SessionInfo, 'details'>): boolean {
   return session?.details?.codex?.observation === 'degraded'
@@ -20,17 +49,12 @@ export function backendIdOf(value: unknown): BackendId | undefined {
 
 export function normalizeSessionMethods(raw: unknown): SessionMethods {
   const value = raw && typeof raw === 'object' ? (raw as Partial<SessionMethods>) : {}
-  const enabled = { claude: true, codex: value.enabled?.codex !== false }
+  const enabled = byBackend((b) => b === ALWAYS_ON_BACKEND || value.enabled?.[b] !== false)
+  const picked = backendIdOf(value.defaultBackend)
   return {
     enabled,
-    defaultBackend: value.defaultBackend === 'codex' && enabled.codex ? 'codex' : 'claude'
+    defaultBackend: picked && enabled[picked] ? picked : ALWAYS_ON_BACKEND
   }
-}
-
-export const BACKEND_LABEL: Record<BackendId, string> = { claude: 'Claude', codex: 'Codex' }
-
-export function otherBackend(backend: BackendId): BackendId {
-  return backend === 'claude' ? 'codex' : 'claude'
 }
 
 export function preferredAssistBackend(settings: {
@@ -45,7 +69,21 @@ export function backendAvailable(list: BackendAvailability[], id: BackendId): bo
 }
 
 export function shownAsInstalled(list: BackendAvailability[] | null, id: BackendId): boolean {
-  return list ? backendAvailable(list, id) : id === 'claude'
+  return list ? backendAvailable(list, id) : id === ALWAYS_ON_BACKEND
+}
+
+export type Messaging = 'queue' | 'peerLine' | 'typed'
+
+const MESSAGING: Record<BackendId, Record<HostId, Messaging>> = {
+  claude: { local: 'peerLine', ssh: 'typed' },
+  // CODEX§17
+  codex: { local: 'queue', ssh: 'queue' },
+  // MUSE§7
+  muse: { local: 'typed', ssh: 'typed' }
+}
+
+export function messagingOf(backend: BackendId, remote: boolean): Messaging {
+  return MESSAGING[backend][remote ? 'ssh' : 'local']
 }
 
 export function sourceOf(backendId: BackendId, workspacePath: string): SessionSource {
@@ -113,6 +151,15 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
     },
     // CODEX§16
     ssh: 'refused'
+  },
+  muse: {
+    local: {
+      ...EVERYTHING,
+      // MUSE§3
+      statusline3: { unsupported: 'MUSE§3' }
+    },
+    // MUSE§6
+    ssh: 'refused'
   }
 }
 
@@ -146,9 +193,10 @@ export function sessionKey(ref: SessionIdentity): string {
 
 export function identityOf(key: string): SessionIdentity {
   const parts = key.split(':')
-  if (parts.length === 3 && (parts[0] === 'codex' || parts[0] === 'claude')) {
+  const backendId = backendIdOf(parts[0])
+  if (parts.length === 3 && backendId) {
     return {
-      backendId: parts[0],
+      backendId,
       sourceId: decodeURIComponent(parts[1]),
       nativeSessionId: decodeURIComponent(parts[2])
     }

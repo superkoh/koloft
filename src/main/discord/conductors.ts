@@ -569,7 +569,9 @@ export class Conductors {
       return result
     const fallback = await this.d.backend('codex')
     if ('error' in fallback) return refusal(fallback.error)
-    this.d.toast(`Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`)
+    this.d.toast(
+      `Assist runs on ${BACKEND_LABEL[fallback.backend]} this time: ${CODEX_GATE_NOT_TRUSTED}`
+    )
     return open({ backend: fallback.backend })
   }
 
@@ -601,7 +603,7 @@ export class Conductors {
           return { ok: true, tabId: live }
         }
         if (await this.d.runningElsewhere(launch.backend, key))
-          return refusal('This Assist is already running in another claude process.')
+          return refusal(`This Assist is already running in another ${launch.backend} process.`)
       }
       const hasTranscript =
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))

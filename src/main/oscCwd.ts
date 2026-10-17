@@ -28,16 +28,13 @@ function cwdFromBody(body: string, hostname: string): string | undefined {
   }
 }
 
-// PLATFORM§2
-export class OscCwdParser {
+export class OscBodies {
   private carry = ''
 
-  constructor(private readonly hostname: string = os.hostname()) {}
-
-  push(chunk: string): string | undefined {
+  push(chunk: string): string[] {
     const s = this.carry + chunk
     this.carry = ''
-    let found: string | undefined
+    const found: string[] = []
     let i = 0
     while (i < s.length) {
       const esc = s.indexOf(ESC, i)
@@ -73,14 +70,27 @@ export class OscCwdParser {
         }
         return this.hold(s.slice(esc), found)
       }
-      found = cwdFromBody(s.slice(esc + 2, end), this.hostname) ?? found
+      found.push(s.slice(esc + 2, end))
       i = end + termLen
     }
     return found
   }
 
-  private hold(partial: string, found: string | undefined): string | undefined {
+  private hold(partial: string, found: string[]): string[] {
     this.carry = partial.length <= OSC_CARRY_MAX ? partial : ''
+    return found
+  }
+}
+
+// PLATFORM§2
+export class OscCwdParser {
+  private bodies = new OscBodies()
+
+  constructor(private readonly hostname: string = os.hostname()) {}
+
+  push(chunk: string): string | undefined {
+    let found: string | undefined
+    for (const body of this.bodies.push(chunk)) found = cwdFromBody(body, this.hostname) ?? found
     return found
   }
 }

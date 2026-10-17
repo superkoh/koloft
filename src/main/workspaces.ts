@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
 import type {
+  BackendId,
   DiscoveredFolder,
   LayoutV6,
   ProjectInfo,
@@ -75,7 +76,7 @@ export interface LiveSession {
 }
 
 export interface WorkspaceManagerDeps {
-  additionalRows?(workspacePath: string): BackendSessionRow[]
+  additionalRows?(workspacePath: string): (BackendSessionRow & { backendId: BackendId })[]
   additionalMembers?(): Set<string>
   projectsRoot: string
   loadLayout(): LayoutV6
@@ -735,7 +736,7 @@ export class WorkspaceManager {
       if (!key) {
         const additional = (this.deps.additionalRows?.(ws.path) ?? []).map((r): SessionRow => ({
           ...r,
-          ...sourceOf('codex', ws.path)
+          ...sourceOf(r.backendId, ws.path)
         }))
         for (const r of additional) bucketDirById.set(r.id, r.cwd)
         for (const r of additional) {

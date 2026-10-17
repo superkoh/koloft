@@ -7,7 +7,7 @@ import {
   type Settings
 } from './types'
 import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
-import { normalizeSessionMethods } from './sessionBackend'
+import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { sanitizeAssistSessions, sanitizeDiscord } from './conductors'
 
 export function buildResetPatch(): Partial<Settings> {
@@ -105,8 +105,9 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
 function sanitizeAssist(raw: unknown): AssistSetting {
   if (!raw || typeof raw !== 'object') return null
   const { on, backend } = raw as Record<string, unknown>
-  if (typeof on !== 'boolean' || (backend !== 'claude' && backend !== 'codex')) return null
-  return { on, backend }
+  const assistOn = backendIdOf(backend)
+  if (typeof on !== 'boolean' || !assistOn) return null
+  return { on, backend: assistOn }
 }
 
 function sanitizeFolderMap(raw: unknown): Record<string, string> {

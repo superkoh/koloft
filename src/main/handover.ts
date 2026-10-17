@@ -4,6 +4,7 @@ import type { Assist } from './assist'
 export interface SessionCaller {
   name?: string
   id: string
+  label: string
   assist?: boolean
   ownerWords?: string
 }
@@ -31,7 +32,7 @@ const translateInstructions = (ownerWords: string): string =>
 const namedSession = (caller: SessionCaller): boolean => !!caller.name
 
 function englishProse(caller: SessionCaller): string {
-  const who = `${namedSession(caller) ? 'the session' : 'the Codex session'} ${CALLER_SLOT}`
+  const who = `${namedSession(caller) ? 'the session' : `the ${caller.label} session`} ${CALLER_SLOT}`
   const trust = caller.assist ? TRUST_ONLY_THE_OWNERS_QUOTED_WORDS : TRUST_THE_CALLER
   const language = caller.ownerWords ? ` ${ANSWER_IN_THE_OWNERS_LANGUAGE}` : ''
   return `${HANDOVER_OPENING}${who} asked it to, for the owner (the person you both work for). ${trust}${language} When you finish a task it gives you, send the result back by running:`
