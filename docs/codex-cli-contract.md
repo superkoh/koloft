@@ -1013,7 +1013,9 @@ machine's app-server alone answered `thread/start {cwd}` with `workspaceWrite` /
 `on-request`; but a thread the Mac's 0.162.0 TUI started over `--remote … -C
 /home/admin/proj` with no `-a`/`-s` ran `sandbox_policy: read-only` (its `turn_context`),
 and its `touch` inside the folder was refused. A trust table for that path in the TUI's
-own `CODEX_HOME` did not change it. Given `-a on-request -s workspace-write`, the thread
+own `CODEX_HOME` did not change it, while a top-level `sandbox_mode = "danger-full-access"`
+there did (Docker lab, same version: the command ran with no `bwrap`). Given `-a on-request
+-s workspace-write`, the thread
 wrote inside the folder, was refused outside it, and after a resume (no flags) still
 wrote inside and was refused outside.
 

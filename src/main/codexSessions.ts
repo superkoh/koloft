@@ -217,9 +217,11 @@ const PERMISSIONS: Record<LaunchPermission, Permissions | undefined> = {
 const CONDUCTOR_PERMISSIONS: Permissions = { approval: 'never', sandbox: 'workspace-write' }
 
 // CODEX§11 CODEX§16
-const MACHINE_TRUSTED_FOLDER_DEFAULT: Permissions = {
-  approval: 'on-request',
-  sandbox: 'workspace-write'
+function machineTrustedFolderFlags(ownConfig: Record<string, unknown>): string[] {
+  return [
+    ...(ownConfig.approval_policy ? [] : ['-a', 'on-request']),
+    ...(ownConfig.sandbox_mode ? [] : ['-s', 'workspace-write'])
+  ]
 }
 
 // CODEX§11
@@ -554,6 +556,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§26
+  private ownConfig(home: string): Promise<Record<string, unknown>> {
+    return this.withRpc(home, (rpc) => rpc.request('config/read', { cwd: os.homedir() }))
+      .then((read) => record(record(read).config))
+      .catch(() => ({}))
+  }
+
   private async browserOverrides(home: string, cwd: string, conductor: boolean): Promise<string[]> {
     const readConfig = (): Promise<unknown> =>
       this.withRpc(home, (rpc) => rpc.request('config/read', { cwd }))
@@ -839,16 +847,20 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     let transport: CodexTransport | undefined
     try {
       const askMachineTrust = !!machine && !permissions && !opts.resumeSessionId
-      const [hookTrust, , trustedThere] = machine
+      const [hookTrust, , trustedThere, ownConfig] = machine
         ? await Promise.all([
             this.koloftHookStates(hooks),
             this.sweptOnce(machine),
             askMachineTrust &&
-              (trustedOnMachine.includes(barePath(cwd)) || this.machineTrusts(parseRemoteKey(cwd)!))
+              (trustedOnMachine.includes(barePath(cwd)) ||
+                this.machineTrusts(parseRemoteKey(cwd)!)),
+            askMachineTrust ? this.ownConfig(home) : {}
           ])
-        : [[], undefined, false]
+        : [[], undefined, false, {}]
       // CODEX§16
-      const launchPermissions = trustedThere ? MACHINE_TRUSTED_FOLDER_DEFAULT : permissions
+      const launchFlags = trustedThere
+        ? machineTrustedFolderFlags(ownConfig)
+        : permissionFlags(permissions)
       // ADR-0029 ADR-0031
       const trusted = machine
         ? new Set(hookTrust.map((h) => h.command))
@@ -887,7 +899,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         STATUS_LINE_CONFIG,
         '-c',
         NO_UPDATE_NOTICE_AT_START,
-        ...(opts.resumeSessionId ? [] : permissionFlags(launchPermissions)),
+        ...(opts.resumeSessionId ? [] : launchFlags),
         ...launchChoiceArgs(opts)
       ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
