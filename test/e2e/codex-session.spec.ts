@@ -144,6 +144,9 @@ test.describe('Codex sessions through the real method chooser, process transport
         fs.writeFileSync(path.join(env.home, 'fake-codex-next-title'), title)
         await startCodex(page, env)
         saved.push({ title, id: codexCalls(env).at(-1)!.sessionId })
+        await expect
+          .poll(() => fs.existsSync(path.join(env.home, 'fake-codex-next-title')))
+          .toBe(false)
         await sendShortcut(app, 'shortcut:close-tab')
         await expect(codexRows(page).filter({ hasText: title })).toHaveClass(/cold/)
       }

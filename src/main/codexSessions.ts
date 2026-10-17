@@ -62,6 +62,7 @@ import {
   seedHandedOverOwnerWords
 } from './hooks'
 import { acceptCodexHookTrust, codexConfigFile, codexHookTrusted, configTrusts } from './codexTrust'
+import { CodexSideServers } from './codexSideServers'
 import {
   CODEX_OPEN_SHIM_FOLDER,
   CODEX_TMP_DIR,
@@ -342,6 +343,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   readonly id = 'codex'
   private crashLeftoversEnded?: Promise<void>
   private listedHooks = new Map<string, ListedHook>()
+  private sideServers = new CodexSideServers((home) => this.rpc(home))
   private machineHistory = new Map<
     string,
     { at: number; reading?: Promise<void>; error?: unknown }
@@ -494,7 +496,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return machine ? this.withMachineRpc(machine, use) : this.withRpc(undefined, use)
   }
 
-  // ADR-0039 CODEX§16
+  // ADR-0039 CODEX§15 CODEX§16
   private machineLogin(home: string): MachineLogin {
     const read = (): LoginParams | undefined => {
       let auth: Record<string, unknown>
@@ -520,6 +522,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       refreshed: async (stale) => {
         let now = read()
         if (!now?.accessToken || now.accessToken === stale) {
+          await this.rereadSignIn(home)
           await this.withRpc(home, (rpc) => rpc.request('account/read', { refreshToken: true }))
           now = read()
         }
@@ -544,15 +547,25 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   ): Promise<T> {
     if (!this.binary && !(await this.availability()).available)
       throw new Error('Codex CLI is unavailable.')
-    const rpc = this.rpc(home)
     try {
-      return await use(rpc)
+      return await this.sideServers.ask(home, use)
     } catch (error) {
       this.noteBinaryGone(error)
       throw error
-    } finally {
-      await rpc.close()
     }
+  }
+
+  // CODEX§15
+  rereadSignIn(home: string): Promise<void> {
+    return this.sideServers.forget(home)
+  }
+
+  hasProcesses(): boolean {
+    return super.hasProcesses() || this.sideServers.anyOpen
+  }
+
+  async stopAll(deadlineMs?: number): Promise<void> {
+    await Promise.all([super.stopAll(deadlineMs), this.sideServers.closeAll()])
   }
 
   // CODEX§26
@@ -600,8 +613,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   // CODEX§15
   protected async listHistory(): Promise<{ key: string; entry: CodexThread; archived: boolean }[]> {
-    const rpc = this.rpc(undefined)
-    const local = await listThreads(rpc).finally(() => rpc.close())
+    const local = await this.withRpc(undefined, (rpc) => listThreads(rpc))
     const onMachines = [...this.history].flatMap(([key, entry]) =>
       hostOfKey(key) ? [{ key, entry, archived: this.archivedIds.has(key) }] : []
     )
@@ -712,10 +724,13 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     })
   }
 
+  // CODEX§15
   async transcriptExists(key: string): Promise<boolean> {
-    const id = this.nativeId(key)
     if (this.archivedIds.has(key)) return false
     const machine = hostOfKey(key)
+    const listed = machine ? undefined : this.history.get(key)?.path
+    if (listed && fs.existsSync(listed)) return true
+    const id = this.nativeId(key)
     const file = await this.withRpcFor(key, async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       return userThread(reply.thread)?.path

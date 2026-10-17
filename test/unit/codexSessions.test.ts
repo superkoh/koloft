@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/codexTransport'
+import type { MachineLogin } from '../../src/main/remote/codexMachine'
 import {
   CODEX_ASKS_AND_WAITS,
   CODEX_GATE_HOOK_COMMAND,
@@ -360,15 +361,32 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§15
-  it('lists and reads history once, from the default home every account home shares', async () => {
-    mocks.request.mockImplementation(async (_method, params) =>
-      params.archived ? { data: [] } : { data: [{ id: A, cwd: repo }] }
+  it('lists history from the default home every account home shares, tells a thread has a transcript from the file its listing named without asking Codex, and reads a thread whose listed file is not written yet on that same app-server', async () => {
+    const written = path.join(directory, 'rollout-a.jsonl')
+    const later = path.join(directory, 'rollout-b.jsonl')
+    fs.writeFileSync(written, '')
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'thread/read') return { thread: { id: B, cwd: repo, path: later } }
+      return params.archived
+        ? { data: [] }
+        : {
+            data: [
+              { id: A, cwd: repo, path: written },
+              { id: B, cwd: repo, path: later }
+            ]
+          }
+    })
+    expect((await sessions.historyRows(repo)).map((row) => row.id).sort()).toEqual(
+      [codexSessionKey(A), codexSessionKey(B)].sort()
     )
-    expect((await sessions.historyRows(repo)).map((row) => row.id)).toEqual([codexSessionKey(A)])
+    const asked = mocks.request.mock.calls.length
+    expect(await sessions.transcriptExists(codexSessionKey(A))).toBe(true)
+    expect(mocks.request.mock.calls.length).toBe(asked)
+    expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(false)
+    fs.writeFileSync(later, '')
+    expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(true)
+    expect(mocks.request.mock.calls.slice(asked).map(([method]) => method)).toEqual(['thread/read'])
     expect(mocks.rpcHomes).toEqual([undefined])
-    mocks.request.mockResolvedValue({ thread: { id: A, cwd: repo, path: null } })
-    await sessions.transcriptExists(codexSessionKey(A))
-    expect(mocks.rpcHomes).toEqual([undefined, undefined])
   })
 
   // CODEX§24
@@ -1161,11 +1179,43 @@ describe('CodexSessions', () => {
     expect(deps.events).toHaveBeenCalledWith(id, bound)
   })
 
+  it('the app-server kept for history questions holds the quit until it is closed, also with no Codex tab open', async () => {
+    expect(sessions.hasProcesses()).toBe(false)
+    await sessions.historyRows(repo)
+    expect(sessions.hasProcesses()).toBe(true)
+    await sessions.stopAll()
+    expect(mocks.close).toHaveBeenCalledOnce()
+    expect(sessions.hasProcesses()).toBe(false)
+  })
+
+  // CODEX§15
+  it("a remote tab's sign-in renewal asks an app-server that reads the account's sign-in afresh, not the one kept for its side questions", async () => {
+    const home = path.join(directory, 'work-home')
+    fs.mkdirSync(home)
+    const signIn = (token: string) =>
+      fs.writeFileSync(
+        path.join(home, 'auth.json'),
+        JSON.stringify({ tokens: { access_token: token, account_id: 'acct' } })
+      )
+    signIn('old')
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'account/read' && params.refreshToken) signIn('new')
+      return { account: {} }
+    })
+    await sessions.readAccount(home)
+    const login = (
+      sessions as unknown as { machineLogin(home: string): MachineLogin }
+    ).machineLogin(home)
+    await expect(login.refreshed('old')).resolves.toMatchObject({ accessToken: 'new' })
+    expect(mocks.rpcHomes).toEqual([home, home])
+    expect(mocks.close).toHaveBeenCalledOnce()
+  })
+
   it('cancels launches waiting on availability when shutdown starts and performs no refresh', async () => {
     const gate = deferred<{ id: 'codex'; available: boolean }>()
     vi.mocked(sessions.availability).mockReturnValueOnce(gate.promise)
     const launch = sessions.launch({ kind: 'codex', cwd: repo })
-    expect(sessions.hasRuns()).toBe(true)
+    expect(sessions.hasProcesses()).toBe(true)
     const rejected = expect(launch).rejects.toThrow('shutting down')
     const shutdown = sessions.stopAll()
     gate.resolve({ id: 'codex', available: true })
