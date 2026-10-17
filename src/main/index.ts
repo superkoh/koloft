@@ -1619,6 +1619,7 @@ async function completeLogin(tabId: string, name: string, token: string): Promis
 }
 
 let probeAllInFlight: Promise<AccountView[]> | null = null
+let probeOnceTheRendererIsUp = false
 
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
@@ -2966,9 +2967,7 @@ app.whenReady().then(() => {
 
   const capsuleShownSoLaunchProbeIsNotBilledForNothing = (): boolean =>
     listAccounts().some((a) => a.enabled && a.kind === 'oauth')
-  if (capsuleShownSoLaunchProbeIsNotBilledForNothing()) {
-    mainWindow?.webContents.once('did-finish-load', () => void probeAllForPanel().catch(() => {}))
-  }
+  probeOnceTheRendererIsUp = capsuleShownSoLaunchProbeIsNotBilledForNothing()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -4511,6 +4510,10 @@ function registerIpc(): void {
   ipcMain.handle('tabs:list', (): TabInventoryReply => {
     rendererReady = true
     cronRunner?.onRendererReady()
+    if (probeOnceTheRendererIsUp) {
+      probeOnceTheRendererIsUp = false
+      void probeAllForPanel().catch(() => {})
+    }
     const activeAsleep = restoreOpenTabs()
     const active = activeAsleep ?? activeTabBeforeReload
     activeTabBeforeReload = null

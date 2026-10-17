@@ -360,42 +360,32 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§15
-  it('lists history from the default home every account home shares, and tells a thread has a transcript from the file the listing named, asking Codex nothing more; a thread whose file is missing is listed once more first', async () => {
-    const rollout = path.join(directory, 'rollout-a.jsonl')
-    mocks.request.mockImplementation(async (_method, params) =>
-      params.archived
+  it('lists history from the default home every account home shares, tells a thread has a transcript from the file its listing named without asking Codex, and reads a thread whose listed file is not written yet on that same app-server', async () => {
+    const written = path.join(directory, 'rollout-a.jsonl')
+    const later = path.join(directory, 'rollout-b.jsonl')
+    fs.writeFileSync(written, '')
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'thread/read') return { thread: { id: B, cwd: repo, path: later } }
+      return params.archived
         ? { data: [] }
         : {
             data: [
-              { id: A, cwd: repo, path: rollout },
-              { id: B, cwd: repo, path: path.join(directory, 'not-written-yet.jsonl') }
+              { id: A, cwd: repo, path: written },
+              { id: B, cwd: repo, path: later }
             ]
           }
-    )
+    })
     expect((await sessions.historyRows(repo)).map((row) => row.id).sort()).toEqual(
       [codexSessionKey(A), codexSessionKey(B)].sort()
     )
-    expect(mocks.rpcHomes).toEqual([undefined])
     const asked = mocks.request.mock.calls.length
-    fs.writeFileSync(rollout, '')
     expect(await sessions.transcriptExists(codexSessionKey(A))).toBe(true)
     expect(mocks.request.mock.calls.length).toBe(asked)
     expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(false)
-    expect(mocks.request.mock.calls.map(([method]) => method).slice(asked)).toEqual([
-      'thread/list',
-      'thread/list'
-    ])
+    fs.writeFileSync(later, '')
+    expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(true)
+    expect(mocks.request.mock.calls.slice(asked).map(([method]) => method)).toEqual(['thread/read'])
     expect(mocks.rpcHomes).toEqual([undefined])
-  })
-
-  it('a thread the history has not listed yet is looked for in a fresh listing before it is called gone', async () => {
-    const rollout = path.join(directory, 'rollout-a.jsonl')
-    fs.writeFileSync(rollout, '')
-    mocks.request.mockImplementation(async (_method, params) =>
-      params.archived ? { data: [] } : { data: [{ id: A, cwd: repo, path: rollout }] }
-    )
-    expect(await sessions.transcriptExists(codexSessionKey(A))).toBe(true)
-    expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(false)
   })
 
   // CODEX§24

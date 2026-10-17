@@ -465,13 +465,15 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   // CODEX§15
   async transcriptExists(key: string): Promise<boolean> {
-    this.nativeId(key)
-    const onDisk = (): boolean => {
-      const thread = this.history.get(key)
-      return !!thread?.path && fs.existsSync(thread.path)
-    }
-    if (!onDisk()) await this.refreshHistory()
-    return !this.archivedIds.has(key) && onDisk()
+    if (this.archivedIds.has(key)) return false
+    const listed = this.history.get(key)?.path
+    if (listed && fs.existsSync(listed)) return true
+    const threadId = this.nativeId(key)
+    return this.withRpc(undefined, async (rpc) => {
+      const reply = record(await rpc.request('thread/read', { threadId, includeTurns: false }))
+      const t = userThread(reply.thread)
+      return !!t?.path && fs.existsSync(t.path)
+    })
   }
 
   openApproval(tabId: string): CodexApproval | undefined {
