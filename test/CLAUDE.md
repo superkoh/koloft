@@ -23,8 +23,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 
 - A component test is a `.test.tsx` whose first line is `// @vitest-environment jsdom`;
   it renders with `@testing-library/react` and calls `cleanup` in `afterEach` (vitest
-  globals are off, so nothing cleans up for it). Every other file runs in plain Node
-  (sessionBackendIcon.test.tsx).
+  globals are off, so nothing cleans up for it) — sessionBackendIcon.test.tsx. Every
+  other file runs in plain Node.
 - There is no global `$HOME` sandbox (vitest has no setupFiles). Anything a module
   reads once as it loads — `HOME`, the session timing knobs (`KOLOFT_*_MS`, read through
   `envMs` in sessionRuntime.ts and sessionTracker.ts; an explicit 0 counts), `TZ` — is
