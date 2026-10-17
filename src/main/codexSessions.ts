@@ -286,7 +286,7 @@ function keyedFiles(machine: string, event: UnboundEvent): UnboundEvent {
   const at = (p: string | undefined): string | undefined => keyedOn(machine, p)
   return {
     ...event,
-    files: event.files.map((f) => ({ ...f, src: at(f.src) ?? f.src })),
+    files: event.files.map((f) => ({ ...f, src: at(f.src)! })),
     lastTouched: at(event.lastTouched),
     lastWritten: at(event.lastWritten)
   }
@@ -296,7 +296,7 @@ export interface CodexMachineDeps {
   instance: string
   ready(): Promise<void>
   run(machine: string, cmd: string): Promise<RunResult>
-  sshArgs(background: boolean): string[]
+  sshArgs(machine: string, background: boolean): string[]
   machinePackage(): MachinePackage
   tabDir(tabId: string): string
   fileExists(file: string): Promise<boolean>
@@ -340,7 +340,6 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   readonly id = 'codex'
   private crashLeftoversEnded?: Promise<void>
   private listedHooks = new Map<string, ListedHook>()
-  private machineThreads = new Map<string, ListedThread[]>()
   private machineHistory = new Map<
     string,
     { at: number; reading?: Promise<void>; error?: unknown }
@@ -431,14 +430,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   ): Promise<Set<string>> {
     const rpc = new CodexRpc(launch)
     try {
-      const listed = async (): Promise<ListedHook[]> => {
-        const hooks = koloftHooksIn(
-          await rpc.request('hooks/list', { cwds: [launch.cwd] }).catch(() => undefined),
-          wanted
-        )
-        for (const hook of hooks) this.listedHooks.set(hook.command, hook)
-        return hooks
-      }
+      const listed = (): Promise<ListedHook[]> => this.listHooks(rpc, launch.cwd, wanted)
       const first = await listed()
       const untrusted = first.filter((h) => h.trustStatus !== 'trusted')
       for (const h of untrusted)
@@ -463,13 +455,20 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       configOverrides: hookOverrides(wanted)
     })
     try {
-      const reply = await rpc.request('hooks/list', { cwds: [os.homedir()] }).catch(() => undefined)
-      const hooks = koloftHooksIn(reply, wanted)
-      for (const hook of hooks) this.listedHooks.set(hook.command, hook)
-      return hooks
+      return await this.listHooks(rpc, os.homedir(), wanted)
     } finally {
       await rpc.close().catch(() => {})
     }
+  }
+
+  // CODEX§27
+  private async listHooks(rpc: CodexRpc, cwd: string, wanted: KoloftHook[]): Promise<ListedHook[]> {
+    const hooks = koloftHooksIn(
+      await rpc.request('hooks/list', { cwds: [cwd] }).catch(() => undefined),
+      wanted
+    )
+    for (const hook of hooks) this.listedHooks.set(hook.command, hook)
+    return hooks
   }
 
   // CODEX§16
@@ -478,7 +477,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     await m.ready()
     const rpc = new CodexRpc({
       binary: 'ssh',
-      args: [...m.sshArgs(true), machine, machineAppServerCmd()],
+      args: [...m.sshArgs(machine, true), machine, machineAppServerCmd()],
       cwd: os.homedir()
     })
     try {
@@ -595,10 +594,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   protected async listHistory(): Promise<{ key: string; entry: CodexThread; archived: boolean }[]> {
     const rpc = this.rpc(undefined)
     const local = await listThreads(rpc).finally(() => rpc.close())
-    return [
-      ...this.listedOn(undefined, local),
-      ...[...this.machineThreads].flatMap(([machine, threads]) => this.listedOn(machine, threads))
-    ]
+    const onMachines = [...this.history].flatMap(([key, entry]) =>
+      hostOfKey(key) ? [{ key, entry, archived: this.archivedIds.has(key) }] : []
+    )
+    return [...this.listedOn(undefined, local), ...onMachines]
   }
 
   private listedOn(
@@ -644,7 +643,6 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const threads =
       home.code === 0 ? await this.withMachineRpc(machine, (rpc) => listThreads(rpc)) : []
     if (this.shuttingDown) return
-    this.machineThreads.set(machine, threads)
     const others = (key: string): boolean => hostOfKey(key) !== machine
     this.history = new Map([...this.history].filter(([key]) => others(key)))
     this.archivedIds = new Set([...this.archivedIds].filter(others))
@@ -667,7 +665,9 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   stop(tabId: string, nativeExitCode?: number, restarting = false): Promise<void> {
     const machine = this.runs.get(tabId)?.machine
     const stopped = super.stop(tabId, nativeExitCode, restarting)
-    if (machine)
+    const state = machine && this.machineHistory.get(machine)
+    if (restarting && state) state.at = 0
+    else if (machine)
       void stopped.then(
         async () => {
           if (this.shuttingDown) return
@@ -842,7 +842,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       const [hookTrust, , trustedThere] = machine
         ? await Promise.all([
             this.koloftHookStates(hooks),
-            this.machineReady(machine),
+            this.sweptOnce(machine),
             askMachineTrust &&
               (trustedOnMachine.includes(barePath(cwd)) || this.machineTrusts(parseRemoteKey(cwd)!))
           ])
@@ -955,7 +955,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // ADR-0039
-  private machineReady(machine: string): Promise<void> {
+  private sweptOnce(machine: string): Promise<void> {
     const m = this.machineDeps()
     let swept = this.machinesSwept.get(machine)
     if (!swept) {
@@ -978,7 +978,9 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const m = this.machineDeps()
     return {
       connect: () =>
-        spawn('ssh', [...m.sshArgs(true), machine, proxyCmd(m.instance, tabId)], { stdio: 'pipe' }),
+        spawn('ssh', [...m.sshArgs(machine, true), machine, proxyCmd(m.instance, tabId)], {
+          stdio: 'pipe'
+        }),
       login: this.machineLogin(home),
       macCwd: os.homedir(),
       machineCwd: () => barePath(cwdNow()),
@@ -1007,7 +1009,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     )
     return codexLaunchLine({
       host: machine,
-      sshOptions: m.sshArgs(false),
+      sshOptions: m.sshArgs(machine, false),
       machine: pkg,
       tabDir,
       tabId,

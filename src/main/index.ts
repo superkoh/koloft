@@ -103,6 +103,7 @@ import {
   defaultControlDir,
   ensureControlDir,
   rsyncPull,
+  backgroundOptions,
   runSsh,
   runSshBytes,
   sshOptions
@@ -2353,7 +2354,9 @@ app.whenReady().then(() => {
   const storedDeps = {
     pty: ptyMgr,
     runtime: tracker,
-    projectInfo: projectInfoFor,
+    projectInfo: projectInfoOnHost,
+    remoteDirExists: (dir: string) => hosts.of(dir).dirExistsOrThrow(dir),
+    remoteTreeIo: machineTreeIo,
     changed: () => {
       const all = onSessionsChanged()
       sendToRenderer('sessions:update', all)
@@ -2373,18 +2376,17 @@ app.whenReady().then(() => {
         ready: loginEnvReady,
         run: (host, cmd) =>
           loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
-        sshArgs: (background) => {
+        sshArgs: (machine, background) => {
           ensureControlDir(remoteControlDir)
-          return sshOptions(remoteControlDir, background)
+          return background
+            ? backgroundOptions(machine, remoteControlDir)
+            : sshOptions(remoteControlDir, false)
         },
         machinePackage,
         tabDir: (tabId) => tabPackageDir(userData, tabId),
         fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
         keyed: pinnedKeyOn
       },
-      projectInfo: projectInfoOnHost,
-      remoteDirExists: (dir) => hosts.of(dir).dirExistsOrThrow(dir),
-      remoteTreeIo: machineTreeIo,
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
@@ -2415,9 +2417,6 @@ app.whenReady().then(() => {
   try {
     museSessions = new MuseSessions(path.join(userData, 'muse-sessions.json'), {
       ...storedDeps,
-      projectInfo: projectInfoOnHost,
-      remoteDirExists: (dir) => hosts.of(dir).dirExistsOrThrow(dir),
-      remoteTreeIo: machineTreeIo,
       remote: museOnMachines,
       leftWorktree: (resource) => removeUntouchedWorktree(museSessions, resource),
       openShimRoot: path.join(userData, 'muse-open'),

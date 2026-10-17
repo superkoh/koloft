@@ -135,13 +135,7 @@ fi
 }
 
 export function tabScript(spec: TabSpec): string {
-  if (
-    !NEEDS_NO_QUOTING_RE.test(spec.tabId) ||
-    !NEEDS_NO_QUOTING_RE.test(spec.tmuxName) ||
-    !NEEDS_NO_QUOTING_RE.test(spec.machineName)
-  ) {
-    throw new Error('unsafe tab/session name')
-  }
+  assertSafeNames(spec.tabId, spec.tmuxName, spec.machineName)
   const T = tabPath(spec.tabId)
   const H = `$HOME/.koloft/hook-sessions/${spec.tabId}`
   const muse = spec.muse
@@ -201,7 +195,7 @@ export function assertSafeNames(...names: string[]): void {
   if (!names.every((n) => NEEDS_NO_QUOTING_RE.test(n))) throw new Error('unsafe tab/session name')
 }
 
-export function machineReady(s: {
+function machineReady(s: {
   host: string
   sshOptions: string[]
   machine: MachinePackage
@@ -219,12 +213,25 @@ export function machineReady(s: {
   return `h=$(${probe}); { [ "$h" = ok ] || ${pushMachine}; }`
 }
 
-export const COULD_NOT_CONNECT = `echo '[Koloft] could not connect or push files — see the error above'`
+const COULD_NOT_CONNECT = `echo '[Koloft] could not connect or push files — see the error above'`
 
-export function pushTabDir(s: { host: string; sshOptions: string[]; tabDir: string }): string {
+function pushTabDir(s: { host: string; sshOptions: string[]; tabDir: string }): string {
   return (
     `COPYFILE_DISABLE=1 tar cf - -C ${shq(s.tabDir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
     `'umask 077; mkdir -p "$HOME/.koloft/tabs" && tar xf - -C "$HOME/.koloft/tabs"'`
+  )
+}
+
+export function tabPushed(s: {
+  host: string
+  sshOptions: string[]
+  machine: MachinePackage
+  tabId: string
+  tabDir: string
+}): string {
+  return (
+    `${machineReady(s)} && ${pushTabDir(s)} ` +
+    `|| { ${COULD_NOT_CONNECT}; rm -rf ${shq(s.tabDir)}; exit 4; }; rm -rf ${shq(s.tabDir)}; `
   )
 }
 
@@ -234,9 +241,7 @@ export function launchLine(s: LaunchLineSpec): string {
   const host = shq(s.host)
   const run = `ssh -tt ${opts} ${host} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" $a $COLUMNS $LINES"`
   return (
-    `${machineReady(s)} && ${pushTabDir(s)} ` +
-    `|| { ${COULD_NOT_CONNECT}; rm -rf ${shq(s.tabDir)}; exit 4; }; ` +
-    `rm -rf ${shq(s.tabDir)}; a=${s.mode}; while :; do ${run}; c=$?; [ "$c" = ${SSH_LINK_BROKE_EXIT} ] || { ` +
+    `${tabPushed(s)}a=${s.mode}; while :; do ${run}; c=$?; [ "$c" = ${SSH_LINK_BROKE_EXIT} ] || { ` +
     `[ "$c" = 0 ] || { echo "[Koloft] the session did not start (exit $c) — see above; press Enter to close"; read -r _; }; exit "$c"; }; ` +
     `a=attach; ${TURN_OFF_MOUSE_PASTE_AND_ALT_SCREEN}; clear; ` +
     `echo '[Koloft] connection lost, reconnecting in 2s…'; sleep 2; done`
@@ -269,6 +274,6 @@ export function resizeStandInCmd(tabId: string, cols: number, rows: number): str
 }
 
 export function killSessionCmd(tmuxName: string): string {
-  if (!NEEDS_NO_QUOTING_RE.test(tmuxName)) throw new Error('unsafe tab/session name')
+  assertSafeNames(tmuxName)
   return remoteShCommand(`tmux -L koloft kill-session -t ${tmuxName}`)
 }

@@ -5,13 +5,7 @@ import type { Socket } from 'net'
 import WebSocket from 'ws'
 import { shq } from '@shared/shellQuote'
 import { CODEX_FIRST_ON_PATH, REMOTE_ENV_LINES, remoteShCommand } from './install'
-import {
-  assertSafeNames,
-  COULD_NOT_CONNECT,
-  machineReady,
-  pushTabDir,
-  type MachinePackage
-} from './launch'
+import { assertSafeNames, tabPushed, type MachinePackage } from './launch'
 import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import {
@@ -28,7 +22,7 @@ import { CODEX_REPLY_LANGUAGE_ENV, CODEX_SAID_ENV, handedOverOwnerWordsFiles } f
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
 
 // ADR-0039
-export const REMOTE_CODEX_HOME = `${REMOTE_HOME}/codex-home`
+const REMOTE_CODEX_HOME = `${REMOTE_HOME}/codex-home`
 
 export function codexMachineInstance(userData: string): string {
   return crypto.createHash('sha256').update(userData).digest('hex').slice(0, 12)
@@ -157,9 +151,7 @@ export interface CodexLaunchLineSpec {
 export function codexLaunchLine(s: CodexLaunchLineSpec): string {
   const start = `ssh -tt ${s.sshOptions.join(' ')} ${shq(s.host)} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" start"`
   return (
-    `${machineReady(s)} && ${pushTabDir(s)} ` +
-    `|| { ${COULD_NOT_CONNECT}; rm -rf ${shq(s.tabDir)}; exit 4; }; rm -rf ${shq(s.tabDir)}; ` +
-    `${start}; c=$?; [ "$c" = 0 ] || { echo "[Koloft] Codex did not start on the machine (exit $c) — see above; press Enter to close"; read -r _; exit "$c"; }; ` +
+    `${tabPushed(s)}${start}; c=$?; [ "$c" = 0 ] || { echo "[Koloft] Codex did not start on the machine (exit $c) — see above; press Enter to close"; read -r _; exit "$c"; }; ` +
     `clear; exec ${s.tui.map(shq).join(' ')}`
   )
 }
