@@ -26,7 +26,7 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
-import { MuseSessions, museShowsAnEmptyInputBox } from './museSessions'
+import { MuseSessions, museShowsItsInputBox } from './museSessions'
 import { museServersAmong } from './taskProcs'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome } from './museSessionLog'
@@ -528,7 +528,7 @@ const slash = new SlashCommands({
     const s = sessionOfTab(tabId)
     if (s?.backendId === 'muse') {
       const lines = screen ?? (await screenLines(tabId))
-      return lines && !museShowsAnEmptyInputBox(lines)
+      return lines && !museShowsItsInputBox(lines)
     }
     if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
     return claudeShowsAPanel(s.sessionId)

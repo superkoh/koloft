@@ -106,7 +106,13 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - For every live session Muse writes
   `museHome/runtime/muse/sessions/<sessionId>.json`:
   `{"schema_version":1,"session_id":"…","process_generation_hint":"pid=<pid>",…}`.
-  The pid is the TUI process (§1).
+  The pid is the TUI process (§1). That is where Linux 1.4.9 writes it (Docker). On
+  macOS 1.4.10 the folder is `/tmp/tbh-<uid>-rt/muse/sessions` instead, the same file
+  in the same shape, whatever `HOME`, `XDG_CONFIG_HOME` or `XDG_RUNTIME_DIR` say, beside
+  the session sockets `ms-*.sock` (real Meta account, macOS, 2026-10: `lsof` on the
+  running TUI). Without it Koloft binds a resumed tab only at its first prompt.
+- macOS 1.4.10 also writes `~/Library/Application Support/Muse/session-name-authority/
+  session-names.db` in the real user's home, whatever `HOME` says.
 - On `/clear`, `/new` and in-TUI `/resume` the old file goes and the new session's
   file appears with the same pid. `muse resume <id>` writes the resumed id. After
   `/exit` the last file stays behind, stale.
@@ -288,7 +294,10 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   with `❯` (bare when empty, `❯ <draft>` with text in it); the status row, and any
   background-task rows, come below the second rule. An approval box takes its place:
   several rows between the rules and no `❯` row (1.4.9, fake model, Docker, 2026-10,
-  read from the rendered screen). Slash-command menus were not looked at.
+  read from the rendered screen). Slash-command menus were not looked at. In 1.4.10
+  (real Meta account, macOS) the upper rule carries a title, `── Voice input (⌥ + v to
+  start) ────…`, and an empty box can show a hint after `❯`, such as `Press Ctrl+O to
+  expand collapsed tool output`.
 - What a slash command prints (`/usage`, `/status`, …) is drawn on the screen only; the
   session log holds none of it (1.4.9, fake model).
 
@@ -312,18 +321,28 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `ai.meta.dev.credentials`, account `meta`), one item for the whole user whatever
   `XDG_CONFIG_HOME` says: a logout in one config folder logs every folder out. With
   `TBH_CREDENTIAL_BACKEND=file` the credential is a file, `auth.json` in that config
-  folder (mode 0600), and two folders hold two credentials. Measured for API keys;
-  where a finished device-code login lands is not probed (needs a Meta account).
+  folder (mode 0600), and two folders hold two credentials. A finished device-code
+  login with `TBH_CREDENTIAL_BACKEND=file` writes that same `auth.json`
+  (`providers.meta` with an access token, the user's name and email) and nothing to
+  the Keychain (1.4.10, a real Meta account, macOS, 2026-10).
 - A config folder whose `muse/trust.json`, `settings.json` and `AGENTS.md` are symlinks
   to the user's own files works: muse keeps each symlink and rewrites the file it
   points to (trust answers, `/theme`, `/permissions`), drops empty `.<name>.lock` files
   beside the symlinks, and `auth set` writes a real `auth.json` (0600) in the folder
-  itself. A `settings.json` without `"schema_version"` stops both the TUI and
-  `muse serve` ("malformed settings file"). Sessions and the live registry stay in
-  museHome (§2) whatever `XDG_CONFIG_HOME` says (Docker and macOS).
+  itself. A symlink to a file that does not exist is different per file: muse
+  creates `trust.json` or `settings.json` through it, but a missing `AGENTS.md`
+  stops the TUI before it draws anything ("runtime host failed to start: failed to
+  read rules file at …/AGENTS.md: No such file or directory", 1.4.10, macOS).
+  A `settings.json` without `"schema_version"` stops both the TUI and
+  `muse serve` ("malformed settings file"). Sessions stay in museHome (§2) whatever
+  `XDG_CONFIG_HOME` says (Docker and macOS); for the live registry see §4.
 - `muse serve` (experimental capability) `account/read` → `state:
   "loggedOut"|"apiKey"|"envKey"|"accountLogin"`; `account/loginStart {type}` returns
   the device code and URL.
+- How much of a Meta account's quota is used shows only after a model call: in the
+  TUI `/usage` draws a Current and a Weekly bar (screen only, §11), while a fresh
+  `muse serve` answers `usage/read` with nothing in it and `muse exec --json` prints
+  no usage record (1.4.10, a real Meta account, macOS, 2026-10).
 - A rejected `META_API_KEY` ends the launch before the TUI: "failed to fetch model
   catalog: authentication failed: your API key from META_API_KEY was rejected".
 

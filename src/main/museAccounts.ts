@@ -50,7 +50,8 @@ function linkBack(own: string, owners: string): void {
     }
     fs.rmSync(own, { force: true })
   }
-  fs.symlinkSync(owners, own)
+  // MUSE§13
+  if (fs.existsSync(owners)) fs.symlinkSync(owners, own)
 }
 
 const KOLOFT_SKILL = 'koloft'

@@ -35,6 +35,17 @@ describe("a Muse account's own settings folder", () => {
     expect(fs.lstatSync(path.join(home, 'muse', 'auth.json')).isSymbolicLink()).toBe(false)
   })
 
+  // MUSE§13
+  it("leaves out the link to an owner's file that does not exist, since muse will not start when its AGENTS.md rules file is missing, and links it once the owner has one", () => {
+    prepareMuseHome(home, owner)
+    expect(fs.lstatSync(path.join(home, 'muse', 'AGENTS.md'), { throwIfNoEntry: false })).toBe(
+      undefined
+    )
+    fs.writeFileSync(path.join(owner, 'muse', 'AGENTS.md'), '# rules')
+    prepareMuseHome(home, owner)
+    expect(fs.readFileSync(path.join(home, 'muse', 'AGENTS.md'), 'utf8')).toBe('# rules')
+  })
+
   it("keeps a folder muse trusted while the link was replaced, in the owner's trust list", () => {
     fs.writeFileSync(
       path.join(owner, 'muse', 'trust.json'),
