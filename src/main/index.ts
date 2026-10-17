@@ -2792,15 +2792,19 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
-      const live = new Set(
-        ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : []))
+      const busy = new Set(
+        allSessions().flatMap((s) => {
+          const h = ptyMgr.get(s.tabId)
+          const working = s.status === 'working' || s.status === 'approval'
+          return working && h?.alive && h.remoteHost ? [h.remoteHost] : []
+        })
       )
       return (workspaceMgr?.remoteTargets() ?? []).map((t) => ({
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
         paths: t.paths,
-        hasTabs: live.has(t.host)
+        busy: busy.has(t.host)
       }))
     },
     onChange: (host) => {
@@ -2814,6 +2818,7 @@ app.whenReady().then(() => {
     onHooksPulled: (host) => museSessions?.followMirrors(host),
     onConnected: (host) => void freshness?.machineUp(host)
   })
+  ptyMgr.on('remote-typed', (host: string) => remoteSync?.typedInto(host))
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
     autoFetch: () => loadSettings().gitAutoFetch,

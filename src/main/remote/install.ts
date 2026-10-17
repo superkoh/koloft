@@ -223,22 +223,42 @@ export const FINGERPRINT = `fp() { stat -c '%.9Y %s' "$1" 2>/dev/null || stat -f
 const UID_LINE = 'uid '
 const TMP_LINE = 'tmp '
 const STAMP_LINE = 'stamp '
+const TRANSCRIPTS_LINE = 'transcripts '
+const HOOKS_LINE = 'hooks '
 const CLAUDE_TMP_BASE =
   'if [ "$(uname)" = Darwin ]; then b="${CLAUDE_CODE_TMPDIR:-/tmp}"; ' +
   'else b="${CLAUDE_CODE_TMPDIR:-${TMPDIR:-${TMP:-${TEMP:-/tmp}}}}"; fi'
+// PLATFORM§37
+const EVERY_FILE_STAMPED =
+  'if stat -c %s / >/dev/null 2>&1; then st="stat -c %n:%.9Y:%s"; else st="stat -f %N:%Fm:%z"; fi; ' +
+  'stamped() { find "$@" -type f -exec $st {} + 2>/dev/null; }'
 
 // CC§2
-export function heartbeatCmd(paths: string[], watched: string[] = []): string {
+export function heartbeatCmd(
+  paths: string[],
+  watched: string[] = [],
+  projectSlugs: string[] = []
+): string {
   return remoteShCommand(
     `echo "${UID_LINE}$(id -u)"; ${CLAUDE_TMP_BASE}; echo "${TMP_LINE}$(cd "$b" && pwd -P)"; ` +
       `${FINGERPRINT}; n=$1; shift; ` +
       `while [ "$n" -gt 0 ]; do echo "${STAMP_LINE}$(fp "$1" 2>/dev/null)"; shift; n=$((n - 1)); done; ` +
+      `${EVERY_FILE_STAMPED}; n=$1; shift; ` +
+      `echo "${TRANSCRIPTS_LINE}$(i=0; for s in "$@"; do [ "$i" -lt "$n" ] || break; i=$((i + 1)); ` +
+      'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; ' +
+      'while [ "$n" -gt 0 ]; do shift; n=$((n - 1)); done; ' +
+      `echo "${HOOKS_LINE}$(stamped "$HOME/.koloft/hook-sessions" | cksum)"; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
       'git -C "$p" worktree list --porcelain 2>/dev/null; done; exit 0',
-    [String(watched.length), ...watched, ...paths]
+    [String(watched.length), ...watched, String(projectSlugs.length), ...projectSlugs, ...paths]
   )
+}
+
+export interface MirrorStamps {
+  transcripts?: string
+  hooks?: string
 }
 
 export interface RemoteGitInfo {
@@ -252,9 +272,11 @@ export function parseHeartbeat(stdout: string): {
   git: Map<string, RemoteGitInfo>
   tmp?: MachineTmp
   stamps: string[]
+  mirrors: MirrorStamps
 } {
   const alive: string[] = []
   const stamps: string[] = []
+  const mirrors: MirrorStamps = {}
   const git = new Map<string, RemoteGitInfo>()
   let uid = NaN
   let tmpRoot = ''
@@ -279,6 +301,10 @@ export function parseHeartbeat(stdout: string): {
       tmpRoot = line.slice(TMP_LINE.length)
     } else if (!current && line.startsWith(STAMP_LINE)) {
       stamps.push(line.slice(STAMP_LINE.length))
+    } else if (!current && line.startsWith(TRANSCRIPTS_LINE)) {
+      mirrors.transcripts = line.slice(TRANSCRIPTS_LINE.length)
+    } else if (!current && line.startsWith(HOOKS_LINE)) {
+      mirrors.hooks = line.slice(HOOKS_LINE.length)
     } else if (!current) {
       if (line.trim()) alive.push(line.trim())
     } else if (line === 'git') {
@@ -290,7 +316,7 @@ export function parseHeartbeat(stdout: string): {
     }
   }
   flush()
-  return { alive, git, tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined, stamps }
+  return { alive, git, tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined, stamps, mirrors }
 }
 
 // PLATFORM§37
