@@ -5,20 +5,20 @@ import type {
   ClaudeSessionInfo as SessionInfo,
   PreviewItem,
   SessionStatus,
-  SessionUsage,
   BackgroundItem
 } from '@shared/types'
 import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { TurnLog, type SaidLine, type Turn as TalkTurn } from '@shared/turns'
-import { costUsdOf, resolvePricing, type TokenCounts } from '@shared/pricing'
-import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
 import { projectInfoFor, realpathSafe } from './projectInfo'
 import { worktreeHomeRoot } from './resumePlan'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
-import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
+import { capTouched, touchedItem } from './touchedFiles'
+import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
+import { TitleSources } from './titleSources'
+import { UsageMeter } from './usageMeter'
 import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
@@ -56,18 +56,6 @@ const RELOCATE_SETTLE_MS = envMs('KOLOFT_RELOCATE_SETTLE_MS', 1200)
 const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
 
 export { encodeCwd }
-
-function num(x: unknown): number {
-  return typeof x === 'number' && isFinite(x) && x > 0 ? x : 0
-}
-
-const TOKEN_FIELDS = ['inTok', 'outTok', 'cacheWriteTok', 'cacheReadTok'] as const
-
-function growthOver(booked: TokenCounts, line: TokenCounts): TokenCounts {
-  const grown = { ...line }
-  for (const f of TOKEN_FIELDS) grown[f] = Math.max(0, line[f] - booked[f])
-  return grown
-}
 
 const BG_PROMOTED = '\x00promoted'
 const UNLISTED_BACKGROUND_WORK: BackgroundItem = {
@@ -190,10 +178,8 @@ function listSubagentJsonls(dir: string): string[] {
   return out
 }
 
-const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 // CC§2
 const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\btouch\s/
-const READ_TOOLS = new Set(['Read'])
 const TASK_LABEL_FIELD: Record<string, string> = {
   Bash: 'command',
   Monitor: 'command',
@@ -241,40 +227,6 @@ interface SubagentFile {
   tail: Buffer
   activeMs: number
   teammate?: boolean
-}
-
-function toolFilePath(input: unknown): string | null {
-  if (!input || typeof input !== 'object') return null
-  const i = input as Record<string, unknown>
-  const p = i.file_path ?? i.notebook_path ?? i.path
-  return typeof p === 'string' && p.length ? p : null
-}
-
-function countLines(s: unknown): number {
-  if (typeof s !== 'string' || s.length === 0) return 0
-  let n = 1
-  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++
-  if (s.charCodeAt(s.length - 1) === 10) n--
-  return n
-}
-
-function editDelta(tool: string, input: unknown): { added: number; removed: number } {
-  if (!input || typeof input !== 'object') return { added: 0, removed: 0 }
-  const i = input as Record<string, unknown>
-  if (tool === 'Edit') return { added: countLines(i.new_string), removed: countLines(i.old_string) }
-  if (tool === 'MultiEdit') {
-    let added = 0
-    let removed = 0
-    if (Array.isArray(i.edits)) {
-      for (const e of i.edits as Array<Record<string, unknown>>) {
-        added += countLines(e?.new_string)
-        removed += countLines(e?.old_string)
-      }
-    }
-    return { added, removed }
-  }
-  if (tool === 'Write') return { added: countLines(i.content), removed: 0 }
-  return { added: 0, removed: 0 }
 }
 
 // CC§2
@@ -461,16 +413,10 @@ interface Tracked {
   launchCwd: string
   readOffset: number
   tailBuf: Buffer
-  customTitle: string | null
-  title: string | null
-  firstPrompt: string | null
-  commandArgsTitle: string | null
-  commandTitle: string | null
-  candidates: Map<string, FileAcc>
+  titles: TitleSources
+  touched: ClaudeTouchedFiles
   fileCache: Map<string, string>
   canonPending: Set<string>
-  lastTouchedAbs: string | null
-  lastWrittenAbs: string | null
   parsePromise?: Promise<void>
   parseAgain: boolean
   statusSeq: number
@@ -478,18 +424,7 @@ interface Tracked {
   jsonlListener?: () => void
   titleListener?: () => void
   sidecarTitle: string | null
-  usageSeen: Map<string, TokenCounts>
-  usageAny: boolean
-  usageInTok: number
-  usageOutTok: number
-  usageCacheWriteTok: number
-  usageCacheReadTok: number
-  usageCostUsd: number
-  usageUnknownModel: boolean
-  usageModel?: string
-  usageCcVersion?: string
-  usageCtxTokens?: number
-  usageToday: { dayKey: string; cost: number }
+  meter: UsageMeter
   subagentFiles: Map<string, SubagentFile>
   subagentScanMs: number
   bgTasks: Set<string>
@@ -590,29 +525,15 @@ export class SessionTracker extends SessionRuntime {
       launchCwd: remote ? cwd : realpathSafe(cwd),
       readOffset: 0,
       tailBuf: Buffer.alloc(0),
-      customTitle: null,
-      title: null,
-      firstPrompt: null,
-      commandArgsTitle: null,
-      commandTitle: null,
-      candidates: new Map(),
+      titles: new TitleSources(),
+      touched: new ClaudeTouchedFiles(),
       fileCache: new Map(),
       canonPending: new Set(),
       sidecarTitle: null,
-      lastTouchedAbs: null,
-      lastWrittenAbs: null,
       parseAgain: false,
       statusSeq: 0,
       caughtUp: false,
-      usageSeen: new Map(),
-      usageAny: false,
-      usageInTok: 0,
-      usageOutTok: 0,
-      usageCacheWriteTok: 0,
-      usageCacheReadTok: 0,
-      usageCostUsd: 0,
-      usageUnknownModel: false,
-      usageToday: { dayKey: '', cost: 0 },
+      meter: new UsageMeter(),
       subagentFiles: new Map(),
       subagentScanMs: 0,
       bgTasks: new Set(),
@@ -1092,32 +1013,15 @@ export class SessionTracker extends SessionRuntime {
   private resetParseState(t: Tracked, keepBindMs = false): void {
     t.readOffset = 0
     t.tailBuf = Buffer.alloc(0)
-    t.customTitle = null
-    t.title = null
-    t.firstPrompt = null
-    t.commandArgsTitle = null
-    t.commandTitle = null
-    t.candidates = new Map()
+    t.titles = new TitleSources()
+    t.touched = new ClaudeTouchedFiles()
     t.fileCache = new Map()
-    t.lastTouchedAbs = null
-    t.lastWrittenAbs = null
     t.relocatedCwd = undefined
     t.lastWorktreeStateInBatch = undefined
     t.info.lastTouched = undefined
     t.info.lastWritten = undefined
     t.caughtUp = false
-    t.usageSeen = new Map()
-    t.usageAny = false
-    t.usageInTok = 0
-    t.usageOutTok = 0
-    t.usageCacheWriteTok = 0
-    t.usageCacheReadTok = 0
-    t.usageCostUsd = 0
-    t.usageUnknownModel = false
-    t.usageModel = undefined
-    t.usageCtxTokens = undefined
-    t.usageCcVersion = undefined
-    t.usageToday = { dayKey: '', cost: 0 }
+    t.meter = new UsageMeter()
     t.subagentFiles = new Map()
     t.subagentScanMs = 0
     t.info.usage = undefined
@@ -1453,7 +1357,7 @@ export class SessionTracker extends SessionRuntime {
         const ts = Math.min(Date.parse(obj.timestamp ?? ''), Date.now())
         if (isFinite(ts) && ts > t.lastBgActivityTs) t.lastBgActivityTs = ts
         if (obj.type === 'assistant' && obj.message?.usage) {
-          this.accumulateUsage(t, obj, false)
+          t.meter.add(obj, false)
           folded = true
         }
       }
@@ -1565,10 +1469,7 @@ export class SessionTracker extends SessionRuntime {
       // ADR-0025
       if (!t.remote && !fs.existsSync(t.info.treeRoot)) this.setTreeRoot(t, obj.cwd)
     }
-    if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') t.title = obj.aiTitle
-    // CC§9
-    if (obj.type === 'custom-title' && typeof obj.customTitle === 'string' && obj.customTitle)
-      t.customTitle = obj.customTitle
+    t.titles.noteRecord(obj)
     // CC§2
     if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
       t.relocatedCwd = obj.relocatedCwd
@@ -1623,9 +1524,7 @@ export class SessionTracker extends SessionRuntime {
       }
       const cls = raw !== null ? classifyUserPrompt(raw) : null
       const named = raw !== null && whoTyped(obj, raw) ? cls : null
-      if (named?.title && !t.firstPrompt) t.firstPrompt = named.title
-      if (named?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = named.commandArgs
-      if (named?.commandName && !t.commandTitle) t.commandTitle = named.commandName
+      if (named) t.titles.notePrompt(named)
       if ((cls?.genuine || hasImage) && mainThread && !commandEcho(obj, raw)) {
         activity = 'user'
         if (
@@ -1637,7 +1536,7 @@ export class SessionTracker extends SessionRuntime {
       }
     }
     if (obj.type === 'assistant' && obj.message?.usage) {
-      this.accumulateUsage(t, obj, mainThread)
+      t.meter.add(obj, mainThread)
     }
     const content = obj.message?.content
     if (obj.type === 'assistant' && Array.isArray(content)) {
@@ -1664,97 +1563,12 @@ export class SessionTracker extends SessionRuntime {
         const raw = toolFilePath(b.input)
         const fp = raw ? this.resolvePath(t, raw) : null
         if (!fp) continue
-        if (WRITE_TOOLS.has(b.name)) {
-          const { added, removed } = editDelta(b.name, b.input)
-          noteWrite(t.candidates, fp, added, removed, isFinite(recTs) ? recTs : Date.now())
-          t.lastTouchedAbs = fp
-          t.lastWrittenAbs = fp
-          if (liveNow) t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
-        } else if (READ_TOOLS.has(b.name)) {
-          noteRead(t.candidates, fp)
-          t.lastTouchedAbs = fp
-        }
+        const at = isFinite(recTs) ? recTs : Date.now()
+        if (t.touched.noteToolCall(b.name, b.input, fp, at) && liveNow)
+          t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
       }
     }
     return activity
-  }
-
-  // CC§2
-  private accumulateUsage(t: Tracked, obj: TranscriptRecord, updateContext = true): void {
-    const msg = obj.message
-    if (!msg) return
-    const model = typeof msg.model === 'string' ? msg.model : ''
-    if (model === '<synthetic>') return
-    const u = msg.usage || {}
-    const line: TokenCounts = {
-      inTok: num(u.input_tokens),
-      outTok: num(u.output_tokens),
-      cacheWriteTok: num(u.cache_creation_input_tokens),
-      cacheReadTok: num(u.cache_read_input_tokens)
-    }
-    let add = line
-    const id = typeof msg.id === 'string' ? msg.id : ''
-    const reqId = typeof obj.requestId === 'string' ? obj.requestId : ''
-    if (id || reqId) {
-      const key = id + ' ' + reqId
-      const booked = t.usageSeen.get(key)
-      // CC§2
-      if (booked) {
-        add = growthOver(booked, line)
-        if (TOKEN_FIELDS.every((f) => add[f] === 0)) return
-        for (const f of TOKEN_FIELDS) booked[f] += add[f]
-      } else {
-        t.usageSeen.set(key, { ...line })
-      }
-    }
-    t.usageAny = true
-
-    t.usageInTok += add.inTok
-    t.usageOutTok += add.outTok
-    t.usageCacheWriteTok += add.cacheWriteTok
-    t.usageCacheReadTok += add.cacheReadTok
-
-    const pricing = model ? resolvePricing(model) : undefined
-    if (!pricing) {
-      t.usageUnknownModel = true
-    } else {
-      const cost = costUsdOf(pricing, add)
-      t.usageCostUsd += cost
-      const recDay = localDayKey(obj.timestamp)
-      if (recDay) {
-        if (recDay > t.usageToday.dayKey) {
-          t.usageToday.dayKey = recDay
-          t.usageToday.cost = 0
-        }
-        if (recDay === t.usageToday.dayKey) t.usageToday.cost += cost
-      }
-    }
-    if (updateContext) {
-      if (model) t.usageModel = model
-      t.usageCtxTokens = line.inTok + line.cacheReadTok + line.cacheWriteTok
-      if (typeof obj.version === 'string' && obj.version) t.usageCcVersion = obj.version
-    }
-  }
-
-  private buildUsage(t: Tracked): SessionUsage | undefined {
-    if (!t.usageAny) return undefined
-    const pricing = t.usageModel ? resolvePricing(t.usageModel) : undefined
-    const ctxPct =
-      pricing && t.usageCtxTokens != null ? t.usageCtxTokens / pricing.windowTokens : undefined
-    const hasToday = !t.usageUnknownModel && t.usageToday.cost > 0 && !!t.usageToday.dayKey
-    return {
-      inTok: t.usageInTok,
-      outTok: t.usageOutTok,
-      cacheWriteTok: t.usageCacheWriteTok,
-      cacheReadTok: t.usageCacheReadTok,
-      costUsd: t.usageUnknownModel ? undefined : t.usageCostUsd,
-      todayCostUsd: hasToday ? t.usageToday.cost : undefined,
-      todayDayKey: hasToday ? t.usageToday.dayKey : undefined,
-      model: t.usageModel,
-      ccVersion: t.usageCcVersion,
-      ctxTokens: t.usageCtxTokens,
-      ctxPct
-    }
   }
 
   private sidecarOf(jsonlPath: string): string {
@@ -1763,7 +1577,7 @@ export class SessionTracker extends SessionRuntime {
 
   private recompute(t: Tracked): void {
     const byCanon = new Map<string, PreviewItem>()
-    for (const [abs, acc] of t.candidates) {
+    for (const [abs, acc] of t.touched.files) {
       const canon = this.canonFile(t, abs)
       if (!canon) continue
       const ex = byCanon.get(canon)
@@ -1780,22 +1594,12 @@ export class SessionTracker extends SessionRuntime {
     }
     const files = capTouched([...byCanon.values()])
 
-    t.info.title =
-      t.sidecarTitle ||
-      t.customTitle ||
-      t.title ||
-      (t.firstPrompt ? t.firstPrompt.slice(0, 60) : null) ||
-      (t.commandArgsTitle ? t.commandArgsTitle.slice(0, 60) : null) ||
-      t.commandTitle ||
-      PLACEHOLDER_SESSION_TITLE
+    t.info.title = t.titles.title(t.sidecarTitle)
     t.info.files = files
-    t.info.lastTouched = t.lastTouchedAbs
-      ? (this.canonFile(t, t.lastTouchedAbs) ?? undefined)
-      : undefined
-    t.info.lastWritten = t.lastWrittenAbs
-      ? (this.canonFile(t, t.lastWrittenAbs) ?? undefined)
-      : undefined
-    t.info.usage = this.buildUsage(t)
+    const { lastTouched, lastWritten } = t.touched
+    t.info.lastTouched = lastTouched ? (this.canonFile(t, lastTouched) ?? undefined) : undefined
+    t.info.lastWritten = lastWritten ? (this.canonFile(t, lastWritten) ?? undefined) : undefined
+    t.info.usage = t.meter.usage()
     t.info.updatedAt = Date.now()
     this.emitUpdate()
   }

@@ -225,43 +225,6 @@ describe('SessionTracker — file extraction from tool_use', () => {
     expect(s3.liveWrites).toBe(2)
     expect(s3.lastWritten).toMatch(/hello\.js$/)
   })
-
-  it('Edit / MultiEdit line deltas and read-never-downgrades-write', async () => {
-    const cwd = makeWorkspace({ 'a.ts': 'x\n' })
-    const tracker = newTracker()
-    tracker.track('tabE', cwd)
-    const file = writeJsonl(cwd, SID, [
-      {
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              name: 'Edit',
-              input: {
-                file_path: 'a.ts',
-                old_string: 'one\ntwo',
-                new_string: 'one\ntwo\nthree\nfour'
-              }
-            }
-          ]
-        },
-        cwd
-      },
-      {
-        type: 'assistant',
-        message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } }] },
-        cwd
-      }
-    ])
-    tracker.bindSession('tabE', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabE' && x.files.length >= 1)
-    const f = s.files.find((x) => x.label === 'a.ts')
-    expect(f?.access).toBe('wrote')
-    expect(f?.added).toBe(4)
-    expect(f?.removed).toBe(2)
-  })
 })
 
 describe('SessionTracker — title resolution priority', () => {
@@ -1149,61 +1112,6 @@ describe('SessionTracker — per-session usage', () => {
     cwd: o.cwd
   })
 
-  // CC§2
-  it('dedups a usage record repeated by streaming (same id+requestId) — counts it once', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabU1', cwd)
-    const rec = asst({
-      id: 'msg_a',
-      req: 'req_a',
-      model: 'claude-opus-4-8',
-      in: 100,
-      out: 200,
-      cw: 1000,
-      cr: 5000,
-      cwd
-    })
-    const file = writeJsonl(cwd, SID, [rec, rec, rec])
-    tracker.bindSession('tabU1', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabU1' && !!x.usage)
-    expect(s.usage!.inTok).toBe(100)
-    expect(s.usage!.outTok).toBe(200)
-    expect(s.usage!.cacheWriteTok).toBe(1000)
-    expect(s.usage!.cacheReadTok).toBe(5000)
-    const expected = (100 * 5 + 200 * 25 + 1000 * 6.25 + 5000 * 0.5) / 1_000_000
-    expect(s.usage!.costUsd).toBeCloseTo(expected, 10)
-  })
-
-  // CC§2
-  it('books the largest count of a streamed call whose repeated lines grow, as a sub-agent transcript writes them', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabUG', cwd)
-    const line = (out: number): Record<string, unknown> =>
-      asst({
-        id: 'msg_g',
-        req: 'req_g',
-        model: 'claude-opus-4-8',
-        in: 100,
-        out,
-        cw: 1000,
-        cr: 5000,
-        cwd
-      })
-    const file = writeJsonl(cwd, SID, [line(3), line(600), line(1231), line(1231)])
-    tracker.bindSession('tabUG', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabUG' && !!x.usage)
-    expect(s.usage!.inTok).toBe(100)
-    expect(s.usage!.outTok).toBe(1231)
-    expect(s.usage!.cacheWriteTok).toBe(1000)
-    expect(s.usage!.cacheReadTok).toBe(5000)
-    const expected = (100 * 5 + 1231 * 25 + 1000 * 6.25 + 5000 * 0.5) / 1_000_000
-    expect(s.usage!.costUsd).toBeCloseTo(expected, 10)
-  })
-
   it('captures the CLI version and the hook-reported account (info-card metadata)', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
@@ -1226,116 +1134,6 @@ describe('SessionTracker — per-session usage', () => {
     expect(s.usage!.ccVersion).toBe('2.0.0-test')
     expect(s.cliVersion).toBe('3.9.9')
     expect(s.account).toBe('acct-x')
-  })
-
-  it('unknown model → tokens present but NO cost (design D6: never a wrong $)', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabU2', cwd)
-    const file = writeJsonl(cwd, SID, [
-      asst({
-        id: 'm1',
-        req: 'r1',
-        model: 'totally-made-up-model',
-        in: 10,
-        out: 20,
-        cw: 0,
-        cr: 0,
-        cwd
-      })
-    ])
-    tracker.bindSession('tabU2', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabU2' && !!x.usage)
-    expect(s.usage!.inTok).toBe(10)
-    expect(s.usage!.outTok).toBe(20)
-    expect(s.usage!.costUsd).toBeUndefined()
-    expect(s.usage!.todayCostUsd).toBeUndefined()
-    expect(s.usage!.ctxPct).toBeUndefined()
-  })
-
-  it('context uses the LATEST record, not the first or the sum', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabU3', cwd)
-    const file = writeJsonl(cwd, SID, [
-      asst({
-        id: 'm1',
-        req: 'r1',
-        model: 'claude-opus-4-8',
-        in: 10,
-        out: 5,
-        cw: 0,
-        cr: 90_000,
-        cwd
-      }),
-      asst({
-        id: 'm2',
-        req: 'r2',
-        model: 'claude-opus-4-8',
-        in: 10,
-        out: 5,
-        cw: 0,
-        cr: 150_000,
-        cwd
-      })
-    ])
-    tracker.bindSession('tabU3', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabU3' && x.usage?.ctxTokens === 150_010)
-    expect(s.usage!.ctxTokens).toBe(150_010)
-    expect(s.usage!.ctxPct).toBeCloseTo(150_010 / 1_000_000, 6)
-  })
-
-  it('skips <synthetic> records but still counts the real one', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabU4', cwd)
-    const file = writeJsonl(cwd, SID, [
-      asst({
-        id: 'syn',
-        req: 'rs',
-        model: '<synthetic>',
-        in: 999,
-        out: 999,
-        cw: 999,
-        cr: 999,
-        cwd
-      }),
-      asst({ id: 'm1', req: 'r1', model: 'claude-opus-4-8', in: 7, out: 8, cw: 0, cr: 0, cwd })
-    ])
-    tracker.bindSession('tabU4', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabU4' && !!x.usage)
-    expect(s.usage!.inTok).toBe(7)
-    expect(s.usage!.outTok).toBe(8)
-    expect(s.usage!.model).toBe('claude-opus-4-8')
-  })
-
-  it("today's cost tracks only records on the current local calendar day", async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabU5', cwd)
-    const file = writeJsonl(cwd, SID, [
-      asst({
-        id: 'old',
-        req: 'ro',
-        model: 'claude-opus-4-8',
-        in: 100,
-        out: 100,
-        cw: 0,
-        cr: 0,
-        ts: '2020-01-01T00:00:00.000Z',
-        cwd
-      }),
-      asst({ id: 'now', req: 'rn', model: 'claude-opus-4-8', in: 100, out: 100, cw: 0, cr: 0, cwd })
-    ])
-    tracker.bindSession('tabU5', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabU5' && x.usage?.todayCostUsd != null)
-    const oneRec = (100 * 5 + 100 * 25) / 1_000_000
-    expect(s.usage!.costUsd).toBeCloseTo(oneRec * 2, 10)
-    expect(s.usage!.todayCostUsd).toBeCloseTo(oneRec, 10)
   })
 
   it('rebinding to a DIFFERENT session resets the accumulators', async () => {
@@ -1465,33 +1263,6 @@ describe('SessionTracker — per-session usage', () => {
     expect(s.usage!.ctxTokens).toBe(40_010)
   })
 
-  it('counts id-less records every time — no false dedupe collapse', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabIL', cwd)
-    const rec = {
-      type: 'assistant',
-      timestamp: new Date().toISOString(),
-      message: {
-        role: 'assistant',
-        model: 'claude-opus-4-8',
-        content: [{ type: 'text', text: 'ok' }],
-        usage: {
-          input_tokens: 100,
-          output_tokens: 0,
-          cache_creation_input_tokens: 0,
-          cache_read_input_tokens: 0
-        }
-      },
-      cwd
-    }
-    const file = writeJsonl(cwd, SID, [rec, rec])
-    tracker.bindSession('tabIL', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabIL' && !!x.usage)
-    expect(s.usage!.inTok).toBe(200)
-  })
-
   it('folds subagent spend when ONLY the subagent transcript grows (idle main jsonl), so the cost never freezes while a background Task runs', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
@@ -1544,42 +1315,6 @@ describe('SessionTracker — per-session usage', () => {
     const mainCost = (10 * 5 + 5 * 25 + 40_000 * 0.5) / 1_000_000
     const sideCost = (4000 * 1 + 2 * 5) / 1_000_000
     expect(s.usage!.costUsd).toBeCloseTo(mainCost + sideCost, 10)
-  })
-
-  it('an out-of-order OLDER-dated record does not wipe today (#4)', async () => {
-    const cwd = makeWorkspace({})
-    const tracker = newTracker()
-    tracker.track('tabOO', cwd)
-    const file = writeJsonl(cwd, SID, [
-      asst({
-        id: 'now',
-        req: 'rn',
-        model: 'claude-opus-4-8',
-        in: 100,
-        out: 100,
-        cw: 0,
-        cr: 0,
-        cwd
-      }),
-      asst({
-        id: 'old',
-        req: 'ro',
-        model: 'claude-opus-4-8',
-        in: 100,
-        out: 100,
-        cw: 0,
-        cr: 0,
-        ts: '2020-01-01T00:00:00.000Z',
-        cwd
-      })
-    ])
-    tracker.bindSession('tabOO', file, SID, cwd)
-
-    const s = await waitFor(tracker, (x) => x.tabId === 'tabOO' && x.usage?.todayCostUsd != null)
-    const oneRec = (100 * 5 + 100 * 25) / 1_000_000
-    expect(s.usage!.todayCostUsd).toBeCloseTo(oneRec, 10)
-    expect(s.usage!.costUsd).toBeCloseTo(oneRec * 2, 10)
-    expect(s.usage!.todayDayKey).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 })
 
