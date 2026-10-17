@@ -32,7 +32,7 @@ function asst(o: {
 
 function meterOf(records: TranscriptRecord[]): UsageMeter {
   const m = new UsageMeter()
-  for (const r of records) m.add(r)
+  for (const r of records) m.add(r, true)
   return m
 }
 

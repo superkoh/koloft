@@ -17,7 +17,7 @@ import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { sharedProcessTable } from './processTable'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, touchedItem } from './touchedFiles'
-import { ClaudeTouchedFiles } from './claudeTouchedFiles'
+import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
 import { TitleSources } from './titleSources'
 import { UsageMeter } from './usageMeter'
 import type { LaunchedSession } from './accountPicker'
@@ -228,13 +228,6 @@ interface SubagentFile {
   tail: Buffer
   activeMs: number
   teammate?: boolean
-}
-
-function toolFilePath(input: unknown): string | null {
-  if (!input || typeof input !== 'object') return null
-  const i = input as Record<string, unknown>
-  const p = i.file_path ?? i.notebook_path ?? i.path
-  return typeof p === 'string' && p.length ? p : null
 }
 
 // CC§2
@@ -1581,7 +1574,7 @@ export class SessionTracker extends SessionRuntime {
         const fp = raw ? this.resolvePath(t, raw) : null
         if (!fp) continue
         const at = isFinite(recTs) ? recTs : Date.now()
-        if (t.touched.noteToolCall(b.name, b.input, fp, at) === 'wrote' && liveNow)
+        if (t.touched.noteToolCall(b.name, b.input, fp, at) && liveNow)
           t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
       }
     }
