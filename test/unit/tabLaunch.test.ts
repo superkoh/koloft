@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { execFile } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { promisify } from 'util'
 import { seedRepo } from './helpers/gitShim'
 
 vi.mock('electron', async () => {
@@ -54,6 +56,7 @@ vi.mock('../../src/main/codexTransport', () => ({
   }
 }))
 
+import { barePath } from '@shared/remoteKey'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
@@ -64,9 +67,10 @@ import type { ClaudeLaunch } from '../../src/main/host/host'
 import { Hosts } from '../../src/main/host/hosts'
 import { localHost } from '../../src/main/host/localHost'
 import { SshHost } from '../../src/main/host/sshHost'
-import { SessionBackends } from '../../src/main/sessionBackends'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
+import type { TreeIo } from '../../src/main/sessionWorktrees'
 
+const execFileAsync = promisify(execFile)
 const TAB = 'pty-t1'
 const MACHINE = 'devbox'
 let home: string
@@ -150,10 +154,20 @@ async function claudeTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<
   return [handed, filesUnder(regDir), filesUnder(userData)].join('\n')
 }
 
-async function codexTab(spec: Partial<CreateTabOptions>): Promise<string> {
+const machineTreeIo: TreeIo = {
+  git: async (dir, args) =>
+    (await execFileAsync('git', ['-C', barePath(dir), ...args])).stdout.trimEnd(),
+  exists: async (p) => fs.existsSync(barePath(p)),
+  real: (p) => p,
+  keyed: (listed) => `ssh://${MACHINE}${listed}`,
+  onThisMac: false
+}
+
+async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<string> {
   if (spec.worktree) seedRepo(repo)
   const allowed: string[][] = []
   const argv: string[][] = []
+  const tabDirs = path.join(userData, 'tabs')
   const sessions = new CodexSessions(path.join(home, 'sessions.json'), {
     pty: {
       nextId: () => TAB,
@@ -165,7 +179,19 @@ async function codexTab(spec: Partial<CreateTabOptions>): Promise<string> {
       clearResumeIntent: () => {}
     } as unknown as CodexSessionDeps['pty'],
     runtime: new SessionRuntime(),
-    projectInfo: (p) => ({ root: repo, treeRoot: p }),
+    projectInfo: (p) => ({ root: cwd, treeRoot: p }),
+    remoteDirExists: async () => true,
+    remoteTreeIo: () => machineTreeIo,
+    machine: {
+      instance: 'table-instance',
+      ready: async () => {},
+      run: async () => ({ code: 1, stdout: '', stderr: '' }),
+      sshArgs: () => [],
+      machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
+      tabDir: (tabId) => path.join(tabDirs, tabId),
+      fileExists: async () => false,
+      keyed: (machine, p) => `ssh://${machine}${p}`
+    },
     changed: () => {},
     events: () => {},
     error: () => {},
@@ -190,35 +216,26 @@ async function codexTab(spec: Partial<CreateTabOptions>): Promise<string> {
       ghWrapper: path.join(home, 'shim', 'gh')
     }
   })
-  vi.spyOn(sessions, 'availability').mockResolvedValue({ id: 'codex', available: true })
   try {
-    await sessions.launch({ kind: 'codex', cwd: repo, ...spec })
+    await sessions.launch({ kind: 'codex', cwd, ...spec })
     const options = codex.transports[codex.transports.length - 1]
     const said = options.sessionEnv?.KOLOFT_CODEX_SAID
     return [
       JSON.stringify({ argv, allowed, options }),
-      said && fs.existsSync(said) ? fs.readFileSync(said, 'utf8') : ''
+      said && fs.existsSync(said) ? fs.readFileSync(said, 'utf8') : '',
+      filesUnder(tabDirs)
     ].join('\n')
   } finally {
     await sessions.stopAll()
   }
 }
 
-async function refused(kind: CreateTabOptions['kind'], spec: Partial<CreateTabOptions>) {
-  return new SessionBackends({} as ConstructorParameters<typeof SessionBackends>[0])
-    .create({ kind, cwd: `ssh://${MACHINE}${repo}`, ...spec })
-    .then(
-      () => 'started',
-      (error: Error) => error.message
-    )
-}
-
 const KINDS = {
   'Claude Code on this Mac': (spec: Partial<CreateTabOptions>) => claudeTab(repo, spec),
   'Claude Code over SSH': (spec: Partial<CreateTabOptions>) =>
     claudeTab(`ssh://${MACHINE}${repo}`, spec),
-  'Codex on this Mac': codexTab,
-  'Codex over SSH': (spec: Partial<CreateTabOptions>) => refused('codex', spec)
+  'Codex on this Mac': (spec: Partial<CreateTabOptions>) => codexTab(repo, spec),
+  'Codex over SSH': (spec: Partial<CreateTabOptions>) => codexTab(`ssh://${MACHINE}${repo}`, spec)
 }
 type Kind = keyof typeof KINDS
 
@@ -226,10 +243,11 @@ type Landing = { handed: string[]; dropped?: string[] } | { takesNothing: string
 
 type LaunchFeature = Exclude<keyof ClaudeLaunch, 'root' | 'cwd' | 'fallbackCwd' | 'resumeSessionId'>
 
-const CODEX_NOT_OVER_SSH: Landing = { takesNothing: 'Codex does not run on a remote machine yet' }
 const CONDUCTORS_RUN_ON_THIS_MAC: Landing = {
   takesNothing: 'a conductor always runs on this Mac, in a folder under Koloft’s data'
 }
+
+const CODEX_TAKES_NO_NAME: Landing = { takesNothing: 'Codex takes no session name when it starts' }
 
 const WORKTREE_OFFSET = String(portOffset('table-wt'))
 
@@ -248,7 +266,9 @@ const FEATURES: Record<
         handed: ['table-wt', `KOLOFT_PORT_OFFSET=${WORKTREE_OFFSET}`]
       },
       'Codex on this Mac': { handed: [`"KOLOFT_PORT_OFFSET":"${WORKTREE_OFFSET}"`] },
-      'Codex over SSH': CODEX_NOT_OVER_SSH
+      'Codex over SSH': {
+        handed: ['/.claude/worktrees/table-wt', `KOLOFT_PORT_OFFSET='${WORKTREE_OFFSET}'`]
+      }
     }
   },
   model: {
@@ -258,7 +278,7 @@ const FEATURES: Record<
       'Claude Code on this Mac': { handed: ['--model table-model'] },
       'Claude Code over SSH': { handed: ['--model', 'table-model'] },
       'Codex on this Mac': { handed: ['"-m","table-model"'] },
-      'Codex over SSH': CODEX_NOT_OVER_SSH
+      'Codex over SSH': { handed: ["'-m' 'table-model'"] }
     }
   },
   effort: {
@@ -268,7 +288,7 @@ const FEATURES: Record<
       'Claude Code on this Mac': { handed: ['--effort xhigh'] },
       'Claude Code over SSH': { handed: ['--effort', 'xhigh'] },
       'Codex on this Mac': { handed: ['model_reasoning_effort=\\"xhigh\\"'] },
-      'Codex over SSH': CODEX_NOT_OVER_SSH
+      'Codex over SSH': { handed: ['model_reasoning_effort=\\"xhigh\\"'] }
     }
   },
   permission: {
@@ -278,7 +298,7 @@ const FEATURES: Record<
       'Claude Code on this Mac': { handed: ['--permission-mode acceptEdits'] },
       'Claude Code over SSH': { handed: ['--permission-mode', 'acceptEdits'] },
       'Codex on this Mac': { handed: ['"-a","on-request","-s","workspace-write"'] },
-      'Codex over SSH': CODEX_NOT_OVER_SSH
+      'Codex over SSH': { handed: ["'-a' 'on-request' '-s' 'workspace-write'"] }
     }
   },
   firstPrompt: {
@@ -288,7 +308,7 @@ const FEATURES: Record<
       'Claude Code on this Mac': { handed: ['"KOLOFT_FIRST_PROMPT":"FIRST-PROMPT-TEXT"'] },
       'Claude Code over SSH': { handed: ['FIRST-PROMPT-TEXT'] },
       'Codex on this Mac': { handed: ['"FIRST-PROMPT-TEXT"'] },
-      'Codex over SSH': CODEX_NOT_OVER_SSH
+      'Codex over SSH': { handed: ["'FIRST-PROMPT-TEXT'"] }
     }
   },
   ownerWords: {
@@ -298,7 +318,7 @@ const FEATURES: Record<
       'Claude Code on this Mac': { handed: [`${TAB}.said: OWNER-WORDS-TEXT`] },
       'Claude Code over SSH': { handed: [`${TAB}.said: OWNER-WORDS-TEXT`] },
       'Codex on this Mac': { handed: ['OWNER-WORDS-TEXT'] },
-      'Codex over SSH': CODEX_NOT_OVER_SSH
+      'Codex over SSH': { handed: [`printf '%s' 'OWNER-WORDS-TEXT' > "$S.said"`] }
     }
   },
   name: {
@@ -309,8 +329,8 @@ const FEATURES: Record<
       'Claude Code over SSH': {
         takesNothing: 'over SSH a name goes along only with a first prompt'
       },
-      'Codex on this Mac': { takesNothing: 'Codex takes no session name when it starts' },
-      'Codex over SSH': CODEX_NOT_OVER_SSH
+      'Codex on this Mac': CODEX_TAKES_NO_NAME,
+      'Codex over SSH': CODEX_TAKES_NO_NAME
     }
   },
   role: {
@@ -320,7 +340,7 @@ const FEATURES: Record<
       'Claude Code on this Mac': { handed: [`${TAB}.conductor: `, 'ROLE-TEXT'] },
       'Claude Code over SSH': CONDUCTORS_RUN_ON_THIS_MAC,
       'Codex on this Mac': { handed: ['ROLE-TEXT'] },
-      'Codex over SSH': CODEX_NOT_OVER_SSH
+      'Codex over SSH': { handed: ['ROLE-TEXT'] }
     }
   },
   allow: {
@@ -330,7 +350,7 @@ const FEATURES: Record<
       'Claude Code on this Mac': { handed: [`${TAB}.allow: ["ALLOW-TOOL"]`] },
       'Claude Code over SSH': CONDUCTORS_RUN_ON_THIS_MAC,
       'Codex on this Mac': { handed: ['"allowed":[["ALLOW-TOOL"]]'] },
-      'Codex over SSH': CODEX_NOT_OVER_SSH
+      'Codex over SSH': CONDUCTORS_RUN_ON_THIS_MAC
     }
   },
   conductor: {
@@ -346,7 +366,7 @@ const FEATURES: Record<
         handed: ['"KOLOFT_CODEX_GATE":"/koloft/codex-conductor-gate.sh"'],
         dropped: ['HELPERS']
       },
-      'Codex over SSH': CODEX_NOT_OVER_SSH
+      'Codex over SSH': CONDUCTORS_RUN_ON_THIS_MAC
     }
   }
 }

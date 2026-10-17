@@ -43,6 +43,7 @@ import { SESSION_ID_RE } from '../claudeArgs'
 import { forgetClaudeProbe, probeClaude } from '../claudeProbe'
 import { runningClaudePid } from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
+import { sharedProcessTable } from '../processTable'
 import {
   findTranscript,
   PROJECTS_ROOT,
@@ -85,6 +86,7 @@ export interface ClaudeBackendDeps {
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
+  machineOfTab(tabId: string): string | undefined
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
 }
 
@@ -339,7 +341,9 @@ export class ClaudeBackend implements SessionBackend {
           if (!pidByTab.has(tabId)) goneStrikes.delete(tabId)
         }
         if (!pidByTab.size) return
-        const alive = await rootsWithClaude([...pidByTab.values()])
+        const alive = rootsWithClaude(await sharedProcessTable.eachRound(LIVENESS_SWEEP_MS), [
+          ...pidByTab.values()
+        ])
         if (!alive) return
         for (const [tabId, pid] of pidByTab) {
           if (alive.has(pid)) {
@@ -506,7 +510,7 @@ export class ClaudeBackend implements SessionBackend {
     const byTmux = typeof r.tmux === 'string' && r.tmux && this.tabRunningTmux(r.tmux, machine)
     if (byTmux) return byTmux
     const tabId = typeof r.tabId === 'string' ? r.tabId : ''
-    if (this.d.tracker.remoteOf(tabId)?.host === machine && this.d.pty.get(tabId)) return tabId
+    if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
     const other = this.d.otherTabOnMachine?.(
       machine,
       typeof r.tmux === 'string' ? r.tmux : '',
@@ -585,7 +589,7 @@ export class ClaudeBackend implements SessionBackend {
       const pid = this.d.pty.pidOf(tabId)
       if (!pid) return
       if (!this.d.tracker.list().some((s) => s.tabId === tabId && s.jsonlPath)) return
-      const alive = await rootsWithClaude([pid])
+      const alive = rootsWithClaude(await sharedProcessTable.fresh(), [pid])
       if (!alive) return
       if (!alive.has(pid)) this.d.tracker.untrack(tabId)
     }, SESSION_END_SETTLE_MS)

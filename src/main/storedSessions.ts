@@ -100,7 +100,7 @@ export interface SessionsWithStore {
   members(): Set<string>
   runningBindings(): Map<string, string>
   threadGone(key: string): boolean
-  hasRuns(): boolean
+  hasProcesses(): boolean
   stopAll(deadlineMs?: number): Promise<void>
   hasTab(tabId: string): boolean
   sessionIdOf(tabId: string): string | undefined
@@ -298,7 +298,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.deps.error(this.untestedNotice(available.version))
   }
 
-  hasRuns(): boolean {
+  hasProcesses(): boolean {
     return this.runs.size > 0 || this.pendingLaunches.size > 0
   }
 

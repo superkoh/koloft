@@ -128,7 +128,7 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
   codex: {
     local: EVERYTHING,
     // CODEX§16
-    ssh: 'refused'
+    ssh: ON_A_MACHINE
   },
   muse: {
     local: EVERYTHING,
@@ -177,11 +177,19 @@ export function identityOf(key: string): SessionIdentity {
   return { backendId: 'claude', sourceId: 'local', nativeSessionId: key }
 }
 
+export function listedBackends(
+  methods: SessionMethods,
+  installed: ((backend: BackendId) => boolean) | null
+): BackendId[] {
+  const listed = installed ? SESSION_BACKENDS.filter((b) => methods.enabled[b] && installed(b)) : []
+  return listed.length ? listed : [methods.defaultBackend]
+}
+
 export function effectiveBackend(
   methods: SessionMethods,
   available: ReadonlySet<BackendId>
 ): BackendId {
   const usable = SESSION_BACKENDS.filter((b) => methods.enabled[b] && available.has(b))
   if (usable.includes(methods.defaultBackend)) return methods.defaultBackend
-  return usable.length === 1 ? usable[0] : methods.defaultBackend
+  return usable[0] ?? methods.defaultBackend
 }
