@@ -12,7 +12,7 @@ import {
   INTERRUPT_TEXTS,
   whoTyped
 } from './sessionTracker'
-import { parseRecord, type TranscriptRecord } from './transcriptRecord'
+import { parseRecord, type TextBlock, type TranscriptRecord } from './transcriptRecord'
 
 export interface Bucket {
   slug: string
@@ -67,9 +67,8 @@ export function resolveBuckets(wsPath: string, deps: ResolveBucketsDeps): Bucket
 
 // CC§2
 function readWorktreeState(obj: TranscriptRecord): WorktreeStateMeta | undefined {
-  const s = obj.worktreeSession
-  if (!s || typeof s !== 'object') return undefined
-  const r = s as Record<string, unknown>
+  const r = obj.worktreeSession
+  if (!r || typeof r !== 'object') return undefined
   const str = (k: string): string | undefined => (typeof r[k] === 'string' ? r[k] : undefined)
   const originalCwd = str('originalCwd')
   const worktreePath = str('worktreePath')
@@ -156,17 +155,12 @@ export function extractJsonlMeta(lines: Iterable<string>): Partial<SessionMeta> 
       !obj.isMeta &&
       !compactionSummary(obj)
     ) {
-      const msg = obj.message as { content?: unknown } | undefined
-      const c = msg?.content
+      const c = obj.message?.content
       let text = ''
       if (typeof c === 'string') text = c
       else if (Array.isArray(c)) {
         const block = c.find(
-          (b: unknown): b is { text: string } =>
-            !!b &&
-            typeof b === 'object' &&
-            (b as { type?: unknown }).type === 'text' &&
-            typeof (b as { text?: unknown }).text === 'string'
+          (b): b is TextBlock => !!b && b.type === 'text' && typeof b.text === 'string'
         )
         if (block) text = block.text
       }
