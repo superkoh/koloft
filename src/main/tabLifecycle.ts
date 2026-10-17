@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events'
 import type { AttentionTracker } from './attention'
 import type { ClaudeBackend } from './backends/claude'
 import type { CronRunner, LeftTab } from './cronRunner'
@@ -21,33 +22,22 @@ export interface TabExit {
   left?: LeftTab
 }
 
-interface TabEvents {
-  exit: TabExit
-  teardown: TabExit
-  slept: string
-  woken: string
-}
-
-type Listener<K extends keyof TabEvents> = (e: TabEvents[K]) => void
-
-export class TabLifecycle {
-  private readonly listeners: { [K in keyof TabEvents]: Listener<K>[] } = {
-    exit: [],
-    teardown: [],
-    slept: [],
-    woken: []
-  }
-
-  on<K extends keyof TabEvents>(event: K, listener: Listener<K>): void {
-    this.listeners[event].push(listener)
-  }
-
-  emit<K extends keyof TabEvents>(event: K, e: TabEvents[K]): void {
-    for (const listener of this.listeners[event]) listener(e)
-  }
-}
+export class TabLifecycle extends EventEmitter<{
+  exit: [TabExit]
+  teardown: [TabExit]
+  slept: []
+  woken: []
+}> {}
 
 type MadeLater<T> = () => T | null
+
+const closeThenForget =
+  (part: MadeLater<Pick<Notices | LiveStatus, 'closed' | 'forget'>>) =>
+  ({ tabId, asleep }: TabExit): void => {
+    const p = part()
+    if (!asleep) p?.closed(tabId)
+    p?.forget(tabId)
+  }
 
 export interface TabSubsystems {
   slash: Pick<SlashCommands, 'closed'>
@@ -68,16 +58,8 @@ export interface TabSubsystems {
 
 export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems): void {
   lifecycle.on('exit', ({ tabId }) => s.slash.closed(tabId))
-  lifecycle.on('exit', ({ tabId, asleep }) => {
-    const notices = s.notices()
-    if (!asleep) notices?.closed(tabId)
-    notices?.forget(tabId)
-  })
-  lifecycle.on('exit', ({ tabId, asleep }) => {
-    const live = s.live()
-    if (!asleep) live?.closed(tabId)
-    live?.forget(tabId)
-  })
+  lifecycle.on('exit', closeThenForget(s.notices))
+  lifecycle.on('exit', closeThenForget(s.live))
   lifecycle.on('exit', ({ tabId }) => s.relay()?.forget(tabId))
   lifecycle.on('exit', ({ tabId }) => s.threads()?.forget(tabId))
   lifecycle.on('exit', ({ tabId }) => s.buttons()?.forget(tabId))

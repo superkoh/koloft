@@ -66,12 +66,17 @@ describe('TabLifecycle', () => {
   it('an asleep tab whose process stopped is forgotten without a "closed" in Discord', () => {
     const { lifecycle, calls } = wired()
     lifecycle.emit('exit', exitOf({ asleep: true }))
-    expect(calls.filter((c) => c.includes('closed') && !c.startsWith('slash'))).toEqual([])
-    expect(calls).toContain('notices.forget t1')
-    expect(calls).toContain('live.forget t1')
+    expect(calls).toEqual([
+      'slash.closed t1',
+      'notices.forget t1',
+      'live.forget t1',
+      'relay.forget t1',
+      'threads.forget t1',
+      'buttons.forget t1'
+    ])
   })
 
-  it('teardown clears attention before Claude Code can mark a crash, and tells conductors last', () => {
+  it('teardown clears attention before Claude Code can mark a crash', () => {
     const { lifecycle, calls } = wired()
     lifecycle.emit('teardown', exitOf({ crashed: true, exitCode: 1, left: { treeRoot: '/repo' } }))
     expect(calls).toEqual([
@@ -83,10 +88,6 @@ describe('TabLifecycle', () => {
       'cron.onPtyExit t1 /repo',
       'conductors.onPtyExit t1 false'
     ])
-  })
-
-  it('teardown of an asleep tab tells conductors it is asleep, so its task stays', () => {
-    const { lifecycle, calls } = wired()
     lifecycle.emit('teardown', exitOf({ asleep: true }))
     expect(calls.at(-1)).toBe('conductors.onPtyExit t1 true')
   })
@@ -118,8 +119,8 @@ describe('TabLifecycle', () => {
 
   it('a tab put to sleep or woken refreshes the workspaces list', () => {
     const { lifecycle, calls } = wired()
-    lifecycle.emit('slept', 't1')
-    lifecycle.emit('woken', 't2')
+    lifecycle.emit('slept')
+    lifecycle.emit('woken')
     expect(calls).toEqual(['workspaces.onTrackerUpdate', 'workspaces.onTrackerUpdate'])
   })
 })

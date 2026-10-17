@@ -717,7 +717,7 @@ function sleepTab(tabId: string): void {
   addSleeper(tabId, openTabOf(s))
   sendToRenderer('tab:slept', tabId)
   void stopTabProcess(tabId)
-  tabLifecycle.emit('slept', tabId)
+  tabLifecycle.emit('slept')
   rememberOpenTabs()
 }
 
@@ -739,16 +739,16 @@ function settleWokenSleepers(all: SessionInfo[]): void {
   if (!sleepers.size) return
   const tabOfSession = new Map<string, string>()
   for (const s of all) if (s.alive && s.sessionId) tabOfSession.set(s.sessionId, s.tabId)
-  const woken: string[] = []
+  let woke = false
   for (const [oldId, t] of sleepers) {
     const newId = tabOfSession.get(t.sessionId)
     if (!newId || newId === oldId) continue
     sleepers.delete(oldId)
     wokenAs.set(oldId, newId)
-    woken.push(newId)
+    woke = true
     void handOverTyping(oldId, newId)
   }
-  for (const tabId of woken) tabLifecycle.emit('woken', tabId)
+  if (woke) tabLifecycle.emit('woken')
 }
 
 const PASTE_OR_ENTER = /(\x1b\[200~[\s\S]*?\x1b\[201~|\r)/
