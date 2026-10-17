@@ -226,6 +226,50 @@ export function isOrphanRow(
   )
 }
 
+export interface RowLookups<S> {
+  tabOf: (row: { id: string; running: boolean; pending?: boolean }) => string | undefined
+  sessionOn: (tabId: string) => S | undefined
+  attentionOn: (rowId: string, tabId: string | undefined) => AttentionEvent | undefined
+  hasAliveTab: (sessionId: string) => boolean
+}
+
+export function rowLookups<S extends { sessionId: string; tabId: string; alive: boolean }>(
+  sessions: readonly S[],
+  tabs: readonly { id: string; sessionId?: string; alive: boolean; asleep?: true }[],
+  attention: readonly AttentionEvent[]
+): RowLookups<S> {
+  const firstBy = <T, K>(items: readonly T[], key: (item: T) => K | undefined): Map<K, T> => {
+    const m = new Map<K, T>()
+    for (const item of items) {
+      const k = key(item)
+      if (k !== undefined && !m.has(k)) m.set(k, item)
+    }
+    return m
+  }
+  const sessionOnTab = firstBy(sessions, (s) => s.tabId)
+  const liveTabOfSession = firstBy(sessions, (s) => (s.alive ? s.sessionId : undefined))
+  const openTabOfSession = firstBy(tabs, (t) => (t.alive || t.asleep ? t.sessionId : undefined))
+  const aliveTabSessions = new Set(tabs.filter((t) => t.alive).map((t) => t.sessionId))
+  const order = new Map(attention.map((e, i) => [e, i]))
+  const attnOfSession = firstBy(attention, (e) => e.sessionId)
+  const attnOfTab = firstBy(attention, (e) => e.tabId)
+  return {
+    tabOf: (row) => {
+      if (row.pending) return row.id
+      if (!row.running) return undefined
+      return liveTabOfSession.get(row.id)?.tabId ?? openTabOfSession.get(row.id)?.id
+    },
+    sessionOn: (tabId) => sessionOnTab.get(tabId),
+    attentionOn: (rowId, tabId) => {
+      const a = attnOfSession.get(rowId)
+      const b = tabId === undefined ? undefined : attnOfTab.get(tabId)
+      if (!a || !b) return a ?? b
+      return order.get(a)! <= order.get(b)! ? a : b
+    },
+    hasAliveTab: (sessionId) => aliveTabSessions.has(sessionId)
+  }
+}
+
 export function mixesBackends(rows: { backendId: SessionBackend }[]): boolean {
   return new Set(rows.map((r) => r.backendId)).size > 1
 }

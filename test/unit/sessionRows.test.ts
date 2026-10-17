@@ -14,7 +14,10 @@ import {
   parkedBadge,
   sessionActivityBadge,
   relTime,
+  rowLookups,
   rowStateClass,
+  attentionOnRow,
+  tabOfRow,
   selectionRoot,
   sessionTree,
   rowsUnder,
@@ -535,5 +538,49 @@ describe('nextWaitingTab (⌘J: the session that has waited longest for you)', (
   it('answers nothing when nothing else waits', () => {
     expect(nextWaitingTab([], null, tabs)).toBeUndefined()
     expect(nextWaitingTab([{ tabId: 'a', kind: 'turn-done', at: 1 }], 'a', tabs)).toBeUndefined()
+  })
+})
+
+describe('rowLookups (the sidebar builds its lookups once per render)', () => {
+  const sessions = [
+    { sessionId: 's-dead', tabId: 'pty-old', alive: false },
+    { sessionId: 's-1', tabId: 'pty-1', alive: true },
+    { sessionId: 's-1', tabId: 'pty-1b', alive: true },
+    { sessionId: 's-2', tabId: 'pty-2', alive: false }
+  ]
+  const tabs = [
+    { id: 'pty-1', sessionId: 's-1', alive: true },
+    { id: 'pty-9', sessionId: 's-2', alive: false, asleep: true as const },
+    { id: 'pty-8', sessionId: 's-2', alive: true },
+    { id: 'pty-7', sessionId: 's-cold', alive: true },
+    { id: 'pty-6', alive: true }
+  ]
+  const attention: AttentionEvent[] = [
+    { tabId: 'pty-2', kind: 'approval', at: 1 },
+    { tabId: 'pty-x', sessionId: 's-1', kind: 'turn-done', at: 2 },
+    { tabId: 'pty-1', kind: 'approval', at: 3 },
+    { tabId: 'pty-9', sessionId: 's-2', kind: 'turn-done', at: 4 }
+  ]
+  const rows = [
+    { id: 's-1', running: true },
+    { id: 's-2', running: true },
+    { id: 's-dead', running: true },
+    { id: 's-cold', running: false },
+    { id: 'pty-new', running: false, pending: true },
+    { id: 's-none', running: true }
+  ]
+
+  it('answers each row exactly as the one-off lookups do, first match winning', () => {
+    const look = rowLookups(sessions, tabs, attention)
+    for (const row of rows) {
+      const tabId = tabOfRow(row, sessions, tabs)
+      expect(look.tabOf(row), row.id).toBe(tabId)
+      expect(look.attentionOn(row.id, tabId), row.id).toBe(attentionOnRow(row.id, tabId, attention))
+      expect(look.hasAliveTab(row.id), row.id).toBe(
+        tabs.some((t) => t.sessionId === row.id && t.alive)
+      )
+    }
+    for (const t of ['pty-1', 'pty-1b', 'pty-old', 'pty-none'])
+      expect(look.sessionOn(t), t).toBe(sessions.find((s) => s.tabId === t))
   })
 })
