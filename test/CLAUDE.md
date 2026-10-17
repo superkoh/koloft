@@ -9,7 +9,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 
 ## Commands
 
-- `npm run test:unit`  — Vitest, plain Node, no app; the fast layer.
+- `npm run test:unit`  — Vitest, plain Node (jsdom for component tests), no app; the
+  fast layer.
 - `npm run test:unit:changed` — the same, only the files reachable from what this
   branch changed against `main` (vitest `--changed`).
 - `npm run test:e2e`   — Playwright drives the real built app. Needs
@@ -20,6 +21,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 
 ## Unit layer (test/unit/)
 
+- A component test is a `.test.tsx` whose first line is `// @vitest-environment jsdom`;
+  it renders with `@testing-library/react` and calls `cleanup` in `afterEach` (vitest
+  globals are off, so nothing cleans up for it). Every other file runs in plain Node
+  (sessionBackendIcon.test.tsx).
 - There is no global `$HOME` sandbox (vitest has no setupFiles). Anything a module
   reads once as it loads — `HOME`, the session timing knobs (`KOLOFT_*_MS`, read through
   `envMs` in sessionRuntime.ts and sessionTracker.ts; an explicit 0 counts), `TZ` — is
