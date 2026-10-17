@@ -135,6 +135,7 @@ async function claudeTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<
             controlDir: path.join(home, 'ssh-control'),
             machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
             alive: () => new Set(),
+            firstHeartbeatDone: async () => {},
             realPath: (p) => p,
             settings: () => ({ skipPermissions: false }),
             agentTools: () => true,
