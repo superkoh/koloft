@@ -58,10 +58,8 @@ const OPTION_KEYS: Record<BackendId, ((key: string) => string[]) | undefined> = 
   codex: (key) => [key],
   muse: (key) => [key, '\r']
 }
-const answersByKeys = (backend: BackendId | undefined): backend is BackendId =>
-  !!backend && OPTION_KEYS[backend] !== undefined
-const optionKeys = (backend: BackendId, key: string): string[] =>
-  OPTION_KEYS[backend]?.(key) ?? [key]
+const optionKeysOf = (backend: BackendId | undefined): ((key: string) => string[]) | undefined =>
+  backend && OPTION_KEYS[backend]
 const ASK_SUFFIX = '.ask.json'
 const ANSWER_SUFFIX = '.answer.json'
 const QUEUED = '⏳'
@@ -430,7 +428,8 @@ export class DiscordRelay {
 
   async answerSession(tab: string, reply: string): Promise<string | undefined> {
     const backend = this.d.backendOf(tab)
-    if (answersByKeys(backend)) {
+    const optionKeys = optionKeysOf(backend)
+    if (backend && optionKeys) {
       const label = BACKEND_LABEL[backend]
       if (this.d.pendingApproval(tab)) {
         const key = codexKeyFor(reply)
@@ -442,7 +441,7 @@ export class DiscordRelay {
       if (!question) return this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG
       const key = codexOptionKey(question, reply)
       if (!key) return takesAnOption(label)
-      await this.press(tab, optionKeys(backend, key))
+      await this.press(tab, optionKeys(key))
       return undefined
     }
     const ask = this.openAsk(tab)
@@ -490,8 +489,8 @@ export class DiscordRelay {
     const asked = this.codexAsks.get(tab)
     if (asked === undefined) return false
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
-    const backend = this.d.backendOf(tab)
-    if (!open || open.id !== asked || !answersByKeys(backend)) {
+    const optionKeys = optionKeysOf(this.d.backendOf(tab))
+    if (!open || open.id !== asked || !optionKeys) {
       this.codexAsks.delete(tab)
       return false
     }
@@ -501,7 +500,7 @@ export class DiscordRelay {
       this.say(m.channelId, question ? PICK_ONE_OPTION : CODEX_NEEDS_YES_OR_NO, m.id)
       return true
     }
-    void this.press(tab, question ? optionKeys(backend, key) : [key])
+    void this.press(tab, question ? optionKeys(key) : [key])
     return true
   }
 
