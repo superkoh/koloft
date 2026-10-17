@@ -1021,6 +1021,7 @@ let discordLive: LiveStatus | null = null
 let askButtons: AskButtons | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
+let claudeAgentPlugin: string | undefined
 let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
@@ -2153,7 +2154,7 @@ app.whenReady().then(() => {
   ptyMgr.regDir = regDir
   if (agentRequests.watch(agentDir)) {
     ptyMgr.agentDir = agentDir
-    claudeBackend.agentPlugin = writeAgentPlugin(app.getPath('userData'))
+    claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
@@ -4414,7 +4415,11 @@ const githubOptions: GithubOptions = {
 }
 
 const hosts = new Hosts(
-  localHost(new GithubLookup(githubOptions)),
+  localHost(new GithubLookup(githubOptions), {
+    hookRegDir: () => hookRegDir ?? '',
+    agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
+    assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey)
+  }),
   (machine) =>
     new SshHost(machine, {
       run: (cmd, opts) =>
@@ -4469,7 +4474,6 @@ const claudeBackend = new ClaudeBackend({
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   error: (message) => sendToRenderer('cron:toast', message),
-  assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
   machineOfTab,
   otherTabOnMachine: (machine, tmuxName, launchTab) =>
     museSessions?.tabOnMachine(machine, tmuxName, launchTab)

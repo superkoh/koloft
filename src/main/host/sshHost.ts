@@ -942,6 +942,7 @@ export class SshHost implements Host {
       ok: true,
       spawnCwd: os.homedir(),
       cwd: spec.root,
+      conductor: !!spec.conductor,
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       launchCommand: (tabId) => {
         const tabDir = tabPackageDir(d.userData, tabId)
