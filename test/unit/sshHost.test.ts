@@ -490,6 +490,13 @@ describe('each remote Workbench step is one ssh round trip', () => {
     }
   })
 
+  it('a file created from the Workbench shows in the very next search', async () => {
+    const host = machine()
+    expect((await host.search(keyed(repo), 'fresh')).hits).toEqual([])
+    await host.createFile(keyed(repo), 'fresh.md')
+    expect((await host.search(keyed(repo), 'fresh')).hits.map((h) => h.rel)).toEqual(['fresh.md'])
+  })
+
   it('a file list the machine could not send is asked for again on the next search', async () => {
     let linkDown = true
     const host = machine((cmd, opts) => (linkDown ? unreachable() : runOnMachine(cmd, opts)))

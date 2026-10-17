@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { GitNumstatMap, GitStatusMap } from '@shared/types'
-import type { BaseChoice } from './filesModel'
+import type { BaseChoice, GitNumstatMap, GitStatusMap } from '@shared/types'
 
 export interface GitChangeSet {
   git: GitStatusMap

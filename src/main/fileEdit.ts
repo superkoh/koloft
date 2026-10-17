@@ -117,7 +117,7 @@ export function editOpenResult(
   return { text, mtimeMs: fp.mtimeMs, size: fp.size, eol, readOnly }
 }
 
-export function sameFingerprint(expect: unknown, now: EditFingerprint): boolean {
+function sameFingerprint(expect: unknown, now: EditFingerprint): boolean {
   return isFingerprint(expect) && now.mtimeMs === expect.mtimeMs && now.size === expect.size
 }
 

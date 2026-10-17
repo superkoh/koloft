@@ -212,11 +212,14 @@ export function parseFingerprint(line: string): EditFingerprint | null {
   return Number.isFinite(mtimeMs) && Number.isFinite(bytes) ? { mtimeMs, size: bytes } : null
 }
 
+function lineAt(buf: Buffer, at: number): [string, number] {
+  const nl = buf.indexOf(0x0a, at)
+  return nl < 0 ? [buf.toString('utf8', at), buf.length] : [buf.toString('utf8', at, nl), nl + 1]
+}
+
 function headerAndBody(buf: Buffer): { header: string; body: Buffer } {
-  const nl = buf.indexOf(0x0a)
-  return nl < 0
-    ? { header: buf.toString('utf8'), body: Buffer.alloc(0) }
-    : { header: buf.toString('utf8', 0, nl), body: buf.subarray(nl + 1) }
+  const [header, body] = lineAt(buf, 0)
+  return { header, body: buf.subarray(body) }
 }
 
 const LIST_DIR = `cd "$1" 2>/dev/null || exit 0
@@ -378,29 +381,23 @@ ${GIT_IN_REPO}
 ${MERGE_BASE}
 [ -d "$r" ] || { echo ${CHANGES_GONE}; exit 0; }
 top=$(g rev-parse --show-toplevel) || { echo ${CHANGES_NOT_A_REPO}; exit 0; }
-gt() { GIT_OPTIONAL_LOCKS=0 git -C "$top" "$@" 2>/dev/null; }
 if [ "$2" = head ]; then b=HEAD; else b=$(db); fi
 o=$(mktemp) || exit 1
 trap 'rm -f "$o"' EXIT
-part() { n=$1; shift; "$@" >"$o"; c=$?; printf '%s %s %s\\n' "$n" "$c" "$(wc -c <"$o" | tr -d ' ')"; cat "$o"; }
+part() { n=$1; shift; "$@" >"$o"; c=$?; printf '%s %s %s\\n' "$n" "$c" "$(wc -c <"$o")"; cat "$o"; }
 printf '${CHANGES_REPO}\\n%s\\n%s\\n' "$b" "$top"
 ns=1 nb=1
 if [ -n "$b" ]; then
   part nameStatus g diff --name-status -z "$b" --; ns=$c
   part vsBase g diff "$b" --numstat -z --; nb=$c
 fi
-part others gt ls-files --others --exclude-standard -z --full-name
-part unmerged gt ls-files -u -z --full-name
+part others g -C "$top" ls-files --others --exclude-standard -z --full-name
+part unmerged g -C "$top" ls-files -u -z --full-name
 [ "$ns" = 0 ] || part porcelain g status --porcelain=v1 -z
 [ "$nb" = 0 ] || { part cached g diff --cached --numstat -z --; part unstaged g diff --numstat -z --; }
 exit 0`
 
-function lineAt(buf: Buffer, at: number): [string, number] {
-  const nl = buf.indexOf(0x0a, at)
-  return nl < 0 ? [buf.toString('utf8', at), buf.length] : [buf.toString('utf8', at, nl), nl + 1]
-}
-
-export function parseChanges(stdout: Buffer): GitChanges | null {
+function parseChanges(stdout: Buffer): GitChanges | null {
   const [state, afterState] = lineAt(stdout, 0)
   if (state === CHANGES_GONE || state === CHANGES_NOT_A_REPO)
     return { base: null, status: {}, numstat: {}, missing: state === CHANGES_GONE }
@@ -410,7 +407,7 @@ export function parseChanges(stdout: Buffer): GitChanges | null {
   const parts = new Map<string, string | null>()
   for (let at = afterTop; at < stdout.length;) {
     const [header, body] = lineAt(stdout, at)
-    const [name, code, bytes] = header.split(' ')
+    const [name, code, bytes] = header.split(/\s+/)
     const end = body + Number(bytes)
     if (!Number.isInteger(end) || end > stdout.length) return null
     parts.set(name, code === '0' ? stdout.toString('utf8', body, end) : null)
@@ -815,6 +812,7 @@ export class SshHost implements Host {
     checkNewFileName(name)
     const r = await this.sh(CREATE_FILE, [this.bare(dir), name])
     if (r.code !== 0) throw failure(r, 'KOLOFT_WRITE_FAILED')
+    this.fileLists.clear()
     const [created, fpLine] = r.stdout.toString('utf8').split('\n')
     const fp = parseFingerprint(fpLine ?? '')
     if (!created || !fp) throw new Error('KOLOFT_WRITE_FAILED')

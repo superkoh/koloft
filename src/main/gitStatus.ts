@@ -164,7 +164,7 @@ export function statusFrom(toplevel: string, o: StatusOutputs): GitStatusMap {
       if (rel) out[path.join(toplevel, rel)] = 'untracked'
     }
   }
-  if (o.porcelain !== null) parsePorcelainInto(out, o.porcelain, toplevel)
+  if (o.nameStatus === null && o.porcelain !== null) parsePorcelainInto(out, o.porcelain, toplevel)
   if (o.unmerged !== null) {
     for (const rec of o.unmerged.split('\0')) {
       const tab = rec.indexOf('\t')
@@ -320,11 +320,13 @@ export function gitOps(runner: GitRunner): GitOps {
     const vsBase = base
       ? await gitOut(['-C', absRoot, 'diff', base, '--numstat', '-z', '--'], cap)
       : null
-    if (vsBase !== null) return numstatFrom(toplevel, { vsBase, cached: null, unstaged: null })
-    const [cached, unstaged] = await Promise.all([
-      gitOut(['-C', absRoot, 'diff', '--cached', '--numstat', '-z', '--'], cap),
-      gitOut(['-C', absRoot, 'diff', '--numstat', '-z', '--'], cap)
-    ])
+    const [cached, unstaged] =
+      vsBase !== null
+        ? [null, null]
+        : await Promise.all([
+            gitOut(['-C', absRoot, 'diff', '--cached', '--numstat', '-z', '--'], cap),
+            gitOut(['-C', absRoot, 'diff', '--numstat', '-z', '--'], cap)
+          ])
     return numstatFrom(toplevel, { vsBase, cached, unstaged })
   }
 

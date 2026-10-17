@@ -1,7 +1,5 @@
 import type { GitFileStatus } from '@shared/types'
 
-export type { BaseChoice } from '@shared/types'
-
 export type FilesTab = 'changes' | 'browse'
 
 export interface ChangeFilters {
