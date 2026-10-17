@@ -123,13 +123,8 @@ function openTarget(command: string, cwd: unknown): string | null {
   return typeof cwd === 'string' && path.isAbsolute(cwd) ? path.resolve(cwd, arg) : null
 }
 
-const CLIENT_METHODS_OBSERVED = [
-  'thread/start',
-  'thread/resume',
-  'thread/fork',
-  'thread/unsubscribe',
-  'turn/start'
-]
+const THREAD_OPENERS = ['thread/start', 'thread/resume', 'thread/fork']
+const CLIENT_METHODS_OBSERVED = [...THREAD_OPENERS, 'thread/unsubscribe', 'turn/start']
 const SERVER_METHODS_OBSERVED = [
   'item/started',
   'item/completed',
@@ -235,11 +230,7 @@ export class CodexObservation {
     const method = typeof f.method === 'string' ? f.method : undefined
     if (!this.wants(direction, method !== undefined ? { method } : { replyTo: id })) return
     if (direction === 'client') {
-      if (
-        id !== undefined &&
-        method &&
-        ['thread/start', 'thread/resume', 'thread/fork'].includes(method)
-      ) {
+      if (id !== undefined && method && THREAD_OPENERS.includes(method)) {
         if (p.ephemeral === true || p.threadSource === 'system') return
         this.unsubscribed = false
         this.requests.set(id, {

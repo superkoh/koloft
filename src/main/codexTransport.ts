@@ -98,16 +98,12 @@ function readFrame(line: Buffer): ReadFrame | undefined {
   const text = line.toString()
   if (!text.trim()) return undefined
   parsed = parseFrame(text)
-  const { id, method } = parsed
-  return {
-    head:
-      typeof method === 'string'
-        ? { method }
-        : typeof id === 'string' || typeof id === 'number'
-          ? { replyTo: id }
-          : {},
-    parse
-  }
+  return { head: headOf(parsed), parse }
+}
+
+function headOf({ id, method }: Record<string, unknown>): CodexFrameHead {
+  if (typeof method === 'string') return { method }
+  return typeof id === 'string' || typeof id === 'number' ? { replyTo: id } : {}
 }
 
 interface ProcessRow {
