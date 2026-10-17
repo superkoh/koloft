@@ -230,7 +230,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
         .poll(() => ran(fake), { timeout: 30_000 })
         .toEqual([
           expect.stringMatching(
-            /ran \/usage:\nIt printed nothing Koloft can read, so here is its screen:[\s\S]*5h window {3}12% used/
+            /ran \/usage:\nIt printed nothing Koloft can read, so here is its screen:[\s\S]*Session usage/
           )
         ])
     } finally {
