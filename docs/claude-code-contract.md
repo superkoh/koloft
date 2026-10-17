@@ -1233,7 +1233,9 @@ other bullets of §9 were not re-measured on this build.
   differs only inside the `--restricted` paragraph (the word "REPL" dropped from the list
   of code-running tools; still 311 lines, 2026-10-15); 2.1.301's is byte-identical to
   2.1.300's (2026-10-16), and 2.1.302's to 2.1.301's (311 lines, 22,110 bytes,
-  2026-10-17). The `CLAUDE_CODE_*` names the 2.1.301 binary adds over 2.1.300
+  2026-10-17). The permission mode a `-p` run with no permission flag starts in, and how
+  2.1.302 changed it for a config dir with no flag cache, is measured in §14. The
+  `CLAUDE_CODE_*` names the 2.1.301 binary adds over 2.1.300
   (`strings`, 2026-10-16; pointers): `ATTACHMENTS_IN_USER_DATA`, `DAPPER_CUPCAKE`,
   `RETRY_WATCHDOG_MAX_USAGE_LIMIT_WAIT_MS`; gone: `SQUISHY_NEWT`. **Unattended retry
   mode** (read from the 2.1.300 and 2.1.301 strings, 2026-10-16; not run): with
@@ -1760,9 +1762,12 @@ below was one run.
   the strings the parser's fallback for a missing cache went from `k("tengu_moss_anchor",
   !0)` to `k("tengu_moss_anchor", !1)`. A `-p` run writes no `permission-mode` record on
   either build; its mode is the first `user` record's `"permissionMode"` and the
-  `stream-json` init line. Koloft's own `-p` calls pass `--tools ''` (no tool to deny) and
-  its shim adds no permission flag to a `-p`, so the Assist is untouched; a user's own
-  `claude -p` in a Koloft terminal is this case.
+  `stream-json` init line. Koloft runs `claude -p` twice and its shim adds no permission
+  flag to a `-p`: the Assist (`src/main/assist.ts`) passes `--tools ''`, so there is no
+  tool to deny; the remote install's warm-up `claude -p ok --max-turns 1`
+  (`src/main/remote/launch.ts`) asks for no tool, and the SSH lab runs that very warm-up
+  on a fresh linux-arm64 2.1.302 before E-SSH-10/11/12/15/17/C2, all green (2026-10-17). A
+  user's own `claude -p` in a Koloft terminal is the measured case.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
   runs), also for a plan in `bypassPermissions`.
