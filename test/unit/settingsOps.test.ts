@@ -211,9 +211,12 @@ describe('sanitizeLoadedSettings and the Assist choice', () => {
 })
 
 describe('sanitizeLoadedSettings and the "skip permission prompts" answer Koloft keeps', () => {
-  it('counts an upgrade that already finished Assist setup as agreed, so it is not asked again, and an upgrade still in setup as not yet', () => {
+  it('counts an upgrade that finished Assist setup with prompts skipped as agreed, so it is not asked again; one that said "ask me first", or is still in setup, as not yet', () => {
     const done = { fontSize: 13, assist: { on: true, backend: 'claude' } }
     expect(sanitizeLoadedSettings(done).skipPermissionsAgreed).toBe(true)
+    expect(sanitizeLoadedSettings({ ...done, skipPermissions: false }).skipPermissionsAgreed).toBe(
+      false
+    )
     expect(sanitizeLoadedSettings({ fontSize: 13 }).skipPermissionsAgreed).toBe(false)
     expect(sanitizeLoadedSettings({}).skipPermissionsAgreed).toBe(false)
   })

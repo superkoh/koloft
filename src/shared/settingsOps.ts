@@ -94,8 +94,10 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.worldClocks = Array.isArray(merged.worldClocks)
     ? [...new Set(merged.worldClocks.filter(isZoneId))].slice(0, WORLD_CLOCK_MAX)
     : []
-  if (!('skipPermissionsAgreed' in doc)) merged.skipPermissionsAgreed = merged.assist !== null
-  merged.skipPermissionsAgreed = merged.skipPermissionsAgreed === true
+  merged.skipPermissionsAgreed =
+    'skipPermissionsAgreed' in doc
+      ? merged.skipPermissionsAgreed === true
+      : merged.assist !== null && merged.skipPermissions === true
   const upgrade = !('onboardingSeen' in doc) && Object.keys(doc).length > 0
   if (upgrade) merged.onboardingSeen = true
   merged.hintsSeen = upgrade
