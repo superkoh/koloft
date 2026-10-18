@@ -78,6 +78,8 @@ const MACHINE_TABS = {
   'pty-c': { host: 'otherbox', tmuxName: 'k-sc' }
 } as Record<string, { host: string; tmuxName: string }>
 
+const CODEX_TABS = { 'pty-cx': 'devbox', 'pty-cy': 'otherbox' } as Record<string, string>
+
 function machineBackend(): {
   boundTo: Map<string, string>
   answeredFor: string[]
@@ -89,7 +91,11 @@ function machineBackend(): {
   const answeredFor: string[] = []
   const sent: [string, string, string][] = []
   const backend = new ClaudeBackend({
-    pty: { get: (id: string) => (MACHINE_TABS[id] ? {} : undefined), clearResumeIntent: () => {} },
+    pty: {
+      get: (id: string) => (MACHINE_TABS[id] || CODEX_TABS[id] ? {} : undefined),
+      clearResumeIntent: () => {}
+    },
+    machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
     hosts: {
       machine: (host: string) => ({
         answerAgent: async (id: string, reply: string) => void sent.push([host, id, reply])
@@ -163,6 +169,17 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
 
     expect(m.sent.map(([, id]) => id).sort()).toEqual(['r4', 'r5'])
     expect(m.answeredFor.sort()).toEqual(['pty-a', 'pty-b'])
+  })
+
+  // ADR-0039
+  it('answers a request from a Codex tab on that machine, which names its tab and no tmux session, and leaves one from a Codex tab on another machine unanswered', async () => {
+    const m = machineBackend()
+    m.drop('req-r6.json', request('pty-cy', ''))
+    m.drop('req-r7.json', request('pty-cx', ''))
+    await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
+    await new Promise((r) => setTimeout(r, A_FEW_MIRROR_PULLS_MS))
+
+    expect(m.sent).toEqual([['devbox', 'r7', replyJson(answered('for pty-cx'))]])
   })
 })
 

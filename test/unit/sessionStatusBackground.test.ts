@@ -1142,6 +1142,7 @@ function stageProcs(
 ): void {
   tracker.pidOf = () => 4242
   tracker.inspect = async () => ({
+    at: Date.now(),
     shells: new Map(
       Object.entries(shells).map(([id, s]) => [
         id,
@@ -1273,6 +1274,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     let cpuMs = 0
     tracker.pidOf = () => 4242
     tracker.inspect = async () => ({
+      at: Date.now(),
       shells: new Map([
         ['btoolu_e2e', { pid: 1, ageMs: 0, listening: true, cpuMs: (cpuMs += 60_000) }]
       ])
@@ -1711,7 +1713,7 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     tracker.inspect = async () => {
       lookStarted()
       await new Promise<void>((r) => (finishLook = r))
-      return { shells: new Map() }
+      return { at: Date.now(), shells: new Map() }
     }
     const closes = await idleSession(tracker, 'tabA11', cwd)
     await looking
