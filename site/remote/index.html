@@ -234,8 +234,8 @@ your Mac                     the other machine
             installer; <code>muse</code> from its official installer (about 330 MB, once), with
             <code>python3</code> first; <code>agy</code> from its official installer;
             <code>codex</code> in the same version as your Mac's, with <code>npm</code> (Node is put
-            there first, and <code>ca-certificates</code> and <code>bubblewrap</code> when the
-            machine lacks them)
+            there first, <code>ca-certificates</code> when the machine lacks it, and on Linux
+            <code>bubblewrap</code> too when it can be installed without a password)
           </li>
           <li>
             if the <code>claude</code> or <code>muse</code> there is older than this Koloft needs,
@@ -286,8 +286,8 @@ your Mac                     the other machine
           A file that changes on the machine shows up by itself: a file you have open reloads, an
           editor with unsaved edits says <code>Changed on disk</code>, and Browse shows a file added
           to or removed from an open folder. This catches up every 2 seconds while a session on that
-          machine runs, every 20 seconds otherwise. Browse's Reload button lists the whole tree
-          again.
+          machine is working, every 5 seconds while a tab on that machine is open but idle, and
+          every 20 seconds otherwise. Browse's Reload button lists the whole tree again.
         </p>
         <p>If ssh drops for a moment, Files keeps what it showed and Changes offers Retry.</p>
         <p>

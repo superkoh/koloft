@@ -122,11 +122,11 @@
           <li>
             <kbd>⌘N</kbd> starts a new session. With more than one agent installed, the button names
             the one it starts, like <code>Start · Claude ⏎</code>, and a small ▾ at its right end
-            opens a numbered list of the other agents: press a digit, or <kbd>↓</kbd>
-            <kbd>↑</kbd> and <kbd>⏎</kbd>. <kbd>⇧⏎</kbd> opens the same list; with exactly two
-            agents it starts the other one at once. An agent that cannot run says why in the list
-            (<code>Unavailable</code>, <code>No account</code>). Pick the default in Settings ▸
-            Sessions ▸ Default method.
+            opens a numbered list of all the agents (the default one marked <code>default</code>):
+            press a digit, or <kbd>↓</kbd> <kbd>↑</kbd> and <kbd>⏎</kbd>. <kbd>⇧⏎</kbd> opens the
+            same list; with exactly two agents, and the other one able to run, it starts that one at
+            once. An agent that cannot run says why in the list (<code>Unavailable</code>,
+            <code>No account</code>). Pick the default in Settings ▸ Sessions ▸ Default method.
           </li>
           <li>Click an old row to resume that session.</li>
           <li>
@@ -270,12 +270,12 @@
           <li>
             Or type what a new session should do, and press <kbd>⏎</kbd> (the button at the right
             reads <code>Ask AI</code>; with more than one agent it adds your default one, like
-            <code>Ask AI · Claude</code>, and a ▾ beside it lists the others).
+            <code>Ask AI · Claude</code>, and a ▾ beside it lists them all).
             <a href="../accounts/#assist">Assist</a> picks the folder, the worktree and a title, and
             the session starts there with your words as its first message. In a folder git tracks it
             gets a worktree of its own (see <a href="#worktrees">worktree sessions</a>). If the
             folder's branch is behind, Koloft first asks whether to pull. <kbd>⇧⏎</kbd> opens the
-            list of the other agents; with exactly two, it starts the other one.
+            list of agents; with exactly two, and the other one able to run, it starts that one.
           </li>
           <li>
             Not everything you type starts a session. Words about Koloft itself ("turn on dark
@@ -459,9 +459,9 @@
         <h2>Right-click a folder</h2>
         <ul class="dash">
           <li>
-            New session <kbd>⌘N</kbd> — or, with more than one agent on in Settings ▸ Sessions, one
-            line per agent (New Claude session, New Codex session, New Muse session, New Antigravity
-            session), the default one first with <kbd>⌘N</kbd>
+            New session <kbd>⌘N</kbd> — or, with more than one agent installed and on in Settings ▸
+            Sessions, one line per agent (New Claude session, New Codex session, New Muse session,
+            New Antigravity session), the default one first with <kbd>⌘N</kbd>
           </li>
           <li>New worktree session… <kbd>⇧⌘N</kbd> <span class="why">(in a git folder)</span></li>
           <li>
