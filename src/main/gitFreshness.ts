@@ -324,7 +324,7 @@ export interface FreshnessDeps {
   busy?(wsPath: string): boolean
   toast?(text: string): void
   onChange(wsPath: string): void
-  onDefaultMoved?(wsPath: string, from: string, to: string): void
+  onDefaultMoved?(move: { wsPath: string; defRef: string; from: string; to: string }): void
   runner(wsPath: string): FreshnessRunner | null
   fetchFailed?(wsPath: string, stderr: string): void
   now?(): number
@@ -568,15 +568,15 @@ export class GitFreshnessEngine {
     }
     if (measured.enoent) this.gitUnavailable = true
     if (measured.fetchStderr !== undefined) this.deps.fetchFailed?.(root, measured.fetchStderr)
-    const defHead = measured.snapshot?.tracking?.defHead
-    if (defHead) this.noteDefHead(root, defHead)
+    if (measured.snapshot?.tracking?.defHead) this.noteDefHead(root, measured.snapshot)
     return measured.snapshot && this.freshnessOf(root, measured.snapshot, attemptAt)
   }
 
-  private noteDefHead(root: string, defHead: string): void {
-    const was = this.defHeads.get(root)
-    this.defHeads.set(root, defHead)
-    if (was && was !== defHead) this.deps.onDefaultMoved?.(root, was, defHead)
+  private noteDefHead(wsPath: string, { defRef, tracking }: GitSnapshot): void {
+    const to = tracking!.defHead
+    const from = this.defHeads.get(wsPath)
+    this.defHeads.set(wsPath, to)
+    if (from && from !== to) this.deps.onDefaultMoved?.({ wsPath, defRef, from, to })
   }
 
   fetchSoon(wsPath: string): void {

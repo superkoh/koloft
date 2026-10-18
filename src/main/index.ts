@@ -222,7 +222,7 @@ import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
-import { repoKeyOf } from './gitRepoKey'
+import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
 import { SessionSync, type SyncSession } from './sessionSync'
 import {
   GithubLookup,
@@ -1325,82 +1325,44 @@ async function queueCodexMessage(tabId: string, text: string, clientId: string):
   await codexSessions.queueMessage(tabId, text, clientId)
 }
 
-const COMMON_GIT_DIR = ['rev-parse', '--path-format=absolute', '--git-common-dir']
-const repoOfTree = new Map<string, Promise<string | null>>()
-
-async function askRepoOf(dir: string): Promise<string | null> {
-  const remote = parseRemoteKey(dir)
-  if (!remote) return repoKeyOf(dir)
-  const common = (await hosts.of(dir).gitOut(dir, COMMON_GIT_DIR))?.trim()
-  return common ? formatRemoteKey(remote.host, common) : null
-}
-
-function repoOfDir(dir: string): Promise<string | null> {
-  const known = repoOfTree.get(dir)
-  if (known) return known
-  const asked = askRepoOf(dir)
-  repoOfTree.set(dir, asked)
-  void asked.then((repo) => {
-    if (!repo && isRemoteKey(dir)) repoOfTree.delete(dir)
-  })
-  return asked
-}
+const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
+  Promise.all(
+    paths.map(async (onMachine) => {
+      const dir = formatRemoteKey(machine, onMachine)
+      const common = (await hosts.of(dir).gitOut(dir, COMMON_GIT_DIR))?.trim()
+      return common ? formatRemoteKey(machine, common) : null
+    })
+  )
+)
 
 function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
-  return all
-    .filter(
-      (s) =>
-        s.alive &&
-        !s.conductor &&
-        !!s.sessionId &&
-        (s.backendId === 'claude' || s.backendId === 'codex')
-    )
-    .map((s) => ({
-      tabId: s.tabId,
-      sessionId: s.sessionId,
-      title: s.title,
-      treeRoot: s.treeRoot,
-      files: s.files,
-      liveWrites: s.liveWrites
-    }))
+  return all.flatMap((s) =>
+    s.alive && !s.conductor && s.sessionId && (s.backendId === 'claude' || s.backendId === 'codex')
+      ? [
+          {
+            tabId: s.tabId,
+            sessionId: s.sessionId,
+            backendId: s.backendId,
+            title: s.title,
+            treeRoot: s.treeRoot,
+            files: s.files,
+            liveWrites: s.liveWrites
+          }
+        ]
+      : []
+  )
 }
 
 const sessionSync = new SessionSync({
-  backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
-  remote: (tabId) => !!remoteHostOfTab(tabId),
   idle: (tabId) =>
     tracker.turnOver(tabId) && !asksTheOwner(tabId) && (codexSessions?.queueDrained(tabId) ?? true),
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
-  repoOf: repoOfDir,
-  hasCommit: async (treeRoot, sha) =>
-    (await hosts.of(treeRoot).gitOut(treeRoot, ['merge-base', '--is-ancestor', sha, 'HEAD'])) !==
-    null,
+  repoOf: (dir) => syncRepoKeys.resolve(dir),
+  gitOut: (dir, args) => hosts.of(dir).gitOut(dir, args),
   queue: queueCodexMessage,
   sendLine: sendPeerLine,
   type: (tabId, keys) => ptyMgr.type(tabId, keys)
 })
-
-async function tellDefaultMoved(wsPath: string, from: string, to: string): Promise<void> {
-  const repo = await repoOfDir(wsPath)
-  if (!repo) return
-  const host = hosts.of(wsPath)
-  const [log, diff] = await Promise.all([
-    host.gitOut(wsPath, ['log', '--format=%s', `${from}..${to}`]),
-    host.gitOut(wsPath, ['diff', '--name-only', from, to])
-  ])
-  const lines = (out: string | null): string[] => (out ?? '').split('\n').filter(Boolean)
-  await sessionSync.defaultMoved(
-    repo,
-    {
-      defRef: freshness?.get(wsPath)?.defRef || 'origin/main',
-      from,
-      to,
-      subjects: lines(log),
-      changed: lines(diff)
-    },
-    syncSessionsOf(allSessions())
-  )
-}
 
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
@@ -2967,7 +2929,7 @@ app.whenReady().then(() => {
     busy: (wsPath) => busyInCheckout(allSessions(), wsPath) > 0,
     toast: (text) => sendToRenderer('cron:toast', text),
     onChange: () => workspaceMgr?.restampLive(),
-    onDefaultMoved: (wsPath, from, to) => void tellDefaultMoved(wsPath, from, to),
+    onDefaultMoved: (move) => void sessionSync.defaultMoved(move, syncSessionsOf(allSessions())),
     runner: (wsPath) => {
       const key = parseRemoteKey(wsPath)
       return key && !remoteSync?.connected(key.host) ? null : hosts.of(wsPath).freshness

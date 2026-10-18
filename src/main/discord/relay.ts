@@ -22,7 +22,11 @@ import { didNotRun, slashCommandProblem, waitingForAnswer } from '@shared/slashC
 import type { AskPayload } from '@shared/sessionEvent'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 import type { ToolCall } from '../sessionTracker'
-import { crossSessionLine, type ModeClass } from '../crossSessionMessage'
+import {
+  MESSAGE_SOCKET_SHOWS_WITHIN_MS,
+  crossSessionLine,
+  type ModeClass
+} from '../crossSessionMessage'
 import { discordIdsFile } from '../hooks'
 import {
   askHow,
@@ -66,7 +70,6 @@ const DELIVERED = '✅'
 const PAGE = 100
 const PROMPT_SETTLES_AFTER_BIND_MS = 1000
 const CONDUCTOR_GETS_READY_WITHIN_MS = 10 * 60_000
-const MESSAGE_SOCKET_SHOWS_WITHIN_MS = 10_000
 
 export interface Destination {
   id: string

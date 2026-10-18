@@ -5,6 +5,7 @@ import { isGitCheckoutAsync } from './projectInfo'
 import type { GitOut } from './resumePlan'
 
 const REPO_KEY_GIT_TIMEOUT_MS = 5000
+export const COMMON_GIT_DIR = ['rev-parse', '--path-format=absolute', '--git-common-dir']
 
 const plainGitOut: GitOut = (dir, args, timeoutMs = REPO_KEY_GIT_TIMEOUT_MS) =>
   new Promise((resolve) => {
@@ -18,9 +19,7 @@ export async function repoKeyOf(
   wsPath: string,
   gitOut: GitOut = plainGitOut
 ): Promise<string | null> {
-  const commonDir = (
-    await gitOut(wsPath, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
-  )?.trim()
+  const commonDir = (await gitOut(wsPath, COMMON_GIT_DIR))?.trim()
   if (!commonDir) return null
   try {
     return await fs.promises.realpath(commonDir)

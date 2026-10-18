@@ -1,15 +1,20 @@
 import path from 'path'
-import { messagingOf } from '@shared/sessionBackend'
-import { parseRemoteKey } from '@shared/remoteKey'
-import type { BackendId, PreviewItem } from '@shared/types'
-import { FROM_KOLOFT, crossSessionLine, type ModeClass } from './crossSessionMessage'
+import { messagingOf, type Messaging } from '@shared/sessionBackend'
+import { barePath, isRemoteKey } from '@shared/remoteKey'
+import type { PreviewItem } from '@shared/types'
+import {
+  FROM_KOLOFT,
+  MESSAGE_SOCKET_SHOWS_WITHIN_MS,
+  crossSessionLine,
+  type ModeClass
+} from './crossSessionMessage'
 
 const NAMED_AT_MOST = 10
-const MESSAGE_SOCKET_SHOWS_WITHIN_MS = 5000
 
 export interface SyncSession {
   tabId: string
   sessionId: string
+  backendId: 'claude' | 'codex'
   title: string
   treeRoot: string
   files?: PreviewItem[]
@@ -17,20 +22,17 @@ export interface SyncSession {
 }
 
 export interface DefaultMove {
+  wsPath: string
   defRef: string
   from: string
   to: string
-  subjects: string[]
-  changed: string[]
 }
 
 export interface SessionSyncDeps {
-  backendOf(tabId: string): BackendId | undefined
-  remote(tabId: string): boolean
   idle(tabId: string): boolean
   modeOf(tabId: string): ModeClass
-  repoOf(treeRoot: string): Promise<string | null>
-  hasCommit(treeRoot: string, sha: string): Promise<boolean>
+  repoOf(dir: string): Promise<string | null>
+  gitOut(dir: string, args: string[]): Promise<string | null>
   queue(tabId: string, text: string, clientId: string): Promise<void>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   type(tabId: string, keys: string[]): Promise<void>
@@ -43,7 +45,8 @@ interface SameFiles {
 }
 
 interface Pending {
-  move?: DefaultMove & { yours: Set<string> }
+  route: Messaging
+  move?: { defRef: string; from: string; to: string; subjects: string[]; yours: Set<string> }
   sameFiles: Map<string, SameFiles>
 }
 
@@ -54,17 +57,17 @@ interface Seen {
   live: Set<string>
 }
 
-function bare(p: string): string {
-  return parseRemoteKey(p)?.path ?? p
-}
-
 function inTree(s: SyncSession, src: string): string | null {
-  const rel = path.posix.relative(bare(s.treeRoot), bare(src))
+  const rel = path.posix.relative(barePath(s.treeRoot), barePath(src))
   return rel && !rel.startsWith('..') && !path.posix.isAbsolute(rel) ? rel : null
 }
 
 function written(s: SyncSession): PreviewItem[] {
   return (s.files ?? []).filter((f) => f.access === 'wrote')
+}
+
+function lines(out: string | null): string[] {
+  return (out ?? '').split('\n').filter(Boolean)
 }
 
 function listed(items: string[]): string {
@@ -77,7 +80,7 @@ function short(sha: string): string {
   return sha.slice(0, 7)
 }
 
-export function noticeText(p: Pending): string {
+function noticeText(p: Pending): string {
   const parts: string[] = []
   const m = p.move
   if (m) {
@@ -102,7 +105,7 @@ export function noticeText(p: Pending): string {
 export class SessionSync {
   private pending = new Map<string, Pending>()
   private seen = new Map<string, Seen>()
-  private told = new Set<string>()
+  private told = new Map<string, Set<string>>()
   private tips = new Map<string, string>()
   private sent = 0
 
@@ -134,47 +137,61 @@ export class SessionSync {
     for (const [writer, wrote] of fresh) await this.tellOthers(writer, wrote, sessions)
   }
 
-  async defaultMoved(repo: string, move: DefaultMove, sessions: SyncSession[]): Promise<void> {
-    if (this.tips.get(repo) === move.to) return
+  async defaultMoved(move: DefaultMove, sessions: SyncSession[]): Promise<void> {
+    const repo = await this.d.repoOf(move.wsPath)
+    if (!repo || this.tips.get(repo) === move.to) return
     this.tips.set(repo, move.to)
-    const changed = new Set(move.changed)
-    for (const s of sessions) {
-      if ((await this.d.repoOf(s.treeRoot)) !== repo) continue
-      if (await this.d.hasCommit(s.treeRoot, move.to)) continue
+    const held = new Map<string, Promise<boolean>>()
+    const lacksTip = async (s: SyncSession): Promise<boolean> => {
+      if ((await this.d.repoOf(s.treeRoot)) !== repo) return false
+      if (!held.has(s.treeRoot))
+        held.set(
+          s.treeRoot,
+          this.d
+            .gitOut(s.treeRoot, ['merge-base', '--is-ancestor', move.to, 'HEAD'])
+            .then((out) => out !== null)
+        )
+      return !(await held.get(s.treeRoot))
+    }
+    const lacking = await Promise.all(sessions.map(lacksTip))
+    const told = sessions.filter((_, i) => lacking[i])
+    if (!told.length) return
+    const [log, diff] = await Promise.all([
+      this.d.gitOut(move.wsPath, ['log', '--format=%s', `${move.from}..${move.to}`]),
+      this.d.gitOut(move.wsPath, ['diff', '--name-only', move.from, move.to])
+    ])
+    const subjects = lines(log)
+    const changed = new Set(lines(diff))
+    for (const s of told) {
       const yours = written(s)
         .map((f) => inTree(s, f.src))
         .filter((rel): rel is string => rel !== null && changed.has(rel))
-      const p = this.of(s.tabId)
-      p.move = p.move
-        ? {
-            ...move,
-            from: p.move.from,
-            subjects: [...move.subjects, ...p.move.subjects],
-            yours: new Set([...p.move.yours, ...yours])
-          }
-        : { ...move, yours: new Set(yours) }
+      const p = this.of(s)
+      p.move = {
+        defRef: move.defRef,
+        from: p.move?.from ?? move.from,
+        to: move.to,
+        subjects: [...subjects, ...(p.move?.subjects ?? [])],
+        yours: new Set([...(p.move?.yours ?? []), ...yours])
+      }
       this.flush(s.tabId)
     }
   }
 
   flush(tabId: string): void {
     const p = this.pending.get(tabId)
-    if (!p) return
-    const backend = this.d.backendOf(tabId)
-    if (backend !== 'claude' && backend !== 'codex') return void this.pending.delete(tabId)
-    const route = messagingOf(backend, this.d.remote(tabId))
-    if (route !== 'peerLine' && !this.d.idle(tabId)) return
+    if (!p || (p.route !== 'peerLine' && !this.d.idle(tabId))) return
     this.pending.delete(tabId)
-    void this.deliver(tabId, route, noticeText(p)).catch(() => undefined)
+    void this.deliver(tabId, p.route, noticeText(p)).catch(() => undefined)
   }
 
   forget(tabId: string): void {
     this.pending.delete(tabId)
     this.seen.delete(tabId)
-    for (const key of this.told) if (key.split('\n', 2).includes(tabId)) this.told.delete(key)
+    this.told.delete(tabId)
   }
 
-  private async deliver(tabId: string, route: string, text: string): Promise<void> {
+  private async deliver(tabId: string, route: Messaging, text: string): Promise<void> {
     const id = `koloft-sync-${++this.sent}`
     if (route === 'queue') return this.d.queue(tabId, text, id)
     if (route === 'typed') return this.d.type(tabId, [text, '\r'])
@@ -182,9 +199,12 @@ export class SessionSync {
     if (line) await this.d.sendLine(tabId, line, MESSAGE_SOCKET_SHOWS_WITHIN_MS)
   }
 
-  private of(tabId: string): Pending {
-    const p = this.pending.get(tabId) ?? { sameFiles: new Map() }
-    this.pending.set(tabId, p)
+  private of(s: SyncSession): Pending {
+    const p = this.pending.get(s.tabId) ?? {
+      route: messagingOf(s.backendId, isRemoteKey(s.treeRoot)),
+      sameFiles: new Map()
+    }
+    this.pending.set(s.tabId, p)
     return p
   }
 
@@ -196,8 +216,10 @@ export class SessionSync {
     const repo = await this.d.repoOf(writer.treeRoot)
     if (!repo) return
     const mine = wrote.map((src) => inTree(writer, src)).filter((r): r is string => r !== null)
-    for (const other of sessions) {
-      if (other.tabId === writer.tabId || (await this.d.repoOf(other.treeRoot)) !== repo) continue
+    const others = sessions.filter((o) => o.tabId !== writer.tabId)
+    const repos = await Promise.all(others.map((o) => this.d.repoOf(o.treeRoot)))
+    others.forEach((other, i) => {
+      if (repos[i] !== repo) return
       const theirs = new Set(
         [...(this.seen.get(other.tabId)?.live ?? [])].map((src) => inTree(other, src))
       )
@@ -205,18 +227,20 @@ export class SessionSync {
       const sameFolder = other.treeRoot === writer.treeRoot
       this.tell(other, writer, both, sameFolder)
       this.tell(writer, other, both, sameFolder)
-    }
+    })
   }
 
   private tell(to: SyncSession, about: SyncSession, files: string[], sameFolder: boolean): void {
+    const told = this.told.get(to.tabId) ?? new Set<string>()
+    this.told.set(to.tabId, told)
     const untold = files.filter((rel) => {
-      const key = `${to.tabId}\n${about.tabId}\n${rel}`
-      if (this.told.has(key)) return false
-      this.told.add(key)
+      const key = `${about.tabId}\n${rel}`
+      if (told.has(key)) return false
+      told.add(key)
       return true
     })
     if (!untold.length) return
-    const p = this.of(to.tabId)
+    const p = this.of(to)
     const entry = p.sameFiles.get(about.tabId) ?? {
       name: about.title,
       sameFolder,

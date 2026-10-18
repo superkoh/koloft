@@ -91,7 +91,7 @@ function harness(
       busy: opts.busy,
       toast: opts.toast,
       onChange: (p) => changed.push(p),
-      onDefaultMoved: (p, from, to) => moved.push(`${p} ${from}..${to}`),
+      onDefaultMoved: (m) => moved.push(`${m.wsPath} ${m.defRef} ${m.from}..${m.to}`),
       runner: (p) => {
         const key = parseRemoteKey(p)
         return key ? (opts.machine?.(key.host) ?? null) : local
@@ -305,7 +305,7 @@ describe('Tier-1 + Tier-2 measurement', () => {
     h.setNow(1_700_000_200_000)
     await h.engine.fetchNow(work)
     const after = git(work, 'rev-parse', 'origin/main').trim()
-    expect(h.moved).toEqual([`${work} ${before}..${after}`])
+    expect(h.moved).toEqual([`${work} origin/main ${before}..${after}`])
   })
 
   it('reports nothing at all for a directory that is not a repo', async () => {
