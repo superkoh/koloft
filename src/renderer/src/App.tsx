@@ -1396,7 +1396,7 @@ export default function App(): JSX.Element {
     beginLayoutDrag()
     setSbDragging(true)
     const left = dockRef.current?.getBoundingClientRect().left ?? 0
-    let live: number | null = null
+    let live = useStore.getState().sidebarWidth
     const onMove = (ev: globalThis.MouseEvent): void => {
       live = Math.min(
         Math.max(SIDEBAR_MIN, ev.clientX - left),
@@ -1407,10 +1407,10 @@ export default function App(): JSX.Element {
     const onUp = (): void => {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
-      if (live !== null) setSidebarWidth(live)
+      setSidebarWidth(live)
       setSbDragging(false)
       endLayoutDrag()
-      void window.api.settings.set({ sidebarWidth: live ?? useStore.getState().sidebarWidth })
+      void window.api.settings.set({ sidebarWidth: live })
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
