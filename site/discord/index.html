@@ -83,12 +83,12 @@
 
         <p>
           Discord is a chat app for your phone and your computer.
-          <a href="../accounts/#assist">Assist</a> is Koloft's own AI: a Claude or Codex session on
-          your Mac that you talk to from the sidebar. Give it a Discord channel (a chat room) and
-          you can write to it from your phone too. It starts your other sessions, reads them, sends
-          them messages, and answers their questions the way you tell it to. It never does the work
-          itself: it cannot change your files, whatever your permission setting, so it passes each
-          job on to a session.
+          <a href="../accounts/#assist">Assist</a> is Koloft's own AI: a Claude, Codex, Muse or
+          Antigravity session on your Mac that you talk to from the sidebar. Give it a Discord
+          channel (a chat room) and you can write to it from your phone too. It starts your other
+          sessions, reads them, sends them messages, and answers their questions the way you tell it
+          to. It never does the work itself: it cannot change your files, whatever your permission
+          setting, so it passes each job on to a session.
         </p>
 
         <pre
@@ -307,9 +307,9 @@ your Mac
         <h3>One thread per session</h3>
         <p>
           A thread is a side chat that hangs off one message. Each session Assist looks after gets
-          its own. The channel shows one small card per session: its title, its folder, and Claude
-          or Codex. Under that card, the session's thread holds its news: finished, waiting for you,
-          closed, and the results of commands.
+          its own. The channel shows one small card per session: its title, its folder, and which
+          agent it is. Under that card, the session's thread holds its news: finished, waiting for
+          you, closed, and the results of commands.
         </p>
         <p>
           The card follows the session's light in the sidebar, and says how long ago that began:
@@ -389,6 +389,34 @@ your Mac
         <p>
           After you press one, the card says "✅" and the label you pressed. A question with several
           parts gets no buttons. See which sessions can take a typed answer below.
+        </p>
+
+        <h3 id="secrets">Passwords and codes</h3>
+        <p>
+          Some things only you know, and they should not sit in a chat. When a session needs one, a
+          🔑 card comes to its thread:
+        </p>
+        <ul class="dash">
+          <li>
+            <code>🔑 &lt;session&gt; asks for your sudo password</code> (the Mac's admin password),
+            with the command it wants to run
+          </li>
+          <li>
+            <code>🔑 &lt;session&gt; asks you to fill in a field on a web page</code>, with the page
+            and the field
+          </li>
+          <li>
+            <code>🔑 &lt;session&gt; needs the address a sign-in ends on</code>, with the sign-in
+            address to open on your phone
+          </li>
+        </ul>
+        <p>
+          Press <code>Enter it</code> and Discord opens a form. What you type goes to Koloft, which
+          passes it straight on: to <code>sudo</code>, into the page's field (and submits the form),
+          or to the session's machine, which opens the address. The session never sees it, and it
+          does not stay in the chat. The card then ends with <code>✅ Passed on.</code>, or
+          <code>⌛ Koloft stopped waiting.</code> if you did not answer in time. See
+          <a href="../agents/#secrets">how the agent asks</a>.
         </p>
 
         <h3>Slash commands</h3>
@@ -546,7 +574,7 @@ your Mac
               <tr>
                 <td>session cards</td>
                 <td>
-                  The session's title and folder (also in thread names), Claude or Codex, and its
+                  The session's title and folder (also in thread names), which agent it is, and its
                   state (see the table above), edited each time the state changes. While it works, a
                   typing signal every 8 seconds.
                 </td>
@@ -594,7 +622,7 @@ your Mac
           </li>
         </ul>
 
-        <h2>Three kinds of session</h2>
+        <h2>Kinds of session</h2>
 
         <h3>Claude on your Mac</h3>
         <ul class="dash">
@@ -639,7 +667,25 @@ your Mac
             goes in at once.
           </li>
         </ul>
-        <p>There is no fourth kind: Codex does not run on another machine.</p>
+        <h3>Codex on another machine</h3>
+        <ul class="dash">
+          <li>
+            The same as Codex on your Mac: Koloft talks to the Codex server on that machine the way
+            it talks to one here.
+          </li>
+        </ul>
+
+        <h3>Muse and Antigravity</h3>
+        <ul class="dash">
+          <li>
+            Like Claude on another machine: Koloft answers by typing keys into their terminal, so
+            Yes / No, or one question with one pick. Anything else: tell Assist what to pick.
+          </li>
+          <li>
+            Antigravity on your Mac is answered by Koloft directly when that works, and by keys
+            otherwise.
+          </li>
+        </ul>
 
         <h2>What it won't do</h2>
         <ul class="dash">
@@ -686,7 +732,8 @@ your Mac
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
           </p>
         </div>
         <nav aria-label="Docs">

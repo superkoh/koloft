@@ -113,15 +113,15 @@
         <ul class="dash">
           <li>a Mac with Apple Silicon (M1 or later)</li>
           <li>
-            Claude Code, or the Codex CLI (command-line tool). If neither is on the Mac, the welcome
-            steps install one for you: click its card ("Not on this Mac. Click to install.") and a
-            terminal tab runs the tool's official installer. Each Koloft version names the oldest
-            Claude Code and Codex it works with, and updates an older one for you (see
-            <a href="#updates">Updates</a> below).
+            one of the agents: Claude Code, the Codex CLI (command-line tool), Meta's Muse Code or
+            Google's Antigravity CLI. If none is on the Mac, the welcome steps install one for you:
+            click its card ("Not on this Mac. Click to install.") and a terminal tab runs the tool's
+            official installer. Each Koloft version says how old each agent may be, and updates an
+            older one for you (see <a href="#updates">Updates</a> below).
           </li>
           <li>
-            a Claude or Codex login to add to Koloft: every session runs on one (see
-            <a href="../accounts/">accounts</a>)
+            a Claude, Codex, Muse or Antigravity login to add to Koloft: every session runs on one
+            (see <a href="../accounts/">accounts</a>)
           </li>
           <li>
             git and <code>gh</code> (GitHub's own command-line tool)
@@ -144,11 +144,12 @@
           <a href="../changelog/">changelog</a>.
         </p>
         <p>
-          Koloft also keeps Claude Code and Codex new enough. If yours is older than this version
-          works with, Koloft runs <code>claude update</code> or <code>codex update</code> for you.
-          For Claude, this runs in the tab each time a session starts. For Codex, it runs once each
-          time Koloft opens, with a small message. If that does not bring it up to date, Koloft asks
-          you to run the update yourself.
+          Koloft also keeps the agents new enough. If yours is older than this version works with,
+          Koloft runs the tool's own update for you, such as <code>claude update</code> or
+          <code>codex update</code>. For Claude, this runs in the tab each time a session starts.
+          For Codex, Muse Code and Antigravity CLI, it runs once each time Koloft opens, with a
+          small message. If that does not bring it up to date, Koloft asks you to run the update
+          yourself.
         </p>
 
         <h2 id="what-it-talks-to">What it talks to</h2>
@@ -211,21 +212,28 @@
                 </td>
               </tr>
               <tr>
-                <td><code>claude.ai,</code><br /><code>chatgpt.com</code></td>
                 <td>
-                  the official installers of <code>claude</code> and <code>codex</code>, only when
-                  you click a tool's card on the welcome steps to install it
+                  <code>claude.ai,</code><br /><code>chatgpt.com,</code><br /><code
+                    >dev.meta.ai,</code
+                  ><br /><code>antigravity.google</code>
+                </td>
+                <td>
+                  the official installers of <code>claude</code>, <code>codex</code>,
+                  <code>muse</code> and <code>agy</code>, only when you click a tool's card on the
+                  welcome steps to install it
                 </td>
               </tr>
               <tr>
                 <td>
-                  <code>claude.ai,</code><br /><code>nodejs.org,</code><br /><code
-                    >unofficial-builds.nodejs.org</code
-                  >
+                  <code>claude.ai,</code><br /><code>dev.meta.ai,</code><br /><code
+                    >antigravity.google,</code
+                  ><br /><code>nodejs.org,</code><br /><code>unofficial-builds.nodejs.org</code>
                 </td>
                 <td>
-                  only to put <code>claude</code> and Node on a remote folder's machine (the third
-                  on an old Linux)
+                  only to put <code>claude</code>, <code>muse</code>, <code>agy</code> and Node on a
+                  remote folder's machine (<code>unofficial-builds.nodejs.org</code> only on an old
+                  Linux); <code>codex</code> is put there with <code>npm</code> (Node's package
+                  tool), which fetches it from npm's own site
                 </td>
               </tr>
               <tr>
@@ -261,8 +269,12 @@
             the status line under each session asks <code>gh</code> about the branch's pull request
           </li>
           <li>
-            with <a href="../accounts/#assist">Assist</a> on Codex, its small jobs go through
-            <code>codex</code> to OpenAI, the same way a Codex session does
+            with <a href="../accounts/#assist">Assist</a> on Codex, Muse or Antigravity, its small
+            jobs go through that tool to OpenAI, Meta or Google, the same way a session does
+          </li>
+          <li>
+            a Muse or Antigravity account's allowance is read by running <code>muse</code> or
+            <code>agy</code> itself; that call is the tool's own, like Codex's
           </li>
           <li>the git check can be turned off in Settings ▸ Appearance ▸ Auto-fetch git remotes</li>
           <li>
@@ -270,9 +282,9 @@
             tool fetches its own update, from the place it was installed from
           </li>
           <li>
-            for a remote folder, <code>bash</code>, <code>tmux</code> and <code>rsync</code> come
-            from that machine's own package manager, which may ask for its sudo password (the admin
-            password)
+            for a remote folder, <code>bash</code>, <code>tmux</code>, <code>rsync</code> and
+            <code>python3</code> (for Muse) come from that machine's own package manager, which may
+            ask for its sudo password (the admin password)
           </li>
           <li>
             the store page loads only when you click Open Chrome Web Store in Settings ▸ Extensions
@@ -289,27 +301,28 @@
           that copies files).
         </p>
         <p>
-          Claude Code talks to Anthropic and Codex talks to OpenAI by themselves, when you log in
-          and every time you send a message. That traffic is theirs, not Koloft's, and this list
-          does not cover it. Koloft also asks Codex how much of each account's limit is left. Codex
-          makes that call itself, through <code>codex app-server</code>.
+          Claude Code talks to Anthropic, Codex to OpenAI, Muse Code to Meta and Antigravity to
+          Google by themselves, when you log in and every time you send a message. That traffic is
+          theirs, not Koloft's, and this list does not cover it. Koloft also asks Codex how much of
+          each account's limit is left. Codex makes that call itself, through
+          <code>codex app-server</code>.
         </p>
 
         <h2>Questions</h2>
         <dl class="qa">
-          <dt><span>Does Koloft replace Claude Code or Codex?</span></dt>
+          <dt><span>Does Koloft replace Claude Code, Codex, Muse Code or Antigravity?</span></dt>
           <dd>
             <span
-              >No. It runs the real <code>claude</code> and <code>codex</code> tools you already
-              have, and shows their own screen, untouched. Koloft adds the list, the Workbench and
-              the note around it.</span
+              >No. It runs the real <code>claude</code>, <code>codex</code>, <code>muse</code> and
+              <code>agy</code> tools you already have, and shows their own screen, untouched. Koloft
+              adds the list, the Workbench and the note around it.</span
             >
           </dd>
           <dt><span>Does it cost anything?</span></dt>
           <dd>
             <span
-              >Koloft is free. Claude Code and Codex use your own Anthropic or OpenAI account, just
-              as they do without Koloft.</span
+              >Koloft is free. The agents use your own Anthropic, OpenAI, Meta or Google account,
+              just as they do without Koloft.</span
             >
           </dd>
           <dt><span>Is there a version for Intel Macs, Windows or Linux?</span></dt>
@@ -354,7 +367,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
           </p>
         </div>
         <nav aria-label="Docs">

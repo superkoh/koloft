@@ -107,9 +107,13 @@
 
         <h2>Where the list comes from</h2>
         <p>
-          Claude Code and Codex already keep every session in their own files. Koloft reads the
-          chats from there and keeps only a short list of which ones belong to Koloft. Add a folder
-          with <kbd>⇧⌘O</kbd> and its sessions show up under it.
+          Koloft runs four agents: Claude Code, Codex, Meta's Muse Code and Google's Antigravity CLI
+          (<code>agy</code>, the one that took over from Gemini CLI; CLI means command-line tool).
+          Each already keeps every session in its own files. Koloft reads the chats from there and
+          keeps only a short list of which ones belong to Koloft. Add a folder with
+          <kbd>⇧⌘O</kbd> and its sessions show up under it. Where this page says Claude and Codex,
+          what Muse and Antigravity do is on the <a href="../accounts/">accounts</a>,
+          <a href="../remote/">remote</a> and <a href="../agents/">agents</a> pages.
         </p>
         <p>
           A session you started in a plain terminal is not listed by itself. To bring it back,
@@ -119,8 +123,13 @@
         <h2>Start and resume</h2>
         <ul class="dash">
           <li>
-            <kbd>⌘N</kbd> starts a new session. Pick the tool it uses by default in Settings ▸
-            Sessions.
+            <kbd>⌘N</kbd> starts a new session. With more than one agent installed, the button names
+            the one it starts, like <code>Start · Claude ⏎</code>, and a small ▾ at its right end
+            opens a numbered list of all the agents (the default one marked <code>default</code>):
+            press a digit, or <kbd>↓</kbd> <kbd>↑</kbd> and <kbd>⏎</kbd>. <kbd>⇧⏎</kbd> opens the
+            same list; with exactly two agents, and the other one able to run, it starts that one at
+            once. An agent that cannot run says why in the list (<code>Unavailable</code>,
+            <code>No account</code>). Pick the default in Settings ▸ Sessions ▸ Default method.
           </li>
           <li>Click an old row to resume that session.</li>
           <li>
@@ -263,13 +272,13 @@
           </li>
           <li>
             Or type what a new session should do, and press <kbd>⏎</kbd> (the button at the right
-            reads <code>Ask AI</code>; with both tools it adds your default one, like
-            <code>Ask AI · Claude</code>). <a href="../accounts/#assist">Assist</a> picks the
-            folder, the worktree and a title, and the session starts there with your words as its
-            first message. In a folder git tracks it gets a worktree of its own (see
-            <a href="#worktrees">worktree sessions</a>). If the folder's branch is behind, Koloft
-            first asks whether to pull. <kbd>⇧⏎</kbd> starts it on the other tool, when you have
-            both.
+            reads <code>Ask AI</code>; with more than one agent it adds your default one, like
+            <code>Ask AI · Claude</code>, and a ▾ beside it lists them all).
+            <a href="../accounts/#assist">Assist</a> picks the folder, the worktree and a title, and
+            the session starts there with your words as its first message. In a folder git tracks it
+            gets a worktree of its own (see <a href="#worktrees">worktree sessions</a>). If the
+            folder's branch is behind, Koloft first asks whether to pull. <kbd>⇧⏎</kbd> works as for
+            <kbd>⌘N</kbd> above.
           </li>
           <li>
             Not everything you type starts a session. Words about Koloft itself ("turn on dark
@@ -280,8 +289,8 @@
             folder ("fix the tests") goes to the Global Assist, which answers in its own tab.
           </li>
           <li>
-            With Assist off, the button reads <code>Start a session</code> (with both tools,
-            <code>Start</code> plus your default one, like <code>Start · Claude</code>) and
+            With Assist off, the button reads <code>Start a session</code> (with more than one
+            agent, <code>Start</code> plus your default one, like <code>Start · Claude</code>) and
             <kbd>⏎</kbd> opens the folder picker instead.
           </li>
           <li>
@@ -291,7 +300,7 @@
           </li>
         </ul>
         <p>
-          All of this works for Claude and Codex, and for a Claude session on a
+          All of this works for every agent, and for a session on a
           <a href="../remote/">remote folder</a>, which is listed with its machine's name and
           resumes there.
         </p>
@@ -453,8 +462,9 @@
         <h2>Right-click a folder</h2>
         <ul class="dash">
           <li>
-            New session <kbd>⌘N</kbd> — or, when both tools are on in Settings ▸ Sessions, New
-            Claude session and New Codex session, the default one with <kbd>⌘N</kbd>
+            New session <kbd>⌘N</kbd> — or, with more than one agent installed and on in Settings ▸
+            Sessions, one line per agent (New Claude session, New Codex session, …), the default one
+            first with <kbd>⌘N</kbd>
           </li>
           <li>New worktree session… <kbd>⇧⌘N</kbd> <span class="why">(in a git folder)</span></li>
           <li>
@@ -568,8 +578,13 @@
           Worktree sessions are not affected.
         </p>
         <p>
-          On a <a href="../remote/">remote folder</a> the panel shows no Pull, no Fetch now and no
-          behind number; the GitHub part and the Account part work as above.
+          On a <a href="../remote/">remote folder</a> the panel works too, on the machine itself:
+          the behind number (every five minutes, and when the machine connects),
+          <code>Fetch now</code> and <code class="nowrap">Pull · fast-forward</code>. When the
+          machine cannot reach origin, the panel says
+          <code>can't reach origin from &lt;machine&gt; — check its network or credentials.</code>
+          While the machine is not connected, Fetch now and Pull are greyed out and the last counts
+          stay. The GitHub part and the Account part work as above.
         </p>
 
         <p class="next">Next page → <a href="../workbench/">The Workbench</a></p>
@@ -583,7 +598,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
           </p>
         </div>
         <nav aria-label="Docs">
