@@ -895,7 +895,8 @@ describe('a Muse session on a remote machine', () => {
         gone: () => gone,
         connected: () => reachable,
         poke: () => {},
-        setupLine: () => undefined
+        setupLine: () => undefined,
+        hookSettings: (tabId) => `/koloft/hooks/${tabId}.json`
       }
     })
   }
@@ -927,12 +928,14 @@ describe('a Muse session on a remote machine', () => {
       trust: []
     })
     expect(launches[0].account.auth()).toBe('{"providers":{"meta":{}}}')
-    expect(vi.mocked(pty.create).mock.calls[0][0]).toMatchObject({
+    const created = vi.mocked(pty.create).mock.calls[0][0]
+    expect(created).toMatchObject({
       kind: 'muse',
       koloftShim: true,
       cwd: os.homedir(),
       launchCommand: expect.any(Function)
     })
+    expect(created.hookSettings?.('pty-m')).toBe('/koloft/hooks/pty-m.json')
     mirror(id, { t: 'bound', sessionId: A })
     await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
     expect(sessions.list()[0]).toMatchObject({ sessionId: museSessionKey(A, 'box'), cwd: KEY })

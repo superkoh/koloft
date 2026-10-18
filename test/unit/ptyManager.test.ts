@@ -91,8 +91,12 @@ describe('PtyManager per-tab environment', () => {
     mgr.shimDir = '/koloft/shim'
     mgr.regDir = '/koloft/reg'
     mgr.openDir = '/koloft/opens'
-    mgr.makeHookSettings = (id) => `/koloft/hooks/${id}.json`
-    const handle = mgr.create({ kind: 'claude', koloftShim: true, cwd: os.tmpdir() })
+    const handle = mgr.create({
+      kind: 'claude',
+      koloftShim: true,
+      hookSettings: (id) => `/koloft/hooks/${id}.json`,
+      cwd: os.tmpdir()
+    })
     const env = spawnedEnv()
     expect(env.PATH.startsWith('/koloft/shim:')).toBe(true)
     expect(env.KOLOFT_TAB_ID).toBe(handle.id)
@@ -104,17 +108,12 @@ describe('PtyManager per-tab environment', () => {
     expect(env.TERM_PROGRAM).toBe('Apple_Terminal')
   })
 
-  it("hands the koloft request folder to every tab that runs Koloft's shim and to none that brings its own tools, and the skill plugin and the koloft allow rule only to a launch that brings the plugin", () => {
-    const allowKoloft: boolean[] = []
+  it("hands the koloft request folder to every tab that runs Koloft's shim and to none that brings its own tools, and the skill plugin only to a launch that brings it", () => {
     const envFor = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
       mocks.spawn.mockClear()
       const mgr = new PtyManager()
       mgr.shimDir = '/koloft/shim'
       mgr.agentDir = '/koloft/agent'
-      mgr.makeHookSettings = (id, allow) => {
-        allowKoloft.push(allow)
-        return `/koloft/hooks/${id}.json`
-      }
       mgr.create(args)
       return spawnedEnv()
     }
@@ -128,7 +127,6 @@ describe('PtyManager per-tab environment', () => {
       extraEnv: { KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin' }
     })
     expect(plugged.KOLOFT_AGENT_PLUGIN).toBe('/koloft/agent-plugin')
-    expect(allowKoloft).toEqual([false, true])
     expect(
       envFor({ kind: 'shell', koloftShim: true, cwd: os.tmpdir(), util: true }).KOLOFT_AGENT_DIR
     ).toBe('/koloft/agent')
@@ -140,9 +138,7 @@ describe('PtyManager per-tab environment', () => {
       processEnv: { PATH: '/own/tools' }
     })
     expect(own.KOLOFT_AGENT_DIR).toBeUndefined()
-    expect(own.KOLOFT_HOOK_SETTINGS).toBeUndefined()
     expect(own.PATH).toBe('/own/tools')
-    expect(allowKoloft).toEqual([false, true])
   })
 
   it('marks a global-terminal (utility) shell with KOLOFT_UTIL=1, the variable the shim hard block keys off', () => {
@@ -184,8 +180,13 @@ describe('PtyManager per-tab environment', () => {
     mgr.regDir = '/koloft/reg'
     mgr.openDir = '/koloft/opens'
     mgr.pickDir = '/koloft/picks'
-    mgr.makeHookSettings = (id) => `/koloft/hooks/${id}.json`
-    const handle = mgr.create({ kind: 'shell', koloftShim: true, cwd: os.tmpdir(), util: true })
+    const handle = mgr.create({
+      kind: 'shell',
+      koloftShim: true,
+      hookSettings: (id) => `/koloft/hooks/${id}.json`,
+      cwd: os.tmpdir(),
+      util: true
+    })
     const env = spawnedEnv()
     expect(env.KOLOFT_SESSION_DIR).toBeUndefined()
     expect(env.KOLOFT_HOOK_SETTINGS).toBeUndefined()
@@ -682,8 +683,6 @@ describe('Codex native terminal isolation', () => {
     mgr.openDir = '/koloft/open'
     mgr.pickDir = '/koloft/accounts'
     mgr.cdpDir = '/koloft/cdp'
-    const hooks = vi.fn(() => '/koloft/hooks')
-    mgr.makeHookSettings = hooks
     const originalHome = process.env.CODEX_HOME
     process.env.CODEX_HOME = '/chosen/codex/config'
     try {
@@ -701,7 +700,6 @@ describe('Codex native terminal isolation', () => {
       ]
       expect(binary).toBe('/bin/codex')
       expect(args).toEqual(['--remote', 'unix:///private/session.sock'])
-      expect(hooks).not.toHaveBeenCalled()
       expect(Object.keys(options.env).filter((k) => k.startsWith('KOLOFT_'))).toEqual([])
       expect(options.env.CODEX_HOME).toBe('/chosen/codex/config')
       expect(options.env.PATH?.split(':')).not.toContain(mgr.shimDir)

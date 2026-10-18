@@ -1007,6 +1007,10 @@ let discordLive: LiveStatus | null = null
 let askButtons: AskButtons | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
+let writeHookSettings:
+  ((tabId: string, allowKoloft: boolean, conductor: boolean) => string) | undefined
+const plainTabHookSettings = (tabId: string): string | undefined =>
+  writeHookSettings?.(tabId, false, false)
 let claudeAgentPlugin: string | undefined
 let discordConnected = false
 
@@ -1177,7 +1181,8 @@ const museOnMachines: MuseRemoteDeps = {
     !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId),
   connected: (host) => !!remoteSync?.connected(host),
   poke: (host) => remoteSync?.pokeNow(host),
-  setupLine: () => setupLine(playwrightCliBin)
+  setupLine: () => setupLine(playwrightCliBin),
+  hookSettings: plainTabHookSettings
 }
 
 function machineProbes(cwd: string): ResumeProbes {
@@ -1577,6 +1582,7 @@ function startGuidedLogin(name: string): string {
   const handle = ptyMgr.create({
     kind: 'shell',
     koloftShim: true,
+    hookSettings: plainTabHookSettings,
     cwd: os.homedir(),
     // CC§7
     cols: LOGIN_PTY_COLS_WIDER_THAN_TOKEN,
@@ -1915,6 +1921,7 @@ function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
   const handle = ptyMgr.create({
     kind: 'shell',
     koloftShim: true,
+    hookSettings: plainTabHookSettings,
     cwd,
     cols: 100,
     rows: 30,
@@ -2214,7 +2221,7 @@ app.whenReady().then(() => {
   // ADR-0033
   Object.assign(process.env, gitAccounts.configEnv(process.env))
   gitAccounts.start()
-  ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
+  writeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
       tabId,
@@ -4469,6 +4476,8 @@ const claudeBackend = new ClaudeBackend({
   remoteSync: () => remoteSync,
   userData: () => app.getPath('userData'),
   setupLine: () => setupLine(playwrightCliBin),
+  hookSettings: (tabId, allowKoloft, conductor) =>
+    writeHookSettings?.(tabId, allowKoloft, conductor),
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
@@ -4505,6 +4514,7 @@ function registerIpc(): void {
       const handle = ptyMgr.create({
         kind: 'shell',
         koloftShim: true,
+        hookSettings: plainTabHookSettings,
         cwd: launch.spawnCwd,
         cols: opts.cols,
         rows: opts.rows,

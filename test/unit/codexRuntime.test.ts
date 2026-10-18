@@ -117,7 +117,6 @@ describe('Codex shell runtime', () => {
     manager.regDir = '/must-not-register'
     manager.pickDir = '/must-not-pick'
     manager.cdpDir = '/must-not-browse'
-    manager.makeHookSettings = vi.fn(() => '/must-not-hook')
     manager.create({
       kind: 'codex',
       ...CODEX_TAB_ENV,
@@ -135,6 +134,5 @@ describe('Codex shell runtime', () => {
     expect(options.env.OPENAI_API_KEY).toBe('profile-fixture-key')
     expect(Object.keys(options.env).some((key) => key.startsWith('KOLOFT_'))).toBe(false)
     expect(options.env.CODEX_THREAD_ID).toBeUndefined()
-    expect(manager.makeHookSettings).not.toHaveBeenCalled()
   })
 })

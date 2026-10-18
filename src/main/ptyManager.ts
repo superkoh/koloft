@@ -30,6 +30,7 @@ interface CreateArgs {
   argv?: string[]
   processEnv?: NodeJS.ProcessEnv
   koloftShim: boolean
+  hookSettings?: (tabId: string) => string | undefined
   finishEnv?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   kind: TabKind
   cwd: string
@@ -41,7 +42,6 @@ interface CreateArgs {
   util?: boolean
   resumeSessionId?: string
   ownerTabId?: string
-  conductor?: boolean
   resized?: (id: string, cols: number, rows: number) => void
   remoteHost?: string
   extraEnv?: {
@@ -97,7 +97,6 @@ export class PtyManager extends EventEmitter {
   pickDir?: string
   cdpDir?: string
   agentDir?: string
-  makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
   private readyWaiters = new Map<string, Set<() => void>>()
@@ -169,14 +168,7 @@ export class PtyManager extends EventEmitter {
     if (this.agentDir && shim) env.KOLOFT_AGENT_DIR = this.agentDir
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
-    const hookSettings =
-      args.util || !shim
-        ? undefined
-        : this.makeHookSettings?.(
-            id,
-            args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
-            args.conductor === true
-          )
+    const hookSettings = args.util ? undefined : args.hookSettings?.(id)
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
     if (this.shimDir && !isWin && shim) env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
     if (args.extraEnv) {
