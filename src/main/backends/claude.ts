@@ -871,7 +871,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private async localResumePlan(sessionId: string): Promise<ResumePlan> {
-    if (await runningClaudePid(sessionId)) return { action: 'unavailable', reason: 'running' }
+    if (await this.runningElsewhere(sessionId)) return { action: 'unavailable', reason: 'running' }
     const workspaces = this.d.workspaces()
     return planResume(
       workspaces?.findRow(sessionId),
@@ -934,13 +934,14 @@ export class ClaudeBackend implements SessionBackend {
     const machine = plan.machine
     const handle = this.d.pty.create({
       kind: 'claude',
-      koloftShim: true,
-      hookSettings: (tabId) =>
-        this.d.hookSettings(
-          tabId,
-          plan.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
-          plan.conductor === true
-        ),
+      koloftShim: {
+        hookSettings: (tabId) =>
+          this.d.hookSettings(
+            tabId,
+            plan.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
+            plan.conductor === true
+          )
+      },
       cwd: plan.spawnCwd,
       cols: spec.cols,
       rows: spec.rows,

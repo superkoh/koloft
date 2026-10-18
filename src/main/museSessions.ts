@@ -616,8 +616,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       const handle = this.deps.pty.create({
         id: tabId,
         kind: 'muse',
-        koloftShim: true,
-        hookSettings: (tabId) => remote.hookSettings(tabId),
+        koloftShim: { hookSettings: (tabId) => remote.hookSettings(tabId) },
         cwd: os.homedir(),
         cols: opts.cols,
         rows: opts.rows,

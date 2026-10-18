@@ -118,7 +118,7 @@ async function claudeTab(
       create: (args: Parameters<ClaudeBackendDeps['pty']['create']>[0]) => {
         const command =
           typeof args.launchCommand === 'function' ? args.launchCommand(TAB) : args.launchCommand
-        args.hookSettings?.(TAB)
+        if (args.koloftShim) args.koloftShim.hookSettings(TAB)
         handed = `${command}\n${JSON.stringify({ conductor, allowKoloft, env: args.extraEnv })}`
         return { id: TAB }
       }

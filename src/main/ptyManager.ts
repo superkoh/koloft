@@ -29,8 +29,7 @@ interface CreateArgs {
   executable?: string
   argv?: string[]
   processEnv?: NodeJS.ProcessEnv
-  koloftShim: boolean
-  hookSettings?: (tabId: string) => string | undefined
+  koloftShim: false | { hookSettings(tabId: string): string | undefined }
   finishEnv?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   kind: TabKind
   cwd: string
@@ -114,7 +113,6 @@ export class PtyManager extends EventEmitter {
     const login = userShell()
     const shell = args.shell || login.shell
 
-    const shim = args.koloftShim
     let env: Record<string, string> = {
       ...((args.processEnv ?? process.env) as Record<string, string>),
       TERM: 'xterm-256color',
@@ -165,12 +163,14 @@ export class PtyManager extends EventEmitter {
     if (this.openDir) env.KOLOFT_OPEN_DIR = this.openDir
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
     if (this.cdpDir && !args.util) env.KOLOFT_CDP_DIR = this.cdpDir
-    if (this.agentDir && shim) env.KOLOFT_AGENT_DIR = this.agentDir
+    if (this.agentDir && args.koloftShim) env.KOLOFT_AGENT_DIR = this.agentDir
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
-    const hookSettings = args.util ? undefined : args.hookSettings?.(id)
+    const hookSettings =
+      args.util || !args.koloftShim ? undefined : args.koloftShim.hookSettings(id)
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
-    if (this.shimDir && !isWin && shim) env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
+    if (this.shimDir && !isWin && args.koloftShim)
+      env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
     if (args.extraEnv) {
       for (const k of [
         'KOLOFT_FIRST_PROMPT',

@@ -56,6 +56,7 @@ import {
   backendsFrom,
   messagingOf,
   PEER_TRAITS,
+  reachedBySendMessage,
   preferredAssistBackend,
   statusUnavailable,
   SUPPORTED_PAIRS
@@ -540,6 +541,19 @@ function asksTheOwner(tabId: string): boolean {
   return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
 }
 
+const panelOpenOn: Record<
+  BackendId,
+  (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
+> = {
+  claude: async (tabId, sessionId) =>
+    !sessionId || tracker.remoteOf(tabId) ? undefined : claudeShowsAPanel(sessionId),
+  codex: async () => undefined,
+  muse: async (tabId, _sessionId, screen) => {
+    const lines = screen ?? (await screenLines(tabId))
+    return lines && !museShowsItsInputBox(lines)
+  }
+}
+
 const slash = new SlashCommands({
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
@@ -548,12 +562,7 @@ const slash = new SlashCommands({
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId, screen) => {
     const s = sessionOfTab(tabId)
-    if (s?.backendId === 'muse') {
-      const lines = screen ?? (await screenLines(tabId))
-      return lines && !museShowsItsInputBox(lines)
-    }
-    if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
-    return claudeShowsAPanel(s.sessionId)
+    return s && panelOpenOn[s.backendId](tabId, s.sessionId, screen)
   },
   screen: screenLines,
   nextMirrorPull: (tabId) => {
@@ -1009,8 +1018,9 @@ const answerable = new Set<string>()
 let hookRegDir: string | undefined
 let writeHookSettings:
   ((tabId: string, allowKoloft: boolean, conductor: boolean) => string) | undefined
-const plainTabHookSettings = (tabId: string): string | undefined =>
-  writeHookSettings?.(tabId, false, false)
+const PLAIN_KOLOFT_SHIM = {
+  hookSettings: (tabId: string): string | undefined => writeHookSettings?.(tabId, false, false)
+}
 let claudeAgentPlugin: string | undefined
 let discordConnected = false
 
@@ -1182,7 +1192,7 @@ const museOnMachines: MuseRemoteDeps = {
   connected: (host) => !!remoteSync?.connected(host),
   poke: (host) => remoteSync?.pokeNow(host),
   setupLine: () => setupLine(playwrightCliBin),
-  hookSettings: plainTabHookSettings
+  hookSettings: PLAIN_KOLOFT_SHIM.hookSettings
 }
 
 function machineProbes(cwd: string): ResumeProbes {
@@ -1581,8 +1591,7 @@ function cancelGuidedLogin(tabId: string): void {
 function startGuidedLogin(name: string): string {
   const handle = ptyMgr.create({
     kind: 'shell',
-    koloftShim: true,
-    hookSettings: plainTabHookSettings,
+    koloftShim: PLAIN_KOLOFT_SHIM,
     cwd: os.homedir(),
     // CC§7
     cols: LOGIN_PTY_COLS_WIDER_THAN_TOKEN,
@@ -1920,8 +1929,7 @@ function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
   const cwd = os.homedir()
   const handle = ptyMgr.create({
     kind: 'shell',
-    koloftShim: true,
-    hookSettings: plainTabHookSettings,
+    koloftShim: PLAIN_KOLOFT_SHIM,
     cwd,
     cols: 100,
     rows: 30,
@@ -2595,7 +2603,7 @@ app.whenReady().then(() => {
           firstPrompt: l.firstPrompt,
           name: !PEER_TRAITS[l.backend].namedAtLaunch
             ? undefined
-            : PEER_TRAITS[l.backend].reachedBySendMessage
+            : reachedBySendMessage(l.backend)
               ? asPeerName(l.title)
               : l.title
         },
@@ -4513,8 +4521,7 @@ function registerIpc(): void {
       const launch = hosts.of(requested).shell(requested)
       const handle = ptyMgr.create({
         kind: 'shell',
-        koloftShim: true,
-        hookSettings: plainTabHookSettings,
+        koloftShim: PLAIN_KOLOFT_SHIM,
         cwd: launch.spawnCwd,
         cols: opts.cols,
         rows: opts.rows,

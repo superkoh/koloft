@@ -931,11 +931,12 @@ describe('a Muse session on a remote machine', () => {
     const created = vi.mocked(pty.create).mock.calls[0][0]
     expect(created).toMatchObject({
       kind: 'muse',
-      koloftShim: true,
       cwd: os.homedir(),
       launchCommand: expect.any(Function)
     })
-    expect(created.hookSettings?.('pty-m')).toBe('/koloft/hooks/pty-m.json')
+    expect(created.koloftShim && created.koloftShim.hookSettings('pty-m')).toBe(
+      '/koloft/hooks/pty-m.json'
+    )
     mirror(id, { t: 'bound', sessionId: A })
     await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
     expect(sessions.list()[0]).toMatchObject({ sessionId: museSessionKey(A, 'box'), cwd: KEY })

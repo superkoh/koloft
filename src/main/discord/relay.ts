@@ -60,6 +60,15 @@ const OPTION_KEYS: Record<BackendId, ((key: string) => string[]) | undefined> = 
 }
 const optionKeysOf = (backend: BackendId | undefined): ((key: string) => string[]) | undefined =>
   backend && OPTION_KEYS[backend]
+
+// MUSE§7
+const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
+  claude: true,
+  codex: true,
+  muse: false
+}
+const typedIntoWhileWorking = (backend: BackendId | undefined): boolean =>
+  !backend || TYPED_INTO_WHILE_WORKING[backend]
 const ASK_SUFFIX = '.ask.json'
 const ANSWER_SUFFIX = '.answer.json'
 const QUEUED = '⏳'
@@ -298,8 +307,7 @@ export class DiscordRelay {
       !!this.d.boundKey(tab) &&
       status !== undefined &&
       status !== 'approval' &&
-      // MUSE§7
-      !(status === 'working' && this.d.backendOf(tab) === 'muse') &&
+      !(status === 'working' && !typedIntoWhileWorking(this.d.backendOf(tab))) &&
       !this.hookWaits(tab)
     )
   }
