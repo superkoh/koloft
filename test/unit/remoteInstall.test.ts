@@ -613,6 +613,19 @@ describe('the heartbeat question', () => {
     expect(fs.existsSync(path.join(home, '.koloft', 'hook-sessions'))).toBe(true)
   })
 
+  it('still stamps transcripts once the folder is there but every transcript was deleted, so the copy with --delete drops them here too', () => {
+    const home = fs.mkdtempSync(path.join(dir, 'emptied-home-'))
+    fs.mkdirSync(path.join(home, '.claude', 'projects', '-home-koh-api'), { recursive: true })
+    const res = spawnSync('sh', ['-c', heartbeatCmd([], [], ['-home-koh-api'], ['brain'])], {
+      encoding: 'utf8',
+      env: { ...process.env, HOME: home }
+    })
+    expect(res.status).toBe(0)
+    const mirrors = parseHeartbeat(res.stdout).mirrors
+    expect(mirrors.transcripts).toMatch(/^\d+ \d+$/)
+    expect(mirrors.extras).toEqual([NO_FILES_THERE])
+  })
+
   it('reads the lines before the first folder as tmux session names, never a stamp line', () => {
     const parsed = parseHeartbeat(
       'stamp 1.5 3\nstamp \nk-aaa\nk-bbb\n== /home/koh/api\ngit\nworktree /home/koh/api\n\n'

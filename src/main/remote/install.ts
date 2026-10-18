@@ -292,8 +292,7 @@ const CLAUDE_TMP_BASE =
 // PLATFORM§37
 const EVERY_FILE_STAMPED =
   'if stat -c %s / >/dev/null 2>&1; then st="stat -c %n:%.9Y:%s"; else st="stat -f %N:%Fm:%z"; fi; ' +
-  'stamped() { find "$@" -type f -exec $st {} + 2>/dev/null; }; ' +
-  'emptyOrSum() { l="$(cat)"; [ -z "$l" ] || printf "%s\\n" "$l" | cksum; }'
+  'stamped() { find "$@" -type f -exec $st {} + 2>/dev/null; }'
 
 // CC§2
 export function heartbeatCmd(
@@ -307,10 +306,10 @@ export function heartbeatCmd(
       `${FINGERPRINT}; n=$1; shift; ` +
       `while [ "$n" -gt 0 ]; do echo "${STAMP_LINE}$(fp "$1" 2>/dev/null)"; shift; n=$((n - 1)); done; ` +
       `${EVERY_FILE_STAMPED}; ` +
-      `echo "${TRANSCRIPTS_LINE}$(for s in $1; do ` +
-      'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | emptyOrSum)"; shift; ' +
+      `echo "${TRANSCRIPTS_LINE}$([ -d "$HOME/.claude/projects" ] && for s in $1; do ` +
+      'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; shift; ' +
       `mkdir -p "${REMOTE_HOOK_DIR}" 2>/dev/null; echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
-      `m=$1; shift; while [ "$m" -gt 0 ]; do echo "${EXTRA_LINE}$(stamped "$HOME/$1" | emptyOrSum)"; shift; m=$((m - 1)); done; ` +
+      `m=$1; shift; while [ "$m" -gt 0 ]; do echo "${EXTRA_LINE}$([ -d "$HOME/$1" ] && stamped "$HOME/$1" | cksum)"; shift; m=$((m - 1)); done; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
