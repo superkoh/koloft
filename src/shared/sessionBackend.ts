@@ -147,19 +147,12 @@ const EVERYTHING: Capabilities = {
   browserControl: true
 }
 
-const NOTHING_YET: Capabilities = {
-  workbench: PENDING,
-  scheduledTasks: PENDING,
-  agentTools: PENDING,
-  browserControl: PENDING
-}
-
 const ON_A_MACHINE: Capabilities = {
   ...EVERYTHING,
   browserControl: PENDING
 }
 
-const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> = {
+const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
   claude: {
     local: EVERYTHING,
     ssh: ON_A_MACHINE
@@ -180,21 +173,7 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
 }
 
 export function capabilitiesFor(backend: BackendId, host: HostId): Capabilities {
-  const caps = CAPABILITIES[backend][host]
-  return caps === 'refused' ? NOTHING_YET : caps
-}
-
-export const SUPPORTED_PAIRS = Object.fromEntries(
-  SESSION_BACKENDS.map((b) => [
-    b,
-    { local: CAPABILITIES[b].local !== 'refused', ssh: CAPABILITIES[b].ssh !== 'refused' }
-  ])
-) as Record<BackendId, Record<HostId, boolean>>
-
-export function unsupportedPairMessage(backend: BackendId, host: HostId): string | undefined {
-  return SUPPORTED_PAIRS[backend][host]
-    ? undefined
-    : `${BACKEND_LABEL[backend]} sessions cannot run on a remote machine yet.`
+  return CAPABILITIES[backend][host]
 }
 
 export interface SessionIdentity {
