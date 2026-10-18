@@ -13,7 +13,14 @@ const SIGNS_IN_TO: Record<SignInBackend, SignInFolderKind> = {
   codex: 'codex-home',
   muse: 'muse-home'
 }
-import { Meter, ageLabel, codexBalanceLabel, probeErrorLabel, resetLabel } from '../accountMeter'
+import {
+  Meter,
+  ageLabel,
+  codexBalanceLabel,
+  noLimitsLabel,
+  probeErrorLabel,
+  resetLabel
+} from '../accountMeter'
 import { GitAccountsSection } from './GitAccountsSection'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
@@ -459,8 +466,7 @@ function AccountRow({
   const now = Date.now()
   const at = measuredAt(a)
   const stale = at !== undefined ? ageLabel(at, now) : null
-  const codexBalance =
-    a.kind === 'codex-home' && a.status === 'ok' && a.limits ? codexBalanceLabel(a.limits, now) : ''
+  const codexBalance = a.status === 'ok' && a.limits ? codexBalanceLabel(a.limits, now) : ''
   return (
     <div className={'acct-row' + (a.enabled ? '' : ' off') + (confirming ? ' confirming' : '')}>
       <div className="acct-main">
@@ -524,7 +530,7 @@ function AccountRow({
           </button>
         </div>
       )}
-      {a.kind === 'codex-home' ? (
+      {SIGN_IN_FOLDER_KINDS.includes(a.kind) ? (
         <div className="acct-meters">
           {a.status !== 'ok' ? (
             <span className="acct-note">Not signed in — use Sign in again</span>
@@ -538,9 +544,7 @@ function AccountRow({
               />
             ))
           ) : (
-            <span className="acct-note">
-              {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
-            </span>
+            <span className="acct-note">{noLimitsLabel(a)}</span>
           )}
           {a.status === 'ok' && a.limits?.windows[0]?.resetsAt ? (
             <span className="acct-note">
@@ -549,16 +553,6 @@ function AccountRow({
             </span>
           ) : null}
           {codexBalance && <span className="acct-note">{codexBalance}</span>}
-        </div>
-      ) : a.kind === 'muse-home' ? (
-        <div className="acct-meters">
-          <span className="acct-note">
-            {a.status !== 'ok'
-              ? 'Not signed in — use Sign in again'
-              : a.probeError
-                ? probeErrorLabel(a.probeError)
-                : 'Signed in'}
-          </span>
         </div>
       ) : a.kind === 'custom' ? (
         <div className="acct-meters">

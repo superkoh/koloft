@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from './helpers/app'
 import { openSettings } from './helpers/extensions'
-import { waitBooted } from './helpers/p1'
+import { agentRow, waitBooted } from './helpers/p1'
 
 test.describe('Settings ▸ Assist: Koloft Assist', () => {
   test('Assist has a page of its own, runs only on a tool that has a Koloft account, says what a job costs, and its switch turns it off without forgetting the tool, which can still be changed while off', async ({
@@ -12,12 +12,12 @@ test.describe('Settings ▸ Assist: Koloft Assist', () => {
     await page.locator('.set-ni', { hasText: 'Sessions' }).click()
     await expect(page.getByRole('switch', { name: 'Koloft Assist' })).toHaveCount(0)
     await page.locator('.set-ni', { hasText: 'Assist' }).click()
-    const runsOn = page.getByRole('group', { name: 'Koloft Assist runs on' })
-    await expect(runsOn.getByRole('button', { name: 'Claude' })).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    )
-    await expect(runsOn.getByRole('button', { name: 'Codex' })).toBeDisabled()
+    const runsOn = page.getByRole('button', { name: 'Koloft Assist runs on' })
+    await expect(runsOn).toHaveText('Claude')
+    await runsOn.click()
+    await expect(agentRow(page, 'Codex')).toHaveAttribute('aria-disabled', 'true')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('listbox', { name: 'Agents' })).toHaveCount(0)
     await expect(page.locator('.set-row.child', { has: runsOn })).toContainText(
       'Codex · no account'
     )
@@ -29,7 +29,8 @@ test.describe('Settings ▸ Assist: Koloft Assist', () => {
     await expect
       .poll(() => page.evaluate(() => window.api.settings.get().then((s) => s.assist)))
       .toEqual({ on: false, backend: 'claude' })
-    await runsOn.getByRole('button', { name: 'Claude' }).click()
+    await runsOn.click()
+    await agentRow(page, 'Claude').click()
     await expect(page.getByRole('switch', { name: 'Koloft Assist' })).not.toBeChecked()
   })
 })

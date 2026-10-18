@@ -1,15 +1,14 @@
 import { NewSessionDialog } from './components/NewSessionDialog'
 import { SessionBackendIcon } from './components/SessionBackendIcon'
-import {
-  NoAccountLines,
-  useAccountIssue,
-  type SessionLaunchOptions
-} from './components/SessionLaunchButtons'
+import type { AgentChoice } from './agentChoice'
+import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
+import { WelcomeLaunch } from './components/WelcomeLaunch'
 import {
   backendAvailable,
   BACKEND_LABEL,
   byBackend,
   effectiveBackend,
+  listedBackends,
   SESSION_BACKENDS,
   unsupportedPairMessage
 } from '@shared/sessionBackend'
@@ -310,6 +309,7 @@ export default function App(): JSX.Element {
     mode: PickerMode
     path?: string
     pending?: PendingStart
+    chosen?: SessionBackend
   } | null>(null)
   const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
@@ -385,15 +385,15 @@ export default function App(): JSX.Element {
     [probed]
   )
   const sessionMethods = useStore((s) => s.settings.sessionMethods)
+  const listed = useMemo(
+    () => listedBackends(sessionMethods, probed && ((b) => probed[b])),
+    [probed, sessionMethods]
+  )
   const namedMethods = useMemo((): SessionBackend[] | null => {
-    if (!probed) return null
-    const usable = SESSION_BACKENDS.filter((b) => sessionMethods.enabled[b] && probed[b])
-    if (usable.length < 2 || !usable.includes(sessionMethods.defaultBackend)) return null
-    return [
-      sessionMethods.defaultBackend,
-      ...usable.filter((b) => b !== sessionMethods.defaultBackend)
-    ]
-  }, [probed, sessionMethods])
+    const { defaultBackend } = sessionMethods
+    if (listed.length < 2 || !listed.includes(defaultBackend)) return null
+    return [defaultBackend, ...listed.filter((b) => b !== defaultBackend)]
+  }, [listed, sessionMethods])
 
   const startSession = useCallback(
     async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
@@ -411,10 +411,10 @@ export default function App(): JSX.Element {
   )
 
   const requestNew = useCallback(
-    (mode: PickerMode, path?: string, pending?: PendingStart): void => {
+    (mode: PickerMode, path?: string, pending?: PendingStart, chosen?: SessionBackend): void => {
       if (newSessionLocked.current) return
       setRestoreWs(null)
-      setNewRequest({ id: ++newRequestId.current, mode, path, pending })
+      setNewRequest({ id: ++newRequestId.current, mode, path, pending, chosen })
     },
     []
   )
@@ -451,7 +451,7 @@ export default function App(): JSX.Element {
       const ws = useStore.getState().workspaceRows.find((w) => w.workspace.path === wsPath)
       if (!ws) return
       if (pullable(ws)) {
-        requestNew('main', wsPath)
+        requestNew('main', wsPath, undefined, backend)
         return
       }
       startNow(
@@ -1141,7 +1141,7 @@ export default function App(): JSX.Element {
       showToast(
         'Koloft Assist is off, so pick the workspace yourself. Turn it on in Settings ▸ Assist.'
       )
-      pickWorkspaceForTyped({ prompt, title: '' })
+      pickWorkspaceForTyped({ prompt, title: '' }, backend)
       return
     }
     const toAssist = (title: string, workspace: string | null): void => {
@@ -1152,7 +1152,7 @@ export default function App(): JSX.Element {
       ).then((r) => {
         if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
-        requestNew('main', undefined, { prompt, title, path: workspace, worktree: null })
+        requestNew('main', undefined, { prompt, title, path: workspace, worktree: null }, backend)
       })
     }
     if (route?.kind === 'feature') {
@@ -1187,15 +1187,15 @@ export default function App(): JSX.Element {
       worktree: route.worktree
     }
     if (pullable(ws)) {
-      requestNew('main', ws.workspace.path, pending)
+      requestNew('main', ws.workspace.path, pending, backend)
       return
     }
     startNow(hostOf(ws.workspace.path), backend, () => pendingOptions(ws.workspace, pending))
   }
 
-  const pickWorkspaceForTyped = (typed: TypedStart): void => {
+  const pickWorkspaceForTyped = (typed: TypedStart, chosen?: SessionBackend): void => {
     setNewProject(null)
-    requestNew('main', undefined, { ...typed, path: null, worktree: null })
+    requestNew('main', undefined, { ...typed, path: null, worktree: null }, chosen)
   }
 
   const paletteActions = (): PaletteAction[] => {
@@ -1233,7 +1233,6 @@ export default function App(): JSX.Element {
   )
   // ADR-0030
   const assistSetup = useAssistSetup()
-  const accountIssue = useAccountIssue()
   const signInTabId = useStore((s) => s.signIn?.tabId)
   const whatsNewOpen = useStore((s) => s.update.open)
   const [assistSetupLater, setAssistSetupLater] = useState(false)
@@ -1294,11 +1293,13 @@ export default function App(): JSX.Element {
   }, [])
 
   const welcomeRoot = welcomeWs?.workspace.path
-  const welcomeBackends = namedMethods ?? [effectiveBackend(sessionMethods, installed)]
-  const welcomeRefusal = (backend: SessionBackend): string | undefined =>
-    welcomeWs ? unsupportedPairMessage(backend, hostOf(welcomeWs.workspace.path)) : undefined
-  const welcomeIssue = (backend: SessionBackend): string | undefined =>
-    welcomeRefusal(backend) || accountIssue(backend) || undefined
+  const paletteChoice: AgentChoice = {
+    listed,
+    lead: effectiveBackend(sessionMethods, installed),
+    defaultBackend: sessionMethods.defaultBackend,
+    issue: () => '',
+    note: () => ''
+  }
   const fileTreeRoot = selectionRoot(
     hasWorkbench(landedTab) ? landedTab : undefined,
     landedSession?.treeRoot,
@@ -1723,31 +1724,7 @@ export default function App(): JSX.Element {
                     <div className="w-empty" tabIndex={-1}>
                       <div className="big">{basename(welcomeWs.workspace.path)}</div>
                       <div className="quiet">{welcomeQuietLine(welcomeRunning)}</div>
-                      <button
-                        className="btn-primary"
-                        disabled={!!welcomeIssue(welcomeBackends[0])}
-                        title={welcomeIssue(welcomeBackends[0])}
-                        onClick={() => startIn(welcomeWs.workspace.path)}
-                      >
-                        ＋{' '}
-                        {namedMethods
-                          ? `New ${BACKEND_LABEL[namedMethods[0]]} session`
-                          : 'New session'}
-                      </button>
-                      {namedMethods?.slice(1).map((other) => (
-                        <button
-                          key={other}
-                          className="mini"
-                          disabled={!!welcomeIssue(other)}
-                          title={welcomeIssue(other)}
-                          onClick={() => startIn(welcomeWs.workspace.path, other)}
-                        >
-                          New {BACKEND_LABEL[other]} session
-                        </button>
-                      ))}
-                      <NoAccountLines
-                        backends={welcomeBackends.filter((b) => !welcomeRefusal(b))}
-                      />
+                      <WelcomeLaunch wsPath={welcomeWs.workspace.path} onStart={startIn} />
                       {welcomeWs.workspace.isGit && (
                         <button
                           className="mini"
@@ -1917,7 +1894,7 @@ export default function App(): JSX.Element {
               onClose={closePalette}
               onRouted={paletteRouted}
               onOpenHit={openSearchHit}
-              methods={welcomeBackends}
+              choice={paletteChoice}
             />
           )}
           {newRequest && (
@@ -1930,6 +1907,7 @@ export default function App(): JSX.Element {
               onStart={startSession}
               launchLock={newSessionLocked}
               pending={newRequest.pending}
+              chosen={newRequest.chosen}
             />
           )}
           {newProject && (
