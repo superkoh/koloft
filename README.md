@@ -308,7 +308,6 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
 - Sessions Koloft did not launch are listed and can be resumed, but their live status
   (working / waiting) is only known for sessions started from Koloft, because the status
   comes from the hooks (Claude) or the relay (Codex) Koloft puts in at launch.
-- Codex does not run in remote workspaces yet.
 - When a worktree session exits from an unchanged worktree, Claude Code removes the
   worktree and moves the session's transcript under the root checkout, so the row moves
   there. A session that never got a message has no transcript at all, so its row goes
