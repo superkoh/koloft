@@ -922,8 +922,38 @@ body {
 }
 .ws-tab.st-approval::before,
 .ob-bar.st-approval {
+  width: 8px;
   background: var(--amber);
+  transform: scaleX(0.375);
+  transform-origin: left;
   animation: barPump 1s var(--ease) infinite;
+}
+.ob-bar.st-approval {
+  position: relative;
+  margin-right: -5px;
+}
+.ws-tab.st-approval::after,
+.ob-bar.st-approval::after {
+  content: '';
+  position: absolute;
+  border-radius: 2px;
+  box-shadow: 0 0 10px 1px rgba(240, 168, 48, 0.55);
+  opacity: 0;
+  animation: barGlow 1s var(--ease) infinite;
+}
+.ws-tab.st-approval::after {
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 8px;
+  transform: scaleX(0.375);
+  transform-origin: left;
+  animation:
+    barPump 1s var(--ease) infinite,
+    barGlow 1s var(--ease) infinite;
+}
+.ob-bar.st-approval::after {
+  inset: 0;
 }
 .ws-tab.st-idle::before,
 .ob-bar.st-idle {
@@ -1053,13 +1083,21 @@ body {
 @keyframes barPump {
   0%,
   100% {
-    width: 3px;
-    box-shadow: none;
+    transform: scaleX(0.375);
   }
   40%,
   60% {
-    width: 8px;
-    box-shadow: 0 0 10px 1px rgba(240, 168, 48, 0.55);
+    transform: none;
+  }
+}
+@keyframes barGlow {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  40%,
+  60% {
+    opacity: 1;
   }
 }
 @keyframes barFlow {
@@ -1086,6 +1124,7 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .ws-tab::before,
+  .ws-tab::after,
   .ws-tab-parked.bg-run {
     animation: none !important;
   }
