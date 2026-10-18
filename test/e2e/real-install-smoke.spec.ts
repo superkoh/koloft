@@ -119,7 +119,9 @@ test('REAL-INSTALL: the welcome installs Codex, then Claude Code, with the offic
     const found = await page.evaluate(() => window.api.sessions.backends(true))
     expect(found.map((b) => [b.id, b.available])).toEqual([
       ['claude', true],
-      ['codex', true]
+      ['codex', true],
+      ['muse', false],
+      ['agy', false]
     ])
   } finally {
     await quitAndClose(app)
