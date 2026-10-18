@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
-import { test, expect, quitAndClose } from './helpers/app'
+import { test, expect, pendingAttention, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
 import {
   chooseBackend,
@@ -14,7 +14,9 @@ import {
   openWorktreeSession,
   processAlive,
   sendShortcut,
+  startSessionIn,
   terminalText,
+  termIds,
   worktreeDialog,
   wsRows
 } from './helpers/p1'
@@ -34,6 +36,8 @@ import type { E2EEnv } from './helpers/env'
 test.setTimeout(180_000)
 
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
 
 interface TuiCall {
   argv: string[]
@@ -285,6 +289,47 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
     const [side] = sideServers(env)
     await expect.poll(() => processAlive(side.pid), { timeout: 10_000 }).toBe(false)
+  })
+
+  test('E-RC-06: an idle remote Codex session goes to sleep — its app-server on the machine ends while its row and tab stay — and clicking it wakes the same thread on a new server there', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installCodexOnFakeRemote(env)
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const first = await startRemoteCodex(page, env)
+      const threadId = tuiCalls(env)[0].sessionId
+      const remoteRow = wsRows(page, REMOTE_WS_NAME).first()
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      const localRow = wsRows(page, 'ws-a').first()
+      await expect(localRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+      await remoteRow.click()
+      await localRow.click()
+      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+      const asleepTab = await remoteRow.getAttribute('data-tab-id')
+      expect(asleepTab).toBe(first.tabId)
+
+      await expect.poll(() => serverAlive(env, first.tabId!), { timeout: 60_000 }).toBe(false)
+      await expect(remoteRow).toHaveClass(/\bst-idle\b/)
+      expect(await termIds(page)).toContain(asleepTab)
+      expect(tuiCalls(env)).toHaveLength(1)
+
+      await remoteRow.click()
+      await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(2)
+      await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(2)
+      expect(tuiCalls(env)[1]).toMatchObject({ method: 'thread/resume', sessionId: threadId })
+      await expect(remoteRow).not.toHaveAttribute('data-tab-id', asleepTab ?? '', {
+        timeout: 30_000
+      })
+      await expect(remoteRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+      expect(await termIds(page)).not.toContain(asleepTab)
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   // CODEX§11 CODEX§16

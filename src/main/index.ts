@@ -406,6 +406,7 @@ import { SessionThreads } from './discord/threads'
 import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, type SlashTarget } from './discord/slash'
+import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
 import { MYSELF } from '@shared/slashCommands'
@@ -651,6 +652,7 @@ function sidebarTitle(s: SessionInfo): string | undefined {
   return s.title && !placeholder ? s.title : undefined
 }
 
+const tabLifecycle = new TabLifecycle()
 const sleepers = new Map<string, OpenTab>()
 const typedWhileAsleep = new Map<string, string>()
 const wokenAs = new Map<string, string>()
@@ -732,7 +734,7 @@ function sleepTab(tabId: string): void {
   addSleeper(tabId, openTabOf(s))
   sendToRenderer('tab:slept', tabId)
   void stopTabProcess(tabId)
-  workspaceMgr?.onTrackerUpdate()
+  tabLifecycle.emit('slept')
   rememberOpenTabs()
 }
 
@@ -743,10 +745,9 @@ function sleepingTabOf(sessionId: string): string | undefined {
 
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
-  conductors?.onPtyExit(tabId, false)
   typedWhileAsleep.delete(tabId)
   sendToRenderer('tab:killedByMain', tabId)
-  workspaceMgr?.onTrackerUpdate()
+  tabLifecycle.emit('forgotten', tabId)
   rememberOpenTabs()
 }
 
@@ -763,7 +764,7 @@ function settleWokenSleepers(all: SessionInfo[]): void {
     woke = true
     void handOverTyping(oldId, newId)
   }
-  if (woke) workspaceMgr?.onTrackerUpdate()
+  if (woke) tabLifecycle.emit('woken')
 }
 
 const PASTE_OR_ENTER = /(\x1b\[200~[\s\S]*?\x1b\[201~|\r)/
@@ -2297,24 +2298,39 @@ app.whenReady().then(() => {
   ptyMgr.on('cwd', (c: { id: string; cwd: string }) => {
     sendToRenderer('terminal:cwd', c)
   })
+  subscribeTabSubsystems(tabLifecycle, {
+    slash,
+    attention,
+    claude: claudeBackend,
+    tracker,
+    storedOwnerOf,
+    toast: (message) => sendToRenderer('cron:toast', message),
+    notices: () => discordNotices,
+    live: () => discordLive,
+    relay: () => discordRelay,
+    threads: () => discordThreads,
+    buttons: () => askButtons,
+    secrets: () => secretAsks,
+    workspaces: () => workspaceMgr,
+    cron: () => cronRunner,
+    conductors: () => conductors
+  })
   ptyMgr.on('exit', (e) => {
     const left = closedTabs.has(e.id) ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
     closedTabs.delete(e.id)
-    slash.closed(e.id)
-    if (!sleepers.has(e.id)) {
-      discordNotices?.closed(e.id)
-      discordLive?.closed(e.id)
+    const exit: TabExit = {
+      tabId: e.id,
+      exitCode: e.exitCode,
+      signal: e.signal,
+      asleep: sleepers.has(e.id),
+      crashed: !quitCommitted && exitedAbnormally(e),
+      left: left ?? undefined
     }
     for (const [oldId, newId] of wokenAs) if (newId === e.id) wokenAs.delete(oldId)
     const wakeThatDied = ptyMgr.get(e.id)?.resumeSessionId
     for (const [id, t] of sleepers)
       if (id !== e.id && t.sessionId === wakeThatDied) forgetSleeper(id)
-    discordLive?.forget(e.id)
-    discordNotices?.forget(e.id)
-    discordRelay?.forget(e.id)
-    discordThreads?.forget(e.id)
-    askButtons?.forget(e.id)
-    secretAsks?.forget(e.id)
+    tabLifecycle.emit('exit', exit)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     loginPtys.delete(e.id)
@@ -2333,8 +2349,6 @@ app.whenReady().then(() => {
       return
     }
     if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
-    attention.clear(e.id)
-    claudeBackend.onPtyExit(e.id, !quitCommitted && exitedAbnormally(e))
     const claudeExit = claudeTabExits.get(e.id)
     claudeTabExits.delete(e.id)
     if (claudeExit?.leaving) {
@@ -2354,13 +2368,7 @@ app.whenReady().then(() => {
     }
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
-    tracker.setAlive(e.id, false)
-    void storedOwnerOf(e.id)
-      ?.stop(e.id, e.signal ? -1 : e.exitCode)
-      .catch((error) => sendToRenderer('cron:toast', String(error)))
-    workspaceMgr?.launchEnded(e.id)
-    cronRunner?.onPtyExit(e.id, left ?? undefined)
-    conductors?.onPtyExit(e.id, sleepers.has(e.id))
+    tabLifecycle.emit('teardown', exit)
     sendToRenderer('terminal:exit', e)
   })
   tracker.on('update', () => {
@@ -4106,7 +4114,7 @@ function restoreOpenTabs(): string | undefined {
     rememberOpenTabs()
     cronRunner?.sweepLeftFolders()
   })
-  workspaceMgr.onTrackerUpdate()
+  tabLifecycle.emit('slept')
   return activeAsleep
 }
 
