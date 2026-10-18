@@ -449,7 +449,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§9 AGY§24
   private async heldElsewhere(conversationId: string): Promise<boolean> {
-    const lock = path.join(this.gemini, 'antigravity-cli', 'presence', `${conversationId}.lock`)
+    const lock = path.join(this.gemini, AGY_APP_DIR, 'presence', `${conversationId}.lock`)
     if (!fs.existsSync(lock)) return false
     const { stdout } = await exec('lsof', ['-t', lock]).catch(() => ({ stdout: '' }))
     const ours = new Set([...this.runs.values()].map((r) => r.pid))
