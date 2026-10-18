@@ -32,7 +32,12 @@ import {
   type Parsed
 } from './agentRequests'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
-import { FROM_A_SESSION, crossSessionLine, type ModeClass } from './crossSessionMessage'
+import {
+  FROM_A_SESSION,
+  FROM_KOLOFT,
+  crossSessionLine,
+  type ModeClass
+} from './crossSessionMessage'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,
@@ -730,7 +735,7 @@ export function sessionSays(from: SessionInfo, text: string): string {
   return `${SESSION_SAYS_OPENING}${from.title}", id ${idToReach(from)}:) ${text}`
 }
 
-const KOLOFT_ENVELOPES = [SESSION_SAYS_OPENING, ASSIST_SAYS_OPENING]
+const KOLOFT_ENVELOPES = [SESSION_SAYS_OPENING, ASSIST_SAYS_OPENING, FROM_KOLOFT]
 
 type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?: string }
 

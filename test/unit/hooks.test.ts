@@ -32,7 +32,7 @@ import {
   handoverPreamble,
   withHandover
 } from '../../src/main/handover'
-import { crossSessionLine } from '../../src/main/crossSessionMessage'
+import { FROM_KOLOFT, crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 import { machineHookSettings } from '../../src/main/backends/claude'
 
@@ -538,12 +538,13 @@ describe('injected hook script', () => {
     })
 
     // CC§13 CC§19
-    it('a message from another session, a background task’s finish report or a subagent’s message keeps the quote of the person’s own last prompt', () => {
+    it('a message from another session, a notice Koloft typed in, a background task’s finish report or a subagent’s message keeps the quote of the person’s own last prompt', () => {
       prompt('tabLangPeer', 'check whether the child finished')
       const report = JSON.parse(crossSessionLine('bypass', 'Done: PR #12 is open.', 'k-1')!).message
         .content
       for (const notPersonal of [
         report,
+        `${FROM_KOLOFT}origin/main moved from abc1234 to def5678, with 1 new commit: "fix: x".`,
         '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command "npm test" completed</summary>\n</task-notification>',
         '<agent-message from="fix-agent">\nDone: the fix is on its branch.\n</agent-message>'
       ]) {
@@ -622,6 +623,10 @@ describe('injected hook script', () => {
       )
       const report = '(From the session "Fix docs", id abc:) Done: PR #12 is open.'
       expect(remindedQuote(codexPrompt(report), 'UserPromptSubmit')).toBe(
+        'find out why the test fails'
+      )
+      const notice = `${FROM_KOLOFT}The session "Fix docs" changed files you changed too: a.ts.`
+      expect(remindedQuote(codexPrompt(notice), 'UserPromptSubmit')).toBe(
         'find out why the test fails'
       )
       expect(remindedQuote(codexPrompt('A'), 'UserPromptSubmit')).toBe(

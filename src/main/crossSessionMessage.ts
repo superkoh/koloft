@@ -5,6 +5,7 @@ export type ModeClass = 'bypass' | 'prompting'
 
 const CLOSING_TAG = '</cross-session-message>'
 export const FROM_A_SESSION = '(From the session '
+export const FROM_KOLOFT = '(From Koloft:) '
 const SOCKET_WRITE_TIMEOUT_MS = 3000
 // CC§13
 const MESSAGES_A_SENDER_MAY_BURST = 30

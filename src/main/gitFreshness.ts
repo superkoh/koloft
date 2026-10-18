@@ -174,6 +174,7 @@ export interface GitTracking {
   ahead: number
   behind: number
   dirty: boolean
+  defHead: string
 }
 
 export interface GitSnapshot {
@@ -252,10 +253,11 @@ export class LocalRunner implements FreshnessRunner {
       (
         await readGit(this.bin, root, ['status', '--porcelain', '-uno', '--ignore-submodules=all'])
       ).trim() !== ''
+    const defHead = (await readGit(this.bin, root, ['rev-parse', defRef])).trim()
     return {
       snapshot: {
         ...snapshot,
-        tracking: { fetched, fetchHeadAt: fetchHeadBefore, ...counts, dirty }
+        tracking: { fetched, fetchHeadAt: fetchHeadBefore, ...counts, dirty, defHead }
       },
       enoent: false,
       fetchStderr
@@ -322,6 +324,7 @@ export interface FreshnessDeps {
   busy?(wsPath: string): boolean
   toast?(text: string): void
   onChange(wsPath: string): void
+  onDefaultMoved?(wsPath: string, from: string, to: string): void
   runner(wsPath: string): FreshnessRunner | null
   fetchFailed?(wsPath: string, stderr: string): void
   now?(): number
@@ -339,6 +342,7 @@ export class GitFreshnessEngine {
   private errors = new Map<string, number>()
   private backoffUntil = new Map<string, number>()
   private fetchFailed = new Set<string>()
+  private defHeads = new Map<string, string>()
   private version = new Map<string, number>()
   private gitUnavailable = false
   private stopped = false
@@ -564,7 +568,21 @@ export class GitFreshnessEngine {
     }
     if (measured.enoent) this.gitUnavailable = true
     if (measured.fetchStderr !== undefined) this.deps.fetchFailed?.(root, measured.fetchStderr)
+    const defHead = measured.snapshot?.tracking?.defHead
+    if (defHead) this.noteDefHead(root, defHead)
     return measured.snapshot && this.freshnessOf(root, measured.snapshot, attemptAt)
+  }
+
+  private noteDefHead(root: string, defHead: string): void {
+    const was = this.defHeads.get(root)
+    this.defHeads.set(root, defHead)
+    if (was && was !== defHead) this.deps.onDefaultMoved?.(root, was, defHead)
+  }
+
+  fetchSoon(wsPath: string): void {
+    if (this.gitUnavailable || this.stopped || !this.deps.autoFetch()) return
+    if (!this.deps.runner(wsPath) || !this.due(wsPath)) return
+    void this.runFetch(wsPath)
   }
 
   private freshnessOf(
