@@ -46,6 +46,7 @@ const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): S
       controlDir: home,
       machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
       alive: () => new Set(),
+      firstHeartbeatDone: async () => {},
       realPath: (p) => p,
       settings: () => ({ skipPermissions: false }),
       agentTools: () => true,
@@ -480,6 +481,7 @@ describe('accounts for remote launches started together', () => {
         controlDir: home,
         machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
         alive: () => new Set(),
+        firstHeartbeatDone: async () => {},
         realPath: (p) => p,
         settings: () => ({ skipPermissions: false }),
         agentTools: () => true,
@@ -534,6 +536,7 @@ describe('accounts for remote launches started together', () => {
         controlDir: home,
         machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
         alive: () => new Set([live]),
+        firstHeartbeatDone: async () => {},
         realPath: (p) => p,
         settings: () => ({ skipPermissions: false }),
         agentTools: () => true,
@@ -546,6 +549,23 @@ describe('accounts for remote launches started together', () => {
     expect((await host.launch({ root: keyed('/w'), resumeSessionId: live })).ok).toBe(true)
     expect(pickAccount).not.toHaveBeenCalled()
   })
+})
+
+it("a launch decided before the machine's first heartbeat this run waits for it, so a session still running there is attached, not started again", async () => {
+  const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+  let answered = (): void => {}
+  const alive = new Set<string>()
+  const host = machine(runOnMachine, {
+    alive: () => alive,
+    firstHeartbeatDone: () => new Promise((done) => (answered = done))
+  })
+  const launching = host.launch({ root: keyed('/w'), resumeSessionId: live })
+  await new Promise((r) => setTimeout(r, 50))
+  alive.add(live)
+  answered()
+  const plan = await launching
+  if (!plan.ok) throw new Error('launch refused')
+  expect(plan.machine?.attachTo).toBe(live)
 })
 
 describe('ending a session that runs on the machine', () => {

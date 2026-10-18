@@ -6,6 +6,7 @@ import { schemeOf } from '@shared/browserRoute'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { CODEX_OPEN_SENT } from './openShimScript'
+import type { CodexFrameHead } from './codexTransport'
 import { TurnLog, type SaidLine } from '@shared/turns'
 import {
   codexQuestionOf,
@@ -122,6 +123,28 @@ function openTarget(command: string, cwd: unknown): string | null {
   return typeof cwd === 'string' && path.isAbsolute(cwd) ? path.resolve(cwd, arg) : null
 }
 
+const THREAD_OPENERS = ['thread/start', 'thread/resume', 'thread/fork']
+const CLIENT_METHODS_OBSERVED = [...THREAD_OPENERS, 'thread/unsubscribe', 'turn/start']
+const SERVER_METHODS_OBSERVED = [
+  'item/started',
+  'item/completed',
+  'thread/status/changed',
+  'turn/started',
+  'turn/completed',
+  'thread/name/updated',
+  'thread/tokenUsage/updated',
+  'error'
+]
+
+// CODEX§3
+function asksTheOwner(method: string): boolean {
+  return (
+    method.endsWith('/requestApproval') ||
+    method === 'item/tool/requestUserInput' ||
+    method === 'mcpServer/elicitation/request'
+  )
+}
+
 interface Activity extends BackgroundItem {
   root: string
   owner: string
@@ -189,17 +212,25 @@ export class CodexObservation {
     return undefined
   }
 
+  wants(direction: 'client' | 'server', { method, replyTo }: CodexFrameHead): boolean {
+    if (method !== undefined)
+      return direction === 'client'
+        ? CLIENT_METHODS_OBSERVED.includes(method)
+        : SERVER_METHODS_OBSERVED.includes(method) || asksTheOwner(method)
+    return (
+      replyTo !== undefined &&
+      (direction === 'client' ? this.approvals : this.requests).has(replyTo)
+    )
+  }
+
   receive(direction: 'client' | 'server', value: unknown): void {
     const f = record(value),
       p = record(f.params)
     const id = typeof f.id === 'string' || typeof f.id === 'number' ? f.id : undefined
     const method = typeof f.method === 'string' ? f.method : undefined
+    if (!this.wants(direction, method !== undefined ? { method } : { replyTo: id })) return
     if (direction === 'client') {
-      if (
-        id !== undefined &&
-        method &&
-        ['thread/start', 'thread/resume', 'thread/fork'].includes(method)
-      ) {
+      if (id !== undefined && method && THREAD_OPENERS.includes(method)) {
         if (p.ephemeral === true || p.threadSource === 'system') return
         this.unsubscribed = false
         this.requests.set(id, {
@@ -293,13 +324,7 @@ export class CodexObservation {
       if (line) this.turns.add(line, true)
     }
     // CODEX§3
-    if (
-      id !== undefined &&
-      method &&
-      (method.endsWith('/requestApproval') ||
-        method === 'item/tool/requestUserInput' ||
-        method === 'mcpServer/elicitation/request')
-    ) {
+    if (id !== undefined && method && asksTheOwner(method)) {
       this.approvals.set(id, method)
       this.approvalThreads.set(id, p.threadId as string)
       const question = codexQuestionOf(method, p)

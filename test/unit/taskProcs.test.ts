@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { inspectTaskProcs, makeExec, parsePsDuration } from '../../src/main/taskProcs'
+import { inspectTaskProcs, makeExec } from '../../src/main/taskProcs'
+import { parseProcessTable, parsePsDuration, type ProcessTable } from '../../src/main/processTable'
 
 const SID = 'sid'
 const TASKS = `/tmp/claude-502/proj/${SID}/tasks`
@@ -24,21 +25,34 @@ const PS = [
   OWN_STOP_HOOK_IN_FLIGHT
 ].join('\n')
 
+const STARTED = 'Sat Oct 17 01:29:13 2026'
+
+function tableOf(ps: string): ProcessTable | null {
+  const rows = ps
+    .split('\n')
+    .map((line) => line.replace(/^(\s*\d+\s+\d+)(\s+\S+\s+\S+)/, `$1 0 S$2 ${STARTED}`))
+  return parseProcessTable(rows.join('\n'), 0)
+}
+
 function stub(outputs: { ps?: string; fd1?: string; listen?: string }): {
+  table: ProcessTable | null
   exec: (cmd: string, args: string[]) => Promise<string>
   calls: string[][]
 } {
   const calls: string[][] = []
   return {
+    table: tableOf(outputs.ps ?? PS),
     calls,
     exec: async (cmd, args) => {
       calls.push([cmd, ...args])
-      if (cmd === 'ps') return outputs.ps ?? PS
       if (args.includes('-d')) return outputs.fd1 ?? ''
       return outputs.listen ?? ''
     }
   }
 }
+
+const inspect = (s: ReturnType<typeof stub>, root = 4242): ReturnType<typeof inspectTaskProcs> =>
+  inspectTaskProcs(s.table, root, SID, s.exec)
 
 describe('taskProcs', () => {
   it('parses ps etime in every shape it comes in', () => {
@@ -71,7 +85,7 @@ describe('taskProcs', () => {
       ].join('\n'),
       listen: 'p4401\nf12\n'
     })
-    const r = await inspectTaskProcs(4242, SID, s.exec)
+    const r = await inspect(s)
     expect(r).not.toBeNull()
     expect([...r!.shells.keys()].sort()).toEqual(['bgit', 'bsleep', 'bsrv'])
     expect(r!.shells.get('bsleep')).toEqual({
@@ -92,8 +106,8 @@ describe('taskProcs', () => {
   })
 
   it('answers null — unknown, never "nothing running" — when ps fails or the root is not a claude', async () => {
-    expect(await inspectTaskProcs(4242, SID, stub({ ps: '' }).exec)).toBeNull()
-    expect(await inspectTaskProcs(9999, SID, stub({}).exec)).toBeNull()
+    expect(await inspect(stub({ ps: '' }))).toBeNull()
+    expect(await inspect(stub({}), 9999)).toBeNull()
   })
 
   it('a run cut short by its deadline answers nothing, not the part it managed to print, while a plain non-zero exit keeps its output', async () => {
@@ -103,19 +117,49 @@ describe('taskProcs', () => {
   })
 
   it('answers null when lsof prints nothing for live tool shells (it failed, they did not all close stdout)', async () => {
-    expect(await inspectTaskProcs(4242, SID, stub({ fd1: '' }).exec)).toBeNull()
+    expect(await inspect(stub({ fd1: '' }))).toBeNull()
   })
 
   it('a claude with no tool shells is an empty view, with no lsof asked', async () => {
     const s = stub({ ps: ' 4242     1 01:00 0:00.00 /Users/me/.local/bin/claude\n' })
-    const r = await inspectTaskProcs(4242, SID, s.exec)
-    expect(r).toEqual({ shells: new Map() })
-    expect(s.calls.map((c) => c[0])).toEqual(['ps'])
+    const r = await inspect(s)
+    expect(r).toEqual({ at: 0, shells: new Map() })
+    expect(s.calls).toEqual([])
+  })
+
+  it('asks lsof once per process table for the tool shells of every claude in it, however many tabs read that table', async () => {
+    const s = stub({
+      ps: [
+        PS,
+        ' 5242     1    01:00:00 0:00.00 /Users/me/.local/bin/claude',
+        ' 5300  5242       02:00 0:00.01 /bin/zsh -c source ' + SNAP + ' && eval "sleep 50"'
+      ].join('\n'),
+      fd1: [
+        'p4300',
+        'f1',
+        `n${TASKS}/bsleep.output`,
+        'p5300',
+        'f1',
+        `n/tmp/claude-502/proj/other/tasks/bnap.output`
+      ].join('\n')
+    })
+    const [mine, theirs] = await Promise.all([
+      inspect(s),
+      inspectTaskProcs(s.table, 5242, 'other', s.exec)
+    ])
+    expect([...mine!.shells.keys()]).toEqual(['bsleep'])
+    expect([...theirs!.shells.keys()]).toEqual(['bnap'])
+    const fd1Calls = s.calls.filter((c) => c.includes('-d'))
+    expect(fd1Calls).toHaveLength(1)
+    expect(fd1Calls[0][fd1Calls[0].indexOf('-p') + 1].split(',').sort()).toEqual(
+      ['4300', '4400', '4500', '5300'].sort()
+    )
+    expect(s.calls.filter((c) => c.includes('-sTCP:LISTEN'))).toHaveLength(1)
   })
 
   it('an output file in another session tasks dir is not one of ours', async () => {
     const s = stub({ fd1: `p4300\nf1\nn/tmp/claude-502/proj/other-sid/tasks/bx.output\n` })
-    const r = await inspectTaskProcs(4242, SID, s.exec)
+    const r = await inspect(s)
     expect(r!.shells.size).toBe(0)
   })
 
@@ -130,7 +174,7 @@ describe('taskProcs', () => {
         `n/tmp/claude-502/proj--claude-worktrees-w/${SID}/tasks/bsrv.output`
       ].join('\n')
     })
-    const r = await inspectTaskProcs(4242, SID, s.exec)
+    const r = await inspect(s)
     expect([...r!.shells.keys()].sort()).toEqual(['bsleep', 'bsrv'])
   })
 })
