@@ -65,7 +65,9 @@
         <h1>Everything Koloft does, <em>and where it works.</em></h1>
         <p>
           32 features, grouped by what you are doing. Where it matters, a card says whether it works
-          with Claude Code and Codex on your Mac, and in a remote folder over SSH.
+          with Claude Code and Codex on your Mac, and in a remote folder over SSH. Koloft also runs
+          Meta's Muse Code and Google's Antigravity CLI; the
+          <a href="../sessions/">docs pages</a> say what each does for them.
         </p>
         <nav class="fchips" aria-label="Feature groups">
           <a href="#palette">⌘P, one box for everything</a>
@@ -103,7 +105,8 @@
             <p>
               Press ⌘P, type “add a forgot-password link to the login page” and hit ⏎. Assist picks
               the folder, opens a worktree when the folder is a git repo, names the session, and the
-              real Claude Code or Codex starts on your words. ⇧⏎ uses the other tool.
+              real Claude Code or Codex starts on your words. The ▾ beside the button, or ⇧⏎, picks
+              another agent.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -112,7 +115,7 @@
             </ul>
             <p class="fnote">
               Needs Assist on (Settings ▸ Assist); with it off, ⏎ opens the folder picker and keeps
-              your words. In a remote folder the session opens on that machine (Claude only).
+              your words. In a remote folder the session opens on that machine.
             </p>
             <a class="more" href="../sessions/#find"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
@@ -565,8 +568,8 @@
           </div>
           <h2>Hand it the work. <em>It reports back.</em></h2>
           <p>
-            Assist is Koloft’s own helper, an ordinary Claude or Codex session on an account you
-            added. Turn it on in Settings ▸ Assist.
+            Assist is Koloft’s own helper, an ordinary Claude, Codex, Muse or Antigravity session on
+            an account you added. Turn it on in Settings ▸ Assist.
           </p>
         </div>
         <div class="fgrid">
@@ -600,7 +603,8 @@
             </div>
             <p>
               Bind Assist to your own Discord bot: one thread per session, Yes / No buttons for its
-              questions, slash commands, files both ways. No server of ours in between.
+              questions, slash commands, files both ways, and a form for a sudo password or a
+              sign-in code the session needs. No server of ours in between.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -661,7 +665,8 @@
           </div>
           <h2>No more <em>“limit reached”.</em></h2>
           <p>
-            Several Claude and Codex accounts in one pool, and always a look at how much is left.
+            Several Claude, Codex, Muse and Antigravity accounts in one pool, and always a look at
+            how much is left.
           </p>
         </div>
         <div class="fgrid">
@@ -671,8 +676,9 @@
               <h3>Several accounts, one pool</h3>
             </div>
             <p>
-              Add your Claude and Codex accounts. A new session starts on the one with the most
-              room; a resumed one stays on its own account until it is 95% used.
+              Add your Claude, Codex, Muse and Antigravity accounts. A new session starts on the one
+              with the most room (Antigravity accounts take turns); a resumed one stays on its own
+              account until it is 95% used.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -690,9 +696,9 @@
               <h3>Usage at a glance</h3>
             </div>
             <p>
-              Little bars at the bottom of the sidebar: hover for each Claude and Codex account’s
-              5-hour and 7-day use and when it resets. Codex accounts also show credits and saved
-              resets.
+              Little bars at the bottom of the sidebar: hover for each Claude, Codex, Muse and
+              Antigravity account’s 5-hour and 7-day use and when it resets. Codex accounts also
+              show credits and saved resets.
             </p>
 
             <a class="more" href="../accounts/"
@@ -779,15 +785,18 @@
               <h3>Folders on another machine</h3>
             </div>
             <p>
-              Add user@host and a path. Claude runs there in tmux, so a dropped line does not stop
-              it; the session list looks just like a local one. Alpha.
+              Add user@host and a path. The agent runs there, so a dropped line does not stop it;
+              the session list looks just like a local one. Alpha.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
-              <li class="no">– Codex</li>
+              <li class="yes">✓ Codex</li>
               <li class="yes">✓ Remote</li>
             </ul>
-            <p class="fnote">Claude only for now.</p>
+            <p class="fnote">
+              Muse Code and Antigravity CLI run there too. Claude, Muse and Antigravity run in tmux;
+              Codex runs as its own server on the machine, which Koloft installs there with npm.
+            </p>
             <a class="more" href="../remote/"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
@@ -799,7 +808,8 @@
             </div>
             <p>
               git, gh, playwright-cli and a Nerd Font ship inside, so a fresh Mac needs no Homebrew.
-              One click on the welcome page installs Claude Code or Codex.
+              One click on the welcome page installs Claude Code, Codex, Muse Code or Antigravity
+              CLI.
             </p>
 
             <a class="more" href="../install/"

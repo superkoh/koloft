@@ -113,15 +113,15 @@
         <ul class="dash">
           <li>a Mac with Apple Silicon (M1 or later)</li>
           <li>
-            Claude Code, or the Codex CLI (command-line tool). If neither is on the Mac, the welcome
-            steps install one for you: click its card ("Not on this Mac. Click to install.") and a
-            terminal tab runs the tool's official installer. Each Koloft version names the oldest
-            Claude Code and Codex it works with, and updates an older one for you (see
-            <a href="#updates">Updates</a> below).
+            one of the agents: Claude Code, the Codex CLI (command-line tool), Meta's Muse Code or
+            Google's Antigravity CLI. If none is on the Mac, the welcome steps install one for you:
+            click its card ("Not on this Mac. Click to install.") and a terminal tab runs the tool's
+            official installer. Each Koloft version names the oldest version of each it works with,
+            and updates an older one for you (see <a href="#updates">Updates</a> below).
           </li>
           <li>
-            a Claude or Codex login to add to Koloft: every session runs on one (see
-            <a href="../accounts/">accounts</a>)
+            a Claude, Codex, Muse or Antigravity login to add to Koloft: every session runs on one
+            (see <a href="../accounts/">accounts</a>)
           </li>
           <li>
             git and <code>gh</code> (GitHub's own command-line tool)
@@ -144,11 +144,12 @@
           <a href="../changelog/">changelog</a>.
         </p>
         <p>
-          Koloft also keeps Claude Code and Codex new enough. If yours is older than this version
-          works with, Koloft runs <code>claude update</code> or <code>codex update</code> for you.
-          For Claude, this runs in the tab each time a session starts. For Codex, it runs once each
-          time Koloft opens, with a small message. If that does not bring it up to date, Koloft asks
-          you to run the update yourself.
+          Koloft also keeps the agents new enough. If yours is older than this version works with,
+          Koloft runs the tool's own update for you, such as <code>claude update</code> or
+          <code>codex update</code>. For Claude, this runs in the tab each time a session starts.
+          For Codex, Muse Code and Antigravity CLI, it runs once each time Koloft opens, with a
+          small message. If that does not bring it up to date, Koloft asks you to run the update
+          yourself.
         </p>
 
         <h2 id="what-it-talks-to">What it talks to</h2>
@@ -211,21 +212,27 @@
                 </td>
               </tr>
               <tr>
-                <td><code>claude.ai,</code><br /><code>chatgpt.com</code></td>
                 <td>
-                  the official installers of <code>claude</code> and <code>codex</code>, only when
-                  you click a tool's card on the welcome steps to install it
+                  <code>claude.ai,</code><br /><code>chatgpt.com,</code><br /><code
+                    >dev.meta.ai,</code
+                  ><br /><code>antigravity.google</code>
+                </td>
+                <td>
+                  the official installers of <code>claude</code>, <code>codex</code>,
+                  <code>muse</code> and <code>agy</code>, only when you click a tool's card on the
+                  welcome steps to install it
                 </td>
               </tr>
               <tr>
                 <td>
-                  <code>claude.ai,</code><br /><code>nodejs.org,</code><br /><code
-                    >unofficial-builds.nodejs.org</code
-                  >
+                  <code>claude.ai,</code><br /><code>dev.meta.ai,</code><br /><code
+                    >antigravity.google,</code
+                  ><br /><code>nodejs.org,</code><br /><code>unofficial-builds.nodejs.org</code>
                 </td>
                 <td>
-                  only to put <code>claude</code> and Node on a remote folder's machine (the third
-                  on an old Linux)
+                  only to put <code>claude</code>, <code>muse</code>, <code>agy</code> and Node on a
+                  remote folder's machine (the last on an old Linux); <code>codex</code> is put
+                  there with <code>npm</code>, which fetches it from its own registry
                 </td>
               </tr>
               <tr>
@@ -270,9 +277,9 @@
             tool fetches its own update, from the place it was installed from
           </li>
           <li>
-            for a remote folder, <code>bash</code>, <code>tmux</code> and <code>rsync</code> come
-            from that machine's own package manager, which may ask for its sudo password (the admin
-            password)
+            for a remote folder, <code>bash</code>, <code>tmux</code>, <code>rsync</code> and
+            <code>python3</code> (for Muse) come from that machine's own package manager, which may
+            ask for its sudo password (the admin password)
           </li>
           <li>
             the store page loads only when you click Open Chrome Web Store in Settings ▸ Extensions

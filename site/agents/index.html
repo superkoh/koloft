@@ -89,11 +89,12 @@
 
         <h2>The koloft command</h2>
         <p>
-          Every session Koloft starts gets a <code>koloft</code> command: Claude or Codex on this
-          Mac, and Claude on a <a href="../remote/">remote folder</a>'s machine. It is on by
-          default. The switch is Settings ▸ Extensions ▸ "Let agents use Koloft". Turning it on
-          reaches sessions you start after that. Turning it off stops the command in every session
-          at once. When an agent changes a scheduled job, a small message pops up to tell you.
+          Every session Koloft starts gets a <code>koloft</code> command: Claude, Codex, Muse or
+          Antigravity, on this Mac and on a <a href="../remote/">remote folder</a>'s machine. It is
+          on by default. The switch is Settings ▸ Extensions ▸ "Let agents use Koloft". Turning it
+          on reaches sessions you start after that. Turning it off stops the command in every
+          session at once. When an agent changes a scheduled job, a small message pops up to tell
+          you.
         </p>
         <p>With it, the agent can:</p>
 
@@ -109,6 +110,33 @@
             folder's, or the Global Assist's own), or add a line to the end of it
           </li>
         </ul>
+
+        <h3 id="secrets">Passwords and codes</h3>
+        <p>
+          When the session needs something only you know, and you are on your phone, it can ask
+          through the session's Discord thread (see
+          <a href="../discord/#secrets">passwords and codes on Discord</a>). What you type goes
+          straight where it is needed; the agent never sees it.
+        </p>
+        <ul class="dash">
+          <li>
+            <code>sudo</code> — a <code>sudo</code> the session runs with no terminal asks you for
+            the password on Discord, instead of failing
+          </li>
+          <li>
+            <code>koloft secret page "&lt;css selector&gt;"</code> — a password or one-time code for
+            a field on a web page in its Workbench; Koloft fills it in and submits the form
+          </li>
+          <li>
+            <code>koloft secret url "&lt;sign-in address&gt;"</code> — a sign-in that ends on a
+            <code>127.0.0.1</code> address; you finish it on your phone and paste the last address,
+            and Koloft opens it on the session's machine
+          </li>
+        </ul>
+        <p>
+          With no Discord channel covering the session, all three are refused with a message that
+          says so.
+        </p>
 
         <h3>Scheduled jobs</h3>
         <ul class="dash">
@@ -131,18 +159,20 @@
           </li>
           <li>
             <code>koloft session new</code> — start a session of the same kind (Claude starts
-            Claude, Codex starts Codex), in its own git worktree with
-            <code class="nowrap">-w</code>; a worktree name already in use gets
-            <code class="nowrap">-2</code> after it. Only Assist (see below) can pick the other
+            Claude, Codex starts Codex, Muse starts Muse, Antigravity starts Antigravity), in its
+            own git worktree with <code class="nowrap">-w</code>; a worktree name already in use
+            gets <code class="nowrap">-2</code> after it. Only Assist (see below) can pick the other
             kind, with <code class="nowrap">--backend</code>; and when Assist leaves out
             <code class="nowrap">-w</code> in a folder git tracks, Koloft still makes one (see
             <a href="../sessions/#worktrees">worktree sessions</a>). Its row hangs under the session
             that started it (see <a href="../sessions/#session-tree">sessions an agent starts</a>).
-            A Claude session it starts gets a short title that
+            A Claude or Muse session it starts gets a short title that
             <a href="../accounts/#assist">Assist</a> makes from its task (with Assist off, the first
             line of the task), or the name the agent gave it with
             <code class="nowrap">--name</code>; the same title shows in the sidebar, in
-            <code class="nowrap">session list</code> and in Discord. Codex names it itself.
+            <code class="nowrap">session list</code> and in Discord. A Codex or Antigravity session
+            has no name of Koloft's: the agent names it itself, and
+            <code class="nowrap">--name</code> is turned down.
           </li>
           <li>
             <code>koloft session read</code> — print what a session said in its last turns, open or
@@ -224,8 +254,8 @@
         <p>
           Browser tools for agents normally start a browser of their own. It is a second browser you
           cannot see, and it is signed into nothing. Koloft offers its web tabs instead. Every
-          Claude or Codex session on this Mac gets a secret CDP address (CDP is the Chrome DevTools
-          Protocol, the way tools steer a browser). A browser tool that uses it steers
+          session on this Mac gets a secret CDP address (CDP is the Chrome DevTools Protocol, the
+          way tools steer a browser). A browser tool that uses it steers
           <mark class="hl">that session's own web tabs</mark>. This works while Settings ▸
           Extensions ▸ "Let agents drive this Browser" is on. How the address reaches the tool
           differs by tool.

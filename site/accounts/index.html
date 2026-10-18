@@ -87,10 +87,11 @@
           new session starts on <mark class="hl">the one with the most room</mark> left.
         </p>
         <p>
-          Every session in Koloft runs on a Claude or Codex account you add here, never on the login
-          this Mac already has. So the first time Koloft opens, it asks you to sign in to Claude or
-          Codex (the welcome step "Sign in, and pick your <a href="#assist">Assist</a>"). A Koloft
-          you updated asks too, if no account was added yet.
+          Every session in Koloft runs on a Claude, Codex, Muse or Antigravity account you add here,
+          never on the login this Mac already has. So the first time Koloft opens, it asks you to
+          sign in to one of them (the welcome step "Sign in, and pick your
+          <a href="#assist">Assist</a>"). A Koloft you updated asks too, if no account was added
+          yet.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 870; --ar-phone: 765 / 1080">
@@ -164,7 +165,7 @@
           <li>if no account can be read, Koloft picks the next one in order</li>
           <li>
             a session that starts again (you click its row, restart it, or quit and reopen Koloft)
-            stays on the account it ran on, Claude and Codex alike. It moves to another account only
+            stays on the account it ran on, whatever the agent. It moves to another account only
             when one of that account's limits (5 hours, 7 days) is past 95%, or that account is
             being told to wait (rate-limited). An API key or custom endpoint is not kept this way.
           </li>
@@ -174,9 +175,10 @@
         <ul class="dash">
           <li>tokens and keys are kept in the macOS Keychain</li>
           <li>
-            the little bars at the bottom of the sidebar show how much room your Claude and Codex
-            accounts have left. Hover them for the <code>Account usage</code> panel: one part per
-            tool, each with its accounts and, with two or more accounts, a Pool row
+            the little bars at the bottom of the sidebar show how much room your Claude, Codex and
+            Muse accounts have left. Hover them for the <code>Account usage</code> panel: one part
+            per tool, each with its accounts; Claude, Codex and Muse get a Pool row with two or more
+            accounts
           </li>
           <li>
             with no account that can be used, the New session button is greyed out, and a line under
@@ -219,12 +221,39 @@
           reset and reads the account's limits again.
         </p>
 
+        <h2>Muse</h2>
+        <p>
+          Muse Code is Meta's agent. <code>Sign in to Muse</code> runs <code>muse login</code> in a
+          terminal tab; each sign-in becomes its own account, with its own sign-in folder. Your Muse
+          settings and trusted folders are shared by every account. Or <code>Paste API key</code>:
+          Koloft hands the key to <code>muse</code>, which keeps it in that account's folder. An
+          account signed in with Meta shows how much of its <code>5h</code> and
+          <code>7d</code> allowance is used, in Settings and in the
+          <code>Account usage</code> panel; an API key account just says <code>Signed in</code>. New
+          Muse sessions pick their account the way Codex sessions do: the least-used one, taking
+          turns when none has been read.
+        </p>
+
+        <h2>Antigravity</h2>
+        <p>
+          Antigravity CLI (<code>agy</code>) is Google's agent, the successor to Gemini CLI.
+          <code>Sign in with Google</code> runs <code>agy</code> in a terminal tab: you sign in,
+          pick a colour scheme, answer Google's Terms screen and type <code>/exit</code>. Each
+          account keeps its sign-in in its own folder, never in the login Keychain; your Antigravity
+          conversations, rules, plugins and MCP servers are shared by every account. Or
+          <code>Paste Gemini API key</code>: the key goes into your Keychain and is handed to
+          <code>agy</code> when a session starts. A signed-in account shows its Google quota as
+          <code>5h</code> and <code>7d</code> meters, in Settings and in the
+          <code>Account usage</code> panel. New Antigravity sessions take turns between your
+          accounts.
+        </p>
+
         <h2 id="assist">Assist</h2>
         <p>
           <mark class="hl">Assist</mark> is Koloft's own AI. One of your accounts runs it. It does
           small jobs for Koloft, and you can talk to it. Settings ▸ Assist is where you turn it on
-          or off and pick the tool it runs on, Claude or Codex. That one pick counts for the small
-          jobs and for every Assist you talk to.
+          or off and pick the agent it runs on: Claude, Codex, Muse or Antigravity. That one pick
+          counts for the small jobs and for every Assist you talk to.
         </p>
         <p>The small jobs:</p>
         <ul class="dash">
@@ -259,8 +288,9 @@
         </p>
         <ul class="dash">
           <li>
-            on Claude it uses Haiku, on Codex GPT-6 Luna, for the small jobs; each costs a tiny bit
-            of that account's plan or API balance, far less than one cent
+            on Claude it uses Haiku, on Codex GPT-6 Luna, on Muse and Antigravity their default
+            model, for the small jobs; each costs a tiny bit of that account's plan or API balance,
+            far less than one cent
           </li>
           <li>
             with Assist off, the small jobs run without AI: a session an agent starts is named after
@@ -367,7 +397,7 @@
           <a href="../sessions/#git-panel">git panel</a> gets the same <code>Account</code> part as
           a local one, and a pick there works as above: git follows it, and for a GitHub or GitHub
           Enterprise account <code>gh</code>, the issue and pull request counts, and
-          <code>gh auth login</code> do too (a remote folder runs Claude Code only). What differs:
+          <code>gh auth login</code> do too. What differs:
         </p>
         <ul class="dash">
           <li>

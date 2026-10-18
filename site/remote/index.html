@@ -83,10 +83,10 @@
 
         <p>
           Koloft can open a folder that lives on another computer, one you reach with
-          <code>ssh</code> (a safe way to log in to another computer over the network). Claude Code
-          runs over there. You watch it and work with it from your Mac. This part is
-          <mark class="hl">alpha</mark>: it is early, it works, and it still has gaps. The ones we
-          know are listed below.
+          <code>ssh</code> (a safe way to log in to another computer over the network). The agent,
+          Claude Code, Codex, Muse Code or Antigravity CLI, runs over there. You watch it and work
+          with it from your Mac. This part is <mark class="hl">alpha</mark>: it is early, it works,
+          and it still has gaps. The ones we know are listed below.
         </p>
 
         <h2>Add one</h2>
@@ -129,12 +129,13 @@
 
         <h2>What happens there</h2>
         <p>
-          Claude Code runs on the other machine. The account it uses comes from
+          The agent runs on the other machine. The account it uses comes from
           <a href="../accounts/">the pool on your Mac</a>. Its git and <code>gh</code> use a
           <a href="../accounts/#machine-accounts">git account kept on that machine</a>, once you
-          pick one. Its transcripts (the written record of each session) stay there, and
-          <code>rsync</code> (a tool that copies files) brings copies back, so the sessions list
-          reads like a folder on your Mac.
+          pick one. Claude Code's and Antigravity's transcripts (the written record of each session)
+          stay there, and <code>rsync</code> (a tool that copies files) brings copies back; Codex
+          and Muse sessions are listed by asking the tool on the machine. Either way the sessions
+          list reads like a folder on your Mac.
         </p>
 
         <figure class="shot is-narrow" style="--ar: 558 / 526">
@@ -176,16 +177,30 @@ your Mac                     the other machine
 +-----------------+          +------------------+
 </pre>
 
+        <p>
+          The picture shows Claude Code. Muse and Antigravity run the same way, inside
+          <code>tmux</code>. Codex is different: it runs as its own server on the machine, and the
+          Codex screen on your Mac talks to that server over ssh.
+        </p>
         <ul class="dash">
           <li>
-            Claude runs inside <code>tmux</code> (a program that keeps a terminal going after you
-            leave). If the link drops, Claude keeps working. Koloft keeps trying to reach the
-            machine: soon at first, then less and less often, down to once a minute. Close the
-            session's tab meanwhile and Koloft says so:
+            Claude, Muse and Antigravity run inside <code>tmux</code> (a program that keeps a
+            terminal going after you leave). If the link drops, the agent keeps working. Koloft
+            keeps trying to reach the machine: soon at first, then less and less often, down to once
+            a minute. Close the session's tab meanwhile and Koloft says so:
             <code
               >Could not stop “…” on &lt;machine&gt;: &lt;why&gt;. It is still running there.</code
             >
             The row stays lit, and a click joins that session again.
+          </li>
+          <li>
+            Codex's server is signed in with the Codex account picked on your Mac: no login is
+            stored on the machine. If ssh drops or the Mac sleeps, the running turn keeps going
+            there, and the tab reconnects by itself. Closing the tab ends the server; a click on the
+            row resumes the same conversation on a new one. In a folder the machine trusts, a shell
+            command runs in Codex's sandbox: it may write inside the folder, not outside it. A
+            <code>sandbox_mode</code> or <code>approval_policy</code> set in the account's own Codex
+            config still wins.
           </li>
           <li>
             The agent gets the <code>koloft</code> command there too, a moment slower, since each
@@ -211,17 +226,26 @@ your Mac                     the other machine
         <h3>What Koloft installs there</h3>
         <ul class="dash">
           <li>
-            <code>bash</code>, <code>claude</code>, <code>tmux</code> and <code>rsync</code>, if the
-            machine is missing them, over the same link
+            <code>bash</code>, <code>tmux</code> and <code>rsync</code>, if the machine is missing
+            them, over the same link
           </li>
           <li>
-            if the <code>claude</code> there is older than this Koloft needs, it gets
-            <code>claude update</code> before the session starts; if that does not bring it up to
+            the agent itself, if the machine has none: <code>claude</code> from its official
+            installer; <code>muse</code> from its official installer (about 330 MB, once), with
+            <code>python3</code> first; <code>agy</code> from its official installer;
+            <code>codex</code> in the same version as your Mac's, with <code>npm</code> (Node is put
+            there first, and <code>ca-certificates</code> and <code>bubblewrap</code> when the
+            machine lacks them)
+          </li>
+          <li>
+            if the <code>claude</code> or <code>muse</code> there is older than this Koloft needs,
+            it gets the tool's own update before the session starts; if that does not bring it up to
             date, the session does not start and the tab asks you to run the update yourself
           </li>
           <li>
-            <code>bash</code>, <code>tmux</code> and <code>rsync</code> come from the machine's own
-            package manager, which may ask for its sudo password (the admin password)
+            <code>bash</code>, <code>tmux</code>, <code>rsync</code>, <code>python3</code> and
+            <code>curl</code> (when the machine has neither curl nor wget) come from the machine's
+            own package manager, which may ask for its sudo password (the admin password)
           </li>
           <li>
             <code>gh</code>, GitHub's command-line tool, if the machine has none (about 40 MB, once)
@@ -235,8 +259,8 @@ your Mac                     the other machine
             a small <code>koloft</code> script, and the guide that tells the agent how to use it
           </li>
           <li>
-            Node, only for the status line; if that fails, the session still runs, just without a
-            status line
+            Node, for the status line (Muse has none, so a Muse session skips this); if that fails,
+            the session still runs, just without a status line
           </li>
           <li>
             on an old Linux, where the usual Node build will not run, one more Node build made for
@@ -258,7 +282,19 @@ your Mac                     the other machine
         </ul>
         <p>An HTML file in that card opens as its source, not as a page.</p>
         <p>The count of changed files there catches up at most every 10 seconds.</p>
+        <p>
+          A file that changes on the machine shows up by itself: a file you have open reloads, an
+          editor with unsaved edits says <code>Changed on disk</code>, and Browse shows a file added
+          to or removed from an open folder. This catches up every 2 seconds while a session on that
+          machine runs, every 20 seconds otherwise. Browse's Reload button lists the whole tree
+          again.
+        </p>
         <p>If ssh drops for a moment, Files keeps what it showed and Changes offers Retry.</p>
+        <p>
+          The folder's <a href="../sessions/#git-panel">git panel</a> works there too: the behind
+          number, Fetch now and Pull all run on the machine. Koloft never pulls a remote folder by
+          itself.
+        </p>
 
         <h2>Not there yet</h2>
         <ul class="dash">
@@ -268,15 +304,22 @@ your Mac                     the other machine
             The agent cannot drive your web tabs. See
             <a href="../agents/">Agents can use Koloft too</a>.
           </li>
-          <li>No Codex yet. A remote folder runs Claude Code only.</li>
           <li>
             A session row's menu offers Copy path (<code>machine:/path</code>) instead of Reveal in
-            Finder. The panel you get by hovering the small branch icon beside the folder's name
-            shows no Pull and no Fetch now.
+            Finder.
           </li>
           <li>
-            Koloft does not check whether the folder's branch is behind its git remote. The open
-            issue and pull request counts of a GitHub repo do show.
+            <kbd>⌥⏎</kbd> search of what was said reaches a remote Claude session, not a remote
+            Codex, Muse or Antigravity one.
+          </li>
+          <li>
+            The files a <code>.worktreeinclude</code> names are not copied into a worktree made on
+            the machine.
+          </li>
+          <li>
+            Assist, and <code>koloft session new --workspace</code> from another session, cannot
+            start a session in a remote folder. A session already on the machine can start one
+            there.
           </li>
         </ul>
 
