@@ -59,6 +59,12 @@ const JSONL_TAIL_FIRST_READ_BYTES = 64 * 1024
 const DISCOVER_MAX = 8
 const TRANSCRIPTS_OPEN_AT_ONCE = 16
 
+interface ListedTranscript {
+  id: string
+  mtime: number
+  hasTitleSidecar: boolean
+}
+
 interface HeadScan {
   size: number
   mtimeMs: number
@@ -189,6 +195,17 @@ function gitWorktreeEntries(root: string): Promise<WorktreeEntry[]> {
   })
 }
 
+const NO_LINKED_WORKTREES_STAMP = 0
+
+// PLATFORM§30
+async function linkedWorktreesStamp(root: string): Promise<number | null> {
+  try {
+    return (await fs.promises.stat(path.join(root, '.git', 'worktrees'))).mtimeMs
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'ENOENT' ? NO_LINKED_WORKTREES_STAMP : null
+  }
+}
+
 export class WorkspaceManager {
   private layout: LayoutV6
   private rowsCache: WorkspaceRows[] = []
@@ -215,6 +232,7 @@ export class WorkspaceManager {
   private headScansSeen = new Set<string>()
   private statByFile = new Map<string, { size: number; mtimeMs: number }>()
   private knownTranscripts = new Set<string>()
+  private worktreeDirsByStamp = new Map<string, { stamp: number; dirs: string[] }>()
   private lastAdditionalKey = ''
 
   constructor(private deps: WorkspaceManagerDeps) {
@@ -376,6 +394,19 @@ export class WorkspaceManager {
     const { key } = this.scope(wsPath)
     if (key) return this.deps.remoteGit?.(key.host, key.path)?.worktrees ?? []
     return (await this.missing(wsPath)) ? [] : gitWorktreeEntries(wsPath)
+  }
+
+  private async worktreeDirs(wsPath: string, isGit: boolean): Promise<string[]> {
+    const list = async (): Promise<string[]> =>
+      (await this.worktreeEntries(wsPath)).map((e) => e.dir)
+    if (this.scope(wsPath).key) return list()
+    if (!isGit) return []
+    const stamp = await linkedWorktreesStamp(wsPath)
+    const known = this.worktreeDirsByStamp.get(wsPath)
+    if (stamp !== null && known?.stamp === stamp) return known.dirs
+    const dirs = await list()
+    if (stamp !== null) this.worktreeDirsByStamp.set(wsPath, { stamp, dirs })
+    return dirs
   }
 
   add(rawPath: string): WorkspaceAddResult {
@@ -696,7 +727,10 @@ export class WorkspaceManager {
       const missing = await this.missing(ws.path)
       workspaceSlugs.push(encodeCwd(scanPath))
       const slugs = await slugsOf(root)
-      const wtDirs = (await this.worktreeEntries(ws.path)).map((e) => e.dir)
+      const isGit = key
+        ? (this.deps.remoteGit?.(key.host, key.path)?.isGit ?? false)
+        : !missing && (await isGitCheckoutAsync(ws.path))
+      const wtDirs = await this.worktreeDirs(ws.path, isGit)
       const buckets = await this.resolveBucketsReadingAhead(root, scanPath, wtDirs, slugs)
       if (key) for (const b of buckets) b.host = key.host
       if (key && scanPath !== key.path) {
@@ -760,9 +794,7 @@ export class WorkspaceManager {
         workspace: {
           path: ws.path,
           missing,
-          isGit: key
-            ? (this.deps.remoteGit?.(key.host, key.path)?.isGit ?? false)
-            : !missing && (await isGitCheckoutAsync(ws.path)),
+          isGit,
           hasHistory: hasHistory(visible, owned, wsRunningIds),
           ...(key
             ? {
@@ -863,7 +895,7 @@ export class WorkspaceManager {
     dirBySlug: Map<string, string>,
     local: boolean
   ): Promise<{
-    files: Map<string, { id: string; mtime: number }[]>
+    files: Map<string, ListedTranscript[]>
     meta: Map<string, SessionMeta>
     dirs: Map<string, boolean>
   }> {
@@ -871,15 +903,15 @@ export class WorkspaceManager {
     const files = new Map(
       await Promise.all(slugs.map(async (s) => [s, await this.listJsonl(root, s)] as const))
     )
-    const transcripts = slugs.flatMap((s) => (files.get(s) ?? []).map((f) => [s, f.id] as const))
+    const transcripts = slugs.flatMap((s) => (files.get(s) ?? []).map((f) => [s, f] as const))
     const meta = new Map(
       await mapAtMost(
         transcripts,
         TRANSCRIPTS_OPEN_AT_ONCE,
-        async ([s, id]) =>
+        async ([s, f]) =>
           [
-            path.join(s, id),
-            await this.readMeta(root, s, id, dirBySlug.get(s) ?? scanPath)
+            path.join(s, f.id),
+            await this.readMeta(root, s, f, dirBySlug.get(s) ?? scanPath)
           ] as const
       )
     )
@@ -980,15 +1012,12 @@ export class WorkspaceManager {
         this.bucketWatchers.delete(dir)
       }
     }
-    const localRoot = path.resolve(this.deps.projectsRoot)
     for (const dir of wanted) {
       if (this.bucketWatchers.has(dir)) continue
-      const local = path.dirname(dir) === localRoot
       try {
         // PLATFORM§40
         const watcher = fs.watch(dir, (_event, filename) => {
-          if (local && filename && this.isLiveTranscript(path.join(dir, filename.toString())))
-            return
+          if (filename && this.isLiveTranscript(path.join(dir, filename.toString()))) return
           this.scheduleRescan()
         })
         watcher.on('error', () => {
@@ -1036,7 +1065,7 @@ export class WorkspaceManager {
     root: string,
     slug: string,
     stats = this.statByFile
-  ): Promise<{ id: string; mtime: number }[]> {
+  ): Promise<ListedTranscript[]> {
     const dir = path.join(root, slug)
     let names: fs.Dirent[]
     try {
@@ -1044,21 +1073,23 @@ export class WorkspaceManager {
     } catch {
       return []
     }
+    const files = new Set(names.filter((e) => e.isFile()).map((e) => e.name))
     const found = await Promise.all(
       names
         .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
         .map(async (e) => {
           const file = path.join(dir, e.name)
+          const id = e.name.slice(0, -'.jsonl'.length)
           try {
             const st = await fs.promises.stat(file)
             stats.set(file, { size: st.size, mtimeMs: st.mtimeMs })
-            return { id: e.name.slice(0, -'.jsonl'.length), mtime: st.mtimeMs }
+            return { id, mtime: st.mtimeMs, hasTitleSidecar: files.has(id + '.title') }
           } catch {
             return null
           }
         })
     )
-    return found.filter((f): f is { id: string; mtime: number } => f !== null)
+    return found.filter((f): f is ListedTranscript => f !== null)
   }
 
   private async listJsonlIds(root: string, slug: string): Promise<string[]> {
@@ -1121,7 +1152,7 @@ export class WorkspaceManager {
   private async readMeta(
     root: string,
     slug: string,
-    id: string,
+    { id, hasTitleSidecar }: ListedTranscript,
     bucketDir: string
   ): Promise<SessionMeta> {
     const file = path.join(root, slug, id + '.jsonl')
@@ -1135,9 +1166,11 @@ export class WorkspaceManager {
       } else if (tail.worktreeState) partial.worktreeState = tail.worktreeState
     }
     let sidecar = ''
-    try {
-      sidecar = (await fs.promises.readFile(file.replace(/\.jsonl$/, '.title'), 'utf8')).trim()
-    } catch {}
+    if (hasTitleSidecar) {
+      try {
+        sidecar = (await fs.promises.readFile(file.replace(/\.jsonl$/, '.title'), 'utf8')).trim()
+      } catch {}
+    }
     if (sidecar) partial.customTitle = sidecar
     // CC§9
     else if (partial.customTitle && this.headScans.get(file)?.final) {

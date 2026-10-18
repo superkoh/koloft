@@ -1,5 +1,7 @@
 import { execFile } from 'child_process'
 import path from 'path'
+import { descendants, type ProcessTable } from './processTable'
+import { looksLikeClaude } from './claudeLiveness'
 
 export interface ShellProc {
   pid: number
@@ -9,6 +11,7 @@ export interface ShellProc {
 }
 
 export interface TaskProcs {
+  at: number
   shells: Map<string, ShellProc>
 }
 
@@ -33,55 +36,6 @@ function isToolShell(command: string): boolean {
   return /shell-snapshots/.test(command) || /(^|\/)(zsh|bash|sh) -c .*\beval\b/.test(command)
 }
 
-export function parsePsDuration(s: string): number {
-  const m = s.trim().match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/)
-  if (!m) return 0
-  const hours = Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)
-  return Math.round(((hours * 60 + Number(m[3])) * 60 + Number(m[4])) * 1000)
-}
-
-interface Snapshot {
-  childrenOf: Map<number, number[]>
-  commandOf: Map<number, string>
-  etimeOf: Map<number, string>
-  cpuOf: Map<number, number>
-}
-
-function parsePs(stdout: string): Snapshot | null {
-  const childrenOf = new Map<number, number[]>()
-  const commandOf = new Map<number, string>()
-  const etimeOf = new Map<number, string>()
-  const cpuOf = new Map<number, number>()
-  for (const line of stdout.split('\n')) {
-    const m = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/)
-    if (!m) continue
-    const pid = Number(m[1])
-    const ppid = Number(m[2])
-    commandOf.set(pid, m[5])
-    etimeOf.set(pid, m[3])
-    cpuOf.set(pid, parsePsDuration(m[4]))
-    const kids = childrenOf.get(ppid)
-    if (kids) kids.push(pid)
-    else childrenOf.set(ppid, [pid])
-  }
-  return commandOf.size ? { childrenOf, commandOf, etimeOf, cpuOf } : null
-}
-
-function descendants(snap: Snapshot, root: number): number[] {
-  const out: number[] = []
-  const stack = [root]
-  const seen = new Set<number>()
-  while (stack.length) {
-    const pid = stack.pop() as number
-    if (seen.has(pid)) continue
-    seen.add(pid)
-    out.push(pid)
-    const kids = snap.childrenOf.get(pid)
-    if (kids) stack.push(...kids)
-  }
-  return out
-}
-
 function parseLsofNames(stdout: string): Map<number, string> {
   const out = new Map<number, string>()
   let pid = 0
@@ -98,14 +52,10 @@ function parseLsofPids(stdout: string): Set<number> {
   return out
 }
 
-async function listeningTrees(trees: Map<string, number[]>, exec: Exec): Promise<Set<string>> {
-  const all = [...trees.values()].flat()
-  if (!all.length) return new Set()
-  const listening = parseLsofPids(
-    await exec('lsof', ['-a', '-p', all.join(','), '-iTCP', '-sTCP:LISTEN', '-Fp'])
-  )
-  return new Set(
-    [...trees].filter(([, pids]) => pids.some((p) => listening.has(p))).map(([id]) => id)
+async function listeningPids(pids: number[], exec: Exec): Promise<Set<number>> {
+  if (!pids.length) return new Set()
+  return parseLsofPids(
+    await exec('lsof', ['-a', '-p', pids.join(','), '-iTCP', '-sTCP:LISTEN', '-Fp'])
   )
 }
 
@@ -123,52 +73,81 @@ function runsCommand(line: string, command: string): boolean {
 
 // MUSE§8
 export async function museServersAmong(
+  table: ProcessTable | null,
   rootPid: number,
   commands: Map<string, string>,
   exec: Exec = defaultExec
 ): Promise<Set<string>> {
-  const snap = parsePs(await exec('ps', ['-Ao', 'pid=,ppid=,etime=,time=,command=']))
-  if (!snap) return new Set()
+  if (!table) return new Set()
   const trees = new Map<string, number[]>()
-  for (const child of snap.childrenOf.get(rootPid) ?? []) {
-    const line = snap.commandOf.get(child) ?? ''
+  for (const child of table.childrenOf.get(rootPid) ?? []) {
+    const line = table.byPid.get(child)?.command ?? ''
     for (const [id, command] of commands)
-      if (runsCommand(line, command)) trees.set(id, descendants(snap, child))
+      if (runsCommand(line, command)) trees.set(id, descendants(table, child))
   }
-  return listeningTrees(trees, exec)
+  const listening = await listeningPids([...trees.values()].flat(), exec)
+  return new Set(
+    [...trees].filter(([, pids]) => pids.some((p) => listening.has(p))).map(([id]) => id)
+  )
+}
+
+interface ClaudeShells {
+  outputOf: Map<number, string>
+  listening: Set<number>
+}
+
+const claudeShellsOf = new WeakMap<ProcessTable, Promise<ClaudeShells | null>>()
+
+function toolShellsUnder(table: ProcessTable, pid: number): number[] {
+  return (table.childrenOf.get(pid) ?? []).filter((k) =>
+    isToolShell(table.byPid.get(k)?.command ?? '')
+  )
+}
+
+// CC§8
+async function readClaudeShells(table: ProcessTable, exec: Exec): Promise<ClaudeShells | null> {
+  const shells = table.rows
+    .filter((row) => looksLikeClaude(row.command))
+    .flatMap((row) => toolShellsUnder(table, row.pid))
+  const [fd1, listening] = await Promise.all([
+    exec('lsof', ['-a', '-p', shells.join(','), '-d', '1', '-Fn']),
+    listeningPids(
+      shells.flatMap((pid) => descendants(table, pid)),
+      exec
+    )
+  ])
+  if (!fd1.trim()) return null
+  const outputOf = new Map([...parseLsofNames(fd1)].filter(([, name]) => name.endsWith('.output')))
+  return { outputOf, listening }
 }
 
 // CC§2 CC§8
 export async function inspectTaskProcs(
+  table: ProcessTable | null,
   rootPid: number,
   sessionId: string,
   exec: Exec = defaultExec
 ): Promise<TaskProcs | null> {
-  const snap = parsePs(await exec('ps', ['-Ao', 'pid=,ppid=,etime=,time=,command=']))
-  if (!snap) return null
-  if (!/claude/i.test(snap.commandOf.get(rootPid) ?? '')) return null
-  const shells = (snap.childrenOf.get(rootPid) ?? []).filter((k) =>
-    isToolShell(snap.commandOf.get(k) ?? '')
-  )
-  const result: TaskProcs = { shells: new Map() }
+  if (!table) return null
+  if (!looksLikeClaude(table.byPid.get(rootPid)?.command ?? '')) return null
+  const result: TaskProcs = { at: table.at, shells: new Map() }
+  const shells = toolShellsUnder(table, rootPid)
   if (!shells.length) return result
-  const fd1 = await exec('lsof', ['-a', '-p', shells.join(','), '-d', '1', '-Fn'])
-  if (!fd1.trim()) return null
-  const names = parseLsofNames(fd1)
+  let read = claudeShellsOf.get(table)
+  if (!read) claudeShellsOf.set(table, (read = readClaudeShells(table, exec)))
+  const seen = await read
+  if (!seen) return null
   const sessionTasks = path.sep + path.join(sessionId, 'tasks')
   for (const pid of shells) {
-    const name = names.get(pid)
-    if (name === undefined || !name.endsWith('.output')) continue
-    if (!path.dirname(name).endsWith(sessionTasks)) continue
+    const name = seen.outputOf.get(pid)
+    if (name === undefined || !path.dirname(name).endsWith(sessionTasks)) continue
+    const tree = descendants(table, pid)
     result.shells.set(path.basename(name, '.output'), {
       pid,
-      ageMs: parsePsDuration(snap.etimeOf.get(pid) ?? ''),
-      listening: false,
-      cpuMs: descendants(snap, pid).reduce((sum, p) => sum + (snap.cpuOf.get(p) ?? 0), 0)
+      ageMs: table.byPid.get(pid)?.ageMs ?? 0,
+      listening: tree.some((p) => seen.listening.has(p)),
+      cpuMs: tree.reduce((sum, p) => sum + (table.byPid.get(p)?.cpuMs ?? 0), 0)
     })
   }
-  const trees = new Map<string, number[]>()
-  for (const [id, sh] of result.shells) trees.set(id, descendants(snap, sh.pid))
-  for (const id of await listeningTrees(trees, exec)) result.shells.get(id)!.listening = true
   return result
 }
