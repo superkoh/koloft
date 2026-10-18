@@ -1332,6 +1332,14 @@ command by hand:
   into `cksum`, the stamp of a whole folder changed on an append, on a same-size rewrite
   0.25 s apart and on a new file (2026-10-17: dash and GNU stat in the e2e sshd image,
   and this Mac's BSD tools).
+- **awk reads that time as the same number JavaScript does.** For a `stat` line
+  `S.NNNNNNNNN size`, `awk -v ms=<String(parseFloat(S) * 1000) from Node> '{ $1 * 1000 == ms }'`
+  is true, and false for `ms + 0.001` or `ms - 1`, so a save script can check a file's
+  fingerprint on the machine against the one the editor holds. (2026-10-17: 1500 files,
+  half with times written by the file system in nanoseconds, half set to random
+  microsecond times, through macOS 27's awk and through mawk, gawk and busybox awk on
+  Debian 12 under Node 22; every one agreed.) `mktemp` and `wc -c` work there and in
+  busybox (Alpine 3.13).
 - **`readlink -f` resolves a path on both** (GNU coreutils 9.4, and macOS 27).
 - **ripgrep (`rg`) was not installed on the Ubuntu box**, and neither was
   `inotifywait`; `git grep` is there with git. So content search needs the `git grep`

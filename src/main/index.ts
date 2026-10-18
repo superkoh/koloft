@@ -5261,14 +5261,10 @@ function registerIpc(): void {
   )
   const baseArg = sanitizeBase
   const untrackedArg = (u: unknown): boolean => u === true
-  ipcMain.handle('fs:diffBase', (_e, root: string) =>
-    typeof root === 'string' && root ? hosts.of(root).diffBase(root) : null
-  )
-  ipcMain.handle('fs:gitStatus', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? hosts.of(root).gitStatus(root, baseArg(base)) : {}
-  )
-  ipcMain.handle('fs:gitNumstat', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? hosts.of(root).gitNumstat(root, baseArg(base)) : {}
+  ipcMain.handle('fs:gitChanges', (_e, root: string, base?: unknown) =>
+    typeof root === 'string' && root
+      ? hosts.of(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
+      : { base: null, status: {}, numstat: {}, missing: false }
   )
   ipcMain.handle('fs:gitDiff', (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root

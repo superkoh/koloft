@@ -51,6 +51,20 @@ Schema availability is distinguished from behavior actually seen on the wire.
   app-server in a throwaway `CODEX_HOME`).
 - Request IDs are strings **or numbers, including zero**. Startup and temporary title
   requests used strings; the real command approval request used numeric `0`.
+- **Each line starts with what kind of message it is** (0.162.0, 2026-10-17: a Node
+  client and a real `codex --remote` TUI on a stdio app-server in a throwaway
+  `CODEX_HOME` holding a copied `auth.json`). The app-server writes a reply as
+  `{"id":…,"result":…}` or `{"id":…,"error":…}`, a notification as `{"method":…,
+  "params":…}`, and a request to the client with `method` first:
+  `{"method":"item/commandExecution/requestApproval","id":0,"params":…}`. A line it
+  cannot read gets an error with no `id` at all (`{"error":{"code":-32600,…}}`). The
+  TUI writes its requests as `{"id":…,"method":…,"params":…}` and `initialized` as
+  `{"method":…}`, all on one line. Koloft reads only these first keys to decide whether
+  a line is worth parsing, and parses any line that starts some other way.
+- **A signed-in start brings very large replies.** The TUI asks `plugin/list` (ids
+  `plugin-list-…`) with no prompt typed; each reply was 16.5 MB (the OpenAI curated
+  marketplace), and three came within about 75 seconds. A home with no login gets
+  `{"marketplaces":[],…}` (101 bytes).
 - The TUI made its own `config/read` and `account/read` requests through the relay.
   Reading history through a different app-server is not evidence that it subscribes
   to a running TUI's events.
