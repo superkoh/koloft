@@ -46,8 +46,10 @@ function fixtureRepo(files: Record<string, string>): string {
   fs.symlinkSync(path.join(repoRoot, 'node_modules'), path.join(dir, 'node_modules'))
   write(dir, {
     '.gitignore': 'node_modules\n',
+    'docs/antigravity-cli-contract.md': '# Antigravity\n',
     'docs/claude-code-contract.md': '# CC\n\n## §9 Launch flags\n',
     'docs/codex-cli-contract.md': '# Codex\n\n## 5. Process exit\n',
+    'docs/muse-code-contract.md': '# Muse\n',
     'docs/platform-contract.md': '# Platform\n',
     ...files
   })

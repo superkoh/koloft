@@ -1,13 +1,15 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { isAbsoluteOnHost } from '@shared/remoteKey'
+import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import {
   cronBackend,
   CRON_PERMISSIONS,
   slugOf,
   hasWordChar,
+  isRunFolderOf,
   isValidModelName,
-  worktreeBase
+  worktreeBase,
+  worktreeHomeOf
 } from '@shared/cronNames'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
 import { isValidSchedule, parseHHMM } from '@shared/schedule'
@@ -35,6 +37,7 @@ import {
   tick,
   type Due
 } from './cronScheduler'
+import type { TidyResult } from './sessionClose'
 
 const MAX_WORKTREE_NAME = 64
 const STAMP_LEN = 12
@@ -74,6 +77,16 @@ export async function worktreeNameFor(
 
 export type LaunchResult = { ok: true; tabId: string } | { ok: false }
 
+export interface LeftTab {
+  treeRoot?: string
+  sessionId?: string
+}
+
+export interface RunLeftovers {
+  folders: string[]
+  branched: string[] | null
+}
+
 export interface LaunchRequest {
   jobId: string
   backend: BackendId
@@ -106,7 +119,11 @@ export interface RunnerDeps {
   worktreeDirExists(root: string, name: string): MaybeAsync<boolean>
   worktreeRecorded(root: string, name: string): boolean
   branchExists(root: string, branch: string): Promise<boolean>
-  countRunFolders(root: string, slug: string): MaybeAsync<number>
+  listRunFolders(root: string, slug: string): MaybeAsync<string[]>
+  runLeftovers(root: string): Promise<RunLeftovers>
+  tidyRun(root: string, worktree: string, sessionId?: string): Promise<TidyResult>
+  foldersInUse(leavingTabId?: string): Set<string>
+  quitting(): boolean
   accountUsable(backend: BackendId): boolean
   trusted(wsPath: string, backend: BackendId): MaybeAsync<boolean>
   ready(): boolean
@@ -119,6 +136,7 @@ export interface RunnerDeps {
   notify(title: string, body: string): void
   push(state: CronState): void
   killed(tabId: string): void
+  endpointAccountWithModelOf(tabId: string): string | undefined
   bindDeadlineMs: number
   closeRecheckMs: number
   setInterval: typeof setInterval
@@ -211,12 +229,39 @@ function saveErrors(
 
 const MANUAL = { manual: true } as const
 
-function lineOf(run: LiveRun): Pick<HistoryLine, 'dueAt' | 'worktree' | 'manual'> {
+function lineOf(
+  run: LiveRun
+): Pick<HistoryLine, 'dueAt' | 'worktree' | 'manual' | 'sessionId' | 'note'> {
   return {
     dueAt: run.dueAt,
     ...(run.worktree ? { worktree: run.worktree } : {}),
-    ...(run.manual ? MANUAL : {})
+    ...(run.manual ? MANUAL : {}),
+    ...(run.sessionId ? { sessionId: run.sessionId } : {}),
+    ...(run.note ? { note: run.note } : {})
   }
+}
+
+function headlines(left: string[]): string {
+  return left.map((l) => l.split('\n')[0].replace(/:$/, '')).join('; ')
+}
+
+function noteFolder(line: HistoryLine, { removed, kept }: TidyResult): boolean {
+  const before = `${line.removed}|${line.kept}`
+  const reason = headlines(kept)
+  if (removed) {
+    line.removed = true
+    delete line.kept
+  } else if (reason) {
+    line.kept = reason
+    delete line.removed
+  } else {
+    delete line.kept
+  }
+  return `${line.removed}|${line.kept}` !== before
+}
+
+function runFolder(root: string, name: string): string {
+  return `${worktreeHomeOf(root)}/${name}`
 }
 
 export class CronRunner {
@@ -226,6 +271,8 @@ export class CronRunner {
   private folders: Record<string, number> = {}
   private foldersRound = 0
   private live = new Map<string, LiveRun>()
+  private killedRuns = new Map<string, string>()
+  private inFlight = new Set<string>()
   private launching = new Set<string>()
   private held = new Map<string, Due[]>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -411,7 +458,10 @@ export class CronRunner {
   private async taken(root: string, name: string): Promise<boolean> {
     if (this.d.worktreeRecorded(root, name)) return true
     if (await this.d.worktreeDirExists(root, name)) return true
-    return this.d.branchExists(root, `worktree-${name}`)
+    if (await this.d.branchExists(root, `worktree-${name}`)) return true
+    return this.jobs.some(
+      (j) => j.workspacePath === root && j.history.some((h) => h.worktree === name)
+    )
   }
 
   private fail(job: CronJob, dueAt: number, mark: object, note: string): void {
@@ -460,6 +510,8 @@ export class CronRunner {
     const run = this.live.get(tabId)
     if (!run) return
     run.sessionId = sessionId
+    const endpoint = this.byId(run.jobId)?.model && this.d.endpointAccountWithModelOf(tabId)
+    if (endpoint) run.note = `model set by the endpoint account ${endpoint}`
     // CC§1
     if (run.state === 'launching') {
       run.state = 'running'
@@ -491,6 +543,8 @@ export class CronRunner {
   }
 
   private killRun(tabId: string): void {
+    const run = this.live.get(tabId)
+    if (run) this.killedRuns.set(tabId, run.jobId)
     this.d.killTab(tabId)
     this.d.killed(tabId)
     this.live.delete(tabId)
@@ -506,10 +560,15 @@ export class CronRunner {
     if (!this.isStillDone(run)) return
     if (!busy && left.length === 0) {
       this.live.delete(tabId)
-      void this.d.closeForGood(tabId, job.workspacePath, run.worktree).then(
-        () => this.refreshFolders(),
-        (error) => this.d.toast(`⏰ ${job.name} could not be closed: ${String(error)}`)
-      )
+      const folder = run.worktree && runFolder(job.workspacePath, run.worktree)
+      if (folder) this.inFlight.add(folder)
+      void this.d
+        .closeForGood(tabId, job.workspacePath, run.worktree)
+        .then(
+          () => this.refreshFolders(),
+          (error) => this.d.toast(`⏰ ${job.name} could not be closed: ${String(error)}`)
+        )
+        .finally(() => folder && this.inFlight.delete(folder))
       this.writeHistory(job, { ...lineOf(run), state: 'finished' })
       this.d.toast(`⏰ ${job.name} finished and closed`)
       return
@@ -523,7 +582,7 @@ export class CronRunner {
   }
 
   private keepOpen(run: LiveRun, job: CronJob, left: string[]): void {
-    const kept = left.map((l) => l.split('\n')[0].replace(/:$/, '')).join('; ')
+    const kept = headlines(left)
     if (run.kept === kept) return
     run.kept = kept
     this.d.toast(`⏰ ${job.name} finished but was not closed: ${kept}`)
@@ -531,11 +590,17 @@ export class CronRunner {
     this.push()
   }
 
-  onPtyExit(tabId: string): void {
+  onPtyExit(tabId: string, left?: LeftTab): void {
     const run = this.live.get(tabId)
-    if (!run) return
-    this.clearTimer(tabId)
-    this.live.delete(tabId)
+    if (run) this.closeOut(run)
+    const killedJobId = this.killedRuns.get(tabId)
+    this.killedRuns.delete(tabId)
+    if (left) this.onTabGone(left, [run?.jobId, killedJobId], tabId)
+  }
+
+  private closeOut(run: LiveRun): void {
+    this.clearTimer(run.tabId)
+    this.live.delete(run.tabId)
     this.refreshFolders()
     const job = this.byId(run.jobId)
     if (!job) {
@@ -549,6 +614,80 @@ export class CronRunner {
       this.d.toast(`⏰ ${job.name} could not start: ${note}`)
     } else {
       this.writeHistory(job, { ...line, state: 'closed' })
+    }
+  }
+
+  onTabGone(left: LeftTab, jobIds: (string | undefined)[] = [], leavingTabId?: string): void {
+    if (this.d.quitting()) return
+    const toSweep = new Set<CronJob>()
+    for (const id of jobIds) {
+      const job = id ? this.byId(id) : undefined
+      if (job) toSweep.add(job)
+    }
+    const name = left.treeRoot?.split('/').pop() ?? ''
+    for (const job of this.jobs) {
+      if (left.treeRoot !== runFolder(job.workspacePath, name)) continue
+      const line = job.history.find((h) => h.worktree === name)
+      if (!line && !isRunFolderOf(slugOf(job.name), name)) continue
+      if (line && left.sessionId && !line.sessionId) {
+        line.sessionId = left.sessionId
+        this.d.store.save(this.jobs)
+        this.push()
+      }
+      toSweep.add(job)
+    }
+    this.sweepSoon([...toSweep], leavingTabId)
+  }
+
+  sweepLeftFolders(): void {
+    this.sweepSoon(this.jobs)
+  }
+
+  private sweepSoon(jobs: CronJob[], leavingTabId?: string): void {
+    if (!jobs.length) return
+    void Promise.allSettled(jobs.map((job) => this.sweep(job, leavingTabId))).then((results) => {
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') this.d.toast(`⏰ ${jobs[i].name}: ${String(r.reason)}`)
+      })
+      this.refreshFolders()
+    })
+  }
+
+  private async sweep(job: CronJob, leavingTabId?: string): Promise<void> {
+    const root = job.workspacePath
+    const remote = isRemoteKey(root)
+    const slug = slugOf(job.name)
+    const { folders, branched } = await this.d.runLeftovers(root)
+    const mayBeLeft = (h: HistoryLine, name: string): boolean =>
+      !branched || !!h.kept || folders.includes(name) || branched.includes(name)
+    const listed = remote ? [] : folders.filter((name) => isRunFolderOf(slug, name))
+    const named = job.history.flatMap((h) =>
+      h.worktree && (!remote || h.sessionId) && mayBeLeft(h, h.worktree) ? [h.worktree] : []
+    )
+    let busy = this.d.foldersInUse(leavingTabId)
+    let unreachable: TidyResult | undefined
+    let changed = false
+    for (const name of new Set([...listed, ...named])) {
+      const folder = runFolder(root, name)
+      const open = [...this.live.values()].some((r) => r.worktree === name)
+      if (open || this.inFlight.has(folder) || busy.has(folder)) continue
+      const line = job.history.find((h) => h.worktree === name)
+      let result = unreachable
+      if (!result) {
+        this.inFlight.add(folder)
+        try {
+          result = await this.d.tidyRun(root, name, line?.sessionId)
+        } finally {
+          this.inFlight.delete(folder)
+        }
+        busy = this.d.foldersInUse(leavingTabId)
+        if (result.unreachable) unreachable = result
+      }
+      if (line && noteFolder(line, result)) changed = true
+    }
+    if (changed) {
+      this.d.store.save(this.jobs)
+      this.push()
     }
   }
 
@@ -696,8 +835,8 @@ export class CronRunner {
     for (const j of this.jobs) {
       whenSettled(this.d.gitDirExists(j.workspacePath), (git) => {
         if (!git) return settled()
-        whenSettled(this.d.countRunFolders(j.workspacePath, slugOf(j.name)), (count) => {
-          next[j.id] = count
+        whenSettled(this.d.listRunFolders(j.workspacePath, slugOf(j.name)), (names) => {
+          next[j.id] = names.length
           settled()
         })
       })

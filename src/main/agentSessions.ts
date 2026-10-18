@@ -7,9 +7,17 @@ import type {
   WorkspaceRows,
   WorktreeInfo
 } from '@shared/types'
-import { ownerSays } from '@shared/agentGuide'
-import { BACKEND_LABEL } from '@shared/sessionBackend'
+import { ASSIST_SAYS_OPENING, DISCORD_PREFIX, ownerSays } from '@shared/agentGuide'
+import {
+  BACKEND_LABEL,
+  PEER_TRAITS,
+  reachedBySendMessage,
+  SESSION_BACKENDS,
+  backendIdOf,
+  messagingOf
+} from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import { withoutBlankEdges } from './messageText'
 import { freshWorktreeName } from '@shared/sessionRoute'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { basename } from '@shared/preview'
@@ -31,8 +39,13 @@ import {
   type Parsed
 } from './agentRequests'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
-import { crossSessionLine, type ModeClass } from './crossSessionMessage'
-import { handoverPreamble, withHandover, type SessionCaller } from './handover'
+import { FROM_A_SESSION, crossSessionLine, type ModeClass } from './crossSessionMessage'
+import {
+  OWNER_WORDS_QUOTED_CHARS,
+  handoverInOwnersLanguage,
+  withHandover,
+  type SessionCaller
+} from './handover'
 import { nameForTask } from './sessionTitle'
 import type { Assist } from './assist'
 import { keysFor } from './typeKeys'
@@ -76,8 +89,9 @@ export function parseNewSessionArgs(args: string[]): Parsed<NewSessionArgs> {
     if (key === 'worktree' && !isValidWorktreeName(value))
       return fail(`"${value}" cannot be a worktree name. Use letters, digits, dots, - and _.`)
     if (key === 'backend') {
-      if (value !== 'claude' && value !== 'codex') return fail('--backend is claude or codex.')
-      flags.backend = value
+      const backend = backendIdOf(value)
+      if (!backend) return fail(`--backend is one of ${SESSION_BACKENDS.join(', ')}.`)
+      flags.backend = backend
     } else flags[key] = value
     i++
   }
@@ -122,7 +136,7 @@ function openSessionLines(
       BACKEND_LABEL[info.backendId],
       stateWords(info, asking)
     ]
-    if (info.backendId === 'codex') parts.push(`id: ${idToReach(info)}`)
+    if (!reachedBySendMessage(info.backendId)) parts.push(`id: ${idToReach(info)}`)
     if (peerName) parts.push(`name: ${peerName}`)
     parts.push(...starterPart(starter))
     const transcript = info.details?.claude?.jsonlPath
@@ -165,9 +179,7 @@ function inScope(scope: string | undefined, workspace: string): boolean {
 
 function peerNamesOf(d: SessionVerbDeps, placed: PlacedRow[]): Promise<(string | null)[]> {
   const nameOf = d.peerNames()
-  return Promise.all(
-    placed.map((p) => (p.live?.backendId === 'claude' ? nameOf(p.live.sessionId) : null))
-  )
+  return Promise.all(placed.map((p) => (p.live ? nameOf(p.live) : null)))
 }
 
 function rowLines(
@@ -234,7 +246,7 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'this is for Codex sessions, and for reporting to the session or Assist that started you, by the id in your first message. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
+  'a Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names. This command reaches Codex, Muse and Antigravity sessions, and the session or Assist that started you.'
 
 function matchRef<T>(
   items: T[],
@@ -260,10 +272,27 @@ function matchOpen(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> | 
   )
 }
 
-export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> {
+export function findSiblingTarget(
+  sessions: SessionInfo[],
+  ref: string,
+  from: BackendId
+): Parsed<SessionInfo> {
   const hit = matchOpen(sessions, ref)
   if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
-  return !hit.ok || hit.value.backendId === 'codex' ? hit : fail(CLAUDE_USES_SEND_MESSAGE)
+  return hit.ok && reachedBySendMessage(hit.value.backendId) && reachedBySendMessage(from)
+    ? fail(CLAUDE_USES_SEND_MESSAGE)
+    : hit
+}
+
+function openTarget(s: SessionInfo & { tabId: string }): Target {
+  return {
+    key: s.sessionId,
+    name: s.title,
+    backend: s.backendId,
+    remote: !!s.remote,
+    tabId: s.tabId,
+    open: async () => s.tabId
+  }
 }
 
 export interface ClosableSession {
@@ -275,14 +304,14 @@ export interface ClosableSession {
   tabId?: string
 }
 
+export type PeerNameOf = (s: { backendId: BackendId; sessionId: string }) => Promise<string | null>
+
 export async function findClosable(
   sessions: ClosableSession[],
   ref: string,
-  nameOf: (sessionId: string) => Promise<string | null>
+  nameOf: PeerNameOf
 ): Promise<Parsed<ClosableSession>> {
-  const names = await Promise.all(
-    sessions.map((s) => (s.backendId === 'claude' ? nameOf(s.sessionId) : null))
-  )
+  const names = await Promise.all(sessions.map((s) => nameOf(s)))
   const hit = matchRef(
     sessions,
     ref,
@@ -303,7 +332,7 @@ export interface SessionVerbDeps {
   workspaceOf(tabId: string): string | undefined
   allSessions(): SessionInfo[]
   pinnedWorkspaces(): PinnedWorkspace[]
-  peerNames(): (sessionId: string) => Promise<string | null>
+  peerNames(): PeerNameOf
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
   assist: Assist
   queue(tabId: string, text: string, clientId?: string): Promise<void>
@@ -315,6 +344,7 @@ export interface SessionVerbDeps {
   sidebar(): WorkspaceRows[]
   worktrees(workspace: string): Promise<WorktreeInfo[]>
   readTurns(key: string, n: number): Promise<Turn[]>
+  quotedPrompt(tabId: string): string | undefined
   touch(tabId: string, key: string): void
   conductorOf(ref: string): Target | undefined
   resume(row: SessionRow): Promise<string>
@@ -322,6 +352,7 @@ export interface SessionVerbDeps {
   asking(tabId: string): boolean
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   press(tabId: string, keys: string[]): Promise<void>
+  deliver(tabId: string, text: string): Promise<boolean>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
   answer(tabId: string, reply: string): Promise<string | undefined>
@@ -361,8 +392,12 @@ const SEND_USAGE =
 const NO_WORKSPACE = 'koloft session: Koloft does not know which workspace this session is in.'
 const LIST_USAGE =
   'koloft session list: the only option is --workspace <folder name or path>, like: koloft session list --workspace koloft'
-const CODEX_HAS_NO_NAME =
-  'koloft session new: a Codex session has no name, so leave out --name. Koloft prints an id to reach it by.'
+const aSessionOf = (backend: BackendId): string => {
+  const label = BACKEND_LABEL[backend]
+  return `${/^[AEIOU]/.test(label) ? 'an' : 'a'} ${label} session`
+}
+const hasNoName = (backend: BackendId): string =>
+  `koloft session new: ${aSessionOf(backend)} has no name, so leave out --name. Koloft prints an id to reach it by.`
 
 function starterNamer(
   d: SessionVerbDeps,
@@ -398,8 +433,7 @@ async function listSessions(
   const listed = await Promise.all(
     sessions.map(async (info) => ({
       info,
-      peerName:
-        info.backendId === 'claude' ? ((await peerName(info.sessionId)) ?? undefined) : undefined,
+      peerName: (await peerName(info)) ?? undefined,
       starter: starterOf(info)
     }))
   )
@@ -418,20 +452,32 @@ async function startSibling(
   me: SessionInfo,
   workspace: string,
   conductorTab: string | undefined,
+  ownerWords: string | undefined,
   oweReply: (tabId: string) => void
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
-  if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
+  const traits = PEER_TRAITS[backend]
+  if (!traits.namedAtLaunch && args.name !== undefined)
+    return refused(hasNoName(backend), EXIT_USAGE)
   const caller: SessionCaller = {
-    name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
+    name: (await d.peerNames()(me)) ?? (reachedBySendMessage(me.backendId) ? me.title : undefined),
     id: idToReach(me),
-    assist: conductorTab !== undefined
+    label: BACKEND_LABEL[me.backendId],
+    assist: conductorTab !== undefined,
+    ownerWords
   }
-  const name =
-    backend === 'claude'
-      ? (args.name ??
-        (await nameForTask(args.prompt, d.assist, new Set(d.allSessions().map((s) => s.title)))))
-      : undefined
+  const [name, preamble] = await Promise.all([
+    !traits.namedAtLaunch
+      ? undefined
+      : (args.name ??
+        nameForTask(
+          args.prompt,
+          d.assist,
+          new Set(d.allSessions().map((s) => s.title)),
+          ownerWords
+        )),
+    handoverInOwnersLanguage(caller, d.assist)
+  ])
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
   const worktree =
     gitWorkspace && (args.worktree || caller.assist)
@@ -445,18 +491,20 @@ async function startSibling(
     model: args.model,
     // ADR-0028
     permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
+    ownerWords,
     // CODEX§17
-    ...(backend === 'codex'
-      ? { role: handoverPreamble(caller), firstPrompt: args.prompt }
-      : { firstPrompt: withHandover(caller, args.prompt) })
+    ...(traits.handoverAsRole
+      ? { role: preamble, firstPrompt: args.prompt }
+      : { firstPrompt: withHandover(preamble, args.prompt) })
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
+  const unnamed = aSessionOf(backend)
   if (conductorTab) {
-    d.started(conductorTab, tabId, name ?? 'a Codex session', workspace, backend)
+    d.started(conductorTab, tabId, name ?? unnamed, workspace, backend)
     return answered(
-      `Started ${name ? `session "${name}"` : 'a Codex session'} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
+      `Started ${name ? `session "${name}"` : unnamed} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
     )
   }
   const listHint =
@@ -464,9 +512,9 @@ async function startSibling(
       ? 'koloft session list'
       : `koloft session list --workspace ${JSON.stringify(workspace)}`
   return answered(
-    name
+    reachedBySendMessage(backend)
       ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
-      : `Started a Codex session in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
+      : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : unnamed} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
   )
 }
 
@@ -681,9 +729,7 @@ const CONDUCTOR_ACT_USAGE: Record<string, string> = {
 
 export function formatScreen(name: string, screen: SessionScreen): string {
   if ('error' in screen) return `${name}: ${screen.error}`
-  const lines = [...screen.lines]
-  while (lines.length && !lines[lines.length - 1].trim()) lines.pop()
-  while (lines.length && !lines[0].trim()) lines.shift()
+  const lines = withoutBlankEdges(screen.lines)
   const shown = lines.length ? `\`\`\`\n${lines.join('\n')}\n\`\`\`` : '(the screen is empty)'
   return [`The screen of ${name} right now:`, shown, ...screen.notes].join('\n')
 }
@@ -693,8 +739,24 @@ function readsItAfterTheQuestion(name: string): string {
   return `But ${name} is asking the owner a question, so it reads your message only once that is answered. See the question with koloft session screen ${arg} and pass it on to the owner.`
 }
 
+const SESSION_SAYS_OPENING = `${FROM_A_SESSION}"`
+
 export function sessionSays(from: SessionInfo, text: string): string {
-  return `(From the session "${from.title}", id ${idToReach(from)}:) ${text}`
+  return `${SESSION_SAYS_OPENING}${from.title}", id ${idToReach(from)}:) ${text}`
+}
+
+const KOLOFT_ENVELOPES = [SESSION_SAYS_OPENING, ASSIST_SAYS_OPENING]
+
+type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?: string }
+
+export function lastOwnerWords(turns: Turn[]): string | undefined {
+  const line = turns
+    .flatMap((t) => t.said)
+    .findLast((l) => l.who === 'owner' && !KOLOFT_ENVELOPES.some((e) => l.text.startsWith(e)))
+  if (!line) return undefined
+  const relayed = `${DISCORD_PREFIX} `
+  const words = line.text.startsWith(relayed) ? line.text.slice(relayed.length) : line.text
+  return words.slice(0, OWNER_WORDS_QUOTED_CHARS)
 }
 
 function isMe(
@@ -722,6 +784,27 @@ export function sessionVerb(d: SessionVerbDeps): {
   let queued = 0
   let lined = 0
   const replyOwed = new Map<string, OwedReply>()
+
+  // ADR-0031
+  const ownerWordsOf = async (
+    s: OwnerWordsHolder,
+    seen = new Set<string>()
+  ): Promise<string | undefined> => {
+    if (PEER_TRAITS[s.backendId].quotesOwnerWordsInHooks)
+      return s.tabId ? d.quotedPrompt(s.tabId) : undefined
+    seen.add(s.sessionId)
+    const [parent] = d.startedSessions.startersOf(s)
+    const holder = parent && !seen.has(parent) ? holderOf(parent) : undefined
+    if (holder) return ownerWordsOf(holder, seen)
+    return lastOwnerWords(await d.readTurns(s.sessionId, MAX_READ_TURNS))
+  }
+
+  const holderOf = (sessionId: string): OwnerWordsHolder | undefined => {
+    const open = d.allSessions().find((s) => s.sessionId === sessionId)
+    if (open) return open
+    const assist = d.conductorOf(sessionId)
+    return assist && { sessionId, tabId: assist.tabId, backendId: assist.backend }
+  }
 
   const owing = async <T>(
     tab: string,
@@ -767,7 +850,10 @@ export function sessionVerb(d: SessionVerbDeps): {
     const tab = t.tabId ?? (await openReady(t, until))
     if (!tab) throw new Error(`${t.name} was resumed but did not get ready in time.`)
     const owed = assist
-      ? { owner: assist, asked: t.backend === 'codex' ? text : undefined }
+      ? {
+          owner: assist,
+          asked: messagingOf(t.backend, !!t.remote) === 'queue' ? text : undefined
+        }
       : undefined
     return owing(tab, owed, () => sendInto(t, tab, text, line, until))
   }
@@ -779,7 +865,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     line: string | undefined,
     until: number
   ): Promise<string> => {
-    if (t.backend === 'codex') {
+    if (messagingOf(t.backend, !!t.remote) === 'queue') {
       await d.queue(tab, text, `koloft-conductor-${++queued}`)
       return `Sent to ${t.name}.`
     }
@@ -787,9 +873,10 @@ export function sessionVerb(d: SessionVerbDeps): {
       await d.sendLine(tab, line, until - Date.now())
       return `Sent to ${t.name}.`
     }
+    if (await d.deliver(tab, text)) return `Sent to ${t.name}.`
     if (!(await d.ready(tab, until - Date.now(), true)))
       throw new Error(
-        `${t.name} stayed busy. It runs on another machine, where Koloft can only type into it once its turn has ended and it shows no question.`
+        `${t.name} stayed busy. ${t.remote ? 'It runs on another machine, where Koloft' : 'Koloft'} can only type into it once its turn has ended and it shows no question.`
       )
     await d.press(tab, [text, '\r'])
     return `Typed into ${t.name}.`
@@ -802,9 +889,10 @@ export function sessionVerb(d: SessionVerbDeps): {
     caller: Pick<AgentCaller, 'tabId' | 'session'>,
     fromAssist: boolean
   ): Promise<AgentReply> => {
-    const typed = t.backend === 'claude' && t.remote
+    const route = messagingOf(t.backend, !!t.remote)
+    const typed = route === 'typed'
     const line =
-      typed || t.backend === 'codex'
+      route !== 'peerLine'
         ? undefined
         : crossSessionLine(d.modeOf(caller.tabId), text, `koloft-session-${++lined}`)
     if (line === null)
@@ -963,10 +1051,18 @@ export function sessionVerb(d: SessionVerbDeps): {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
       const where = parsed.value.workspace
-      const start = (workspace: string, conductorTab?: string): Promise<AgentReply> =>
-        startSibling(d, parsed.value, caller.session, workspace, conductorTab, (tab) =>
-          replyOwed.set(tab, { owner: caller.session.sessionId })
+      const start = async (workspace: string, conductorTab?: string): Promise<AgentReply> => {
+        const ownerWords = await ownerWordsOf(caller.session)
+        return startSibling(
+          d,
+          parsed.value,
+          caller.session,
+          workspace,
+          conductorTab,
+          ownerWords,
+          (tab) => replyOwed.set(tab, { owner: caller.session.sessionId })
         )
+      }
       if (scope !== undefined) {
         if (scope === GLOBAL_SCOPE && where === undefined) return refused(GLOBAL_NEEDS_WORKSPACE)
         const target = startableWorkspace(where ?? scope, d.pinnedWorkspaces())
@@ -998,12 +1094,15 @@ export function sessionVerb(d: SessionVerbDeps): {
       const to = starter(ref)
       if (to) replyOwed.delete(caller.tabId)
       if (to) return deliver('send', to, sessionSays(caller.session, text), caller, false)
-      if (caller.session.backendId !== 'codex')
-        return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
-      const target = findCodexTarget(open, ref)
+      const target = findSiblingTarget(open, ref, caller.session.backendId)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
-      await d.queue(target.value.tabId, text)
-      return answered(`Sent to ${target.value.title}.`)
+      return deliver(
+        'send',
+        openTarget(target.value),
+        sessionSays(caller.session, text),
+        caller,
+        false
+      )
     }
     if (Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
       return refused(`koloft session ${sub}: ${ONLY_A_CONDUCTOR}`)

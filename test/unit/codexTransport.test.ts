@@ -4,17 +4,18 @@ import os from 'os'
 import path from 'path'
 import { once } from 'events'
 import WebSocket from 'ws'
-import {
-  CodexRpc,
-  codexEnvironment,
-  createCodexTransport,
-  type CodexFrame
-} from '../../src/main/codexTransport'
+import type { CodexFrame } from '../../src/main/codexTransport'
+
+const PROCESS_SAMPLE_MS = 1000
+process.env.KOLOFT_CODEX_PROCESS_SAMPLE_MS = String(PROCESS_SAMPLE_MS)
+const { CodexRpc, codexEnvironment, createCodexTransport } =
+  await import('../../src/main/codexTransport')
+type CodexRpc = InstanceType<typeof CodexRpc>
 
 let directory: string
 let binary: string
 const cleanups: (() => Promise<void>)[] = []
-const LONGER_THAN_ONE_PROCESS_SAMPLE_MS = 1500
+const LONGER_THAN_ONE_PROCESS_SAMPLE_MS = PROCESS_SAMPLE_MS * 1.5
 const CHILD_SIGTERM_HANDLER_INSTALL_MS = 100
 const LINEAR_SLACK_FAR_BELOW_THE_SQUARE_OF_THE_RATIO = 3
 
@@ -45,6 +46,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
    child.unref();
    out({id:f.id,result:{pid:process.pid,child:child.pid}});return;
  }
+ if(mode==='unread') {process.stdout.write('{"id":"plugin-list-1","result":not json}\\n');out({id:f.id,result:{}});return;}
  if(mode==='big') {process.stdout.write(JSON.stringify({id:f.id,result:{pad:'x'.repeat(f.params.bytes)}})+'\\n');return;}
  if(mode==='utf8') {
    const bytes=Buffer.from(JSON.stringify({id:f.id,result:{title:'会话🙂'}})+'\\n');
@@ -307,6 +309,35 @@ describe('Codex TUI transport', () => {
     socket.close()
     await done
     for (const pid of [result.pid, result.child]) expect(() => process.kill(pid, 0)).toThrow()
+    expect(errors).toEqual([])
+  })
+
+  it('a reply the observer does not want reaches the TUI as Codex wrote it, without being read, while one it wants is read', async () => {
+    const observed: CodexFrame[] = []
+    const errors: Error[] = []
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: (direction, frame) => {
+        if (direction === 'server') observed.push(frame)
+      },
+      observes: (_direction, head) => head.replyTo !== 'plugin-list-1',
+      onError: (error) => errors.push(error)
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const raw: string[] = []
+    const both = new Promise<void>((resolve) =>
+      socket.on('message', (bytes) => {
+        if (raw.push(bytes.toString()) === 2) resolve()
+      })
+    )
+    socket.send(JSON.stringify({ id: 'mine', method: 'thread/read', params: { mode: 'unread' } }))
+    await both
+    expect(raw).toEqual(['{"id":"plugin-list-1","result":not json}', '{"id":"mine","result":{}}'])
+    expect(observed).toContainEqual({ id: 'mine', result: {} })
+    expect(observed.some((frame) => frame.id === 'plugin-list-1')).toBe(false)
     expect(errors).toEqual([])
   })
 

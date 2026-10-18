@@ -105,6 +105,30 @@ describe('store: claude → shell revert, only after a session actually bound', 
   })
 })
 
+describe('store: a sessions push changes only what it changed', () => {
+  it('a push that changes nothing leaves the sessions array as it was and notifies nobody', () => {
+    const s = useStore.getState()
+    s.setSessions([session('q1'), session('q2')])
+    const before = useStore.getState().sessions
+    const heard = vi.fn()
+    const off = useStore.subscribe(heard)
+    s.setSessions([session('q1'), session('q2')])
+    off()
+    expect(useStore.getState().sessions).toBe(before)
+    expect(heard).not.toHaveBeenCalled()
+  })
+
+  it('a push keeps the object of every session it did not change', () => {
+    const s = useStore.getState()
+    s.setSessions([session('k1'), session('k2')])
+    const [k1] = useStore.getState().sessions
+    s.setSessions([session('k1'), { ...session('k2'), title: 'Renamed' }])
+    const after = useStore.getState().sessions
+    expect(after[0]).toBe(k1)
+    expect(after[1].title).toBe('Renamed')
+  })
+})
+
 describe('store: intercepted file open routing — the open always surfaces, tagged so it stays out of Recent', () => {
   it('opens the file in the viewer pane (tagged as an intercept) when the owning tab is active', () => {
     const s = useStore.getState()

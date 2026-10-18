@@ -2307,6 +2307,27 @@ body {
   background: var(--bg-3);
   color: var(--fg);
 }
+.menu.wt-list {
+  width: 240px;
+  outline: none;
+}
+.split {
+  display: inline-flex;
+  align-items: stretch;
+}
+.split > button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.split > button + button {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.split > .btn-primary + .btn-primary {
+  border-left-color: rgba(0, 0, 0, 0.28);
+}
 .wt-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5573,7 +5594,8 @@ input.switch:focus-visible {
 .hist-state .dot.bad {
   background: var(--red);
 }
-.hist-wt {
+.hist-wt,
+.hist-folder {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--fg-faint);

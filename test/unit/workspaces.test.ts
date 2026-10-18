@@ -72,15 +72,37 @@ function latest(wsPath: string): WorkspaceRows {
   return entry
 }
 
+async function withFailingGitOnPath(
+  run: (gitCalls: () => string[]) => Promise<void>
+): Promise<void> {
+  const bin = path.join(root, 'fakebin')
+  const log = path.join(root, 'argv.log')
+  fs.mkdirSync(bin)
+  fs.writeFileSync(
+    path.join(bin, 'git'),
+    '#!/bin/sh\nprintf "%s\\n" "$*" >> ' + JSON.stringify(log) + '\nexit 1\n',
+    { mode: 0o755 }
+  )
+  const realPath = process.env.PATH ?? ''
+  process.env.PATH = bin + ':' + realPath
+  try {
+    await run(() =>
+      (fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '').split('\n').filter(Boolean)
+    )
+  } finally {
+    process.env.PATH = realPath
+  }
+}
+
 async function holdNextRescan(): Promise<() => void> {
   let release!: () => void
   const held = new Promise<void>((r) => (release = r))
   const internals = mgr as unknown as {
-    worktreeEntries(p: string): Promise<unknown>
+    worktreeDirs(p: string): Promise<unknown>
     rescan(): Promise<void>
   }
-  const real = internals.worktreeEntries.bind(mgr)
-  const spy = vi.spyOn(internals, 'worktreeEntries').mockImplementationOnce(async (p) => {
+  const real = internals.worktreeDirs.bind(mgr)
+  const spy = vi.spyOn(internals, 'worktreeDirs').mockImplementationOnce(async (p) => {
     await held
     return real(p)
   })
@@ -337,6 +359,27 @@ describe('WorkspaceManager: cold-row title parity with the live tracker', () => 
   })
 })
 
+describe('WorkspaceManager: what a rescan asks git', () => {
+  it("lists a repository's worktrees again only after one is added or removed, and never for a folder outside any repository", async () => {
+    const rescanned = async (): Promise<void> => {
+      const before = pushed.length
+      mgr.refresh()
+      await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
+    }
+    await withFailingGitOnPath(async (gitCalls) => {
+      const listed = (): string[] => gitCalls().filter((l) => l.includes('worktree list'))
+      mgr.start()
+      await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+      await rescanned()
+      expect(listed()).toEqual([`-C ${repo} worktree list --porcelain`])
+
+      fs.mkdirSync(path.join(repo, '.git', 'worktrees', 'feature'), { recursive: true })
+      await rescanned()
+      expect(listed()).toHaveLength(2)
+    })
+  })
+})
+
 describe('WorkspaceManager: which transcript writes rescan the list', () => {
   const PAST_RESCAN_DEBOUNCE_AND_FS_EVENT_LATENCY_MS = 1000
   const settle = (): Promise<void> =>
@@ -372,6 +415,42 @@ describe('WorkspaceManager: which transcript writes rescan the list', () => {
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
   })
 
+  it("a mirror pull that grows a running remote session's transcript rescans nothing; one that grows a stopped session's, or brings the running one in under its worktree's folder, still does", async () => {
+    const worktree = `${RPATH}/.claude/worktrees/feature`
+    writeMirrorJsonl('live')
+    writeMirrorJsonl('cold')
+    writeMirrorJsonl('other', worktree)
+    own('live', 'cold', 'other')
+    bindings.set('live', 'tab-live')
+    layout.workspaces = [{ path: RKEY }]
+    mgr = remoteMgr()
+    mgr.start()
+    await vi.waitFor(() =>
+      expect(
+        latest(RKEY)
+          .rows.map((r) => r.id)
+          .sort()
+      ).toEqual(['cold', 'live', 'other'])
+    )
+    const append = (id: string): void =>
+      fs.appendFileSync(mirrorJsonlPath(id), JSON.stringify({ type: 'assistant' }) + '\n')
+
+    await settle()
+
+    const before = pushed.length
+    append('live')
+    await settle()
+    expect(pushed.length).toBe(before)
+
+    append('cold')
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
+
+    await settle()
+    const beforeMove = pushed.length
+    fs.renameSync(mirrorJsonlPath('live'), mirrorJsonlPath('live', worktree))
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(beforeMove))
+  })
+
   it('a Codex change that leaves every Codex row as it was rescans nothing; one that changes a row does', async () => {
     const codexRow = {
       id: 'codex:local:t1',
@@ -394,7 +473,7 @@ describe('WorkspaceManager: which transcript writes rescan the list', () => {
       runningBindings: () => bindings,
       killTab: () => {},
       pushRows: (p) => pushed.push(p),
-      additionalRows: (ws) => (ws === repo ? [{ ...codexRow }] : []),
+      additionalRows: (ws) => (ws === repo ? [{ ...codexRow, backendId: 'codex' as const }] : []),
       additionalMembers: () => new Set([codexRow.id])
     })
     mgr.start()
@@ -1167,11 +1246,15 @@ describe('WorkspaceManager: discover (U-OB-01, the welcome’s folders-you-alrea
 const RKEY = 'ssh://devbox/home/koh/api'
 const RPATH = '/home/koh/api'
 
+function mirrorJsonlPath(id: string, cwd = RPATH): string {
+  return path.join(root, 'remote', 'devbox', 'projects', encodeCwd(cwd), id + '.jsonl')
+}
+
 function writeMirrorJsonl(id: string, cwd = RPATH): void {
-  const dir = path.join(root, 'remote', 'devbox', 'projects', encodeCwd(cwd))
-  fs.mkdirSync(dir, { recursive: true })
+  const file = mirrorJsonlPath(id, cwd)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(
-    path.join(dir, id + '.jsonl'),
+    file,
     JSON.stringify({ type: 'summary', summary: 'a remote session' }) +
       '\n' +
       JSON.stringify({ type: 'user', cwd, timestamp: '2026-09-07T11:00:00.000Z', sessionId: id }) +
@@ -1245,17 +1328,7 @@ describe('remote workspace: pinning', () => {
   })
 
   it('U-WS-2: runs no local repo probe at all for a remote workspace', async () => {
-    const bin = path.join(root, 'fakebin')
-    const log = path.join(root, 'argv.log')
-    fs.mkdirSync(bin)
-    fs.writeFileSync(
-      path.join(bin, 'git'),
-      '#!/bin/sh\nprintf "%s\\n" "$*" >> ' + JSON.stringify(log) + '\nexit 1\n',
-      { mode: 0o755 }
-    )
-    const realPath = process.env.PATH ?? ''
-    process.env.PATH = bin + ':' + realPath
-    try {
+    await withFailingGitOnPath(async (gitCalls) => {
       layout.workspaces = [{ path: RKEY }]
       mgr = remoteMgr()
       mgr.start()
@@ -1264,11 +1337,8 @@ describe('remote workspace: pinning', () => {
       expect(ws.missing).toBe(false)
       expect(ws.isGit).toBe(false)
       expect(ws.remote).toEqual({ host: 'devbox', path: RPATH, connected: false })
-      const argv = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : ''
-      expect(argv).not.toContain('ssh://')
-    } finally {
-      process.env.PATH = realPath
-    }
+      expect(gitCalls().join('\n')).not.toContain('ssh://')
+    })
   })
 })
 
@@ -1730,6 +1800,46 @@ describe('WorkspaceManager: a running session that moved', () => {
     await vi.waitFor(() => expect(latest(repo).rows.length).toBe(1))
     const row = latest(repo).rows[0]
     expect(row).toMatchObject({ worktree: 'main', cwd: repo, invalidCwd: false })
+    expect(row.worktreeState).toBeUndefined()
+  })
+
+  // CC§4
+  it('a session that left its worktree is listed at the root even when more than 64 KB of records follow the leaving record', async () => {
+    const wt = path.join(repo, '.claude', 'worktrees', 'left-far')
+    const dir = path.join(projectsRoot, encodeCwd(repo))
+    const id = 'exited-far'
+    fs.mkdirSync(dir, { recursive: true })
+    const records = [
+      { type: 'user', cwd: wt, timestamp: '2026-10-15T11:00:00.000Z', sessionId: id },
+      {
+        type: 'worktree-state',
+        sessionId: id,
+        worktreeSession: {
+          originalCwd: repo,
+          worktreePath: wt,
+          worktreeName: 'left-far',
+          worktreeBranch: 'worktree-left-far',
+          originalHeadCommit: 'abc123'
+        }
+      },
+      { type: 'relocated', sessionId: id, relocatedCwd: repo },
+      { type: 'worktree-state', worktreeSession: null, sessionId: id },
+      ...Array.from({ length: 100 }, () => ({
+        type: 'api-request-blob',
+        sessionId: id,
+        blob: 'x'.repeat(1000)
+      }))
+    ]
+    fs.writeFileSync(
+      path.join(dir, id + '.jsonl'),
+      records.map((r) => JSON.stringify(r)).join('\n') + '\n'
+    )
+    layout = { ...layout, workspaces: [{ path: repo }], members: [id], panels: { [id]: SEEDED } }
+    mgr = liveMgr()
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.length).toBe(1))
+    const row = latest(repo).rows[0]
+    expect(row).toMatchObject({ worktree: 'main', cwd: repo })
     expect(row.worktreeState).toBeUndefined()
   })
 

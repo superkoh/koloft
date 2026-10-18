@@ -16,7 +16,8 @@ import type {
   GitAccountView,
   WorkspaceFreshness,
   WorkspaceGitAccount,
-  WorkspaceGithub
+  WorkspaceGithub,
+  WorkspaceRows
 } from '@shared/types'
 import { busyInCheckout, canPull, pullToast } from '@shared/freshnessOps'
 import { basename } from '@shared/preview'
@@ -356,6 +357,7 @@ export function FreshnessPopover({
   wsPath,
   f,
   github,
+  remote,
   left,
   top,
   onClose,
@@ -366,6 +368,7 @@ export function FreshnessPopover({
   wsPath: string
   f?: WorkspaceFreshness
   github?: WorkspaceGithub
+  remote?: WorkspaceRows['workspace']['remote']
   left: number
   top: number
   onClose: () => void
@@ -442,8 +445,13 @@ export function FreshnessPopover({
   const fitTop = Math.min(top, Math.max(4, window.innerHeight - height - 4))
 
   const { acct, notes: gitNotes, block: gitBlock } = useGitAccountView(wsPath, !!github, onClose)
+  const offline = !!remote && !remote.connected
   const eligible = !!f && canPull(f)
-  const note: PullNote | null = failed ? { text: failed, tone: 'alarm' } : f ? pullNote(f) : null
+  const note: PullNote | null = failed
+    ? { text: failed, tone: 'alarm' }
+    : f
+      ? pullNote(f, remote?.host)
+      : null
 
   return (
     <>
@@ -481,7 +489,7 @@ export function FreshnessPopover({
               <div className="tbu-sep" />
               <button
                 className="tbu-act pull"
-                disabled={!eligible || pulling}
+                disabled={!eligible || pulling || offline}
                 onClick={() => {
                   const inMain = busyInCheckout(useStore.getState().sessions, wsPath)
                   if (inMain > 0) {
@@ -499,7 +507,11 @@ export function FreshnessPopover({
                   </span>
                 )}
               </button>
-              <button className="tbu-act" disabled={fetching} onClick={() => void doFetch()}>
+              <button
+                className="tbu-act"
+                disabled={fetching || offline}
+                onClick={() => void doFetch()}
+              >
                 <IconReload size={14} />
                 {fetching ? 'Fetching…' : 'Fetch now'}
               </button>

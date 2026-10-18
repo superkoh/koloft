@@ -28,7 +28,6 @@ import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
 import { AGENT_DROP_NAME, REQUEST_NAME, replyJson, type AgentReply } from '../agentRequests'
 import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../remote/launch'
-import { AGENT_PROMPT_FILE } from '../agentPlugin'
 import {
   dq,
   mirrorHookDir,
@@ -36,21 +35,15 @@ import {
   REMOTE_HOOK_DIR,
   tabPackageDir
 } from '../remote/paths'
-import {
-  hookSettings,
-  KOLOFT_ALLOW_RULE,
-  removeConductorMarker,
-  writeAllowFile,
-  writeConductorMarker
-} from '../hooks'
+import { hookSettings, KOLOFT_ALLOW_RULE, removeConductorMarker } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
-import { loadSettings } from '../settings'
 import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
 import { SESSION_ID_RE } from '../claudeArgs'
 import { forgetClaudeProbe, probeClaude } from '../claudeProbe'
-import { runningClaudePid } from '../claudeSessionRegistry'
+import { claudePeerNames, runningClaudePid } from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
+import { sharedProcessTable } from '../processTable'
 import {
   findTranscript,
   PROJECTS_ROOT,
@@ -89,11 +82,13 @@ export interface ClaudeBackendDeps {
   remoteSync(): RemoteSync | null
   userData(): string
   setupLine(): string | undefined
+  hookSettings(tabId: string, allowKoloft: boolean, conductor: boolean): string | undefined
   ptysChanged(): void
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
-  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
+  machineOfTab(tabId: string): string | undefined
+  otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
 }
 
 // PLATFORM§28
@@ -139,7 +134,6 @@ export class ClaudeBackend implements SessionBackend {
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
   private startsBeforeRegistration = new Map<string, unknown>()
-  agentPlugin?: string
   agentReply?: (tabId: string, raw: unknown) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -192,6 +186,14 @@ export class ClaudeBackend implements SessionBackend {
 
   accountUsable(): boolean {
     return hasUsableAccount(listAccounts(), 'claude')
+  }
+
+  peerNames(): (key: string) => Promise<string | null> {
+    return claudePeerNames()
+  }
+
+  async runningElsewhere(key: string): Promise<boolean> {
+    return (await runningClaudePid(key)) !== null
   }
 
   trustsFolder(dir: string): Promise<boolean> {
@@ -348,7 +350,9 @@ export class ClaudeBackend implements SessionBackend {
           if (!pidByTab.has(tabId)) goneStrikes.delete(tabId)
         }
         if (!pidByTab.size) return
-        const alive = await rootsWithClaude([...pidByTab.values()])
+        const alive = rootsWithClaude(await sharedProcessTable.eachRound(LIVENESS_SWEEP_MS), [
+          ...pidByTab.values()
+        ])
         if (!alive) return
         for (const [tabId, pid] of pidByTab) {
           if (alive.has(pid)) {
@@ -515,9 +519,13 @@ export class ClaudeBackend implements SessionBackend {
     const byTmux = typeof r.tmux === 'string' && r.tmux && this.tabRunningTmux(r.tmux, machine)
     if (byTmux) return byTmux
     const tabId = typeof r.tabId === 'string' ? r.tabId : ''
-    return this.d.tracker.remoteOf(tabId)?.host === machine && this.d.pty.get(tabId)
-      ? tabId
-      : undefined
+    if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
+    const other = this.d.otherTabOnMachine?.(
+      machine,
+      typeof r.tmux === 'string' ? r.tmux : '',
+      tabId
+    )
+    return other && this.d.pty.get(other) ? other : undefined
   }
 
   private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
@@ -590,7 +598,7 @@ export class ClaudeBackend implements SessionBackend {
       const pid = this.d.pty.pidOf(tabId)
       if (!pid) return
       if (!this.d.tracker.list().some((s) => s.tabId === tabId && s.jsonlPath)) return
-      const alive = await rootsWithClaude([pid])
+      const alive = rootsWithClaude(await sharedProcessTable.fresh(), [pid])
       if (!alive) return
       if (!alive.has(pid)) this.d.tracker.untrack(tabId)
     }, SESSION_END_SETTLE_MS)
@@ -599,6 +607,17 @@ export class ClaudeBackend implements SessionBackend {
   private remoteSessionGone(host: string, sessionId: string): boolean {
     const remoteSync = this.d.remoteSync()
     return !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId)
+  }
+
+  async waitRemoteGone(host: string, sessionId: string): Promise<'gone' | 'alive' | 'unreachable'> {
+    this.d.remoteSync()?.pokeNow(host)
+    const deadline = Date.now() + REMOTE_EXIT_WAIT_MS
+    while (!this.remoteSessionGone(host, sessionId)) {
+      if (Date.now() >= deadline)
+        return this.d.remoteSync()?.connected(host) ? 'alive' : 'unreachable'
+      await new Promise((r) => setTimeout(r, REMOTE_EXIT_POLL_MS))
+    }
+    return 'gone'
   }
 
   noticeRemoteExits(host: string, sessionIds: string[]): void {
@@ -779,6 +798,7 @@ export class ClaudeBackend implements SessionBackend {
       effort: opts.effort,
       permission: opts.permission,
       firstPrompt: opts.firstPrompt,
+      ownerWords: opts.ownerWords,
       name: opts.name,
       cols: opts.cols,
       rows: opts.rows,
@@ -851,7 +871,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private async localResumePlan(sessionId: string): Promise<ResumePlan> {
-    if (await runningClaudePid(sessionId)) return { action: 'unavailable', reason: 'running' }
+    if (await this.runningElsewhere(sessionId)) return { action: 'unavailable', reason: 'running' }
     const workspaces = this.d.workspaces()
     return planResume(
       workspaces?.findRow(sessionId),
@@ -900,14 +920,7 @@ export class ClaudeBackend implements SessionBackend {
 
   private async createTab(
     host: Host,
-    spec: ClaudeLaunch & {
-      cols?: number
-      rows?: number
-      role?: string
-      allow?: string[]
-      conductor?: boolean
-      trustFolder?: boolean
-    }
+    spec: ClaudeLaunch & { cols?: number; rows?: number; trustFolder?: boolean }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const workspaces = this.d.workspaces()
@@ -919,39 +932,30 @@ export class ClaudeBackend implements SessionBackend {
     })
     if (!plan.ok) return plan
     const machine = plan.machine
-    // ADR-0029
-    const assist = machine ? undefined : this.d.assistOf(plan.cwd, spec.resumeSessionId)
-    const conductor = spec.conductor || !!assist
-    const role = spec.role ?? assist?.role
-    const agentPlugin =
-      !machine && this.agentPlugin && loadSettings().agentTools ? this.agentPlugin : undefined
     const handle = this.d.pty.create({
       kind: 'claude',
+      koloftShim: {
+        hookSettings: (tabId) =>
+          this.d.hookSettings(
+            tabId,
+            plan.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
+            plan.conductor === true
+          )
+      },
       cwd: plan.spawnCwd,
       cols: spec.cols,
       rows: spec.rows,
       setupCommand: this.d.setupLine(),
-      launchCommand: (tabId) => {
-        if (machine) this.forgetHookReports(machine.hookMirror, tabId)
-        return plan.launchCommand(tabId)
-      },
+      launchCommand: plan.launchCommand,
       resumeSessionId: spec.resumeSessionId,
-      conductor,
       resized: plan.resized,
+      remoteHost: machine?.tracking.host,
       shell: plan.shell,
-      extraEnv: agentPlugin
-        ? {
-            ...plan.extraEnv,
-            KOLOFT_AGENT_PLUGIN: agentPlugin,
-            KOLOFT_AGENT_PROMPT: conductor ? undefined : path.join(agentPlugin, AGENT_PROMPT_FILE)
-          }
-        : plan.extraEnv
+      extraEnv: plan.extraEnv
     })
-    if (role && !machine) writeConductorMarker(this.hookRegDir, handle.id, role)
-    if (conductor && !machine)
-      writeAllowFile(this.hookRegDir, handle.id, spec.allow ?? assist?.allow ?? [])
     if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)
     if (machine) {
+      this.forgetHookReports(machine.hookMirror, handle.id)
       tracker.track(handle.id, machine.cwd, machine.tracking)
       if (machine.pickKey) tracker.movePick(machine.pickKey, handle.id)
       if (machine.attachTo) {

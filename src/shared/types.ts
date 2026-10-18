@@ -8,7 +8,26 @@ export interface ProjectInfo {
 }
 
 // CC§7 CODEX§15
-export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home'
+export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home' | 'muse-home' | 'agy-home'
+
+export const ACCOUNT_KINDS: readonly AccountKind[] = [
+  'oauth',
+  'apikey',
+  'custom',
+  'codex-home',
+  'muse-home',
+  'agy-home'
+]
+
+export type SignInFolderKind = Extract<AccountKind, 'codex-home' | 'muse-home' | 'agy-home'>
+export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = [
+  'codex-home',
+  'muse-home',
+  'agy-home'
+] satisfies SignInFolderKind[]
+
+export const isSignInFolderKind = (kind: unknown): kind is SignInFolderKind =>
+  SIGN_IN_FOLDER_KINDS.some((k) => k === kind)
 
 export type AccountStatus = 'ok' | 'expired' | 'unverified'
 
@@ -141,7 +160,7 @@ export interface WorkspaceGitAccount {
 
 export function keychainServiceSuffix(kind: AccountKind): string {
   if (kind === 'oauth') return '-claude-oauth'
-  if (kind === 'codex-home') return '-codex-home'
+  if (isSignInFolderKind(kind)) return `-${kind}`
   return kind === 'apikey' ? '-anthropic-api' : '-custom-endpoint'
 }
 
@@ -176,8 +195,7 @@ export function sanitizeAccountList(raw: unknown): AccountMeta[] {
   const seen = new Set<string>()
   for (const a of raw as Partial<AccountMeta>[]) {
     if (!a || typeof a.name !== 'string' || !ACCOUNT_NAME_RE.test(a.name)) continue
-    if (a.kind !== 'oauth' && a.kind !== 'apikey' && a.kind !== 'custom' && a.kind !== 'codex-home')
-      continue
+    if (!a.kind || !ACCOUNT_KINDS.includes(a.kind)) continue
     if (a.kind === 'custom' && !isHttpUrl(a.baseUrl)) continue
     const key = `${a.kind}:${a.name.toLowerCase()}`
     if (seen.has(key)) continue
@@ -250,13 +268,20 @@ export const CODEX_RESET_OUTCOMES = [
 
 export type CodexResetOutcome = (typeof CODEX_RESET_OUTCOMES)[number] | 'failed'
 
+export interface QuotaBucket {
+  label: string
+  used: number
+  resetsAt?: number
+}
+
 export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
   limits?: CodexLimits
+  quota?: QuotaBucket[]
   probeError?: ProbeErrorKind
 }
 
-export type CodexSignInResult =
+export type SignInResult =
   | { ok: true; tabId: string; cwd: string }
   | { ok: false; error: 'invalid-name' | 'duplicate' | 'unavailable' }
 
@@ -410,7 +435,10 @@ export type HintId = (typeof HINT_IDS)[number]
 export const WORLD_CLOCK_MAX = 3
 
 export const DEFAULT_SETTINGS: Settings = {
-  sessionMethods: { defaultBackend: 'claude', enabled: { claude: true, codex: true } },
+  sessionMethods: {
+    defaultBackend: 'claude',
+    enabled: { claude: true, codex: true, muse: true, agy: true }
+  },
   fontFamily:
     '"JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", Menlo, Monaco, monospace',
   fontSize: 13,
@@ -453,7 +481,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gitMachines: {}
 }
 
-export type BackendId = 'claude' | 'codex'
+export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'
 export type HostId = 'local' | 'ssh'
 
 export interface UsageRow extends TokenCounts {
@@ -503,6 +531,7 @@ export interface CreateTabOptions {
   util?: boolean
   ownerTabId?: string
   role?: string
+  ownerWords?: string
   allow?: string[]
   conductor?: boolean
   trustFolder?: boolean
@@ -551,6 +580,15 @@ export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'untracked' | 're
 export type GitStatusMap = Record<string, GitFileStatus>
 
 export type GitNumstatMap = Record<string, { added: number; removed: number }>
+
+export type BaseChoice = 'merge-base' | 'head'
+
+export interface GitChanges {
+  base: string | null
+  status: GitStatusMap
+  numstat: GitNumstatMap
+  missing: boolean
+}
 
 export const HIDDEN_BY_DEFAULT_NAMES: ReadonlySet<string> = new Set(['node_modules', '.git'])
 
@@ -671,7 +709,13 @@ export interface SessionUsage {
 }
 
 export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
-export const CODEX_PLACEHOLDER_TITLE = 'Codex session'
+
+export const PLACEHOLDER_TITLES: Record<BackendId, string> = {
+  claude: PLACEHOLDER_SESSION_TITLE,
+  codex: 'Codex session',
+  muse: 'Muse session',
+  agy: 'Antigravity session'
+}
 
 export const PENDING_SESSION_TITLE = 'Starting…'
 
@@ -1119,9 +1163,7 @@ export interface KoloftApi {
       query: string,
       opts?: { showIgnored?: boolean }
     ): Promise<{ hits: SearchHit[]; truncated: boolean }>
-    diffBase(root: string): Promise<string | null>
-    gitStatus(root: string, base?: string): Promise<GitStatusMap>
-    gitNumstat(root: string, base?: string): Promise<GitNumstatMap>
+    gitChanges(root: string, base: BaseChoice): Promise<GitChanges>
     watchDir(root: string): Promise<boolean>
     unwatchDir(root: string): void
     onDirChange(cb: (root: string) => void): () => void
@@ -1223,8 +1265,8 @@ export interface KoloftApi {
       reauth?: boolean
     ): Promise<'ok' | 'invalid-name' | 'duplicate' | 'unknown'>
     cancelLogin(): void
-    // CODEX§15
-    codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult>
+    // CODEX§15 MUSE§13
+    signIn(kind: SignInFolderKind, name: string, again?: boolean): Promise<SignInResult>
     // CODEX§15
     codexUseReset(name: string): Promise<CodexResetOutcome>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
@@ -1322,7 +1364,7 @@ export interface KoloftApi {
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
     channels(): Promise<DiscordChannel[]>
-    setUpWithAssist(): Promise<ConductorOpenResult>
+    setUpWithAssist(ownerWords?: string): Promise<ConductorOpenResult>
   }
 }
 
@@ -1365,6 +1407,9 @@ export interface HistoryLine {
   until?: number
   worktree?: string
   note?: string
+  sessionId?: string
+  removed?: true
+  kept?: string
 }
 
 export interface CronFile {
@@ -1384,6 +1429,7 @@ export interface LiveRun {
   dueAt: number
   manual?: true
   kept?: string
+  note?: string
 }
 
 export interface CronState {
@@ -1575,6 +1621,7 @@ export interface WorkspaceGithub {
 
 export interface WorktreeInfo {
   recoveryResourceId?: string
+  recoveryBackend?: BackendId
   name: string
   dir: string
   branch?: string

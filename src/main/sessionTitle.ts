@@ -5,9 +5,12 @@ const TASK_MAX_CHARS_SENT_FOR_A_TITLE = 4000
 
 const TITLE_SYSTEM = 'You write short titles.'
 
-const TITLE_INSTRUCTIONS =
+const titleInstructions = (ownerWords: string | undefined): string =>
   'Give the task below a very short title, so a person sees at a glance what this session is doing. ' +
-  'Write it in the language of the task: at most 16 characters in Chinese or Japanese, at most 6 words otherwise. ' +
+  (ownerWords
+    ? `Write it in the language of these words of the person, whatever language the task is in: «${ownerWords}». `
+    : 'Write it in the language of the task. ') +
+  'At most 16 characters in Chinese or Japanese, at most 6 words otherwise. ' +
   'Leave out background, rules and filler such as "research a question". ' +
   'Reply with the title alone, no quotes, no full stop.\n\nTask:\n'
 
@@ -38,11 +41,12 @@ function distinctName(name: string, taken: Set<string>): string {
 export async function nameForTask(
   task: string,
   assist: Assist,
-  taken: Set<string>
+  taken: Set<string>,
+  ownerWords?: string
 ): Promise<string> {
   const reply = await assist({
     system: TITLE_SYSTEM,
-    prompt: TITLE_INSTRUCTIONS + task.slice(0, TASK_MAX_CHARS_SENT_FOR_A_TITLE)
+    prompt: titleInstructions(ownerWords) + task.slice(0, TASK_MAX_CHARS_SENT_FOR_A_TITLE)
   })
   return distinctName((reply && nameFromReply(reply)) || firstLineName(task), taken)
 }

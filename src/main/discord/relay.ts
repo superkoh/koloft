@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendId, SessionStatus } from '@shared/types'
+import { BACKEND_LABEL, messagingOf } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { newerSnowflake } from '@shared/conductors'
 import { safeDownloadName } from '@shared/downloadName'
@@ -41,11 +42,35 @@ import {
 export const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 export const CODEX_NEEDS_YES_OR_NO = 'Reply yes or no.'
 export const SHOWS_NO_DIALOG = 'Koloft sees no question or approval in it right now.'
-export const CODEX_INPUT_NOT_PROBED =
-  'Codex is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. Assist can still answer this one by pressing its keys.'
+// MUSE§3
+export const ASKS_WHAT_KOLOFT_CANNOT_SEE =
+  'It is waiting for an answer Koloft cannot read from here. Assist can still answer it by pressing its keys.'
+export const inputNotProbed = (label: string): string =>
+  `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. Assist can still answer this one by pressing its keys.`
 export const CONDUCTOR_ASKS = '❓ **Assist** is waiting for you.'
-const CODEX_TAKES_YES_OR_NO = 'a Codex approval takes yes or no.'
-const CODEX_TAKES_AN_OPTION = 'this Codex question takes the number or the name of one option.'
+const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
+const takesAnOption = (label: string): string =>
+  `this ${label} question takes the number or the name of one option.`
+
+// CODEX§20 MUSE§11 AGY§14
+const OPTION_KEYS: Record<BackendId, ((key: string) => string[]) | undefined> = {
+  claude: undefined,
+  codex: (key) => [key],
+  muse: (key) => [key, '\r'],
+  agy: (key) => [key]
+}
+const optionKeysOf = (backend: BackendId | undefined): ((key: string) => string[]) | undefined =>
+  backend && OPTION_KEYS[backend]
+
+// MUSE§7 AGY§15
+const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
+  claude: true,
+  codex: true,
+  muse: false,
+  agy: true
+}
+const typedIntoWhileWorking = (backend: BackendId | undefined): boolean =>
+  !backend || TYPED_INTO_WHILE_WORKING[backend]
 const ASK_SUFFIX = '.ask.json'
 const ANSWER_SUFFIX = '.answer.json'
 const QUEUED = '⏳'
@@ -94,8 +119,10 @@ export interface RelayDeps {
   queue(tabId: string, text: string, clientId: string): Promise<void>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   modeOf(tabId: string): ModeClass
-  codexApproval(tabId: string): CodexApproval | undefined
-  codexQuestion(tabId: string): CodexQuestion | undefined
+  pendingApproval(tabId: string): CodexApproval | undefined
+  pendingQuestion(tabId: string): CodexQuestion | undefined
+  answerable(tabId: string): Promise<void>
+  answerInPlace(tabId: string, reply: string): Promise<string | undefined | false>
   regDir: string
   attachmentsDir: string
 }
@@ -247,11 +274,10 @@ export class DiscordRelay {
     const tab = await this.readyTab(dest)
     const text = await item.text(tab)
     if (item.command) return dest.typeCommand(tab, text)
-    if (this.d.backendOf(tab) === 'codex') {
-      await this.d.queue(tab, text, item.clientId)
-      return
-    }
-    if (dest.conductor) return this.sendAsPeer(tab, text, item.clientId)
+    const backend = this.d.backendOf(tab)
+    const route = backend && messagingOf(backend, this.d.remote(tab))
+    if (route === 'queue') return this.d.queue(tab, text, item.clientId)
+    if (dest.conductor && route === 'peerLine') return this.sendAsPeer(tab, text, item.clientId)
     await this.d.type(tab, [text, '\r'])
   }
 
@@ -284,6 +310,7 @@ export class DiscordRelay {
       !!this.d.boundKey(tab) &&
       status !== undefined &&
       status !== 'approval' &&
+      !(status === 'working' && !typedIntoWhileWorking(this.d.backendOf(tab))) &&
       !this.hookWaits(tab)
     )
   }
@@ -295,7 +322,7 @@ export class DiscordRelay {
   }
 
   dialogOpen(tab: string): boolean {
-    return !!this.openAsk(tab) || !!this.d.codexApproval(tab) || !!this.d.codexQuestion(tab)
+    return !!this.openAsk(tab) || !!this.d.pendingApproval(tab) || !!this.d.pendingQuestion(tab)
   }
 
   private hookWaits(tab: string): boolean {
@@ -402,25 +429,40 @@ export class DiscordRelay {
     if (ask && isAskedCall(ask.payload, call)) this.answer(tab, {})
   }
 
+  private async press(tab: string, keys: string[]): Promise<void> {
+    this.codexAsks.delete(tab)
+    await this.d.answerable(tab)
+    await this.d.type(tab, keys)
+  }
+
   async answerSession(tab: string, reply: string): Promise<string | undefined> {
-    if (this.d.backendOf(tab) === 'codex') {
-      if (this.d.codexApproval(tab)) {
-        const key = codexKeyFor(reply)
-        if (!key) return CODEX_TAKES_YES_OR_NO
+    const backend = this.d.backendOf(tab)
+    const optionKeys = optionKeysOf(backend)
+    if (backend && optionKeys) {
+      const inPlace = await this.d.answerInPlace(tab, reply)
+      if (inPlace !== false) {
         this.codexAsks.delete(tab)
-        await this.d.type(tab, [key])
+        return inPlace
+      }
+      const label = BACKEND_LABEL[backend]
+      if (this.d.pendingApproval(tab)) {
+        const key = codexKeyFor(reply)
+        if (!key) return takesYesOrNo(label)
+        await this.press(tab, [key])
         return undefined
       }
-      const question = this.d.codexQuestion(tab)
-      if (!question) return this.d.awaitsInput(tab) ? CODEX_INPUT_NOT_PROBED : SHOWS_NO_DIALOG
+      const question = this.d.pendingQuestion(tab)
+      if (!question) return this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG
       const key = codexOptionKey(question, reply)
-      if (!key) return CODEX_TAKES_AN_OPTION
-      this.codexAsks.delete(tab)
-      await this.d.type(tab, [key])
+      if (!key) return takesAnOption(label)
+      await this.press(tab, optionKeys(key))
       return undefined
     }
     const ask = this.openAsk(tab)
-    if (!ask) return SHOWS_NO_DIALOG
+    if (!ask)
+      return this.d.status(tab) === 'approval' || this.d.awaitsInput(tab)
+        ? ASKS_WHAT_KOLOFT_CANNOT_SEE
+        : SHOWS_NO_DIALOG
     if (ask.hook) {
       this.answer(tab, hookAnswer(ask.payload, reply))
       return undefined
@@ -440,7 +482,8 @@ export class DiscordRelay {
     const view = codexDialog(a)
     const question = 'options' in a
     const how = question ? PICK_ONE_OPTION : CODEX_NEEDS_YES_OR_NO
-    const shown = question ? view.text : `Codex asks to run: ${view.text || 'a command'}`
+    const label = BACKEND_LABEL[this.d.backendOf(tab) ?? 'codex']
+    const shown = question ? view.text : `${label} asks to run: ${view.text || 'a command'}`
     this.card(channelId, this.askCard(tab, view, how, shown))
   }
 
@@ -459,20 +502,33 @@ export class DiscordRelay {
     this.asks.delete(tab)
     const asked = this.codexAsks.get(tab)
     if (asked === undefined) return false
-    const open = this.d.codexApproval(tab) ?? this.d.codexQuestion(tab)
-    if (!open || open.id !== asked) {
+    const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
+    const optionKeys = optionKeysOf(this.d.backendOf(tab))
+    if (!open || open.id !== asked || !optionKeys) {
       this.codexAsks.delete(tab)
       return false
     }
+    void this.d.answerInPlace(tab, m.content).then((inPlace) => {
+      if (inPlace === false) return this.answerOpenByKeys(tab, m, open, optionKeys)
+      this.codexAsks.delete(tab)
+      if (inPlace) this.say(m.channelId, inPlace, m.id)
+    })
+    return true
+  }
+
+  private answerOpenByKeys(
+    tab: string,
+    m: DiscordMessage,
+    open: CodexApproval | CodexQuestion,
+    optionKeys: (key: string) => string[]
+  ): void {
     const question = 'options' in open
     const key = question ? codexOptionKey(open, m.content) : codexKeyFor(m.content)
     if (!key) {
       this.say(m.channelId, question ? PICK_ONE_OPTION : CODEX_NEEDS_YES_OR_NO, m.id)
-      return true
+      return
     }
-    this.codexAsks.delete(tab)
-    void this.d.type(tab, [key])
-    return true
+    void this.press(tab, question ? optionKeys(key) : [key])
   }
 
   forget(tab: string): void {

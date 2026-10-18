@@ -1,6 +1,7 @@
 import { execFile, execFileSync, spawnSync } from 'child_process'
 import crypto from 'crypto'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { promisify } from 'util'
 import { seedSettings, type E2EEnv } from './env'
@@ -311,9 +312,50 @@ export async function runOnTargetWhileServing(
   return stdout
 }
 
+export function runOnBastion(lab: SshLab, user: string, script: string): string {
+  return dk(['exec', '-u', user, '-w', `/home/${user}`, lab.bastion, 'sh', '-c', script])
+}
+
 export function installOnTarget(lab: SshLab, file: string, at: string): void {
   dk(['cp', file, `${lab.target}:${at}`])
   dk(['exec', lab.target, 'chmod', '755', at])
+}
+
+export function installFakeCodexOnTarget(lab: SshLab): void {
+  const dir = '/usr/local/lib/fake-codex'
+  dk(['exec', lab.target, 'mkdir', '-p', `${dir}/node_modules`])
+  dk(['cp', path.join(FIXTURES, 'fake-codex.js'), `${lab.target}:${dir}/fake-codex.js`])
+  dk([
+    'cp',
+    path.dirname(require.resolve('ws/package.json')),
+    `${lab.target}:${dir}/node_modules/ws`
+  ])
+  dk([
+    'exec',
+    lab.target,
+    'sh',
+    '-c',
+    `printf '#!/bin/sh\\nexec node ${dir}/fake-codex.js "$@"\\n' > /usr/local/bin/codex && chmod 755 /usr/local/bin/codex`
+  ])
+}
+
+export const FAKE_RESPONSES_PORT = 8090
+
+export function startFakeResponsesOnTarget(lab: SshLab, command: string, log: string): void {
+  const at = '/usr/local/lib/fake-responses.js'
+  dk(['cp', path.join(FIXTURES, 'fake-responses.js'), `${lab.target}:${at}`])
+  dk([
+    'exec',
+    '-d',
+    '-u',
+    'kuser',
+    lab.target,
+    'node',
+    at,
+    String(FAKE_RESPONSES_PORT),
+    command,
+    log
+  ])
 }
 
 export function loginsAccepted(lab: SshLab, user: string): number {
@@ -366,12 +408,44 @@ export function installClaudeOnTheMachine(
     `printf '%s' ${JSON.stringify(
       JSON.stringify({
         hasCompletedOnboarding: true,
-        bypassPermissionsModeAccepted: true,
         projects: Object.fromEntries(
           ['/home/kuser/proj', ...alsoTrusted].map((dir) => [dir, { hasTrustDialogAccepted: true }])
         )
       })
     )} > .claude.json`
+  )
+}
+
+const LINUX_MUSE_DIR = process.env.KOLOFT_SMOKE_MUSE_LINUX_DIR ?? ''
+export const HAVE_LINUX_MUSE = fs.existsSync(path.join(LINUX_MUSE_DIR, 'muse'))
+export const NEEDS_LINUX_MUSE =
+  'set KOLOFT_SMOKE_MUSE_LINUX_DIR (the ~/.local/bin of a Linux muse install for the lab machine’s CPU: its launcher and its muse-bin-* binary)'
+
+// MUSE§1 MUSE§5
+const MUSE_ON_THE_ECHO_MODEL = `#!/bin/sh
+MUSE_NO_AUTO_UPDATE=1; export MUSE_NO_AUTO_UPDATE
+case "$1" in serve|--version|auth|login|exec) exec "$HOME/.local/muse-official/muse" "$@" ;; esac
+exec "$HOME/.local/muse-official/muse" --provider echo "$@"
+`
+
+export function installRealMuseOnTheMachine(lab: SshLab, user: string): void {
+  const home = `/home/${user}`
+  dk(['exec', lab.target, 'mkdir', '-p', `${home}/.local/muse-official`, `${home}/.local/bin`])
+  dk(['cp', `${LINUX_MUSE_DIR}/.`, `${lab.target}:${home}/.local/muse-official/`])
+  dk(['exec', lab.target, 'chown', '-R', `${user}:${user}`, `${home}/.local`])
+  const launcher = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-lab-muse-')), 'muse')
+  fs.writeFileSync(launcher, MUSE_ON_THE_ECHO_MODEL)
+  installOnTarget(lab, launcher, `${home}/.local/bin/muse`)
+  fs.rmSync(path.dirname(launcher), { recursive: true, force: true })
+  runOnTarget(
+    lab,
+    user,
+    `mkdir -p .config/muse && printf '%s' ${JSON.stringify(
+      JSON.stringify({
+        schema_version: 1,
+        projects: { [`${home}/proj`]: { decision: 'trusted' } }
+      })
+    )} > .config/muse/trust.json`
   )
 }
 

@@ -9,10 +9,16 @@
 [![Platform: macOS arm64](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)](#install-macos-apple-silicon)
 [![CI](https://github.com/superkoh/koloft/actions/workflows/ci.yml/badge.svg)](https://github.com/superkoh/koloft/actions/workflows/ci.yml)
 
+**[Website](https://koloft.ai)** · **[Download for Mac](https://github.com/superkoh/koloft/releases/latest)** · [Features](https://koloft.ai/features/) · [Changelog](https://koloft.ai/changelog/)
+
 </div>
 
-A macOS desktop app that runs and manages **Claude Code** and **Codex** (the `claude` and
-`codex` command-line tools).
+A free Mac app for **Claude Code** and **Codex** (the `claude` and `codex` command-line
+tools). You start a session with one plain sentence and follow it in one window, or hear
+from it on your phone when it needs you. Your agents start sessions of their own, drive a
+browser of their own, and report back.
+
+![Koloft: ⌘P, one sentence typed, and a real Claude Code session starts in its own worktree](.github/assets/start-a-session.gif)
 
 You pick a **workspace** (a folder, usually a git checkout). Koloft lists every Claude
 Code and Codex session that folder already has, straight from each tool's own storage,
@@ -20,7 +26,7 @@ and lets you start new ones or resume old ones. Each session gets a **Workbench*
 beside its terminal: the files the agent changed, a file browser, web pages, and a
 shell.
 
-![Koloft: workspaces and their sessions on the left, the running session in the middle, and its Workbench on the right showing the changes the agent made](.github/assets/screenshot.png)
+![Koloft: workspaces and their sessions on the left, the running session in the middle, and its Workbench on the right with a web page the agent opened and clicked](.github/assets/screenshot.png)
 
 ## What you get
 
@@ -181,12 +187,11 @@ src/
 
 Browser tools normally launch a Chromium of their own — a second browser, with its own
 empty cookie jar, that you cannot see. Koloft offers its own instead: every local Claude
-session is started with a Chrome debugging endpoint pointing at that session's web tabs.
-Codex sessions and Claude sessions in a remote workspace do not get one yet; an
-`open <url>` from a local Codex session still lands in its Workbench.
+and Codex session is started with a Chrome debugging endpoint pointing at that session's
+web tabs. Sessions in a remote workspace do not get one yet.
 
-Both variables below are set for the session's Claude, so the agent — and anything the
-agent runs — sees them. A terminal tab in the Workbench is not that environment and has
+Both variables below are set for the session's Claude or Codex, so the agent — and
+anything the agent runs — sees them. A terminal tab in the Workbench is not that environment and has
 neither.
 
 - **playwright-mcp and the Playwright CLI — nothing to configure.** Both read
@@ -282,8 +287,8 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
     or Gitea / Forgejo / Codeberg (sign in on the site), your own GitLab or Azure DevOps
     (a pasted token), or any other server (its address, your username and a token, kept
     without checking). Tokens live in the Keychain. Pick one per repository in its git
-    panel's `Account` part; a folder with no pick, and a remote (SSH) folder, keeps the
-    machine's own git and gh setup.
+    panel's `Account` part; a folder with no pick keeps the machine's own git and gh
+    setup.
 
   With the mode off, sessions run a bare `claude` or `codex` on whatever login the
   machine already has.
@@ -325,7 +330,7 @@ and approvals go to your own bot. The only hosts it ever reaches on its own are:
 
 | Host | Why |
 | --- | --- |
-| `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, as a session starts and every 5 minutes, so the balancer can pick the least-loaded one; an API key or custom endpoint is only checked that it still works |
+| `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, so the balancer can pick the least-loaded one: when Koloft opens, as a session starts (a reading from the last 30 seconds is reused), when Settings opens, when the topbar usage panel opens and its last reading is over 5 minutes old, and on `Refresh usage`; an API key or custom endpoint is only checked that it still works |
 | `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request; for a **remote** workspace's machine that lacks them, downloads `gh` itself and Git Credential Manager; signs in a GitHub git account and checks its token |
 | `gitlab.com`, `api.bitbucket.org`, `dev.azure.com`, `codeberg.org`, or your own git server | the server of a git account you add, only after you add one there. To check the token and read the username: when it is added, when Koloft starts, every 6 hours, when `Settings ▸ Accounts` opens, and when the server turns the token down during a git call (an account added as "Other server" is never checked). To see whether the account can push to a workspace's repository: when a workspace is added, and when the git panel's Account list opens. Bitbucket also reaches `bitbucket.org` for the browser sign-in |
 | your workspace's git remote (often `github.com`) | every 5 minutes, to see whether the branch is behind — `Settings ▸ Appearance` turns auto-fetch off |

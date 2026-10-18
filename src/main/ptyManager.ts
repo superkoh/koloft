@@ -7,9 +7,8 @@ import type { TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { OscCwdParser } from './oscCwd'
-import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
-import { bracketedPaste, typeKeys, typedPieces } from './typeKeys'
+import { bracketedPaste, typeKeys, typedPieces, withoutMouseAndFocusReports } from './typeKeys'
 
 export interface PtyHandle {
   id: string
@@ -22,6 +21,7 @@ export interface PtyHandle {
   ownerTabId?: string
   resized?: (id: string, cols: number, rows: number) => void
   startedAt: number
+  remoteHost?: string
 }
 
 interface CreateArgs {
@@ -29,6 +29,8 @@ interface CreateArgs {
   executable?: string
   argv?: string[]
   processEnv?: NodeJS.ProcessEnv
+  koloftShim: false | { hookSettings(tabId: string): string | undefined }
+  finishEnv?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   kind: TabKind
   cwd: string
   cols?: number
@@ -39,8 +41,8 @@ interface CreateArgs {
   util?: boolean
   resumeSessionId?: string
   ownerTabId?: string
-  conductor?: boolean
   resized?: (id: string, cols: number, rows: number) => void
+  remoteHost?: string
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
@@ -94,7 +96,6 @@ export class PtyManager extends EventEmitter {
   pickDir?: string
   cdpDir?: string
   agentDir?: string
-  makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
   private readyWaiters = new Map<string, Set<() => void>>()
@@ -113,10 +114,7 @@ export class PtyManager extends EventEmitter {
     const shell = args.shell || login.shell
 
     let env: Record<string, string> = {
-      ...((args.kind === 'codex' ? (args.processEnv ?? process.env) : process.env) as Record<
-        string,
-        string
-      >),
+      ...((args.processEnv ?? process.env) as Record<string, string>),
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
       KOLOFT_TAB_ID: id,
@@ -165,19 +163,13 @@ export class PtyManager extends EventEmitter {
     if (this.openDir) env.KOLOFT_OPEN_DIR = this.openDir
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
     if (this.cdpDir && !args.util) env.KOLOFT_CDP_DIR = this.cdpDir
-    if (this.agentDir && args.kind !== 'codex') env.KOLOFT_AGENT_DIR = this.agentDir
+    if (this.agentDir && args.koloftShim) env.KOLOFT_AGENT_DIR = this.agentDir
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
     const hookSettings =
-      args.util || args.kind === 'codex'
-        ? undefined
-        : this.makeHookSettings?.(
-            id,
-            args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
-            args.conductor === true
-          )
+      args.util || !args.koloftShim ? undefined : args.koloftShim.hookSettings(id)
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
-    if (this.shimDir && !isWin && args.kind !== 'codex')
+    if (this.shimDir && !isWin && args.koloftShim)
       env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
     if (args.extraEnv) {
       for (const k of [
@@ -192,9 +184,9 @@ export class PtyManager extends EventEmitter {
       }
     }
 
-    if (args.kind === 'codex') {
+    if (args.finishEnv) {
       env = Object.fromEntries(
-        Object.entries(codexEnvironment(env)).filter(
+        Object.entries(args.finishEnv(env)).filter(
           (entry): entry is [string, string] => typeof entry[1] === 'string'
         )
       )
@@ -221,7 +213,8 @@ export class PtyManager extends EventEmitter {
       resumeSessionId: args.resumeSessionId,
       ownerTabId: args.ownerTabId,
       resized: args.resized,
-      startedAt: Date.now()
+      startedAt: Date.now(),
+      remoteHost: args.remoteHost
     }
     this.ptys.set(id, handle)
 
@@ -287,7 +280,9 @@ export class PtyManager extends EventEmitter {
   }
 
   write(id: string, data: string): void {
-    this.ptys.get(id)?.proc.write(data)
+    const handle = this.ptys.get(id)
+    handle?.proc.write(data)
+    if (handle && withoutMouseAndFocusReports(data)) this.emit('typed', id)
   }
 
   exclusive<T>(id: string, typing: () => Promise<T>): Promise<T> {

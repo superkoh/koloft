@@ -31,12 +31,40 @@ Schema availability is distinguished from behavior actually seen on the wire.
   app-server in a throwaway `CODEX_HOME`, no login): the result is `{data, nextCursor,
   backwardsCursor}` (the last key new), each item carries `id, sessionId, preview,
   source, status, path, cwd, cliVersion, originator, historyMode, model, name, turns,
-  …` (33 keys; `status {type: "notLoaded"}`, `turns []`, `historyMode "paginated"`); a
-  rollout the full-screen TUI wrote has `source: "vscode"`, one `codex exec` wrote has
-  `source: "exec"` and is left out by that list; `initialize` now also brings a
-  `remoteControl/status/changed` notification.
+  …` (32 keys, counted again on 0.162.1 and 0.163.0 on 2026-10-16: `id, environments,
+  extra, sessionId, forkedFromId, parentThreadId, preview, ephemeral, section,
+  sectionEnteredAt, projectId, historyMode, modelProvider, model, reasoningEffort,
+  createdAt, updatedAt, recencyAt, status, path, cwd, cliVersion, originator, source,
+  canAcceptDirectInput, threadSource, agentNickname, agentRole, gitInfo, name,
+  daybreakEnabled, turns`; `status {type: "notLoaded"}`, `turns []`, `historyMode
+  "paginated"`); a rollout the full-screen TUI wrote has `source: "vscode"`, one `codex
+  exec` wrote has `source: "exec"` and is left out by that list; `initialize` now also
+  brings a `remoteControl/status/changed` notification. **0.163.0 adds `readStates` to
+  the `thread/list` result** (a map from thread id to `{firstUnread: {type: "turn",
+  turnId}, revision}`; the result keys are `data, readStates, nextCursor,
+  backwardsCursor`), a `thread/readState/changed` notification (`{threadId,
+  readState}`) sent just before each `idle` status, the methods
+  `thread/readState/update` and `thread/items/read` (strings), and a `thread/list`
+  param `excludedThreadIds` (one real id drops that thread; more than 100 entries or a
+  non-UUID is refused with `-32602`); 0.162.1 ignores that param without a word, so
+  Koloft cannot lean on it below 0.163.0 (2026-10-16, a Node client on a stdio
+  app-server in a throwaway `CODEX_HOME`).
 - Request IDs are strings **or numbers, including zero**. Startup and temporary title
   requests used strings; the real command approval request used numeric `0`.
+- **Each line starts with what kind of message it is** (0.162.0, 2026-10-17: a Node
+  client and a real `codex --remote` TUI on a stdio app-server in a throwaway
+  `CODEX_HOME` holding a copied `auth.json`). The app-server writes a reply as
+  `{"id":…,"result":…}` or `{"id":…,"error":…}`, a notification as `{"method":…,
+  "params":…}`, and a request to the client with `method` first:
+  `{"method":"item/commandExecution/requestApproval","id":0,"params":…}`. A line it
+  cannot read gets an error with no `id` at all (`{"error":{"code":-32600,…}}`). The
+  TUI writes its requests as `{"id":…,"method":…,"params":…}` and `initialized` as
+  `{"method":…}`, all on one line. Koloft reads only these first keys to decide whether
+  a line is worth parsing, and parses any line that starts some other way.
+- **A signed-in start brings very large replies.** The TUI asks `plugin/list` (ids
+  `plugin-list-…`) with no prompt typed; each reply was 16.5 MB (the OpenAI curated
+  marketplace), and three came within about 75 seconds. A home with no login gets
+  `{"marketplaces":[],…}` (101 bytes).
 - The TUI made its own `config/read` and `account/read` requests through the relay.
   Reading history through a different app-server is not evidence that it subscribes
   to a running TUI's events.
@@ -253,11 +281,18 @@ flags on a resume, `turn_context` fields), 15 (`auth.json`, the shared `sessions
 turn on another login, and the read-after-resume limit, issue #486), 17 (the handover
 note naming the thread), 19 (message phases), 21 (auto-compaction), 23 (paste), 24, 25
 and 26 were measured again, and the real-binary e2e specs that stand on 10, 11, 17, 23
-and 26 passed on 0.162.1. Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+:
-section 1's update-notice key, 2, 3 (the approval keys), 4, 8 (status-line item ids),
-9 (the trust question before connecting), 12 (`fileChange` / `commandActions` shapes,
+and 26 passed on 0.162.1. On 0.163.0 (2026-10-16): sections 1 (`thread/list` shape),
+10 (the command line after the zsh backend went), 11 (a resume's permissions — changed,
+see there), 13/14 (`model/list`, the default model), 17 (a message queued mid-turn), 20
+(the waiting question), 21 (the slash popup) and 25 (the TUI's startup bytes, OSC 7501,
+the leader key) were measured again, and the same e2e specs passed; they passed again on
+0.163.0 on 2026-10-17 (no newer Codex that day). Still only on
+0.153.4 or 0.159.3, and so inferred for 0.161+:
+section 1's update-notice key, 2, 3 (the approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` / `commandActions` shapes,
 the `open` shim), 13 (token-usage fields) and 14 (first prompt, `-m`,
-`model_reasoning_effort`).
+`model_reasoning_effort`). `codex --help`, `app-server --help`,
+`exec --help` and `resume --help` are byte-identical on 0.161.0, 0.162.1 and 0.163.0
+(2026-10-16).
 
 Keep worktree tests inside a temporary repository. Record version, executable source,
 matching request IDs, thread IDs and event order; redact login/account contents. Fixture
@@ -265,34 +300,64 @@ tests cannot replace these external checks.
 
 ## 8. Native status line
 
-**Checked on 2026-09-10 with standalone Codex CLI 0.153.4, without a model call.**
-The real TUI ran in a temporary Git repository with an isolated `CODEX_HOME` and
-an unauthenticated test provider pointing at an unused localhost port. Both ordinary
-startup and `--remote unix://…` against a separate real app-server were checked.
-The PTY output was decoded with pyte at 120 and 55 columns.
+**Checked on 2026-10-16 with standalone Codex CLI 0.162.0** (`~/.local/bin/codex` →
+`~/.codex/packages/standalone/current/bin/codex`), **without a model call.** The real TUI
+ran in a temporary Git repository with an isolated `CODEX_HOME` and an unauthenticated
+test provider pointing at an unused localhost port, both on its own and as
+`--remote ws://…` against a separate `codex app-server --listen ws://…` given the same
+`-c` overrides. The PTY output was decoded with pyte at 220, 160, 120, 100 and 55
+columns. First measured on 2026-09-10 with 0.153.4; the findings below hold on both
+unless marked.
 
-- `tui.status_line` selects ordered built-in item IDs. Passing it with `-c` to the
-  server and remote TUI displayed the selected items. A separate `config/read`
-  probe confirmed that server startup overrides supersede the file's list without
-  rewriting that file.
-- The footer occupied one line. Long content ended in an ellipsis at both widths;
-  shrinking the terminal did not wrap it. A `"\n"` item produced an invalid-item
-  warning and was ignored. The picker had no `newline` item. These checks establish
-  that the tested native configuration cannot reproduce a three-line footer.
-- The TUI displayed `context-used`, `git-branch`, `codex-version`, `model`,
-  `reasoning`, `model-with-reasoning` and `current-dir` from the empty test session.
-- `account` and `git-worktree` produced invalid-item warnings; searching the picker
-  for account and worktree returned no matches.
-- The picker describes `branch-changes` as **committed** changes against the
-  default branch. It is not a substitute for working-directory change counts.
-- The picker describes `pull-request-number` as the open PR number for the current
-  branch, omitted when unavailable. It does not describe review or check status.
-- The picker describes `estimated-thread-cost` as an estimate in USD for
-  **Enterprise workspaces only**, omitted when unavailable. Its preview contains
-  sample cost and PR values; those are not evidence of actual account data.
+- `[tui]` has three keys for this, and only three: `status_line`,
+  `status_line_use_colors` and `terminal_title` (binary strings). `tui.status_line` is a
+  flat, ordered list of built-in item IDs. Passing it with `-c` to the app-server and to
+  the remote TUI displayed the selected items. A list of lists stops startup:
+  `invalid type: sequence, expected a string in tui.status_line`. That server startup
+  overrides supersede the file's list without rewriting it was checked by `config/read`
+  on 0.153.4 only.
+- The footer is one line. Long content ends in an ellipsis at every width tried;
+  shrinking the terminal does not wrap it. `"\n"`, `newline`, `line-break`, `separator`
+  and `spacer` each produce an "Ignored invalid status line items" warning (F2). The
+  native configuration cannot reproduce a three-line footer.
+- No item runs a user command or reads a file: `custom-command`, `command` and `custom`
+  are rejected, and a picker search for "command" returns no matches.
+- The `/statusline` picker offers 31 IDs: `model`, `model-with-reasoning`, `reasoning`,
+  `current-dir`, `project-name`, `hostname`, `git-branch`, `pull-request-number`,
+  `branch-changes`, `run-state`, `permissions`, `approval-mode`, `context-remaining`,
+  `context-used`, `five-hour-limit`, `weekly-limit`, `codex-version`,
+  `context-window-size`, `used-tokens`, `total-input-tokens`, `total-output-tokens`,
+  `thread-credits`, `estimated-thread-cost`, `thread-id`, `fast-mode`, `daybreak`,
+  `raw-output`, `thread-name`, `thread-title`, `workspace-headline`, `task-progress`.
+  With no `tui.status_line` set, `model-with-reasoning`, `current-dir` and `thread-name`
+  are ticked. The binary also carries descriptions for `daily-limit`, `monthly-limit`,
+  `annual-limit`, `usage-limit` and `secondary-usage-limit`, but 0.162.0 rejects all
+  five as invalid items.
+- `account`, `account-email`, `plan`, `rate-limits`, `git-worktree`, `git-changes`,
+  `git-review` and `session-cost` produce invalid-item warnings; picker searches for
+  account, worktree, plan and usage return no matches.
+- `five-hour-limit` and `weekly-limit` are described as **remaining** usage on the
+  primary and secondary limit. On the unauthenticated home both are omitted; the
+  picker preview's `primary 0% · secondary 0%` is sample text. What they show on a
+  signed-in home was not checked.
+- `branch-changes` counts **committed** changes against the default branch only: an
+  uncommitted edit showed `No changes`, the same edit committed showed `+2 -0`. It is
+  not a substitute for working-directory change counts.
+- `pull-request-number` is the open PR number for the current branch, omitted when
+  unavailable; it carries no review or check status. `estimated-thread-cost`,
+  `thread-credits` and `workspace-headline` are Enterprise-only and were omitted. The
+  preview's `PR #123`, `~$1.82` and `5.2 credits` are sample values, not account data.
+- `tui.terminal_title` (picker: `/title`) takes 25 IDs, `activity`, `thread-name` and
+  `project-name` ticked by default. The title is written as OSC 0 with items joined by
+  ` | ` (e.g. `ESC]0;Ready | gpt-5.2-codex default | feat/probe-branch | Context 0% used
+  BEL`), rewritten as state changes, cleared with an empty OSC 0 on exit, and also
+  emitted under `--remote`.
+- A plain `codex -c …` shows a startup warning that command-line overrides require
+  embedded mode instead of the shared background server; without `-c`, the TUI
+  starts a managed `codex app-server --listen unix:// --managed-daemon` under
+  `$CODEX_HOME/packages/app-server-daemon/`. The `--remote` launch showed no warning.
 - The picker offers `Use theme colors` (`tui.status_line_use_colors`). No per-item
-  background colors or Powerline separator settings were exposed by the tested
-  configuration or picker.
+  background colors or Powerline separator settings are exposed.
 
 ## 9. Confirmation before remote resume
 
@@ -344,7 +409,17 @@ Koloft reads, is unchanged). The same rollout's `turn_context` gained a
 `approval_policy` and `sandbox_policy`, which still hold what §11 reads. Established by
 `agent-tools-real-smoke.spec.ts` › "a real Codex in a worktree Koloft made gets the
 ignored files .worktreeinclude lists, and echoes, with its shell tool, the port offset of
-that worktree’s name" (green again on 0.162.1, 2026-10-11).
+that worktree’s name" (green again on 0.162.1, 2026-10-11, and on 0.163.0, 2026-10-16).
+**0.163.0 dropped its patched zsh backend, and the command line is unchanged**
+(2026-10-16, a Node client on a stdio app-server, real turns on 0.162.1 and 0.163.0): the
+model's `echo hi` still ran as `["/bin/zsh","-lc","echo hi"]`, the rollout item's keys are
+the eleven above on both, with `source: "unified_exec_startup"` and `cwd` written as a
+`file://` URL; on the wire the item's `command` is one string (`/bin/zsh -lc 'echo hi'`)
+and `source` is `unifiedExecStartup`. The retired flags `features.shell_zsh_fork` and
+`features.unified_exec_zsh_fork` (`-c` or `config.toml`) bring a `deprecationNotice`
+notification ("… is deprecated and ignored. The patched zsh backend has been removed…"),
+`-c zsh_path=…` a `configWarning` plus a thread `warning` and an ERROR line on stderr;
+`shell_environment_policy` is still taken in silence. Koloft sends none of those keys.
 
 ## 11. Folder trust and the approval flags
 
@@ -431,7 +506,55 @@ the sandbox bypassed, resumed after its tab closed, …" (before the change: `tu
 `never` / `workspace-write`, the write refused). A new thread with the choice on the
 app-server alone, and no `-a`/`-s` on the TUI, is not probed yet. The resume case
 passed again on 0.162.1 (2026-10-11; its `turn_context` read still finds
-`approval_policy` and `sandbox_policy`, §10).
+`approval_policy` and `sandbox_policy`, §10) and on 0.163.0 (2026-10-16).
+
+**Codex CLI 0.163.0 restores a resumed thread's own permissions and ignores the
+app-server's `-c approval_policy=…` / `-c sandbox_mode=…` on a resume.** Measured
+2026-10-16 with a Node client on `codex app-server --stdio` and, for the TUI line, a
+real `codex --remote unix://… resume <id>` on an `app-server --listen` started with
+those two `-c` flags; a throwaway `CODEX_HOME` holding a copy of this Mac's login, real
+turns, each turn's settings read from the rollout's `turn_context` (its keys as in
+§10, nothing new for the changelog's "network approvals"):
+
+- A thread started `never` / `danger-full-access` came back the same on a bare resume
+  by a new app-server with no `-c` (on 0.162.1 the same resume came back `never` /
+  `workspace-write`, as the bullet above says — that sentence holds only up to 0.162.1).
+- The same thread resumed by an app-server with `-c approval_policy="never" -c
+  sandbox_mode="workspace-write"` still ran `never` / `danger-full-access`: the `-c` was
+  ignored. A thread started with no permission params (`on-request` /
+  `workspace-write`) resumed with `-c approval_policy="never" -c
+  sandbox_mode="danger-full-access"` stayed `on-request` / `workspace-write`, through
+  the plain client and through the real TUI alike.
+- Explicit params on the request win: `thread/resume {threadId, approvalPolicy:
+  "on-request", sandbox: "workspace-write"}` on the `never` / danger thread ran
+  `on-request` / `workspace-write`, and the next bare resume restored *that* — a value
+  set by params becomes what the thread remembers. The `thread/resume` result carries
+  `approvalPolicy`, `sandbox` and `activePermissionProfile` matching the `turn_context`.
+
+Koloft is not caught by this: it resumes a thread with the permission it saved for that
+session (`permission` in its own metadata, the one the thread was started with), so what
+the thread restores is what the `-c` would have set; the conductor's choice is the same
+on start and resume — as long as the thread's last turn ran under that choice. A
+`bypass` thread whose last turn was a resume without Koloft's `-c` (on 0.161–0.162 a
+bare resume always came back `workspace-write`, above) keeps `workspace-write` on
+0.163.0 while Koloft's row says bypass, and the old path cannot lift it (inferred from
+the three resume shapes measured; that thread was not built). The `-c` pair on a
+resume is dead weight on 0.163.0 and still the
+thing that sets the sandbox on 0.161–0.162. A resume that should *change* a thread's
+permissions would have to go through the `thread/resume` params (the TUI sends that
+request; Koloft's relay would have to add them) — not needed today.
+
+**The trust table decides the sandbox of a thread started with no sandbox flag.**
+2026-10-16, codex-cli 0.162.0, `codex app-server --stdio` driven by a Node script, a
+throwaway `CODEX_HOME`, no model turn: `thread/start {cwd}` with no `sandbox` and no
+`approvalPolicy` answered `sandbox: {type:"workspaceWrite", networkAccess:true,
+writableRoots:[…]}` / `approvalPolicy: "on-request"` for a folder with a
+`[projects."<realpath>"] trust_level = "trusted"` table, and `sandbox: {type:"readOnly",
+networkAccess:false}` / `"on-request"` for a folder without one — with the same `-c
+sandbox_workspace_write.*` on the app-server, and whichever folder the app-server itself
+started in. `config/read {cwd}` answered `sandbox_mode: null` for both. Not probed yet:
+what the TUI over `--remote` sends after the owner answers its trust question in an
+untrusted folder.
 
 ## 12. Files a turn touched, and a command that opens a file
 
@@ -545,6 +668,13 @@ conductor runs: **inferred, not checked**.
 Browser control (an agent driving a Workbench web tab through Koloft's CDP (Chrome DevTools
 Protocol) relay) goes through an MCP server, never a sandboxed command: see section 26.
 
+**`sudo` cannot start inside `workspace-write`.** `codex exec --skip-git-repo-check -s
+workspace-write` (0.162.0, 2026-10-15, this Mac's login, a scratch folder) running
+`/usr/bin/sudo -n -k true` got `zsh:1: operation not permitted: /usr/bin/sudo`, exit 127:
+the sandbox refuses to exec the setuid binary at all, before any password question. That
+Codex's own default (`read-only`) refuses it too, and that a command Codex runs outside
+the sandbox after an approval reaches sudo: **inferred, not checked**.
+
 ## 13. Token counts and the price table
 
 **Token counts checked on 2026-09-24 with standalone Codex CLI 0.153.4**, reading the
@@ -610,8 +740,27 @@ tokens (input / cached input / output): `gpt-6-astra` 10 / 1 / 50, `gpt-6-sol` 2
 account home runs on it). OpenAI charges nothing to write the cache. The page lists
 a higher "long context" price for prompts above 272K tokens; Codex's window on this Mac
 (258400 on the wire, 272000 in `~/.codex/models_cache.json`) stays below it, so only
-the short-context price is used. The model ids match the `slug`s in
-`~/.codex/models_cache.json` on the same day. A ChatGPT plan login is not billed per token:
+the short-context price is used — **no longer true for `gpt-6.1-sol`**: on 2026-10-16
+the `models_cache.json` a fresh throwaway home got from `model/list` on 0.162.1 and on
+0.163.0 gives it a `context_window` of 500000 (the other six 272000), so a prompt above
+272K tokens on it is billed at the long-context price Koloft's table does not hold
+(`pricing.ts` prices every OpenAI model at the short-context rate; the context meter
+reads `modelContextWindow` from the wire, not the table). The same page on 2026-10-16
+("Long context: >272K input tokens", input / cached / output): `gpt-6.1-sol` 4 / 0.20 /
+15, `gpt-6-astra` 20 / 2 / 75, `gpt-6-sol` 4 / 0.4 / 15, `gpt-6-luna` 0.2 / 0.02 / 0.75,
+`gpt-5.6-sol` 8 / 0.8 / 30, `gpt-5.6-terra` 4 / 0.4 / 18, `gpt-5.6-luna` 0.4 / 0.04 /
+1.8 — twice the short-context price, except that a 272K-window model never reaches it
+(issue #669). The model ids match the
+`slug`s in `~/.codex/models_cache.json` on the same day. `model/list` on 2026-10-16
+(0.162.1 and 0.163.0 alike) listed `gpt-6.1-sol` (`isDefault: true`, efforts `low` …
+`ultra`), `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`,
+`gpt-5.6-luna`, each with `availableAccessPrograms {cyber: ["standard"]}`; the cache adds
+`gpt-reserve` and `codex-auto-review` (visibility `hide`), and the binary's bundled
+catalog also names `gpt-daybreak-blue-latest` and `gpt-daybreak-red-latest`, which this
+account does not get. "Daybreak", on by default since 0.163.0, is a per-thread
+cyber-access program (`daybreakEnabled` on `thread/start`, thread items and the
+`thread/list` rows; `/daybreak` in the TUI; the `cli_daybreak` flag went from under
+development to stable), not a change of the default model. A ChatGPT plan login is not billed per token:
 this cost is what the same tokens would cost on the API, not what the person pays.
 
 ## 14. A launch that starts with a task, a model and a thinking level
@@ -645,6 +794,19 @@ way is **inferred, not checked** (`~/.codex/models_cache.json` lists them, plus
 names the session, so a scheduled Codex run gets its title from Codex itself.
 
 ## 15. One login per CODEX_HOME, and its rate limits
+
+**The browser login ends on a loopback address that takes the redirect from anywhere on
+that machine.** Codex CLI 0.162.1 in a Debian container (2026-10-15), a temporary
+`CODEX_HOME`, no browser: `codex login` printed `Starting local login server on
+http://localhost:1455.` and an `auth.openai.com/oauth/authorize` address whose
+`redirect_uri` is `http://127.0.0.1:1455/auth/callback`, with a 43-character `state` and
+a PKCE `code_challenge` (`S256`). It listened on 127.0.0.1:1455 only. A `curl` of the
+callback with a wrong `state` got `400 State mismatch` and Codex kept waiting; with the
+right `state` and a made-up `code` Codex tried the token exchange (`401 Unauthorized`),
+showed `token_exchange_failed` and exited. So the address a phone's browser fails to load
+at the end of the sign-in, opened on the machine Codex runs on, finishes the login, once.
+`codex login --device-auth` instead printed `https://auth.openai.com/codex/device` and a
+one-time code that `expires in 15 minutes`, and gave up after 15 minutes.
 
 **Checked on 2026-09-24 with standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`), no model
 turn.** A Node script ran `codex app-server` on stdio twice, each time with its own
@@ -792,69 +954,209 @@ Not tried, because they need a second real login or would open a browser on this
 - that two homes with two different logins each use their own login, so moving new
   sessions between homes spreads use across the two accounts — **inferred, not checked**.
 
+**What one app-server that stays up sees, and what it keeps from its start.** Checked
+2026-10-17 with Codex CLI 0.162.0, one model turn. A Node script made a throwaway `HOME`
+and `CODEX_HOME` (a copied `auth.json`, a `config.toml` trusting one folder; deleted
+afterwards) and kept app-server A running while it asked:
+
+- **Threads another app-server writes show up at once.** A second app-server B ran
+  `thread/start` and one turn; A's next `thread/list` held the new thread, A's
+  `thread/search` found it by the word the model answered, and the `path` in A's list and
+  in A's `thread/read` were the one B's `thread/start` gave.
+- **`config/read` reads `config.toml` again each time**: an `[mcp_servers.probe]` table
+  appended to the file showed in A's next answer.
+- **The sign-in is read once, when the app-server starts.** With `auth.json` moved out of
+  the home, A still answered `account/read` with the account; a new app-server C started
+  then answered no account, and kept answering no account after `auth.json` was put back.
+  So an app-server started before a `codex login` in its home reports the old sign-in
+  until it is restarted.
+- **`account/rateLimits/read` asks the network each time**: four calls on one app-server,
+  1.5 s apart, took 377–851 ms each (a busy Mac; `initialize` took 3.5 s there).
+- **Questions sent together on one connection all get answered**: three `thread/search`,
+  a `thread/list` and a `config/read` written before any answer came back were each
+  answered, together in 16 ms (an empty home, no login).
+- **An app-server that only answers such questions still starts processes of its own**:
+  right after `initialize`, and again after `thread/list`, `thread/search`, `config/read`
+  and `account/read`, it had `git` and `git-remote-https` children fetching over https
+  (no login, a `config.toml` naming one MCP server, which was not started).
+
 ## 16. Codex on a remote machine
 
-**Checked on 2026-09-24.** On the Mac: standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`).
-On the machine: an Ubuntu 24.04 x86_64 server reached with `ssh -o BatchMode=yes` (bash,
-tmux, no node, no Codex, no Codex login). For the probe only, the official
-`@openai/codex@0.153.4-linux-x64` npm package was unpacked into a new folder in the
-machine's home (its `codex` and `rg`, not its bundled `bwrap`), run with a new empty
-`CODEX_HOME` beside it, and the folder was deleted afterwards. No login or key was
-copied to the machine.
+**Checked on 2026-10-16.** On the Mac: standalone Codex CLI 0.162.0 (`codex-cli 0.162.0`).
+On the machine: the repo's Docker SSH lab image (`test/e2e/fixtures/sshd.Dockerfile`,
+Debian 12 arm64, reached as `kuser` with a throwaway key), with `@openai/codex@0.162.0`
+installed by `npm i -g` (it pulls `codex-linux-arm64`, a static
+`aarch64-unknown-linux-musl` build with `codex-resources/bwrap`, root-owned). A Node
+probe on the Mac drove `ssh -T <machine> 'cd <folder> && CODEX_HOME=<home> exec codex
+app-server --stdio -c check_for_update_on_startup=false'`, and a Node relay built like
+Koloft's (section 1) served the real TUI. A real ChatGPT Pro login was used; no
+`auth.json` holding a usable refresh token ever reached the machine (below), the Mac's
+own `auth.json` kept its `last_refresh` and mtime, and the container was removed after.
 
-What was tried is the "Codex runs on the machine, its screen runs on the Mac" shape: a
-small Node probe relay on the Mac built like Koloft's (section 1), whose app-server was
-`ssh -T <machine> 'cd <folder> && CODEX_HOME=<home> exec <codex> app-server --stdio'`.
+**What the machine needs.**
+- System CA certificates. Without the `ca-certificates` package every HTTPS call fails;
+  the surface errors are `account/login/completed {success:false, error:"workspace
+  routing discovery failed"}` and `account/rateLimits/read` -32603 "error sending request
+  for url (…/wham/usage)"; only `RUST_LOG=debug` shows "server certificate verification
+  failed. CAfile: none".
+- A sandbox the kernel allows. Under Docker's default profile both the bundled `bwrap`
+  and Debian's `bubblewrap` 0.8.0 fail "No permissions to create a new namespace", so a
+  `workspace-write` turn completes with its commandExecution and fileChange `failed`;
+  `danger-full-access` ran them. With seccomp and AppArmor off, bwrap failed later
+  ("setting up uid map: Permission denied"). That `workspace-write` works on a real
+  host or VM with unprivileged user namespaces is **inferred, not checked**. Without
+  `bwrap` on `PATH` every start sends `configWarning` ("Codex could not find bubblewrap on
+  PATH … will use the bundled bubblewrap"; the TUI shows "⚠ 1 warning · f2"); with
+  Debian's `bubblewrap` installed it is gone. The 0.162.0 refusal of a writable sandbox
+  executable did not appear (the bundled one was root-owned); not probed with a
+  user-writable copy.
 
-- A Node script sent `initialize`, `initialized`, `account/read` and `thread/list` down
-  that ssh line. All answered: `initialize` after about 4.4 seconds (ssh connect plus
-  Codex start) with `platformOs: "linux"` and the machine's `codexHome`; `account/read`
-  gave `{account: null, requiresOpenaiAuth: true}`; `thread/list` gave an empty `data`.
-  Closing stdin ended the remote app-server (exit 0) in about 0.2 seconds, and `ps` on
-  the machine showed nothing left over. Koloft's own `CodexProcess.stop()` ends stdin
-  first too, but then at once sends SIGTERM to the processes it owns on the Mac — here
-  the ssh client — and that path was not run against ssh; that the remote app-server
-  still ends cleanly when the ssh client is killed is **inferred, not checked**. The app-server also sent a `configWarning` that
-  bubblewrap was not on the machine's `PATH` and that it would use its bundled one. This
-  probe did not unpack the package's `codex-resources/bwrap`, so there was none; a real
-  launch must put that file on the machine or install `bubblewrap` there, and that the
-  bundled one works on Ubuntu is **inferred, not checked**. Codex 0.162.0 "rejects
-  writable sandbox-construction executables" — a `bwrap` on `PATH` that the sandboxed
-  user can write to is refused (release notes, read 2026-10-11, not run): a copy put on
-  the machine by Koloft would have to be read-only for that user.
-- The real TUI ran on the Mac in a Python PTY (120×40) as `codex -c
-  check_for_update_on_startup=false --remote unix://<relay socket> -C <folder on the
-  machine>`. That folder does not exist on the Mac, and the TUI still connected: it sent
-  `config/read` with `cwd: <folder on the machine>` (its trust check) and
-  `account/read`, and showed its sign-in screen. Before that answer came, its start card
-  showed the Mac folder the TUI process was started in. With a folder missing on the Mac
-  and no socket at all, it failed only with "failed to connect to remote app server".
-  Closing the TUI closed the relay's connection and the remote app-server ended.
-- Sign-in from that screen did not work on this machine. "Sign in with Device Code" sent
-  `account/login/start {type: "chatgptDeviceCode"}` to the machine, which answered
-  error `-32603`, "device code request failed with status 403 Forbidden". A plain `curl`
-  to `https://auth.openai.com/` from the machine also got 403, so OpenAI refuses that
-  machine, not Codex; that the cause is the machine's network or region is **inferred,
-  not checked**. "Sign in with ChatGPT" answered
-  an `authUrl` whose `redirect_uri` is `http://localhost:1455/…` — the machine's own
-  localhost, which a browser on the Mac does not reach.
+**Signing in from the Mac: `chatgptAuthTokens`.** The 0.162.0 schema has
+`account/login/start {type:"chatgptAuthTokens", accessToken, chatgptAccountId,
+chatgptPlanType?}` (marked "[UNSTABLE] FOR OPENAI INTERNAL USE ONLY") and a server→client
+request `account/chatgptAuthTokens/refresh {reason:"unauthorized", previousAccountId}`
+answered with `{accessToken, chatgptAccountId, chatgptPlanType?}`. With `initialize`
+carrying `capabilities.experimentalApi: true` (without it: not probed), an app-server on
+an empty remote home took the Mac login's access token and account id: the call
+answered at once, `account/updated {authMode:"chatgptAuthTokens", planType:"pro"}` came
+~0.4 s later, and `account/read` then answered `{type:"chatgpt", planType:"pro"}` plus
+`workspaceRouting`. Rate limits and `model/list` read normally, and turns ran (below). The
+home got no `auth.json`, and a byte search of every file under the user's home and
+`/tmp` found neither the access nor the refresh token. Logging in with a token whose
+signature was broken made the server send `account/chatgptAuthTokens/refresh {reason:
+"unauthorized"}` at once; answering it with the real token completed the login. The
+login lives in the process: every connection to one `--listen` server saw it, and every
+new `--stdio` process started signed out. How the Mac gets a fresh access token when its
+own expires (`account/read {refreshToken: true}` on a local managed home, per the
+GetAccountParams description) is **inferred, not checked** — running it rotates the
+owner's refresh token.
 
-Not tried, and why:
-- **A real model turn over ssh.** The machine has no login and this probe copied none, so
-  no turn, tool call, approval or file edit ran on the machine. That turn frames look the
-  same as section 12's when they cross ssh is **inferred, not checked**.
-- **Signing in on a machine OpenAI does not refuse.** That `codex login --device-auth`
-  (the flag is in `codex login --help` on 0.153.4) signs the machine in from an
-  `ssh -t` terminal is **inferred, not checked**.
-- **"Codex and its screen both on the machine"** (a relay that runs on the machine next
-  to a TUI in tmux) needs a relay and node shipped to the machine; it was not built or
-  run. `codex app-server --help` lists `--listen unix://PATH` and `app-server proxy
-  --sock <SOCKET_PATH>` ("proxy stdio bytes to the running app-server control socket"),
-  so an app-server that outlives one ssh line may not need Koloft's own relay there —
-  **inferred, not checked** (only the help text was read).
+A copied `auth.json` (refresh token replaced by a dummy before Codex started) also
+signed the machine in (`authMode:"chatgpt"`) and ran turns; its `last_refresh` and mtime
+did not change. A real refresh token on the machine was not probed.
 
-So Koloft keeps Codex on a remote machine refused: the part that runs (transport, the
-remote folder, stop) is checked, but no one has yet signed in and run a turn there.
+**Turns over ssh.** Same frames as section 12: `thread/started`, `turn/started`,
+`item/started`/`item/completed`, `item/agentMessage/delta`, `turn/diff/updated`,
+`thread/tokenUsage/updated`, `account/rateLimits/updated`, `turn/moderationMetadata`,
+`turn/completed`. "Reply pong" took 2.6–3.7 s from `turn/start`; `touch hello.txt` plus a
+file edit took 6.2 s; `initialize` answered in ~0.2–0.3 s (ssh to a local container, not
+a network). Files landed in the remote folder; the rollout in
+`<home>/sessions/YYYY/MM/DD/`. A second ssh line's `thread/list` (no login needed) listed
+the threads with `source:"vscode"` and the remote `cwd`; a third line's `thread/resume`
+returned both turns and a turn there recalled the first answer. `thread/resume` also
+sends `deprecationNotice` "Full-history hydration is deprecated for paginated threads;
+use `excludeTurns: true`…".
+
+**The real TUI.** `codex -c check_for_update_on_startup=false --remote unix://<relay
+socket> -C <remote folder>` (Python PTY, 120×40) through a relay that, after the TUI's
+`initialized`, sends its own `account/login/start chatgptAuthTokens` (id
+`koloft-login-1`, its reply dropped), holds the TUI's frames until
+`account/login/completed`, and answers refresh requests itself: no sign-in screen, the
+reply rendered, "Worked for 1s". The TUI's Mac home got `config.toml`, `history.jsonl`
+and `tui-thread-reference-capabilities/`, no `auth.json`. One Ctrl-C at an idle composer
+detaches: "Disconnected from this task. Any running work continues." plus a `codex
+--remote … resume <id>` line. The footer's `current-dir` shows the Mac folder until the
+thread starts, then the remote folder; `git-branch` stays empty, because the TUI sends
+`command/exec ["git","-c","safe.bareRepository=explicit","branch","--show-current"]` to
+the remote with `cwd` = the Mac folder its process started in, answered -32603 "failed
+to spawn command: No such file or directory (os error 2)". A 0.162.0 TUI against a
+0.161.0 remote app-server ran a turn the same way.
+
+**An app-server that outlives the ssh line.** `codex app-server --listen
+unix:///tmp/x.sock` (started with `setsid nohup`) makes the path a symlink into
+`/tmp/codex-daemon-<uid>/<hash>`, and the socket speaks WebSocket (an HTTP Upgrade got
+101; a bare JSON line got nothing). `codex app-server proxy --sock <path>` pipes stdio
+bytes to it, so a client speaks WebSocket through `ssh -T … proxy`. A turn running `sleep
+20` survived a SIGKILL of the ssh client (the remote proxy process ended with it); a new
+proxy line found the thread in `thread/loaded/list`, `thread/resume` answered `status:
+active` with the turn `inProgress`, then delivered `turn/completed` and the command's
+result. A second connection got only `thread/started` and `thread/status/changed` for
+another connection's thread until it resumed it, then every turn notification.
+`app-server daemon bootstrap` ("durable local app-server management for SSH-driven use")
+was only read in help.
+
+**Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
+process within 0.3 s. Mid-turn: not probed.
+
+**A `--stdio` app-server outlives a link that drops without a word.** Measured 2026-10-17,
+`@openai/codex@0.162.0` by npm on the Docker SSH lab's Debian 12 target, reached from the
+Mac's OpenSSH through the lab's jump host on one ControlMaster (`ControlPersist=yes`,
+`ServerAliveInterval=15`, `ServerAliveCountMax=3`), no login, an empty home. Both a
+SIGTERM and a SIGKILL to the Mac's ssh client ended the remote app-server (the npm `node`
+wrapper and the native `codex`) within the 32 ms a `docker exec ps` takes. With the
+target taken off its Docker network instead, the Mac's ssh client exited 59 s later. In
+one of two such runs both processes were still running 5 s and 65 s after the network came
+back: the target's `tcp_keepalive_time` was 7200 and sshd sets no `ClientAliveInterval`,
+so nothing there notices before then (that it ends at the keepalive is **inferred, not
+checked**); in the other they had ended by 5 s after it came back. With the Mac's ssh
+client stopped by SIGSTOP, the remote app-server kept running, as on such a drop. Timing
+on the same lab line, each run five times: a fresh line that sends `initialize` and one
+`thread/list` answered in 40–98 ms (162 ms once, the first line of a run); on one line
+kept open, each later `thread/list` answered in under 1 ms. The lab is a local container,
+not a network.
+
+**A `--listen` app-server shrugs off SIGTERM.** Measured 2026-10-17, `@openai/codex@0.162.0`
+installed by npm on Debian 12 (Docker, arm64), signed in with `chatgptAuthTokens`, idle
+after two real turns and with no client connected: the process tree was the npm `node`
+wrapper (process-group leader), the native `codex app-server --listen …` under it, and a
+`codex-code-mode` child in a process group of its own. `/proc/<pid>/status` showed SIGTERM
+caught (not ignored) by both `node` and `codex`. A SIGTERM to the group, and one to the
+native `codex` alone, left all three running 3–18 s later; while they lived, a new
+app-server on the same `CODEX_HOME` resuming the thread drew the TUI's "This conversation
+is open in another app" (§5). SIGKILL to every process of the tree ended them, and the
+resume then worked. Debian's `sh` (dash) refuses `kill -KILL -- -<pgid>` ("Illegal number:
+-"); `kill -- -<pgid>` and `kill -s KILL <pid> …` work.
+
+**`--listen` refuses a socket folder others can write.** Measured 2026-10-17 on an Ubuntu
+24.04.5 VM (tart, arm64, kernel 7.0), `@openai/codex@0.162.0` by npm, login umask `0002`:
+with the socket's folder made `drwxrwxr-x` by `mkdir -p`, `codex app-server --listen
+unix://<folder>/<name>.sock` exited at once with "Error: socket parent must be owned by
+the user or root and prevent other users from replacing socket entries". The same VM
+(AppArmor `kernel.apparmor_restrict_unprivileged_userns = 1`, no AppArmor profile for
+`bwrap`, `bubblewrap` 0.9.0 from apt) also logged at start "Codex's Linux sandbox uses
+bubblewrap and needs access to create user namespaces." Every sandboxed command then
+failed with "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted" — through
+Koloft, and the same from `codex sandbox -c sandbox_mode=workspace-write -- …` run
+directly on the VM. With an AppArmor profile for `/usr/bin/bwrap` granting `userns`
+(`apparmor_parser -r`), the direct run wrote inside the folder and got "Read-only file
+system" outside it.
+
+**The Mac's TUI starts a machine folder read-only.** Same VM, same day: with
+`[projects."/home/admin/proj"] trust_level = "trusted"` in the machine's `CODEX_HOME`, the
+machine's app-server alone answered `thread/start {cwd}` with `workspaceWrite` /
+`on-request`; but a thread the Mac's 0.162.0 TUI started over `--remote … -C
+/home/admin/proj` with no `-a`/`-s` ran `sandbox_policy: read-only` (its `turn_context`),
+and its `touch` inside the folder was refused. A trust table for that path in the TUI's
+own `CODEX_HOME` did not change it, while a top-level `sandbox_mode = "danger-full-access"`
+there did (Docker lab, same version: the command ran with no `bwrap`). Given `-a on-request
+-s workspace-write`, the thread
+wrote inside the folder, was refused outside it, and after a resume (no flags) still
+wrote inside and was refused outside.
+
+**A login shell drops the server's `PATH` on Linux.** Checked on 2026-10-16 with
+`@openai/codex@0.162.0` (`npm i -g`, `codex-linux-arm64`) in a plain
+`node:22-bookworm-slim` container, as a non-root user whose shell is bash, no login:
+the app-server ran with `model_provider` pointed at a local fake Responses API (plain
+HTTP, `env_key` set) that answered the first request with one `exec_command` function
+call. The app-server's own `PATH` began with `/opt/kbin`, which held a `koloft` script,
+and its environment had `KOLOFT_TAB_ID`. By default the item's command was `/bin/bash
+-lc '…'`; Debian's `/etc/profile` set `PATH` afresh, so the command saw Codex's own
+`codex-path` folder and `/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games`,
+`command -v koloft` found nothing, and `KOLOFT_TAB_ID` was still set. With `-c
+allow_login_shell=false` the command was `/bin/bash -c '…'`, its `PATH` kept `/opt/kbin`
+(after Codex's `codex-path` and an `arg0` folder in `CODEX_HOME/tmp`), and it found
+`koloft`. The request's tool list was `exec_command, write_stdin, request_user_input,
+apply_patch, view_image, get_goal, create_goal, update_goal, tool_search, web_search`.
+
+**A hook trusted on the Mac's terms is trusted on the machine.** Same day, same container:
+`hooks/list` on the Mac's codex-cli 0.162.0 (a new empty `CODEX_HOME`) with `-c
+hooks.UserPromptSubmit=…` and `-c hooks.PostToolUse=…` gave keys
+`/<session-flags>/config.toml:user_prompt_submit:0:0` and `…:post_tool_use:0:0` and their
+`sha256:` hashes, `untrusted`. Writing those two `[hooks.state."<key>"]` tables with
+`trusted_hash` into the machine's `CODEX_HOME/config.toml` with `awk` and `printf`, twice
+over, left one table each, and the machine's 0.162.0 then listed both hooks `trusted`.
+
+Not tried: `codex login --device-auth` on the machine; a real refresh token on the machine.
 
 ## 17. Handing a session context and a command, and queuing a message into it
 
@@ -881,6 +1183,46 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   note, not the task (`agent-tools-real-smoke.spec.ts`). That the title thread never
   reads the developer instructions is inferred, not checked, beyond that spec passing
   (again on 0.162.1, 2026-10-11).
+- **A resume never takes new developer instructions; a start's own instructions replace
+  the `-c` ones.** 2026-10-16, Codex CLI 0.162.0, `gpt-6.1-sol`, an app-server client as in
+  section 27. With `-c developer_instructions=` naming codeword ZEBRA: two turns, and a
+  second `thread/start` on the same server, answered ZEBRA. A `thread/start` there with
+  `developerInstructions: <OTTER text>`, or `config: {developer_instructions: <FALCON
+  text>}`, answered OTTER / FALCON, and those rollouts held no ZEBRA. A thread started
+  under ZEBRA that never named the word was then `thread/resume`d on a server with
+  `-c …YAK`, and another with the `developerInstructions: <HERON>` param: both answered
+  ZEBRA, and neither YAK nor HERON reached the rollout. So a newer Koloft prompt does not
+  reach a resumed older session.
+- **`$CODEX_HOME/AGENTS.md` reaches the model** as a `user` message
+  `# AGENTS.md instructions\n\n<INSTRUCTIONS>…`: its codeword came back (same run).
+  **Skills reach it only as a list**: a `developer` message `<skills_instructions>` holds
+  `- <name>: <description> (file: r0/<name>/SKILL.md)`; asked for something only the body
+  held, the model ran `cat <path>/SKILL.md` and answered it. `skills/list` gave `{name,
+  description, path, scope: "user", enabled, pluginId}`; a fresh home was seeded with
+  `skills/.system/` (imagegen, openai-docs, skill-creator, skill-installer).
+- **The folder's AGENTS.md is a memory that survives a restart and a resume.** 2026-10-16,
+  Codex CLI 0.162.0, real turns (`gpt-6.1-sol`, low effort), `codex app-server --stdio`
+  with `approval_policy="never"`, `sandbox_mode="workspace-write"`, non-git scratch
+  folders. The cwd's `AGENTS.md` reaches the model as a user message `# AGENTS.md
+  instructions for <cwd>` before `<environment_context>`, untrusted folders too. With
+  Koloft's Assist rule "Do not write or change files (your own memory folder aside)" as
+  developer instructions and no `AGENTS.md`, a model told "Remember for next time: …"
+  said it could not save across sessions and wrote nothing. With an `AGENTS.md` seeded
+  beforehand saying "This file is your memory folder. When the owner asks you to remember
+  something, add it here as one short line", the same rule plus Koloft's conductor gate
+  (section 27): a thread started before the seed and resumed after it wrote the fact into
+  `AGENTS.md` with `apply_patch` (`*** Add File: <absolute path>`), and a new thread on a
+  new app-server answered it; on resume Codex adds a fresh AGENTS.md message before the
+  new turn. `features.memories` (stable, off by default) was tried too: per `CODEX_HOME`,
+  run by a background consolidation agent at app-server start, its notes outside the cwd,
+  and after two startups a new thread did not recall the fact.
+- **`$CODEX_HOME/rules/*.rules` applies to a turn's commands.** 2026-10-16, Codex CLI
+  0.162.0, a real turn in a trusted folder of a throwaway `CODEX_HOME` whose
+  `rules/default.rules` held `prefix_rule(pattern=["touch"], decision="forbidden")`:
+  asked to run `touch made-by-probe.txt`, the command was refused (`policy forbids
+  commands starting with \`touch\``) and no file appeared. So a home Koloft makes per
+  account sees the owner's own global instructions, skills and command rules only if it
+  links them from the owner's home.
 - **Developer instructions do not count as the owner asking for sub-agents.** Codex
   ships sub-agents on (`codex features list`: `multi_agent stable true`) but tells the
   model, last in its developer message, `Do not spawn sub-agents unless the user or
@@ -936,7 +1278,16 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   `turn/start`; that turn's first item was the queued `userMessage` with
   `clientId: "koloft-conductor-1"`, and the model answered it there. Thread status went
   `idle`, then `active` (`activeFlags: []`) between the two turns. On an idle thread the
-  same call started a turn at once.
+  same call started a turn at once. **The same on 0.163.0, whose notes say a follow-up
+  typed in the TUI now steers the running turn** (2026-10-16, the same setup on
+  `gpt-6.1-sol`): the reply came in 6 ms, `thread/queue/changed {threadId}` fired on
+  add, mid-turn and at the end, the `sleep 20` ran to its end (`durationMs 19879`,
+  `status completed`), the first turn answered and completed with no extra
+  `userMessage`, the next `turn/started` came 5 ms later on its own with the queued
+  `userMessage` (`clientId` as sent) first, and `thread/queue/list` was empty after.
+  So a message Koloft queues is not an interrupt. `turn/steer` and `turn/interrupt` are
+  methods on 0.161.0–0.163.0 (strings; `codex features list` shows `steer` as removed,
+  on, and `instant_interrupt` under development, on since 0.162.1) — neither run.
 
 ## 18. Which command lines open the full-screen TUI
 
@@ -964,6 +1315,12 @@ Codex's own full-screen screen from one that prints and exits.
   `codex -i a.png b.png` reads as a prompt, which opens the TUI anyway.
 - That `login` opens no full-screen screen is read off its help text ("Manage login"),
   not checked by running it.
+- **Text in the terminal before the TUI starts is gone once it draws.** 2026-10-16,
+  Codex CLI 0.162.0 started by Koloft (`--remote`) in a real Electron/xterm tab: a line
+  Koloft wrote into the tab before Codex's first output was in neither the screen nor the
+  scrollback of the active buffer once the start screen showed
+  (`agent-tools-real-smoke.spec.ts` run). So a note meant for the owner cannot be printed
+  above a Codex tab the way the Claude shim prints its account line.
 
 ## 19. What a turn said, live and read back
 
@@ -1096,10 +1453,26 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   the TUI drew it as a question the owner could pick by digit. In one run whose brief
   still allowed a plain-text question, the model asked in plain text instead; told to
   ask every question with that tool, it did. Not probed: what `isBlocking: false`
-  changes.
-- Not probed: several questions in one request, a free-text answer (`N+1` and notes),
-  `isSecret`, a form with several fields or a field that is not an enum, and an
-  elicitation `mode` other than `form`. Koloft refuses those from Discord.
+  changes. The same on 0.163.0 (2026-10-16, the flag on, `on-request` / `read-only`):
+  `waitingOnUserInput`, then `item/tool/requestUserInput` (`isBlocking: false`,
+  `autoResolutionMs: null`), the turn waited 10 s for the answer, then
+  `serverRequest/resolved {threadId, requestId}` came, the flags cleared and the turn
+  completed with the picked option; `default_mode_request_user_input` is still under
+  development, off, on 0.161.0–0.163.0.
+- **Several questions and free text, with the flag on.** 2026-10-16, Codex CLI 0.162.0,
+  `gpt-6.1-sol`, `features.default_mode_request_user_input=true`, an app-server client as
+  in section 27. Asked for two questions in one call, the model sent one request with
+  `questions: [{id: "colour", …}, {id: "size", …}]`, each `isOther: true`, two options,
+  `isBlocking: false`; `{answers: {colour: {answers: ["Blue"]}, size: {answers:
+  ["Large"]}}}` gave "You prefer blue and large." A string that is not an option,
+  `{colour: {answers: ["Purple with green stripes"]}}`, was repeated back word for word.
+  `["Red", "user_note: but only dark red, like wine"]` came back as "Red but only dark
+  red, like wine". That the TUI's notes field sends that `user_note: ` prefix is inferred
+  from a string in the binary, not seen on the wire. Each time: `waitingOnUserInput`,
+  then `serverRequest/resolved`, then the turn went on.
+- Not probed: `isSecret`, what `isBlocking: false` changes, a form with several fields or
+  a field that is not an enum, and an elicitation `mode` other than `form`. Koloft refuses
+  several questions, free text and those from Discord.
 
 ## 21. Slash commands typed into the TUI
 
@@ -1155,6 +1528,11 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   and `active` again within 3–4 ms. Each queued `userMessage` item carried the
   `clientUserMessageId` as `clientId`, and `thread/queue/list` was empty as soon as the
   last one's turn started.
+- **The popup on 0.163.0 has 55 entries; `/config` and `/daybreak` are the ones 0.162.1
+  lacks** (2026-10-16, `codex --no-daemon` in a python pty, each list scrolled; `/keymap`,
+  `/daemon` and `/side` are on both). `/keymap` names a "Global Leader ctrl-x"
+  (`tui.keymap.global.leader`, default `ctrl-x`), "Chat Interrupt Turn esc", "Composer
+  Queue tab" and "Toggle Side Conversation ctrl-/" among 153 actions (§25).
 
 ## 22. `codex update`
 
@@ -1289,8 +1667,34 @@ the one before, the screen read back through `pyte`.
   fires only for explicit command-line feature overrides. `--no-daemon` is refused with
   `--remote` ("--no-daemon cannot be used with --remote"), and Koloft's TUI, which
   connects with `--remote` to Koloft's own app-server, showed no such dialog in the
-  real-binary e2e cases on 0.162.1 (2026-10-11). Strings read the same day; the
-  dialog itself was not raised.
+  real-binary e2e cases on 0.162.1 (2026-10-11) or 0.163.0 (2026-10-16). Strings read
+  the same day; the dialog itself was not raised.
+- **Since 0.163.0 the TUI tells its terminal what it is doing with OSC 7501, with no
+  query first** (2026-10-16, `codex --no-daemon -c check_for_update_on_startup=false` in
+  a python pty at 100×40 on 0.162.1 and 0.163.0, the raw bytes saved, two env shapes:
+  Koloft's — `TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=Apple_Terminal`,
+  no `TERM_SESSION_ID` — and the same without `TERM_PROGRAM`; also a TUI under
+  `--remote`): 0.163.0 writes `ESC ] 7501 ; state=idle:app=codex ESC \` about 1.6 s in,
+  `state=working:app=codex` 30 ms after a typed CR, `state=idle:app=codex` when the
+  answer ends, and `state=clear` at exit — unasked (there is no `7501;?` query in the
+  binary), the same with or without `TERM_PROGRAM`, and under `--remote`. The strings
+  also name `blocked` (not seen) and an iTerm2 `OSC 21337;status=…` (not seen).
+  Unlike Claude Code's (CC§12: query-gated, with `id` and `kind`), it carries only
+  `state` and `app`. 0.162.1 writes none of it. Koloft's terminal does not handle 7501
+  for either CLI (issue #487). The startup and exit sequences are otherwise the same on
+  both versions and both env shapes: `?2004h`, `>7u`, `?1004h`, the `6n`, OSC 10/11
+  and `?u`/DA1 queries, `?1049h`, `?1007l`, then `?1000h ?1002h ?1003h ?1006h`; at exit
+  `?1006l ?1015l ?1003l ?1002l ?1000l <1u ?1007l ?1049l <u ?2004l ?1004l` — so the
+  mouse modes are set at start and reset at exit, not both on the welcome screen as the
+  bullet above says from 2026-10-13. No XTVERSION query is sent. 0.163.0's strings drop
+  `TERM_SESSION_ID` from the terminal-detection env list (`ITERM_SESSION_ID` stays);
+  `TERM_PROGRAM` and `Apple_Terminal` are still named, and nothing the TUI wrote differed
+  with `TERM_PROGRAM` set.
+- **Ctrl+X (0x18), the leader key 0.163.0 adds, shows nothing at the idle composer in
+  3 s**; a following Esc shows "esc again to edit previous message". One Ctrl+C at an
+  empty composer quits at once (both versions). What Ctrl+X followed by another key does
+  was not run; Koloft itself never sends 0x18 (a conductor's `koloft session keys` would
+  have to name it).
 
 ## 26. Reaching the Workbench browser: sandbox, MCP servers and their environment
 
@@ -1430,8 +1834,24 @@ so its folders were not writable by default.
   the CLI is refused there — **inferred, not checked**), and a user on the newer
   `default_permissions` profiles, which the `-P` result suggests ignore these legacy keys
   — **inferred, not checked**.
+- **MCP tool approval, and `approve`.** 2026-10-16, codex-cli 0.162.0, app-server driven by
+  a Node script, a tiny stdio MCP server (one tool `ping`) given as `-c
+  mcp_servers.probe.command=…`/`args=[…]`, real model turns asked to call it:
+  - `on-request`: the first call in each new thread sent `mcpServer/elicitation/request`
+    with `mode: "form"`, `message: "Allow the probe MCP server to run tool \"ping\"?"`,
+    `_meta: {codex_approval_kind: "mcp_tool_call", persist: ["session","always"], …}`;
+    `{action:"accept"}` ran it. A second thread on the same app-server asked again.
+  - `never` (an Assist): no request; the call failed with `MCP tool call requires
+    approval, but approval policy is never`.
+  - `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (values `auto`, `prompt`,
+    `writes`, `approve`): the call ran with no request under `on-request` and under
+    `never`.
+- **A failed `config/read` drops every browser setting at once**: Koloft builds
+  `network_access`, the Playwright cache root and the `env_vars` passthrough from one
+  `config/read`, so a read lost to section 28's race leaves a tab with no network (unless
+  a git account's pick gives it, section 29) and no CDP endpoint for the MCP server.
 
-## 27. A PreToolUse hook on one app-server, and its trust
+## 27. Hooks on one app-server, and their trust
 
 **Checked on 2026-10-11 with standalone Codex CLI 0.162.0.** Node scripts drove
 `codex app-server --stdio` (`initialize` with `experimentalApi: true`, `initialized`,
@@ -1495,6 +1915,54 @@ command line. The hook command was a small Node script that logged its stdin.
 - Not probed yet: a real TUI connected over `--remote` to the hooked app-server, and
   whether both PreToolUse hooks run in one turn (each needs a model turn, so a signed-in
   account).
+
+**All twelve events, checked on 2026-10-16 with standalone Codex CLI 0.162.0, real model
+turns (`gpt-6.1-sol`, `effort: "low"`).** A Node client drove `codex app-server --stdio`
+(`initialize` with `experimentalApi: true`) in a throwaway `CODEX_HOME` (a copy of this
+Mac's login, deleted afterwards; the folder trusted), each hook given as
+`-c hooks.<Event>=[{hooks=[{type="command",command="node <script> <Event>"}]}]` and
+trusted with its `[hooks.state."<key>"] trusted_hash` table. The event list and the
+stdin/stdout shapes were also read from the binary, which embeds a JSON schema per event
+(`<event>.command.input` / `.command.output`).
+
+- **The events are exactly** `PreToolUse`, `PermissionRequest`, `PostToolUse`,
+  `PreCompact`, `PostCompact`, `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
+  `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt` (no `Notification`). Each lists in
+  `hooks/list` as `/<session-flags>/config.toml:<snake_case event>:0:0` and needs its own
+  trust table.
+- **Every stdin carries** `session_id`, `transcript_path`, `cwd`, `hook_event_name`,
+  `model`; all but `SessionStart`/`SessionEnd` add `turn_id`. `UserPromptSubmit` adds
+  `prompt`; `PostToolUse` adds `tool_name`, `tool_input`, `tool_use_id`, `tool_response`
+  (for `Bash` the output as one string); `Stop` adds `stop_hook_active`,
+  `last_assistant_message`.
+- **When each fires:** `SessionStart` at the first turn after `thread/start`,
+  `thread/resume` or a compaction, not at `thread/start` itself. `UserPromptSubmit`, then
+  `PreToolUse`/`PostToolUse` around each tool, then `Stop` at the end of each turn.
+  `SessionEnd` ran when the app-server exited, not on `thread/unsubscribe`. A sub-agent's
+  tool calls ran `PreToolUse`/`PostToolUse` with the parent's `session_id` plus
+  `agent_id`/`agent_type`; no `SessionStart`, `UserPromptSubmit` or `Stop` ran for the
+  child.
+- **`hookSpecificOutput.additionalContext` reaches the model** from `SessionStart`,
+  `UserPromptSubmit`, `PreToolUse`, `PostToolUse` and `SubagentStart`: "Always end your
+  reply with the word X" made the reply end with X each time. It is saved in the rollout
+  as a `developer` message.
+- **`Stop` with `{"decision":"block","reason":"…"}` makes the model go on**, and
+  **`PermissionRequest`** answering `{"decision":{"behavior":"allow"}}` runs the command with
+  no request reaching the client (`deny` stops it).
+- **An owner's own `UserPromptSubmit` hook in `config.toml` stays next to one given with
+  `-c`**, as for PreToolUse above (2026-10-16, no model turn: `hooks/list` listed both).
+- **Hooks run outside the sandbox.** 2026-10-16, a real turn in an untrusted folder
+  (`sandbox: {type: "readOnly"}`, `exclude_slash_tmp`): the `UserPromptSubmit` and
+  `PostToolUse` hooks appended to a file under `~/Library/Caches`, and the reply ended
+  with the word the prompt hook asked for.
+- **The rollout `transcript_path` names keeps each note the model writes as one line
+  holding** `"role":"assistant","content":[{"type":"output_text","text":"<note>"}],"phase":"commentary"`
+  (`"final_answer"` for the reply), read off a 0.162 TUI rollout of 2026-10-15 on this
+  Mac. **A note is in the file when the next tool's `PostToolUse` runs**: 2026-10-16,
+  0.162.0, a real Koloft Codex tab (the opt-in case in `agent-tools-real-smoke.spec.ts`):
+  after an English turn, a Chinese prompt's hook quoted that turn's English reply back,
+  the model wrote a Chinese note, ran `ls`, and the `PostToolUse` hook saw that note
+  (it gave the plain reminder, not the quote of the English reply).
 
 ## 28. Two app-servers starting at once in a home no app-server has used
 
@@ -1561,5 +2029,17 @@ the configured sandbox.
   Operation not permitted`. In both runs git could not write inside the repository's
   `.git` (`index.lock`, `refs/remotes/origin/main.lock`: `Operation not permitted`), so the
   push went out but the remote-tracking ref was not updated.
+- **`.git` is read-only inside a writable root, and a model turn asks before it commits.**
+  2026-10-16, codex-cli 0.162.0, real model turns through an app-server with the
+  parameters Koloft's TUI sends for each tab kind (folder trusted; `exclude_slash_tmp`
+  because the scratch repositories sat under `/tmp`), asked to `git add -A && git commit
+  -m probe && git push origin HEAD` to a local bare repository:
+  - A ＋ tab (`on-request`/`workspace-write`): `fatal: Unable to create
+    '<repo>/.git/index.lock': Operation not permitted`; one run then sent
+    `item/commandExecution/requestApproval` to rerun it outside the sandbox, another only
+    reported the failure. A worktree tab: the same on `<repo>/.git/worktrees/<name>/
+    index.lock`. An Assist (`never`): the same error, exit 128, no request.
+  - With `<repo>/.git` (and for a worktree also `<repo>/.git/worktrees/<name>`) added to
+    `sandbox_workspace_write.writable_roots`, commit and push ran with no question.
 - Not probed yet: a push to the real github.com from a Codex turn.
 

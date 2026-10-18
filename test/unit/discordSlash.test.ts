@@ -3,6 +3,7 @@ import type { SessionStatus } from '../../src/shared/types'
 import {
   MORE_OUTPUT_SETTLES_MS,
   NOTHING_CAME_BACK_MS,
+  SCREEN_SHOWS_THE_OUTPUT_MS,
   SlashCommands,
   type SlashDeps
 } from '../../src/main/discord/slash'
@@ -23,10 +24,12 @@ function setup(over: Partial<SlashDeps> = {}) {
     asking: () => false,
     takesTyping: () => turnIsOver(status),
     panelOpen: async () => undefined,
+    screen: async () => undefined,
     nextMirrorPull: () => undefined,
     ready: async (_t, ready) => ready(),
     exclusive: (_t, typing) => typing(),
     typeNow: async (_t, keys) => void typed.push(...keys),
+    outputOnlyOnScreen: () => undefined,
     post: (_c, text) => void posts.push(text),
     card: (_c, card) => void posts.push(`${card.header}\n${card.body}`),
     ...over
@@ -62,6 +65,20 @@ describe('a slash command typed into a session', () => {
     const { slash, typed } = setup({ backendOf: () => 'codex' })
     await slash.typeWhenIdle(child, '/compact', CHANNEL)
     expect(typed).toEqual(['\x05\x15', '/compact', '\x1b', '\r'])
+  })
+
+  it('in Antigravity, which keeps no command output on disk, posts what its screen shows and presses Esc to close the panel', async () => {
+    const { slash, typed, posts } = setup({
+      backendOf: () => 'agy',
+      outputOnlyOnScreen: async () => 'Models & Quota\nGemini 3.1 Pro  42% left'
+    })
+    await slash.typeWhenIdle(child, '/usage', CHANNEL)
+    expect(typed).toEqual(['/usage', '\r'])
+    await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS)
+    expect(typed).toEqual(['/usage', '\r', '\x1b'])
+    expect(posts).toEqual([
+      '⌨️ **fix-login** ran /usage:\nModels & Quota\nGemini 3.1 Pro  42% left'
+    ])
   })
 
   it('posts what the command printed once no more output follows, and counts as running until then', async () => {
@@ -163,13 +180,30 @@ describe('a slash command typed into a session', () => {
     )
   })
 
-  it('in Codex, also closes a pager and empties the box, since Esc alone leaves an unknown command typed there', async () => {
-    const { slash, typed, posts } = setup({ backendOf: () => 'codex' })
+  it('in Codex, also closes a pager and empties the box, since Esc alone leaves an unknown command typed there, and posts the screen as it was before those keys', async () => {
+    const typed: string[] = []
+    const { slash, posts } = setup({
+      backendOf: () => 'codex',
+      typeNow: async (_t, keys) => void typed.push(...keys),
+      screen: async () => (typed.includes('q') ? ['›'] : ['', 'Model: gpt-5', '›', ''])
+    })
     await slash.typeWhenIdle(child, '/stauts', CHANNEL)
     await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS)
     expect(typed.slice(4)).toEqual(['\x1b', 'q', '\x05\x15'])
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
-    expect(posts[0]).toMatch(/only on its screen/)
+    expect(posts[0]).toContain('here is its screen:\n```\nModel: gpt-5\n›\n```')
+  })
+
+  it('posts the screen of a session that printed nothing readable and opened no panel, as Muse draws a command’s output only on its screen', async () => {
+    const { slash, posts } = setup({
+      backendOf: () => 'muse',
+      panelOpen: async () => false,
+      screen: async () => ['Usage', '  5h  12%', '❯']
+    })
+    await slash.typeWhenIdle(child, '/usage', CHANNEL)
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
+    expect(posts[0]).toContain('  5h  12%')
+    expect(posts[0]).not.toContain('Nothing came back')
   })
 
   it('a local Claude panel that one Esc does not close gets another, but Esc stops once Claude says nothing is open', async () => {

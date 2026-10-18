@@ -12,6 +12,7 @@ import { IconEdit, IconOutline, IconReload, IconSearch } from '../icons'
 import '../filesView.css'
 import type {
   ArtifactView,
+  BaseChoice,
   EditFingerprint,
   GitNumstatMap,
   GitStatusMap,
@@ -36,7 +37,6 @@ import {
   relOf,
   saveList,
   splitPath,
-  type BaseChoice,
   type ChangeFilters,
   type FilesMenu,
   type FilesTab
@@ -567,6 +567,7 @@ export function FilesBody({
             recents={c.recents}
             bookmarks={c.bookmarks}
             sideWidth={shownSideWidth}
+            refreshNonce={c.refreshNonce}
             onOpen={openPath}
             onEdit={onEdit}
             newFileDir={newFileDir}

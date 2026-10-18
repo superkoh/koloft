@@ -101,6 +101,12 @@ export class GitMachineAccounts {
     if (!needGcm || facts.gcm) return { ok: true }
     const download = facts.gcmAsset && gcmDownload(facts.gcmAsset)
     if (!download) return { ok: false, error: 'no-gcm' }
+    if (!facts.fetch)
+      return {
+        ok: false,
+        error: 'machine',
+        message: `${machine} has neither curl nor wget, so Koloft cannot fetch the sign-in tool there. Install one of them on ${machine}, then add the account again.`
+      }
     const installed = await this.run(machine, INSTALL_GCM, [download.url, download.sha256], {
       timeoutMs: GCM_INSTALL_TIMEOUT_MS
     })

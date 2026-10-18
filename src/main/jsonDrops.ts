@@ -25,7 +25,7 @@ export function writeWholeBeforeVisible(dest: string, text: string): void {
   fs.renameSync(tmp, dest)
 }
 
-type DropHandlerFor = (name: string) => ((obj: unknown, full: string) => void) | null
+export type DropHandlerFor = (name: string) => ((obj: unknown, full: string) => void) | null
 
 function readNamedDrop(dir: string, name: string, handlerFor: DropHandlerFor): void {
   if (!name.endsWith('.json')) return

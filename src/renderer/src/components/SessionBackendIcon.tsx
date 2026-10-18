@@ -1,6 +1,14 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { BsClaude, BsOpenai } from 'react-icons/bs'
+import { BsClaude, BsGoogle, BsMeta, BsOpenai } from 'react-icons/bs'
 import type { BackendId } from '@shared/types'
+import type { IconType } from 'react-icons'
+
+const ICON: Record<BackendId, IconType> = {
+  claude: BsClaude,
+  codex: BsOpenai,
+  muse: BsMeta,
+  agy: BsGoogle
+}
 
 export function SessionBackendIcon({
   backend,
@@ -11,7 +19,7 @@ export function SessionBackendIcon({
   size?: number
   decorative?: boolean
 }) {
-  const Icon = backend === 'codex' ? BsOpenai : BsClaude
+  const Icon = ICON[backend]
   if (decorative) return <Icon size={size} aria-hidden="true" />
   return (
     <span

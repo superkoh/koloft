@@ -15,6 +15,8 @@ import {
   type TabSpec
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
+import { museRunLines } from '../../src/main/museRemote'
+import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
 
 const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
 const tmpRoots: string[] = []
@@ -403,7 +405,8 @@ exit 0
           HOME: home,
           PATH: '/usr/bin:/bin',
           SHELL: path.join(bin, 'fish'),
-          ANTHROPIC_API_KEY: 'stale-machine-key'
+          ANTHROPIC_API_KEY: 'stale-machine-key',
+          GEMINI_API_KEY: 'stale-machine-key'
         },
         timeout: 30_000
       })
@@ -478,6 +481,130 @@ describe('U-TAB-*: the tab script on the machine', () => {
     ])
     expect(b.env().PATH.split(':')[0]).toBe(`${m}/bin/`)
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
+  })
+
+  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper, and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
+    const s = spec({
+      tmuxName: 'm-T',
+      program: {
+        name: 'muse',
+        run: museRunLines({
+          tabId: 'T',
+          account: "o'brien",
+          args: ['--approval-judge', 'off', 'say hi'],
+          trust: []
+        }),
+        files: { 'T.auth.json': '{"providers":{}}', 'T.hooks.json': '{"hooks":{}}' }
+      }
+    })
+    const b = box(s)
+    const own = path.join(b.home, '.config', 'muse')
+    fs.mkdirSync(own, { recursive: true })
+    fs.writeFileSync(path.join(own, 'settings.json'), '{"schema_version":1}')
+    const accountMuse = path.join(b.home, '.koloft', 'muse-homes', "o'brien", 'muse')
+    fs.mkdirSync(accountMuse, { recursive: true })
+    fs.symlinkSync(path.join(own, 'AGENTS.md'), path.join(accountMuse, 'AGENTS.md'))
+    fs.writeFileSync(
+      path.join(b.home, '.local', 'bin', 'python3'),
+      `#!/bin/sh\nenv > ${JSON.stringify(path.join(b.logs, 'env'))}\nprintf '%s\\n' "$@" > ${JSON.stringify(path.join(b.logs, 'argv'))}\n`,
+      { mode: 0o755 }
+    )
+    expect(b.run().status).toBe(0)
+    expect(b.tmux().join(' ')).toContain('new-session -A -D -s m-T')
+    const m = path.join(b.home, '.koloft', 'm-0000000000000000')
+    expect(b.argv()).toEqual([
+      `${m}/muse-wrap.py`,
+      `${b.home}/.koloft/hook-sessions`,
+      'T',
+      '--',
+      'muse',
+      '--approval-judge',
+      'off',
+      'say hi'
+    ])
+    const account = path.join(b.home, '.koloft', 'muse-homes', "o'brien")
+    expect(b.env()).toMatchObject({
+      XDG_CONFIG_HOME: account,
+      TBH_CREDENTIAL_BACKEND: 'file',
+      TBH_MANAGED_HOOKS_PATH: `${b.home}/.koloft/tabs/T.hooks.json`
+    })
+    expect(fs.readFileSync(path.join(account, 'muse', 'auth.json'), 'utf8')).toBe(
+      '{"providers":{}}'
+    )
+    expect(fs.statSync(path.join(account, 'muse', 'auth.json')).mode & 0o777).toBe(0o600)
+    expect(fs.existsSync(path.join(b.tabs, 'T.auth.json'))).toBe(false)
+    expect(fs.readlinkSync(path.join(account, 'muse', 'settings.json'))).toBe(
+      path.join(own, 'settings.json')
+    )
+    expect(fs.readlinkSync(path.join(account, 'muse', 'trust.json'))).toBe(
+      path.join(own, 'trust.json')
+    )
+    expect(fs.lstatSync(path.join(account, 'muse', 'AGENTS.md'), { throwIfNoEntry: false })).toBe(
+      undefined
+    )
+    fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
+    b.run('attach')
+    expect(b.tmux().slice(-6)).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess9'])
+  })
+
+  it("an Antigravity tab puts Koloft's settings, hooks and carried sign-in into its account's folder on the machine, links the machine user's own conversations there, runs agy with Koloft's API key and never the machine's own, and a reconnect attaches by the name agy's title script gave the tmux session", () => {
+    const tabFiles = {
+      'T.settings.json': '{"koloft":1}',
+      'T.hooks.json': '{"hooks":{}}',
+      'T.auth.json': 'oauth-token'
+    }
+    const s = spec({
+      tmuxName: 'm-T-t',
+      env: { [AGY_KEY_FROM_KOLOFT]: 'koloft-key' },
+      program: agyTab({
+        tabId: 'T',
+        account: "o'brien",
+        args: ['--csrf_token=x', 'say hi'],
+        settings: tabFiles['T.settings.json'],
+        hooks: tabFiles['T.hooks.json'],
+        token: tabFiles['T.auth.json']
+      })
+    })
+    const b = box(s)
+    fs.writeFileSync(
+      path.join(b.home, '.local', 'bin', 'agy'),
+      `#!/bin/sh\nenv > ${JSON.stringify(path.join(b.logs, 'env'))}\nprintf '%s\\n' "$@" > ${JSON.stringify(path.join(b.logs, 'argv'))}\n`,
+      { mode: 0o755 }
+    )
+    expect(b.run().status).toBe(0)
+    expect(b.tmux().join(' ')).toContain('new-session -A -D -s m-T-t')
+    const account = path.join(b.home, '.koloft', 'agy', "o'brien")
+    expect(b.argv()).toEqual([`--gemini_dir=${account}`, '--csrf_token=x', 'say hi'])
+    expect(b.env().GEMINI_API_KEY).toBe('koloft-key')
+    expect(b.env()[AGY_KEY_FROM_KOLOFT]).toBeUndefined()
+    expect(b.env().KOLOFT_AGY_LOG).toBe(`${b.home}/.koloft/hook-sessions/T.agy.jsonl`)
+    const app = path.join(account, 'antigravity-cli')
+    expect(fs.readFileSync(path.join(app, 'settings.json'), 'utf8')).toBe('{"koloft":1}')
+    expect(fs.readFileSync(path.join(account, 'config', 'hooks.json'), 'utf8')).toBe('{"hooks":{}}')
+    expect(fs.readFileSync(path.join(app, 'antigravity-oauth-token'), 'utf8')).toBe('oauth-token')
+    for (const name of Object.keys(tabFiles))
+      expect(fs.existsSync(path.join(b.tabs, name))).toBe(false)
+    expect(fs.readlinkSync(path.join(app, 'conversations'))).toBe(
+      `${b.home}/.gemini/antigravity-cli/conversations`
+    )
+    fs.writeFileSync(path.join(b.tabs, 'T.tmux'), 'k-sess9')
+    b.run('attach')
+    expect(b.tmux().slice(-6)).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess9'])
+  })
+
+  it("an Antigravity tab started without an API key runs agy without the machine's own key", () => {
+    const b = box(
+      spec({
+        program: agyTab({ tabId: 'T', account: 'a', args: [], settings: '{}', hooks: '{}' })
+      })
+    )
+    fs.writeFileSync(
+      path.join(b.home, '.local', 'bin', 'agy'),
+      `#!/bin/sh\nenv > ${JSON.stringify(path.join(b.logs, 'env'))}\n`,
+      { mode: 0o755 }
+    )
+    expect(b.run().status).toBe(0)
+    expect(b.env().GEMINI_API_KEY).toBeUndefined()
   })
 
   it('a reconnect attaches to the running session and installs nothing', () => {

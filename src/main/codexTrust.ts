@@ -8,9 +8,11 @@ export function codexConfigFile(env: NodeJS.ProcessEnv | undefined): string {
   return path.join(env?.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml')
 }
 
-const projectHeader = (dir: string): string => `[projects.${JSON.stringify(fs.realpathSync(dir))}]`
+const projectHeaderOf = (realDir: string): string => `[projects.${JSON.stringify(realDir)}]`
 
-const hookStateHeader = (key: string): string => `[hooks.state.${JSON.stringify(key)}]`
+const projectHeader = (dir: string): string => projectHeaderOf(fs.realpathSync(dir))
+
+export const hookStateHeader = (key: string): string => `[hooks.state.${JSON.stringify(key)}]`
 
 function readConfig(configFile: string): string {
   try {
@@ -42,6 +44,16 @@ export function acceptCodexTrust(configFile: string, dir: string): void {
 }
 
 // CODEX§27
+export function codexHookTrusted(configFile: string, key: string, hash: string): boolean {
+  const lines = readConfig(configFile).split('\n')
+  const start = lines.findIndex((line) => line.trim() === hookStateHeader(key))
+  if (start < 0) return false
+  const trusted = `trusted_hash = ${JSON.stringify(hash)}`
+  for (let i = start + 1; i < lines.length && !lines[i].trim().startsWith('['); i++)
+    if (lines[i].trim() === trusted) return true
+  return false
+}
+
 export function acceptCodexHookTrust(configFile: string, key: string, hash: string): void {
   const header = hookStateHeader(key)
   const trusted = `trusted_hash = ${JSON.stringify(hash)}`
@@ -60,14 +72,16 @@ export function acceptCodexHookTrust(configFile: string, key: string, hash: stri
 
 // CODEX§11
 export function codexTrustsFolder(configFile: string, dir: string): boolean {
-  let text: string
-  let header: string
   try {
-    text = fs.readFileSync(configFile, 'utf8')
-    header = projectHeader(dir)
+    return configTrusts(fs.readFileSync(configFile, 'utf8'), fs.realpathSync(dir))
   } catch {
     return false
   }
+}
+
+// CODEX§11
+export function configTrusts(text: string, realDir: string): boolean {
+  const header = projectHeaderOf(realDir)
   const lines = text.split(/\r?\n/).map((line) => line.trim())
   const start = lines.indexOf(header)
   if (start < 0) return false
