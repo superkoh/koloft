@@ -17,8 +17,8 @@ through `ssh … codex app-server proxy`, speaks WebSocket over that line, and a
 opens a new line and resumes the thread. After the TUI's `initialized` the relay signs
 the server in with `chatgptAuthTokens` read from the picked account's home on the Mac,
 holds the TUI's frames until `account/login/completed`, and answers every token refresh
-request itself. Closing the tab ends the server; the first launch on a machine in each
-app run ends the servers a crash left behind.
+request itself. Closing the tab ends the server; the first launch or side question on a
+machine in each app run ends the servers a crash left behind, the side app-server too.
 **Rejected**:
 - The TUI in tmux on the machine, like Claude: Koloft would need a relay and node on
   the machine to see the frames, and a second copy of everything CodexObservation does.

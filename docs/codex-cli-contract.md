@@ -1008,6 +1008,23 @@ was only read in help.
 **Ending.** A SIGTERM to the ssh client of an idle `--stdio` app-server ended the remote
 process within 0.3 s. Mid-turn: not probed.
 
+**A `--stdio` app-server outlives a link that drops without a word.** Measured 2026-10-17,
+`@openai/codex@0.162.0` by npm on the Docker SSH lab's Debian 12 target, reached from the
+Mac's OpenSSH through the lab's jump host on one ControlMaster (`ControlPersist=yes`,
+`ServerAliveInterval=15`, `ServerAliveCountMax=3`), no login, an empty home. Both a
+SIGTERM and a SIGKILL to the Mac's ssh client ended the remote app-server (the npm `node`
+wrapper and the native `codex`) within the 32 ms a `docker exec ps` takes. With the
+target taken off its Docker network instead, the Mac's ssh client exited 59 s later. In
+one of two such runs both processes were still running 5 s and 65 s after the network came
+back: the target's `tcp_keepalive_time` was 7200 and sshd sets no `ClientAliveInterval`,
+so nothing there notices before then (that it ends at the keepalive is **inferred, not
+checked**); in the other they had ended by 5 s after it came back. With the Mac's ssh
+client stopped by SIGSTOP, the remote app-server kept running, as on such a drop. Timing
+on the same lab line, each run five times: a fresh line that sends `initialize` and one
+`thread/list` answered in 40–98 ms (162 ms once, the first line of a run); on one line
+kept open, each later `thread/list` answered in under 1 ms. The lab is a local container,
+not a network.
+
 **A `--listen` app-server shrugs off SIGTERM.** Measured 2026-10-17, `@openai/codex@0.162.0`
 installed by npm on Debian 12 (Docker, arm64), signed in with `chatgptAuthTokens`, idle
 after two real turns and with no client connected: the process tree was the npm `node`
