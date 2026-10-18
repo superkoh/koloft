@@ -24,6 +24,7 @@ import {
 } from './codexObservation'
 import {
   CodexRpc,
+  codexEnvironment,
   createCodexTransport,
   DEFAULT_MAX_FRAME,
   type CodexProcessOptions,
@@ -109,6 +110,11 @@ const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
 
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
+
+export const CODEX_TAB_ENV = {
+  koloftShim: false,
+  finishEnv: (env: NodeJS.ProcessEnv) => codexEnvironment(env)
+} as const
 
 const stringList = (raw: unknown): string[] =>
   (Array.isArray(raw) ? raw : []).filter((v): v is string => typeof v === 'string')
@@ -948,6 +954,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       const handle = this.deps.pty.create({
         id: tabId,
         kind: 'codex',
+        ...CODEX_TAB_ENV,
         ...launch,
         cols: opts.cols,
         rows: opts.rows,

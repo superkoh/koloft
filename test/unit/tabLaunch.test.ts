@@ -105,14 +105,21 @@ function filesUnder(dir: string): string {
     .join('\n')
 }
 
-async function claudeTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<string> {
+async function claudeTab(
+  cwd: string,
+  spec: Partial<CreateTabOptions>,
+  withPlugin = true
+): Promise<string> {
   let handed = ''
+  let conductor: boolean | undefined
+  let allowKoloft: boolean | undefined
   const backend = new ClaudeBackend({
     pty: {
       create: (args: Parameters<ClaudeBackendDeps['pty']['create']>[0]) => {
         const command =
           typeof args.launchCommand === 'function' ? args.launchCommand(TAB) : args.launchCommand
-        handed = `${command}\n${JSON.stringify({ conductor: args.conductor, env: args.extraEnv })}`
+        if (args.koloftShim) args.koloftShim.hookSettings(TAB)
+        handed = `${command}\n${JSON.stringify({ conductor, allowKoloft, env: args.extraEnv })}`
         return { id: TAB }
       }
     },
@@ -120,7 +127,7 @@ async function claudeTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<
     hosts: new Hosts(
       localHost(new GithubLookup(), {
         hookRegDir: () => regDir,
-        agentPlugin: () => '/koloft/agent-plugin',
+        agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
         assistOf: () => undefined
       }),
       (machine) =>
@@ -148,6 +155,11 @@ async function claudeTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<
     remoteSync: () => null,
     userData: () => userData,
     setupLine: () => undefined,
+    hookSettings: (_tabId: string, allowsKoloft: boolean, isConductor: boolean) => {
+      allowKoloft = allowsKoloft
+      conductor = isConductor
+      return undefined
+    },
     ptysChanged: () => {}
   } as unknown as ClaudeBackendDeps)
   const r = await backend.create({ kind: 'claude', cwd, ...spec })
@@ -395,4 +407,9 @@ describe('what each of the four kinds of session tab is handed for each launch f
       }
     })
   })
+})
+
+it("lets a Claude Code tab on this Mac run koloft without asking only when it brings Koloft's plugin", async () => {
+  expect(await claudeTab(repo, {})).toContain('"allowKoloft":true')
+  expect(await claudeTab(repo, {}, false)).toContain('"allowKoloft":false')
 })

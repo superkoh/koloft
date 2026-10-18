@@ -55,6 +55,8 @@ import {
   identityOf,
   backendsFrom,
   messagingOf,
+  PEER_TRAITS,
+  reachedBySendMessage,
   preferredAssistBackend,
   statusUnavailable,
   SUPPORTED_PAIRS
@@ -416,12 +418,7 @@ import {
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'
-import {
-  claudePeerNames,
-  claudeShowsAPanel,
-  runningClaudePid,
-  whenMessagingSocket
-} from './claudeSessionRegistry'
+import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
 import {
   asPeerName,
   conductorName,
@@ -441,14 +438,13 @@ import {
   workspaceVerb,
   type ClosableSession,
   type SessionScreen,
-  type PeerNameOf,
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
 import { crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
-import { koloftAssist } from './assist'
+import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import {
@@ -548,6 +544,19 @@ function asksTheOwner(tabId: string): boolean {
   return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
 }
 
+const panelOpenOn: Record<
+  BackendId,
+  (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
+> = {
+  claude: async (tabId, sessionId) =>
+    !sessionId || tracker.remoteOf(tabId) ? undefined : claudeShowsAPanel(sessionId),
+  codex: async () => undefined,
+  muse: async (tabId, _sessionId, screen) => {
+    const lines = screen ?? (await screenLines(tabId))
+    return lines && !museShowsItsInputBox(lines)
+  }
+}
+
 const slash = new SlashCommands({
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
@@ -556,12 +565,7 @@ const slash = new SlashCommands({
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId, screen) => {
     const s = sessionOfTab(tabId)
-    if (s?.backendId === 'muse') {
-      const lines = screen ?? (await screenLines(tabId))
-      return lines && !museShowsItsInputBox(lines)
-    }
-    if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
-    return claudeShowsAPanel(s.sessionId)
+    return s && panelOpenOn[s.backendId](tabId, s.sessionId, screen)
   },
   screen: screenLines,
   nextMirrorPull: (tabId) => {
@@ -784,16 +788,7 @@ function writeToTab(id: string, data: string): void {
 async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
   const title = s && sidebarTitle(s)
   if (title) return title
-  return s?.sessionId ? peerNameOf()(s) : null
-}
-function peerNameOf(): PeerNameOf {
-  const claudeName = claudePeerNames()
-  return async ({ backendId, sessionId }) =>
-    backendId === 'claude'
-      ? claudeName(sessionId)
-      : backendId === 'muse'
-        ? (museSessions?.peerName(sessionId) ?? null)
-        : null
+  return s?.sessionId ? sessionBackends.peerNames()(s) : null
 }
 function retitleDiscordThreads(sessions: SessionInfo[]): void {
   if (!discordThreads) return
@@ -1027,6 +1022,11 @@ let askButtons: AskButtons | null = null
 let secretAsks: SecretAsks | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
+let writeHookSettings:
+  ((tabId: string, allowKoloft: boolean, conductor: boolean) => string) | undefined
+const PLAIN_KOLOFT_SHIM = {
+  hookSettings: (tabId: string): string | undefined => writeHookSettings?.(tabId, false, false)
+}
 let claudeAgentPlugin: string | undefined
 let discordConnected = false
 
@@ -1197,7 +1197,8 @@ const museOnMachines: MuseRemoteDeps = {
     !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId),
   connected: (host) => !!remoteSync?.connected(host),
   poke: (host) => remoteSync?.pokeNow(host),
-  setupLine: () => setupLine(playwrightCliBin)
+  setupLine: () => setupLine(playwrightCliBin),
+  hookSettings: PLAIN_KOLOFT_SHIM.hookSettings
 }
 
 function machineProbes(cwd: string): ResumeProbes {
@@ -1244,25 +1245,28 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
   }
 })
 
-const assist = koloftAssist({
-  setting: () => loadSettings().assist,
-  enabled: (backend) => loadSettings().sessionMethods.enabled[backend],
-  target: async (backend) => {
-    if (backend === 'claude') {
-      const env = await pickedAccountEnv()
-      if (!env) return null
-      return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
-    }
-    if (backend === 'codex') {
-      const picked = pickCodexHome()
-      if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
-      const binary = codexSessions.cliBinary
-      if (!binary) return null
-      return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
-    }
+const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
+  claude: async () => {
+    const env = await pickedAccountEnv()
+    if (!env) return null
+    return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
+  },
+  codex: async () => {
+    const picked = pickCodexHome()
+    if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
+    const binary = codexSessions.cliBinary
+    if (!binary) return null
+    return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+  },
+  muse: async () => {
     const picked = musePicker.pick(accountViews())
     return picked ? ((await museServeFor(picked.name)) ?? null) : null
   }
+}
+const assist = koloftAssist({
+  setting: () => loadSettings().assist,
+  enabled: (backend) => loadSettings().sessionMethods.enabled[backend],
+  target: (backend) => assistTargets[backend]()
 })
 const assistRuns = new Map<number, AbortController>()
 
@@ -1271,21 +1275,27 @@ async function whyAssistCannotRunOn(
   enabled: SessionMethods['enabled']
 ): Promise<string | undefined> {
   if (!enabled[backend]) return `${BACKEND_LABEL[backend]} is turned off in Settings ▸ Sessions`
-  if (backend === 'codex') {
+  return whyAssistCannotRun[backend]()
+}
+
+const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> = {
+  claude: async () => {
+    const { res } = await pickForLaunch()
+    if (res.account !== null) return undefined
+    return res.reason === 'no-accounts'
+      ? 'there is no Claude account'
+      : 'every Claude account is at its limit'
+  },
+  codex: async () => {
     if (!codexSessions || !(await codexSessions.availability()).available)
       return 'Codex is not available on this Mac'
     return codexPicker.pick(accountViews()) ? undefined : 'every Codex account is at its limit'
-  }
-  if (backend === 'muse') {
+  },
+  muse: async () => {
     if (!museSessions || !(await museSessions.availability()).available)
       return 'Muse is not available on this Mac'
     return musePicker.pick(accountViews()) ? undefined : 'there is no usable Muse account'
   }
-  const { res } = await pickForLaunch()
-  if (res.account !== null) return undefined
-  return res.reason === 'no-accounts'
-    ? 'there is no Claude account'
-    : 'every Claude account is at its limit'
 }
 
 async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoice> {
@@ -1332,7 +1342,7 @@ const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.conductor),
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
-  peerNames: peerNameOf,
+  peerNames: () => sessionBackends.peerNames(),
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
@@ -1595,6 +1605,7 @@ function cancelGuidedLogin(tabId: string): void {
 function startGuidedLogin(name: string): string {
   const handle = ptyMgr.create({
     kind: 'shell',
+    koloftShim: PLAIN_KOLOFT_SHIM,
     cwd: os.homedir(),
     // CC§7
     cols: LOGIN_PTY_COLS_WIDER_THAN_TOKEN,
@@ -1930,7 +1941,14 @@ async function addMuseKey(name: string, key: string): Promise<AccountAddResult> 
 
 function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
   const cwd = os.homedir()
-  const handle = ptyMgr.create({ kind: 'shell', cwd, cols: 100, rows: 30, launchCommand })
+  const handle = ptyMgr.create({
+    kind: 'shell',
+    koloftShim: PLAIN_KOLOFT_SHIM,
+    cwd,
+    cols: 100,
+    rows: 30,
+    launchCommand
+  })
   return { tabId: handle.id, cwd }
 }
 
@@ -2225,7 +2243,7 @@ app.whenReady().then(() => {
   // ADR-0033
   Object.assign(process.env, gitAccounts.configEnv(process.env))
   gitAccounts.start()
-  ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
+  writeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
       tabId,
@@ -2586,10 +2604,7 @@ app.whenReady().then(() => {
     backend: assistBackendChoice,
     tabAlive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     liveTabFor: (backend, key) => sessionBackends.get(backend).aliveTabFor(key),
-    runningElsewhere: async (backend, key) =>
-      backend === 'claude'
-        ? (await runningClaudePid(key)) !== null
-        : backend === 'muse' && !!museSessions?.runningElsewhere(key),
+    runningElsewhere: (backend, key) => sessionBackends.runningElsewhere(backend, key),
     transcriptExists: async (backend, key) => sessionBackends.get(backend).transcriptExists(key),
     start: (l) =>
       launchQuietTab(
@@ -2601,12 +2616,11 @@ app.whenReady().then(() => {
           conductor: true,
           trustFolder: true,
           firstPrompt: l.firstPrompt,
-          name:
-            l.backend === 'claude'
+          name: !PEER_TRAITS[l.backend].namedAtLaunch
+            ? undefined
+            : reachedBySendMessage(l.backend)
               ? asPeerName(l.title)
-              : l.backend === 'muse'
-                ? l.title
-                : undefined
+              : l.title
         },
         l.title
       ),
@@ -4517,6 +4531,8 @@ const claudeBackend = new ClaudeBackend({
   remoteSync: () => remoteSync,
   userData: () => app.getPath('userData'),
   setupLine: () => setupLine(playwrightCliBin),
+  hookSettings: (tabId, allowKoloft, conductor) =>
+    writeHookSettings?.(tabId, allowKoloft, conductor),
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
@@ -4552,6 +4568,7 @@ function registerIpc(): void {
       const launch = hosts.of(requested).shell(requested)
       const handle = ptyMgr.create({
         kind: 'shell',
+        koloftShim: PLAIN_KOLOFT_SHIM,
         cwd: launch.spawnCwd,
         cols: opts.cols,
         rows: opts.rows,

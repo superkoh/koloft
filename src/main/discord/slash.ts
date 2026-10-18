@@ -16,8 +16,18 @@ const CLOSE_THE_COMMAND_MENU = ESC
 const CLOSE_PAGER = 'q'
 const TO_LINE_END = '\x05'
 const CLEAR_TO_LINE_START = '\x15'
+const EMPTY_THE_BOX = TO_LINE_END + CLEAR_TO_LINE_START
 // CODEX§21
-const CODEX_BACK_TO_AN_EMPTY_BOX = [ESC, CLOSE_PAGER, TO_LINE_END + CLEAR_TO_LINE_START]
+const BACK_TO_AN_EMPTY_BOX: Record<BackendId, string[]> = {
+  claude: [ESC],
+  codex: [ESC, CLOSE_PAGER, EMPTY_THE_BOX],
+  muse: [ESC]
+}
+const BEFORE_A_COMMAND: Record<BackendId, string[]> = {
+  claude: [],
+  codex: [EMPTY_THE_BOX],
+  muse: []
+}
 // CC§11 CC§12
 const PANEL_CLOSES_WITHIN_MS = 500
 const ESC_PRESSES_AT_MOST = 3
@@ -63,8 +73,7 @@ interface Pending {
 
 // CC§12 CODEX§21
 export function commandKeys(text: string, backend: BackendId | undefined): string[] {
-  const typed = [text, CLOSE_THE_COMMAND_MENU, '\r']
-  return backend === 'codex' ? [TO_LINE_END + CLEAR_TO_LINE_START, ...typed] : typed
+  return [...(backend ? BEFORE_A_COMMAND[backend] : []), text, CLOSE_THE_COMMAND_MENU, '\r']
 }
 
 const SCREEN_LINES_IN_A_RESULT = 40
@@ -180,8 +189,8 @@ export class SlashCommands {
     if (!quiet()) return
     if (panel !== false) {
       p.pressedEsc = true
-      const keys = this.d.backendOf(tab) === 'codex' ? CODEX_BACK_TO_AN_EMPTY_BOX : [ESC]
-      await this.press(tab, keys)
+      const backend = this.d.backendOf(tab)
+      await this.press(tab, backend ? BACK_TO_AN_EMPTY_BOX[backend] : [ESC])
     }
     for (let more = 1; panel && more < ESC_PRESSES_AT_MOST; more++) {
       await sleep(PANEL_CLOSES_WITHIN_MS)

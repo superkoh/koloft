@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendId, SessionStatus } from '@shared/types'
-import { BACKEND_LABEL } from '@shared/sessionBackend'
+import { BACKEND_LABEL, messagingOf } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { newerSnowflake } from '@shared/conductors'
 import { safeDownloadName } from '@shared/downloadName'
@@ -52,13 +52,23 @@ const takesYesOrNo = (label: string): string => `a ${label} approval takes yes o
 const takesAnOption = (label: string): string =>
   `this ${label} question takes the number or the name of one option.`
 
-type KeyedBackend = 'codex' | 'muse'
-const answersByKeys = (backend: BackendId | undefined): backend is KeyedBackend =>
-  backend === 'codex' || backend === 'muse'
-
 // CODEX§20 MUSE§11
-const optionKeys = (backend: KeyedBackend, key: string): string[] =>
-  backend === 'muse' ? [key, '\r'] : [key]
+const OPTION_KEYS: Record<BackendId, ((key: string) => string[]) | undefined> = {
+  claude: undefined,
+  codex: (key) => [key],
+  muse: (key) => [key, '\r']
+}
+const optionKeysOf = (backend: BackendId | undefined): ((key: string) => string[]) | undefined =>
+  backend && OPTION_KEYS[backend]
+
+// MUSE§7
+const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
+  claude: true,
+  codex: true,
+  muse: false
+}
+const typedIntoWhileWorking = (backend: BackendId | undefined): boolean =>
+  !backend || TYPED_INTO_WHILE_WORKING[backend]
 const ASK_SUFFIX = '.ask.json'
 const ANSWER_SUFFIX = '.answer.json'
 const QUEUED = '⏳'
@@ -261,12 +271,10 @@ export class DiscordRelay {
     const tab = await this.readyTab(dest)
     const text = await item.text(tab)
     if (item.command) return dest.typeCommand(tab, text)
-    if (this.d.backendOf(tab) === 'codex') {
-      await this.d.queue(tab, text, item.clientId)
-      return
-    }
-    if (dest.conductor && this.d.backendOf(tab) === 'claude')
-      return this.sendAsPeer(tab, text, item.clientId)
+    const backend = this.d.backendOf(tab)
+    const route = backend && messagingOf(backend, this.d.remote(tab))
+    if (route === 'queue') return this.d.queue(tab, text, item.clientId)
+    if (dest.conductor && route === 'peerLine') return this.sendAsPeer(tab, text, item.clientId)
     await this.d.type(tab, [text, '\r'])
   }
 
@@ -299,8 +307,7 @@ export class DiscordRelay {
       !!this.d.boundKey(tab) &&
       status !== undefined &&
       status !== 'approval' &&
-      // MUSE§7
-      !(status === 'working' && this.d.backendOf(tab) === 'muse') &&
+      !(status === 'working' && !typedIntoWhileWorking(this.d.backendOf(tab))) &&
       !this.hookWaits(tab)
     )
   }
@@ -427,7 +434,8 @@ export class DiscordRelay {
 
   async answerSession(tab: string, reply: string): Promise<string | undefined> {
     const backend = this.d.backendOf(tab)
-    if (answersByKeys(backend)) {
+    const optionKeys = optionKeysOf(backend)
+    if (backend && optionKeys) {
       const label = BACKEND_LABEL[backend]
       if (this.d.pendingApproval(tab)) {
         const key = codexKeyFor(reply)
@@ -439,7 +447,7 @@ export class DiscordRelay {
       if (!question) return this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG
       const key = codexOptionKey(question, reply)
       if (!key) return takesAnOption(label)
-      await this.press(tab, optionKeys(backend, key))
+      await this.press(tab, optionKeys(key))
       return undefined
     }
     const ask = this.openAsk(tab)
@@ -487,8 +495,8 @@ export class DiscordRelay {
     const asked = this.codexAsks.get(tab)
     if (asked === undefined) return false
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
-    const backend = this.d.backendOf(tab)
-    if (!open || open.id !== asked || !answersByKeys(backend)) {
+    const optionKeys = optionKeysOf(this.d.backendOf(tab))
+    if (!open || open.id !== asked || !optionKeys) {
       this.codexAsks.delete(tab)
       return false
     }
@@ -498,7 +506,7 @@ export class DiscordRelay {
       this.say(m.channelId, question ? PICK_ONE_OPTION : CODEX_NEEDS_YES_OR_NO, m.id)
       return true
     }
-    void this.press(tab, question ? optionKeys(backend, key) : [key])
+    void this.press(tab, question ? optionKeys(key) : [key])
     return true
   }
 
