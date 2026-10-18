@@ -150,7 +150,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       fs.writeFileSync(path.join(repo, 'staged.txt'), 'one\ntwo\n')
       git('add', 'staged.txt')
       fs.writeFileSync(path.join(repo, 'loose.txt'), 'x\n')
-      const local = localHost(new GithubLookup({}))
+      const local = localHost(new GithubLookup({}), {} as never)
       const bareKeys = <V>(m: Record<string, V>): Record<string, V> =>
         Object.fromEntries(
           Object.entries(m).map(([k, v]) => [k.replace(`ssh://${MACHINE}`, ''), v])
