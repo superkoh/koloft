@@ -210,10 +210,16 @@ export function realDirAndConfigCmd(dir: string): string {
   )
 }
 
-// CODEX§16
-export function machineAppServerCmd(): string {
+const SIDE_SERVER = 'side'
+
+// ADR-0039 CODEX§16
+export function machineAppServerCmd(instance: string): string {
+  assertSafeNames(instance)
   return remoteShCommand(
-    `${CODEX_FIRST_ON_PATH}\nCODEX_HOME="${REMOTE_CODEX_HOME}"; export CODEX_HOME\n` +
+    `D="${serversDir(instance)}"\n${STOP_SERVER_FN}\n` +
+      `mkdir -p "$D" && chmod 700 "$D" || exit 3\n` +
+      `stop_one ${SIDE_SERVER}\necho $$ > "$D/${SIDE_SERVER}.pid"\n` +
+      `${CODEX_FIRST_ON_PATH}\nCODEX_HOME="${REMOTE_CODEX_HOME}"; export CODEX_HOME\n` +
       'exec codex app-server --stdio -c check_for_update_on_startup=false'
   )
 }

@@ -130,6 +130,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
   socket.on('close', () => process.exit(0))
 } else if (argv[0] === 'app-server') {
   append('fake-codex-server-calls.jsonl', {
+    pid: process.pid,
     argv,
     cwd: process.cwd(),
     codexHome,

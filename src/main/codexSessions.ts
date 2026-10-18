@@ -343,7 +343,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   readonly id = 'codex'
   private crashLeftoversEnded?: Promise<void>
   private listedHooks = new Map<string, ListedHook>()
-  private sideServers = new CodexSideServers((home) => this.rpc(home))
+  private sideServers = new CodexSideServers((home: string | undefined) => this.rpc(home))
+  private machineSideServers = new CodexSideServers((machine: string) => this.machineRpc(machine))
   private machineHistory = new Map<
     string,
     { at: number; reading?: Promise<void>; error?: unknown }
@@ -476,19 +477,20 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§16
-  private async withMachineRpc<T>(machine: string, use: (rpc: CodexRpc) => Promise<T>): Promise<T> {
+  private machineRpc(machine: string): CodexRpc {
     const m = this.machineDeps()
-    await m.ready()
-    const rpc = new CodexRpc({
+    return new CodexRpc({
       binary: 'ssh',
-      args: [...m.sshArgs(machine, true), machine, machineAppServerCmd()],
+      args: [...m.sshArgs(machine, true), machine, machineAppServerCmd(m.instance)],
       cwd: os.homedir()
     })
-    try {
-      return await use(rpc)
-    } finally {
-      await rpc.close()
-    }
+  }
+
+  // ADR-0039
+  private async withMachineRpc<T>(machine: string, use: (rpc: CodexRpc) => Promise<T>): Promise<T> {
+    await this.machineDeps().ready()
+    await this.sweptOnce(machine)
+    return this.machineSideServers.ask(machine, use)
   }
 
   private withRpcFor<T>(key: string, use: (rpc: CodexRpc) => Promise<T>): Promise<T> {
@@ -561,11 +563,15 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   hasProcesses(): boolean {
-    return super.hasProcesses() || this.sideServers.anyOpen
+    return super.hasProcesses() || this.sideServers.anyOpen || this.machineSideServers.anyOpen
   }
 
   async stopAll(deadlineMs?: number): Promise<void> {
-    await Promise.all([super.stopAll(deadlineMs), this.sideServers.closeAll()])
+    await Promise.all([
+      super.stopAll(deadlineMs),
+      this.sideServers.closeAll(),
+      this.machineSideServers.closeAll()
+    ])
   }
 
   // CODEX§26
