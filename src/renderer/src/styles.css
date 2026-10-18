@@ -6318,18 +6318,19 @@ input.ft-newfile {
 }
 
 /* PLATFORM§24 */
-:where([title]:not(.tb-ico, .aux-ico, .side-grip, .switch)) {
-  position: relative;
-}
-:where([title]:not(.tb-ico, .aux-ico, .side-grip, .switch))::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-}
-:where([title]:has(:where([title], button))) {
-  isolation: isolate;
-}
-:where([title]) :where([title], button) {
-  position: relative;
-  z-index: 1;
+.kt-tip {
+  position: fixed;
+  z-index: 300;
+  max-width: 420px;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  box-shadow: 0 14px 40px -10px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
 }
