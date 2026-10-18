@@ -16,7 +16,9 @@ export function museBackend(
     {
       accountUsable: () => hasUsableAccount(listAccounts(), 'muse'),
       trustsFolder: (dir) => sessions.trustsFolder(dir),
-      turns: (key, n) => sessions.readTurns(key, n)
+      turns: (key, n) => sessions.readTurns(key, n),
+      peerNames: () => async (key) => sessions.peerName(key),
+      runningElsewhere: (key) => sessions.runningElsewhere(key)
     },
     machineProbes
   )

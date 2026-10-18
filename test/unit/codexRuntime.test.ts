@@ -4,6 +4,7 @@ import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolveCodexRuntime } from '../../src/main/codexRuntime'
 import { PtyManager } from '../../src/main/ptyManager'
+import { CODEX_TAB_ENV } from '../../src/main/codexSessions'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 
 const fake = vi.hoisted(() => ({ spawn: vi.fn() }))
@@ -116,9 +117,9 @@ describe('Codex shell runtime', () => {
     manager.regDir = '/must-not-register'
     manager.pickDir = '/must-not-pick'
     manager.cdpDir = '/must-not-browse'
-    manager.makeHookSettings = vi.fn(() => '/must-not-hook')
     manager.create({
       kind: 'codex',
+      ...CODEX_TAB_ENV,
       cwd: directory,
       executable: runtime.binary,
       argv: ['--remote', 'unix:///test/socket'],
@@ -133,6 +134,5 @@ describe('Codex shell runtime', () => {
     expect(options.env.OPENAI_API_KEY).toBe('profile-fixture-key')
     expect(Object.keys(options.env).some((key) => key.startsWith('KOLOFT_'))).toBe(false)
     expect(options.env.CODEX_THREAD_ID).toBeUndefined()
-    expect(manager.makeHookSettings).not.toHaveBeenCalled()
   })
 })

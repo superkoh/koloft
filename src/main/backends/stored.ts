@@ -9,7 +9,10 @@ import { dirExistsSync, planResume, type ResumeProbes } from '../resumePlan'
 export function storedBackend(
   sessions: CodexSessions | MuseSessions,
   resumeProbes: ResumeProbes,
-  own: Pick<SessionBackend, 'accountUsable' | 'trustsFolder' | 'turns'>,
+  own: Pick<
+    SessionBackend,
+    'accountUsable' | 'trustsFolder' | 'turns' | 'peerNames' | 'runningElsewhere'
+  >,
   machineProbes?: (cwd: string) => ResumeProbes
 ): SessionBackend {
   return {
@@ -36,8 +39,7 @@ export function storedBackend(
       }
     },
     resumePlan: async (key): Promise<ResumePlan> => {
-      if ('runningElsewhere' in sessions && sessions.runningElsewhere(key))
-        return { action: 'unavailable', reason: 'running' }
+      if (await own.runningElsewhere(key)) return { action: 'unavailable', reason: 'running' }
       const row = sessions.findRow(key)
       const onMachine = !!row && isRemoteKey(row.cwd)
       if (row && !onMachine && !row.worktreeState && !dirExistsSync(row.cwd)) {

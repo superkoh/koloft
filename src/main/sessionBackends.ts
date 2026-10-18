@@ -47,6 +47,8 @@ export interface SessionBackend {
   trustsFolder(dir: string): boolean | Promise<boolean>
   turns(key: string, n: number): Promise<Turn[]>
   permissionClass(tabId: string): ModeClass
+  peerNames(): (key: string) => Promise<string | null>
+  runningElsewhere(key: string): boolean | Promise<boolean>
 }
 
 export interface SessionLifecycle {
@@ -171,6 +173,21 @@ export class SessionBackends {
 
   permissionClass(tabId: string): ModeClass {
     return this.ownerOfTab(tabId)?.permissionClass(tabId) ?? 'prompting'
+  }
+
+  peerNames(): (s: { backendId: BackendId; sessionId: string }) => Promise<string | null> {
+    const lookups = new Map<BackendId, (key: string) => Promise<string | null>>()
+    return async ({ backendId, sessionId }) => {
+      const backend = this.adapters.get(backendId)
+      if (!backend) return null
+      const lookup = lookups.get(backendId) ?? backend.peerNames()
+      lookups.set(backendId, lookup)
+      return lookup(sessionId)
+    }
+  }
+
+  async runningElsewhere(backendId: BackendId, key: string): Promise<boolean> {
+    return (await this.adapters.get(backendId)?.runningElsewhere(key)) ?? false
   }
 
   async historyRows(

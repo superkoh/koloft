@@ -7,6 +7,7 @@ import type { AskButtons } from './discord/buttons'
 import type { Conductors } from './discord/conductors'
 import type { LiveStatus } from './discord/liveStatus'
 import type { Notices } from './discord/notices'
+import type { SecretAsks } from './discord/secretAsks'
 import type { DiscordRelay } from './discord/relay'
 import type { SlashCommands } from './discord/slash'
 import type { SessionThreads } from './discord/threads'
@@ -51,6 +52,7 @@ export interface TabSubsystems {
   relay: MadeLater<Pick<DiscordRelay, 'forget'>>
   threads: MadeLater<Pick<SessionThreads, 'forget'>>
   buttons: MadeLater<Pick<AskButtons, 'forget'>>
+  secrets: MadeLater<Pick<SecretAsks, 'forget'>>
   workspaces: MadeLater<Pick<WorkspaceManager, 'launchEnded' | 'onTrackerUpdate'>>
   cron: MadeLater<Pick<CronRunner, 'onPtyExit'>>
   conductors: MadeLater<Pick<Conductors, 'onPtyExit'>>
@@ -63,6 +65,7 @@ export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems
   lifecycle.on('exit', ({ tabId }) => s.relay()?.forget(tabId))
   lifecycle.on('exit', ({ tabId }) => s.threads()?.forget(tabId))
   lifecycle.on('exit', ({ tabId }) => s.buttons()?.forget(tabId))
+  lifecycle.on('exit', ({ tabId }) => s.secrets()?.forget(tabId))
 
   lifecycle.on('teardown', ({ tabId }) => s.attention.clear(tabId))
   lifecycle.on('teardown', ({ tabId, crashed }) => s.claude.onPtyExit(tabId, crashed))

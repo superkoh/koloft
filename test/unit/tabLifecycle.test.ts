@@ -28,6 +28,7 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
     relay: () => ({ forget: say('relay.forget') }),
     threads: () => ({ forget: say('threads.forget') }),
     buttons: () => ({ forget: say('buttons.forget') }),
+    secrets: () => ({ forget: say('secrets.forget') }),
     workspaces: () => ({
       launchEnded: say('workspaces.launchEnded'),
       onTrackerUpdate: say('workspaces.onTrackerUpdate')
@@ -59,7 +60,8 @@ describe('TabLifecycle', () => {
       'live.forget t1',
       'relay.forget t1',
       'threads.forget t1',
-      'buttons.forget t1'
+      'buttons.forget t1',
+      'secrets.forget t1'
     ])
   })
 
@@ -72,7 +74,8 @@ describe('TabLifecycle', () => {
       'live.forget t1',
       'relay.forget t1',
       'threads.forget t1',
-      'buttons.forget t1'
+      'buttons.forget t1',
+      'secrets.forget t1'
     ])
   })
 

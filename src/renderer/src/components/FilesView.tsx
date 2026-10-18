@@ -12,6 +12,7 @@ import { IconEdit, IconOutline, IconReload, IconSearch } from '../icons'
 import '../filesView.css'
 import type {
   ArtifactView,
+  BaseChoice,
   EditFingerprint,
   GitNumstatMap,
   GitStatusMap,
@@ -36,7 +37,6 @@ import {
   relOf,
   saveList,
   splitPath,
-  type BaseChoice,
   type ChangeFilters,
   type FilesMenu,
   type FilesTab
