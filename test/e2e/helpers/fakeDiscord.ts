@@ -106,6 +106,7 @@ export interface FakeCallback {
     flags?: number
     choices?: { name: string; value: string }[]
     components?: RawComponent[]
+    custom_id?: string
   }
 }
 
@@ -120,6 +121,8 @@ export function openerNow(
 export const SLASH_COMMAND = 2
 export const BUTTON_PRESS = 3
 export const AUTOCOMPLETE = 4
+export const FORM_SUBMIT = 5
+export const OPEN_A_FORM = 9
 
 export function callbackText(c: FakeCallback): string {
   return c.data.components ? cardText(c.data.components).text : (c.data.content ?? '')
@@ -149,6 +152,7 @@ export interface FakeDiscord {
   commands: FakeCommand[]
   callbacks: FakeCallback[]
   press(author: FakeAuthor, button: FakeButton, channelId: string): string
+  submit(author: FakeAuthor, formId: string, typed: string, channelId: string): string
   say(
     author: FakeAuthor,
     content: string,
@@ -260,6 +264,32 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
               guild_id: FAKE_GUILD.id,
               member: { user: author },
               data: { custom_id: button.id, component_type: 2 }
+            }
+          })
+        )
+      return id
+    },
+    submit: (author, formId, typed, channelId) => {
+      const id = String(++nextId)
+      for (const ws of sockets)
+        ws.send(
+          JSON.stringify({
+            op: 0,
+            t: 'INTERACTION_CREATE',
+            s: ++seq,
+            d: {
+              id,
+              token: `token-${id}`,
+              type: FORM_SUBMIT,
+              channel_id: channelId,
+              guild_id: FAKE_GUILD.id,
+              member: { user: author },
+              data: {
+                custom_id: formId,
+                components: [
+                  { type: 1, components: [{ type: 4, custom_id: 'value', value: typed }] }
+                ]
+              }
             }
           })
         )
