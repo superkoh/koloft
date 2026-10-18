@@ -133,7 +133,7 @@ describe('Codex stdio reads', () => {
       }
       return best
     }
-    const small = await fastestMs(SMALL_BYTES)
+    const small = await readMs(SMALL_BYTES)
     const big = await fastestMs(SIZE_RATIO * SMALL_BYTES)
     expect(big / small, `${Math.round(small)}ms then ${Math.round(big)}ms`).toBeLessThan(
       SIZE_RATIO * LINEAR_SLACK_FAR_BELOW_THE_SQUARE_OF_THE_RATIO
