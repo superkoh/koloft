@@ -14,6 +14,7 @@ import type { BytesResult } from '../../src/main/remote/ssh'
 import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
+import { barePath } from '../../src/shared/remoteKey'
 
 const MACHINE = 'devbox'
 let home: string
@@ -152,9 +153,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       fs.writeFileSync(path.join(repo, 'loose.txt'), 'x\n')
       const local = localHost(new GithubLookup({}), {} as never)
       const bareKeys = <V>(m: Record<string, V>): Record<string, V> =>
-        Object.fromEntries(
-          Object.entries(m).map(([k, v]) => [k.replace(`ssh://${MACHINE}`, ''), v])
-        )
+        Object.fromEntries(Object.entries(m).map(([k, v]) => [barePath(k), v]))
       for (const choice of ['merge-base', 'head'] as const) {
         const remote = await machine().gitChanges(keyed(repo), choice)
         const here = await local.gitChanges(repo, choice)
