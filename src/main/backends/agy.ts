@@ -16,7 +16,9 @@ export function agyBackend(
     {
       accountUsable: () => hasUsableAccount(listAccounts(), 'agy'),
       trustsFolder: (dir) => sessions.trustsFolder(dir),
-      turns: (key, n) => sessions.readTurns(key, n)
+      turns: (key, n) => sessions.readTurns(key, n),
+      peerNames: () => async () => null,
+      runningElsewhere: () => false
     },
     machineProbes
   )

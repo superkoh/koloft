@@ -31,7 +31,9 @@ export function codexBackend(
           ? sessions.machineTrusts(onMachine)
           : codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir)
       },
-      turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n)
+      turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n),
+      peerNames: () => async () => null,
+      runningElsewhere: () => false
     },
     machineProbes
   )

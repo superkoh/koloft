@@ -41,7 +41,7 @@ import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
 import { SESSION_ID_RE } from '../claudeArgs'
 import { forgetClaudeProbe, probeClaude } from '../claudeProbe'
-import { runningClaudePid } from '../claudeSessionRegistry'
+import { claudePeerNames, runningClaudePid } from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
 import { sharedProcessTable } from '../processTable'
 import {
@@ -82,6 +82,7 @@ export interface ClaudeBackendDeps {
   remoteSync(): RemoteSync | null
   userData(): string
   setupLine(): string | undefined
+  hookSettings(tabId: string, allowKoloft: boolean, conductor: boolean): string | undefined
   ptysChanged(): void
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
@@ -185,6 +186,14 @@ export class ClaudeBackend implements SessionBackend {
 
   accountUsable(): boolean {
     return hasUsableAccount(listAccounts(), 'claude')
+  }
+
+  peerNames(): (key: string) => Promise<string | null> {
+    return claudePeerNames()
+  }
+
+  async runningElsewhere(key: string): Promise<boolean> {
+    return (await runningClaudePid(key)) !== null
   }
 
   trustsFolder(dir: string): Promise<boolean> {
@@ -862,7 +871,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private async localResumePlan(sessionId: string): Promise<ResumePlan> {
-    if (await runningClaudePid(sessionId)) return { action: 'unavailable', reason: 'running' }
+    if (await this.runningElsewhere(sessionId)) return { action: 'unavailable', reason: 'running' }
     const workspaces = this.d.workspaces()
     return planResume(
       workspaces?.findRow(sessionId),
@@ -925,13 +934,20 @@ export class ClaudeBackend implements SessionBackend {
     const machine = plan.machine
     const handle = this.d.pty.create({
       kind: 'claude',
+      koloftShim: {
+        hookSettings: (tabId) =>
+          this.d.hookSettings(
+            tabId,
+            plan.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
+            plan.conductor === true
+          )
+      },
       cwd: plan.spawnCwd,
       cols: spec.cols,
       rows: spec.rows,
       setupCommand: this.d.setupLine(),
       launchCommand: plan.launchCommand,
       resumeSessionId: spec.resumeSessionId,
-      conductor: plan.conductor,
       resized: plan.resized,
       remoteHost: machine?.tracking.host,
       shell: plan.shell,

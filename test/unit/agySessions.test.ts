@@ -243,6 +243,7 @@ beforeEach(() => {
       connected: () => true,
       nextPull: async () => undefined,
       setupLine: () => undefined,
+      hookSettings: () => undefined,
       machineName: () => 'm-test'
     }
   }

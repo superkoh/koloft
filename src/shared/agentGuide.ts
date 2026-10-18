@@ -2,7 +2,7 @@ import { conductorName, GLOBAL_SCOPE } from './conductors'
 import { GH_ISSUE_CREATE_TEXT, GH_READ_FLAGS, GH_READS_TEXT } from './githubCommands'
 import { parseRemoteKey, remoteCopyText } from './remoteKey'
 import type { BackendId } from './types'
-import { BACKEND_LABEL, SESSION_BACKENDS } from './sessionBackend'
+import { BACKEND_LABEL, PEER_TRAITS, SESSION_BACKENDS } from './sessionBackend'
 
 const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
   const labels = backends.map((b) => BACKEND_LABEL[b])
@@ -16,7 +16,11 @@ const KINDS_BUT_CLAUDE = kindsOf(
   'or'
 )
 const KINDS_WITH_A_NAME = kindsOf(
-  SESSION_BACKENDS.filter((b) => b !== 'codex'),
+  SESSION_BACKENDS.filter((b) => PEER_TRAITS[b].namedAtLaunch),
+  'or'
+)
+const KINDS_WITHOUT_A_NAME = kindsOf(
+  SESSION_BACKENDS.filter((b) => !PEER_TRAITS[b].namedAtLaunch),
   'or'
 )
 const BACKEND_CHOICE = SESSION_BACKENDS.join('|')
@@ -184,7 +188,7 @@ koloft workspace list
     Only for the global Assist: list the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--model <model>] -- "<first message>"
-    Start a sibling session of your own kind (${OWN_KIND}), and print the name to reach it by. A ${KINDS_WITH_A_NAME} session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which cannot be a remote (SSH) workspace. A Codex session has no name; for a ${KINDS_BUT_CLAUDE} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
+    Start a sibling session of your own kind (${OWN_KIND}), and print the name to reach it by. A ${KINDS_WITH_A_NAME} session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which cannot be a remote (SSH) workspace. A ${KINDS_WITHOUT_A_NAME} session has no name; for a ${KINDS_BUT_CLAUDE} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
     Example: koloft session new --name "Fix docs links" -- "Fix the broken links in docs/."
     Example: koloft session new --workspace koloft -- "Check that the latest release has all its files."
     Assist may also pick --backend ${BACKEND_CHOICE} (its own kind if left out). The global Assist must give --workspace; a workspace's Assist can only start sessions in its own workspace. A session Assist starts in a git workspace always gets its own worktree: -w names it, and without -w Koloft picks a name.
@@ -230,6 +234,22 @@ koloft session close [<id or name>]
     Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session started with "koloft session new" by you, or by a session you started, and so on down (open, or already ended), once you have its result. Assist may also close, when the owner asks, any ended session it looks after on this computer: an open one is refused (stop it first), and so is one on another machine. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no other branch and no remote branch, nothing is closed and Koloft lists what is left. Koloft has no merge button: to bring a worktree session's work into the main checkout, commit it, merge its branch from the main checkout, then close.
     Example: koloft session close "Fix docs links"
 
+PASSWORDS, CODES AND SIGN-INS
+
+When a step needs the owner's password or a one-time code, Koloft asks the owner for it in this session's Discord thread and passes it on itself: you never see it. Never ask the owner to write a password or code in a message. If no Discord channel covers this session, these are refused: ask the owner to do the step at the Mac.
+
+sudo
+    In a command with no terminal, Koloft's sudo asks the owner for the password. The owner may be on a phone: run the command with a long timeout (10 minutes) or in the background. Each new command asks again, so put all the sudo steps in one command line. A script that runs /usr/bin/sudo itself cannot be answered. Inside the Codex sandbox sudo cannot run at all.
+    Example: sudo brew services restart nginx && sudo launchctl kickstart -k system/com.example
+
+koloft secret page <css selector>
+    The owner types a password or code into one field of a page in this session's Workbench browser, and Koloft submits the form. The selector must match exactly one input box in one open page. Then look at the page to see what happened. Only for passwords and codes: fill other fields yourself.
+    Example: koloft secret page "input[type=password]"
+
+koloft secret url "<sign-in address>"
+    For a sign-in that a command line tool starts in a browser and that ends on a 127.0.0.1 or localhost address, like codex login. Start the tool in the background first and give its sign-in address. The owner finishes the sign-in on a phone and pastes the address it ended on; Koloft opens that address on the machine this session runs on, which finishes the sign-in. Prefer a tool's device code sign-in when it has one: then just tell the owner the address and the code.
+    Example: koloft secret url "https://auth.openai.com/oauth/authorize?..."
+
 DISCORD (Assist only)
 
 koloft discord send <file>... [-- "<text>"]
@@ -254,7 +274,7 @@ To use the web pages in this session's Workbench, drive them with the playwright
 When the owner allows browser control, it drives the Workbench browser, whose address is in $KOLOFT_BROWSER_CDP; otherwise it starts a hidden browser of its own. In the Workbench it works in tabs of its own, which the owner sees marked as driven by you; it cannot see the tabs the owner opened, so open the address you need yourself. The Workbench browser takes one tool at a time: if Playwright MCP tools also drive it in this session, the one that comes second is refused with "this endpoint already has a client", so use one of the two ("playwright-cli close" lets go of it). A session on another machine (over SSH) cannot reach the Workbench browser yet.`
 
 export const AGENT_SKILL_DESCRIPTION =
-  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
+  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, or get a password, code or sign-in from the owner through Discord (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
 
 const RELAY_NEVER_GUESS = `You pass on what the owner says and what the sessions say; you never make anything up.
 - When you send a session the owner's words, quote them exactly as the owner wrote them, inside ${OWNER_QUOTE_MARKS}. Koloft tells the session that only those words are the owner's. What you add outside them only says where the words come from, gives facts the session may not have, and asks it to answer the owner; it never adds an order, a decision, a step, a permission or a hint at an answer the owner did not give, like "change nothing yet" or "should X come first?".

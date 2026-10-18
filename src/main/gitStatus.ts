@@ -27,7 +27,7 @@ interface Slot {
 
 const slots = new Map<string, Slot>()
 
-function coalesce<T>(key: string, fn: () => Promise<T>): Promise<T> {
+export function coalesce<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const again = (): Promise<T> => {
     slots.delete(key)
     return coalesce(key, fn)
@@ -149,6 +149,48 @@ function parseNumstatInto(out: GitNumstatMap, stdout: string, toplevel: string):
   }
 }
 
+export interface StatusOutputs {
+  nameStatus: string | null
+  others: string | null
+  porcelain: string | null
+  unmerged: string | null
+}
+
+export function statusFrom(toplevel: string, o: StatusOutputs): GitStatusMap {
+  const out: GitStatusMap = {}
+  if (o.nameStatus !== null) parseNameStatusInto(out, o.nameStatus, toplevel)
+  if (o.others !== null) {
+    for (const rel of o.others.split('\0')) {
+      if (rel) out[path.join(toplevel, rel)] = 'untracked'
+    }
+  }
+  if (o.nameStatus === null && o.porcelain !== null) parsePorcelainInto(out, o.porcelain, toplevel)
+  if (o.unmerged !== null) {
+    for (const rec of o.unmerged.split('\0')) {
+      const tab = rec.indexOf('\t')
+      if (tab < 0) continue
+      out[path.join(toplevel, rec.slice(tab + 1))] = 'conflict'
+    }
+  }
+  return out
+}
+
+export interface NumstatOutputs {
+  vsBase: string | null
+  cached: string | null
+  unstaged: string | null
+}
+
+export function numstatFrom(toplevel: string, o: NumstatOutputs): GitNumstatMap {
+  const out: GitNumstatMap = {}
+  if (o.vsBase !== null) parseNumstatInto(out, o.vsBase, toplevel)
+  else if (o.cached !== null && o.unstaged !== null) {
+    parseNumstatInto(out, o.cached, toplevel)
+    parseNumstatInto(out, o.unstaged, toplevel)
+  }
+  return out
+}
+
 export interface DiffResult {
   text: string
   truncated: boolean
@@ -253,8 +295,7 @@ export function gitOps(runner: GitRunner): GitOps {
       baseIn === undefined ? diffBase(absRoot) : Promise.resolve(baseIn)
     ])
     if (!toplevel) return {}
-    const out: GitStatusMap = {}
-    const [trackedOut, othersOut, unmergedOut] = await Promise.all([
+    const [nameStatus, others, unmerged] = await Promise.all([
       base ? gitOut(['-C', absRoot, 'diff', '--name-status', '-z', base, '--'], cap) : null,
       gitOut(
         ['-C', toplevel, 'ls-files', '--others', '--exclude-standard', '-z', '--full-name'],
@@ -262,24 +303,11 @@ export function gitOps(runner: GitRunner): GitOps {
       ),
       gitOut(['-C', toplevel, 'ls-files', '-u', '-z', '--full-name'], cap)
     ])
-    if (trackedOut !== null) parseNameStatusInto(out, trackedOut, toplevel)
-    if (othersOut !== null) {
-      for (const rel of othersOut.split('\0')) {
-        if (rel) out[path.join(toplevel, rel)] = 'untracked'
-      }
-    }
-    if (trackedOut === null) {
-      const porcelain = await gitOut(['-C', absRoot, 'status', '--porcelain=v1', '-z'], cap)
-      if (porcelain !== null) parsePorcelainInto(out, porcelain, toplevel)
-    }
-    if (unmergedOut !== null) {
-      for (const rec of unmergedOut.split('\0')) {
-        const tab = rec.indexOf('\t')
-        if (tab < 0) continue
-        out[path.join(toplevel, rec.slice(tab + 1))] = 'conflict'
-      }
-    }
-    return out
+    const porcelain =
+      nameStatus === null
+        ? await gitOut(['-C', absRoot, 'status', '--porcelain=v1', '-z'], cap)
+        : null
+    return statusFrom(toplevel, { nameStatus, others, porcelain, unmerged })
   }
 
   async function numstatOf(absRoot: string, baseIn?: string): Promise<GitNumstatMap> {
@@ -289,23 +317,17 @@ export function gitOps(runner: GitRunner): GitOps {
       baseIn === undefined ? diffBase(absRoot) : Promise.resolve(baseIn)
     ])
     if (!toplevel) return {}
-    const out: GitNumstatMap = {}
-    if (base) {
-      const vsBase = await gitOut(['-C', absRoot, 'diff', base, '--numstat', '-z', '--'], cap)
-      if (vsBase !== null) {
-        parseNumstatInto(out, vsBase, toplevel)
-        return out
-      }
-    }
-    const [cached, unstaged] = await Promise.all([
-      gitOut(['-C', absRoot, 'diff', '--cached', '--numstat', '-z', '--'], cap),
-      gitOut(['-C', absRoot, 'diff', '--numstat', '-z', '--'], cap)
-    ])
-    if (cached !== null && unstaged !== null) {
-      parseNumstatInto(out, cached, toplevel)
-      parseNumstatInto(out, unstaged, toplevel)
-    }
-    return out
+    const vsBase = base
+      ? await gitOut(['-C', absRoot, 'diff', base, '--numstat', '-z', '--'], cap)
+      : null
+    const [cached, unstaged] =
+      vsBase !== null
+        ? [null, null]
+        : await Promise.all([
+            gitOut(['-C', absRoot, 'diff', '--cached', '--numstat', '-z', '--'], cap),
+            gitOut(['-C', absRoot, 'diff', '--numstat', '-z', '--'], cap)
+          ])
+    return numstatFrom(toplevel, { vsBase, cached, unstaged })
   }
 
   async function aggregateDiff(absRoot: string, base: string | null): Promise<DiffResult> {

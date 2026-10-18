@@ -297,8 +297,9 @@ describe('MuseSessions launch', () => {
     await expect(launch()).rejects.toThrow(/No Muse account/)
   })
 
-  it("puts the tab's own open, gh and playwright-cli commands first on muse's PATH", async () => {
+  it("puts the tab's own open, gh and playwright-cli commands first on muse's PATH, in place of Koloft's shim", async () => {
     await launch()
+    expect(vi.mocked(pty.create).mock.calls[0][0]).toMatchObject({ koloftShim: false })
     const first = created[0].env.PATH!.split(':')[0]
     for (const tool of ['open', 'gh', 'playwright-cli'])
       expect(fs.existsSync(path.join(first, tool))).toBe(true)
@@ -894,7 +895,8 @@ describe('a Muse session on a remote machine', () => {
         gone: () => gone,
         connected: () => reachable,
         poke: () => {},
-        setupLine: () => undefined
+        setupLine: () => undefined,
+        hookSettings: (tabId) => `/koloft/hooks/${tabId}.json`
       }
     })
   }
@@ -916,7 +918,7 @@ describe('a Muse session on a remote machine', () => {
     return id
   }
 
-  it('starts muse on the machine with the picked account carried along, the local ssh line in its tab, and binds from the bound line the wrapper writes', async () => {
+  it("starts muse on the machine with the picked account carried along, the local ssh line in a tab that runs Koloft's shim like a remote Claude tab, and binds from the bound line the wrapper writes", async () => {
     onMachine()
     const { id } = await sessions.launch({ kind: 'muse', cwd: KEY, firstPrompt: 'hi' })
     expect(launches[0]).toMatchObject({
@@ -926,11 +928,15 @@ describe('a Muse session on a remote machine', () => {
       trust: []
     })
     expect(launches[0].account.auth()).toBe('{"providers":{"meta":{}}}')
-    expect(vi.mocked(pty.create).mock.calls[0][0]).toMatchObject({
+    const created = vi.mocked(pty.create).mock.calls[0][0]
+    expect(created).toMatchObject({
       kind: 'muse',
       cwd: os.homedir(),
       launchCommand: expect.any(Function)
     })
+    expect(created.koloftShim && created.koloftShim.hookSettings('pty-m')).toBe(
+      '/koloft/hooks/pty-m.json'
+    )
     mirror(id, { t: 'bound', sessionId: A })
     await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
     expect(sessions.list()[0]).toMatchObject({ sessionId: museSessionKey(A, 'box'), cwd: KEY })

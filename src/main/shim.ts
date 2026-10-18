@@ -4,6 +4,7 @@ import path from 'path'
 import { keychainNamespace } from '@shared/types'
 import { NEWID_FN, OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
 import { CLAUDE_AGENT_SHIM } from './agentShim'
+import { writeSudoShims } from './sudoShim'
 import { ghWrapperScript, gitCredentialHelperScript } from './gitCredentialScripts'
 import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'
 import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'
@@ -571,6 +572,7 @@ export function setupShim(gitAuthDir: string): ShimPaths {
   const agentShimPath = path.join(shimDir, 'koloft')
   fs.writeFileSync(agentShimPath, CLAUDE_AGENT_SHIM, { mode: 0o755 })
   fs.chmodSync(agentShimPath, 0o755)
+  writeSudoShims(shimDir)
 
   const gitHelper = path.join(shimDir, 'git-credential-koloft')
   fs.writeFileSync(gitHelper, gitCredentialHelperScript(gitAuthDir), { mode: 0o755 })

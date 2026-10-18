@@ -149,6 +149,7 @@ export interface AgyRemoteDeps {
   connected(host: string): boolean
   nextPull(host: string): Promise<void>
   setupLine(): string | undefined
+  hookSettings(tabId: string): string | undefined
   machineName(): string
 }
 
@@ -528,6 +529,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       const handle = this.deps.pty.create({
         id: tabId,
         kind: 'agy',
+        koloftShim: false,
         cwd,
         cols: opts.cols,
         rows: opts.rows,
@@ -647,6 +649,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const handle = this.deps.pty.create({
       id: tabId,
       kind: 'agy',
+      koloftShim: { hookSettings: (tabId) => remote.hookSettings(tabId) },
       cwd: plan.spawnCwd,
       cols: opts.cols,
       rows: opts.rows,

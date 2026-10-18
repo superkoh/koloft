@@ -165,14 +165,6 @@ export function rowsUnder<R extends { id: string; parentId?: string }>(node: Row
   return node.children.flatMap((child) => [child.row, ...rowsUnder(child)])
 }
 
-export function attentionOnRow(
-  rowId: string,
-  tabId: string | undefined,
-  pending: AttentionEvent[]
-): AttentionEvent | undefined {
-  return pending.find((e) => e.sessionId === rowId || e.tabId === tabId)
-}
-
 export function nextWaitingTab(
   pending: readonly AttentionEvent[],
   activeTabId: string | null,
@@ -183,25 +175,12 @@ export function nextWaitingTab(
     .sort((a, b) => a.at - b.at)[0]?.tabId
 }
 
-// CODEX§9
 export function liveTabOf(
   sessionId: string,
   sessions: readonly { sessionId: string; tabId: string; alive: boolean }[],
   tabs: readonly { id: string; sessionId?: string; alive: boolean; asleep?: true }[]
 ): string | undefined {
-  return (
-    sessions.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
-    tabs.find((t) => (t.alive || t.asleep) && t.sessionId === sessionId)?.id
-  )
-}
-
-export function tabOfRow(
-  row: { id: string; running: boolean; pending?: boolean },
-  sessions: readonly { sessionId: string; tabId: string; alive: boolean }[],
-  tabs: readonly { id: string; sessionId?: string; alive: boolean; asleep?: true }[]
-): string | undefined {
-  if (row.pending) return row.id
-  return row.running ? liveTabOf(row.id, sessions, tabs) : undefined
+  return rowLookups(sessions, tabs, []).tabOf({ id: sessionId, running: true })
 }
 
 export function shownTitle(rowTitle: string, liveTitle: string | undefined): string {
@@ -224,6 +203,44 @@ export function isOrphanRow(
       (t.alive && (t.id === bound || t.sessionId === row.id)) ||
       (t.asleep && t.sessionId === row.id)
   )
+}
+
+interface RowLookups<S> {
+  tabOf: (row: { id: string; running: boolean; pending?: boolean }) => string | undefined
+  sessionOn: (tabId: string) => S | undefined
+  attentionOn: (rowId: string, tabId: string | undefined) => AttentionEvent | undefined
+  hasAliveTab: (sessionId: string) => boolean
+}
+
+// CODEX§9
+export function rowLookups<S extends { sessionId: string; tabId: string; alive: boolean }>(
+  sessions: readonly S[],
+  tabs: readonly { id: string; sessionId?: string; alive: boolean; asleep?: true }[],
+  attention: readonly AttentionEvent[]
+): RowLookups<S> {
+  const firstBy = <T, K>(items: readonly T[], key: (item: T) => K | undefined): Map<K, T> => {
+    const m = new Map<K, T>()
+    for (const item of items) {
+      const k = key(item)
+      if (k !== undefined && !m.has(k)) m.set(k, item)
+    }
+    return m
+  }
+  const sessionOnTab = firstBy(sessions, (s) => s.tabId)
+  const liveTabOfSession = firstBy(sessions, (s) => (s.alive ? s.sessionId : undefined))
+  const openTabOfSession = firstBy(tabs, (t) => (t.alive || t.asleep ? t.sessionId : undefined))
+  const aliveTabSessions = new Set(tabs.filter((t) => t.alive).map((t) => t.sessionId))
+  return {
+    tabOf: (row) => {
+      if (row.pending) return row.id
+      if (!row.running) return undefined
+      return liveTabOfSession.get(row.id)?.tabId ?? openTabOfSession.get(row.id)?.id
+    },
+    sessionOn: (tabId) => sessionOnTab.get(tabId),
+    attentionOn: (rowId, tabId) =>
+      attention.find((e) => e.sessionId === rowId || e.tabId === tabId),
+    hasAliveTab: (sessionId) => aliveTabSessions.has(sessionId)
+  }
 }
 
 export function mixesBackends(rows: { backendId: SessionBackend }[]): boolean {

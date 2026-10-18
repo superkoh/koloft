@@ -77,6 +77,8 @@ import {
   identityOf,
   backendsFrom,
   messagingOf,
+  PEER_TRAITS,
+  reachedBySendMessage,
   preferredAssistBackend,
   statusUnavailable,
   SUPPORTED_PAIRS
@@ -154,7 +156,8 @@ import {
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
-import { REMOTE_AGENT_SHIM } from './agentShim'
+import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
+import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import {
   oncePerName,
@@ -422,11 +425,14 @@ import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/
 import { DISCORD_SETUP_TASK, DISCORD_SETUP_TASK_NAME, setupStatusText } from './discord/setupTask'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
-import { Notices } from './discord/notices'
+import { Notices, type NoticeSubject } from './discord/notices'
+import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
+import { secretVerb } from './agentSecret'
 import { SessionThreads } from './discord/threads'
 import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, type SlashTarget } from './discord/slash'
+import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
 import { MYSELF } from '@shared/slashCommands'
@@ -439,12 +445,7 @@ import {
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'
-import {
-  claudePeerNames,
-  claudeShowsAPanel,
-  runningClaudePid,
-  whenMessagingSocket
-} from './claudeSessionRegistry'
+import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
 import {
   asPeerName,
   conductorName,
@@ -464,7 +465,6 @@ import {
   workspaceVerb,
   type ClosableSession,
   type SessionScreen,
-  type PeerNameOf,
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
@@ -574,6 +574,20 @@ function asksTheOwner(tabId: string): boolean {
   return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
 }
 
+const panelOpenOn: Record<
+  BackendId,
+  (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
+> = {
+  claude: async (tabId, sessionId) =>
+    !sessionId || tracker.remoteOf(tabId) ? undefined : claudeShowsAPanel(sessionId),
+  codex: async () => undefined,
+  muse: async (tabId, _sessionId, screen) => {
+    const lines = screen ?? (await screenLines(tabId))
+    return lines && !museShowsItsInputBox(lines)
+  },
+  agy: async () => undefined
+}
+
 const slash = new SlashCommands({
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
@@ -582,12 +596,7 @@ const slash = new SlashCommands({
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId, screen) => {
     const s = sessionOfTab(tabId)
-    if (s?.backendId === 'muse') {
-      const lines = screen ?? (await screenLines(tabId))
-      return lines && !museShowsItsInputBox(lines)
-    }
-    if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
-    return claudeShowsAPanel(s.sessionId)
+    return s && panelOpenOn[s.backendId](tabId, s.sessionId, screen)
   },
   screen: screenLines,
   nextMirrorPull: (tabId) => {
@@ -678,6 +687,7 @@ function sidebarTitle(s: SessionInfo): string | undefined {
   return s.title && !placeholder ? s.title : undefined
 }
 
+const tabLifecycle = new TabLifecycle()
 const sleepers = new Map<string, OpenTab>()
 const typedWhileAsleep = new Map<string, string>()
 const wokenAs = new Map<string, string>()
@@ -759,7 +769,7 @@ function sleepTab(tabId: string): void {
   addSleeper(tabId, openTabOf(s))
   sendToRenderer('tab:slept', tabId)
   void stopTabProcess(tabId)
-  workspaceMgr?.onTrackerUpdate()
+  tabLifecycle.emit('slept')
   rememberOpenTabs()
 }
 
@@ -770,10 +780,9 @@ function sleepingTabOf(sessionId: string): string | undefined {
 
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
-  conductors?.onPtyExit(tabId, false)
   typedWhileAsleep.delete(tabId)
   sendToRenderer('tab:killedByMain', tabId)
-  workspaceMgr?.onTrackerUpdate()
+  tabLifecycle.emit('forgotten', tabId)
   rememberOpenTabs()
 }
 
@@ -790,7 +799,7 @@ function settleWokenSleepers(all: SessionInfo[]): void {
     woke = true
     void handOverTyping(oldId, newId)
   }
-  if (woke) workspaceMgr?.onTrackerUpdate()
+  if (woke) tabLifecycle.emit('woken')
 }
 
 const PASTE_OR_ENTER = /(\x1b\[200~[\s\S]*?\x1b\[201~|\r)/
@@ -815,16 +824,7 @@ function writeToTab(id: string, data: string): void {
 async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
   const title = s && sidebarTitle(s)
   if (title) return title
-  return s?.sessionId ? peerNameOf()(s) : null
-}
-function peerNameOf(): PeerNameOf {
-  const claudeName = claudePeerNames()
-  return async ({ backendId, sessionId }) =>
-    backendId === 'claude'
-      ? claudeName(sessionId)
-      : backendId === 'muse'
-        ? (museSessions?.peerName(sessionId) ?? null)
-        : null
+  return s?.sessionId ? sessionBackends.peerNames()(s) : null
 }
 function retitleDiscordThreads(sessions: SessionInfo[]): void {
   if (!discordThreads) return
@@ -1033,6 +1033,8 @@ function machinePackage(): MachinePackage {
     [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
     [AGY_LIST_FILE]: AGY_LIST_JS
   }
+  for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
+    pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   try {
@@ -1059,8 +1061,14 @@ let discordNotices: Notices | null = null
 let discordThreads: SessionThreads | null = null
 let discordLive: LiveStatus | null = null
 let askButtons: AskButtons | null = null
+let secretAsks: SecretAsks | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
+let writeHookSettings:
+  ((tabId: string, allowKoloft: boolean, conductor: boolean) => string) | undefined
+const PLAIN_KOLOFT_SHIM = {
+  hookSettings: (tabId: string): string | undefined => writeHookSettings?.(tabId, false, false)
+}
 let claudeAgentPlugin: string | undefined
 let discordConnected = false
 
@@ -1236,7 +1244,8 @@ const museOnMachines: MuseRemoteDeps = {
     !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId),
   connected: (host) => !!remoteSync?.connected(host),
   poke: (host) => remoteSync?.pokeNow(host),
-  setupLine: () => setupLine(playwrightCliBin)
+  setupLine: () => setupLine(playwrightCliBin),
+  hookSettings: PLAIN_KOLOFT_SHIM.hookSettings
 }
 
 function machineProbes(cwd: string): ResumeProbes {
@@ -1283,26 +1292,29 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
   }
 })
 
+const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
+  claude: async () => {
+    const env = await pickedAccountEnv()
+    if (!env) return null
+    return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
+  },
+  codex: async () => {
+    const picked = pickCodexHome()
+    if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
+    const binary = codexSessions.cliBinary
+    if (!binary) return null
+    return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+  },
+  muse: async () => {
+    const picked = musePicker.pick(accountViews())
+    return picked ? ((await museServeFor(picked.name)) ?? null) : null
+  },
+  agy: () => agyOneShotTarget()
+}
 const assist = koloftAssist({
   setting: () => loadSettings().assist,
   enabled: (backend) => loadSettings().sessionMethods.enabled[backend],
-  target: async (backend) => {
-    if (backend === 'claude') {
-      const env = await pickedAccountEnv()
-      if (!env) return null
-      return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
-    }
-    if (backend === 'codex') {
-      const picked = pickCodexHome()
-      if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
-      const binary = codexSessions.cliBinary
-      if (!binary) return null
-      return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
-    }
-    if (backend === 'agy') return agyOneShotTarget()
-    const picked = musePicker.pick(accountViews())
-    return picked ? ((await museServeFor(picked.name)) ?? null) : null
-  }
+  target: (backend) => assistTargets[backend]()
 })
 const assistRuns = new Map<number, AbortController>()
 
@@ -1311,26 +1323,32 @@ async function whyAssistCannotRunOn(
   enabled: SessionMethods['enabled']
 ): Promise<string | undefined> {
   if (!enabled[backend]) return `${BACKEND_LABEL[backend]} is turned off in Settings ▸ Sessions`
-  if (backend === 'codex') {
+  return whyAssistCannotRun[backend]()
+}
+
+const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> = {
+  claude: async () => {
+    const { res } = await pickForLaunch()
+    if (res.account !== null) return undefined
+    return res.reason === 'no-accounts'
+      ? 'there is no Claude account'
+      : 'every Claude account is at its limit'
+  },
+  codex: async () => {
     if (!codexSessions || !(await codexSessions.availability()).available)
       return 'Codex is not available on this Mac'
     return codexPicker.pick(accountViews()) ? undefined : 'every Codex account is at its limit'
-  }
-  if (backend === 'muse') {
+  },
+  muse: async () => {
     if (!museSessions || !(await museSessions.availability()).available)
       return 'Muse is not available on this Mac'
     return musePicker.pick(accountViews()) ? undefined : 'there is no usable Muse account'
-  }
-  if (backend === 'agy') {
+  },
+  agy: async () => {
     if (!agySessions || !(await agySessions.availability()).available)
       return 'Antigravity is not available on this Mac'
     return agyPicker.pick(accountViews()) ? undefined : 'there is no usable Antigravity account'
   }
-  const { res } = await pickForLaunch()
-  if (res.account !== null) return undefined
-  return res.reason === 'no-accounts'
-    ? 'there is no Claude account'
-    : 'every Claude account is at its limit'
 }
 
 async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoice> {
@@ -1377,7 +1395,7 @@ const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.conductor),
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
-  peerNames: peerNameOf,
+  peerNames: () => sessionBackends.peerNames(),
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
@@ -1485,6 +1503,14 @@ const agentRequests = new AgentRequests({
           ? bindWithNewChannel({ scope: found.value.path })
           : { ok: false, error: found.error }
       }
+    }),
+    [SECRET_VERB]: secretVerb({
+      ask: (a) =>
+        secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
+      machine: (tabId) => tracker.remoteOf(tabId)?.host,
+      pages: guestPagesOf,
+      open: openOnTabMachine,
+      sleep
     }),
     gh: githubVerb({
       scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
@@ -1635,6 +1661,7 @@ function cancelGuidedLogin(tabId: string): void {
 function startGuidedLogin(name: string): string {
   const handle = ptyMgr.create({
     kind: 'shell',
+    koloftShim: PLAIN_KOLOFT_SHIM,
     cwd: os.homedir(),
     // CC§7
     cols: LOGIN_PTY_COLS_WIDER_THAN_TOKEN,
@@ -2079,7 +2106,14 @@ async function agyOneShotTarget(): Promise<AssistTarget | null> {
 
 function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
   const cwd = os.homedir()
-  const handle = ptyMgr.create({ kind: 'shell', cwd, cols: 100, rows: 30, launchCommand })
+  const handle = ptyMgr.create({
+    kind: 'shell',
+    koloftShim: PLAIN_KOLOFT_SHIM,
+    cwd,
+    cols: 100,
+    rows: 30,
+    launchCommand
+  })
   return { tabId: handle.id, cwd }
 }
 
@@ -2375,7 +2409,7 @@ app.whenReady().then(() => {
   // ADR-0033
   Object.assign(process.env, gitAccounts.configEnv(process.env))
   gitAccounts.start()
-  ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
+  writeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
       tabId,
@@ -2429,23 +2463,39 @@ app.whenReady().then(() => {
   ptyMgr.on('cwd', (c: { id: string; cwd: string }) => {
     sendToRenderer('terminal:cwd', c)
   })
+  subscribeTabSubsystems(tabLifecycle, {
+    slash,
+    attention,
+    claude: claudeBackend,
+    tracker,
+    storedOwnerOf,
+    toast: (message) => sendToRenderer('cron:toast', message),
+    notices: () => discordNotices,
+    live: () => discordLive,
+    relay: () => discordRelay,
+    threads: () => discordThreads,
+    buttons: () => askButtons,
+    secrets: () => secretAsks,
+    workspaces: () => workspaceMgr,
+    cron: () => cronRunner,
+    conductors: () => conductors
+  })
   ptyMgr.on('exit', (e) => {
     const left = closedTabs.has(e.id) ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
     closedTabs.delete(e.id)
-    slash.closed(e.id)
-    if (!sleepers.has(e.id)) {
-      discordNotices?.closed(e.id)
-      discordLive?.closed(e.id)
+    const exit: TabExit = {
+      tabId: e.id,
+      exitCode: e.exitCode,
+      signal: e.signal,
+      asleep: sleepers.has(e.id),
+      crashed: !quitCommitted && exitedAbnormally(e),
+      left: left ?? undefined
     }
     for (const [oldId, newId] of wokenAs) if (newId === e.id) wokenAs.delete(oldId)
     const wakeThatDied = ptyMgr.get(e.id)?.resumeSessionId
     for (const [id, t] of sleepers)
       if (id !== e.id && t.sessionId === wakeThatDied) forgetSleeper(id)
-    discordLive?.forget(e.id)
-    discordNotices?.forget(e.id)
-    discordRelay?.forget(e.id)
-    discordThreads?.forget(e.id)
-    askButtons?.forget(e.id)
+    tabLifecycle.emit('exit', exit)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     loginPtys.delete(e.id)
@@ -2464,8 +2514,6 @@ app.whenReady().then(() => {
       return
     }
     if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
-    attention.clear(e.id)
-    claudeBackend.onPtyExit(e.id, !quitCommitted && exitedAbnormally(e))
     const claudeExit = claudeTabExits.get(e.id)
     claudeTabExits.delete(e.id)
     if (claudeExit?.leaving) {
@@ -2485,13 +2533,7 @@ app.whenReady().then(() => {
     }
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
-    tracker.setAlive(e.id, false)
-    void storedOwnerOf(e.id)
-      ?.stop(e.id, e.signal ? -1 : e.exitCode)
-      .catch((error) => sendToRenderer('cron:toast', String(error)))
-    workspaceMgr?.launchEnded(e.id)
-    cronRunner?.onPtyExit(e.id, left ?? undefined)
-    conductors?.onPtyExit(e.id, sleepers.has(e.id))
+    tabLifecycle.emit('teardown', exit)
     sendToRenderer('terminal:exit', e)
   })
   tracker.on('update', () => {
@@ -2788,10 +2830,7 @@ app.whenReady().then(() => {
     backend: assistBackendChoice,
     tabAlive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     liveTabFor: (backend, key) => sessionBackends.get(backend).aliveTabFor(key),
-    runningElsewhere: async (backend, key) =>
-      backend === 'claude'
-        ? (await runningClaudePid(key)) !== null
-        : backend === 'muse' && !!museSessions?.runningElsewhere(key),
+    runningElsewhere: (backend, key) => sessionBackends.runningElsewhere(backend, key),
     transcriptExists: async (backend, key) => sessionBackends.get(backend).transcriptExists(key),
     start: (l) =>
       launchQuietTab(
@@ -2803,12 +2842,11 @@ app.whenReady().then(() => {
           conductor: true,
           trustFolder: true,
           firstPrompt: l.firstPrompt,
-          name:
-            l.backend === 'claude'
+          name: !PEER_TRAITS[l.backend].namedAtLaunch
+            ? undefined
+            : reachedBySendMessage(l.backend)
               ? asPeerName(l.title)
-              : l.backend === 'muse'
-                ? l.title
-                : undefined
+              : l.title
         },
         l.title
       ),
@@ -2919,6 +2957,13 @@ app.whenReady().then(() => {
     respond: (i, body) => link.respond(i, body)
   })
   askButtons = buttons
+  const secrets = new SecretAsks({
+    owner: () => conductorsNow.owner(),
+    place: async (tabId, card) => discordNotices?.placeCard(tabId, card),
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
+    respond: (i, body) => link.respond(i, body)
+  })
+  secretAsks = secrets
   const interactions = new Interactions({
     owner: () => conductorsNow.owner(),
     routeOf: (channelId) => conductorsNow.routeOf(channelId),
@@ -2932,7 +2977,8 @@ app.whenReady().then(() => {
       if (!found.ok) throw new Error(found.error)
       return commandInto(b, found.value, text)
     },
-    press: (i) => buttons.press(i),
+    press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? secrets.press(i) : buttons.press(i)),
+    submit: (i) => secrets.submit(i),
     respond: (i, body) => link.respond(i, body)
   })
   const sessionDestination = (b: ConductorBinding, threadId: string, key: string): Destination => {
@@ -3033,21 +3079,10 @@ app.whenReady().then(() => {
     place: (b, subject) => threads.place(b, subject),
     threadOf: (key) => threads.threadOf(key),
     card: async (channelId, card) => discordRelay?.card(channelId, card),
+    post: async (channelId, card) => (await link.card(channelId, card)).at(-1),
     archive: (threadId) => threads.archive(threadId),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
-    subject: (tabId) => {
-      const s = sessionOfTab(tabId)
-      return s?.sessionId
-        ? {
-            tabId,
-            key: s.sessionId,
-            name: s.title,
-            backend: s.backendId,
-            workspace: sessionBackends.workspaceOfTab(tabId),
-            conductor: s.conductor
-          }
-        : undefined
-    },
+    subject: noticeSubjectOf,
     shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
     commandRunning: (tabId) => slash.running(tabId),
     dialog: dialogOf
@@ -4313,7 +4348,7 @@ function restoreOpenTabs(): string | undefined {
     rememberOpenTabs()
     cronRunner?.sweepLeftFolders()
   })
-  workspaceMgr.onTrackerUpdate()
+  tabLifecycle.emit('slept')
   return activeAsleep
 }
 
@@ -4396,6 +4431,41 @@ function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolea
 function registerSlashCommands(): void {
   const guilds = new Set((conductors?.bindings() ?? []).map((b) => b.channel.guildId))
   void discordLink?.registerCommands([...guilds], SLASH_COMMANDS)
+}
+
+function noticeSubjectOf(tabId: string): NoticeSubject | undefined {
+  const s = sessionOfTab(tabId)
+  return s?.sessionId
+    ? {
+        tabId,
+        key: s.sessionId,
+        name: s.title,
+        backend: s.backendId,
+        workspace: sessionBackends.workspaceOfTab(tabId),
+        conductor: s.conductor
+      }
+    : undefined
+}
+
+const LOOPBACK_OPEN_TIMEOUT_MS = 15_000
+
+// CODEX§15
+async function openOnTabMachine(tabId: string, url: string): Promise<string> {
+  const host = tracker.remoteOf(tabId)?.host
+  if (!host) {
+    const res = await fetch(url, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(LOOPBACK_OPEN_TIMEOUT_MS)
+    }).catch((error: unknown) => `nothing (${errorText(error)})`)
+    return typeof res === 'string' ? res : String(res.status)
+  }
+  await loginEnvReady()
+  const r = await runSsh(
+    host,
+    `curl -sS -o /dev/null -w '%{http_code}' --max-time ${LOOPBACK_OPEN_TIMEOUT_MS / 1000} ${shq(url)}`,
+    { controlDir: remoteControlDir, timeoutMs: LOOPBACK_OPEN_TIMEOUT_MS * 2 }
+  )
+  return r.stdout.trim() || `nothing (${r.stderr.trim()})`
 }
 
 function guestPagesOf(tabId: string): GuestPage[] {
@@ -4703,6 +4773,8 @@ const claudeBackend = new ClaudeBackend({
   remoteSync: () => remoteSync,
   userData: () => app.getPath('userData'),
   setupLine: () => setupLine(playwrightCliBin),
+  hookSettings: (tabId, allowKoloft, conductor) =>
+    writeHookSettings?.(tabId, allowKoloft, conductor),
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
@@ -4740,6 +4812,7 @@ function registerIpc(): void {
       const launch = hosts.of(requested).shell(requested)
       const handle = ptyMgr.create({
         kind: 'shell',
+        koloftShim: PLAIN_KOLOFT_SHIM,
         cwd: launch.spawnCwd,
         cols: opts.cols,
         rows: opts.rows,
@@ -5479,14 +5552,10 @@ function registerIpc(): void {
   )
   const baseArg = sanitizeBase
   const untrackedArg = (u: unknown): boolean => u === true
-  ipcMain.handle('fs:diffBase', (_e, root: string) =>
-    typeof root === 'string' && root ? hosts.of(root).diffBase(root) : null
-  )
-  ipcMain.handle('fs:gitStatus', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? hosts.of(root).gitStatus(root, baseArg(base)) : {}
-  )
-  ipcMain.handle('fs:gitNumstat', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? hosts.of(root).gitNumstat(root, baseArg(base)) : {}
+  ipcMain.handle('fs:gitChanges', (_e, root: string, base?: unknown) =>
+    typeof root === 'string' && root
+      ? hosts.of(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
+      : { base: null, status: {}, numstat: {}, missing: false }
   )
   ipcMain.handle('fs:gitDiff', (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root

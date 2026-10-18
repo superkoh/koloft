@@ -567,6 +567,15 @@ export type GitStatusMap = Record<string, GitFileStatus>
 
 export type GitNumstatMap = Record<string, { added: number; removed: number }>
 
+export type BaseChoice = 'merge-base' | 'head'
+
+export interface GitChanges {
+  base: string | null
+  status: GitStatusMap
+  numstat: GitNumstatMap
+  missing: boolean
+}
+
 export const HIDDEN_BY_DEFAULT_NAMES: ReadonlySet<string> = new Set(['node_modules', '.git'])
 
 export interface DirEntry {
@@ -1140,9 +1149,7 @@ export interface KoloftApi {
       query: string,
       opts?: { showIgnored?: boolean }
     ): Promise<{ hits: SearchHit[]; truncated: boolean }>
-    diffBase(root: string): Promise<string | null>
-    gitStatus(root: string, base?: string): Promise<GitStatusMap>
-    gitNumstat(root: string, base?: string): Promise<GitNumstatMap>
+    gitChanges(root: string, base: BaseChoice): Promise<GitChanges>
     watchDir(root: string): Promise<boolean>
     unwatchDir(root: string): void
     onDirChange(cb: (root: string) => void): () => void
