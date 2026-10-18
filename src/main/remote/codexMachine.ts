@@ -409,8 +409,8 @@ export class MachineCodexUpstream implements CodexUpstream {
       const { method, replyTo } = read.head
       if (typeof replyTo === 'string' && replyTo.startsWith(OWN_ID_PREFIX)) {
         const answer = this.own.get(replyTo)
-        if (typeof answer === 'function') answer(read.parse())
         this.own.delete(replyTo)
+        if (typeof answer === 'function') answer(read.parse())
         return
       }
       // CODEX§16
