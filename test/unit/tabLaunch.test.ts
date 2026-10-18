@@ -339,9 +339,7 @@ const FEATURES: Record<
     marker: 'TableName',
     on: {
       'Claude Code on this Mac': { handed: ['"KOLOFT_SESSION_NAME":"TableName"'] },
-      'Claude Code over SSH': {
-        takesNothing: 'over SSH a name goes along only with a first prompt'
-      },
+      'Claude Code over SSH': { handed: ["'--name' 'TableName'"] },
       'Codex on this Mac': CODEX_TAKES_NO_NAME,
       'Codex over SSH': CODEX_TAKES_NO_NAME
     }
