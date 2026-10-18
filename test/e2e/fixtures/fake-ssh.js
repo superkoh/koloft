@@ -4,8 +4,11 @@ const path = require('path')
 const cp = require('child_process')
 
 const SSH_UNREACHABLE_EXIT = 255
+const UBUNTU_USER_PRIVATE_GROUP_UMASK = 0o002
 
-const STATE = process.env.KOLOFT_FAKE_SSH_STATE
+process.umask(UBUNTU_USER_PRIVATE_GROUP_UMASK)
+
+const STATE = process.env.KOLOFT_FAKE_SSH_STATE || path.join(process.env.HOME, 'fake-ssh')
 const cfg = JSON.parse(fs.readFileSync(path.join(STATE, 'config.json'), 'utf8'))
 const argv = process.argv.slice(2)
 const remoteCmd = argv[argv.length - 1] || ''

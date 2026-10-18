@@ -9,7 +9,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 
 ## Commands
 
-- `npm run test:unit`  — Vitest, plain Node, no app; the fast layer.
+- `npm run test:unit`  — Vitest, plain Node (jsdom for component tests), no app; the
+  fast layer.
 - `npm run test:unit:changed` — the same, only the files reachable from what this
   branch changed against `main` (vitest `--changed`).
 - `npm run test:e2e`   — Playwright drives the real built app. Needs
@@ -20,6 +21,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 
 ## Unit layer (test/unit/)
 
+- A component test is a `.test.tsx` whose first line is `// @vitest-environment jsdom`;
+  it renders with `@testing-library/react` and calls `cleanup` in `afterEach` (vitest
+  globals are off, so nothing cleans up for it) — sessionBackendIcon.test.tsx. Every
+  other file runs in plain Node.
 - There is no global `$HOME` sandbox (vitest has no setupFiles). Anything a module
   reads once as it loads — `HOME`, the session timing knobs (`KOLOFT_*_MS`, read through
   `envMs` in sessionRuntime.ts and sessionTracker.ts; an explicit 0 counts), `TZ` — is
@@ -164,7 +169,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - Codex sessions: the `codex` is fixtures/fake-codex.js, installed per case by
   `installCodex` (helpers/env.ts) (it sets `KOLOFT_CODEX_CMD` and `CODEX_HOME`).
   Without it, `KOLOFT_CODEX_CMD` is a bare name, not a path, so Codex reads as not
-  installed whatever the developer's own login shell has.
+  installed whatever the developer's own login shell has. A Codex tab on the fake remote
+  needs `installCodexOnFakeRemote` (helpers/remote.ts), which also puts fake-codex on
+  the machine and gives the Mac account a token; what the machine's app-server did lands
+  in the machine home's `fake-codex-*.jsonl` (`machineCodexLog`).
 - Muse sessions: the `muse` is fixtures/fake-muse.js, installed per case by `installMuse`
   (helpers/env.ts, sets `KOLOFT_MUSE_CMD`); without it `KOLOFT_MUSE_CMD` is a bare name, so
   Muse reads as not installed. It asks Muse's trust question unless `trust.json` under
@@ -285,7 +293,8 @@ first of these that can do it; only a step none of them can do goes to the owner
    says how). It lends a Claude account from the installed Koloft: the token goes into
    a 0600 file in the sandbox's home, is never printed, and goes with `stop`. Local
    Claude and local Codex tabs run there, a remote Claude tab with `--remote`; a remote
-   Codex tab does not exist in the product (CODEX§16). Drive it with
+   Codex tab there is not set up, as the lab machine has no CA certificates, so Codex on
+   it cannot reach OpenAI (CODEX§16). Drive it with
    `playwright-cli attach --cdp=<cdp>` and screenshots; check results in transcripts,
    files and `<home>/koloft.log`.
 2. A fake server: helpers/fakeDiscord.ts, the GitHub fixture, the fake `gh`.

@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import type { LeftoverProcess } from '@shared/types'
 import { makeExec, type Exec } from './taskProcs'
+import { sharedProcessTable, type ProcessTable } from './processTable'
 import { museSessionKey, UUID } from './sessionStore'
 
 const SCAN_DEADLINE_MS = 5000
@@ -21,13 +22,12 @@ function sessionOf(commandWithEnv: string): string | undefined {
   return muse && UUID.test(muse) ? museSessionKey(muse) : undefined
 }
 
-async function orphansByLaunchd(run: Exec): Promise<Map<number, string>> {
-  const commandOf = new Map<number, string>()
-  for (const line of (await run('ps', ['-Ao', 'pid=,ppid=,command='])).split('\n')) {
-    const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/)
-    if (m && Number(m[2]) === ADOPTED_BY_LAUNCHD) commandOf.set(Number(m[1]), m[3])
-  }
-  return commandOf
+function orphansByLaunchd(table: ProcessTable | null): Map<number, string> {
+  return new Map(
+    (table?.rows ?? [])
+      .filter((row) => row.ppid === ADOPTED_BY_LAUNCHD)
+      .map((row) => [row.pid, row.command])
+  )
 }
 
 export function pidAlive(pid: number): boolean {
@@ -43,11 +43,8 @@ const WAIT_FOR_LEFTOVER_EXIT_MS = 3000
 const LEFTOVER_EXIT_POLL_MS = 100
 
 // CODEX§5
-export async function endCodexAppServersLeftByACrash(
-  marker: string,
-  run: Exec = defaultExec
-): Promise<void> {
-  const leftovers = [...(await orphansByLaunchd(run))]
+export async function endCodexAppServersLeftByACrash(marker: string): Promise<void> {
+  const leftovers = [...orphansByLaunchd(await sharedProcessTable.fresh())]
     .filter(([, command]) => command.includes('app-server --stdio') && command.includes(marker))
     .map(([pid]) => pid)
   for (const pid of leftovers) {
@@ -88,9 +85,10 @@ export function removeFoldersLeftByEndedRuns(dir: string, ours: RegExp): void {
 
 // CC§9 PLATFORM§3
 export async function scanLeftovers(
+  table: ProcessTable | null,
   run: Exec = defaultExec
 ): Promise<Record<string, LeftoverProcess[]>> {
-  const commandOf = await orphansByLaunchd(run)
+  const commandOf = orphansByLaunchd(table)
   const out: Record<string, LeftoverProcess[]> = {}
   if (!commandOf.size) return out
   const withEnv = await run('ps', [
