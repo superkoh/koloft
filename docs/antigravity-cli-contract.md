@@ -280,8 +280,11 @@ Nothing ran against Google's real servers.
   passes, agy refreshes with the copied `refresh_token` and writes only the copy; it
   keeps the same `refresh_token` unless the server sends a new one, which it then
   saves. The original folder refreshing later with the same `refresh_token` also
-  worked (fake server). What real Google does with a reused `refresh_token`: not
-  probed.
+  worked (fake server). Real Google (2026-10-18, agy 1.4.2, one Google AI Ultra
+  account signed in on macOS, its token file copied to a Linux machine over SSH, both
+  agy running): each side refreshed on its own when the hour ran out (both files then
+  held a new `expiry`, an hour on), and both kept answering turns after it; the Mac
+  account's `/usage` probe still read signed in.
 - No token with `-p`: with stdin a terminal agy prints the URL, waits 60 s, then
   exits 1; with stdin a pipe it exits 1 at once with `Error: authentication required.
   Run 'agy' to log in, then retry.`
