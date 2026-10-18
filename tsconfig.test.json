@@ -17,6 +17,7 @@
   },
   "include": [
     "test/**/*.ts",
+    "test/**/*.tsx",
     "vitest.config.ts",
     "playwright.config.ts",
     "src/renderer/src/global.d.ts",

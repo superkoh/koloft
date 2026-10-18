@@ -30,9 +30,11 @@ import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museS
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
+import { sharedProcessTable } from './processTable'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome } from './museSessionLog'
-import { museSignedIn, storeMuseKey } from './museServe'
+import { museSignIn, storeMuseKey } from './museServe'
+import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { WorktreeResource } from './sessionStore'
@@ -81,6 +83,7 @@ import {
 import { directoryListingHtml } from './dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
+  CODEX_REPLY_LANGUAGE_SCRIPT,
   HOOK_SCRIPT,
   forgetAssistMarkers,
   markAnswerable,
@@ -103,11 +106,13 @@ import {
   defaultControlDir,
   ensureControlDir,
   rsyncPull,
+  backgroundOptions,
   runSsh,
   runSshBytes,
   sshOptions
 } from './remote/ssh'
-import { ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import { ENSURE_CODEX_SH, ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
 import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
   AGENT_PLUGIN_DIR,
@@ -120,7 +125,12 @@ import {
   CLAUDE_AUTH_ENV_VARS,
   type MachinePackage
 } from './remote/launch'
-import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
+import {
+  machinePackageBase,
+  mirrorHookDir,
+  mirrorProjectsRoot,
+  tabPackageDir
+} from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { REMOTE_AGENT_SHIM } from './agentShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
@@ -300,7 +310,7 @@ import {
   type GitPlatform,
   type GitTokenAdd
 } from '@shared/types'
-import { ACCOUNT_KINDS_OF } from '@shared/accountUsage'
+import { ACCOUNT_KINDS_OF, AUTO_PROBE_MS } from '@shared/accountUsage'
 import {
   answerPermissionRequest,
   awaitGuestFor,
@@ -575,7 +585,7 @@ let leftovers: Record<string, LeftoverProcess[]> = {}
 tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
 async function refreshLeftovers(): Promise<void> {
-  const next = await scanLeftovers()
+  const next = await scanLeftovers(await sharedProcessTable.eachRound(LEFTOVER_SCAN_MS))
   const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
   leftovers = next
   if (changed) sendToRenderer('sessions:leftovers', next)
@@ -957,6 +967,8 @@ function machinePackage(): MachinePackage {
   if (machinePkg) return machinePkg
   const pkgFiles: Record<string, string | Buffer> = {
     'ensure.sh': ENSURE_SH,
+    [ENSURE_CODEX_FILE]: ENSURE_CODEX_SH,
+    ...replyLanguageFiles(CODEX_REPLY_LANGUAGE_SCRIPT),
     'hook.sh': HOOK_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
@@ -995,6 +1007,7 @@ let discordLive: LiveStatus | null = null
 let askButtons: AskButtons | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
+let claudeAgentPlugin: string | undefined
 let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
@@ -1103,6 +1116,10 @@ function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   )
 }
 
+function machineOfTab(tabId: string): string | undefined {
+  return remoteHostOfTab(tabId) ?? codexSessions?.machineOfTab(tabId)
+}
+
 function agentToolsFor(backend: BackendId, host: HostId): boolean {
   return loadSettings().agentTools && capabilitiesFor(backend, host).agentTools === true
 }
@@ -1196,7 +1213,7 @@ function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
   open: (tabId, target, view) => {
-    const machine = remoteHostOfTab(tabId)
+    const machine = machineOfTab(tabId)
     return machine && !schemeOf(target)
       ? openOnMachine(tabId, machine, target, view)
       : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
@@ -1433,7 +1450,7 @@ const agentRequests = new AgentRequests({
   session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    return !!backend && agentToolsFor(backend, remoteHostOfTab(tabId) ? 'ssh' : 'local')
+    return !!backend && agentToolsFor(backend, machineOfTab(tabId) ? 'ssh' : 'local')
   },
   alive: pidAlive
 })
@@ -1615,6 +1632,7 @@ async function completeLogin(tabId: string, name: string, token: string): Promis
 }
 
 let probeAllInFlight: Promise<AccountView[]> | null = null
+let probeOnceTheRendererIsUp = false
 
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
@@ -1688,7 +1706,8 @@ async function addAccount(
 }
 
 const codexPicker = new HomeAccountPicker('codex-home')
-const CODEX_LIMITS_STALE_MS = 5 * 60_000
+const MUSE_QUOTA_FOLDER = 'muse-quota'
+const museProbedAt = new Map<string, number>()
 
 function codexSharedConfig(): string {
   return codexConfigFile(codexSessions?.defaultEnv)
@@ -1701,13 +1720,8 @@ function pickCodexHome(
   const views = accountViews()
   const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
   if (!picked) return undefined
-  const stale = views.some(
-    (a) =>
-      a.kind === 'codex-home' &&
-      a.enabled &&
-      (!a.limits || Date.now() - a.limits.at > CODEX_LIMITS_STALE_MS)
-  )
-  if (stale) void probeCodexAccounts()
+  const stale = (a: AccountView): boolean => !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
+  if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
   return { account: picked.name, home, notice: codexAllLimitedNotice(picked) }
@@ -1788,7 +1802,10 @@ const homeLogin: Record<
 }
 
 const probeHomeAccount: Record<HomeKind, (name: string) => Promise<void>> = {
-  'codex-home': (name) => probeCodexAccount(name),
+  'codex-home': async (name) => {
+    await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
+    await probeCodexAccount(name)
+  },
   'muse-home': (name) => probeMuseAccount(name)
 }
 
@@ -1825,7 +1842,11 @@ function museHomeFor(name: string): string {
 function pickMuseHome(
   resumeSessionId?: string
 ): { account: string; env: Record<string, string> } | undefined {
-  const picked = musePicker.pick(accountViews(), sessionAccounts?.of('muse', resumeSessionId))
+  const views = accountViews()
+  const picked = musePicker.pick(views, sessionAccounts?.of('muse', resumeSessionId))
+  const stale = (a: AccountView): boolean =>
+    Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
+  if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
   return picked && { account: picked.name, env: museAccountEnv(museHomeFor(picked.name)) }
 }
 
@@ -1843,24 +1864,36 @@ async function probeMuseAccount(name: string): Promise<void> {
   const serve = acct && (await museServeFor(name))
   if (!acct || !serve) return
   const key = viewKey(name, 'muse-home')
+  museProbedAt.set(name, Date.now())
   try {
-    const signedIn = await museSignedIn(serve)
-    const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
+    const signIn = await museSignIn(serve)
+    const status = signIn !== 'none' ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
     if (status !== acct.status) upsertAccountMeta({ ...acct, status })
     if (status === 'expired' && acct.status !== 'expired') notifyExpired(name, 'Muse')
-    usageViews.delete(key)
+    if (signIn !== 'subscription') usageViews.delete(key)
+    else {
+      const dir = path.join(app.getPath('userData'), MUSE_QUOTA_FOLDER)
+      fs.mkdirSync(dir, { recursive: true })
+      const limits = await readMuseQuota(serve.binary, serve.env, dir)
+      usageViews.set(key, { limits: limits ?? usageViews.get(key)?.limits })
+    }
   } catch {
-    usageViews.set(key, { probeError: 'network' })
+    usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
   }
   pushAccounts()
 }
 
+let museProbeRound: Promise<void> | null = null
+
 function probeMuseAccounts(): Promise<void> {
-  return Promise.all(
+  museProbeRound ??= Promise.all(
     listAccounts()
       .filter((a) => a.kind === 'muse-home' && a.enabled)
       .map((a) => probeMuseAccount(a.name))
-  ).then(() => undefined)
+  ).then(() => {
+    museProbeRound = null
+  })
+  return museProbeRound
 }
 
 // MUSE§13
@@ -2124,7 +2157,7 @@ app.whenReady().then(() => {
   ptyMgr.regDir = regDir
   if (agentRequests.watch(agentDir)) {
     ptyMgr.agentDir = agentDir
-    claudeBackend.agentPlugin = writeAgentPlugin(app.getPath('userData'))
+    claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
@@ -2343,7 +2376,9 @@ app.whenReady().then(() => {
   const storedDeps = {
     pty: ptyMgr,
     runtime: tracker,
-    projectInfo: projectInfoFor,
+    projectInfo: projectInfoOnHost,
+    remoteDirExists: (dir: string) => hosts.of(dir).dirExistsOrThrow(dir),
+    remoteTreeIo: machineTreeIo,
     changed: () => {
       const all = onSessionsChanged()
       sendToRenderer('sessions:update', all)
@@ -2358,6 +2393,22 @@ app.whenReady().then(() => {
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
       ...storedDeps,
+      machine: {
+        instance: codexMachineInstance(userData),
+        ready: loginEnvReady,
+        run: (host, cmd) =>
+          loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
+        sshArgs: (machine, background) => {
+          ensureControlDir(remoteControlDir)
+          return background
+            ? backgroundOptions(machine, remoteControlDir)
+            : sshOptions(remoteControlDir, false)
+        },
+        machinePackage,
+        tabDir: (tabId) => tabPackageDir(userData, tabId),
+        fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
+        keyed: pinnedKeyOn
+      },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
@@ -2373,7 +2424,7 @@ app.whenReady().then(() => {
       fallbackBin,
       gitBin: gitFirstBin,
       agent: {
-        enabled: () => agentToolsFor('codex', 'local'),
+        enabled: (host) => agentToolsFor('codex', host),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
       },
       gitAccounts: {
@@ -2388,9 +2439,6 @@ app.whenReady().then(() => {
   try {
     museSessions = new MuseSessions(path.join(userData, 'muse-sessions.json'), {
       ...storedDeps,
-      projectInfo: projectInfoOnHost,
-      remoteDirExists: (dir) => hosts.of(dir).dirExistsOrThrow(dir),
-      remoteTreeIo: machineTreeIo,
       remote: museOnMachines,
       leftWorktree: (resource) => removeUntouchedWorktree(museSessions, resource),
       openShimRoot: path.join(userData, 'muse-open'),
@@ -2401,7 +2449,8 @@ app.whenReady().then(() => {
         writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
       },
       skipPermissions: () => loadSettings().skipPermissions,
-      serversAmong: (pid, commands) => museServersAmong(pid, commands),
+      serversAmong: async (pid, commands) =>
+        museServersAmong(await sharedProcessTable.fresh(), pid, commands),
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,
@@ -2426,7 +2475,7 @@ app.whenReady().then(() => {
       .catch((error) => sendToRenderer('cron:toast', String(error)))
   }
   if (codexSessions) {
-    sessionBackends.register(codexBackend(codexSessions, resumeProbes))
+    sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes))
     void codexSessions
       .availability()
       .then((codex) => {
@@ -2791,15 +2840,23 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
-      const live = new Set(
-        ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : []))
+      const live = new Set([
+        ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
+        ...(codexSessions?.machinesWithTabs() ?? [])
+      ])
+      const busy = new Set(
+        allSessions().flatMap((s) => {
+          const host = s.alive && machineOfTab(s.tabId)
+          return host && (s.status === 'working' || s.status === 'approval') ? [host] : []
+        })
       )
       return (workspaceMgr?.remoteTargets() ?? []).map((t) => ({
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
         paths: t.paths,
-        hasTabs: live.has(t.host)
+        hasTabs: live.has(t.host),
+        busy: busy.has(t.host)
       }))
     },
     onChange: (host) => {
@@ -2812,6 +2869,10 @@ app.whenReady().then(() => {
     },
     onHooksPulled: (host) => museSessions?.followMirrors(host),
     onConnected: (host) => void freshness?.machineUp(host)
+  })
+  ptyMgr.on('typed', (tabId: string) => {
+    const host = machineOfTab(tabId)
+    if (host) remoteSync?.typedInto(host)
   })
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
@@ -2962,9 +3023,7 @@ app.whenReady().then(() => {
 
   const capsuleShownSoLaunchProbeIsNotBilledForNothing = (): boolean =>
     listAccounts().some((a) => a.enabled && a.kind === 'oauth')
-  if (capsuleShownSoLaunchProbeIsNotBilledForNothing()) {
-    void probeAllForPanel().catch(() => {})
-  }
+  probeOnceTheRendererIsUp = capsuleShownSoLaunchProbeIsNotBilledForNothing()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -3010,7 +3069,7 @@ app.on('before-quit', (e) => {
   clearQuitFallback()
   if (!quitCommitted) rememberOpenTabs()
   quitCommitted = true
-  if (!storedQuitStopped && storedSessions().some((s) => s.hasRuns())) {
+  if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
     e.preventDefault()
     if (!storedQuitPending) {
       storedQuitPending = true
@@ -4355,7 +4414,11 @@ const githubOptions: GithubOptions = {
 }
 
 const hosts = new Hosts(
-  localHost(new GithubLookup(githubOptions)),
+  localHost(new GithubLookup(githubOptions), {
+    hookRegDir: () => hookRegDir ?? '',
+    agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
+    assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey)
+  }),
   (machine) =>
     new SshHost(machine, {
       run: (cmd, opts) =>
@@ -4386,6 +4449,7 @@ const hosts = new Hosts(
         controlDir: remoteControlDir,
         machinePackage,
         alive: () => remoteSync?.alive(machine) ?? new Set(),
+        firstHeartbeatDone: () => remoteSync?.firstRoundDone(machine) ?? Promise.resolve(),
         realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
         settings: loadSettings,
         pickAccount: (launchKey, resumeSessionId) =>
@@ -4409,7 +4473,7 @@ const claudeBackend = new ClaudeBackend({
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   error: (message) => sendToRenderer('cron:toast', message),
-  assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
+  machineOfTab,
   otherTabOnMachine: (machine, tmuxName, launchTab) =>
     museSessions?.tabOnMachine(machine, tmuxName, launchTab)
 })
@@ -4508,6 +4572,10 @@ function registerIpc(): void {
   ipcMain.handle('tabs:list', (): TabInventoryReply => {
     rendererReady = true
     cronRunner?.onRendererReady()
+    if (probeOnceTheRendererIsUp) {
+      probeOnceTheRendererIsUp = false
+      void probeAllForPanel().catch(() => {})
+    }
     const activeAsleep = restoreOpenTabs()
     const active = activeAsleep ?? activeTabBeforeReload
     activeTabBeforeReload = null

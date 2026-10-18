@@ -10,7 +10,16 @@ const alias = {
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
-    resolve: { alias }
+    resolve: {
+      alias: {
+        ...alias,
+        // PLATFORM§21
+        '@xterm/headless': resolve(
+          __dirname,
+          'node_modules/@xterm/headless/lib-headless/xterm-headless.mjs'
+        )
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()],

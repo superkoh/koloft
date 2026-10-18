@@ -4,6 +4,7 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   E2E_MUSE_ACCOUNT,
+  installCodex,
   installMuse,
   museCalls,
   seedSettings,
@@ -12,14 +13,17 @@ import {
   type MuseCall
 } from './helpers/env'
 import {
+  agentRow,
   centerTerm,
   chooseBackend,
   gitCommitAll,
   gitInit,
   newSessionInWith,
   openMenu,
+  openPicker,
   openWorktreeSession,
   processAlive,
+  readCalls,
   runIn,
   sendShortcut,
   waitBooted,
@@ -71,6 +75,38 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(row).toHaveClass(/st-working/)
       await expect(row).toHaveClass(/st-waiting/)
       await expect(row).toContainText('hello muse')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§13
+  test('a Muse account signed in with Meta shows its 5h and 7d quota in the usage panel, read from /usage in a muse that keeps no session log, so no session appears anywhere', async ({
+    env
+  }) => {
+    installMuse(env)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(
+      path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
+      JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+    )
+    fs.writeFileSync(
+      path.join(env.home, 'fake-muse-quota.json'),
+      JSON.stringify({ current: 40, weekly: 7 })
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.accounts.probe())
+      await page.locator('.tbu').click()
+      const pop = page.locator('.tbu-pop')
+      await expect(pop.locator('.tbu-pop-head', { hasText: /^Muse$/ })).toBeVisible()
+      const row = pop.locator('.tbu-row', { hasText: E2E_MUSE_ACCOUNT })
+      await expect(row.locator('.acct-meter[data-win="5h"] .m-pct')).toHaveText('40%')
+      await expect(row.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('7%')
+      expect(museCalls(env)).toEqual([])
+      expect(await page.evaluate(() => window.api.sessions.list())).toEqual([])
     } finally {
       await quitAndClose(app)
     }
@@ -148,6 +184,49 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       }
     })
 
+  test('with Claude, Codex and Muse, ⇧⏎ in the ⌘N picker opens the numbered agent list on the first other agent; ↓↑ and Esc stay inside the list, and its digit starts that agent in the picked workspace', async ({
+    env
+  }) => {
+    installCodex(env)
+    installMuse(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dlg = await openPicker(app, page)
+      await expect(dlg.getByRole('button', { name: 'Pick an agent' })).toBeVisible()
+      await expect(dlg.getByText('⏎ Claude · ⇧⏎ other agent')).toBeVisible()
+      const hotWs = dlg.locator('.cb-row.hot .wsp-name')
+      const picked = await hotWs.innerText()
+      trustInMuse(
+        env,
+        Object.values(env.workspaces).find((ws) => path.basename(ws) === picked)!
+      )
+
+      await page.keyboard.press('Shift+Enter')
+      const list = page.getByRole('listbox', { name: 'Agents' })
+      await expect(list.getByRole('option')).toHaveText(['1Claudedefault', '2Codex', '3Muse'])
+      await expect(agentRow(page, 'Codex')).toHaveAttribute('aria-selected', 'true')
+      await page.keyboard.press('ArrowDown')
+      await expect(agentRow(page, 'Muse')).toHaveAttribute('aria-selected', 'true')
+      await expect(hotWs).toHaveText(picked)
+      await page.keyboard.press('Escape')
+      await expect(list).toHaveCount(0)
+      await expect(dlg).toBeVisible()
+
+      await page.keyboard.press('Shift+Enter')
+      await expect(list).toBeVisible()
+      await page.keyboard.press('3')
+      await expect.poll(() => museCalls(env).length).toBe(1)
+      await expect(dlg).toHaveCount(0)
+      expect(path.basename(museCalls(env)[0].cwd)).toBe(picked)
+      expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('a Muse worktree session runs in its own worktree folder, trusted for that run because its workspace is', async ({
     env
   }) => {
@@ -162,7 +241,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await waitBooted(page)
       const dialog = await openWorktreeSession(page, 'ws-a')
       await dialog.locator('input').fill('muse-tree')
-      await chooseBackend(page, 'other')
+      await chooseBackend(page, 'Muse')
       await expect.poll(() => museCalls(env).length).toBe(1)
       const call = museCalls(env)[0]
       expect(call.argv).toEqual([...SKIPS_PERMISSION_PROMPTS_AS_SHIPPED, '--trust-workspace'])

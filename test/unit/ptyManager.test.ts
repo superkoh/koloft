@@ -338,6 +338,20 @@ describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted 
   })
 })
 
+// CC§12
+it("tells which tab got input, so a remote tab's sync wakes, but not for a mouse move or a focus change", () => {
+  const mgr = new PtyManager()
+  const typed: string[] = []
+  mgr.on('typed', (tabId: string) => typed.push(tabId))
+  const tab = mgr.create({ kind: 'codex', ...CODEX_TAB_ENV, cwd: os.tmpdir() })
+  mgr.write(tab.id, '\x1b[<35;10;5M\x1b[<35;11;5M')
+  mgr.write(tab.id, '\x1b[I')
+  expect(typed).toEqual([])
+  mgr.write(tab.id, 'h')
+  mgr.write(tab.id, '\x1b[<0;3;4Mx')
+  expect(typed).toEqual([tab.id, tab.id])
+})
+
 describe('PtyManager types the PATH line and the launch line once the login shell reads', () => {
   const SETUP = 'export PATH="/koloft/shim:$PATH"; hash -r 2>/dev/null; clear'
   const LAUNCH = 'exec claude --resume abc'

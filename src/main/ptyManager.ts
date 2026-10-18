@@ -8,7 +8,7 @@ import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { OscCwdParser } from './oscCwd'
 import { userShell } from './userShell'
-import { bracketedPaste, typeKeys, typedPieces } from './typeKeys'
+import { bracketedPaste, typeKeys, typedPieces, withoutMouseAndFocusReports } from './typeKeys'
 
 export interface PtyHandle {
   id: string
@@ -288,7 +288,9 @@ export class PtyManager extends EventEmitter {
   }
 
   write(id: string, data: string): void {
-    this.ptys.get(id)?.proc.write(data)
+    const handle = this.ptys.get(id)
+    handle?.proc.write(data)
+    if (handle && withoutMouseAndFocusReports(data)) this.emit('typed', id)
   }
 
   exclusive<T>(id: string, typing: () => Promise<T>): Promise<T> {

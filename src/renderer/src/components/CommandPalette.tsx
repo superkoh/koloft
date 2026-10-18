@@ -18,7 +18,8 @@ import { openSessionRow } from '../sessionClick'
 import { mixesBackends, relTime } from '../sessionRows'
 import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
-import { BusyLine, enterMethod } from './SessionLaunchButtons'
+import { startOrList, type AgentChoice } from '../agentChoice'
+import { BusyLine, SessionLaunchButtons } from './SessionLaunchButtons'
 
 const SEARCH_AFTER_TYPING_MS = 400
 
@@ -70,13 +71,13 @@ export function CommandPalette({
   onClose,
   onRouted,
   onOpenHit,
-  methods
+  choice
 }: {
   actions: PaletteAction[]
   onClose: () => void
   onRouted: PaletteRouted
   onOpenHit: (hit: SessionSearchHit) => void
-  methods: BackendId[]
+  choice: AgentChoice
 }): JSX.Element {
   const rows = useStore((s) => s.workspaceRows)
   const sessions = useStore((s) => s.sessions)
@@ -89,6 +90,7 @@ export function CommandPalette({
   const [mode, setMode] = useState<'ask' | 'thinking' | 'search'>('ask')
   const [hits, setHits] = useState<SessionSearchHit[]>([])
   const [searchDone, setSearchDone] = useState(false)
+  const [listOpen, setListOpen] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const asking = useRef<ReturnType<typeof askRoute> | null>(null)
@@ -107,8 +109,6 @@ export function CommandPalette({
   const count = keys.length
   const keyAt = keys.indexOf(hotKey ?? '')
   const at = keyAt >= 0 ? keyAt : mode === 'search' && count > 0 ? 0 : null
-  const [primary, ...others] = methods
-  const [other, third] = others
   const startIsDefault = mode === 'ask' && at === null && !!typed
   const pick = (i: number | null): void => setHotKey(i === null ? null : keys[i])
 
@@ -122,7 +122,7 @@ export function CommandPalette({
     else item.run()
   }
 
-  const start = (backend: BackendId = primary): void => {
+  const start = (backend: BackendId = choice.lead): void => {
     if (mode !== 'ask' || !typed) return
     if (!assistOn) {
       onRouted(typed, backend, null)
@@ -214,8 +214,8 @@ export function CommandPalette({
     if (e.altKey) search()
     else if (mode === 'search') {
       if (at !== null && hits[at]) onOpenHit(hits[at])
-    } else if (at !== null && !e.shiftKey && !(e.ctrlKey && third)) open(visible[at])
-    else start(enterMethod(e, others) ?? primary)
+    } else if (at !== null && !e.shiftKey) open(visible[at])
+    else startOrList(e, choice, start, () => typed && setListOpen(true))
   }
 
   const rowOf = (item: PaletteItem): JSX.Element => {
@@ -391,36 +391,26 @@ export function CommandPalette({
               >
                 Search conversations <span className="k">⌥⏎</span>
               </button>
-              <button
+              <SessionLaunchButtons
+                choice={choice}
+                open={listOpen}
+                onOpen={setListOpen}
                 className={'pal-pill' + (startIsDefault ? ' go' : '')}
+                icon={false}
+                keyHint={startIsDefault}
+                busy={false}
                 disabled={!typed}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => start(primary)}
-              >
-                <IconAiStart size={12} className="pal-pill-glyph" />{' '}
-                {startLabel(assistOn, other && BACKEND_LABEL[primary])}
-                {startIsDefault && <span className="k">⏎</span>}
-              </button>
-              {other && (
-                <button
-                  className="pal-pill"
-                  disabled={!typed}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => start(other)}
-                >
-                  {BACKEND_LABEL[other]} <span className="k">⇧⏎</span>
-                </button>
-              )}
-              {third && (
-                <button
-                  className="pal-pill"
-                  disabled={!typed}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => start(third)}
-                >
-                  {BACKEND_LABEL[third]} <span className="k">⌃⏎</span>
-                </button>
-              )}
+                label={(backend) => (
+                  <>
+                    <IconAiStart size={12} className="pal-pill-glyph" />{' '}
+                    {startLabel(
+                      assistOn,
+                      choice.listed.length > 1 ? BACKEND_LABEL[backend] : undefined
+                    )}
+                  </>
+                )}
+                onStart={start}
+              />
             </>
           )}
         </div>
