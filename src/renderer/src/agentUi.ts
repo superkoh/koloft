@@ -1,11 +1,11 @@
-import { capabilitiesFor } from '@shared/sessionBackend'
+import { backendIdOf, capabilitiesFor } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import type { BackendId, TabKind } from '@shared/types'
 
 export type SessionBackend = BackendId
 
 export function isSessionKind(kind?: TabKind | string): kind is BackendId {
-  return kind === 'claude' || kind === 'codex'
+  return backendIdOf(kind) !== undefined
 }
 
 // PLATFORM§6

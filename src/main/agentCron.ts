@@ -12,7 +12,7 @@ import {
   type LiveRun,
   type Schedule
 } from '@shared/types'
-import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, backendIdOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { cronBackend, CRON_PERMISSIONS, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { describeSchedule, describeWhen, DOW, nextRun } from '@shared/schedule'
 import { histText, histWhen, lastRunOf, LIVE_WORDS, liveOf, whenLine } from '@shared/cronHistory'
@@ -43,6 +43,7 @@ const VALUE_FLAGS = [
   '--when-done'
 ]
 const WHEN_DONE = ['open', 'close'] as const
+const BACKEND_WORDS = `${SESSION_BACKENDS.slice(0, -1).join(', ')} or ${SESSION_BACKENDS[SESSION_BACKENDS.length - 1]}`
 
 export interface CronPatch {
   name?: string
@@ -93,7 +94,7 @@ function applyFlag(patch: CronPatch, flag: string, value: string): string | null
   else if (flag === '--model') patch.model = value
   else if (flag === '--backend') {
     const backend = backendIdOf(value)
-    if (!backend) return '--backend is claude or codex.'
+    if (!backend) return `--backend is ${BACKEND_WORDS}.`
     patch.backend = backend
   } else if (flag === '--effort') {
     if (!isCronEffort(value)) return `--effort is one of ${CRON_EFFORTS.join(', ')}.`

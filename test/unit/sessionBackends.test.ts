@@ -136,23 +136,22 @@ describe('session backend boundary', () => {
     await expect(registry.historyRows('/repo', () => {})).rejects.toThrow('app-server gone')
   })
 
-  it('keeps native ids from different backends separate and accepts legacy Claude references', () => {
+  it('keeps native ids from different backends separate, Muse included, and accepts legacy Claude references', () => {
     const nativeSessionId = '00000000-0000-4000-8000-000000000001'
     const claude = sessionKey({ backendId: 'claude', sourceId: 'local', nativeSessionId })
     const codex = sessionKey({ backendId: 'codex', sourceId: 'local', nativeSessionId })
     expect(claude).not.toBe(codex)
     expect(identityOf(codex)).toEqual({ backendId: 'codex', sourceId: 'local', nativeSessionId })
+    const muse = sessionKey({ backendId: 'muse', sourceId: 'local', nativeSessionId })
+    expect(identityOf(muse)).toEqual({ backendId: 'muse', sourceId: 'local', nativeSessionId })
     expect(identityOf(nativeSessionId).backendId).toBe('claude')
   })
 
-  it('refuses implicit/new unsupported launches before reaching any backend', async () => {
+  it('refuses a launch with no method before reaching any backend, and hands a Codex launch here or on a machine to Codex', async () => {
     const registry = new SessionBackends(lifecycle())
     const create = vi.fn(async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }))
     const backend: SessionBackend = { ...stubBackend('codex'), create }
     registry.register(backend)
-    await expect(registry.create({ kind: 'codex', cwd: 'ssh://server/repo' })).rejects.toThrow(
-      'Codex sessions cannot run on a remote machine yet.'
-    )
     await expect(registry.create({ kind: undefined as never, cwd: '/repo' })).resolves.toEqual({
       ok: false,
       code: 'invalid-args'
@@ -161,7 +160,12 @@ describe('session backend boundary', () => {
     await expect(registry.create({ kind: 'codex', cwd: '/repo' })).resolves.toMatchObject({
       ok: true
     })
+    await expect(
+      registry.create({ kind: 'codex', cwd: 'ssh://server/repo' })
+    ).resolves.toMatchObject({ ok: true })
+    expect(create).toHaveBeenCalledTimes(2)
     expect(registry.forSession('codex:local:id')).toBe(backend)
+    expect(registry.forSession('codex:server:id')).toBe(backend)
   })
 
   // ADR-0030
@@ -224,29 +228,30 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(Object.values(capabilitiesFor('claude', 'local')).every((c) => c === true)).toBe(true)
   })
 
-  it('gives a remote Claude session a Workbench, scheduled tasks and the koloft command but keeps agent open and browser control off', () => {
+  it('gives a remote Claude session a Workbench, scheduled tasks and the koloft command but keeps browser control off', () => {
     const remote = capabilitiesFor('claude', 'ssh')
     expect(remote.workbench).toBe(true)
     expect(remote.scheduledTasks).toBe(true)
     expect(remote.agentTools).toBe(true)
-    expect(remote.agentOpen).not.toBe(true)
     expect(remote.browserControl).not.toBe(true)
   })
 
-  it('gives a Codex session on this Mac a Workbench, accounts, scheduled tasks, the koloft command and browser control, and marks the three-line status line unsupported, citing the ledger section that shows why', () => {
-    expect(capabilitiesFor('codex', 'local').workbench).toBe(true)
-    expect(capabilitiesFor('codex', 'local').scheduledTasks).toBe(true)
-    expect(capabilitiesFor('codex', 'local').accounts).toBe(true)
-    expect(capabilitiesFor('codex', 'local').agentTools).toBe(true)
-    expect(capabilitiesFor('codex', 'local').browserControl).toBe(true)
-    expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
+  it('gives a Codex session on this Mac a Workbench, scheduled tasks, the koloft command and browser control', () => {
+    expect(capabilitiesFor('codex', 'local')).toEqual(capabilitiesFor('claude', 'local'))
   })
 
-  it('supports every pair but Codex on a remote machine', () => {
+  // CODEX§16
+  it('supports every pair, and Codex on a remote machine leaves pending what Claude there does', () => {
     expect(SUPPORTED_PAIRS).toEqual({
       claude: { local: true, ssh: true },
-      codex: { local: true, ssh: false }
+      codex: { local: true, ssh: true },
+      muse: { local: true, ssh: true }
     })
+    expect(capabilitiesFor('codex', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
+  })
+
+  it('gives a remote Muse tab what a remote Claude tab has', () => {
+    expect(capabilitiesFor('muse', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
   })
 })
 
@@ -266,7 +271,7 @@ describe('shownAsInstalled (which tools a dialog offers while the installed-tool
 describe('effectiveBackend (what every direct entrance starts on a Mac that may have only one of the two CLIs)', () => {
   const methods = (defaultBackend: BackendId, codex = true) => ({
     defaultBackend,
-    enabled: { claude: true, codex }
+    enabled: { claude: true, codex, muse: true }
   })
   const have = (...ids: BackendId[]): ReadonlySet<BackendId> => new Set(ids)
 
@@ -278,6 +283,11 @@ describe('effectiveBackend (what every direct entrance starts on a Mac that may 
   it('starts the only method there is when the default is not installed', () => {
     expect(effectiveBackend(methods('claude'), have('codex'))).toBe('codex')
     expect(effectiveBackend(methods('codex'), have('claude'))).toBe('claude')
+  })
+
+  it('starts the first method that can run when the default cannot and several can', () => {
+    expect(effectiveBackend(methods('claude'), have('codex', 'muse'))).toBe('codex')
+    expect(effectiveBackend(methods('muse'), have('claude', 'codex'))).toBe('claude')
   })
 
   it('ignores an installed method the user switched off', () => {

@@ -206,7 +206,7 @@ const api: KoloftApi = {
     },
     pair: (isMe) => ipcRenderer.invoke('discord:pair', isMe),
     channels: () => ipcRenderer.invoke('discord:channels'),
-    setUpWithAssist: () => ipcRenderer.invoke('discord:setUpWithAssist')
+    setUpWithAssist: (ownerWords) => ipcRenderer.invoke('discord:setUpWithAssist', ownerWords)
   },
   attention: {
     list: () => ipcRenderer.invoke('attention:list'),
@@ -442,7 +442,7 @@ const api: KoloftApi = {
     acceptBypass: () => ipcRenderer.invoke('accounts:accept-bypass'),
     startLogin: (name, reauth) => ipcRenderer.invoke('accounts:start-login', name, reauth),
     cancelLogin: () => ipcRenderer.send('accounts:cancel-login'),
-    codexSignIn: (name, again) => ipcRenderer.invoke('accounts:codex-sign-in', name, again),
+    signIn: (kind, name, again) => ipcRenderer.invoke('accounts:sign-in', kind, name, again),
     codexUseReset: (name) => ipcRenderer.invoke('accounts:codex-use-reset', name),
     onLoginProgress: (cb) => {
       const handler = (_e: unknown, p: LoginProgress): void => cb(p)
@@ -462,7 +462,8 @@ const api: KoloftApi = {
       ipcRenderer.on('gitAccounts:update', handler)
       return () => ipcRenderer.removeListener('gitAccounts:update', handler)
     },
-    loginStart: (platform, url) => ipcRenderer.invoke('gitAccounts:login-start', platform, url),
+    loginStart: (platform, url, machine) =>
+      ipcRenderer.invoke('gitAccounts:login-start', platform, url, machine),
     loginCancel: () => ipcRenderer.send('gitAccounts:login-cancel'),
     loginBrowser: () => ipcRenderer.send('gitAccounts:login-browser'),
     onLoginProgress: (cb) => {
@@ -471,8 +472,8 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('gitAccounts:login-progress', handler)
     },
     addToken: (add) => ipcRenderer.invoke('gitAccounts:add-token', add),
-    remove: (id) => ipcRenderer.invoke('gitAccounts:remove', id),
-    makeDefault: (id) => ipcRenderer.invoke('gitAccounts:make-default', id),
+    remove: (id, machine) => ipcRenderer.invoke('gitAccounts:remove', id, machine),
+    makeDefault: (id, machine) => ipcRenderer.invoke('gitAccounts:make-default', id, machine),
     check: () => ipcRenderer.invoke('gitAccounts:check'),
     pick: (wsPath, id) => ipcRenderer.invoke('gitAccounts:pick', wsPath, id),
     suggest: (wsPath, network) => ipcRenderer.invoke('gitAccounts:suggest', wsPath, network),

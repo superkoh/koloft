@@ -78,6 +78,8 @@ const MACHINE_TABS = {
   'pty-c': { host: 'otherbox', tmuxName: 'k-sc' }
 } as Record<string, { host: string; tmuxName: string }>
 
+const CODEX_TABS = { 'pty-cx': 'devbox', 'pty-cy': 'otherbox' } as Record<string, string>
+
 function machineBackend(): {
   boundTo: Map<string, string>
   answeredFor: string[]
@@ -89,7 +91,11 @@ function machineBackend(): {
   const answeredFor: string[] = []
   const sent: [string, string, string][] = []
   const backend = new ClaudeBackend({
-    pty: { get: (id: string) => (MACHINE_TABS[id] ? {} : undefined), clearResumeIntent: () => {} },
+    pty: {
+      get: (id: string) => (MACHINE_TABS[id] || CODEX_TABS[id] ? {} : undefined),
+      clearResumeIntent: () => {}
+    },
+    machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
     hosts: {
       machine: (host: string) => ({
         answerAgent: async (id: string, reply: string) => void sent.push([host, id, reply])
@@ -163,6 +169,68 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
 
     expect(m.sent.map(([, id]) => id).sort()).toEqual(['r4', 'r5'])
     expect(m.answeredFor.sort()).toEqual(['pty-a', 'pty-b'])
+  })
+
+  // ADR-0039
+  it('answers a request from a Codex tab on that machine, which names its tab and no tmux session, and leaves one from a Codex tab on another machine unanswered', async () => {
+    const m = machineBackend()
+    m.drop('req-r6.json', request('pty-cy', ''))
+    m.drop('req-r7.json', request('pty-cx', ''))
+    await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
+    await new Promise((r) => setTimeout(r, A_FEW_MIRROR_PULLS_MS))
+
+    expect(m.sent).toEqual([['devbox', 'r7', replyJson(answered('for pty-cx'))]])
+  })
+})
+
+describe('ClaudeBackend: waiting for a remote session to end before its folder is tidied (#22)', () => {
+  const REMOTE_EXIT_WAIT_MS = 10_000
+
+  function machine(): {
+    backend: ClaudeBackend
+    sync: { connected: boolean; alive: Set<string>; pokes: string[] }
+  } {
+    const sync = { connected: true, alive: new Set(['sid-1']), pokes: [] as string[] }
+    const backend = new ClaudeBackend({
+      remoteSync: () => ({
+        pokeNow: (host: string) => void sync.pokes.push(host),
+        connected: () => sync.connected,
+        alive: () => sync.alive
+      })
+    } as unknown as ClaudeBackendDeps)
+    return { backend, sync }
+  }
+
+  it('asks the machine at once, and answers "gone" as soon as the session leaves its list', async () => {
+    vi.useFakeTimers()
+    try {
+      const m = machine()
+      const answer = m.backend.waitRemoteGone('devbox', 'sid-1')
+      expect(m.sync.pokes).toEqual(['devbox'])
+      await vi.advanceTimersByTimeAsync(2_000)
+      m.sync.alive.delete('sid-1')
+      await vi.advanceTimersByTimeAsync(1_000)
+      await expect(answer).resolves.toBe('gone')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers "alive" when the session is still there after ten seconds, and "unreachable" when the machine never answered', async () => {
+    vi.useFakeTimers()
+    try {
+      const alive = machine()
+      const stillThere = alive.backend.waitRemoteGone('devbox', 'sid-1')
+      const down = machine()
+      down.sync.connected = false
+      down.sync.alive.clear()
+      const neverAnswered = down.backend.waitRemoteGone('devbox', 'sid-1')
+      await vi.advanceTimersByTimeAsync(REMOTE_EXIT_WAIT_MS + 1_000)
+      await expect(stillThere).resolves.toBe('alive')
+      await expect(neverAnswered).resolves.toBe('unreachable')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

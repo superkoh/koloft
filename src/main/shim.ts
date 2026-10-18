@@ -138,7 +138,13 @@ const CODEX_SUBCOMMANDS_WITHOUT_A_TUI = [
   'help'
 ].join('|')
 
-const UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX = `if [ "$KOLOFT_UTIL" = "1" ]; then
+function utilTerminalRefusesInteractive(
+  label: string,
+  flagsFollowedByAValue: string,
+  subcommandsWithoutATui: string,
+  hint: string
+): string {
+  return `if [ "$KOLOFT_UTIL" = "1" ]; then
   utilok=0
   valflag=0
   sub=""
@@ -149,23 +155,83 @@ const UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX = `if [ "$KOLOFT_UTIL" = "1" ]; th
     fi
     case "$a" in
       -h|--help|-V|--version) utilok=1 ;;
-      ${CODEX_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
+      ${flagsFollowedByAValue}) valflag=1 ;;
       -*) ;;
       *) [ -z "$sub" ] && sub="$a" ;;
     esac
   done
   case "$sub" in
-    ${CODEX_SUBCOMMANDS_WITHOUT_A_TUI}) utilok=1 ;;
+    ${subcommandsWithoutATui}) utilok=1 ;;
   esac
   if [ "$utilok" = "0" ]; then
-${utilTerminalRefusal('Codex', 'codex exec · --help · login · mcp')}
+${utilTerminalRefusal(label, hint)}
   fi
 fi`
+}
+
+// MUSE§1
+const MUSE_FLAGS_FOLLOWED_BY_A_VALUE = [
+  '-c',
+  '--config',
+  '--agents',
+  '--provider',
+  '--preset',
+  '--model',
+  '--contributor-mode',
+  '--reasoning-effort',
+  '--effort',
+  '--base-url',
+  '--image',
+  '--workspace',
+  '--worktree-base',
+  '--worktree-existing',
+  '--approval-mode',
+  '--permission-profile',
+  '--approval-judge',
+  '--echo-delay-ms'
+].join('|')
+
+// MUSE§1
+const MUSE_SUBCOMMANDS_WITHOUT_A_TUI = [
+  'exec',
+  'config',
+  'export',
+  'trace',
+  'model-profile',
+  'skills',
+  'voice',
+  'plugins',
+  'sandbox',
+  'schema',
+  'serve',
+  'session-message',
+  'mcp',
+  'auth',
+  'login',
+  'logout',
+  'init',
+  'help'
+].join('|')
 
 const UTIL_TERMINAL_REFUSAL = {
   claude: UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE,
-  codex: UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX
+  codex: utilTerminalRefusesInteractive(
+    'Codex',
+    CODEX_FLAGS_FOLLOWED_BY_A_VALUE,
+    CODEX_SUBCOMMANDS_WITHOUT_A_TUI,
+    'codex exec · --help · login · mcp'
+  ),
+  muse: utilTerminalRefusesInteractive(
+    'Muse',
+    MUSE_FLAGS_FOLLOWED_BY_A_VALUE,
+    MUSE_SUBCOMMANDS_WITHOUT_A_TUI,
+    'muse exec · --help · login'
+  )
 }
+
+const GUARDED_OUTSIDE_THE_CLAUDE_SHIM = (
+  Object.keys(UTIL_TERMINAL_REFUSAL) as (keyof typeof UTIL_TERMINAL_REFUSAL)[]
+).filter((tool) => tool !== 'claude')
 
 export function utilTerminalGuard(bin: keyof typeof UTIL_TERMINAL_REFUSAL): string {
   return `#!/bin/sh
@@ -339,6 +405,15 @@ if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
       export ANTHROPIC_DEFAULT_FABLE_MODEL="$pmodel"
       export CLAUDE_CODE_SUBAGENT_MODEL="$pmodel"
       export CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
+      # CC§9
+      kargs=()
+      kdrop=0
+      for a in "$@"; do
+        if [ "$kdrop" = "1" ]; then kdrop=0; continue; fi
+        if [ "$a" = "--model" ]; then kdrop=1; continue; fi
+        kargs+=("$a")
+      done
+      set -- "\${kargs[@]}"
     fi
   else
     export CLAUDE_CODE_OAUTH_TOKEN="$ptok"
@@ -446,9 +521,11 @@ export function setupShim(gitAuthDir: string): ShimPaths {
   fs.writeFileSync(openShimPath, OPEN_SHIM_SCRIPT, { mode: 0o755 })
   fs.chmodSync(openShimPath, 0o755)
 
-  const codexGuardPath = path.join(shimDir, 'codex')
-  fs.writeFileSync(codexGuardPath, utilTerminalGuard('codex'), { mode: 0o755 })
-  fs.chmodSync(codexGuardPath, 0o755)
+  for (const tool of GUARDED_OUTSIDE_THE_CLAUDE_SHIM) {
+    const guardPath = path.join(shimDir, tool)
+    fs.writeFileSync(guardPath, utilTerminalGuard(tool), { mode: 0o755 })
+    fs.chmodSync(guardPath, 0o755)
+  }
 
   const agentShimPath = path.join(shimDir, 'koloft')
   fs.writeFileSync(agentShimPath, CLAUDE_AGENT_SHIM, { mode: 0o755 })

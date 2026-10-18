@@ -28,6 +28,10 @@ const flagVal = (f) => {
 
 const openFifoNeverSeeingEof = (fifo) => fs.openSync(fifo, fs.constants.O_RDWR)
 
+const DCS_OPEN = '\x1bPtmux;'
+const WHOLE_DCS = /^\x1bPtmux;(?:[^\x1b]|\x1b\x1b)*\x1b\\/
+const DCS = /\x1bPtmux;((?:[^\x1b]|\x1b\x1b)*)\x1b\\/g
+
 const aliveFile = (name) => path.join(aliveDir, name)
 const fifoPath = (io) => path.join(ioDir, `${io}.in`)
 const outPath = (io) => path.join(ioDir, `${io}.out`)
@@ -72,6 +76,7 @@ function attach(name) {
   process.stdin.resume()
 
   let off = 0
+  let held = ''
   const pump = () => {
     try {
       const size = fs.statSync(outPath(io)).size
@@ -81,8 +86,21 @@ function attach(name) {
       fs.readSync(fd, buf, 0, buf.length, off)
       fs.closeSync(fd)
       off = size
-      process.stdout.write(buf)
+      process.stdout.write(passThrough(buf))
     } catch {}
+  }
+  // PLATFORM§35
+  const passThrough = (buf) => {
+    let text = held + buf.toString('latin1')
+    held = ''
+    const open = text.lastIndexOf(DCS_OPEN)
+    if (open >= 0 && !WHOLE_DCS.test(text.slice(open))) {
+      held = text.slice(open)
+      text = text.slice(0, open)
+    }
+    const passes = !fs.existsSync(path.join(STATE, 'no-passthrough'))
+    text = text.replace(DCS, (_, inner) => (passes ? inner.replace(/\x1b\x1b/g, '\x1b') : ''))
+    return Buffer.from(text, 'latin1')
   }
   setInterval(pump, 80)
   setInterval(() => {

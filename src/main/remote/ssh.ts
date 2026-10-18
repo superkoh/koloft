@@ -41,7 +41,7 @@ const MASTER_FULL = 'Session open refused by peer'
 
 const spilledHosts = new Set<string>()
 
-function backgroundOptions(host: string, controlDir: string): string[] {
+export function backgroundOptions(host: string, controlDir: string): string[] {
   return sshOptions(controlDir, true, spilledHosts.has(host) ? SPILL_MASTER : SHARED_MASTER)
 }
 
@@ -130,7 +130,7 @@ async function run(bin: string, args: string[], timeoutMs: number): Promise<RunR
 export function runSsh(
   host: string,
   remoteCmd: string,
-  opts: { controlDir: string; timeoutMs?: number }
+  opts: { controlDir: string; timeoutMs?: number; input?: Buffer }
 ): Promise<RunResult> {
   return runSshBytes(host, remoteCmd, { ...opts, maxBuffer: 32 * 1024 * 1024 }).then((r) => ({
     ...r,

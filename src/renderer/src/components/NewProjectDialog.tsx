@@ -1,6 +1,6 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
-import { LuSparkles, LuX } from 'react-icons/lu'
+import { IconAiStart, IconClose } from '../icons'
 import type { BackendId } from '@shared/types'
 import { LOCAL_MACHINE } from '@shared/sessionRoute'
 import { isValidWorktreeName } from '@shared/worktreeName'
@@ -11,6 +11,7 @@ import { remoteKeyFromForm } from '../remoteWorkspace'
 import { useStore } from '../store'
 import { SeedFields } from './SeedFields'
 import { updateSettings } from './settings/useSettingsUpdate'
+import { startOrList } from '../agentChoice'
 import {
   BusyLine,
   SessionLaunchButtons,
@@ -49,6 +50,8 @@ export function NewProjectDialog({
   const [prompt, setPrompt] = useState(seed.prompt)
   const folderRef = useRef<HTMLInputElement>(null)
   const sessionLaunch = useSessionLaunch(local ? 'local' : 'ssh', onStart, onClose)
+  const choice = sessionLaunch.choice()
+  const [listOpen, setListOpen] = useState(false)
   const locked = sessionLaunch.starting
   useEffect(() => {
     launchLock.current = locked
@@ -76,13 +79,8 @@ export function NewProjectDialog({
   const whereBad = remote?.ok === false ? remote.message : ''
   const parentKey = remote?.ok ? remote.key : where
   const ready = !!name && !nameBad && !!where && !whereBad
-  const backends = sessionLaunch.usable
-  const other =
-    backends.length > 1
-      ? backends.find((b) => b !== sessionLaunch.methods.defaultBackend)
-      : undefined
 
-  const submit = (backend: BackendId = sessionLaunch.methods.defaultBackend): void => {
+  const submit = (backend: BackendId = choice.lead): void => {
     if (!ready || locked || sessionLaunch.issue(backend)) return
     void sessionLaunch.launch(async () => {
       const opts = await projectOptions(parentKey, name, { prompt, title })
@@ -94,7 +92,7 @@ export function NewProjectDialog({
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
     if (locked || e.key !== 'Enter' || isComposing(e)) return
     e.preventDefault()
-    submit(e.shiftKey && other ? other : undefined)
+    startOrList(e, choice, submit, () => ready && setListOpen(true))
   }
 
   const pick = async (): Promise<void> => {
@@ -115,12 +113,12 @@ export function NewProjectDialog({
         <div className="modal-header">
           <span>New Project</span>
           <span className="modal-close" onClick={() => !locked && onClose()} aria-label="Close">
-            <LuX size={16} />
+            <IconClose size={16} />
           </span>
         </div>
         <div className="modal-body">
           <p className="field-hint assist-why">
-            <LuSparkles size={13} className="assist-glyph" />
+            <IconAiStart size={13} className="assist-glyph" />
             <span>{seed.why || 'No workspace fits — make a new one.'}</span>
             <button
               className="ob-link"
@@ -208,14 +206,15 @@ export function NewProjectDialog({
             Cancel
           </button>
           <SessionLaunchButtons
-            launch={sessionLaunch}
-            backends={backends}
+            choice={choice}
+            open={listOpen}
+            onOpen={setListOpen}
             busy={locked}
             disabled={!ready || locked}
             label={(backend) =>
               locked
                 ? 'Starting…'
-                : backends.length > 1
+                : choice.listed.length > 1
                   ? `Create project · ${BACKEND_LABEL[backend]}`
                   : 'Create project'
             }

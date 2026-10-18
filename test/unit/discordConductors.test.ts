@@ -38,8 +38,15 @@ let transcripts: Set<string>
 let choice: AssistBackendChoice
 let codexRefusesTheGate: boolean
 let release: () => void
+let testRun = 0
 
 function make(): Conductors {
+  const run = testRun
+  const onlyWhileItsTestRuns =
+    <A extends unknown[]>(record: (...args: A) => void) =>
+    (...args: A): void => {
+      if (run === testRun) record(...args)
+    }
   const deps: ConductorDeps = {
     userData,
     load: () => saved,
@@ -71,11 +78,11 @@ function make(): Conductors {
       resumed.push(l.key)
       return `tab-resumed-${l.key}`
     },
-    kill: (tabId) => void killed.push(tabId),
+    kill: onlyWhileItsTestRuns((tabId: string) => void killed.push(tabId)),
     say: (channelId, text) => void said.push({ channelId, text }),
     rowsChanged: () => void rescans++,
-    tasksChanged: () => void taskPushes++,
-    toast: (t) => void toasts.push(t),
+    tasksChanged: onlyWhileItsTestRuns(() => void taskPushes++),
+    toast: onlyWhileItsTestRuns((t: string) => void toasts.push(t)),
     bindDeadlineMs: DEADLINE_MS
   }
   return new Conductors(deps)
@@ -92,6 +99,7 @@ async function opened(c: Conductors, scope: string): Promise<string> {
 }
 
 beforeEach(() => {
+  testRun++
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
   saved = { bindings: [] }
   records = []

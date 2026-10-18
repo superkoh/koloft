@@ -1,14 +1,14 @@
 import { NewSessionDialog } from './components/NewSessionDialog'
 import { SessionBackendIcon } from './components/SessionBackendIcon'
-import {
-  NoAccountLines,
-  useAccountIssue,
-  type SessionLaunchOptions
-} from './components/SessionLaunchButtons'
+import type { AgentChoice } from './agentChoice'
+import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
+import { WelcomeLaunch } from './components/WelcomeLaunch'
 import {
   backendAvailable,
   BACKEND_LABEL,
+  byBackend,
   effectiveBackend,
+  listedBackends,
   SESSION_BACKENDS,
   unsupportedPairMessage
 } from '@shared/sessionBackend'
@@ -25,15 +25,15 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  LuSettings,
-  LuFolderPlus,
-  LuPanelRight,
-  LuPanelLeft,
-  LuAppWindow,
-  LuCoffee,
-  LuCircleArrowUp,
-  LuChevronRight
-} from 'react-icons/lu'
+  IconAddProject,
+  IconChevronRight,
+  IconKeepAwake,
+  IconOpenedPage,
+  IconSettings,
+  IconSidebarLeft,
+  IconSidebarRight,
+  IconUpdate
+} from './icons'
 import type {
   BrowserAuthChallenge,
   BrowserCdpOp,
@@ -114,7 +114,7 @@ import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
 import { ConductorsIsland, setUpDiscordWithAssist } from './components/ConductorsIsland'
 import { BindConductorDialog } from './components/BindConductorDialog'
-import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
+import { conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
@@ -151,6 +151,7 @@ import {
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
+const CENTER_TERMINAL_MAX_COLS = 120
 
 const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch arguments'
 
@@ -307,6 +308,7 @@ export default function App(): JSX.Element {
     mode: PickerMode
     path?: string
     pending?: PendingStart
+    chosen?: SessionBackend
   } | null>(null)
   const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
@@ -325,6 +327,11 @@ export default function App(): JSX.Element {
   }, [])
 
   const [tuiFocus, setTuiFocus] = useState(0)
+  const focusTuiFromMargin = useCallback((e: MouseEvent<HTMLDivElement>): void => {
+    if (e.target !== e.currentTarget) return
+    e.preventDefault()
+    setTuiFocus((n) => n + 1)
+  }, [])
 
   const returnFocus = useCallback((): void => {
     const st = useStore.getState()
@@ -362,14 +369,10 @@ export default function App(): JSX.Element {
     let alive = true
     void window.api.sessions.backends().then(
       (list) => {
-        if (alive)
-          setProbed({
-            claude: backendAvailable(list, 'claude'),
-            codex: backendAvailable(list, 'codex')
-          })
+        if (alive) setProbed(byBackend((b) => backendAvailable(list, b)))
       },
       () => {
-        if (alive) setProbed({ claude: false, codex: false })
+        if (alive) setProbed(byBackend(() => false))
       }
     )
     return () => {
@@ -381,13 +384,15 @@ export default function App(): JSX.Element {
     [probed]
   )
   const sessionMethods = useStore((s) => s.settings.sessionMethods)
-  const namedMethods = useMemo((): [SessionBackend, SessionBackend] | null => {
-    if (!probed) return null
-    const usable = SESSION_BACKENDS.filter((b) => sessionMethods.enabled[b] && probed[b])
-    if (usable.length < 2) return null
-    const other = usable.find((b) => b !== sessionMethods.defaultBackend)
-    return other ? [sessionMethods.defaultBackend, other] : null
-  }, [probed, sessionMethods])
+  const listed = useMemo(
+    () => listedBackends(sessionMethods, probed && ((b) => probed[b])),
+    [probed, sessionMethods]
+  )
+  const namedMethods = useMemo((): SessionBackend[] | null => {
+    const { defaultBackend } = sessionMethods
+    if (listed.length < 2 || !listed.includes(defaultBackend)) return null
+    return [defaultBackend, ...listed.filter((b) => b !== defaultBackend)]
+  }, [listed, sessionMethods])
 
   const startSession = useCallback(
     async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
@@ -405,10 +410,10 @@ export default function App(): JSX.Element {
   )
 
   const requestNew = useCallback(
-    (mode: PickerMode, path?: string, pending?: PendingStart): void => {
+    (mode: PickerMode, path?: string, pending?: PendingStart, chosen?: SessionBackend): void => {
       if (newSessionLocked.current) return
       setRestoreWs(null)
-      setNewRequest({ id: ++newRequestId.current, mode, path, pending })
+      setNewRequest({ id: ++newRequestId.current, mode, path, pending, chosen })
     },
     []
   )
@@ -437,7 +442,7 @@ export default function App(): JSX.Element {
       const ws = useStore.getState().workspaceRows.find((w) => w.workspace.path === wsPath)
       if (!ws) return
       if (pullable(ws)) {
-        requestNew('main', wsPath)
+        requestNew('main', wsPath, undefined, backend)
         return
       }
       startNow(
@@ -1078,7 +1083,7 @@ export default function App(): JSX.Element {
     selectedWs,
     lastWsPath
   )
-  const notesWs = activeConductor ? conductorNotesWorkspace(activeConductor) : currentWs
+  const notesWs = activeConductor ?? currentWs
   notesWsRef.current = notesWs
   const [notesFocusWs, setNotesFocusWs] = useState(notesWs)
   if (notesFocusWs !== notesWs) {
@@ -1120,7 +1125,7 @@ export default function App(): JSX.Element {
       return
     }
     if (route?.kind === 'discord') {
-      void setUpDiscordWithAssist().then((error) => {
+      void setUpDiscordWithAssist(prompt).then((error) => {
         if (error) showToast(error)
       })
       return
@@ -1129,7 +1134,7 @@ export default function App(): JSX.Element {
       showToast(
         'Koloft Assist is off, so pick the workspace yourself. Turn it on in Settings ▸ Assist.'
       )
-      pickWorkspaceForTyped({ prompt, title: '' })
+      pickWorkspaceForTyped({ prompt, title: '' }, backend)
       return
     }
     const toAssist = (title: string, workspace: string | null): void => {
@@ -1140,7 +1145,7 @@ export default function App(): JSX.Element {
       ).then((r) => {
         if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
-        requestNew('main', undefined, { prompt, title, path: workspace, worktree: null })
+        requestNew('main', undefined, { prompt, title, path: workspace, worktree: null }, backend)
       })
     }
     if (route?.kind === 'feature') {
@@ -1175,15 +1180,15 @@ export default function App(): JSX.Element {
       worktree: route.worktree
     }
     if (pullable(ws)) {
-      requestNew('main', ws.workspace.path, pending)
+      requestNew('main', ws.workspace.path, pending, backend)
       return
     }
     startNow(hostOf(ws.workspace.path), backend, () => pendingOptions(ws.workspace, pending))
   }
 
-  const pickWorkspaceForTyped = (typed: TypedStart): void => {
+  const pickWorkspaceForTyped = (typed: TypedStart, chosen?: SessionBackend): void => {
     setNewProject(null)
-    requestNew('main', undefined, { ...typed, path: null, worktree: null })
+    requestNew('main', undefined, { ...typed, path: null, worktree: null }, chosen)
   }
 
   const paletteActions = (): PaletteAction[] => {
@@ -1219,7 +1224,6 @@ export default function App(): JSX.Element {
   const activeSession = activeTab ? sessions.find((s) => s.tabId === activeTab.id) : undefined
   // ADR-0030
   const assistSetup = useAssistSetup()
-  const accountIssue = useAccountIssue()
   const signInTabId = useStore((s) => s.signIn?.tabId)
   const whatsNewOpen = useStore((s) => s.update.open)
   const [assistSetupLater, setAssistSetupLater] = useState(false)
@@ -1279,11 +1283,13 @@ export default function App(): JSX.Element {
   }, [])
 
   const welcomeRoot = welcomeWs?.workspace.path
-  const welcomeBackends = namedMethods ?? [effectiveBackend(sessionMethods, installed)]
-  const welcomeRefusal = (backend: SessionBackend): string | undefined =>
-    welcomeWs ? unsupportedPairMessage(backend, hostOf(welcomeWs.workspace.path)) : undefined
-  const welcomeIssue = (backend: SessionBackend): string | undefined =>
-    welcomeRefusal(backend) || accountIssue(backend) || undefined
+  const paletteChoice: AgentChoice = {
+    listed,
+    lead: effectiveBackend(sessionMethods, installed),
+    defaultBackend: sessionMethods.defaultBackend,
+    issue: () => '',
+    note: () => ''
+  }
   const fileTreeRoot = selectionRoot(
     hasWorkbench(landedTab) ? landedTab : undefined,
     landedSession?.treeRoot,
@@ -1474,7 +1480,7 @@ export default function App(): JSX.Element {
               title="Page Koloft opened for you"
               aria-label="Opened page"
             >
-              <LuAppWindow size={20} />
+              <IconOpenedPage size={20} />
             </button>
           )}
           {window.api.isDev && (
@@ -1494,7 +1500,7 @@ export default function App(): JSX.Element {
             title="Add workspace (⇧⌘O)"
             aria-label="Add workspace"
           >
-            <LuFolderPlus size={20} />
+            <IconAddProject size={20} />
           </button>
           {addMenu && (
             <div
@@ -1536,13 +1542,13 @@ export default function App(): JSX.Element {
               className="btn-primary upd-banner"
               onClick={() => useStore.getState().openUpdateCheck()}
             >
-              <LuCircleArrowUp size={15} />
+              <IconUpdate size={15} />
               <span>
                 {updateOffer.status === 'restart-required'
                   ? `Koloft ${updateOffer.installed} installed · restart`
                   : `Koloft ${updateOffer.latest} available`}
               </span>
-              <LuChevronRight size={15} />
+              <IconChevronRight size={15} />
             </button>
           )}
           <ConductorsIsland />
@@ -1581,7 +1587,7 @@ export default function App(): JSX.Element {
             aria-label="Keep Mac awake"
             aria-pressed={keepAwake}
           >
-            <LuCoffee size={20} />
+            <IconKeepAwake size={20} />
           </button>
           <button
             className="tb-ico"
@@ -1589,7 +1595,7 @@ export default function App(): JSX.Element {
             title="Settings"
             aria-label="Settings"
           >
-            <LuSettings size={20} />
+            <IconSettings size={20} />
           </button>
         </div>
         <div
@@ -1627,12 +1633,14 @@ export default function App(): JSX.Element {
                       style={{
                         display: t.id === shown.id || t.ghost === shown.id ? 'block' : 'none'
                       }}
+                      onMouseDown={focusTuiFromMargin}
                     >
                       <TerminalView
                         id={t.ghost}
                         active={t.id === shown.id || t.ghost === shown.id}
                         scrollbar={false}
                         focusSignal={tuiFocus}
+                        maxCols={CENTER_TERMINAL_MAX_COLS}
                       />
                     </div>
                   ),
@@ -1643,11 +1651,13 @@ export default function App(): JSX.Element {
                       display: t.id === shown.id ? 'block' : 'none',
                       visibility: t.ghost ? 'hidden' : undefined
                     }}
+                    onMouseDown={focusTuiFromMargin}
                   >
                     <TerminalView
                       id={t.id}
                       active={t.id === shown.id && !t.ghost}
                       scrollbar={false}
+                      maxCols={CENTER_TERMINAL_MAX_COLS}
                       onUserInput={
                         isSessionKind(t.kind)
                           ? () => window.api.sessions.noteActivity(t.id)
@@ -1658,8 +1668,8 @@ export default function App(): JSX.Element {
                         if (t.id === activeTabId) setPaintedGen(switchGen)
                       }}
                     />
-                    {/* CODEX§9 */}
-                    {t.resuming && t.kind !== 'codex' && <ResumingMask title={t.title} />}
+                    {/* CODEX§9 MUSE§10 */}
+                    {t.resuming && t.kind === 'claude' && <ResumingMask title={t.title} />}
                   </div>
                 ])}
                 {switching && activeTab && (
@@ -1678,30 +1688,7 @@ export default function App(): JSX.Element {
                     <div className="w-empty" tabIndex={-1}>
                       <div className="big">{basename(welcomeWs.workspace.path)}</div>
                       <div className="quiet">{welcomeQuietLine(welcomeRunning)}</div>
-                      <button
-                        className="btn-primary"
-                        disabled={!!welcomeIssue(welcomeBackends[0])}
-                        title={welcomeIssue(welcomeBackends[0])}
-                        onClick={() => startIn(welcomeWs.workspace.path)}
-                      >
-                        ＋{' '}
-                        {namedMethods
-                          ? `New ${BACKEND_LABEL[namedMethods[0]]} session`
-                          : 'New session'}
-                      </button>
-                      {namedMethods && (
-                        <button
-                          className="mini"
-                          disabled={!!welcomeIssue(namedMethods[1])}
-                          title={welcomeIssue(namedMethods[1])}
-                          onClick={() => startIn(welcomeWs.workspace.path, namedMethods[1])}
-                        >
-                          New {BACKEND_LABEL[namedMethods[1]]} session
-                        </button>
-                      )}
-                      <NoAccountLines
-                        backends={welcomeBackends.filter((b) => !welcomeRefusal(b))}
-                      />
+                      <WelcomeLaunch wsPath={welcomeWs.workspace.path} onStart={startIn} />
                       {welcomeWs.workspace.isGit && (
                         <button
                           className="mini"
@@ -1857,7 +1844,7 @@ export default function App(): JSX.Element {
                 title="Workbench (⇧⌘B)"
                 aria-label="Workbench"
               >
-                <LuPanelRight size={18} />
+                <IconSidebarRight size={18} />
               </button>
             )}
           </div>
@@ -1871,7 +1858,7 @@ export default function App(): JSX.Element {
         aria-label="Sidebar"
         aria-pressed={!sidebarHidden}
       >
-        <LuPanelLeft size={18} />
+        <IconSidebarLeft size={18} />
         {callingCount > 0 && <span className="ws-tab-parked ws-unread-count">{callingCount}</span>}
       </button>
       {/* ADR-0013 */}
@@ -1883,7 +1870,7 @@ export default function App(): JSX.Element {
               onClose={closePalette}
               onRouted={paletteRouted}
               onOpenHit={openSearchHit}
-              methods={welcomeBackends}
+              choice={paletteChoice}
             />
           )}
           {newRequest && (
@@ -1896,6 +1883,7 @@ export default function App(): JSX.Element {
               onStart={startSession}
               launchLock={newSessionLocked}
               pending={newRequest.pending}
+              chosen={newRequest.chosen}
             />
           )}
           {newProject && (

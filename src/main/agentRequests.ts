@@ -84,11 +84,16 @@ export function parseAgentRequest(raw: unknown): AgentRequest | null {
   }
 }
 
+function asksForHelp(argv: string[]): boolean {
+  return splitAtDashes(argv).before.includes('--help')
+}
+
 export async function dispatchAgent(
   verbs: AgentVerbs,
   argv: string[],
   caller: AgentCaller
 ): Promise<AgentReply> {
+  if (asksForHelp(argv)) return answered(AGENT_GUIDE)
   const [verb = 'help', ...rest] = argv
   const run = Object.hasOwn(verbs, verb) ? verbs[verb] : undefined
   if (!run)

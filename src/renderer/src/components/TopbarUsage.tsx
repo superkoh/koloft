@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useRef,
@@ -8,7 +9,7 @@ import {
   type ReactNode
 } from 'react'
 import { createPortal } from 'react-dom'
-import { LuRotateCw, LuSettings } from 'react-icons/lu'
+import { IconReload, IconSettings } from '../icons'
 import type { AccountView, CodexLimitWindow, CodexResetOutcome } from '@shared/types'
 import {
   accountWalled,
@@ -27,6 +28,7 @@ import {
   poolSnapshot,
   popoverX,
   sublineFor,
+  ACCOUNT_KINDS_OF,
   type CapsuleGlyph,
   type PoolSnapshot
 } from '@shared/accountUsage'
@@ -35,6 +37,7 @@ import {
   Meter,
   ageLabel,
   codexBalanceLabel,
+  noLimitsLabel,
   probeErrorLabel,
   resetIn,
   resetLabel
@@ -123,16 +126,28 @@ export function TopbarUsage(): JSX.Element | null {
 
   const members = accounts.filter((a) => a.kind === 'oauth' && a.enabled)
   const codex = accounts.filter((a) => a.kind === 'codex-home' && a.enabled)
-  if (members.length === 0 && codex.length === 0) return null
+  const muse = accounts.filter((a) => a.kind === 'muse-home' && a.enabled)
+  if (members.length === 0 && codex.length === 0 && muse.length === 0) return null
+  const homePools = [
+    { label: 'Codex', accounts: codex },
+    { label: 'Muse', accounts: muse }
+  ]
+    .filter((h) => h.accounts.length > 0)
+    .map((h) => {
+      const pool = codexPoolSnapshot(h.accounts, now)
+      return {
+        ...h,
+        glyphs: h.accounts.map((a) => codexGlyph(a, now)),
+        total: codexPoolGlyph(h.accounts, now),
+        pool,
+        windows: pool.windows.map((w) => w.minutes)
+      }
+    })
 
   const claude = members.length > 0
-  const enabled = accounts.filter((a) => a.enabled && a.kind !== 'codex-home')
+  const enabled = accounts.filter((a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind))
   const armed = claude && meteredArmed(accounts, Math.floor(now / 1000))
   const total = claude ? poolGlyph(members, now) : null
-  const codexGlyphs = codex.map((a) => codexGlyph(a, now))
-  const codexTotal = codexPoolGlyph(codex, now)
-  const codexPool = codexPoolSnapshot(codex, now)
-  const codexWindows = codexPool.windows.map((w) => w.minutes)
   const claudePool = poolSnapshot(members, now)
   const cols = enabled.some((a) => a.kind === 'oauth' && a.status === 'ok' && a.usage?.hasOi)
     ? 3
@@ -170,7 +185,7 @@ export function TopbarUsage(): JSX.Element | null {
         className="tbu"
         aria-label={[
           ...(claude ? [capsuleAria(members, now)] : []),
-          ...(codex.length > 0 ? [codexAria(codexGlyphs)] : [])
+          ...homePools.map((h) => homeAria(h.glyphs, h.label))
         ].join('; ')}
         aria-expanded={pop !== null}
         onMouseEnter={enter}
@@ -195,14 +210,14 @@ export function TopbarUsage(): JSX.Element | null {
             <i className="tbu-fill acc" style={{ height: '100%' }} />
           </span>
         )}
-        {codex.length > 0 && (
-          <span className="tbu-group">
-            {codexTotal && <CapsuleBar glyph={codexTotal} total />}
-            {codex.map((a, i) => (
-              <CapsuleBar key={`${a.kind}:${a.name}`} glyph={codexGlyphs[i]} />
+        {homePools.map((h) => (
+          <span key={h.label} className="tbu-group">
+            {h.total && <CapsuleBar glyph={h.total} total />}
+            {h.accounts.map((a, i) => (
+              <CapsuleBar key={`${a.kind}:${a.name}`} glyph={h.glyphs[i]} />
             ))}
           </span>
-        )}
+        ))}
       </button>
       {/* ADR-0013 */}
       {pop &&
@@ -216,7 +231,9 @@ export function TopbarUsage(): JSX.Element | null {
           >
             <div className="tbu-pop-head">
               <span>Account usage</span>
-              <span className="age">{headAge(oldestAt([...enabled, ...codex]), now)}</span>
+              <span className="age">
+                {headAge(oldestAt(accounts.filter((a) => a.enabled)), now)}
+              </span>
             </div>
             <div className="tbu-rows">
               {claude && (
@@ -251,36 +268,38 @@ export function TopbarUsage(): JSX.Element | null {
                   ))}
                 </Section>
               )}
-              {claude && codex.length > 0 && <div className="tbu-sep" />}
-              {codex.length > 0 && (
-                <Section
-                  title="Codex"
-                  columns={codexWindows.map(windowLabel)}
-                  pool={
-                    codex.length >= 2 && (
-                      <PoolRow
-                        p={codexPool}
-                        cells={codexPool.windows.map((w) => ({
-                          win: windowLabel(w.minutes),
-                          v: w.mean
-                        }))}
-                        two
-                        now={now}
-                        probing={probing}
-                        fallback={false}
-                      />
-                    )
-                  }
-                >
-                  {codex.map((a) => (
-                    <CodexRow key={a.name} a={a} now={now} windows={codexWindows} />
-                  ))}
-                </Section>
-              )}
+              {homePools.map((h, i) => (
+                <Fragment key={h.label}>
+                  {(claude || i > 0) && <div className="tbu-sep" />}
+                  <Section
+                    title={h.label}
+                    columns={h.windows.map(windowLabel)}
+                    pool={
+                      h.accounts.length >= 2 && (
+                        <PoolRow
+                          p={h.pool}
+                          cells={h.pool.windows.map((w) => ({
+                            win: windowLabel(w.minutes),
+                            v: w.mean
+                          }))}
+                          two
+                          now={now}
+                          probing={probing}
+                          fallback={false}
+                        />
+                      )
+                    }
+                  >
+                    {h.accounts.map((a) => (
+                      <CodexRow key={a.name} a={a} now={now} windows={h.windows} />
+                    ))}
+                  </Section>
+                </Fragment>
+              ))}
             </div>
             <div className="tbu-sep" />
             <button className="tbu-act" disabled={probing} onClick={() => void probe()}>
-              <LuRotateCw size={14} />
+              <IconReload size={14} />
               {probing ? 'Probing…' : 'Probe now'}
               <span className="k">1–2 requests per account</span>
             </button>
@@ -291,7 +310,7 @@ export function TopbarUsage(): JSX.Element | null {
                 setSettingsOpen(true)
               }}
             >
-              <LuSettings size={14} />
+              <IconSettings size={14} />
               Account settings…
             </button>
           </div>,
@@ -301,10 +320,10 @@ export function TopbarUsage(): JSX.Element | null {
   )
 }
 
-function codexAria(glyphs: CapsuleGlyph[]): string {
+function homeAria(glyphs: CapsuleGlyph[], label: string): string {
   const walled = glyphs.filter((g) => g.kind === 'walled').length
   return (
-    `${glyphs.length} Codex account${glyphs.length === 1 ? '' : 's'}` +
+    `${glyphs.length} ${label} account${glyphs.length === 1 ? '' : 's'}` +
     (walled > 0 ? `, ${walled} walled` : '')
   )
 }
@@ -613,9 +632,7 @@ function RowHead({
 function NotProbedNote({ a }: { a: AccountView }): JSX.Element {
   return (
     <div className="tbu-row-note">
-      <span className="acct-note">
-        {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
-      </span>
+      <span className="acct-note">{noLimitsLabel(a)}</span>
     </div>
   )
 }

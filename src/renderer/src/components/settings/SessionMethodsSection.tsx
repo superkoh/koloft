@@ -1,10 +1,21 @@
 import { useEffect, useState } from 'react'
-import { BACKEND_LABEL, SESSION_BACKENDS, normalizeSessionMethods } from '@shared/sessionBackend'
+import {
+  ALWAYS_ON_BACKEND,
+  BACKEND_LABEL,
+  SESSION_BACKENDS,
+  normalizeSessionMethods
+} from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
 import { useStore } from '../../store'
-import { SessionBackendIcon } from '../SessionBackendIcon'
+import { AgentSelect } from '../SessionLaunchButtons'
 import { Switch } from './Switch'
 import { useSettingsUpdate } from './useSettingsUpdate'
+
+const METHOD_NOTE: Record<BackendId, string> = {
+  claude: 'Always enabled',
+  codex: 'Runs on a Codex account from Settings ▸ Accounts',
+  muse: 'Runs on a Muse account from Settings ▸ Accounts'
+}
 
 type Detected = Awaited<ReturnType<typeof window.api.sessions.backends>>
 
@@ -46,48 +57,38 @@ export function SessionMethodsSection() {
       <div className="set-row">
         <div className="set-lab">
           <b>Default method</b>
-          <small>
-            New session starts with this method. With several workspaces, Enter picks it and ⇧⏎ the
-            other one.
-          </small>
+          <small>New session starts with this method. ⏎ starts it; ⇧⏎ picks another.</small>
         </div>
-        <div className="seg" role="group" aria-label="Default session method">
-          {SESSION_BACKENDS.map((backend) => (
-            <button
-              key={backend}
-              className={methods.defaultBackend === backend ? 'on' : ''}
-              aria-pressed={methods.defaultBackend === backend}
-              aria-label={`Use ${BACKEND_LABEL[backend]} by default`}
-              disabled={!methods.enabled[backend]}
-              onClick={() =>
-                update({
-                  sessionMethods: normalizeSessionMethods({ ...methods, defaultBackend: backend })
-                })
-              }
-            >
-              <SessionBackendIcon backend={backend} size={14} decorative />
-              {BACKEND_LABEL[backend]}
-            </button>
-          ))}
-        </div>
+        <AgentSelect
+          value={methods.defaultBackend}
+          ariaLabel="Default session method"
+          choice={{
+            listed: SESSION_BACKENDS,
+            issue: (b) => (methods.enabled[b] ? '' : `${BACKEND_LABEL[b]} is switched off below.`),
+            note: () => 'Off'
+          }}
+          onPick={(backend) =>
+            update({
+              sessionMethods: normalizeSessionMethods({ ...methods, defaultBackend: backend })
+            })
+          }
+        />
       </div>
       {SESSION_BACKENDS.map((backend) => (
         <div className="set-row" key={backend}>
           <div className="set-lab">
             <b>{BACKEND_LABEL[backend]}</b>
-            <small>
-              {backend === 'claude'
-                ? 'Always enabled'
-                : 'Runs on a Codex account from Settings ▸ Accounts'}
-            </small>
+            <small>{METHOD_NOTE[backend]}</small>
             <small>{status(backend)}</small>
           </div>
           <Switch
             checked={methods.enabled[backend]}
-            disabled={backend === 'claude'}
+            disabled={backend === ALWAYS_ON_BACKEND}
             ariaLabel={`Enable ${BACKEND_LABEL[backend]}`}
             title={
-              backend === 'claude' ? 'Claude is always enabled' : 'Enable Codex for new sessions'
+              backend === ALWAYS_ON_BACKEND
+                ? `${BACKEND_LABEL[backend]} is always enabled`
+                : `Enable ${BACKEND_LABEL[backend]} for new sessions`
             }
             onChange={(on) =>
               update({

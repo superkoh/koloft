@@ -1,5 +1,6 @@
 import { ageLabel, type FreshLineState } from '@shared/freshnessOps'
 import type {
+  BackendId,
   CreateTabOptions,
   GithubItem,
   SessionRow,
@@ -111,14 +112,26 @@ export type WtAim =
   | { kind: 'none' }
   | { kind: 'create'; name: string }
   | { kind: 'open'; name: string; dir: string }
-  | { kind: 'recover'; name: string; dir: string; recoveryResourceId: string }
+  | {
+      kind: 'recover'
+      name: string
+      dir: string
+      recoveryResourceId: string
+      backend: BackendId
+    }
   | { kind: 'reserved'; name: string }
   | { kind: 'invalid'; name: string }
   | { kind: 'item'; item: GithubItem; name: string; dir: string | null }
 
 function existingWorktreeAim(w: WorktreeInfo): WtAim {
-  return w.recoveryResourceId
-    ? { kind: 'recover', name: w.name, dir: w.dir, recoveryResourceId: w.recoveryResourceId }
+  return w.recoveryResourceId && w.recoveryBackend
+    ? {
+        kind: 'recover',
+        name: w.name,
+        dir: w.dir,
+        recoveryResourceId: w.recoveryResourceId,
+        backend: w.recoveryBackend
+      }
     : { kind: 'open', name: w.name, dir: w.dir }
 }
 
@@ -291,10 +304,6 @@ export function freshLineCopy(
 export function pullFailedReason(reason: string): string {
   const r = reason.trim()
   return r.endsWith('.') ? r : r + '.'
-}
-
-export function mainRunningCount(rows: SessionRow[]): number {
-  return rows.filter((r) => (r.running || r.pending) && r.worktree === 'main').length
 }
 
 export function worktreeInUse(w: Pick<WorktreeInfo, 'name' | 'dir'>, rows: SessionRow[]): boolean {

@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
-import type { BackendId } from '@shared/types'
 import { hasUsableAccount } from '@shared/accountUsage'
 import { SESSION_BACKENDS, shownAsInstalled } from '@shared/sessionBackend'
+import type { BackendId } from '@shared/types'
 import { useStore } from './store'
 import { useInstalledBackends } from './useInstalledBackends'
 
@@ -24,6 +24,7 @@ export function useAssistSetup(): AssistSetupState {
   const accountsLoaded = useStore((s) => s.accounts !== null)
   const claude = useStore((s) => hasUsableAccount(s.accounts ?? [], 'claude'))
   const codex = useStore((s) => hasUsableAccount(s.accounts ?? [], 'codex'))
+  const muse = useStore((s) => hasUsableAccount(s.accounts ?? [], 'muse'))
   const { installed } = useInstalledBackends()
 
   useEffect(() => {
@@ -36,9 +37,9 @@ export function useAssistSetup(): AssistSetupState {
     tools,
     toolsKnown: installed !== null,
     noTool: tools.length === 0,
-    usable: { claude, codex },
+    usable: { claude, codex, muse },
     askBypass,
     loaded: accountsLoaded && bypassAccepted !== null,
-    done: (claude || codex) && assist !== null && !askBypass
+    done: (claude || codex || muse) && assist !== null && !askBypass
   }
 }

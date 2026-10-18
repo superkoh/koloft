@@ -38,6 +38,7 @@ const PINNED: PinnedWorkspace[] = [
 ]
 const CODEX_THREAD = '0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11'
 const OTHER_THREAD = '0199c3f2-7a41-7c30-9e55-1d2b8f6a0c22'
+const MUSE_ID = '01a13795-6b09-7531-bdd6-84ce54f976ea'
 
 function session(
   tabId: string,
@@ -64,11 +65,13 @@ interface Conducting {
   scopes?: Record<string, string>
   sidebar?: WorkspaceRows[]
   turns?: Record<string, Turn[]>
+  quotedPrompts?: Record<string, string>
   conductors?: Record<string, Target>
   ready?: (tabId: string, turnEnded: boolean, ms: number) => boolean | Promise<boolean>
   bypass?: string[]
   answer?: (tabId: string, reply: string) => string | undefined
   titleReply?: string | null
+  translation?: string | null
   asking?: string[]
   worktrees?: string[]
 }
@@ -124,12 +127,16 @@ function harness(
     workspaceOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.cwd,
     allSessions: () => sessions,
     pinnedWorkspaces: () => PINNED,
-    peerNames: () => async (sessionId) => peerNames[sessionId] ?? null,
+    peerNames:
+      () =>
+      async ({ sessionId }) =>
+        peerNames[sessionId] ?? null,
     launch: async (spec) => {
       launched.push(spec)
       return 'new-tab'
     },
-    assist: async () => conducting.titleReply ?? null,
+    assist: async (job) =>
+      (job.system === 'You translate.' ? conducting.translation : conducting.titleReply) ?? null,
     queue: async (tabId, text, clientId) => {
       queued.push({ tabId, text, clientId })
     },
@@ -146,6 +153,7 @@ function harness(
       reads.push({ key, n })
       return (conducting.turns?.[key] ?? []).slice(-n)
     },
+    quotedPrompt: (tabId) => conducting.quotedPrompts?.[tabId],
     touch: (tabId, key) => {
       if (conducting.scopes?.[tabId]) touched.push({ tabId, key })
     },
@@ -276,19 +284,32 @@ describe('koloft session new: reading the command line', () => {
 
 describe('the handover put before the first message', () => {
   it('tells a child who started it and to treat its messages as the owner’s', () => {
-    const text = handoverPreamble({ name: 'planner', id: 'planner-id' })
+    const text = handoverPreamble({ name: 'planner', id: 'planner-id', label: 'Claude' })
     expect(text).toContain('the session "planner"')
     expect(text).toContain("the owner's instructions")
-    expect(handoverPreamble({ id: CODEX_THREAD })).toContain(`the Codex session ${CODEX_THREAD}`)
+    expect(handoverPreamble({ id: CODEX_THREAD, label: 'Codex' })).toContain(
+      `the Codex session ${CODEX_THREAD}`
+    )
+    expect(handoverPreamble({ id: MUSE_ID, label: 'Muse' })).toContain(
+      `the Muse session ${MUSE_ID}`
+    )
   })
 
   it('tells a child Assist started that only the words Assist quotes in « » are the owner’s, so Assist’s own guesses never pass as the owner’s orders', () => {
-    const text = handoverPreamble({ name: 'Global-conductor', id: 'global-id', assist: true })
+    const text = handoverPreamble({
+      name: 'Global-conductor',
+      id: 'global-id',
+      label: 'Claude',
+      assist: true
+    })
     expect(text).toContain("only words inside « » in its messages are the owner's own")
     expect(text).not.toContain("the owner's instructions")
   })
 
-  it.each([{ name: 'planner', id: 'planner-id' }, { id: CODEX_THREAD }])(
+  it.each([
+    { name: 'planner', id: 'planner-id', label: 'Claude' },
+    { id: CODEX_THREAD, label: 'Codex' }
+  ])(
     'tells every child of %j, Claude or Codex, to answer with koloft session send and the caller’s id, never SendMessage, since a caller that went to sleep has left ListAgents while koloft session send starts it again first',
     (caller) => {
       const text = handoverPreamble(caller)
@@ -299,7 +320,7 @@ describe('the handover put before the first message', () => {
 })
 
 describe('koloft session list', () => {
-  it('shows each session’s state, a Claude session’s name and transcript, a Codex session’s id, and marks the caller; a session showing a question reads apart from one that only finished its turn', async () => {
+  it('shows each session’s state, a Claude or Muse session’s name, a Claude transcript, a Codex session’s id, and marks the caller; a session showing a question reads apart from one that only finished its turn', async () => {
     const { verb } = harness(
       [
         session('me', 'claude', {
@@ -309,9 +330,10 @@ describe('koloft session list', () => {
         session('cx', 'codex', { status: 'approval', nativeSessionId: CODEX_THREAD }),
         session('q', 'codex', { status: 'waiting', nativeSessionId: OTHER_THREAD }),
         session('done', 'claude', { status: 'waiting' }),
-        session('idle', 'claude', { status: 'idle' })
+        session('idle', 'claude', { status: 'idle' }),
+        session('mu', 'muse', { status: 'working', nativeSessionId: MUSE_ID })
       ],
-      { 'me-session': 'planner' },
+      { 'me-session': 'planner', 'mu-session': 'iron-libra' },
       [],
       { asking: ['q'] }
     )
@@ -322,7 +344,8 @@ describe('koloft session list', () => {
       `cx title · Codex · asking the owner a question · id: ${CODEX_THREAD}`,
       `q title · Codex · asking the owner a question · id: ${OTHER_THREAD}`,
       'done title · Claude · finished its turn',
-      'idle title · Claude · idle'
+      'idle title · Claude · idle',
+      `mu title · Muse · working · id: ${MUSE_ID} · name: iron-libra`
     ])
   })
 
@@ -339,6 +362,18 @@ describe('koloft session list', () => {
   })
 })
 
+describe('koloft session new from a Muse session', () => {
+  it('starts a Muse sibling under the name it was given, or a short title from its task, and says to reach it by its tab id', async () => {
+    const { verb, launched } = harness([session('me', 'muse', { nativeSessionId: MUSE_ID })])
+    const named = await verb(['new', '--name', 'Fix links', '--', 'Fix the links.'], from('me'))
+    expect(named.exit).toBe(0)
+    expect(launched[0]).toMatchObject({ kind: 'muse', name: 'Fix links' })
+    expect(launched[0].firstPrompt).toContain(`the Muse session ${MUSE_ID}`)
+    expect(named.text).toContain('koloft session send new-tab')
+    expect(named.text).not.toContain('SendMessage')
+  })
+})
+
 describe('koloft session new', () => {
   it('a Claude caller starts a named Claude sibling in its workspace whose first message says who to report to, since the transcript replays that message on every resume while a SessionStart note lives only as long as its tab', async () => {
     const { verb, launched } = harness([session('me', 'claude')], { 'me-session': 'planner' })
@@ -347,7 +382,9 @@ describe('koloft session new', () => {
     const [spec] = launched
     expect(spec).toMatchObject({ kind: 'claude', cwd: WS, worktree: 'links' })
     expect(
-      spec.firstPrompt?.startsWith(handoverPreamble({ name: 'planner', id: 'me-session' }))
+      spec.firstPrompt?.startsWith(
+        handoverPreamble({ name: 'planner', id: 'me-session', label: 'Claude' })
+      )
     ).toBe(true)
     expect(spec.firstPrompt?.endsWith('Fix the links.')).toBe(true)
     expect(reply.text).toContain(`"${spec.name}"`)
@@ -401,6 +438,102 @@ describe('koloft session new', () => {
     expect(reply.text).toContain('new-tab')
   })
 
+  // ADR-0031
+  it('a child is handed the owner’s last words to its parent, so it talks to the owner in their language even when its task is in English: a Claude parent’s quoted prompt, a Codex parent’s last message from the owner (not a session’s report or Assist’s wrapper), and a Codex child the words of the session that started it', async () => {
+    const { verb, launched } = harness(
+      [
+        session('me', 'claude'),
+        session('cx', 'codex', { nativeSessionId: CODEX_THREAD }),
+        session('new-tab', 'codex', { nativeSessionId: OTHER_THREAD })
+      ],
+      {},
+      [],
+      {
+        quotedPrompts: { me: '先把侧栏修好' },
+        turns: {
+          'cx-session': [
+            {
+              said: [{ who: 'owner', text: '[Discord] 帮我跑一下测试', at: 1 }],
+              reply: 'ok',
+              at: 1
+            },
+            {
+              said: [
+                { who: 'owner', text: '(From the session "kid", id k:) All green.', at: 2 },
+                { who: 'owner', text: ownerSays('Rerun «the flaky one».'), at: 2 }
+              ],
+              reply: 'ok',
+              at: 2
+            }
+          ],
+          'new-tab-session': [
+            { said: [{ who: 'owner', text: 'Run the tests.', at: 3 }], reply: '', at: 3 }
+          ]
+        }
+      }
+    )
+    await verb(['new', '--', 'Fix the sidebar.'], from('me'))
+    await verb(['new', '--', 'Run the tests.'], from('cx'))
+    await verb(['new', '--', 'Run the flaky one again.'], from('new-tab'))
+    expect(launched[0].firstPrompt).toContain('«先把侧栏修好»')
+    expect(launched[1].role).toContain('«帮我跑一下测试»')
+    expect(launched[2].role).toContain('«帮我跑一下测试»')
+  })
+
+  // ADR-0031
+  it.each([
+    [
+      'Chinese\n\nKoloft 启动了你，因为会话 {caller} 请它这么做。主人最后写的是 {owner}。做完后运行这条命令发回结果：\n',
+      true
+    ],
+    ['Chinese\nKoloft 启动了你，因为会话 {caller} 请它这么做。做完后运行：', false],
+    ['Chinese\nKoloft 启动了你，因为会话请它这么做。主人最后写的是 {owner}。', false],
+    ['Chinese\nKoloft 启动了你，因为会话 {caller} 请它这么做。\n主人最后写的是 {owner}。', false],
+    ['Koloft 启动了你，因为会话 {caller} 请它这么做。主人最后写的是 {owner}。', false],
+    [null, false]
+  ])(
+    'a child’s handover is written in the language of the owner’s words, keeping those words, the caller and the koloft session send command exact, Koloft hands the words to the launch for the child’s reply-language hook, and the note stays English when the model’s reply %j is not the language’s name and then one line holding the caller and the owner’s words once each',
+    async (translation, translated) => {
+      const { verb, launched } = harness(
+        [session('me', 'claude'), session('cx', 'codex', { nativeSessionId: CODEX_THREAD })],
+        { 'me-session': 'planner' },
+        [],
+        {
+          quotedPrompts: { me: '先把侧栏修好' },
+          turns: {
+            'cx-session': [
+              { said: [{ who: 'owner', text: '先把侧栏修好', at: 1 }], reply: 'ok', at: 1 }
+            ]
+          },
+          translation
+        }
+      )
+      await verb(['new', '--', 'Fix the sidebar.'], from('me'))
+      await verb(['new', '--', 'Fix the sidebar.'], from('cx'))
+      const [claudeCaller, codexCaller] = translated
+        ? [
+            'Koloft 启动了你，因为会话 "planner" 请它',
+            `Koloft 启动了你，因为会话 ${CODEX_THREAD} 请它`
+          ]
+        : [
+            'Koloft started you because the session "planner" asked it',
+            `Koloft started you because the Codex session ${CODEX_THREAD} asked it`
+          ]
+      expect(launched[0].firstPrompt).toMatch(
+        new RegExp(
+          `^${claudeCaller}[^\\n]*«先把侧栏修好»[^\\n]* koloft session send me-session "<your result>"\\n\\nFix the sidebar\\.$`
+        )
+      )
+      expect(launched[1].firstPrompt).toBe('Fix the sidebar.')
+      expect(launched[1].role).toMatch(
+        new RegExp(
+          `^${codexCaller}[^\\n]*«先把侧栏修好»[^\\n]* koloft session send ${CODEX_THREAD} "<your result>"$`
+        )
+      )
+      expect(launched.map((l) => l.ownerWords)).toEqual(['先把侧栏修好', '先把侧栏修好'])
+    }
+  )
+
   it('--workspace starts the sibling in another sidebar workspace, found by full path or folder name', async () => {
     const { verb, launched } = harness([session('me', 'claude')])
     for (const ref of [OTHER_WS, 'app'])
@@ -443,22 +576,62 @@ describe('koloft session send', () => {
     session('cc', 'claude', { title: 'Planner' })
   ]
 
-  it('queues the message on the Codex session found by id, tab id or title, a title with spaces quoted or not', async () => {
+  it('queues the message, marked with who sent it, on the Codex session found by id, tab id or title, a title with spaces quoted or not', async () => {
     const { verb, queued } = harness(sessions())
     for (const ref of [[OTHER_THREAD], ['cx'], ['Test runner'], ['Test', 'runner']])
       expect((await verb(['send', ...ref, 'What', 'did you find?'], from('me'))).exit).toBe(0)
-    expect(queued).toEqual(Array(4).fill({ tabId: 'cx', text: 'What did you find?' }))
+    expect(queued.map((q) => [q.tabId, q.text])).toEqual(
+      Array(4).fill([
+        'cx',
+        expect.stringMatching(/^\(From the session "me title".*\) What did you find\?$/)
+      ])
+    )
   })
 
-  it('points a Claude caller, or a Claude target, to SendMessage and sends nothing', async () => {
-    const { verb, queued } = harness(sessions())
-    const toClaude = await verb(['send', 'Planner', 'hi'], from('me'))
-    const fromClaude = await verb(['send', OTHER_THREAD, 'hi'], from('cc'))
-    for (const reply of [toClaude, fromClaude]) {
-      expect(reply.exit).not.toBe(0)
-      expect(reply.text).toContain('SendMessage')
-    }
-    expect(queued).toEqual([])
+  it('a Muse session reaches an open Muse or Codex session: typed into a Muse one once it is idle, queued on a Codex one, both marked with who sent it', async () => {
+    const { verb, pressed, queued } = harness([
+      session('me', 'muse', { nativeSessionId: MUSE_ID, title: 'Docs fixer' }),
+      session('mu', 'muse', { title: 'Test runner' }),
+      session('cx', 'codex', { nativeSessionId: OTHER_THREAD, title: 'Linter' })
+    ])
+    expect((await verb(['send', 'Test runner', 'Run', 'it'], from('me'))).exit).toBe(0)
+    expect((await verb(['send', 'cx', 'Lint', 'it'], from('me'))).exit).toBe(0)
+    expect(pressed).toHaveLength(1)
+    expect(pressed[0]).toMatchObject({
+      tabId: 'mu',
+      keys: [expect.stringContaining('Run it'), '\r']
+    })
+    expect(pressed[0].keys[0]).toContain('Docs fixer')
+    expect(queued.map((q) => [q.tabId, q.text])).toEqual([
+      ['cx', expect.stringContaining('Lint it')]
+    ])
+  })
+
+  it('points a Claude caller to SendMessage for a Claude target and sends nothing', async () => {
+    const { verb, lines } = harness([
+      ...sessions(),
+      session('cc2', 'claude', { title: 'Reviewer' })
+    ])
+    const reply = await verb(['send', 'Reviewer', 'hi'], from('cc'))
+    expect(reply.exit).not.toBe(0)
+    expect(reply.text).toContain('SendMessage')
+    expect(lines).toEqual([])
+  })
+
+  it('a Codex or Muse session reaches an open Claude session on its message line, marked with who sent it, and the Claude session answers it with koloft session send', async () => {
+    const { verb, lines, queued, pressed } = harness([
+      ...sessions(),
+      session('mu', 'muse', { nativeSessionId: MUSE_ID, title: 'Docs fixer' })
+    ])
+    expect((await verb(['send', 'Planner', 'Check', 'it'], from('mu'))).exit).toBe(0)
+    expect((await verb(['send', 'Planner', 'Lint', 'it'], from('me'))).exit).toBe(0)
+    expect(lines.map((l) => l.tabId)).toEqual(['cc', 'cc'])
+    expect(lines[0].line).toContain('from-mode=')
+    expect(lines[0].line).toContain(`(From the session \\"Docs fixer\\", id ${MUSE_ID}:) Check it`)
+    expect((await verb(['send', MUSE_ID, 'Done'], from('cc'))).exit).toBe(0)
+    expect((await verb(['send', CODEX_THREAD, 'Done'], from('cc'))).exit).toBe(0)
+    expect(pressed.map((p) => p.tabId)).toEqual(['mu'])
+    expect(queued.map((q) => q.tabId)).toEqual(['me'])
   })
 
   it('a Claude or Codex child reports to the session that started it by its id or name, starting it again first if it is closed or asleep, marked with who sent it; any other Claude session stays out of reach', async () => {
@@ -560,7 +733,9 @@ describe('koloft session send', () => {
       session('kid', 'codex', { nativeSessionId: OTHER_THREAD, cwd: OTHER_WS })
     ])
     expect((await verb(['send', CODEX_THREAD, 'done'], from('kid'))).exit).toBe(0)
-    expect(queued).toEqual([{ tabId: 'me', text: 'done' }])
+    expect(queued.map((q) => [q.tabId, q.text])).toEqual([
+      ['me', expect.stringMatching(/^\(From the session .*\) done$/)]
+    ])
   })
 
   it('refuses a session that is not open anywhere, and a missing message', async () => {
@@ -608,6 +783,26 @@ describe('koloft session close', () => {
     startedSessions.bound('gone-tab', 'kid-session')
     expect((await verb(['close', 'Test runner'], from('me'))).exit).toBe(0)
     expect(closed).toEqual(['kid-session'])
+  })
+
+  it('closes a session one of its own sessions started, since the sidebar shows it under the caller, while that session is there and after it is closed', async () => {
+    const grandkid: ClosableSession = {
+      sessionId: 'grand-session',
+      backendId: 'claude',
+      title: 'Grand task',
+      treeRoot: WS
+    }
+    const { verb, closed, startedSessions } = harness([session('me', 'claude')], {}, [], {}, [
+      grandkid
+    ])
+    startedSessions.started('kid-tab', 'me-session')
+    startedSessions.bound('kid-tab', 'kid-session')
+    startedSessions.started('grand-tab', 'kid-session')
+    startedSessions.bound('grand-tab', 'grand-session')
+    expect((await verb(['close', 'Grand task'], from('me'))).exit).toBe(0)
+    startedSessions.forget('kid-session')
+    expect((await verb(['close', 'grand-session'], from('me'))).exit).toBe(0)
+    expect(closed).toEqual(['grand-session', 'grand-session'])
   })
 
   it('refuses, closing nothing, a session it did not start — open or ended', async () => {
@@ -718,9 +913,30 @@ describe('a conductor’s view of sessions: its binding sets the scope', () => {
     )
   })
 
-  it('a session that is not a conductor keeps listing only the open sessions of a workspace', async () => {
-    const { verb } = harness(live, {}, [], conducting)
-    expect((await verb(['list'], from('fix'))).text).toBe('fix-login (you) · Claude · working')
+  it('a session that is not a conductor sees every session its workspace shows in the sidebar: the open ones, then the asleep and closed ones with last active and id, each with who started it', async () => {
+    const { verb, startedSessions } = harness(live, {}, [], {
+      ...conducting,
+      sidebar: sidebar([
+        [
+          WS,
+          [
+            ...rows[0].rows,
+            row('nap-id', { title: 'nap', running: true }),
+            row('grand-id', { title: 'grandkid', mtime: Date.now() - 3 * 86_400_000 })
+          ]
+        ]
+      ])
+    })
+    startedSessions.started('docs-tab', 'fix-id')
+    startedSessions.bound('docs-tab', CODEX_KEY)
+    startedSessions.started('grand-tab', CODEX_KEY)
+    startedSessions.bound('grand-tab', 'grand-id')
+    expect((await verb(['list'], from('fix'))).text.split('\n')).toEqual([
+      'fix-login (you) · Claude · working',
+      `docs-links · Codex · local · closed · last active 2 h ago · id: ${CODEX_THREAD} · started by: you`,
+      'nap · Claude · local · idle · last active just now · id: nap-id',
+      'grandkid · Claude · local · closed · last active 3 days ago · id: grand-id · started by: docs-links'
+    ])
   })
 
   it('session read prints what the owner, a peer and the session said in the last N turns, found by name or id, and marks the session touched', async () => {

@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { launchApp } from './app'
-import type { E2EEnv } from './env'
+import { installCodex, type E2EEnv } from './env'
 import { encodeCwd, killSession, waitBooted } from './p1'
 
 export const REMOTE_HOST = 'devbox'
@@ -204,6 +204,72 @@ export function installFakeRemote(env: E2EEnv): void {
   )
 
   env.launchEnv.KOLOFT_FAKE_SSH_STATE = state
+}
+
+export const MAC_CODEX_ACCESS_TOKEN = 'mac-access-token-for-the-machine'
+
+export function installCodexOnFakeRemote(env: E2EEnv): void {
+  installCodex(
+    env,
+    JSON.stringify({ tokens: { access_token: MAC_CODEX_ACCESS_TOKEN, account_id: 'mac-account' } })
+  )
+  const bin = path.join(machineHome(env), '.local', 'bin')
+  fs.mkdirSync(bin, { recursive: true })
+  writeExec(
+    path.join(bin, 'codex'),
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(__dirname, '..', 'fixtures', 'fake-codex.js'))} "$@"\n`
+  )
+}
+
+export function machineCodexLog<T>(env: E2EEnv, name: string): T[] {
+  const file = path.join(machineHome(env), name)
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as T)
+}
+
+export function installMuseOnMachine(env: E2EEnv): void {
+  const machine = machineHome(env)
+  const bin = path.join(machine, '.local', 'bin')
+  fs.mkdirSync(bin, { recursive: true })
+  fs.copyFileSync(path.join(__dirname, '..', 'fixtures', 'fake-muse.js'), path.join(bin, 'muse'))
+  fs.chmodSync(path.join(bin, 'muse'), 0o755)
+  fs.mkdirSync(remoteDir(env), { recursive: true })
+  const config = path.join(machine, '.config', 'muse')
+  fs.mkdirSync(config, { recursive: true })
+  fs.writeFileSync(
+    path.join(config, 'trust.json'),
+    JSON.stringify({
+      schema_version: 1,
+      projects: { [fs.realpathSync(remoteDir(env))]: { decision: 'trusted' } }
+    })
+  )
+}
+
+export interface MachineMuseCall {
+  pid: number
+  argv: string[]
+  cwd: string
+  sessionId: string
+  configHome: string | null
+  credentials: string | null
+}
+
+export function machineMuseCalls(env: E2EEnv): MachineMuseCall[] {
+  const file = path.join(machineHome(env), 'fake-muse-calls.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as MachineMuseCall)
+}
+
+export function dropTmuxPassthrough(env: E2EEnv): void {
+  fs.writeFileSync(path.join(stateDir(env), 'no-passthrough'), '')
 }
 
 export async function launchWithRemote(

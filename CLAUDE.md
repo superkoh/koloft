@@ -13,8 +13,9 @@ A session tab is not a session: the tab is the terminal `claude` or `codex` runs
 `/clear`, a resume or a restart swaps the session inside it while the tab stays —
 the Workbench, its web pages and the shim's env are keyed by the tab.
 Judge every trade-off against that one idea.
-(Source lives in `superkoh/koloft`; installers in `superkoh/koloft-releases`, the list
-`install.sh` and the in-app updater read.)
+(Source and installers both live in `superkoh/koloft`, whose release list `install.sh`
+and the in-app updater read; `superkoh/koloft-releases` is the bridge older apps update
+through, and is never deleted — ADR-0037.)
 
 How each feature behaves is not written here — the code and its tests are the source
 of truth.
@@ -53,6 +54,18 @@ Working principles:
   interactions, state treatments and CSS classes exactly; never invent a parallel
   version or replace a screen for another session backend. A plan that changes a
   screen shows it as a local HTML mockup built from the app's CSS.
+- Icons are Koloft's own, one style ("soft line"), all from `src/renderer/src/icons`.
+  A new icon is never taken or copied from an icon library and never hand-drawn as
+  SVG code: it is made with an image generation tool (Codex's `image_gen`), with
+  `src/renderer/src/icons/sheet-1.png` given as the style reference image, as a new
+  6 × 4 sheet of white glyphs on black, each glyph drawn from its purpose in the
+  app. Every glyph is designed near-square and fills its square — no strip-shaped
+  icon (a thin symbol such as a minus or an arrow sits inside a circle); the
+  script sizes each glyph so its larger side is 22 of the 24 units and evens its
+  line to 2 units. Commit the sheet next to the others, name its cells in
+  `sheets.json` (`null` for a cell left unused), run `node scripts/trace-icons.mjs` to rewrite
+  `paths.ts`, export the icon from `index.tsx`, and look at it at its real size.
+  Only brand marks (Claude, Codex, Discord, GitHub) come from `react-icons/bs`.
 - Every feature covers every kind of session tab: Claude Code and Codex, each in a
   local workspace and in a remote one reached over SSH (Secure Shell) — four kinds.
   A plan, design or PR says what each of the four does: the same thing, a named
@@ -65,7 +78,7 @@ Working principles:
   after-edit hook) rejects every comment except two kinds, each with nothing else in it:
   - a tool directive: `@ts-expect-error`, `prettier-ignore`, `@vite-ignore`,
     `#__PURE__`, `@vitest-environment <env>`, `/// <reference … />`;
-  - a marker: `// ADR-0007`, `// CC§9`, `// CODEX§5`, `// PLATFORM§3` — several may
+  - a marker: `// ADR-0007`, `// CC§9`, `// CODEX§5`, `// MUSE§4`, `// PLATFORM§3` — several may
     share one line;
     in CSS `/* ADR-0007 */`, in JSX `{/* ADR-0007 */}`. Each must resolve to a
     `docs/adr/` file or a `##` section of that contract ledger.
@@ -76,7 +89,8 @@ Working principles:
   2. a test whose title states the rule;
   3. a measured fact about an external system → its contract ledger, cited from the
      code with a marker: Claude Code `docs/claude-code-contract.md` (`CC§`), Codex
-     `docs/codex-cli-contract.md` (`CODEX§`), anything else — Electron, Node, macOS,
+     `docs/codex-cli-contract.md` (`CODEX§`), Muse Code `docs/muse-code-contract.md`
+     (`MUSE§`), anything else — Electron, Node, macOS,
      git, GitHub — `docs/platform-contract.md` (`PLATFORM§`);
   4. an ADR (architecture decision record), `docs/adr/NNNN-slug.md` — only when all
      four hold: it cannot be read from the code (names, types, tests); a smart
@@ -235,7 +249,7 @@ Working principles:
   - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
   - Find a file before you grep or read it (grep -rl 'word' src): a name
     made up from a sibling file fails.
-  - Read stops at 25,000 tokens: read a big file or diff ~1,000 lines at a time.
+  - Read stops at 25,000 tokens (~50 KB), not lines: wc -c a big file, slice it.
   - grep is ugrep and fails on a .{0,N} span: use /usr/bin/grep -o -E, N ≤ 255.
   - Findings go in your final message; the harness refuses report files.
   ```

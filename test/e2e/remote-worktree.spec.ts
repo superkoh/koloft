@@ -63,7 +63,6 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
       await expect
         .poll(async () => (await wsMenuTexts(page)).join(' | '), { timeout: 60_000 })
         .toContain('New worktree session')
-      expect((await wsMenuTexts(page)).join(' | ')).not.toContain('Fetch origin')
 
       const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
       await dlg.getByRole('textbox').click()

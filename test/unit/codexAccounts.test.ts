@@ -2,7 +2,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { describe, expect, it } from 'vitest'
-import { CodexAccountPicker, limitsFrom, prepareCodexHome } from '../../src/main/codexAccounts'
+import { HomeAccountPicker, limitsFrom, prepareCodexHome } from '../../src/main/codexAccounts'
+import { codexAllLimitedNotice } from '../../src/main/accountPicker'
 import { windowLabel } from '../../src/shared/accountUsage'
 import type { AccountView } from '../../src/shared/types'
 
@@ -81,9 +82,9 @@ describe('limitsFrom (the rate-limit reply a Codex login gives)', () => {
   })
 })
 
-describe('CodexAccountPicker', () => {
+describe('picking a Codex account', () => {
   it('picks the enabled, signed-in account with the most room left, skipping one that is used up or that Codex says reached a limit', () => {
-    const picker = new CodexAccountPicker()
+    const picker = new HomeAccountPicker('codex-home')
     const pool = [
       account('full', { limits: used(1) }),
       account('busy', { limits: used(0.7) }),
@@ -97,7 +98,7 @@ describe('CodexAccountPicker', () => {
   })
 
   it('takes turns when no account has been measured yet, and picks none when there is no Codex account', () => {
-    const picker = new CodexAccountPicker()
+    const picker = new HomeAccountPicker('codex-home')
     const pool = [account('a'), account('b')]
     expect([picker.pick(pool)?.name, picker.pick(pool)?.name, picker.pick(pool)?.name]).toEqual([
       'a',
@@ -107,8 +108,25 @@ describe('CodexAccountPicker', () => {
     expect(picker.pick([account('claude', { kind: 'oauth' })])).toBeUndefined()
   })
 
+  it('when every account is used up, starts on the one whose limit resets soonest and says so; with room left it says nothing', () => {
+    const picker = new HomeAccountPicker('codex-home')
+    const walledUntil = (resetsAt: number): AccountView['limits'] => ({
+      windows: [
+        { minutes: 300, used: 1, resetsAt },
+        { minutes: 10080, used: 0.4, resetsAt: resetsAt + 99_999 }
+      ],
+      at: Date.now()
+    })
+    const late = account('late', { limits: walledUntil(2_000_000_000) })
+    const soon = account('soon', { limits: walledUntil(1_900_000_000) })
+    const picked = picker.pick([late, soon])
+    expect(picked?.name).toBe('soon')
+    expect(codexAllLimitedNotice(picked!)).toMatch(/soon.*\d\d:\d\d/)
+    expect(codexAllLimitedNotice(account('light', { limits: used(0.25) }))).toBeUndefined()
+  })
+
   it('a resumed session keeps the account it ran on until that account is past 95% used, and is never stuck on one that cannot run', () => {
-    const picker = new CodexAccountPicker()
+    const picker = new HomeAccountPicker('codex-home')
     const pool = (sameUsed?: number, over: Partial<AccountView> = {}): AccountView[] => [
       account('same', { ...(sameUsed !== undefined && { limits: used(sameUsed) }), ...over }),
       account('idle', { limits: used(0) })
@@ -140,15 +158,33 @@ describe('prepareCodexHome', () => {
   })
 
   // CODEX§15
-  it("links a home's sessions and archived_sessions to the default home's, so any account lists and resumes every session", () => {
+  it("links a home's sessions, archived_sessions, skills and rules to the default home's, so any account lists and resumes every session and sees the owner's own skills and command rules", () => {
     const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
     const shared = path.join(dir, 'dot-codex', 'config.toml')
     const home = path.join(dir, 'homes', 'work')
     prepareCodexHome(home, shared)
-    for (const folder of ['sessions', 'archived_sessions']) {
+    for (const folder of ['sessions', 'archived_sessions', 'skills', 'rules']) {
       expect(fs.readlinkSync(path.join(home, folder))).toBe(path.join(dir, 'dot-codex', folder))
       expect(fs.statSync(path.join(dir, 'dot-codex', folder)).isDirectory()).toBe(true)
     }
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  // CODEX§17
+  it("a home reads the owner's own AGENTS.md once the owner has one, and keeps an AGENTS.md of its own", () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
+    const shared = path.join(dir, 'dot-codex', 'config.toml')
+    const home = path.join(dir, 'homes', 'work')
+    prepareCodexHome(home, shared)
+    expect(fs.existsSync(path.join(home, 'AGENTS.md'))).toBe(false)
+    fs.writeFileSync(path.join(dir, 'dot-codex', 'AGENTS.md'), 'Answer in Chinese.\n')
+    prepareCodexHome(home, shared)
+    expect(fs.readFileSync(path.join(home, 'AGENTS.md'), 'utf8')).toBe('Answer in Chinese.\n')
+    const own = path.join(dir, 'homes', 'own')
+    fs.mkdirSync(own, { recursive: true })
+    fs.writeFileSync(path.join(own, 'AGENTS.md'), 'Mine.\n')
+    prepareCodexHome(own, shared)
+    expect(fs.readFileSync(path.join(own, 'AGENTS.md'), 'utf8')).toBe('Mine.\n')
     fs.rmSync(dir, { recursive: true, force: true })
   })
 

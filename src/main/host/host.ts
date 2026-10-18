@@ -11,6 +11,7 @@ import type {
   SearchHit,
   SkillSuggestion
 } from '@shared/types'
+import type { FreshnessRunner } from '../gitFreshness'
 import type { DiffResult, GitDiffResult } from '../gitStatus'
 import type { GithubLookup } from '../github'
 import type { GitRunResult } from '../gitSteps'
@@ -38,7 +39,11 @@ export interface ClaudeLaunch {
   effort?: CronEffort
   permission?: LaunchPermission
   firstPrompt?: string
+  ownerWords?: string
   name?: string
+  role?: string
+  allow?: string[]
+  conductor?: boolean
 }
 
 export interface MachineTab {
@@ -59,10 +64,13 @@ export type ClaudeLaunchPlan =
       shell?: string
       launchCommand: (tabId: string) => string
       resized?: (tabId: string, cols: number, rows: number) => void
+      conductor: boolean
       extraEnv?: {
         KOLOFT_FIRST_PROMPT?: string
         KOLOFT_SESSION_NAME?: string
         KOLOFT_PORT_OFFSET?: string
+        KOLOFT_AGENT_PLUGIN?: string
+        KOLOFT_AGENT_PROMPT?: string
       }
       machine?: MachineTab
     }
@@ -115,4 +123,5 @@ export interface Host {
   reveal(p: string): void
   osOpen(p: string): void
   github: GithubLookup
+  freshness: FreshnessRunner
 }

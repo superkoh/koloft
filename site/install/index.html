@@ -91,9 +91,9 @@
         <h2>Install</h2>
         <p>
           Get the <code>.dmg</code> (the disk image a Mac app comes in) from
-          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>. Open it and
-          drag Koloft to Applications. Koloft is signed with an Apple Developer ID and notarized, so
-          it opens with a normal double-click.
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>. Open it and drag
+          Koloft to Applications. Koloft is signed with an Apple Developer ID and notarized, so it
+          opens with a normal double-click.
         </p>
 
         <h3>Or one line in Terminal</h3>
@@ -103,7 +103,7 @@
         </p>
         <!-- prettier-ignore -->
         <p class="command">
-          <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>superkoh/<wbr>koloft-releases/<wbr>main/<wbr>install.sh | bash</code>
+          <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>superkoh/<wbr>koloft/<wbr>main/<wbr>install.sh | bash</code>
           <button type="button" class="copy" data-copy="cmd-install">
               <span class="idle"><svg class="icon" aria-hidden="true"><use href="../icons.svg#copy" /></svg> Copy</span><span class="done"><svg class="icon" aria-hidden="true"><use href="../icons.svg#check" /></svg> Copied</span>
             </button>
@@ -172,7 +172,8 @@
                   <code>api.anthropic.com</code>
                 </td>
                 <td>
-                  each account's room left, as a session starts and every 5 minutes. Through
+                  each account's room left, as Koloft opens, as a session starts, and when Settings
+                  or the usage panel opens. Through
                   <code>claude</code>, the small jobs of
                   <a href="../accounts/#assist">Assist</a> when it runs on Claude
                 </td>
@@ -182,9 +183,9 @@
                 <td>
                   a newer Koloft and its <code>.dmg</code>; through <code>gh</code>, issue and pull
                   request counts, a branch's checks, and what Assist asks with
-                  <code>koloft gh</code>; and <code>gh</code> itself, for a remote folder's machine
-                  that has none; a GitHub <a href="../accounts/#git-accounts">git account</a>'s
-                  sign-in, and its token check
+                  <code>koloft gh</code>; and, for a remote folder's machine that lacks them,
+                  <code>gh</code> itself and the sign-in tool (Git Credential Manager); a GitHub
+                  <a href="../accounts/#git-accounts">git account</a>'s sign-in, and its token check
                 </td>
               </tr>
               <tr>
@@ -372,7 +373,7 @@
           <b>Project</b>
           <a href="../changelog/">Changelog</a>
           <a href="https://github.com/superkoh/koloft">Source on GitHub</a>
-          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>
+          <a href="https://github.com/superkoh/koloft/releases">Releases</a>
           <a href="https://github.com/superkoh/koloft/issues">Issues</a>
         </nav>
       </div>

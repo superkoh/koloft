@@ -6,8 +6,8 @@ import {
   type AssistSetting,
   type Settings
 } from './types'
-import { sanitizeGitAccounts, sanitizeGitPicks } from './gitAccountOps'
-import { normalizeSessionMethods } from './sessionBackend'
+import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
+import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { sanitizeAssistSessions, sanitizeDiscord } from './conductors'
 
 export function buildResetPatch(): Partial<Settings> {
@@ -23,11 +23,13 @@ export function buildResetPatch(): Partial<Settings> {
     gitAccounts,
     gitPicks,
     gitSuggestionsDismissed,
+    gitMachines,
     ...rest
   } = DEFAULT_SETTINGS
   void gitAccounts
   void gitPicks
   void gitSuggestionsDismissed
+  void gitMachines
   void assist
   void assistSessions
   void newProjectFolders
@@ -47,11 +49,13 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
     gitAccounts,
     gitPicks,
     gitSuggestionsDismissed,
+    gitMachines,
     ...rest
   } = patch
   void gitAccounts
   void gitPicks
   void gitSuggestionsDismissed
+  void gitMachines
   void accounts
   void discord
   void assistSessions
@@ -68,6 +72,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.gitSuggestionsDismissed = Array.isArray(merged.gitSuggestionsDismissed)
     ? merged.gitSuggestionsDismissed.filter((r): r is string => typeof r === 'string')
     : []
+  merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
   merged.assistSessions = sanitizeAssistSessions(merged.assistSessions, merged.discord)
   merged.discord = sanitizeDiscord(merged.discord)
   merged.assist = sanitizeAssist(merged.assist)
@@ -100,8 +105,9 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
 function sanitizeAssist(raw: unknown): AssistSetting {
   if (!raw || typeof raw !== 'object') return null
   const { on, backend } = raw as Record<string, unknown>
-  if (typeof on !== 'boolean' || (backend !== 'claude' && backend !== 'codex')) return null
-  return { on, backend }
+  const assistOn = backendIdOf(backend)
+  if (typeof on !== 'boolean' || !assistOn) return null
+  return { on, backend: assistOn }
 }
 
 function sanitizeFolderMap(raw: unknown): Record<string, string> {

@@ -6,14 +6,16 @@ import type {
   CodexLimits,
   UsageSnapshot
 } from './types'
+import { SIGN_IN_FOLDER_KINDS } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
 
-const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
+export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
   claude: ['oauth', 'apikey', 'custom'],
-  codex: ['codex-home']
+  codex: ['codex-home'],
+  muse: ['muse-home']
 }
 
-const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home']
+const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home', 'muse-home']
 
 export function usableAccounts<A extends Pick<AccountMeta, 'kind' | 'enabled' | 'status'>>(
   accounts: readonly A[],
@@ -65,7 +67,8 @@ export const NO_USABLE_ACCOUNT: Record<BackendId, string> = {
   claude:
     'No Claude account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
   codex:
-    'No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
+    'No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
+  muse: 'No Muse account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
 }
 
 export const STALE_MS = 15 * 60_000
@@ -158,6 +161,11 @@ export function codexWalled(limits: CodexLimits): boolean {
   return limits.reached === true || codexHeaviest(limits) >= 1
 }
 
+export function codexBackAt(limits: CodexLimits): number {
+  const full = limits.windows.filter((w) => w.used >= 1)
+  return Math.max(0, ...(full.length ? full : limits.windows).map((w) => w.resetsAt))
+}
+
 export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   if (a.status !== 'ok') return { kind: 'grey' }
   const l = a.limits
@@ -212,7 +220,7 @@ export function autoProbeDue(
 ): boolean {
   if (lastAttempt !== null && nowMs >= lastAttempt && nowMs - lastAttempt <= AUTO_PROBE_MS)
     return false
-  const rows = usableAccounts(views, ['oauth', 'codex-home'])
+  const rows = usableAccounts(views, ['oauth', ...SIGN_IN_FOLDER_KINDS])
   if (rows.length === 0) return false
   let oldest = Infinity
   for (const a of rows) {
@@ -307,7 +315,7 @@ export interface CodexPoolSnapshot {
 // CODEX§15
 export function codexPoolSnapshot(members: AccountView[], nowMs: number): CodexPoolSnapshot {
   const nowSec = Math.floor(nowMs / 1000)
-  const live = usableAccounts(members, ['codex-home'])
+  const live = usableAccounts(members, SIGN_IN_FOLDER_KINDS)
   const M = live.filter((a) => a.limits !== undefined)
   const limitsOf = (a: AccountView): CodexLimits => a.limits as CodexLimits
   const walledRows = M.filter((a) => codexWalled(limitsOf(a)))

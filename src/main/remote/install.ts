@@ -1,14 +1,30 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
-import { remotePtsFile } from './paths'
-import { ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'
+import { REMOTE_HOOK_DIR, remotePtsFile } from './paths'
+import { ENSURE_CLAUDE_MINIMUM_FN, ENSURE_MUSE_MINIMUM_FN } from '../cliMinimums'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
 
+// MUSE§17
+const MUSE_INSTALLER = 'https://dev.meta.ai/install.sh'
+
+export const REMOTE_GIT_DIR = '.koloft/git-accounts'
+
+export const FETCH_FN =
+  'fetch() { if command -v curl >/dev/null 2>&1; then curl -fsSL -o "$2" "$1"; else wget -qO "$2" "$1"; fi; }'
+
+// PLATFORM§54 ADR-0036
+const GIT_ACCOUNTS_INCLUDE_LINE =
+  `koloft_git="'include.path=$HOME/${REMOTE_GIT_DIR}/config'"; ` +
+  'case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; ' +
+  '*) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; ' +
+  'export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git'
+
 // PLATFORM§33
-export const REMOTE_PATH_LINE =
-  'export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
+export const REMOTE_ENV_LINES =
+  'export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"\n' +
+  GIT_ACCOUNTS_INCLUDE_LINE
 
 // PLATFORM§38
 export function onATerminalEvenWhenSshGaveNone(
@@ -27,17 +43,13 @@ fi`
 
 // PLATFORM§33 PLATFORM§37
 export function remoteShCommand(script: string, args: string[] = []): string {
-  const body = `set -- ${args.map(shq).join(' ')}\n${REMOTE_PATH_LINE}\n${script}`
+  const body = `set -- ${args.map(shq).join(' ')}\n${REMOTE_ENV_LINES}\n${script}`
   return `sh -c 'eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`
 }
 
-// PLATFORM§37 PLATFORM§44
-export const ENSURE_SH = `#!/bin/sh
-${REMOTE_PATH_LINE}
-NODE_VERSION=${NODE_VERSION}
-say() { printf '[Koloft] %s\\n' "$*"; }
+const INSTALL_PKG = `say() { printf '[Koloft] %s\\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
-fetch() { if have curl; then curl -fsSL -o "$2" "$1"; else wget -qO "$2" "$1"; fi; }
+${FETCH_FN}
 
 pm=""
 for c in apt-get dnf yum apk brew; do
@@ -77,20 +89,13 @@ install_pkg() {
   say "$1 is missing and installing it needs your password. Run this on the machine, then start the session again:"
   printf '  sudo %s\\n' "$cmd"
   return 1
-}
+}`
 
-have bash || install_pkg bash || exit 4
-
-if ! have claude; then
-  say "installing claude (official installer)"
-  if have curl; then curl -fsSL https://claude.ai/install.sh | bash
-  elif have wget; then wget -qO- https://claude.ai/install.sh | bash
-  else say "need curl or wget to install claude"; exit 4; fi
-  have claude || { say "claude did not install; see the output above"; exit 4; }
-fi
-${ENSURE_CLAUDE_MINIMUM_FN}
-ensure_claude_minimum claude || exit 4
-
+const installNode = (
+  forWhat: string,
+  without: string,
+  only = ''
+): string => `NODE_VERSION=${NODE_VERSION}
 node_ok() {
   have node || return 1
   v="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
@@ -125,10 +130,10 @@ install_node() {
 }
 node_runs() { "$HOME/.koloft/node/bin/node" -v >/dev/null 2>&1; }
 no_build_runs="$HOME/.koloft/node-$NODE_VERSION.no-build-runs"
-if ! node_ok && [ ! -f "$no_build_runs" ]; then
-  say "installing node $NODE_VERSION for the statusline (about 30 MB, once)"
+if ${only}! node_ok && [ ! -f "$no_build_runs" ]; then
+  say "installing node $NODE_VERSION for ${forWhat} (about 30 MB, once)"
   if ! node_platform || ! install_node "https://nodejs.org/dist/v$NODE_VERSION" "node-v$NODE_VERSION-$os-$arch"; then
-    rm -rf "$HOME/.koloft/node.tmp.$$"; say "node could not be installed: this machine gets no statusline"
+    rm -rf "$HOME/.koloft/node.tmp.$$"; say "node could not be installed: ${without}"
   elif node_runs; then
     :
   elif [ "$os-$arch" = linux-x64 ] \\
@@ -138,9 +143,43 @@ if ! node_ok && [ ! -f "$no_build_runs" ]; then
     :
   else
     rm -rf "$HOME/.koloft/node" "$HOME/.koloft/node.tmp.$$"; : > "$no_build_runs"
-    say "node $NODE_VERSION does not run on this machine (its C library is too old): this machine gets no statusline"
+    say "node $NODE_VERSION does not run on this machine (its C library is too old): ${without}"
   fi
+fi`
+
+// PLATFORM§37 PLATFORM§44
+export const ENSURE_SH = `#!/bin/sh
+${REMOTE_ENV_LINES}
+${INSTALL_PKG}
+
+have bash || install_pkg bash || exit 4
+
+${ENSURE_CLAUDE_MINIMUM_FN}
+${ENSURE_MUSE_MINIMUM_FN}
+python_has_pty() { python3 -c 'import pty, termios' >/dev/null 2>&1; }
+if [ "$1" = muse ]; then
+  python_has_pty || install_pkg python3
+  python_has_pty || { say "Muse sessions need python3 on this machine, and python3 here does not run. Install python3, then start the session again."; exit 4; }
+  if ! have muse; then
+    say "installing muse (official installer, about 330 MB, once)"
+    if have curl; then curl -fsSL ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
+    elif have wget; then wget -qO- ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
+    else say "need curl or wget to install muse"; exit 4; fi
+    have muse || { say "muse did not install; see the output above"; exit 4; }
+  fi
+  ensure_muse_minimum muse || exit 4
+else
+  if ! have claude; then
+    say "installing claude (official installer)"
+    if have curl; then curl -fsSL https://claude.ai/install.sh | bash
+    elif have wget; then wget -qO- https://claude.ai/install.sh | bash
+    else say "need curl or wget to install claude"; exit 4; fi
+    have claude || { say "claude did not install; see the output above"; exit 4; }
+  fi
+  ensure_claude_minimum claude || exit 4
 fi
+
+${installNode('the statusline', 'this machine gets no statusline', '[ "$1" != muse ] && ')}
 
 GH_VERSION=${VENDOR_RELEASE.gh.version}
 gh_platform() {
@@ -168,6 +207,46 @@ have rsync || install_pkg rsync || exit 4
 exit 0
 `
 
+const CODEX_CLI_DIR = '$HOME/.koloft/codex-cli'
+
+export const CODEX_FIRST_ON_PATH = `PATH="${CODEX_CLI_DIR}/bin:$PATH"; export PATH`
+
+const CA_BUNDLES = [
+  '/etc/ssl/certs/ca-certificates.crt',
+  '/etc/pki/tls/certs/ca-bundle.crt',
+  '/etc/ssl/cert.pem',
+  '/etc/ssl/ca-bundle.pem'
+]
+
+// CODEX§16
+export const ENSURE_CODEX_SH = `#!/bin/sh
+${REMOTE_ENV_LINES}
+${CODEX_FIRST_ON_PATH}
+want="$1"
+${INSTALL_PKG}
+have bash || install_pkg bash || exit 4
+ca_ok() {
+  for f in ${CA_BUNDLES.join(' ')}; do [ -s "$f" ] && return 0; done
+  return 1
+}
+if ! ca_ok; then
+  install_pkg ca-certificates && ca_ok || {
+    say "this machine has no CA certificates (the ca-certificates package), so Codex cannot reach OpenAI from here — it would only say \\"workspace routing discovery failed\\". Install ca-certificates there, then start the session again."
+    exit 4
+  }
+fi
+if ! have bwrap && [ "$(uname -s)" = Linux ] && { [ "$(id -u)" = 0 ] || sudo -n true >/dev/null 2>&1; }; then
+  install_pkg bubblewrap || :
+fi
+[ "$(codex --version 2>/dev/null)" = "codex-cli $want" ] && exit 0
+${installNode('Codex', 'Codex cannot be installed on this machine')}
+have npm || { say "Codex is installed with npm, and this machine has none: install Node.js 20 or newer there, then start the session again"; exit 4; }
+say "installing Codex $want on this machine (once per Codex version)"
+npm install -g --prefix "${CODEX_CLI_DIR}" "@openai/codex@$want" </dev/null || { say "Codex $want did not install; see the output above"; exit 4; }
+[ "$(codex --version 2>/dev/null)" = "codex-cli $want" ] || { say "Codex $want did not install; see the output above"; exit 4; }
+exit 0
+`
+
 // PLATFORM§35
 export const TMUX_CONF = `set -g default-shell /bin/sh
 set -g status off
@@ -178,6 +257,7 @@ set -g default-terminal tmux-256color
 set -asq terminal-features ',xterm*:RGB:hyperlinks'
 set -gq exit-empty on
 set -g mouse off
+set -gq allow-passthrough on
 `
 
 export interface MachineTmp {
@@ -185,22 +265,47 @@ export interface MachineTmp {
   uid: number
 }
 
+// PLATFORM§37
+export const FINGERPRINT = `fp() { stat -c '%.9Y %s' "$1" 2>/dev/null || stat -f '%Fm %z' "$1"; }`
+
 const UID_LINE = 'uid '
 const TMP_LINE = 'tmp '
+const STAMP_LINE = 'stamp '
+const TRANSCRIPTS_LINE = 'transcripts '
+const HOOKS_LINE = 'hooks '
 const CLAUDE_TMP_BASE =
   'if [ "$(uname)" = Darwin ]; then b="${CLAUDE_CODE_TMPDIR:-/tmp}"; ' +
   'else b="${CLAUDE_CODE_TMPDIR:-${TMPDIR:-${TMP:-${TEMP:-/tmp}}}}"; fi'
+// PLATFORM§37
+const EVERY_FILE_STAMPED =
+  'if stat -c %s / >/dev/null 2>&1; then st="stat -c %n:%.9Y:%s"; else st="stat -f %N:%Fm:%z"; fi; ' +
+  'stamped() { find "$@" -type f -exec $st {} + 2>/dev/null; }'
 
 // CC§2
-export function heartbeatCmd(paths: string[]): string {
+export function heartbeatCmd(
+  paths: string[],
+  watched: string[] = [],
+  projectSlugs: string[] = []
+): string {
   return remoteShCommand(
     `echo "${UID_LINE}$(id -u)"; ${CLAUDE_TMP_BASE}; echo "${TMP_LINE}$(cd "$b" && pwd -P)"; ` +
+      `${FINGERPRINT}; n=$1; shift; ` +
+      `while [ "$n" -gt 0 ]; do echo "${STAMP_LINE}$(fp "$1" 2>/dev/null)"; shift; n=$((n - 1)); done; ` +
+      `${EVERY_FILE_STAMPED}; ` +
+      `echo "${TRANSCRIPTS_LINE}$(for s in $1; do ` +
+      'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; shift; ' +
+      `echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
       'git -C "$p" worktree list --porcelain 2>/dev/null; done; exit 0',
-    paths
+    [String(watched.length), ...watched, projectSlugs.join(' '), ...paths]
   )
+}
+
+export interface MirrorStamps {
+  transcripts?: string
+  hooks?: string
 }
 
 export interface RemoteGitInfo {
@@ -213,8 +318,12 @@ export function parseHeartbeat(stdout: string): {
   alive: string[]
   git: Map<string, RemoteGitInfo>
   tmp?: MachineTmp
+  stamps: string[]
+  mirrors: MirrorStamps
 } {
   const alive: string[] = []
+  const stamps: string[] = []
+  const mirrors: MirrorStamps = {}
   const git = new Map<string, RemoteGitInfo>()
   let uid = NaN
   let tmpRoot = ''
@@ -237,6 +346,12 @@ export function parseHeartbeat(stdout: string): {
       uid = parseInt(line.slice(UID_LINE.length), 10)
     } else if (!current && line.startsWith(TMP_LINE)) {
       tmpRoot = line.slice(TMP_LINE.length)
+    } else if (!current && line.startsWith(STAMP_LINE)) {
+      stamps.push(line.slice(STAMP_LINE.length))
+    } else if (!current && line.startsWith(TRANSCRIPTS_LINE)) {
+      mirrors.transcripts = line.slice(TRANSCRIPTS_LINE.length)
+    } else if (!current && line.startsWith(HOOKS_LINE)) {
+      mirrors.hooks = line.slice(HOOKS_LINE.length)
     } else if (!current) {
       if (line.trim()) alive.push(line.trim())
     } else if (line === 'git') {
@@ -248,13 +363,13 @@ export function parseHeartbeat(stdout: string): {
     }
   }
   flush()
-  return { alive, git, tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined }
+  return { alive, git, tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined, stamps, mirrors }
 }
 
 // PLATFORM§37
 export const UTIL_SH = `#!/bin/sh
 M=$(cd "$(dirname "$0")" && pwd)
-${REMOTE_PATH_LINE}
+${REMOTE_ENV_LINES}
 KOLOFT_UTIL=1
 export KOLOFT_UTIL
 PATH="$M/util-bin:$PATH"

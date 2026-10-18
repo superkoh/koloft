@@ -6,7 +6,6 @@ import {
   itemAim,
   itemFilterText,
   itemLaunchExtras,
-  mainRunningCount,
   moveHot,
   pendingLaunch,
   pendingWorktree,
@@ -215,23 +214,6 @@ describe('pullFailedReason (git speaks in full sentences, or not)', () => {
   it('terminates a bare reason', () => {
     expect(pullFailedReason('state changed')).toBe('state changed.')
     expect(pullFailedReason('  state changed  ')).toBe('state changed.')
-  })
-})
-
-describe('mainRunningCount (D4 guard counts only root-checkout Koloft sessions)', () => {
-  it('counts running and pending rows in the main bucket only', () => {
-    expect(
-      mainRunningCount([
-        sessionRow(),
-        sessionRow({ id: 's2', running: false, pending: true }),
-        sessionRow({ id: 's3', worktree: 'bugfix' }),
-        sessionRow({ id: 's4', running: false })
-      ])
-    ).toBe(2)
-  })
-
-  it('is zero for an idle checkout', () => {
-    expect(mainRunningCount([sessionRow({ running: false })])).toBe(0)
   })
 })
 
@@ -592,16 +574,18 @@ describe('worktree preparation recovery', () => {
   const resource = {
     name: 'interrupted',
     dir: '/repo/.koloft/worktrees/interrupted',
-    recoveryResourceId: 'resource-1'
+    recoveryResourceId: 'resource-1',
+    recoveryBackend: 'muse' as const
   }
 
-  it('recovers the recorded resource for an exact name or a selected row', () => {
+  it('recovers the recorded resource for an exact name or a selected row, with the tool that recorded it', () => {
     for (const aim of [
       worktreeAim([resource], 'Interrupted', { where: 'field' }),
       worktreeAim([resource], '', { where: 'list', index: 0 })
     ]) {
       expect(aim.kind).toBe('recover')
       if (aim.kind !== 'recover') throw new Error('expected recovery')
+      expect(aim.backend).toBe('muse')
       expect(resolveLaunch(aim, '/repo')).toEqual({
         cwd: '/repo',
         worktreeResourceId: 'resource-1'

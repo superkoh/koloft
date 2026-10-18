@@ -4,7 +4,7 @@ import path from 'path'
 export const SECRET_VERB = 'secret'
 export const ASKPASS_NAME = 'koloft-askpass'
 
-// PLATFORM§54
+// PLATFORM§58
 export const SUDO_WRAPPER = `#!/bin/sh
 : koloft sudo wrapper
 self="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
@@ -36,7 +36,7 @@ done
 SUDO_ASKPASS="$self/${ASKPASS_NAME}" exec "$real" -A "$@"
 `
 
-// PLATFORM§54
+// PLATFORM§58
 export const ASKPASS = `#!/bin/sh
 : koloft askpass
 exec "$(dirname "$0")/koloft" ${SECRET_VERB} sudo "$1" "$(ps -o args= -p "$PPID" 2>/dev/null)"

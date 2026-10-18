@@ -175,7 +175,7 @@ async function inARealWorktreeSession(
     await waitBooted(page)
     const dlg = await openWorktreeSession(page, 'repo')
     await dlg.locator('input').fill(WORKTREE)
-    await chooseBackend(page, backend)
+    await chooseBackend(page, backend === 'default' ? 'default' : 'Codex')
     const rows = wsRows(page, 'repo')
     await expect(rows).toHaveCount(1, { timeout: 60_000 })
     await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 90_000 })
@@ -220,7 +220,8 @@ const START_A_CHILD_THEN_CLOSE_IT = {
 }
 const TITLE_SAMPLE_EVERY_MS = 250
 // CODEX§17
-const TITLE_DRAWN_FROM_THE_HANDOVER = /Koloft started you|hand-?off|hand-?over/i
+const TITLE_DRAWN_FROM_THE_HANDOVER =
+  /Koloft started you|koloft session send|«|hand-?off|hand-?over/i
 
 // CC§9
 function launchNameOfTheChild(env: E2EEnv): string | undefined {
@@ -645,6 +646,88 @@ test.describe('KOLOFT_PORT_OFFSET reaches the REAL agent’s own shell in a work
       true
     )
   })
+})
+
+const savedWords = (files: string[]): string[] =>
+  files
+    .filter((file) => fs.existsSync(file))
+    .map((file) => JSON.parse(`"${fs.readFileSync(file, 'utf8').trim()}"`) as string)
+
+function claudeHookContexts(env: E2EEnv): string[] {
+  const projects = path.join(env.home, '.claude', 'projects')
+  return fs
+    .readdirSync(projects, { recursive: true, encoding: 'utf8' })
+    .filter((rel) => rel.endsWith('.jsonl'))
+    .flatMap((rel) => jsonLines(path.join(projects, rel)))
+    .map((r) => r.attachment as { type?: string; content?: string[] } | undefined)
+    .filter((a) => a?.type === 'hook_additional_context')
+    .map((a) => (a!.content ?? []).join(' '))
+}
+
+function codexHookContexts(env: E2EEnv): string[] {
+  return codexRollouts(env)
+    .flatMap(jsonLines)
+    .map((r) => r.payload as { role?: string; content?: { text?: string }[] } | undefined)
+    .filter((p) => p?.role === 'developer')
+    .map((p) => p!.content?.[0]?.text ?? '')
+}
+
+// ADR-0031 CC§19 CODEX§27
+test.describe('REAL Claude Code and Codex tabs keep the owner’s language: opt-in cases; they spend real money', () => {
+  const cases = [
+    {
+      name: 'Claude Code',
+      backend: 'default' as const,
+      useReal: useRealClaude,
+      have: HAVE_REAL_CLAUDE,
+      skip: 'set KOLOFT_SMOKE_CLAUDE (absolute path of a real claude binary) and a token',
+      said: (env: E2EEnv) => {
+        const reg = path.join(env.userData, 'hook-sessions')
+        return savedWords(
+          fs
+            .readdirSync(reg)
+            .filter((f) => f.endsWith('.said'))
+            .map((f) => path.join(reg, f))
+        )
+      },
+      handed: claudeHookContexts
+    },
+    {
+      name: 'Codex',
+      backend: 'other' as const,
+      useReal: useRealCodex,
+      have: HAVE_REAL_CODEX,
+      skip: 'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)',
+      said: (env: E2EEnv) => {
+        const shims = path.join(env.userData, 'codex-open')
+        return savedWords(fs.readdirSync(shims).map((dir) => path.join(shims, dir, 'said')))
+      },
+      handed: codexHookContexts
+    }
+  ]
+  for (const c of cases)
+    test(`in a real ${c.name} tab Koloft's reply-language hooks keep the owner's words, quote back a last note in the wrong language, and stop once a note in the owner's language reaches the transcript`, async ({
+      env
+    }) => {
+      test.skip(!c.have, c.skip)
+      test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 180_000)
+      const english = 'Reply with exactly these words and nothing else: All quiet in this folder.'
+      const words =
+        '用 shell 先运行 ls，看完结果再单独运行 pwd，每次运行前先用一句中文告诉我你要做什么，最后只回复「好」。'
+      await inARealWorktreeSession(env, c.backend, c.useReal, [], async ({ page, rows }) => {
+        for (const prompt of [english, words]) {
+          await ask(page, rows, prompt)
+          await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, {
+            timeout: A_REAL_MODEL_TURN_MS
+          })
+        }
+        expect(c.said(env)).toEqual([words])
+        const named = c.handed(env).filter((text) => /^(The user writes|Your last note)/.test(text))
+        expect(named[0]).toMatch(/^Your last note to the user, «All quiet in this folder/)
+        expect(named.length).toBeGreaterThan(2)
+        expect(named.at(-1)).toMatch(/^The user writes Chinese\. /)
+      })
+    })
 })
 
 const LIST_THE_REMOTE =

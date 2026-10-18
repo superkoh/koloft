@@ -174,7 +174,7 @@ describe('koloft cron: reading the command line', () => {
       /"funday" is not a day/
     )
     expect(parseError(['edit', '1', '--weekly', 'mon'])).toMatch(/--weekly like/)
-    expect(parseError(['edit', '1', '--backend', 'gemini'])).toMatch(/claude or codex/)
+    expect(parseError(['edit', '1', '--backend', 'gemini'])).toMatch(/claude, codex or muse/)
     expect(parseError(['edit', '1', '--effort', 'huge'])).toMatch(/--effort is one of/)
     expect(parseError(['edit', '1', '--permission', 'root'])).toMatch(/--permission is one of/)
     expect(parseError(['edit', '1', '--when-done', 'quit'])).toMatch(/--when-done is one of/)

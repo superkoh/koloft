@@ -14,6 +14,7 @@ let answers: (() => Promise<RunResult>)[]
 let changes: string[]
 let lefts: string[]
 let answerWhenQueueEmpty: (() => Promise<RunResult>) | undefined
+let rsyncAnswer: RunResult
 let target: RemoteTarget
 let sync: RemoteSync
 
@@ -33,7 +34,7 @@ function make(): RemoteSync {
     rsync: (host, remoteDir, localDir, extra) => {
       rsyncs.push(`${host} ${remoteDir}`)
       rsyncFlags.push(extra)
-      return Promise.resolve(ok(''))
+      return Promise.resolve(rsyncAnswer)
     },
     targets: () => [target],
     onChange: (host) => changes.push(host),
@@ -53,6 +54,7 @@ beforeEach(() => {
   runsFull = []
   answers = []
   answerWhenQueueEmpty = undefined
+  rsyncAnswer = ok('')
   changes = []
   lefts = []
   target = {
@@ -60,7 +62,8 @@ beforeEach(() => {
     mirrorProjectsRoot: '/ud/remote/devbox/projects',
     mirrorHookDir: '/ud/remote/devbox/hook-sessions',
     paths: ['/home/koh/api'],
-    hasTabs: true
+    hasTabs: true,
+    busy: true
   }
   sync = make()
 })
@@ -287,20 +290,92 @@ it("U-HB-3: greys the dot when ssh's own timeout kills the command (code null)",
   expect([...sync.alive('devbox')]).toEqual(['aaa'])
 })
 
-it('U-HB-3: polls every 2s with a live tab and every 20s without one', async () => {
+it('U-HB-3: polls every 2s while a session on the machine works or waits for approval, still for 30s after it stops, then every 5s while a tab there is open, and every 20s with none', async () => {
   sync.start()
   await tick(1)
-  const withTabs = runs.length
+  const working = runs.length
   await tick(6000)
-  expect(runs.length - withTabs).toBe(3)
+  expect(runs.length - working).toBe(3)
+
+  target = { ...target, busy: false }
+  const stopped = runs.length
+  await tick(30_000)
+  expect(runs.length - stopped).toBe(15)
+  const idleStart = runs.length
+  await tick(10_000)
+  expect(runs.length - idleStart).toBe(2)
 
   target = { ...target, hasTabs: false }
+  await tick(5000)
+  const noTabs = runs.length
+  await tick(40_000)
+  expect(runs.length - noTabs).toBe(2)
+})
+
+it('asks an idle machine at once when the person types into one of its tabs, then every 2s for 30s; typing between 2s rounds adds none', async () => {
+  target = { ...target, busy: false }
+  sync.start()
+  await tick(1)
+  await tick(40_000)
+  const idle = runs.length
+  sync.typedInto('devbox')
+  await tick(1)
+  expect(runs.length).toBe(idle + 1)
+  sync.typedInto('devbox')
+  await tick(1000)
+  sync.typedInto('devbox')
+  await tick(1000)
+  expect(runs.length).toBe(idle + 2)
+  await tick(30_000)
+  const after = runs.length
+  await tick(5000)
+  expect(runs.length - after).toBe(1)
+})
+
+it('pulls a folder only when the heartbeat shows its files changed, and again after a failed pull or a poke', async () => {
+  let transcripts = '1 10'
+  let hooks = '7 70'
+  answerWhenQueueEmpty = () =>
+    Promise.resolve(ok(`transcripts ${transcripts}\nhooks ${hooks}\nk-aaa\n`))
+  const pulledInRound = async (): Promise<string[]> => {
+    const before = rsyncs.length
+    await tick(2000)
+    return rsyncs.slice(before)
+  }
+  sync.start()
+  await tick(1)
+  expect(rsyncs).toEqual(['devbox .claude/projects', 'devbox .koloft/hook-sessions'])
+  expect(await pulledInRound()).toEqual([])
+
+  hooks = '8 71'
+  expect(await pulledInRound()).toEqual(['devbox .koloft/hook-sessions'])
+  transcripts = '2 11'
+  expect(await pulledInRound()).toEqual(['devbox .claude/projects'])
+
+  transcripts = '3 12'
+  rsyncAnswer = { code: 23, stdout: '', stderr: 'rsync error: some files could not be transferred' }
+  expect(await pulledInRound()).toEqual(['devbox .claude/projects'])
+  rsyncAnswer = ok('')
+  expect(await pulledInRound()).toEqual(['devbox .claude/projects'])
+  expect(await pulledInRound()).toEqual([])
+
+  sync.pokeNow('devbox')
+  await tick(1)
+  expect(rsyncs.slice(-2)).toEqual(['devbox .claude/projects', 'devbox .koloft/hook-sessions'])
+})
+
+it('pulls the transcripts again when the pinned path resolves to another folder, even if the stamp matches', async () => {
+  let real = '/home/koh/api'
+  answerWhenQueueEmpty = () =>
+    Promise.resolve(ok(`transcripts 1 10\nhooks 7 70\n== /home/koh/api\nreal ${real}\n`))
+  sync.start()
+  await tick(1)
   await tick(2000)
-  const idleStart = runs.length
-  await tick(6000)
-  expect(runs.length - idleStart).toBe(0)
-  await tick(20_000)
-  expect(runs.length - idleStart).toBe(1)
+  const before = rsyncFlags.length
+  real = '/mnt/disk2/api'
+  await tick(18_000)
+  const pulled = rsyncFlags.slice(before).find((f) => f.includes('--include=/-mnt-disk2-api*/'))
+  expect(pulled).toBeDefined()
 })
 
 it('stops polling a machine that is no longer pinned', async () => {
@@ -341,9 +416,86 @@ it('a wait for the next pull ends only after a round that started after it, sinc
   expect(done).toBe(true)
 })
 
+it('a watched path is stamped on every heartbeat: the first stamp is only the baseline, a changed one fires once, and an unwatched path is no longer asked', async () => {
+  const file = '/home/koh/api/notes.md'
+  let stamp = '1.0 3'
+  answerWhenQueueEmpty = () => {
+    const asked = scriptSent(runsFull[runsFull.length - 1]).includes(file)
+    return Promise.resolve(ok(asked ? `stamp ${stamp}\nk-aaa\n` : 'k-aaa\n'))
+  }
+  const seen: string[] = []
+  sync.watch('devbox', file, (s) => seen.push(s))
+  sync.start()
+  await tick(1)
+  await tick(2000)
+  expect(seen).toEqual([])
+
+  stamp = '2.0 4'
+  await tick(2000)
+  expect(seen).toEqual(['2.0 4'])
+  await tick(2000)
+  expect(seen).toEqual(['2.0 4'])
+
+  stamp = ''
+  await tick(2000)
+  expect(seen).toEqual(['2.0 4', ''])
+
+  sync.unwatch('devbox', file)
+  await tick(2000)
+  expect(scriptSent(runsFull[runsFull.length - 1])).not.toContain(file)
+})
+
+it('unwatchAll drops every watched path at once, however many times each was watched, so a reloaded window leaves none stamped', async () => {
+  const file = '/home/koh/api/notes.md'
+  const dir = '/home/koh/api/src'
+  sync.watch('devbox', file, () => {})
+  sync.watch('devbox', file, () => {})
+  sync.watch('devbox', dir, () => {})
+  sync.start()
+  await tick(1)
+  expect(scriptSent(runsFull[runsFull.length - 1])).toContain(dir)
+
+  sync.unwatchAll()
+  await tick(2000)
+  const sent = scriptSent(runsFull[runsFull.length - 1])
+  expect(sent).not.toContain(file)
+  expect(sent).not.toContain(dir)
+})
+
+it("the wait for a machine's first heartbeat ends when that first round ends, answered or not, and later waits end at once without a round of their own", async () => {
+  let answer = (): void => {}
+  answers.push(
+    () =>
+      new Promise<RunResult>(
+        (res) => (answer = () => res({ code: 255, stdout: '', stderr: 'down' }))
+      )
+  )
+  sync.start()
+  await tick(1)
+  let done = false
+  void sync.firstRoundDone('devbox').then(() => (done = true))
+  await tick(1)
+  expect(done).toBe(false)
+  answer()
+  await tick(1)
+  expect(done).toBe(true)
+  const before = runs.length
+  await sync.firstRoundDone('devbox')
+  expect(runs.length).toBe(before)
+})
+
+it('a wait for the first round ends when the sync stops before that round runs, so a launch waiting on it is not stuck', async () => {
+  let done = false
+  void sync.firstRoundDone('devbox').then(() => (done = true))
+  sync.stop()
+  await tick(1)
+  expect(runs).toEqual([])
+  expect(done).toBe(true)
+})
+
 describe('pokeNow', () => {
   it('runs a round at once instead of waiting out the interval', async () => {
-    target = { ...target, hasTabs: false }
+    target = { ...target, busy: false }
     sync.start()
     await tick(1)
     const before = runs.length

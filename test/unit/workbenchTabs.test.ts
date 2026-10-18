@@ -1128,10 +1128,10 @@ describe('a terminal tab (R2/R19)', () => {
     expect(set.tabs.filter((t) => t.kind === 'terminal')).toHaveLength(2)
   })
 
-  it('lands at the RIGHT end, and a later web tab goes in FRONT of it', () => {
+  it('keeps the order tabs were opened in — a later web tab goes AFTER it, not in front', () => {
     const withTerm = withShells(1)
     const after = openTab(withTerm, { kind: 'web', url: 'http://h/p', source: 'user' }).set
-    expect(after.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'terminal'])
+    expect(after.tabs.map((t) => t.kind)).toEqual(['files', 'terminal', 'web'])
   })
 
   it('refuses the ninth instead of evicting one of the eight, which could kill a running shell (R2)', () => {
@@ -1150,7 +1150,7 @@ describe('a terminal tab (R2/R19)', () => {
     expect(r.set.tabs.filter((t) => t.kind === 'terminal')).toHaveLength(KIND_TAB_CAP)
   })
 
-  it('takes no part in drag ordering, in either direction', () => {
+  it('drags like any other tab, and a web tab can be dragged past it', () => {
     let set = openTab(emptyTabSet(), { kind: 'web', url: 'http://h/a', source: 'user' }).set
     set = openTab(set, {
       kind: 'terminal',
@@ -1159,12 +1159,11 @@ describe('a terminal tab (R2/R19)', () => {
       title: 'zsh',
       source: 'user'
     }).set
-    set = openTab(set, { kind: 'web', url: 'http://h/b', source: 'user' }).set
-    expect(set.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'web', 'terminal'])
-    expect(moveTab(set, 'pty1', 1)).toBe(set)
-    const moved = moveTab(set, set.tabs[1].id, 9)
-    expect(moved.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'web', 'terminal'])
-    expect(moved.tabs[3].id).toBe('pty1')
+    const webA = set.tabs[1].id
+    const left = moveTab(set, 'pty1', 0)
+    expect(left.tabs.map((t) => t.id)).toEqual([FILES_TAB_ID, 'pty1', webA])
+    const right = moveTab(left, webA, 1)
+    expect(right.tabs.map((t) => t.id)).toEqual([FILES_TAB_ID, webA, 'pty1'])
   })
 
   it('labels itself with its title alone (R19), never with its directory', () => {

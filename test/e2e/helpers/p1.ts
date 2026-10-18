@@ -383,25 +383,42 @@ export function worktreeDialog(page: Page): Locator {
 }
 
 export function dialogPrimary(dlg: Locator): Locator {
-  return dlg.locator('.modal-foot .btn-primary')
+  return dlg.locator('.modal-foot .btn-primary:not([aria-haspopup])')
 }
 
-export async function chooseBackend(page: Page, which: 'default' | 'other'): Promise<void> {
+export function agentRow(page: Page, method: 'Claude' | 'Codex' | 'Muse'): Locator {
+  return page
+    .getByRole('listbox', { name: 'Agents' })
+    .getByRole('option')
+    .filter({ hasText: new RegExp(`^\\d?${method}`) })
+}
+
+export async function pickAgent(
+  page: Page,
+  from: Locator,
+  method: 'Claude' | 'Codex' | 'Muse'
+): Promise<void> {
+  await from.getByRole('button', { name: 'Pick an agent' }).click()
+  await agentRow(page, method).click()
+}
+
+export async function chooseBackend(
+  page: Page,
+  which: 'default' | 'Claude' | 'Codex' | 'Muse'
+): Promise<void> {
   const dialog = page.locator('.modal.wspicker, .modal.worktreesess')
-  const start = dialog.locator(
-    which === 'default'
-      ? '.modal-foot button[data-default="true"]'
-      : '.modal-foot button[data-default="false"]'
-  )
-  await expect(start).toBeEnabled()
-  await start.click()
+  if (which === 'default') {
+    const start = dialog.locator('.modal-foot button[data-default="true"]')
+    await expect(start).toBeEnabled()
+    await start.click()
+  } else await pickAgent(page, dialog, which)
   await expect(dialog).toHaveCount(0)
 }
 
 export async function newSessionInWith(
   page: Page,
   wsName: string,
-  method: 'Claude' | 'Codex'
+  method: 'Claude' | 'Codex' | 'Muse'
 ): Promise<void> {
   await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
   await page.locator('.menu .mi', { hasText: `New ${method} session` }).click()

@@ -8,7 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent
 } from 'react'
 import { createPortal } from 'react-dom'
-import { LuAlignLeft, LuPencil, LuRotateCw, LuSearch } from 'react-icons/lu'
+import { IconEdit, IconOutline, IconReload, IconSearch } from '../icons'
 import '../filesView.css'
 import type {
   ArtifactView,
@@ -292,11 +292,11 @@ export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Eleme
           aria-label="Search files"
           onClick={c.toggleSearch}
         >
-          <LuSearch size={14} />
+          <IconSearch size={14} />
         </button>
       )}
       <button className="icobtn" onClick={c.refresh} title="Reload" aria-label="Reload">
-        <LuRotateCw size={14} />
+        <IconReload size={14} />
       </button>
       {fullBtn}
 
@@ -567,6 +567,7 @@ export function FilesBody({
             recents={c.recents}
             bookmarks={c.bookmarks}
             sideWidth={shownSideWidth}
+            refreshNonce={c.refreshNonce}
             onOpen={openPath}
             onEdit={onEdit}
             newFileDir={newFileDir}
@@ -698,7 +699,7 @@ function ReadingArea({
           </div>
         )}
         <button className="icobtn" onClick={c.reloadReading} title="Reload" aria-label="Reload">
-          <LuRotateCw size={14} />
+          <IconReload size={14} />
         </button>
         <button
           className="icobtn wb-edit"
@@ -707,7 +708,7 @@ function ReadingArea({
           disabled={!probe.can}
           onClick={() => onEdit(file.src)}
         >
-          <LuPencil size={13} />
+          <IconEdit size={13} />
         </button>
         <button
           className={'icobtn' + (c.outlineOpen ? ' on' : '')}
@@ -716,7 +717,7 @@ function ReadingArea({
           disabled={!caps.hasOutline}
           onClick={() => c.setOutlineOpen(!c.outlineOpen)}
         >
-          <LuAlignLeft size={14} />
+          <IconOutline size={14} />
         </button>
       </div>
       <div className="wb-host fv-read-host">

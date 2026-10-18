@@ -50,7 +50,6 @@ function setup(over: Partial<NoticeDeps> = {}) {
     }),
     subject: (tabId) => subject(tabId, tabId),
     shownName: async () => null,
-    awaitsInput: () => false,
     commandRunning: () => false,
     dialog: async () => undefined,
     ...over
@@ -62,16 +61,12 @@ afterEach(() => vi.useRealTimers())
 
 describe('Discord notices: which session state change reaches which conductor', () => {
   it('a turn that ends is "finished", a dialog is "waiting", and a fresh session settling is nothing', () => {
-    expect(noticeKindOf('working', 'waiting', false)).toBe('finished')
-    expect(noticeKindOf('approval', 'waiting', false)).toBe('finished')
-    expect(noticeKindOf('working', 'approval', false)).toBe('waiting')
-    expect(noticeKindOf(undefined, 'waiting', false)).toBeUndefined()
-    expect(noticeKindOf('waiting', 'idle', false)).toBeUndefined()
-    expect(noticeKindOf('waiting', 'working', false)).toBeUndefined()
-  })
-
-  it('a turn that stops to ask the owner for input is "waiting", not "finished"', () => {
-    expect(noticeKindOf('working', 'waiting', true)).toBe('waiting')
+    expect(noticeKindOf('working', 'waiting')).toBe('finished')
+    expect(noticeKindOf('approval', 'waiting')).toBe('finished')
+    expect(noticeKindOf('working', 'approval')).toBe('waiting')
+    expect(noticeKindOf(undefined, 'waiting')).toBeUndefined()
+    expect(noticeKindOf('waiting', 'idle')).toBeUndefined()
+    expect(noticeKindOf('waiting', 'working')).toBeUndefined()
   })
 
   it('"finished" goes only to a conductor that touched the session or whose session already has a thread; "waiting" and "closed" go to any conductor whose scope holds it', () => {

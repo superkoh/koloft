@@ -9,7 +9,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 
 ## Commands
 
-- `npm run test:unit`  — Vitest, plain Node, no app; the fast layer.
+- `npm run test:unit`  — Vitest, plain Node (jsdom for component tests), no app; the
+  fast layer.
 - `npm run test:unit:changed` — the same, only the files reachable from what this
   branch changed against `main` (vitest `--changed`).
 - `npm run test:e2e`   — Playwright drives the real built app. Needs
@@ -20,6 +21,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 
 ## Unit layer (test/unit/)
 
+- A component test is a `.test.tsx` whose first line is `// @vitest-environment jsdom`;
+  it renders with `@testing-library/react` and calls `cleanup` in `afterEach` (vitest
+  globals are off, so nothing cleans up for it) — sessionBackendIcon.test.tsx. Every
+  other file runs in plain Node.
 - There is no global `$HOME` sandbox (vitest has no setupFiles). Anything a module
   reads once as it loads — `HOME`, the session timing knobs (`KOLOFT_*_MS`, read through
   `envMs` in sessionRuntime.ts and sessionTracker.ts; an explicit 0 counts), `TZ` — is
@@ -106,7 +111,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
-    Stop. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
+    Stop, its UserPromptSubmit hook given the line as `prompt`. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
     so an Esc Koloft presses lands inside the next one). A bracketed paste
     (`ESC[200~` … `ESC[201~`) waits, as in the real input box, until the Enter after
     it, and is then one prompt together with what was typed after it; fake-codex
@@ -164,7 +169,14 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - Codex sessions: the `codex` is fixtures/fake-codex.js, installed per case by
   `installCodex` (helpers/env.ts) (it sets `KOLOFT_CODEX_CMD` and `CODEX_HOME`).
   Without it, `KOLOFT_CODEX_CMD` is a bare name, not a path, so Codex reads as not
-  installed whatever the developer's own login shell has.
+  installed whatever the developer's own login shell has. A Codex tab on the fake remote
+  needs `installCodexOnFakeRemote` (helpers/remote.ts), which also puts fake-codex on
+  the machine and gives the Mac account a token; what the machine's app-server did lands
+  in the machine home's `fake-codex-*.jsonl` (`machineCodexLog`).
+- Muse sessions: the `muse` is fixtures/fake-muse.js, installed per case by `installMuse`
+  (helpers/env.ts, sets `KOLOFT_MUSE_CMD`); without it `KOLOFT_MUSE_CMD` is a bare name, so
+  Muse reads as not installed. It asks Muse's trust question unless `trust.json` under
+  `<home>/.config/muse` trusts the folder or it got `--trust-workspace`.
 
 ### Keys, focus and the hidden window
 
@@ -251,7 +263,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `src/preload/index.ts` for the renderer — so grep its name. All are inert in
   production.
 - Always on (set by `helpers/env.ts`): `KOLOFT_TEST_BACKGROUND`, `KOLOFT_DOM_RENDERER`,
-  `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
+  `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_MUSE_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
   `KOLOFT_SUPPRESS_OS_OPEN`, `KOLOFT_EXTERNAL_OPENS_FILE`, `KOLOFT_DOWNLOAD_DIR`,
   `KOLOFT_CDP_LOG`, `KOLOFT_FILE_DIALOG_FILE`.
 - Per spec, read once at startup, so set in `env.launchEnv` before launching by hand:
@@ -281,7 +293,8 @@ first of these that can do it; only a step none of them can do goes to the owner
    says how). It lends a Claude account from the installed Koloft: the token goes into
    a 0600 file in the sandbox's home, is never printed, and goes with `stop`. Local
    Claude and local Codex tabs run there, a remote Claude tab with `--remote`; a remote
-   Codex tab does not exist in the product (CODEX§16). Drive it with
+   Codex tab there is not set up, as the lab machine has no CA certificates, so Codex on
+   it cannot reach OpenAI (CODEX§16). Drive it with
    `playwright-cli attach --cdp=<cdp>` and screenshots; check results in transcripts,
    files and `<home>/koloft.log`.
 2. A fake server: helpers/fakeDiscord.ts, the GitHub fixture, the fake `gh`.
