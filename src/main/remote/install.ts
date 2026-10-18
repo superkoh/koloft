@@ -167,10 +167,10 @@ ${ENSURE_CLAUDE_MINIMUM_FN}
 ${ENSURE_MUSE_MINIMUM_FN}
 python_has_pty() { python3 -c 'import pty, termios' >/dev/null 2>&1; }
 official_install() {
+  have curl || have wget || install_pkg curl || { say "need curl or wget to install $1"; exit 4; }
   say "installing $1 (official installer$3)"
   if have curl; then curl -fsSL "$2" | bash
-  elif have wget; then wget -qO- "$2" | bash
-  else say "need curl or wget to install $1"; exit 4; fi
+  else wget -qO- "$2" | bash; fi
   have "$1" || { say "$1 did not install; see the output above"; exit 4; }
 }
 case "$program" in
@@ -292,7 +292,8 @@ const CLAUDE_TMP_BASE =
 // PLATFORM§37
 const EVERY_FILE_STAMPED =
   'if stat -c %s / >/dev/null 2>&1; then st="stat -c %n:%.9Y:%s"; else st="stat -f %N:%Fm:%z"; fi; ' +
-  'stamped() { find "$@" -type f -exec $st {} + 2>/dev/null; }'
+  'stamped() { find "$@" -type f -exec $st {} + 2>/dev/null; }; ' +
+  'emptyOrSum() { l="$(cat)"; [ -z "$l" ] || printf "%s\\n" "$l" | cksum; }'
 
 // CC§2
 export function heartbeatCmd(
@@ -307,9 +308,9 @@ export function heartbeatCmd(
       `while [ "$n" -gt 0 ]; do echo "${STAMP_LINE}$(fp "$1" 2>/dev/null)"; shift; n=$((n - 1)); done; ` +
       `${EVERY_FILE_STAMPED}; ` +
       `echo "${TRANSCRIPTS_LINE}$(for s in $1; do ` +
-      'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; shift; ' +
-      `echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
-      `m=$1; shift; while [ "$m" -gt 0 ]; do echo "${EXTRA_LINE}$(stamped "$HOME/$1" | cksum)"; shift; m=$((m - 1)); done; ` +
+      'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | emptyOrSum)"; shift; ' +
+      `echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | emptyOrSum)"; ` +
+      `m=$1; shift; while [ "$m" -gt 0 ]; do echo "${EXTRA_LINE}$(stamped "$HOME/$1" | emptyOrSum)"; shift; m=$((m - 1)); done; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
@@ -324,6 +325,8 @@ export function heartbeatCmd(
     ]
   )
 }
+
+export const NO_FILES_THERE = ''
 
 export interface MirrorStamps {
   transcripts?: string

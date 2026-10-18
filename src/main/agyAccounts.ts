@@ -159,6 +159,9 @@ export function readAgyQuota(
   })
 }
 
+// AGY§23
+const WINDOW_LABEL: Record<string, string> = { weekly: '7d', '5h': '5h' }
+
 // AGY§20 AGY§23
 export function agyQuotaFrom(stdout: string): QuotaBucket[] | undefined {
   let groups: unknown
@@ -175,8 +178,14 @@ export function agyQuotaFrom(stdout: string): QuotaBucket[] | undefined {
       const bucket = record(b)
       const left = bucket.remaining_fraction
       if (typeof left !== 'number') return []
-      const reset = typeof bucket.reset_time === 'string' ? Date.parse(bucket.reset_time) : NaN
-      const label = [group.name, bucket.name].filter((n) => typeof n === 'string' && n).join(' · ')
+      const reset =
+        typeof bucket.reset_time === 'string'
+          ? Math.floor(Date.parse(bucket.reset_time) / 1000)
+          : NaN
+      const window = typeof bucket.window === 'string' ? WINDOW_LABEL[bucket.window] : undefined
+      const label = [group.name, window ?? bucket.name]
+        .filter((n) => typeof n === 'string' && n)
+        .join(' · ')
       return [
         {
           label: label || 'Quota',

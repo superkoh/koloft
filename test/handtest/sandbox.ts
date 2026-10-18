@@ -33,11 +33,12 @@ import { readLoginShell } from '../../src/main/loginShell'
 import { acceptClaudeTrust } from '../../src/main/claudeTrust'
 import { acceptCodexTrust, codexConfigFile } from '../../src/main/codexTrust'
 import { codexHomes } from '../../src/main/codexAccounts'
+import { AGY_INSTALLER_URL } from '../../src/main/toolInstall'
 import { keychainService } from '../../src/shared/types'
 
 const USAGE = `Starts a hidden dev build of Koloft with the real claude and codex, in a home of its own.
 
-  npm run handtest -- start [--account <name>] [--port <n>] [--remote] [--muse]
+  npm run handtest -- start [--account <name>] [--port <n>] [--remote] [--muse] [--agy]
   npm run handtest -- menu <home> <menu item id>
   npm run handtest -- stop <home>
 
@@ -53,6 +54,8 @@ stop quits it and deletes the home.
              sign in to Muse from the sandbox's Settings ▸ Accounts
   --muse-auth <file>  with --muse, start with a Muse account "meta" signed in by this
              auth.json, kept from an earlier sandbox's muse-homes/meta/muse (never printed)
+  --agy      also install the real agy with its official installer, into the sandbox home;
+             sign in to Antigravity from the sandbox's Settings ▸ Accounts
 Run npm run build first.`
 
 const REPO = path.resolve(__dirname, '..', '..')
@@ -172,20 +175,39 @@ async function useRealCodex(env: E2EEnv): Promise<boolean> {
   return true
 }
 
-// MUSE§1
-async function useRealMuse(env: E2EEnv): Promise<string> {
-  const res = await fetch(MUSE_INSTALLER)
-  if (!res.ok) throw new Error(`${MUSE_INSTALLER} answered ${res.status}`)
-  const installer = path.join(env.home, 'install-muse.sh')
+async function installIntoTheSandbox(
+  env: E2EEnv,
+  name: string,
+  url: string,
+  extraEnv: Record<string, string> = {}
+): Promise<string> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`${url} answered ${res.status}`)
+  const installer = path.join(env.home, `install-${name}.sh`)
   fs.writeFileSync(installer, await res.text(), { mode: 0o700 })
   execFileSync('/bin/bash', [installer], {
-    env: { ...env.launchEnv, HOME: env.home, MUSE_NO_MODIFY_PATH: '1' },
+    env: { ...env.launchEnv, HOME: env.home, ...extraEnv },
     stdio: 'ignore'
   })
-  const muse = path.join(env.home, '.local', 'bin', 'muse')
-  if (!fs.existsSync(muse)) throw new Error(`the Muse installer left no ${muse}`)
+  const binary = path.join(env.home, '.local', 'bin', name)
+  if (!fs.existsSync(binary)) throw new Error(`the ${name} installer left no ${binary}`)
+  return binary
+}
+
+// MUSE§1
+async function useRealMuse(env: E2EEnv): Promise<string> {
+  const muse = await installIntoTheSandbox(env, 'muse', MUSE_INSTALLER, {
+    MUSE_NO_MODIFY_PATH: '1'
+  })
   env.launchEnv.KOLOFT_MUSE_CMD = muse
   return muse
+}
+
+// AGY§3
+async function useRealAgy(env: E2EEnv): Promise<string> {
+  const agy = await installIntoTheSandbox(env, 'agy', AGY_INSTALLER_URL)
+  env.launchEnv.KOLOFT_AGY_CMD = agy
+  return agy
 }
 
 async function linuxClaude(env: E2EEnv, localClaude: string): Promise<string> {
@@ -247,6 +269,7 @@ async function start(opt: {
   remote: boolean
   muse: boolean
   museAuth?: string
+  agy: boolean
 }): Promise<void> {
   if (!fs.existsSync(MAIN_ENTRY)) throw new Error(`${MAIN_ENTRY} not found — run npm run build`)
   for (const port of [Number(opt.port), mainInspectorPort(opt.port)])
@@ -270,6 +293,7 @@ async function start(opt: {
     const muse = opt.muse ? await useRealMuse(env) : undefined
     if (opt.museAuth)
       addMuseAccount(env, MUSE_SIGNED_IN_ACCOUNT, fs.readFileSync(opt.museAuth, 'utf8'))
+    const agy = opt.agy ? await useRealAgy(env) : undefined
     if (opt.remote) lab = await startRemote(env, claude)
     const remote = lab ? remoteKeyFor(LAB_ALIAS, LAB_USER) : undefined
     writeLayoutWithTheShippedWorkbenchDefault(env, remote)
@@ -307,6 +331,7 @@ async function start(opt: {
           account,
           codex,
           muse,
+          agy,
           workspaces: { ...env.workspaces, ...(remote ? { remote } : {}) },
           log,
           stop: `npm run handtest -- stop ${env.home}`
@@ -414,7 +439,8 @@ const { positionals, values } = parseArgs({
     port: { type: 'string', default: DEFAULT_PORT },
     remote: { type: 'boolean', default: false },
     muse: { type: 'boolean', default: false },
-    'muse-auth': { type: 'string' }
+    'muse-auth': { type: 'string' },
+    agy: { type: 'boolean', default: false }
   }
 })
 
@@ -425,7 +451,8 @@ if (command === 'start') {
     port: values.port,
     remote: values.remote,
     muse: values.muse,
-    museAuth: values['muse-auth']
+    museAuth: values['muse-auth'],
+    agy: values.agy
   })
 } else if (command === 'stop' && home) {
   await stop(home)

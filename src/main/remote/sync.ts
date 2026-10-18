@@ -4,6 +4,7 @@ import {
   heartbeatCmd,
   parseHeartbeat,
   type MachineTmp,
+  NO_FILES_THERE,
   type MirrorStamps,
   type RemoteGitInfo
 } from './install'
@@ -308,6 +309,7 @@ export class RemoteSync {
           localDir: string,
           flags: string[]
         ): Promise<RunResult | undefined> => {
+          if (stamp === NO_FILES_THERE) return undefined
           if (stamp !== undefined && st.pulled[which] === stamp) return undefined
           const r = await this.deps.rsync(host, remoteDir, localDir, flags)
           st.pulled[which] = r.code === 0 ? stamp : undefined

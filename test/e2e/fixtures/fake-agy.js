@@ -1655,18 +1655,25 @@ function usageData() {
   if (custom) return custom
   if (apiKeyRoute()) return { groups: [] }
   return {
-    description: 'Models & Quota',
+    description: 'Within each group, models share a weekly limit and a 5-hour limit.',
     groups: [
       {
-        name: 'Gemini Pro',
-        description: 'Gemini 3.1 Pro models',
+        name: 'Gemini Models',
+        description: 'Models within this group: Gemini Flash, Gemini Pro',
         buckets: [
           {
-            id: 'gemini-pro-daily',
-            name: 'Daily requests',
-            description: 'Requests per day',
+            id: 'gemini-weekly',
+            name: 'Weekly Limit Remaining',
+            window: 'weekly',
             remaining_fraction: 0.42,
-            reset_time: new Date(Date.now() + 6 * 3600 * 1000).toISOString()
+            reset_time: new Date(Date.now() + 6 * 24 * 3600 * 1000).toISOString()
+          },
+          {
+            id: 'gemini-5h',
+            name: 'Five Hour Limit Remaining',
+            window: '5h',
+            remaining_fraction: 0.9,
+            reset_time: new Date(Date.now() + 3 * 3600 * 1000).toISOString()
           }
         ]
       }

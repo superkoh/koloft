@@ -839,6 +839,13 @@ Nothing ran against Google's real servers.
   Measured against a server answer made up from the binary's field names (the real
   message also has `remainingAmount`, `window`, `disabled`); on the API-key route
   `{groups:[]}`.
+- `/usage` on a real Google account on the Google AI Ultra plan (2026-10-18, agy 1.4.2,
+  macOS, a fresh sign-in): two groups, "Gemini Models" and "Claude and GPT models", each with buckets
+  `{id, name, window, remaining_fraction, reset_time}`: `gemini-weekly` /
+  `3p-weekly` named "Weekly Limit Remaining", `window:"weekly"`, and `gemini-5h` /
+  `3p-5h` named "Five Hour Limit Remaining", `window:"5h"`; `remaining_fraction` 1
+  (what is left, not what is used), `reset_time` an ISO UTC time (7 days and 5 hours
+  after the sign-in). No `description`, `remainingAmount` or `disabled` on a bucket.
 - Desktop-app conversations in `<geminiDir>/antigravity/conversations` show only in
   the `/resume` picker's "Other" tab (also through a symlinked folder), titled by
   their first message; Enter asks "Import this conversation? (y/n)". A real desktop

@@ -207,17 +207,29 @@ describe('oneShotAgyHome (a throwaway folder for one agy -p run, AGY§6 AGY§20)
 })
 
 describe('agyQuotaFrom (/usage as JSON, AGY§20 AGY§23)', () => {
-  it('turns each bucket into a meter named by its group and bucket, with the share used and when it resets', () => {
+  it('turns each bucket into a meter named by its group and window (5h, 7d) as the other accounts name theirs, with the share used — agy reports what is left — and the reset time in seconds', () => {
     const out = JSON.stringify({
       command: {
         name: 'usage',
         data: {
           groups: [
             {
-              name: 'Gemini Pro',
+              name: 'Gemini Models',
               buckets: [
-                { name: 'Daily', remaining_fraction: 0.25, reset_time: '2026-10-17T00:00:00Z' },
-                { name: 'Weekly', remaining_fraction: 1.2 },
+                {
+                  id: 'gemini-weekly',
+                  name: 'Weekly Limit Remaining',
+                  window: 'weekly',
+                  remaining_fraction: 0.25,
+                  reset_time: '2026-10-25T07:16:11Z'
+                },
+                {
+                  id: 'gemini-5h',
+                  name: 'Five Hour Limit Remaining',
+                  window: '5h',
+                  remaining_fraction: 1.2
+                },
+                { name: 'Daily', remaining_fraction: 0.5 },
                 { name: 'No number' }
               ]
             },
@@ -227,8 +239,13 @@ describe('agyQuotaFrom (/usage as JSON, AGY§20 AGY§23)', () => {
       }
     })
     expect(agyQuotaFrom(out)).toEqual([
-      { label: 'Gemini Pro · Daily', used: 0.75, resetsAt: Date.UTC(2026, 9, 17) },
-      { label: 'Gemini Pro · Weekly', used: 0 },
+      {
+        label: 'Gemini Models · 7d',
+        used: 0.75,
+        resetsAt: Date.UTC(2026, 9, 25, 7, 16, 11) / 1000
+      },
+      { label: 'Gemini Models · 5h', used: 0 },
+      { label: 'Gemini Models · Daily', used: 0.5 },
       { label: 'Quota', used: 1 }
     ])
   })

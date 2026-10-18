@@ -6,6 +6,7 @@ import { spawnSync } from 'child_process'
 
 import {
   ENSURE_SH,
+  NO_FILES_THERE,
   NODE_VERSION,
   heartbeatCmd,
   parseHeartbeat
@@ -389,6 +390,25 @@ printf '%s\\n' 'printf "#!/bin/sh\\necho Muse Code 1.4.9\\n" > "$HOME/.local/bin
     expect(m.calls('curl')).toEqual([])
   })
 
+  it('on a machine with neither curl nor wget, as a bare container is, curl is installed with the package manager before the installer runs', () => {
+    const m = machine()
+    forMuse(m, 'runs')
+    const curl = path.join(m.home, '.local', 'bin', 'curl')
+    const packaged = path.join(m.home, 'curl-from-the-package')
+    fs.renameSync(curl, packaged)
+    m.give('id', 'echo 0')
+    m.give(
+      'apt-get',
+      `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(m.logs, 'apt-get.log'))}
+[ "$*" = "install -y curl" ] && cat ${JSON.stringify(packaged)} > ${JSON.stringify(curl)} && chmod +x ${JSON.stringify(curl)}
+exit 0`
+    )
+    const res = m.run('muse')
+    expect(res.status).toBe(0)
+    expect(m.calls('apt-get')).toEqual(['update', 'install -y curl'])
+    expect(m.calls('curl')).toEqual(['-fsSL https://dev.meta.ai/install.sh'])
+  })
+
   it('a Claude tab never reaches for muse or python3', () => {
     const m = machine()
     complete(m)
@@ -570,6 +590,7 @@ describe('the heartbeat question', () => {
     }
     const first = beat()
     expect(first.mirrors.extras).toHaveLength(3)
+    expect(first.mirrors.extras[2]).toBe(NO_FILES_THERE)
     expect(first.alive).toEqual([])
     expect([...first.git.keys()]).toEqual([workspace])
 
@@ -578,6 +599,20 @@ describe('the heartbeat question', () => {
     expect(after[0]).not.toBe(first.mirrors.extras[0])
     expect(after.slice(1)).toEqual(first.mirrors.extras.slice(1))
   }, 120_000)
+
+  it('says "no files there" for transcripts and hooks on a machine that never ran a Claude Code session, so nothing is copied from it', () => {
+    const home = fs.mkdtempSync(path.join(dir, 'bare-home-'))
+    const res = spawnSync('sh', ['-c', heartbeatCmd([], [], ['-home-koh-api'])], {
+      encoding: 'utf8',
+      env: { ...process.env, HOME: home }
+    })
+    expect(res.status).toBe(0)
+    expect(parseHeartbeat(res.stdout).mirrors).toEqual({
+      transcripts: NO_FILES_THERE,
+      hooks: NO_FILES_THERE,
+      extras: []
+    })
+  })
 
   it('reads the lines before the first folder as tmux session names, never a stamp line', () => {
     const parsed = parseHeartbeat(

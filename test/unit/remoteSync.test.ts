@@ -364,6 +364,16 @@ it('pulls a folder only when the heartbeat shows its files changed, and again af
   expect(rsyncs.slice(-2)).toEqual(['devbox .claude/projects', 'devbox .koloft/hook-sessions'])
 })
 
+it('copies no folder the machine says holds no files, so a machine that never ran a Claude Code session shows no sync problem', async () => {
+  target.extraPulls = [{ from: '.gemini/brain', to: '/ud/remote/devbox/brain', flags: [] }]
+  answerWhenQueueEmpty = () => Promise.resolve(ok('transcripts \nhooks 7 70\nextra \nk-aaa\n'))
+  sync.start()
+  await tick(1)
+  await tick(2000)
+  expect(rsyncs).toEqual(['devbox .koloft/hook-sessions'])
+  expect(sync.problem('devbox')).toBeUndefined()
+})
+
 it('pulls an extra folder (agy’s brain) only when its own stamp changed, with the flags it was given', async () => {
   target.extraPulls = [{ from: '.gemini/brain', to: '/ud/remote/devbox/brain', flags: ['-m'] }]
   let brain = '5 50'
