@@ -92,8 +92,8 @@
         <h2>Set up a job</h2>
         <p>
           Right-click a folder in the sidebar and pick Scheduled jobs… from the menu. Each job
-          starts a Claude Code, Codex, Muse Code or Antigravity CLI session; the Runs in row lists
-          the agents you have on, in a remote folder too. For each one you choose:
+          starts a Claude Code, Codex, Muse Code or Antigravity session; the Runs in row lists the
+          agents you have on, and a remote folder gets the same list. For each one you choose:
         </p>
         <ul class="dash">
           <li>
@@ -170,9 +170,9 @@
           Git is the tool that keeps a history of your files. A worktree is
           <mark class="hl">a new copy of the folder</mark>, on its own branch, so your own files are
           never touched. When a run's tab closes, Koloft removes its copy and branch, unless they
-          hold work not committed, or a commit that is nowhere else; the run's row stays in the
-          sidebar, greyed, and a click makes the copy again and resumes the same session. Copies
-          left by older runs go the next time Koloft opens.
+          hold work not committed, or a commit that is nowhere else. The run's row stays in the
+          sidebar, greyed; a click makes the copy again and resumes the same session. Copies left by
+          older runs go the next time Koloft opens.
         </p>
         <pre
           class="ascii"
@@ -319,10 +319,9 @@
         <p>
           Close it works the same for a Claude, Codex or Muse job, and for a Claude job in a
           <a href="../remote/">remote folder</a>. On a remote machine, Koloft cannot see programs
-          the run left going in the background there; a run's copy on the machine goes once its
-          session has left the machine, and stays with
-          <code>folder kept: machine unreachable</code> or
-          <code>still running on the machine</code> otherwise.
+          the run left going in the background. The run's copy there goes once its session has left
+          the machine; otherwise the line says <code>folder kept: machine unreachable</code> or
+          <code>still running on the machine</code>.
         </p>
 
         <h2>What it never does</h2>
@@ -330,8 +329,8 @@
           <li>
             <s class="struck">type into your session</s>
             <span class="why"
-              >(it hands the first message to <code>claude</code> or <code>codex</code> once, as the
-              session starts, and nothing after that)</span
+              >(it hands the first message to the agent once, as the session starts, and nothing
+              after that)</span
             >
           </li>
           <li>
@@ -362,7 +361,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
           </p>
         </div>
         <nav aria-label="Docs">

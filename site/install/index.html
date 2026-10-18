@@ -116,8 +116,8 @@
             one of the agents: Claude Code, the Codex CLI (command-line tool), Meta's Muse Code or
             Google's Antigravity CLI. If none is on the Mac, the welcome steps install one for you:
             click its card ("Not on this Mac. Click to install.") and a terminal tab runs the tool's
-            official installer. Each Koloft version names the oldest version of each it works with,
-            and updates an older one for you (see <a href="#updates">Updates</a> below).
+            official installer. Each Koloft version says how old each agent may be, and updates an
+            older one for you (see <a href="#updates">Updates</a> below).
           </li>
           <li>
             a Claude, Codex, Muse or Antigravity login to add to Koloft: every session runs on one
@@ -231,8 +231,9 @@
                 </td>
                 <td>
                   only to put <code>claude</code>, <code>muse</code>, <code>agy</code> and Node on a
-                  remote folder's machine (the last on an old Linux); <code>codex</code> is put
-                  there with <code>npm</code>, which fetches it from its own registry
+                  remote folder's machine (<code>unofficial-builds.nodejs.org</code> only on an old
+                  Linux); <code>codex</code> is put there with <code>npm</code> (Node's package
+                  tool), which fetches it from npm's own site
                 </td>
               </tr>
               <tr>
@@ -268,8 +269,12 @@
             the status line under each session asks <code>gh</code> about the branch's pull request
           </li>
           <li>
-            with <a href="../accounts/#assist">Assist</a> on Codex, its small jobs go through
-            <code>codex</code> to OpenAI, the same way a Codex session does
+            with <a href="../accounts/#assist">Assist</a> on Codex, Muse or Antigravity, its small
+            jobs go through that tool to OpenAI, Meta or Google, the same way a session does
+          </li>
+          <li>
+            a Muse or Antigravity account's allowance is read by running <code>muse</code> or
+            <code>agy</code> itself; that call is the tool's own, like Codex's
           </li>
           <li>the git check can be turned off in Settings ▸ Appearance ▸ Auto-fetch git remotes</li>
           <li>
@@ -296,27 +301,28 @@
           that copies files).
         </p>
         <p>
-          Claude Code talks to Anthropic and Codex talks to OpenAI by themselves, when you log in
-          and every time you send a message. That traffic is theirs, not Koloft's, and this list
-          does not cover it. Koloft also asks Codex how much of each account's limit is left. Codex
-          makes that call itself, through <code>codex app-server</code>.
+          Claude Code talks to Anthropic, Codex to OpenAI, Muse Code to Meta and Antigravity to
+          Google by themselves, when you log in and every time you send a message. That traffic is
+          theirs, not Koloft's, and this list does not cover it. Koloft also asks Codex how much of
+          each account's limit is left. Codex makes that call itself, through
+          <code>codex app-server</code>.
         </p>
 
         <h2>Questions</h2>
         <dl class="qa">
-          <dt><span>Does Koloft replace Claude Code or Codex?</span></dt>
+          <dt><span>Does Koloft replace Claude Code, Codex, Muse Code or Antigravity?</span></dt>
           <dd>
             <span
-              >No. It runs the real <code>claude</code> and <code>codex</code> tools you already
-              have, and shows their own screen, untouched. Koloft adds the list, the Workbench and
-              the note around it.</span
+              >No. It runs the real <code>claude</code>, <code>codex</code>, <code>muse</code> and
+              <code>agy</code> tools you already have, and shows their own screen, untouched. Koloft
+              adds the list, the Workbench and the note around it.</span
             >
           </dd>
           <dt><span>Does it cost anything?</span></dt>
           <dd>
             <span
-              >Koloft is free. Claude Code and Codex use your own Anthropic or OpenAI account, just
-              as they do without Koloft.</span
+              >Koloft is free. The agents use your own Anthropic, OpenAI, Meta or Google account,
+              just as they do without Koloft.</span
             >
           </dd>
           <dt><span>Is there a version for Intel Macs, Windows or Linux?</span></dt>
@@ -361,7 +367,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
           </p>
         </div>
         <nav aria-label="Docs">

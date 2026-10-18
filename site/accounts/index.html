@@ -236,16 +236,17 @@
 
         <h2>Antigravity</h2>
         <p>
-          Antigravity CLI (<code>agy</code>) is Google's agent, the successor to Gemini CLI.
+          Antigravity CLI (<code>agy</code>; CLI means command-line tool) is Google's agent, the one
+          that took over from Gemini CLI.
           <code>Sign in with Google</code> runs <code>agy</code> in a terminal tab: you sign in,
           pick a colour scheme, answer Google's Terms screen and type <code>/exit</code>. Each
           account keeps its sign-in in its own folder, never in the login Keychain; your Antigravity
-          conversations, rules, plugins and MCP servers are shared by every account. Or
-          <code>Paste Gemini API key</code>: the key goes into your Keychain and is handed to
-          <code>agy</code> when a session starts. A signed-in account shows its Google quota as
-          <code>5h</code> and <code>7d</code> meters, in Settings and in the
-          <code>Account usage</code> panel. New Antigravity sessions take turns between your
-          accounts.
+          conversations, rules, plugins and MCP servers (boxes of tools an agent can call) are
+          shared by every account. Or <code>Paste Gemini API key</code>: the key goes into your
+          Keychain and is handed to <code>agy</code> when a session starts. An account signed in
+          with Google shows how much of its <code>5h</code> and <code>7d</code> allowance is used,
+          in Settings and in the <code>Account usage</code> panel. New Antigravity sessions take
+          turns between your accounts.
         </p>
 
         <h2 id="assist">Assist</h2>
@@ -258,7 +259,7 @@
         <p>The small jobs:</p>
         <ul class="dash">
           <li>
-            the short title of a Claude session that an agent starts with
+            the short title of a Claude or Muse session that an agent starts with
             <code>koloft session new</code> (see <a href="../agents/">agents</a>)
           </li>
           <li>which docs the <a href="../workbench/#folded">folded Workbench card</a> lists</li>
@@ -445,7 +446,8 @@
         <h2>Your own accounts</h2>
         <p>
           The pool is for <mark class="hl">your own accounts</mark>. Please check that the way you
-          use them fits Anthropic's and OpenAI's terms. That is between you and them.
+          use them fits Anthropic's, OpenAI's, Meta's and Google's terms. That is between you and
+          them.
         </p>
 
         <p class="next">Next page → <a href="../remote/">Remote folders</a></p>
@@ -459,7 +461,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
           </p>
         </div>
         <nav aria-label="Docs">

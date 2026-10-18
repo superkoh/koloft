@@ -393,14 +393,13 @@ your Mac
 
         <h3 id="secrets">Passwords and codes</h3>
         <p>
-          Some things only you know, and they should not sit in a chat: the Mac's sudo password (the
-          admin password), a password or one-time code for a web page, or the last address of a
-          sign-in. When a session needs one, a 🔑 card comes to its thread:
+          Some things only you know, and they should not sit in a chat. When a session needs one, a
+          🔑 card comes to its thread:
         </p>
         <ul class="dash">
           <li>
-            <code>🔑 &lt;session&gt; asks for your sudo password</code>, with the command it wants
-            to run
+            <code>🔑 &lt;session&gt; asks for your sudo password</code> (the Mac's admin password),
+            with the command it wants to run
           </li>
           <li>
             <code>🔑 &lt;session&gt; asks you to fill in a field on a web page</code>, with the page
@@ -575,7 +574,7 @@ your Mac
               <tr>
                 <td>session cards</td>
                 <td>
-                  The session's title and folder (also in thread names), Claude or Codex, and its
+                  The session's title and folder (also in thread names), which agent it is, and its
                   state (see the table above), edited each time the state changes. While it works, a
                   typing signal every 8 seconds.
                 </td>
@@ -669,19 +668,24 @@ your Mac
           </li>
         </ul>
         <h3>Codex on another machine</h3>
-        <p>
-          The same as Codex on your Mac: Koloft talks to the Codex server on the machine the way it
-          talks to one here, so your messages wait in line, and Yes / No and one-pick questions get
-          buttons.
-        </p>
+        <ul class="dash">
+          <li>
+            The same as Codex on your Mac: Koloft talks to the Codex server on that machine the way
+            it talks to one here.
+          </li>
+        </ul>
 
         <h3>Muse and Antigravity</h3>
-        <p>
-          Koloft answers them by typing keys into their terminal, like Claude on another machine:
-          Yes / No, or one question with one pick. On your Mac, Antigravity's questions are answered
-          through its own local API when that works, and by keys otherwise. Anything else: tell
-          Assist what to pick.
-        </p>
+        <ul class="dash">
+          <li>
+            Like Claude on another machine: Koloft answers by typing keys into their terminal, so
+            Yes / No, or one question with one pick. Anything else: tell Assist what to pick.
+          </li>
+          <li>
+            Antigravity on your Mac is answered by Koloft directly when that works, and by keys
+            otherwise.
+          </li>
+        </ul>
 
         <h2>What it won't do</h2>
         <ul class="dash">
@@ -728,7 +732,8 @@ your Mac
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
           </p>
         </div>
         <nav aria-label="Docs">

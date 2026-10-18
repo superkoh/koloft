@@ -105,8 +105,8 @@
             <p>
               Press ⌘P, type “add a forgot-password link to the login page” and hit ⏎. Assist picks
               the folder, opens a worktree when the folder is a git repo, names the session, and the
-              real Claude Code or Codex starts on your words. The ▾ beside the button, or ⇧⏎, picks
-              another agent.
+              agent you picked starts on your words. The ▾ beside the button, or ⇧⏎, picks another
+              agent.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -284,7 +284,9 @@
               <li class="yes">✓ Codex</li>
               <li class="yes">✓ Remote</li>
             </ul>
-            <p class="fnote">A remote session keeps running in tmux and is simply re-attached.</p>
+            <p class="fnote">
+              A remote session keeps running on the machine and is simply re-attached.
+            </p>
             <a class="more" href="../sessions/"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
@@ -381,8 +383,8 @@
           </div>
           <h2>The agent keeps its screen. <em>Everything else hangs beside it.</em></h2>
           <p>
-            The middle is Claude Code’s or Codex’s own terminal; Koloft draws nothing over it.
-            Beside it hangs a Workbench for that one session.
+            The middle is the agent’s own terminal; Koloft draws nothing over it. Beside it hangs a
+            Workbench for that one session.
           </p>
         </div>
         <div class="fgrid">
@@ -603,7 +605,7 @@
             </div>
             <p>
               Bind Assist to your own Discord bot: one thread per session, Yes / No buttons for its
-              questions, slash commands, files both ways, and a form for a sudo password or a
+              questions, slash commands, files both ways, and a form for an admin password or a
               sign-in code the session needs. No server of ours in between.
             </p>
             <ul class="kinds">
@@ -793,10 +795,7 @@
               <li class="yes">✓ Codex</li>
               <li class="yes">✓ Remote</li>
             </ul>
-            <p class="fnote">
-              Muse Code and Antigravity CLI run there too. Claude, Muse and Antigravity run in tmux;
-              Codex runs as its own server on the machine, which Koloft installs there with npm.
-            </p>
+            <p class="fnote">Muse Code and Antigravity run there too.</p>
             <a class="more" href="../remote/"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
@@ -823,7 +822,7 @@
             </div>
             <p>
               No Koloft account and no analytics. It reads the tools’ own records; a remote folder’s
-              are mirrored to your Mac so its list works, and nothing goes anywhere else. Every
+              are read from that machine so its list works, and nothing goes anywhere else. Every
               place it talks to is listed.
             </p>
 
@@ -842,7 +841,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
           </p>
         </div>
         <nav aria-label="Docs">

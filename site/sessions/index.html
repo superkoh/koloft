@@ -108,9 +108,12 @@
         <h2>Where the list comes from</h2>
         <p>
           Koloft runs four agents: Claude Code, Codex, Meta's Muse Code and Google's Antigravity CLI
-          (<code>agy</code>, the successor to Gemini CLI). Each already keeps every session in its
-          own files. Koloft reads the chats from there and keeps only a short list of which ones
-          belong to Koloft. Add a folder with <kbd>⇧⌘O</kbd> and its sessions show up under it.
+          (<code>agy</code>, the one that took over from Gemini CLI; CLI means command-line tool).
+          Each already keeps every session in its own files. Koloft reads the chats from there and
+          keeps only a short list of which ones belong to Koloft. Add a folder with
+          <kbd>⇧⌘O</kbd> and its sessions show up under it. Where this page says Claude and Codex,
+          what Muse and Antigravity do is on the <a href="../accounts/">accounts</a>,
+          <a href="../remote/">remote</a> and <a href="../agents/">agents</a> pages.
         </p>
         <p>
           A session you started in a plain terminal is not listed by itself. To bring it back,
@@ -274,8 +277,8 @@
             <a href="../accounts/#assist">Assist</a> picks the folder, the worktree and a title, and
             the session starts there with your words as its first message. In a folder git tracks it
             gets a worktree of its own (see <a href="#worktrees">worktree sessions</a>). If the
-            folder's branch is behind, Koloft first asks whether to pull. <kbd>⇧⏎</kbd> opens the
-            list of agents; with exactly two, and the other one able to run, it starts that one.
+            folder's branch is behind, Koloft first asks whether to pull. <kbd>⇧⏎</kbd> works as for
+            <kbd>⌘N</kbd> above.
           </li>
           <li>
             Not everything you type starts a session. Words about Koloft itself ("turn on dark
@@ -460,8 +463,8 @@
         <ul class="dash">
           <li>
             New session <kbd>⌘N</kbd> — or, with more than one agent installed and on in Settings ▸
-            Sessions, one line per agent (New Claude session, New Codex session, New Muse session,
-            New Antigravity session), the default one first with <kbd>⌘N</kbd>
+            Sessions, one line per agent (New Claude session, New Codex session, …), the default one
+            first with <kbd>⌘N</kbd>
           </li>
           <li>New worktree session… <kbd>⇧⌘N</kbd> <span class="why">(in a git folder)</span></li>
           <li>
@@ -575,15 +578,13 @@
           Worktree sessions are not affected.
         </p>
         <p>
-          On a <a href="../remote/">remote folder</a> the panel works too, and everything in it runs
-          on the machine itself: the behind number is measured there (every five minutes, and when
-          the machine connects), <code>Fetch now</code> asks origin from there, and
-          <code class="nowrap">Pull · fast-forward</code> pulls there. When the machine cannot reach
-          origin, the panel says
+          On a <a href="../remote/">remote folder</a> the panel works too, on the machine itself:
+          the behind number (every five minutes, and when the machine connects),
+          <code>Fetch now</code> and <code class="nowrap">Pull · fast-forward</code>. When the
+          machine cannot reach origin, the panel says
           <code>can't reach origin from &lt;machine&gt; — check its network or credentials.</code>
           While the machine is not connected, Fetch now and Pull are greyed out and the last counts
-          stay. Auto-pull never pulls a remote folder by itself. The GitHub part and the Account
-          part work as above.
+          stay. The GitHub part and the Account part work as above.
         </p>
 
         <p class="next">Next page → <a href="../workbench/">The Workbench</a></p>
@@ -597,7 +598,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
           </p>
         </div>
         <nav aria-label="Docs">
