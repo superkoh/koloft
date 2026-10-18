@@ -48,6 +48,7 @@ function checkoutWithOrigin(ws: string, home: string): string {
   runGit(ws, 'remote', 'add', 'origin', `file://${origin}`)
   runGit(ws, 'push', '-q', '-u', 'origin', 'main')
   runGit(home, 'clone', '-q', `file://${origin}`, author)
+  runGit(ws, 'checkout', '-q', '-b', 'fix-login')
   return author
 }
 
@@ -101,7 +102,7 @@ async function claudeThenCodex(page: Page, env: E2EEnv, beforeCodex = async () =
 }
 
 test.describe('open sessions hear what changed around them, from Koloft, without anyone asking', () => {
-  test('when origin/main moves, a Claude session and a Codex session open in that checkout are each told which commits came in', async ({
+  test('when origin/main moves, a Claude session and a Codex session open on a feature branch of that repository are each told which commits came in', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -153,7 +154,7 @@ test.describe('open sessions hear what changed around them, from Koloft, without
     }
   })
 
-  test('on another machine over ssh, a Claude session hears it typed in once its turn is over and a Codex session through its queue there, when origin/main moves on that machine', async ({
+  test('on another machine over ssh, a Claude session on a feature branch hears it typed in once its turn is over and a Codex session through its queue there, when origin/main moves on that machine', async ({
     env
   }) => {
     test.setTimeout(300_000)

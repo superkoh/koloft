@@ -141,20 +141,22 @@ export class SessionSync {
     const repo = await this.d.repoOf(move.wsPath)
     if (!repo || this.tips.get(repo) === move.to) return
     this.tips.set(repo, move.to)
-    const held = new Map<string, Promise<boolean>>()
-    const lacksTip = async (s: SyncSession): Promise<boolean> => {
-      if ((await this.d.repoOf(s.treeRoot)) !== repo) return false
-      if (!held.has(s.treeRoot))
-        held.set(
-          s.treeRoot,
-          this.d
-            .gitOut(s.treeRoot, ['merge-base', '--is-ancestor', move.to, 'HEAD'])
-            .then((out) => out !== null)
-        )
-      return !(await held.get(s.treeRoot))
+    const defBranch = move.defRef.replace(/^origin\//, '')
+    const branchNeedsIt = async (treeRoot: string): Promise<boolean> => {
+      const [branch, holdsTip] = await Promise.all([
+        this.d.gitOut(treeRoot, ['rev-parse', '--abbrev-ref', 'HEAD']),
+        this.d.gitOut(treeRoot, ['merge-base', '--is-ancestor', move.to, 'HEAD'])
+      ])
+      return branch?.trim() !== defBranch && holdsTip === null
     }
-    const lacking = await Promise.all(sessions.map(lacksTip))
-    const told = sessions.filter((_, i) => lacking[i])
+    const asked = new Map<string, Promise<boolean>>()
+    const needsIt = async (s: SyncSession): Promise<boolean> => {
+      if ((await this.d.repoOf(s.treeRoot)) !== repo) return false
+      if (!asked.has(s.treeRoot)) asked.set(s.treeRoot, branchNeedsIt(s.treeRoot))
+      return asked.get(s.treeRoot)!
+    }
+    const needed = await Promise.all(sessions.map(needsIt))
+    const told = sessions.filter((_, i) => needed[i])
     if (!told.length) return
     const [log, diff] = await Promise.all([
       this.d.gitOut(move.wsPath, ['log', '--format=%s', `${move.from}..${move.to}`]),

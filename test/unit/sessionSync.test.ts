@@ -3,6 +3,7 @@ import { SessionSync, type SyncSession, type DefaultMove } from '../../src/main/
 import { FROM_KOLOFT } from '../../src/main/crossSessionMessage'
 
 const HOLDS_THE_TIP = '/r/held'
+const ON_MAIN = '/r/root'
 const A = 'a'.repeat(40)
 const B = 'b'.repeat(40)
 const C = 'c'.repeat(40)
@@ -16,6 +17,7 @@ function rig(repos: Record<string, string>, busy: Set<string> = new Set()) {
     repoOf: async (dir) => repos[dir] ?? null,
     gitOut: async (dir, args) => {
       if (args[0] === 'merge-base') return dir === HOLDS_THE_TIP ? '' : null
+      if (args[0] === 'rev-parse') return dir === ON_MAIN ? 'main\n' : 'fix-login\n'
       if (args[0] === 'log') return `${SUBJECTS[args[2]]}\n`
       return 'src/store.ts\nREADME.md\n'
     },
@@ -52,16 +54,18 @@ function session(
 const MOVE: DefaultMove = { wsPath: '/r/ws', defRef: 'origin/main', from: A, to: B }
 
 describe('telling open sessions what changed around them', () => {
-  it('main moving tells every open session of that repository whose HEAD lacks the new tip, naming the files it changed too; a session holding the tip, or in another repository, hears nothing', async () => {
+  it('main moving tells every open session of that repository whose branch lacks the new tip, naming the files it changed too; a session holding the tip, one on main itself (Koloft’s own pull serves it), or one in another repository hears nothing', async () => {
     const { sync, got } = rig({
       '/r/ws': 'repo',
       '/r/a': 'repo',
       [HOLDS_THE_TIP]: 'repo',
+      [ON_MAIN]: 'repo',
       '/x/other': 'elsewhere'
     })
     await sync.defaultMoved(MOVE, [
       session('a', '/r/a', [['/r/a/src/store.ts', 5]]),
       session('held', HOLDS_THE_TIP),
+      session('root', ON_MAIN),
       session('other', '/x/other')
     ])
     expect(got.map((g) => g.tabId)).toEqual(['a'])
