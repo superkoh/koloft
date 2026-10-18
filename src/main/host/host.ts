@@ -1,12 +1,12 @@
 import type {
+  BaseChoice,
   ContentHit,
   CronEffort,
   DirEntry,
   EditCreateResult,
   EditOpenResult,
   EditWriteResult,
-  GitNumstatMap,
-  GitStatusMap,
+  GitChanges,
   LaunchPermission,
   SearchHit,
   SkillSuggestion
@@ -90,9 +90,7 @@ export interface Host {
     q: string,
     opts?: ShowIgnored
   ): Promise<{ hits: ContentHit[]; truncated: boolean }>
-  diffBase(root: string): Promise<string | null>
-  gitStatus(root: string, base?: string): Promise<GitStatusMap>
-  gitNumstat(root: string, base?: string): Promise<GitNumstatMap>
+  gitChanges(root: string, base: BaseChoice): Promise<GitChanges>
   gitDiff(root: string, base?: string): Promise<GitDiffResult>
   gitFileDiff(file: string, base?: string, untracked?: boolean): Promise<DiffResult>
   gitFileDiffFull(file: string, base?: string, untracked?: boolean): Promise<DiffResult>

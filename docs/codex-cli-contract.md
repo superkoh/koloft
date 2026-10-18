@@ -51,6 +51,20 @@ Schema availability is distinguished from behavior actually seen on the wire.
   app-server in a throwaway `CODEX_HOME`).
 - Request IDs are strings **or numbers, including zero**. Startup and temporary title
   requests used strings; the real command approval request used numeric `0`.
+- **Each line starts with what kind of message it is** (0.162.0, 2026-10-17: a Node
+  client and a real `codex --remote` TUI on a stdio app-server in a throwaway
+  `CODEX_HOME` holding a copied `auth.json`). The app-server writes a reply as
+  `{"id":…,"result":…}` or `{"id":…,"error":…}`, a notification as `{"method":…,
+  "params":…}`, and a request to the client with `method` first:
+  `{"method":"item/commandExecution/requestApproval","id":0,"params":…}`. A line it
+  cannot read gets an error with no `id` at all (`{"error":{"code":-32600,…}}`). The
+  TUI writes its requests as `{"id":…,"method":…,"params":…}` and `initialized` as
+  `{"method":…}`, all on one line. Koloft reads only these first keys to decide whether
+  a line is worth parsing, and parses any line that starts some other way.
+- **A signed-in start brings very large replies.** The TUI asks `plugin/list` (ids
+  `plugin-list-…`) with no prompt typed; each reply was 16.5 MB (the OpenAI curated
+  marketplace), and three came within about 75 seconds. A home with no login gets
+  `{"marketplaces":[],…}` (101 bytes).
 - The TUI made its own `config/read` and `account/read` requests through the relay.
   Reading history through a different app-server is not evidence that it subscribes
   to a running TUI's events.
@@ -654,6 +668,13 @@ conductor runs: **inferred, not checked**.
 Browser control (an agent driving a Workbench web tab through Koloft's CDP (Chrome DevTools
 Protocol) relay) goes through an MCP server, never a sandboxed command: see section 26.
 
+**`sudo` cannot start inside `workspace-write`.** `codex exec --skip-git-repo-check -s
+workspace-write` (0.162.0, 2026-10-15, this Mac's login, a scratch folder) running
+`/usr/bin/sudo -n -k true` got `zsh:1: operation not permitted: /usr/bin/sudo`, exit 127:
+the sandbox refuses to exec the setuid binary at all, before any password question. That
+Codex's own default (`read-only`) refuses it too, and that a command Codex runs outside
+the sandbox after an approval reaches sudo: **inferred, not checked**.
+
 ## 13. Token counts and the price table
 
 **Token counts checked on 2026-09-24 with standalone Codex CLI 0.153.4**, reading the
@@ -737,6 +758,19 @@ way is **inferred, not checked** (`~/.codex/models_cache.json` lists them, plus
 names the session, so a scheduled Codex run gets its title from Codex itself.
 
 ## 15. One login per CODEX_HOME, and its rate limits
+
+**The browser login ends on a loopback address that takes the redirect from anywhere on
+that machine.** Codex CLI 0.162.1 in a Debian container (2026-10-15), a temporary
+`CODEX_HOME`, no browser: `codex login` printed `Starting local login server on
+http://localhost:1455.` and an `auth.openai.com/oauth/authorize` address whose
+`redirect_uri` is `http://127.0.0.1:1455/auth/callback`, with a 43-character `state` and
+a PKCE `code_challenge` (`S256`). It listened on 127.0.0.1:1455 only. A `curl` of the
+callback with a wrong `state` got `400 State mismatch` and Codex kept waiting; with the
+right `state` and a made-up `code` Codex tried the token exchange (`401 Unauthorized`),
+showed `token_exchange_failed` and exited. So the address a phone's browser fails to load
+at the end of the sign-in, opened on the machine Codex runs on, finishes the login, once.
+`codex login --device-auth` instead printed `https://auth.openai.com/codex/device` and a
+one-time code that `expires in 15 minutes`, and gave up after 15 minutes.
 
 **Checked on 2026-09-24 with standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`), no model
 turn.** A Node script ran `codex app-server` on stdio twice, each time with its own

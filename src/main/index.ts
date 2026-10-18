@@ -131,7 +131,8 @@ import {
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
-import { REMOTE_AGENT_SHIM } from './agentShim'
+import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
+import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import {
   oncePerName,
@@ -396,7 +397,9 @@ import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/
 import { DISCORD_SETUP_TASK, DISCORD_SETUP_TASK_NAME, setupStatusText } from './discord/setupTask'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
-import { Notices } from './discord/notices'
+import { Notices, type NoticeSubject } from './discord/notices'
+import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
+import { secretVerb } from './agentSecret'
 import { SessionThreads } from './discord/threads'
 import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
@@ -995,6 +998,8 @@ function machinePackage(): MachinePackage {
     [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
     [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH
   }
+  for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
+    pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   try {
@@ -1019,6 +1024,7 @@ let discordNotices: Notices | null = null
 let discordThreads: SessionThreads | null = null
 let discordLive: LiveStatus | null = null
 let askButtons: AskButtons | null = null
+let secretAsks: SecretAsks | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
 let claudeAgentPlugin: string | undefined
@@ -1431,6 +1437,14 @@ const agentRequests = new AgentRequests({
           ? bindWithNewChannel({ scope: found.value.path })
           : { ok: false, error: found.error }
       }
+    }),
+    [SECRET_VERB]: secretVerb({
+      ask: (a) =>
+        secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
+      machine: (tabId) => tracker.remoteOf(tabId)?.host,
+      pages: guestPagesOf,
+      open: openOnTabMachine,
+      sleep
     }),
     gh: githubVerb({
       scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
@@ -2282,6 +2296,7 @@ app.whenReady().then(() => {
     discordRelay?.forget(e.id)
     discordThreads?.forget(e.id)
     askButtons?.forget(e.id)
+    secretAsks?.forget(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     loginPtys.delete(e.id)
@@ -2702,6 +2717,13 @@ app.whenReady().then(() => {
     respond: (i, body) => link.respond(i, body)
   })
   askButtons = buttons
+  const secrets = new SecretAsks({
+    owner: () => conductorsNow.owner(),
+    place: async (tabId, card) => discordNotices?.placeCard(tabId, card),
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
+    respond: (i, body) => link.respond(i, body)
+  })
+  secretAsks = secrets
   const interactions = new Interactions({
     owner: () => conductorsNow.owner(),
     routeOf: (channelId) => conductorsNow.routeOf(channelId),
@@ -2715,7 +2737,8 @@ app.whenReady().then(() => {
       if (!found.ok) throw new Error(found.error)
       return commandInto(b, found.value, text)
     },
-    press: (i) => buttons.press(i),
+    press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? secrets.press(i) : buttons.press(i)),
+    submit: (i) => secrets.submit(i),
     respond: (i, body) => link.respond(i, body)
   })
   const sessionDestination = (b: ConductorBinding, threadId: string, key: string): Destination => {
@@ -2813,21 +2836,10 @@ app.whenReady().then(() => {
     place: (b, subject) => threads.place(b, subject),
     threadOf: (key) => threads.threadOf(key),
     card: async (channelId, card) => discordRelay?.card(channelId, card),
+    post: async (channelId, card) => (await link.card(channelId, card)).at(-1),
     archive: (threadId) => threads.archive(threadId),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
-    subject: (tabId) => {
-      const s = sessionOfTab(tabId)
-      return s?.sessionId
-        ? {
-            tabId,
-            key: s.sessionId,
-            name: s.title,
-            backend: s.backendId,
-            workspace: sessionBackends.workspaceOfTab(tabId),
-            conductor: s.conductor
-          }
-        : undefined
-    },
+    subject: noticeSubjectOf,
     shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
     commandRunning: (tabId) => slash.running(tabId),
     dialog: dialogOf
@@ -4165,6 +4177,41 @@ function registerSlashCommands(): void {
   void discordLink?.registerCommands([...guilds], SLASH_COMMANDS)
 }
 
+function noticeSubjectOf(tabId: string): NoticeSubject | undefined {
+  const s = sessionOfTab(tabId)
+  return s?.sessionId
+    ? {
+        tabId,
+        key: s.sessionId,
+        name: s.title,
+        backend: s.backendId,
+        workspace: sessionBackends.workspaceOfTab(tabId),
+        conductor: s.conductor
+      }
+    : undefined
+}
+
+const LOOPBACK_OPEN_TIMEOUT_MS = 15_000
+
+// CODEX§15
+async function openOnTabMachine(tabId: string, url: string): Promise<string> {
+  const host = tracker.remoteOf(tabId)?.host
+  if (!host) {
+    const res = await fetch(url, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(LOOPBACK_OPEN_TIMEOUT_MS)
+    }).catch((error: unknown) => `nothing (${errorText(error)})`)
+    return typeof res === 'string' ? res : String(res.status)
+  }
+  await loginEnvReady()
+  const r = await runSsh(
+    host,
+    `curl -sS -o /dev/null -w '%{http_code}' --max-time ${LOOPBACK_OPEN_TIMEOUT_MS / 1000} ${shq(url)}`,
+    { controlDir: remoteControlDir, timeoutMs: LOOPBACK_OPEN_TIMEOUT_MS * 2 }
+  )
+  return r.stdout.trim() || `nothing (${r.stderr.trim()})`
+}
+
 function guestPagesOf(tabId: string): GuestPage[] {
   return webContents
     .getAllWebContents()
@@ -5244,14 +5291,10 @@ function registerIpc(): void {
   )
   const baseArg = sanitizeBase
   const untrackedArg = (u: unknown): boolean => u === true
-  ipcMain.handle('fs:diffBase', (_e, root: string) =>
-    typeof root === 'string' && root ? hosts.of(root).diffBase(root) : null
-  )
-  ipcMain.handle('fs:gitStatus', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? hosts.of(root).gitStatus(root, baseArg(base)) : {}
-  )
-  ipcMain.handle('fs:gitNumstat', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? hosts.of(root).gitNumstat(root, baseArg(base)) : {}
+  ipcMain.handle('fs:gitChanges', (_e, root: string, base?: unknown) =>
+    typeof root === 'string' && root
+      ? hosts.of(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
+      : { base: null, status: {}, numstat: {}, missing: false }
   )
   ipcMain.handle('fs:gitDiff', (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root

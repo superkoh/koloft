@@ -95,9 +95,9 @@ export function canOpenExternally(target: string): boolean {
 const DISCORD_DESKTOP_APP_HOST = '127.0.0.1'
 const DISCORD_DESKTOP_APP_FIRST_PORT = 6463
 const DISCORD_DESKTOP_APP_LAST_PORT = 6472
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
+export const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
 
-function urlOrNull(raw: string): URL | null {
+export function urlOrNull(raw: string): URL | null {
   try {
     return new URL(raw)
   } catch {

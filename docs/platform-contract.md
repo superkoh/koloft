@@ -593,6 +593,11 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 
 ## §17 Playwright as a CDP client
 
+- **A snapshot shows what a password box holds, in plain text.** After `playwright-cli
+  fill '#p' <text>` on an `<input type=password>` in a Workbench tab, `playwright-cli
+  snapshot` printed `textbox "pw" [active]: <text>`. So a secret left in a page field
+  reaches the session's transcript the next time it looks at the page. Measured
+  2026-10-15 with Koloft's playwright-cli through its relay on a `data:` page.
 - **What `connectOverCDP` expects** (measured against playwright-core 1.62 where
   marked): right after the handshake it sends `Target.getTargetInfo` with no `targetId`,
   asking for the browser's own target, and drops the connection on an error (measured).
@@ -1332,6 +1337,14 @@ command by hand:
   into `cksum`, the stamp of a whole folder changed on an append, on a same-size rewrite
   0.25 s apart and on a new file (2026-10-17: dash and GNU stat in the e2e sshd image,
   and this Mac's BSD tools).
+- **awk reads that time as the same number JavaScript does.** For a `stat` line
+  `S.NNNNNNNNN size`, `awk -v ms=<String(parseFloat(S) * 1000) from Node> '{ $1 * 1000 == ms }'`
+  is true, and false for `ms + 0.001` or `ms - 1`, so a save script can check a file's
+  fingerprint on the machine against the one the editor holds. (2026-10-17: 1500 files,
+  half with times written by the file system in nanoseconds, half set to random
+  microsecond times, through macOS 27's awk and through mawk, gawk and busybox awk on
+  Debian 12 under Node 22; every one agreed.) `mktemp` and `wc -c` work there and in
+  busybox (Alpine 3.13).
 - **`readlink -f` resolves a path on both** (GNU coreutils 9.4, and macOS 27).
 - **ripgrep (`rg`) was not installed on the Ubuntu box**, and neither was
   `inotifywait`; `git grep` is there with git. So content search needs the `git grep`
@@ -1591,6 +1604,18 @@ Gateway (the live connection that pushes events):
   body; `GET /channels/{id}/messages?after=<id>&limit=<1–100>` lists the messages after
   that id, and an attachment in `MESSAGE_CREATE` carries `filename`, `size` and a `url`
   that needs no token.
+
+- **A form opened from a button** — measured 2026-10-15 with the same bot, its own Gateway
+  connection, in a channel no conductor is bound to, the owner pressing on their Discord
+  app: a button press (type 3) answered with callback `{type: 9, data: {custom_id, title,
+  components: [action row (1) holding a text input (4): custom_id, label, style 1,
+  required, max_length]}}` got 204 and the form opened. Its submit arrived as
+  `INTERACTION_CREATE` type 5, `data.custom_id` the form's, and the typed text at
+  `data.components[0].components[0].value`, exactly as typed. A type 4 reply with `flags:
+  64` answered it (204). The typed text was not posted as a message: the channel's last
+  ten messages held none with it. The text box shows what is typed in plain text; Discord
+  has no masked text input. From the docs, not measured: newer forms may wrap a text input
+  in a label component (type 18, its input under `component`).
 
 ## §40 Node `fs.watch` on a macOS directory
 
@@ -2086,3 +2111,36 @@ server unless a line says so.
   `edit file 1791720667.980639518` (unchanged), `rename 1791720670.010643717`,
   `remove 1791720671.024645823`, `add in sub 1791720671.024645823` (unchanged; the
   subfolder moved to `1791720672.028647913`).
+
+## §58 sudo with no terminal, and an askpass helper
+
+- **Without a controlling terminal, plain `sudo` fails at once**: `sudo: a terminal is
+  required to read the password; either use the -S option to read from standard input or
+  configure an askpass helper`, exit 1, even with `SUDO_ASKPASS` set. A Claude Code Bash
+  tool call has no controlling terminal (`ps` shows `TTY ??`, its zsh leads a session of
+  its own), so this is what a session's `sudo` meets.
+- **`sudo -A` runs `$SUDO_ASKPASS` with no terminal either** and reads the password from
+  its stdout, up to the newline. The helper gets the prompt as `$1` (`Password:` on macOS,
+  `[sudo] password for <user>: ` on Debian), inherits the caller's environment (a variable
+  set by the caller and `KOLOFT_AGENT_DIR` both arrived), and its `$PPID` is the sudo
+  process, whose `ps -o args=` is the whole command (`/usr/bin/sudo -A -k true`). A helper
+  that exits 1 printing nothing gives `sudo: no password was provided` and exit 1 at once.
+- **No time limit while the helper waits**: a helper that answered after 400 s still let
+  the command run; so did one that answered after 90 s under `Defaults passwd_timeout=1`.
+  The Mac's man page also gives `passwd_timeout` a default of 0 (not measured on the Mac).
+- **The 15-minute credential cache does not span Bash tool calls**: `timestamp_type` is
+  `tty`, which with no terminal falls back to the parent process, so a second `sudo -A`
+  from the same shell skips the helper, while one from a new shell (every Bash tool call)
+  asks again.
+- **Over ssh without `-t` it is the same**: `sudo -A` with the helper on the remote side
+  ran the command; plain `sudo` failed with the terminal message.
+- **A macOS system password dialog takes no posted input.** SecurityAgent's admin dialog
+  (`do shell script … with administrator privileges`) ignored `CGEventPost` keys and
+  Return, System Events `keystroke` stopped at the Automation consent dialog, reading its
+  Accessibility tree hung, and `screencapture` did not draw it; the same `CGEventPost`
+  answered an ordinary `display dialog`. So a password for an admin action reaches it only
+  through a command line such as `sudo -A`.
+- Measured 2026-10-15: on macOS 27.0.1 from a Koloft Claude Code tab (sudo 1.9.17p2, the
+  helper exiting 1); sudo 1.9.13p3 in a Debian bookworm container and over ssh between two
+  containers, with a test user's real password; the dialog in a tart 2.40.1 macOS 27.0 VM
+  with SIP on and Accessibility granted (§52).

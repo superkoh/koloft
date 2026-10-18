@@ -4,7 +4,6 @@ import fs from 'fs/promises'
 import http from 'http'
 import os from 'os'
 import path from 'path'
-import { StringDecoder } from 'string_decoder'
 import WebSocket, { WebSocketServer } from 'ws'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { CODEX_TMP_DIR, ownedByThisRun } from './leftovers'
@@ -27,18 +26,19 @@ export interface CodexProcessOptions {
 export interface CodexUpstream {
   readonly ready: Promise<void>
   readonly limit: number
-  write(raw: string): void
+  write(raw: string | Buffer): void
   stop(): Promise<void>
 }
 
 export type CodexUpstreamFactory = (
-  frame: (raw: string, parsed: CodexFrame) => void,
+  frame: (read: ReadFrame) => void,
   failure: (error: Error) => void
 ) => CodexUpstream
 
 export interface CodexTransportOptions extends CodexProcessOptions {
   upstream?: CodexUpstreamFactory
   onFrame(direction: 'client' | 'server', frame: CodexFrame): void
+  observes?(direction: 'client' | 'server', head: CodexFrameHead): boolean
   onDisconnect?(): void
   onError?(error: Error): void
 }
@@ -74,13 +74,52 @@ export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessE
   return env
 }
 
-export function parseFrame(text: string, limit: number): CodexFrame {
-  if (Buffer.byteLength(text) > limit) throw new Error('Codex frame exceeds the size limit')
+export interface CodexFrameHead {
+  method?: string
+  replyTo?: string | number
+}
+
+export interface ReadFrame {
+  raw: Buffer
+  head: CodexFrameHead
+  parse(): CodexFrame
+}
+
+const NEWLINE = 0x0a
+const HEAD_PEEK_BYTES = 256
+// CODEX§1
+const FRAME_HEAD =
+  /^\{(?:"method":"([^"\\]*)"|"id":(?:(\d+)|"([^"\\]*)"),(?:"method":"([^"\\]*)"|"(?:result|error)"))/
+
+function parseFrame(text: string): CodexFrame {
   const frame: unknown = JSON.parse(text)
   if (!frame || typeof frame !== 'object' || Array.isArray(frame)) {
     throw new Error('Codex sent a non-object protocol frame')
   }
   return frame as CodexFrame
+}
+
+export function readFrame(line: Buffer): ReadFrame | undefined {
+  let parsed: CodexFrame | undefined
+  const parse = (): CodexFrame => (parsed ??= parseFrame(line.toString()))
+  const m = FRAME_HEAD.exec(line.toString('utf8', 0, HEAD_PEEK_BYTES))
+  if (m) {
+    const method = m[1] ?? m[4]
+    return {
+      raw: line,
+      head: method !== undefined ? { method } : { replyTo: m[2] !== undefined ? +m[2] : m[3] },
+      parse
+    }
+  }
+  const text = line.toString()
+  if (!text.trim()) return undefined
+  parsed = parseFrame(text)
+  return { raw: line, head: headOf(parsed), parse }
+}
+
+function headOf({ id, method }: Record<string, unknown>): CodexFrameHead {
+  if (typeof method === 'string') return { method }
+  return typeof id === 'string' || typeof id === 'number' ? { replyTo: id } : {}
 }
 
 async function processRows(): Promise<ProcessRow[]> {
@@ -126,8 +165,7 @@ function signal(pid: number, value: NodeJS.Signals): void {
 class CodexProcess implements CodexUpstream {
   readonly child: ChildProcessWithoutNullStreams
   readonly ready: Promise<void>
-  private decoder = new StringDecoder('utf8')
-  private tail = ''
+  private tail: Buffer[] = []
   private tailBytes = 0
   private stopping?: Promise<void>
   private failed = false
@@ -137,7 +175,7 @@ class CodexProcess implements CodexUpstream {
 
   constructor(
     readonly options: CodexProcessOptions,
-    private frame: (raw: string, parsed: CodexFrame) => void,
+    private frame: (read: ReadFrame) => void,
     private failure: (error: Error) => void
   ) {
     const configArgs = (options.configOverrides ?? []).flatMap((value) => ['-c', value])
@@ -164,27 +202,29 @@ class CodexProcess implements CodexUpstream {
     this.child.stdout.on('data', (chunk: Buffer) => {
       if (this.failed || this.stopping) return
       try {
-        const text = this.decoder.write(chunk)
         let start = 0
         let newline: number
-        while ((newline = text.indexOf('\n', start)) !== -1) {
-          const raw = this.tail + text.slice(start, newline)
-          this.tail = ''
+        while ((newline = chunk.indexOf(NEWLINE, start)) !== -1) {
+          const piece = chunk.subarray(start, newline)
+          const raw = this.tail.length ? Buffer.concat([...this.tail, piece]) : piece
+          this.tail = []
           this.tailBytes = 0
           start = newline + 1
-          if (raw.trim()) this.frame(raw, parseFrame(raw, this.limit))
+          if (raw.length > this.limit) throw new Error('Codex frame exceeds the size limit')
+          const read = readFrame(raw)
+          if (read) this.frame(read)
         }
-        const rest = text.slice(start)
-        this.tail += rest
-        this.tailBytes += Buffer.byteLength(rest)
+        if (start < chunk.length) {
+          this.tail.push(chunk.subarray(start))
+          this.tailBytes += chunk.length - start
+        }
         if (this.tailBytes > this.limit) throw new Error('Codex frame exceeds the size limit')
       } catch (error) {
         this.fail(asError(error))
       }
     })
     this.child.stdout.on('end', () => {
-      this.tail += this.decoder.end()
-      if (!this.stopping && this.tail.trim())
+      if (!this.stopping && Buffer.concat(this.tail).toString().trim())
         this.fail(new Error('Codex exited with an incomplete protocol frame'))
     })
     this.child.on('exit', (code, sig) => {
@@ -204,12 +244,13 @@ class CodexProcess implements CodexUpstream {
     this.failure(error)
   }
 
-  write(raw: string): void {
+  write(raw: string | Buffer): void {
     if (this.stopping || this.failed || this.exited) throw new Error('Codex connection is closed')
     if (this.child.stdin.writableLength + Buffer.byteLength(raw) > this.limit * 2) {
       throw new Error('Codex input queue exceeds the size limit')
     }
-    this.child.stdin.write(raw + '\n')
+    this.child.stdin.write(raw)
+    this.child.stdin.write('\n')
   }
 
   stop(): Promise<void> {
@@ -319,9 +360,10 @@ function sendRequest<K>(
   })
 }
 
-function settleRequest<K>(pending: Map<K, PendingRequest>, id: K, frame: CodexFrame): void {
+function settleRequest<K>(pending: Map<K, PendingRequest>, id: K, parse: () => CodexFrame): void {
   const request = pending.get(id)
   if (!request) return
+  const frame = parse()
   pending.delete(id)
   clearTimeout(request.timer)
   if (frame.error) {
@@ -362,7 +404,7 @@ export async function createCodexTransport(
   let client: WebSocket | undefined
   let accepted = false
   let stopping: Promise<void> | undefined
-  const pending: string[] = []
+  const pending: Buffer[] = []
   let pendingBytes = 0
   const own = new Map<string, PendingRequest>()
   const report = (error: Error): void => {
@@ -370,7 +412,9 @@ export async function createCodexTransport(
       options.onError?.(error)
     } catch {}
   }
-  const observe = (direction: 'client' | 'server', frame: CodexFrame): void => {
+  const observe = (direction: 'client' | 'server', { head, parse }: ReadFrame): void => {
+    if (options.observes && !options.observes(direction, head)) return
+    const frame = parse()
     try {
       options.onFrame(direction, frame)
     } catch (error) {
@@ -401,25 +445,23 @@ export async function createCodexTransport(
   }
   const upstreamOf: CodexUpstreamFactory =
     options.upstream ?? ((frame, failure) => new CodexProcess(options, frame, failure))
-  const upstream = upstreamOf((raw, frame) => {
-    observe('server', frame)
+  const upstream = upstreamOf((read) => {
+    const { raw, head } = read
+    const { replyTo } = head
     // CODEX§1
-    if (
-      frame.method === undefined &&
-      typeof frame.id === 'string' &&
-      frame.id.startsWith(OWN_REQUEST_ID_PREFIX)
-    ) {
-      settleRequest(own, frame.id, frame)
+    if (typeof replyTo === 'string' && replyTo.startsWith(OWN_REQUEST_ID_PREFIX)) {
+      settleRequest(own, replyTo, read.parse)
       return
     }
+    observe('server', read)
     if (client?.readyState === WebSocket.OPEN) {
       if (client.bufferedAmount > upstream.limit * 2)
         throw new Error('Codex output queue exceeds the size limit')
-      client.send(raw, (error) => {
+      client.send(raw, { binary: false }, (error) => {
         if (error) fail(error)
       })
     } else if (!accepted) {
-      pendingBytes += Buffer.byteLength(raw)
+      pendingBytes += raw.length
       if (pendingBytes > upstream.limit * 2)
         throw new Error('Codex output queue exceeds the size limit')
       pending.push(raw)
@@ -439,10 +481,11 @@ export async function createCodexTransport(
       ws.on('message', (bytes, binary) => {
         try {
           if (binary) throw new Error('Codex protocol requires text frames')
-          const raw = bytes.toString()
-          const frame = parseFrame(raw, upstream.limit)
-          const line = JSON.stringify(frame)
-          observe('client', frame)
+          const raw = bytes as Buffer
+          const read = readFrame(raw)
+          if (!read) return
+          const line = raw.includes(NEWLINE) ? JSON.stringify(read.parse()) : raw
+          observe('client', read)
           // CODEX§1
           upstream.write(line)
         } catch (error) {
@@ -460,7 +503,7 @@ export async function createCodexTransport(
           })
           .catch(report)
       })
-      for (const raw of pending) ws.send(raw)
+      for (const raw of pending) ws.send(raw, { binary: false })
       pending.length = 0
     })
   })
@@ -536,9 +579,8 @@ export class CodexRpc {
   private spawn(): CodexProcess {
     return new CodexProcess(
       this.options,
-      (_raw, frame) => {
-        if (frame.method !== undefined || typeof frame.id !== 'number') return
-        settleRequest(this.pending, frame.id, frame)
+      ({ head, parse }) => {
+        if (typeof head.replyTo === 'number') settleRequest(this.pending, head.replyTo, parse)
       },
       (error) => {
         rejectAll(this.pending, error)

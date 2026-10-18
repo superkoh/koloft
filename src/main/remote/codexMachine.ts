@@ -11,9 +11,10 @@ import { SSH_LINK_BROKE_EXIT } from './ssh'
 import {
   asError,
   KOLOFT_INITIALIZE,
-  parseFrame,
+  readFrame,
   type CodexFrame,
-  type CodexUpstream
+  type CodexUpstream,
+  type ReadFrame
 } from '../codexTransport'
 import { record } from '../codexObservation'
 import { hookStateHeader } from '../codexTrust'
@@ -256,8 +257,8 @@ const LOGIN_ANSWERS_WITHIN_MS = 20_000
 const OWN_REQUEST_ANSWERS_WITHIN_MS = 15_000
 const STDERR_KEPT_BYTES = 2000
 
-const isInitialized = (line: string): boolean =>
-  line.includes('"initialized"') && record(JSON.parse(line)).method === 'initialized'
+const isInitialized = (line: string | Buffer): boolean =>
+  line.includes('"initialized"') && record(JSON.parse(line.toString())).method === 'initialized'
 
 // ADR-0039 CODEX§16
 export class MachineCodexUpstream implements CodexUpstream {
@@ -265,7 +266,7 @@ export class MachineCodexUpstream implements CodexUpstream {
   readonly limit: number
   private ws?: WebSocket
   private child?: ChildProcessWithoutNullStreams
-  private queue: string[] | null = []
+  private queue: (string | Buffer)[] | null = []
   private queuedBytes = 0
   private connecting = false
   private tuiJoined = false
@@ -280,13 +281,13 @@ export class MachineCodexUpstream implements CodexUpstream {
 
   constructor(
     private o: MachineUpstreamOptions,
-    private frame: (raw: string, parsed: CodexFrame) => void,
+    private frame: (read: ReadFrame) => void,
     private failure: (error: Error) => void
   ) {
     this.limit = o.maxFrameBytes
   }
 
-  write(raw: string): void {
+  write(raw: string | Buffer): void {
     if (this.stopping) throw new Error('Codex connection is closed')
     const line = this.withMachineCwd(raw)
     if (this.queue) {
@@ -300,7 +301,7 @@ export class MachineCodexUpstream implements CodexUpstream {
     this.sendSigningInAfterInitialized(line)
   }
 
-  private sendSigningInAfterInitialized(line: string): boolean {
+  private sendSigningInAfterInitialized(line: string | Buffer): boolean {
     this.send(line)
     if (this.signedIn || !isInitialized(line)) return false
     this.tuiJoined = true
@@ -323,20 +324,20 @@ export class MachineCodexUpstream implements CodexUpstream {
   }
 
   // CODEX§16
-  private withMachineCwd(raw: string): string {
+  private withMachineCwd(raw: string | Buffer): string | Buffer {
     if (!raw.includes('"command/exec"')) return raw
-    const frame = record(JSON.parse(raw))
+    const frame = record(JSON.parse(raw.toString()))
     const params = record(frame.params)
     if (frame.method !== 'command/exec' || params.cwd !== this.o.macCwd) return raw
     return JSON.stringify({ ...frame, params: { ...params, cwd: this.o.machineCwd() } })
   }
 
-  private send(line: string): void {
+  private send(line: string | Buffer): void {
     const ws = this.ws
     if (!ws || ws.readyState !== WebSocket.OPEN) throw new Error('Codex connection is closed')
     if (ws.bufferedAmount > this.limit * 2)
       throw new Error('Codex input queue exceeds the size limit')
-    ws.send(line)
+    ws.send(line, { binary: false })
   }
 
   private release(): void {
@@ -401,36 +402,28 @@ export class MachineCodexUpstream implements CodexUpstream {
     if (!this.stopping && this.ws) this.release()
   }
 
-  private received(raw: string): void {
-    let frame: CodexFrame
+  private received(raw: Buffer): void {
     try {
-      frame = parseFrame(raw, this.limit)
-    } catch (error) {
-      this.failure(asError(error))
-      return
-    }
-    if (
-      frame.method === undefined &&
-      typeof frame.id === 'string' &&
-      frame.id.startsWith(OWN_ID_PREFIX)
-    ) {
-      const answer = this.own.get(frame.id)
-      this.own.delete(frame.id)
-      if (typeof answer === 'function') answer(frame)
-      return
-    }
-    // CODEX§16
-    if (frame.method === 'account/chatgptAuthTokens/refresh' && frame.id !== undefined) {
-      void this.answerRefresh(frame.id)
-      return
-    }
-    if (frame.method === 'account/login/completed') this.loginCompleted?.()
-    if (frame.method === 'thread/started') {
-      const id = record(record(frame.params).thread).id
-      if (typeof id === 'string') this.threadId = id
-    }
-    try {
-      this.frame(raw, frame)
+      const read = readFrame(raw)
+      if (!read) return
+      const { method, replyTo } = read.head
+      if (typeof replyTo === 'string' && replyTo.startsWith(OWN_ID_PREFIX)) {
+        const answer = this.own.get(replyTo)
+        this.own.delete(replyTo)
+        if (typeof answer === 'function') answer(read.parse())
+        return
+      }
+      // CODEX§16
+      if (method === 'account/chatgptAuthTokens/refresh' && read.parse().id !== undefined) {
+        void this.answerRefresh(read.parse().id)
+        return
+      }
+      if (method === 'account/login/completed') this.loginCompleted?.()
+      if (method === 'thread/started') {
+        const id = record(record(read.parse().params).thread).id
+        if (typeof id === 'string') this.threadId = id
+      }
+      this.frame(read)
     } catch (error) {
       this.failure(asError(error))
     }
@@ -482,7 +475,7 @@ export class MachineCodexUpstream implements CodexUpstream {
         if (this.ws === ws) this.failure(asError(error))
       })
     })
-    ws.on('message', (data) => this.received(data.toString()))
+    ws.on('message', (data) => this.received(data as Buffer))
     ws.on('error', () => {})
     const gone = (code: number | null): void => {
       if (lost) return

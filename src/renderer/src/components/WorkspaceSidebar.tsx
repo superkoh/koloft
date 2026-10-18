@@ -958,7 +958,7 @@ function SidebarFloating({
   )
 }
 
-export function WorkspaceSidebar({
+export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onNewSession,
   namedMethods,
   onNewWorktreeSession,
@@ -1432,4 +1432,4 @@ export function WorkspaceSidebar({
       )}
     </>
   )
-}
+})
