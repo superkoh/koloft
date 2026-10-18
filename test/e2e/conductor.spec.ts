@@ -3,7 +3,14 @@ import path from 'path'
 import { spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  installCodex,
+  installMuse,
+  museCalls,
+  museSaid,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   assistRecordOnDisk,
   centerTerm,
@@ -398,6 +405,40 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       expect(path.dirname(tui.cwd)).toBe(path.join(env.userData, 'conductors'))
       expect(tui.argv[tui.argv.indexOf('-s') + 1]).toBe('workspace-write')
       expect(tui.argv[tui.argv.indexOf('-a') + 1]).toBe('never')
+      expect(readCalls(env)).toEqual([])
+      await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
+      await expect(wsRows(page, 'ws-a')).toHaveCount(0)
+    } finally {
+      await close()
+    }
+  })
+
+  // ADR-0029 MUSE§9 MUSE§12
+  test('a Muse Assist is told its role when its session starts, never stops to ask, runs in a folder of its own, its hook lets it write only inside that folder, and its session stays out of the workspace rows', async ({
+    env
+  }) => {
+    installMuse(env)
+    const { page, close } = await launched(env, { assist: { on: true, backend: 'muse' } })
+    try {
+      await bindFromWorkspaceMenu(page, 'ws-a', { channel: CHANNEL_A })
+      expect(bindingsOnDisk(env)).toMatchObject([{ backend: 'muse' }])
+      await openConductor(page, 'ws-a')
+      await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
+      const [call] = museCalls(env)
+      expect(path.dirname(call.cwd)).toBe(path.join(env.userData, 'conductors'))
+      expect(call.argv).toEqual(['--approval-mode', 'never', '--sandbox-network', 'enabled'])
+      const tabId = await conductorTabId(page, env)
+      const type = (line: string): Promise<void> =>
+        page.evaluate(([id, text]) => window.api.terminal.write(id, text + '\r'), [tabId, line])
+      await type('/write ../escaped.md')
+      await expect
+        .poll(() => museSaid(env, call.sessionId).join('\n'))
+        .toContain('Blocked: Koloft: Assist only passes work on')
+      expect(fs.existsSync(path.join(path.dirname(call.cwd), 'escaped.md'))).toBe(false)
+      await type('/write notes.md')
+      await expect.poll(() => fs.existsSync(path.join(call.cwd, 'notes.md'))).toBe(true)
+      const told = fs.readFileSync(path.join(env.home, 'fake-muse-told.jsonl'), 'utf8')
+      expect(told).toContain(`Assist, Koloft's own AI, for the workspace ${env.workspaces.a}`)
       expect(readCalls(env)).toEqual([])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)

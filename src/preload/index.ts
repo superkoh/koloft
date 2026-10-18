@@ -206,7 +206,7 @@ const api: KoloftApi = {
     },
     pair: (isMe) => ipcRenderer.invoke('discord:pair', isMe),
     channels: () => ipcRenderer.invoke('discord:channels'),
-    setUpWithAssist: () => ipcRenderer.invoke('discord:setUpWithAssist')
+    setUpWithAssist: (ownerWords) => ipcRenderer.invoke('discord:setUpWithAssist', ownerWords)
   },
   attention: {
     list: () => ipcRenderer.invoke('attention:list'),
@@ -352,9 +352,7 @@ const api: KoloftApi = {
     listDir: (p, opts) => ipcRenderer.invoke('fs:listDir', p, opts),
     dirExists: (p) => ipcRenderer.invoke('fs:dirExists', p),
     search: (root, q, opts) => ipcRenderer.invoke('fs:search', root, q, opts),
-    diffBase: (root) => ipcRenderer.invoke('fs:diffBase', root),
-    gitStatus: (root, base) => ipcRenderer.invoke('fs:gitStatus', root, base),
-    gitNumstat: (root, base) => ipcRenderer.invoke('fs:gitNumstat', root, base),
+    gitChanges: (root, base) => ipcRenderer.invoke('fs:gitChanges', root, base),
     watchDir: (root) => ipcRenderer.invoke('fs:watchDir', root),
     unwatchDir: (root) => ipcRenderer.send('fs:unwatchDir', root),
     onDirChange: (cb) => {
@@ -442,7 +440,7 @@ const api: KoloftApi = {
     acceptBypass: () => ipcRenderer.invoke('accounts:accept-bypass'),
     startLogin: (name, reauth) => ipcRenderer.invoke('accounts:start-login', name, reauth),
     cancelLogin: () => ipcRenderer.send('accounts:cancel-login'),
-    codexSignIn: (name, again) => ipcRenderer.invoke('accounts:codex-sign-in', name, again),
+    signIn: (kind, name, again) => ipcRenderer.invoke('accounts:sign-in', kind, name, again),
     codexUseReset: (name) => ipcRenderer.invoke('accounts:codex-use-reset', name),
     onLoginProgress: (cb) => {
       const handler = (_e: unknown, p: LoginProgress): void => cb(p)

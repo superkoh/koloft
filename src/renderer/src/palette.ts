@@ -7,14 +7,7 @@ import type {
 } from '@shared/types'
 import { remoteCopyText } from '@shared/remoteKey'
 import { shortenHome } from './browseModel'
-import {
-  attentionOnRow,
-  rowsUnder,
-  sessionTree,
-  shownTitle,
-  tabOfRow,
-  workspaceName
-} from './sessionRows'
+import { rowLookups, rowsUnder, sessionTree, shownTitle, workspaceName } from './sessionRows'
 
 export interface PaletteSession {
   kind: 'session'
@@ -100,14 +93,15 @@ export function paletteSessions(
   tabs: readonly { id: string; sessionId?: string; alive: boolean }[],
   attention: AttentionEvent[]
 ): PaletteSession[] {
+  const look = rowLookups(sessions, tabs, attention)
   return rows.flatMap(({ workspace: ws, rows: sessionRows }) => {
     const name = workspaceName(ws)
     const place = ws.remote ? `${ws.remote.host}:${name}` : name
     return sessionTree(sessionRows)
       .flatMap((node) => [node.row, ...rowsUnder(node)])
       .map((row): PaletteSession => {
-        const tabId = tabOfRow(row, sessions, tabs)
-        const live = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
+        const tabId = look.tabOf(row)
+        const live = tabId ? look.sessionOn(tabId) : undefined
         const title = shownTitle(row.title, live?.title)
         return {
           kind: 'session',
@@ -116,7 +110,7 @@ export function paletteSessions(
           row,
           title,
           note: `${place} · ${row.worktree}`,
-          calling: !!attentionOnRow(row.id, tabId, attention),
+          calling: !!look.attentionOn(row.id, tabId),
           text: [title, row.worktree, name, ws.remote?.host ?? ''].join(' ')
         }
       })

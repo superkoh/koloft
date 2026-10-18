@@ -5,25 +5,28 @@ import type {
   ClaudeSessionInfo as SessionInfo,
   PreviewItem,
   SessionStatus,
-  SessionUsage,
   BackgroundItem
 } from '@shared/types'
 import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { TurnLog, type SaidLine, type Turn as TalkTurn } from '@shared/turns'
-import { costUsdOf, resolvePricing } from '@shared/pricing'
-import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
 import { projectInfoFor, realpathSafe } from './projectInfo'
 import { worktreeHomeRoot } from './resumePlan'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
+import { sharedProcessTable } from './processTable'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
-import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
+import { capTouched, touchedItem } from './touchedFiles'
+import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
+import { TitleSources } from './titleSources'
+import { UsageMeter } from './usageMeter'
+import { BackgroundLedger, isBackgroundSpawnAck } from './backgroundLedger'
 import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 import { withoutHandover } from './handover'
 import { messageText } from './messageText'
+import { parseRecord, type TextBlock, type TranscriptRecord } from './transcriptRecord'
 
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -51,11 +54,6 @@ const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
 
 export { encodeCwd }
 
-function num(x: unknown): number {
-  return typeof x === 'number' && isFinite(x) && x > 0 ? x : 0
-}
-
-const BG_PROMOTED = '\x00promoted'
 const UNLISTED_BACKGROUND_WORK: BackgroundItem = {
   id: 'unlisted',
   kind: 'command',
@@ -107,44 +105,17 @@ export function sessionEventFromHook(
 const AGENT_TYPES = new Set(['subagent', 'workflow', 'mcp-task', 'cloud-session'])
 
 // CC§8
-const BG_SPAWN_STATUSES = new Set(['async_launched', 'teammate_spawned', 'remote_launched'])
-
-// CC§8
-const TERMINAL_TASK_STATUSES = new Set([
-  'completed',
-  'failed',
-  'killed',
-  'stopped',
-  'cancelled',
-  'canceled'
-])
-
-// CC§8
-function isBackgroundSpawnAck(tur: unknown): boolean {
-  if (!tur || typeof tur !== 'object') return false
-  const r = tur as Record<string, unknown>
-  if (typeof r.status === 'string' && BG_SPAWN_STATUSES.has(r.status)) return true
-  if (r.status === 'forked' && r.background === true) return true
-  if (typeof r.backgroundTaskId === 'string' && r.backgroundTaskId) return true
-  return typeof r.taskId === 'string' && r.taskId !== '' && typeof r.timeoutMs === 'number'
-}
-
-// CC§8
-function taskNotificationText(obj: any): string | null {
-  if (obj?.type === 'attachment') {
+function taskNotificationText(obj: TranscriptRecord): string | null {
+  if (obj.type === 'attachment') {
     const a = obj.attachment
     return a?.commandMode === 'task-notification' && typeof a.prompt === 'string' ? a.prompt : null
   }
-  if (obj?.type === 'queue-operation') {
+  if (obj.type === 'queue-operation') {
     const c = obj.content
     return typeof c === 'string' && c.startsWith('<task-notification>') ? c : null
   }
-  if (obj?.origin?.kind === 'task-notification') {
-    const c = obj.message?.content
-    if (typeof c === 'string') return c
-    if (Array.isArray(c))
-      return c.map((b: any) => (typeof b?.text === 'string' ? b.text : '')).join('\n')
-    return ''
+  if (obj.origin?.kind === 'task-notification') {
+    return messageText(obj.message?.content) ?? ''
   }
   return null
 }
@@ -181,10 +152,8 @@ function listSubagentJsonls(dir: string): string[] {
   return out
 }
 
-const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 // CC§2
 const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\btouch\s/
-const READ_TOOLS = new Set(['Read'])
 const TASK_LABEL_FIELD: Record<string, string> = {
   Bash: 'command',
   Monitor: 'command',
@@ -232,40 +201,6 @@ interface SubagentFile {
   tail: Buffer
   activeMs: number
   teammate?: boolean
-}
-
-function toolFilePath(input: unknown): string | null {
-  if (!input || typeof input !== 'object') return null
-  const i = input as Record<string, unknown>
-  const p = i.file_path ?? i.notebook_path ?? i.path
-  return typeof p === 'string' && p.length ? p : null
-}
-
-function countLines(s: unknown): number {
-  if (typeof s !== 'string' || s.length === 0) return 0
-  let n = 1
-  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++
-  if (s.charCodeAt(s.length - 1) === 10) n--
-  return n
-}
-
-function editDelta(tool: string, input: unknown): { added: number; removed: number } {
-  if (!input || typeof input !== 'object') return { added: 0, removed: 0 }
-  const i = input as Record<string, unknown>
-  if (tool === 'Edit') return { added: countLines(i.new_string), removed: countLines(i.old_string) }
-  if (tool === 'MultiEdit') {
-    let added = 0
-    let removed = 0
-    if (Array.isArray(i.edits)) {
-      for (const e of i.edits as Array<Record<string, unknown>>) {
-        added += countLines(e?.new_string)
-        removed += countLines(e?.old_string)
-      }
-    }
-    return { added, removed }
-  }
-  if (tool === 'Write') return { added: countLines(i.content), removed: 0 }
-  return { added: 0, removed: 0 }
 }
 
 // CC§2
@@ -346,9 +281,9 @@ export function whoTyped(record: { origin?: unknown }, text: string): 'owner' | 
 type TurnPiece = { line: SaidLine; midTurn: boolean } | 'tool'
 
 // CC§2 CC§13
-function claudeTurnPieces(obj: any): TurnPiece[] {
+function claudeTurnPieces(obj: TranscriptRecord | null): TurnPiece[] {
   if (!obj || obj.isSidechain === true) return []
-  const ts = Date.parse(obj.timestamp)
+  const ts = Date.parse(obj.timestamp ?? '')
   const at = isFinite(ts) ? ts : Date.now()
   if (obj.type === 'user') {
     const raw = messageText(obj.message?.content)
@@ -374,8 +309,9 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
     const text = who === 'peer' ? peerText(a.prompt) : a.prompt.trim()
     return [{ line: { who, text, at }, midTurn: true }]
   }
-  if (obj.type !== 'assistant' || !Array.isArray(obj.message?.content)) return []
-  return obj.message.content.flatMap((b: any): TurnPiece[] => {
+  const content = obj.message?.content
+  if (obj.type !== 'assistant' || !Array.isArray(content)) return []
+  return content.flatMap((b): TurnPiece[] => {
     if (b?.type === 'tool_use') return ['tool']
     if (b?.type !== 'text' || typeof b.text !== 'string' || !b.text.trim()) return []
     return [{ line: { who: 'assistant', text: b.text.trim(), at }, midTurn: true }]
@@ -389,13 +325,7 @@ export function lastTurnsOfLines(
   const log = new TurnLog()
   let started = 0
   for (const line of lines) {
-    let obj: unknown
-    try {
-      obj = JSON.parse(line)
-    } catch {
-      continue
-    }
-    for (const piece of claudeTurnPieces(obj)) {
+    for (const piece of claudeTurnPieces(parseRecord(line))) {
       if (piece === 'tool') continue
       const before = log.open()
       log.add(piece.line, piece.midTurn)
@@ -457,16 +387,10 @@ interface Tracked {
   launchCwd: string
   readOffset: number
   tailBuf: Buffer
-  customTitle: string | null
-  title: string | null
-  firstPrompt: string | null
-  commandArgsTitle: string | null
-  commandTitle: string | null
-  candidates: Map<string, FileAcc>
+  titles: TitleSources
+  touched: ClaudeTouchedFiles
   fileCache: Map<string, string>
   canonPending: Set<string>
-  lastTouchedAbs: string | null
-  lastWrittenAbs: string | null
   parsePromise?: Promise<void>
   parseAgain: boolean
   statusSeq: number
@@ -474,36 +398,22 @@ interface Tracked {
   jsonlListener?: () => void
   titleListener?: () => void
   sidecarTitle: string | null
-  usageSeen: Set<string>
-  usageAny: boolean
-  usageInTok: number
-  usageOutTok: number
-  usageCacheWriteTok: number
-  usageCacheReadTok: number
-  usageCostUsd: number
-  usageUnknownModel: boolean
-  usageModel?: string
-  usageCcVersion?: string
-  usageCtxTokens?: number
-  usageToday: { dayKey: string; cost: number }
+  meter: UsageMeter
   subagentFiles: Map<string, SubagentFile>
   subagentScanMs: number
-  bgTasks: Set<string>
+  ledger: BackgroundLedger
+  teammateActiveMs: number
   lastBgActivityTs: number
   lastMainActivityTs: number
   bindMs: number
   resetMs: number
   reported: ReportedTask[] | null
   reportedAt: number
-  taskLabels: Map<string, string>
-  monitorIds: Set<string>
-  toolLabels: Map<string, string>
   openTools: Map<string, ToolCall>
   procs: TaskProcs | null
   shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
   procsAt: number
   procsPromise?: Promise<void>
-  teammateActiveMs: number
   lastInterruptTs: number
   rootPinAwaitingCatchup: boolean
   turns: TurnLog
@@ -518,6 +428,8 @@ interface Tracked {
   subagentTimer?: ReturnType<typeof setInterval>
 }
 
+const APPEND_READ_CHUNK_BYTES = envMs('KOLOFT_APPEND_READ_CHUNK_BYTES', 256 * 1024)
+
 export async function readAppendedLines(
   file: string,
   size: number,
@@ -527,7 +439,7 @@ export async function readAppendedLines(
   let fh: fs.promises.FileHandle | undefined
   try {
     fh = await fs.promises.open(file, 'r')
-    const len = size - cur.offset
+    const len = Math.min(size - cur.offset, APPEND_READ_CHUNK_BYTES)
     newBytes = Buffer.allocUnsafe(len)
     const { bytesRead } = await fh.read(newBytes, 0, len, cur.offset)
     if (bytesRead < len) newBytes = newBytes.subarray(0, bytesRead)
@@ -540,7 +452,7 @@ export async function readAppendedLines(
   const buf = cur.tail.length ? Buffer.concat([cur.tail, newBytes]) : newBytes
   const lastNl = buf.lastIndexOf(0x0a)
   if (lastNl === -1) {
-    cur.tail = Buffer.from(buf)
+    cur.tail = buf
     return []
   }
   cur.tail = Buffer.from(buf.subarray(lastNl + 1))
@@ -553,7 +465,16 @@ export class SessionTracker extends SessionRuntime {
   private emitTimer?: ReturnType<typeof setTimeout>
   private lastEmitMs = 0
   pidOf?: (tabId: string) => number | undefined
-  inspect: typeof inspectTaskProcs = inspectTaskProcs
+  inspect = async (
+    rootPid: number,
+    sessionId: string,
+    roundMs?: number
+  ): Promise<TaskProcs | null> =>
+    inspectTaskProcs(
+      await (roundMs ? sharedProcessTable.eachRound(roundMs) : sharedProcessTable.fresh()),
+      rootPid,
+      sessionId
+    )
   leftBehind?: (sessionId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
   dialogsWatched: (tabId: string) => boolean = () => true
@@ -584,46 +505,29 @@ export class SessionTracker extends SessionRuntime {
       launchCwd: remote ? cwd : realpathSafe(cwd),
       readOffset: 0,
       tailBuf: Buffer.alloc(0),
-      customTitle: null,
-      title: null,
-      firstPrompt: null,
-      commandArgsTitle: null,
-      commandTitle: null,
-      candidates: new Map(),
+      titles: new TitleSources(),
+      touched: new ClaudeTouchedFiles(),
       fileCache: new Map(),
       canonPending: new Set(),
       sidecarTitle: null,
-      lastTouchedAbs: null,
-      lastWrittenAbs: null,
       parseAgain: false,
       statusSeq: 0,
       caughtUp: false,
-      usageSeen: new Set(),
-      usageAny: false,
-      usageInTok: 0,
-      usageOutTok: 0,
-      usageCacheWriteTok: 0,
-      usageCacheReadTok: 0,
-      usageCostUsd: 0,
-      usageUnknownModel: false,
-      usageToday: { dayKey: '', cost: 0 },
+      meter: new UsageMeter(),
       subagentFiles: new Map(),
       subagentScanMs: 0,
-      bgTasks: new Set(),
+      ledger: new BackgroundLedger(),
+      teammateActiveMs: 0,
       lastBgActivityTs: 0,
       lastMainActivityTs: 0,
       bindMs: Date.now(),
       resetMs: Date.now(),
       reported: null,
       reportedAt: 0,
-      taskLabels: new Map(),
-      monitorIds: new Set(),
-      toolLabels: new Map(),
       openTools: new Map(),
       procs: null,
       shellCpu: new Map(),
       procsAt: 0,
-      teammateActiveMs: 0,
       lastInterruptTs: 0,
       rootPinAwaitingCatchup: false,
       turns: new TurnLog(),
@@ -733,7 +637,7 @@ export class SessionTracker extends SessionRuntime {
 
   private endTurnHeldByWhatRuns(t: Tracked): void {
     const busy = this.judgeHold(t)
-    if (!busy) t.bgTasks.clear()
+    if (!busy) t.ledger.clear()
     this.applyStatus(t, 'ended', busy)
   }
 
@@ -786,8 +690,8 @@ export class SessionTracker extends SessionRuntime {
     let idleTeammates = 0
     for (const task of list) {
       if (task.type === 'shell') {
-        const label = t.taskLabels.get(task.id) ?? task.id
-        if (t.monitorIds.has(task.id)) {
+        const label = t.ledger.labelOf(task.id) ?? task.id
+        if (t.ledger.isMonitor(task.id)) {
           parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
         } else if (!procs) {
           trusted = true
@@ -817,7 +721,7 @@ export class SessionTracker extends SessionRuntime {
       } else if (AGENT_TYPES.has(task.type)) {
         if (agentsFresh || toolCallInFlight) {
           observed = true
-          run(task, 'agent', t.taskLabels.get(task.id) ?? task.type)
+          run(task, 'agent', t.ledger.labelOf(task.id) ?? task.type)
         }
       } else if (task.type === 'teammate') {
         if (teammatesFresh || toolCallInFlight) {
@@ -858,10 +762,10 @@ export class SessionTracker extends SessionRuntime {
     if (!root || !sessionId) return
     t.procsPromise = (async () => {
       try {
-        const procs = await this.inspect(root, sessionId)
+        const procs = await this.inspect(root, sessionId, force ? undefined : PROCS_SCAN_MS)
         if (this.tracked.get(t.info.tabId) !== t) return
         t.procs = procs
-        t.procsAt = Date.now()
+        t.procsAt = procs?.at ?? Date.now()
         if (procs) this.sampleShellCpu(t, procs, t.procsAt)
       } finally {
         t.procsPromise = undefined
@@ -895,7 +799,7 @@ export class SessionTracker extends SessionRuntime {
 
   private bgBusy(t: Tracked): boolean {
     const quietMs = Date.now() - t.lastBgActivityTs
-    if (t.bgTasks.size > 0) return quietMs < BG_SILENCE_MAX_MS
+    if (t.ledger.held) return quietMs < BG_SILENCE_MAX_MS
     return t.lastBgActivityTs > t.lastMainActivityTs && quietMs < STOP_HOLD_MS
   }
 
@@ -1086,41 +990,21 @@ export class SessionTracker extends SessionRuntime {
   private resetParseState(t: Tracked, keepBindMs = false): void {
     t.readOffset = 0
     t.tailBuf = Buffer.alloc(0)
-    t.customTitle = null
-    t.title = null
-    t.firstPrompt = null
-    t.commandArgsTitle = null
-    t.commandTitle = null
-    t.candidates = new Map()
+    t.titles = new TitleSources()
+    t.touched = new ClaudeTouchedFiles()
     t.fileCache = new Map()
-    t.lastTouchedAbs = null
-    t.lastWrittenAbs = null
     t.relocatedCwd = undefined
     t.lastWorktreeStateInBatch = undefined
     t.info.lastTouched = undefined
     t.info.lastWritten = undefined
     t.caughtUp = false
-    t.usageSeen = new Set()
-    t.usageAny = false
-    t.usageInTok = 0
-    t.usageOutTok = 0
-    t.usageCacheWriteTok = 0
-    t.usageCacheReadTok = 0
-    t.usageCostUsd = 0
-    t.usageUnknownModel = false
-    t.usageModel = undefined
-    t.usageCtxTokens = undefined
-    t.usageCcVersion = undefined
-    t.usageToday = { dayKey: '', cost: 0 }
+    t.meter = new UsageMeter()
     t.subagentFiles = new Map()
     t.subagentScanMs = 0
     t.info.usage = undefined
-    t.bgTasks = new Set()
-    t.monitorIds = new Set()
-    t.taskLabels = new Map()
-    t.toolLabels = new Map()
-    t.openTools = new Map()
+    t.ledger = new BackgroundLedger()
     t.teammateActiveMs = 0
+    t.openTools = new Map()
     t.lastBgActivityTs = 0
     t.lastMainActivityTs = 0
     t.lastInterruptTs = 0
@@ -1333,7 +1217,7 @@ export class SessionTracker extends SessionRuntime {
       t.lastBgActivityTs > this.statusSince(t.info.tabId) + RESUME_AFTER_STOP_MS
     ) {
       this.applyStatus(t, 'ended', true)
-      t.bgTasks.add(BG_PROMOTED)
+      t.ledger.promote()
       return
     }
     if (!this.isHeldByBackground(t.info.tabId)) {
@@ -1343,32 +1227,35 @@ export class SessionTracker extends SessionRuntime {
     const busy = this.judgeHold(t)
     if (!busy) {
       if (Date.now() - t.lastMainActivityTs < STOP_HOLD_MS) return
-      t.bgTasks.clear()
+      t.ledger.clear()
       this.applyStatus(t, 'ended')
     }
   }
 
   private async ingestMainAppend(t: Tracked, p: string, st: fs.Stats): Promise<boolean> {
-    const cur = { offset: t.readOffset, tail: t.tailBuf }
-    const lines = await readAppendedLines(p, st.size, cur)
-    if (lines !== null) {
-      t.readOffset = cur.offset
-      t.tailBuf = cur.tail
-    }
-    if (!lines || !lines.length) return false
-
+    let sawLines = false
     let sawUserPrompt = false
     let sawAssistant = false
     let sawInterrupt = false
-    for (const line of lines) {
-      if (!line) continue
-      const activity = this.ingestLine(t, line)
-      if (activity === 'user') {
-        sawUserPrompt = true
-        sawInterrupt = false
-      } else if (activity === 'assistant') sawAssistant = true
-      else if (activity === 'interrupt') sawInterrupt = true
+    while (t.readOffset < st.size) {
+      const cur = { offset: t.readOffset, tail: t.tailBuf }
+      const lines = await readAppendedLines(p, st.size, cur)
+      if (this.tracked.get(t.info.tabId) !== t || t.info.jsonlPath !== p) return false
+      if (lines === null || cur.offset === t.readOffset) break
+      t.readOffset = cur.offset
+      t.tailBuf = cur.tail
+      if (lines.length) sawLines = true
+      for (const line of lines) {
+        if (!line) continue
+        const activity = this.ingestLine(t, line)
+        if (activity === 'user') {
+          sawUserPrompt = true
+          sawInterrupt = false
+        } else if (activity === 'assistant') sawAssistant = true
+        else if (activity === 'interrupt') sawInterrupt = true
+      }
     }
+    if (!sawLines) return false
     if (t.rootPinAwaitingCatchup) this.setTreeRoot(t, t.info.cwd)
     this.followWorktreeState(t)
     if (sawInterrupt) await this.interruptTurn(t)
@@ -1432,22 +1319,21 @@ export class SessionTracker extends SessionRuntime {
     sst.activeMs = Date.now()
     if (sst.teammate === undefined) sst.teammate = readTeammateFlag(file)
     if (sst.teammate) t.teammateActiveMs = sst.activeMs
-    const lines = await readAppendedLines(file, st.size, sst)
-    if (!lines) return false
     let folded = false
-    for (const line of lines) {
-      if (!line) continue
-      let obj: any
-      try {
-        obj = JSON.parse(line)
-      } catch {
-        continue
-      }
-      const ts = Math.min(Date.parse(obj?.timestamp), Date.now())
-      if (isFinite(ts) && ts > t.lastBgActivityTs) t.lastBgActivityTs = ts
-      if (obj && obj.type === 'assistant' && obj.message && obj.message.usage) {
-        this.accumulateUsage(t, obj, false)
-        folded = true
+    while (sst.offset < st.size) {
+      const from = sst.offset
+      const lines = await readAppendedLines(file, st.size, sst)
+      if (this.tracked.get(t.info.tabId) !== t || t.subagentFiles.get(file) !== sst) return false
+      if (lines === null || sst.offset === from) break
+      for (const line of lines) {
+        const obj = parseRecord(line)
+        if (!obj) continue
+        const ts = Math.min(Date.parse(obj.timestamp ?? ''), Date.now())
+        if (isFinite(ts) && ts > t.lastBgActivityTs) t.lastBgActivityTs = ts
+        if (obj.type === 'assistant' && obj.message?.usage) {
+          t.meter.add(obj, false)
+          folded = true
+        }
       }
     }
     return folded
@@ -1473,49 +1359,35 @@ export class SessionTracker extends SessionRuntime {
     }
   }
 
-  private ingestSpawnAck(t: Tracked, obj: any): void {
+  private ingestSpawnAck(t: Tracked, obj: TranscriptRecord): void {
     const tur = obj.toolUseResult
-    if (!isBackgroundSpawnAck(tur) || !Array.isArray(obj.message?.content)) return
-    const ts = Date.parse(obj.timestamp)
+    const content = obj.message?.content
+    if (!isBackgroundSpawnAck(tur) || !Array.isArray(content)) return
+    const ts = Date.parse(obj.timestamp ?? '')
     const live = t.caughtUp || (isFinite(ts) && ts >= t.bindMs && ts <= Date.now())
     if (!live) return
     const toolUseIds: string[] = []
-    for (const b of obj.message.content) {
-      if (b?.type === 'tool_result' && typeof b.tool_use_id === 'string') {
-        t.bgTasks.add(b.tool_use_id)
+    for (const b of content) {
+      if (b?.type === 'tool_result' && typeof b.tool_use_id === 'string')
         toolUseIds.push(b.tool_use_id)
-      }
     }
-    const r = tur as Record<string, unknown>
-    let task: ReportedTask | null = null
-    if (typeof r.backgroundTaskId === 'string') task = { id: r.backgroundTaskId, type: 'shell' }
-    else if (typeof r.taskId === 'string' && typeof r.timeoutMs === 'number') {
-      task = { id: r.taskId, type: 'shell' }
-      t.monitorIds.add(r.taskId)
-    } else if (r.status === 'teammate_spawned') {
-      // CC§8
-      if (toolUseIds[0]) task = { id: toolUseIds[0], type: 'teammate' }
-      t.teammateActiveMs = Date.now()
-    } else if (typeof r.agentId === 'string') {
-      task = { id: r.agentId, type: r.status === 'remote_launched' ? 'cloud-session' : 'subagent' }
+    const task = t.ledger.noteSpawnAck(tur, toolUseIds)
+    // CC§8
+    if (tur.status === 'teammate_spawned') t.teammateActiveMs = Date.now()
+    if (task && t.reported && !t.reported.some((x) => x.id === task.id)) {
+      t.reported.push({ ...task, since: Date.now() })
     }
-    if (task) {
-      const cmd = toolUseIds.map((id) => t.toolLabels.get(id)).find((c) => c)
-      if (cmd) t.taskLabels.set(task.id, cmd)
-      if (t.reported && !t.reported.some((x) => x.id === task.id)) {
-        t.reported.push({ ...task, since: Date.now() })
-      }
-    }
-    for (const id of toolUseIds) t.toolLabels.delete(id)
     const at = Math.min(isFinite(ts) ? ts : Date.now(), Date.now())
     if (at > t.lastBgActivityTs) t.lastBgActivityTs = at
   }
 
   // CC§14
-  private ingestToolDone(t: Tracked, obj: any): void {
-    if (!Array.isArray(obj.message?.content)) return
-    for (const b of obj.message.content) {
-      const call = b?.type === 'tool_result' ? t.openTools.get(b.tool_use_id) : undefined
+  private ingestToolDone(t: Tracked, obj: TranscriptRecord): void {
+    const content = obj.message?.content
+    if (!Array.isArray(content)) return
+    for (const b of content) {
+      if (b?.type !== 'tool_result') continue
+      const call = t.openTools.get(b.tool_use_id)
       if (!call) continue
       t.openTools.delete(b.tool_use_id)
       if (t.caughtUp) this.emit('tool-done', { tabId: t.info.tabId, ...call })
@@ -1523,224 +1395,120 @@ export class SessionTracker extends SessionRuntime {
   }
 
   // CC§8
-  private ingestTaskNotification(t: Tracked, obj: any): void {
+  private ingestTaskNotification(t: Tracked, obj: TranscriptRecord): void {
     const text = taskNotificationText(obj)
     if (text === null) return
-    const st = text
-      .match(/<status>([^<]*)<\/status>/)?.[1]
-      ?.trim()
-      .toLowerCase()
-    if (!st || !TERMINAL_TASK_STATUSES.has(st)) return
-    for (const m of text.matchAll(/<tool-use-id>([^<]+)<\/tool-use-id>/g)) {
-      t.bgTasks.delete(m[1])
-    }
-    const gone = new Set([...text.matchAll(/<task-id>([^<]+)<\/task-id>/g)].map((m) => m[1]))
+    const gone = t.ledger.noteNotification(text)
     if (t.reported && gone.size) t.reported = t.reported.filter((x) => !gone.has(x.id))
-    for (const id of gone) {
-      t.monitorIds.delete(id)
-      t.taskLabels.delete(id)
-    }
-    t.bgTasks.delete(BG_PROMOTED)
   }
 
   private ingestLine(t: Tracked, line: string): 'user' | 'assistant' | 'interrupt' | null {
-    let obj: any = null
-    try {
-      obj = JSON.parse(line)
-    } catch {
-      return null
-    }
+    const obj = parseRecord(line)
+    if (!obj) return null
     let activity: 'user' | 'assistant' | 'interrupt' | null = null
-    if (obj) {
-      if (typeof obj.cwd === 'string' && obj.cwd && obj.cwd !== t.info.cwd) {
-        t.info.cwd = obj.cwd
-        // ADR-0025
-        if (!t.remote && !fs.existsSync(t.info.treeRoot)) this.setTreeRoot(t, obj.cwd)
+    if (typeof obj.cwd === 'string' && obj.cwd && obj.cwd !== t.info.cwd) {
+      t.info.cwd = obj.cwd
+      // ADR-0025
+      if (!t.remote && !fs.existsSync(t.info.treeRoot)) this.setTreeRoot(t, obj.cwd)
+    }
+    t.titles.noteRecord(obj)
+    // CC§2
+    if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
+      t.relocatedCwd = obj.relocatedCwd
+    }
+    if (obj.type === 'worktree-state') {
+      const bound = obj.worktreeSession?.worktreePath
+      t.lastWorktreeStateInBatch = typeof bound === 'string' && bound ? bound : undefined
+    }
+    // CC§2
+    const recTs = Math.min(Date.parse(obj.timestamp ?? ''), Date.now())
+    const mainThread = obj.isSidechain !== true
+    if (isFinite(recTs)) {
+      if (!mainThread) {
+        if (recTs > t.lastBgActivityTs) t.lastBgActivityTs = recTs
+      } else if (recTs > t.lastMainActivityTs) {
+        t.lastMainActivityTs = recTs
       }
-      if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') t.title = obj.aiTitle
-      // CC§9
-      if (obj.type === 'custom-title' && typeof obj.customTitle === 'string' && obj.customTitle)
-        t.customTitle = obj.customTitle
-      // CC§2
-      if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
-        t.relocatedCwd = obj.relocatedCwd
+    }
+    for (const piece of claudeTurnPieces(obj)) {
+      if (piece === 'tool') t.replyDone = false
+      else {
+        t.turns.add(piece.line, piece.midTurn)
+        t.replyDone = piece.line.who === 'assistant'
       }
-      if (obj.type === 'worktree-state') {
-        const bound = obj.worktreeSession?.worktreePath
-        t.lastWorktreeStateInBatch = typeof bound === 'string' && bound ? bound : undefined
+    }
+    const ending = t.endingTurn?.turn
+    if (ending && (t.replyDone || ending !== t.turns.open())) this.finishTurn(t, ending)
+    if (obj.type === 'user') {
+      this.ingestSpawnAck(t, obj)
+      this.ingestToolDone(t, obj)
+    }
+    this.ingestTaskNotification(t, obj)
+    const output = t.caughtUp ? commandOutputOf(obj) : null
+    if (output) this.emit('command-output', { tabId: t.info.tabId, ...output })
+    if (obj.type === 'user' && !obj.isMeta && !compactionSummary(obj)) {
+      const c = obj.message?.content
+      let raw: string | null = null
+      let hasImage = false
+      if (typeof c === 'string') raw = c
+      else if (Array.isArray(c)) {
+        const text = c.find((x): x is TextBlock => x?.type === 'text')
+        if (text?.text) raw = text.text
+        hasImage = c.some((x) => x?.type === 'image')
       }
-      // CC§2
-      const recTs = Math.min(Date.parse(obj.timestamp), Date.now())
-      const mainThread = obj.isSidechain !== true
-      if (isFinite(recTs)) {
-        if (!mainThread) {
-          if (recTs > t.lastBgActivityTs) t.lastBgActivityTs = recTs
-        } else if (recTs > t.lastMainActivityTs) {
-          t.lastMainActivityTs = recTs
+      if (raw !== null && INTERRUPT_TEXTS.has(raw) && mainThread) {
+        if (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) {
+          const at = isFinite(recTs) ? recTs : Date.now()
+          if (at > t.lastInterruptTs) t.lastInterruptTs = at
+          return 'interrupt'
+        }
+        return null
+      }
+      const cls = raw !== null ? classifyUserPrompt(raw) : null
+      const named = raw !== null && whoTyped(obj, raw) ? cls : null
+      if (named) t.titles.notePrompt(named)
+      if ((cls?.genuine || hasImage) && mainThread && !commandEcho(obj, raw)) {
+        activity = 'user'
+        if (
+          (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) &&
+          this.isHeldByBackground(t.info.tabId)
+        ) {
+          this.applyStatus(t, 'working')
         }
       }
-      for (const piece of claudeTurnPieces(obj)) {
-        if (piece === 'tool') t.replyDone = false
-        else {
-          t.turns.add(piece.line, piece.midTurn)
-          t.replyDone = piece.line.who === 'assistant'
+    }
+    if (obj.type === 'assistant' && obj.message?.usage) {
+      t.meter.add(obj, mainThread)
+    }
+    const content = obj.message?.content
+    if (obj.type === 'assistant' && Array.isArray(content)) {
+      if (mainThread) activity = 'assistant'
+      const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
+      for (const b of content) {
+        if (!b || b.type !== 'tool_use') continue
+        if (liveNow && typeof b.id === 'string' && this.dialogsWatched(t.info.tabId)) {
+          if (t.openTools.size >= UNACKED_TOOL_CAP)
+            t.openTools.delete(t.openTools.keys().next().value as string)
+          t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })
         }
-      }
-      const ending = t.endingTurn?.turn
-      if (ending && (t.replyDone || ending !== t.turns.open())) this.finishTurn(t, ending)
-      if (obj.type === 'user') {
-        this.ingestSpawnAck(t, obj)
-        this.ingestToolDone(t, obj)
-      }
-      this.ingestTaskNotification(t, obj)
-      const output = t.caughtUp ? commandOutputOf(obj) : null
-      if (output) this.emit('command-output', { tabId: t.info.tabId, ...output })
-      if (obj.type === 'user' && !obj.isMeta && !compactionSummary(obj)) {
-        const c = obj.message?.content
-        let raw: string | null = null
-        let hasImage = false
-        if (typeof c === 'string') raw = c
-        else if (Array.isArray(c)) {
-          const text = c.find((x: any) => x?.type === 'text')
-          if (text?.text) raw = text.text
-          hasImage = c.some((x: any) => x?.type === 'image')
-        }
-        if (raw !== null && INTERRUPT_TEXTS.has(raw) && mainThread) {
-          if (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) {
-            const at = isFinite(recTs) ? recTs : Date.now()
-            if (at > t.lastInterruptTs) t.lastInterruptTs = at
-            return 'interrupt'
-          }
-          return null
-        }
-        const cls = raw !== null ? classifyUserPrompt(raw) : null
-        const named = raw !== null && whoTyped(obj, raw) ? cls : null
-        if (named?.title && !t.firstPrompt) t.firstPrompt = named.title
-        if (named?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = named.commandArgs
-        if (named?.commandName && !t.commandTitle) t.commandTitle = named.commandName
-        if ((cls?.genuine || hasImage) && mainThread && !commandEcho(obj, raw)) {
-          activity = 'user'
-          if (
-            (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) &&
-            this.isHeldByBackground(t.info.tabId)
-          ) {
-            this.applyStatus(t, 'working')
-          }
-        }
-      }
-      if (obj.type === 'assistant' && obj.message && obj.message.usage) {
-        this.accumulateUsage(t, obj, mainThread)
-      }
-      if (obj.type === 'assistant' && Array.isArray(obj.message?.content)) {
-        if (mainThread) activity = 'assistant'
-        const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
-        for (const b of obj.message.content) {
-          if (!b || b.type !== 'tool_use') continue
-          if (liveNow && typeof b.id === 'string' && this.dialogsWatched(t.info.tabId)) {
-            if (t.openTools.size >= UNACKED_TOOL_CAP)
-              t.openTools.delete(t.openTools.keys().next().value as string)
-            t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })
-          }
-          const labelField = TASK_LABEL_FIELD[b.name]
-          const label = labelField ? b.input?.[labelField] : undefined
-          if (typeof label === 'string') {
-            if (t.toolLabels.size >= UNACKED_TOOL_CAP)
-              t.toolLabels.delete(t.toolLabels.keys().next().value as string)
-            t.toolLabels.set(b.id, label.replace(/\s+/g, ' ').trim().slice(0, 120))
-            if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) {
-              t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
-            }
-          }
-          // CC§2
-          const raw = toolFilePath(b.input)
-          const fp = raw ? this.resolvePath(t, raw) : null
-          if (!fp) continue
-          if (WRITE_TOOLS.has(b.name)) {
-            const { added, removed } = editDelta(b.name, b.input)
-            noteWrite(t.candidates, fp, added, removed, isFinite(recTs) ? recTs : Date.now())
-            t.lastTouchedAbs = fp
-            t.lastWrittenAbs = fp
-            if (liveNow) t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
-          } else if (READ_TOOLS.has(b.name)) {
-            noteRead(t.candidates, fp)
-            t.lastTouchedAbs = fp
+        const labelField = TASK_LABEL_FIELD[b.name]
+        const label = labelField ? b.input?.[labelField] : undefined
+        if (typeof label === 'string') {
+          t.ledger.noteToolLabel(b.id, label)
+          if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) {
+            t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
           }
         }
+        // CC§2
+        const raw = toolFilePath(b.input)
+        const fp = raw ? this.resolvePath(t, raw) : null
+        if (!fp) continue
+        const at = isFinite(recTs) ? recTs : Date.now()
+        if (t.touched.noteToolCall(b.name, b.input, fp, at) && liveNow)
+          t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
       }
     }
     return activity
-  }
-
-  // CC§2
-  private accumulateUsage(t: Tracked, obj: any, updateContext = true): void {
-    const msg = obj.message
-    const model = typeof msg.model === 'string' ? msg.model : ''
-    if (model === '<synthetic>') return
-    const id = typeof msg.id === 'string' ? msg.id : ''
-    const reqId = typeof obj.requestId === 'string' ? obj.requestId : ''
-    if (id || reqId) {
-      const key = id + ' ' + reqId
-      if (t.usageSeen.has(key)) return
-      t.usageSeen.add(key)
-    }
-    t.usageAny = true
-
-    const u = msg.usage || {}
-    const inTok = num(u.input_tokens)
-    const outTok = num(u.output_tokens)
-    const cacheWrite = num(u.cache_creation_input_tokens)
-    const cacheRead = num(u.cache_read_input_tokens)
-    t.usageInTok += inTok
-    t.usageOutTok += outTok
-    t.usageCacheWriteTok += cacheWrite
-    t.usageCacheReadTok += cacheRead
-
-    const pricing = model ? resolvePricing(model) : undefined
-    if (!pricing) {
-      t.usageUnknownModel = true
-    } else {
-      const cost = costUsdOf(pricing, {
-        inTok,
-        outTok,
-        cacheWriteTok: cacheWrite,
-        cacheReadTok: cacheRead
-      })
-      t.usageCostUsd += cost
-      const recDay = localDayKey(obj.timestamp)
-      if (recDay) {
-        if (recDay > t.usageToday.dayKey) {
-          t.usageToday.dayKey = recDay
-          t.usageToday.cost = 0
-        }
-        if (recDay === t.usageToday.dayKey) t.usageToday.cost += cost
-      }
-    }
-    if (updateContext) {
-      if (model) t.usageModel = model
-      t.usageCtxTokens = inTok + cacheRead + cacheWrite
-      if (typeof obj.version === 'string' && obj.version) t.usageCcVersion = obj.version
-    }
-  }
-
-  private buildUsage(t: Tracked): SessionUsage | undefined {
-    if (!t.usageAny) return undefined
-    const pricing = t.usageModel ? resolvePricing(t.usageModel) : undefined
-    const ctxPct =
-      pricing && t.usageCtxTokens != null ? t.usageCtxTokens / pricing.windowTokens : undefined
-    const hasToday = !t.usageUnknownModel && t.usageToday.cost > 0 && !!t.usageToday.dayKey
-    return {
-      inTok: t.usageInTok,
-      outTok: t.usageOutTok,
-      cacheWriteTok: t.usageCacheWriteTok,
-      cacheReadTok: t.usageCacheReadTok,
-      costUsd: t.usageUnknownModel ? undefined : t.usageCostUsd,
-      todayCostUsd: hasToday ? t.usageToday.cost : undefined,
-      todayDayKey: hasToday ? t.usageToday.dayKey : undefined,
-      model: t.usageModel,
-      ccVersion: t.usageCcVersion,
-      ctxTokens: t.usageCtxTokens,
-      ctxPct
-    }
   }
 
   private sidecarOf(jsonlPath: string): string {
@@ -1749,7 +1517,7 @@ export class SessionTracker extends SessionRuntime {
 
   private recompute(t: Tracked): void {
     const byCanon = new Map<string, PreviewItem>()
-    for (const [abs, acc] of t.candidates) {
+    for (const [abs, acc] of t.touched.files) {
       const canon = this.canonFile(t, abs)
       if (!canon) continue
       const ex = byCanon.get(canon)
@@ -1766,22 +1534,12 @@ export class SessionTracker extends SessionRuntime {
     }
     const files = capTouched([...byCanon.values()])
 
-    t.info.title =
-      t.sidecarTitle ||
-      t.customTitle ||
-      t.title ||
-      (t.firstPrompt ? t.firstPrompt.slice(0, 60) : null) ||
-      (t.commandArgsTitle ? t.commandArgsTitle.slice(0, 60) : null) ||
-      t.commandTitle ||
-      PLACEHOLDER_SESSION_TITLE
+    t.info.title = t.titles.title(t.sidecarTitle)
     t.info.files = files
-    t.info.lastTouched = t.lastTouchedAbs
-      ? (this.canonFile(t, t.lastTouchedAbs) ?? undefined)
-      : undefined
-    t.info.lastWritten = t.lastWrittenAbs
-      ? (this.canonFile(t, t.lastWrittenAbs) ?? undefined)
-      : undefined
-    t.info.usage = this.buildUsage(t)
+    const { lastTouched, lastWritten } = t.touched
+    t.info.lastTouched = lastTouched ? (this.canonFile(t, lastTouched) ?? undefined) : undefined
+    t.info.lastWritten = lastWritten ? (this.canonFile(t, lastWritten) ?? undefined) : undefined
+    t.info.usage = t.meter.usage()
     t.info.updatedAt = Date.now()
     this.emitUpdate()
   }

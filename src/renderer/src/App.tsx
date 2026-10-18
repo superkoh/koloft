@@ -1,14 +1,14 @@
 import { NewSessionDialog } from './components/NewSessionDialog'
 import { SessionBackendIcon } from './components/SessionBackendIcon'
-import {
-  NoAccountLines,
-  useAccountIssue,
-  type SessionLaunchOptions
-} from './components/SessionLaunchButtons'
+import type { AgentChoice } from './agentChoice'
+import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
+import { WelcomeLaunch } from './components/WelcomeLaunch'
 import {
   backendAvailable,
   BACKEND_LABEL,
+  byBackend,
   effectiveBackend,
+  listedBackends,
   SESSION_BACKENDS,
   unsupportedPairMessage
 } from '@shared/sessionBackend'
@@ -24,6 +24,7 @@ import {
   type MouseEvent
 } from 'react'
 import { createPortal } from 'react-dom'
+import { useShallow } from 'zustand/react/shallow'
 import {
   IconAddProject,
   IconChevronRight,
@@ -37,6 +38,7 @@ import {
 import type {
   BrowserAuthChallenge,
   BrowserCdpOp,
+  BrowserDialogAnswer,
   BrowserJsDialog,
   ExtensionPermissionRequest,
   HostId,
@@ -124,7 +126,7 @@ import { WorkbenchPane } from './components/WorkbenchPane'
 import { WorkbenchPreview } from './components/WorkbenchPreview'
 import type { WorkbenchCommandSignal } from './components/workbenchCommands'
 import { ExtensionConfirm } from './components/ExtensionConfirm'
-import { tabLabel } from './components/workbenchTabs'
+import { tabLabel, type WorkbenchTab, type WorkbenchTabSet } from './components/workbenchTabs'
 import { SettingsModal } from './components/settings/SettingsModal'
 import { loginClearDelay, savedClearDue } from './components/settings/loginFlow'
 import { TopbarUsage } from './components/TopbarUsage'
@@ -262,7 +264,6 @@ export default function App(): JSX.Element {
   }, [activeTabId, switchGen, shown.gen, wokeInPlace])
   const switching =
     activeTabId !== null && !wokeInPlace && (shown.gen !== switchGen || paintedGen !== switchGen)
-  const sessions = useStore((s) => s.sessions)
   const workbenchWidth = useStore((s) => s.workbenchWidth)
   const workbenchWidths = useStore((s) => s.workbenchWidths)
   const workbench = useStore((s) => s.workbench)
@@ -308,6 +309,7 @@ export default function App(): JSX.Element {
     mode: PickerMode
     path?: string
     pending?: PendingStart
+    chosen?: SessionBackend
   } | null>(null)
   const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
@@ -368,14 +370,10 @@ export default function App(): JSX.Element {
     let alive = true
     void window.api.sessions.backends().then(
       (list) => {
-        if (alive)
-          setProbed({
-            claude: backendAvailable(list, 'claude'),
-            codex: backendAvailable(list, 'codex')
-          })
+        if (alive) setProbed(byBackend((b) => backendAvailable(list, b)))
       },
       () => {
-        if (alive) setProbed({ claude: false, codex: false })
+        if (alive) setProbed(byBackend(() => false))
       }
     )
     return () => {
@@ -387,13 +385,15 @@ export default function App(): JSX.Element {
     [probed]
   )
   const sessionMethods = useStore((s) => s.settings.sessionMethods)
-  const namedMethods = useMemo((): [SessionBackend, SessionBackend] | null => {
-    if (!probed) return null
-    const usable = SESSION_BACKENDS.filter((b) => sessionMethods.enabled[b] && probed[b])
-    if (usable.length < 2) return null
-    const other = usable.find((b) => b !== sessionMethods.defaultBackend)
-    return other ? [sessionMethods.defaultBackend, other] : null
-  }, [probed, sessionMethods])
+  const listed = useMemo(
+    () => listedBackends(sessionMethods, probed && ((b) => probed[b])),
+    [probed, sessionMethods]
+  )
+  const namedMethods = useMemo((): SessionBackend[] | null => {
+    const { defaultBackend } = sessionMethods
+    if (listed.length < 2 || !listed.includes(defaultBackend)) return null
+    return [defaultBackend, ...listed.filter((b) => b !== defaultBackend)]
+  }, [listed, sessionMethods])
 
   const startSession = useCallback(
     async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
@@ -411,11 +411,19 @@ export default function App(): JSX.Element {
   )
 
   const requestNew = useCallback(
-    (mode: PickerMode, path?: string, pending?: PendingStart): void => {
+    (mode: PickerMode, path?: string, pending?: PendingStart, chosen?: SessionBackend): void => {
       if (newSessionLocked.current) return
       setRestoreWs(null)
-      setNewRequest({ id: ++newRequestId.current, mode, path, pending })
+      setNewRequest({ id: ++newRequestId.current, mode, path, pending, chosen })
     },
+    []
+  )
+  const newWorktreeSessionIn = useCallback(
+    (path: string) => requestNew('worktree', path),
+    [requestNew]
+  )
+  const openScheduledJobs = useCallback(
+    (path: string, jobId?: string) => setCronWs({ path, jobId }),
     []
   )
 
@@ -443,7 +451,7 @@ export default function App(): JSX.Element {
       const ws = useStore.getState().workspaceRows.find((w) => w.workspace.path === wsPath)
       if (!ws) return
       if (pullable(ws)) {
-        requestNew('main', wsPath)
+        requestNew('main', wsPath, undefined, backend)
         return
       }
       startNow(
@@ -1055,10 +1063,12 @@ export default function App(): JSX.Element {
 
   const lastWsPath = useStore((s) => s.lastWsPath)
   const setLastWsPath = useStore((s) => s.setLastWsPath)
+  const activeTabWs = useStore((s) =>
+    activeTabId ? workspaceOfTab(s.workspaceRows, s.sessions, activeTabId) : null
+  )
   useEffect(() => {
-    const ws = activeTabId && workspaceOfTab(workspaceRows, sessions, activeTabId)
-    if (ws) setLastWsPath(ws)
-  }, [activeTabId, sessions, workspaceRows, setLastWsPath])
+    if (activeTabWs) setLastWsPath(activeTabWs)
+  }, [activeTabWs, setLastWsPath])
   const welcomeWs = welcomeTarget(workspaceRows, lastWsPath)
   const welcomeActive = useStore((s) => s.welcomeActive)
   const setWelcomeActive = useStore((s) => s.setWelcomeActive)
@@ -1075,15 +1085,11 @@ export default function App(): JSX.Element {
   const assistRecords = useStore((s) => s.settings.assistSessions)
   const assistOn = useStore((s) => !!s.settings.assist?.on)
   const conductorsFolded = useStore((s) => s.settings.conductorsFolded)
-  const activeConductor = activeTabId
-    ? conductorOfTab(sessions, conductorTabs, assistTasks, activeTabId)
-    : undefined
-  const currentWs = currentWorkspace(
-    workspaceRows,
-    activeTabId ? rowIdOfTab(sessions, activeTabId) : null,
-    selectedWs,
-    lastWsPath
+  const activeConductor = useStore((s) =>
+    activeTabId ? conductorOfTab(s.sessions, conductorTabs, assistTasks, activeTabId) : undefined
   )
+  const activeRowId = useStore((s) => (activeTabId ? rowIdOfTab(s.sessions, activeTabId) : null))
+  const currentWs = currentWorkspace(workspaceRows, activeRowId, selectedWs, lastWsPath)
   const notesWs = activeConductor ?? currentWs
   notesWsRef.current = notesWs
   const [notesFocusWs, setNotesFocusWs] = useState(notesWs)
@@ -1126,7 +1132,7 @@ export default function App(): JSX.Element {
       return
     }
     if (route?.kind === 'discord') {
-      void setUpDiscordWithAssist().then((error) => {
+      void setUpDiscordWithAssist(prompt).then((error) => {
         if (error) showToast(error)
       })
       return
@@ -1135,7 +1141,7 @@ export default function App(): JSX.Element {
       showToast(
         'Koloft Assist is off, so pick the workspace yourself. Turn it on in Settings ▸ Assist.'
       )
-      pickWorkspaceForTyped({ prompt, title: '' })
+      pickWorkspaceForTyped({ prompt, title: '' }, backend)
       return
     }
     const toAssist = (title: string, workspace: string | null): void => {
@@ -1146,7 +1152,7 @@ export default function App(): JSX.Element {
       ).then((r) => {
         if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
-        requestNew('main', undefined, { prompt, title, path: workspace, worktree: null })
+        requestNew('main', undefined, { prompt, title, path: workspace, worktree: null }, backend)
       })
     }
     if (route?.kind === 'feature') {
@@ -1181,15 +1187,15 @@ export default function App(): JSX.Element {
       worktree: route.worktree
     }
     if (pullable(ws)) {
-      requestNew('main', ws.workspace.path, pending)
+      requestNew('main', ws.workspace.path, pending, backend)
       return
     }
     startNow(hostOf(ws.workspace.path), backend, () => pendingOptions(ws.workspace, pending))
   }
 
-  const pickWorkspaceForTyped = (typed: TypedStart): void => {
+  const pickWorkspaceForTyped = (typed: TypedStart, chosen?: SessionBackend): void => {
     setNewProject(null)
-    requestNew('main', undefined, { ...typed, path: null, worktree: null })
+    requestNew('main', undefined, { ...typed, path: null, worktree: null }, chosen)
   }
 
   const paletteActions = (): PaletteAction[] => {
@@ -1222,10 +1228,11 @@ export default function App(): JSX.Element {
   }
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
-  const activeSession = activeTab ? sessions.find((s) => s.tabId === activeTab.id) : undefined
+  const activeSessionTitle = useStore((s) =>
+    activeTab ? s.sessions.find((x) => x.tabId === activeTab.id)?.title : undefined
+  )
   // ADR-0030
   const assistSetup = useAssistSetup()
-  const accountIssue = useAccountIssue()
   const signInTabId = useStore((s) => s.signIn?.tabId)
   const whatsNewOpen = useStore((s) => s.update.open)
   const [assistSetupLater, setAssistSetupLater] = useState(false)
@@ -1241,33 +1248,37 @@ export default function App(): JSX.Element {
       !whatsNewOpen &&
       !(signInTabId && activeTabId === signInTabId))
   const landedTab = tabs.find((t) => t.id === shown.id) ?? activeTab
-  const landedSession = landedTab ? sessions.find((s) => s.tabId === landedTab.id) : undefined
+  const landed = useStore(
+    useShallow((s) => {
+      const x = s.sessions.find((y) => y.tabId === landedTab?.id)
+      return { sessionId: x?.sessionId, alive: x?.alive, treeRoot: x?.treeRoot }
+    })
+  )
   const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined
   const panelWidth = (panelTab ? workbenchWidths[panelTab] : undefined) ?? workbenchWidth
-  const liveTabs = useMemo(
-    () =>
-      new Set(
-        tabs
-          .filter((t) => {
-            if (!hasWorkbench(t)) return false
-            const sess = sessions.find((x) => x.tabId === t.id)
-            if (sess && !sess.alive) return false
-            return !!boundSessionId({ sessions, tabs }, t.id)
-          })
-          .map((t) => t.id)
-      ),
-    [sessions, tabs]
+  const liveTabIds = useStore(
+    useShallow((s) =>
+      s.tabs
+        .filter((t) => {
+          if (!hasWorkbench(t)) return false
+          const sess = s.sessions.find((x) => x.tabId === t.id)
+          if (sess && !sess.alive) return false
+          return !!boundSessionId(s, t.id)
+        })
+        .map((t) => t.id)
+    )
   )
-  const panelSid = landedSession?.sessionId
+  const liveTabs = useMemo(() => new Set(liveTabIds), [liveTabIds])
+  const panelSid = landed.sessionId
   useEffect(() => {
     if (!panelTab) return
     void useStore.getState().ensureWorkbench(panelTab)
   }, [panelTab, panelSid])
 
-  const panelReady =
-    !!panelTab && !landedTab?.resuming && !!boundSessionId({ sessions, tabs }, panelTab)
+  const panelBound = useStore((s) => !!panelTab && !!boundSessionId(s, panelTab))
+  const panelReady = panelBound && !landedTab?.resuming
 
-  const terminalReady = panelReady && !!(landedSession?.alive && landedSession.sessionId)
+  const terminalReady = panelReady && !!(landed.alive && landed.sessionId)
 
   useEffect(() => {
     window.api.workbench.setAvailable(panelReady, terminalReady)
@@ -1285,14 +1296,16 @@ export default function App(): JSX.Element {
   }, [])
 
   const welcomeRoot = welcomeWs?.workspace.path
-  const welcomeBackends = namedMethods ?? [effectiveBackend(sessionMethods, installed)]
-  const welcomeRefusal = (backend: SessionBackend): string | undefined =>
-    welcomeWs ? unsupportedPairMessage(backend, hostOf(welcomeWs.workspace.path)) : undefined
-  const welcomeIssue = (backend: SessionBackend): string | undefined =>
-    welcomeRefusal(backend) || accountIssue(backend) || undefined
+  const paletteChoice: AgentChoice = {
+    listed,
+    lead: effectiveBackend(sessionMethods, installed),
+    defaultBackend: sessionMethods.defaultBackend,
+    issue: () => '',
+    note: () => ''
+  }
   const fileTreeRoot = selectionRoot(
     hasWorkbench(landedTab) ? landedTab : undefined,
-    landedSession?.treeRoot,
+    landed.treeRoot,
     welcomeRoot
   )
 
@@ -1320,6 +1333,32 @@ export default function App(): JSX.Element {
   const dropCdpOp = useCallback((opId: string): void => {
     setCdpOps((q) => q.filter((o) => o.opId !== opId))
   }, [])
+  const onPanelTabEvicted = useCallback(
+    (t: WorkbenchTab, set: WorkbenchTabSet) => showToast(tabEvictedNotice(tabLabel(set, t))),
+    [showToast]
+  )
+  const answerBrowserDialog = useCallback(
+    (id: string, answer: BrowserDialogAnswer) => {
+      const auth = browserDialog?.kind === 'auth'
+      setBrowserDialog(null)
+      if (auth) window.api.browser.answerAuthChallenge(id, answer)
+      else window.api.browser.answerJsDialog(id, answer)
+    },
+    [browserDialog]
+  )
+  const onPanelEscapeFellThrough = useCallback(() => {
+    if (workbenchFull) setWorkbenchFull(false)
+    else returnFocus()
+  }, [workbenchFull, setWorkbenchFull, returnFocus])
+  const panelTabForSession = useCallback(
+    (sid: string) => tabForSession(useStore.getState(), sid),
+    []
+  )
+  const createCdpTab = useCallback((sid: string, url: string) => {
+    const st = useStore.getState()
+    const owner = tabForSession(st, sid)
+    return owner ? st.openCdpTab(owner, url) : Promise.resolve(null)
+  }, [])
   // PLATFORM§9
   const staged =
     !panelShown && (cdpOps.length > 0 || Object.values(cdpAttached).some((ids) => ids.length > 0))
@@ -1336,6 +1375,7 @@ export default function App(): JSX.Element {
   const [vDragging, setVDragging] = useState(false)
   const [sbDragging, setSbDragging] = useState(false)
   const dockRef = useRef<HTMLDivElement>(null)
+  const sideRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   // ADR-0011
   const shownWidth = useRef(0)
@@ -1395,20 +1435,21 @@ export default function App(): JSX.Element {
     beginLayoutDrag()
     setSbDragging(true)
     const left = dockRef.current?.getBoundingClientRect().left ?? 0
+    let live = useStore.getState().sidebarWidth
     const onMove = (ev: globalThis.MouseEvent): void => {
-      setSidebarWidth(
-        Math.min(
-          Math.max(SIDEBAR_MIN, ev.clientX - left),
-          window.innerWidth - left - CENTER_ISLANDS_MIN_WIDTH - GUTTER_AND_CANVAS_RIGHT_PADDING
-        )
+      live = Math.min(
+        Math.max(SIDEBAR_MIN, ev.clientX - left),
+        window.innerWidth - left - CENTER_ISLANDS_MIN_WIDTH - GUTTER_AND_CANVAS_RIGHT_PADDING
       )
+      if (sideRef.current) sideRef.current.style.width = `${live}px`
     }
     const onUp = (): void => {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      setSidebarWidth(live)
       setSbDragging(false)
       endLayoutDrag()
-      void window.api.settings.set({ sidebarWidth: useStore.getState().sidebarWidth })
+      void window.api.settings.set({ sidebarWidth: live })
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
@@ -1471,7 +1512,7 @@ export default function App(): JSX.Element {
         </div>
       )}
 
-      <div className="side" style={{ width: sidebarWidth }}>
+      <div className="side" ref={sideRef} style={{ width: sidebarWidth }}>
         <div className="titlebar">
           {overlay && (
             <button
@@ -1533,9 +1574,9 @@ export default function App(): JSX.Element {
           <WorkspaceSidebar
             onNewSession={startIn}
             namedMethods={namedMethods}
-            onNewWorktreeSession={(path) => requestNew('worktree', path)}
+            onNewWorktreeSession={newWorktreeSessionIn}
             onRestoreSession={setRestoreWs}
-            onScheduledJobs={(path, jobId) => setCronWs({ path, jobId })}
+            onScheduledJobs={openScheduledJobs}
           />
           {updateOffer && (
             <button
@@ -1668,13 +1709,13 @@ export default function App(): JSX.Element {
                         if (t.id === activeTabId) setPaintedGen(switchGen)
                       }}
                     />
-                    {/* CODEX§9 */}
-                    {t.resuming && t.kind !== 'codex' && <ResumingMask title={t.title} />}
+                    {/* CODEX§9 MUSE§10 */}
+                    {t.resuming && t.kind === 'claude' && <ResumingMask title={t.title} />}
                   </div>
                 ])}
                 {switching && activeTab && (
                   <ResumingMask
-                    title={activeSession?.title ?? activeTab.title}
+                    title={activeSessionTitle ?? activeTab.title}
                     label={activeTab.resuming ? undefined : 'Loading session…'}
                     late={!activeTab.resuming}
                   />
@@ -1688,30 +1729,7 @@ export default function App(): JSX.Element {
                     <div className="w-empty" tabIndex={-1}>
                       <div className="big">{basename(welcomeWs.workspace.path)}</div>
                       <div className="quiet">{welcomeQuietLine(welcomeRunning)}</div>
-                      <button
-                        className="btn-primary"
-                        disabled={!!welcomeIssue(welcomeBackends[0])}
-                        title={welcomeIssue(welcomeBackends[0])}
-                        onClick={() => startIn(welcomeWs.workspace.path)}
-                      >
-                        ＋{' '}
-                        {namedMethods
-                          ? `New ${BACKEND_LABEL[namedMethods[0]]} session`
-                          : 'New session'}
-                      </button>
-                      {namedMethods && (
-                        <button
-                          className="mini"
-                          disabled={!!welcomeIssue(namedMethods[1])}
-                          title={welcomeIssue(namedMethods[1])}
-                          onClick={() => startIn(welcomeWs.workspace.path, namedMethods[1])}
-                        >
-                          New {BACKEND_LABEL[namedMethods[1]]} session
-                        </button>
-                      )}
-                      <NoAccountLines
-                        backends={welcomeBackends.filter((b) => !welcomeRefusal(b))}
-                      />
+                      <WelcomeLaunch wsPath={welcomeWs.workspace.path} onStart={startIn} />
                       {welcomeWs.workspace.isGit && (
                         <button
                           className="mini"
@@ -1811,38 +1829,25 @@ export default function App(): JSX.Element {
                 command={panelCmd}
                 dialog={browserDialog}
                 treeRoot={fileTreeRoot}
-                session={landedSession ?? null}
                 activeTabId={landedTab?.id ?? null}
                 onUpdate={updateWorkbenchTabs}
-                onEvicted={(t, set) => showToast(tabEvictedNotice(tabLabel(set, t)))}
-                onExternalOpen={(url) => window.api.browser.openExternal(url)}
-                onCertProceed={(url) => window.api.browser.certProceed(url)}
-                onDialogAnswer={(id, answer) => {
-                  const auth = browserDialog?.kind === 'auth'
-                  setBrowserDialog(null)
-                  if (auth) window.api.browser.answerAuthChallenge(id, answer)
-                  else window.api.browser.answerJsDialog(id, answer)
-                }}
+                onEvicted={onPanelTabEvicted}
+                onExternalOpen={window.api.browser.openExternal}
+                onCertProceed={window.api.browser.certProceed}
+                onDialogAnswer={answerBrowserDialog}
                 onToggleFull={toggleFull}
                 panelFocus={panelFocus}
-                onEscapeFellThrough={() => {
-                  if (workbenchFull) setWorkbenchFull(false)
-                  else returnFocus()
-                }}
+                onEscapeFellThrough={onPanelEscapeFellThrough}
                 onReturnFocus={returnFocus}
                 pinned={cdpAttached}
-                tabForSession={(sid) => tabForSession(useStore.getState(), sid)}
+                tabForSession={panelTabForSession}
                 cdpOps={cdpOps}
                 onCdpDone={dropCdpOp}
-                onCdpCreate={(sid, url) => {
-                  const st = useStore.getState()
-                  const owner = tabForSession(st, sid)
-                  return owner ? st.openCdpTab(owner, url) : Promise.resolve(null)
-                }}
+                onCdpCreate={createCdpTab}
               />
               {switching && !staged && activeTab && (
                 <ResumingMask
-                  title={activeSession?.title ?? activeTab.title}
+                  title={activeSessionTitle ?? activeTab.title}
                   label="Loading session…"
                   late
                 />
@@ -1850,12 +1855,7 @@ export default function App(): JSX.Element {
             </div>
           )}
           {previewShown && panelTab && (
-            <WorkbenchPreview
-              tabId={panelTab}
-              root={fileTreeRoot}
-              session={landedSession ?? null}
-              width={PREVIEW_CARD_WIDTH_PX}
-            />
+            <WorkbenchPreview tabId={panelTab} root={fileTreeRoot} width={PREVIEW_CARD_WIDTH_PX} />
           )}
 
           <div className="aux-icons">
@@ -1893,7 +1893,7 @@ export default function App(): JSX.Element {
               onClose={closePalette}
               onRouted={paletteRouted}
               onOpenHit={openSearchHit}
-              methods={welcomeBackends}
+              choice={paletteChoice}
             />
           )}
           {newRequest && (
@@ -1906,6 +1906,7 @@ export default function App(): JSX.Element {
               onStart={startSession}
               launchLock={newSessionLocked}
               pending={newRequest.pending}
+              chosen={newRequest.chosen}
             />
           )}
           {newProject && (

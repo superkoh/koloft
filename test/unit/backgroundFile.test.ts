@@ -29,9 +29,10 @@ describe('BackgroundFile', () => {
     let release!: () => void
     const held = new Promise<void>((r) => (release = r))
     const realWrite = fs.promises.writeFile
-    vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce(async (...args) => {
-      await held
-      return realWrite(...(args as Parameters<typeof realWrite>))
+    let heldWriteDone!: Promise<void>
+    vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce((...args) => {
+      heldWriteDone = held.then(() => realWrite(...(args as Parameters<typeof realWrite>)))
+      return heldWriteDone
     })
     const out = new BackgroundFile(() => file)
     out.write('old')
@@ -39,6 +40,7 @@ describe('BackgroundFile', () => {
     out.flushSync()
     expect(fs.readFileSync(file, 'utf8')).toBe('new')
     release()
+    await heldWriteDone.catch(() => {})
     await vi.waitFor(() =>
       expect(fs.readdirSync(dir).filter((n) => n !== 'state.json')).toEqual([])
     )

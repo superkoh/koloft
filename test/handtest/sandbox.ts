@@ -9,6 +9,7 @@ import type { ReadableStream as WebReadableStream } from 'stream/web'
 import { parseArgs } from 'util'
 import {
   addCodexAccount,
+  addMuseAccount,
   addKeychainEntry,
   seededAccount,
   seedSettings,
@@ -32,11 +33,15 @@ import { readLoginShell } from '../../src/main/loginShell'
 import { acceptClaudeTrust } from '../../src/main/claudeTrust'
 import { acceptCodexTrust, codexConfigFile } from '../../src/main/codexTrust'
 import { codexHomes } from '../../src/main/codexAccounts'
+import { AGY_INSTALLER_URL } from '../../src/main/toolInstall'
 import { keychainService } from '../../src/shared/types'
+import { DISCORD_API_URL } from '../../src/main/discord/link'
+
+const DEV_BOT_KEYCHAIN = 'koloft-dev-discord-bot'
 
 const USAGE = `Starts a hidden dev build of Koloft with the real claude and codex, in a home of its own.
 
-  npm run handtest -- start [--account <name>] [--port <n>] [--remote]
+  npm run handtest -- start [--account <name>] [--port <n>] [--remote] [--muse] [--agy]
   npm run handtest -- menu <home> <menu item id>
   npm run handtest -- stop <home>
 
@@ -48,6 +53,16 @@ stop quits it and deletes the home.
              (the first enabled one when left out)
   --remote   also start the Docker SSH lab with the real claude on it, as a remote workspace
              (a Linux claude from KOLOFT_SMOKE_CLAUDE_LINUX, or downloaded to match the local one)
+  --muse     also install the real muse with its official installer, into the sandbox home;
+             sign in to Muse from the sandbox's Settings ▸ Accounts
+  --muse-auth <file>  with --muse, start with a Muse account "meta" signed in by this
+             auth.json, kept from an earlier sandbox's muse-homes/meta/muse (never printed)
+  --agy      also install the real agy with its official installer, into the sandbox home;
+             sign in to Antigravity from the sandbox's Settings ▸ Accounts
+  --discord <file>  connect to the real Discord as the dev build's test bot (its token from
+             the Keychain item ${DEV_BOT_KEYCHAIN}, never the installed app's), with
+             workspace a bound to a test channel: a JSON file of userId, userName, guildId,
+             channelId and channelName
 Run npm run build first.`
 
 const REPO = path.resolve(__dirname, '..', '..')
@@ -68,6 +83,8 @@ const AMBIENT_ENV_THAT_WOULD_BYPASS_THE_ACCOUNT = [
 // CC§16
 const LINUX_CLAUDE_RELEASES = 'https://downloads.claude.ai/claude-code-releases'
 const LINUX_ARCH: Record<string, string> = { aarch64: 'arm64', x86_64: 'x64' }
+const MUSE_INSTALLER = 'https://dev.meta.ai/install.sh'
+const MUSE_SIGNED_IN_ACCOUNT = 'meta'
 const LAB_USER = 'kuser'
 const LAB_ALIAS = 'kt-key'
 const LAB_GIT_ID = '-c user.email=handtest@koloft.test -c user.name=handtest'
@@ -165,6 +182,71 @@ async function useRealCodex(env: E2EEnv): Promise<boolean> {
   return true
 }
 
+async function installIntoTheSandbox(
+  env: E2EEnv,
+  name: string,
+  url: string,
+  extraEnv: Record<string, string> = {}
+): Promise<string> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`${url} answered ${res.status}`)
+  const installer = path.join(env.home, `install-${name}.sh`)
+  fs.writeFileSync(installer, await res.text(), { mode: 0o700 })
+  execFileSync('/bin/bash', [installer], {
+    env: { ...env.launchEnv, HOME: env.home, ...extraEnv },
+    stdio: 'ignore'
+  })
+  const binary = path.join(env.home, '.local', 'bin', name)
+  if (!fs.existsSync(binary)) throw new Error(`the ${name} installer left no ${binary}`)
+  return binary
+}
+
+// MUSE§1
+async function useRealMuse(env: E2EEnv): Promise<string> {
+  const muse = await installIntoTheSandbox(env, 'muse', MUSE_INSTALLER, {
+    MUSE_NO_MODIFY_PATH: '1'
+  })
+  env.launchEnv.KOLOFT_MUSE_CMD = muse
+  return muse
+}
+
+// AGY§3
+async function useRealAgy(env: E2EEnv): Promise<string> {
+  const agy = await installIntoTheSandbox(env, 'agy', AGY_INSTALLER_URL)
+  env.launchEnv.KOLOFT_AGY_CMD = agy
+  return agy
+}
+
+interface TestBinding {
+  userId: string
+  userName: string
+  guildId: string
+  channelId: string
+  channelName: string
+}
+
+function useRealDiscord(env: E2EEnv, file: string): void {
+  const bot = JSON.parse(fs.readFileSync(file, 'utf8')) as TestBinding
+  env.launchEnv.KOLOFT_DISCORD_API_URL = DISCORD_API_URL
+  addKeychainEntry(env, DEV_BOT_KEYCHAIN, 'bot', keychainSecret(DEV_BOT_KEYCHAIN, 'bot'))
+  seedSettings(env, {
+    assist: { on: true, backend: 'claude' },
+    discord: {
+      userId: bot.userId,
+      userName: bot.userName,
+      bindings: [
+        {
+          id: 'handtest',
+          scope: env.workspaces.a,
+          backend: 'claude',
+          channel: { guildId: bot.guildId, channelId: bot.channelId, name: bot.channelName },
+          touched: []
+        }
+      ]
+    }
+  })
+}
+
 async function linuxClaude(env: E2EEnv, localClaude: string): Promise<string> {
   const given = process.env.KOLOFT_SMOKE_CLAUDE_LINUX
   if (given && fs.existsSync(given)) return given
@@ -218,7 +300,15 @@ async function koloftPage(port: string): Promise<{ webSocketDebuggerUrl: string 
   return targets.find((t) => t.type === 'page' && t.url.endsWith('/renderer/index.html'))
 }
 
-async function start(opt: { account?: string; port: string; remote: boolean }): Promise<void> {
+async function start(opt: {
+  account?: string
+  port: string
+  remote: boolean
+  muse: boolean
+  museAuth?: string
+  agy: boolean
+  discord?: string
+}): Promise<void> {
   if (!fs.existsSync(MAIN_ENTRY)) throw new Error(`${MAIN_ENTRY} not found — run npm run build`)
   for (const port of [Number(opt.port), mainInspectorPort(opt.port)])
     if (!(await portIsFree(port))) throw new Error(`port ${port} is taken`)
@@ -238,6 +328,11 @@ async function start(opt: { account?: string; port: string; remote: boolean }): 
     })
     const claude = await useRealClaude(env, account)
     const codex = await useRealCodex(env)
+    const muse = opt.muse ? await useRealMuse(env) : undefined
+    if (opt.museAuth)
+      addMuseAccount(env, MUSE_SIGNED_IN_ACCOUNT, fs.readFileSync(opt.museAuth, 'utf8'))
+    const agy = opt.agy ? await useRealAgy(env) : undefined
+    if (opt.discord) useRealDiscord(env, opt.discord)
     if (opt.remote) lab = await startRemote(env, claude)
     const remote = lab ? remoteKeyFor(LAB_ALIAS, LAB_USER) : undefined
     writeLayoutWithTheShippedWorkbenchDefault(env, remote)
@@ -274,6 +369,8 @@ async function start(opt: { account?: string; port: string; remote: boolean }): 
           home: env.home,
           account,
           codex,
+          muse,
+          agy,
           workspaces: { ...env.workspaces, ...(remote ? { remote } : {}) },
           log,
           stop: `npm run handtest -- stop ${env.home}`
@@ -379,13 +476,25 @@ const { positionals, values } = parseArgs({
   options: {
     account: { type: 'string' },
     port: { type: 'string', default: DEFAULT_PORT },
-    remote: { type: 'boolean', default: false }
+    remote: { type: 'boolean', default: false },
+    muse: { type: 'boolean', default: false },
+    'muse-auth': { type: 'string' },
+    agy: { type: 'boolean', default: false },
+    discord: { type: 'string' }
   }
 })
 
 const [command, home, menuItem] = positionals
 if (command === 'start') {
-  await start({ account: values.account, port: values.port, remote: values.remote })
+  await start({
+    account: values.account,
+    port: values.port,
+    remote: values.remote,
+    muse: values.muse,
+    museAuth: values['muse-auth'],
+    agy: values.agy,
+    discord: values.discord
+  })
 } else if (command === 'stop' && home) {
   await stop(home)
 } else if (command === 'menu' && home && menuItem) {

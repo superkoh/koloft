@@ -68,6 +68,7 @@ export { NO_MENTIONS }
 export const COMMAND_INTERACTION = 2
 export const COMPONENT_INTERACTION = 3
 export const AUTOCOMPLETE_INTERACTION = 4
+export const FORM_SUBMIT_INTERACTION = 5
 const REPLY_TO_INTERACTION = 4
 const ONLY_THE_SENDER_SEES_IT = 64
 const PUBLIC_THREAD_KEPT_A_WEEK_MINUTES = 10080
@@ -87,6 +88,13 @@ export interface DiscordInteraction {
   options: Record<string, string>
   focused?: string
   customId?: string
+  fields?: Record<string, string>
+}
+
+interface RawComponent {
+  custom_id?: string
+  value?: unknown
+  components?: RawComponent[]
 }
 
 interface RawInteraction {
@@ -100,7 +108,17 @@ interface RawInteraction {
     name?: string
     custom_id?: string
     options?: { name: string; value?: unknown; focused?: boolean }[]
+    components?: RawComponent[]
   }
+}
+
+// PLATFORM§39
+function fieldsOf(rows: RawComponent[]): Record<string, string> {
+  const fields: Record<string, string> = {}
+  for (const row of rows)
+    for (const c of row.components ?? [])
+      if (c.custom_id && typeof c.value === 'string') fields[c.custom_id] = c.value
+  return fields
 }
 
 export interface SlashCommandSpec {
@@ -131,7 +149,8 @@ export function sameCommand(a: SlashCommandSpec, b: SlashCommandSpec): boolean {
 export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
   const userId = raw.member?.user?.id ?? raw.user?.id
   const data = raw.data
-  const pressed = raw.type === COMPONENT_INTERACTION ? data?.custom_id : undefined
+  const submitted = raw.type === FORM_SUBMIT_INTERACTION
+  const pressed = raw.type === COMPONENT_INTERACTION || submitted ? data?.custom_id : undefined
   if (!raw.channel_id || !userId || !data || !(data.name || pressed)) return null
   const options: Record<string, string> = {}
   let focused: string | undefined
@@ -148,7 +167,8 @@ export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
     command: data.name ?? '',
     options,
     focused,
-    ...(pressed ? { customId: pressed } : {})
+    ...(pressed ? { customId: pressed } : {}),
+    ...(submitted ? { fields: fieldsOf(data.components ?? []) } : {})
   }
 }
 
@@ -164,6 +184,7 @@ export interface DiscordLinkDeps {
   onInteraction(i: DiscordInteraction): void
   onReady(): void
   postFailed(channelId: string, error: string): void
+  channelGone(channelId: string): void
 }
 
 interface Author {
@@ -484,6 +505,8 @@ export class DiscordLink {
       if (this.failing.delete(channelId)) this.d.push(this.status())
       return sent
     } catch (error) {
+      if (error instanceof DiscordHttpError && error.status === NOT_FOUND)
+        this.d.channelGone(channelId)
       if (error instanceof DiscordHttpError && !this.failing.has(channelId)) {
         this.failing.set(channelId, error.message)
         this.d.push(this.status())

@@ -574,16 +574,18 @@ describe('worktree preparation recovery', () => {
   const resource = {
     name: 'interrupted',
     dir: '/repo/.koloft/worktrees/interrupted',
-    recoveryResourceId: 'resource-1'
+    recoveryResourceId: 'resource-1',
+    recoveryBackend: 'muse' as const
   }
 
-  it('recovers the recorded resource for an exact name or a selected row', () => {
+  it('recovers the recorded resource for an exact name or a selected row, with the tool that recorded it', () => {
     for (const aim of [
       worktreeAim([resource], 'Interrupted', { where: 'field' }),
       worktreeAim([resource], '', { where: 'list', index: 0 })
     ]) {
       expect(aim.kind).toBe('recover')
       if (aim.kind !== 'recover') throw new Error('expected recovery')
+      expect(aim.backend).toBe('muse')
       expect(resolveLaunch(aim, '/repo')).toEqual({
         cwd: '/repo',
         worktreeResourceId: 'resource-1'

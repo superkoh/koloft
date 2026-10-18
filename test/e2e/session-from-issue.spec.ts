@@ -17,6 +17,7 @@ import {
   type ClaudeCall
 } from './helpers/p1'
 import { waitForSessionRow } from './helpers/blackbox'
+import { codexCalls } from './helpers/codex'
 import {
   addRemoteWorkspace,
   installFakeRemote,
@@ -63,6 +64,17 @@ function git(cwd: string, ...args: string[]): string {
     ['-c', 'user.email=e2e@koloft.test', '-c', 'user.name=koloft-e2e', ...args],
     { cwd, encoding: 'utf8' }
   ).trim()
+}
+
+function pushPrOnlyOnGithub(env: E2EEnv, ws: string): string {
+  const origin = path.join(env.home, 'origin.git')
+  git(env.home, 'init', '-q', '--bare', origin)
+  git(ws, 'remote', 'add', 'origin', origin)
+  git(ws, 'commit', '-q', '--allow-empty', '-m', 'the pull request')
+  git(ws, 'push', '-q', 'origin', `HEAD:refs/pull/${PR_ONLY_ON_GITHUB.number}/head`)
+  const prHead = git(ws, 'rev-parse', 'HEAD')
+  git(ws, 'reset', '-q', '--hard', 'HEAD~1')
+  return prHead
 }
 
 function itemRow(dlg: Locator, n: number): Locator {
@@ -155,13 +167,7 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
     fs.writeFileSync(path.join(ws, '.env'), 'PORT=3000\n')
     const onBranch = path.join(ws, '.claude', 'worktrees', 'fix-190')
     git(ws, 'worktree', 'add', '-q', '-b', 'fix/restart', onBranch)
-    const origin = path.join(env.home, 'origin.git')
-    git(env.home, 'init', '-q', '--bare', origin)
-    git(ws, 'remote', 'add', 'origin', origin)
-    git(ws, 'commit', '-q', '--allow-empty', '-m', 'the pull request')
-    git(ws, 'push', '-q', 'origin', 'HEAD:refs/pull/330/head')
-    const prHead = git(ws, 'rev-parse', 'HEAD')
-    git(ws, 'reset', '-q', '--hard', 'HEAD~1')
+    const prHead = pushPrOnlyOnGithub(env, ws)
     feedGithub(env, ws)
 
     const app = await launchApp(env)
@@ -215,9 +221,10 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
       await waitBooted(page)
       const dlg = await openWorktreeSession(page, 'ws-a')
       await pickWithKeys(page, dlg, 218)
-      await expect(dlg.locator('.modal-foot button[data-default="false"]')).toHaveText(
-        'Create from #218 · Codex⇧⏎'
+      await expect(dlg.locator('.modal-foot button[data-default="true"]')).toHaveText(
+        'Create from #218 · Claude⏎'
       )
+      await expect(dlg.getByRole('button', { name: 'Pick an agent' })).toBeVisible()
       await page.keyboard.press('Shift+Enter')
       await expect(dlg).toHaveCount(0)
 
@@ -229,6 +236,42 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
       expect(call.argv).not.toContain('--name')
       expectIssueMessage(call.argv[call.argv.length - 1])
       expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test("local Codex: a pull request whose branch is only on GitHub gets the same pr-<n> worktree, fetched from the pull request's head, and the same first message", async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    const ws = env.workspaces.a
+    gitInit(ws)
+    const prHead = pushPrOnlyOnGithub(env, ws)
+    feedGithub(env, ws)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'ws-a')
+      await pickWithKeys(page, dlg, 330)
+      await expect(dlg.locator('.modal-foot button[data-default="true"]')).toHaveText(
+        'Create from #330 · Claude⏎'
+      )
+      await expect(dlg.getByRole('button', { name: 'Pick an agent' })).toBeVisible()
+      await page.keyboard.press('Shift+Enter')
+      await expect(dlg).toHaveCount(0)
+
+      await expect.poll(() => codexCalls(env).length, { timeout: 40_000 }).toBe(1)
+      const [call] = codexCalls(env)
+      const made = path.join(ws, '.claude', 'worktrees', 'pr-330')
+      expect(fs.realpathSync(call.cwd)).toBe(fs.realpathSync(made))
+      expect(git(made, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('feat/payment-retry')
+      expect(git(made, 'rev-parse', 'HEAD')).toBe(prHead)
+      expect(call.argv[call.argv.length - 1]).toContain('gh pr view 330 --comments')
+      expect(readCalls(env)).toHaveLength(0)
+      await waitForSessionRow(page, 'ws-a', 'pr-330')
     } finally {
       await quitAndClose(app)
     }
@@ -273,18 +316,3 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
     }
   })
 })
-
-interface CodexCall {
-  argv: string[]
-  cwd: string
-}
-
-function codexCalls(env: E2EEnv): CodexCall[] {
-  const file = path.join(env.home, 'fake-codex-calls.jsonl')
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as CodexCall)
-}

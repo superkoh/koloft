@@ -35,10 +35,19 @@ import {
   wbUnreadTabs
 } from './helpers/workbench'
 import { setupChangeFixture } from './helpers/filesFixture'
+import {
+  claudeRows,
+  codexCalls,
+  codexRows,
+  fakeCodexLog,
+  startCodex,
+  type CodexCall
+} from './helpers/codex'
 import { portOffset } from '../../src/shared/worktreeName'
 import {
   addWorkspace,
   centerTerm,
+  agentRow,
   chooseBackend,
   clickAppMenuItem,
   dialogPrimary,
@@ -71,13 +80,6 @@ const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const A_REMOVAL_WOULD_HAVE_FINISHED_MS = 3000
 
-interface CodexCall {
-  pid: number
-  argv: string[]
-  cwd: string
-  sessionId: string
-  codexHome: string | null
-}
 function codexOpenOutputs(env: E2EEnv): string[] {
   return fs
     .readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
@@ -103,42 +105,14 @@ function codexPrompts(env: E2EEnv): string[] {
       }
     })
 }
-function fakeCodexLog<T>(env: E2EEnv, name: string): T[] {
-  const file = path.join(env.home, name)
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line) as T]
-      } catch {
-        return []
-      }
-    })
-}
-function codexCalls(env: E2EEnv): CodexCall[] {
-  return fakeCodexLog<CodexCall>(env, 'fake-codex-calls.jsonl')
-}
 async function startCodexInWorktree(page: Page, env: E2EEnv, name: string): Promise<CodexCall> {
   const before = codexCalls(env).length
   await newIn(page, true)
   await worktreeDialog(page).locator('input').fill(name)
-  await chooseBackend(page, 'other')
+  await chooseBackend(page, 'Codex')
   await expect.poll(() => codexCalls(env).length).toBe(before + 1)
   await expect(codexRows(page).filter({ hasText: 'Starting…' })).toHaveCount(0)
   return codexCalls(env)[before]
-}
-function codexRows(page: Page): Locator {
-  return wsRows(page, 'ws-a').filter({
-    hasNot: page.getByRole('img', { name: 'Claude', exact: true })
-  })
-}
-function claudeRows(page: Page): Locator {
-  return wsRows(page, 'ws-a').filter({
-    has: page.getByRole('img', { name: 'Claude', exact: true })
-  })
 }
 async function restoreFromTheFirstMenuOpenedAfterLaunch(page: Page): Promise<void> {
   await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
@@ -155,14 +129,6 @@ async function newIn(
   const item = worktree ? 'New worktree session' : method ? `New ${method} session` : 'New session'
   await page.locator('.menu .mi', { hasText: item }).click()
 }
-async function startCodex(page: Page, env: E2EEnv): Promise<void> {
-  const before = codexCalls(env).length
-  await newSessionInWith(page, 'ws-a', 'Codex')
-  await expect.poll(() => codexCalls(env).length).toBe(before + 1)
-  await expect(codexRows(page).filter({ hasText: 'Starting…' })).toHaveCount(0)
-  await expect(codexRows(page).and(page.locator('.active'))).toHaveClass(/st-waiting/)
-}
-
 test.describe('Codex sessions through the real method chooser, process transport, saved history and UI lifecycle, with only the external CLI faked', () => {
   test('two saved Codex sessions remain switchable through native startup prompts and a new session', async ({
     env
@@ -178,6 +144,9 @@ test.describe('Codex sessions through the real method chooser, process transport
         fs.writeFileSync(path.join(env.home, 'fake-codex-next-title'), title)
         await startCodex(page, env)
         saved.push({ title, id: codexCalls(env).at(-1)!.sessionId })
+        await expect
+          .poll(() => fs.existsSync(path.join(env.home, 'fake-codex-next-title')))
+          .toBe(false)
         await sendShortcut(app, 'shortcut:close-tab')
         await expect(codexRows(page).filter({ hasText: title })).toHaveClass(/cold/)
       }
@@ -230,15 +199,57 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('/new in a Codex tab binds its one row to the new thread, as /clear does in Claude, and the old thread waits in Restore session, which resumes it', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      fs.writeFileSync(path.join(env.home, 'fake-codex-next-title'), 'Before new')
+      const before = await startCodex(page, env)
+      await expect(codexRows(page).filter({ hasText: 'Before new' })).toHaveCount(1)
+      const tabs = await termIds(page)
+
+      fs.writeFileSync(path.join(env.home, 'fake-codex-next-title'), 'After new')
+      await runIn(page, centerTerm(page), '/new')
+      await expect.poll(() => codexCalls(env).length).toBe(2)
+      const after = codexCalls(env)[1]
+      expect(after.method).toBe('thread/start')
+      expect(after.sessionId).not.toBe(before.sessionId)
+
+      await expect(codexRows(page)).toHaveText(/After new/)
+      await expect(codexRows(page)).toHaveClass(/\bactive\b/)
+      await expect(codexRows(page)).toHaveCount(1)
+      expect(await termIds(page)).toEqual(tabs)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
+      const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
+      await expect(history.getByRole('button').filter({ hasText: 'After new' })).toHaveCount(0)
+      await history.getByRole('button').filter({ hasText: 'Before new' }).click()
+      await expect.poll(() => codexCalls(env).length).toBe(3)
+      expect(codexCalls(env)[2]).toMatchObject({
+        method: 'thread/resume',
+        sessionId: before.sessionId
+      })
+      await expect(codexRows(page)).toHaveCount(2)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('the workspace entrance starts the default method straight away', async ({ env }) => {
     installCodex(env)
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await expect(
-        page.locator('.w-empty').getByRole('button', { name: 'New Codex session' })
-      ).toBeVisible()
+      const empty = page.locator('.w-empty')
+      await expect(empty.locator('button[data-default="true"]')).toHaveText('＋ New Claude session')
+      await expect(empty.getByRole('button', { name: 'Pick an agent' })).toBeVisible()
       const menu = await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       await expect(menu.locator('.mi', { hasText: 'New Codex session' })).toBeVisible()
       await menu.locator('.mi', { hasText: 'New Claude session' }).click()
@@ -255,7 +266,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // ADR-0030
-  test('with no Codex account, "New Codex session" is shut on the empty workspace and in the ⌘N picker, under a line that stays and whose Settings part opens Settings ▸ Accounts', async ({
+  test('with no Codex account, Codex is shut as "No account" in the agent list of the empty workspace and of the ⌘N picker, where ⇧⏎ opens that list and Esc shuts only the list, under a line that stays and whose Settings part opens Settings ▸ Accounts', async ({
     env
   }) => {
     installCodex(env)
@@ -267,18 +278,26 @@ test.describe('Codex sessions through the real method chooser, process transport
       await waitBooted(page)
       const empty = page.locator('.w-empty')
       const line = /^No Codex account yet — add one in Settings ▸ Accounts\.$/
-      await expect(empty.getByRole('button', { name: 'New Codex session' })).toBeDisabled()
       await expect(empty.getByRole('button', { name: /New Claude session/ })).toBeEnabled()
+      await empty.getByRole('button', { name: 'Pick an agent' }).click()
+      await expect(agentRow(page, 'Codex')).toHaveAttribute('aria-disabled', 'true')
+      await expect(agentRow(page, 'Codex')).toContainText('No account')
       await expect(empty.locator('.field-hint.bad')).toHaveText(line)
       await snap(page, 'codex-no-account-empty-workspace')
+      await agentRow(page, 'Codex').click({ force: true })
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('listbox', { name: 'Agents' })).toHaveCount(0)
 
       await clickAppMenuItem(app, page, 'new-session')
       const dlg = pickerDialog(page)
       await expect(dlg).toBeVisible({ timeout: 15_000 })
-      await expect(dlg.locator('.modal-foot button[data-default="false"]')).toBeDisabled()
       await expect(dlg.locator('.field-hint.bad')).toHaveText(line)
-      await snap(page, 'codex-no-account-picker')
       await page.keyboard.press('Shift+Enter')
+      await expect(agentRow(page, 'Codex')).toHaveAttribute('aria-disabled', 'true')
+      await snap(page, 'codex-no-account-picker')
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('listbox', { name: 'Agents' })).toHaveCount(0)
+      await expect(dlg).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(dlg).toHaveCount(0)
 
@@ -332,7 +351,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('the worktree dialog still asks, and its buttons name both methods', async ({ env }) => {
+  test('the worktree dialog still asks, and its agent list names both methods', async ({ env }) => {
     installCodex(env)
     gitInit(env.workspaces.a)
     const app = await launchApp(env)
@@ -347,9 +366,11 @@ test.describe('Codex sessions through the real method chooser, process transport
 
       await page.keyboard.type('feat-x')
       await expect(dialogPrimary(dialog)).toContainText('Create · Claude')
-      await expect(dialog.locator('.modal-foot button[data-default="false"]')).toHaveText(
-        'Create · Codex⇧⏎'
-      )
+      await dialog.getByRole('button', { name: 'Pick an agent' }).click()
+      await expect(page.getByRole('listbox', { name: 'Agents' }).getByRole('option')).toHaveText([
+        '1Claudedefault',
+        '2Codex'
+      ])
       const screenshots = path.join(__dirname, '../../test-results/codex-ui')
       fs.mkdirSync(screenshots, { recursive: true })
       await page.screenshot({
@@ -357,7 +378,8 @@ test.describe('Codex sessions through the real method chooser, process transport
         animations: 'disabled'
       })
 
-      await chooseBackend(page, 'other')
+      await agentRow(page, 'Codex').click()
+      await expect(dialog).toHaveCount(0)
       await expect.poll(() => codexCalls(env).length).toBe(1)
       expect(codexCalls(env)[0].cwd).toContain('feat-x')
       expect(readCalls(env)).toHaveLength(0)
@@ -376,9 +398,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await addWorkspace(page, env.workspaces.b)
       await clickAppMenuItem(app, page, 'new-session')
       await expect(pickerDialog(page)).toBeVisible({ timeout: 15_000 })
-      await expect(
-        pickerDialog(page).locator('.modal-foot button[data-default="false"]')
-      ).toHaveCount(0)
+      await expect(pickerDialog(page).getByRole('button', { name: 'Pick an agent' })).toHaveCount(0)
       await page.keyboard.press('Enter')
       await expect
         .poll(() => readCalls(env).length, { timeout: LAUNCH_MUST_NOT_WAIT_FOR_PROBE_MS })
@@ -399,7 +419,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await clickAppMenuItem(app, page, 'new-session')
       const dlg = pickerDialog(page)
       await expect(dlg).toBeVisible({ timeout: 15_000 })
-      await expect(dlg.locator('.modal-foot button[data-default=false]')).toBeVisible()
+      await expect(dlg.getByRole('button', { name: 'Pick an agent' })).toBeVisible()
       await page.keyboard.press('Shift+Enter')
       await expect.poll(() => codexCalls(env).length).toBe(1)
       await expect(dlg).toHaveCount(0)
@@ -617,13 +637,20 @@ test.describe('Codex sessions through the real method chooser, process transport
         .trim()
         .split('\n')
         .map((line) => JSON.parse(line) as { argv: string[] })
-      expect(servers.map((call) => statusOverride(call.argv)).filter(Boolean)).toEqual([
-        preset,
-        preset,
-        preset
-      ])
+      expect(new Set(servers.map((call) => statusOverride(call.argv)).filter(Boolean))).toEqual(
+        new Set([preset])
+      )
       expect(readCalls(env).some((call) => statusOverride(call.argv))).toBe(false)
-      expect(fs.readFileSync(configFile, 'utf8')).toBe(userConfig)
+      const config = fs.readFileSync(configFile, 'utf8')
+      expect(config.startsWith(userConfig)).toBe(true)
+      expect(
+        config
+          .slice(userConfig.length)
+          .split('\n')
+          .filter(
+            (line) => line.trim() && !/^(\[hooks\.state\."[^"]+"\]|trusted_hash = )/.test(line)
+          )
+      ).toEqual([])
     } finally {
       await quitAndClose(app)
     }
@@ -699,11 +726,11 @@ test.describe('Codex sessions through the real method chooser, process transport
         .split('\n')
         .map((line) => JSON.parse(line) as { argv: string[]; playwrightMcpEndpoint: string })
         .filter((call) => call.argv.some((a) => a.startsWith('tui.status_line=')))
-      expect(tabServers).toHaveLength(1)
-      expect(tabServers[0].argv.filter((a) => a.startsWith('mcp_servers.'))).toEqual([
-        'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
-      ])
-      const url = tabServers[0].playwrightMcpEndpoint
+      for (const server of tabServers)
+        expect(server.argv.filter((a) => a.startsWith('mcp_servers.'))).toEqual([
+          'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
+        ])
+      const url = tabServers.at(-1)!.playwrightMcpEndpoint
       expect(url).toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[a-f0-9]{32}$/)
 
       const first = await chromium.connectOverCDP(url)
@@ -750,7 +777,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       const dialog = worktreeDialog(page)
       await expect(dialog).toBeVisible()
       await dialog.locator('input').fill('codex-feature')
-      await chooseBackend(page, 'other')
+      await chooseBackend(page, 'Codex')
       await expect.poll(() => codexCalls(env).length).toBe(1)
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
       const first = codexCalls(env)[0]
@@ -790,7 +817,8 @@ test.describe('Codex sessions through the real method chooser, process transport
         .map((line) => (JSON.parse(line) as { portOffset: string | null }).portOffset)
         .filter((offset) => offset !== null)
       const offset = String(portOffset('codex-feature'))
-      expect(offsets).toEqual([offset, offset, offset])
+      expect(offsets.length).toBeGreaterThanOrEqual(3)
+      expect(new Set(offsets)).toEqual(new Set([offset]))
     } finally {
       await quitAndClose(app)
     }
@@ -1097,6 +1125,45 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  // ADR-0031 CODEX§27
+  test("a Codex tab's own app-server runs Koloft's reply-language hooks once Koloft has trusted them: the prompt and every tool call hand Codex the owner's words, which a slash command alone does not replace", async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await runIn(page, centerTerm(page), '/koloft help')
+      const handed = (): { event: string; context: string }[] =>
+        fs
+          .readFileSync(path.join(env.home, 'fake-codex-hook-output.jsonl'), 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as { event: string; stdout: string })
+          .filter((h) => h.stdout)
+          .map((h) => ({
+            event: h.event,
+            context: (JSON.parse(h.stdout) as { hookSpecificOutput: { additionalContext: string } })
+              .hookSpecificOutput.additionalContext
+          }))
+      await expect
+        .poll(() => {
+          try {
+            return handed()
+              .slice(1)
+              .map((h) => `${h.event} ${h.context.includes('«Codex fixture session»')}`)
+          } catch {
+            return []
+          }
+        })
+        .toEqual(['UserPromptSubmit true', 'PostToolUse true'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('Codex approval, interruption and close confirmation use the shared session controls', async ({
     env
   }) => {
@@ -1114,6 +1181,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       await confirm.getByRole('button', { name: 'Cancel', exact: true }).click()
       await expect(codexRows(page)).toHaveClass(/st-approval/)
       await runIn(page, centerTerm(page), 'y')
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), 'please ask me')
+      await expect(codexRows(page)).toHaveClass(/st-approval/)
+      await page.keyboard.press('2')
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
       await runIn(page, centerTerm(page), 'hold')
       await expect(codexRows(page)).toHaveClass(/st-working/)
@@ -1446,10 +1517,9 @@ test.describe('Codex sessions through the real method chooser, process transport
       await sendShortcut(app, 'shortcut:open-settings')
       await expect(page.locator('.set-main')).toContainText('Sign in to Codex')
       await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
-      await expect(page.getByRole('button', { name: 'Use Claude by default' })).toHaveAttribute(
-        'aria-pressed',
-        'true'
-      )
+      const defaultMethod = (): Locator =>
+        page.getByRole('button', { name: 'Default session method' })
+      await expect(defaultMethod()).toHaveText('Claude')
       await expect(page.getByRole('switch', { name: 'Enable Claude', exact: true })).toBeDisabled()
       const screenshots = path.join(__dirname, '../../test-results/codex-ui')
       fs.mkdirSync(screenshots, { recursive: true })
@@ -1457,7 +1527,9 @@ test.describe('Codex sessions through the real method chooser, process transport
         path: path.join(screenshots, 'session-methods.png'),
         animations: 'disabled'
       })
-      await page.getByRole('button', { name: 'Use Codex by default' }).click()
+      await defaultMethod().click()
+      await agentRow(page, 'Codex').click()
+      await expect(defaultMethod()).toHaveText('Codex')
       await page.keyboard.press('Escape')
 
       await newIn(page, false, 'Codex')
@@ -1485,16 +1557,14 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(codexRows(page)).toHaveCount(2)
       await sendShortcut(app, 'shortcut:open-settings')
       await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
-      await expect(page.getByRole('button', { name: 'Use Codex by default' })).toHaveAttribute(
-        'aria-pressed',
-        'true'
-      )
+      await expect(defaultMethod()).toHaveText('Codex')
       await page.getByRole('switch', { name: 'Enable Codex', exact: true }).uncheck()
-      await expect(page.getByRole('button', { name: 'Use Claude by default' })).toHaveAttribute(
-        'aria-pressed',
-        'true'
-      )
-      await expect(page.getByRole('button', { name: 'Use Codex by default' })).toBeDisabled()
+      await expect(defaultMethod()).toHaveText('Claude')
+      await defaultMethod().click()
+      await expect(agentRow(page, 'Codex')).toHaveAttribute('aria-disabled', 'true')
+      await expect(agentRow(page, 'Codex')).toContainText('Off')
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('listbox', { name: 'Agents' })).toHaveCount(0)
       await page.keyboard.press('Escape')
 
       const menu = await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
@@ -1731,6 +1801,80 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(page.locator('.terminals .term-wrap')).toHaveCount(0, { timeout: 30_000 })
       await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex job left open loses its folder and branch when you close its tab, though the run left an ignored build file Codex itself would keep; its line says so, and clicking its cold row makes the folder again for the same thread', async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    fs.writeFileSync(path.join(env.workspaces.a, '.gitignore'), 'build/\n')
+    gitCommitAll(env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    fs.mkdirSync(path.join(env.home, '.codex'), { recursive: true })
+    fs.writeFileSync(
+      path.join(env.home, '.codex', 'config.toml'),
+      `[projects.${JSON.stringify(fs.realpathSync(env.workspaces.a))}]\ntrust_level = "trusted"\n`
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      const dlg = page.locator('.modal.cronjobs')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
+      await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
+      await dlg.locator('[aria-label="What to run"]').fill('/daily-report now')
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
+
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(1)
+      const first = codexCalls(env)[0]
+      const tree = first.cwd
+      expect(path.basename(path.dirname(tree))).toBe('worktrees')
+      const branch = `worktree-${path.basename(tree)}`
+      const branchListed = (): string =>
+        execFileSync('git', ['branch', '--list', branch], {
+          cwd: env.workspaces.a,
+          encoding: 'utf8'
+        }).trim()
+      fs.mkdirSync(path.join(tree, 'build'))
+      fs.writeFileSync(path.join(tree, 'build', 'out.txt'), 'made by the run')
+      await expect(dlg.locator('.job-last')).toContainText('done — waiting for you', {
+        timeout: 30_000
+      })
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0)
+
+      await codexRows(page).click()
+      await expect(codexRows(page)).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(branchListed()).toBe('')
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      await expect(dlg.locator('.hist-row').first().locator('.hist-folder')).toHaveText(
+        ' · folder removed',
+        { timeout: 30_000 }
+      )
+      await expect(dlg.locator('.hist-row').first().locator('.hist-state')).toHaveText(
+        'Closed by you'
+      )
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0)
+
+      await codexRows(page).click()
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(2)
+      await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+      expect(codexCalls(env)[1]).toMatchObject({ cwd: tree, sessionId: first.sessionId })
+      expect(fs.existsSync(tree)).toBe(true)
     } finally {
       await quitAndClose(app)
     }

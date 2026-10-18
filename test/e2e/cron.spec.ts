@@ -11,7 +11,8 @@ import {
   REMOTE_WS_NAME,
   remoteDir
 } from './helpers/remote'
-import { seedClaudeTrust, seedSettings, type E2EEnv } from './helpers/env'
+import { installCodex, seedClaudeTrust, seedSettings, type E2EEnv } from './helpers/env'
+import { codexCalls } from './helpers/codex'
 import { runGit } from './helpers/gitFixture'
 import {
   auxIcon,
@@ -37,9 +38,9 @@ import type { CronFile, CronJob } from '../../src/shared/types'
 
 const gitWhere = (slug: string): string =>
   `A new copy of the repo every time — .claude/worktrees/${slug}-<date>-<time>, ` +
-  `branch worktree-${slug}-…. Your own files are never touched. Each run's folder and ` +
-  `branch stay until you remove them (git worktree remove). Closing and /exit work ` +
-  `exactly as in any New worktree session.`
+  `branch worktree-${slug}-…. Your own files are never touched. When a run's tab closes, ` +
+  `Koloft removes its folder and branch, unless they hold work not committed; its row in ` +
+  `the sidebar still resumes it.`
 
 function cronDialog(page: Page): Locator {
   return page.locator('.modal.cronjobs')
@@ -126,6 +127,7 @@ interface HistLine {
   when: string
   state: string
   wt: string
+  folder: string
 }
 
 async function histLines(page: Page): Promise<HistLine[]> {
@@ -135,9 +137,18 @@ async function histLines(page: Page): Promise<HistLine[]> {
       rows.map((r) => ({
         when: (r.querySelector('.hist-when')?.textContent ?? '').trim(),
         state: (r.querySelector('.hist-state')?.textContent ?? '').trim(),
-        wt: r.querySelector('.hist-wt')?.textContent ?? ''
+        wt: r.querySelector('.hist-wt')?.textContent ?? '',
+        folder: r.querySelector('.hist-folder')?.textContent ?? ''
       }))
     )
+}
+
+function runTree(root: string, wt: string): string {
+  return path.join(root, '.claude', 'worktrees', wt)
+}
+
+function branchOf(root: string, wt: string): string {
+  return runGit(root, 'branch', '--list', `worktree-${wt}`).trim()
 }
 
 function storePath(env: E2EEnv): string {
@@ -450,7 +461,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
-  test('BB-M06: closing a finished run yourself, and resuming it from the sidebar', async ({
+  test('BB-M06: closing a finished run yourself takes its folder and branch away and leaves its row, and resuming it from the sidebar makes the folder again for the same session', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -481,22 +492,76 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await expect(row.locator('.ws-tab-cron')).toHaveCount(1)
 
+      const tree = runTree(env.workspaces.a, wt)
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(branchOf(env.workspaces.a, wt)).toBe('')
+
       const dlg2 = await openCron(page, 'ws-a')
       await expect(dlg2).toBeVisible()
       await expect
-        .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
-        .toBe('Closed by you')
-      expect((await histLines(page))[0].wt).toBe(` · ${wt}`)
+        .poll(async () => (await histLines(page))[0], { timeout: 20_000 })
+        .toMatchObject({ state: 'Closed by you', wt: ` · ${wt}`, folder: ' · folder removed' })
       await closeCron(page)
-
-      await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
-      expect(fs.existsSync(path.join(env.workspaces.a, '.claude', 'worktrees', wt))).toBe(true)
 
       const before = readCalls(env).length
       await row.click()
       const resume = await waitNewCall(env, before)
       expect(resumedId(resume)).toBe(call.sessionId)
       await waitRunStateBound(row)
+      expect(fs.existsSync(tree)).toBe(true)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-M29: a job that names a model, run on a custom endpoint account that pins its own model, starts without --model, and its History line says the endpoint set the model', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    seedSettings(env, {
+      accounts: [
+        {
+          name: 'glm',
+          kind: 'custom',
+          enabled: true,
+          fable: 'unknown',
+          status: 'ok',
+          addedAt: 1,
+          baseUrl: 'https://custom-endpoint.invalid/api',
+          model: 'glm-5.2'
+        }
+      ]
+    })
+    fs.writeFileSync(
+      env.keychainFile,
+      JSON.stringify({ 'koloft-dev-custom-endpoint': { glm: 'custom-endpoint-fixture-token' } })
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await createJob(page, dlg, { name: 'Nightly report', task: '/daily-report', model: 'Sonnet' })
+      await clickRunNow(page, 'Nightly report')
+
+      const call = await waitNewCall(env, 0)
+      expect(call.argv).not.toContain('--model')
+      const row = cronRows(page, 'ws-a')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await closeCron(page)
+
+      await row.click()
+      await expect(row).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+
+      await openCron(page, 'ws-a')
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
+        .toBe('Closed by you — model set by the endpoint account glm')
     } finally {
       await app.close().catch(() => {})
     }
@@ -549,8 +614,104 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(row).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
       expect(runGit(env.workspaces.a, 'branch', '--list', `worktree-${wt}`).trim()).toBe('')
+      await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+      expect((await histLines(page))[0]).toMatchObject({
+        state: 'Done — closed itself',
+        folder: ''
+      })
     } finally {
       await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-M30: closing a run yourself keeps a folder that holds a file not committed, and its History line says why', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await createJob(page, dlg, { name: 'Nightly report', task: '/write report.md' })
+      await clickRunNow(page, 'Nightly report')
+
+      const call = await waitNewCall(env, 0)
+      const wt = worktreeOf(call)
+      const tree = runTree(env.workspaces.a, wt)
+      await expect
+        .poll(() => fs.existsSync(path.join(tree, 'report.md')), { timeout: 60_000 })
+        .toBe(true)
+      await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Nightly report')
+      await closeCron(page)
+
+      const row = cronRows(page, 'ws-a')
+      await row.click()
+      await expect(row).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+
+      await openCron(page, 'ws-a')
+      await expect
+        .poll(async () => (await histLines(page))[0], { timeout: 30_000 })
+        .toMatchObject({
+          state: 'Closed by you',
+          wt: ` · ${wt}`,
+          folder: ' · folder kept: Changes not committed'
+        })
+      expect(fs.existsSync(path.join(tree, 'report.md'))).toBe(true)
+      expect(branchOf(env.workspaces.a, wt)).not.toBe('')
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-M18 in Codex: with "Close it" on, a Codex run that left a file uncommitted stays open and says so; once the file is gone it closes for good: tab, row, worktree and branch', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
+      await fillForm(dlg, { name: 'Nightly report', task: '/write report.md' })
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Nightly report')
+
+      await expect.poll(() => codexCalls(env).length, { timeout: 60_000 }).toBe(1)
+      const tree = codexCalls(env)[0].cwd
+      expect(tree).not.toBe(env.workspaces.a)
+      const report = path.join(tree, 'report.md')
+      await expect.poll(() => fs.existsSync(report), { timeout: 60_000 }).toBe(true)
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+        .toBe('Done — not closed: Changes not committed')
+      const row = cronRows(page, 'ws-a')
+      await expect(row).toHaveCount(1)
+      expect(await tabDisplays(page)).toHaveLength(1)
+      const branch = runGit(tree, 'rev-parse', '--abbrev-ref', 'HEAD').trim()
+
+      fs.rmSync(report)
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 30_000 })
+        .toBe('Done — closed itself')
+      await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
+      await expect(row).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(env.workspaces.a, 'branch', '--list', branch).trim()).toBe('')
+    } finally {
+      await quitAndClose(app)
     }
   })
 
@@ -589,12 +750,13 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
-  test('BB-M08: jobs survive a relaunch; live runs are closed out, never stored', async ({
+  test('BB-M08: jobs survive a relaunch; live runs are closed out, never stored; the run’s tab comes back with its folder, which goes once you close that tab', async ({
     env
   }) => {
-    test.setTimeout(180_000)
+    test.setTimeout(240_000)
     gitInit(env.workspaces.a)
     const WHEN_NEXT_TODAY_OR_TOMORROW = /^Every day at 21:00 · next (today|tomorrow) 21:00$/
+    let wt = ''
     const app1 = await launchApp(env)
     try {
       const page = await app1.firstWindow()
@@ -604,7 +766,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       const dlg = await openCron(page, 'ws-a')
       await createJob(page, dlg, { name: 'Nightly report', task: '/daily-report' })
       await clickRunNow(page, 'Nightly report')
-      await waitNewCall(env, 0)
+      wt = worktreeOf(await waitNewCall(env, 0))
       await expect(cronRows(page, 'ws-a')).toHaveCount(1, { timeout: 60_000 })
       await expect(card(page, 'Nightly report').locator('.job-when')).toHaveText(
         WHEN_NEXT_TODAY_OR_TOMORROW
@@ -639,6 +801,24 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         .toBe('Ended — Koloft quit')
 
       await waitColdRowMarkedBeforeRunNowSoTheCountsAfterMeanSomething(page)
+
+      const row = cronRows(page, 'ws-a')
+      await waitRunStateBound(row)
+      await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+      const tree = runTree(env.workspaces.a, wt)
+      expect(fs.existsSync(tree)).toBe(true)
+      expect((await histLines(page))[0]).toMatchObject({ state: 'Ended — Koloft quit', folder: '' })
+
+      await closeCron(page)
+      await row.click()
+      await expect(row).toHaveClass(/\bactive\b/)
+      await sendShortcut(app2, 'shortcut:close-tab')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      await openCron(page, 'ws-a')
+      await expect
+        .poll(async () => (await histLines(page))[0], { timeout: 20_000 })
+        .toMatchObject({ state: 'Ended — Koloft quit', folder: ' · folder removed' })
 
       const before = readCalls(env).length
       await clickRunNow(page, 'Nightly report')
@@ -849,11 +1029,18 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
   })
 
   // CC§9
-  test('BB-M17: a job in a remote workspace starts claude on the machine with its task, name, model and permission, and waits for you when its turn ends', async ({
+  test('BB-M17: a job in a remote workspace starts claude on the machine with its task, name, model and permission, waits for you when its turn ends, and once you close it its folder on the machine goes', async ({
     env
   }) => {
     test.setTimeout(300_000)
     const TASK = `/daily-report please "quote" it's $HOME`
+    installFakeRemote(env)
+    gitInit(remoteDir(env))
+    // CC§9 ADR-0026
+    fs.writeFileSync(
+      path.join(machineHome(env), '.claude.json'),
+      JSON.stringify({ projects: { [remoteDir(env)]: { hasTrustDialogAccepted: true } } })
+    )
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
@@ -876,8 +1063,20 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       expect(call.argv[call.argv.indexOf('--name') + 1]).toBe('Remote report')
       expect(call.argv[call.argv.indexOf('--model') + 1]).toBe('sonnet')
       expect(call.argv[call.argv.indexOf('--permission-mode') + 1]).toBe('acceptEdits')
+      const tree = runTree(remoteDir(env), worktreeOf(call))
+      await expect.poll(() => fs.existsSync(tree), { timeout: 60_000 }).toBe(true)
 
       await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Remote report')
+      await closeCron(page)
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await row.click()
+      await expect(row).toHaveClass(/\bactive\b/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => fs.existsSync(tree), { timeout: 90_000 }).toBe(false)
+      await openCron(page, REMOTE_WS_NAME)
+      await expect
+        .poll(async () => (await histLines(page))[0], { timeout: 30_000 })
+        .toMatchObject({ state: 'Closed by you', folder: ' · folder removed' })
     } finally {
       await quitAndClose(app)
       killFakeRemote(env)
@@ -918,6 +1117,11 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+      expect((await histLines(page))[0]).toMatchObject({
+        state: 'Done — closed itself',
+        folder: ''
+      })
     } finally {
       await quitAndClose(app)
       killFakeRemote(env)

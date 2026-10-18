@@ -2,13 +2,15 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
+import { codexCalls, codexRows } from './helpers/codex'
 import {
   centerTerm,
   clickAppMenuItem,
   encodeCwd,
   gitInit,
+  newSessionInWith,
   processAlive,
   readCalls,
   resumedId,
@@ -308,6 +310,48 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       await expect(page.locator('.toast')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
+    }
+  })
+
+  test('a Codex thread with no turn yet is gated the same way: ⇧⌘R is a no-op with the toast, and its first turn unlocks a restart that resumes the same thread', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installCodex(env)
+    fs.writeFileSync(path.join(env.home, 'fake-codex-lazy'), '')
+    const { app, page } = await launch(env)
+    try {
+      await newSessionInWith(page, WS_A, 'Codex')
+      await expect.poll(() => codexCalls(env).length).toBe(1)
+      const [first] = codexCalls(env)
+      const row = codexRows(page)
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/)
+      await expect(page.locator('.term-island .term-wrap:visible')).toContainText(
+        `Codex fixture ready ${first.sessionId}`
+      )
+
+      await restart(app, page)
+      await expect(page.locator('.toast-msg')).toHaveText(LIVE_TOAST, { timeout: 20_000 })
+      expect(processAlive(first.pid)).toBe(true)
+      expect(codexCalls(env)).toHaveLength(1)
+      await expect(page.locator('.toast')).toHaveCount(0, { timeout: 20_000 })
+
+      await runIn(page, centerTerm(page), 'now we have talked')
+      await expect(page.locator('.term-island .term-wrap:visible')).toContainText('Codex done', {
+        timeout: 30_000
+      })
+
+      await restart(app, page)
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(codexCalls(env)[1]).toMatchObject({
+        method: 'thread/resume',
+        sessionId: first.sessionId
+      })
+      await expect.poll(() => processAlive(first.pid), { timeout: 30_000 }).toBe(false)
+      await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
+      await expect(row).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
     }
   })
 })

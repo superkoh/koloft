@@ -14,6 +14,7 @@ import {
   parkedBadge,
   sessionActivityBadge,
   relTime,
+  rowLookups,
   rowStateClass,
   selectionRoot,
   sessionTree,
@@ -535,5 +536,48 @@ describe('nextWaitingTab (⌘J: the session that has waited longest for you)', (
   it('answers nothing when nothing else waits', () => {
     expect(nextWaitingTab([], null, tabs)).toBeUndefined()
     expect(nextWaitingTab([{ tabId: 'a', kind: 'turn-done', at: 1 }], 'a', tabs)).toBeUndefined()
+  })
+})
+
+describe('rowLookups (which tab, live session and attention mark belong to a sidebar row)', () => {
+  const sessions = [
+    { sessionId: 's-dead', tabId: 'pty-old', alive: false },
+    { sessionId: 's-1', tabId: 'pty-1', alive: true },
+    { sessionId: 's-1', tabId: 'pty-1b', alive: true }
+  ]
+  const tabs = [
+    { id: 'pty-9', sessionId: 's-2', alive: false, asleep: true as const },
+    { id: 'pty-8', sessionId: 's-2', alive: true },
+    { id: 'pty-7', sessionId: 's-cold', alive: true },
+    { id: 'pty-6', alive: true }
+  ]
+  const bySession: AttentionEvent = { tabId: 'pty-x', sessionId: 's-1', kind: 'turn-done', at: 2 }
+  const byTab: AttentionEvent = { tabId: 'pty-1', kind: 'approval', at: 3 }
+  const look = rowLookups(sessions, tabs, [bySession, byTab])
+
+  it('a running row shows in the tab of its first live session, else its first open or asleep tab', () => {
+    expect(look.tabOf({ id: 's-1', running: true })).toBe('pty-1')
+    expect(look.tabOf({ id: 's-2', running: true })).toBe('pty-9')
+    expect(look.tabOf({ id: 's-dead', running: true })).toBeUndefined()
+  })
+
+  it('a pending row is its own tab, and a cold row has none even when a tab carries its id', () => {
+    expect(look.tabOf({ id: 'pty-new', running: false, pending: true })).toBe('pty-new')
+    expect(look.tabOf({ id: 's-cold', running: false })).toBeUndefined()
+    expect(look.hasAliveTab('s-cold')).toBe(true)
+    expect(look.hasAliveTab('s-dead')).toBe(false)
+  })
+
+  it('the live session on a tab is the first one the stream names, dead or alive', () => {
+    expect(look.sessionOn('pty-1')).toBe(sessions[1])
+    expect(look.sessionOn('pty-old')).toBe(sessions[0])
+    expect(look.sessionOn('pty-none')).toBeUndefined()
+  })
+
+  it('a row’s attention mark is the earliest one naming its session or its tab', () => {
+    expect(look.attentionOn('s-1', 'pty-1')).toBe(bySession)
+    expect(look.attentionOn('s-other', 'pty-1')).toBe(byTab)
+    expect(look.attentionOn('s-other', undefined)).toBeUndefined()
+    expect(rowLookups([], [], [byTab, bySession]).attentionOn('s-1', 'pty-1')).toBe(byTab)
   })
 })

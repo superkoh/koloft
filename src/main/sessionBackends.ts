@@ -27,6 +27,7 @@ import type { ModeClass } from './crossSessionMessage'
 
 export interface SessionBackend {
   id: BackendId
+  recoversWorktrees?: true
   availability(): Promise<BackendAvailability>
   forgetAvailability(): void
   list(): BackendSessionInfo[]
@@ -46,6 +47,8 @@ export interface SessionBackend {
   trustsFolder(dir: string): boolean | Promise<boolean>
   turns(key: string, n: number): Promise<Turn[]>
   permissionClass(tabId: string): ModeClass
+  peerNames(): (key: string) => Promise<string | null>
+  runningElsewhere(key: string): boolean | Promise<boolean>
 }
 
 export interface SessionLifecycle {
@@ -154,7 +157,7 @@ export class SessionBackends {
       backend.list().map((s): SessionInfo => ({
         ...s,
         backendId: backend.id,
-        host: s.remote ? 'ssh' : 'local',
+        host: s.remote ? 'ssh' : hostOf(s.cwd),
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
         conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId),
         assistTask: this.assistTaskOf(s.tabId),
@@ -170,6 +173,21 @@ export class SessionBackends {
 
   permissionClass(tabId: string): ModeClass {
     return this.ownerOfTab(tabId)?.permissionClass(tabId) ?? 'prompting'
+  }
+
+  peerNames(): (s: { backendId: BackendId; sessionId: string }) => Promise<string | null> {
+    const lookups = new Map<BackendId, (key: string) => Promise<string | null>>()
+    return async ({ backendId, sessionId }) => {
+      const backend = this.adapters.get(backendId)
+      if (!backend) return null
+      const lookup = lookups.get(backendId) ?? backend.peerNames()
+      lookups.set(backendId, lookup)
+      return lookup(sessionId)
+    }
+  }
+
+  async runningElsewhere(backendId: BackendId, key: string): Promise<boolean> {
+    return (await this.adapters.get(backendId)?.runningElsewhere(key)) ?? false
   }
 
   async historyRows(
@@ -197,7 +215,7 @@ export class SessionBackends {
     if (
       !SUPPORTED_PAIRS[options.kind] ||
       options.util ||
-      (options.worktreeResourceId && options.kind !== 'codex')
+      (options.worktreeResourceId && !this.adapters.get(options.kind)?.recoversWorktrees)
     ) {
       return Promise.resolve({ ok: false, code: 'invalid-args' })
     }

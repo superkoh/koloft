@@ -117,6 +117,16 @@ method. A recheck adds its date, version and command to the bullet.
   while `claude`, `qemu` and `adb` printed theirs (2026-09-23; rechecked 2026-09-24 on
   macOS 27.0: `ps eww` showed a set env word for `node` and none for `/bin/sleep`). So
   an env-based lookup never sees a leftover that is an Apple binary.
+- **`ps -o lstart` prints the start time in the locale's own date format**, and
+  `LC_ALL` beats `LC_TIME`. Measured 2026-10-17, macOS 27.0, one process each: C and
+  `en_US.UTF-8` print `Sat Oct 17 01:29:13 2026`; `zh_CN.UTF-8` `六 10月/17 01:29:13 2026`;
+  `ja_JP.UTF-8` `土 10/17 …`; `de_DE.UTF-8` `Sa. 17 Okt. …`; `LANG=zh_CN.UTF-8 LC_TIME=C`
+  prints the C form, `LC_ALL=zh_CN.UTF-8 LC_TIME=C` still the Chinese one. The command
+  column follows `LC_CTYPE`: under C (also an empty environment) a non-ASCII argument
+  prints as `M-dM-<…` escapes, under a UTF-8 `LC_CTYPE` as itself. So one `ps` that reads
+  `lstart` and `command` together has to drop `LC_ALL`, carry its value into `LC_CTYPE`
+  and set `LC_TIME=C`. `TZ` moves `lstart` too (`TZ=UTC` printed 08:38 for a local
+  01:38).
 - **macOS has no `timeout(1)`** (2026-09-24, macOS 27.0: `command -v timeout` found
   nothing), and `/usr/bin/security` waits on a GUI unlock or authorization dialog with
   no timeout of its own. A time limit in a shell script has to be a `kill -0` polling
@@ -583,6 +593,11 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 
 ## §17 Playwright as a CDP client
 
+- **A snapshot shows what a password box holds, in plain text.** After `playwright-cli
+  fill '#p' <text>` on an `<input type=password>` in a Workbench tab, `playwright-cli
+  snapshot` printed `textbox "pw" [active]: <text>`. So a secret left in a page field
+  reaches the session's transcript the next time it looks at the page. Measured
+  2026-10-15 with Koloft's playwright-cli through its relay on a `data:` page.
 - **What `connectOverCDP` expects** (measured against playwright-core 1.62 where
   marked): right after the handshake it sends `Target.getTargetInfo` with no `targetId`,
   asking for the browser's own target, and drops the connection on an error (measured).
@@ -752,6 +767,12 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 
 ## §21 xterm.js
 
+- **`@xterm/headless` names an entry file it does not ship.** In 6.1.0-beta.302 its
+  `package.json` gives `"module": "lib/xterm.mjs"`, but the package holds only
+  `lib-headless/xterm-headless.js` and `.mjs`; Vite (electron-vite and vitest) picks
+  `module` and fails with "Failed to resolve entry for package" (seen 2026-10-17 on
+  `npm run build`).
+
 - **Write buffer**: xterm takes in about 5–35 MB/s and silently throws away written
   data past a hard cap of about 50 MB (`DISCARD_WATERMARK = 50000000` in
   `src/common/input/WriteBuffer.ts`, read 2026-09-24 in 6.1.0-beta.302). Its
@@ -847,6 +868,17 @@ inferred, not checked.
   tab scrambled the Claude TUI). A WebGL terminal taken out of the layout entirely,
   with no xterm mounting or disposing (seen: the Claude TUI behind a full-width
   Workbench), came back blank until the atlas was cleared and repainted (§20).
+- **`clearTextureAtlas()` silently does nothing when page 0 looks empty.**
+  `TextureAtlas.clearTexture()` returns early when `pages[0].currentRow` is at (0, 0),
+  meant as "nothing drawn yet". But a merged page never moves its `currentRow`, and a
+  cleared page 0 stays at (0, 0) when new glyphs land on a later page. After heavy CJK
+  output and one earlier clear, page 0 was an 8192-px merged page at (0, 0), so every
+  later clear kept the old cache: glyph textures wiped the way the GPU loses them stayed
+  blank (ink 73410 → 0 → 510 pixels after `webgl:repair`) until the app restarted. Making
+  page 0's `currentRow.x` non-zero before the call lets the clear run (ink back to
+  73410); one clear resets it to (0, 0), so the other owners of that atlas skip theirs.
+  Measured 2026-10-16, Electron 43.7.3, addon 0.20.0-beta.298, `webgl-repair.spec.ts`;
+  the same guard is still on xterm.js master that day.
 
 ## §24 DOM, CSS and form controls in Chromium
 
@@ -1061,8 +1093,23 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   follows the folder's read order, not the name order: killed at 5 s, a tree of `.git`,
   `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
   gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
+- **The mtime of `<repo>/.git/worktrees` moves when a linked worktree is added, removed
+  or pruned, and only then**: a repo with none has no such folder, `git worktree add`
+  creates it, and the last `remove` or `prune` deletes it again. A checkout or a lock
+  inside a worktree, `git worktree move`, and an `rm -rf` of a worktree's folder (which
+  `git worktree list` then shows as `prunable`) leave it as it was. (Measured, git 2.54.0,
+  macOS APFS, 2026-10-17, on a throwaway repo.)
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
-  existence and mtime show whether a fetch ran.
+  existence and mtime show whether a fetch ran. **A failed fetch writes it too** (0
+  bytes), so its mtime says a fetch was tried, not that one worked — read it before
+  fetching. With `BatchMode=yes` and no askpass, a fetch the machine has no credentials
+  for fails at once with exit 128 and never waits: `Host key verification failed.` (ssh
+  origin, host not in `known_hosts`, 0.4 s), `Permission denied (publickey).` (no key,
+  0.6 s), `could not read Username … terminal prompts disabled` (https needing a login,
+  0.3 s). (2026-10-06, git 2.39.5 on Debian 12 in the e2e sshd Docker image, reached
+  with `/usr/bin/ssh` and `SshHost`'s options; a public https origin fetched in 1.6 s.
+  The 0-byte `FETCH_HEAD` also came from a fetch of a missing local path with git 2.54.0
+  on macOS 27, 2026-10-11.)
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
   own config is enough), and git splits its command on spaces.
 
@@ -1210,6 +1257,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   pull), and even with it an unchanged file may be touched again, so a watcher can see
   it again.
 - **Mirrored files keep the source machine's mtime**, not the time they arrived.
+- **`--append` breaks a rewritten file, so it cannot go on the transcripts pull**, which
+  also carries the `.title` files: a title rewritten shorter ("Hello world title" →
+  "Hi") was never pulled, and one rewritten longer ("Hi" → "Jo, a longer title") arrived
+  as "Hi, a longer title" — the old head kept, only the new tail sent. On a 20 MB
+  append-only file it did skip the full re-read (`Matched data` 0 instead of ~27 MB a
+  pull). rsync's flags hold for a whole run, so `--append` for the transcripts alone, or
+  `-I` for the hook folder alone, each need a run of their own. (2026-10-17: this Mac's
+  openrsync, protocol 29, pulling from rsync 3.2.7 in the e2e sshd image through
+  `docker exec -i`, not ssh.)
 - **Filter rules anchored with a leading `/`, and `**`, work the same on both ends.**
   `--include=/<slug>*/`, `/<slug>*/*.jsonl`, `/<slug>*/*.title`, `/<slug>*/*/`,
   `/<slug>*/*/**` then `--exclude=*` pulled exactly the workspace's transcripts, their
@@ -1248,6 +1304,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **With `mouse off`, tmux 3.6b passes the pane's mouse-mode requests (1000/1002/1006)
   to the outer terminal untouched** (measured locally in a python pty).
 - **tmux sets `TMUX` and `TMUX_PANE`** for a command inside a session.
+- **`-t <name>` falls back to the start of a session name** when no session has that exact
+  name and only one starts with it (tmux manual, target-session), so a kill aimed at a
+  session that was renamed can hit another whose name it begins.
+- **`allow-passthrough on` lets a pane's `ESC P tmux; … ESC \` reach the terminal outside
+  tmux, and nothing else**: a bare OSC the pane prints stays inside. In tmux 3.3a `all` is
+  not a valid value (`bad value: all`, the option stays off), and that error in a `-f`
+  config file leaves the new pane in view-mode, eating every key (October 2026, tmux 3.3a
+  in Docker, probed for remote Muse tabs).
 - **tmux 2.6 does not know `terminal-features` or `exit-empty`**: each line of a `-f`
   config naming them is an `invalid option` error, shown over the first window. `set -q`
   drops the error and tmux runs on (2026-10-03, Ubuntu 18.04's tmux 2.6).
@@ -1278,7 +1342,19 @@ command by hand:
 - **`stat` has two dialects.** GNU: `stat -c '%.9Y %s'` prints the last-modified time with
   nanoseconds and the size (`1748674639.260000000 16`). BSD (macOS): the same flags
   fail; `stat -f '%Fm %z'` prints the same shape (`1788431650.000000000 213`). Trying
-  GNU first and falling back to BSD works on both.
+  GNU first and falling back to BSD works on both. With a file name in front
+  (`stat -c %n:%.9Y:%s`, `stat -f %N:%Fm:%z`) and `find … -type f -exec … {} +` piped
+  into `cksum`, the stamp of a whole folder changed on an append, on a same-size rewrite
+  0.25 s apart and on a new file (2026-10-17: dash and GNU stat in the e2e sshd image,
+  and this Mac's BSD tools).
+- **awk reads that time as the same number JavaScript does.** For a `stat` line
+  `S.NNNNNNNNN size`, `awk -v ms=<String(parseFloat(S) * 1000) from Node> '{ $1 * 1000 == ms }'`
+  is true, and false for `ms + 0.001` or `ms - 1`, so a save script can check a file's
+  fingerprint on the machine against the one the editor holds. (2026-10-17: 1500 files,
+  half with times written by the file system in nanoseconds, half set to random
+  microsecond times, through macOS 27's awk and through mawk, gawk and busybox awk on
+  Debian 12 under Node 22; every one agreed.) `mktemp` and `wc -c` work there and in
+  busybox (Alpine 3.13).
 - **`readlink -f` resolves a path on both** (GNU coreutils 9.4, and macOS 27).
 - **ripgrep (`rg`) was not installed on the Ubuntu box**, and neither was
   `inotifywait`; `git grep` is there with git. So content search needs the `git grep`
@@ -1538,6 +1614,18 @@ Gateway (the live connection that pushes events):
   body; `GET /channels/{id}/messages?after=<id>&limit=<1–100>` lists the messages after
   that id, and an attachment in `MESSAGE_CREATE` carries `filename`, `size` and a `url`
   that needs no token.
+
+- **A form opened from a button** — measured 2026-10-15 with the same bot, its own Gateway
+  connection, in a channel no conductor is bound to, the owner pressing on their Discord
+  app: a button press (type 3) answered with callback `{type: 9, data: {custom_id, title,
+  components: [action row (1) holding a text input (4): custom_id, label, style 1,
+  required, max_length]}}` got 204 and the form opened. Its submit arrived as
+  `INTERACTION_CREATE` type 5, `data.custom_id` the form's, and the typed text at
+  `data.components[0].components[0].value`, exactly as typed. A type 4 reply with `flags:
+  64` answered it (204). The typed text was not posted as a message: the channel's last
+  ten messages held none with it. The text box shows what is typed in plain text; Discord
+  has no masked text input. From the docs, not measured: newer forms may wrap a text input
+  in a label component (type 18, its input under `component`).
 
 ## §40 Node `fs.watch` on a macOS directory
 
@@ -2014,3 +2102,55 @@ server unless a line says so.
 - Inside a colima container `host.docker.internal` (and `host.lima.internal`) resolve to
   `192.168.5.2`, and a server listening on the Mac's `127.0.0.1` answered there.
 - Measured 2026-10-13, colima on macOS 27.0, `node:22-bookworm-slim`.
+
+## §57 A folder's last-modified time on Linux and macOS
+
+- **Adding, renaming or removing a file right inside a folder moves the folder's
+  last-modified time.** So does creating a file inside a subfolder for that subfolder.
+- **Writing into a file already there does not move its folder's time, and a change
+  inside a subfolder does not reach the parent folder.** Watching a folder this way sees
+  its own list of names change, nothing deeper.
+- On Linux the folder's size stays `4096` through all of it; on macOS (APFS) the size
+  changes with the number of entries (`96` → `128` → `96`).
+- A missing path prints nothing to stdout from either `stat` dialect (§37).
+- Measured 2026-10-11 with one script that ran the §37 `fp()` (`stat -c '%.9Y %s'`, falling
+  back to `stat -f '%Fm %z'`) on a fresh folder after each step, one second apart: add a
+  file, append to it, rename it, remove it, add a file in a subfolder. Run in a Docker
+  `ubuntu:24.04` container (Linux 6.8.0, GNU coreutils) and on this Mac (macOS 27.0, BSD
+  `stat`). Linux output: `start 1791720666.973637444 4096`, `add file 1791720667.980639518`,
+  `edit file 1791720667.980639518` (unchanged), `rename 1791720670.010643717`,
+  `remove 1791720671.024645823`, `add in sub 1791720671.024645823` (unchanged; the
+  subfolder moved to `1791720672.028647913`).
+
+## §58 sudo with no terminal, and an askpass helper
+
+- **Without a controlling terminal, plain `sudo` fails at once**: `sudo: a terminal is
+  required to read the password; either use the -S option to read from standard input or
+  configure an askpass helper`, exit 1, even with `SUDO_ASKPASS` set. A Claude Code Bash
+  tool call has no controlling terminal (`ps` shows `TTY ??`, its zsh leads a session of
+  its own), so this is what a session's `sudo` meets.
+- **`sudo -A` runs `$SUDO_ASKPASS` with no terminal either** and reads the password from
+  its stdout, up to the newline. The helper gets the prompt as `$1` (`Password:` on macOS,
+  `[sudo] password for <user>: ` on Debian), inherits the caller's environment (a variable
+  set by the caller and `KOLOFT_AGENT_DIR` both arrived), and its `$PPID` is the sudo
+  process, whose `ps -o args=` is the whole command (`/usr/bin/sudo -A -k true`). A helper
+  that exits 1 printing nothing gives `sudo: no password was provided` and exit 1 at once.
+- **No time limit while the helper waits**: a helper that answered after 400 s still let
+  the command run; so did one that answered after 90 s under `Defaults passwd_timeout=1`.
+  The Mac's man page also gives `passwd_timeout` a default of 0 (not measured on the Mac).
+- **The 15-minute credential cache does not span Bash tool calls**: `timestamp_type` is
+  `tty`, which with no terminal falls back to the parent process, so a second `sudo -A`
+  from the same shell skips the helper, while one from a new shell (every Bash tool call)
+  asks again.
+- **Over ssh without `-t` it is the same**: `sudo -A` with the helper on the remote side
+  ran the command; plain `sudo` failed with the terminal message.
+- **A macOS system password dialog takes no posted input.** SecurityAgent's admin dialog
+  (`do shell script … with administrator privileges`) ignored `CGEventPost` keys and
+  Return, System Events `keystroke` stopped at the Automation consent dialog, reading its
+  Accessibility tree hung, and `screencapture` did not draw it; the same `CGEventPost`
+  answered an ordinary `display dialog`. So a password for an admin action reaches it only
+  through a command line such as `sudo -A`.
+- Measured 2026-10-15: on macOS 27.0.1 from a Koloft Claude Code tab (sudo 1.9.17p2, the
+  helper exiting 1); sudo 1.9.13p3 in a Debian bookworm container and over ssh between two
+  containers, with a test user's real password; the dialog in a tart 2.40.1 macOS 27.0 VM
+  with SIP on and Accessibility granted (§52).

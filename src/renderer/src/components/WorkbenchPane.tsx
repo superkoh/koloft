@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -52,8 +53,7 @@ import type {
   GitStepResult,
   GithubInfo,
   GithubTarget,
-  PrChecks,
-  SessionInfo
+  PrChecks
 } from '@shared/types'
 import { CommitDialog } from './CommitDialog'
 import { CHANGES_MSG, commentBlocked } from './changesModel'
@@ -230,7 +230,6 @@ export interface WorkbenchPaneProps {
   onEscapeFellThrough: () => void
   onReturnFocus: () => void
   treeRoot: string | null
-  session: SessionInfo | null
   activeTabId: string | null
   pinned: Record<string, string[]>
   tabForSession: (sessionId: string) => string | undefined
@@ -319,7 +318,7 @@ function useGithubChecks(
   return { checks: got && got.key === key ? got.checks : null, refresh }
 }
 
-export function WorkbenchPane({
+export const WorkbenchPane = memo(function WorkbenchPane({
   tabId: ownerTab,
   states,
   liveTabs,
@@ -337,7 +336,6 @@ export function WorkbenchPane({
   onEscapeFellThrough,
   onReturnFocus,
   treeRoot,
-  session,
   activeTabId,
   pinned,
   tabForSession,
@@ -345,6 +343,7 @@ export function WorkbenchPane({
   onCdpDone,
   onCdpCreate
 }: WorkbenchPaneProps): JSX.Element {
+  const session = useStore((s) => s.sessions.find((x) => x.tabId === activeTabId) ?? null)
   const termFocus = useStore((s) => s.termFocus)
   const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
   const ownerBackend = useStore(
@@ -2405,4 +2404,4 @@ export function WorkbenchPane({
       {dialog && <BrowserModal dialog={dialog} onAnswer={onDialogAnswer} />}
     </div>
   )
-}
+})

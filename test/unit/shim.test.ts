@@ -31,7 +31,7 @@ beforeAll(() => {
   ;({ shimDir, regDir, pickDir, gitHelper, ghWrapper } = setupShim(gitAuthDir))
   base = path.dirname(shimDir)
   realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realbin-'))
-  for (const bin of ['claude', 'codex']) {
+  for (const bin of ['claude', 'codex', 'muse', 'agy']) {
     fs.writeFileSync(
       path.join(realBin, bin),
       '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$KOLOFT_ARGS_OUT"\n' +
@@ -141,7 +141,7 @@ const NO_ACCOUNT_PICKED_YET = { KOLOFT_ACCOUNT_PICKED: '', CLAUDE_CODE_OAUTH_TOK
 function runShim(
   args: string[],
   extraEnv: Record<string, string> = {},
-  bin: 'claude' | 'codex' = 'claude'
+  bin: 'claude' | 'codex' | 'muse' | 'agy' = 'claude'
 ): ShimRun {
   const cwd = os.tmpdir()
   const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
@@ -464,6 +464,29 @@ describe('claude shim (multi-account pick section — U5)', () => {
     expect(r.realEnv?.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBeUndefined()
   })
 
+  it('a --model Koloft put on the line (a scheduled job, koloft session new) yields to a custom endpoint that pins its own model, and stays for one that does not', async () => {
+    token('glm', 'endpoint-key-fixture')
+    const pinned = await runShimPick(['-w', 'job-1', '--model', 'opus', '--effort', 'high'], {
+      account: 'glm',
+      kind: 'custom',
+      banner: 'koloft: → glm (custom endpoint · glm-5.2)',
+      baseUrl: 'https://example.test/api/anthropic',
+      model: 'glm-5.2'
+    })
+    expect(pinned.realArgs).not.toContain('--model')
+    expect(pinned.realArgs).not.toContain('opus')
+    expect(pinned.realArgs).toEqual(expect.arrayContaining(['-w', 'job-1', '--effort', 'high']))
+
+    token('proxy', 'proxy-key')
+    const open = await runShimPick(['--model', 'opus'], {
+      account: 'proxy',
+      kind: 'custom',
+      banner: 'koloft: → proxy (custom endpoint)',
+      baseUrl: 'https://proxy.test'
+    })
+    expect(open.realArgs).toEqual(expect.arrayContaining(['--model', 'opus']))
+  })
+
   it('-p gets the token but NEVER the flag, and still does not register', async () => {
     token('bravo', 'tok-bravo')
     const r = await runShimPick(['-p', 'hi'], {
@@ -703,6 +726,57 @@ describe('codex guard (Koloft terminal hard block — the same funnel as claude,
     expect(r.status).toBe(0)
     expect(r.stderr).not.toContain('⛔')
     expect(r.realArgs).toEqual([])
+  })
+})
+
+describe('muse guard (Koloft terminal hard block — the same funnel as claude and codex, MUSE§1)', () => {
+  const UTIL = { KOLOFT_UTIL: '1' }
+
+  it.each([[[]], [['fix the bug']], [['--approval-mode', 'never', 'resume', 'abc']]])(
+    'an interactive form %j in a Koloft terminal is refused before the real muse runs',
+    (args) => {
+      const r = runShim(args, UTIL, 'muse')
+      expect(r.status).toBe(1)
+      expect(r.stderr).toContain("Start interactive Muse from the sidebar's ＋ (⌘N).")
+      expect(r.realArgs).toBeNull()
+    }
+  )
+
+  it.each([[['exec', 'say hi']], [['--model', 'x', 'serve']], [['login']], [['--version']]])(
+    'a form that opens no TUI %j passes through untouched',
+    (args) => {
+      const r = runShim(args, UTIL, 'muse')
+      expect(r.status).toBe(0)
+      expect(r.realArgs).toEqual(args)
+    }
+  )
+})
+
+describe('agy guard (Koloft terminal hard block — the same funnel as claude, codex and muse, AGY§1)', () => {
+  const UTIL = { KOLOFT_UTIL: '1' }
+
+  it.each([
+    [[]],
+    [['-i', 'fix the bug']],
+    [['--model', 'models', '-c']],
+    [['--conversation', 'abc']]
+  ])('an interactive form %j in a Koloft terminal is refused before the real agy runs', (args) => {
+    const r = runShim(args, UTIL, 'agy')
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain("Start interactive Antigravity from the sidebar's ＋ (⌘N).")
+    expect(r.realArgs).toBeNull()
+  })
+
+  it.each([
+    [['-p', 'say hi']],
+    [['--model', 'x', '--print', 'say hi']],
+    [['mcp', 'list']],
+    [['update']],
+    [['--version']]
+  ])('a form that opens no TUI %j passes through untouched', (args) => {
+    const r = runShim(args, UTIL, 'agy')
+    expect(r.status).toBe(0)
+    expect(r.realArgs).toEqual(args)
   })
 })
 

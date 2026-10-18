@@ -2,8 +2,9 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { codexTooOld, resolveCodexRuntime } from '../../src/main/codexRuntime'
+import { resolveCodexRuntime } from '../../src/main/codexRuntime'
 import { PtyManager } from '../../src/main/ptyManager'
+import { CODEX_TAB_ENV } from '../../src/main/codexSessions'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 
 const fake = vi.hoisted(() => ({ spawn: vi.fn() }))
@@ -99,19 +100,15 @@ describe('Codex shell runtime', () => {
   })
 
   it.each([
-    { printed: '0.160.9', tooOld: true, verified: false },
-    { printed: '0.161.0', tooOld: false, verified: true },
-    { printed: '0.161.3', tooOld: false, verified: true },
-    { printed: '0.162.0', tooOld: false, verified: false }
-  ])(
-    'reads Codex $printed: too old $tooOld (verified $verified)',
-    async ({ printed, tooOld, verified }) => {
-      fs.writeFileSync(binary, `#!/bin/sh\nprintf "codex-cli ${printed}\\n"\n`, { mode: 0o700 })
-      const runtime = await resolveCodexRuntime({ env: environment })
-      expect(runtime).toMatchObject({ version: printed, verified })
-      expect(codexTooOld(runtime)).toBe(tooOld)
-    }
-  )
+    { printed: '0.160.9', verified: false },
+    { printed: '0.161.0', verified: true },
+    { printed: '0.161.3', verified: true },
+    { printed: '0.162.0', verified: false }
+  ])('reads Codex $printed (verified $verified)', async ({ printed, verified }) => {
+    fs.writeFileSync(binary, `#!/bin/sh\nprintf "codex-cli ${printed}\\n"\n`, { mode: 0o700 })
+    const runtime = await resolveCodexRuntime({ env: environment })
+    expect(runtime).toMatchObject({ version: printed, verified })
+  })
 
   it('passes the same resolved user configuration to the native PTY without Claude integration', async () => {
     const runtime = await resolveCodexRuntime({ env: environment })
@@ -120,9 +117,9 @@ describe('Codex shell runtime', () => {
     manager.regDir = '/must-not-register'
     manager.pickDir = '/must-not-pick'
     manager.cdpDir = '/must-not-browse'
-    manager.makeHookSettings = vi.fn(() => '/must-not-hook')
     manager.create({
       kind: 'codex',
+      ...CODEX_TAB_ENV,
       cwd: directory,
       executable: runtime.binary,
       argv: ['--remote', 'unix:///test/socket'],
@@ -137,6 +134,5 @@ describe('Codex shell runtime', () => {
     expect(options.env.OPENAI_API_KEY).toBe('profile-fixture-key')
     expect(Object.keys(options.env).some((key) => key.startsWith('KOLOFT_'))).toBe(false)
     expect(options.env.CODEX_THREAD_ID).toBeUndefined()
-    expect(manager.makeHookSettings).not.toHaveBeenCalled()
   })
 })

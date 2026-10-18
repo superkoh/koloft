@@ -41,6 +41,29 @@ export const OPENAI_PRICING: Record<string, ModelPricing> = {
   'gpt-5': openAi(1.25, 0.125, 10)
 }
 
+const GEMINI_WINDOW_TOKENS = 1_048_576
+
+function gemini(inPerM: number, cacheReadPerM: number, outPerM: number): ModelPricing {
+  return { inPerM, outPerM, cacheWritePerM: 0, cacheReadPerM, windowTokens: GEMINI_WINDOW_TOKENS }
+}
+
+// AGY§21
+export const GEMINI_PRICING: Record<string, ModelPricing> = {
+  'gemini-3.1-pro': gemini(2, 0.2, 12),
+  'gemini-3.8-flash': gemini(0.75, 0.075, 3.75),
+  'gemini-3.6-flash': gemini(0.75, 0.075, 3.75),
+  'gemini-3.1-flash-lite': gemini(0.25, 0.025, 1.5)
+}
+
+// AGY§21
+const GEMINI_VARIANT = /-(?:preview|low|medium|high|xhigh|max)$/
+
+function geminiPricing(model: string): ModelPricing | undefined {
+  let base = model
+  while (GEMINI_VARIANT.test(base)) base = base.replace(GEMINI_VARIANT, '')
+  return GEMINI_PRICING[base]
+}
+
 // CC§7
 export const MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-fable-5-1': tier(10, 50, M, 0.25),
@@ -71,7 +94,7 @@ const DATE_STAMP = /^\d{8}$/
 
 export function resolvePricing(model: string): ModelPricing | undefined {
   if (!model) return undefined
-  const exact = MODEL_PRICING[model] ?? OPENAI_PRICING[model]
+  const exact = MODEL_PRICING[model] ?? OPENAI_PRICING[model] ?? geminiPricing(model)
   if (exact) return exact
   for (const k of KEYS) {
     if (model.startsWith(k + '-') && DATE_STAMP.test(model.slice(k.length + 1)))

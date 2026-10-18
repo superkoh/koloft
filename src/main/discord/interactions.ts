@@ -5,6 +5,7 @@ import {
   AUTOCOMPLETE_INTERACTION,
   COMMAND_INTERACTION,
   COMPONENT_INTERACTION,
+  FORM_SUBMIT_INTERACTION,
   NO_MENTIONS,
   privately,
   type DiscordInteraction,
@@ -81,6 +82,7 @@ export interface InteractionDeps {
   choices(b: ConductorBinding): SessionChoice[]
   run(b: ConductorBinding, session: string, text: string): Promise<string>
   press(i: DiscordInteraction): Promise<void>
+  submit(i: DiscordInteraction): Promise<void>
   respond(i: DiscordInteraction, body: unknown): Promise<unknown>
 }
 
@@ -91,6 +93,7 @@ export class Interactions {
     const route = this.d.routeOf(i.channelId)
     if (!route) return
     if (i.type === COMPONENT_INTERACTION) return this.d.press(i).catch(() => undefined)
+    if (i.type === FORM_SUBMIT_INTERACTION) return this.d.submit(i).catch(() => undefined)
     const b = route.binding
     const owner = i.userId === this.d.owner()
     if (i.type === AUTOCOMPLETE_INTERACTION) {

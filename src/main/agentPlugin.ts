@@ -4,7 +4,7 @@ import { AGENT_GUIDE, AGENT_SKILL_DESCRIPTION, koloftPrompt } from '@shared/agen
 
 export const AGENT_PROMPT_FILE = 'koloft-prompt.md'
 
-function agentSkillMarkdown(): string {
+export function agentSkillMarkdown(): string {
   return `---\nname: koloft\ndescription: ${JSON.stringify(AGENT_SKILL_DESCRIPTION)}\n---\n\n${AGENT_GUIDE}\n`
 }
 

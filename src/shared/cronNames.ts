@@ -4,7 +4,9 @@ export const CRON_PERMISSIONS: CronPermission[] = ['same', 'acceptEdits', 'skipA
 
 export const NEW_JOB_PERMISSION: Record<BackendId, CronPermission> = {
   claude: 'same',
-  codex: 'skipAll'
+  codex: 'skipAll',
+  muse: 'same',
+  agy: 'skipAll'
 }
 
 const SLUG_CAP_LEAVING_ROOM_FOR_STAMP_IN_64_CHAR_WORKTREE_NAME = 48
@@ -32,6 +34,14 @@ export function worktreeBase(name: string, at: number): string {
   const p2 = (n: number): string => String(n).padStart(2, '0')
   const stamp = `${p2(d.getFullYear() % 100)}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`
   return `${slugOf(name)}-${stamp}`
+}
+
+export function worktreeHomeOf(root: string): string {
+  return `${root}/.claude/worktrees`
+}
+
+export function isRunFolderOf(slug: string, name: string): boolean {
+  return new RegExp(`^${slug}-\\d{6}-\\d{4}(-.+)?$`).test(name)
 }
 
 export function cronBackend(job: { backend?: BackendId }): BackendId {

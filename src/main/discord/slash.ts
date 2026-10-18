@@ -4,6 +4,7 @@ import { waitingForAnswer } from '@shared/slashCommands'
 import type { CommandOutput } from '../claudeCommandOutput'
 import { sleep } from '../codexTransport'
 import { errorText } from '../agentRequests'
+import { withoutBlankEdges } from '../messageText'
 import { accentOf, CONDUCTOR_ACCENT, type Card } from './cards'
 
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
@@ -15,11 +16,32 @@ const CLOSE_THE_COMMAND_MENU = ESC
 const CLOSE_PAGER = 'q'
 const TO_LINE_END = '\x05'
 const CLEAR_TO_LINE_START = '\x15'
+const EMPTY_THE_BOX = TO_LINE_END + CLEAR_TO_LINE_START
 // CODEX§21
-const CODEX_BACK_TO_AN_EMPTY_BOX = [ESC, CLOSE_PAGER, TO_LINE_END + CLEAR_TO_LINE_START]
+const BACK_TO_AN_EMPTY_BOX: Record<BackendId, string[]> = {
+  claude: [ESC],
+  codex: [ESC, CLOSE_PAGER, EMPTY_THE_BOX],
+  muse: [ESC],
+  agy: [ESC]
+}
+const BEFORE_A_COMMAND: Record<BackendId, string[]> = {
+  claude: [],
+  codex: [EMPTY_THE_BOX],
+  muse: [],
+  agy: []
+}
+// CC§12 AGY§23
+const MENU_CLOSER: Record<BackendId, string[]> = {
+  claude: [CLOSE_THE_COMMAND_MENU],
+  codex: [CLOSE_THE_COMMAND_MENU],
+  muse: [CLOSE_THE_COMMAND_MENU],
+  agy: []
+}
 // CC§11 CC§12
 const PANEL_CLOSES_WITHIN_MS = 500
 const ESC_PRESSES_AT_MOST = 3
+// AGY§23
+export const SCREEN_SHOWS_THE_OUTPUT_MS = 1500
 
 export interface SlashTarget {
   name: string
@@ -33,11 +55,13 @@ export interface SlashDeps {
   turnOver(tabId: string): boolean
   asking(tabId: string): boolean
   takesTyping(tabId: string): boolean
-  panelOpen(tabId: string): Promise<boolean | undefined>
+  panelOpen(tabId: string, screen?: string[]): Promise<boolean | undefined>
+  screen(tabId: string): Promise<string[] | undefined>
   nextMirrorPull(tabId: string): Promise<void> | undefined
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
   exclusive(tabId: string, typing: () => Promise<boolean>): Promise<boolean>
   typeNow(tabId: string, keys: string[]): Promise<void>
+  outputOnlyOnScreen(tabId: string): Promise<string | undefined> | undefined
   post(channelId: string, text: string): void
   card(channelId: string, card: Card): void
 }
@@ -53,18 +77,31 @@ interface Pending {
   reply?: string
   newKey?: string
   pressedEsc: boolean
+  screen?: string[]
   timers: ReturnType<typeof setTimeout>[]
   settle?: ReturnType<typeof setTimeout>
   mirrorPull?: Promise<void>
 }
 
-// CC§12 CODEX§21
+// CC§12 CODEX§21 AGY§23
 export function commandKeys(text: string, backend: BackendId | undefined): string[] {
-  const typed = [text, CLOSE_THE_COMMAND_MENU, '\r']
-  return backend === 'codex' ? [TO_LINE_END + CLEAR_TO_LINE_START, ...typed] : typed
+  return [
+    ...(backend ? BEFORE_A_COMMAND[backend] : []),
+    text,
+    ...(backend ? MENU_CLOSER[backend] : [CLOSE_THE_COMMAND_MENU]),
+    '\r'
+  ]
 }
 
-function resultCard(p: Pending): Card | undefined {
+const SCREEN_LINES_IN_A_RESULT = 40
+
+function screenShot(lines: string[] | undefined): string | undefined {
+  const shown = withoutBlankEdges(lines ?? [])
+  if (!shown.length) return undefined
+  return `It printed nothing Koloft can read, so here is its screen:\n\`\`\`\n${shown.slice(-SCREEN_LINES_IN_A_RESULT).join('\n')}\n\`\`\``
+}
+
+function resultCard(p: Pending, screen: string[] | undefined): Card | undefined {
   const details = p.outputs.filter((o) => o.kind === 'details').map((o) => o.text)
   const printed = p.outputs.filter((o) => o.kind !== 'details').map((o) => o.text)
   const said = details.length && !p.worked ? details : printed
@@ -76,7 +113,8 @@ function resultCard(p: Pending): Card | undefined {
   if (!body.length && p.worked) body.push('Done.')
   if (!body.length)
     body.push(
-      'It printed nothing Koloft can read. Whatever it showed is only on its screen; ask Assist to show you its screen.'
+      screenShot(screen) ??
+        'It printed nothing Koloft can read, and its screen could not be read either.'
     )
   if (p.pressedEsc)
     body.push(
@@ -152,7 +190,19 @@ export class SlashCommands {
     }
     p.timers.push(setTimeout(() => void this.nothingCameBack(tab, p), NOTHING_CAME_BACK_MS))
     p.timers.push(setTimeout(() => this.finish(tab), RESULT_WITHIN_MS))
+    p.timers.push(setTimeout(() => void this.readScreen(tab, p), SCREEN_SHOWS_THE_OUTPUT_MS))
     this.pending.set(tab, p)
+  }
+
+  // AGY§23
+  private async readScreen(tab: string, p: Pending): Promise<void> {
+    const reading = this.d.outputOnlyOnScreen(tab)
+    if (!reading) return
+    const text = await reading
+    if (this.pending.get(tab) !== p || p.outputs.length || p.worked || !text) return
+    p.outputs.push({ kind: 'printed', text })
+    await this.press(tab, [ESC])
+    this.settleSoon(tab, p)
   }
 
   private async nothingCameBack(tab: string, p: Pending): Promise<void> {
@@ -163,12 +213,13 @@ export class SlashCommands {
       !p.newKey &&
       this.d.turnOver(tab)
     if (!quiet()) return
-    let panel = await this.d.panelOpen(tab)
+    p.screen = await this.d.screen(tab).catch(() => undefined)
+    let panel = await this.d.panelOpen(tab, p.screen)
     if (!quiet()) return
     if (panel !== false) {
       p.pressedEsc = true
-      const keys = this.d.backendOf(tab) === 'codex' ? CODEX_BACK_TO_AN_EMPTY_BOX : [ESC]
-      await this.press(tab, keys)
+      const backend = this.d.backendOf(tab)
+      await this.press(tab, backend ? BACK_TO_AN_EMPTY_BOX[backend] : [ESC])
     }
     for (let more = 1; panel && more < ESC_PRESSES_AT_MOST; more++) {
       await sleep(PANEL_CLOSES_WITHIN_MS)
@@ -238,8 +289,14 @@ export class SlashCommands {
 
   private finish(tab: string): void {
     const p = this.take(tab)
-    const card = p && resultCard(p)
-    if (p && card) this.d.card(p.channelId, card)
+    if (!p) return
+    const readable = p.outputs.length > 0 || p.worked || !!p.reply || !!p.newKey
+    const screen =
+      readable || p.screen ? Promise.resolve(p.screen) : this.d.screen(tab).catch(() => undefined)
+    void screen.then((lines) => {
+      const card = resultCard(p, lines)
+      if (card) this.d.card(p.channelId, card)
+    })
   }
 
   private take(tab: string): Pending | undefined {
