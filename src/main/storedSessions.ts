@@ -36,6 +36,8 @@ export const hostOfKey = (key: string): string | undefined => {
   return sourceId === 'local' ? undefined : sourceId
 }
 
+export const REMOTE_EXIT_WAIT_MS = 10_000
+
 // ADR-0025
 const seenMissing = (cwd: string): boolean => !isRemoteKey(cwd) && !dirExists(cwd)
 
@@ -111,6 +113,11 @@ export interface SessionsWithStore {
   openApproval(tabId: string): CodexApproval | undefined
   openQuestion(tabId: string): CodexQuestion | undefined
   answerable?(tabId: string): Promise<void>
+  answer?(tabId: string, reply: string): Promise<string | undefined | false>
+  deliver?(tabId: string, text: string): Promise<boolean>
+  noticeRemoteExits?(host: string, sessionIds: string[]): void
+  followMirrors?(host: string): void
+  tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
 }
 
 interface RowScope {

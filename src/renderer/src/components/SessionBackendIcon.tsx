@@ -1,9 +1,14 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { BsClaude, BsMeta, BsOpenai } from 'react-icons/bs'
+import { BsClaude, BsGoogle, BsMeta, BsOpenai } from 'react-icons/bs'
 import type { BackendId } from '@shared/types'
 import type { IconType } from 'react-icons'
 
-const ICON: Record<BackendId, IconType> = { claude: BsClaude, codex: BsOpenai, muse: BsMeta }
+const ICON: Record<BackendId, IconType> = {
+  claude: BsClaude,
+  codex: BsOpenai,
+  muse: BsMeta,
+  agy: BsGoogle
+}
 
 export function SessionBackendIcon({
   backend,

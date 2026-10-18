@@ -52,20 +52,22 @@ const takesYesOrNo = (label: string): string => `a ${label} approval takes yes o
 const takesAnOption = (label: string): string =>
   `this ${label} question takes the number or the name of one option.`
 
-// CODEX§20 MUSE§11
+// CODEX§20 MUSE§11 AGY§14
 const OPTION_KEYS: Record<BackendId, ((key: string) => string[]) | undefined> = {
   claude: undefined,
   codex: (key) => [key],
-  muse: (key) => [key, '\r']
+  muse: (key) => [key, '\r'],
+  agy: (key) => [key]
 }
 const optionKeysOf = (backend: BackendId | undefined): ((key: string) => string[]) | undefined =>
   backend && OPTION_KEYS[backend]
 
-// MUSE§7
+// MUSE§7 AGY§15
 const TYPED_INTO_WHILE_WORKING: Record<BackendId, boolean> = {
   claude: true,
   codex: true,
-  muse: false
+  muse: false,
+  agy: true
 }
 const typedIntoWhileWorking = (backend: BackendId | undefined): boolean =>
   !backend || TYPED_INTO_WHILE_WORKING[backend]
@@ -120,6 +122,7 @@ export interface RelayDeps {
   pendingApproval(tabId: string): CodexApproval | undefined
   pendingQuestion(tabId: string): CodexQuestion | undefined
   answerable(tabId: string): Promise<void>
+  answerInPlace(tabId: string, reply: string): Promise<string | undefined | false>
   regDir: string
   attachmentsDir: string
 }
@@ -436,6 +439,11 @@ export class DiscordRelay {
     const backend = this.d.backendOf(tab)
     const optionKeys = optionKeysOf(backend)
     if (backend && optionKeys) {
+      const inPlace = await this.d.answerInPlace(tab, reply)
+      if (inPlace !== false) {
+        this.codexAsks.delete(tab)
+        return inPlace
+      }
       const label = BACKEND_LABEL[backend]
       if (this.d.pendingApproval(tab)) {
         const key = codexKeyFor(reply)
@@ -500,14 +508,27 @@ export class DiscordRelay {
       this.codexAsks.delete(tab)
       return false
     }
+    void this.d.answerInPlace(tab, m.content).then((inPlace) => {
+      if (inPlace === false) return this.answerOpenByKeys(tab, m, open, optionKeys)
+      this.codexAsks.delete(tab)
+      if (inPlace) this.say(m.channelId, inPlace, m.id)
+    })
+    return true
+  }
+
+  private answerOpenByKeys(
+    tab: string,
+    m: DiscordMessage,
+    open: CodexApproval | CodexQuestion,
+    optionKeys: (key: string) => string[]
+  ): void {
     const question = 'options' in open
     const key = question ? codexOptionKey(open, m.content) : codexKeyFor(m.content)
     if (!key) {
       this.say(m.channelId, question ? PICK_ONE_OPTION : CODEX_NEEDS_YES_OR_NO, m.id)
-      return true
+      return
     }
     void this.press(tab, question ? optionKeys(key) : [key])
-    return true
   }
 
   forget(tab: string): void {

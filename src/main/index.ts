@@ -31,6 +31,28 @@ import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } fro
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { sharedProcessTable } from './processTable'
+import { AgySessions } from './agySessions'
+import {
+  agyAccountEnv,
+  agyHomeOf,
+  agySignedIn,
+  oneShotAgyHome,
+  prepareAgyHome,
+  readAgyQuota,
+  setAgyApiKeyRoute
+} from './agyAccounts'
+import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from './agyStore'
+import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'
+import {
+  AGY_BRAIN_FLAGS,
+  AGY_HOOK_FILE,
+  AGY_LIST_FILE,
+  AGY_REMOTE_BRAIN,
+  AGY_STATUSLINE_FILE,
+  AGY_TITLE_FILE,
+  agyStatuslineScript
+} from './remote/agyTab'
+import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome } from './museSessionLog'
 import { museSignIn, storeMuseKey } from './museServe'
@@ -128,6 +150,7 @@ import {
 } from './remote/launch'
 import {
   machinePackageBase,
+  mirrorAgyGemini,
   mirrorHookDir,
   mirrorProjectsRoot,
   tabPackageDir
@@ -144,10 +167,12 @@ import {
   writeWholeBeforeVisible
 } from './jsonDrops'
 import {
+  AGY_STATUSLINE_JS,
   bundlePath,
   DEFAULT_THEME,
   remoteWrapperScript,
   setupStatusline,
+  setupAgyStatusline,
   statusLineSetting
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
@@ -329,6 +354,7 @@ import {
 import type {
   AccountAddResult,
   AccountKind,
+  QuotaBucket,
   AccountMeta,
   AccountView,
   ArtifactView,
@@ -487,10 +513,13 @@ let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
 let codexSessions: CodexSessions | null = null
 let museSessions: MuseSessions | null = null
+let agySessions: AgySessions | null = null
 const startupErrors: Partial<Record<BackendId, string>> = {}
 
 function storedSessions(): SessionsWithStore[] {
-  return [codexSessions, museSessions].filter((s): s is CodexSessions | MuseSessions => !!s)
+  return [codexSessions, museSessions, agySessions].filter(
+    (s): s is CodexSessions | MuseSessions | AgySessions => !!s
+  )
 }
 function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
   return storedSessions().find((s) => s.hasTab(tabId))
@@ -555,7 +584,8 @@ const panelOpenOn: Record<
   muse: async (tabId, _sessionId, screen) => {
     const lines = screen ?? (await screenLines(tabId))
     return lines && !museShowsItsInputBox(lines)
-  }
+  },
+  agy: async () => undefined
 }
 
 const slash = new SlashCommands({
@@ -576,6 +606,11 @@ const slash = new SlashCommands({
   ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
   exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
   typeNow: (tabId, keys) => typeKeys((data) => ptyMgr.write(tabId, data), keys),
+  // AGY§23
+  outputOnlyOnScreen: (tabId) =>
+    backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
+      ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
+      : undefined,
   post: (channelId, text) => discordRelay?.say(channelId, text),
   card: (channelId, card) => discordRelay?.card(channelId, card)
 })
@@ -988,11 +1023,15 @@ function machinePackage(): MachinePackage {
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
     [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
+    [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
-    [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH
+    [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH,
+    [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
+    [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
+    [AGY_LIST_FILE]: AGY_LIST_JS
   }
   for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
     pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
@@ -1003,6 +1042,8 @@ function machinePackage(): MachinePackage {
     pkgFiles['statusline/package.json'] = '{"type":"module"}\n'
     pkgFiles['statusline/theme.json'] = JSON.stringify(DEFAULT_THEME, null, 2)
     pkgFiles['statusline/run.sh'] = remoteWrapperScript()
+    pkgFiles['statusline/agy.cjs'] = AGY_STATUSLINE_JS
+    pkgFiles[AGY_STATUSLINE_FILE] = agyStatuslineScript()
   } catch (err) {
     console.error('[koloft] remote statusline bundle unreadable:', err)
   }
@@ -1071,7 +1112,12 @@ let rendererReady = false
 // CC§7
 const usageViews = new Map<
   string,
-  { usage?: UsageSnapshot; limits?: CodexLimits; probeError?: ProbeErrorKind }
+  {
+    usage?: UsageSnapshot
+    limits?: CodexLimits
+    quota?: QuotaBucket[]
+    probeError?: ProbeErrorKind
+  }
 >()
 
 function viewKey(name: string, kind: AccountKind): string {
@@ -1262,7 +1308,8 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
   muse: async () => {
     const picked = musePicker.pick(accountViews())
     return picked ? ((await museServeFor(picked.name)) ?? null) : null
-  }
+  },
+  agy: () => agyOneShotTarget()
 }
 const assist = koloftAssist({
   setting: () => loadSettings().assist,
@@ -1296,6 +1343,11 @@ const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> =
     if (!museSessions || !(await museSessions.availability()).available)
       return 'Muse is not available on this Mac'
     return musePicker.pick(accountViews()) ? undefined : 'there is no usable Muse account'
+  },
+  agy: async () => {
+    if (!agySessions || !(await agySessions.availability()).available)
+      return 'Antigravity is not available on this Mac'
+    return agyPicker.pick(accountViews()) ? undefined : 'there is no usable Antigravity account'
   }
 }
 
@@ -1372,6 +1424,9 @@ const sessionDeps: SessionVerbDeps = {
   asking: asksTheOwner,
   sendLine: sendPeerLine,
   press: (tabId, keys) => ptyMgr.type(tabId, keys),
+  deliver: async (tabId, text) => {
+    return storedOwnerOf(tabId)?.deliver?.(tabId, text) ?? false
+  },
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
   answer: async (tabId, reply) => {
@@ -1673,6 +1728,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
     await Promise.all([
       probeCodexAccounts(),
       probeMuseAccounts(),
+      probeAgyAccounts(),
       ...claude.map(async (a) => {
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
@@ -1703,6 +1759,7 @@ async function addAccount(
   endpoint?: { baseUrl?: string; model?: string }
 ): Promise<AccountAddResult> {
   if (kind === 'muse-home') return addMuseKey(name, typeof secret === 'string' ? secret : '')
+  if (kind === 'agy-home') return addAgyKey(name, typeof secret === 'string' ? secret : '')
   const v = validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = typeof secret === 'string' ? secret.trim() : ''
@@ -1814,7 +1871,9 @@ function noteHomeAccount(name: string, kind: HomeKind): void {
 
 const homeLogin: Record<
   HomeKind,
-  (name: string) => Promise<{ binary: string; env: Record<string, string> } | undefined>
+  (
+    name: string
+  ) => Promise<{ binary: string; env: Record<string, string>; args?: string[] } | undefined>
 > = {
   // CODEX§15
   'codex-home': async (name) => {
@@ -1828,6 +1887,15 @@ const homeLogin: Record<
   'muse-home': async (name) => {
     const serve = await museServeFor(name)
     return serve && { binary: serve.binary, env: museAccountEnv(museHomeFor(name)) }
+  },
+  // AGY§5 AGY§7
+  'agy-home': async (name) => {
+    const binary = await agyBinary()
+    if (!binary) return undefined
+    const home = agyHomeFor(name)
+    const apiKey = await agyApiKeyOf(name)
+    setAgyApiKeyRoute(home, !!apiKey)
+    return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
   }
 }
 
@@ -1836,7 +1904,8 @@ const probeHomeAccount: Record<HomeKind, (name: string) => Promise<void>> = {
     await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
     await probeCodexAccount(name)
   },
-  'muse-home': (name) => probeMuseAccount(name)
+  'muse-home': (name) => probeMuseAccount(name),
+  'agy-home': (name) => probeAgyAccount(name)
 }
 
 async function signInToHome(kind: HomeKind, name: string, again: boolean): Promise<SignInResult> {
@@ -1850,7 +1919,8 @@ async function signInToHome(kind: HomeKind, name: string, again: boolean): Promi
   if (!login) return { ok: false, error: 'unavailable' }
   noteHomeAccount(name, kind)
   const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
-  const tab = homeShellTab(`${assignments.join(' ')} ${shq(login.binary)} login && exit`)
+  const args = (login.args ?? ['login']).map(shq).join(' ')
+  const tab = homeShellTab(`${assignments.join(' ')} ${shq(login.binary)} ${args} && exit`)
   signInPtys.set(tab.tabId, { kind, name })
   return { ok: true, ...tab }
 }
@@ -1938,6 +2008,100 @@ async function addMuseKey(name: string, key: string): Promise<AccountAddResult> 
   await probeMuseAccount(name)
   const account = accountViews().find((a) => a.kind === 'muse-home' && a.name === name)
   return { ok: account?.status === 'ok', account }
+}
+
+const agyPicker = new HomeAccountPicker('agy-home')
+const preparedAgyHomes = new Set<string>()
+
+function ownersGemini(): string {
+  return ownersGeminiDir(agySessions?.defaultEnv ?? process.env)
+}
+
+// AGY§4
+function agyHomeFor(name: string): string {
+  const home = agyHomeOf(app.getPath('userData'), name)
+  if (preparedAgyHomes.has(home)) return home
+  prepareAgyHome(home, ownersGemini())
+  preparedAgyHomes.add(home)
+  return home
+}
+
+async function agyApiKeyOf(name: string): Promise<string | undefined> {
+  return (await keychainRead('agy-home', name)) ?? undefined
+}
+
+// ADR-0030
+function pickAgyHome(resumeSessionId?: string): { account: string; home: string } | undefined {
+  const picked = agyPicker.pick(accountViews(), sessionAccounts?.of('agy', resumeSessionId))
+  return picked && { account: picked.name, home: agyHomeFor(picked.name) }
+}
+
+// AGY§5 AGY§6
+async function probeAgyAccount(name: string): Promise<void> {
+  const acct = findAccount(name, 'agy-home')
+  if (!acct) return
+  const home = agyHomeFor(name)
+  const apiKey = await agyApiKeyOf(name)
+  const signedIn = agySignedIn(home, !!apiKey)
+  const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
+  if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+  const key = viewKey(name, 'agy-home')
+  if (signedIn && !apiKey) {
+    const quota = await agyUsage(home)
+    usageViews.set(key, quota ? { quota } : { ...usageViews.get(key), probeError: 'network' })
+  }
+  pushAccounts()
+}
+
+async function agyBinary(): Promise<string | undefined> {
+  return ((await agySessions?.availability())?.available && agySessions?.cliBinary) || undefined
+}
+
+async function agyUsage(home: string): Promise<QuotaBucket[] | undefined> {
+  const binary = await agyBinary()
+  if (!binary) return undefined
+  return readAgyQuota(binary, { ...agySessions?.defaultEnv, ...agyAccountEnv() }, home)
+}
+
+function probeAgyAccounts(): Promise<void> {
+  return Promise.all(
+    listAccounts()
+      .filter((a) => a.kind === 'agy-home' && a.enabled)
+      .map((a) => probeAgyAccount(a.name))
+  ).then(() => undefined)
+}
+
+// AGY§6
+async function addAgyKey(name: string, key: string): Promise<AccountAddResult> {
+  const v = validateNewAccount(name, 'agy-home')
+  if (v !== 'ok') return { ok: false, error: v }
+  const trimmed = key.trim()
+  if (!trimmed || !(await keychainWrite('agy-home', name, trimmed)))
+    return { ok: false, error: 'unknown' }
+  setAgyApiKeyRoute(agyHomeFor(name), true)
+  noteHomeAccount(name, 'agy-home')
+  await probeAgyAccount(name)
+  const account = accountViews().find((a) => a.kind === 'agy-home' && a.name === name)
+  return { ok: account?.status === 'ok', account }
+}
+
+// AGY§6 AGY§20
+async function agyOneShotTarget(): Promise<AssistTarget | null> {
+  const picked = agyPicker.pick(accountViews())
+  const binary = await agyBinary()
+  if (!picked || !binary) return null
+  const apiKey = await agyApiKeyOf(picked.name)
+  const shot = oneShotAgyHome(
+    agyHomeFor(picked.name),
+    path.join(app.getPath('userData'), 'agy-one-shots'),
+    !!apiKey
+  )
+  return {
+    binary,
+    env: { ...agySessions?.defaultEnv, ...agyAccountEnv(apiKey) },
+    args: [`--gemini_dir=${shot.dir}`],
+    done: shot.done
+  }
 }
 
 function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
@@ -2203,6 +2367,7 @@ app.whenReady().then(() => {
 
   const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
   const statusline = setupStatusline()
+  const agyStatusline = setupAgyStatusline(statusline)
   const playwrightBin = setupPlaywrightCli()
   playwrightCliBin = playwrightBin
   fallbackBin = bundledGhDir()
@@ -2504,6 +2669,59 @@ app.whenReady().then(() => {
     })
   } catch (error) {
     startupErrors.muse = `Muse session data could not be loaded; the original file is preserved. ${String(error)}`
+  }
+  try {
+    agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
+      ...storedDeps,
+      projectInfo: projectInfoOnHost,
+      remoteDirExists: (dir) => hosts.of(dir).dirExistsOrThrow(dir),
+      remoteTreeIo: machineTreeIo,
+      remote: {
+        ...museOnMachines,
+        machine: (host) => hosts.machine(host),
+        mirrorGemini: (host) => mirrorAgyGemini(userData, host),
+        nextPull: (host) => {
+          if (!remoteSync) return Promise.resolve()
+          const pulled = remoteSync.nextPullDone(host)
+          remoteSync.pokeNow(host)
+          return pulled
+        },
+        machineName: () => machinePackage().name
+      },
+      leftWorktree: (resource) => removeUntouchedWorktree(agySessions, resource),
+      openShimRoot: path.join(userData, 'agy-open'),
+      scriptsDir: path.join(userData, 'agy-scripts'),
+      ownersGemini,
+      pickHome: pickAgyHome,
+      apiKeyOf: agyApiKeyOf,
+      builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),
+      assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
+      conductorGate: {
+        script: hookPaths.agyGateScript,
+        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
+      },
+      browserEndpoint: relayEndpoint,
+      playwrightBin,
+      fallbackBin,
+      gitBin: gitFirstBin,
+      agent: {
+        enabled: (remote) => agentToolsFor('agy', remote ? 'ssh' : 'local'),
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+      },
+      gitAccounts: {
+        configEnv: (env) => gitAccounts!.configEnv(env),
+        ghWrapper
+      }
+    })
+  } catch (error) {
+    startupErrors.agy = `Antigravity session data could not be loaded; the original file is preserved. ${String(error)}`
+  }
+  if (agySessions) {
+    sessionBackends.register(agyBackend(agySessions, resumeProbes, machineProbes))
+    void agySessions
+      .availability()
+      .then((agy) => (agy.available ? agySessions!.refreshHistory() : undefined))
+      .catch((error) => sendToRenderer('cron:toast', String(error)))
   }
   if (museSessions) {
     sessionBackends.register(museBackend(museSessions, resumeProbes, machineProbes))
@@ -2846,6 +3064,9 @@ app.whenReady().then(() => {
     answerable: async (tabId) => {
       await storedOwnerOf(tabId)?.answerable?.(tabId)
     },
+    answerInPlace: async (tabId, reply) => {
+      return storedOwnerOf(tabId)?.answer?.(tabId, reply) ?? false
+    },
     regDir: hookPaths.regDir,
     attachmentsDir
   })
@@ -2889,6 +3110,17 @@ app.whenReady().then(() => {
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
+        ...(agySessions?.usesHost(t.host)
+          ? {
+              extraPulls: [
+                {
+                  from: AGY_REMOTE_BRAIN,
+                  to: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain'),
+                  flags: AGY_BRAIN_FLAGS
+                }
+              ]
+            }
+          : {}),
         paths: t.paths,
         hasTabs: live.has(t.host),
         busy: busy.has(t.host)
@@ -2900,9 +3132,11 @@ app.whenReady().then(() => {
     },
     onLeft: (host, ids) => {
       claudeBackend.noticeRemoteExits(host, ids)
-      museSessions?.noticeRemoteExits(host, ids)
+      for (const s of storedSessions()) s.noticeRemoteExits?.(host, ids)
     },
-    onHooksPulled: (host) => museSessions?.followMirrors(host),
+    onHooksPulled: (host) => {
+      for (const s of storedSessions()) s.followMirrors?.(host)
+    },
     onConnected: (host) => void freshness?.machineUp(host)
   })
   ptyMgr.on('typed', (tabId: string) => {
@@ -4547,7 +4781,9 @@ const claudeBackend = new ClaudeBackend({
   error: (message) => sendToRenderer('cron:toast', message),
   machineOfTab,
   otherTabOnMachine: (machine, tmuxName, launchTab) =>
-    museSessions?.tabOnMachine(machine, tmuxName, launchTab)
+    storedSessions()
+      .map((s) => s.tabOnMachine?.(machine, tmuxName, launchTab))
+      .find(Boolean)
 })
 sessionBackends.register(claudeBackend)
 

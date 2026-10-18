@@ -66,6 +66,17 @@ import {
 import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
 import { remoteMuseHooks, sessionStartContext } from '../museHooks'
 import { claudeArgv } from '../claudeArgs'
+import type { SummaryRow } from '../agyStore'
+import {
+  AGY_HELD_ELSEWHERE_EXIT,
+  agyHeldCmd,
+  listAgyCmd,
+  parseAgyConfig,
+  readAgyConfigCmd,
+  type AgyMachineLaunch,
+  type AgyMachinePlan,
+  type RemoteAgyConfig
+} from '../remote/agyTab'
 import { listSkills, type SkillFs } from '../skillList'
 import { worktreeNameAround } from '../resumePlan'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
@@ -917,7 +928,8 @@ export class SshHost implements Host {
           settings: {},
           ownerWords: spec.ownerWords,
           claudeArgs: [],
-          muse: {
+          program: {
+            name: 'muse',
             run: museRunLines({
               tabId,
               account: spec.account.name,
@@ -1000,6 +1012,56 @@ export class SshHost implements Host {
     const files = new Map<string, string>()
     for (let i = 0; i + 1 < rest.length; i += 2) files.set(rest[i], rest[i + 1])
     return listSkills(skillFsOf(files), bareRoot, home)
+  }
+
+  async readAgyConfig(account: string): Promise<RemoteAgyConfig> {
+    await this.deps.sshEnvReady?.()
+    const r = await this.deps.run(readAgyConfigCmd(account))
+    if (sshLinkBroke(r)) throw new Error(problemOf(r))
+    return parseAgyConfig(r.stdout.toString('utf8'))
+  }
+
+  async agyHeldElsewhere(conversationId: string): Promise<boolean> {
+    return (await this.deps.run(agyHeldCmd(conversationId))).code === AGY_HELD_ELSEWHERE_EXIT
+  }
+
+  async agyConversations(): Promise<SummaryRow[]> {
+    const r = await this.deps.run(listAgyCmd(this.deps.claude.machinePackage().name))
+    if (r.code !== 0) throw new Error(problemOf(r))
+    const rows: unknown = JSON.parse(r.stdout.toString('utf8') || '[]')
+    return Array.isArray(rows) ? (rows as SummaryRow[]) : []
+  }
+
+  async launchAgy(spec: AgyMachineLaunch): Promise<AgyMachinePlan> {
+    const d = this.deps.claude
+    await this.sshReady()
+    const sid = spec.resumeId
+    const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
+    const tmuxName = sid ? tmuxSessionName(sid) : `m-${spec.tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
+    const pkg = d.machinePackage()
+    const tabDir = tabPackageDir(d.userData, spec.tabId)
+    return {
+      attach,
+      tmuxName,
+      spawnCwd: os.homedir(),
+      shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
+      resized: this.resized,
+      launchCommand: () => {
+        writeTabPackage(tabDir, {
+          tabId: spec.tabId,
+          tmuxName,
+          machineName: pkg.name,
+          cwd: this.bare(spec.cwd),
+          banner: spec.banner,
+          env: spec.env,
+          portOffset: spec.portOffset,
+          settings: {},
+          claudeArgs: [],
+          program: attach ? { ...spec.program, files: {} } : spec.program
+        })
+        return this.tabLaunchLine(pkg, tabDir, spec.tabId, attach ? 'attach' : 'start')
+      }
+    }
   }
 
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {

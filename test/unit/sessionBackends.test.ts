@@ -247,13 +247,18 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(SUPPORTED_PAIRS).toEqual({
       claude: { local: true, ssh: true },
       codex: { local: true, ssh: true },
-      muse: { local: true, ssh: true }
+      muse: { local: true, ssh: true },
+      agy: { local: true, ssh: true }
     })
     expect(capabilitiesFor('codex', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
   })
 
   it('gives a remote Muse tab what a remote Claude tab has', () => {
     expect(capabilitiesFor('muse', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
+  })
+
+  it('gives a remote Antigravity tab what a remote Claude tab has', () => {
+    expect(capabilitiesFor('agy', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
   })
 })
 
@@ -273,7 +278,7 @@ describe('shownAsInstalled (which tools a dialog offers while the installed-tool
 describe('effectiveBackend (what every direct entrance starts on a Mac that may have only one of the two CLIs)', () => {
   const methods = (defaultBackend: BackendId, codex = true) => ({
     defaultBackend,
-    enabled: { claude: true, codex, muse: true }
+    enabled: { claude: true, codex, muse: true, agy: true }
   })
   const have = (...ids: BackendId[]): ReadonlySet<BackendId> => new Set(ids)
 

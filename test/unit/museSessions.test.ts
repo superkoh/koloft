@@ -13,7 +13,7 @@ import {
   type MuseSessionDeps
 } from '../../src/main/museSessions'
 import { museSessionKey } from '../../src/main/sessionStore'
-import { MUSE_TMUX_NAME_SH } from '../../src/main/museRemote'
+import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import { MUSE_CONDUCTOR_GATE_SCRIPT } from '../../src/main/conductorGate'
@@ -881,7 +881,7 @@ describe('a Muse session on a remote machine', () => {
         killed.push(name)
         return undefined
       },
-      runScript: async (script) => (script === MUSE_TMUX_NAME_SH ? nameThere : null)
+      runScript: async (script) => (script === TAB_TMUX_NAME_SH ? nameThere : null)
     }
     sessions = new MuseSessions(path.join(home, 'remote-sessions.json'), {
       ...sessions['deps'],

@@ -326,9 +326,6 @@ for f in "$@"; do
 done
 exit 0`
 
-export const MUSE_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
-exit 0`
-
 // MUSE§10
 export const MUSE_TRUSTED_SH = `cd "$1" 2>/dev/null || exit 1
 d="$(pwd -P)"

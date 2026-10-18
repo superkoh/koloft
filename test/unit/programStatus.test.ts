@@ -17,6 +17,23 @@ describe('ProgramStatusParser (OSC 7501, MUSE§3)', () => {
     })
   })
 
+  // AGY§10
+  it("reads Antigravity's message, sent as base64 UTF-8, and an empty one as none", () => {
+    const p = new ProgramStatusParser()
+    const msg = Buffer.from('Approve RunCommand: ls 中文', 'utf8').toString('base64')
+    expect(
+      p.push(
+        `${ESC}]7501;state=blocked:kind=permission:app=antigravity:msg=${msg}\x07${ESC}]7501;state=idle:app=antigravity:msg=\x07`
+      )
+    ).toEqual({
+      asked: false,
+      states: [
+        { state: 'blocked', kind: 'permission', msg: 'Approve RunCommand: ls 中文' },
+        { state: 'idle' }
+      ]
+    })
+  })
+
   it("ignores a background worker's frame and every other OSC", () => {
     const p = new ProgramStatusParser()
     expect(p.push(`${ESC}]7501;state=working:app=muse:id=w1\x07${ESC}]0;title\x07`)).toEqual({

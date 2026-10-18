@@ -246,7 +246,7 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'a Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names. This command reaches Codex and Muse sessions, and the session or Assist that started you.'
+  'a Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names. This command reaches Codex, Muse and Antigravity sessions, and the session or Assist that started you.'
 
 function matchRef<T>(
   items: T[],
@@ -352,6 +352,7 @@ export interface SessionVerbDeps {
   asking(tabId: string): boolean
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   press(tabId: string, keys: string[]): Promise<void>
+  deliver(tabId: string, text: string): Promise<boolean>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
   answer(tabId: string, reply: string): Promise<string | undefined>
@@ -391,8 +392,12 @@ const SEND_USAGE =
 const NO_WORKSPACE = 'koloft session: Koloft does not know which workspace this session is in.'
 const LIST_USAGE =
   'koloft session list: the only option is --workspace <folder name or path>, like: koloft session list --workspace koloft'
+const aSessionOf = (backend: BackendId): string => {
+  const label = BACKEND_LABEL[backend]
+  return `${/^[AEIOU]/.test(label) ? 'an' : 'a'} ${label} session`
+}
 const hasNoName = (backend: BackendId): string =>
-  `koloft session new: a ${BACKEND_LABEL[backend]} session has no name, so leave out --name. Koloft prints an id to reach it by.`
+  `koloft session new: ${aSessionOf(backend)} has no name, so leave out --name. Koloft prints an id to reach it by.`
 
 function starterNamer(
   d: SessionVerbDeps,
@@ -495,7 +500,7 @@ async function startSibling(
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
-  const unnamed = `a ${BACKEND_LABEL[backend]} session`
+  const unnamed = aSessionOf(backend)
   if (conductorTab) {
     d.started(conductorTab, tabId, name ?? unnamed, workspace, backend)
     return answered(
@@ -868,6 +873,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       await d.sendLine(tab, line, until - Date.now())
       return `Sent to ${t.name}.`
     }
+    if (await d.deliver(tab, text)) return `Sent to ${t.name}.`
     if (!(await d.ready(tab, until - Date.now(), true)))
       throw new Error(
         `${t.name} stayed busy. ${t.remote ? 'It runs on another machine, where Koloft' : 'Koloft'} can only type into it once its turn has ended and it shows no question.`

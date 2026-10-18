@@ -17,6 +17,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/unit/**/*.test.{ts,tsx}'],
+    execArgv: ['--experimental-sqlite'],
     testTimeout: OUTLASTS_SPEC_WAITFOR_BUDGETS_MS,
     hookTimeout: OUTLASTS_SPEC_WAITFOR_BUDGETS_MS
   }

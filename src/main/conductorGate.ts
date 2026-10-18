@@ -172,6 +172,43 @@ ${TOOLS_THE_ALLOW_FILE_NAMES}
 
 ${DENY_AND_SAY(MUSE_CONDUCTOR_DENIED)}`
 
+const AGY_CONDUCTOR_DENIED =
+  'Koloft: Assist only passes work on. It may run shell commands, read files, change files inside its own folder and ask the owner a question with ask_question. It may not start subagents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
+
+// AGY§13
+const AGY_RUN_OR_READ_TOOLS = ['run_command', 'view_file', 'ask_question']
+const AGY_WRITE_TOOLS = ['write_to_file', 'replace_file_content']
+
+// ADR-0029 AGY§12 AGY§13
+export const AGY_CONDUCTOR_GATE_SCRIPT = `const path = require('path')
+const RUN_OR_READ_TOOLS = new Set(${JSON.stringify(AGY_RUN_OR_READ_TOOLS)})
+const WRITE_TOOLS = new Set(${JSON.stringify(AGY_WRITE_TOOLS)})
+
+function inOwnFolder(event, call) {
+  const own = Array.isArray(event.workspacePaths) ? event.workspacePaths[0] : undefined
+  const file = call.args && call.args.TargetFile
+  if (typeof own !== 'string' || typeof file !== 'string') return false
+  return path.resolve(own, file).startsWith(path.resolve(own) + path.sep)
+}
+
+${TOOLS_THE_ALLOW_FILE_NAMES}
+
+let raw = ''
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', (chunk) => (raw += chunk))
+process.stdin.on('end', () => {
+  let event = {}
+  try {
+    event = JSON.parse(raw)
+  } catch {}
+  const call = event.toolCall || {}
+  const named = toolsTheAllowFileNames()
+  if (named.has(call.name) || RUN_OR_READ_TOOLS.has(call.name)) return
+  if (WRITE_TOOLS.has(call.name) && inOwnFolder(event, call)) return
+  process.stdout.write(JSON.stringify({ decision: 'deny', reason: ${JSON.stringify(AGY_CONDUCTOR_DENIED)} }))
+})
+`
+
 export function conductorGateCommand(gateScript: string, allowFile: string): string {
   return `ELECTRON_RUN_AS_NODE=1 ${shq(process.execPath)} ${shq(gateScript)} ${shq(allowFile)}`
 }

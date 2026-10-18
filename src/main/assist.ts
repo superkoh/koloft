@@ -56,6 +56,21 @@ const MUSE_ONE_SHOT = (task: string): string[] => [
   task
 ]
 
+// AGY§20
+const AGY_ONE_SHOT = (task: string): string[] => ['-p', task, '--output-format', 'json']
+
+// AGY§20
+function agyResponse(out: string): string | null {
+  try {
+    const result = JSON.parse(out) as { status?: unknown; response?: unknown }
+    return result.status === 'SUCCESS' && typeof result.response === 'string'
+      ? result.response
+      : null
+  } catch {
+    return null
+  }
+}
+
 const withSystemFirst = (job: AssistJob): string => `${job.system}\n\n${job.prompt}`
 
 const ONE_SHOT: Record<
@@ -76,12 +91,19 @@ const ONE_SHOT: Record<
     argv: (job) => MUSE_ONE_SHOT(withSystemFirst(job)),
     stdin: () => '',
     answer: lastCompletedText
+  },
+  agy: {
+    argv: (job) => AGY_ONE_SHOT(withSystemFirst(job)),
+    stdin: () => '',
+    answer: agyResponse
   }
 }
 
 export interface AssistTarget {
   binary: string
   env: NodeJS.ProcessEnv
+  args?: string[]
+  done?(): void
 }
 
 export interface AssistDeps {
@@ -128,7 +150,10 @@ export function koloftAssist(deps: AssistDeps): Assist {
       if (job.signal?.aborted) return null
       if (!target) continue
       const shot = ONE_SHOT[backend]
-      const out = await runOnce(target, shot.argv(job), shot.stdin(job), job.signal)
+      const argv = [...(target.args ?? []), ...shot.argv(job)]
+      const out = await runOnce(target, argv, shot.stdin(job), job.signal).finally(() =>
+        target.done?.()
+      )
       return out === null ? null : shot.answer(out)
     }
     return null

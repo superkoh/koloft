@@ -5,6 +5,9 @@ export const TESTED_CODEX_LINE = MIN_CODEX_VERSION.split('.').slice(0, 2).join('
 // MUSE§1
 export const MIN_MUSE_VERSION = '1.4.7'
 export const TESTED_MUSE_LINE = MIN_MUSE_VERSION.split('.').slice(0, 2).join('.')
+// AGY§3
+export const MIN_AGY_VERSION = '1.4.0'
+export const TESTED_AGY_LINE = MIN_AGY_VERSION.split('.').slice(0, 2).join('.')
 
 function ensureMinimumFn(s: {
   tool: string

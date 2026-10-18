@@ -12,10 +12,11 @@ import { BACKEND_LABEL } from './sessionBackend'
 export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
   claude: ['oauth', 'apikey', 'custom'],
   codex: ['codex-home'],
-  muse: ['muse-home']
+  muse: ['muse-home'],
+  agy: ['agy-home']
 }
 
-const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home', 'muse-home']
+const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home', 'muse-home', 'agy-home']
 
 export function usableAccounts<A extends Pick<AccountMeta, 'kind' | 'enabled' | 'status'>>(
   accounts: readonly A[],
@@ -68,7 +69,8 @@ export const NO_USABLE_ACCOUNT: Record<BackendId, string> = {
     'No Claude account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
   codex:
     'No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
-  muse: 'No Muse account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
+  muse: 'No Muse account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
+  agy: 'No Antigravity account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
 }
 
 export const STALE_MS = 15 * 60_000
@@ -178,6 +180,21 @@ export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
     frac: Math.min(binding, CAP),
     level: meterLevel(binding),
     stale,
+    fable: null
+  }
+}
+
+// AGY§23
+export function quotaGlyph(a: AccountView): CapsuleGlyph {
+  if (a.status !== 'ok') return { kind: 'grey' }
+  if (!a.quota?.length) return { kind: 'empty' }
+  const heaviest = Math.max(...a.quota.map((q) => q.used))
+  if (heaviest >= 1) return { kind: 'walled', stale: false }
+  return {
+    kind: 'bar',
+    frac: Math.min(heaviest, CAP),
+    level: meterLevel(heaviest),
+    stale: false,
     fable: null
   }
 }

@@ -31,7 +31,7 @@ beforeAll(() => {
   ;({ shimDir, regDir, pickDir, gitHelper, ghWrapper } = setupShim(gitAuthDir))
   base = path.dirname(shimDir)
   realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realbin-'))
-  for (const bin of ['claude', 'codex', 'muse']) {
+  for (const bin of ['claude', 'codex', 'muse', 'agy']) {
     fs.writeFileSync(
       path.join(realBin, bin),
       '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$KOLOFT_ARGS_OUT"\n' +
@@ -141,7 +141,7 @@ const NO_ACCOUNT_PICKED_YET = { KOLOFT_ACCOUNT_PICKED: '', CLAUDE_CODE_OAUTH_TOK
 function runShim(
   args: string[],
   extraEnv: Record<string, string> = {},
-  bin: 'claude' | 'codex' | 'muse' = 'claude'
+  bin: 'claude' | 'codex' | 'muse' | 'agy' = 'claude'
 ): ShimRun {
   const cwd = os.tmpdir()
   const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
@@ -750,6 +750,34 @@ describe('muse guard (Koloft terminal hard block — the same funnel as claude a
       expect(r.realArgs).toEqual(args)
     }
   )
+})
+
+describe('agy guard (Koloft terminal hard block — the same funnel as claude, codex and muse, AGY§1)', () => {
+  const UTIL = { KOLOFT_UTIL: '1' }
+
+  it.each([
+    [[]],
+    [['-i', 'fix the bug']],
+    [['--model', 'models', '-c']],
+    [['--conversation', 'abc']]
+  ])('an interactive form %j in a Koloft terminal is refused before the real agy runs', (args) => {
+    const r = runShim(args, UTIL, 'agy')
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain("Start interactive Antigravity from the sidebar's ＋ (⌘N).")
+    expect(r.realArgs).toBeNull()
+  })
+
+  it.each([
+    [['-p', 'say hi']],
+    [['--model', 'x', '--print', 'say hi']],
+    [['mcp', 'list']],
+    [['update']],
+    [['--version']]
+  ])('a form that opens no TUI %j passes through untouched', (args) => {
+    const r = runShim(args, UTIL, 'agy')
+    expect(r.status).toBe(0)
+    expect(r.realArgs).toEqual(args)
+  })
 })
 
 describe('claude shim (scheduled jobs: first prompt + session name ride env vars, never the typed command line — BB-E19 / §4.6)', () => {

@@ -116,7 +116,8 @@ function machineBackend(): {
       dropOwnership: () => {}
     }),
     userData: () => userData,
-    events: () => {}
+    events: () => {},
+    machineOf: (id: string) => MACHINE_TABS[id]?.host
   } as unknown as ClaudeBackendDeps)
   backend.agentReply = async (tabId) => {
     answeredFor.push(tabId)

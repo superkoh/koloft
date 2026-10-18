@@ -21,16 +21,27 @@ const EMPTY_THE_BOX = TO_LINE_END + CLEAR_TO_LINE_START
 const BACK_TO_AN_EMPTY_BOX: Record<BackendId, string[]> = {
   claude: [ESC],
   codex: [ESC, CLOSE_PAGER, EMPTY_THE_BOX],
-  muse: [ESC]
+  muse: [ESC],
+  agy: [ESC]
 }
 const BEFORE_A_COMMAND: Record<BackendId, string[]> = {
   claude: [],
   codex: [EMPTY_THE_BOX],
-  muse: []
+  muse: [],
+  agy: []
+}
+// CC§12 AGY§23
+const MENU_CLOSER: Record<BackendId, string[]> = {
+  claude: [CLOSE_THE_COMMAND_MENU],
+  codex: [CLOSE_THE_COMMAND_MENU],
+  muse: [CLOSE_THE_COMMAND_MENU],
+  agy: []
 }
 // CC§11 CC§12
 const PANEL_CLOSES_WITHIN_MS = 500
 const ESC_PRESSES_AT_MOST = 3
+// AGY§23
+export const SCREEN_SHOWS_THE_OUTPUT_MS = 1500
 
 export interface SlashTarget {
   name: string
@@ -50,6 +61,7 @@ export interface SlashDeps {
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
   exclusive(tabId: string, typing: () => Promise<boolean>): Promise<boolean>
   typeNow(tabId: string, keys: string[]): Promise<void>
+  outputOnlyOnScreen(tabId: string): Promise<string | undefined> | undefined
   post(channelId: string, text: string): void
   card(channelId: string, card: Card): void
 }
@@ -71,9 +83,14 @@ interface Pending {
   mirrorPull?: Promise<void>
 }
 
-// CC§12 CODEX§21
+// CC§12 CODEX§21 AGY§23
 export function commandKeys(text: string, backend: BackendId | undefined): string[] {
-  return [...(backend ? BEFORE_A_COMMAND[backend] : []), text, CLOSE_THE_COMMAND_MENU, '\r']
+  return [
+    ...(backend ? BEFORE_A_COMMAND[backend] : []),
+    text,
+    ...(backend ? MENU_CLOSER[backend] : [CLOSE_THE_COMMAND_MENU]),
+    '\r'
+  ]
 }
 
 const SCREEN_LINES_IN_A_RESULT = 40
@@ -173,7 +190,19 @@ export class SlashCommands {
     }
     p.timers.push(setTimeout(() => void this.nothingCameBack(tab, p), NOTHING_CAME_BACK_MS))
     p.timers.push(setTimeout(() => this.finish(tab), RESULT_WITHIN_MS))
+    p.timers.push(setTimeout(() => void this.readScreen(tab, p), SCREEN_SHOWS_THE_OUTPUT_MS))
     this.pending.set(tab, p)
+  }
+
+  // AGY§23
+  private async readScreen(tab: string, p: Pending): Promise<void> {
+    const reading = this.d.outputOnlyOnScreen(tab)
+    if (!reading) return
+    const text = await reading
+    if (this.pending.get(tab) !== p || p.outputs.length || p.worked || !text) return
+    p.outputs.push({ kind: 'printed', text })
+    await this.press(tab, [ESC])
+    this.settleSoon(tab, p)
   }
 
   private async nothingCameBack(tab: string, p: Pending): Promise<void> {

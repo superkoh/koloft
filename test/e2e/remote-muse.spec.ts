@@ -19,6 +19,7 @@ import {
   type MachineMuseCall
 } from './helpers/remote'
 import {
+  agentRow,
   centerTerm,
   gitCommitAll,
   gitInit,
@@ -295,9 +296,10 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       const page = await app.firstWindow()
       const empty = page.locator('.w-empty')
       await expect(empty.locator('.big')).toHaveText(REMOTE_WS_NAME, { timeout: 20_000 })
-      const muse = empty.getByRole('button', { name: /New Muse session/ })
-      await expect(muse).toBeDisabled()
-      await expect(empty).not.toContainText('Local only')
+      await empty.getByRole('button', { name: 'Pick an agent' }).click()
+      await expect(agentRow(page, 'Muse')).toHaveAttribute('aria-disabled', 'true')
+      await expect(agentRow(page, 'Muse')).toContainText('No account')
+      await expect(agentRow(page, 'Muse')).not.toContainText('Local only')
       await expect(empty.locator('.field-hint.bad')).toContainText('No Muse account yet')
     } finally {
       await quitAndClose(app)

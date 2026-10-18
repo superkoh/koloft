@@ -7,7 +7,7 @@ import {
   codexWalled,
   usableAccounts
 } from '@shared/accountUsage'
-import type { AccountView, CodexLimits, CodexLimitWindow } from '@shared/types'
+import type { AccountView, CodexLimits, CodexLimitWindow, SignInFolderKind } from '@shared/types'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -139,7 +139,7 @@ function resetsFrom(value: unknown): CodexLimits['resets'] {
 export class HomeAccountPicker {
   private turn = 0
 
-  constructor(private kind: 'codex-home' | 'muse-home') {}
+  constructor(private kind: SignInFolderKind) {}
 
   pick(accounts: AccountView[], resumedOn?: string): AccountView | undefined {
     const pool = usableAccounts(accounts, [this.kind])

@@ -13,6 +13,10 @@ export function mirrorHookDir(userData: string, host: string): string {
   return path.join(remoteBase(userData, host), 'hook-sessions')
 }
 
+export function mirrorAgyGemini(userData: string, host: string): string {
+  return path.join(remoteBase(userData, host), 'agy-gemini')
+}
+
 export function machinePackageBase(userData: string): string {
   return path.join(userData, 'remote', 'pkg')
 }

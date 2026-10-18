@@ -43,7 +43,7 @@ export function probeErrorLabel(e: NonNullable<AccountView['probeError']>): stri
 
 export function noLimitsLabel(a: AccountView): string {
   if (a.probeError) return probeErrorLabel(a.probeError)
-  return a.kind === 'muse-home' ? 'Signed in' : 'Not probed yet'
+  return a.kind === 'muse-home' || a.kind === 'agy-home' ? 'Signed in' : 'Not probed yet'
 }
 
 // CODEX§15
@@ -93,5 +93,26 @@ export function Meter({
       </span>
       <span className="m-pct">{pct}%</span>
     </span>
+  )
+}
+
+export function QuotaMeters({
+  quota,
+  now
+}: {
+  quota: NonNullable<AccountView['quota']>
+  now: number
+}): JSX.Element {
+  return (
+    <div className="acct-meters">
+      {quota.map((q) => (
+        <Meter key={q.label} label={q.label} v={q.used} win="" />
+      ))}
+      {quota[0]?.resetsAt ? (
+        <span className="acct-note">
+          {quota[0].label} resets {resetLabel(quota[0].resetsAt, now)}
+        </span>
+      ) : null}
+    </div>
   )
 }

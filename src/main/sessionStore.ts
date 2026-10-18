@@ -38,7 +38,7 @@ interface SessionStoreData {
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const sessionKeyOn =
-  (backend: 'codex' | 'muse', label: string) =>
+  (backend: 'codex' | 'muse' | 'agy', label: string) =>
   (id: string, host?: string): string => {
     if (!UUID.test(id)) throw new Error(`Invalid ${label} session ID`)
     const onMachine = SUPPORTED_PAIRS[backend].ssh ? host : undefined
@@ -47,6 +47,7 @@ const sessionKeyOn =
 
 export const codexSessionKey = sessionKeyOn('codex', 'Codex')
 export const museSessionKey = sessionKeyOn('muse', 'Muse')
+export const agySessionKey = sessionKeyOn('agy', 'Antigravity')
 
 export type KeyOf = (id: string, host?: string) => string
 

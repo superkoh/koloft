@@ -7,20 +7,22 @@ export interface ProjectInfo {
 }
 
 // CC§7 CODEX§15
-export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home' | 'muse-home'
+export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home' | 'muse-home' | 'agy-home'
 
 export const ACCOUNT_KINDS: readonly AccountKind[] = [
   'oauth',
   'apikey',
   'custom',
   'codex-home',
-  'muse-home'
+  'muse-home',
+  'agy-home'
 ]
 
-export type SignInFolderKind = Extract<AccountKind, 'codex-home' | 'muse-home'>
+export type SignInFolderKind = Extract<AccountKind, 'codex-home' | 'muse-home' | 'agy-home'>
 export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = [
   'codex-home',
-  'muse-home'
+  'muse-home',
+  'agy-home'
 ] satisfies SignInFolderKind[]
 
 export const isSignInFolderKind = (kind: unknown): kind is SignInFolderKind =>
@@ -157,7 +159,7 @@ export interface WorkspaceGitAccount {
 
 export function keychainServiceSuffix(kind: AccountKind): string {
   if (kind === 'oauth') return '-claude-oauth'
-  if (kind === 'codex-home' || kind === 'muse-home') return `-${kind}`
+  if (isSignInFolderKind(kind)) return `-${kind}`
   return kind === 'apikey' ? '-anthropic-api' : '-custom-endpoint'
 }
 
@@ -265,9 +267,16 @@ export const CODEX_RESET_OUTCOMES = [
 
 export type CodexResetOutcome = (typeof CODEX_RESET_OUTCOMES)[number] | 'failed'
 
+export interface QuotaBucket {
+  label: string
+  used: number
+  resetsAt?: number
+}
+
 export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
   limits?: CodexLimits
+  quota?: QuotaBucket[]
   probeError?: ProbeErrorKind
 }
 
@@ -427,7 +436,7 @@ export const WORLD_CLOCK_MAX = 3
 export const DEFAULT_SETTINGS: Settings = {
   sessionMethods: {
     defaultBackend: 'claude',
-    enabled: { claude: true, codex: true, muse: true }
+    enabled: { claude: true, codex: true, muse: true, agy: true }
   },
   fontFamily:
     '"JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", Menlo, Monaco, monospace',
@@ -471,7 +480,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gitMachines: {}
 }
 
-export type BackendId = 'claude' | 'codex' | 'muse'
+export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'
 export type HostId = 'local' | 'ssh'
 export interface SessionMethods {
   defaultBackend: BackendId
@@ -690,7 +699,8 @@ export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
 export const PLACEHOLDER_TITLES: Record<BackendId, string> = {
   claude: PLACEHOLDER_SESSION_TITLE,
   codex: 'Codex session',
-  muse: 'Muse session'
+  muse: 'Muse session',
+  agy: 'Antigravity session'
 }
 
 export const PENDING_SESSION_TITLE = 'Starting…'

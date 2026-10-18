@@ -14,7 +14,8 @@ import { useSettingsUpdate } from './useSettingsUpdate'
 const METHOD_NOTE: Record<BackendId, string> = {
   claude: 'Always enabled',
   codex: 'Runs on a Codex account from Settings ▸ Accounts',
-  muse: 'Runs on a Muse account from Settings ▸ Accounts'
+  muse: 'Runs on a Muse account from Settings ▸ Accounts',
+  agy: 'Runs on a Google sign-in or a Gemini API key from Settings ▸ Accounts'
 }
 
 type Detected = Awaited<ReturnType<typeof window.api.sessions.backends>>

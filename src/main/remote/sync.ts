@@ -4,6 +4,7 @@ import {
   heartbeatCmd,
   parseHeartbeat,
   type MachineTmp,
+  NO_FILES_THERE,
   type MirrorStamps,
   type RemoteGitInfo
 } from './install'
@@ -30,7 +31,6 @@ function projectFlags(slugs: string[]): string[] {
 }
 // PLATFORM§34
 const HOOK_FLAGS = ['-I', '--inplace', '--delete']
-
 const FAST_INTERVAL_MS = 2000
 const IDLE_TAB_INTERVAL_MS = 5000
 const IDLE_INTERVAL_MS = 20_000
@@ -42,6 +42,7 @@ export interface RemoteTarget {
   host: string
   mirrorProjectsRoot: string
   mirrorHookDir: string
+  extraPulls?: { from: string; to: string; flags: string[] }[]
   paths: string[]
   hasTabs: boolean
   busy: boolean
@@ -68,7 +69,7 @@ interface HostState {
   timer?: ReturnType<typeof setTimeout>
   dueAt: number
   fastUntil: number
-  pulled: MirrorStamps
+  pulled: Record<string, string | undefined>
   running: boolean
   again: boolean
   waitingForNextPull: (() => void)[]
@@ -265,10 +266,19 @@ export class RemoteSync {
       const askGit = Date.now() - st.gitAt >= GIT_INTERVAL_MS
       const watched = [...(this.watches.get(host)?.keys() ?? [])]
       const slugsNow = (): string[] => target.paths.map((p) => encodeCwd(st.git.get(p)?.real ?? p))
+      const extras = target.extraPulls ?? []
       const hb = await this.deps
-        .run(host, heartbeatCmd(askGit ? target.paths : [], watched, slugsNow()))
+        .run(
+          host,
+          heartbeatCmd(
+            askGit ? target.paths : [],
+            watched,
+            slugsNow(),
+            extras.map((e) => e.from)
+          )
+        )
         .catch((e: unknown) => ({ code: null, stdout: '', stderr: String(e) }))
-      let mirrors: MirrorStamps = {}
+      let mirrors: MirrorStamps = { extras: [] }
       if (hb.code === 0) {
         st.connected = true
         st.failures = 0
@@ -293,12 +303,13 @@ export class RemoteSync {
       }
       if (st.connected) {
         const pull = async (
-          which: keyof MirrorStamps,
+          which: string,
           stamp: string | undefined,
           remoteDir: string,
           localDir: string,
           flags: string[]
         ): Promise<RunResult | undefined> => {
+          if (stamp === NO_FILES_THERE) return undefined
           if (stamp !== undefined && st.pulled[which] === stamp) return undefined
           const r = await this.deps.rsync(host, remoteDir, localDir, flags)
           st.pulled[which] = r.code === 0 ? stamp : undefined
@@ -319,7 +330,12 @@ export class RemoteSync {
           target.mirrorHookDir,
           HOOK_FLAGS
         )
-        const failed = [transcripts, hooks].find((r) => r && r.code !== 0)
+        const pulls = [transcripts, hooks]
+        for (const [i, extra] of extras.entries())
+          pulls.push(
+            await pull(`extra ${extra.from}`, mirrors.extras[i], extra.from, extra.to, extra.flags)
+          )
+        const failed = pulls.find((r) => r && r.code !== 0)
         st.problem = failed && problemOf(failed)
         if (!hooks || hooks.code === 0) this.deps.onHooksPulled?.(host)
       }

@@ -2,6 +2,7 @@ import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { REMOTE_HOOK_DIR, remotePtsFile } from './paths'
 import { ENSURE_CLAUDE_MINIMUM_FN, ENSURE_MUSE_MINIMUM_FN } from '../cliMinimums'
+import { AGY_INSTALLER_URL } from '../toolInstall'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
@@ -94,9 +95,16 @@ install_pkg() {
 const installNode = (
   forWhat: string,
   without: string,
-  only = ''
+  only = '',
+  onlyOwnNodeWhen = ''
 ): string => `NODE_VERSION=${NODE_VERSION}
-node_ok() {
+node_ok() {${
+  onlyOwnNodeWhen
+    ? `
+  # AGY§8
+  ${onlyOwnNodeWhen} && { node_runs; return; }`
+    : ''
+}
   have node || return 1
   v="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
   [ "\${v:-0}" -ge 20 ] 2>/dev/null
@@ -154,32 +162,36 @@ ${INSTALL_PKG}
 
 have bash || install_pkg bash || exit 4
 
+program="$1"
 ${ENSURE_CLAUDE_MINIMUM_FN}
 ${ENSURE_MUSE_MINIMUM_FN}
 python_has_pty() { python3 -c 'import pty, termios' >/dev/null 2>&1; }
-if [ "$1" = muse ]; then
+official_install() {
+  have curl || have wget || install_pkg curl || { say "need curl or wget to install $1"; exit 4; }
+  say "installing $1 (official installer$3)"
+  if have curl; then curl -fsSL "$2" | bash
+  else wget -qO- "$2" | bash; fi
+  have "$1" || { say "$1 did not install; see the output above"; exit 4; }
+}
+case "$program" in
+muse)
   python_has_pty || install_pkg python3
   python_has_pty || { say "Muse sessions need python3 on this machine, and python3 here does not run. Install python3, then start the session again."; exit 4; }
-  if ! have muse; then
-    say "installing muse (official installer, about 330 MB, once)"
-    if have curl; then curl -fsSL ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
-    elif have wget; then wget -qO- ${MUSE_INSTALLER} | MUSE_NO_MODIFY_PATH=1 bash
-    else say "need curl or wget to install muse"; exit 4; fi
-    have muse || { say "muse did not install; see the output above"; exit 4; }
-  fi
+  MUSE_NO_MODIFY_PATH=1; export MUSE_NO_MODIFY_PATH
+  have muse || official_install muse ${MUSE_INSTALLER} ", about 330 MB, once"
   ensure_muse_minimum muse || exit 4
-else
-  if ! have claude; then
-    say "installing claude (official installer)"
-    if have curl; then curl -fsSL https://claude.ai/install.sh | bash
-    elif have wget; then wget -qO- https://claude.ai/install.sh | bash
-    else say "need curl or wget to install claude"; exit 4; fi
-    have claude || { say "claude did not install; see the output above"; exit 4; }
-  fi
+  ;;
+agy)
+  # AGY§3
+  have agy || official_install agy ${AGY_INSTALLER_URL}
+  ;;
+*)
+  have claude || official_install claude https://claude.ai/install.sh
   ensure_claude_minimum claude || exit 4
-fi
+  ;;
+esac
 
-${installNode('the statusline', 'this machine gets no statusline', '[ "$1" != muse ] && ')}
+${installNode('the statusline', 'this machine gets no statusline', '[ "$program" != muse ] && ', '[ "$program" = agy ]')}
 
 GH_VERSION=${VENDOR_RELEASE.gh.version}
 gh_platform() {
@@ -273,6 +285,7 @@ const TMP_LINE = 'tmp '
 const STAMP_LINE = 'stamp '
 const TRANSCRIPTS_LINE = 'transcripts '
 const HOOKS_LINE = 'hooks '
+const EXTRA_LINE = 'extra '
 const CLAUDE_TMP_BASE =
   'if [ "$(uname)" = Darwin ]; then b="${CLAUDE_CODE_TMPDIR:-/tmp}"; ' +
   'else b="${CLAUDE_CODE_TMPDIR:-${TMPDIR:-${TMP:-${TEMP:-/tmp}}}}"; fi'
@@ -285,27 +298,39 @@ const EVERY_FILE_STAMPED =
 export function heartbeatCmd(
   paths: string[],
   watched: string[] = [],
-  projectSlugs: string[] = []
+  projectSlugs: string[] = [],
+  extraDirs: string[] = []
 ): string {
   return remoteShCommand(
     `echo "${UID_LINE}$(id -u)"; ${CLAUDE_TMP_BASE}; echo "${TMP_LINE}$(cd "$b" && pwd -P)"; ` +
       `${FINGERPRINT}; n=$1; shift; ` +
       `while [ "$n" -gt 0 ]; do echo "${STAMP_LINE}$(fp "$1" 2>/dev/null)"; shift; n=$((n - 1)); done; ` +
       `${EVERY_FILE_STAMPED}; ` +
-      `echo "${TRANSCRIPTS_LINE}$(for s in $1; do ` +
+      `echo "${TRANSCRIPTS_LINE}$([ -d "$HOME/.claude/projects" ] && for s in $1; do ` +
       'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; shift; ' +
-      `echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
+      `mkdir -p "${REMOTE_HOOK_DIR}" 2>/dev/null; echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
+      `m=$1; shift; while [ "$m" -gt 0 ]; do echo "${EXTRA_LINE}$([ -d "$HOME/$1" ] && stamped "$HOME/$1" | cksum)"; shift; m=$((m - 1)); done; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
       'git -C "$p" worktree list --porcelain 2>/dev/null; done; exit 0',
-    [String(watched.length), ...watched, projectSlugs.join(' '), ...paths]
+    [
+      String(watched.length),
+      ...watched,
+      projectSlugs.join(' '),
+      String(extraDirs.length),
+      ...extraDirs,
+      ...paths
+    ]
   )
 }
+
+export const NO_FILES_THERE = ''
 
 export interface MirrorStamps {
   transcripts?: string
   hooks?: string
+  extras: string[]
 }
 
 export interface RemoteGitInfo {
@@ -323,7 +348,7 @@ export function parseHeartbeat(stdout: string): {
 } {
   const alive: string[] = []
   const stamps: string[] = []
-  const mirrors: MirrorStamps = {}
+  const mirrors: MirrorStamps = { extras: [] }
   const git = new Map<string, RemoteGitInfo>()
   let uid = NaN
   let tmpRoot = ''
@@ -352,6 +377,8 @@ export function parseHeartbeat(stdout: string): {
       mirrors.transcripts = line.slice(TRANSCRIPTS_LINE.length)
     } else if (!current && line.startsWith(HOOKS_LINE)) {
       mirrors.hooks = line.slice(HOOKS_LINE.length)
+    } else if (!current && line.startsWith(EXTRA_LINE)) {
+      mirrors.extras.push(line.slice(EXTRA_LINE.length))
     } else if (!current) {
       if (line.trim()) alive.push(line.trim())
     } else if (line === 'git') {

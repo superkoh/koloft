@@ -103,12 +103,15 @@ export interface TabSpec {
   ownerWords?: string
   agentPlugin?: boolean
   claudeArgs: string[]
-  muse?: { run: string; files: Record<string, string> }
+  program?: { name: 'muse' | 'agy'; run: string; files: Record<string, string> }
 }
 
 export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
 
 const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
+
+export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
+exit 0`
 
 function claudeRun(spec: TabSpec): string {
   const T = tabPath(spec.tabId)
@@ -138,9 +141,9 @@ export function tabScript(spec: TabSpec): string {
   assertSafeNames(spec.tabId, spec.tmuxName, spec.machineName)
   const T = tabPath(spec.tabId)
   const H = `$HOME/.koloft/hook-sessions/${spec.tabId}`
-  const muse = spec.muse
+  const program = spec.program
   // PLATFORM§35
-  const attachTo = muse
+  const attachTo = program
     ? `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
     : `'${spec.tmuxName}'`
   // PLATFORM§35
@@ -153,14 +156,14 @@ if [ "$1" = run ]; then
   KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
   unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
-${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}${muse ? muse.run : claudeRun(spec)}fi
+${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}${program ? program.run : claudeRun(spec)}fi
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t ${attachTo}
-${muse ? `trap 'rm -f "$T.auth.json"' EXIT\n` : ''}sh "$M/ensure.sh"${muse ? ' muse' : ''} || exit $?
+${program ? `trap 'rm -f "$T.auth.json"' EXIT\n` : ''}sh "$M/ensure.sh"${program ? ` ${program.name}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}.status.jsonl"
-${muse ? 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n' : claudeFirstRun(spec)}tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
+${program ? 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n' : claudeFirstRun(spec)}tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 c=$?
 rm -f "${T}.env"
 exit $c
@@ -169,7 +172,7 @@ exit $c
 
 export function writeTabPackage(dir: string, spec: TabSpec): void {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const files = spec.muse?.files ?? { [`${spec.tabId}.json`]: JSON.stringify(spec.settings) }
+  const files = spec.program?.files ?? { [`${spec.tabId}.json`]: JSON.stringify(spec.settings) }
   for (const [name, text] of Object.entries(files))
     fs.writeFileSync(path.join(dir, name), text, { mode: 0o600 })
   fs.writeFileSync(path.join(dir, `${spec.tabId}.sh`), tabScript(spec), { mode: 0o700 })

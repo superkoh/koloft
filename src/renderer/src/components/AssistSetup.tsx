@@ -7,11 +7,12 @@ import type { AssistSetupState } from '../useAssistSetup'
 import { AddAccountDialog, LoginDialog, SignInDialog } from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 
-// CC§9 CODEX§15 MUSE§1
+// CC§9 CODEX§15 MUSE§1 AGY§2
 export const ASSIST_RUNS_ON: Record<BackendId, string> = {
   claude: 'Haiku, about 750 tokens a job',
   codex: 'GPT-6 Luna, a few thousand tokens a job',
-  muse: 'Muse’s default model'
+  muse: 'Muse’s default model',
+  agy: 'Antigravity’s default model, plus a short title call, per job'
 }
 
 export const ASSIST_COST_LINE =

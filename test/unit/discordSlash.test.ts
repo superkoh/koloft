@@ -3,6 +3,7 @@ import type { SessionStatus } from '../../src/shared/types'
 import {
   MORE_OUTPUT_SETTLES_MS,
   NOTHING_CAME_BACK_MS,
+  SCREEN_SHOWS_THE_OUTPUT_MS,
   SlashCommands,
   type SlashDeps
 } from '../../src/main/discord/slash'
@@ -28,6 +29,7 @@ function setup(over: Partial<SlashDeps> = {}) {
     ready: async (_t, ready) => ready(),
     exclusive: (_t, typing) => typing(),
     typeNow: async (_t, keys) => void typed.push(...keys),
+    outputOnlyOnScreen: () => undefined,
     post: (_c, text) => void posts.push(text),
     card: (_c, card) => void posts.push(`${card.header}\n${card.body}`),
     ...over
@@ -63,6 +65,20 @@ describe('a slash command typed into a session', () => {
     const { slash, typed } = setup({ backendOf: () => 'codex' })
     await slash.typeWhenIdle(child, '/compact', CHANNEL)
     expect(typed).toEqual(['\x05\x15', '/compact', '\x1b', '\r'])
+  })
+
+  it('in Antigravity, which keeps no command output on disk, posts what its screen shows and presses Esc to close the panel', async () => {
+    const { slash, typed, posts } = setup({
+      backendOf: () => 'agy',
+      outputOnlyOnScreen: async () => 'Models & Quota\nGemini 3.1 Pro  42% left'
+    })
+    await slash.typeWhenIdle(child, '/usage', CHANNEL)
+    expect(typed).toEqual(['/usage', '\r'])
+    await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS)
+    expect(typed).toEqual(['/usage', '\r', '\x1b'])
+    expect(posts).toEqual([
+      '⌨️ **fix-login** ran /usage:\nModels & Quota\nGemini 3.1 Pro  42% left'
+    ])
   })
 
   it('posts what the command printed once no more output follows, and counts as running until then', async () => {
