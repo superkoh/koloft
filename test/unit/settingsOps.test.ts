@@ -210,6 +210,22 @@ describe('sanitizeLoadedSettings and the Assist choice', () => {
   })
 })
 
+describe('sanitizeLoadedSettings and the "skip permission prompts" answer Koloft keeps', () => {
+  it('counts an upgrade that already finished Assist setup as agreed, so it is not asked again, and an upgrade still in setup as not yet', () => {
+    const done = { fontSize: 13, assist: { on: true, backend: 'claude' } }
+    expect(sanitizeLoadedSettings(done).skipPermissionsAgreed).toBe(true)
+    expect(sanitizeLoadedSettings({ fontSize: 13 }).skipPermissionsAgreed).toBe(false)
+    expect(sanitizeLoadedSettings({}).skipPermissionsAgreed).toBe(false)
+  })
+
+  it('keeps a saved answer, and About ▸ Reset leaves it alone', () => {
+    const saved = { assist: { on: true, backend: 'claude' }, skipPermissionsAgreed: false }
+    expect(sanitizeLoadedSettings(saved).skipPermissionsAgreed).toBe(false)
+    expect(sanitizeLoadedSettings({ skipPermissionsAgreed: true }).skipPermissionsAgreed).toBe(true)
+    expect(buildResetPatch()).not.toHaveProperty('skipPermissionsAgreed')
+  })
+})
+
 describe('sanitizeLoadedSettings and where new projects go', () => {
   it('starts empty — no folder is guessed — and keeps only non-empty paths per machine', () => {
     expect(sanitizeLoadedSettings({}).newProjectFolders).toEqual({})

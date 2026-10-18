@@ -66,7 +66,6 @@ export function AssistSetup({
   const accounts = useStore((s) => s.accounts) ?? []
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)
-  const setBypassAccepted = useStore((s) => s.setBypassAccepted)
   const update = useSettingsUpdate()
   const [signIn, setSignIn] = useState<{
     backend: Exclude<BackendId, 'claude'>
@@ -78,10 +77,6 @@ export function AssistSetup({
     if (setup.usable[b]) update({ assist: { on: true, backend: b } })
     else if (b === 'claude') beginLogin(again)
     else setSignIn({ backend: b, again })
-  }
-  const acceptBypass = async (): Promise<void> => {
-    if (await window.api.accounts.acceptBypass()) setBypassAccepted(true)
-    else update({ skipPermissions: false })
   }
 
   if (setup.noTool)
@@ -138,11 +133,10 @@ export function AssistSetup({
             that OK?
           </div>
           <div className="ob-choices">
-            <button className="choice" onClick={() => void acceptBypass()}>
+            <button className="choice" onClick={() => update({ skipPermissionsAgreed: true })}>
               <span className="choice-t">Yes, don’t ask</span>
               <span className="choice-d">
-                Koloft tells Claude you agreed, so a session started in the background never stops
-                at its warning.
+                Koloft remembers your answer. Your own Claude settings stay as they are.
               </span>
             </button>
             <button className="choice" onClick={() => update({ skipPermissions: false })}>
