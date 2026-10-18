@@ -398,6 +398,8 @@ part unmerged g -C "$top" ls-files -u -z --full-name
 [ "$nb" = 0 ] || { part cached g diff --cached --numstat -z --; part unstaged g diff --numstat -z --; }
 exit 0`
 
+const CHANGES_GIT_QUERIES_IN_A_ROW = 9
+
 function parseChanges(stdout: Buffer): GitChanges | null {
   const [state, afterState] = lineAt(stdout, 0)
   if (state === CHANGES_GONE || state === CHANGES_NOT_A_REPO)
@@ -732,7 +734,9 @@ export class SshHost implements Host {
   gitChanges(root: string, base: BaseChoice): Promise<GitChanges> {
     const bareRoot = this.bare(root)
     return coalesce(['ssh', this.machine, 'changes', bareRoot, base].join('\0'), async () => {
-      const r = await this.sh(CHANGES, [bareRoot, base], { timeoutMs: GIT_TIMEOUT_MS })
+      const r = await this.sh(CHANGES, [bareRoot, base], {
+        timeoutMs: GIT_TIMEOUT_MS * CHANGES_GIT_QUERIES_IN_A_ROW
+      })
       const got = r.code === 0 ? parseChanges(r.stdout) : null
       if (!got) throw new Error(problemOf(r))
       return { ...got, status: this.keyedMap(got.status), numstat: this.keyedMap(got.numstat) }
