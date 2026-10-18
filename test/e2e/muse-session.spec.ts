@@ -80,6 +80,38 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
+  // MUSE§13
+  test('a Muse account signed in with Meta shows its 5h and 7d quota in the usage panel, read from /usage in a muse that keeps no session log, so no session appears anywhere', async ({
+    env
+  }) => {
+    installMuse(env)
+    seedSettings(env, { hintsOff: true })
+    fs.writeFileSync(
+      path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
+      JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+    )
+    fs.writeFileSync(
+      path.join(env.home, 'fake-muse-quota.json'),
+      JSON.stringify({ current: 40, weekly: 7 })
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.accounts.probe())
+      await page.locator('.tbu').click()
+      const pop = page.locator('.tbu-pop')
+      await expect(pop.locator('.tbu-pop-head', { hasText: /^Muse$/ })).toBeVisible()
+      const row = pop.locator('.tbu-row', { hasText: E2E_MUSE_ACCOUNT })
+      await expect(row.locator('.acct-meter[data-win="5h"] .m-pct')).toHaveText('40%')
+      await expect(row.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('7%')
+      expect(museCalls(env)).toEqual([])
+      expect(await page.evaluate(() => window.api.sessions.list())).toEqual([])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('/clear keeps the tab and moves it to a new session; the cleared one leaves the list for Restore session, which resumes it with muse resume', async ({
     env
   }) => {

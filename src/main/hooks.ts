@@ -150,15 +150,24 @@ remind_reply_language UserPromptSubmit
 exit 0
 `
 
+function quotedOwnerWords(ownerWords: string): string {
+  return JSON.stringify(ownerWords.slice(0, OWNER_WORDS_QUOTED_CHARS)).slice(1, -1)
+}
+
 // ADR-0031
 export function seedOwnerWords(said: string, ownerWords: string): void {
-  fs.writeFileSync(said, JSON.stringify(ownerWords.slice(0, OWNER_WORDS_QUOTED_CHARS)).slice(1, -1))
+  fs.writeFileSync(said, quotedOwnerWords(ownerWords))
+}
+
+// ADR-0031
+export function handedOverOwnerWordsFiles(ownerWords: string): Record<string, string> {
+  return { '': quotedOwnerWords(ownerWords), [HANDED_OVER_TASK_COMES_FIRST]: '' }
 }
 
 // ADR-0031
 export function seedHandedOverOwnerWords(said: string, ownerWords: string): void {
-  seedOwnerWords(said, ownerWords)
-  fs.writeFileSync(said + HANDED_OVER_TASK_COMES_FIRST, '')
+  for (const [suffix, text] of Object.entries(handedOverOwnerWordsFiles(ownerWords)))
+    fs.writeFileSync(said + suffix, text)
 }
 
 // CC§1

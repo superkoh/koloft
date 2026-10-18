@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { launchApp } from './app'
-import type { E2EEnv } from './env'
+import { installCodex, type E2EEnv } from './env'
 import { encodeCwd, killSession, waitBooted } from './p1'
 
 export const REMOTE_HOST = 'devbox'
@@ -215,6 +215,31 @@ export function installRemoteAgy(env: E2EEnv): void {
   const settings = path.join(machineHome(env), '.gemini', 'antigravity-cli', 'settings.json')
   fs.mkdirSync(path.dirname(settings), { recursive: true })
   fs.writeFileSync(settings, JSON.stringify({ trustedWorkspaces: [remoteDir(env)] }))
+}
+
+export const MAC_CODEX_ACCESS_TOKEN = 'mac-access-token-for-the-machine'
+
+export function installCodexOnFakeRemote(env: E2EEnv): void {
+  installCodex(
+    env,
+    JSON.stringify({ tokens: { access_token: MAC_CODEX_ACCESS_TOKEN, account_id: 'mac-account' } })
+  )
+  const bin = path.join(machineHome(env), '.local', 'bin')
+  fs.mkdirSync(bin, { recursive: true })
+  writeExec(
+    path.join(bin, 'codex'),
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(__dirname, '..', 'fixtures', 'fake-codex.js'))} "$@"\n`
+  )
+}
+
+export function machineCodexLog<T>(env: E2EEnv, name: string): T[] {
+  const file = path.join(machineHome(env), name)
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as T)
 }
 
 export function installMuseOnMachine(env: E2EEnv): void {

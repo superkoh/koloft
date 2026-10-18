@@ -1,16 +1,22 @@
 import { encodeCwd } from '@shared/cwdKey'
 import { problemOf, type RunResult } from './ssh'
-import { heartbeatCmd, parseHeartbeat, type MachineTmp, type RemoteGitInfo } from './install'
+import {
+  heartbeatCmd,
+  parseHeartbeat,
+  type MachineTmp,
+  type MirrorStamps,
+  type RemoteGitInfo
+} from './install'
 import { sessionIdOfTmux } from './launch'
 
 // CC§2 CC§4 PLATFORM§34
-function projectFlags(paths: string[]): string[] {
+function projectFlags(slugs: string[]): string[] {
   return [
     '--inplace',
     '-m',
     '--delete',
-    ...paths.flatMap((p) => {
-      const project = `/${encodeCwd(p)}*`
+    ...slugs.flatMap((slug) => {
+      const project = `/${slug}*`
       return [
         `--include=${project}/`,
         `--include=${project}/*.jsonl`,
@@ -25,9 +31,11 @@ function projectFlags(paths: string[]): string[] {
 // PLATFORM§34
 const HOOK_FLAGS = ['-I', '--inplace', '--delete']
 const FAST_INTERVAL_MS = 2000
+const IDLE_TAB_INTERVAL_MS = 5000
 const IDLE_INTERVAL_MS = 20_000
 const GIT_INTERVAL_MS = 20_000
 const LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS = 60_000
+const STAY_FAST_AFTER_WORK_OR_INPUT_MS = 30_000
 
 export interface RemoteTarget {
   host: string
@@ -36,6 +44,7 @@ export interface RemoteTarget {
   extraPulls?: { from: string; to: string; flags: string[] }[]
   paths: string[]
   hasTabs: boolean
+  busy: boolean
 }
 
 export interface RemoteSyncDeps {
@@ -57,9 +66,14 @@ interface HostState {
   failures: number
   problem?: string
   timer?: ReturnType<typeof setTimeout>
+  dueAt: number
+  fastUntil: number
+  pulled: Record<string, string | undefined>
   running: boolean
   again: boolean
   waitingForNextPull: (() => void)[]
+  roundEnded: boolean
+  waitingForFirstRound: (() => void)[]
 }
 
 interface Watch {
@@ -87,7 +101,10 @@ export class RemoteSync {
 
   stop(): void {
     this.stopped = true
-    for (const st of this.hosts.values()) if (st.timer) clearTimeout(st.timer)
+    for (const st of this.hosts.values()) {
+      if (st.timer) clearTimeout(st.timer)
+      this.roundOver(st)
+    }
     this.hosts.clear()
   }
 
@@ -145,17 +162,44 @@ export class RemoteSync {
     return new Promise((done) => this.state(host).waitingForNextPull.push(done))
   }
 
+  firstRoundDone(host: string): Promise<void> {
+    const st = this.state(host)
+    if (this.stopped || st.roundEnded) return Promise.resolve()
+    if (!st.running && !st.timer) this.next(host, st, 0)
+    return new Promise((done) => st.waitingForFirstRound.push(done))
+  }
+
+  private roundOver(st: HostState): void {
+    st.roundEnded = true
+    for (const done of st.waitingForFirstRound.splice(0)) done()
+  }
+
   pokeNow(host: string): void {
     if (this.stopped) return
     const st = this.state(host)
     st.gitAt = 0
     st.failures = 0
+    st.pulled = {}
+    st.fastUntil = Date.now() + STAY_FAST_AFTER_WORK_OR_INPUT_MS
     if (st.running) {
       st.again = true
       return
     }
+    this.next(host, st, 0)
+  }
+
+  typedInto(host: string): void {
+    const st = this.hosts.get(host)
+    if (this.stopped || !st) return
+    st.fastUntil = Date.now() + STAY_FAST_AFTER_WORK_OR_INPUT_MS
+    if (st.running || st.failures || st.dueAt - Date.now() <= FAST_INTERVAL_MS) return
+    this.next(host, st, 0)
+  }
+
+  private next(host: string, st: HostState, delay: number): void {
     if (st.timer) clearTimeout(st.timer)
-    st.timer = setTimeout(() => void this.round(host), 0)
+    st.dueAt = Date.now() + delay
+    st.timer = setTimeout(() => void this.round(host), delay)
     st.timer.unref?.()
   }
 
@@ -170,9 +214,14 @@ export class RemoteSync {
           gitAt: 0,
           connected: false,
           failures: 0,
+          dueAt: 0,
+          fastUntil: 0,
+          pulled: {},
           running: false,
           again: false,
-          waitingForNextPull: []
+          waitingForNextPull: [],
+          roundEnded: false,
+          waitingForFirstRound: []
         })
       )
     return st
@@ -186,6 +235,7 @@ export class RemoteSync {
       for (const [host, st] of this.hosts) {
         if (hosts.has(host)) continue
         if (st.timer) clearTimeout(st.timer)
+        this.roundOver(st)
         this.hosts.delete(host)
       }
       for (const host of hosts) {
@@ -202,7 +252,7 @@ export class RemoteSync {
     st.timer = undefined
     if (this.stopped || st.running) return
     const target = this.deps.targets().find((t) => t.host === host)
-    if (!target) return
+    if (!target) return this.roundOver(st)
     st.running = true
     const waiting = st.waitingForNextPull.splice(0)
     try {
@@ -214,13 +264,25 @@ export class RemoteSync {
       }
       const askGit = Date.now() - st.gitAt >= GIT_INTERVAL_MS
       const watched = [...(this.watches.get(host)?.keys() ?? [])]
+      const slugsNow = (): string[] => target.paths.map((p) => encodeCwd(st.git.get(p)?.real ?? p))
+      const extras = target.extraPulls ?? []
       const hb = await this.deps
-        .run(host, heartbeatCmd(askGit ? target.paths : [], watched))
+        .run(
+          host,
+          heartbeatCmd(
+            askGit ? target.paths : [],
+            watched,
+            slugsNow(),
+            extras.map((e) => e.from)
+          )
+        )
         .catch((e: unknown) => ({ code: null, stdout: '', stderr: String(e) }))
+      let mirrors: MirrorStamps = { extras: [] }
       if (hb.code === 0) {
         st.connected = true
         st.failures = 0
         const parsed = parseHeartbeat(hb.stdout)
+        mirrors = parsed.mirrors
         this.noticeStamps(host, watched, parsed.stamps)
         st.tmp = parsed.tmp
         const prevAlive = st.alive
@@ -239,24 +301,41 @@ export class RemoteSync {
         st.problem = problemOf(hb)
       }
       if (st.connected) {
-        const transcripts = await this.deps.rsync(
-          host,
+        const pull = async (
+          which: string,
+          stamp: string | undefined,
+          remoteDir: string,
+          localDir: string,
+          flags: string[]
+        ): Promise<RunResult | undefined> => {
+          if (stamp !== undefined && st.pulled[which] === stamp) return undefined
+          const r = await this.deps.rsync(host, remoteDir, localDir, flags)
+          st.pulled[which] = r.code === 0 ? stamp : undefined
+          return r
+        }
+        const slugs = slugsNow()
+        const transcripts = await pull(
+          'transcripts',
+          mirrors.transcripts && `${slugs.join(' ')} ${mirrors.transcripts}`,
           '.claude/projects',
           target.mirrorProjectsRoot,
-          projectFlags(target.paths.map((p) => st.git.get(p)?.real ?? p))
+          projectFlags(slugs)
         )
-        const hooks = await this.deps.rsync(
-          host,
+        const hooks = await pull(
+          'hooks',
+          mirrors.hooks,
           '.koloft/hook-sessions',
           target.mirrorHookDir,
           HOOK_FLAGS
         )
         const pulls = [transcripts, hooks]
-        for (const extra of target.extraPulls ?? [])
-          pulls.push(await this.deps.rsync(host, extra.from, extra.to, extra.flags))
-        const failed = pulls.find((r) => r.code !== 0)
+        for (const [i, extra] of extras.entries())
+          pulls.push(
+            await pull(`extra ${extra.from}`, mirrors.extras[i], extra.from, extra.to, extra.flags)
+          )
+        const failed = pulls.find((r) => r && r.code !== 0)
         st.problem = failed && problemOf(failed)
-        if (hooks.code === 0) this.deps.onHooksPulled?.(host)
+        if (!hooks || hooks.code === 0) this.deps.onHooksPulled?.(host)
       }
       if (
         before.connected !== st.connected ||
@@ -270,17 +349,21 @@ export class RemoteSync {
     } finally {
       st.running = false
       for (const done of waiting) done()
+      this.roundOver(st)
       if (this.stopped) return
       const again = st.again
       st.again = false
-      const steady = target.hasTabs ? FAST_INTERVAL_MS : IDLE_INTERVAL_MS
+      if (target.busy) st.fastUntil = Date.now() + STAY_FAST_AFTER_WORK_OR_INPUT_MS
+      const steady =
+        Date.now() < st.fastUntil
+          ? FAST_INTERVAL_MS
+          : target.hasTabs
+            ? IDLE_TAB_INTERVAL_MS
+            : IDLE_INTERVAL_MS
       const backoff = st.failures
         ? Math.min(FAST_INTERVAL_MS * 2 ** (st.failures - 1), LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS)
         : 0
-      const delay = again ? 0 : Math.max(steady, backoff)
-      if (st.timer) clearTimeout(st.timer)
-      st.timer = setTimeout(() => void this.round(host), delay)
-      st.timer.unref?.()
+      this.next(host, st, again ? 0 : Math.max(steady, backoff))
     }
   }
 }

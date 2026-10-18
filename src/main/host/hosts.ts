@@ -1,4 +1,4 @@
-import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { keyedOn, parseRemoteKey } from '@shared/remoteKey'
 import type { BackendSessionInfo, ClaudeSessionInfo } from '@shared/types'
 import type { Host } from './host'
 
@@ -9,8 +9,7 @@ export function publicClaudeSession({
   ...s
 }: ClaudeSessionInfo): BackendSessionInfo {
   const machine = s.remote?.host
-  const keyed = (p: string | undefined): string | undefined =>
-    machine && p?.startsWith('/') ? formatRemoteKey(machine, p) : p
+  const keyed = (p: string | undefined): string | undefined => keyedOn(machine, p)
   const info: BackendSessionInfo = {
     ...s,
     details: { claude: { jsonlPath, scratchpadDir: keyed(scratchpadDir) } }

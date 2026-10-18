@@ -94,54 +94,34 @@ export function sourceOf(backendId: BackendId, workspacePath: string): SessionSo
   return { backendId, host: hostOf(workspacePath) }
 }
 
-export type Capability = true | { unsupported: string } | { pending: true }
+export type Capability = true | { pending: true }
 
 export interface Capabilities {
   workbench: Capability
-  worktree: Capability
-  accounts: Capability
   scheduledTasks: Capability
-  agentOpen: Capability
   agentTools: Capability
   browserControl: Capability
-  filesTouched: Capability
-  statusline3: Capability
-  rename: Capability
 }
 
 const PENDING = { pending: true } as const
 
 const EVERYTHING: Capabilities = {
   workbench: true,
-  worktree: true,
-  accounts: true,
   scheduledTasks: true,
-  agentOpen: true,
   agentTools: true,
-  browserControl: true,
-  filesTouched: true,
-  statusline3: true,
-  rename: true
+  browserControl: true
 }
 
 const NOTHING_YET: Capabilities = {
   workbench: PENDING,
-  worktree: PENDING,
-  accounts: PENDING,
   scheduledTasks: PENDING,
-  agentOpen: PENDING,
   agentTools: PENDING,
-  browserControl: PENDING,
-  filesTouched: PENDING,
-  statusline3: PENDING,
-  rename: PENDING
+  browserControl: PENDING
 }
 
 const ON_A_MACHINE: Capabilities = {
   ...EVERYTHING,
-  agentOpen: PENDING,
-  browserControl: PENDING,
-  rename: PENDING
+  browserControl: PENDING
 }
 
 const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> = {
@@ -150,25 +130,13 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
     ssh: ON_A_MACHINE
   },
   codex: {
-    local: {
-      ...EVERYTHING,
-      // CODEX§8
-      statusline3: { unsupported: 'CODEX§8' }
-    },
+    local: EVERYTHING,
     // CODEX§16
-    ssh: 'refused'
+    ssh: ON_A_MACHINE
   },
   muse: {
-    local: {
-      ...EVERYTHING,
-      // MUSE§3
-      statusline3: { unsupported: 'MUSE§3' }
-    },
-    ssh: {
-      ...ON_A_MACHINE,
-      // MUSE§3
-      statusline3: { unsupported: 'MUSE§3' }
-    }
+    local: EVERYTHING,
+    ssh: ON_A_MACHINE
   },
   agy: {
     local: EVERYTHING,

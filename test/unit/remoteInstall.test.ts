@@ -502,6 +502,83 @@ describe('the heartbeat question', () => {
     expect(info.git.get(repo)?.isGit).toBe(true)
   })
 
+  // PLATFORM§34 PLATFORM§37
+  it("stamps the workspace's transcripts and the hook folder as wholes: an append, a same-size rewrite within one second, a new or a removed file each change the stamp, another project's files never do", () => {
+    const home = path.join(dir, 'home')
+    const projects = path.join(home, '.claude', 'projects')
+    const hookDir = path.join(home, '.koloft', 'hook-sessions')
+    const mine = path.join(projects, '-home-koh-api')
+    const other = path.join(projects, '-srv-www')
+    for (const d of [path.join(mine, 's1', 'subagents'), other, hookDir])
+      fs.mkdirSync(d, { recursive: true })
+    fs.writeFileSync(path.join(mine, 's1.jsonl'), 'a\n')
+    fs.writeFileSync(path.join(mine, 's1', 'subagents', 'x.jsonl'), 'a\n')
+    fs.writeFileSync(path.join(other, 's3.jsonl'), 'a\n')
+    fs.writeFileSync(path.join(hookDir, 't1.json'), '{"event":"stop"}')
+    const mirrors = (): ReturnType<typeof parseHeartbeat>['mirrors'] => {
+      const res = spawnSync('sh', ['-c', heartbeatCmd([], [], ['-home-koh-api'])], {
+        encoding: 'utf8',
+        env: { ...process.env, HOME: home }
+      })
+      expect(res.status).toBe(0)
+      return parseHeartbeat(res.stdout).mirrors
+    }
+    const hook = path.join(hookDir, 't1.json')
+    fs.utimesSync(hook, 1_700_000_000.25, 1_700_000_000.25)
+    const first = mirrors()
+    expect(first.transcripts).toMatch(/^\d+ \d+$/)
+    expect(first.hooks).toMatch(/^\d+ \d+$/)
+
+    fs.appendFileSync(path.join(other, 's3.jsonl'), 'b\n')
+    fs.writeFileSync(path.join(projects, 'stray.jsonl'), 'a\n')
+    expect(mirrors()).toEqual(first)
+
+    fs.appendFileSync(path.join(mine, 's1', 'subagents', 'x.jsonl'), 'b\n')
+    const appended = mirrors()
+    expect(appended.transcripts).not.toBe(first.transcripts)
+    expect(appended.hooks).toBe(first.hooks)
+
+    fs.writeFileSync(hook, '{"event":"ask"}X')
+    fs.utimesSync(hook, 1_700_000_000.5, 1_700_000_000.5)
+    const rewritten = mirrors()
+    expect(rewritten.hooks).not.toBe(appended.hooks)
+    expect(rewritten.transcripts).toBe(appended.transcripts)
+
+    fs.writeFileSync(path.join(hookDir, 't2.status.jsonl'), 'x\n')
+    const added = mirrors()
+    expect(added.hooks).not.toBe(rewritten.hooks)
+    fs.rmSync(path.join(hookDir, 't2.status.jsonl'))
+    expect(mirrors().hooks).not.toBe(added.hooks)
+  }, 120_000)
+
+  it('stamps each extra folder it is asked to mirror under the home, one line apiece in the order asked, so a change in one leaves the others and the workspace folders as they were', () => {
+    const home = path.join(dir, 'home')
+    const brain = path.join(home, '.gemini', 'antigravity', 'brain', 'c1')
+    const other = path.join(home, 'other')
+    const workspace = path.join(home, 'api')
+    for (const d of [brain, other, workspace]) fs.mkdirSync(d, { recursive: true })
+    fs.writeFileSync(path.join(brain, 'transcript.jsonl'), 'a\n')
+    fs.writeFileSync(path.join(other, 'x'), 'a\n')
+    const beat = (): ReturnType<typeof parseHeartbeat> => {
+      const res = spawnSync(
+        'sh',
+        ['-c', heartbeatCmd([workspace], [], [], ['.gemini/antigravity/brain', 'other', 'gone'])],
+        { encoding: 'utf8', env: { ...process.env, HOME: home } }
+      )
+      expect(res.status).toBe(0)
+      return parseHeartbeat(res.stdout)
+    }
+    const first = beat()
+    expect(first.mirrors.extras).toHaveLength(3)
+    expect(first.alive).toEqual([])
+    expect([...first.git.keys()]).toEqual([workspace])
+
+    fs.appendFileSync(path.join(brain, 'transcript.jsonl'), 'b\n')
+    const after = beat().mirrors.extras
+    expect(after[0]).not.toBe(first.mirrors.extras[0])
+    expect(after.slice(1)).toEqual(first.mirrors.extras.slice(1))
+  }, 120_000)
+
   it('reads the lines before the first folder as tmux session names, never a stamp line', () => {
     const parsed = parseHeartbeat(
       'stamp 1.5 3\nstamp \nk-aaa\nk-bbb\n== /home/koh/api\ngit\nworktree /home/koh/api\n\n'

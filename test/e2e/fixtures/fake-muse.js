@@ -88,7 +88,8 @@ const pendingOf = (id) => {
 const signedIn = () => {
   if (process.env.META_API_KEY) return 'envKey'
   try {
-    return JSON.parse(fs.readFileSync(authFile, 'utf8')).providers?.meta ? 'apiKey' : 'loggedOut'
+    const meta = JSON.parse(fs.readFileSync(authFile, 'utf8')).providers?.meta
+    return !meta ? 'loggedOut' : meta.access_token ? 'accountLogin' : 'apiKey'
   } catch {
     return 'loggedOut'
   }
@@ -189,6 +190,7 @@ function tui() {
     )
       flags[a] = argv[++i]
     else if (a === '--trust-workspace') flags.trust = true
+    else if (a === '--no-session-log') flags.noLog = true
     else rest.push(a)
   }
   let resumeId = rest[0] === 'resume' ? rest[1] : undefined
@@ -269,6 +271,10 @@ function tui() {
       items: []
     }
     started = !!resumed
+    if (flags.noLog) {
+      process.stdout.write(`Muse fixture ready (no session log)\r\n`)
+      return inputBox()
+    }
     save(session)
     register()
     append('fake-muse-calls.jsonl', {
@@ -464,7 +470,29 @@ function tui() {
       return
     }
     if (text === '/usage') {
-      process.stdout.write('Usage this week\r\n  5h window   12% used\r\n')
+      const used = JSON.parse(read('fake-muse-quota.json', '{"current":12,"weekly":34}'))
+      const box = [
+        'Session usage',
+        '',
+        '  Turns         0',
+        ...(signedIn() === 'accountLogin'
+          ? [
+              '',
+              'Subscription · Muse Code High Usage',
+              `  Current        ${used.current}% used · Resets at 4:11 AM`,
+              `  Weekly         ${used.weekly}% used · Resets Oct 18 at 5:00 PM`,
+              '  as of 12:31 AM'
+            ]
+          : [])
+      ]
+      const width = 54
+      process.stdout.write(
+        [
+          `┌${'─'.repeat(width)}┐`,
+          ...box.map((l) => `│  ${l.padEnd(width - 2)}│`),
+          `└${'─'.repeat(width)}┘`
+        ].join('\r\n') + '\r\n'
+      )
       inputBox()
       return
     }

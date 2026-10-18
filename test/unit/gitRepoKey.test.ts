@@ -60,4 +60,35 @@ describe('GitRepoKeys', () => {
     await keys.refresh([plain])
     expect(keys.known(repo)).toBeNull()
   })
+
+  it('asks git about a pinned folder once, however often the list is refreshed, until a folder that was no repository gets a .git; a machine that had no answer yet is asked again', async () => {
+    const askedLocal: string[] = []
+    const askedRemote: string[] = []
+    const keys = new GitRepoKeys(
+      async (dir) => {
+        askedLocal.push(dir)
+        return dir === repo ? path.join(repo, '.git') : null
+      },
+      async (_, paths) => {
+        askedRemote.push(...paths)
+        return paths.map(() => null)
+      }
+    )
+    const remote = 'ssh://devbox/srv/api'
+    await keys.refresh([repo, plain, remote])
+    await keys.refresh([repo, plain, remote])
+    expect(askedLocal.sort()).toEqual([plain, repo].sort())
+    expect(askedRemote).toEqual(['/srv/api', '/srv/api'])
+    expect(keys.known(repo)).toBe(path.join(repo, '.git'))
+    await keys.refresh([repo, tree])
+    expect(askedLocal.filter((d) => d === tree)).toEqual([tree])
+
+    const initedLater = path.join(root, 'inited-later')
+    fs.mkdirSync(initedLater)
+    await keys.refresh([initedLater])
+    await keys.refresh([initedLater])
+    fs.mkdirSync(path.join(initedLater, '.git'))
+    await keys.refresh([initedLater])
+    expect(askedLocal.filter((d) => d === initedLater)).toHaveLength(2)
+  })
 })

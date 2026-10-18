@@ -41,6 +41,11 @@ export function probeErrorLabel(e: NonNullable<AccountView['probeError']>): stri
   }
 }
 
+export function noLimitsLabel(a: AccountView): string {
+  if (a.probeError) return probeErrorLabel(a.probeError)
+  return a.kind === 'muse-home' || a.kind === 'agy-home' ? 'Signed in' : 'Not probed yet'
+}
+
 // CODEX§15
 export function codexBalanceLabel(l: CodexLimits, nowMs: number): string {
   const parts: string[] = []
