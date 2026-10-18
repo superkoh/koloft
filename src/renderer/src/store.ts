@@ -9,6 +9,7 @@ import {
   type ArtifactView,
   type AssistTaskRow,
   type AttentionEvent,
+  type BaseChoice,
   type BrowserJsDialog,
   type CronState,
   type SessionWorkbenchState,
@@ -26,7 +27,7 @@ import { basename } from '@shared/preview'
 import { resolveOnHost } from '@shared/remoteKey'
 import { routeFor } from '@shared/browserRoute'
 import type { LoginFlowState } from './components/settings/loginFlow'
-import type { BaseChoice, FilesTab } from './components/filesModel'
+import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
 import { selectionRoot } from './sessionRows'

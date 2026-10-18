@@ -42,7 +42,7 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true })
 })
 
-describe('fs.diffBase (the channel NFR-02 exists for)', () => {
+describe('diffBase, the base fs:gitChanges reports (the channel NFR-02 exists for)', () => {
   it('resolves the merge-base with the default branch, not HEAD', async () => {
     const base = await diffBase(repo)
     expect(base).toBeTruthy()
