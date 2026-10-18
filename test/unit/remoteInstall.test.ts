@@ -135,6 +135,13 @@ const expectNoHomebrewRsyncThePathCannotHide = (): void => {
   expect(['/opt/homebrew/bin/rsync', '/usr/local/bin/rsync'].filter(fs.existsSync)).toEqual([])
 }
 
+const HOMEBREW_FETCHERS_THE_PATH_CANNOT_HIDE = [
+  '/opt/homebrew/bin/curl',
+  '/opt/homebrew/bin/wget',
+  '/usr/local/bin/curl',
+  '/usr/local/bin/wget'
+].filter((f) => fs.existsSync(f))
+
 const NODE = (version: string) => `[ "$1" = -v ] && echo v${version}\nexit 0`
 
 const complete = (m: Machine, opts: { node?: string; curlExit?: number } = {}): void => {
@@ -390,24 +397,27 @@ printf '%s\\n' 'printf "#!/bin/sh\\necho Muse Code 1.4.9\\n" > "$HOME/.local/bin
     expect(m.calls('curl')).toEqual([])
   })
 
-  it('on a machine with neither curl nor wget, as a bare container is, curl is installed with the package manager before the installer runs', () => {
-    const m = machine()
-    forMuse(m, 'runs')
-    const curl = path.join(m.home, '.local', 'bin', 'curl')
-    const packaged = path.join(m.home, 'curl-from-the-package')
-    fs.renameSync(curl, packaged)
-    m.give('id', 'echo 0')
-    m.give(
-      'apt-get',
-      `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(m.logs, 'apt-get.log'))}
+  it.skipIf(HOMEBREW_FETCHERS_THE_PATH_CANNOT_HIDE.length > 0)(
+    'on a machine with neither curl nor wget, as a bare container is, curl is installed with the package manager before the installer runs',
+    () => {
+      const m = machine()
+      forMuse(m, 'runs')
+      const curl = path.join(m.home, '.local', 'bin', 'curl')
+      const packaged = path.join(m.home, 'curl-from-the-package')
+      fs.renameSync(curl, packaged)
+      m.give('id', 'echo 0')
+      m.give(
+        'apt-get',
+        `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(m.logs, 'apt-get.log'))}
 [ "$*" = "install -y curl" ] && cat ${JSON.stringify(packaged)} > ${JSON.stringify(curl)} && chmod +x ${JSON.stringify(curl)}
 exit 0`
-    )
-    const res = m.run('muse')
-    expect(res.status).toBe(0)
-    expect(m.calls('apt-get')).toEqual(['update', 'install -y curl'])
-    expect(m.calls('curl')).toEqual(['-fsSL https://dev.meta.ai/install.sh'])
-  })
+      )
+      const res = m.run('muse')
+      expect(res.status).toBe(0)
+      expect(m.calls('apt-get')).toEqual(['update', 'install -y curl'])
+      expect(m.calls('curl')).toEqual(['-fsSL https://dev.meta.ai/install.sh'])
+    }
+  )
 
   it('a Claude tab never reaches for muse or python3', () => {
     const m = machine()
