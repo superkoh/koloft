@@ -53,8 +53,7 @@ import type {
   GitStepResult,
   GithubInfo,
   GithubTarget,
-  PrChecks,
-  SessionInfo
+  PrChecks
 } from '@shared/types'
 import { CommitDialog } from './CommitDialog'
 import { CHANGES_MSG, commentBlocked } from './changesModel'
@@ -231,7 +230,6 @@ export interface WorkbenchPaneProps {
   onEscapeFellThrough: () => void
   onReturnFocus: () => void
   treeRoot: string | null
-  session: SessionInfo | null
   activeTabId: string | null
   pinned: Record<string, string[]>
   tabForSession: (sessionId: string) => string | undefined
@@ -338,7 +336,6 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   onEscapeFellThrough,
   onReturnFocus,
   treeRoot,
-  session,
   activeTabId,
   pinned,
   tabForSession,
@@ -346,6 +343,9 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   onCdpDone,
   onCdpCreate
 }: WorkbenchPaneProps): JSX.Element {
+  const session =
+    useStore((s) => (activeTabId ? s.sessions.find((x) => x.tabId === activeTabId) : undefined)) ??
+    null
   const termFocus = useStore((s) => s.termFocus)
   const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
   const ownerBackend = useStore(

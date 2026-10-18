@@ -1248,8 +1248,11 @@ export default function App(): JSX.Element {
       !whatsNewOpen &&
       !(signInTabId && activeTabId === signInTabId))
   const landedTab = tabs.find((t) => t.id === shown.id) ?? activeTab
-  const landedSession = useStore((s) =>
-    landedTab ? s.sessions.find((x) => x.tabId === landedTab.id) : undefined
+  const landedSession = useStore(
+    useShallow((s) => {
+      const x = landedTab ? s.sessions.find((y) => y.tabId === landedTab.id) : undefined
+      return { sessionId: x?.sessionId, alive: x?.alive, treeRoot: x?.treeRoot }
+    })
   )
   const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined
   const panelWidth = (panelTab ? workbenchWidths[panelTab] : undefined) ?? workbenchWidth
@@ -1266,7 +1269,7 @@ export default function App(): JSX.Element {
     )
   )
   const liveTabs = useMemo(() => new Set(liveTabIds), [liveTabIds])
-  const panelSid = landedSession?.sessionId
+  const panelSid = landedSession.sessionId
   useEffect(() => {
     if (!panelTab) return
     void useStore.getState().ensureWorkbench(panelTab)
@@ -1275,7 +1278,7 @@ export default function App(): JSX.Element {
   const panelBound = useStore((s) => !!panelTab && !!boundSessionId(s, panelTab))
   const panelReady = panelBound && !landedTab?.resuming
 
-  const terminalReady = panelReady && !!(landedSession?.alive && landedSession.sessionId)
+  const terminalReady = panelReady && !!(landedSession.alive && landedSession.sessionId)
 
   useEffect(() => {
     window.api.workbench.setAvailable(panelReady, terminalReady)
@@ -1302,7 +1305,7 @@ export default function App(): JSX.Element {
   }
   const fileTreeRoot = selectionRoot(
     hasWorkbench(landedTab) ? landedTab : undefined,
-    landedSession?.treeRoot,
+    landedSession.treeRoot,
     welcomeRoot
   )
 
@@ -1824,7 +1827,6 @@ export default function App(): JSX.Element {
                 command={panelCmd}
                 dialog={browserDialog}
                 treeRoot={fileTreeRoot}
-                session={landedSession ?? null}
                 activeTabId={landedTab?.id ?? null}
                 onUpdate={updateWorkbenchTabs}
                 onEvicted={onPanelTabEvicted}
@@ -1851,12 +1853,7 @@ export default function App(): JSX.Element {
             </div>
           )}
           {previewShown && panelTab && (
-            <WorkbenchPreview
-              tabId={panelTab}
-              root={fileTreeRoot}
-              session={landedSession ?? null}
-              width={PREVIEW_CARD_WIDTH_PX}
-            />
+            <WorkbenchPreview tabId={panelTab} root={fileTreeRoot} width={PREVIEW_CARD_WIDTH_PX} />
           )}
 
           <div className="aux-icons">
