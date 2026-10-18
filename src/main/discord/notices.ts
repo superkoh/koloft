@@ -3,6 +3,7 @@ import { GLOBAL_SCOPE } from '@shared/conductors'
 import { edgeAttention } from '../attention'
 import { accentOf, type Card } from './cards'
 import type { DialogView } from './dialog'
+import type { PlacedCard } from './secretAsks'
 
 export type NoticeKind = 'finished' | 'waiting' | 'closed'
 
@@ -55,6 +56,7 @@ export interface NoticeDeps {
   place(b: ConductorBinding, subject: NoticeSubject): Promise<string>
   threadOf(key: string): string | undefined
   card(channelId: string, card: Card): Promise<void>
+  post(channelId: string, card: Card): Promise<string | undefined>
   archive(threadId: string): void
   withButtons(tabId: string, view: DialogView, card: Card): Card
   subject(tabId: string): NoticeSubject | undefined
@@ -142,6 +144,17 @@ export class Notices {
     if (kind === 'waiting' && inThread) card = { ...card, footer: ANSWER_IN_THE_THREAD }
     if (dialog?.choices.length) card = this.d.withButtons(tabId, dialog, card)
     void this.d.card(channelId, card)
+  }
+
+  async placeCard(tabId: string, card: (name: string) => Card): Promise<PlacedCard | undefined> {
+    const subject = this.liveSubject(tabId)
+    if (!subject || subject.conductor) return undefined
+    const b = noticeBinding(this.d.bindings(), subject, 'waiting', !!this.d.threadOf(subject.key))
+    if (!b) return undefined
+    const name = await this.nameOf(tabId, subject.name)
+    const channelId = await this.d.place(b, { ...subject, name })
+    const messageId = await this.d.post(channelId, card(name))
+    return messageId ? { channelId, messageId, name } : undefined
   }
 
   // PLATFORM§39

@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState, type JSX } from 'react'
 import { IconFile, IconFiles, IconWebPage } from '../icons'
 import { routeFor } from '@shared/browserRoute'
 import { basename, dirname } from '@shared/preview'
-import type { SessionInfo } from '@shared/types'
 import { useStore } from '../store'
 import { CHANGES_MSG } from './changesModel'
 import { splitPath } from './filesModel'
@@ -35,14 +34,13 @@ function openDoc(tabId: string, doc: PreviewDoc): void {
 export function WorkbenchPreview({
   tabId,
   root,
-  session,
   width
 }: {
   tabId: string
   root: string | null
-  session: SessionInfo | null
   width: number
 }): JSX.Element {
+  const session = useStore((s) => s.sessions.find((x) => x.tabId === tabId))
   const baseChoice = useStore((s) => s.changesBase[tabId] ?? 'merge-base')
   const webTabs = useStore((s) => s.workbench[tabId]?.tabs)
   const openFile = useStore((s) => s.openFiles[tabId] ?? null)

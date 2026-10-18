@@ -294,7 +294,8 @@ first of these that can do it; only a step none of them can do goes to the owner
    a 0600 file in the sandbox's home, is never printed, and goes with `stop`. Local
    Claude and local Codex tabs run there, a remote Claude tab with `--remote`; a remote
    Codex tab there is not set up, as the lab machine has no CA certificates, so Codex on
-   it cannot reach OpenAI (CODEX§16). Drive it with
+   it cannot reach OpenAI (CODEX§16). `--discord` puts it on the real Discord as the dev
+   build's test bot, so the owner's only step is a press on the phone. Drive it with
    `playwright-cli attach --cdp=<cdp>` and screenshots; check results in transcripts,
    files and `<home>/koloft.log`.
 2. A fake server: helpers/fakeDiscord.ts, the GitHub fixture, the fake `gh`.

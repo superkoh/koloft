@@ -7,6 +7,7 @@ import {
 import { SessionBackendIcon } from './SessionBackendIcon'
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -188,7 +189,7 @@ function UnseenFileMark({ tabId }: { tabId: string }): JSX.Element | null {
   )
 }
 
-export function WorkspaceSidebar({
+export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onNewSession,
   namedMethods,
   onNewWorktreeSession,
@@ -1211,4 +1212,4 @@ export function WorkspaceSidebar({
       )}
     </>
   )
-}
+})

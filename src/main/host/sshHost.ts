@@ -3,12 +3,12 @@ import os from 'os'
 import path from 'path'
 import {
   HIDDEN_BY_DEFAULT_NAMES,
+  type BaseChoice,
   type DirEntry,
   type EditCreateResult,
   type EditFingerprint,
   type EditWriteResult,
-  type GitNumstatMap,
-  type GitStatusMap,
+  type GitChanges,
   type SkillSuggestion
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
@@ -22,10 +22,17 @@ import {
   bytesToWrite,
   checkNewFileName,
   editOpenResult,
-  looksBinary,
-  sameFingerprint
+  isFingerprint,
+  looksBinary
 } from '../fileEdit'
-import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
+import {
+  GIT_TIMEOUT_MS,
+  coalesce,
+  gitOps,
+  numstatFrom,
+  statusFrom,
+  type GitOps
+} from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
@@ -206,11 +213,14 @@ export function parseFingerprint(line: string): EditFingerprint | null {
   return Number.isFinite(mtimeMs) && Number.isFinite(bytes) ? { mtimeMs, size: bytes } : null
 }
 
+function lineAt(buf: Buffer, at: number): [string, number] {
+  const nl = buf.indexOf(0x0a, at)
+  return nl < 0 ? [buf.toString('utf8', at), buf.length] : [buf.toString('utf8', at, nl), nl + 1]
+}
+
 function headerAndBody(buf: Buffer): { header: string; body: Buffer } {
-  const nl = buf.indexOf(0x0a)
-  return nl < 0
-    ? { header: buf.toString('utf8'), body: Buffer.alloc(0) }
-    : { header: buf.toString('utf8', 0, nl), body: buf.subarray(nl + 1) }
+  const [header, body] = lineAt(buf, 0)
+  return { header, body: buf.subarray(body) }
 }
 
 const LIST_DIR = `cd "$1" 2>/dev/null || exit 0
@@ -308,12 +318,10 @@ d=-; [ -w "$(dirname "$1")" ] && d=w
 printf '%s %s %s\\n' "$f" "$w" "$d"
 cat "$1"`
 
-const FINGERPRINT_ONLY = `p=$(readlink -f "$1" 2>/dev/null || printf '%s' "$1")
-[ -e "$p" ] || { [ -d "$(dirname "$p")" ] && exit ${EXIT_GONE}; exit ${EXIT_DIR_GONE}; }
-[ -f "$p" ] || exit ${EXIT_NOT_FILE}
-${FINGERPRINT}
-fp "$p"`
+const ANY_FINGERPRINT = '-'
+const NO_FINGERPRINT = 'none'
 
+// PLATFORM§37
 const WRITE_IF_UNCHANGED = `p=$(readlink -f "$1" 2>/dev/null || printf '%s' "$1")
 [ -e "$p" ] || { [ -d "$(dirname "$p")" ] && exit ${EXIT_GONE}; exit ${EXIT_DIR_GONE}; }
 [ -f "$p" ] || exit ${EXIT_NOT_FILE}
@@ -321,7 +329,8 @@ ${FINGERPRINT}
 t="$(dirname "$p")/.$(basename "$p").koloft-tmp-$$"
 cp -p "$p" "$t" 2>/dev/null || exit ${EXIT_NO_PERM}
 cat > "$t" || { rm -f "$t"; exit ${EXIT_WRITE_FAILED}; }
-if [ "$2" != - ] && [ "$(fp "$p")" != "$2" ]; then rm -f "$t"; printf 'stale '; fp "$p"; exit 0; fi
+if [ "$2" != ${ANY_FINGERPRINT} ] && ! fp "$p" | awk -v ms="$2" -v sz="$3" '{ same = $1 * 1000 == ms && $2 == sz } END { exit !same }'
+then rm -f "$t"; printf 'stale '; fp "$p"; exit 0; fi
 mv -f "$t" "$p" || { rm -f "$t"; exit ${EXIT_WRITE_FAILED}; }
 printf 'ok '; fp "$p"`
 
@@ -347,15 +356,83 @@ const DEFAULT_REF = `dr() {
   return 1
 }`
 
+const MERGE_BASE = `${DEFAULT_REF}
+db() {
+  def=$(dr origin/main origin/master main master)
+  if [ -n "$def" ]; then
+    mb=$(g merge-base HEAD "$def") && [ -n "$mb" ] && { printf '%s' "$mb"; return 0; }
+  fi
+  g rev-parse --verify --quiet HEAD >/dev/null && printf HEAD
+  return 0
+}`
+
 const DIFF_BASE = `r=$1
 ${GIT_IN_REPO}
-${DEFAULT_REF}
-def=$(dr origin/main origin/master main master)
-if [ -n "$def" ]; then
-  mb=$(g merge-base HEAD "$def") && [ -n "$mb" ] && { printf '%s' "$mb"; exit 0; }
-fi
-g rev-parse --verify --quiet HEAD >/dev/null && printf HEAD
+${MERGE_BASE}
+db
 exit 0`
+
+const CHANGES_GONE = 'gone'
+const CHANGES_NOT_A_REPO = 'norepo'
+const CHANGES_REPO = 'repo'
+
+// PLATFORM§37
+const CHANGES = `r=$1
+${GIT_IN_REPO}
+${MERGE_BASE}
+[ -d "$r" ] || { echo ${CHANGES_GONE}; exit 0; }
+top=$(g rev-parse --show-toplevel) || { echo ${CHANGES_NOT_A_REPO}; exit 0; }
+if [ "$2" = head ]; then b=HEAD; else b=$(db); fi
+o=$(mktemp) || exit 1
+trap 'rm -f "$o"' EXIT
+part() { n=$1; shift; "$@" >"$o"; c=$?; printf '%s %s %s\\n' "$n" "$c" "$(wc -c <"$o")"; cat "$o"; }
+printf '${CHANGES_REPO}\\n%s\\n%s\\n' "$b" "$top"
+ns=1 nb=1
+if [ -n "$b" ]; then
+  part nameStatus g diff --name-status -z "$b" --; ns=$c
+  part vsBase g diff "$b" --numstat -z --; nb=$c
+fi
+part others g -C "$top" ls-files --others --exclude-standard -z --full-name
+part unmerged g -C "$top" ls-files -u -z --full-name
+[ "$ns" = 0 ] || part porcelain g status --porcelain=v1 -z
+[ "$nb" = 0 ] || { part cached g diff --cached --numstat -z --; part unstaged g diff --numstat -z --; }
+exit 0`
+
+const CHANGES_GIT_QUERIES_IN_A_ROW = 9
+
+function parseChanges(stdout: Buffer): GitChanges | null {
+  const [state, afterState] = lineAt(stdout, 0)
+  if (state === CHANGES_GONE || state === CHANGES_NOT_A_REPO)
+    return { base: null, status: {}, numstat: {}, missing: state === CHANGES_GONE }
+  if (state !== CHANGES_REPO) return null
+  const [base, afterBase] = lineAt(stdout, afterState)
+  const [toplevel, afterTop] = lineAt(stdout, afterBase)
+  const parts = new Map<string, string | null>()
+  for (let at = afterTop; at < stdout.length;) {
+    const [header, body] = lineAt(stdout, at)
+    const [name, code, bytes] = header.split(/\s+/)
+    const end = body + Number(bytes)
+    if (!Number.isInteger(end) || end > stdout.length) return null
+    parts.set(name, code === '0' ? stdout.toString('utf8', body, end) : null)
+    at = end
+  }
+  const out = (name: string): string | null => parts.get(name) ?? null
+  return {
+    base: base || null,
+    status: statusFrom(toplevel, {
+      nameStatus: out('nameStatus'),
+      others: out('others'),
+      porcelain: out('porcelain'),
+      unmerged: out('unmerged')
+    }),
+    numstat: numstatFrom(toplevel, {
+      vsBase: out('vsBase'),
+      cached: out('cached'),
+      unstaged: out('unstaged')
+    }),
+    missing: false
+  }
+}
 
 const SKILL_FILES = `printf '%s\\0' "$HOME"
 for b in "$1" "$HOME"; do
@@ -460,6 +537,8 @@ cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm 
 
 const RESIZE_SETTLE_MS = 200
 
+const REMOTE_FILE_LIST_FRESH_MS = 30_000
+
 // PLATFORM§35
 const NO_TAB_NAME_IS_ANOTHERS_PREFIX = '-t'
 
@@ -469,6 +548,7 @@ export class SshHost implements Host {
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
   private resizes = new Map<string, ReturnType<typeof setTimeout>>()
+  private fileLists = new Map<string, Promise<{ rel: string; ignored: boolean }[] | null>>()
 
   private resized = (tabId: string, cols: number, rows: number): void => {
     clearTimeout(this.resizes.get(tabId))
@@ -619,12 +699,24 @@ export class SshHost implements Host {
     if (!q) return { hits: [], truncated: false }
     const showIgnored = !!opts?.showIgnored
     const bareRoot = this.bare(root)
-    const r = await this.sh(SEARCH_FILES, [bareRoot, showIgnored ? '1' : '0'], {
-      timeoutMs: GIT_TIMEOUT_MS
-    })
-    const found = r.code === 0 ? parseSearchFiles(r.stdout.toString('utf8')) : []
+    const found = (await this.fileList(bareRoot, showIgnored)) ?? []
     const ranked = rankFiles(found, bareRoot, q, showIgnored)
     return { ...ranked, hits: this.keyedPaths(ranked.hits) }
+  }
+
+  private fileList(bareRoot: string, showIgnored: boolean) {
+    const key = `${bareRoot}\0${showIgnored}`
+    const cached = this.fileLists.get(key)
+    if (cached) return cached
+    const listed = this.sh(SEARCH_FILES, [bareRoot, showIgnored ? '1' : '0'], {
+      timeoutMs: GIT_TIMEOUT_MS
+    }).then((r) => (r.code === 0 ? parseSearchFiles(r.stdout.toString('utf8')) : null))
+    const forget = (): void => {
+      if (this.fileLists.get(key) === listed) this.fileLists.delete(key)
+    }
+    this.fileLists.set(key, listed)
+    void listed.then((files) => (files ? setTimeout(forget, REMOTE_FILE_LIST_FRESH_MS) : forget()))
+    return listed
   }
 
   async searchContent(root: string, query: string, opts?: { showIgnored?: boolean }) {
@@ -641,16 +733,16 @@ export class SshHost implements Host {
     return { ...found, hits: this.keyedPaths(found.hits) }
   }
 
-  diffBase(root: string): Promise<string | null> {
-    return this.git.diffBase(this.bare(root))
-  }
-
-  async gitStatus(root: string, base?: string): Promise<GitStatusMap> {
-    return this.keyedMap(await this.git.gitStatus(this.bare(root), base))
-  }
-
-  async gitNumstat(root: string, base?: string): Promise<GitNumstatMap> {
-    return this.keyedMap(await this.git.gitNumstat(this.bare(root), base))
+  gitChanges(root: string, base: BaseChoice): Promise<GitChanges> {
+    const bareRoot = this.bare(root)
+    return coalesce(['ssh', this.machine, 'changes', bareRoot, base].join('\0'), async () => {
+      const r = await this.sh(CHANGES, [bareRoot, base], {
+        timeoutMs: GIT_TIMEOUT_MS * CHANGES_GIT_QUERIES_IN_A_ROW
+      })
+      const got = r.code === 0 ? parseChanges(r.stdout) : null
+      if (!got) throw new Error(problemOf(r))
+      return { ...got, status: this.keyedMap(got.status), numstat: this.keyedMap(got.numstat) }
+    })
   }
 
   async gitDiff(root: string, base?: string) {
@@ -706,18 +798,13 @@ export class SshHost implements Host {
   ): Promise<EditWriteResult> {
     if (typeof text !== 'string') throw new Error('KOLOFT_WRITE_FAILED')
     if (Buffer.byteLength(text, 'utf8') > EDIT_WRITE_MAX_BYTES) throw new Error('KOLOFT_TOO_LARGE')
-    const force = opts?.force === true
-    const bare = this.bare(file)
-    let seen = '-'
-    if (!force) {
-      const r = await this.sh(FINGERPRINT_ONLY, [bare])
-      if (r.code !== 0) throw failure(r, 'KOLOFT_WRITE_FAILED')
-      seen = r.stdout.toString('utf8').trim()
-      const fp = parseFingerprint(seen)
-      if (!fp) throw new Error('KOLOFT_WRITE_FAILED')
-      if (!sameFingerprint(expect, fp)) return this.staleResult(file, fp)
-    }
-    const r = await this.sh(WRITE_IF_UNCHANGED, [bare, seen], {
+    const want =
+      opts?.force === true
+        ? [ANY_FINGERPRINT, ANY_FINGERPRINT]
+        : isFingerprint(expect)
+          ? [String(expect.mtimeMs), String(expect.size)]
+          : [NO_FINGERPRINT, NO_FINGERPRINT]
+    const r = await this.sh(WRITE_IF_UNCHANGED, [this.bare(file), ...want], {
       input: bytesToWrite(text, opts?.eol)
     })
     if (r.code !== 0) throw failure(r, 'KOLOFT_WRITE_FAILED')
@@ -732,6 +819,7 @@ export class SshHost implements Host {
     checkNewFileName(name)
     const r = await this.sh(CREATE_FILE, [this.bare(dir), name])
     if (r.code !== 0) throw failure(r, 'KOLOFT_WRITE_FAILED')
+    this.fileLists.clear()
     const [created, fpLine] = r.stdout.toString('utf8').split('\n')
     const fp = parseFingerprint(fpLine ?? '')
     if (!created || !fp) throw new Error('KOLOFT_WRITE_FAILED')

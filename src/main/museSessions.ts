@@ -119,6 +119,7 @@ export interface MuseRemoteDeps {
   connected(host: string): boolean
   poke(host: string): void
   setupLine(): string | undefined
+  hookSettings(tabId: string): string | undefined
 }
 
 interface MuseLaunch {
@@ -615,6 +616,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       const handle = this.deps.pty.create({
         id: tabId,
         kind: 'muse',
+        koloftShim: { hookSettings: (tabId) => remote.hookSettings(tabId) },
         cwd: os.homedir(),
         cols: opts.cols,
         rows: opts.rows,
@@ -701,6 +703,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       const handle = this.deps.pty.create({
         id: tabId,
         kind: 'muse',
+        koloftShim: false,
         cwd,
         cols: opts.cols,
         rows: opts.rows,

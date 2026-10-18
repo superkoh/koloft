@@ -86,6 +86,36 @@ export function messagingOf(backend: BackendId, remote: boolean): Messaging {
   return MESSAGING[backend][remote ? 'ssh' : 'local']
 }
 
+export function reachedBySendMessage(backend: BackendId): boolean {
+  return MESSAGING[backend].local === 'peerLine'
+}
+
+export interface PeerTraits {
+  namedAtLaunch: boolean
+  handoverAsRole: boolean
+  quotesOwnerWordsInHooks: boolean
+}
+
+export const PEER_TRAITS: Record<BackendId, PeerTraits> = {
+  // CC§13
+  claude: {
+    namedAtLaunch: true,
+    handoverAsRole: false,
+    quotesOwnerWordsInHooks: true
+  },
+  // CODEX§17
+  codex: {
+    namedAtLaunch: false,
+    handoverAsRole: true,
+    quotesOwnerWordsInHooks: false
+  },
+  muse: {
+    namedAtLaunch: true,
+    handoverAsRole: false,
+    quotesOwnerWordsInHooks: false
+  }
+}
+
 export function sourceOf(backendId: BackendId, workspacePath: string): SessionSource {
   return { backendId, host: hostOf(workspacePath) }
 }
