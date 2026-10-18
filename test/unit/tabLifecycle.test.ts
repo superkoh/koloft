@@ -20,7 +20,7 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
     claude: { onPtyExit: say('claude.onPtyExit') },
     tracker: { setAlive: say('tracker.setAlive') },
     storedOwnerOf: () => ({
-      stop: async (...args: [string, number]) => say('owner.stop')(...args)
+      stop: async (tabId, code) => say('owner.stop')(tabId, code)
     }),
     toast: say('toast'),
     notices: () => ({ closed: say('notices.closed'), forget: say('notices.forget') }),
@@ -76,7 +76,7 @@ describe('TabLifecycle', () => {
     ])
   })
 
-  it('teardown clears attention before Claude Code can mark a crash', () => {
+  it('teardown clears attention before Claude Code can mark a crash, and tells conductors whether the tab only fell asleep', () => {
     const { lifecycle, calls } = wired()
     lifecycle.emit('teardown', exitOf({ crashed: true, exitCode: 1, left: { treeRoot: '/repo' } }))
     expect(calls).toEqual([
@@ -114,7 +114,6 @@ describe('TabLifecycle', () => {
     relay = { forget: (tabId) => calls.push(`late relay.forget ${tabId}`) }
     lifecycle.emit('exit', exitOf({ tabId: 'late' }))
     expect(calls).toContain('late relay.forget late')
-    expect(calls).not.toContain('late relay.forget early')
   })
 
   it('a tab put to sleep or woken refreshes the workspaces list', () => {

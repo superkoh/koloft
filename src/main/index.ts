@@ -2331,7 +2331,7 @@ app.whenReady().then(() => {
     const held = pendingData.get(e.id)
     if (held !== undefined) {
       pendingData.delete(e.id)
-      if (!exit.asleep) sendToRenderer('terminal:data', { id: e.id, data: held })
+      if (!sleepers.has(e.id)) sendToRenderer('terminal:data', { id: e.id, data: held })
     }
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
@@ -4088,7 +4088,7 @@ function restoreOpenTabs(): string | undefined {
     rememberOpenTabs()
     cronRunner?.sweepLeftFolders()
   })
-  workspaceMgr.onTrackerUpdate()
+  tabLifecycle.emit('slept')
   return activeAsleep
 }
 

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events'
+import type { TerminalExit } from '@shared/types'
 import type { AttentionTracker } from './attention'
 import type { ClaudeBackend } from './backends/claude'
 import type { CronRunner, LeftTab } from './cronRunner'
@@ -13,10 +14,8 @@ import type { SessionTracker } from './sessionTracker'
 import type { SessionsWithStore } from './storedSessions'
 import type { WorkspaceManager } from './workspaces'
 
-export interface TabExit {
+export interface TabExit extends Pick<TerminalExit, 'exitCode' | 'signal'> {
   tabId: string
-  exitCode: number
-  signal?: number
   asleep: boolean
   crashed: boolean
   left?: LeftTab
