@@ -309,7 +309,7 @@ export function heartbeatCmd(
       `${EVERY_FILE_STAMPED}; ` +
       `echo "${TRANSCRIPTS_LINE}$(for s in $1; do ` +
       'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | emptyOrSum)"; shift; ' +
-      `echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | emptyOrSum)"; ` +
+      `mkdir -p "${REMOTE_HOOK_DIR}" 2>/dev/null; echo "${HOOKS_LINE}$(stamped "${REMOTE_HOOK_DIR}" | cksum)"; ` +
       `m=$1; shift; while [ "$m" -gt 0 ]; do echo "${EXTRA_LINE}$(stamped "$HOME/$1" | emptyOrSum)"; shift; m=$((m - 1)); done; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +

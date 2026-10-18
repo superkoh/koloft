@@ -600,18 +600,17 @@ describe('the heartbeat question', () => {
     expect(after.slice(1)).toEqual(first.mirrors.extras.slice(1))
   }, 120_000)
 
-  it('says "no files there" for transcripts and hooks on a machine that never ran a Claude Code session, so nothing is copied from it', () => {
+  it('says "no files there" for the transcripts of a machine that never ran a Claude Code session, so they are not copied, while Koloft’s own hook folder is made and always stamped, so its copy still shows a shell that breaks rsync', () => {
     const home = fs.mkdtempSync(path.join(dir, 'bare-home-'))
     const res = spawnSync('sh', ['-c', heartbeatCmd([], [], ['-home-koh-api'])], {
       encoding: 'utf8',
       env: { ...process.env, HOME: home }
     })
     expect(res.status).toBe(0)
-    expect(parseHeartbeat(res.stdout).mirrors).toEqual({
-      transcripts: NO_FILES_THERE,
-      hooks: NO_FILES_THERE,
-      extras: []
-    })
+    const mirrors = parseHeartbeat(res.stdout).mirrors
+    expect(mirrors.transcripts).toBe(NO_FILES_THERE)
+    expect(mirrors.hooks).toMatch(/^\d+ \d+$/)
+    expect(fs.existsSync(path.join(home, '.koloft', 'hook-sessions'))).toBe(true)
   })
 
   it('reads the lines before the first folder as tmux session names, never a stamp line', () => {
