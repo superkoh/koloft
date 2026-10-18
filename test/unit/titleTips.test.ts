@@ -36,7 +36,7 @@ describe('Koloft draws its own tooltip for every title', () => {
     expect(tip()).toBeNull()
     vi.advanceTimersByTime(1)
     expect(tip()?.textContent).toBe('http://localhost:5173/')
-    expect($('tab').hasAttribute('title')).toBe(false)
+    expect($('tab').getAttribute('title')).toBe('')
     leave($('tab'), $('away'))
     expect(tip()).toBeNull()
     expect($('tab').getAttribute('title')).toBe('http://localhost:5173/')
@@ -65,6 +65,20 @@ describe('Koloft draws its own tooltip for every title', () => {
     over($('lb'), $('away'))
     vi.advanceTimersByTime(TIP_DELAY_MS)
     expect(tip()?.textContent).toBe('http://localhost:5173/')
+  })
+
+  it('a title the app drops or changes while its tip shows stays as the app left it, not as it was', () => {
+    over($('lb'), $('away'))
+    vi.advanceTimersByTime(TIP_DELAY_MS)
+    $('tab').removeAttribute('title')
+    leave($('tab'), $('away'))
+    expect($('tab').hasAttribute('title')).toBe(false)
+
+    over($('x'), $('away'))
+    vi.advanceTimersByTime(TIP_DELAY_MS)
+    $('x').setAttribute('title', 'Close this tab')
+    leave($('x'), $('away'))
+    expect($('x').getAttribute('title')).toBe('Close this tab')
   })
 
   it('an empty title shows nothing, also not its parent’s', () => {

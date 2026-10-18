@@ -1,6 +1,7 @@
 export const TIP_DELAY_MS = 600
 const GAP_PX = 6
 const EDGE_PX = 4
+const HELD_BACK = ''
 
 interface Shown {
   el: Element
@@ -38,7 +39,7 @@ export function installTitleTips(doc: Document = document): () => void {
     pending = null
     const text = el.getAttribute('title')
     if (!text || !el.isConnected) return
-    el.removeAttribute('title')
+    el.setAttribute('title', HELD_BACK)
     shown = { el, text }
     tip.textContent = text
     doc.body.appendChild(tip)
@@ -49,7 +50,7 @@ export function installTitleTips(doc: Document = document): () => void {
     if (pending) win.clearTimeout(pending.timer)
     pending = null
     if (!shown) return
-    if (!shown.el.hasAttribute('title')) shown.el.setAttribute('title', shown.text)
+    if (shown.el.getAttribute('title') === HELD_BACK) shown.el.setAttribute('title', shown.text)
     shown = null
     tip.remove()
   }
@@ -84,7 +85,7 @@ export function installTitleTips(doc: Document = document): () => void {
   doc.addEventListener('mouseout', out, true)
   doc.addEventListener('mousedown', dismiss, true)
   doc.addEventListener('keydown', dismiss, true)
-  doc.addEventListener('wheel', dismiss, { capture: true, passive: true })
+  doc.addEventListener('scroll', dismiss, true)
   win.addEventListener('blur', hide)
   return () => {
     hide()
@@ -92,7 +93,7 @@ export function installTitleTips(doc: Document = document): () => void {
     doc.removeEventListener('mouseout', out, true)
     doc.removeEventListener('mousedown', dismiss, true)
     doc.removeEventListener('keydown', dismiss, true)
-    doc.removeEventListener('wheel', dismiss, { capture: true })
+    doc.removeEventListener('scroll', dismiss, true)
     win.removeEventListener('blur', hide)
   }
 }
