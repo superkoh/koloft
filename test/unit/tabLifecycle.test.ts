@@ -123,4 +123,10 @@ describe('TabLifecycle', () => {
     lifecycle.emit('woken')
     expect(calls).toEqual(['workspaces.onTrackerUpdate', 'workspaces.onTrackerUpdate'])
   })
+
+  it('a sleeping tab closed for good ends its conductor task and refreshes the workspaces list', () => {
+    const { lifecycle, calls } = wired()
+    lifecycle.emit('forgotten', 't1')
+    expect(calls).toEqual(['conductors.onPtyExit t1 false', 'workspaces.onTrackerUpdate'])
+  })
 })

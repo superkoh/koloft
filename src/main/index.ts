@@ -738,10 +738,9 @@ function sleepingTabOf(sessionId: string): string | undefined {
 
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
-  conductors?.onPtyExit(tabId, false)
   typedWhileAsleep.delete(tabId)
   sendToRenderer('tab:killedByMain', tabId)
-  workspaceMgr?.onTrackerUpdate()
+  tabLifecycle.emit('forgotten', tabId)
   rememberOpenTabs()
 }
 

@@ -27,6 +27,7 @@ export class TabLifecycle extends EventEmitter<{
   teardown: [TabExit]
   slept: []
   woken: []
+  forgotten: [string]
 }> {}
 
 type MadeLater<T> = () => T | null
@@ -79,4 +80,6 @@ export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems
 
   lifecycle.on('slept', () => s.workspaces()?.onTrackerUpdate())
   lifecycle.on('woken', () => s.workspaces()?.onTrackerUpdate())
+  lifecycle.on('forgotten', (tabId) => s.conductors()?.onPtyExit(tabId, false))
+  lifecycle.on('forgotten', () => s.workspaces()?.onTrackerUpdate())
 }
