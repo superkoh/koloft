@@ -31,7 +31,7 @@ export interface CodexUpstream {
 }
 
 export type CodexUpstreamFactory = (
-  frame: (raw: Buffer, read: ReadFrame) => void,
+  frame: (read: ReadFrame) => void,
   failure: (error: Error) => void
 ) => CodexUpstream
 
@@ -80,6 +80,7 @@ export interface CodexFrameHead {
 }
 
 export interface ReadFrame {
+  raw: Buffer
   head: CodexFrameHead
   parse(): CodexFrame
 }
@@ -105,6 +106,7 @@ export function readFrame(line: Buffer): ReadFrame | undefined {
   if (m) {
     const method = m[1] ?? m[4]
     return {
+      raw: line,
       head: method !== undefined ? { method } : { replyTo: m[2] !== undefined ? +m[2] : m[3] },
       parse
     }
@@ -112,7 +114,7 @@ export function readFrame(line: Buffer): ReadFrame | undefined {
   const text = line.toString()
   if (!text.trim()) return undefined
   parsed = parseFrame(text)
-  return { head: headOf(parsed), parse }
+  return { raw: line, head: headOf(parsed), parse }
 }
 
 function headOf({ id, method }: Record<string, unknown>): CodexFrameHead {
@@ -173,7 +175,7 @@ class CodexProcess implements CodexUpstream {
 
   constructor(
     readonly options: CodexProcessOptions,
-    private frame: (raw: Buffer, read: ReadFrame) => void,
+    private frame: (read: ReadFrame) => void,
     private failure: (error: Error) => void
   ) {
     const configArgs = (options.configOverrides ?? []).flatMap((value) => ['-c', value])
@@ -210,7 +212,7 @@ class CodexProcess implements CodexUpstream {
           start = newline + 1
           if (raw.length > this.limit) throw new Error('Codex frame exceeds the size limit')
           const read = readFrame(raw)
-          if (read) this.frame(raw, read)
+          if (read) this.frame(read)
         }
         if (start < chunk.length) {
           this.tail.push(chunk.subarray(start))
@@ -443,8 +445,9 @@ export async function createCodexTransport(
   }
   const upstreamOf: CodexUpstreamFactory =
     options.upstream ?? ((frame, failure) => new CodexProcess(options, frame, failure))
-  const upstream = upstreamOf((raw, read) => {
-    const { replyTo } = read.head
+  const upstream = upstreamOf((read) => {
+    const { raw, head } = read
+    const { replyTo } = head
     // CODEX§1
     if (typeof replyTo === 'string' && replyTo.startsWith(OWN_REQUEST_ID_PREFIX)) {
       settleRequest(own, replyTo, read.parse)
@@ -576,7 +579,7 @@ export class CodexRpc {
   private spawn(): CodexProcess {
     return new CodexProcess(
       this.options,
-      (_raw, { head, parse }) => {
+      ({ head, parse }) => {
         if (typeof head.replyTo === 'number') settleRequest(this.pending, head.replyTo, parse)
       },
       (error) => {

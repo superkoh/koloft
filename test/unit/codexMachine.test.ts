@@ -145,7 +145,7 @@ describe('MachineCodexUpstream: the relay between a Codex TUI on this Mac and it
         maxFrameBytes: 1 << 20,
         report: () => {}
       },
-      (_raw, { parse }) => toTui.push(parse()),
+      ({ parse }) => toTui.push(parse()),
       (error) => {
         throw error
       }

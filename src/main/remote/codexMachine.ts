@@ -281,7 +281,7 @@ export class MachineCodexUpstream implements CodexUpstream {
 
   constructor(
     private o: MachineUpstreamOptions,
-    private frame: (raw: Buffer, read: ReadFrame) => void,
+    private frame: (read: ReadFrame) => void,
     private failure: (error: Error) => void
   ) {
     this.limit = o.maxFrameBytes
@@ -414,19 +414,16 @@ export class MachineCodexUpstream implements CodexUpstream {
         return
       }
       // CODEX§16
-      if (method === 'account/chatgptAuthTokens/refresh') {
-        const { id } = read.parse()
-        if (id !== undefined) {
-          void this.answerRefresh(id)
-          return
-        }
+      if (method === 'account/chatgptAuthTokens/refresh' && read.parse().id !== undefined) {
+        void this.answerRefresh(read.parse().id)
+        return
       }
       if (method === 'account/login/completed') this.loginCompleted?.()
       if (method === 'thread/started') {
         const id = record(record(read.parse().params).thread).id
         if (typeof id === 'string') this.threadId = id
       }
-      this.frame(raw, read)
+      this.frame(read)
     } catch (error) {
       this.failure(asError(error))
     }
