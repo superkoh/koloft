@@ -738,7 +738,14 @@ the newest request and `total` the running sum. The rollout files agree: across 
 newest rollouts under `~/.codex/sessions`, 917 `token_usage_record` lines belong to a turn
 of more than one request (`turn_token_usage` ≠ `usage`); for 908 of them an `event_msg`
 `token_count` has `last_token_usage` equal to the record's own `usage` (the request), for
-none is it the turn's sum, and 9 match neither.
+none is it the turn's sum, and 9 match neither. A frame can come twice: right after
+`thread/resume`, before any new turn, a fresh app-server sends the old last turn's frame
+again with the same `turnId` and the same `total` (2026-10-16, codex-cli 0.162.0, a
+throwaway `CODEX_HOME`, issue #225), so Koloft adds a request's long-context surcharge
+only when `total` has grown. The same probe found that `total` after a resume still
+holds the turns before it (13147 before; one more turn of 13800 gave 26947), while a
+fresh observer has seen none of their `last` frames: those earlier requests stay at the
+short price in the cost line.
 
 ## 14. A launch that starts with a task, a model and a thinking level
 
