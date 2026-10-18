@@ -343,9 +343,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   onCdpDone,
   onCdpCreate
 }: WorkbenchPaneProps): JSX.Element {
-  const session =
-    useStore((s) => (activeTabId ? s.sessions.find((x) => x.tabId === activeTabId) : undefined)) ??
-    null
+  const session = useStore((s) => s.sessions.find((x) => x.tabId === activeTabId) ?? null)
   const termFocus = useStore((s) => s.termFocus)
   const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
   const ownerBackend = useStore(

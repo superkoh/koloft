@@ -1248,9 +1248,9 @@ export default function App(): JSX.Element {
       !whatsNewOpen &&
       !(signInTabId && activeTabId === signInTabId))
   const landedTab = tabs.find((t) => t.id === shown.id) ?? activeTab
-  const landedSession = useStore(
+  const landed = useStore(
     useShallow((s) => {
-      const x = landedTab ? s.sessions.find((y) => y.tabId === landedTab.id) : undefined
+      const x = s.sessions.find((y) => y.tabId === landedTab?.id)
       return { sessionId: x?.sessionId, alive: x?.alive, treeRoot: x?.treeRoot }
     })
   )
@@ -1269,7 +1269,7 @@ export default function App(): JSX.Element {
     )
   )
   const liveTabs = useMemo(() => new Set(liveTabIds), [liveTabIds])
-  const panelSid = landedSession.sessionId
+  const panelSid = landed.sessionId
   useEffect(() => {
     if (!panelTab) return
     void useStore.getState().ensureWorkbench(panelTab)
@@ -1278,7 +1278,7 @@ export default function App(): JSX.Element {
   const panelBound = useStore((s) => !!panelTab && !!boundSessionId(s, panelTab))
   const panelReady = panelBound && !landedTab?.resuming
 
-  const terminalReady = panelReady && !!(landedSession.alive && landedSession.sessionId)
+  const terminalReady = panelReady && !!(landed.alive && landed.sessionId)
 
   useEffect(() => {
     window.api.workbench.setAvailable(panelReady, terminalReady)
@@ -1305,7 +1305,7 @@ export default function App(): JSX.Element {
   }
   const fileTreeRoot = selectionRoot(
     hasWorkbench(landedTab) ? landedTab : undefined,
-    landedSession.treeRoot,
+    landed.treeRoot,
     welcomeRoot
   )
 
