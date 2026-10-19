@@ -16,18 +16,17 @@ export function fitGithubCounts(heads: Iterable<HTMLElement>): void {
     if (group && name)
       parts.push({ head, group, name, counts: [...group.children] as HTMLElement[] })
   }
-  for (const { group, name, counts } of parts) {
+  for (const { group, counts } of parts) {
     group.style.display = ''
     for (const c of counts) c.style.display = ''
-    name.style.flexShrink = '0'
-    name.style.maxWidth = `${NAME_KEEPS_PX}px`
   }
+  const keeps = parts.map(({ name }) => Math.min(NAME_KEEPS_PX, name.scrollWidth))
+  parts.forEach(({ name }, i) => (name.style.minWidth = `${keeps[i]}px`))
   const hidden = parts.map(countsToHide)
   parts.forEach(({ group, name, counts }, i) => {
     for (const c of counts.slice(counts.length - hidden[i])) c.style.display = 'none'
     if (hidden[i] === counts.length) group.style.display = 'none'
-    name.style.flexShrink = ''
-    name.style.maxWidth = ''
+    name.style.minWidth = ''
   })
 }
 
