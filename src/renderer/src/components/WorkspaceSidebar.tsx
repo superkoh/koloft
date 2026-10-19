@@ -283,6 +283,7 @@ const SessionRowView = memo(function SessionRowView({
     <div
       className={className}
       data-tab-id={tabId}
+      data-row-id={id}
       title={tooltip}
       onClick={() => actions.openRow(id)}
       onContextMenu={(e) => actions.rowMenu(e, id)}
@@ -1018,6 +1019,37 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     ro.observe(list)
     return () => ro.disconnect()
   }, [fitHeads])
+
+  const reveal = useStore((s) => s.revealRow)
+  const revealing = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    if (!reveal) return
+    const st = useStore.getState()
+    const sessionId = st.tabs.find((t) => t.id === reveal.tabId)?.sessionId
+    for (const w of st.workspaceRows) {
+      const row = w.rows.find((r) => r.id === reveal.tabId || r.id === sessionId)
+      if (!row) continue
+      revealing.current = row.id
+      setCollapsed((c) => (c[w.workspace.path] ? { ...c, [w.workspace.path]: false } : c))
+      const byId = new Map(w.rows.map((r) => [r.id, r]))
+      const unfold: Record<string, boolean> = {}
+      for (
+        let at = row.parentId;
+        at && byId.has(at) && !(at in unfold);
+        at = byId.get(at)?.parentId
+      )
+        unfold[at] = false
+      if (Object.keys(unfold).length) setFoldedRows((f) => ({ ...f, ...unfold }))
+      return
+    }
+  }, [reveal])
+  useLayoutEffect(() => {
+    const id = revealing.current
+    const row = id && listRef.current?.querySelector(`[data-row-id="${CSS.escape(id)}"]`)
+    if (!row) return
+    revealing.current = null
+    row.scrollIntoView({ block: 'nearest' })
+  })
 
   const now = new Date()
   const look = rowLookups(sessions, storeTabs, attention)

@@ -22,7 +22,6 @@ export async function openConductor(scope: string, fresh = false): Promise<void>
     return
   }
   st.setConductorTab(scope, r.tabId)
-  window.api.attention.visit(r.tabId)
   st.activateTab(r.tabId)
 }
 
@@ -31,7 +30,6 @@ export async function setUpDiscordWithAssist(ownerWords?: string): Promise<strin
   if (!r.ok) return r.error
   const st = useStore.getState()
   st.setSettingsOpen(false)
-  window.api.attention.visit(r.tabId)
   st.activateTab(r.tabId)
   st.followAgentBrowser(r.tabId)
   return null
@@ -92,7 +90,6 @@ export function ConductorsIsland(): JSX.Element {
   }
 
   const openTask = (task: AssistTaskRow): void => {
-    window.api.attention.visit(task.tabId)
     useStore.getState().activateTab(task.tabId)
   }
 

@@ -136,9 +136,9 @@
             About half an hour after a session goes quiet (its light turns dim green), it goes to
             sleep: its program stops, but its row, its tab, its screen and its Workbench stay as
             they were. Click the row, or let something send it a message, and the same session wakes
-            in that tab. It stays awake while you look at it, while it still has a red dot, or while
-            a shell tab or an unsaved file is open in it. A session marked Keep running never sleeps
-            (see <a href="#keep-running">below</a>).
+            in that tab. It stays awake while you look at it, while it waits for your OK, or while a
+            shell tab or an unsaved file is open in it. A red dot stays on it while it sleeps. A
+            session marked Keep running never sleeps (see <a href="#keep-running">below</a>).
           </li>
           <li>
             Quit Koloft and open it again, and every session comes back the way it was: the ones
@@ -195,8 +195,10 @@
             which. It sits beside the light; it does not replace it.
           </li>
           <li>
-            Click the row and the dot goes. It is still there after you quit and reopen Koloft
-            (after a restart it always reads "turn done").
+            Looking at the session does not clear the dot. It goes when the session works again: you
+            send it something, answer its question or give your OK, or another session or your
+            Assist does. It also goes when you close the tab or archive the session. It is still
+            there after you quit and reopen Koloft (after a restart it always reads "turn done").
           </li>
           <li>
             The number on the Dock icon counts these dots. Turn off Dock badge in Settings ▸
@@ -204,10 +206,12 @@
           </li>
           <li>A folded folder shows how many of its sessions are calling.</li>
           <li>
-            <kbd>⌘J</kbd> (View ▸ Next Waiting Session) takes you to the session with the oldest red
-            dot, in any folder, and clears it. Press it again for the next one. When no dot is left,
-            it does nothing. It wakes a sleeping session the way a click does. It skips a closed row
-            with a dot; a click still resumes that one.
+            While any session is calling, a <mark class="hl">bell</mark> with the count sits next to
+            the sidebar button, even with the sidebar hidden. Click it, or press <kbd>⌘J</kbd> (View
+            ▸ Next Waiting Session), to go to the session that has waited longest, in any folder;
+            the sidebar opens its folder and scrolls to its row. Click again for the next one; after
+            the last it starts over. It wakes a sleeping session the way a click does. It skips a
+            closed row with a dot; a click still resumes that one.
           </li>
         </ul>
 

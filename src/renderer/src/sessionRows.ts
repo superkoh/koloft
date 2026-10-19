@@ -165,14 +165,23 @@ export function rowsUnder<R extends { id: string; parentId?: string }>(node: Row
   return node.children.flatMap((child) => [child.row, ...rowsUnder(child)])
 }
 
+export function waitingTabs(
+  pending: readonly AttentionEvent[],
+  tabs: readonly { id: string }[]
+): string[] {
+  return pending
+    .filter((e) => tabs.some((t) => t.id === e.tabId))
+    .sort((a, b) => a.at - b.at)
+    .map((e) => e.tabId)
+}
+
 export function nextWaitingTab(
   pending: readonly AttentionEvent[],
   activeTabId: string | null,
   tabs: readonly { id: string }[]
 ): string | undefined {
-  return pending
-    .filter((e) => e.tabId !== activeTabId && tabs.some((t) => t.id === e.tabId))
-    .sort((a, b) => a.at - b.at)[0]?.tabId
+  const waiting = waitingTabs(pending, tabs)
+  return waiting[(waiting.indexOf(activeTabId ?? '') + 1) % waiting.length]
 }
 
 export function liveTabOf(

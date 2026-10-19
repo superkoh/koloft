@@ -1083,7 +1083,6 @@ export interface KoloftApi {
   attention: {
     list(): Promise<AttentionEvent[]>
     activeTab(id: string | null): void
-    visit(id: string): void
     onActivateTab(cb: (tabId: string) => void): () => void
     onChanged(cb: (pending: AttentionEvent[]) => void): () => void
   }

@@ -79,7 +79,7 @@ describe('TabLifecycle', () => {
     ])
   })
 
-  it('teardown clears attention before Claude Code can mark a crash, and tells conductors whether the tab only fell asleep', () => {
+  it('teardown clears attention before Claude Code can mark a crash, keeps it when the tab only fell asleep, and tells conductors which it was', () => {
     const { lifecycle, calls } = wired()
     lifecycle.emit('teardown', exitOf({ crashed: true, exitCode: 1, left: { treeRoot: '/repo' } }))
     expect(calls).toEqual([
@@ -91,7 +91,9 @@ describe('TabLifecycle', () => {
       'cron.onPtyExit t1 /repo',
       'conductors.onPtyExit t1 false'
     ])
+    calls.length = 0
     lifecycle.emit('teardown', exitOf({ asleep: true }))
+    expect(calls).not.toContain('attention.clear t1')
     expect(calls.at(-1)).toBe('conductors.onPtyExit t1 true')
   })
 

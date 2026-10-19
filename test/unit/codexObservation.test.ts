@@ -20,10 +20,7 @@ function fixture() {
   })
   runtime.on('status', (edge: StatusEdge) => {
     edges.push(edge)
-    attention.onStatusChange(edge.tabId, edge.prev, edge.next, {
-      windowFocused: false,
-      activeTabId: null
-    })
+    attention.onStatusChange(edge.tabId, edge.prev, edge.next)
   })
   const observer = new CodexObservation((event) => {
     events.push(event)

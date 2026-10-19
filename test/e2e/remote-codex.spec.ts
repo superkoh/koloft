@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
-import { test, expect, pendingAttention, quitAndClose } from './helpers/app'
+import { test, expect, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
 import {
   chooseBackend,
@@ -307,9 +307,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
       const localRow = wsRows(page, 'ws-a').first()
       await expect(localRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
-      await remoteRow.click()
       await localRow.click()
-      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
       const asleepTab = await remoteRow.getAttribute('data-tab-id')
       expect(asleepTab).toBe(first.tabId)
 

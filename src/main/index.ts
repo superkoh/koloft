@@ -83,7 +83,7 @@ import {
   statusUnavailable
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
-import { AttentionTracker, type AttentionContext } from './attention'
+import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
@@ -539,7 +539,7 @@ const sessionBackends = new SessionBackends({
   },
   prompted: consumeOutletDedupe,
   bound: (tabId, key) => {
-    attention.bound(tabId, key, attentionCtx())
+    attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
     conductors?.onBound(tabId, key)
     discordThreads?.bound(tabId, key)
@@ -547,7 +547,7 @@ const sessionBackends = new SessionBackends({
     slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
   },
-  exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
+  exited: (tabId, subject) => attention.onExited(tabId, subject),
   asked: (tabId, ask) => discordRelay?.onAsk(tabId, ask),
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
@@ -623,7 +623,7 @@ tracker.heldTabs = () => {
       held.add(s.tabId)
   return held
 }
-tracker.needsUser = (id) => attention.list().some((e) => e.tabId === id)
+tracker.needsUser = (id) => attention.waitsOnApproval(id)
 let leftovers: Record<string, LeftoverProcess[]> = {}
 tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
@@ -843,12 +843,12 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
   return { title: s?.title, sessionId: s?.sessionId }
 }
-function attentionCtx(): AttentionContext {
-  let focused = false
+function windowFocused(): boolean {
   try {
-    focused = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
-  } catch {}
-  return { windowFocused: focused, activeTabId: uiActiveTabId }
+    return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
+  } catch {
+    return false
+  }
 }
 
 function projectFolderName(event: AttentionEvent): string | undefined {
@@ -869,14 +869,9 @@ function updateDockBadge(pending: AttentionEvent[]): void {
   else app.dock?.setBadge(text)
 }
 
-function pointFocusClearingAtTabBeforeFocusingWindow(tabId: string): void {
-  uiActiveTabId = tabId
-}
-
 function activateTabFromNotification(tabId: string): void {
   const win = mainWindow
   if (win && !win.isDestroyed()) {
-    pointFocusClearingAtTabBeforeFocusingWindow(tabId)
     tracker.noteActivity(tabId)
     if (win.isMinimized()) win.restore()
     if (!win.isVisible()) win.show()
@@ -952,12 +947,14 @@ function consumeOutletDedupe(tabId: string): void {
 }
 
 function routeAttentionEvent(event: AttentionEvent): void {
+  const focused = windowFocused()
+  if (focused && event.tabId === uiActiveTabId) return
   const outletKey = `${event.tabId}:${event.kind}`
   const lastAt = recentOutlets.get(outletKey)
   const now = Date.now()
   if (lastAt !== undefined && now - lastAt < OUTLET_FLAP_DEDUPE_MS) return
   recentOutlets.set(outletKey, now)
-  const decision = route(event, attentionCtx().windowFocused, loadSettings())
+  const decision = route(event, focused, loadSettings())
   if (decision.os) showOsNotification(event)
   if (decision.sound && !BACKGROUND_TEST) shell.beep()
 }
@@ -2332,16 +2329,11 @@ function createWindow(): void {
     sendToRenderer('window:focus', true)
     if (blurredAt && Date.now() - blurredAt > WEBGL_REPAIR_BLUR_MS) requestWebglRepair()
     blurredAt = 0
-    if (uiActiveTabId) {
-      consumeOutletDedupe(uiActiveTabId)
-      attention.clear(uiActiveTabId)
-    }
     void freshness?.sweep({ host: null })
   })
   mainWindow.on('blur', () => {
     sendToRenderer('window:focus', false)
     blurredAt = Date.now()
-    if (uiActiveTabId) attention.reconsider(uiActiveTabId, attentionCtx())
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
@@ -2622,7 +2614,7 @@ app.whenReady().then(() => {
     discordNotices?.onStatus(t.tabId, t.prev, t.next)
     void discordLive?.refresh(t.tabId)
     if (!(conductor && t.next === 'waiting'))
-      attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
+      attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
   })
@@ -4168,6 +4160,7 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
   const sleeper = sleepers.get(tabId)
   if (sleeper) {
     forgetSleeper(tabId)
+    attention.clearKeepingExit(tabId)
     const tree = projectInfoFor(sleeper.cwd).treeRoot
     const owner = restarting ? undefined : storedSessions().find((s) => s.id === sleeper.kind)
     const resource = owner?.store.listResources().find((r) => r.worktreePath === tree)
@@ -4190,7 +4183,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   const stopped = owner
     ? Promise.resolve(owner.stop(tabId, restarting))
     : Promise.resolve(ptyMgr.kill(tabId))
-  attention.clearKeepingExit(tabId)
+  if (!sleepers.has(tabId)) attention.clearKeepingExit(tabId)
   relayTabClosed(tabId)
   boundSessions.delete(tabId)
   return stopped.then(
@@ -4965,25 +4958,9 @@ function registerIpc(): void {
     return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
   })
   ipcMain.on('attention:active-tab', (_e, id: string | null) => {
-    const prevActive = uiActiveTabId
     uiActiveTabId = typeof id === 'string' && id ? id : null
     if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
-    const ctx = attentionCtx()
-    if (uiActiveTabId && ctx.windowFocused) {
-      consumeOutletDedupe(uiActiveTabId)
-      attention.clear(uiActiveTabId)
-    }
-    if (prevActive && prevActive !== uiActiveTabId) attention.reconsider(prevActive, ctx)
     rememberOpenTabs()
-  })
-  ipcMain.on('attention:visit', (_e, id: string) => {
-    if (typeof id !== 'string' || !id) return
-    const prevActive = uiActiveTabId
-    uiActiveTabId = id
-    tracker.noteActivity(id)
-    consumeOutletDedupe(id)
-    attention.clear(id)
-    if (prevActive && prevActive !== id) attention.reconsider(prevActive, attentionCtx())
   })
 
   ipcMain.handle(

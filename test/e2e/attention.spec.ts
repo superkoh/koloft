@@ -16,7 +16,7 @@ import {
 const PAST_TWO_LIVENESS_SWEEPS_MS = 6_000
 
 test.describe('attention markers come from real session-status transitions (shim → hooks → tracker → attention set)', () => {
-  test('a finished turn pends attention and a red dot on its row even with the window unfocused, and visiting the tab clears both', async ({
+  test('a finished turn pends attention and a red dot on its row, visiting the tab keeps both, and only the session working again clears them', async ({
     page
   }) => {
     await waitBooted(page)
@@ -40,36 +40,48 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect(page.locator('.toast')).toHaveCount(0)
 
     await page.locator('.ws-tab').first().click()
-    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
-    await expect(page.locator('.ws-tab.st-waiting')).toBeVisible()
+    await expect(page.locator('.ws-tab.active')).toHaveCount(1)
+    expect(await pendingAttention(page)).toHaveLength(1)
+    await expect(page.locator('.ws-tab-unread')).toHaveCount(1)
+
+    await runIn(page, centerTerm(page), '/busy')
+    await expect.poll(() => pendingAttention(page), { timeout: 15_000 }).toHaveLength(0)
     await expect(page.locator('.ws-tab-unread')).toHaveCount(0)
   })
 
-  test('⌘J walks the waiting sessions oldest first across workspaces, skipping the one on screen and clearing each mark it lands on', async ({
+  test('the bell counts the waiting sessions and walks them longest wait first, round and round, unfolding the workspace it lands in; ⌘J does the same, and only an answer takes one off', async ({
     app,
     page
   }) => {
     await waitBooted(page)
+    const bell = page.locator('.aux-ico.waiting-bell')
+    await expect(bell).toHaveCount(0)
     await startSessionIn(page, 'ws-a')
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
     await startSessionIn(page, 'ws-b')
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
+    await expect(bell.locator('.ws-unread-count')).toHaveText('2')
 
     const activeIn = (ws: string) => wsGroup(page, ws).locator('.ws-tab.active')
     await expect(activeIn('ws-b')).toHaveCount(1)
-    const [older, newer] = (await pendingAttention(page)).sort((x, y) => x.at - y.at)
+    const [older] = (await pendingAttention(page)).sort((x, y) => x.at - y.at)
     const aTab = await wsGroup(page, 'ws-a').locator('.ws-tab').getAttribute('data-tab-id')
     expect(older.tabId).toBe(aTab)
 
-    await sendShortcut(app, 'shortcut:next-waiting-session')
+    await bell.click()
     await expect(activeIn('ws-a')).toHaveCount(1)
-    await expect
-      .poll(async () => (await pendingAttention(page)).map((e) => e.tabId))
-      .toEqual([newer.tabId])
+    expect(await pendingAttention(page)).toHaveLength(2)
+
+    await wsGroup(page, 'ws-b').locator('.ws-head .fico').click()
+    await expect(wsGroup(page, 'ws-b').locator('.ws-tab')).toHaveCount(0)
+    await bell.click()
+    await expect(activeIn('ws-b')).toHaveCount(1)
 
     await sendShortcut(app, 'shortcut:next-waiting-session')
-    await expect(activeIn('ws-b')).toHaveCount(1)
-    await expect.poll(() => pendingAttention(page)).toHaveLength(0)
+    await expect(activeIn('ws-a')).toHaveCount(1)
+
+    await runIn(page, centerTerm(page), '/busy')
+    await expect(bell.locator('.ws-unread-count')).toHaveText('1', { timeout: 15_000 })
   })
 
   test('a graceful /exit clears pending and never raises exited, not even after two liveness sweeps', async ({
