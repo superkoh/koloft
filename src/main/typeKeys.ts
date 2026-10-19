@@ -1,6 +1,6 @@
 import { sleep } from './codexTransport'
 
-// CC§12 CC§18
+// CC§12 CC§18 MUSE§17
 const SUBMIT_AFTER_TEXT_MS = 300
 
 // CC§12
