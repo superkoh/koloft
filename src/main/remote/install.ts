@@ -250,6 +250,9 @@ fi
 if ! have bwrap && [ "$(uname -s)" = Linux ] && { [ "$(id -u)" = 0 ] || sudo -n true >/dev/null 2>&1; }; then
   install_pkg bubblewrap || :
 fi
+if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ] && ! grep -rqs /usr/bin/bwrap /etc/apparmor.d; then
+  say "this machine's AppArmor blocks the sandbox Codex runs commands in (kernel.apparmor_restrict_unprivileged_userns = 1 and no AppArmor profile for /usr/bin/bwrap), so each command Codex runs there fails with \\"bwrap: loopback\\". To fix it, load an AppArmor profile that allows userns for /usr/bin/bwrap on the machine (needs root), then start the session again."
+fi
 [ "$(codex --version 2>/dev/null)" = "codex-cli $want" ] && exit 0
 ${installNode('Codex', 'Codex cannot be installed on this machine')}
 have npm || { say "Codex is installed with npm, and this machine has none: install Node.js 20 or newer there, then start the session again"; exit 4; }

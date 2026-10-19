@@ -15,12 +15,7 @@ import type {
 } from '@shared/types'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
-import {
-  identityOf,
-  sourceOf,
-  SUPPORTED_PAIRS,
-  unsupportedPairMessage
-} from '@shared/sessionBackend'
+import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { ModeClass } from './crossSessionMessage'
@@ -141,7 +136,7 @@ export class SessionBackends {
     unregistered: (id: BackendId) => BackendAvailability
   ): Promise<BackendAvailability[]> {
     return Promise.all(
-      (Object.keys(SUPPORTED_PAIRS) as BackendId[]).map((id) => {
+      SESSION_BACKENDS.map((id) => {
         const backend = this.adapters.get(id)
         return backend ? backend.availability() : unregistered(id)
       })
@@ -213,14 +208,12 @@ export class SessionBackends {
   create(options: CreateTabOptions): Promise<CreateTabResult> {
     if (options.kind === 'shell') throw new Error('A utility terminal is not a session.')
     if (
-      !SUPPORTED_PAIRS[options.kind] ||
+      !SESSION_BACKENDS.includes(options.kind) ||
       options.util ||
       (options.worktreeResourceId && !this.adapters.get(options.kind)?.recoversWorktrees)
     ) {
       return Promise.resolve({ ok: false, code: 'invalid-args' })
     }
-    const refusal = unsupportedPairMessage(options.kind, hostOf(options.cwd ?? ''))
-    if (refusal) return Promise.reject(new Error(refusal))
     const backend = this.get(options.kind)
     // ADR-0030
     if (!backend.accountUsable()) return Promise.reject(new Error(NO_USABLE_ACCOUNT[options.kind]))

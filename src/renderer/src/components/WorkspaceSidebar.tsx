@@ -1,9 +1,4 @@
-import {
-  BACKEND_LABEL,
-  capabilitiesFor,
-  identityOf,
-  unsupportedPairMessage
-} from '@shared/sessionBackend'
+import { BACKEND_LABEL, capabilitiesFor, identityOf } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import {
   Fragment,
@@ -72,7 +67,7 @@ import { behindBadge, countLabel, openIssuesLabel, openPullsLabel } from '../fre
 import { fitGithubCounts } from '../wsHeadFit'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
-import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
+import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
 import { openConductor } from './ConductorsIsland'
 import {
@@ -707,23 +702,18 @@ function SidebarFloating({
     const { target } = menu
     const style = { left: menu.left, top: menu.top }
     if (target.kind === 'workspace') {
-      const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => {
-        const refusal = backend ? unsupportedPairMessage(backend, hostOf(target.wsPath)) : undefined
-        return (
-          <div
-            className={'mi' + (refusal ? ' disabled' : '')}
-            title={refusal}
-            onClick={() => {
-              if (refusal) return
-              setMenu(null)
-              onNewSession(target.wsPath, backend)
-            }}
-          >
-            {label}
-            {key && <span className="k">{key}</span>}
-          </div>
-        )
-      }
+      const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => (
+        <div
+          className="mi"
+          onClick={() => {
+            setMenu(null)
+            onNewSession(target.wsPath, backend)
+          }}
+        >
+          {label}
+          {key && <span className="k">{key}</span>}
+        </div>
+      )
       const hasHistory = rows.some(
         (r) => r.workspace.path === target.wsPath && r.workspace.hasHistory
       )
