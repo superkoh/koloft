@@ -783,7 +783,7 @@ describe('SessionTracker — binding', () => {
       tracker.bindSession('tabKL1', live, SID, liveWs)
       tracker.track('tabKL2', deadWs)
       tracker.bindSession('tabKL2', dead, deadSid, deadWs)
-      await waitFor(tracker, (x) => x.tabId === 'tabKL2' && x.jsonlPath === dead)
+      await waitFor(tracker, (x) => x.tabId === 'tabKL2' && x.title === 'hi')
       tracker.setAlive('tabKL2', false)
 
       fs.appendFileSync(dead, JSON.stringify({ type: 'assistant', cwd: drift }) + '\n')
