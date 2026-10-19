@@ -703,18 +703,19 @@ export const useStore = create<AppState>((set, get) => ({
         return
       }
       restartedPtys.add(oldId)
-      get().setTabTitle(oldId, sess?.title ?? tab.title)
+      const title = sess?.title ?? tab.title
+      get().setTabTitle(oldId, title)
       window.api.terminal.kill(oldId, true)
       void window.api.sessions
         .resume({ sessionId: resumeId, cwd })
         .then((res) => {
           if (!res.ok) {
             const main =
-              res.code === 'rebuild-failed' && workspaceOfRow(get().workspaceRows, resumeId)
+              res.code === 'rebuild-failed' ? workspaceOfRow(get().workspaceRows, resumeId) : null
             if (main) {
               get().setResumeDialog({
                 kind: 'escape',
-                target: { backendId: backend, id: resumeId, title: sess?.title ?? tab.title },
+                target: { backendId: backend, id: resumeId, title },
                 worktreeName: basename(cwd),
                 cwd: main
               })

@@ -832,7 +832,8 @@ export class ClaudeBackend implements SessionBackend {
       }
       worktree = req.worktree
     }
-    if (await rebuildsTheWorktree(req.mode, () => host.dirExists(cwd))) {
+    const rebuildable = !home || !!this.d.workspaces()?.findRow(sid)?.worktreeState
+    if (await rebuildsTheWorktree(req.mode, async () => !rebuildable || host.dirExists(cwd))) {
       const plan = home
         ? await this.machineResumePlan(host, sid)
         : await this.localWorktreePlan(sid)
@@ -844,7 +845,7 @@ export class ClaudeBackend implements SessionBackend {
         ) {
           return { ok: false, code: 'rebuild-failed' }
         }
-      } else if (mode === 'rebuild') {
+      } else if (req.mode === 'rebuild') {
         if (plan.action !== 'direct') return { ok: false, code: 'rebuild-failed' }
         cwd = host.keyed(plan.cwd)
       }

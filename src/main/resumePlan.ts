@@ -11,7 +11,7 @@ import type {
 export class ResumeRefused extends Error {
   constructor(
     readonly code: ResumeFailure,
-    message: string
+    message: string = code
   ) {
     super(message)
   }

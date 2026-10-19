@@ -763,25 +763,19 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       ? this.store.getResource(m.worktreeResourceId)
       : this.store.listResources().find((r) => r.worktreePath === t?.cwd)
     let cwd = m?.cwd ?? t!.cwd
-    const recorded = resource
     if (
       await rebuildsTheWorktree(
         req.mode,
-        async () => !recorded || this.dirThere(recorded.worktreePath)
+        async () => !resource || this.dirThere(resource.worktreePath)
       )
     ) {
-      if (!resource)
-        throw new ResumeRefused('rebuild-failed', 'The worktree has no saved recovery record.')
-      resource = await this.worktrees.rebuild(resource.id).catch((error: unknown) => {
-        throw new ResumeRefused(
-          'rebuild-failed',
-          error instanceof Error ? error.message : String(error)
-        )
+      if (!resource) throw new ResumeRefused('rebuild-failed')
+      resource = await this.worktrees.rebuild(resource.id).catch(() => {
+        throw new ResumeRefused('rebuild-failed')
       })
       cwd = resource.worktreePath
     } else if (req.mode === 'renamed') {
-      if (!resource || !req.worktree)
-        throw new ResumeRefused('invalid-args', 'The new worktree name is missing.')
+      if (!resource || !req.worktree) throw new ResumeRefused('invalid-args')
       resource = await this.worktrees.prepareRenamed(resource.id, req.worktree)
       cwd = resource.worktreePath
     } else if (req.mode === 'main') {
