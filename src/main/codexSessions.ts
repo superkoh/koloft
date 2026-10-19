@@ -8,7 +8,6 @@ import type {
   BackendSessionRow,
   CreateTabOptions,
   HostId,
-  LaunchPermission,
   CodexResetOutcome
 } from '@shared/types'
 import { CODEX_RESET_OUTCOMES } from '@shared/types'
@@ -51,18 +50,40 @@ import {
   allowsTheBrowser,
   ASSIST_ALLOW_ENV,
   CODEX_GATE_ENV,
-  CODEX_GATE_HOOK_COMMAND,
   CODEX_GATE_NOT_TRUSTED,
-  codexHookOverride,
   CODEX_ASKS_AND_WAITS
 } from './conductorGate'
+import {
+  CONDUCTOR_PERMISSIONS,
+  developerInstructions,
+  GATE_HOOK,
+  hookOverrides,
+  launchChoiceArgs,
+  machineTrustedFolderFlags,
+  NO_UPDATE_NOTICE_AT_START,
+  permissionConfig,
+  permissionFlags,
+  PERMISSIONS,
+  browserSandboxOverrides,
+  playwrightEnvOverrides,
+  seedAssistMemory,
+  STATUS_LINE_CONFIG,
+  type KoloftHook
+} from './codexLaunchConfig'
 import {
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_REPLY_LANGUAGE_HOOKS,
   CODEX_SAID_ENV,
   seedHandedOverOwnerWords
 } from './hooks'
-import { acceptCodexHookTrust, codexConfigFile, codexHookTrusted, configTrusts } from './codexTrust'
+import {
+  acceptCodexHookTrust,
+  codexConfigFile,
+  codexHookTrusted,
+  configTrusts,
+  koloftHooksIn,
+  type ListedHook
+} from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
 import {
   CODEX_OPEN_SHIM_FOLDER,
@@ -77,7 +98,7 @@ import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { koloftPrompt } from '@shared/agentGuide'
-import { browserControlEnv, playwrightMcpEnv } from './browserControlEnv'
+import { browserControlEnv } from './browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
@@ -91,165 +112,12 @@ import {
 
 const MACHINE_HISTORY_FRESH_MS = 15_000
 
-const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
-  'context-used',
-  'git-branch',
-  'codex-version',
-  'model-with-reasoning',
-  'estimated-thread-cost',
-  'pull-request-number',
-  'current-dir'
-])}`
-
-// CODEX§17
-function developerInstructions(lines: string[]): string {
-  return `developer_instructions=${JSON.stringify(lines.join('\n\n'))}`
-}
-
 const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
-
-// CODEX§1
-const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
 
 export const CODEX_TAB_ENV = {
   koloftShim: false,
   finishEnv: (env: NodeJS.ProcessEnv) => codexEnvironment(env)
 } as const
-
-const stringList = (raw: unknown): string[] =>
-  (Array.isArray(raw) ? raw : []).filter((v): v is string => typeof v === 'string')
-
-const mergedList = (own: unknown, ours: string[]): string =>
-  JSON.stringify([...new Set([...stringList(own), ...ours])])
-
-// CODEX§26
-function browserSandboxOverrides(sandbox: unknown, cacheDir: string): string[] {
-  return [
-    'sandbox_workspace_write.network_access=true',
-    `sandbox_workspace_write.writable_roots=${mergedList(record(sandbox).writable_roots, [cacheDir])}`
-  ]
-}
-
-const runsPlaywrightMcp = (word: string): boolean =>
-  word.includes('@playwright/mcp') || path.basename(word) === 'playwright-mcp'
-
-const KEY_THE_CODEX_FLAG_PARSER_TAKES = /^[A-Za-z0-9_-]+$/
-
-// CODEX§26
-export function playwrightEnvOverrides(mcpServers: unknown, approveTools = false): string[] {
-  return Object.entries(record(mcpServers)).flatMap(([name, raw]) => {
-    const entry = record(raw)
-    const words = [entry.command, ...(Array.isArray(entry.args) ? entry.args : [])]
-    if (!KEY_THE_CODEX_FLAG_PARSER_TAKES.test(name)) return []
-    if (!words.some((w) => typeof w === 'string' && runsPlaywrightMcp(w))) return []
-    return [
-      `mcp_servers.${name}.env_vars=${mergedList(entry.env_vars, Object.keys(playwrightMcpEnv('')))}`,
-      // CODEX§26
-      ...(approveTools ? [`mcp_servers.${name}.default_tools_approval_mode="approve"`] : [])
-    ]
-  })
-}
-
-interface ListedHook {
-  key: string
-  command: string
-  currentHash: string
-  trustStatus: string
-}
-
-const ASSIST_MEMORY = `# Assist memory
-
-This file is your memory folder. When the owner asks you to remember something, add it here as one short line. Keep everything already here.
-`
-
-// CODEX§17
-function seedAssistMemory(folder: string): void {
-  try {
-    fs.writeFileSync(path.join(folder, 'AGENTS.md'), ASSIST_MEMORY, { flag: 'wx' })
-  } catch {}
-}
-
-interface KoloftHook {
-  event: string
-  command: string
-}
-
-const GATE_HOOK: KoloftHook = { event: 'PreToolUse', command: CODEX_GATE_HOOK_COMMAND }
-
-const hookOverrides = (hooks: KoloftHook[]): string[] =>
-  hooks.map(({ event, command }) => codexHookOverride(event, command))
-
-// CODEX§27
-function koloftHooksIn(reply: unknown, wanted: KoloftHook[]): ListedHook[] {
-  const found: ListedHook[] = []
-  const lists = record(reply).data
-  for (const list of Array.isArray(lists) ? lists : []) {
-    const hooks = record(list).hooks
-    for (const raw of Array.isArray(hooks) ? hooks : []) {
-      const hook = record(raw)
-      if (
-        hook.source === 'sessionFlags' &&
-        wanted.some(
-          (w) =>
-            w.command === hook.command &&
-            w.event.toLowerCase() === String(hook.eventName).toLowerCase()
-        ) &&
-        typeof hook.key === 'string' &&
-        typeof hook.currentHash === 'string'
-      )
-        found.push({
-          key: hook.key,
-          command: String(hook.command),
-          currentHash: hook.currentHash,
-          trustStatus: String(hook.trustStatus)
-        })
-    }
-  }
-  return found
-}
-
-interface Permissions {
-  approval: 'never' | 'on-request'
-  sandbox: 'workspace-write' | 'danger-full-access'
-}
-
-// CODEX§11
-const PERMISSIONS: Record<LaunchPermission, Permissions | undefined> = {
-  default: undefined,
-  acceptEdits: { approval: 'on-request', sandbox: 'workspace-write' },
-  bypass: { approval: 'never', sandbox: 'danger-full-access' }
-}
-
-// ADR-0029 CODEX§12
-const CONDUCTOR_PERMISSIONS: Permissions = { approval: 'never', sandbox: 'workspace-write' }
-
-// CODEX§11 CODEX§16
-function machineTrustedFolderFlags(ownConfig: Record<string, unknown>): string[] {
-  return [
-    ...(ownConfig.approval_policy ? [] : ['-a', 'on-request']),
-    ...(ownConfig.sandbox_mode ? [] : ['-s', 'workspace-write'])
-  ]
-}
-
-// CODEX§11
-function permissionFlags(p: Permissions | undefined): string[] {
-  return p ? ['-a', p.approval, '-s', p.sandbox] : []
-}
-
-// CODEX§11
-function permissionConfig(p: Permissions | undefined): string[] {
-  return p
-    ? [`approval_policy=${JSON.stringify(p.approval)}`, `sandbox_mode=${JSON.stringify(p.sandbox)}`]
-    : []
-}
-
-// CODEX§14
-function launchChoiceArgs(opts: CreateTabOptions): string[] {
-  return [
-    ...(opts.model ? ['-m', opts.model] : []),
-    ...(opts.effort ? ['-c', `model_reasoning_effort=${JSON.stringify(opts.effort)}`] : [])
-  ]
-}
 
 const sourceKinds = ['cli', 'vscode', 'appServer']
 

@@ -3,6 +3,8 @@ import os from 'os'
 import path from 'path'
 import { writePrivateAtomically } from './privateFile'
 import { realpathSafe } from './projectInfo'
+import { record } from './codexObservation'
+import type { KoloftHook } from './codexLaunchConfig'
 
 export function codexConfigFile(env: NodeJS.ProcessEnv | undefined): string {
   return path.join(env?.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml')
@@ -90,4 +92,40 @@ export function configTrusts(text: string, realDir: string): boolean {
     if (/^trust_level\s*=\s*"trusted"$/.test(line)) return true
   }
   return false
+}
+
+export interface ListedHook {
+  key: string
+  command: string
+  currentHash: string
+  trustStatus: string
+}
+
+// CODEX§27
+export function koloftHooksIn(reply: unknown, wanted: KoloftHook[]): ListedHook[] {
+  const found: ListedHook[] = []
+  const lists = record(reply).data
+  for (const list of Array.isArray(lists) ? lists : []) {
+    const hooks = record(list).hooks
+    for (const raw of Array.isArray(hooks) ? hooks : []) {
+      const hook = record(raw)
+      if (
+        hook.source === 'sessionFlags' &&
+        wanted.some(
+          (w) =>
+            w.command === hook.command &&
+            w.event.toLowerCase() === String(hook.eventName).toLowerCase()
+        ) &&
+        typeof hook.key === 'string' &&
+        typeof hook.currentHash === 'string'
+      )
+        found.push({
+          key: hook.key,
+          command: String(hook.command),
+          currentHash: hook.currentHash,
+          trustStatus: String(hook.trustStatus)
+        })
+    }
+  }
+  return found
 }
