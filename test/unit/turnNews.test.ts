@@ -7,13 +7,14 @@ const nobodyOwes = (): boolean => false
 const noParent = (): undefined => undefined
 
 describe('waitsOnOtherWork — what Koloft itself can see a session waiting on', () => {
-  it('its own background job left running, but not a server, which never ends', () => {
-    const job = (kind: 'monitor' | 'server') => ({
+  it('a Monitor it left watching for an event, but no other leftover: a server never ends, an idle teammate or a finished helper is waited on by no one', () => {
+    const job = (kind: 'monitor' | 'server' | 'teammate' | 'agent') => ({
       sessionId: 'me',
       background: [{ id: 'b', kind, label: kind, state: 'waiting' as const }]
     })
     expect(waitsOnOtherWork(job('monitor'), [], noParent, nobodyOwes)).toBe(true)
-    expect(waitsOnOtherWork(job('server'), [], noParent, nobodyOwes)).toBe(false)
+    for (const other of ['server', 'teammate', 'agent'] as const)
+      expect(waitsOnOtherWork(job(other), [], noParent, nobodyOwes)).toBe(false)
   })
 
   it('a session that owes it a reply, or that it wrote to and that has not finished', () => {

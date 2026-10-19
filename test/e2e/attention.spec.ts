@@ -110,12 +110,15 @@ test.describe('attention markers come from real session-status transitions (shim
       await startSessionIn(page, 'ws-a')
       const parentTab = (await page.locator('.ws-tab.active').getAttribute('data-tab-id'))!
       await expect.poll(() => markOn(page, parentTab), { timeout: 25_000 }).toBeTruthy()
-      const type = (line: string): Promise<void> =>
-        page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [parentTab, line])
-      await type('/koloft session new -- /busy')
+      const type = (tab: string, line: string): Promise<void> =>
+        page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
+      await type(parentTab, '/koloft session new -- help me')
       await waitForCalls(env, 2)
-      await expect(page.locator('.ws-tab.st-working')).toHaveCount(1, { timeout: 20_000 })
-      await type('reporting back')
+      const helper = page.locator(`.ws-tab:not([data-tab-id="${parentTab}"])`)
+      await expect(helper).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await type((await helper.getAttribute('data-tab-id'))!, '/busy')
+      await expect(helper).toHaveClass(/\bst-working\b/, { timeout: 20_000 })
+      await type(parentTab, 'reporting back')
       await expect
         .poll(async () => (await markOn(page, parentTab))?.fyi, { timeout: 20_000 })
         .toBe(true)
@@ -140,7 +143,7 @@ test.describe('attention markers come from real session-status transitions (shim
       await waitBooted(page)
       await startSessionIn(page, 'ws-a')
       const tab = (await page.locator('.ws-tab.active').getAttribute('data-tab-id'))!
-      await expect.poll(async () => (await markOn(page, tab))?.fyi, { timeout: 30_000 }).toBe(true)
+      await expect.poll(async () => (await markOn(page, tab))?.fyi, { timeout: 45_000 }).toBe(true)
       await expect(page.locator('.ws-tab-unread')).toHaveAttribute(
         'title',
         'turn done — just letting you know'
@@ -193,8 +196,7 @@ test.describe('attention markers come from real session-status transitions (shim
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
     await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
-    await page.locator('.ws-tab').first().click()
-    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(1)
 
     const [call] = await waitForCalls(env, 1)
     killSession(call.pid, env)

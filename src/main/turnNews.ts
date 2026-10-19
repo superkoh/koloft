@@ -31,7 +31,7 @@ export function waitsOnOtherWork(
   parentOf: (sessionId: string) => string | undefined,
   owedOrMessaged: (sessionId: string) => boolean
 ): boolean {
-  if (me.background?.some((b) => b.kind !== 'server')) return true
+  if (me.background?.some((b) => b.kind === 'monitor')) return true
   if (owedOrMessaged(me.sessionId)) return true
   return helpers.some(
     (h) =>
