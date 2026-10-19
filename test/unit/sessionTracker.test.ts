@@ -768,6 +768,33 @@ describe('SessionTracker — binding', () => {
       expect(tracker.aliveTabFor(SID)).toBeNull()
     })
 
+    it('a tab whose claude was killed stops reading its transcript but keeps its row, while a live tab beside it keeps reading', async () => {
+      const PAST_ONE_5S_SUBAGENT_SCAN_MS = 5600
+      const tracker = newTracker()
+      const [liveWs, deadWs, drift] = [makeWorkspace({}), makeWorkspace({}), makeWorkspace({})]
+      const live = writeJsonl(liveWs, SID, [
+        { type: 'user', message: { content: 'hi' }, cwd: liveWs }
+      ])
+      const deadSid = '22222222-2222-4222-8222-222222222222'
+      const dead = writeJsonl(deadWs, deadSid, [
+        { type: 'user', message: { content: 'hi' }, cwd: deadWs }
+      ])
+      tracker.track('tabKL1', liveWs)
+      tracker.bindSession('tabKL1', live, SID, liveWs)
+      tracker.track('tabKL2', deadWs)
+      tracker.bindSession('tabKL2', dead, deadSid, deadWs)
+      await waitFor(tracker, (x) => x.tabId === 'tabKL2' && x.title === 'hi')
+      tracker.setAlive('tabKL2', false)
+
+      fs.appendFileSync(dead, JSON.stringify({ type: 'assistant', cwd: drift }) + '\n')
+      fs.appendFileSync(live, JSON.stringify({ type: 'assistant', cwd: drift }) + '\n')
+      await waitFor(tracker, (x) => x.tabId === 'tabKL1' && x.cwd === drift)
+      await new Promise((r) => setTimeout(r, PAST_ONE_5S_SUBAGENT_SCAN_MS))
+
+      const row = tracker.list().find((x) => x.tabId === 'tabKL2')
+      expect(row).toMatchObject({ sessionId: deadSid, alive: false, cwd: deadWs })
+    })
+
     it('returns null for a session nothing is bound to', () => {
       const cwd = makeWorkspace({})
       const tracker = newTracker()

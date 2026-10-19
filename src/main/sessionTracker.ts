@@ -544,6 +544,7 @@ export class SessionTracker extends SessionRuntime {
     if (!alive) this.pendingPicked.delete(tabId)
     const t = this.tracked.get(tabId)
     if (t) {
+      if (!alive) this.stopFollowing(t)
       t.info.alive = alive
       t.info.updatedAt = Date.now()
       this.emitUpdate()
@@ -932,15 +933,22 @@ export class SessionTracker extends SessionRuntime {
     return null
   }
 
-  // PLATFORM§28
   private cleanup(t: Tracked): void {
     this.forget(t.info.tabId)
+    this.stopFollowing(t)
+  }
+
+  private stopFollowing(t: Tracked): void {
     if (t.subagentTimer) clearInterval(t.subagentTimer)
     if (t.landTimer) clearTimeout(t.landTimer)
-    if (t.info.jsonlPath) {
-      if (t.jsonlListener) fs.unwatchFile(t.info.jsonlPath, t.jsonlListener)
-      if (t.titleListener) fs.unwatchFile(this.sidecarOf(t.info.jsonlPath), t.titleListener)
-    }
+    this.unwatchTranscript(t)
+  }
+
+  // PLATFORM§28
+  private unwatchTranscript(t: Tracked): void {
+    if (!t.info.jsonlPath) return
+    if (t.jsonlListener) fs.unwatchFile(t.info.jsonlPath, t.jsonlListener)
+    if (t.titleListener) fs.unwatchFile(this.sidecarOf(t.info.jsonlPath), t.titleListener)
   }
 
   // CC§2 PLATFORM§1
@@ -1018,10 +1026,7 @@ export class SessionTracker extends SessionRuntime {
 
   // PLATFORM§28
   private watchTranscript(t: Tracked, file: string): void {
-    if (t.info.jsonlPath) {
-      if (t.jsonlListener) fs.unwatchFile(t.info.jsonlPath, t.jsonlListener)
-      if (t.titleListener) fs.unwatchFile(this.sidecarOf(t.info.jsonlPath), t.titleListener)
-    }
+    this.unwatchTranscript(t)
     t.info.jsonlPath = file
     t.sidecarTitle = null
     t.jsonlListener ??= (): void => void this.parse(t)
