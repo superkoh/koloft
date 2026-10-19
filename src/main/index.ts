@@ -1443,6 +1443,18 @@ function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
   )
 }
 
+async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
+  return (await storedOwnerOf(tabId)?.deliver?.(tabId, text)) ?? false
+}
+
+const NOTICE_WAITS_FOR_THE_TURN_MS = 10_000
+
+async function typeOnceReady(tabId: string, text: string): Promise<void> {
+  if (await deliverViaOwner(tabId, text)) return
+  if (await tabReady(tabId, NOTICE_WAITS_FOR_THE_TURN_MS, true))
+    await ptyMgr.type(tabId, [text, '\r'])
+}
+
 const sessionSync = new SessionSync({
   idle: (tabId) =>
     tracker.turnOver(tabId) && !asksTheOwner(tabId) && (codexSessions?.queueDrained(tabId) ?? true),
@@ -1451,7 +1463,7 @@ const sessionSync = new SessionSync({
   gitOut: (dir, args) => hosts.of(dir).gitOut(dir, args),
   queue: queueCodexMessage,
   sendLine: sendPeerLine,
-  type: (tabId, keys) => ptyMgr.type(tabId, keys)
+  type: typeOnceReady
 })
 
 const sessionDeps: SessionVerbDeps = {
@@ -1487,9 +1499,7 @@ const sessionDeps: SessionVerbDeps = {
   asking: asksTheOwner,
   sendLine: sendPeerLine,
   press: (tabId, keys) => ptyMgr.type(tabId, keys),
-  deliver: async (tabId, text) => {
-    return storedOwnerOf(tabId)?.deliver?.(tabId, text) ?? false
-  },
+  deliver: deliverViaOwner,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
   answer: async (tabId, reply) => {

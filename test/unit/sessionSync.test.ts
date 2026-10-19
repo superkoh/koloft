@@ -29,7 +29,7 @@ function rig(repos: Record<string, string>, busy: Set<string> = new Set()) {
         how: 'peerLine',
         text: JSON.parse(line).message.content.split('\n')[1]
       }),
-    type: async (tabId, keys) => void got.push({ tabId, how: 'typed', text: keys.join('') })
+    type: async (tabId, text) => void got.push({ tabId, how: 'typed', text })
   })
   return { sync, got }
 }
@@ -118,7 +118,6 @@ describe('telling open sessions what changed around them', () => {
     expect(got[2].text).toContain(
       'origin/main moved from aaaaaaa to ccccccc, with 2 new commits: "feat: y", "fix: login".'
     )
-    for (const typed of got.slice(3)) expect(typed.text.endsWith('\r')).toBe(true)
     sync.flush('cx')
     expect(got).toHaveLength(6)
   })

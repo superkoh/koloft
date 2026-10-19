@@ -35,7 +35,7 @@ export interface SessionSyncDeps {
   gitOut(dir: string, args: string[]): Promise<string | null>
   queue(tabId: string, text: string, clientId: string): Promise<void>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
-  type(tabId: string, keys: string[]): Promise<void>
+  type(tabId: string, text: string): Promise<void>
 }
 
 interface SameFiles {
@@ -196,7 +196,7 @@ export class SessionSync {
   private async deliver(tabId: string, route: Messaging, text: string): Promise<void> {
     const id = `koloft-sync-${++this.sent}`
     if (route === 'queue') return this.d.queue(tabId, text, id)
-    if (route === 'typed') return this.d.type(tabId, [text, '\r'])
+    if (route === 'typed') return this.d.type(tabId, text)
     const line = crossSessionLine(this.d.modeOf(tabId), text, id)
     if (line) await this.d.sendLine(tabId, line, MESSAGE_SOCKET_SHOWS_WITHIN_MS)
   }
