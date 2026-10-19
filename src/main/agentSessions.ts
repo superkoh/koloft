@@ -857,14 +857,15 @@ export function sessionVerb(d: SessionVerbDeps): {
   ): Promise<string> => {
     const tab = t.tabId ?? (await openReady(t, until))
     if (!tab) throw new Error(`${t.name} was resumed but did not get ready in time.`)
-    messagedBy.set(tab, (messagedBy.get(tab) ?? new Set()).add(from))
     const owed = assist
       ? {
           owner: assist,
           asked: messagingOf(t.backend, !!t.remote) === 'queue' ? text : undefined
         }
       : undefined
-    return owing(tab, owed, () => sendInto(t, tab, text, line, until))
+    const sent = await owing(tab, owed, () => sendInto(t, tab, text, line, until))
+    messagedBy.set(tab, (messagedBy.get(tab) ?? new Set()).add(from))
+    return sent
   }
 
   const sendInto = async (
@@ -936,8 +937,14 @@ export function sessionVerb(d: SessionVerbDeps): {
   }
 
   const waitsOnAnother = (sessionId: string): boolean =>
-    [...replyOwed.values()].some((o) => o.owner === sessionId) ||
-    [...messagedBy.values()].some((from) => from.has(sessionId))
+    d
+      .allSessions()
+      .some(
+        (s) =>
+          s.alive &&
+          (s.status === 'working' || s.status === 'approval') &&
+          (replyOwed.get(s.tabId)?.owner === sessionId || !!messagedBy.get(s.tabId)?.has(sessionId))
+      )
 
   const turnEnded = (tabId: string, turn: Turn): void => {
     messagedBy.delete(tabId)

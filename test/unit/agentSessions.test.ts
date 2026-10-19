@@ -591,13 +591,18 @@ describe('koloft session send', () => {
     )
   })
 
-  it('the sender waits on another session until the one it wrote to ends its turn', async () => {
+  it('the sender waits on another session while the one it wrote to works, until that one ends its turn or closes', async () => {
     const all = sessions()
+    const cx = all.find((s) => s.tabId === 'cx')!
+    cx.status = 'working'
     const me = all.find((s) => s.tabId === 'me')!.sessionId
     const { verb, turnEnded, waitsOnAnother } = harness(all)
     expect(waitsOnAnother(me)).toBe(false)
     expect((await verb(['send', 'cx', 'Run', 'the tests'], from('me'))).exit).toBe(0)
     expect(waitsOnAnother(me)).toBe(true)
+    cx.alive = false
+    expect(waitsOnAnother(me)).toBe(false)
+    cx.alive = true
     turnEnded('cx', 'All green.')
     expect(waitsOnAnother(me)).toBe(false)
   })

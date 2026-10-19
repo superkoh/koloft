@@ -16,6 +16,7 @@ export class AttentionTracker {
   asleep: (tabId: string) => boolean = () => false
   waitsOnAnother: (tabId: string) => boolean = () => false
   watching: () => string | null = () => null
+  turnDone: (tabId: string) => void = () => {}
 
   constructor(
     private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
@@ -31,8 +32,7 @@ export class AttentionTracker {
     const carried = this.list().find((e) => e.sessionId === sessionId)
     if (!carried) return
     for (const e of this.list()) if (e.sessionId === sessionId) this.pending.delete(e.tabId)
-    if (this.pending.get(tabId)?.kind !== 'approval')
-      this.pending.set(tabId, { ...carried, tabId, kind: 'turn-done' })
+    this.pending.set(tabId, { ...carried, tabId, kind: 'turn-done' })
     this.onChange(this.list(), null)
   }
 
@@ -67,20 +67,28 @@ export class AttentionTracker {
     return this.pending.get(tabId)?.kind === 'approval'
   }
 
-  markFyi(tabId: string): void {
+  unjudgedTurnDone(tabId: string): number | undefined {
     const cur = this.pending.get(tabId)
-    if (cur?.kind !== 'turn-done' || cur.fyi) return
-    if (this.watching() === tabId) return this.clear(tabId)
+    return cur?.kind === 'turn-done' && !cur.fyi ? cur.at : undefined
+  }
+
+  markFyi(tabId: string, raisedAt: number): void {
+    const cur = this.pending.get(tabId)
+    if (cur?.kind !== 'turn-done' || cur.fyi || cur.at !== raisedAt) return
+    if (this.watching() === tabId) return this.drop(tabId)
     this.pending.set(tabId, { ...cur, fyi: true })
     this.onChange(this.list(), null)
   }
 
   seen(tabId: string): void {
-    if (this.pending.get(tabId)?.fyi) this.clear(tabId)
+    if (this.pending.get(tabId)?.fyi) this.drop(tabId)
   }
 
   clear(tabId: string): void {
-    if (this.asleep(tabId)) return
+    if (!this.asleep(tabId)) this.drop(tabId)
+  }
+
+  private drop(tabId: string): void {
     if (this.pending.delete(tabId)) this.onChange(this.list(), null)
   }
 
@@ -103,13 +111,9 @@ export class AttentionTracker {
     const event: AttentionEvent = { ...subject, tabId, kind, at: Date.now(), ...(fyi && { fyi }) }
     const cur = this.pending.get(tabId)
     if (cur && cur.kind === 'approval' && kind === 'turn-done') return
-    if (fyi && this.watching() === tabId) return this.clear(tabId)
-    if (cur && cur.kind === kind) {
-      this.pending.set(tabId, event)
-      this.onChange(this.list(), null)
-      return
-    }
+    if (fyi && this.watching() === tabId) return this.drop(tabId)
     this.pending.set(tabId, event)
-    this.onChange(this.list(), event)
+    this.onChange(this.list(), cur?.kind === kind ? null : event)
+    if (kind === 'turn-done' && !fyi) this.turnDone(tabId)
   }
 }

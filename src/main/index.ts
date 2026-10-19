@@ -535,7 +535,8 @@ const readerDocs = new ReaderDocs({
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
     void readerDocs.turnEnded(tabId, turn)
-    void judgeTurnNews(tabId, turn)
+    turnsToJudge.set(tabId, turn)
+    judgeTurnNews(tabId)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
     discordNotices?.turnEnded(tabId, turn.reply)
@@ -568,9 +569,14 @@ function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
 
-async function judgeTurnNews(tabId: string, turn: Turn): Promise<void> {
-  if (conductors?.heldResident(tabId) || attention.waitsOnAnother(tabId)) return
-  if (await onlyNews(assist, turn)) attention.markFyi(tabId)
+const turnsToJudge = new Map<string, Turn>()
+
+function judgeTurnNews(tabId: string): void {
+  const turn = turnsToJudge.get(tabId)
+  const raisedAt = attention.unjudgedTurnDone(tabId)
+  if (!turn || raisedAt === undefined) return
+  turnsToJudge.delete(tabId)
+  void onlyNews(assist, turn).then((news) => news && attention.markFyi(tabId, raisedAt))
 }
 
 // CC§14
@@ -685,6 +691,7 @@ const attention = new AttentionTracker((pending, event) => {
 }, loadLastRunAttention())
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
+attention.turnDone = (tabId) => judgeTurnNews(tabId)
 attention.waitsOnAnother = (tabId) => {
   const me = sessionOfTab(tabId)
   return (
@@ -897,6 +904,7 @@ function updateDockBadge(pending: AttentionEvent[]): void {
 function activateTabFromNotification(tabId: string): void {
   const win = mainWindow
   if (win && !win.isDestroyed()) {
+    uiActiveTabId = tabId
     tracker.noteActivity(tabId)
     if (win.isMinimized()) win.restore()
     if (!win.isVisible()) win.show()
@@ -2657,6 +2665,7 @@ app.whenReady().then(() => {
     if (conductor && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     discordNotices?.onStatus(t.tabId, t.prev, t.next)
+    if (t.next === 'working') turnsToJudge.delete(t.tabId)
     void discordLive?.refresh(t.tabId)
     if (!(conductor && t.next === 'waiting'))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))

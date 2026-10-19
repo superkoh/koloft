@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { AttentionTracker, type SavedMark } from '../../src/main/attention'
 import type { AttentionEvent } from '../../src/shared/types'
 
@@ -116,14 +116,39 @@ describe('attention — a turn that only reports goes once it is seen', () => {
     t.onStatusChange('tab-A', 'working', 'waiting')
     t.onStatusChange('tab-B', 'working', 'waiting')
     t.onStatusChange('tab-C', 'waiting', 'approval')
-    t.markFyi('tab-A')
+    t.markFyi('tab-A', t.unjudgedTurnDone('tab-A')!)
     watched = 'tab-B'
-    t.markFyi('tab-B')
-    t.markFyi('tab-C')
+    t.markFyi('tab-B', t.unjudgedTurnDone('tab-B')!)
+    expect(t.unjudgedTurnDone('tab-C')).toBeUndefined()
     expect(t.list()).toEqual([
       expect.objectContaining({ tabId: 'tab-A', fyi: true }),
       expect.objectContaining({ tabId: 'tab-C', kind: 'approval' })
     ])
+  })
+
+  it('a late verdict on an older turn leaves the next turn’s mark alone', () => {
+    vi.useFakeTimers({ now: 1_000 })
+    try {
+      const { t } = makeTracker()
+      t.onStatusChange('tab-A', 'working', 'waiting')
+      const judged = t.unjudgedTurnDone('tab-A')!
+      t.onStatusChange('tab-A', 'waiting', 'working')
+      vi.advanceTimersByTime(5_000)
+      t.onStatusChange('tab-A', 'working', 'waiting')
+      t.markFyi('tab-A', judged)
+      expect(t.list()).toEqual([expect.not.objectContaining({ fyi: true })])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('news on a sleeping tab still goes once it is seen', () => {
+    const { t } = makeTracker()
+    t.asleep = () => true
+    t.waitsOnAnother = () => true
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.seen('tab-A')
+    expect(t.list()).toEqual([])
   })
 })
 
