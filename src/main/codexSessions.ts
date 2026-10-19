@@ -86,7 +86,6 @@ import {
 } from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
 import {
-  CODEX_OPEN_SHIM_FOLDER,
   CODEX_TMP_DIR,
   CODEX_TMP_FOLDER,
   endCodexAppServersLeftByACrash,
@@ -262,10 +261,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     // CODEX§5
     await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG)
       .catch(() => {})
-      .then(() => {
-        removeFoldersLeftByEndedRuns(CODEX_TMP_DIR, CODEX_TMP_FOLDER)
-        removeFoldersLeftByEndedRuns(this.deps.openShimRoot, CODEX_OPEN_SHIM_FOLDER)
-      }))
+      .then(() => removeFoldersLeftByEndedRuns(CODEX_TMP_DIR, CODEX_TMP_FOLDER)))
     try {
       return await createCodexTransport(options)
     } catch (error) {
