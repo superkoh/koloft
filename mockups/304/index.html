@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>#304 限额行界面稿</title>
+<style>
+/* ---- 从 src/renderer/src/styles.css 原样复制的规则（:root、.island、.ws-*、.ws-tab*） ---- */
+:root {
+  --bg-0: #0d0d0f;
+  --bg-1: #161618;
+  --bg-2: #1c1c1f;
+  --bg-3: #27272c;
+  --bg-4: #34343a;
+  --bg-side: #0f0f11;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-2: rgba(255, 255, 255, 0.17);
+  --fg: #f3f1ee;
+  --fg-dim: #bdb9b2;
+  --fg-faint: #908b84;
+  --accent: #ec9670;
+  --accent-soft: rgba(236, 150, 112, 0.18);
+  --good: #8fc69a;
+  --amber: #f0a830;
+  --amber-soft: rgba(240, 168, 48, 0.14);
+  --red: #d9776a;
+  --folder: #c9a06a;
+  --fg-cold: #9a958d;
+  --r: 9px;
+  --r-sm: 7px;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --font: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'JetBrainsMono Nerd Font', 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg-0);
+  color: var(--fg);
+  font: 13px/1.5 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+.island {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.ws-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws { display: flex; flex-direction: column; }
+.ws-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 5px 9px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--fg);
+  position: relative;
+}
+.ws-head:hover { background: var(--bg-3); }
+.fico { flex: 0 0 auto; display: flex; color: var(--folder); border-radius: 5px; padding: 2px; margin: -2px; }
+.ws-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-name i { font-style: inherit; }
+.ws-remote {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 5px; max-width: 96px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: 10px; line-height: 1; margin-top: 2px; color: var(--fg-faint);
+}
+.ws-conn { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--fg-faint); }
+.ws-conn.on { background: var(--good); }
+.ws-tabs { display: flex; flex-direction: column; gap: 1px; margin: 1px 0 4px 0; padding-left: 14px; }
+.ws-tab {
+  position: relative; display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  min-height: 46px; padding: 6px 10px 6px 18px; border-radius: var(--r-sm); cursor: pointer;
+  color: var(--fg-dim); overflow: hidden;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.ws-tab::before, .ws-tab.st-approval::after {
+  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: transparent;
+}
+.ws-tab.st-working::before { background: var(--accent); }
+.ws-tab.st-waiting::before { background: var(--good); }
+.ws-tab.st-working::before, .ws-tab.st-bg-run::before { animation: barBreathe 2.4s var(--ease) infinite; }
+.ws-tab.st-approval::before {
+  width: 8px; background: var(--amber); transform: scaleX(0.375); transform-origin: left; animation: barPump 1s var(--ease) infinite;
+}
+.ws-tab.st-approval::after {
+  content: ''; position: absolute; border-radius: 2px; box-shadow: 0 0 10px 1px rgba(240, 168, 48, 0.55); opacity: 0;
+  width: 8px; transform: scaleX(0.375); transform-origin: left;
+  animation: barPump 1s var(--ease) infinite, barGlow 1s var(--ease) infinite;
+}
+.ws-tab.st-idle::before { background: var(--good); opacity: 0.4; }
+.ws-tab.cold::before { background: var(--fg-cold); opacity: 0.35; }
+.ws-tab:hover { background: var(--bg-3); color: var(--fg); }
+.ws-tab.active { background: var(--accent-soft); color: var(--fg); }
+.ws-tab-main { display: flex; align-items: center; gap: 8px; min-width: 0; position: relative; z-index: 1; }
+.ws-tab-title { flex: 1; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-tab-title i { font-style: inherit; }
+.ws-tab.active .ws-tab-title { font-weight: 600; }
+.ws-tab-parked {
+  flex: none; font-family: var(--mono); font-size: 10px; line-height: 14px; padding: 0 5px; border: 0; border-radius: 7px;
+  color: var(--fg-faint); background: var(--bg-3); cursor: help;
+}
+.ws-tab-unread { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+.ws-tab-sub {
+  display: flex; align-items: center; gap: 5px; min-width: 0; position: relative; z-index: 1;
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ws-tab-sub > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-tab.cold .ws-tab-title { font-style: italic; color: var(--fg-cold); font-weight: 400; }
+.ws-tab.cold .ws-tab-sub { opacity: 0.7; }
+@keyframes barBreathe { 0%, 100% { opacity: 0.95; } 50% { opacity: 0.5; } }
+@keyframes barPump { 0%, 100% { transform: scaleX(0.375); } 40%, 60% { transform: none; } }
+@keyframes barGlow { 0%, 100% { opacity: 0; } 40%, 60% { opacity: 1; } }
+
+/* ---- 本次新增的两条规则（方案 §3「The row」） ---- */
+.ws-tab.limited::before { background: var(--amber); opacity: 0.55; animation: none; }
+.ws-tab-limit { color: var(--amber); font-weight: inherit; }
+
+/* ---- 只属于这张稿子的排版 ---- */
+.page { max-width: 1120px; margin: 0 auto; padding: 28px 16px 60px; }
+h1 { font-size: 18px; font-weight: 600; margin: 0 0 6px; }
+h2 { font-size: 14px; font-weight: 600; margin: 28px 0 10px; color: var(--fg); }
+p.lead { color: var(--fg-dim); margin: 0 0 18px; max-width: 760px; }
+.cols { display: grid; grid-template-columns: 272px 1fr; gap: 28px; align-items: start; }
+@media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+.sidebar { background: var(--bg-side); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+.sidebar .island { height: 100%; }
+.cap { font-size: 12px; color: var(--fg-dim); margin: 6px 0 0; }
+.cap b { color: var(--fg); font-weight: 600; }
+.legend { display: grid; grid-template-columns: 18px 1fr; gap: 6px 10px; align-items: center; font-size: 12px; color: var(--fg-dim); margin: 0; }
+.legend i { display: block; width: 3px; height: 18px; border-radius: 2px; margin-left: 7px; }
+.pointer { position: relative; }
+.tag { display: inline-block; font-family: var(--mono); font-size: 10px; line-height: 14px; padding: 0 5px; border-radius: 7px; background: var(--bg-3); color: var(--fg-faint); vertical-align: middle; }
+.tag.new { background: var(--amber-soft); color: var(--amber); }
+.notes { display: flex; flex-direction: column; gap: 14px; }
+.banner {
+  display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start;
+  width: 360px; max-width: 100%; padding: 10px 12px; border-radius: 14px;
+  background: rgba(58, 58, 62, 0.92); border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 36px -12px rgba(0, 0, 0, 0.8); color: #fff; font-size: 12.5px;
+}
+.banner .app { width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(145deg, #ec9670, #d97757); }
+.banner .who { font-size: 10px; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.04em; }
+.banner .t { font-weight: 600; margin-top: 1px; }
+.banner .b { color: rgba(255,255,255,0.85); }
+table { border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line); color: var(--fg-dim); vertical-align: top; }
+th { color: var(--fg); font-weight: 600; }
+code { font-family: var(--mono); font-size: 11px; color: var(--fg); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>#304 用量限额：侧栏里的行 + 系统通知（界面稿）</h1>
+  <p class="lead">
+    左边是 app 侧栏里的会话行，用 app 自己的 CSS 和行结构拼出来；标成
+    <span class="tag new">new</span> 的是这次新增的样子。右边是 Koloft 在后台时发的四种系统通知。
+    app 里的英文原样加引号。
+  </p>
+
+  <div class="cols">
+    <div>
+      <div class="sidebar">
+        <div class="island isl-sessions">
+          <div class="ws-list">
+
+            <!-- 本机工作区：Claude 会话 -->
+            <div class="ws">
+              <div class="ws-head" title="/Users/me/Projects/koloft">
+                <span class="fico"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path fill-rule="evenodd" d="M2.8 2.6C1 3.6,1 3.5,1 12.3C1 20.8,1 20.6,2.3 21.4L3 21.8 10.3 21.8C18.4 21.8,18.4 21.8,19.1 20.8C19.6 20.1,22.9 11.3,22.9 10.6C22.9 9.5,21.9 8.6,20.8 8.6C20.2 8.6,20.2 8.6,20.1 7.8C20 7.2,19.8 6.7,19.5 6.3C18.8 5.3,18.4 5.2,15.3 5.2C13.7 5.2,12.3 5.2,12.2 5.1C12.1 5,11.7 4.5,11.3 4C10.2 2.5,9.9 2.4,6.3 2.4C3.9 2.4,3.2 2.4,2.8 2.6M3.6 4.6L3.2 4.7 3.2 9.9C3.2 12.8,3.2 15.1,3.3 15C3.3 15,3.8 13.9,4.4 12.5C5.1 11.2,5.8 9.9,6 9.6C6.9 8.6,7.1 8.6,12.8 8.6C18 8.6,18.1 8.6,18.1 8.3C18.1 7.3,18 7.3,15.1 7.3C11.4 7.3,11 7.1,9.5 5L9.2 4.5 6.6 4.4C5.1 4.4,3.8 4.5,3.6 4.6M7.6 10.9C7.4 11,6.4 13,5.3 15.4L3.4 19.7 10.4 19.7C15.8 19.8,17.4 19.7,17.5 19.6C17.7 19.3,20.8 11.3,20.8 10.9C20.8 10.6,8 10.5,7.6 10.9"/></svg></span>
+                <span class="ws-name"><i>koloft</i></span>
+              </div>
+              <div class="ws-tabs">
+                <div class="ws-tab st-working active" data-tab-id="pty-1">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>Fix the sidebar flicker</i></span></div>
+                  <div class="ws-tab-sub"><span>main</span></div>
+                </div>
+
+                <!-- new：撞到限额，Claude Code 自己会在 14:05 接着干 -->
+                <div class="ws-tab st-waiting limited" data-tab-id="pty-2" title="Usage limit hit · Claude Code goes on by itself at 14:05">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>Write the release notes</i></span></div>
+                  <div class="ws-tab-sub"><span>main · <b class="ws-tab-limit">limited until 14:05</b></span></div>
+                </div>
+
+                <div class="ws-tab st-waiting" data-tab-id="pty-3">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>Audit the hook scripts</i></span><span class="ws-tab-unread" title="turn done — your move"></span></div>
+                  <div class="ws-tab-sub"><span>hooks-audit</span></div>
+                </div>
+
+                <div class="ws-tab st-approval" data-tab-id="pty-4">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>Rename the IPC table</i></span><span class="ws-tab-unread" title="waiting for your approval"></span></div>
+                  <div class="ws-tab-sub"><span>ipc-rename</span></div>
+                </div>
+
+                <!-- new：Mac 睡过了重置，Claude Code 没自己接上 -->
+                <div class="ws-tab st-waiting limited" data-tab-id="pty-5" title="Usage limit over · press Enter in the session to go on">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>Port the installer</i></span><span class="ws-tab-unread" title="usage limit over — press Enter to go on"></span></div>
+                  <div class="ws-tab-sub"><span>main · <b class="ws-tab-limit">limited · press Enter</b></span></div>
+                </div>
+
+                <!-- new：Claude Code 不会自己接上（关了自动继续 / 重置在 24 小时之外 / Fable 额度用完） -->
+                <div class="ws-tab st-waiting limited" data-tab-id="pty-6" title="Usage limit hit · Claude Code will not go on by itself">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>Trim the bundle size</i></span><span class="ws-tab-unread" title="usage limit hit — will not go on by itself"></span></div>
+                  <div class="ws-tab-sub"><span>bundle · <b class="ws-tab-limit">limited · will not go on</b></span></div>
+                </div>
+
+                <div class="ws-tab cold" title="3h ago — click to resume">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>Old notes on the updater</i></span></div>
+                  <div class="ws-tab-sub"><span>main</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 远程工作区（SSH）：Claude 会话，样子一样，只是晚一次镜像 -->
+            <div class="ws">
+              <div class="ws-head" title="ssh://lab-1/home/me/koloft">
+                <span class="fico"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path fill-rule="evenodd" d="M2.8 2.6C1 3.6,1 3.5,1 12.3C1 20.8,1 20.6,2.3 21.4L3 21.8 10.3 21.8C18.4 21.8,18.4 21.8,19.1 20.8C19.6 20.1,22.9 11.3,22.9 10.6C22.9 9.5,21.9 8.6,20.8 8.6C20.2 8.6,20.2 8.6,20.1 7.8C20 7.2,19.8 6.7,19.5 6.3C18.8 5.3,18.4 5.2,15.3 5.2C13.7 5.2,12.3 5.2,12.2 5.1C12.1 5,11.7 4.5,11.3 4C10.2 2.5,9.9 2.4,6.3 2.4C3.9 2.4,3.2 2.4,2.8 2.6M3.6 4.6L3.2 4.7 3.2 9.9C3.2 12.8,3.2 15.1,3.3 15C3.3 15,3.8 13.9,4.4 12.5C5.1 11.2,5.8 9.9,6 9.6C6.9 8.6,7.1 8.6,12.8 8.6C18 8.6,18.1 8.6,18.1 8.3C18.1 7.3,18 7.3,15.1 7.3C11.4 7.3,11 7.1,9.5 5L9.2 4.5 6.6 4.4C5.1 4.4,3.8 4.5,3.6 4.6M7.6 10.9C7.4 11,6.4 13,5.3 15.4L3.4 19.7 10.4 19.7C15.8 19.8,17.4 19.7,17.5 19.6C17.7 19.3,20.8 11.3,20.8 10.9C20.8 10.6,8 10.5,7.6 10.9"/></svg></span>
+                <span class="ws-name"><i>koloft</i></span>
+                <span class="ws-remote" title="lab-1:/home/me/koloft">lab-1<span class="ws-conn on"></span></span>
+              </div>
+              <div class="ws-tabs">
+                <div class="ws-tab st-waiting limited" data-tab-id="pty-7" title="Usage limit hit · Claude Code goes on by itself at 14:05">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>Move the lab scripts</i></span></div>
+                  <div class="ws-tab-sub"><span>main · <b class="ws-tab-limit">limited until 14:05</b></span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Codex 工作区：Koloft 到点替你敲 continue -->
+            <div class="ws">
+              <div class="ws-head" title="/Users/me/Projects/site">
+                <span class="fico"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path fill-rule="evenodd" d="M2.8 2.6C1 3.6,1 3.5,1 12.3C1 20.8,1 20.6,2.3 21.4L3 21.8 10.3 21.8C18.4 21.8,18.4 21.8,19.1 20.8C19.6 20.1,22.9 11.3,22.9 10.6C22.9 9.5,21.9 8.6,20.8 8.6C20.2 8.6,20.2 8.6,20.1 7.8C20 7.2,19.8 6.7,19.5 6.3C18.8 5.3,18.4 5.2,15.3 5.2C13.7 5.2,12.3 5.2,12.2 5.1C12.1 5,11.7 4.5,11.3 4C10.2 2.5,9.9 2.4,6.3 2.4C3.9 2.4,3.2 2.4,2.8 2.6M3.6 4.6L3.2 4.7 3.2 9.9C3.2 12.8,3.2 15.1,3.3 15C3.3 15,3.8 13.9,4.4 12.5C5.1 11.2,5.8 9.9,6 9.6C6.9 8.6,7.1 8.6,12.8 8.6C18 8.6,18.1 8.6,18.1 8.3C18.1 7.3,18 7.3,15.1 7.3C11.4 7.3,11 7.1,9.5 5L9.2 4.5 6.6 4.4C5.1 4.4,3.8 4.5,3.6 4.6M7.6 10.9C7.4 11,6.4 13,5.3 15.4L3.4 19.7 10.4 19.7C15.8 19.8,17.4 19.7,17.5 19.6C17.7 19.3,20.8 11.3,20.8 10.9C20.8 10.6,8 10.5,7.6 10.9"/></svg></span>
+                <span class="ws-name"><i>site</i></span>
+              </div>
+              <div class="ws-tabs">
+                <div class="ws-tab st-waiting limited" data-tab-id="pty-8" title="Usage limit hit · Koloft types continue at 15:20">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>Rewrite the pricing page</i></span></div>
+                  <div class="ws-tab-sub"><span>main · <b class="ws-tab-limit">limited until 15:20</b></span></div>
+                </div>
+                <div class="ws-tab st-idle" data-tab-id="pty-9">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>Check the sitemap</i></span></div>
+                  <div class="ws-tab-sub"><span>main</span></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+      <p class="cap">左边的竖条："working" 橙色呼吸、"waiting" 绿色、"approval" 琥珀色一跳一跳；<b>限额是不动的、半透明的琥珀色</b>，意思是"在等钟，不是在等你"。</p>
+      <p class="legend">
+        <i style="background: var(--accent)"></i><span>"working"：正在干活</span>
+        <i style="background: var(--good)"></i><span>"waiting"：这一轮做完了，轮到你</span>
+        <i style="background: var(--amber)"></i><span>"approval"：卡在一个要你点头的框上（会一跳一跳）</span>
+        <i style="background: var(--amber); opacity: .55"></i><span><span class="tag new">new</span> "limited"：撞到用量限额，等重置</span>
+      </p>
+    </div>
+
+    <div>
+      <h2 style="margin-top: 0">行上的第二行字（在 worktree 名字后面，琥珀色）</h2>
+      <table>
+        <tr><th>什么时候</th><th>第二行写什么</th><th>红点</th></tr>
+        <tr><td>撞到限额，Claude Code 会自己接着干（或 Codex 由 Koloft 接着干）</td><td><code>main · limited until 14:05</code></td><td>没有</td></tr>
+        <tr><td>Mac 睡过了重置，Claude Code 没自己接上</td><td><code>main · limited · press Enter</code></td><td>有</td></tr>
+        <tr><td>Claude Code 不会自己接上（自动继续关了 / 重置在 24 小时之外 / 连撞上限 / 只是 Fable 额度用完）</td><td><code>main · limited · will not go on</code></td><td>有</td></tr>
+        <tr><td>撞到限额但拿不到时间（Codex 读不到账号额度）</td><td><code>main · limited</code></td><td>没有</td></tr>
+      </table>
+      <p class="cap">时间用用量胶囊里同一个格式：当天就 <code>14:05</code>，不是当天就 <code>10-20 14:05</code>。鼠标停在行上，提示框说明是谁会接着干。</p>
+
+      <h2>Koloft 在后台时发的系统通知（和现在的三种通知走同一条路，Settings ▸ Notifications 里多一个开关 "Usage limit"）</h2>
+      <div class="notes">
+        <div>
+          <div class="banner">
+            <div class="app"></div>
+            <div><div class="who">Koloft</div><div class="t">Write the release notes</div><div class="b">usage limit over — going on · koloft</div></div>
+          </div>
+          <p class="cap">Claude 的 "quota_auto_resume_fired"：重置到了，Claude Code 自己接着干了。只是告诉你一声，不用做什么。</p>
+        </div>
+        <div>
+          <div class="banner">
+            <div class="app"></div>
+            <div><div class="who">Koloft</div><div class="t">Port the installer</div><div class="b">usage limit over — press Enter to go on · koloft</div></div>
+          </div>
+          <p class="cap">Claude 的 "quota_auto_resume_stale"：Mac 睡过了重置。点通知到那个标签页，按一下 Enter 就继续。</p>
+        </div>
+        <div>
+          <div class="banner">
+            <div class="app"></div>
+            <div><div class="who">Koloft</div><div class="t">Trim the bundle size</div><div class="b">usage limit hit — will not go on by itself · koloft</div></div>
+          </div>
+          <p class="cap">Claude 的 "quota_auto_resume_disabled"：Claude Code 不会自己接上，要你去处理。</p>
+        </div>
+        <div>
+          <div class="banner">
+            <div class="app"></div>
+            <div><div class="who">Koloft</div><div class="t">Rewrite the pricing page</div><div class="b">usage limit over — Koloft typed continue · site</div></div>
+          </div>
+          <p class="cap">Codex：到点了，会话闲着、你也没往里打过字，Koloft 替你敲了 "continue" + Enter。</p>
+        </div>
+      </div>
+      <p class="cap">撞到限额的那一刻不发通知（主人定的：接上的时候才通知）。窗口在前台时也不发，行上的样子已经说明了。绑了 Discord 的工作区：撞限额时不发 "finished" 卡片，会话卡片改画 "⏳ limited until 14:05"，上面四句话同样发到会话的 thread 里。</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>
