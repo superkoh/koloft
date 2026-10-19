@@ -21,6 +21,9 @@ import { SessionBackendIcon } from './SessionBackendIcon'
 import { startOrList, type AgentChoice } from '../agentChoice'
 import { BusyLine, SessionLaunchButtons } from './SessionLaunchButtons'
 import '../commandPalette.css'
+import '../workspaceSidebar.css'
+import '../workspacePicker.css'
+import '../restoreDialog.css'
 
 const SEARCH_AFTER_TYPING_MS = 400
 

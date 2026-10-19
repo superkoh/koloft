@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type JSX } from 'react'
 import { useStore } from '../store'
 import { unsavedBody, UNSAVED_TITLE } from '../closeSession'
 import { removeJobsNote } from '../unsavedGuard'
-import '../unsavedDialog.css'
 
 export function UnsavedDialog(): JSX.Element | null {
   const prompt = useStore((s) => s.unsavedPrompt)

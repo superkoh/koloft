@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import type { AccountView, CodexLimits } from '@shared/types'
 import { FABLE_STOP, meterLevel, type MeterLevel } from '@shared/accountUsage'
+import '../accounts.css'
 
 const FABLE_WARN_AT = 0.85
 

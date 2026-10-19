@@ -1,3 +1,12 @@
+.outline-it.cur {
+  background: var(--accent-soft);
+}
+.outline-it.cur .outline-name {
+  color: var(--accent);
+}
+.outline-it:focus-visible {
+  outline: 1px solid var(--accent-line);
+}
 .fp-stale {
   position: absolute;
   top: 54px;
@@ -101,24 +110,6 @@
   top: 6px;
   right: 12px;
   z-index: 6;
-}
-.outline-btn {
-  pointer-events: auto;
-  -webkit-app-region: no-drag;
-  cursor: pointer;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  border: 1px solid var(--line-2);
-  background: var(--bg-3);
-  color: var(--fg-dim);
-  font-size: 14px;
-  line-height: 1;
-}
-.outline-btn:hover,
-.outline-btn.on {
-  color: var(--accent);
-  border-color: var(--accent-line);
 }
 .outline-list {
   position: absolute;

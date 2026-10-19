@@ -1,12 +1,3 @@
-/* PLATFORM§9 */
-.wb-col.staged {
-  position: absolute;
-  left: 0;
-  top: 0;
-  z-index: -1;
-  opacity: 0.01;
-  pointer-events: none;
-}
 .wb-tab.driven .lb::before,
 .wb-panel .bdriven::before {
   content: '';
@@ -239,42 +230,6 @@
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.wb-bar {
-  -webkit-app-region: no-drag;
-  position: relative;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 9px;
-  background: var(--bg-2);
-  border-bottom: 1px solid var(--line);
-}
-.wb-title {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--fg);
-  white-space: nowrap;
-}
-.wb-title .dir {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--fg-faint);
-  font-weight: 400;
-}
-.wb-title .nm {
-  flex: 0 0 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .wb-panel .wb-title {
   --nm-floor: 10ch;
   min-width: var(--nm-floor);
@@ -626,122 +581,6 @@
   border-color: var(--accent);
   color: var(--accent);
 }
-.bmodal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 130;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(8, 8, 10, 0.55);
-}
-.bmodal {
-  width: 420px;
-  max-width: 80vw;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-2);
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-}
-.bmodal-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--line);
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--fg-dim);
-}
-.bmodal-realm {
-  color: var(--fg-faint);
-}
-.bmodal-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 16px;
-}
-.bmodal-msg {
-  font-size: 12.5px;
-  color: var(--fg);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.bmodal-field {
-  height: 28px;
-  padding: 0 8px;
-  background: var(--bg-1);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  font-family: var(--font);
-  font-size: 12.5px;
-  color: var(--fg);
-  outline: none;
-}
-.bmodal-field:focus {
-  border-color: var(--accent-line);
-}
-.bmodal-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--line);
-}
-
-/* PLATFORM§9 */
-.wb-col,
-.wb-peek {
-  position: relative;
-  margin-top: 10px;
-  border-color: var(--line-layout);
-  --bg-2: var(--bg-panel);
-  --bg-1: var(--bg-panel-sunk);
-  --term-ground: var(--bg-1);
-}
-.wb-peek {
-  flex: 0 0 auto;
-  align-self: flex-start;
-  max-height: calc(100% - 10px);
-  margin-left: 10px;
-  animation: none;
-}
-.wb-peek .wb-tabs {
-  padding-right: 33px;
-}
-.wb-peek .cv-list {
-  flex: 0 1 auto;
-}
-.wb-peek-dir {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--fg-faint);
-}
-.wb-col.full {
-  margin-left: 10px;
-}
-.wb-tabs .wb-spill {
-  padding-right: 33px;
-}
-/* PLATFORM§9 */
-.wb-col.off {
-  border-width: 0;
-}
-.wb-col.off:not(.staged) .wb-panel {
-  right: auto;
-  bottom: auto;
-  width: calc(var(--wb-w) - 2px);
-  height: calc(100% - 2px);
-}
 .bperm {
   display: flex;
   align-items: center;
@@ -904,39 +743,6 @@
 }
 .bdl-act:hover {
   color: var(--accent-press);
-}
-
-.bmenu {
-  position: absolute;
-  right: 9px;
-  top: 74px;
-  z-index: 40;
-  width: 176px;
-  padding: 5px;
-  background: var(--bg-2);
-  border: 1px solid var(--line-2);
-  border-radius: 9px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
-}
-.bmenu:focus {
-  outline: none;
-}
-.bmenu-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 7px 9px;
-  border: none;
-  border-radius: var(--r-sm);
-  background: none;
-  font-size: 12.5px;
-  color: var(--fg-dim);
-  text-align: left;
-}
-.bmenu-item:hover {
-  background: var(--bg-3);
-  color: var(--fg);
 }
 
 .btab-spk {

@@ -44,6 +44,7 @@ import {
   type FilesMenu,
   type FilesTab
 } from './filesModel'
+import '../fileTree.css'
 
 export const READING_TAB_ID = 'files:reading'
 

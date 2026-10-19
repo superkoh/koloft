@@ -20,6 +20,7 @@ import {
   type StartSession
 } from './SessionLaunchButtons'
 import '../newProjectDialog.css'
+import '../workspaceSidebar.css'
 
 export interface ProjectSeed {
   prompt: string

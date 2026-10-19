@@ -277,20 +277,6 @@
   font-size: 12.5px;
   line-height: 1.6;
 }
-.set-input {
-  background: var(--bg-2);
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-sm);
-  color: var(--fg);
-  font: inherit;
-  font-size: 12.5px;
-  padding: 7px 10px;
-  width: 100%;
-  outline: none;
-}
-.set-input:focus {
-  border-color: var(--accent-line);
-}
 .font-chips {
   display: flex;
   gap: 6px;
@@ -376,30 +362,6 @@
     animation: none;
   }
 }
-
-.acct-confirm,
-.set-confirm {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 8px;
-  padding: 7px 10px;
-  background: rgba(217, 119, 106, 0.08);
-  border: 1px solid rgba(217, 119, 106, 0.35);
-  border-radius: var(--r-sm);
-  font-size: 12px;
-  color: var(--fg-dim);
-}
-.acct-confirm span,
-.set-confirm span {
-  flex: 1;
-  min-width: 180px;
-}
-.acct-row.confirming .acct-x {
-  opacity: 0.25;
-  pointer-events: none;
-}
 .set-about {
   display: flex;
   align-items: center;
@@ -446,10 +408,6 @@
 }
 .set-keep {
   color: var(--fg-dim);
-}
-
-.acct-foot .mini svg {
-  flex: none;
 }
 .wp-cards {
   display: grid;

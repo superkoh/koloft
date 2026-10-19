@@ -9,6 +9,7 @@ import { assistScopes, conductorsNeedYou, conductorTab } from '../conductorRows'
 import { preferredAssistBackend } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { menuPosFor, useDismissOnOutside } from './WorkspaceSidebar'
+import '../workspaceSidebar.css'
 
 export const NOT_ON_DISCORD = 'not on Discord'
 

@@ -45,6 +45,7 @@ import {
   resetLabel
 } from './accountMeter'
 import '../topbarUsage.css'
+import '../accounts.css'
 
 const POP_W = 430
 const HOVER_OPEN_MS = 150

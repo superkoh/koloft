@@ -4,6 +4,7 @@ import type { ArtifactView, GitFileStatus } from '@shared/types'
 import type { ArtifactCaps } from './ArtifactPane'
 import type { EditProbe } from './EditPane'
 import { GIT_LETTER, splitPath } from './filesModel'
+import '../fileTree.css'
 
 const VIEW_LABEL: Record<ArtifactView, string> = {
   render: 'Rendered',

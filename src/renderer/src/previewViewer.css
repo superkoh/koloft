@@ -342,20 +342,6 @@
   border-bottom-style: solid;
 }
 
-.outline.outline-md {
-  top: 52px;
-  right: 12px;
-}
-.outline-it.cur {
-  background: var(--accent-soft);
-}
-.outline-it.cur .outline-name {
-  color: var(--accent);
-}
-.outline-it:focus-visible {
-  outline: 1px solid var(--accent-line);
-}
-
 .img-wrap {
   overflow: auto;
   display: flex;

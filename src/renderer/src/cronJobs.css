@@ -78,25 +78,6 @@
   padding: 6px 10px;
   font-size: 12px;
 }
-.ibtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--fg-faint);
-  cursor: pointer;
-  padding: 0;
-}
-.ibtn:hover {
-  color: var(--accent);
-}
-.ibtn.danger:hover {
-  color: var(--red);
-}
 .hist {
   display: flex;
   flex-direction: column;
@@ -185,14 +166,6 @@
 .inline .cb-input.time {
   width: 120px;
   color-scheme: dark;
-}
-.cb-field.task {
-  resize: vertical;
-  line-height: 1.4;
-}
-/* CC§9 */
-.field-hint.warn {
-  color: var(--amber);
 }
 .fnote {
   font-size: 12.5px;
