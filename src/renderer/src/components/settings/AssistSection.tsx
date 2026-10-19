@@ -65,7 +65,7 @@ export function AssistSection(): JSX.Element {
           onPick={(b) => update({ assist: { on: assist?.on ?? true, backend: b } })}
         />
       </div>
-      <div className="set-row">
+      <div className="set-row stack">
         <div className="set-lab">
           <b>Name</b>
           <small>
