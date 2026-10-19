@@ -187,9 +187,11 @@ Working principles:
   stop every Monitor and wake-up you armed, so the report stays the last message.
   Remove an agent's worktree with `git worktree remove -f -f <path>` (locked while
   its agent lives).
-- When work is split across agents or a Workflow: steps that only write code or run
-  tests go to `model: 'opus'`, the rest (design, review, judgment, what the owner
-  reads) to `model: 'fable'`. Fan out by slices of work, never one agent per
+- When work is split across agents or a Workflow: every step goes to
+  `model: 'opus'` — writing code, running tests, reading and searching code,
+  design drafts, review along the way. Only the independent check of what the owner
+  will decide on (the plan, design or audit report above) goes to `model: 'fable'`:
+  a Fable agent costs about 2.5 times an Opus one. Fan out by slices of work, never one agent per
   finding — a handful per phase — and say how many before launching. Every brief and
   every Workflow step prompt starts with the shell-rule block below, word for word:
   an Explore agent never sees this file, and agents whose brief lacked the block
