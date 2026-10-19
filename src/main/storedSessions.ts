@@ -120,9 +120,15 @@ export interface SessionsWithStore {
   tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
 }
 
+interface Place {
+  root: string
+  worktreeName?: string
+  missing: boolean
+}
+
 interface RowScope {
   byPath: Map<string, WorktreeResource>
-  roots: Map<string, string>
+  remotePlaces: Map<string, Place>
 }
 
 export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry, P = undefined> {
@@ -130,6 +136,8 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   protected runs = new Map<string, R>()
   protected history = new Map<string, H>()
   protected archivedIds = new Set<string>()
+  private places = new Map<string, Place>()
+  private placesFor?: Map<string, H>
   private probed?: { at: number; reply: BackendAvailability }
   private probing?: Promise<BackendAvailability>
   protected binary?: string
@@ -366,7 +374,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   rows(workspace: string): BackendSessionRow[] {
     const scope: RowScope = {
       byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
-      roots: new Map()
+      remotePlaces: new Map()
     }
     const rows = new Map<string, BackendSessionRow>()
     for (const [key, t] of this.history) {
@@ -423,15 +431,16 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   private row(t: H, scope: RowScope): BackendSessionRow {
     const key = this.keyOf(t.id, hostOfPath(t.cwd))
     const resource = scope.byPath.get(t.cwd)
+    const place = this.placeOf(t.cwd, scope)
     return {
       id: key,
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
       title: t.name || t.preview?.slice(0, 100) || PLACEHOLDER_TITLES[this.id],
       cwd: t.cwd,
-      worktree: resource?.worktreeName ?? this.deps.projectInfo(t.cwd).worktreeName ?? 'main',
+      worktree: resource?.worktreeName ?? place.worktreeName ?? 'main',
       running: this.readsRunning(key),
-      invalidCwd: seenMissing(t.cwd),
+      invalidCwd: place.missing,
       mtime: (t.updatedAt ?? t.createdAt ?? 0) * 1000,
       ...(resource
         ? { worktreeState: { ...resource, worktreeBranch: resource.worktreeBranch ?? '' } }
@@ -444,11 +453,21 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       ? scope.byPath.get(cwd)
       : this.store.listResources().find((r) => r.worktreePath === cwd)
     if (resource) return resource.originalCwd
-    const known = scope?.roots.get(cwd)
-    if (known !== undefined) return known
-    const root = this.deps.projectInfo(cwd).root
-    scope?.roots.set(cwd, root)
-    return root
+    return scope ? this.placeOf(cwd, scope).root : this.deps.projectInfo(cwd).root
+  }
+
+  private placeOf(cwd: string, scope: RowScope): Place {
+    if (this.placesFor !== this.history) {
+      this.places = new Map()
+      this.placesFor = this.history
+    }
+    const places = isRemoteKey(cwd) ? scope.remotePlaces : this.places
+    const known = places.get(cwd)
+    if (known) return known
+    const { root, worktreeName } = this.deps.projectInfo(cwd)
+    const place = { root, worktreeName, missing: seenMissing(cwd) }
+    places.set(cwd, place)
+    return place
   }
 
   async refreshHistory(): Promise<void> {

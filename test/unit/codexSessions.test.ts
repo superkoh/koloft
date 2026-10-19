@@ -265,6 +265,33 @@ describe('CodexSessions', () => {
     expect(sessions.members().has(codexSessionKey(A))).toBe(true)
   })
 
+  it('looks at each history folder on disk once per history list, not on every rows read (the shared stored-sessions rows, so Muse and Antigravity too)', async () => {
+    mocks.request.mockImplementation(async (_method, params) =>
+      params.archived
+        ? { data: [] }
+        : {
+            data: [
+              { id: A, cwd: repo },
+              { id: B, cwd: repo }
+            ]
+          }
+    )
+    await sessions.refreshHistory()
+    const projectInfo = vi.spyOn(deps, 'projectInfo')
+    const stat = vi.spyOn(fs, 'statSync')
+    expect(sessions.rows(repo)).toHaveLength(2)
+    expect(projectInfo).toHaveBeenCalledTimes(1)
+    expect(stat).toHaveBeenCalledTimes(1)
+    sessions.rows(repo)
+    sessions.rows(other)
+    expect(projectInfo).toHaveBeenCalledTimes(1)
+    expect(stat).toHaveBeenCalledTimes(1)
+    await sessions.refreshHistory()
+    sessions.rows(repo)
+    expect(projectInfo).toHaveBeenCalledTimes(2)
+    expect(stat).toHaveBeenCalledTimes(2)
+  })
+
   it('calls a thread gone only once a listing finished without it, never before the first listing, after a failed one or while a listing runs', async () => {
     const listed = codexSessionKey(A)
     const unlisted = codexSessionKey(B)
