@@ -2087,8 +2087,24 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
   runs said they had read only the first part, and still answered `(none)`.
 - **Two runs of one level on one diff find different things.** Of the known bugs four
   `medium` runs per PR caught, each was caught by only one of the four.
-- **Cost and time.** A `medium` run cost $0.89 at list price, with a median of 2.7
-  minutes and the slowest at 9.4. A `high` run cost $1.54, with the slowest at 20.1.
+- **What each choice caught, cost and took.** The 26 PRs were 8 that brought in 12
+  bugs fixed later, 9 with an old fix reverted into them and 9 that never needed a fix;
+  a Fable judge marked which findings named a known bug. "×3" is three fresh runs
+  merged; its range is every 3-of-4 subset of four runs (high end) against each bug's
+  chance per run taken as independent (low end).
+
+  | | later-fixed bugs caught, of 12 | per PR, list price | median / slowest run |
+  |---|---|---|---|
+  | `low` ×1 | 0 | $0.22 | 0.3 / 0.9 min |
+  | `medium` ×1 | 1.0 | $0.89 | 2.7 / 9.4 min |
+  | `medium` ×3 | 2.3–3.0 | $2.66 | 3.1 / 9.4 min |
+  | `high` ×2 | 2.4–2.7 | $3.07 | 4.9 / 20.1 min |
+  | `high` ×3 | 2.9–3.5 | $4.61 | 5.1 / 20.1 min |
+  | `xhigh` ×1 | 2.5 | $6.31 | 17.8 / 29 min |
+  | `max` ×1 | 1 of the 2 it finished | about $132 | 88–103 min |
+
+  In a blind sample of 35 `medium` findings, 2 were real defects, 19 right but minor,
+  8 suggestions and 6 wrong.
 - **Three at once hit no limit at `medium` or `high`.** None of their 208 runs came back
   with a usage-limit result; 3 of 5 `max` runs did.
 - **The findings are the result text.** `(none)` means the review found nothing.

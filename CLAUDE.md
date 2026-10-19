@@ -136,7 +136,8 @@ Working principles:
   diff is final, commit it, `git fetch origin`, and start `node scripts/code-review.mjs`
   in the background: three reviews at once, 3–10 minutes (ADR-0040). While it runs,
   run `/simplify` over the whole diff and pick the e2e flows, but hold `/simplify`'s
-  edits until the reviews are in. Merge the three reports, fix what is real, and only
+  edits until the reviews are in. Merge the reports, fix what is real (a run that failed
+  is rerun, or the what-ran table says how many of three came back), and only
   then run the e2e flows, once — in a Workflow too, whose step agents run only the fast
   checks. A cleanup commit that lands after a test round throws that round away.
   Playwright never builds: after the last `src/` change or merge of `main`, `npm run

@@ -48,13 +48,9 @@ function review(n) {
     })
     let stdout = ''
     let stderr = ''
-    child.stdout.on('data', (d) => (stdout += d))
-    child.stderr.on('data', (d) => (stderr += d))
-    const fail = (why, detail) => {
-      console.log(`${head} failed (${why})\n\n${detail.trim()}\n`)
-      resolve(false)
-    }
-    child.on('error', (error) => fail('could not start claude', error.message))
+    child.stdout.setEncoding('utf8').on('data', (d) => (stdout += d))
+    child.stderr.setEncoding('utf8').on('data', (d) => (stderr += d))
+    child.on('error', (error) => (stderr += error.message))
     child.on('close', (code, signal) => {
       let result = null
       try {
@@ -64,13 +60,16 @@ function review(n) {
         console.log(`${head}\n\n${result.result}\n`)
         return resolve(true)
       }
-      const why = signal
-        ? `stopped by ${signal}; the time limit is ${RUN_TIME_LIMIT_MINUTES} minutes`
-        : `exit ${code}`
-      fail(why, result?.result ?? (stderr || stdout))
+      const why = child.killed
+        ? `stopped at the ${RUN_TIME_LIMIT_MINUTES}-minute limit`
+        : `exit ${code ?? signal}`
+      console.log(`${head} failed (${why})\n\n${(result?.result ?? (stderr || stdout)).trim()}\n`)
+      resolve(false)
     })
   })
 }
 
 const finished = await Promise.all(Array.from({ length: RUNS }, (_, i) => review(i + 1)))
-if (!finished.some(Boolean)) process.exitCode = 1
+const done = finished.filter(Boolean).length
+console.log(`${done} of ${RUNS} reviews finished.`)
+if (done < RUNS) process.exitCode = 1
