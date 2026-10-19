@@ -99,7 +99,9 @@ function codexTurnLine(item: Record<string, unknown>, at: number): SaidLine | nu
     .flatMap((c) => (c.type === 'text' && typeof c.text === 'string' ? [c.text] : []))
     .join('\n')
     .trim()
-  return text ? { who: 'owner', text, at } : null
+  if (!text) return null
+  const queuedByKoloft = typeof item.clientId === 'string' && item.clientId.startsWith('koloft-')
+  return queuedByKoloft ? { who: 'owner', text, at, koloft: true } : { who: 'owner', text, at }
 }
 
 // CODEX§19

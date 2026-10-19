@@ -428,6 +428,8 @@ import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, type SlashTarget } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
+import { SessionEvents } from './sessionEvents'
+import { followSessions } from './discord/followSessions'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
 import { MYSELF } from '@shared/slashCommands'
@@ -506,6 +508,12 @@ function flowGateFor(id: string): FlowGate {
 let resetAllFlow: () => void = () => {}
 let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
+const sessionEvents = new SessionEvents({
+  keyOf: (tabId) => sessionOfTab(tabId)?.sessionId,
+  status: (tabId) => tracker.statusOf(tabId),
+  turnOver: (tabId) => tracker.turnOver(tabId),
+  launchedToResume: (tabId) => ptyMgr.get(tabId)?.launchedToResume
+})
 let codexSessions: CodexSessions | null = null
 let museSessions: MuseSessions | null = null
 let agySessions: AgySessions | null = null
@@ -534,7 +542,7 @@ const sessionBackends = new SessionBackends({
     void readerDocs.turnEnded(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
-    discordNotices?.turnEnded(tabId, turn.reply)
+    sessionEvents.turnEnded(tabId, turn)
     sessionCommand.turnEnded(tabId, turn)
   },
   prompted: consumeOutletDedupe,
@@ -542,7 +550,7 @@ const sessionBackends = new SessionBackends({
     attention.bound(tabId, key, attentionCtx())
     cronRunner?.onBound(tabId, key)
     conductors?.onBound(tabId, key)
-    discordThreads?.bound(tabId, key)
+    sessionEvents.bound(tabId, key)
     startedSessions.bound(tabId, key)
     slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
@@ -824,13 +832,16 @@ async function discordShownName(s: SessionInfo | undefined): Promise<string | nu
   if (title) return title
   return s?.sessionId ? sessionBackends.peerNames()(s) : null
 }
-function retitleDiscordThreads(sessions: SessionInfo[]): void {
-  if (!discordThreads) return
-  for (const s of sessions) {
-    const title = sidebarTitle(s)
-    if (title) discordThreads.retitle(s.tabId, title, sessionBackends.workspaceOfTab(s.tabId))
-    discordLive?.sessionChanged(s.tabId, title, statusUnavailable(s))
-  }
+function listedForSessionEvents(sessions: SessionInfo[]): void {
+  sessionEvents.sessionsChanged(
+    sessions.map((s) => ({
+      tabId: s.tabId,
+      key: s.sessionId,
+      title: sidebarTitle(s),
+      workspace: sessionBackends.workspaceOfTab(s.tabId),
+      statusUnknown: statusUnavailable(s)
+    }))
+  )
 }
 function markedSessionsOf(wsPath: string): string[] {
   return attention
@@ -1429,7 +1440,10 @@ const sessionSync = new SessionSync({
   gitOut: (dir, args) => hosts.of(dir).gitOut(dir, args),
   queue: queueCodexMessage,
   sendLine: sendPeerLine,
-  type: (tabId, keys) => ptyMgr.type(tabId, keys)
+  type: (tabId, keys) => {
+    sessionEvents.deliveredText(tabId, keys.join('').trim())
+    return ptyMgr.type(tabId, keys)
+  }
 })
 
 const sessionDeps: SessionVerbDeps = {
@@ -1468,6 +1482,7 @@ const sessionDeps: SessionVerbDeps = {
   deliver: async (tabId, text) => {
     return storedOwnerOf(tabId)?.deliver?.(tabId, text) ?? false
   },
+  told: (tabId, from, text) => sessionEvents.told(tabId, from, text),
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
   answer: async (tabId, reply) => {
@@ -1484,10 +1499,8 @@ const sessionDeps: SessionVerbDeps = {
     if (caller) discordRelay?.tell(conductorDestination(caller), `[Koloft] ${text}`)
   },
   started: (conductorTab, tabId, name, workspace, backend) => {
-    const b = conductors?.bindingOfTab(conductorTab)
-    if (!b) return
-    conductors?.touchWhenBound(conductorTab, tabId)
-    void discordThreads?.place(b, { tabId, name, workspace, backend }, true)
+    if (conductors?.bindingOfTab(conductorTab)) conductors.touchWhenBound(conductorTab, tabId)
+    sessionEvents.started(conductorTab, tabId, name, workspace, backend)
   },
   command: async (callerTab, target, text) => {
     if (!conductors) throw new Error(STILL_STARTING)
@@ -1546,8 +1559,12 @@ const agentRequests = new AgentRequests({
       }
     }),
     [SECRET_VERB]: secretVerb({
-      ask: (a) =>
-        secretAsks ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS) : Promise.resolve(null),
+      ask: (a) => {
+        sessionEvents.secretAsked(a.tabId, a.label)
+        return secretAsks
+          ? secretAsks.ask(a, OWNER_TYPES_A_SECRET_WITHIN_MS)
+          : Promise.resolve(null)
+      },
       machine: (tabId) => tracker.remoteOf(tabId)?.host,
       pages: guestPagesOf,
       open: openOnTabMachine,
@@ -2521,10 +2538,8 @@ app.whenReady().then(() => {
     tracker,
     storedOwnerOf,
     toast: (message) => sendToRenderer('cron:toast', message),
-    notices: () => discordNotices,
-    live: () => discordLive,
+    events: sessionEvents,
     relay: () => discordRelay,
-    threads: () => discordThreads,
     buttons: () => askButtons,
     secrets: () => secretAsks,
     workspaces: () => workspaceMgr,
@@ -2532,7 +2547,8 @@ app.whenReady().then(() => {
     conductors: () => conductors
   })
   ptyMgr.on('exit', (e) => {
-    const left = closedTabs.has(e.id) ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
+    const closedByKoloft = closedTabs.has(e.id)
+    const left = closedByKoloft ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
     closedTabs.delete(e.id)
     const exit: TabExit = {
       tabId: e.id,
@@ -2540,6 +2556,7 @@ app.whenReady().then(() => {
       signal: e.signal,
       asleep: sleepers.has(e.id),
       crashed: !quitCommitted && exitedAbnormally(e),
+      byKoloft: closedByKoloft,
       left: left ?? undefined
     }
     for (const [oldId, newId] of wokenAs) if (newId === e.id) wokenAs.delete(oldId)
@@ -2592,7 +2609,7 @@ app.whenReady().then(() => {
     sendToRenderer('sessions:update', all)
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
-    retitleDiscordThreads(all)
+    listedForSessionEvents(all)
   })
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
     sendToRenderer('session:relocated', e)
@@ -2607,7 +2624,7 @@ app.whenReady().then(() => {
   tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
     ptyMgr.wakeReady(tabId)
     slash.turnOver(tabId, over)
-    void discordLive?.refresh(tabId)
+    sessionEvents.turnOver({ tabId, over })
     if (!over) return
     sessionSync.flush(tabId)
     const workspace = pinnedWorkspaceOfTab(tabId)
@@ -2619,8 +2636,7 @@ app.whenReady().then(() => {
     const conductor = !!conductors?.heldResident(t.tabId)
     if (conductor && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
-    discordNotices?.onStatus(t.tabId, t.prev, t.next)
-    void discordLive?.refresh(t.tabId)
+    sessionEvents.status(t)
     if (!(conductor && t.next === 'waiting'))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
     // ADR-0022
@@ -2642,10 +2658,10 @@ app.whenReady().then(() => {
       const all = onSessionsChanged()
       sendToRenderer('sessions:update', all)
       workspaceMgr?.onAdditionalSessionsChanged()
-      retitleDiscordThreads(all)
+      listedForSessionEvents(all)
     },
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
-    memberRemoved: (key: string) => discordThreads?.left(key),
+    memberRemoved: (key: string) => sessionEvents.removed(key),
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
     error: (message: string) => sendToRenderer('cron:toast', message)
   }
@@ -2864,7 +2880,7 @@ app.whenReady().then(() => {
             !storedSessions().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
       ),
     memberDropped: (sessionId, why) => {
-      discordThreads?.left(sessionId)
+      sessionEvents.removed(sessionId)
       try {
         fs.appendFileSync(
           path.join(app.getPath('userData'), 'dropped-sessions.log'),
@@ -3009,7 +3025,9 @@ app.whenReady().then(() => {
     dialogText: async (tabId) => (await dialogOf(tabId))?.text,
     answer: async (tabId, reply) => {
       if (!discordRelay) return STILL_STARTING
-      return discordRelay.answerSession(tabId, reply)
+      const error = await discordRelay.answerSession(tabId, reply)
+      if (error === undefined) sessionEvents.answeredInDiscord(tabId, reply)
+      return error
     },
     respond: (i, body) => link.respond(i, body)
   })
@@ -3104,10 +3122,9 @@ app.whenReady().then(() => {
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
-    waiting: (tabId) => {
-      discordNotices?.waiting(tabId)
-      void discordLive?.refresh(tabId)
-    },
+    waiting: (tabId) => sessionEvents.asked(tabId),
+    delivered: (tabId, text) => sessionEvents.deliveredText(tabId, text),
+    answeredInDiscord: (tabId, reply) => sessionEvents.answeredInDiscord(tabId, reply),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
     asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
@@ -3144,6 +3161,16 @@ app.whenReady().then(() => {
     commandRunning: (tabId) => slash.running(tabId),
     dialog: dialogOf
   })
+  followSessions(sessionEvents, () =>
+    discordNotices && discordLive && discordThreads
+      ? {
+          notices: discordNotices,
+          live: discordLive,
+          threads: discordThreads,
+          bindingOfTab: (tabId) => conductorsNow.bindingOfTab(tabId)
+        }
+      : null
+  )
   tracker.dialogsWatched = (tabId) =>
     watchedByDiscord(conductorsNow, { tabId, conductor: conductorsNow.conductorOf(tabId) })
   void link.connect()
@@ -4176,10 +4203,7 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
       () => true
     )
   }
-  if (ptyMgr.get(tabId)?.alive) {
-    discordNotices?.closed(tabId)
-    discordLive?.closed(tabId)
-  }
+  if (ptyMgr.get(tabId)?.alive) sessionEvents.closing(tabId)
   return stopTabProcess(tabId, restarting)
 }
 
@@ -4382,6 +4406,7 @@ async function launchQuietTab(
 ): Promise<string | null> {
   const r = await sessionBackends.create(options)
   if (!r.ok) return null
+  if (options.firstPrompt) sessionEvents.deliveredText(r.id, options.firstPrompt)
   const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, jobId }
   sendToRenderer('terminal:spawned', spawned)
   return r.id
@@ -4655,9 +4680,11 @@ async function sendPaletteText(
     return { ok: false, error: `The ${conductorName(scope)} did not get ready in time.` }
   try {
     if (route === 'queue') await queueCodexMessage(tabId, text, id)
-    else if (route === 'typed')
-      await ptyMgr.type(tabId, [`The owner typed this in ⌘P: ${text}`, '\r'])
-    else {
+    else if (route === 'typed') {
+      const typed = `The owner typed this in ⌘P: ${text}`
+      sessionEvents.deliveredText(tabId, typed)
+      await ptyMgr.type(tabId, [typed, '\r'])
+    } else {
       const line = crossSessionLine('prompting', `The owner typed this in ⌘P: ${text}`, id)
       if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }
       // ADR-0031

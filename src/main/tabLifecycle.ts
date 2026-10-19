@@ -5,12 +5,10 @@ import type { ClaudeBackend } from './backends/claude'
 import type { CronRunner, LeftTab } from './cronRunner'
 import type { AskButtons } from './discord/buttons'
 import type { Conductors } from './discord/conductors'
-import type { LiveStatus } from './discord/liveStatus'
-import type { Notices } from './discord/notices'
 import type { SecretAsks } from './discord/secretAsks'
 import type { DiscordRelay } from './discord/relay'
 import type { SlashCommands } from './discord/slash'
-import type { SessionThreads } from './discord/threads'
+import type { SessionEvents } from './sessionEvents'
 import type { SessionTracker } from './sessionTracker'
 import type { SessionsWithStore } from './storedSessions'
 import type { WorkspaceManager } from './workspaces'
@@ -19,6 +17,7 @@ export interface TabExit extends Pick<TerminalExit, 'exitCode' | 'signal'> {
   tabId: string
   asleep: boolean
   crashed: boolean
+  byKoloft: boolean
   left?: LeftTab
 }
 
@@ -32,14 +31,6 @@ export class TabLifecycle extends EventEmitter<{
 
 type MadeLater<T> = () => T | null
 
-const closeThenForget =
-  (part: MadeLater<Pick<Notices | LiveStatus, 'closed' | 'forget'>>) =>
-  ({ tabId, asleep }: TabExit): void => {
-    const p = part()
-    if (!asleep) p?.closed(tabId)
-    p?.forget(tabId)
-  }
-
 export interface TabSubsystems {
   slash: Pick<SlashCommands, 'closed'>
   attention: Pick<AttentionTracker, 'clear'>
@@ -47,10 +38,8 @@ export interface TabSubsystems {
   tracker: Pick<SessionTracker, 'setAlive'>
   storedOwnerOf: (tabId: string) => Pick<SessionsWithStore, 'stop'> | undefined
   toast: (message: string) => void
-  notices: MadeLater<Pick<Notices, 'closed' | 'forget'>>
-  live: MadeLater<Pick<LiveStatus, 'closed' | 'forget'>>
+  events: Pick<SessionEvents, 'exit'>
   relay: MadeLater<Pick<DiscordRelay, 'forget'>>
-  threads: MadeLater<Pick<SessionThreads, 'forget'>>
   buttons: MadeLater<Pick<AskButtons, 'forget'>>
   secrets: MadeLater<Pick<SecretAsks, 'forget'>>
   workspaces: MadeLater<Pick<WorkspaceManager, 'launchEnded' | 'onTrackerUpdate'>>
@@ -60,10 +49,8 @@ export interface TabSubsystems {
 
 export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems): void {
   lifecycle.on('exit', ({ tabId }) => s.slash.closed(tabId))
-  lifecycle.on('exit', closeThenForget(s.notices))
-  lifecycle.on('exit', closeThenForget(s.live))
+  lifecycle.on('exit', (exit) => s.events.exit(exit))
   lifecycle.on('exit', ({ tabId }) => s.relay()?.forget(tabId))
-  lifecycle.on('exit', ({ tabId }) => s.threads()?.forget(tabId))
   lifecycle.on('exit', ({ tabId }) => s.buttons()?.forget(tabId))
   lifecycle.on('exit', ({ tabId }) => s.secrets()?.forget(tabId))
 

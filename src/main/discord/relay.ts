@@ -114,6 +114,8 @@ export interface RelayDeps {
   awaitsInput(tabId: string): boolean
   turnOver(tabId: string): boolean
   waiting(tabId: string): void
+  delivered(tabId: string, text: string): void
+  answeredInDiscord(tabId: string, reply: string): void
   alive(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
   asksChanged(tabId: string): void
@@ -187,13 +189,16 @@ export class DiscordRelay {
     const refusal = command === undefined ? undefined : this.commandRefusal(tab, command, dest.name)
     const answersByKeys = !dest.conductor || (!!tab && this.heldInTerminal(tab))
     if (!refusal && command === undefined && tab && answersByKeys && this.dialogOpen(tab)) {
-      void this.answerSession(tab, m.content).then((error) =>
-        error ? this.say(m.channelId, error, m.id) : this.react(m, DELIVERED, true)
-      )
+      void this.answerSession(tab, m.content).then((error) => {
+        if (error) return this.say(m.channelId, error, m.id)
+        this.d.answeredInDiscord(tab, m.content)
+        this.react(m, DELIVERED, true)
+      })
       dest.seen(m.id)
       return
     }
     const answered = command === undefined && !!tab && dest.conductor && this.answerDialog(tab, m)
+    if (answered) this.d.answeredInDiscord(tab, m.content)
     if (refusal || answered) {
       if (refusal) this.say(m.channelId, refusal, m.id)
       else this.react(m, DELIVERED, true)
@@ -277,6 +282,7 @@ export class DiscordRelay {
     const tab = await this.readyTab(dest)
     const text = await item.text(tab)
     if (item.command) return dest.typeCommand(tab, text)
+    this.d.delivered(tab, text)
     const backend = this.d.backendOf(tab)
     const route = backend && messagingOf(backend, this.d.remote(tab))
     if (route === 'queue') return this.d.queue(tab, text, item.clientId)

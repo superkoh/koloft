@@ -4,6 +4,7 @@ export interface SaidLine {
   who: Speaker
   text: string
   at: number
+  koloft?: true
 }
 
 export interface Turn {

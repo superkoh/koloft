@@ -18,6 +18,7 @@ export interface PtyHandle {
   alive: boolean
   util: boolean
   resumeSessionId?: string
+  readonly launchedToResume?: string
   ownerTabId?: string
   resized?: (id: string, cols: number, rows: number) => void
   startedAt: number
@@ -211,6 +212,7 @@ export class PtyManager extends EventEmitter {
       alive: true,
       util: args.util === true,
       resumeSessionId: args.resumeSessionId,
+      launchedToResume: args.resumeSessionId,
       ownerTabId: args.ownerTabId,
       resized: args.resized,
       startedAt: Date.now(),

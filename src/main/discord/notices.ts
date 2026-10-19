@@ -1,6 +1,5 @@
-import type { BackendId, ConductorBinding, SessionStatus } from '@shared/types'
+import type { BackendId, ConductorBinding } from '@shared/types'
 import { GLOBAL_SCOPE } from '@shared/conductors'
-import { edgeAttention } from '../attention'
 import { accentOf, type Card } from './cards'
 import type { DialogView } from './dialog'
 import type { PlacedCard } from './secretAsks'
@@ -19,16 +18,6 @@ export interface NoticeSubject {
 export const REPLY_FOLLOWS_THE_TURN_MS = 7000
 const TAB_GONE = null
 export const ANSWER_IN_THE_THREAD = '-# Answer with a button, or write the answer here.'
-
-export function noticeKindOf(
-  prev: SessionStatus | undefined,
-  next: SessionStatus
-): NoticeKind | undefined {
-  const edge = edgeAttention(prev, next)
-  if (edge === 'approval') return 'waiting'
-  if (edge === 'turn-done') return 'finished'
-  return undefined
-}
 
 export function noticeBinding(
   bindings: ConductorBinding[],
@@ -74,11 +63,14 @@ export class Notices {
 
   constructor(private d: NoticeDeps) {}
 
-  onStatus(tabId: string, prev: SessionStatus | undefined, next: SessionStatus): void {
+  working(tabId: string): void {
     this.liveSubject(tabId)
-    if (next === 'working') this.waitingNoticed.delete(tabId)
-    const kind = noticeKindOf(prev, next)
-    if (kind) void this.notice(tabId, kind)
+    this.waitingNoticed.delete(tabId)
+  }
+
+  settled(tabId: string, turnDone: boolean): void {
+    this.liveSubject(tabId)
+    if (turnDone) void this.notice(tabId, 'finished')
   }
 
   turnEnded(tabId: string, reply: string): void {
