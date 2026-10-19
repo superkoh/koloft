@@ -43,6 +43,7 @@ import {
 } from './workspaceOps'
 import { encodeCwd } from './sessionTracker'
 import { dirExists } from './fileTree'
+import { dirExistsSync } from './resumePlan'
 import { isGitCheckoutAsync } from './projectInfo'
 import { replacesTheConversation } from './hookRouting'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
@@ -109,14 +110,6 @@ export interface WorkspaceManagerDeps {
   conductorsRoot?: string
   sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
   memberDropped?(sessionId: string, why: string): void
-}
-
-function dirExistsSync(p: string): boolean {
-  try {
-    return fs.statSync(p).isDirectory()
-  } catch {
-    return false
-  }
 }
 
 function* linesUntilExhausted(lines: string[], probe: { exhausted: boolean }): Generator<string> {
