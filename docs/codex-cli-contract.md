@@ -1494,7 +1494,10 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   CR showed "Unrecognized command '/co'" and sent nothing; `/compact`, Esc, CR and
   `/new`, Esc, CR ran those commands. A trailing space closes the popup too (`/co `
   + CR: Unrecognized). Esc and CR must be separate writes: `\x1b\r` in one write is read
-  as Alt+Enter and adds a line; 30 ms apart works.
+  as Alt+Enter and adds a line; 30 ms apart works. Rechecked 2026-10-19 on Codex CLI
+  0.162.0 (`codex --no-daemon` in a python pty, a temporary `CODEX_HOME` holding a fake
+  API key, the screen read through `pyte`): `/status` then `\x1b\r` in one write left
+  `› /status` in the composer, unsent; a lone CR 2 s later ran it.
 - **An unknown command** (`/comapct`, `/stauts`, with or without a trailing space) shows
   "Unrecognized command '…'" and sends nothing, and the text stays in the box with the
   cursor at its start. Esc leaves it there; Ctrl-E then Ctrl-U empties the box; Ctrl-U

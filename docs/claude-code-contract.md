@@ -1480,6 +1480,23 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   `/compact <args>` and `/model haiku` with Esc before Enter ran as typed. With no menu
   open (a command with arguments), that Esc only shows "Esc again to clear"; one Esc at
   an empty box does nothing, a second one opens the rewind menu.
+- **That Esc and the Enter after it must reach claude in two reads, or the Enter is
+  lost.** Measured 2026-10-19, CC 2.1.303, real claude in a python pty (120×40) in a
+  scratch `HOME`, logged in with `CLAUDE_CODE_OAUTH_TOKEN`, `--dangerously-skip-permissions`,
+  stub hooks and a status line, the screen read back through `pyte`: `/context`, then
+  `ESC` and CR in one write 0.3 s later, closed the command menu, left `/context` in the
+  box ("ctrl+g to edit in VS Code" showed above it) and wrote nothing to the transcript,
+  in 3 of 3 tries with a background subagent running and 2 of 2 without one; with the
+  CR 20 ms after the `ESC`, 3 of 3 were lost; 60 ms after, 0 of 3. A lone CR later sent
+  the command (3 of 3). With the keys 300 ms apart, 40 of 40 tries in that pty ran it.
+  Inside Koloft (13 runs of `discord-real-smoke.spec.ts`'s background-subagent `/context`
+  case, every pty write and read logged), claude asked for the cursor position
+  (`ESC[?6n`) about every 220 ms while a background subagent ran, and in the seconds after
+  the subagent started those asks came 377–529 ms apart: claude's event loop stood still
+  longer than the 300 ms between Koloft's keys, so both can wait in the pty and be read
+  together. That this is what lost the Enter in the nightly failures is inferred from
+  their screen (`❯ /context` left in the box under "✻ Waiting for 1 background agent to
+  finish"); none of the 13 logged runs lost it.
 - **Commands that open a panel or picker write nothing until it closes**: `/cost`,
   `/usage`, `/status`, `/help` and `/config` open a panel and leave no record at all;
   `/model` with no argument and `/resume` open a picker; `/model sonnet` from Haiku asks
