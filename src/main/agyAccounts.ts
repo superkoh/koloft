@@ -113,6 +113,9 @@ export interface KoloftSettings {
 
 const KOLOFT_KEYS = ['title', 'statusLine', 'modelProvider'] as const
 
+// AGY§27
+const NO_FLICKERING_RENDERING = { altScreenMode: 'always' }
+
 // AGY§4 AGY§5 AGY§11
 export function mergeAgySettings(home: string, ownersGemini: string, k: KoloftSettings): void {
   writeAgyJson(
@@ -121,13 +124,13 @@ export function mergeAgySettings(home: string, ownersGemini: string, k: KoloftSe
   )
 }
 
-// AGY§4 AGY§5 AGY§11
+// AGY§4 AGY§5 AGY§11 AGY§27
 export function mergedAgySettings(
   own: Record<string, unknown>,
   owners: Record<string, unknown>,
   k: KoloftSettings
 ): Record<string, unknown> {
-  const merged: Record<string, unknown> = { ...own, ...owners }
+  const merged: Record<string, unknown> = { ...NO_FLICKERING_RENDERING, ...own, ...owners }
   for (const key of KOLOFT_KEYS) delete merged[key]
   const trusted = [own.trustedWorkspaces, owners.trustedWorkspaces].flatMap((list) =>
     Array.isArray(list) ? list.filter((p): p is string => typeof p === 'string') : []

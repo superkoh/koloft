@@ -619,6 +619,40 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
+  // AGY§3
+  test('with no agy on this Mac, Sign in with Google in Settings ▸ Accounts says it installs it first, then one terminal tab runs the official installer and goes straight on to agy on the new account’s own folder', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_AGY_CMD = path.join(env.home, '.local', 'bin', 'agy')
+    env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = path.join(
+      __dirname,
+      'fixtures',
+      'fake-tool-installer.js'
+    )
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in with Google' }).click()
+      const dialog = page.locator('.acct-add')
+      await dialog.locator('input[type="text"]').fill('fresh')
+      await expect(dialog.locator('.field-hint')).toContainText(
+        'Antigravity is not on this Mac yet, so the tab installs it first.'
+      )
+      await dialog.getByRole('button', { name: 'Sign in', exact: true }).click()
+
+      await expect
+        .poll(() => agyCalls(env).map((c) => c.geminiDir), { timeout: 30_000 })
+        .toContain(path.join(env.userData, 'agy-homes', 'fresh'))
+      expect(fs.readFileSync(path.join(env.home, 'fake-tool-installs.txt'), 'utf8')).toBe('agy\n')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§20
   test('Assist set to Antigravity routes a ⌘P start with agy -p in a throwaway Gemini folder, which it removes after, and leaves no Antigravity row in the sidebar', async ({
     env

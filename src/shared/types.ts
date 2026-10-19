@@ -281,8 +281,7 @@ export interface AccountView extends AccountMeta {
 }
 
 export type SignInResult =
-  | { ok: true; tabId: string; cwd: string }
-  | { ok: false; error: 'invalid-name' | 'duplicate' | 'unavailable' }
+  { ok: true; tabId: string; cwd: string } | { ok: false; error: 'invalid-name' | 'duplicate' }
 
 export interface LoginProgress {
   phase: 'starting' | 'browser' | 'saved' | 'failed'
