@@ -9,8 +9,7 @@ import {
   byBackend,
   effectiveBackend,
   listedBackends,
-  SESSION_BACKENDS,
-  unsupportedPairMessage
+  SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import { hasWorkbench, isSessionKind, launchErrorMessage, type SessionBackend } from './agentUi'
 import {
@@ -430,11 +429,6 @@ export default function App(): JSX.Element {
   const startNow = useCallback(
     (host: HostId, backend: SessionBackend, options: () => Promise<SessionLaunchOptions>): void => {
       if (newSessionLocked.current) return
-      const refusal = unsupportedPairMessage(backend, host)
-      if (refusal) {
-        showToast(refusal)
-        return
-      }
       newSessionLocked.current = true
       void options()
         .then((opts) => startSession(opts, backend))

@@ -80,8 +80,7 @@ import {
   PEER_TRAITS,
   reachedBySendMessage,
   preferredAssistBackend,
-  statusUnavailable,
-  SUPPORTED_PAIRS
+  statusUnavailable
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker, type AttentionContext } from './attention'
@@ -5239,7 +5238,6 @@ function registerIpc(): void {
   ipcMain.handle('workspace:worktrees', async (_e, p: string) => {
     const trees = (await workspaceMgr?.worktrees(p)) ?? []
     for (const stored of storedSessions()) {
-      if (!SUPPORTED_PAIRS[stored.id][hostOf(p)]) continue
       const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
       const there = await Promise.all(
         mine.map((r) => r.state === 'ready' && hosts.of(r.worktreePath).dirExists(r.worktreePath))

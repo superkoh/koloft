@@ -10,8 +10,8 @@ import type {
   SessionResumeRequest
 } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
-import { BACKEND_LABEL, SUPPORTED_PAIRS, identityOf, sourceOf } from '@shared/sessionBackend'
-import { hostOf, isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
+import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
+import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
@@ -364,7 +364,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   rows(workspace: string): BackendSessionRow[] {
-    if (!SUPPORTED_PAIRS[this.id][hostOf(workspace)]) return []
     const scope: RowScope = {
       byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
       roots: new Map()
@@ -546,9 +545,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       identity.backendId !== this.id ||
       this.keyOf(identity.nativeSessionId, hostOfKey(key)) !== key
     ) {
-      throw new Error(
-        `A ${SUPPORTED_PAIRS[this.id].ssh ? '' : 'local '}${this.label} session is required.`
-      )
+      throw new Error(`A ${this.label} session is required.`)
     }
     return identity.nativeSessionId
   }
