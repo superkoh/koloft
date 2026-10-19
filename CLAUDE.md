@@ -133,16 +133,14 @@ Working principles:
 - Finish the code, then review, then test. While code is still being written, only
   the fast checks run (`format`, typecheck, `check:comments`, `test:unit:changed`) —
   CI's first gate is `format:check`, and no hook runs Prettier for you. Once the
-  diff is final, commit it, `git fetch origin`, run `node scripts/code-review.mjs` in
-  the background, then `/simplify` over the whole diff. The script runs `/code-review
-  medium origin/main...HEAD` in three fresh `claude -p` processes at once (3–10
-  minutes) and prints all three reports. One run catches only some of the bugs, and
-  which ones changes from run to run. Merge the three reports, fix what is real, and
-  only then pick and run the e2e flows, once — in a Workflow too, whose step agents
-  run only the fast checks. A cleanup commit that lands after a test round throws that
-  round away. Playwright never builds: after the
-  last `src/` change or merge of `main`, `npm run build` first, or e2e tests the old
-  `out/`.
+  diff is final, commit it, `git fetch origin`, and start `node scripts/code-review.mjs`
+  in the background: three reviews at once, 3–10 minutes (ADR-0040). While it runs,
+  run `/simplify` over the whole diff and pick the e2e flows, but hold `/simplify`'s
+  edits until the reviews are in. Merge the three reports, fix what is real, and only
+  then run the e2e flows, once — in a Workflow too, whose step agents run only the fast
+  checks. A cleanup commit that lands after a test round throws that round away.
+  Playwright never builds: after the last `src/` change or merge of `main`, `npm run
+  build` first, or e2e tests the old `out/`.
 - The PR title becomes `main`'s commit subject on squash, and the release notes and
   the site changelog sort by its type, so it reads `type(scope): what changed`, the
   change in the user's words: `feat`, `fix` or `perf` for what a user meets,
