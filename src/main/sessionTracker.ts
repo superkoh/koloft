@@ -937,10 +937,7 @@ export class SessionTracker extends SessionRuntime {
     this.forget(t.info.tabId)
     if (t.subagentTimer) clearInterval(t.subagentTimer)
     if (t.landTimer) clearTimeout(t.landTimer)
-    if (t.info.jsonlPath) {
-      if (t.jsonlListener) fs.unwatchFile(t.info.jsonlPath, t.jsonlListener)
-      if (t.titleListener) fs.unwatchFile(this.sidecarOf(t.info.jsonlPath), t.titleListener)
-    }
+    this.unwatchTranscript(t)
   }
 
   // CC§2 PLATFORM§1
@@ -1018,17 +1015,20 @@ export class SessionTracker extends SessionRuntime {
 
   // PLATFORM§28
   private watchTranscript(t: Tracked, file: string): void {
-    if (t.info.jsonlPath) {
-      if (t.jsonlListener) fs.unwatchFile(t.info.jsonlPath, t.jsonlListener)
-      if (t.titleListener) fs.unwatchFile(this.sidecarOf(t.info.jsonlPath), t.titleListener)
-    }
+    this.unwatchTranscript(t)
     t.info.jsonlPath = file
     t.sidecarTitle = null
     t.jsonlListener ??= (): void => void this.parse(t)
-    t.titleListener ??= (): void => void this.readSidecarTitle(t)
     fs.watchFile(file, { interval: 500 }, t.jsonlListener)
-    fs.watchFile(this.sidecarOf(file), { interval: 500 }, t.titleListener)
     void this.readSidecarTitle(t)
+  }
+
+  // PLATFORM§28
+  private unwatchTranscript(t: Tracked): void {
+    if (!t.info.jsonlPath) return
+    if (t.jsonlListener) fs.unwatchFile(t.info.jsonlPath, t.jsonlListener)
+    if (t.titleListener) fs.unwatchFile(this.sidecarOf(t.info.jsonlPath), t.titleListener)
+    t.titleListener = undefined
   }
 
   private async readSidecarTitle(t: Tracked): Promise<void> {
@@ -1039,6 +1039,10 @@ export class SessionTracker extends SessionRuntime {
       title = (await fs.promises.readFile(this.sidecarOf(file), 'utf8')).trim() || null
     } catch {}
     if (t.info.jsonlPath !== file || this.tracked.get(t.info.tabId) !== t) return
+    if (title !== null && !t.titleListener) {
+      t.titleListener = (): void => void this.readSidecarTitle(t)
+      fs.watchFile(this.sidecarOf(file), { interval: 500 }, t.titleListener)
+    }
     if (title === t.sidecarTitle) return
     t.sidecarTitle = title
     this.recompute(t)
@@ -1192,6 +1196,7 @@ export class SessionTracker extends SessionRuntime {
 
   private async parseOnce(t: Tracked): Promise<void> {
     if (!t.info.jsonlPath) return
+    if (!t.titleListener) void this.readSidecarTitle(t)
     let mainChanged = false
     const st = await this.followRelocation(t)
     const p = t.info.jsonlPath

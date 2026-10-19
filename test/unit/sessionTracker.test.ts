@@ -256,6 +256,27 @@ describe('SessionTracker — title resolution priority', () => {
     expect(s.title).toBe('Sidecar Name')
   })
 
+  it('a sidecar <id>.title that does not exist yet is not polled; once it shows up it is, and a later rename of it is seen', async () => {
+    const watchFile = vi.spyOn(fs, 'watchFile')
+    onTestFinished(() => watchFile.mockRestore())
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    tracker.track('tabT2s', cwd)
+    const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'first' }, cwd }])
+    const sidecar = file.replace(/\.jsonl$/, '.title')
+    tracker.bindSession('tabT2s', file, SID, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'first')
+    expect(watchFile.mock.calls.map(([p]) => p)).toEqual([file])
+
+    fs.writeFileSync(sidecar, 'Sidecar Name\n')
+    fs.appendFileSync(file, JSON.stringify({ type: 'ai-title', aiTitle: 'AI title' }) + '\n')
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'Sidecar Name')
+    expect(watchFile.mock.calls.map(([p]) => p)).toEqual([file, sidecar])
+
+    fs.writeFileSync(sidecar, 'Renamed\n')
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'Renamed')
+  })
+
   it('a session name (custom-title, from --name or /rename) beats the first prompt, the latest one wins, and the sidecar still beats it', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
