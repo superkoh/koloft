@@ -160,17 +160,15 @@ body {
 .app.sb-off .side {
   display: none;
 }
-.aux-ico.sb-toggle {
+.aux-ico.sb-toggle,
+.aux-ico.waiting-bell {
   position: absolute;
   top: 9px;
   left: var(--sb-toggle-left);
   z-index: 3;
 }
 .aux-ico.waiting-bell {
-  position: absolute;
-  top: 9px;
   left: calc(var(--sb-toggle-left) + 36px);
-  z-index: 3;
 }
 .aux-ico.waiting-bell .ws-unread-count {
   position: absolute;

@@ -672,8 +672,9 @@ const attention = new AttentionTracker((pending, event) => {
   updateDockBadge(pending)
   sendToRenderer('attention:changed', pending)
   retractStaleOsNotifications(pending)
-  if (event && !event.resurrected) routeAttentionEvent(event)
+  if (event) routeAttentionEvent(event)
 }, loadLastRunAttention())
+attention.asleep = (tabId) => sleepers.has(tabId)
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
@@ -779,6 +780,7 @@ function sleepingTabOf(sessionId: string): string | undefined {
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
   typedWhileAsleep.delete(tabId)
+  attention.clearKeepingExit(tabId)
   sendToRenderer('tab:killedByMain', tabId)
   tabLifecycle.emit('forgotten', tabId)
   rememberOpenTabs()
@@ -793,6 +795,7 @@ function settleWokenSleepers(all: SessionInfo[]): void {
     const newId = tabOfSession.get(t.sessionId)
     if (!newId || newId === oldId) continue
     sleepers.delete(oldId)
+    attention.rehome(oldId, newId)
     wokenAs.set(oldId, newId)
     woke = true
     void handOverTyping(oldId, newId)
@@ -947,14 +950,13 @@ function consumeOutletDedupe(tabId: string): void {
 }
 
 function routeAttentionEvent(event: AttentionEvent): void {
-  const focused = windowFocused()
-  if (focused && event.tabId === uiActiveTabId) return
+  const decision = route(event, windowFocused(), loadSettings(), uiActiveTabId)
+  if (!decision.os && !decision.sound) return
   const outletKey = `${event.tabId}:${event.kind}`
   const lastAt = recentOutlets.get(outletKey)
   const now = Date.now()
   if (lastAt !== undefined && now - lastAt < OUTLET_FLAP_DEDUPE_MS) return
   recentOutlets.set(outletKey, now)
-  const decision = route(event, focused, loadSettings())
   if (decision.os) showOsNotification(event)
   if (decision.sound && !BACKGROUND_TEST) shell.beep()
 }
@@ -4160,7 +4162,6 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
   const sleeper = sleepers.get(tabId)
   if (sleeper) {
     forgetSleeper(tabId)
-    attention.clearKeepingExit(tabId)
     const tree = projectInfoFor(sleeper.cwd).treeRoot
     const owner = restarting ? undefined : storedSessions().find((s) => s.id === sleeper.kind)
     const resource = owner?.store.listResources().find((r) => r.worktreePath === tree)
@@ -4183,7 +4184,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   const stopped = owner
     ? Promise.resolve(owner.stop(tabId, restarting))
     : Promise.resolve(ptyMgr.kill(tabId))
-  if (!sleepers.has(tabId)) attention.clearKeepingExit(tabId)
+  attention.clearKeepingExit(tabId)
   relayTabClosed(tabId)
   boundSessions.delete(tabId)
   return stopped.then(

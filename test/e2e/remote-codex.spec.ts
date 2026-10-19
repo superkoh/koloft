@@ -291,7 +291,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     await expect.poll(() => processAlive(side.pid), { timeout: 10_000 }).toBe(false)
   })
 
-  test('E-RC-06: an idle remote Codex session goes to sleep — its app-server on the machine ends while its row and tab stay — and clicking it wakes the same thread on a new server there', async ({
+  test('E-RC-06: an idle remote Codex session goes to sleep — its app-server on the machine ends while its row, red dot and tab stay — and clicking it wakes the same thread on a new server there', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -311,8 +311,10 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       const asleepTab = await remoteRow.getAttribute('data-tab-id')
       expect(asleepTab).toBe(first.tabId)
 
+      await expect(remoteRow.locator('.ws-tab-unread')).toHaveCount(1)
       await expect.poll(() => serverAlive(env, first.tabId!), { timeout: 60_000 }).toBe(false)
       await expect(remoteRow).toHaveClass(/\bst-idle\b/)
+      await expect(remoteRow.locator('.ws-tab-unread')).toHaveCount(1)
       expect(await termIds(page)).toContain(asleepTab)
       expect(tuiCalls(env)).toHaveLength(1)
 

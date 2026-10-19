@@ -98,7 +98,7 @@ interface AppState {
   sessions: SessionInfo[]
   leftovers: Record<string, LeftoverProcess[]>
   attention: AttentionEvent[]
-  revealRow: { tabId: string; seq: number } | null
+  revealRow: { tabId: string } | null
   settings: Settings
   settingsOpen: boolean
   settingsPane: SettingsPaneId | null
@@ -672,7 +672,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (activateOnceSpawned) return
     set({ activeTabId: id, resumeLaunch: null })
   },
-  revealTab: (id) => set((s) => ({ revealRow: { tabId: id, seq: (s.revealRow?.seq ?? 0) + 1 } })),
+  revealTab: (id) => set({ revealRow: { tabId: id } }),
 
   restartActiveSession: () => {
     const { tabs, activeTabId, sessions } = get()

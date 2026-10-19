@@ -641,7 +641,6 @@ export interface AttentionEvent extends AttentionSubject {
   tabId: string
   kind: AttentionKind
   at: number
-  resurrected?: boolean
 }
 
 export interface OsOutletsSeenByTests {

@@ -536,6 +536,13 @@ describe('nextWaitingTab (⌘J and the bell: walk the waiting sessions, longest 
     expect(nextWaitingTab(pending, null, tabs)).toBe('c')
   })
 
+  it('finds a mark from the last run on the tab that now holds its session, such as one restored asleep under a new id', () => {
+    const pending: AttentionEvent[] = [
+      { tabId: 'before-restart', kind: 'turn-done', at: 1, sessionId: 's-1' }
+    ]
+    expect(nextWaitingTab(pending, null, [{ id: 'asleep-1', sessionId: 's-1' }])).toBe('asleep-1')
+  })
+
   it('stays on the tab you are on when it is the only one waiting, and answers nothing when none waits', () => {
     expect(nextWaitingTab([], null, tabs)).toBeUndefined()
     expect(nextWaitingTab([{ tabId: 'a', kind: 'turn-done', at: 1 }], 'a', tabs)).toBe('a')

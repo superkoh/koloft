@@ -13,6 +13,7 @@ export function edgeAttention(
 
 export class AttentionTracker {
   private pending = new Map<string, AttentionEvent>()
+  asleep: (tabId: string) => boolean = () => false
 
   constructor(
     private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
@@ -26,8 +27,19 @@ export class AttentionTracker {
 
   bound(tabId: string, sessionId: string): void {
     const carried = this.list().find((e) => e.sessionId === sessionId)
-    this.clearSession(sessionId)
-    if (carried) this.raise(tabId, 'turn-done', { title: carried.title, sessionId }, true)
+    if (!carried) return
+    for (const e of this.list()) if (e.sessionId === sessionId) this.pending.delete(e.tabId)
+    if (this.pending.get(tabId)?.kind !== 'approval')
+      this.pending.set(tabId, { ...carried, tabId, kind: 'turn-done' })
+    this.onChange(this.list(), null)
+  }
+
+  rehome(fromTabId: string, toTabId: string): void {
+    const mark = this.pending.get(fromTabId)
+    if (!mark) return
+    this.pending.delete(fromTabId)
+    if (!this.pending.has(toTabId)) this.pending.set(toTabId, { ...mark, tabId: toTabId })
+    this.onChange(this.list(), null)
   }
 
   onStatusChange(
@@ -54,6 +66,7 @@ export class AttentionTracker {
   }
 
   clear(tabId: string): void {
+    if (this.asleep(tabId)) return
     if (this.pending.delete(tabId)) this.onChange(this.list(), null)
   }
 
@@ -71,14 +84,10 @@ export class AttentionTracker {
     return [...this.pending.values()]
   }
 
-  private raise(
-    tabId: string,
-    kind: AttentionKind,
-    subject: AttentionSubject,
-    resurrected?: boolean
-  ): void {
-    const event: AttentionEvent = { ...subject, tabId, kind, at: Date.now(), resurrected }
+  private raise(tabId: string, kind: AttentionKind, subject: AttentionSubject): void {
+    const event: AttentionEvent = { ...subject, tabId, kind, at: Date.now() }
     const cur = this.pending.get(tabId)
+    if (cur && cur.kind === 'approval' && kind === 'turn-done') return
     if (cur && cur.kind === kind) {
       this.pending.set(tabId, event)
       this.onChange(this.list(), null)

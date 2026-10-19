@@ -49,7 +49,7 @@ async function startMuse(page: Page, env: E2EEnv): Promise<MuseCall> {
 }
 
 test.describe('Muse Code sessions through the real method chooser, status signal, live registry and muse serve, with only the CLI faked', () => {
-  test("a Muse session starts from the workspace menu, waits on Muse's trust question in its terminal, and its light follows its status from working to waiting", async ({
+  test("a Muse session starts from the workspace menu, waits on Muse's trust question in its terminal, and its light follows its status from working to waiting, the finished turn leaving a red dot and the bell's count though its tab is on screen", async ({
     env
   }) => {
     installMuse(env)
@@ -75,6 +75,8 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(row).toHaveClass(/st-working/)
       await expect(row).toHaveClass(/st-waiting/)
       await expect(row).toContainText('hello muse')
+      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+      await expect(page.locator('.aux-ico.waiting-bell .ws-unread-count')).toHaveText('1')
     } finally {
       await quitAndClose(app)
     }

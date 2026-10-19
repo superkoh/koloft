@@ -56,12 +56,11 @@ describe('attention — a mark stays until the session moves again', () => {
     expect(changes.at(-1)).toMatchObject({ event: null, pending: [] })
   })
 
-  it('an approval the turn finished past becomes "your move", and is raised as such', () => {
-    const { t, changes } = makeTracker()
+  it('an approval is never downgraded by a turn-done — its prompt may still be up', () => {
+    const { t } = makeTracker()
     t.onStatusChange('tab-A', 'waiting', 'approval')
     t.onStatusChange('tab-A', 'approval', 'waiting')
-    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-A', kind: 'turn-done' })])
-    expect(changes.at(-1)?.event).toMatchObject({ kind: 'turn-done' })
+    expect(t.list()).toEqual([expect.objectContaining({ kind: 'approval' })])
   })
 
   it('turn-done upgrades to approval', () => {
@@ -128,14 +127,35 @@ describe('attention — unread marks outlive a Koloft restart', () => {
 })
 
 describe('attention — a session starting again keeps its mark', () => {
-  it('moves the mark onto the new tab as turn-done, silently', () => {
+  it('moves the mark onto the new tab as turn-done, silently, keeping how long it has waited', () => {
     const { t, changes } = makeTracker()
     t.onExited('tab-old', { title: 'Done one', sessionId: 'sid-1' })
+    const since = t.list()[0].at
     t.bound('tab-new', 'sid-1')
     expect(t.list()).toEqual([
-      expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', title: 'Done one' })
+      expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', title: 'Done one', at: since })
     ])
-    expect(changes.at(-1)?.event).toMatchObject({ resurrected: true })
+    expect(changes.at(-1)?.event).toBeNull()
+  })
+
+  it('a tab put to sleep keeps its mark through its process ending, until it is closed', () => {
+    const { t } = makeTracker()
+    const asleep = new Set(['tab-A'])
+    t.asleep = (tabId) => asleep.has(tabId)
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.clear('tab-A')
+    t.clearKeepingExit('tab-A')
+    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-A' })])
+    asleep.delete('tab-A')
+    t.clearKeepingExit('tab-A')
+    expect(t.list()).toEqual([])
+  })
+
+  it('a sleeping tab woken under a new id takes its mark along, whatever session the mark names', () => {
+    const { t } = makeTracker()
+    t.onStatusChange('tab-asleep', 'working', 'waiting', { sessionId: 'before-clear' })
+    t.rehome('tab-asleep', 'tab-woken')
+    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-woken', kind: 'turn-done' })])
   })
 })
 

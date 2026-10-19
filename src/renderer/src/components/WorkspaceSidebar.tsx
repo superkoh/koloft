@@ -65,6 +65,7 @@ import { requestCloseTab } from '../closeFlow'
 import { freshnessShown } from '@shared/freshnessOps'
 import { behindBadge, countLabel, openIssuesLabel, openPullsLabel } from '../freshnessView'
 import { fitGithubCounts } from '../wsHeadFit'
+import { rowSelector } from '../hints'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
@@ -283,7 +284,6 @@ const SessionRowView = memo(function SessionRowView({
     <div
       className={className}
       data-tab-id={tabId}
-      data-row-id={id}
       title={tooltip}
       onClick={() => actions.openRow(id)}
       onContextMenu={(e) => actions.rowMenu(e, id)}
@@ -1021,35 +1021,32 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   }, [fitHeads])
 
   const reveal = useStore((s) => s.revealRow)
-  const revealing = useRef<string | null>(null)
   useLayoutEffect(() => {
     if (!reveal) return
     const st = useStore.getState()
-    const sessionId = st.tabs.find((t) => t.id === reveal.tabId)?.sessionId
+    const lookNow = rowLookups(st.sessions, st.tabs, st.attention)
     for (const w of st.workspaceRows) {
-      const row = w.rows.find((r) => r.id === reveal.tabId || r.id === sessionId)
+      const row = w.rows.find((r) => lookNow.tabOf(r) === reveal.tabId)
       if (!row) continue
-      revealing.current = row.id
       setCollapsed((c) => (c[w.workspace.path] ? { ...c, [w.workspace.path]: false } : c))
       const byId = new Map(w.rows.map((r) => [r.id, r]))
-      const unfold: Record<string, boolean> = {}
-      for (
-        let at = row.parentId;
-        at && byId.has(at) && !(at in unfold);
-        at = byId.get(at)?.parentId
+      setFoldedRows((f) => {
+        let next = f
+        const seen = new Set<string>()
+        for (let at = row.parentId; at && !seen.has(at); at = byId.get(at)?.parentId) {
+          seen.add(at)
+          if (next[at]) next = { ...next, [at]: false }
+        }
+        return next
+      })
+      const frame = requestAnimationFrame(() =>
+        listRef.current
+          ?.querySelector(rowSelector(reveal.tabId))
+          ?.scrollIntoView({ block: 'nearest' })
       )
-        unfold[at] = false
-      if (Object.keys(unfold).length) setFoldedRows((f) => ({ ...f, ...unfold }))
-      return
+      return () => cancelAnimationFrame(frame)
     }
   }, [reveal])
-  useLayoutEffect(() => {
-    const id = revealing.current
-    const row = id && listRef.current?.querySelector(`[data-row-id="${CSS.escape(id)}"]`)
-    if (!row) return
-    revealing.current = null
-    row.scrollIntoView({ block: 'nearest' })
-  })
 
   const now = new Date()
   const look = rowLookups(sessions, storeTabs, attention)

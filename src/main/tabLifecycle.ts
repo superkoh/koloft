@@ -67,9 +67,7 @@ export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems
   lifecycle.on('exit', ({ tabId }) => s.buttons()?.forget(tabId))
   lifecycle.on('exit', ({ tabId }) => s.secrets()?.forget(tabId))
 
-  lifecycle.on('teardown', ({ tabId, asleep }) => {
-    if (!asleep) s.attention.clear(tabId)
-  })
+  lifecycle.on('teardown', ({ tabId }) => s.attention.clear(tabId))
   lifecycle.on('teardown', ({ tabId, crashed }) => s.claude.onPtyExit(tabId, crashed))
   lifecycle.on('teardown', ({ tabId }) => s.tracker.setAlive(tabId, false))
   lifecycle.on('teardown', ({ tabId, exitCode, signal }) => {

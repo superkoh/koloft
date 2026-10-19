@@ -31,7 +31,8 @@ export function visitAndReveal(tabId: string): void {
 export function visitNextWaiting(): void {
   const st = useStore.getState()
   const tabId = nextWaitingTab(st.attention, st.activeTabId, st.tabs)
-  if (tabId) visitAndReveal(tabId)
+  if (tabId === st.activeTabId) st.revealTab(tabId)
+  else if (tabId) visitAndReveal(tabId)
 }
 
 export function openSessionRow(row: SessionRow, wsPath: string): void {
