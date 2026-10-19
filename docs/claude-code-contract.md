@@ -886,6 +886,16 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   organization id the claim's path needs is out of reach; the usage read answered 429
   twice and showed nothing. So a session Koloft starts — Assist's too — cannot use
   `/limit-reset` (inferred from the gate, not run).
+- **`claude setup-token` can only ever mint a `user:inference` token.** Read 2026-10-19
+  from the 2.1.303 binary (`strings`): the authorize URL's `scope` is the fixed list
+  `["user:inference"]` whenever the flow runs with `inferenceOnly`, which the login
+  command sets exactly for `setup-token`, and that call passes no OAuth client of its own
+  (the only thing that would replace the list). The full
+  `/login` asks for `org:create_api_key user:profile user:inference
+  user:sessions:claude_code user:mcp_servers user:file_upload` (plus `user:plugins` when
+  registered), and its tokens expire and refresh. So plan usage from `/api/oauth/usage`
+  (and the saved limit resets above) needs a full `/login` per account, kept and
+  refreshed by Koloft — the setup-token login Koloft uses today cannot reach it.
 - **The 5h window's reset time moves forward between probes** — the window is rolling.
   (Inferred, not checked.)
 - **Remote Control refuses the long-lived token Koloft injects.** Measured 2026-10-01,
