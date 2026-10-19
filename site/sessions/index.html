@@ -357,11 +357,11 @@
           <li>
             A session whose worktree is gone stays in the list. Hover its row and the tip reads
             <code>worktree deleted; click to rebuild and resume</code>; a click makes the worktree
-            again and resumes the same session in it. A restart (<kbd>⇧⌘R</kbd>) of a session whose
-            worktree was deleted does the same. Claude and Codex both do this. When the worktree
-            cannot be made again, a box titled <code>Could not rebuild the worktree</code> offers
+            again and resumes the same session in it. Restarting it (<kbd>⇧⌘R</kbd>) does the same.
+            When the worktree cannot be made again, a box titled
+            <code>Could not rebuild the worktree</code> offers
             <code>Resume in main without isolation</code>: the same session goes on in the folder
-            itself, so every file it touches lands there.
+            itself, so every file it touches lands there. Claude and Codex both do all of this.
           </li>
           <li>
             In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in
@@ -592,31 +592,31 @@
           stay. The GitHub part and the Account part work as above.
         </p>
 
-        <h3 id="session-sync">Open sessions hear about it too</h3>
+        <h3 id="session-sync">Open sessions hear what changed</h3>
         <p>
-          When a fetch (Koloft's own every five minutes, or <code>Fetch now</code>) finds that
-          origin's main branch has moved, say because a pull request was merged, every open Claude
-          Code or Codex session in that repository that sits on another branch and does not have
-          those commits yet (Assist's own sessions aside) gets a message from Koloft:
-          <code
-            >(From Koloft:) origin/main moved from … to …, with 2 new commits: "…", "…". It changed
-            files you changed too: ….</code
-          >
-          When those commits touch files the session itself had changed, the message names them.
-          Nobody asks it to merge or rebase; what to do is the agent's call. A session on the main
-          branch itself is not told: the behind number, Pull and Auto-pull serve it.
+          When a fetch finds that origin's main branch has moved, say because a pull request was
+          merged, Koloft sends a message to every open Claude Code or Codex session in that
+          repository that sits on another branch and does not have those commits yet. The fetch is
+          Koloft's own (every five minutes, while Auto-fetch is on) or <code>Fetch now</code>.
+          Assist's own sessions are not told, nor is a session on the main branch itself: the behind
+          number, Pull and Auto-pull serve it. Commits that came in while Koloft was closed are not
+          announced either. The message reads:
+          <code>(From Koloft:) origin/main moved from … to …, with 2 new commits: "…", "…". …</code>
+          When those commits touch files the session itself had changed, it names them, and it ends
+          by saying that nobody asks the session to merge or rebase: what to do is the agent's call.
         </p>
         <p>
           When two open sessions of one repository write the same file, each is told:
-          <code>The session "…" changed files you changed too: ….</code> In the same folder, the
-          message says to read the file again before editing it; in two worktrees, it says the two
-          branches may conflict when both reach main. Only files the agent wrote through its own
-          tools count, not ones a shell command wrote.
+          <code>The session "…" changed files you changed too: ….</code> If both sit in the same
+          folder, the message says to read the file again before editing it; if they sit in two
+          worktrees, it says the two branches may conflict when both reach main. Only files the
+          agent wrote through its own tools count, not ones a shell command wrote, and only writes
+          made while the session was open in Koloft; each file is named once per pair of sessions.
         </p>
         <p>
-          A Claude Code session on this Mac gets the message at once, even mid-task. A Codex
-          session, here or on a machine, and a Claude Code session on a machine get it once their
-          turn is over. Muse and Antigravity sessions are not told.
+          A Claude Code session here gets the message at once, even mid-task. A Codex session, here
+          or on a machine, and a Claude Code session on a machine get it once their turn is over.
+          Muse and Antigravity sessions are not told.
         </p>
 
         <p class="next">Next page → <a href="../workbench/">The Workbench</a></p>
