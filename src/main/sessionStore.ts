@@ -1,7 +1,7 @@
 import fs from 'fs'
 import type { LaunchPermission } from '@shared/types'
 import { isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
-import { SUPPORTED_PAIRS, sessionKey } from '@shared/sessionBackend'
+import { sessionKey } from '@shared/sessionBackend'
 import { BackgroundFile } from './backgroundFile'
 
 export interface StoredMember {
@@ -40,8 +40,7 @@ const sessionKeyOn =
   (backend: 'codex' | 'muse' | 'agy', label: string) =>
   (id: string, host?: string): string => {
     if (!UUID.test(id)) throw new Error(`Invalid ${label} session ID`)
-    const onMachine = SUPPORTED_PAIRS[backend].ssh ? host : undefined
-    return sessionKey({ backendId: backend, sourceId: onMachine ?? 'local', nativeSessionId: id })
+    return sessionKey({ backendId: backend, sourceId: host ?? 'local', nativeSessionId: id })
   }
 
 export const codexSessionKey = sessionKeyOn('codex', 'Codex')

@@ -310,6 +310,7 @@ export interface Settings {
   sidebarWidth: number
   sidebarHidden: boolean
   skipPermissions: boolean
+  skipPermissionsAgreed: boolean
   fablePriority: boolean
   accounts: AccountMeta[]
   notifyTurnDone: boolean
@@ -448,6 +449,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarWidth: 280,
   sidebarHidden: false,
   skipPermissions: true,
+  skipPermissionsAgreed: false,
   fablePriority: true,
   accounts: [],
   notifyTurnDone: true,
@@ -1238,9 +1240,6 @@ export interface KoloftApi {
     remove(name: string, kind: AccountKind): Promise<void>
     toggle(name: string, kind: AccountKind, enabled: boolean): Promise<void>
     probe(): Promise<AccountView[]>
-    // CC§9
-    bypassAccepted(): Promise<boolean>
-    acceptBypass(): Promise<boolean>
     // CC§7
     startLogin(
       name: string,

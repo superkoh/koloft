@@ -261,6 +261,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `toBeVisible` ignores scroll clipping: compare bounding rects. A click scrolls its
   target into view first, so read a scroll offset after the click. A chained selector
   resolves under its parent: `tabCloseIn` under a tab, `tabClose` only from the page.
+- While Koloft's own tooltip shows (the mouse rests 600 ms on a titled element,
+  `titleTips.ts`), that element's `title` reads `''` until the mouse leaves: read or
+  select by `title` before hovering, or move the mouse away first. A click hides the
+  tip and puts the title back at once.
 
 ### Test-only seams
 

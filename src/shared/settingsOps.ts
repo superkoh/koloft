@@ -14,6 +14,7 @@ export function buildResetPatch(): Partial<Settings> {
   const {
     accounts,
     skipPermissions,
+    skipPermissionsAgreed,
     fablePriority,
     sessionMethods,
     discord,
@@ -35,6 +36,7 @@ export function buildResetPatch(): Partial<Settings> {
   void newProjectFolders
   void accounts
   void skipPermissions
+  void skipPermissionsAgreed
   void fablePriority
   void sessionMethods
   void discord
@@ -92,6 +94,10 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.worldClocks = Array.isArray(merged.worldClocks)
     ? [...new Set(merged.worldClocks.filter(isZoneId))].slice(0, WORLD_CLOCK_MAX)
     : []
+  merged.skipPermissionsAgreed =
+    'skipPermissionsAgreed' in doc
+      ? merged.skipPermissionsAgreed === true
+      : merged.assist !== null && merged.skipPermissions === true
   const upgrade = !('onboardingSeen' in doc) && Object.keys(doc).length > 0
   if (upgrade) merged.onboardingSeen = true
   merged.hintsSeen = upgrade

@@ -150,13 +150,13 @@ export function machineClaudeArgs(
           : undefined
   })
   if (!argv.ok) return argv
-  const unwatched = !spec.resumeSessionId && spec.firstPrompt !== undefined
+  const fresh = !spec.resumeSessionId
   return {
     ok: true,
     args: [
       ...argv.argv.slice(1),
-      ...(unwatched && spec.name ? ['--name', spec.name] : []),
-      ...(unwatched && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
+      ...(fresh && spec.name ? ['--name', spec.name] : []),
+      ...(fresh && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
     ]
   }
 }

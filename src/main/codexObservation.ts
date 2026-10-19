@@ -3,7 +3,12 @@ import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from './sessionRuntime'
 import path from 'path'
 import { schemeOf } from '@shared/browserRoute'
-import { costUsdOf, resolvePricing } from '@shared/pricing'
+import {
+  costUsdOf,
+  longContextSurchargeUsd,
+  resolvePricing,
+  type TokenCounts
+} from '@shared/pricing'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { CODEX_OPEN_SENT } from './openShimScript'
 import type { CodexFrameHead } from './codexTransport'
@@ -145,6 +150,36 @@ function asksTheOwner(method: string): boolean {
   )
 }
 
+interface WireTokens {
+  inputTokens: number
+  outputTokens: number
+  cachedInputTokens: number
+  cacheWriteInputTokens?: number
+}
+
+function isTokenCount(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0
+}
+
+function isWireTokens(t: Record<string, unknown>): t is Record<string, unknown> & WireTokens {
+  return (
+    isTokenCount(t.inputTokens) &&
+    isTokenCount(t.outputTokens) &&
+    isTokenCount(t.cachedInputTokens) &&
+    (t.cacheWriteInputTokens === undefined || isTokenCount(t.cacheWriteInputTokens))
+  )
+}
+
+// CODEX§13
+function tokenCountsOf(t: WireTokens): TokenCounts {
+  return {
+    inTok: Math.max(0, t.inputTokens - t.cachedInputTokens),
+    outTok: t.outputTokens,
+    cacheReadTok: t.cachedInputTokens,
+    cacheWriteTok: t.cacheWriteInputTokens ?? 0
+  }
+}
+
 interface Activity extends BackgroundItem {
   root: string
   owner: string
@@ -166,6 +201,8 @@ export class CodexObservation {
   private threadId?: string
   private liveTurns = new Set<string>()
   private model?: string
+  private pricedThrough = 0
+  private longContextSurchargeUsd = 0
   private mainTurn: Turn = 'ended'
   private publishedTurn?: Turn
   private waitingForInput = false
@@ -289,6 +326,7 @@ export class CodexObservation {
       this.touched.clear()
       this.lastTouched = this.lastWritten = undefined
       this.liveWrites = 0
+      this.pricedThrough = this.longContextSurchargeUsd = 0
       this.model = typeof result.model === 'string' ? result.model : (thread.model ?? undefined)
       const cwd =
         typeof result.cwd === 'string' && path.isAbsolute(result.cwd)
@@ -369,29 +407,23 @@ export class CodexObservation {
       const u = record(p.tokenUsage),
         total = record(u.total),
         last = record(u.last)
-      const n = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0
-      if (
-        !n(total.inputTokens) ||
-        !n(total.outputTokens) ||
-        !n(total.cachedInputTokens) ||
-        (total.cacheWriteInputTokens !== undefined && !n(total.cacheWriteInputTokens))
-      )
-        return
-      const ctx = n(last.totalTokens) ? last.totalTokens : undefined
-      const window = n(u.modelContextWindow) ? u.modelContextWindow : undefined
-      // CODEX§13
-      const tokens = {
-        inTok: Math.max(0, total.inputTokens - total.cachedInputTokens),
-        outTok: total.outputTokens,
-        cacheReadTok: total.cachedInputTokens,
-        cacheWriteTok: (total.cacheWriteInputTokens as number) ?? 0
-      }
+      if (!isWireTokens(total)) return
+      const ctx = isTokenCount(last.totalTokens) ? last.totalTokens : undefined
+      const window = isTokenCount(u.modelContextWindow) ? u.modelContextWindow : undefined
+      const tokens = tokenCountsOf(total)
       const pricing = this.model ? resolvePricing(this.model) : undefined
+      const through = total.inputTokens + total.outputTokens
+      if (pricing && through > this.pricedThrough && isWireTokens(last)) {
+        this.pricedThrough = through
+        this.longContextSurchargeUsd += longContextSurchargeUsd(pricing, tokenCountsOf(last))
+      }
       this.emit({
         type: 'usage',
         usage: {
           ...tokens,
-          ...(pricing ? { costUsd: costUsdOf(pricing, tokens) } : {}),
+          ...(pricing
+            ? { costUsd: costUsdOf(pricing, tokens) + this.longContextSurchargeUsd }
+            : {}),
           ctxTokens: ctx,
           ...(window && ctx !== undefined ? { ctxPct: ctx / window } : {}),
           model: this.model

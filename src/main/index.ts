@@ -80,8 +80,7 @@ import {
   PEER_TRAITS,
   reachedBySendMessage,
   preferredAssistBackend,
-  statusUnavailable,
-  SUPPORTED_PAIRS
+  statusUnavailable
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker, type AttentionContext } from './attention'
@@ -231,12 +230,6 @@ import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backen
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { museBackend } from './backends/muse'
 import { codexConfigFile } from './codexTrust'
-import {
-  acceptBypassWarning,
-  bypassWarningAccepted,
-  claudeJsonPath,
-  claudeSettingsPath
-} from './claudeTrust'
 import {
   HomeAccountPicker,
   codexHomeOf,
@@ -5042,10 +5035,6 @@ function registerIpc(): void {
     pushAccounts()
   })
   ipcMain.handle('accounts:probe', () => probeAllForPanel())
-  ipcMain.handle('accounts:bypass-accepted', () =>
-    bypassWarningAccepted(claudeJsonPath(), claudeSettingsPath())
-  )
-  ipcMain.handle('accounts:accept-bypass', () => acceptBypassWarning(claudeSettingsPath()))
   ipcMain.handle('accounts:start-login', (_e, name: string, reauth?: boolean) => {
     const v = reauth
       ? findAccount(name, 'oauth')
@@ -5250,7 +5239,6 @@ function registerIpc(): void {
   ipcMain.handle('workspace:worktrees', async (_e, p: string) => {
     const trees = (await workspaceMgr?.worktrees(p)) ?? []
     for (const stored of storedSessions()) {
-      if (!SUPPORTED_PAIRS[stored.id][hostOf(p)]) continue
       const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
       const there = await Promise.all(
         mine.map((r) => r.state === 'ready' && hosts.of(r.worktreePath).dirExists(r.worktreePath))

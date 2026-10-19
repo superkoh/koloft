@@ -33,10 +33,6 @@ export function claudeTrustsFolder(claudeJson: string, dir: string): boolean {
   return isTrustedByClaude(() => JSON.parse(fs.readFileSync(claudeJson, 'utf8')), realpathSafe(dir))
 }
 
-export function claudeSettingsPath(): string {
-  return path.join(os.homedir(), '.claude', 'settings.json')
-}
-
 function jsonObjectIn(file: string): Record<string, unknown> | undefined {
   if (!fs.existsSync(file)) return {}
   try {
@@ -45,26 +41,6 @@ function jsonObjectIn(file: string): Record<string, unknown> | undefined {
   } catch {
     return undefined
   }
-}
-
-// CC§9
-export function bypassWarningAccepted(claudeJson: string, claudeSettings: string): boolean {
-  return (
-    jsonObjectIn(claudeSettings)?.skipDangerousModePermissionPrompt === true ||
-    jsonObjectIn(claudeJson)?.bypassPermissionsModeAccepted === true
-  )
-}
-
-// CC§9
-export function acceptBypassWarning(claudeSettings: string): boolean {
-  const doc = jsonObjectIn(claudeSettings)
-  if (!doc) return false
-  fs.mkdirSync(path.dirname(claudeSettings), { recursive: true })
-  writePrivateAtomically(
-    claudeSettings,
-    JSON.stringify({ ...doc, skipDangerousModePermissionPrompt: true }, null, 2)
-  )
-  return true
 }
 
 // CC§10

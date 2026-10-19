@@ -1,6 +1,5 @@
 import type { ResumePlan } from '@shared/types'
-import { hostOf, isRemoteKey } from '@shared/remoteKey'
-import { SUPPORTED_PAIRS } from '@shared/sessionBackend'
+import { isRemoteKey } from '@shared/remoteKey'
 import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import type { MuseSessions } from '../museSessions'
@@ -23,10 +22,7 @@ export function storedBackend(
     forgetAvailability: () => sessions.forgetAvailability(),
     list: () => sessions.list(),
     historyRows: async (workspacePath) =>
-      !SUPPORTED_PAIRS[sessions.id][hostOf(workspacePath)] ||
-      !(await sessions.availability()).available
-        ? []
-        : sessions.historyRows(workspacePath),
+      !(await sessions.availability()).available ? [] : sessions.historyRows(workspacePath),
     create: async (spec) => ({ ok: true, ...(await sessions.launch(spec)) }),
     resume: async (req) => {
       try {

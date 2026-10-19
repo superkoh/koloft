@@ -713,8 +713,10 @@ reads `modelContextWindow` from the wire, not the table). The same page on 2026-
 ("Long context: >272K input tokens", input / cached / output): `gpt-6.1-sol` 4 / 0.20 /
 15, `gpt-6-astra` 20 / 2 / 75, `gpt-6-sol` 4 / 0.4 / 15, `gpt-6-luna` 0.2 / 0.02 / 0.75,
 `gpt-5.6-sol` 8 / 0.8 / 30, `gpt-5.6-terra` 4 / 0.4 / 18, `gpt-5.6-luna` 0.4 / 0.04 /
-1.8 — twice the short-context price, except that a 272K-window model never reaches it
-(issue #669). The model ids match the
+1.8 — twice the short-context input and cached price and 1.5 times the output price,
+except that a 272K-window model never reaches it (issue #669). Koloft prices a request
+whose own `inputTokens` is above 272K at that second row (see `last` below). The model
+ids match the
 `slug`s in `~/.codex/models_cache.json` on the same day. `model/list` on 2026-10-16
 (0.162.1 and 0.163.0 alike) listed `gpt-6.1-sol` (`isDefault: true`, efforts `low` …
 `ultra`), `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`,
@@ -726,6 +728,24 @@ cyber-access program (`daybreakEnabled` on `thread/start`, thread items and the
 `thread/list` rows; `/daybreak` in the TUI; the `cli_daybreak` flag went from under
 development to stable), not a change of the default model. A ChatGPT plan login is not billed per token:
 this cost is what the same tokens would cost on the API, not what the person pays.
+
+**`last` is one API request, not the turn's sum** (2026-10-18, codex-cli 0.162.0, this
+Mac's login, a real `codex app-server` over stdio in a scratch folder, `gpt-6-luna`, one
+turn that ran two shell commands, the thread archived after): the turn sent two
+`thread/tokenUsage/updated` frames with the same `turnId`; the second had
+`last.inputTokens` 18123 and `total.inputTokens` 35982 (= 17859 + 18123), so `last` is
+the newest request and `total` the running sum. The rollout files agree: across the 60
+newest rollouts under `~/.codex/sessions`, 917 `token_usage_record` lines belong to a turn
+of more than one request (`turn_token_usage` ≠ `usage`); for 908 of them an `event_msg`
+`token_count` has `last_token_usage` equal to the record's own `usage` (the request), for
+none is it the turn's sum, and 9 match neither. A frame can come twice: right after
+`thread/resume`, before any new turn, a fresh app-server sends the old last turn's frame
+again with the same `turnId` and the same `total` (2026-10-16, codex-cli 0.162.0, a
+throwaway `CODEX_HOME`, issue #225), so Koloft adds a request's long-context surcharge
+only when `total` has grown. The same probe found that `total` after a resume still
+holds the turns before it (13147 before; one more turn of 13800 gave 26947), while a
+fresh observer has seen none of their `last` frames: those earlier requests stay at the
+short price in the cost line.
 
 ## 14. A launch that starts with a task, a model and a thinking level
 

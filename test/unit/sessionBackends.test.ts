@@ -6,8 +6,7 @@ import {
   effectiveBackend,
   identityOf,
   sessionKey,
-  shownAsInstalled,
-  SUPPORTED_PAIRS
+  shownAsInstalled
 } from '@shared/sessionBackend'
 import type { BackendId, BackendSessionInfo, BackendSessionRow } from '@shared/types'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
@@ -243,13 +242,7 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
   })
 
   // CODEX§16
-  it('supports every pair, and Codex on a remote machine leaves pending what Claude there does', () => {
-    expect(SUPPORTED_PAIRS).toEqual({
-      claude: { local: true, ssh: true },
-      codex: { local: true, ssh: true },
-      muse: { local: true, ssh: true },
-      agy: { local: true, ssh: true }
-    })
+  it('Codex on a remote machine leaves pending what Claude there does', () => {
     expect(capabilitiesFor('codex', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
   })
 
