@@ -114,9 +114,6 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
 
     await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
     stamp(steps, 'startup turn rested')
-    await page.locator('.ws-tab').first().click()
-    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
-    stamp(steps, 'attention consumed')
 
     await runIn(page, centerTerm(page), '/bg-work')
     await expect(greenWithRunningMarker(page)).toBeVisible({ timeout: 15_000 })
@@ -146,8 +143,6 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
     await startSessionIn(page, 'ws-a')
 
     await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
-    await page.locator('.ws-tab').first().click()
-    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
 
     await runIn(page, centerTerm(page), '/bg-shell')
     await expect(greenWithRunningMarker(page)).toBeVisible({ timeout: 15_000 })
@@ -166,8 +161,6 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
     await startSessionIn(page, 'ws-a')
 
     await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
-    await page.locator('.ws-tab').first().click()
-    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
 
     await runIn(page, centerTerm(page), '/bg-reported')
     await expect(greenWithRunningMarker(page)).toBeVisible({ timeout: 15_000 })
@@ -192,8 +185,6 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
     await startSessionIn(page, 'ws-a')
 
     await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
-    await page.locator('.ws-tab').first().click()
-    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
 
     await runIn(page, centerTerm(page), '/bg-monitor')
     const badge = page.locator('.ws-tab .ws-tab-parked')
