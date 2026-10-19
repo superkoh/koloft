@@ -19,6 +19,7 @@ import {
   processAlive,
   readCalls,
   resumedId,
+  runClaudeElsewhere,
   runIn,
   seedJsonl,
   setNextSessionTitle,
@@ -302,18 +303,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
   }) => {
     test.setTimeout(120_000)
     const id = seedJsonl(env, env.workspaces.a, { summary: 'Running elsewhere session' })
-    const livePid = process.pid
-    const procStart = execFileSync('ps', ['-o', 'lstart=', '-p', String(livePid)], {
-      env: { ...process.env, TZ: 'UTC' }
-    })
-      .toString()
-      .trim()
-    const registry = path.join(env.home, '.claude', 'sessions')
-    fs.mkdirSync(registry, { recursive: true })
-    fs.writeFileSync(
-      path.join(registry, `${livePid}.json`),
-      JSON.stringify({ pid: livePid, sessionId: id, procStart })
-    )
+    const stopOther = runClaudeElsewhere(env, id)
 
     const app = await launchApp(env)
     try {
@@ -323,12 +313,14 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await row.click()
 
-      await expect(
-        page.locator('.toast', { hasText: 'still running in another claude process' })
-      ).toBeVisible({ timeout: 10_000 })
+      await expect(page.locator('.toast', { hasText: /still running/ })).toBeVisible({
+        timeout: 10_000
+      })
+      await expect(page.locator('.terminals .empty', { hasText: 'Resuming' })).toHaveCount(0)
       await expect(row).toHaveClass(/\bcold\b/)
       expect(readCalls(env)).toHaveLength(0)
     } finally {
+      stopOther()
       await app.close().catch(() => {})
     }
   })
