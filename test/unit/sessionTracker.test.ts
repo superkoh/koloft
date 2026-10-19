@@ -769,7 +769,7 @@ describe('SessionTracker — binding', () => {
     })
 
     it('a tab whose claude was killed stops reading its transcript but keeps its row, while a live tab beside it keeps reading', async () => {
-      const PAST_ONE_MORE_500MS_FILE_POLL_MS = 1200
+      const PAST_ONE_5S_SUBAGENT_SCAN_MS = 5600
       const tracker = newTracker()
       const [liveWs, deadWs, drift] = [makeWorkspace({}), makeWorkspace({}), makeWorkspace({})]
       const live = writeJsonl(liveWs, SID, [
@@ -789,7 +789,7 @@ describe('SessionTracker — binding', () => {
       fs.appendFileSync(dead, JSON.stringify({ type: 'assistant', cwd: drift }) + '\n')
       fs.appendFileSync(live, JSON.stringify({ type: 'assistant', cwd: drift }) + '\n')
       await waitFor(tracker, (x) => x.tabId === 'tabKL1' && x.cwd === drift)
-      await new Promise((r) => setTimeout(r, PAST_ONE_MORE_500MS_FILE_POLL_MS))
+      await new Promise((r) => setTimeout(r, PAST_ONE_5S_SUBAGENT_SCAN_MS))
 
       const row = tracker.list().find((x) => x.tabId === 'tabKL2')
       expect(row).toMatchObject({ sessionId: deadSid, alive: false, cwd: deadWs })
