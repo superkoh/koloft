@@ -19,6 +19,7 @@ import {
   termIds,
   waitBooted,
   waitForCalls,
+  waitTerminalQuiet,
   wsRows
 } from './helpers/p1'
 
@@ -174,6 +175,9 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       const { pid } = await startSilentSession(page, env)
       const rows = wsRows(page, WS_A)
       await expect(rows).toHaveCount(1)
+      const tabs = await termIds(page)
+      expect(tabs).toHaveLength(1)
+      await waitTerminalQuiet(page, tabs[0])
       const before = await page.evaluate(
         () =>
           document.querySelector('.term-island .term-wrap:not([style*="none"])')?.textContent ?? ''

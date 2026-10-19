@@ -575,7 +575,7 @@ export function termIds(page: Page): Promise<string[]> {
   )
 }
 
-const SHELL_READY_ONCE_QUIET_FOR_MS = 700
+const TERMINAL_QUIET_ONCE_UNCHANGED_FOR_MS = 700
 
 export async function openSessionTerminal(app: ElectronApplication, page: Page): Promise<Locator> {
   await page.waitForFunction(
@@ -607,49 +607,27 @@ export async function openSessionTerminal(app: ElectronApplication, page: Page):
   const ptyId = await page.locator('.wb-panel .wb-term:visible').getAttribute('data-pty')
   if (!ptyId) throw new Error('the visible terminal tab carries no data-pty')
 
+  await waitTerminalQuiet(page, ptyId)
+  return term
+}
+
+export async function waitTerminalQuiet(page: Page, tabId: string): Promise<void> {
   let last = ''
   let stableSince = 0
   await expect
     .poll(
       async () => {
-        const now = (
-          await page.evaluate((id) => {
-            const t = (
-              window as unknown as {
-                __koloftTerms?: Record<
-                  string,
-                  {
-                    buffer: {
-                      active: {
-                        length: number
-                        getLine(
-                          i: number
-                        ): { translateToString(trim?: boolean): string } | undefined
-                      }
-                    }
-                  }
-                >
-              }
-            ).__koloftTerms?.[id]
-            if (!t) return ''
-            const b = t.buffer.active
-            const out: string[] = []
-            for (let i = 0; i < b.length; i++) out.push(b.getLine(i)?.translateToString(true) ?? '')
-            return out.join('\n')
-          }, ptyId)
-        ).trim()
+        const now = (await terminalText(page, tabId)).trim()
         if (now !== last || now === '') {
           last = now
           stableSince = Date.now()
           return false
         }
-        if (stableSince === 0) stableSince = Date.now()
-        return Date.now() - stableSince >= SHELL_READY_ONCE_QUIET_FOR_MS
+        return Date.now() - stableSince >= TERMINAL_QUIET_ONCE_UNCHANGED_FOR_MS
       },
       { intervals: [200], timeout: 40_000 }
     )
     .toBe(true)
-  return term
 }
 
 export function panelTerm(page: Page): Locator {
