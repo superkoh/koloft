@@ -597,14 +597,14 @@
           When a fetch (Koloft's own every five minutes, or <code>Fetch now</code>) finds that
           origin's main branch has moved, say because a pull request was merged, every open Claude
           Code or Codex session in that repository that sits on another branch and does not have
-          those commits yet gets a message from Koloft:
+          those commits yet (Assist's own sessions aside) gets a message from Koloft:
           <code
             >(From Koloft:) origin/main moved from … to …, with 2 new commits: "…", "…". It changed
             files you changed too: ….</code
           >
-          The last part names the files the session itself had changed. Nobody asks it to merge or
-          rebase; what to do is the agent's call. A session on the main branch itself is not told:
-          the behind number, Pull and Auto-pull serve it.
+          When those commits touch files the session itself had changed, the message ends by naming
+          them. Nobody asks it to merge or rebase; what to do is the agent's call. A session on the
+          main branch itself is not told: the behind number, Pull and Auto-pull serve it.
         </p>
         <p>
           When two open sessions of one repository write the same file, each is told:
