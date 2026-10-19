@@ -11,7 +11,7 @@ vi.mock('electron', async () => {
 })
 
 import { app } from 'electron'
-import { loadSettings, saveSettings } from '../../src/main/settings'
+import { loadSettings, saveSettings, rereadSettingsOnNextLoad } from '../../src/main/settings'
 import {
   keychainRead,
   keychainWrite,
@@ -57,6 +57,7 @@ function meta(p: Partial<AccountMeta>): AccountMeta {
 
 beforeEach(() => {
   fs.rmSync(settingsFile, { force: true })
+  rereadSettingsOnNextLoad()
   fs.rmSync(`${settingsFile}.tmp`, { force: true })
   fs.rmSync(fixtureFile, { force: true })
   resetProbeOutcomeState()
@@ -127,6 +128,17 @@ describe('U3 · registry persistence', () => {
     await keychainWrite('oauth', 'bravo', 'sk-ant-oat01-SUPER-SECRET')
     upsertAccountMeta(meta({ name: 'bravo' }))
     expect(fs.readFileSync(settingsFile, 'utf8')).not.toContain('sk-ant')
+  })
+
+  it('settings.json is read once: later loads never touch the disk, each hands back its own copy, and a save is seen by the next load', () => {
+    saveSettings({ keepAwake: false })
+    const reads = vi.spyOn(fs, 'readFileSync')
+    loadSettings().accounts.push(meta({ name: 'only-in-a-copy' }))
+    expect(loadSettings().accounts).toEqual([])
+    expect(reads.mock.calls.filter(([p]) => p === settingsFile)).toHaveLength(1)
+    saveSettings({ keepAwake: true })
+    expect(loadSettings().keepAwake).toBe(true)
+    reads.mockRestore()
   })
 
   it('hostile entries on disk are dropped on load (names reach a shell)', () => {
