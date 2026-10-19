@@ -69,7 +69,7 @@ async function expectAnchoredAt(page: Page, selector: string): Promise<void> {
 }
 
 async function shownTabId(page: Page): Promise<string> {
-  const id = await page.locator('.ws-tab.active').first().getAttribute('data-tab-id')
+  const id = await page.locator('.ws .ws-tab.active').first().getAttribute('data-tab-id')
   if (!id) throw new Error('the shown session row carries no data-tab-id')
   return id
 }

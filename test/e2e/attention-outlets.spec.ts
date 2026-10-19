@@ -10,21 +10,21 @@ test('one bar per session carries working, approval and waiting side by side, an
   await waitBooted(page)
 
   await startSessionIn(page, 'ws-a')
-  await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+  await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
   await runIn(page, centerTerm(page), '/need-approval')
-  await expect(page.locator('.ws-tab.st-approval')).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('.ws .ws-tab.st-approval')).toBeVisible({ timeout: 20_000 })
 
   await startSessionIn(page, 'ws-b')
-  await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+  await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
   await runIn(page, centerTerm(page), '/busy')
-  await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('.ws .ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
 
   await startSessionIn(page, 'ws-a')
-  await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+  await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
 
-  await expect(page.locator('.ws-tab.st-working')).toBeVisible()
-  await expect(page.locator('.ws-tab.st-approval')).toBeVisible()
-  await expect(page.locator('.ws-tab.st-waiting')).toBeVisible()
+  await expect(page.locator('.ws .ws-tab.st-working')).toBeVisible()
+  await expect(page.locator('.ws .ws-tab.st-approval')).toBeVisible()
+  await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible()
 
   expect((await pendingAttention(page)).length).toBeGreaterThan(0)
   const dottedRowsMatchPending = async (): Promise<boolean> => {

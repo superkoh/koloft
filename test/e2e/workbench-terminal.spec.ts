@@ -129,7 +129,7 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
         const wtDir = fs.realpathSync(path.join(env.workspaces.a, '.claude', 'worktrees', 'wt197'))
         expect(call.effectiveCwd).toBe(wtDir)
         expect(call.cwd).toBe(env.workspaces.a)
-        await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+        await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
 
         await openSessionTerminal(app, page)
 
@@ -325,11 +325,11 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       fs.writeFileSync(env.claudeDelayFile, '4000')
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       await page.locator('.menu .mi', { hasText: 'New session' }).click()
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(1, { timeout: 30_000 })
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(1, { timeout: 30_000 })
       expect(await itemEnabled()).toBe(false)
 
       fs.rmSync(env.claudeDelayFile, { force: true })
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
       const [session] = await waitForCalls(env, 1)
       await expect.poll(itemEnabled, { timeout: 30_000 }).toBe(true)
       await clickAppMenuItem(app, page, 'new-terminal-tab')

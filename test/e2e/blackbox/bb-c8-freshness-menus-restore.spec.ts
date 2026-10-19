@@ -59,7 +59,7 @@ async function seedSessionKilledThenRemovedFromListByHand(
   wsName: string
 ): Promise<void> {
   await startSessionIn(page, wsName)
-  const row = page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+  const row = page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
   await expect(row).toHaveCount(1, { timeout: 40_000 })
 
   const calls = await waitForCalls(env, 1)
@@ -420,9 +420,9 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
       pinned.git['repo-run'].originAhead(3)
       await fetchNowInGitPanel(page, 'repo-run')
       await waitForBehindBadge(page, 'repo-run', 3)
-      await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+      await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
       await runIn(page, centerTerm(page), '/busy')
-      await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('.ws .ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
 
       await openWorktreeDialog(page, 'repo-run')
       await page.keyboard.type('x')

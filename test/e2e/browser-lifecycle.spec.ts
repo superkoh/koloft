@@ -191,7 +191,7 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
       await expect(page.locator('.ws-head')).toHaveCount(2, { timeout: 20_000 })
-      const row = page.locator('.ws-tab', { hasText: 'Old layout session' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'Old layout session' })
       await expect(row).toBeVisible({ timeout: 40_000 })
 
       await expect

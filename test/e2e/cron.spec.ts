@@ -169,11 +169,11 @@ async function storedJobs(env: E2EEnv, count: number): Promise<CronJob[]> {
 }
 
 function cronRows(page: Page, wsName: string): Locator {
-  return wsRows(page, wsName).filter({ has: page.locator('.ws-tab-cron') })
+  return wsRows(page, wsName).filter({ has: page.locator('.ws .ws-tab-cron') })
 }
 
 function plainRows(page: Page, wsName: string): Locator {
-  return wsRows(page, wsName).filter({ hasNot: page.locator('.ws-tab-cron') })
+  return wsRows(page, wsName).filter({ hasNot: page.locator('.ws .ws-tab-cron') })
 }
 
 function nextRow(page: Page, wsName: string): Locator {
@@ -369,7 +369,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       ).toBe(true)
 
       await expect(plainRows(page, 'ws-a')).toHaveClass(/\bactive\b/)
-      await expect(page.locator('.ws-tab.active .ws-tab-cron')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.active .ws-tab-cron')).toHaveCount(0)
       await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toEqual(['block', 'none'])
 
       expect(call.argv).toContain('--session-id')

@@ -6,7 +6,7 @@ import { ATTENTION_REASON, type AssistTaskRow, type SessionInfo } from '@shared/
 import { preferredAssistBackend } from '@shared/sessionBackend'
 import { useStore } from '../store'
 import { rowStateClass } from '../sessionRows'
-import { butlerTabOf } from '../butlerRows'
+import { butlerSetUp, butlerTabOf } from '../butlerRows'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { updateSettings } from './settings/useSettingsUpdate'
 import { menuPosFor, useDismissOnOutside } from './WorkspaceSidebar'
@@ -131,7 +131,7 @@ export function ButlerRow(): JSX.Element {
 
   return (
     <div className="ws-tabs isl-butler">
-      {assist === null ? (
+      {!butlerSetUp({ assist, binding }) ? (
         <div className="ws-tab cold" onClick={() => setAssistAsked(true)}>
           <div className="ws-tab-main">{title}</div>
           <div className="ws-tab-sub">

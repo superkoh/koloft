@@ -1,4 +1,11 @@
-import type { AssistTaskRow, SessionInfo } from '@shared/types'
+import type { AssistSetting, AssistTaskRow, ConductorBinding, SessionInfo } from '@shared/types'
+
+export function butlerSetUp(s: {
+  assist: AssistSetting
+  binding: ConductorBinding | undefined
+}): boolean {
+  return s.assist !== null || !!s.binding
+}
 
 type TabState = { id: string; alive: boolean; asleep?: true }
 

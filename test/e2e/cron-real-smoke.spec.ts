@@ -170,7 +170,7 @@ test.describe('Scheduled jobs on the REAL claude: the one opt-in case proving th
       await createSmokeJob(page)
       await card(page).locator('button.mini', { hasText: 'Run now' }).click()
 
-      const row = wsRows(page, 'ws-a').filter({ has: page.locator('.ws-tab-cron') })
+      const row = wsRows(page, 'ws-a').filter({ has: page.locator('.ws .ws-tab-cron') })
       await expect(row).toHaveCount(1, { timeout: 60_000 })
       await expect(row).toHaveClass(/\bst-(working|waiting)\b/, { timeout: 90_000 })
       const sub = row.locator('.ws-tab-sub')

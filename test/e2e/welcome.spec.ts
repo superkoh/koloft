@@ -70,7 +70,7 @@ test.describe('S4: the centre with no session running — onboarding with nothin
       const recent = panel.locator('.recent-list .recent-row')
       await expect(recent).toHaveCount(1)
       await expect(recent.locator('.ws-tab-title')).toHaveText('Recent A session')
-      await expect(page.locator('.ws-tab', { hasText: 'Other B session' })).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Other B session' })).toHaveCount(1)
       await snap(page, 'T-LIFE-13b')
 
       await panel.locator('button', { hasText: 'New worktree session' }).click()
@@ -107,7 +107,7 @@ test.describe('S4: the centre with no session running — onboarding with nothin
       await waitForCalls(env, 1)
       await expect(page.locator('.w-empty')).toHaveCount(0)
 
-      await expect(page.locator('.ws-tab', { hasText: 'Recent A session' })).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Recent A session' })).toHaveCount(1)
 
       await runInTerminal(page, '/exit')
 
@@ -115,7 +115,7 @@ test.describe('S4: the centre with no session running — onboarding with nothin
       await expect(panel).toBeVisible({ timeout: 30_000 })
       await expect(panel.locator('.quiet').first()).toHaveText('No running session')
       await expect(page.locator('.term-wrap')).toHaveCount(0)
-      await expect(page.locator('.ws-tab', { hasText: 'Recent A session' })).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab', { hasText: 'Recent A session' })).toHaveCount(1)
       await snap(page, 'T-LIFE-17')
     } finally {
       await app.close().catch(() => {})

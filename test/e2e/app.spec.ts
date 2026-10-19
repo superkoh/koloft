@@ -20,7 +20,7 @@ test('T-LIFE-09: app launches with the isolated koloft-dev home and shows the em
   await expect(page.locator('.isl-sessions')).toBeVisible()
   await expect(page.locator('.ws-name', { hasText: 'ws-a' })).toBeVisible()
   await expect(page.locator('.ws-name', { hasText: 'ws-b' })).toBeVisible()
-  await expect(page.locator('.ws-tab')).toHaveCount(0)
+  await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
   await expect(page.locator('.center')).toContainText('No running session')
   await expect(page.locator('.dev-badge')).toBeVisible()
 })

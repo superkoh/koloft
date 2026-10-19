@@ -448,7 +448,7 @@ export async function startSessionIn(
     .click()
   await expect(rows).toHaveCount(before + 1, { timeout: 30_000 })
   await expect(page.locator('.modal')).toHaveCount(0)
-  await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+  await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
   if (opts.remote) {
     await expect(rows.filter({ hasText: FAKE_SESSION_TITLE })).toHaveCount(titledBefore + 1, {
       timeout: 60_000

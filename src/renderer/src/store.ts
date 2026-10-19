@@ -31,7 +31,7 @@ import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
 import { selectionRoot, workspaceOfRow } from './sessionRows'
-import { isButlerTab } from './butlerRows'
+import { butlerSetUp, isButlerTab } from './butlerRows'
 import {
   activateTab as activateWbTab,
   closeTab as closeWbTab,
@@ -643,7 +643,7 @@ export const useStore = create<AppState>((set, get) => ({
     const toButler =
       s.activeTabId === id &&
       isSessionKind(closed?.kind) &&
-      s.settings.assist !== null &&
+      butlerSetUp({ assist: s.settings.assist, binding: s.settings.discord.bindings[0] }) &&
       !isButlerTab(s.sessions, s.butlerTab, s.assistTasks, id)
     restoreLaunches.delete(id)
     window.api.terminal.kill(id)

@@ -658,7 +658,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await page.keyboard.press('Escape')
       await expect(dlg).toHaveCount(0)
 
-      const row = wsRows(page, 'kt-key').filter({ has: page.locator('.ws-tab-cron') })
+      const row = wsRows(page, 'kt-key').filter({ has: page.locator('.ws .ws-tab-cron') })
       await expect(row).toHaveClass(/\bst-(working|waiting)\b/, { timeout: 60_000 })
       await row.click()
       await expect(row).toHaveClass(/\bactive\b/)
@@ -1041,7 +1041,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect.poll(() => boundMuse(page), { timeout: 60_000 }).not.toBe(first)
         const second = await boundMuse(page)
         await expect.poll(() => tmuxThere(lab), { timeout: 30_000 }).toBe(`k-${second}`)
-        await page.locator('.ws-tab.active').first().click()
+        await page.locator('.ws .ws-tab.active').first().click()
         await sendShortcut(app, 'shortcut:close-tab')
         await expect.poll(() => tmuxThere(lab), { timeout: 30_000 }).toBe('')
       },

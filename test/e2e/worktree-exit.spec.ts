@@ -75,7 +75,7 @@ test.describe('leaving a worktree session with /exit', () => {
       await expect(worktreeRow(page, 'leaving')).toHaveCount(0, { timeout: 4000 })
       expect(fs.existsSync(wt)).toBe(true)
       await expect(
-        page.locator('.ws-tab.active', { hasText: FAKE_SESSION_TITLE }).locator('.ws-tab-sub')
+        page.locator('.ws .ws-tab.active', { hasText: FAKE_SESSION_TITLE }).locator('.ws-tab-sub')
       ).toHaveText('main')
 
       await expect.poll(() => fs.existsSync(wt), { timeout: 30_000 }).toBe(false)
