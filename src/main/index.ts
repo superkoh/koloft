@@ -1363,6 +1363,8 @@ async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoi
     error: `${butlerNameNow()} cannot start: ${whys.join(', and ')}. Check Settings ▸ Accounts.`
   }
 }
+const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
+  'Koloft has picked no GitHub account for this workspace on its machine; pick one in Settings ▸ Accounts ▸ Git, or run gh there yourself.'
 const COMMAND_NEEDS_DISCORD =
   "koloft session command posts what the command printed in Discord, so it needs the butler's Discord channel."
 
@@ -1541,7 +1543,7 @@ const agentRequests = new AgentRequests({
         }
         if (!isRemoteKey(workspace)) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
         const onMachine = await gitAccounts?.machineGh(workspace, args)
-        if (!onMachine) return ghRead(args, undefined)
+        if (!onMachine) return { ok: false, out: NO_GITHUB_ACCOUNT_ON_THE_MACHINE }
         return onMachine.code === 0
           ? { ok: true, out: onMachine.stdout }
           : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
@@ -4606,18 +4608,23 @@ let paletteMessages = 0
 const PALETTE_TASK_ANSWERS_ITSELF =
   'When this is a question or a piece of writing you can answer from what you know (translate, explain, draft a message), answer it here yourself; start or message a session only for work on files, commands or what a workspace holds.'
 
-function paletteTask(title: string, text: string): AssistTask {
+function paletteTask(title: string, text: string, workspace: string | undefined): AssistTask {
+  const about = workspace ? `\nKoloft took this to be about the workspace ${workspace}.` : ''
   return {
     name: title || firstLineName(text),
-    brief: `${text}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
+    brief: `${text}${about}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
     ownerWords: text
   }
 }
 
-async function openPaletteTask(title: string, text: string): Promise<ConductorOpenResult> {
+async function openPaletteTask(
+  title: string,
+  text: string,
+  workspace?: string
+): Promise<ConductorOpenResult> {
   const all = conductors
   if (!all) return { ok: false, error: STILL_STARTING }
-  const task = paletteTask(title, text)
+  const task = paletteTask(title, text, workspace)
   const running = all.runningTaskTab(task.name)
   return running
     ? sendToButler(
@@ -5206,8 +5213,8 @@ function registerIpc(): void {
     'conductors:startFresh',
     () => conductors?.startFresh() ?? { ok: false, error: STILL_STARTING }
   )
-  ipcMain.handle('conductors:openTask', (_e, title: string, text: string) =>
-    openPaletteTask(title, text)
+  ipcMain.handle('conductors:openTask', (_e, title: string, text: string, workspace?: string) =>
+    openPaletteTask(title, text, typeof workspace === 'string' ? workspace : undefined)
   )
   ipcMain.handle('conductors:closeTask', (_e, tabId: string) => conductors?.closeTask(tabId))
   ipcMain.handle('conductors:tasks', () => conductors?.taskRows() ?? [])

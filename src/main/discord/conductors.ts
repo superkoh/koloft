@@ -109,6 +109,7 @@ export class Conductors {
   private opening = new Map<string, Promise<ConductorOpenResult>>()
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
   private pendingTouch = new Map<string, string>()
+  private launchedAs = new Set<string>()
 
   constructor(private d: ConductorDeps) {
     this.discord = d.load()
@@ -177,6 +178,7 @@ export class Conductors {
   isButler(ref: string): boolean {
     return (
       peerNamesOf(this.d.name()).includes(ref) ||
+      [...this.launchedAs].some((name) => peerNamesOf(name).includes(ref)) ||
       !!this.record()?.sessionIds.some(
         (key) => key === ref || identityOf(key).nativeSessionId === ref
       )
@@ -438,7 +440,9 @@ export class Conductors {
   private launchFor(backend: BackendId): ConductorLaunch {
     const cwd = conductorFolder(this.d.userData)
     fs.mkdirSync(cwd, { recursive: true })
-    return { backend, cwd, role: this.role(), title: this.d.name() }
+    const title = this.d.name()
+    this.launchedAs.add(title)
+    return { backend, cwd, role: this.role(), title }
   }
 
   // ADR-0029 CODEX§27
@@ -550,9 +554,7 @@ export class Conductors {
   }
 
   taskRows(): AssistTaskRow[] {
-    return this.tasks
-      .filter((t) => t.tabId)
-      .map((t) => ({ tabId: t.tabId, scope: GLOBAL_SCOPE, name: t.name }))
+    return this.tasks.filter((t) => t.tabId).map((t) => ({ tabId: t.tabId, name: t.name }))
   }
 
   closeTask(tabId: string): void {

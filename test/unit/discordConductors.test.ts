@@ -141,6 +141,14 @@ describe('the butler', () => {
     expect(c.isButler('Global')).toBe(false)
   })
 
+  it('renamed while it runs, it still answers to the name it started under, which its sessions were told', async () => {
+    const c = make()
+    await opened(c)
+    name = 'Jeeves'
+    expect(c.isButler('Alfred')).toBe(true)
+    expect(c.isButler('Jeeves')).toBe(true)
+  })
+
   it('starts in the global Assist’s folder under userData, named and told its role by its current name; on Discord the role says how the owner’s Discord messages reach it', async () => {
     name = 'Jeeves'
     const c = make()
@@ -408,7 +416,7 @@ describe('a ⌘P task of the butler', () => {
     expect(started[0].role).toContain('do not close this session')
     expect(c.isButlerTab('tab-1')).toBe(true)
     expect(c.heldResident('tab-1')).toBe(false)
-    expect(c.taskRows()).toEqual([{ tabId: 'tab-1', scope: 'global', name: 'Translate' }])
+    expect(c.taskRows()).toEqual([{ tabId: 'tab-1', name: 'Translate' }])
     c.onBound('tab-1', 'task-key')
     expect(records).toEqual([{ scope: 'global', sessionIds: ['task-key'] }])
     expect(c.identityOfLaunch(conductorFolder(userData), 'task-key')?.task).toBe('Translate')
@@ -437,7 +445,7 @@ describe('a ⌘P task of the butler', () => {
     c.onPtyExit('tab-1', true)
     expect(c.taskRows()).toHaveLength(1)
     c.onBound('tab-woken', 'task-key')
-    expect(c.taskRows()).toEqual([{ tabId: 'tab-woken', scope: 'global', name: 'Translate' }])
+    expect(c.taskRows()).toEqual([{ tabId: 'tab-woken', name: 'Translate' }])
     c.closeTask('tab-woken')
     expect(killed).toEqual(['tab-woken'])
     expect(c.taskRows()).toEqual([])

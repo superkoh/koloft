@@ -360,7 +360,6 @@ export interface AssistRecord {
 
 export interface AssistTaskRow {
   tabId: string
-  scope: string
   name: string
 }
 
@@ -1330,7 +1329,7 @@ export interface KoloftApi {
     unbind(): Promise<void>
     open(): Promise<ConductorOpenResult>
     startFresh(): Promise<ConductorOpenResult>
-    openTask(title: string, brief: string): Promise<ConductorOpenResult>
+    openTask(title: string, brief: string, workspace?: string): Promise<ConductorOpenResult>
     closeTask(tabId: string): Promise<void>
     tasks(): Promise<AssistTaskRow[]>
     onTasks(cb: (rows: AssistTaskRow[]) => void): () => void

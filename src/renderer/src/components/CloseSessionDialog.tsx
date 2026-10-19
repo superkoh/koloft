@@ -43,7 +43,7 @@ export function CloseSessionDialog(): JSX.Element | null {
   const proceed = (): void => {
     const st = useStore.getState()
     st.setCloseConfirm(null)
-    st.closeTab(confirm.tabId)
+    st.closeTabByOwner(confirm.tabId)
   }
   const discardClose = (): void => {
     unsaved?.discard()

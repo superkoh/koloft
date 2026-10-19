@@ -7,11 +7,12 @@ import { preferredAssistBackend } from '@shared/sessionBackend'
 import { useStore } from '../store'
 import { rowStateClass } from '../sessionRows'
 import { butlerSetUp, butlerTabOf } from '../butlerRows'
+import { visitTab } from '../sessionClick'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { updateSettings } from './settings/useSettingsUpdate'
 import { menuPosFor, useDismissOnOutside } from './WorkspaceSidebar'
 
-export const NOT_ON_DISCORD = 'not on Discord'
+const NOT_ON_DISCORD = 'not on Discord'
 
 export async function openButler(fresh = false): Promise<void> {
   const error = await useStore.getState().openButler(fresh)
@@ -24,8 +25,7 @@ export async function setUpDiscordWithButler(ownerWords?: string): Promise<strin
   const st = useStore.getState()
   st.setButlerTab(r.tabId)
   st.setSettingsOpen(false)
-  window.api.attention.visit(r.tabId)
-  st.activateTab(r.tabId)
+  visitTab(r.tabId)
   return null
 }
 
@@ -68,10 +68,7 @@ export function ButlerRow(): JSX.Element {
     (record?.sessionIds ?? []).filter((key) => !taskKeys.has(key))
   )
 
-  const openTask = (task: AssistTaskRow): void => {
-    window.api.attention.visit(task.tabId)
-    useStore.getState().activateTab(task.tabId)
-  }
+  const openTask = (task: AssistTaskRow): void => visitTab(task.tabId)
 
   const item = (label: string, run: () => void, cls = 'mi', key?: string): JSX.Element => (
     <div

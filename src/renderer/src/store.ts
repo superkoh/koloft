@@ -31,7 +31,7 @@ import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
 import { selectionRoot, workspaceOfRow } from './sessionRows'
-import { butlerSetUp, isButlerTab } from './butlerRows'
+import { butlerSetUp, butlerTabOf, isButlerTab } from './butlerRows'
 import {
   activateTab as activateWbTab,
   closeTab as closeWbTab,
@@ -169,6 +169,7 @@ interface AppState {
   adoptTabs: (tabs: AdoptableTab[], activeTabBeforeReload: string | null) => void
   removeTab: (id: string) => void
   closeTab: (id: string) => void
+  closeTabByOwner: (id: string) => void
   openButler: (fresh?: boolean) => Promise<string | null>
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
@@ -638,6 +639,11 @@ export const useStore = create<AppState>((set, get) => ({
     })
   },
   closeTab: (id) => {
+    restoreLaunches.delete(id)
+    window.api.terminal.kill(id)
+    get().removeTab(id)
+  },
+  closeTabByOwner: (id) => {
     const s = get()
     const closed = s.tabs.find((t) => t.id === id)
     const toButler =
@@ -645,10 +651,17 @@ export const useStore = create<AppState>((set, get) => ({
       isSessionKind(closed?.kind) &&
       butlerSetUp({ assist: s.settings.assist, binding: s.settings.discord.bindings[0] }) &&
       !isButlerTab(s.sessions, s.butlerTab, s.assistTasks, id)
-    restoreLaunches.delete(id)
-    window.api.terminal.kill(id)
-    get().removeTab(id)
-    if (toButler) void get().openButler()
+    s.closeTab(id)
+    if (!toButler) return
+    const live = butlerTabOf(get().sessions, get().butlerTab, get().tabs)
+    if (live) {
+      window.api.attention.visit(live)
+      get().activateTab(live)
+      return
+    }
+    void get()
+      .openButler()
+      .then((error) => error && get().showToast(error))
   },
   openButler: async (fresh = false) => {
     const r = await (fresh ? window.api.conductors.startFresh() : window.api.conductors.open())

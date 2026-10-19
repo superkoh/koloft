@@ -19,10 +19,12 @@ sessions have no such limit: they may use every `koloft` command.
   file names the tool) or change a file — it asks a session to — and `koloft discord
   send` and `koloft open` need absolute paths into a workspace.
 - Holes, each the owner's choice, so the butler need not take a session's word for a
-  fact or lose what the owner taught it. `koloft gh` runs any `gh` command in Koloft's
-  own process, with the GitHub account Koloft picked for the repository, except
-  `gh auth` (it could print the token or sign the owner out) and `gh alias` and
-  `gh extension` (each could run `gh auth` or any program under another name). That
+  fact or lose what the owner taught it. `koloft gh` runs any of gh's own commands in
+  Koloft's own process, with the GitHub account Koloft picked for the repository, and
+  that account's token in gh's environment — except `gh auth` (it could print the token
+  or sign the owner out), and `gh alias`, `gh extension`, `gh config`, `gh copilot`, an
+  alias and an extension, each of which can run another program with that environment,
+  outside the gate; a `--jq` filter that reads the environment is refused too. That
   lets the butler merge a pull request: the owner chose this, knowing the gate sees
   the call, never who asked for it, so only the role text stands between text injected
   into a page and a merge. A Claude butler may Write or Edit inside its own memory

@@ -188,7 +188,8 @@ const api: KoloftApi = {
     unbind: () => ipcRenderer.invoke('conductors:unbind'),
     open: () => ipcRenderer.invoke('conductors:open'),
     startFresh: () => ipcRenderer.invoke('conductors:startFresh'),
-    openTask: (title, brief) => ipcRenderer.invoke('conductors:openTask', title, brief),
+    openTask: (title, brief, workspace) =>
+      ipcRenderer.invoke('conductors:openTask', title, brief, workspace),
     closeTask: (tabId) => ipcRenderer.invoke('conductors:closeTask', tabId),
     tasks: () => ipcRenderer.invoke('conductors:tasks'),
     onTasks: (cb) => {

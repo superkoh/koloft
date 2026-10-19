@@ -251,7 +251,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       expect(assist.cwd).toBe(path.join(env.userData, 'conductors', 'global'))
       await expect
         .poll(() => page.evaluate(() => window.api.conductors.tasks()))
-        .toEqual([{ tabId: expect.any(String), scope: 'global', name: 'fix the build' }])
+        .toEqual([{ tabId: expect.any(String), name: 'fix the build' }])
       await expect(page.locator('.modal')).toHaveCount(0)
 
       await page.evaluate(() =>
@@ -279,7 +279,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      const tasks = (): Promise<{ tabId: string; scope: string; name: string }[]> =>
+      const tasks = (): Promise<{ tabId: string; name: string }[]> =>
         page.evaluate(() => window.api.conductors.tasks())
 
       assistAnswers(env, { hand: 'koloft', title: 'Dark mode', why: 'A Koloft setting.' })
@@ -288,9 +288,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       const [global] = await waitForCalls(env, 1, 30_000)
       await expect(page.locator('.modal')).toHaveCount(0)
       expect(global.cwd).toBe(path.join(env.userData, 'conductors', 'global'))
-      await expect
-        .poll(tasks)
-        .toEqual([{ tabId: expect.any(String), scope: 'global', name: 'Dark mode' }])
+      await expect.poll(tasks).toEqual([{ tabId: expect.any(String), name: 'Dark mode' }])
       expect(textAfterDashes(global)).toBe('turn on dark mode')
       const [{ tabId: darkMode }] = await tasks()
       const ownerWords = (): string => {
@@ -323,9 +321,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await page.keyboard.press('Enter')
       const calls = await waitForCalls(env, 3, 30_000)
       expect(calls[2].cwd).toBe(path.join(env.userData, 'conductors', 'global'))
-      await expect
-        .poll(tasks)
-        .toContainEqual({ tabId: expect.any(String), scope: 'global', name: 'Ask ws-b' })
+      await expect.poll(tasks).toContainEqual({ tabId: expect.any(String), name: 'Ask ws-b' })
     } finally {
       await quitAndClose(app)
     }

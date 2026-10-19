@@ -16,7 +16,7 @@ export const GLOBAL_SCOPE = 'global'
 
 const DISCORD_ID_RE = /^\d{1,30}$/
 
-export const BUTLER_NAME_MAX_CHARS = 40
+const BUTLER_NAME_MAX_CHARS = 40
 
 export function isDiscordId(value: unknown): value is string {
   return typeof value === 'string' && DISCORD_ID_RE.test(value)

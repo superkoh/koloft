@@ -5,6 +5,7 @@ import {
   formatList,
   formatShow,
   parseCronArgs,
+  CRON_NEEDS_A_WORKSPACE,
   type CronVerbDeps
 } from '../../src/main/agentCron'
 import { EXIT_USAGE, NOT_PINNED } from '../../src/main/agentRequests'
@@ -246,7 +247,8 @@ describe('koloft cron: changing tasks', () => {
 
   it('refuses every command while the workspace is not pinned', async () => {
     const c = cron([job()], { pinnedWorkspaceOf: () => undefined })
-    expect(await c.run('list')).toEqual({ text: NOT_PINNED, exit: 1 })
+    expect(await c.run('list')).toEqual({ text: CRON_NEEDS_A_WORKSPACE, exit: 1 })
+    expect(CRON_NEEDS_A_WORKSPACE).toMatch(new RegExp(`^${NOT_PINNED} .*--workspace`))
   })
 
   it('add saves an enabled task in the caller workspace with the dialog default permission for its backend, and toasts who did it', async () => {

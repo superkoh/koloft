@@ -65,6 +65,8 @@ export interface CronCommand {
 
 const WORKSPACE_FLAG = '--workspace'
 
+export const CRON_NEEDS_A_WORKSPACE = `${NOT_PINNED} Or name one with ${WORKSPACE_FLAG} <workspace>; "koloft workspace list" shows them.`
+
 export function parseSchedule(flag: string, value: string): Parsed<Schedule> {
   if (flag === '--every') {
     const m = /^(\d+)([mh])$/.exec(value)
@@ -304,7 +306,7 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
     const resolved = named === undefined ? undefined : d.resolveWorkspace(named)
     if (resolved && !resolved.ok) return refused(`koloft cron: ${resolved.error}`)
     const workspace = resolved ? resolved.value : d.pinnedWorkspaceOf(caller.tabId)
-    if (!workspace) return refused(NOT_PINNED)
+    if (!workspace) return refused(CRON_NEEDS_A_WORKSPACE)
     const runner = d.runner()
     if (!runner) return refused(RUNNER_NOT_READY)
     const { sub, ref, patch } = parsed.value

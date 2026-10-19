@@ -1044,12 +1044,11 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (sub === 'send') {
       const open = d.allSessions()
       const parent = starterRow(d, caller, open)
-      const rows = await allRows(d)
       const starter = (ref: string): Target | undefined =>
         d.conductorOf(ref) ?? (parent && matchRow([parent], ref) ? rowTarget(d, parent) : undefined)
       const split = nameThenWords(
         rest,
-        (ref) => starter(ref) !== undefined || matchOpen(open, ref) !== null || namesARow(rows, ref)
+        (ref) => starter(ref) !== undefined || matchOpen(open, ref) !== null
       )
       if (!split.ok) return refused(`koloft session send: ${split.error}`, EXIT_USAGE)
       const { ref, tail } = split.value
@@ -1059,14 +1058,10 @@ export function sessionVerb(d: SessionVerbDeps): {
       const to = starter(ref)
       if (to) replyOwed.delete(caller.tabId)
       if (to) return deliver('send', to, said, caller, false)
-      if (matchOpen(open, ref) !== null) {
-        const target = findSiblingTarget(open, ref, caller.session.backendId)
-        if (!target.ok) return refused(`koloft session send: ${target.error}`)
-        return deliver('send', openTarget(target.value), said, caller, false)
-      }
-      const found = findAmong(rows, 'send', ref)
-      if (!found.ok) return refused(found.error)
-      return deliver('send', rowTarget(d, found.value), said, caller, false)
+      if (matchOpen(open, ref) === null) return sessionAct(sub, rest, caller, false)
+      const target = findSiblingTarget(open, ref, caller.session.backendId)
+      if (!target.ok) return refused(`koloft session send: ${target.error}`)
+      return deliver('send', openTarget(target.value), said, caller, false)
     }
     if (Object.hasOwn(SESSION_ACT_USAGE, sub)) return sessionAct(sub, rest, caller, false)
     if (sub === 'close') {

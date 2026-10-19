@@ -36,7 +36,11 @@ describe('koloft gh', () => {
   it.each([
     ['gh auth, which can print the token or sign the owner out', ['auth', 'token']],
     ['gh alias, which can run gh auth under another name', ['alias', 'set', 'x', 'auth token']],
-    ['gh extension, which runs any program with the sign-in', ['extension', 'exec', 'x']]
+    ['gh extension, which runs any program with the sign-in', ['extension', 'exec', 'x']],
+    ['gh ext, its short name', ['ext', 'install', 'evil/gh-x']],
+    ['an installed extension or an alias called by its name', ['x']],
+    ['gh config, which can name a browser gh starts', ['config', 'set', 'browser', 'sh']],
+    ['gh copilot, an agent of its own', ['copilot', 'suggest', 'x']]
   ])('refuses %s without running gh', async (_n, args) => {
     const { call, ran } = verb()
     expect(await call(args)).toEqual({ text: GH_REFUSED, exit: 1 })
@@ -46,11 +50,19 @@ describe('koloft gh', () => {
   it.each([
     ['--jq', ['pr', 'view', '1', '--json', 'url', '--jq', '$ENV.GH_TOKEN']],
     ['--jq=', ['api', 'user', '--jq=env.GH_TOKEN']],
-    ['-q', ['api', 'user', '-q', 'env']]
+    ['-q', ['api', 'user', '-q', 'env']],
+    ['-q with its value attached', ['api', 'user', '-qenv.GH_TOKEN']]
   ])('refuses a %s filter that reads the environment, where the sign-in is', async (_n, args) => {
     const { call, ran } = verb()
     expect(await call(args)).toEqual({ text: GH_JQ_READS_ENV, exit: 1 })
     expect(ran).toEqual([])
+  })
+
+  it('lets a --jq filter read a field whose name only contains env', async () => {
+    const { call, ran } = verb()
+    const args = ['run', 'view', '7', '--json', 'jobs', '--jq', '.jobs[].environment']
+    expect((await call(args)).exit).toBe(0)
+    expect(ran).toHaveLength(1)
   })
 
   it('refuses no command at all', async () => {
@@ -80,6 +92,7 @@ describe('koloft gh', () => {
     expect(repoFlagOf(['pr', 'list', '--repo', 'a/b'])).toBe('a/b')
     expect(repoFlagOf(['pr', 'list', '--repo=a/b'])).toBe('a/b')
     expect(repoFlagOf(['pr', 'list', '-R', 'a/b'])).toBe('a/b')
+    expect(repoFlagOf(['pr', 'list', '-Ra/b'])).toBe('a/b')
     expect(repoFlagOf(['pr', 'list'])).toBeUndefined()
   })
 })

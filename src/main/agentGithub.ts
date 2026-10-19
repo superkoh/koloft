@@ -1,15 +1,45 @@
 import { answered, EXIT_USAGE, refused, type AgentVerb } from './agentRequests'
 
 export const GH_USAGE =
-  'koloft: usage: koloft gh <any gh command but auth, alias or extension>, like: koloft gh pr view 389'
+  "koloft: usage: koloft gh <one of gh's own commands but auth, alias, extension, config or copilot>, like: koloft gh pr view 389"
 
-const REFUSED_COMMANDS = new Set(['auth', 'alias', 'extension'])
+// PLATFORM§32
+const GH_OWN_COMMANDS = new Set([
+  'agent-task',
+  'api',
+  'attestation',
+  'browse',
+  'cache',
+  'co',
+  'codespace',
+  'completion',
+  'discussion',
+  'gist',
+  'gpg-key',
+  'issue',
+  'label',
+  'licenses',
+  'org',
+  'pr',
+  'preview',
+  'project',
+  'release',
+  'repo',
+  'ruleset',
+  'run',
+  'search',
+  'secret',
+  'skill',
+  'ssh-key',
+  'status',
+  'variable',
+  'workflow'
+])
 
 export const GH_REFUSED =
-  'koloft: koloft gh runs every gh command but auth, alias and extension, which could print or change the sign-in.'
+  "koloft: koloft gh runs gh's own commands, but not auth, alias, extension, config or copilot, nor an alias or an extension: each could print the GitHub sign-in or run another program with it."
 
-const JQ_FLAGS = new Set(['--jq', '-q'])
-const READS_THE_ENVIRONMENT = /env/i
+const READS_THE_ENVIRONMENT = /\benv\b|\$ENV/
 
 export const GH_JQ_READS_ENV =
   'koloft: a --jq filter may not read the environment, which holds the GitHub sign-in.'
@@ -20,23 +50,27 @@ export interface GithubVerbDeps {
   run(args: string[], tabId: string, cwd: string): Promise<{ ok: boolean; out: string }>
 }
 
-function flagName(arg: string): string {
-  const eq = arg.indexOf('=')
-  return eq < 0 ? arg : arg.slice(0, eq)
-}
+const LONG_REPO = '--repo'
+const SHORT_REPO = '-R'
 
+// PLATFORM§32
 export function repoFlagOf(args: string[]): string | undefined {
-  const at = args.findIndex((a) => flagName(a) === '--repo' || a === '-R')
-  if (at < 0) return undefined
-  return args[at] === '--repo' || args[at] === '-R'
-    ? args[at + 1]
-    : args[at].slice('--repo='.length)
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === LONG_REPO || a === SHORT_REPO) return args[i + 1]
+    if (a.startsWith(`${LONG_REPO}=`)) return a.slice(LONG_REPO.length + 1)
+    if (a.startsWith(SHORT_REPO)) return a.slice(SHORT_REPO.length).replace(/^=/, '')
+  }
+  return undefined
 }
 
-function jqReadsTheEnvironment(args: string[]): boolean {
-  return args.some((arg, i) => {
-    const filter = JQ_FLAGS.has(arg) ? args[i + 1] : JQ_FLAGS.has(flagName(arg)) ? arg : undefined
-    return filter !== undefined && READS_THE_ENVIRONMENT.test(filter)
+// PLATFORM§32
+function jqFilters(args: string[]): string[] {
+  return args.flatMap((a, i) => {
+    if (a === '--jq' || a === '-q') return args[i + 1] === undefined ? [] : [args[i + 1]]
+    if (a.startsWith('--jq=')) return [a.slice('--jq='.length)]
+    const attached = /^-[A-Za-z]*q=?(.*)$/.exec(a)
+    return attached && !a.startsWith('--') ? [attached[1]] : []
   })
 }
 
@@ -45,8 +79,8 @@ export function githubVerb(d: GithubVerbDeps): AgentVerb {
   return async (args, caller) => {
     const [command] = args
     if (!command || command.startsWith('-')) return refused(GH_USAGE, EXIT_USAGE)
-    if (REFUSED_COMMANDS.has(command)) return refused(GH_REFUSED)
-    if (jqReadsTheEnvironment(args)) return refused(GH_JQ_READS_ENV)
+    if (!GH_OWN_COMMANDS.has(command)) return refused(GH_REFUSED)
+    if (jqFilters(args).some((f) => READS_THE_ENVIRONMENT.test(f))) return refused(GH_JQ_READS_ENV)
     const { ok, out } = await d.run(args, caller.tabId, caller.cwd)
     if (!ok) return refused(`koloft: gh ${args.slice(0, 2).join(' ')}: ${out}`)
     if (out.length <= REPLY_CHARS_A_TURN_HOLDS) return answered(out)

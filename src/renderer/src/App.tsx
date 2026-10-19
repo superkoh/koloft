@@ -1133,7 +1133,7 @@ export default function App(): JSX.Element {
       return
     }
     const toAssist = (title: string, workspace: string | null): void => {
-      void window.api.conductors.openTask(title, prompt).then((r) => {
+      void window.api.conductors.openTask(title, prompt, workspace ?? undefined).then((r) => {
         if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
         requestNew('main', undefined, { prompt, title, path: workspace, worktree: null }, backend)
