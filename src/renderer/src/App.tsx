@@ -49,6 +49,7 @@ import {
   useStore,
   openInterceptedFile,
   boundSessionId,
+  workbenchOwnerLive,
   consumeRestartExit,
   conversationTabFor,
   tabForSession,
@@ -1251,16 +1252,7 @@ export default function App(): JSX.Element {
   const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined
   const panelWidth = (panelTab ? workbenchWidths[panelTab] : undefined) ?? workbenchWidth
   const liveTabIds = useStore(
-    useShallow((s) =>
-      s.tabs
-        .filter((t) => {
-          if (!hasWorkbench(t)) return false
-          const sess = s.sessions.find((x) => x.tabId === t.id)
-          if (sess && !sess.alive) return false
-          return !!boundSessionId(s, t.id)
-        })
-        .map((t) => t.id)
-    )
+    useShallow((s) => s.tabs.filter((t) => workbenchOwnerLive(s, t)).map((t) => t.id))
   )
   const liveTabs = useMemo(() => new Set(liveTabIds), [liveTabIds])
   const panelSid = landed.sessionId
