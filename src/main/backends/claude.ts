@@ -126,12 +126,47 @@ async function rebuildWorktree(
   return true
 }
 
+interface RemoteExitDrop {
+  name: string
+  raw: { event?: string; reason?: string; sessionId?: string }
+}
+
+function remoteExitIn(name: string, obj: unknown, sid: string): RemoteExitDrop | undefined {
+  const raw = obj as RemoteExitDrop['raw'] | null
+  return raw?.event === 'end' && raw.sessionId === sid ? { name, raw } : undefined
+}
+
+async function remoteExitOnDisk(
+  mirrorDir: string,
+  sid: string,
+  since: number
+): Promise<RemoteExitDrop | undefined> {
+  let names: string[] = []
+  try {
+    names = await fs.promises.readdir(mirrorDir)
+  } catch {
+    return undefined
+  }
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue
+    const full = path.join(mirrorDir, name)
+    try {
+      if ((await fs.promises.stat(full)).mtimeMs < since) continue
+      const text = await fs.promises.readFile(full, 'utf8')
+      const hit = text.includes(sid) ? remoteExitIn(name, JSON.parse(text), sid) : undefined
+      if (hit) return hit
+    } catch {}
+  }
+  return undefined
+}
+
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
   private hookRegDir = ''
   private statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
   private statusLogDraining = new Map<string, boolean>()
   private watchedHookMirrors = new Map<string, () => void>()
+  private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
@@ -385,6 +420,12 @@ export class ClaudeBackend implements SessionBackend {
   private watchHookRegistrations(dir: string, machine?: string): () => void {
     const isNews = machine ? makeDropDedupe() : null
     const handle = (obj: unknown, full: string): void => {
+      if (machine) {
+        for (const { sid, settle } of this.remoteExitWaits) {
+          const hit = remoteExitIn(path.basename(full), obj, sid)
+          if (hit) settle(hit)
+        }
+      }
       if (isNews && !isNews(full, JSON.stringify(obj))) return
       this.handleHookRegistration(obj)
     }
@@ -651,35 +692,8 @@ export class ClaudeBackend implements SessionBackend {
     sid?: string,
     title?: string
   ): Promise<void> {
-    // PLATFORM§34
-    const since = Date.now() - REMOTE_EXIT_SLACK_MS
-    const thisExit = (): { name: string; raw: { event?: string; reason?: string } } | undefined => {
-      let names: string[] = []
-      try {
-        names = fs.readdirSync(mirrorDir)
-      } catch {
-        return undefined
-      }
-      for (const name of names) {
-        if (!name.endsWith('.json')) continue
-        const full = path.join(mirrorDir, name)
-        try {
-          if (fs.statSync(full).mtimeMs < since) continue
-          const text = fs.readFileSync(full, 'utf8')
-          if (!sid || !text.includes(`"${sid}"`)) continue
-          const raw = JSON.parse(text) as { event?: string; reason?: string }
-          if (raw.event === 'end') return { name, raw }
-        } catch {}
-      }
-      return undefined
-    }
     this.d.remoteSync()?.pokeNow(host)
-    const deadline = Date.now() + REMOTE_EXIT_WAIT_MS
-    let hit = thisExit()
-    while (!hit && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, REMOTE_EXIT_POLL_MS))
-      hit = thisExit()
-    }
+    const hit = sid ? await this.remoteExitReport(mirrorDir, sid) : undefined
     if (hit && EVICTING_END_REASONS.has(hit.raw.reason ?? '')) {
       const stillBound = !!sid && this.d.tracker.list().some((t) => t.alive && t.sessionId === sid)
       if (sid && !stillBound)
@@ -691,6 +705,28 @@ export class ClaudeBackend implements SessionBackend {
       if (name) fs.rmSync(path.join(mirrorDir, name), { force: true })
     }
     this.dropStatusLog(mirrorDir, tabId)
+  }
+
+  // PLATFORM§28
+  private remoteExitReport(mirrorDir: string, sid: string): Promise<RemoteExitDrop | undefined> {
+    // PLATFORM§34
+    const since = Date.now() - REMOTE_EXIT_SLACK_MS
+    return new Promise((resolve) => {
+      const wait = {
+        sid,
+        settle: (hit: RemoteExitDrop | undefined): void => {
+          if (!this.remoteExitWaits.delete(wait)) return
+          clearTimeout(lastLook)
+          resolve(hit)
+        }
+      }
+      const lastLook = setTimeout(
+        () => void remoteExitOnDisk(mirrorDir, sid, since).then(wait.settle),
+        REMOTE_EXIT_WAIT_MS
+      )
+      this.remoteExitWaits.add(wait)
+      void remoteExitOnDisk(mirrorDir, sid, since).then((hit) => hit && wait.settle(hit))
+    })
   }
 
   private drainExitRegistration(regDir: string, tabId: string): boolean {

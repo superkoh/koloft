@@ -60,6 +60,7 @@ import { barePath } from '@shared/remoteKey'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
 import { CODEX_GATE_HOOK_COMMAND } from '../../src/main/conductorGate'
 import { GithubLookup } from '../../src/main/github'
@@ -90,8 +91,9 @@ beforeEach(() => {
   codex.transports.length = 0
 })
 
-afterEach(() => {
+afterEach(async () => {
   process.env.HOME = realHome
+  await BackgroundFile.whenAllWritten()
   fs.rmSync(home, { recursive: true, force: true })
 })
 

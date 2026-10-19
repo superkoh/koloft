@@ -25,6 +25,19 @@ describe('BackgroundFile', () => {
     expect(fs.readdirSync(dir)).toEqual(['state.json'])
   })
 
+  it('whenAllWritten resolves only once every file has its newest text on disk and no temp file is left', async () => {
+    const other = path.join(dir, 'other.json')
+    const a = new BackgroundFile(() => file)
+    const b = new BackgroundFile(() => other)
+    a.write('a1')
+    b.write('b1')
+    a.write('a2')
+    await BackgroundFile.whenAllWritten()
+    expect(fs.readFileSync(file, 'utf8')).toBe('a2')
+    expect(fs.readFileSync(other, 'utf8')).toBe('b1')
+    expect(fs.readdirSync(dir).sort()).toEqual(['other.json', 'state.json'])
+  })
+
   it('a flush at quit puts the newest text on disk at once, and a slower earlier write never overwrites it', async () => {
     let release!: () => void
     const held = new Promise<void>((r) => (release = r))
