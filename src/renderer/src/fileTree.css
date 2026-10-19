@@ -172,42 +172,6 @@
   font-size: 12px;
   color: var(--fg-faint);
 }
-.ft-chips {
-  flex: 0 0 auto;
-  display: flex;
-  gap: 4px;
-  padding: 5px 12px 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.ft-chips::-webkit-scrollbar {
-  display: none;
-}
-.ft-chip {
-  -webkit-app-region: no-drag;
-  flex: 0 0 auto;
-  cursor: pointer;
-  font-size: 11px;
-  padding: 2px 10px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: var(--bg-3);
-  color: var(--fg-dim);
-  white-space: nowrap;
-  transition:
-    color 0.12s var(--ease),
-    background 0.12s var(--ease),
-    border-color 0.12s var(--ease);
-}
-.ft-chip:hover {
-  color: var(--fg);
-}
-.ft-chip.on {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-  color: var(--accent);
-}
-
 .ft-name.git-modified {
   color: var(--git-m);
 }
@@ -423,12 +387,20 @@
   background: rgba(255, 255, 255, 0.04);
 }
 .ft-chips {
+  flex: 0 0 auto;
   display: flex;
   gap: 6px;
   padding: 4px 6px;
-  flex: 0 0 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ft-chips::-webkit-scrollbar {
+  display: none;
 }
 .ft-chip {
+  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+  cursor: pointer;
   font-size: 11px;
   line-height: 16px;
   padding: 1px 8px;
@@ -436,15 +408,22 @@
   border: 1px solid var(--line-2);
   background: transparent;
   color: var(--fg-dim);
-  cursor: pointer;
   white-space: nowrap;
+  transition:
+    color 0.12s var(--ease),
+    background 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+.ft-chip.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .ft-chip:hover {
   background: var(--bg-4);
 }
-.ft-chip.on {
-  border-color: var(--accent);
-  color: var(--accent);
+.ft-chip:not(.on):hover {
+  color: var(--fg);
 }
 .ft-node.ignored .ft-name,
 .ft-result.ignored .ft-name {
