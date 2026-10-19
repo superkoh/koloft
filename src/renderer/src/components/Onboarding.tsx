@@ -375,6 +375,12 @@ export function Onboarding({
               ))}
             </div>
             <div className="quiet">
+              Claude Code runs most steps without asking, so its light seldom turns amber: Koloft
+              starts it with permission prompts skipped (Settings ▸ Accounts), and without that it
+              starts in auto mode. To be asked before each step, turn that switch off and pick
+              manual with ⇧Tab in the session.
+            </div>
+            <div className="quiet">
               When Koloft is in the background, a light turning amber or green also sends a
               notification (Settings ▸ Notifications).
             </div>
