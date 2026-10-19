@@ -2027,3 +2027,24 @@ the configured sandbox.
     `sandbox_workspace_write.writable_roots`, commit and push ran with no question.
 - Not probed yet: a push to the real github.com from a Codex turn.
 
+## 30. A one-shot ⌘P routing answer
+
+2026-10-19, codex-cli 0.162.0, `gpt-6-luna`, the `CODEX_ONE_SHOT` argv with a fresh
+`CODEX_HOME` holding only `auth.json`, the ⌘P routing prompt of `routeJob` and the typed
+lines of `test/unit/sessionRoute.real.test.ts`.
+
+- **It names the right rule but writes another rule's JSON.** For "how's blog doing on
+  the Electron article" (blog is not git) it answered
+  `{"workspace":2,"worktree":"main",…,"why":"规则 1：询问 blog …"}` in 3 of 6 answers:
+  the `why` names rule 1 (ask that workspace's Assist) while the object has rule 6's shape
+  (start a session there). Giving rule 1 a key of its own (`{"assist": <id>}`) did not
+  help: 6 of 10 answers were wrong. With a `"rule": <number>` field asked for next to
+  `title` and `why` and read by the parser, all 10 answers to that line that came in
+  time reached blog's Assist (2 of 12 timed out), and in 2 full runs
+  of the 24 lines no line that should start a session landed on an Assist. Claude Code
+  2.1.303 with the same prompt: 48 of 48 right, before and after.
+- **Some answers take 15–45 s.** 4 of 24 lines in one run hit Koloft's 15 s
+  `ASSIST_TIMEOUT_MS`, often two or three in a row; most answers take 2.6–6.8 s. Run
+  directly, 1 of 15 `codex exec` calls took 43.7 s and still exited 0 with the right
+  answer, so the time is spent inside Codex.
+

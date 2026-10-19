@@ -155,7 +155,7 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     ).toMatchObject({ kind: 'workspace', path: '/Users/me/code/app' })
   })
 
-  it('a reply that names the check-in rule goes to that workspace’s Assist even when its shape is the new-session one, as the real Codex writes it', () => {
+  it('a reply that names the check-in rule goes to that workspace’s Assist even when its shape is the new-session one', () => {
     expect(
       parseRoute(reply({ rule: 1, workspace: 1, worktree: 'main', title: 'Progress' }), LIST)
     ).toEqual({ kind: 'assist', path: '/Users/me/code/app', title: 'Progress', why: '' })

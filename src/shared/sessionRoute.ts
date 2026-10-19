@@ -39,6 +39,7 @@ const SESSIONS_SENT_PER_WORKSPACE = 5
 const PROMPT_MAX_CHARS_SENT = 4000
 const TITLE_MAX_CHARS = 40
 const WHY_MAX_CHARS = 200
+// CODEX§30
 const CHECK_IN_RULE = 1
 
 const ROUTE_SYSTEM = 'You decide who in the Koloft app should take what a person typed.'
