@@ -607,8 +607,8 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   - **One capture is at most 16384 device pixels on a side** (the GPU's
     `max_texture_size`): at device scale 2, an 8000 px tall page captured
     (2560×16000), an 8400 px one never answered. Past the limit the capture hangs
-    rather than fails, the GPU process logs "Invalid size … max_texture_size=16384"
-    and restarts, and later captures in that process hung too. Two ways under it,
+    rather than fails, and the GPU process logs "Invalid size … max_texture_size=16384"
+    and restarts. Two ways under it,
     both measured: `clip.scale` 0.5 (a 16000 px page as 1280×16000), or clips of at
     most 8000 CSS px down the page (a 40000 px page as five 2560×16000 images in
     1.3 s, the last ending in red).
@@ -1568,10 +1568,10 @@ Gateway (the live connection that pushes events):
     (`type: 11`, no opener message); so were 4320, a later `PATCH` of 60 and back to
     10080, and a channel's `default_auto_archive_duration: 10080`. A value outside the
     list (5000) answered 400, 50035 `ENUM_TYPE_COERCE`.
-  - Thread creates share one bucket for the bot: `x-ratelimit-limit` 50,
-    `reset-after` 300 s (50 creates per 5 minutes); a message-based create and a
-    standalone one drew from the same bucket. How many active threads a server may hold
-    was not probed.
+  - Thread creates in that channel drew from one bucket: `x-ratelimit-limit` 50,
+    `reset-after` 300 s (50 creates per 5 minutes), a message-based create and a
+    standalone one alike. Whether a second channel draws from the same bucket was not
+    measured, nor how many active threads a server may hold.
   - `POST /channels/{thread}/messages` by the bot into a thread it had just archived
     answered 200, and the thread read back open (`archived: false`, a new
     `archive_timestamp`). So did a post into a thread archived and `locked` (the bot's
