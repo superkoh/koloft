@@ -98,6 +98,7 @@ interface AppState {
   sessions: SessionInfo[]
   leftovers: Record<string, LeftoverProcess[]>
   attention: AttentionEvent[]
+  revealRow: { tabId: string } | null
   settings: Settings
   settingsOpen: boolean
   settingsPane: SettingsPaneId | null
@@ -173,6 +174,7 @@ interface AppState {
   setTabAsleep: (id: string) => void
 
   activateTab: (id: string) => void
+  revealTab: (id: string) => void
   restartActiveSession: () => void
 
   setSessions: (s: SessionInfo[]) => void
@@ -484,6 +486,7 @@ export const useStore = create<AppState>((set, get) => ({
   sessions: [],
   leftovers: {},
   attention: [],
+  revealRow: null,
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
   settingsPane: null,
@@ -669,6 +672,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (activateOnceSpawned) return
     set({ activeTabId: id, resumeLaunch: null })
   },
+  revealTab: (id) => set({ revealRow: { tabId: id } }),
 
   restartActiveSession: () => {
     const { tabs, activeTabId, sessions } = get()

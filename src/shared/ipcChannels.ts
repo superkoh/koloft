@@ -92,7 +92,6 @@ export const CH = {
   attention: {
     list: 'attention:list',
     activeTab: 'attention:active-tab',
-    visit: 'attention:visit',
     activateTab: 'attention:activate-tab',
     changed: 'attention:changed'
   },

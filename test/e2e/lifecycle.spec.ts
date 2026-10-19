@@ -145,8 +145,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     const [call] = await waitForCalls(env, 1)
     const row = page.locator('.ws-tab', { hasText: 'Hangup session' })
 
-    await row.click()
-    await expect.poll(() => pendingAttention(page), { timeout: 20_000 }).toHaveLength(0)
+    await expect.poll(() => pendingAttention(page), { timeout: 20_000 }).toHaveLength(1)
 
     // CC§1
     process.kill(call.pid, 'SIGHUP')

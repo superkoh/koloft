@@ -215,7 +215,6 @@ const api: KoloftApi = {
   attention: {
     list: () => ipcRenderer.invoke(CH.attention.list),
     activeTab: (id) => ipcRenderer.send(CH.attention.activeTab, id),
-    visit: (id) => ipcRenderer.send(CH.attention.visit, id),
     onActivateTab: (cb) => {
       const handler = (_e: unknown, p: { tabId: string }): void => cb(p.tabId)
       ipcRenderer.on(CH.attention.activateTab, handler)

@@ -1661,16 +1661,16 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     await waitForClose(closes, 'tabA6')
   }, 15_000)
 
-  it('never closes a tab with a "needs you" mark you have not seen, and closes it once seen', async () => {
+  it('never closes a tab whose approval is still unanswered, and closes it once answered', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     stageAllClear(tracker)
-    let unseen = true
-    tracker.needsUser = () => unseen
+    let unanswered = true
+    tracker.needsUser = () => unanswered
     const closes = await idleSession(tracker, 'tabA12', cwd)
     await expectStays(closes)
 
-    unseen = false
+    unanswered = false
     await waitForClose(closes, 'tabA12')
   }, 15_000)
 

@@ -116,7 +116,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
     }
   })
 
-  test('a remote session’s unread red dot survives a Koloft restart, and clicking the row in a focused window clears it', async ({
+  test('a remote session’s unread red dot survives a Koloft restart, stays when the row is clicked in a focused window, and goes once the session works again', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -147,7 +147,9 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       await pretendWindowFocused(app2)
       await row.click()
       await expect(centerTerm(page2)).toBeVisible({ timeout: 30_000 })
-      await expect(row.locator('.ws-tab-unread')).toHaveCount(0, { timeout: 30_000 })
+      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+      await runIn(page2, centerTerm(page2), '/busy')
+      await expect(row.locator('.ws-tab-unread')).toHaveCount(0, { timeout: 60_000 })
     } finally {
       await quitAndClose(app2)
     }

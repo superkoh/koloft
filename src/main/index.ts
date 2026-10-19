@@ -83,7 +83,7 @@ import {
   statusUnavailable
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
-import { AttentionTracker, type AttentionContext } from './attention'
+import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
@@ -318,7 +318,7 @@ import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
-  ATTENTION_REASON,
+  attentionReason,
   BROWSER_PARTITION,
   DISCORD_OFF,
   PLACEHOLDER_SESSION_TITLE,
@@ -468,6 +468,7 @@ import {
 import { crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
+import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -534,14 +535,18 @@ const readerDocs = new ReaderDocs({
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
     void readerDocs.turnEnded(tabId, turn)
+    newsJudge.turnEnded(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
     discordNotices?.turnEnded(tabId, turn.reply)
     sessionCommand.turnEnded(tabId, turn)
   },
-  prompted: consumeOutletDedupe,
+  prompted: (tabId) => {
+    consumeOutletDedupe(tabId)
+    newsJudge.prompted(tabId)
+  },
   bound: (tabId, key) => {
-    attention.bound(tabId, key, attentionCtx())
+    attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
     conductors?.onBound(tabId, key)
     discordThreads?.bound(tabId, key)
@@ -549,7 +554,7 @@ const sessionBackends = new SessionBackends({
     slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
   },
-  exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
+  exited: (tabId, subject) => attention.onExited(tabId, subject),
   asked: (tabId, ask) => discordRelay?.onAsk(tabId, ask),
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
@@ -565,6 +570,12 @@ sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
+
+const newsJudge = new NewsJudge({
+  isNews: (turn) => onlyNews(assist, turn),
+  awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
+  markFyi: (tabId) => attention.markFyi(tabId)
+})
 
 // CC§14
 function asksTheOwner(tabId: string): boolean {
@@ -625,7 +636,7 @@ tracker.heldTabs = () => {
       held.add(s.tabId)
   return held
 }
-tracker.needsUser = (id) => attention.list().some((e) => e.tabId === id)
+tracker.needsUser = (id) => attention.waitsOnApproval(id)
 let leftovers: Record<string, LeftoverProcess[]> = {}
 tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
@@ -674,8 +685,23 @@ const attention = new AttentionTracker((pending, event) => {
   updateDockBadge(pending)
   sendToRenderer(CH.attention.changed, pending)
   retractStaleOsNotifications(pending)
-  if (event && !event.resurrected) routeAttentionEvent(event)
+  if (event) routeAttentionEvent(event)
 }, loadLastRunAttention())
+attention.asleep = (tabId) => sleepers.has(tabId)
+attention.watching = () => (windowFocused() ? uiActiveTabId : null)
+attention.turnDone = (tabId) => newsJudge.marked(tabId)
+attention.waitsOnAnother = (tabId) => {
+  const me = sessionOfTab(tabId)
+  return (
+    !!me?.sessionId &&
+    waitsOnOtherWork(
+      me,
+      allSessions(),
+      (id) => startedSessions.parentOfRow(id),
+      (id) => sessionCommand.waitsOnAnother(id)
+    )
+  )
+}
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
@@ -781,6 +807,7 @@ function sleepingTabOf(sessionId: string): string | undefined {
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
   typedWhileAsleep.delete(tabId)
+  attention.clearKeepingExit(tabId)
   sendToRenderer(CH.tab.killedByMain, tabId)
   tabLifecycle.emit('forgotten', tabId)
   rememberOpenTabs()
@@ -795,6 +822,7 @@ function settleWokenSleepers(all: SessionInfo[]): void {
     const newId = tabOfSession.get(t.sessionId)
     if (!newId || newId === oldId) continue
     sleepers.delete(oldId)
+    attention.rehome(oldId, newId)
     wokenAs.set(oldId, newId)
     woke = true
     void handOverTyping(oldId, newId)
@@ -845,12 +873,12 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
   return { title: s?.title, sessionId: s?.sessionId }
 }
-function attentionCtx(): AttentionContext {
-  let focused = false
+function windowFocused(): boolean {
   try {
-    focused = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
-  } catch {}
-  return { windowFocused: focused, activeTabId: uiActiveTabId }
+    return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
+  } catch {
+    return false
+  }
 }
 
 function projectFolderName(event: AttentionEvent): string | undefined {
@@ -871,14 +899,10 @@ function updateDockBadge(pending: AttentionEvent[]): void {
   else app.dock?.setBadge(text)
 }
 
-function pointFocusClearingAtTabBeforeFocusingWindow(tabId: string): void {
-  uiActiveTabId = tabId
-}
-
 function activateTabFromNotification(tabId: string): void {
   const win = mainWindow
   if (win && !win.isDestroyed()) {
-    pointFocusClearingAtTabBeforeFocusingWindow(tabId)
+    uiActiveTabId = tabId
     tracker.noteActivity(tabId)
     if (win.isMinimized()) win.restore()
     if (!win.isVisible()) win.show()
@@ -906,7 +930,7 @@ function retractStaleOsNotifications(pending: AttentionEvent[]): void {
 }
 
 function osNotificationText(event: AttentionEvent): { title: string; body: string } {
-  const reason = ATTENTION_REASON[event.kind]
+  const reason = attentionReason(event)
   const folder = projectFolderName(event)
   return {
     title: event.title || PLACEHOLDER_SESSION_TITLE,
@@ -954,12 +978,13 @@ function consumeOutletDedupe(tabId: string): void {
 }
 
 function routeAttentionEvent(event: AttentionEvent): void {
+  const decision = route(event, windowFocused(), loadSettings(), uiActiveTabId)
+  if (!decision.os && !decision.sound) return
   const outletKey = `${event.tabId}:${event.kind}`
   const lastAt = recentOutlets.get(outletKey)
   const now = Date.now()
   if (lastAt !== undefined && now - lastAt < OUTLET_FLAP_DEDUPE_MS) return
   recentOutlets.set(outletKey, now)
-  const decision = route(event, attentionCtx().windowFocused, loadSettings())
   if (decision.os) showOsNotification(event)
   if (decision.sound && !BACKGROUND_TEST) shell.beep()
 }
@@ -2354,16 +2379,12 @@ function createWindow(): void {
     sendToRenderer(CH.window.focus, true)
     if (blurredAt && Date.now() - blurredAt > WEBGL_REPAIR_BLUR_MS) requestWebglRepair()
     blurredAt = 0
-    if (uiActiveTabId) {
-      consumeOutletDedupe(uiActiveTabId)
-      attention.clear(uiActiveTabId)
-    }
+    if (uiActiveTabId) attention.seen(uiActiveTabId)
     void freshness?.sweep({ host: null })
   })
   mainWindow.on('blur', () => {
     sendToRenderer(CH.window.focus, false)
     blurredAt = Date.now()
-    if (uiActiveTabId) attention.reconsider(uiActiveTabId, attentionCtx())
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
@@ -2644,7 +2665,7 @@ app.whenReady().then(() => {
     discordNotices?.onStatus(t.tabId, t.prev, t.next)
     void discordLive?.refresh(t.tabId)
     if (!(conductor && t.next === 'waiting'))
-      attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
+      attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
   })
@@ -4987,25 +5008,10 @@ function registerIpc(): void {
     return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
   })
   ipcMain.on(CH.attention.activeTab, (_e, id: string | null) => {
-    const prevActive = uiActiveTabId
     uiActiveTabId = typeof id === 'string' && id ? id : null
     if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
-    const ctx = attentionCtx()
-    if (uiActiveTabId && ctx.windowFocused) {
-      consumeOutletDedupe(uiActiveTabId)
-      attention.clear(uiActiveTabId)
-    }
-    if (prevActive && prevActive !== uiActiveTabId) attention.reconsider(prevActive, ctx)
+    if (uiActiveTabId && windowFocused()) attention.seen(uiActiveTabId)
     rememberOpenTabs()
-  })
-  ipcMain.on(CH.attention.visit, (_e, id: string) => {
-    if (typeof id !== 'string' || !id) return
-    const prevActive = uiActiveTabId
-    uiActiveTabId = id
-    tracker.noteActivity(id)
-    consumeOutletDedupe(id)
-    attention.clear(id)
-    if (prevActive && prevActive !== id) attention.reconsider(prevActive, attentionCtx())
   })
 
   ipcMain.handle(

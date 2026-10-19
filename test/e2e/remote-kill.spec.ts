@@ -339,9 +339,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await startSessionIn(page, 'ws-a')
       const localRow = wsRows(page, 'ws-a').first()
       await expect(localRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
-      await remoteRow.click()
       await localRow.click()
-      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
       const asleepTab = await remoteRow.getAttribute('data-tab-id')
 
       await expect.poll(() => killLines(env, first.sessionId), { timeout: 60_000 }).toHaveLength(1)
