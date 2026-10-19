@@ -1,20 +1,11 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import { IconClose, IconPlus, IconReload, IconWebPage } from '../../icons'
-import type { AccountKind, AccountView, SignInFolderKind } from '@shared/types'
-import { SIGN_IN_FOLDER_KINDS } from '@shared/types'
+import type { AccountKind, AccountView, SignInBackend } from '@shared/types'
+import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from '@shared/types'
 import { BACKEND_LABEL, backendAvailable } from '@shared/sessionBackend'
 import { useStore } from '../../store'
 import { useInstalledBackends } from '../../useInstalledBackends'
 import { ACCOUNT_KINDS_OF, measuredAt, needsSignInAgain, windowLabel } from '@shared/accountUsage'
-
-type SignInBackend = 'codex' | 'muse' | 'agy'
-
-// CODEX§15 MUSE§13 AGY§5
-const SIGNS_IN_TO: Record<SignInBackend, SignInFolderKind> = {
-  codex: 'codex-home',
-  muse: 'muse-home',
-  agy: 'agy-home'
-}
 
 // AGY§5
 const SIGN_IN_COMMAND: Record<SignInBackend, string> = {
@@ -431,7 +422,7 @@ export function SignInDialog({
     setBusy(true)
     setError(null)
     const nm = name.trim()
-    const r = await window.api.accounts.signIn(SIGNS_IN_TO[backend], nm, !!again)
+    const r = await window.api.accounts.signIn(SIGN_IN_FOLDER_OF[backend], nm, !!again)
     setBusy(false)
     if (!r.ok) {
       setError(

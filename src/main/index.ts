@@ -328,6 +328,7 @@ import {
   isHttpUrl,
   keychainNamespace,
   SIGN_IN_FOLDER_KINDS,
+  BACKEND_OF_SIGN_IN_FOLDER,
   isSignInFolderKind,
   type SignInFolderKind,
   type GitPlatform,
@@ -1932,12 +1933,6 @@ function noteHomeAccount(name: string, kind: HomeKind): void {
   pushAccounts()
 }
 
-const HOME_BACKEND: Record<HomeKind, BackendId> = {
-  'codex-home': 'codex',
-  'muse-home': 'muse',
-  'agy-home': 'agy'
-}
-
 const homeLogin: Record<
   HomeKind,
   (name: string) => Promise<{ binary?: string; env: Record<string, string>; args?: string[] }>
@@ -1989,7 +1984,7 @@ async function signInToHome(kind: HomeKind, name: string, again: boolean): Promi
   const tab = homeShellTab(
     login.binary
       ? signIn(shq(login.binary))
-      : installThen(HOME_BACKEND[kind], signIn, process.env.KOLOFT_TEST_TOOL_INSTALLER)
+      : installThen(BACKEND_OF_SIGN_IN_FOLDER[kind], signIn, process.env.KOLOFT_TEST_TOOL_INSTALLER)
   )
   signInPtys.set(tab.tabId, { kind, name })
   if (!login.binary) toolInstallPtys.add(tab.tabId)

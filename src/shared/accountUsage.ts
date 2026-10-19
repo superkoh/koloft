@@ -6,14 +6,14 @@ import type {
   CodexLimits,
   UsageSnapshot
 } from './types'
-import { SIGN_IN_FOLDER_KINDS } from './types'
+import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
 
 export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
   claude: ['oauth', 'apikey', 'custom'],
-  codex: ['codex-home'],
-  muse: ['muse-home'],
-  agy: ['agy-home']
+  codex: [SIGN_IN_FOLDER_OF.codex],
+  muse: [SIGN_IN_FOLDER_OF.muse],
+  agy: [SIGN_IN_FOLDER_OF.agy]
 }
 
 const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home', 'muse-home', 'agy-home']

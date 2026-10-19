@@ -19,11 +19,21 @@ export const ACCOUNT_KINDS: readonly AccountKind[] = [
 ]
 
 export type SignInFolderKind = Extract<AccountKind, 'codex-home' | 'muse-home' | 'agy-home'>
-export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = [
-  'codex-home',
-  'muse-home',
-  'agy-home'
-] satisfies SignInFolderKind[]
+
+// CODEX§15 MUSE§13 AGY§5
+export const SIGN_IN_FOLDER_OF = {
+  codex: 'codex-home',
+  muse: 'muse-home',
+  agy: 'agy-home'
+} as const satisfies Partial<Record<BackendId, SignInFolderKind>>
+
+export type SignInBackend = keyof typeof SIGN_IN_FOLDER_OF
+
+export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = Object.values(SIGN_IN_FOLDER_OF)
+
+export const BACKEND_OF_SIGN_IN_FOLDER = Object.fromEntries(
+  Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [kind, backend])
+) as Record<SignInFolderKind, SignInBackend>
 
 export const isSignInFolderKind = (kind: unknown): kind is SignInFolderKind =>
   SIGN_IN_FOLDER_KINDS.some((k) => k === kind)
