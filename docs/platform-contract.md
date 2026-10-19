@@ -240,6 +240,14 @@ method. A recheck adds its date, version and command to the bullet.
   `Error invoking remote method '<channel>': Error: <original message>` (the original
   text is everything after the `': Error: ` that ends this prefix; a message may itself
   contain `Error: `).
+- **A module that two preload inputs both import breaks the sandboxed guest
+  preload.** electron-vite puts the shared module in `out/preload/chunks/<name>.js`
+  and has each preload `require("./chunks/<name>.js")`; the guest frame preload runs
+  sandboxed (§14), cannot load that file, and stops working. Measured 2026-10-19,
+  Electron 43.7.3 / electron-vite 5.0.0: with `src/preload/guest.ts` importing the
+  shared channel table, the built `guest.js` required the chunk and browser-routing's
+  "a middle-click on a link in a guest page opens it as a background tab" failed twice;
+  with the plain strings back it passed.
 
 ## §7 Electron: menus and keys
 
