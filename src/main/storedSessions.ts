@@ -120,11 +120,7 @@ export interface SessionsWithStore {
   tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
 }
 
-interface Place {
-  root: string
-  worktreeName?: string
-  missing: boolean
-}
+type Place = ProjectInfo & { missing: boolean }
 
 interface RowScope {
   byPath: Map<string, WorktreeResource>
@@ -137,7 +133,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   protected history = new Map<string, H>()
   protected archivedIds = new Set<string>()
   private places = new Map<string, Place>()
-  private placesFor?: Map<string, H>
   private probed?: { at: number; reply: BackendAvailability }
   private probing?: Promise<BackendAvailability>
   protected binary?: string
@@ -457,15 +452,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   private placeOf(cwd: string, scope: RowScope): Place {
-    if (this.placesFor !== this.history) {
-      this.places = new Map()
-      this.placesFor = this.history
-    }
     const places = isRemoteKey(cwd) ? scope.remotePlaces : this.places
     const known = places.get(cwd)
     if (known) return known
-    const { root, worktreeName } = this.deps.projectInfo(cwd)
-    const place = { root, worktreeName, missing: seenMissing(cwd) }
+    const place = { ...this.deps.projectInfo(cwd), missing: seenMissing(cwd) }
     places.set(cwd, place)
     return place
   }
@@ -503,6 +493,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       if (archived) archivedIds.add(key)
     }
     this.history = seen
+    this.places.clear()
     this.archivedIds = archivedIds
     this.listed = true
     this.historyError = undefined
