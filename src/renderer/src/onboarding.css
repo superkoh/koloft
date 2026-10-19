@@ -20,7 +20,8 @@
   text-transform: uppercase;
   color: var(--accent);
 }
-.onboarding .big {
+/* ADR-0014 */
+.w-empty.onboarding .big {
   font-size: 19px;
 }
 .onboarding .quiet {
@@ -123,7 +124,8 @@
   width: var(--ob-w);
   max-width: 100%;
 }
-.ob-skip {
+/* ADR-0014 */
+.ob-link.ob-skip {
   flex: 1;
   text-align: left;
   color: var(--fg-faint);

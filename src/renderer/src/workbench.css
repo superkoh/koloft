@@ -247,8 +247,9 @@
 .wb-panel .wb-title .nm::before {
   content: '\200E';
 }
-.wb-newmenu,
-.wb-ghmenu {
+/* ADR-0014 */
+.menu.wb-newmenu,
+.menu.wb-ghmenu {
   position: absolute;
   top: 38px;
   z-index: 40;

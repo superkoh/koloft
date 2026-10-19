@@ -77,7 +77,8 @@
 .wc-add[aria-expanded='true'] {
   opacity: 1;
 }
-.wc-pop {
+/* ADR-0014 */
+.menu.wc-pop {
   width: 300px;
   padding: 6px;
 }
