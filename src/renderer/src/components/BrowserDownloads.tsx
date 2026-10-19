@@ -1,8 +1,24 @@
-import { useEffect, useRef, type JSX } from 'react'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { IconDelete, IconFile } from '../icons'
-import type { DownloadItem, DownloadList } from './downloadList'
+import {
+  applyDownloadEvent,
+  clearFinishedDownloads,
+  type DownloadItem,
+  type DownloadList
+} from './downloadList'
 
 const OPENER_BUTTON_IS_NOT_OUTSIDE = '[data-panel-toggle="downloads"]'
+
+export function useBrowserDownloads(): { downloads: DownloadList; clearFinished: () => void } {
+  const [downloads, setDownloads] = useState<DownloadList>({ items: [] })
+  useEffect(() => {
+    return window.api.browser.onDownloadEvent((event) => {
+      setDownloads((prev) => applyDownloadEvent(prev, event))
+    })
+  }, [])
+  const clearFinished = useCallback(() => setDownloads((prev) => clearFinishedDownloads(prev)), [])
+  return { downloads, clearFinished }
+}
 
 function sizeText(item: DownloadItem): string {
   const mb = (n: number): string => (n / 1024 / 1024).toFixed(1) + ' MB'

@@ -1,6 +1,8 @@
 import {
+  memo,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type JSX,
@@ -24,6 +26,7 @@ import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { boundSessionId, useActiveOpenFile, useStore, type OpenFile } from '../store'
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { useEditProbe } from './EditPane'
+import { FullWidthButton } from './WorkbenchBars'
 import { ChangesView } from './ChangesView'
 import { BrowseView } from './BrowseView'
 import { clampSideWidth, readSideWidth, storeSideWidth } from './filesSide'
@@ -198,48 +201,86 @@ export function useFilesController(tabId: string | null, root: string | null): F
     setReadingCaps((prev) => (sameCaps(prev, caps) ? prev : caps))
   }, [])
 
-  return {
-    tabId,
-    view,
-    setView,
-    baseChoice,
-    setBaseChoice,
-    filters,
-    setFilters,
-    menu,
-    setMenu,
-    searchOpen,
-    toggleSearch,
-    searchFocusNonce,
-    anchor,
-    scrollToFile: useCallback(
-      (rel: string) => setAnchor((a) => ({ rel, nonce: (a?.nonce ?? 0) + 1 })),
-      []
-    ),
-    refreshNonce,
-    refresh: useCallback(() => setRefreshNonce((n) => n + 1), []),
-    readingView,
-    setReadingView: setReadingViewRaw,
-    readingCaps,
-    reportReadingCaps,
-    readingReloadNonce,
-    reloadReading: useCallback(() => setReadingReloadNonce((n) => n + 1), []),
-    outlineOpen,
-    setOutlineOpen,
-    recents,
-    bookmarks,
-    toggleBookmark,
-    openInReadingArea
-  }
+  const scrollToFile = useCallback(
+    (rel: string) => setAnchor((a) => ({ rel, nonce: (a?.nonce ?? 0) + 1 })),
+    []
+  )
+  const refresh = useCallback(() => setRefreshNonce((n) => n + 1), [])
+  const reloadReading = useCallback(() => setReadingReloadNonce((n) => n + 1), [])
+
+  return useMemo(
+    () => ({
+      tabId,
+      view,
+      setView,
+      baseChoice,
+      setBaseChoice,
+      filters,
+      setFilters,
+      menu,
+      setMenu,
+      searchOpen,
+      toggleSearch,
+      searchFocusNonce,
+      anchor,
+      scrollToFile,
+      refreshNonce,
+      refresh,
+      readingView,
+      setReadingView: setReadingViewRaw,
+      readingCaps,
+      reportReadingCaps,
+      readingReloadNonce,
+      reloadReading,
+      outlineOpen,
+      setOutlineOpen,
+      recents,
+      bookmarks,
+      toggleBookmark,
+      openInReadingArea
+    }),
+    [
+      tabId,
+      view,
+      setView,
+      baseChoice,
+      setBaseChoice,
+      filters,
+      menu,
+      searchOpen,
+      toggleSearch,
+      searchFocusNonce,
+      anchor,
+      scrollToFile,
+      refreshNonce,
+      refresh,
+      readingView,
+      readingCaps,
+      reportReadingCaps,
+      readingReloadNonce,
+      reloadReading,
+      outlineOpen,
+      recents,
+      bookmarks,
+      toggleBookmark,
+      openInReadingArea
+    ]
+  )
 }
 
 export interface FilesBarProps {
   c: FilesController
   changedCount: number
-  fullBtn: JSX.Element
+  full: boolean
+  onToggleFull: () => void
 }
 
-export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Element {
+export const FilesBar = memo(function FilesBar({
+  c,
+  changedCount,
+  full,
+  onToggleFull
+}: FilesBarProps): JSX.Element {
   const closeOnEsc = (e: ReactKeyboardEvent): void => {
     if (e.key === 'Escape') c.setMenu(null)
   }
@@ -298,7 +339,7 @@ export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Eleme
       <button className="icobtn" onClick={c.refresh} title="Reload" aria-label="Reload">
         <IconReload size={14} />
       </button>
-      {fullBtn}
+      <FullWidthButton full={full} onToggle={onToggleFull} />
 
       {c.menu?.kind === 'base' && (
         <div
@@ -376,7 +417,7 @@ export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Eleme
       )}
     </div>
   )
-}
+})
 
 function FilterGroup({
   label,
@@ -429,7 +470,7 @@ export interface FilesBodyProps {
   onReturnFocus: () => void
 }
 
-export function FilesBody({
+export const FilesBody = memo(function FilesBody({
   c,
   root,
   rootMissing,
@@ -626,7 +667,7 @@ export function FilesBody({
         ))(c.menu)}
     </div>
   )
-}
+})
 
 function ReadingArea({
   c,
