@@ -57,13 +57,6 @@ export function playwrightEnvOverrides(mcpServers: unknown, approveTools = false
   })
 }
 
-export interface ListedHook {
-  key: string
-  command: string
-  currentHash: string
-  trustStatus: string
-}
-
 const ASSIST_MEMORY = `# Assist memory
 
 This file is your memory folder. When the owner asks you to remember something, add it here as one short line. Keep everything already here.
@@ -85,35 +78,6 @@ export const GATE_HOOK: KoloftHook = { event: 'PreToolUse', command: CODEX_GATE_
 
 export const hookOverrides = (hooks: KoloftHook[]): string[] =>
   hooks.map(({ event, command }) => codexHookOverride(event, command))
-
-// CODEX§27
-export function koloftHooksIn(reply: unknown, wanted: KoloftHook[]): ListedHook[] {
-  const found: ListedHook[] = []
-  const lists = record(reply).data
-  for (const list of Array.isArray(lists) ? lists : []) {
-    const hooks = record(list).hooks
-    for (const raw of Array.isArray(hooks) ? hooks : []) {
-      const hook = record(raw)
-      if (
-        hook.source === 'sessionFlags' &&
-        wanted.some(
-          (w) =>
-            w.command === hook.command &&
-            w.event.toLowerCase() === String(hook.eventName).toLowerCase()
-        ) &&
-        typeof hook.key === 'string' &&
-        typeof hook.currentHash === 'string'
-      )
-        found.push({
-          key: hook.key,
-          command: String(hook.command),
-          currentHash: hook.currentHash,
-          trustStatus: String(hook.trustStatus)
-        })
-    }
-  }
-  return found
-}
 
 interface Permissions {
   approval: 'never' | 'on-request'

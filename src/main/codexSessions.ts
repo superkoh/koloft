@@ -58,19 +58,17 @@ import {
   developerInstructions,
   GATE_HOOK,
   hookOverrides,
-  koloftHooksIn,
   launchChoiceArgs,
   machineTrustedFolderFlags,
   NO_UPDATE_NOTICE_AT_START,
   permissionConfig,
   permissionFlags,
   PERMISSIONS,
-  playwrightEnvOverrides,
   browserSandboxOverrides,
+  playwrightEnvOverrides,
   seedAssistMemory,
   STATUS_LINE_CONFIG,
-  type KoloftHook,
-  type ListedHook
+  type KoloftHook
 } from './codexLaunchConfig'
 import {
   CODEX_REPLY_LANGUAGE_ENV,
@@ -78,7 +76,14 @@ import {
   CODEX_SAID_ENV,
   seedHandedOverOwnerWords
 } from './hooks'
-import { acceptCodexHookTrust, codexConfigFile, codexHookTrusted, configTrusts } from './codexTrust'
+import {
+  acceptCodexHookTrust,
+  codexConfigFile,
+  codexHookTrusted,
+  configTrusts,
+  koloftHooksIn,
+  type ListedHook
+} from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
 import {
   CODEX_OPEN_SHIM_FOLDER,
