@@ -73,6 +73,8 @@ describe('the browser chrome', () => {
     'WorkbenchPane.tsx',
     'WorkbenchTabStrip.tsx',
     'WorkbenchWebGuests.tsx',
+    'WorkbenchMenus.tsx',
+    'WorkbenchFind.tsx',
     'BrowserAddressBar.tsx',
     'BrowserModal.tsx',
     'BrowserGuest.tsx'

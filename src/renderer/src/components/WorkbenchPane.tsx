@@ -34,6 +34,7 @@ import { editRefusal, useEditProbe } from './EditPane'
 import {
   allEditTabs,
   beginEdit,
+  dirtyTabsOf,
   discardTab,
   endEdit,
   getEntry,
@@ -82,7 +83,7 @@ import {
   type TabRuntime
 } from './WorkbenchWebGuests'
 import { useBrowserPermissions } from './useBrowserPermissions'
-import { useCdpOps } from './useCdpOps'
+import { useCdpOps, useStripReport } from './useCdpOps'
 
 function globalLiveGuestLimit(): number {
   return window.api.browserGuestLimit
@@ -92,8 +93,7 @@ const ZOOM_STEPS = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
 
 const WATCHLESS_REFRESH_THROTTLE_MS = 600
 
-const GUEST_ID_RETRY_MS = CDP_GUEST_ID_RETRY_MS
-const GUEST_ID_RETRIES = CDP_GUEST_ID_RETRIES
+const NO_TABS = emptyTabSet()
 
 const PREARMED_COMMANDS: ReadonlySet<WorkbenchCommandSignal['id']> = new Set([
   'find-files',
@@ -181,7 +181,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const [reloadNonce, setReloadNonce] = useState<Record<string, number>>({})
   const [editing, setEditing] = useState<Record<string, boolean>>({})
   const [editFocus, setEditFocus] = useState<Record<string, number>>({})
-  const [, bumpEdit] = useReducer((n: number) => n + 1, 0)
+  const [editTick, bumpEdit] = useReducer((n: number) => n + 1, 0)
   useEffect(() => subscribeDirty(bumpEdit), [])
 
   const files = useFilesController(ownerTab, treeRoot)
@@ -199,12 +199,12 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const bodies = useRef(new Map<string, HTMLElement>())
   // PLATFORM§9
   const mountOrder = useRef<string[]>([])
-  const everLive = useRef(new Set<string>())
+  const [everLive, setEverLive] = useState<ReadonlySet<string>>(() => new Set())
   const [visited, setVisited] = useState<string[]>([])
 
   const statesRef = useRef(states)
   statesRef.current = states
-  const set = (ownerTab && states[ownerTab]) || emptyTabSet()
+  const set = (ownerTab && states[ownerTab]) || NO_TABS
   const activeTab = set.tabs.find((t) => t.id === set.activeId) ?? null
   const activeKind = activeTab?.kind ?? 'files'
   const activeRuntime = activeTab ? (runtime[activeTab.id] ?? BLANK_RUNTIME) : BLANK_RUNTIME
@@ -269,7 +269,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   }, [pinnedIds])
 
   const makeLive = useCallback((id: string): void => {
-    everLive.current.add(id)
+    setEverLive((ever) => (ever.has(id) ? ever : new Set(ever).add(id)))
     if (!mountOrder.current.includes(id)) mountOrder.current.push(id)
     setLive((prev) => {
       const next = prev.filter((x) => x !== id && webIndexRef.current.has(x))
@@ -332,10 +332,11 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const activate = useCallback(
     (id: string): void => {
       if (!ownerTab) return
-      const restore = id === set.activeId ? () => {} : keepCaret()
+      const shown = statesRef.current[ownerTab] ?? NO_TABS
+      const restore = id === shown.activeId ? () => {} : keepCaret()
       onUpdate(ownerTab, (prev) => activateTab(prev, id))
       restore()
-      const tab = set.tabs.find((t) => t.id === id)
+      const tab = shown.tabs.find((t) => t.id === id)
       if (!tab) return
       if (tab.kind === 'file') {
         setVisited((prev) => (prev.includes(id) ? prev : [...prev, id]))
@@ -346,7 +347,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       if (tab.url && !els.current.has(id)) applyLive(id, tab.url)
       else makeLive(id)
     },
-    [ownerTab, sessionCold, set, onUpdate, applyLive, makeLive, keepCaret]
+    [ownerTab, sessionCold, onUpdate, applyLive, makeLive, keepCaret]
   )
 
   const closeNow = useCallback(
@@ -388,7 +389,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const close = useCallback(
     (id: string): void => {
       if (!ownerTab || id === FILES_TAB_ID) return
-      if (set.tabs.find((t) => t.id === id)?.kind === 'terminal') {
+      if (statesRef.current[ownerTab]?.tabs.find((t) => t.id === id)?.kind === 'terminal') {
         useStore.getState().closeTerminalTab(id)
         closeNow(id)
         return
@@ -427,17 +428,22 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         }
       })
     },
-    [ownerTab, set, treeRoot, closeNow, activate, refreshFiles]
+    [ownerTab, treeRoot, closeNow, activate, refreshFiles]
   )
 
-  const cdp = useCdpOps({
+  const closeIn = useCallback(
+    (owner: string, id: string): void => {
+      if (owner === ownerTab) close(id)
+      else onUpdate(owner, (prev) => closeTab(prev, id))
+    },
+    [ownerTab, close, onUpdate]
+  )
+
+  useStripReport(states, live, attached, guestIdOf)
+  const { waitGuestId, onAttached, settled, mounting } = useCdpOps({
     els,
     webIndexRef,
     pinnedRef,
-    states,
-    live,
-    attached,
-    guestIdOf,
     stage,
     unstage,
     applyLiveIn,
@@ -447,17 +453,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     tabForSession,
     onCdpCreate,
     onCdpDone,
-    close,
-    onUpdate,
-    ownerTab
+    closeIn
   })
-
-  const activateRef = useRef(activate)
-  activateRef.current = activate
-  const activateStable = useCallback((id: string): void => activateRef.current(id), [])
-  const closeRef = useRef(close)
-  closeRef.current = close
-  const closeStable = useCallback((id: string): void => closeRef.current(id), [])
 
   const enterEdit = useCallback(
     (tabId: string, path: string, created?: EditFingerprint): void => {
@@ -912,7 +909,6 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     [ownerTab, onUpdate]
   )
 
-  const mounting = cdp.mounting
   useEffect(() => {
     mountOrder.current = mountOrder.current.filter((id) => webIndex.has(id) || mounting(id))
   }, [webIndex])
@@ -973,8 +969,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     if (report()) return
     let tries = 0
     const timer = setInterval(() => {
-      if (report() || ++tries >= GUEST_ID_RETRIES) clearInterval(timer)
-    }, GUEST_ID_RETRY_MS)
+      if (report() || ++tries >= CDP_GUEST_ID_RETRIES) clearInterval(timer)
+    }, CDP_GUEST_ID_RETRY_MS)
     return () => clearInterval(timer)
   }, [ownerTab, activeTab?.id, activeTab?.url, live, attached, openDedupedIntoShownTabNonce])
 
@@ -1070,9 +1066,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     [ownerTab, onUpdate]
   )
 
-  const latest = useRef({ ownerTab, onUpdate, runtime })
-  latest.current = { ownerTab, onUpdate, runtime }
-  const { waitGuestId, attached: mountAttached, settled: mountSettled } = cdp
+  const latest = useRef({ onUpdate, runtime, closeIn })
+  latest.current = { onUpdate, runtime, closeIn }
   const guestEvents = useMemo<GuestEvents>(() => {
     const elOf = (tabId: string): GuestElement | undefined => els.current.get(tabId)
     const recordVisit = (owner: string, tabId: string, url: string): void => {
@@ -1105,7 +1100,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
           () => {}
         )
         setAttached((n) => n + 1)
-        mountAttached(tabId)
+        onAttached(tabId)
       },
       loading: (_owner, tabId, loading) => {
         patchRuntime(tabId, { loading, ...guestHistory(elOf(tabId)) })
@@ -1124,7 +1119,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         } catch {
           return
         }
-        if (stopEndsMount(evidence)) mountSettled(tabId)
+        if (stopEndsMount(evidence)) settled(tabId)
       },
       navigate: (owner, tabId, url) => {
         patchRuntime(tabId, {
@@ -1143,15 +1138,12 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       },
       fail: (_owner, tabId, fail) => {
         patchRuntime(tabId, { fail, loading: false })
-        mountSettled(tabId)
+        settled(tabId)
       },
       crash: (_owner, tabId) => patchRuntime(tabId, { crashed: true, loading: false }),
-      close: (owner, tabId) => {
-        if (owner === latest.current.ownerTab) closeStable(tabId)
-        else latest.current.onUpdate(owner, (prev) => closeTab(prev, tabId))
-      }
+      close: (owner, tabId) => latest.current.closeIn(owner, tabId)
     }
-  }, [patchRuntime, waitGuestId, mountAttached, mountSettled, closeStable])
+  }, [patchRuntime, waitGuestId, onAttached, settled])
 
   const mountedWebTabs = mountOrder.current
     .filter((id) => live.includes(id))
@@ -1175,12 +1167,10 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     activeTab?.sourceTabId && set.tabs.some((t) => t.id === activeTab.sourceTabId)
       ? activeTab.sourceTabId
       : null
-  const dirtyIds = ownerTab
-    ? set.tabs
-        .filter((t) => isTabDirty(ownerTab, t.id))
-        .map((t) => t.id)
-        .join(' ')
-    : ''
+  const dirtyIds = useMemo(
+    () => new Set(ownerTab ? dirtyTabsOf(ownerTab).map((d) => d.tabId) : []),
+    [ownerTab, editTick]
+  )
 
   const openGithub = useCallback(
     (what: GithubTarget): void => {
@@ -1232,7 +1222,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       <WorkbenchTabStrip
         set={set}
         live={live}
-        everLive={everLive.current}
+        everLive={everLive}
         pinnedIds={pinnedIds}
         dirtyIds={dirtyIds}
         audio={audio}
@@ -1243,8 +1233,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         githubLabel={gh.label}
         onGithubOpen={openGithubFromButton}
         onGithubMenu={openGithubMenu}
-        onActivate={activateStable}
-        onClose={closeStable}
+        onActivate={activate}
+        onClose={close}
         onToggleMute={toggleMute}
         onMove={moveTabTo}
         onNewMenu={toggleNewMenu}
@@ -1380,7 +1370,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
           onToggleOutline={toggleOutline}
         />
       ) : (
-        <FilesBar c={files} changedCount={changedCount} fullBtn={fullBtn} />
+        <FilesBar c={files} changedCount={changedCount} full={full} onToggleFull={onToggleFull} />
       )}
 
       {dlOpen && (
@@ -1435,40 +1425,42 @@ export const WorkbenchPane = memo(function WorkbenchPane({
           />
         ))}
 
-        {fileTabs.map((t) => {
-          const unsaved = !!ownerTab && isTabDirty(ownerTab, t.id)
-          return (
-            <FileTabHost
-              key={t.id}
-              ownerTab={ownerTab}
-              tabId={t.id}
-              path={t.path ?? ''}
-              view={t.view}
-              line={t.line}
-              scrollTop={t.scrollTop}
-              shown={t.id === set.activeId}
-              editing={!!ownerTab && !!editing[t.id] && !!getEntry(ownerTab, t.id)}
-              editFocus={editFocus[t.id] ?? 0}
-              editText={unsaved && ownerTab ? getEntry(ownerTab, t.id)?.text : undefined}
-              editUnsaved={unsaved}
-              wsRoot={treeRoot}
-              base={base}
-              changed={!!(t.path && git[t.path])}
-              reloadNonce={reloadNonce[t.id] ?? 0}
-              outlineOpen={!!outlineOpen[t.id]}
-              zoom={t.id === set.activeId ? zoom : null}
-              onSaved={refreshFiles}
-              onCaps={reportCaps}
-              onNavigate={retarget}
-              onBody={reportBody}
-              onZoomImage={setZoom}
-              onCloseZoom={closeZoom}
-              onOutlineClose={closeOutline}
-              onClose={closeStable}
-              onUnmount={keepScrollTop}
-            />
-          )
-        })}
+        {ownerTab &&
+          fileTabs.map((t) => {
+            const unsaved = dirtyIds.has(t.id)
+            const editingHere = !!editing[t.id] && !!getEntry(ownerTab, t.id)
+            return (
+              <FileTabHost
+                key={t.id}
+                ownerTab={ownerTab}
+                tabId={t.id}
+                path={t.path ?? ''}
+                view={t.view}
+                line={t.line}
+                scrollTop={t.scrollTop}
+                shown={t.id === set.activeId}
+                editing={editingHere}
+                editFocus={editFocus[t.id] ?? 0}
+                editText={unsaved && !editingHere ? getEntry(ownerTab, t.id)?.text : undefined}
+                editUnsaved={unsaved}
+                wsRoot={treeRoot}
+                base={base}
+                changed={!!(t.path && git[t.path])}
+                reloadNonce={reloadNonce[t.id] ?? 0}
+                outlineOpen={!!outlineOpen[t.id]}
+                zoom={t.id === set.activeId ? zoom : null}
+                onSaved={refreshFiles}
+                onCaps={reportCaps}
+                onNavigate={retarget}
+                onBody={reportBody}
+                onZoomImage={setZoom}
+                onCloseZoom={closeZoom}
+                onOutlineClose={closeOutline}
+                onClose={close}
+                onUnmount={keepScrollTop}
+              />
+            )
+          })}
 
         <div
           className="wb-host"

@@ -53,6 +53,6 @@ describe('the panel asks it', () => {
     expect(start).toBeGreaterThan(-1)
     const handler = src.slice(start, src.indexOf('navigate:', start))
     expect(handler).toContain('stopEndsMount')
-    expect(handler.indexOf('mountSettled')).toBeGreaterThan(handler.indexOf('stopEndsMount'))
+    expect(handler.indexOf('settled(tabId)')).toBeGreaterThan(handler.indexOf('stopEndsMount'))
   })
 })

@@ -21,7 +21,7 @@ export const TerminalHost = memo(function TerminalHost({
 })
 
 export interface FileTabHostProps {
-  ownerTab: string | null
+  ownerTab: string
   tabId: string
   path: string
   view?: ArtifactView
@@ -79,7 +79,7 @@ export const FileTabHost = memo(function FileTabHost({
 }: FileTabHostProps): JSX.Element {
   return (
     <div className="wb-host" style={{ visibility: shown ? undefined : 'hidden' }}>
-      {ownerTab && editing ? (
+      {editing ? (
         <EditPane ownerTab={ownerTab} tabId={tabId} focusNonce={editFocus} onSaved={onSaved} />
       ) : (
         <ArtifactPane

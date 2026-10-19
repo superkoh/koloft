@@ -54,6 +54,15 @@ export function guestId(el: GuestElement | undefined): number {
 }
 
 // PLATFORM§8
+export function guestLoading(el: GuestElement | undefined): boolean {
+  try {
+    return el?.isLoading() ?? false
+  } catch {
+    return false
+  }
+}
+
+// PLATFORM§8
 export function guestUrl(el: GuestElement | undefined): string {
   try {
     return el?.getURL() ?? ''

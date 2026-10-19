@@ -26,6 +26,7 @@ import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { boundSessionId, useActiveOpenFile, useStore, type OpenFile } from '../store'
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { useEditProbe } from './EditPane'
+import { FullWidthButton } from './WorkbenchBars'
 import { ChangesView } from './ChangesView'
 import { BrowseView } from './BrowseView'
 import { clampSideWidth, readSideWidth, storeSideWidth } from './filesSide'
@@ -270,10 +271,16 @@ export function useFilesController(tabId: string | null, root: string | null): F
 export interface FilesBarProps {
   c: FilesController
   changedCount: number
-  fullBtn: JSX.Element
+  full: boolean
+  onToggleFull: () => void
 }
 
-export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Element {
+export const FilesBar = memo(function FilesBar({
+  c,
+  changedCount,
+  full,
+  onToggleFull
+}: FilesBarProps): JSX.Element {
   const closeOnEsc = (e: ReactKeyboardEvent): void => {
     if (e.key === 'Escape') c.setMenu(null)
   }
@@ -332,7 +339,7 @@ export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Eleme
       <button className="icobtn" onClick={c.refresh} title="Reload" aria-label="Reload">
         <IconReload size={14} />
       </button>
-      {fullBtn}
+      <FullWidthButton full={full} onToggle={onToggleFull} />
 
       {c.menu?.kind === 'base' && (
         <div
@@ -410,7 +417,7 @@ export function FilesBar({ c, changedCount, fullBtn }: FilesBarProps): JSX.Eleme
       )}
     </div>
   )
-}
+})
 
 function FilterGroup({
   label,

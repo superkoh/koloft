@@ -15,13 +15,43 @@ import {
 import type { BrowserCdpOp, BrowserCdpOpResult } from '@shared/types'
 import { boundSessionId, useStore } from '../store'
 import type { GuestElement } from './BrowserGuest'
-import { cdpVisibleTabs, closeTab, type WorkbenchTab, type WorkbenchTabSet } from './workbenchTabs'
+import { cdpVisibleTabs, type WorkbenchTab, type WorkbenchTabSet } from './workbenchTabs'
+import { guestId, guestLoading } from './WorkbenchWebGuests'
 
 const CAPTURE_AFTER_PAINT_MS = 90
 
+export function useStripReport(
+  states: Record<string, WorkbenchTabSet>,
+  live: string[],
+  attached: number,
+  guestIdOf: (tabId: string) => number
+): void {
+  const bindings = useStore((s) =>
+    s.tabs.map((t) => `${t.id}=${boundSessionId(s, t.id) ?? ''}`).join(' ')
+  )
+  const lastReport = useRef(new Map<string, string>())
+  useEffect(() => {
+    const st = useStore.getState()
+    for (const [owner, s] of Object.entries(states)) {
+      const sid = boundSessionId(st, owner)
+      if (!sid) continue
+      const targets = cdpVisibleTabs(s).map((t) => ({
+        targetId: t.id,
+        url: t.url ?? '',
+        title: t.title,
+        guestId: guestIdOf(t.id) || null
+      }))
+      const json = JSON.stringify(targets)
+      if (lastReport.current.get(sid) === json) continue
+      lastReport.current.set(sid, json)
+      window.api.browser.reportStrip(sid, targets)
+    }
+  }, [states, live, attached, guestIdOf, bindings])
+}
+
 export interface CdpMounts {
   waitGuestId: (tabId: string) => Promise<number>
-  attached: (tabId: string) => void
+  onAttached: (tabId: string) => void
   settled: (tabId: string) => void
   mounting: (tabId: string) => boolean
 }
@@ -30,10 +60,6 @@ export function useCdpOps({
   els,
   webIndexRef,
   pinnedRef,
-  states,
-  live,
-  attached,
-  guestIdOf,
   stage,
   unstage,
   applyLiveIn,
@@ -43,17 +69,11 @@ export function useCdpOps({
   tabForSession,
   onCdpCreate,
   onCdpDone,
-  close,
-  onUpdate,
-  ownerTab
+  closeIn
 }: {
   els: RefObject<Map<string, GuestElement>>
   webIndexRef: RefObject<Map<string, { owner: string; tab: WorkbenchTab }>>
   pinnedRef: RefObject<Set<string>>
-  states: Record<string, WorkbenchTabSet>
-  live: string[]
-  attached: number
-  guestIdOf: (tabId: string) => number
   stage: (tabId: string) => void
   unstage: (tabId: string) => void
   applyLiveIn: (owner: string | null, id: string, url: string) => void
@@ -63,9 +83,7 @@ export function useCdpOps({
   tabForSession: (sessionId: string) => string | undefined
   onCdpCreate: (sessionId: string, url: string) => Promise<string | null>
   onCdpDone: (opId: string) => void
-  close: (id: string) => void
-  onUpdate: (tabId: string, update: (prev: WorkbenchTabSet) => WorkbenchTabSet) => void
-  ownerTab: string | null
+  closeIn: (owner: string, id: string) => void
 }): CdpMounts {
   const pendingMounts = useRef(new Map<string, () => void>())
   const pendingSettles = useRef(new Map<string, () => void>())
@@ -75,13 +93,13 @@ export function useCdpOps({
   const waitGuestId = useCallback(
     async (tabId: string): Promise<number> => {
       for (let i = 0; i < CDP_GUEST_ID_RETRIES; i++) {
-        const id = guestIdOf(tabId)
+        const id = guestId(els.current.get(tabId))
         if (id) return id
         await new Promise((r) => setTimeout(r, CDP_GUEST_ID_RETRY_MS))
       }
       throw new Error('the page never reported its id')
     },
-    [guestIdOf]
+    [els]
   )
 
   const inFlightMounts = useRef(new Map<string, Promise<number>>())
@@ -97,17 +115,6 @@ export function useCdpOps({
       pendingSettles.current.set(tabId, done)
     })
   }, [])
-
-  const guestLoading = useCallback(
-    (tabId: string): boolean => {
-      try {
-        return els.current.get(tabId)?.isLoading() ?? false
-      } catch {
-        return false
-      }
-    },
-    [els]
-  )
 
   const doMount = useCallback(
     async (opOwner: string, tabId: string, urlHint?: string): Promise<number> => {
@@ -132,10 +139,10 @@ export function useCdpOps({
         makeLive(tabId)
       }
       // PLATFORM§8
-      if (fresh || guestLoading(tabId)) await settledPromise(tabId)
+      if (fresh || guestLoading(els.current.get(tabId))) await settledPromise(tabId)
       return await waitGuestId(tabId)
     },
-    [els, webIndexRef, applyLiveIn, makeLive, settledPromise, waitGuestId, guestLoading, stage]
+    [els, webIndexRef, applyLiveIn, makeLive, settledPromise, waitGuestId, stage]
   )
 
   const mountTab = useCallback(
@@ -153,28 +160,6 @@ export function useCdpOps({
     },
     [doMount, unstage, pinnedRef]
   )
-
-  const bindings = useStore((s) =>
-    s.tabs.map((t) => `${t.id}=${boundSessionId(s, t.id) ?? ''}`).join(' ')
-  )
-  const lastReport = useRef(new Map<string, string>())
-  useEffect(() => {
-    const st = useStore.getState()
-    for (const [owner, s] of Object.entries(states)) {
-      const sid = boundSessionId(st, owner)
-      if (!sid) continue
-      const targets = cdpVisibleTabs(s).map((t) => ({
-        targetId: t.id,
-        url: t.url ?? '',
-        title: t.title,
-        guestId: guestIdOf(t.id) || null
-      }))
-      const json = JSON.stringify(targets)
-      if (lastReport.current.get(sid) === json) continue
-      lastReport.current.set(sid, json)
-      window.api.browser.reportStrip(sid, targets)
-    }
-  }, [states, live, attached, guestIdOf, bindings])
 
   useEffect(() => {
     if (!cdpOps.length) return
@@ -216,8 +201,7 @@ export function useCdpOps({
         }, fail)
       } else if (op.kind === 'close' && op.targetId) {
         const id = op.targetId
-        if (opOwner === ownerTab) close(id)
-        else onUpdate(opOwner, (prev) => closeTab(prev, id))
+        closeIn(opOwner, id)
         setLive((prev) => prev.filter((x) => x !== id))
         finish({ ok: true })
       } else if (op.kind === 'stage' && op.targetId) {
@@ -227,20 +211,9 @@ export function useCdpOps({
         finish({ ok: false, error: `unknown op ${op.kind}` })
       }
     }
-  }, [
-    cdpOps,
-    mountTab,
-    onCdpCreate,
-    onCdpDone,
-    close,
-    onUpdate,
-    ownerTab,
-    tabForSession,
-    stage,
-    setLive
-  ])
+  }, [cdpOps, mountTab, onCdpCreate, onCdpDone, closeIn, tabForSession, stage, setLive])
 
-  const attachedMount = useCallback((tabId: string): void => {
+  const onAttached = useCallback((tabId: string): void => {
     const waiting = pendingMounts.current.get(tabId)
     if (waiting) {
       pendingMounts.current.delete(tabId)
@@ -250,5 +223,5 @@ export function useCdpOps({
   const settled = useCallback((tabId: string): void => pendingSettles.current.get(tabId)?.(), [])
   const mounting = useCallback((tabId: string): boolean => inFlightMounts.current.has(tabId), [])
 
-  return { waitGuestId, attached: attachedMount, settled, mounting }
+  return { waitGuestId, onAttached, settled, mounting }
 }

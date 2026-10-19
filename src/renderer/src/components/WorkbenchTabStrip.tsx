@@ -9,14 +9,14 @@ import {
   IconTerminal,
   IconWebPage
 } from '../icons'
-import type { GithubInfo, GithubTarget } from '@shared/types'
+import type { BrowserAudioState, GithubInfo, GithubTarget } from '@shared/types'
 import { CHANGES_MSG, type ChangeTotals } from './changesModel'
 import { FilesTabLabel } from './FilesTabLabel'
 import type { ChecksDot } from './prChecksView'
 import { GithubButton } from './workbenchGithub'
 import { tabLabel, type WorkbenchTab, type WorkbenchTabSet } from './workbenchTabs'
 
-export type TabAudio = Record<string, { audible: boolean; muted: boolean }>
+export type TabAudio = Record<string, Pick<BrowserAudioState, 'audible' | 'muted'>>
 
 function pressOnTabControl(e: { stopPropagation(): void; preventDefault(): void }): void {
   e.stopPropagation()
@@ -59,7 +59,7 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
   live: string[]
   everLive: ReadonlySet<string>
   pinnedIds: ReadonlySet<string>
-  dirtyIds: string
+  dirtyIds: ReadonlySet<string>
   audio: TabAudio
   totals: ChangeTotals | null
   driving: boolean
@@ -75,7 +75,6 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
   onNewMenu: () => void
 }): JSX.Element {
   const [drag, setDrag] = useState<{ id: string; over: number } | null>(null)
-  const dirty = dirtyIds.split(' ')
 
   const dropTab = (to: number): void => {
     const id = drag?.id
@@ -148,7 +147,7 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
           onMouseDown={pressOnTabControl}
           onClick={() => onClose(t.id)}
         >
-          {dirty.includes(t.id) ? (
+          {dirtyIds.has(t.id) ? (
             <>
               <span className="dirty" title="Unsaved changes" />
               <span className="xhov">
