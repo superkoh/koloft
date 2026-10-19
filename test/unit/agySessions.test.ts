@@ -253,7 +253,7 @@ beforeEach(() => {
 afterEach(async () => {
   await sessions.stopAll()
   process.env.PATH = REAL_PATH
-  fs.rmSync(home, { recursive: true, force: true })
+  fs.rmSync(home, { recursive: true, force: true, maxRetries: 3 })
 })
 
 async function launch(

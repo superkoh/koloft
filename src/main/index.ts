@@ -3418,6 +3418,7 @@ app.on('before-quit', (e) => {
   flushLayout()
   openTabsFile?.flushSync()
   sessionAccounts?.flushSync()
+  for (const stored of storedSessions()) stored.store.flushSync()
   flushAttention()
   freshness?.stop()
   remoteSync?.stop()

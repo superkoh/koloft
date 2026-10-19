@@ -195,7 +195,7 @@ afterEach(async () => {
   await sessions.stopAll()
   vi.restoreAllMocks()
   process.env.HOME = realHome
-  fs.rmSync(directory, { recursive: true, force: true })
+  fs.rmSync(directory, { recursive: true, force: true, maxRetries: 3 })
 })
 
 describe('CodexSessions', () => {

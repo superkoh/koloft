@@ -20,7 +20,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
-  fs.rmSync(directory, { recursive: true, force: true })
+  fs.rmSync(directory, { recursive: true, force: true, maxRetries: 3 })
 })
 
 function member(): StoredMember {
@@ -57,11 +57,26 @@ describe('SessionStore', () => {
     store.putResource(worktree)
     store.upsertMember(session)
     store.removeMember(session.key)
+    store.flushSync()
     const reopened = new SessionStore(filename)
     expect(reopened.listMembers()).toEqual([])
     expect(reopened.getResource(worktree.id)).toEqual(worktree)
     reopened.upsertMember(session)
+    reopened.flushSync()
     expect(new SessionStore(filename).getMember(session.key)).toEqual(session)
+  })
+
+  it('writes off the main thread: a change is in memory at once and lands on disk, owner-only, a moment later', async () => {
+    const writes = vi.spyOn(fs, 'writeFileSync')
+    const store = new SessionStore(filename)
+    const session = member()
+    store.upsertMember(session)
+    expect(store.getMember(session.key)).toEqual(session)
+    expect(writes).not.toHaveBeenCalled()
+    await vi.waitFor(() =>
+      expect(new SessionStore(filename).getMember(session.key)).toEqual(session)
+    )
+    expect(fs.statSync(filename).mode & 0o777).toBe(0o600)
   })
 
   it('drops a worktree’s recovery record once no member uses it, and keeps it while one still does', () => {
@@ -77,6 +92,7 @@ describe('SessionStore', () => {
     expect(store.getResource(worktree.id)).toEqual(worktree)
     store.removeMember(second.key)
     store.removeUnusedResourcesAt(worktree.worktreePath)
+    store.flushSync()
     expect(new SessionStore(filename).getResource(worktree.id)).toBeUndefined()
   })
 
@@ -105,27 +121,18 @@ describe('SessionStore', () => {
     }
   })
 
-  it('leaves disk and memory unchanged if the atomic replacement fails', () => {
-    const store = new SessionStore(filename)
+  it('keeps the first backup intact over later writes and later opens', () => {
     const session = member()
-    store.upsertMember(session)
+    const first = new SessionStore(filename)
+    first.upsertMember(session)
+    first.flushSync()
     const original = fs.readFileSync(filename, 'utf8')
-    vi.spyOn(fs, 'renameSync').mockImplementation(() => {
-      throw new Error('disk error')
-    })
-    expect(() => store.updateMember(session.key, { title: 'Lost write' })).toThrow('disk error')
-    expect(store.getMember(session.key)).toEqual(session)
-    expect(fs.readFileSync(filename, 'utf8')).toBe(original)
-    expect(fs.readdirSync(directory).filter((file) => file.endsWith('.tmp'))).toEqual([])
-  })
-
-  it('keeps the first backup intact over later writes', () => {
     const store = new SessionStore(filename)
-    const session = member()
-    store.upsertMember(session)
-    const original = fs.readFileSync(filename, 'utf8')
     store.updateMember(session.key, { title: 'Two' })
-    store.updateMember(session.key, { title: 'Three' })
+    store.flushSync()
+    const later = new SessionStore(filename)
+    later.updateMember(session.key, { title: 'Three' })
+    later.flushSync()
     expect(fs.readFileSync(filename + '.bak', 'utf8')).toBe(original)
     expect(new SessionStore(filename).getMember(session.key)?.title).toBe('Three')
   })
