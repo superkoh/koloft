@@ -83,6 +83,16 @@ export function removeFoldersLeftByEndedRuns(dir: string, ours: RegExp): void {
   }
 }
 
+const toolShimRootsSwept = new Set<string>()
+
+export function removeToolShimsLeftByEndedRunsOnce(root: string): void {
+  if (toolShimRootsSwept.has(root)) return
+  try {
+    removeFoldersLeftByEndedRuns(root, CODEX_OPEN_SHIM_FOLDER)
+    toolShimRootsSwept.add(root)
+  } catch {}
+}
+
 // CC§9 PLATFORM§3
 export async function scanLeftovers(
   table: ProcessTable | null,

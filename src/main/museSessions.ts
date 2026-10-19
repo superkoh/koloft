@@ -22,7 +22,7 @@ import { startToolShim } from './toolShim'
 import { placeKoloftSkill, readJson } from './museAccounts'
 import { mapAtMost } from './mapAtMost'
 import { agentSkillMarkdown } from './agentPlugin'
-import { pidAlive } from './leftovers'
+import { pidAlive, removeToolShimsLeftByEndedRunsOnce } from './leftovers'
 import { browserControlEnv } from './browserControlEnv'
 import { allowsTheBrowser, conductorGateCommand } from './conductorGate'
 import {
@@ -737,6 +737,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     gate: string | undefined,
     ownerWords: string | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
+    removeToolShimsLeftByEndedRunsOnce(this.deps.openShimRoot)
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       {

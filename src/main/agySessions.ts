@@ -17,6 +17,7 @@ import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
 import { MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
+import { removeToolShimsLeftByEndedRunsOnce } from './leftovers'
 import { browserControlEnv } from './browserControlEnv'
 import { allowsTheBrowser, conductorGateCommand } from './conductorGate'
 import {
@@ -500,6 +501,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     })
     mergeAgyHooks(pick.home, gemini, koloftHookEntry(runWithSh(scripts.hook)))
     let bound: AgyRun | undefined
+    removeToolShimsLeftByEndedRunsOnce(this.deps.openShimRoot)
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { spawnSync } from 'child_process'
+import { randomUUID } from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -7,6 +8,7 @@ import {
   CODEX_TMP_FOLDER,
   ownedByThisRun,
   removeFoldersLeftByEndedRuns,
+  removeToolShimsLeftByEndedRunsOnce,
   scanLeftovers,
   stopLeftover
 } from '../../src/main/leftovers'
@@ -146,5 +148,19 @@ describe('Codex tab folders left by a Koloft run that has ended are removed, a l
       ].sort()
     )
     fs.rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('a Muse or Antigravity tool folder root loses the folders of ended runs once, keeps a live run’s, and a root that cannot be read stops no launch', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tool-shims-'))
+    const ended = `${spawnSync('true').pid}-${randomUUID()}`
+    const live = ownedByThisRun(randomUUID())
+    fs.mkdirSync(path.join(root, ended))
+    fs.mkdirSync(path.join(root, live))
+
+    removeToolShimsLeftByEndedRunsOnce(root)
+
+    expect(fs.readdirSync(root)).toEqual([live])
+    expect(() => removeToolShimsLeftByEndedRunsOnce(path.join(root, 'missing'))).not.toThrow()
+    fs.rmSync(root, { recursive: true, force: true })
   })
 })
