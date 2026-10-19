@@ -5,6 +5,7 @@ import type { CommandOutput } from '../claudeCommandOutput'
 import { sleep } from '../codexTransport'
 import { errorText } from '../agentRequests'
 import { withoutBlankEdges } from '../messageText'
+import { codexComposerDraft, inputBoxDraft } from '../inputBox'
 import { accentOf, CONDUCTOR_ACCENT, type Card } from './cards'
 
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
@@ -42,15 +43,13 @@ const PANEL_CLOSES_WITHIN_MS = 500
 const ESC_PRESSES_AT_MOST = 3
 // AGY§23
 export const SCREEN_SHOWS_THE_OUTPUT_MS = 1500
-// CC§12 CODEX§21
-const INPUT_ROW_MARK: Partial<Record<BackendId, string>> = { claude: '❯', codex: '›' }
-export const AN_ENTER_LANDS_WITHIN_MS = 2000
-const NO_BREAK_SPACE = / /g
-
-export function stillTyped(lines: string[], text: string, mark: string): boolean {
-  const inputRow = lines.findLast((line) => line.startsWith(mark))
-  return inputRow?.slice(mark.length).replace(NO_BREAK_SPACE, ' ').trim() === text.trim()
+// CC§12 CODEX§21 MUSE§11
+const DRAFT_ON_SCREEN: Partial<Record<BackendId, (lines: string[]) => string | undefined>> = {
+  claude: inputBoxDraft,
+  codex: codexComposerDraft,
+  muse: inputBoxDraft
 }
+export const AN_ENTER_LANDS_WITHIN_MS = 2000
 
 export interface SlashTarget {
   name: string
@@ -171,8 +170,9 @@ export class SlashCommands {
         if (!idle()) return false
         panel = (await this.d.panelOpen(tab)) === true
         if (panel) return false
-        this.arm(target, text, channelId)
+        const p = this.arm(target, text, channelId)
         await this.d.typeNow(tab, commandKeys(text, this.d.backendOf(tab)))
+        this.checkTheEnterLanded(tab, p)
         return true
       })
       if (typed) return
@@ -183,7 +183,7 @@ export class SlashCommands {
     }
   }
 
-  private arm(target: SlashTarget, text: string, channelId: string): void {
+  private arm(target: SlashTarget, text: string, channelId: string): Pending {
     const tab = target.tabId
     this.finish(tab)
     const p: Pending = {
@@ -200,20 +200,26 @@ export class SlashCommands {
     p.timers.push(setTimeout(() => void this.nothingCameBack(tab, p), NOTHING_CAME_BACK_MS))
     p.timers.push(setTimeout(() => this.finish(tab), RESULT_WITHIN_MS))
     p.timers.push(setTimeout(() => void this.readScreen(tab, p), SCREEN_SHOWS_THE_OUTPUT_MS))
-    const backend = this.d.backendOf(tab)
-    const mark = backend && INPUT_ROW_MARK[backend]
-    if (mark)
-      p.timers.push(
-        setTimeout(() => void this.enterAgainIfStillTyped(tab, p, mark), AN_ENTER_LANDS_WITHIN_MS)
-      )
     this.pending.set(tab, p)
+    return p
   }
 
-  // CC§12 CODEX§21
-  private async enterAgainIfStillTyped(tab: string, p: Pending, mark: string): Promise<void> {
-    const lines = await this.d.screen(tab).catch(() => undefined)
-    if (this.pending.get(tab) !== p || p.outputs.length || p.worked || p.newKey) return
-    if (lines && stillTyped(lines, p.text, mark)) await this.press(tab, ['\r'])
+  private unanswered(tab: string, p: Pending): boolean {
+    return this.pending.get(tab) === p && !p.outputs.length && !p.worked && !p.newKey
+  }
+
+  // CC§12 CODEX§21 MUSE§11
+  private checkTheEnterLanded(tab: string, p: Pending): void {
+    const backend = this.d.backendOf(tab)
+    const draft = backend && DRAFT_ON_SCREEN[backend]
+    if (!draft) return
+    const enterAgainIfStillTyped = async (): Promise<void> => {
+      if (!this.unanswered(tab, p)) return
+      const lines = await this.d.screen(tab).catch(() => undefined)
+      if (lines && this.unanswered(tab, p) && draft(lines) === p.text.trim())
+        await this.press(tab, ['\r'])
+    }
+    p.timers.push(setTimeout(() => void enterAgainIfStillTyped(), AN_ENTER_LANDS_WITHIN_MS))
   }
 
   // AGY§23
@@ -228,12 +234,7 @@ export class SlashCommands {
   }
 
   private async nothingCameBack(tab: string, p: Pending): Promise<void> {
-    const quiet = (): boolean =>
-      this.pending.get(tab) === p &&
-      !p.outputs.length &&
-      !p.worked &&
-      !p.newKey &&
-      this.d.turnOver(tab)
+    const quiet = (): boolean => this.unanswered(tab, p) && this.d.turnOver(tab)
     if (!quiet()) return
     p.screen = await this.d.screen(tab).catch(() => undefined)
     let panel = await this.d.panelOpen(tab, p.screen)

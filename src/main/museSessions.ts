@@ -23,6 +23,7 @@ import { placeKoloftSkill, readJson } from './museAccounts'
 import { mapAtMost } from './mapAtMost'
 import { agentSkillMarkdown } from './agentPlugin'
 import { pidAlive } from './leftovers'
+import { inputBoxDraft } from './inputBox'
 import { browserControlEnv } from './browserControlEnv'
 import { allowsTheBrowser, conductorGateCommand } from './conductorGate'
 import {
@@ -178,15 +179,9 @@ function mirrorLine(raw: string): Record<string, unknown> | undefined {
 // MUSE§11
 const KEYS_TAKE_AFTER_A_DIALOG_SHOWS_MS = 2000
 
-const INPUT_BOX_RULE = /^─.*─{8,}$/
-const INPUT_ROW_MARK = '❯'
-
 // MUSE§11
 export function museShowsItsInputBox(lines: string[]): boolean {
-  const rules = lines.flatMap((line, i) => (INPUT_BOX_RULE.test(line.trim()) ? [i] : []))
-  if (rules.length < 2) return false
-  const [above, below] = rules.slice(-2)
-  return below === above + 2 && lines[above + 1].trim().startsWith(INPUT_ROW_MARK)
+  return inputBoxDraft(lines) !== undefined
 }
 
 // MUSE§1
