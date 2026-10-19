@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { SessionSync, type SyncSession, type DefaultMove } from '../../src/main/sessionSync'
 import { FROM_KOLOFT } from '../../src/main/crossSessionMessage'
+import type { BackendId } from '../../src/shared/types'
 
 const HOLDS_THE_TIP = '/r/held'
 const ON_MAIN = '/r/root'
@@ -38,7 +39,7 @@ function session(
   treeRoot: string,
   writes: [string, number][] = [],
   live = 0,
-  backendId: 'claude' | 'codex' = 'claude'
+  backendId: BackendId = 'claude'
 ): SyncSession {
   return {
     tabId,
@@ -76,17 +77,26 @@ describe('telling open sessions what changed around them', () => {
     expect(got).toHaveLength(1)
   })
 
-  it('a local Claude session hears at once even mid-turn; a busy Codex or ssh Claude session hears when its turn ends, in one message however often main moved meanwhile', async () => {
+  it('a local Claude session hears at once even mid-turn; a busy Codex, ssh Claude, Muse or Antigravity session hears when its turn ends, in one message however often main moved meanwhile', async () => {
     const ssh = 'ssh://box/r/ssh'
-    const busy = new Set(['cc', 'cx', 'ssh'])
+    const busy = new Set(['cc', 'cx', 'ssh', 'mu', 'ag'])
     const { sync, got } = rig(
-      { '/r/ws': 'repo', '/r/cc': 'repo', '/r/cx': 'repo', [ssh]: 'repo' },
+      {
+        '/r/ws': 'repo',
+        '/r/cc': 'repo',
+        '/r/cx': 'repo',
+        [ssh]: 'repo',
+        '/r/mu': 'repo',
+        '/r/ag': 'repo'
+      },
       busy
     )
     const all = [
       session('cc', '/r/cc'),
       session('cx', '/r/cx', [], 0, 'codex'),
-      session('ssh', ssh)
+      session('ssh', ssh),
+      session('mu', '/r/mu', [], 0, 'muse'),
+      session('ag', '/r/ag', [], 0, 'agy')
     ]
     await sync.defaultMoved(MOVE, all)
     await sync.defaultMoved({ ...MOVE, from: B, to: C }, all)
@@ -97,13 +107,20 @@ describe('telling open sessions what changed around them', () => {
     busy.clear()
     sync.flush('cx')
     sync.flush('ssh')
-    expect(got.slice(2).map((g) => `${g.tabId} ${g.how}`)).toEqual(['cx queue', 'ssh typed'])
+    sync.flush('mu')
+    sync.flush('ag')
+    expect(got.slice(2).map((g) => `${g.tabId} ${g.how}`)).toEqual([
+      'cx queue',
+      'ssh typed',
+      'mu typed',
+      'ag typed'
+    ])
     expect(got[2].text).toContain(
       'origin/main moved from aaaaaaa to ccccccc, with 2 new commits: "feat: y", "fix: login".'
     )
-    expect(got[3].text.endsWith('\r')).toBe(true)
+    for (const typed of got.slice(3)) expect(typed.text.endsWith('\r')).toBe(true)
     sync.flush('cx')
-    expect(got).toHaveLength(4)
+    expect(got).toHaveLength(6)
   })
 
   it('a write made while open tells each other open session of the same repository that changed the same file, both ways and once; writes a resumed session brings back from its history never count', async () => {

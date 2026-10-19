@@ -1,7 +1,7 @@
 import path from 'path'
 import { messagingOf, type Messaging } from '@shared/sessionBackend'
 import { barePath, isRemoteKey } from '@shared/remoteKey'
-import type { PreviewItem } from '@shared/types'
+import type { BackendId, PreviewItem } from '@shared/types'
 import {
   FROM_KOLOFT,
   MESSAGE_SOCKET_SHOWS_WITHIN_MS,
@@ -14,7 +14,7 @@ const NAMED_AT_MOST = 10
 export interface SyncSession {
   tabId: string
   sessionId: string
-  backendId: 'claude' | 'codex'
+  backendId: BackendId
   title: string
   treeRoot: string
   files?: PreviewItem[]

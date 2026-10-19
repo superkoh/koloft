@@ -1427,7 +1427,7 @@ const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
 
 function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
   return all.flatMap((s) =>
-    s.alive && !s.conductor && s.sessionId && (s.backendId === 'claude' || s.backendId === 'codex')
+    s.alive && !s.conductor && s.sessionId
       ? [
           {
             tabId: s.tabId,
