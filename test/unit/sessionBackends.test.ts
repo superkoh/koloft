@@ -5,10 +5,12 @@ import {
   capabilitiesFor,
   effectiveBackend,
   identityOf,
+  SESSION_BACKENDS,
   sessionKey,
-  shownAsInstalled
+  shownAsInstalled,
+  type Capability
 } from '@shared/sessionBackend'
-import type { BackendId, BackendSessionInfo, BackendSessionRow } from '@shared/types'
+import type { BackendId, BackendSessionInfo, BackendSessionRow, HostId } from '@shared/types'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 
 function stubBackend(
@@ -237,21 +239,44 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(remote.browserControl).not.toBe(true)
   })
 
-  it('gives a Codex session on this Mac a Workbench, scheduled tasks, the koloft command and browser control', () => {
-    expect(capabilitiesFor('codex', 'local')).toEqual(capabilitiesFor('claude', 'local'))
+  const SHARED_ROWS = ['workbench', 'scheduledTasks', 'agentTools', 'browserControl'] as const
+  const sharedRowsOf = (backend: BackendId, host: HostId): Capability[] =>
+    SHARED_ROWS.map((row) => capabilitiesFor(backend, host)[row])
+
+  it('gives a Codex, Muse or Antigravity session on this Mac a Workbench, scheduled tasks, the koloft command and browser control', () => {
+    for (const backend of SESSION_BACKENDS)
+      expect(sharedRowsOf(backend, 'local')).toEqual(sharedRowsOf('claude', 'local'))
   })
 
   // CODEX§16
-  it('Codex on a remote machine leaves pending what Claude there does', () => {
-    expect(capabilitiesFor('codex', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
+  it('gives a remote Codex, Muse or Antigravity tab what a remote Claude tab has', () => {
+    for (const backend of SESSION_BACKENDS)
+      expect(sharedRowsOf(backend, 'ssh')).toEqual(sharedRowsOf('claude', 'ssh'))
   })
 
-  it('gives a remote Muse tab what a remote Claude tab has', () => {
-    expect(capabilitiesFor('muse', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
-  })
-
-  it('gives a remote Antigravity tab what a remote Claude tab has', () => {
-    expect(capabilitiesFor('agy', 'ssh')).toEqual(capabilitiesFor('claude', 'ssh'))
+  // CC§4 CC§11 CC§14
+  it.each([
+    [
+      "Koloft's ask hook holds a question until Discord answers it only in a Claude Code tab on this Mac; on a machine the hook only records it and a Discord button presses the key, and other agents have no such hook",
+      'askHookWaitsForDiscord',
+      ['claude/local']
+    ],
+    [
+      'Koloft sees whether a menu or panel is open in Claude Code on this Mac (its session registry) and in Muse anywhere (its screen); in every other tab a slash command from Discord presses Esc to be safe',
+      'panelSeen',
+      ['claude/local', 'muse/local', 'muse/ssh']
+    ],
+    [
+      'Koloft follows Claude Code removing its worktree at /exit, and says so when it fails, only on this Mac: through tmux the title code it watches for never arrives, and other agents remove no worktree at exit',
+      'worktreeRemovalFollowed',
+      ['claude/local']
+    ]
+  ] as const)('%s', (_rule, row, on) => {
+    for (const backend of SESSION_BACKENDS)
+      for (const host of ['local', 'ssh'] as const)
+        expect(capabilitiesFor(backend, host)[row] === true, `${backend}/${host}`).toBe(
+          (on as readonly string[]).includes(`${backend}/${host}`)
+        )
   })
 })
 

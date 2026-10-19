@@ -569,18 +569,17 @@ function asksTheOwner(tabId: string): boolean {
   return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
 }
 
-const panelOpenOn: Record<
-  BackendId,
-  (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
+const panelOpenOn: Partial<
+  Record<
+    BackendId,
+    (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
+  >
 > = {
-  claude: async (tabId, sessionId) =>
-    !sessionId || tracker.remoteOf(tabId) ? undefined : claudeShowsAPanel(sessionId),
-  codex: async () => undefined,
+  claude: async (_tabId, sessionId) => (sessionId ? claudeShowsAPanel(sessionId) : undefined),
   muse: async (tabId, _sessionId, screen) => {
     const lines = screen ?? (await screenLines(tabId))
     return lines && !museShowsItsInputBox(lines)
-  },
-  agy: async () => undefined
+  }
 }
 
 const slash = new SlashCommands({
@@ -591,7 +590,8 @@ const slash = new SlashCommands({
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId, screen) => {
     const s = sessionOfTab(tabId)
-    return s && panelOpenOn[s.backendId](tabId, s.sessionId, screen)
+    if (!s || capabilitiesFor(s.backendId, hostOfTab(tabId)).panelSeen !== true) return undefined
+    return panelOpenOn[s.backendId]?.(tabId, s.sessionId, screen)
   },
   screen: screenLines,
   nextMirrorPull: (tabId) => {
@@ -650,7 +650,9 @@ const closedTabs = new Map<string, LeftTab | null>()
 function watchForWorktreeRemoval(tabId: string, data: string): void {
   let exit = claudeTabExits.get(tabId)
   if (!exit) {
-    if (ptyMgr.get(tabId)?.kind !== 'claude' || tracker.remoteOf(tabId)) return
+    const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
+    if (!backend || capabilitiesFor(backend, hostOfTab(tabId)).worktreeRemovalFollowed !== true)
+      return
     claudeTabExits.set(tabId, (exit = { watch: new WorktreeRemovalWatch() }))
   }
   if (!exit.watch.started(data)) return
@@ -1092,7 +1094,11 @@ function watchedByDiscord(all: Conductors, s: { tabId: string; conductor?: strin
 function syncAnswerable(): void {
   if (!hookRegDir || !conductors) return
   for (const s of allSessions()) {
-    if (s.backendId !== 'claude' || !s.alive || s.remote) continue
+    if (
+      !s.alive ||
+      capabilitiesFor(s.backendId, hostOfTab(s.tabId)).askHookWaitsForDiscord !== true
+    )
+      continue
     const on = discordConnected && watchedByDiscord(conductors, s)
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
@@ -1181,6 +1187,10 @@ function watchPickRequests(pickDir: string): fs.FSWatcher | null {
 
 function machineOfTab(tabId: string): string | undefined {
   return remoteHostOfTab(tabId) ?? codexSessions?.machineOfTab(tabId)
+}
+
+function hostOfTab(tabId: string): HostId {
+  return machineOfTab(tabId) ? 'ssh' : 'local'
 }
 
 function agentToolsFor(backend: BackendId, host: HostId): boolean {
@@ -1570,7 +1580,7 @@ const agentRequests = new AgentRequests({
   session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    return !!backend && agentToolsFor(backend, machineOfTab(tabId) ? 'ssh' : 'local')
+    return !!backend && agentToolsFor(backend, hostOfTab(tabId))
   },
   alive: pidAlive
 })
