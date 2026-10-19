@@ -35,6 +35,7 @@ import { GitAccountsSection } from './GitAccountsSection'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
 import { useSettingsUpdate } from './useSettingsUpdate'
+import '../../accounts.css'
 
 const REFRESH_DONE_LABEL_BEAT_MS = 2500
 const INVALID_ACCOUNT_NAME = 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'

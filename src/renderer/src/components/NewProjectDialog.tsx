@@ -19,6 +19,7 @@ import {
   useSessionLaunch,
   type StartSession
 } from './SessionLaunchButtons'
+import '../newProjectDialog.css'
 
 export interface ProjectSeed {
   prompt: string

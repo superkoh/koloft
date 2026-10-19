@@ -6,6 +6,7 @@ import { WORLD_CLOCK_MAX } from '@shared/types'
 import { useStore } from '../store'
 import { cityOf, cityZones, dayDelta, formatTime, matchZones, zoneTitle } from '../worldClock'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
+import '../worldClock.css'
 
 const POP_W = 300
 

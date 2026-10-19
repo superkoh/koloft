@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { ParsedDiff } from '../inlineDiff'
 import { highlightLines, langForPath } from '../highlight'
+import '../inlineDiff.css'
 
 export const MAX_INLINE_ROWS = 5000
 

@@ -84,6 +84,7 @@ import {
 } from './WorkbenchWebGuests'
 import { useBrowserPermissions } from './useBrowserPermissions'
 import { useCdpOps, useStripReport } from './useCdpOps'
+import '../workbench.css'
 
 function globalLiveGuestLimit(): number {
   return window.api.browserGuestLimit

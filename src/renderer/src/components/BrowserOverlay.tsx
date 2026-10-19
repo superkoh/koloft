@@ -4,6 +4,7 @@ import { IconBack, IconClose, IconLinkOut } from '../icons'
 import { BrowserGuest, type GuestElement } from './BrowserGuest'
 import { BrowserModal } from './BrowserModal'
 import { useStore } from '../store'
+import '../browserOverlay.css'
 
 const GUEST_ID_RETRY_MS = 50
 

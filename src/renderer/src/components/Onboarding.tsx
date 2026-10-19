@@ -13,6 +13,7 @@ import { relTime } from '../sessionRows'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 import { useAssistSetup } from '../useAssistSetup'
 import { AssistSetup, InstallHint } from './AssistSetup'
+import '../onboarding.css'
 
 const PIC_ROWS: { color: string; title: string; state: string; cold?: boolean }[] = [
   { color: 'var(--accent)', title: 'Fix login bug', state: 'working' },

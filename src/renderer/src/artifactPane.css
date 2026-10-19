@@ -1,0 +1,186 @@
+.fp-stale {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 28px);
+  padding: 6px 6px 6px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.fp-stale-msg {
+  font-size: 12px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fp-stale-btn {
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.fp-stale-x {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg-faint);
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.fp-stale-x:hover {
+  color: var(--accent);
+}
+.file-pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  background: var(--bg-1);
+}
+.file-pane-body > * {
+  width: 100%;
+  height: 100%;
+}
+
+.code-body {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--bg-1);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  user-select: text;
+}
+.code-body .shiki,
+.code-body pre {
+  margin: 0;
+  background: transparent !important;
+  padding: 14px 16px;
+}
+.code-body code {
+  font-family: inherit;
+  background: transparent;
+}
+.code-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-faint);
+  font-size: 13px;
+}
+.code-wrap {
+  position: relative;
+  height: 100%;
+}
+.outline {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  z-index: 6;
+}
+.outline-btn {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-3);
+  color: var(--fg-dim);
+  font-size: 14px;
+  line-height: 1;
+}
+.outline-btn:hover,
+.outline-btn.on {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+.outline-list {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  width: 240px;
+  max-height: 60vh;
+  overflow: auto;
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+}
+.outline-it {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.outline-it:hover {
+  background: var(--accent-soft);
+}
+.outline-kind {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-4);
+  color: var(--fg-dim);
+}
+.outline-kind.k-class {
+  color: var(--git-m);
+}
+.outline-kind.k-type {
+  color: var(--git-r);
+}
+.outline-kind.k-fn {
+  color: var(--accent);
+}
+.outline-kind.k-method {
+  color: var(--good);
+}
+.outline-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.outline-line {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-faint);
+}

@@ -1,0 +1,478 @@
+.file-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 6px 12px;
+}
+.ft-search {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  height: 0;
+  overflow: hidden;
+  border-bottom: 0 solid var(--line);
+  transition:
+    height 0.12s var(--ease),
+    border-bottom-width 0.12s var(--ease);
+}
+.ft-search.open {
+  height: 32px;
+  border-bottom-width: 1px;
+}
+.ft-search-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-3);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+  outline: none;
+  transition: border-color 0.12s var(--ease);
+}
+.ft-search-input::placeholder {
+  color: var(--fg-faint);
+}
+.ft-search-input:focus {
+  border-color: var(--accent-line);
+}
+.ft-search-clear {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--fg-faint);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+}
+.ft-search-clear:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.ft-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 6px 12px;
+}
+.ft-result {
+  -webkit-app-region: no-drag;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: none;
+  transition:
+    background 0.1s var(--ease),
+    color 0.1s var(--ease);
+}
+.ft-result:hover,
+.ft-result.sel {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.ft-result.active {
+  background: var(--accent-soft);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.ft-result .ft-name {
+  flex: 0 1 auto;
+}
+.ft-rel {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+
+.ft-children {
+  margin-left: 9px;
+  padding-left: 2px;
+  border-left: 1px solid var(--line);
+}
+.ft-node {
+  -webkit-app-region: no-drag;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: none;
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.ft-node:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.ft-node.active {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.ft-dir {
+  color: var(--fg);
+}
+.ft-root {
+  font-weight: 600;
+}
+.ft-icon {
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+  display: flex;
+  transition: color 0.12s var(--ease);
+}
+.ft-dir .ft-icon {
+  color: var(--folder);
+}
+.ft-node.active .ft-icon {
+  color: var(--accent);
+}
+.ft-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+.ft-file .ft-name {
+  color: var(--fg-dim);
+}
+.ft-node:hover .ft-name,
+.ft-dir .ft-name {
+  color: var(--fg);
+}
+.ft-hint {
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--fg-faint);
+}
+.ft-chips {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+  padding: 5px 12px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ft-chips::-webkit-scrollbar {
+  display: none;
+}
+.ft-chip {
+  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--bg-3);
+  color: var(--fg-dim);
+  white-space: nowrap;
+  transition:
+    color 0.12s var(--ease),
+    background 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+.ft-chip:hover {
+  color: var(--fg);
+}
+.ft-chip.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.ft-name.git-modified {
+  color: var(--git-m);
+}
+.ft-name.git-added {
+  color: var(--git-a);
+}
+.ft-name.git-untracked {
+  color: var(--git-u);
+}
+.ft-name.git-renamed {
+  color: var(--git-r);
+}
+.ft-name.git-deleted {
+  color: var(--git-d);
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+.ft-name.git-conflict {
+  color: var(--git-c);
+}
+
+.ft-delta {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  display: inline-flex;
+  gap: 4px;
+  letter-spacing: -0.01em;
+}
+.ft-delta .add {
+  color: var(--good);
+}
+.ft-delta .del {
+  color: var(--git-d);
+}
+.ft-gbadge {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  width: 13px;
+  text-align: center;
+}
+.ft-gbadge.git-modified {
+  color: var(--git-m);
+}
+.ft-gbadge.git-added {
+  color: var(--git-a);
+}
+.ft-gbadge.git-untracked {
+  color: var(--git-u);
+}
+.ft-gbadge.git-renamed {
+  color: var(--git-r);
+}
+.ft-gbadge.git-deleted {
+  color: var(--git-d);
+}
+.ft-gbadge.git-conflict {
+  color: var(--git-c);
+}
+
+.ft-pulse {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: ft-pls 1.4s var(--ease) infinite;
+}
+@keyframes ft-pls {
+  0% {
+    box-shadow: 0 0 0 0 rgba(236, 150, 112, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 5px rgba(236, 150, 112, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(236, 150, 112, 0);
+  }
+}
+.ft-node.live {
+  background: var(--accent-soft);
+}
+
+.ft-dir-agg {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  opacity: 0.85;
+}
+.ft-node.has-changes .ft-name {
+  color: var(--git-m);
+}
+
+.ft-external .ft-name {
+  color: var(--accent);
+}
+.ft-ext-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  text-align: center;
+  color: var(--accent);
+  font-size: 13px;
+}
+.ft-loc {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--fg-faint);
+  margin-left: 6px;
+}
+
+.ft-ctx {
+  position: fixed;
+  z-index: 200;
+  min-width: 184px;
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  font-size: 12.5px;
+}
+.ft-ctx-it {
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+  padding: 5px 9px;
+  border-radius: 6px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+.ft-ctx-it:hover {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.ft-ctx-it.ai {
+  color: var(--accent);
+}
+
+.ft-mode {
+  flex: 0 0 auto;
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.ft-mode-btn {
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+  border: none;
+  background: var(--bg-1);
+  color: var(--fg-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 7px;
+}
+.ft-mode-btn.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ft-cresult {
+  -webkit-app-region: no-drag;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.ft-cresult:hover,
+.ft-cresult.sel {
+  background: var(--bg-3);
+}
+.ft-cresult.active {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.ft-cfile {
+  font-size: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ft-cline {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.ft-ctext {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ft-section .ft-name {
+  color: var(--fg);
+}
+
+.ft-node.kbd-focus {
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+  background: rgba(255, 255, 255, 0.04);
+}
+.ft-chips {
+  display: flex;
+  gap: 6px;
+  padding: 4px 6px;
+  flex: 0 0 auto;
+}
+.ft-chip {
+  font-size: 11px;
+  line-height: 16px;
+  padding: 1px 8px;
+  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ft-chip:hover {
+  background: var(--bg-4);
+}
+.ft-chip.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ft-node.ignored .ft-name,
+.ft-result.ignored .ft-name {
+  color: var(--fg-faint);
+  opacity: 0.65;
+}
+.ft-newfile-row {
+  gap: 5px;
+  cursor: default;
+}
+input.ft-newfile {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--accent-line);
+  border-radius: 4px;
+  background: var(--bg-1);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+}
+.ft-newfile-err {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--red);
+}

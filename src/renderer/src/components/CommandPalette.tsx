@@ -20,6 +20,7 @@ import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { startOrList, type AgentChoice } from '../agentChoice'
 import { BusyLine, SessionLaunchButtons } from './SessionLaunchButtons'
+import '../commandPalette.css'
 
 const SEARCH_AFTER_TYPING_MS = 400
 
