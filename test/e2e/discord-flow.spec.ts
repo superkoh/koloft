@@ -612,13 +612,14 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect.poll(() => bindingOnDisk(env)?.touched.length).toBe(2)
       const opener = fake.posted.find((p) => p.content.startsWith('▶ Started **a Codex session**'))!
       const thread = (): string | undefined => fake.threads.find((t) => t.id === opener.id)?.name
+      const sessionTitle = (): string | undefined => thread()?.replace(/ · ws-a$/, '')
       await expect
         .poll(
           async () => {
             const titles = (await page.evaluate(() => window.api.sessions.list())).map(
               (s) => s.title
             )
-            return thread() !== 'a Codex session' && titles.includes(thread() ?? '')
+            return titles.some((title) => thread() === `${title} · ws-a`)
           },
           { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
         )
@@ -628,7 +629,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       )
       await expect
         .poll(() => openerNow(fake, CHANNEL, opener.id)?.split(' · ')[0])
-        .toBe(`✅ **${thread()}**`)
+        .toBe(`✅ **${sessionTitle()}**`)
       expect(openerNow(fake, CHANNEL, opener.id)).toMatch(
         / · turn done <t:\d+:R>\n-# ws-a · Codex$/
       )
@@ -641,7 +642,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       )!.tabId
       await expect
         .poll(() => terminalText(page, conductorTab), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain(`Closing "${thread()}" now`)
+        .toContain(`Closing "${sessionTitle()}" now`)
       await expect
         .poll(async () =>
           (await page.evaluate(() => window.api.sessions.list())).some(
