@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import {
   SessionStore,
   codexSessionKey,
@@ -18,9 +19,10 @@ beforeEach(() => {
   filename = path.join(directory, 'sessions.json')
 })
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks()
-  fs.rmSync(directory, { recursive: true, force: true, maxRetries: 3 })
+  await BackgroundFile.whenAllWritten()
+  fs.rmSync(directory, { recursive: true, force: true })
 })
 
 function member(): StoredMember {

@@ -7,6 +7,7 @@ import { pathToFileURL } from 'url'
 import { EventEmitter } from 'events'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgySessions, type AgyHomePick, type AgySessionDeps } from '../../src/main/agySessions'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import { agySessionKey } from '../../src/main/sessionStore'
 import { agyTranscript, type SummaryRow } from '../../src/main/agyStore'
 import type { AgyMachineLaunch, RemoteAgyConfig } from '../../src/main/remote/agyTab'
@@ -256,7 +257,8 @@ beforeEach(() => {
 afterEach(async () => {
   await sessions.stopAll()
   process.env.PATH = REAL_PATH
-  fs.rmSync(home, { recursive: true, force: true, maxRetries: 3 })
+  await BackgroundFile.whenAllWritten()
+  fs.rmSync(home, { recursive: true, force: true })
 })
 
 async function launch(

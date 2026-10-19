@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
 import { storedBackend } from '../../src/main/backends/stored'
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
@@ -196,7 +197,8 @@ afterEach(async () => {
   await sessions.stopAll()
   vi.restoreAllMocks()
   process.env.HOME = realHome
-  fs.rmSync(directory, { recursive: true, force: true, maxRetries: 3 })
+  await BackgroundFile.whenAllWritten()
+  fs.rmSync(directory, { recursive: true, force: true })
 })
 
 describe('CodexSessions', () => {
