@@ -117,6 +117,7 @@ async function rebuildWorktree(
   const branchLives =
     (await git(root, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
   // PLATFORM§30
+  await git(root, ['worktree', 'remove', spec.worktreePath])
   const args = branchLives
     ? ['worktree', 'add', spec.worktreePath, spec.branch]
     : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
