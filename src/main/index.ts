@@ -181,7 +181,8 @@ import {
   setKeepAwakeChecked,
   setSaveAvailable,
   setupAppMenu,
-  setWorkbenchAvailable
+  setWorkbenchAvailable,
+  type MenuShortcut
 } from './menu'
 import { applyKeepAwake } from './keepAwake'
 import {
@@ -431,6 +432,7 @@ import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecyc
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
 import { MYSELF } from '@shared/slashCommands'
+import { CH, type Channel } from '@shared/ipcChannels'
 import {
   codexDialog,
   type CodexApproval,
@@ -527,7 +529,7 @@ const readerDocs = new ReaderDocs({
   assist: (job) => assist(job),
   session: sessionOfTab,
   remoteFileExists: (host, keyed) => hosts.machine(host).fileExists(keyed),
-  changed: () => sendToRenderer('sessions:update', onSessionsChanged())
+  changed: () => sendToRenderer(CH.sessions.update, onSessionsChanged())
 })
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
@@ -631,7 +633,7 @@ async function refreshLeftovers(): Promise<void> {
   const next = await scanLeftovers(await sharedProcessTable.eachRound(LEFTOVER_SCAN_MS))
   const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
   leftovers = next
-  if (changed) sendToRenderer('sessions:leftovers', next)
+  if (changed) sendToRenderer(CH.sessions.leftovers, next)
 }
 if (process.platform !== 'win32') {
   setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
@@ -663,14 +665,14 @@ function watchForWorktreeRemoval(tabId: string, data: string): void {
     treeRoot: session?.treeRoot
   }
   if (session?.sessionId) sessionsLeavingTheirWorktree.add(session.sessionId)
-  sendToRenderer('tab:killedByMain', tabId)
+  sendToRenderer(CH.tab.killedByMain, tabId)
   workspaceMgr?.refresh()
 }
 
 const attention = new AttentionTracker((pending, event) => {
   if (!quitCommitted) saveAttention(pending)
   updateDockBadge(pending)
-  sendToRenderer('attention:changed', pending)
+  sendToRenderer(CH.attention.changed, pending)
   retractStaleOsNotifications(pending)
   if (event && !event.resurrected) routeAttentionEvent(event)
 }, loadLastRunAttention())
@@ -765,7 +767,7 @@ function sleepTab(tabId: string): void {
   const s = sessionOfTab(tabId)
   if (!s?.sessionId) return killTabFromMain(tabId)
   addSleeper(tabId, openTabOf(s))
-  sendToRenderer('tab:slept', tabId)
+  sendToRenderer(CH.tab.slept, tabId)
   void stopTabProcess(tabId)
   tabLifecycle.emit('slept')
   rememberOpenTabs()
@@ -779,7 +781,7 @@ function sleepingTabOf(sessionId: string): string | undefined {
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
   typedWhileAsleep.delete(tabId)
-  sendToRenderer('tab:killedByMain', tabId)
+  sendToRenderer(CH.tab.killedByMain, tabId)
   tabLifecycle.emit('forgotten', tabId)
   rememberOpenTabs()
 }
@@ -882,7 +884,7 @@ function activateTabFromNotification(tabId: string): void {
     if (!win.isVisible()) win.show()
     win.focus()
     app.focus({ steal: true })
-    sendToRenderer('attention:activate-tab', { tabId })
+    sendToRenderer(CH.attention.activateTab, { tabId })
     return
   }
   createWindow()
@@ -964,7 +966,7 @@ function routeAttentionEvent(event: AttentionEvent): void {
 let mainWindow: BrowserWindow | null = null
 
 // PLATFORM§5
-function sendToRenderer(channel: string, ...args: unknown[]): boolean {
+function sendToRenderer(channel: Channel, ...args: unknown[]): boolean {
   try {
     const win = mainWindow
     if (!win || win.isDestroyed()) return false
@@ -977,12 +979,32 @@ function sendToRenderer(channel: string, ...args: unknown[]): boolean {
   }
 }
 
+const MENU_SHORTCUT_CHANNEL: {
+  [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
+} = {
+  'new-session': CH.shortcut.newSession,
+  'new-worktree-session': CH.shortcut.newWorktreeSession,
+  'close-tab': CH.shortcut.closeTab,
+  find: CH.shortcut.find,
+  'find-files': CH.shortcut.findFiles,
+  'check-update': CH.shortcut.checkUpdate,
+  'restart-session': CH.shortcut.restartSession,
+  'add-workspace': CH.shortcut.addWorkspace,
+  'new-terminal-tab': CH.shortcut.newTerminalTab,
+  save: CH.shortcut.save,
+  'focus-notes': CH.shortcut.focusNotes,
+  'next-waiting-session': CH.shortcut.nextWaitingSession,
+  'toggle-sidebar': CH.shortcut.toggleSidebar,
+  'open-settings': CH.shortcut.openSettings,
+  'command-palette': CH.shortcut.commandPalette
+}
+
 let webglRepairTimer: NodeJS.Timeout | undefined
 const WEBGL_REPAIR_BURST_DEBOUNCE_MS = 500
 function requestWebglRepair(): void {
   clearTimeout(webglRepairTimer)
   webglRepairTimer = setTimeout(
-    () => sendToRenderer('webgl:repair'),
+    () => sendToRenderer(CH.webgl.repair),
     WEBGL_REPAIR_BURST_DEBOUNCE_MS
   )
 }
@@ -1127,7 +1149,7 @@ function accountViews(): AccountView[] {
 }
 
 function pushAccounts(): void {
-  sendToRenderer('accounts:update', accountViews())
+  sendToRenderer(CH.accounts.update, accountViews())
 }
 
 function notifyExpired(name: string, label = 'Claude'): void {
@@ -1479,7 +1501,7 @@ const sessionDeps: SessionVerbDeps = {
     const b =
       caller ?? (target.assistScope ? conductors?.bindingOfScope(target.assistScope) : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
-    if (!b) return void sendToRenderer('cron:toast', text)
+    if (!b) return void sendToRenderer(CH.cron.toast, text)
     discordRelay?.say(b.channel.channelId, `⚠ ${text}`)
     if (caller) discordRelay?.tell(conductorDestination(caller), `[Koloft] ${text}`)
   },
@@ -1508,7 +1530,7 @@ const agentRequests = new AgentRequests({
       cronVerb({
         runner: () => cronRunner,
         pinnedWorkspaceOf: pinnedWorkspaceOfTab,
-        toast: (text) => sendToRenderer('cron:toast', text),
+        toast: (text) => sendToRenderer(CH.cron.toast, text),
         now: () => new Date()
       })
     ),
@@ -1647,7 +1669,7 @@ const AUTH_URL_RE = /https?:\/\/[^\s'"`<>]+/
 const TOKEN_RE = /sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{24,}/
 
 function sendLoginProgress(p: LoginProgress): void {
-  sendToRenderer('accounts:login-progress', p)
+  sendToRenderer(CH.accounts.loginProgress, p)
 }
 
 function feedLoginWatcher(tabId: string, data: string): void {
@@ -2325,11 +2347,11 @@ function createWindow(): void {
   const WEBGL_REPAIR_BLUR_MS = 30_000
   let blurredAt = 0
   mainWindow.on('restore', requestWebglRepair)
-  mainWindow.on('enter-full-screen', () => sendToRenderer('window:fullscreen', true))
-  mainWindow.on('leave-full-screen', () => sendToRenderer('window:fullscreen', false))
+  mainWindow.on('enter-full-screen', () => sendToRenderer(CH.window.fullscreen, true))
+  mainWindow.on('leave-full-screen', () => sendToRenderer(CH.window.fullscreen, false))
   mainWindow.on('focus', () => {
     // PLATFORM§10
-    sendToRenderer('window:focus', true)
+    sendToRenderer(CH.window.focus, true)
     if (blurredAt && Date.now() - blurredAt > WEBGL_REPAIR_BLUR_MS) requestWebglRepair()
     blurredAt = 0
     if (uiActiveTabId) {
@@ -2339,7 +2361,7 @@ function createWindow(): void {
     void freshness?.sweep({ host: null })
   })
   mainWindow.on('blur', () => {
-    sendToRenderer('window:focus', false)
+    sendToRenderer(CH.window.focus, false)
     blurredAt = Date.now()
     if (uiActiveTabId) attention.reconsider(uiActiveTabId, attentionCtx())
   })
@@ -2377,9 +2399,9 @@ app.whenReady().then(() => {
   setupExtensions({
     window: () => mainWindow,
     openTab: openExtensionTab,
-    ask: (request) => sendToRenderer('ext:permission-request', request)
+    ask: (request) => sendToRenderer(CH.ext.permissionRequest, request)
   })
-  onExtensionsChanged(() => sendToRenderer('ext:changed'))
+  onExtensionsChanged(() => sendToRenderer(CH.ext.changed))
   setupBrowserAuth()
   setupCertErrors()
   setupGuestUnload()
@@ -2442,8 +2464,8 @@ app.whenReady().then(() => {
       return owner && name ? { owner, name } : null
     },
     openInBrowser: (url) => void leaveForOS(url, 'url'),
-    progress: (p) => sendToRenderer('gitAccounts:login-progress', p),
-    accountsChanged: (views) => sendToRenderer('gitAccounts:update', views),
+    progress: (p) => sendToRenderer(CH.gitAccounts.loginProgress, p),
+    accountsChanged: (views) => sendToRenderer(CH.gitAccounts.update, views),
     picksChanged: () => {
       void githubCounts?.sweep()
       workspaceMgr?.restampLive()
@@ -2483,7 +2505,7 @@ app.whenReady().then(() => {
         gate.onBacklog(utf16Units)
         continue
       }
-      if (!sendToRenderer('terminal:data', { id, data })) {
+      if (!sendToRenderer(CH.terminal.data, { id, data })) {
         gate.reset()
         pendingData.delete(id)
         continue
@@ -2509,10 +2531,10 @@ app.whenReady().then(() => {
     if (!flushTimer) flushTimer = setTimeout(flushData, PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
   })
   ptyMgr.on('process-title', (t: { id: string; name: string }) => {
-    sendToRenderer('terminal:processTitle', t)
+    sendToRenderer(CH.terminal.processTitle, t)
   })
   ptyMgr.on('cwd', (c: { id: string; cwd: string }) => {
-    sendToRenderer('terminal:cwd', c)
+    sendToRenderer(CH.terminal.cwd, c)
   })
   subscribeTabSubsystems(tabLifecycle, {
     slash,
@@ -2520,7 +2542,7 @@ app.whenReady().then(() => {
     claude: claudeBackend,
     tracker,
     storedOwnerOf,
-    toast: (message) => sendToRenderer('cron:toast', message),
+    toast: (message) => sendToRenderer(CH.cron.toast, message),
     notices: () => discordNotices,
     live: () => discordLive,
     relay: () => discordRelay,
@@ -2552,7 +2574,7 @@ app.whenReady().then(() => {
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
-      sendToRenderer('sessions:toolsChanged')
+      sendToRenderer(CH.sessions.toolsChanged)
     }
     const signedIn = signInPtys.get(e.id)
     if (signedIn) {
@@ -2572,7 +2594,7 @@ app.whenReady().then(() => {
       if (sessionId) sessionsLeavingTheirWorktree.delete(sessionId)
       const claudeSaid = claudeExit.watch.failure()
       if (claudeSaid)
-        sendToRenderer('cron:toast', `Claude Code did not remove the worktree: ${claudeSaid}`)
+        sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
       workspaceMgr?.refresh()
     }
     flushData()
@@ -2580,22 +2602,22 @@ app.whenReady().then(() => {
     const held = pendingData.get(e.id)
     if (held !== undefined) {
       pendingData.delete(e.id)
-      if (!sleepers.has(e.id)) sendToRenderer('terminal:data', { id: e.id, data: held })
+      if (!sleepers.has(e.id)) sendToRenderer(CH.terminal.data, { id: e.id, data: held })
     }
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
     tabLifecycle.emit('teardown', exit)
-    sendToRenderer('terminal:exit', e)
+    sendToRenderer(CH.terminal.exit, e)
   })
   tracker.on('update', () => {
     const all = onSessionsChanged()
-    sendToRenderer('sessions:update', all)
+    sendToRenderer(CH.sessions.update, all)
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
     retitleDiscordThreads(all)
   })
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
-    sendToRenderer('session:relocated', e)
+    sendToRenderer(CH.session.relocated, e)
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) =>
@@ -2640,14 +2662,14 @@ app.whenReady().then(() => {
     remoteTreeIo: machineTreeIo,
     changed: () => {
       const all = onSessionsChanged()
-      sendToRenderer('sessions:update', all)
+      sendToRenderer(CH.sessions.update, all)
       workspaceMgr?.onAdditionalSessionsChanged()
       retitleDiscordThreads(all)
     },
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
     memberRemoved: (key: string) => discordThreads?.left(key),
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
-    error: (message: string) => sendToRenderer('cron:toast', message)
+    error: (message: string) => sendToRenderer(CH.cron.toast, message)
   }
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
@@ -2778,14 +2800,14 @@ app.whenReady().then(() => {
     void agySessions
       .availability()
       .then((agy) => (agy.available ? agySessions!.refreshHistory() : undefined))
-      .catch((error) => sendToRenderer('cron:toast', String(error)))
+      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
   if (museSessions) {
     sessionBackends.register(museBackend(museSessions, resumeProbes, machineProbes))
     void museSessions
       .availability()
       .then((muse) => (muse.available ? museSessions!.refreshHistory() : undefined))
-      .catch((error) => sendToRenderer('cron:toast', String(error)))
+      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
   if (codexSessions) {
     sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes))
@@ -2797,7 +2819,7 @@ app.whenReady().then(() => {
         for (const home of codexHomes(userData)) prepareCodexHome(home, codexSharedConfig())
         return codexSessions!.refreshHistory()
       })
-      .catch((error) => sendToRenderer('cron:toast', String(error)))
+      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
   workspaceMgr = new WorkspaceManager({
     additionalRows: (wsPath) =>
@@ -2832,7 +2854,7 @@ app.whenReady().then(() => {
       return m
     },
     pushRows: (payload) => {
-      sendToRenderer('workspace:rows', payload)
+      sendToRenderer(CH.workspace.rows, payload)
       syncAnswerable()
     },
     freshness: (wsPath) => freshness?.get(wsPath),
@@ -2924,14 +2946,14 @@ app.whenReady().then(() => {
         title: l.title,
         sessionId: l.key
       }
-      sendToRenderer('terminal:spawned', spawned)
+      sendToRenderer(CH.terminal.spawned, spawned)
       return res.id
     },
     kill: killTabFromMain,
     say: (channelId, text) => discordRelay?.say(channelId, text),
     rowsChanged: () => workspaceMgr?.refresh(),
-    tasksChanged: () => sendToRenderer('conductors:tasks', conductors?.taskRows() ?? []),
-    toast: (text) => sendToRenderer('cron:toast', text),
+    tasksChanged: () => sendToRenderer(CH.conductors.tasks, conductors?.taskRows() ?? []),
+    toast: (text) => sendToRenderer(CH.cron.toast, text),
     bindDeadlineMs: cronBindDeadlineMs()
   })
   conductors.keepPinned(workspaceMgr.pinnedPaths().map((w) => w.path))
@@ -2945,7 +2967,7 @@ app.whenReady().then(() => {
     owner: () => conductors?.owner(),
     foundAppOwner: (owner) => conductors?.setOwner(owner),
     push: (status) => {
-      sendToRenderer('discord:status', status)
+      sendToRenderer(CH.discord.status, status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()
     },
@@ -2959,7 +2981,7 @@ app.whenReady().then(() => {
     postFailed: (channelId, error) => {
       const name = conductors?.bindingOfChannel(channelId)?.channel.name ?? channelId
       const text = `Koloft could not post to #${name} in Discord: ${error}`
-      sendToRenderer('cron:toast', text)
+      sendToRenderer(CH.cron.toast, text)
       const { failing } = link.status()
       const other = conductors
         ?.bindings()
@@ -2977,7 +2999,7 @@ app.whenReady().then(() => {
     conductors: conductorsNow,
     deleteFailed: (threadName, error) =>
       sendToRenderer(
-        'cron:toast',
+        CH.cron.toast,
         `Koloft could not delete the Discord thread "${threadName}", so it only archived it: ${errorText(error)}`
       ),
     opened: (tabId) => void discordLive?.refresh(tabId)
@@ -3205,7 +3227,7 @@ app.whenReady().then(() => {
     autoFetch: () => loadSettings().gitAutoFetch,
     autoPull: () => loadSettings().gitAutoPull,
     busy: (wsPath) => busyInCheckout(allSessions(), wsPath) > 0,
-    toast: (text) => sendToRenderer('cron:toast', text),
+    toast: (text) => sendToRenderer(CH.cron.toast, text),
     onChange: () => workspaceMgr?.restampLive(),
     onDefaultMoved: (move) => void sessionSync.defaultMoved(move, syncSessionsOf(allSessions())),
     runner: (wsPath) => {
@@ -3263,10 +3285,10 @@ app.whenReady().then(() => {
     stillWorking: (tabId) => tracker.stillWorking(tabId),
     whatIsLeft: whatClosingTheRunWouldLose,
     closeForGood: closeTheRunFully,
-    toast: (text) => sendToRenderer('cron:toast', text),
+    toast: (text) => sendToRenderer(CH.cron.toast, text),
     notify: notifyPlain,
-    push: (state) => sendToRenderer('cron:state', state),
-    killed: (tabId) => sendToRenderer('tab:killedByMain', tabId),
+    push: (state) => sendToRenderer(CH.cron.state, state),
+    killed: (tabId) => sendToRenderer(CH.tab.killedByMain, tabId),
     endpointAccountWithModelOf: (tabId) => {
       const name = tracker.infoOf(tabId)?.pickedAccount
       return name && findAccount(name, 'custom')?.model ? name : undefined
@@ -3287,19 +3309,19 @@ app.whenReady().then(() => {
         commitSettings({ keepAwake: !loadSettings().keepAwake })
         return
       }
-      sendToRenderer(`shortcut:${action}`)
+      sendToRenderer(MENU_SHORTCUT_CHANNEL[action])
     },
-    (cmd) => sendToRenderer('shortcut:browser', cmd),
+    (cmd) => sendToRenderer(CH.shortcut.browser, cmd),
     loadSettings().keepAwake
   )
   applyKeepAwake(loadSettings().keepAwake)
 
   const sendGuestCommand = (cmd: ReturnType<typeof guestShortcut>): void => {
     if (!cmd) return
-    if (cmd === 'find') sendToRenderer('shortcut:find')
+    if (cmd === 'find') sendToRenderer(CH.shortcut.find)
     else if (cmd === 'cycle-next' || cmd === 'cycle-prev') {
-      sendToRenderer('shortcut:workbench', cmd)
-    } else sendToRenderer('shortcut:browser', cmd)
+      sendToRenderer(CH.shortcut.workbench, cmd)
+    } else sendToRenderer(CH.shortcut.browser, cmd)
   }
   // PLATFORM§12
   const pdfKeepsItsNativeFind = (
@@ -3346,7 +3368,7 @@ app.whenReady().then(() => {
   screen.on('display-metrics-changed', requestWebglRepair)
 
   createWindow()
-  startUpdateNotifier((offer) => sendToRenderer('update:offer', offer))
+  startUpdateNotifier((offer) => sendToRenderer(CH.update.offer, offer))
 
   const capsuleShownSoLaunchProbeIsNotBilledForNothing = (): boolean =>
     listAccounts().some((a) => a.enabled && a.kind === 'oauth')
@@ -3368,7 +3390,7 @@ function clearQuitFallback(): void {
 }
 
 function askQuit(): boolean {
-  if (!sendToRenderer('app:quit-requested')) return false
+  if (!sendToRenderer(CH.app.quitRequested)) return false
   clearQuitFallback()
   quitFallback = setTimeout(() => {
     quitFallback = null
@@ -3513,7 +3535,7 @@ function askUserForPermission(
   }
   const id = crypto.randomUUID()
   pendingPermissions.set(id, { guestId, origin, permission, answer: callback })
-  sendToRenderer('browser:permission-ask', { id, origin, permission })
+  sendToRenderer(CH.browser.permissionAsk, { id, origin, permission })
 }
 
 function answerPermission(id: string, granted: boolean): void {
@@ -3531,7 +3553,7 @@ function dropPermissions(match: (p: PendingPermission) => boolean): void {
     if (!match(pending)) continue
     pendingPermissions.delete(id)
     pending.answer(false)
-    sendToRenderer('browser:permission-drop', id)
+    sendToRenderer(CH.browser.permissionDrop, id)
   }
 }
 
@@ -3547,7 +3569,7 @@ function setupBrowserAuth(): void {
     const id = crypto.randomUUID()
     pendingAuth.set(id, callback)
     const payload: BrowserAuthChallenge = { id, kind: 'auth', ...prompt }
-    sendToRenderer('browser:auth-challenge', payload)
+    sendToRenderer(CH.browser.authChallenge, payload)
   })
 }
 
@@ -3637,16 +3659,16 @@ function muteGuestsUnderTest(): void {
 
 // PLATFORM§12
 function setupGuestLinkReports(): void {
-  ipcMain.on('browser:link-blocked', (e, url: unknown) => {
+  ipcMain.on(CH.browser.linkBlocked, (e, url: unknown) => {
     if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (typeof url !== 'string' || !url) return
-    sendToRenderer('browser:blocked-scheme', url.slice(0, 2048))
+    sendToRenderer(CH.browser.blockedScheme, url.slice(0, 2048))
   })
 }
 
 // PLATFORM§11
 function setupGuestPermissionQuery(): void {
-  ipcMain.on('browser:permission-undecided', (e, name: unknown) => {
+  ipcMain.on(CH.browser.permissionUndecided, (e, name: unknown) => {
     const decision = permissionQueryAsk(name, {
       requestingUrl: e.senderFrame?.url,
       isMainFrame: e.senderFrame?.parent === null
@@ -3675,7 +3697,7 @@ function setupPermissionCleanup(): void {
 }
 
 function setupGuestBackgroundOpen(): void {
-  ipcMain.on('browser:open-background', (e, url: unknown) => {
+  ipcMain.on(CH.browser.openBackground, (e, url: unknown) => {
     if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (typeof url !== 'string' || !url) return
     if (isOverlayGuest(e.sender)) {
@@ -3691,7 +3713,7 @@ function setupGuestBackgroundOpen(): void {
     const tabId = tabOwningGuest(e.sender)
     if (!tabId) return
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'agent' }
-    sendToRenderer('browser:open', payload)
+    sendToRenderer(CH.browser.open, payload)
   })
 }
 
@@ -3708,12 +3730,12 @@ function setupGuestFullscreen(): void {
     contents.on('enter-html-full-screen', () => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       pageFullscreen = true
-      sendToRenderer('browser:fullscreen', true)
+      sendToRenderer(CH.browser.fullscreen, true)
     })
     contents.on('leave-html-full-screen', () => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       pageFullscreen = false
-      sendToRenderer('browser:fullscreen', false)
+      sendToRenderer(CH.browser.fullscreen, false)
     })
   })
 }
@@ -3723,7 +3745,7 @@ function setupGuestAudioState(): void {
     if (contents.getType() !== 'webview') return
     contents.on('audio-state-changed', (event) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-      sendToRenderer('browser:audio-state', {
+      sendToRenderer(CH.browser.audioState, {
         guestId: contents.id,
         audible: event.audible,
         muted: contents.isAudioMuted()
@@ -3750,7 +3772,7 @@ function sendOverlayOpen(url: string, presentation: 'now' | 'background'): void 
 function flushOverlayOpens(): void {
   if (!overlayListening) return
   while (pendingOverlayOpens.length) {
-    if (!sendToRenderer('browser:overlay-open', pendingOverlayOpens[0])) return
+    if (!sendToRenderer(CH.browser.overlayOpen, pendingOverlayOpens[0])) return
     pendingOverlayOpens.shift()
   }
 }
@@ -3788,7 +3810,7 @@ async function screenOf(tabId: string): Promise<SessionScreen> {
       resolve(a)
     })
     const request: ScreenRequest = { requestId, tabId }
-    sendToRenderer('terminal:screen', request)
+    sendToRenderer(CH.terminal.screen, request)
   })
   if (!answer?.lines) return { error: 'the Koloft window did not show its screen.' }
   const notes: string[] = []
@@ -3831,7 +3853,7 @@ function cdpOp(
       resolve(res)
     })
     const payload: BrowserCdpOp = { opId, kind, sessionId, ...extra }
-    sendToRenderer('browser:cdp-op', payload)
+    sendToRenderer(CH.browser.cdpOp, payload)
   })
 }
 
@@ -3860,7 +3882,7 @@ function relayDeps(): RelayDeps {
     },
     setAttached: (sessionId, targetIds) => {
       const payload: BrowserCdpAttached = { sessionId, targetIds }
-      sendToRenderer('browser:cdp-attached', payload)
+      sendToRenderer(CH.browser.cdpAttached, payload)
     }
   }
 }
@@ -3876,7 +3898,7 @@ function routeGuestPopup(url: string, from: WebContents): void {
     const decision = routeFor(url, 'user')
     if (decision.dest === 'browser') sendOverlayOpen(decision.target, 'now')
     else if (decision.dest === 'system') openUrlExternally(decision.target)
-    else sendToRenderer('browser:blocked-scheme', url)
+    else sendToRenderer(CH.browser.blockedScheme, url)
     return
   }
   const decision = routeFor(url, 'user')
@@ -3885,14 +3907,14 @@ function routeGuestPopup(url: string, from: WebContents): void {
   if (!tabId) return
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'user' }
-    sendToRenderer('browser:open', payload)
+    sendToRenderer(CH.browser.open, payload)
   } else if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
     const payload: OpenRequest = { tabId, path: decision.target, source: 'user' }
-    sendToRenderer('preview:open-file', payload)
+    sendToRenderer(CH.preview.openFile, payload)
   } else if (decision.dest === 'system') {
     openUrlExternally(decision.target)
   } else {
-    sendToRenderer('browser:blocked-scheme', url)
+    sendToRenderer(CH.browser.blockedScheme, url)
   }
 }
 
@@ -3904,7 +3926,7 @@ async function openExtensionTab(url: string): Promise<WebContents | null> {
   if (!extensionPage && decision.dest !== 'browser') return null
   const target = extensionPage ? url : decision.target
   const payload: BrowserOpenRequest = { tabId, url: target, source: 'user' }
-  if (!sendToRenderer('browser:open', payload)) return null
+  if (!sendToRenderer(CH.browser.open, payload)) return null
   return awaitGuestFor(target)
 }
 
@@ -3963,7 +3985,7 @@ function setupBrowserPartition(): void {
     if (decision.kind === 'refuse') {
       callback(false)
       if (decision.tell) {
-        sendToRenderer('browser:permission-refused', {
+        sendToRenderer(CH.browser.permissionRefused, {
           origin: decision.origin,
           permission: decision.permission
         })
@@ -3985,7 +4007,7 @@ function setupBrowserPartition(): void {
     if (permission !== 'openExternal') return
     const target = (details as { externalURL?: string }).externalURL ?? ''
     if (canOpenExternally(target) && takeGuestGesture(_wc)) openUrlExternally(target)
-    else if (target) sendToRenderer('browser:blocked-scheme', target)
+    else if (target) sendToRenderer(CH.browser.blockedScheme, target)
   })
   // PLATFORM§11
   ses.setPermissionCheckHandler((_wc, permission, _origin, details) => {
@@ -4060,7 +4082,7 @@ function setupBrowserPartition(): void {
     const id = retryId ?? crypto.randomUUID()
     if (retryId) downloadSources.delete(retryId)
     liveDownloads.set(id, item)
-    sendToRenderer('browser:download-event', {
+    sendToRenderer(CH.browser.downloadEvent, {
       id,
       kind: 'started',
       name,
@@ -4068,7 +4090,7 @@ function setupBrowserPartition(): void {
     })
     item.on('updated', (_ev, state) => {
       if (state !== 'progressing') return
-      sendToRenderer('browser:download-event', {
+      sendToRenderer(CH.browser.downloadEvent, {
         id,
         kind: 'progress',
         received: item.getReceivedBytes()
@@ -4077,7 +4099,7 @@ function setupBrowserPartition(): void {
     item.once('done', (_ev, state) => {
       liveDownloads.delete(id)
       if (state === 'completed') downloadSources.set(id, url)
-      sendToRenderer('browser:download-event', {
+      sendToRenderer(CH.browser.downloadEvent, {
         id,
         kind: 'done',
         state,
@@ -4088,7 +4110,7 @@ function setupBrowserPartition(): void {
         return
       }
       const payload: BrowserDownload = { name, path: savePath }
-      sendToRenderer('browser:download', payload)
+      sendToRenderer(CH.browser.download, payload)
     })
   })
 }
@@ -4135,12 +4157,12 @@ function openInWorkbench(
 ): boolean {
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source, osFallback }
-    sendToRenderer('browser:open', payload)
+    sendToRenderer(CH.browser.open, payload)
     return true
   }
   if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
     const payload: OpenRequest = { tabId, path: decision.target, source, view }
-    sendToRenderer('preview:open-file', payload)
+    sendToRenderer(CH.preview.openFile, payload)
     return true
   }
   return false
@@ -4155,12 +4177,12 @@ async function openOnMachine(
   const keyed = formatRemoteKey(machine, file)
   if (!(await hosts.machine(machine).fileExists(keyed))) return false
   const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
-  sendToRenderer('preview:open-file', payload)
+  sendToRenderer(CH.preview.openFile, payload)
   return true
 }
 
 function killTabFromMain(tabId: string): void {
-  sendToRenderer('tab:killedByMain', tabId)
+  sendToRenderer(CH.tab.killedByMain, tabId)
   void killTabPty(tabId)
 }
 
@@ -4196,7 +4218,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   return stopped.then(
     () => true,
     (error) => {
-      sendToRenderer('cron:toast', String(error))
+      sendToRenderer(CH.cron.toast, String(error))
       return false
     }
   )
@@ -4265,10 +4287,10 @@ async function closeSessionFully(
 ): Promise<void> {
   const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
   if (tabId) {
-    sendToRenderer('tab:killedByMain', tabId)
+    sendToRenderer(CH.tab.killedByMain, tabId)
     await killTabPty(tabId)
   } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
-    sendToRenderer('cron:toast', `${target.title} was opened again, so Koloft did not close it.`)
+    sendToRenderer(CH.cron.toast, `${target.title} was opened again, so Koloft did not close it.`)
     return
   }
   const tree = await closingTree(hostGitOut, info)
@@ -4276,7 +4298,7 @@ async function closeSessionFully(
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
-    sendToRenderer('cron:toast', `${target.title}: ${problem}`)
+    sendToRenderer(CH.cron.toast, `${target.title}: ${problem}`)
     return
   }
   archiveSession(target.sessionId)
@@ -4296,7 +4318,7 @@ async function removeUntouchedWorktree(
     worktreeName: resource.worktreeName,
     branches: [`worktree-${resource.worktreeName}`]
   })
-  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer('cron:toast', problem)
+  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer(CH.cron.toast, problem)
 }
 
 function cronRunTree(root: string, worktree?: string): ProjectInfo {
@@ -4383,7 +4405,7 @@ async function launchQuietTab(
   const r = await sessionBackends.create(options)
   if (!r.ok) return null
   const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, jobId }
-  sendToRenderer('terminal:spawned', spawned)
+  sendToRenderer(CH.terminal.spawned, spawned)
   return r.id
 }
 
@@ -4424,10 +4446,10 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
         }))
       : undefined
     if (!resumed?.ok) {
-      if (resumed) sendToRenderer('cron:toast', resumed.error)
+      if (resumed) sendToRenderer(CH.cron.toast, resumed.error)
       return
     }
-    if (id === active) sendToRenderer('attention:activate-tab', { tabId: resumed.tabId })
+    if (id === active) sendToRenderer(CH.attention.activateTab, { tabId: resumed.tabId })
     await tabReady(resumed.tabId, RESUMED_TAB_READY_MS, false)
   }
   await mapAtMost(ids, RESUMES_AT_ONCE, resumeOne)
@@ -4472,7 +4494,7 @@ async function resumeRow(
     title: row.title,
     sessionId: row.id
   }
-  sendToRenderer('terminal:spawned', spawned)
+  sendToRenderer(CH.terminal.spawned, spawned)
   return { ok: true, tabId: res.id }
 }
 
@@ -4737,7 +4759,7 @@ const resumeProbes: ResumeProbes = {
 
 function commitSettings(patch: Partial<Settings>): Settings {
   const s = saveSettings(patch)
-  sendToRenderer('settings:update', s)
+  sendToRenderer(CH.settings.update, s)
   updateDockBadge(attention.list())
   setRelayEnabled(s.browserControl, ptyTabIds())
   applyKeepAwake(s.keepAwake)
@@ -4837,7 +4859,7 @@ const claudeBackend = new ClaudeBackend({
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
-  error: (message) => sendToRenderer('cron:toast', message),
+  error: (message) => sendToRenderer(CH.cron.toast, message),
   machineOfTab,
   otherTabOnMachine: (machine, tmuxName, launchTab) =>
     storedSessions()
@@ -4857,7 +4879,7 @@ function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tab
 
 function registerIpc(): void {
   ipcMain.handle(
-    'terminal:create',
+    CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
       if (
         opts.kind !== 'shell' &&
@@ -4887,16 +4909,16 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.on('terminal:write', (_e, id: string, data: string) => writeToTab(id, data))
-  ipcMain.handle('terminal:paste', (_e, id: string, text: string, typedAfter?: string) => {
+  ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => writeToTab(id, data))
+  ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })
   // PLATFORM§21
-  ipcMain.on('sessions:activity', (_e, id: unknown) => {
+  ipcMain.on(CH.sessions.activity, (_e, id: unknown) => {
     if (typeof id === 'string' && id) tracker.noteActivity(id)
   })
-  ipcMain.on('terminal:ack', (_e, id: string, ackedUtf16Units: number) => {
+  ipcMain.on(CH.terminal.ack, (_e, id: string, ackedUtf16Units: number) => {
     if (
       typeof ackedUtf16Units === 'number' &&
       Number.isFinite(ackedUtf16Units) &&
@@ -4907,23 +4929,23 @@ function registerIpc(): void {
       }
     }
   })
-  ipcMain.on('terminal:attach', (_e, id: string) => {
+  ipcMain.on(CH.terminal.attach, (_e, id: string) => {
     flowGateFor(id).attach()
     flushHeldData()
   })
-  ipcMain.handle('terminal:flowStats', () =>
+  ipcMain.handle(CH.terminal.flowStats, () =>
     [...flowGates.entries()].map(([id, gate]) => gate.stats(id))
   )
-  ipcMain.on('terminal:resize', (_e, id: string, cols: number, rows: number) =>
+  ipcMain.on(CH.terminal.resize, (_e, id: string, cols: number, rows: number) =>
     ptyMgr.resize(id, cols, rows)
   )
   ipcMain.on(
-    'terminal:kill',
+    CH.terminal.kill,
     (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
   )
 
-  ipcMain.handle('sessions:list', () => allSessions())
-  ipcMain.handle('sessions:backends', (_e, recheck: unknown) => {
+  ipcMain.handle(CH.sessions.list, () => allSessions())
+  ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
     if (recheck === true) sessionBackends.forgetAvailability()
     return sessionBackends.availability((id) => ({
       id,
@@ -4931,12 +4953,12 @@ function registerIpc(): void {
       reason: startupErrors[id] ?? `${BACKEND_LABEL[id]} is not ready.`
     }))
   })
-  ipcMain.handle('sessions:installTool', (_e, backend: unknown) => {
+  ipcMain.handle(CH.sessions.installTool, (_e, backend: unknown) => {
     const id = backendIdOf(backend)
     return id ? installTool(id) : null
   })
-  ipcMain.handle('attention:list', () => attention.list())
-  ipcMain.handle('tabs:list', (): TabInventoryReply => {
+  ipcMain.handle(CH.attention.list, () => attention.list())
+  ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
     cronRunner?.onRendererReady()
     if (probeOnceTheRendererIsUp) {
@@ -4964,7 +4986,7 @@ function registerIpc(): void {
     const asleep = [...sleepers].map(([id, t]): AdoptableTab => ({ id, ...t, asleep: true }))
     return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
   })
-  ipcMain.on('attention:active-tab', (_e, id: string | null) => {
+  ipcMain.on(CH.attention.activeTab, (_e, id: string | null) => {
     const prevActive = uiActiveTabId
     uiActiveTabId = typeof id === 'string' && id ? id : null
     if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
@@ -4976,7 +4998,7 @@ function registerIpc(): void {
     if (prevActive && prevActive !== uiActiveTabId) attention.reconsider(prevActive, ctx)
     rememberOpenTabs()
   })
-  ipcMain.on('attention:visit', (_e, id: string) => {
+  ipcMain.on(CH.attention.visit, (_e, id: string) => {
     if (typeof id !== 'string' || !id) return
     const prevActive = uiActiveTabId
     uiActiveTabId = id
@@ -4987,37 +5009,37 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(
-    'cron:list',
+    CH.cron.list,
     () => cronRunner?.state() ?? { jobs: [], live: [], folders: {}, notes: {} }
   )
   ipcMain.handle(
-    'cron:save',
+    CH.cron.save,
     (_e, input: CronSaveInput) =>
       cronRunner?.save(input) ?? { ok: false, errors: [CRON_SAVE_MESSAGES.workspace] }
   )
-  ipcMain.handle('cron:delete', (_e, jobId: string) => cronRunner?.delete(jobId))
-  ipcMain.handle('cron:setEnabled', (_e, arg: { jobId: string; on: boolean }) =>
+  ipcMain.handle(CH.cron.delete, (_e, jobId: string) => cronRunner?.delete(jobId))
+  ipcMain.handle(CH.cron.setEnabled, (_e, arg: { jobId: string; on: boolean }) =>
     cronRunner?.setEnabled(arg.jobId, arg.on)
   )
   ipcMain.handle(
-    'cron:runNow',
+    CH.cron.runNow,
     (_e, jobId: string) => cronRunner?.runNow(jobId) ?? { ok: false, reason: 'not-ready' }
   )
-  ipcMain.handle('cron:skills', (_e, workspacePath: string) =>
+  ipcMain.handle(CH.cron.skills, (_e, workspacePath: string) =>
     hosts.of(workspacePath).listSkills(workspacePath)
   )
-  ipcMain.handle('cron:trusted', (_e, workspacePath: string, backend: BackendId) =>
+  ipcMain.handle(CH.cron.trusted, (_e, workspacePath: string, backend: BackendId) =>
     sessionBackends.get(backend).trustsFolder(workspacePath)
   )
 
-  ipcMain.handle('update:check', () => checkForUpdates())
-  ipcMain.handle('update:download', () =>
-    downloadAndInstall((p) => sendToRenderer('update:progress', p))
+  ipcMain.handle(CH.update.check, () => checkForUpdates())
+  ipcMain.handle(CH.update.download, () =>
+    downloadAndInstall((p) => sendToRenderer(CH.update.progress, p))
   )
-  ipcMain.on('update:restart', () => restartApp())
-  ipcMain.handle('update:offer', () => currentOffer())
-  ipcMain.on('update:openRelease', () => sendOverlayOpen(releasePageUrl(), 'now'))
-  ipcMain.handle('update:whatsNew', async (): Promise<WhatsNew | null> => {
+  ipcMain.on(CH.update.restart, () => restartApp())
+  ipcMain.handle(CH.update.offer, () => currentOffer())
+  ipcMain.on(CH.update.openRelease, () => sendOverlayOpen(releasePageUrl(), 'now'))
+  ipcMain.handle(CH.update.whatsNew, async (): Promise<WhatsNew | null> => {
     if (!app.isPackaged && !fixturePath()) return null
     const { show, record } = await whatsNewDecision(
       loadSettings().lastSeenVersion,
@@ -5028,9 +5050,9 @@ function registerIpc(): void {
     return show
   })
 
-  ipcMain.handle('accounts:list', () => accountViews())
+  ipcMain.handle(CH.accounts.list, () => accountViews())
   ipcMain.handle(
-    'accounts:add',
+    CH.accounts.add,
     (
       _e,
       name: string,
@@ -5039,7 +5061,7 @@ function registerIpc(): void {
       endpoint?: { baseUrl: string; model?: string }
     ) => addAccount(name, kind, secret, endpoint)
   )
-  ipcMain.handle('accounts:remove', async (_e, name: string, kind: AccountKind) => {
+  ipcMain.handle(CH.accounts.remove, async (_e, name: string, kind: AccountKind) => {
     // CODEX§15 MUSE§13
     if (!SIGN_IN_FOLDER_KINDS.includes(kind)) await keychainDelete(kind, name)
     removeAccountMeta(name, kind)
@@ -5047,12 +5069,12 @@ function registerIpc(): void {
     picker.forget(kind, name)
     pushAccounts()
   })
-  ipcMain.handle('accounts:toggle', (_e, name: string, kind: AccountKind, enabled: boolean) => {
+  ipcMain.handle(CH.accounts.toggle, (_e, name: string, kind: AccountKind, enabled: boolean) => {
     setAccountEnabled(name, kind, enabled === true)
     pushAccounts()
   })
-  ipcMain.handle('accounts:probe', () => probeAllForPanel())
-  ipcMain.handle('accounts:start-login', (_e, name: string, reauth?: boolean) => {
+  ipcMain.handle(CH.accounts.probe, () => probeAllForPanel())
+  ipcMain.handle(CH.accounts.startLogin, (_e, name: string, reauth?: boolean) => {
     const v = reauth
       ? findAccount(name, 'oauth')
         ? 'ok'
@@ -5064,20 +5086,20 @@ function registerIpc(): void {
     return 'ok'
   })
   ipcMain.handle(
-    'accounts:sign-in',
+    CH.accounts.signIn,
     async (_e, kind: unknown, name: string, again?: boolean): Promise<SignInResult> =>
       isSignInFolderKind(kind)
         ? signInToHome(kind, name, again === true)
         : { ok: false, error: 'invalid-name' }
   )
-  ipcMain.handle('accounts:codex-use-reset', (_e, name: string) => codexUseReset(name))
-  ipcMain.on('accounts:cancel-login', () => {
+  ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
+  ipcMain.on(CH.accounts.cancelLogin, () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
   })
 
-  ipcMain.handle('settings:get', () => loadSettings())
-  ipcMain.handle('app:version', () => app.getVersion())
-  ipcMain.handle('settings:set', (_e, patch) => {
+  ipcMain.handle(CH.settings.get, () => loadSettings())
+  ipcMain.handle(CH.app.version, () => app.getVersion())
+  ipcMain.handle(CH.settings.set, (_e, patch) => {
     const saved = commitSettings(sanitizeSettingsPatch(patch))
     const backend = preferredAssistBackend(saved)
     if (!conductors || saved.discord.bindings.every((b) => b.backend === backend)) return saved
@@ -5085,7 +5107,7 @@ function registerIpc(): void {
     return loadSettings()
   })
 
-  ipcMain.handle('assist:route', async (_e, id: unknown, message: unknown) => {
+  ipcMain.handle(CH.assist.route, async (_e, id: unknown, message: unknown) => {
     if (typeof id !== 'number' || typeof message !== 'string' || !workspaceMgr) return null
     const mgr = workspaceMgr
     const run = new AbortController()
@@ -5100,7 +5122,7 @@ function registerIpc(): void {
       assistRuns.delete(id)
     }
   })
-  ipcMain.on('assist:cancel', (_e, id: unknown) => {
+  ipcMain.on(CH.assist.cancel, (_e, id: unknown) => {
     if (typeof id === 'number') assistRuns.get(id)?.abort()
   })
   const addWorkspacePath = (p: string): WorkspaceAddResult | undefined => {
@@ -5109,25 +5131,25 @@ function registerIpc(): void {
     if (remote && r?.code === 'added') remoteSync?.pokeNow(remote.host)
     return r
   }
-  ipcMain.handle('workspace:add', (_e, p: string) => {
+  ipcMain.handle(CH.workspace.add, (_e, p: string) => {
     const r = addWorkspacePath(p)
     if (r?.code === 'added') void gitAccounts?.autoPickNewWorkspace(p)
     return r
   })
   const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
   const isGitPlatform = (v: unknown): v is GitPlatform => GIT_PLATFORMS.includes(v as GitPlatform)
-  ipcMain.handle('gitAccounts:list', () => gitAccounts?.views() ?? [])
+  ipcMain.handle(CH.gitAccounts.list, () => gitAccounts?.views() ?? [])
   const machineOf = (v: unknown): string | undefined => (isText(v) ? v : undefined)
   ipcMain.handle(
-    'gitAccounts:login-start',
+    CH.gitAccounts.loginStart,
     (_e, platform: unknown, url: unknown, machine: unknown) =>
       gitAccounts && isGitPlatform(platform) && typeof url === 'string'
         ? gitAccounts.loginStart(platform, url, machineOf(machine))
         : { ok: false, error: 'bad-url' }
   )
-  ipcMain.on('gitAccounts:login-cancel', () => gitAccounts?.loginCancel())
-  ipcMain.on('gitAccounts:login-browser', () => gitAccounts?.loginBrowser())
-  ipcMain.handle('gitAccounts:add-token', (_e, add: Partial<GitTokenAdd> | undefined) =>
+  ipcMain.on(CH.gitAccounts.loginCancel, () => gitAccounts?.loginCancel())
+  ipcMain.on(CH.gitAccounts.loginBrowser, () => gitAccounts?.loginBrowser())
+  ipcMain.handle(CH.gitAccounts.addToken, (_e, add: Partial<GitTokenAdd> | undefined) =>
     gitAccounts && isGitPlatform(add?.platform) && isText(add.token) && typeof add.url === 'string'
       ? gitAccounts.addToken({
           platform: add.platform,
@@ -5138,36 +5160,36 @@ function registerIpc(): void {
         })
       : { ok: false, error: 'rejected' }
   )
-  ipcMain.handle('gitAccounts:remove', (_e, id: unknown, machine: unknown) =>
+  ipcMain.handle(CH.gitAccounts.remove, (_e, id: unknown, machine: unknown) =>
     isText(id) ? gitAccounts?.remove(id, machineOf(machine)) : undefined
   )
-  ipcMain.handle('gitAccounts:make-default', (_e, id: unknown, machine: unknown) =>
+  ipcMain.handle(CH.gitAccounts.makeDefault, (_e, id: unknown, machine: unknown) =>
     isText(id) ? gitAccounts?.makeDefault(id, machineOf(machine)) : undefined
   )
-  ipcMain.handle('gitAccounts:check', () => gitAccounts?.checkAll())
-  ipcMain.handle('gitAccounts:pick', (_e, wsPath: unknown, id: unknown) =>
+  ipcMain.handle(CH.gitAccounts.check, () => gitAccounts?.checkAll())
+  ipcMain.handle(CH.gitAccounts.pick, (_e, wsPath: unknown, id: unknown) =>
     isText(wsPath) && (id === null || isText(id))
       ? gitAccounts?.pick(wsPath, id).then(() => void freshness?.fetchNow(wsPath))
       : undefined
   )
-  ipcMain.handle('gitAccounts:suggest', (_e, wsPath: unknown, network: unknown) =>
+  ipcMain.handle(CH.gitAccounts.suggest, (_e, wsPath: unknown, network: unknown) =>
     isText(wsPath) && gitAccounts ? gitAccounts.suggest(wsPath, network === true) : { kind: 'none' }
   )
-  ipcMain.handle('gitAccounts:dismiss', (_e, wsPath: unknown) =>
+  ipcMain.handle(CH.gitAccounts.dismiss, (_e, wsPath: unknown) =>
     isText(wsPath) ? gitAccounts?.dismiss(wsPath) : undefined
   )
-  ipcMain.handle('gitAccounts:make-ssh-key', (_e, wsPath: unknown) =>
+  ipcMain.handle(CH.gitAccounts.makeSshKey, (_e, wsPath: unknown) =>
     isText(wsPath) ? gitAccounts?.makeSshKey(wsPath) : undefined
   )
-  ipcMain.handle('gitAccounts:check-ssh-key', (_e, wsPath: unknown) =>
+  ipcMain.handle(CH.gitAccounts.checkSshKey, (_e, wsPath: unknown) =>
     isText(wsPath) ? gitAccounts?.checkSshKey(wsPath) : undefined
   )
-  ipcMain.handle('project:create', (_e, parent: unknown, name: unknown) =>
+  ipcMain.handle(CH.project.create, (_e, parent: unknown, name: unknown) =>
     typeof parent === 'string' && parent && typeof name === 'string'
       ? createProject(hosts.of(parent), parent, name, addWorkspacePath)
       : { ok: false, reason: 'Pick a folder.' }
   )
-  ipcMain.handle('workspace:remove', (_e, p: string) => {
+  ipcMain.handle(CH.workspace.remove, (_e, p: string) => {
     const marked = markedSessionsOf(p)
     const r = workspaceMgr?.remove(p)
     if (r?.removed) {
@@ -5177,7 +5199,7 @@ function registerIpc(): void {
     }
     return r
   })
-  ipcMain.handle('workspace:removeConfirmed', async (_e, p: string) => {
+  ipcMain.handle(CH.workspace.removeConfirmed, async (_e, p: string) => {
     await Promise.all(
       storedSessions().flatMap((stored) => {
         const tabs = new Set(
@@ -5196,7 +5218,7 @@ function registerIpc(): void {
     conductors?.removeWorkspace(p)
     for (const id of marked) attention.clearSession(id)
   })
-  ipcMain.handle('conductors:save', (_e, input: ConductorSaveInput) => {
+  ipcMain.handle(CH.conductors.save, (_e, input: ConductorSaveInput) => {
     const channel = input?.channel
     if (
       typeof input?.scope !== 'string' ||
@@ -5213,47 +5235,47 @@ function registerIpc(): void {
     if (saved.ok) registerSlashCommands()
     return saved
   })
-  ipcMain.handle('conductors:saveWithNewChannel', (_e, input: NewChannelInput) =>
+  ipcMain.handle(CH.conductors.saveWithNewChannel, (_e, input: NewChannelInput) =>
     bindWithNewChannel({ id: input.id, scope: input.scope })
   )
-  ipcMain.handle('conductors:unbind', (_e, id: string) => {
+  ipcMain.handle(CH.conductors.unbind, (_e, id: string) => {
     conductors?.unbind(id)
     syncAnswerable()
   })
   ipcMain.handle(
-    'conductors:open',
+    CH.conductors.open,
     (_e, scope: string) => conductors?.open(scope) ?? { ok: false, error: STILL_STARTING }
   )
   ipcMain.handle(
-    'conductors:startFresh',
+    CH.conductors.startFresh,
     (_e, scope: string) => conductors?.startFresh(scope) ?? { ok: false, error: STILL_STARTING }
   )
-  ipcMain.handle('conductors:openTask', (_e, scope: string, title: string, text: string) =>
+  ipcMain.handle(CH.conductors.openTask, (_e, scope: string, title: string, text: string) =>
     openPaletteTask(scope, title, text)
   )
-  ipcMain.handle('conductors:tell', (_e, scope: string, title: string, text: string) =>
+  ipcMain.handle(CH.conductors.tell, (_e, scope: string, title: string, text: string) =>
     tellAssist(scope, title, text)
   )
-  ipcMain.handle('conductors:closeTask', (_e, tabId: string) => conductors?.closeTask(tabId))
-  ipcMain.handle('conductors:tasks', () => conductors?.taskRows() ?? [])
-  ipcMain.handle('discord:status', () => discordLink?.status() ?? DISCORD_OFF)
-  ipcMain.handle('discord:pair', (_e, isMe: unknown) => {
+  ipcMain.handle(CH.conductors.closeTask, (_e, tabId: string) => conductors?.closeTask(tabId))
+  ipcMain.handle(CH.conductors.tasks, () => conductors?.taskRows() ?? [])
+  ipcMain.handle(CH.discord.status, () => discordLink?.status() ?? DISCORD_OFF)
+  ipcMain.handle(CH.discord.pair, (_e, isMe: unknown) => {
     const owner = discordLink?.pair(isMe === true)
     if (owner) conductors?.setOwner(owner)
   })
-  ipcMain.handle('discord:channels', () => discordLink?.channels() ?? [])
-  ipcMain.handle('discord:setUpWithAssist', (_e, ownerWords?: string) =>
+  ipcMain.handle(CH.discord.channels, () => discordLink?.channels() ?? [])
+  ipcMain.handle(CH.discord.setUpWithAssist, (_e, ownerWords?: string) =>
     openDiscordSetup(ownerWords)
   )
-  ipcMain.handle('workspace:move', (_e, p: string, before: string | null) =>
+  ipcMain.handle(CH.workspace.move, (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
   )
-  ipcMain.handle('workspace:rows', async () => {
+  ipcMain.handle(CH.workspace.rows, async () => {
     await workspaceMgr?.firstScan
     return workspaceMgr?.rows() ?? []
   })
-  ipcMain.handle('workspace:discover', () => workspaceMgr?.discover() ?? [])
-  ipcMain.handle('workspace:worktrees', async (_e, p: string) => {
+  ipcMain.handle(CH.workspace.discover, () => workspaceMgr?.discover() ?? [])
+  ipcMain.handle(CH.workspace.worktrees, async (_e, p: string) => {
     const trees = (await workspaceMgr?.worktrees(p)) ?? []
     for (const stored of storedSessions()) {
       const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
@@ -5278,16 +5300,16 @@ function registerIpc(): void {
     }
     return trees
   })
-  ipcMain.handle('workspace:fetchFreshness', (_e, p: string) => freshness?.fetchNow(p) ?? null)
+  ipcMain.handle(CH.workspace.fetchFreshness, (_e, p: string) => freshness?.fetchNow(p) ?? null)
   ipcMain.handle(
-    'workspace:pull',
+    CH.workspace.pull,
     (_e, p: string, expect: { branch: string; head: string }) =>
       freshness?.pull(p, expect) ?? { ok: false, reason: 'state changed' }
   )
-  ipcMain.handle('workbench:get', (_e, sessionId: string) =>
+  ipcMain.handle(CH.workbench.get, (_e, sessionId: string) =>
     workspaceMgr?.workbenchState(sessionId)
   )
-  ipcMain.on('workbench:setState', (_e, sessionId: string, state: SessionWorkbenchState) => {
+  ipcMain.on(CH.workbench.setState, (_e, sessionId: string, state: SessionWorkbenchState) => {
     if (typeof sessionId !== 'string' || !sessionId) return
     if (!state || typeof state !== 'object' || !Array.isArray(state.tabs)) return
     if (!workspaceMgr) return
@@ -5296,31 +5318,31 @@ function registerIpc(): void {
       sanitizeSessionWorkbench(state, workspaceMgr.defaultOpen())
     )
   })
-  ipcMain.on('workbench:available', (_e, available: unknown, terminal: unknown) => {
+  ipcMain.on(CH.workbench.available, (_e, available: unknown, terminal: unknown) => {
     setWorkbenchAvailable(available === true, terminal === true)
   })
-  ipcMain.on('workbench:findAvailable', (_e, available: unknown) => {
+  ipcMain.on(CH.workbench.findAvailable, (_e, available: unknown) => {
     setFindAvailable(available === true)
   })
-  ipcMain.on('workbench:saveAvailable', (_e, available: unknown) => {
+  ipcMain.on(CH.workbench.saveAvailable, (_e, available: unknown) => {
     setSaveAvailable(available === true)
   })
-  ipcMain.on('workbench:dirtyTabs', (_e, ids: unknown) => {
+  ipcMain.on(CH.workbench.dirtyTabs, (_e, ids: unknown) => {
     if (!Array.isArray(ids) || ids.some((x) => typeof x !== 'string')) return
     dirtyTabIds.clear()
     for (const id of ids as string[]) dirtyTabIds.add(id)
   })
-  ipcMain.handle('sessions:archive', (_e, id: unknown): boolean => {
+  ipcMain.handle(CH.sessions.archive, (_e, id: unknown): boolean => {
     if (typeof id !== 'string' || !id) return false
     return archiveSession(id)
   })
 
-  ipcMain.on('sessions:setResident', (_e, id: unknown, on: unknown) => {
+  ipcMain.on(CH.sessions.setResident, (_e, id: unknown, on: unknown) => {
     if (typeof id !== 'string' || !id || typeof on !== 'boolean') return
     workspaceMgr?.setResident(id, on)
   })
 
-  ipcMain.handle('sessions:forceClose', async (_e, id: unknown): Promise<{ ok: boolean }> => {
+  ipcMain.handle(CH.sessions.forceClose, async (_e, id: unknown): Promise<{ ok: boolean }> => {
     if (typeof id !== 'string' || !id) return { ok: false }
     const tabId = sessionBackends.forSession(id).aliveTabFor(id)
     if (!tabId) return { ok: false }
@@ -5328,15 +5350,15 @@ function registerIpc(): void {
   })
 
   // CC§2
-  ipcMain.handle('sessions:transcriptExists', (_e, id: unknown): boolean | Promise<boolean> => {
+  ipcMain.handle(CH.sessions.transcriptExists, (_e, id: unknown): boolean | Promise<boolean> => {
     if (typeof id !== 'string' || !id) return false
     return sessionBackends.forSession(id).transcriptExists(id)
   })
 
-  ipcMain.handle('workspace:historyRows', (_e, p: string) =>
+  ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
     sessionBackends.historyRows(p, (id, error) =>
       sendToRenderer(
-        'cron:toast',
+        CH.cron.toast,
         `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
       )
     )
@@ -5367,74 +5389,74 @@ function registerIpc(): void {
         stop: () => void worker.terminate()
       }
     },
-    send: (found) => sendToRenderer('sessions:search-hits', found)
+    send: (found) => sendToRenderer(CH.sessions.searchHits, found)
   })
-  ipcMain.on('sessions:search', (_e, searchId: unknown, term: unknown) => {
+  ipcMain.on(CH.sessions.search, (_e, searchId: unknown, term: unknown) => {
     if (typeof searchId !== 'number' || typeof term !== 'string') return
     sessionSearch.start(searchId, term)
   })
 
-  ipcMain.handle('sessions:leftovers', () => leftovers)
-  ipcMain.handle('sessions:stopLeftover', async (_e, sessionId: unknown, pid: unknown) => {
+  ipcMain.handle(CH.sessions.leftovers, () => leftovers)
+  ipcMain.handle(CH.sessions.stopLeftover, async (_e, sessionId: unknown, pid: unknown) => {
     if (typeof sessionId !== 'string' || typeof pid !== 'number') return false
     const stopped = await stopLeftover(sessionId, pid)
     await refreshLeftovers()
     return stopped
   })
 
-  ipcMain.handle('sessions:resumePlan', (_e, id: unknown): Promise<ResumePlan> => {
+  ipcMain.handle(CH.sessions.resumePlan, (_e, id: unknown): Promise<ResumePlan> => {
     if (typeof id !== 'string' || !id) {
       return Promise.resolve({ action: 'unavailable', reason: 'not-found' })
     }
     return sessionBackends.forSession(id).resumePlan(id)
   })
 
-  ipcMain.handle('sessions:resume', (_e, req: SessionResumeRequest) => {
+  ipcMain.handle(CH.sessions.resume, (_e, req: SessionResumeRequest) => {
     if (typeof req?.sessionId !== 'string') return { ok: false, code: 'invalid-args' }
     return sessionBackends.forSession(req.sessionId).resume(req)
   })
 
-  ipcMain.on('app:isDev', (e) => {
+  ipcMain.on(CH.app.isDev, (e) => {
     e.returnValue = !app.isPackaged
   })
 
-  ipcMain.on('app:quit-approved', () => {
+  ipcMain.on(CH.app.quitApproved, () => {
     clearQuitFallback()
     approveAndRun(() => app.quit())
   })
-  ipcMain.on('app:quit-held', () => {
+  ipcMain.on(CH.app.quitHeld, () => {
     clearQuitFallback()
     resetQuitGuard()
   })
-  ipcMain.on('app:quit-declined', () => {
+  ipcMain.on(CH.app.quitDeclined, () => {
     clearQuitFallback()
     declineQuit()
   })
 
-  ipcMain.on('shortcut:window', (e, cmd: WindowCommand) => applyWindowCommand(e.sender, cmd))
+  ipcMain.on(CH.shortcut.window, (e, cmd: WindowCommand) => applyWindowCommand(e.sender, cmd))
 
-  ipcMain.on('browser:guest-limit', (e) => {
+  ipcMain.on(CH.browser.guestLimit, (e) => {
     e.returnValue = browserGuestLimit()
   })
-  ipcMain.on('browser:overlay-guest', (_e, guestId: unknown, on: unknown) => {
+  ipcMain.on(CH.browser.overlayGuest, (_e, guestId: unknown, on: unknown) => {
     if (typeof guestId !== 'number') return
     if (on) overlayGuests.add(guestId)
     else overlayGuests.delete(guestId)
   })
-  ipcMain.on('browser:guest-owner', (_e, guestId: unknown, ownerTabId: unknown) => {
+  ipcMain.on(CH.browser.guestOwner, (_e, guestId: unknown, ownerTabId: unknown) => {
     if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return
     const guest = webContents.fromId(guestId)
     if (guest) guestOwners.set(guest, ownerTabId)
   })
-  ipcMain.on('browser:overlay-ready', () => {
+  ipcMain.on(CH.browser.overlayReady, () => {
     overlayListening = true
     flushOverlayOpens()
   })
-  ipcMain.on('browser:strip', (_e, sessionId: unknown, targets: unknown) => {
+  ipcMain.on(CH.browser.strip, (_e, sessionId: unknown, targets: unknown) => {
     if (typeof sessionId !== 'string' || !Array.isArray(targets)) return
     relayStripChanged(sessionId, targets as BrowserStripTarget[])
   })
-  ipcMain.on('terminal:screen-done', (_e, answer: unknown) => {
+  ipcMain.on(CH.terminal.screenDone, (_e, answer: unknown) => {
     const a = answer as ScreenAnswer
     if (!a || typeof a.requestId !== 'string') return
     const pending = screenAsks.get(a.requestId)
@@ -5442,7 +5464,7 @@ function registerIpc(): void {
     screenAsks.delete(a.requestId)
     pending(a)
   })
-  ipcMain.on('browser:cdp-op-done', (_e, res: unknown) => {
+  ipcMain.on(CH.browser.cdpOpDone, (_e, res: unknown) => {
     const r = res as BrowserCdpOpResult
     if (!r || typeof r.opId !== 'string') return
     const pending = cdpOps.get(r.opId)
@@ -5450,10 +5472,10 @@ function registerIpc(): void {
     cdpOps.delete(r.opId)
     pending(r)
   })
-  ipcMain.on('browser:open-external', (_e, url: string) => {
+  ipcMain.on(CH.browser.openExternal, (_e, url: string) => {
     if (typeof url === 'string') openUrlExternally(url)
   })
-  ipcMain.on('browser:devtools', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.devtools, (_e, id: unknown) => {
     if (typeof id !== 'number') return
     const guest = webContents.fromId(id)
     if (!guest || guest.getType() !== 'webview') return
@@ -5461,23 +5483,23 @@ function registerIpc(): void {
     if (guest.isDevToolsOpened()) guest.closeDevTools()
     else guest.openDevTools({ mode: 'detach', activate: !BACKGROUND_TEST })
   })
-  ipcMain.handle('ext:list', () =>
+  ipcMain.handle(CH.ext.list, () =>
     listExtensions().map(({ id, name, version, enabled }) => ({ id, name, version, enabled }))
   )
-  ipcMain.handle('ext:set-enabled', (_e, id: unknown, enabled: unknown) => {
+  ipcMain.handle(CH.ext.setEnabled, (_e, id: unknown, enabled: unknown) => {
     if (typeof id !== 'string' || typeof enabled !== 'boolean') return
     return setExtensionEnabled(id, enabled)
   })
-  ipcMain.handle('ext:uninstall', (_e, id: unknown) => {
+  ipcMain.handle(CH.ext.uninstall, (_e, id: unknown) => {
     if (typeof id === 'string') uninstallExtension(id)
   })
-  ipcMain.on('ext:active-guest', (_e, id: unknown, url: unknown) => {
+  ipcMain.on(CH.ext.activeGuest, (_e, id: unknown, url: unknown) => {
     if (typeof id === 'number') reportActiveGuest(id, typeof url === 'string' ? url : '')
   })
-  ipcMain.on('ext:open-dropped', (_e, url: unknown) => {
+  ipcMain.on(CH.ext.openDropped, (_e, url: unknown) => {
     if (typeof url === 'string') reportOpenDropped(url)
   })
-  ipcMain.handle('ext:popup-anchor', (_e, rect: ExtensionPopupAnchor) => {
+  ipcMain.handle(CH.ext.popupAnchor, (_e, rect: ExtensionPopupAnchor) => {
     if (!rect) return
     const finite = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v)
     // PLATFORM§5
@@ -5485,62 +5507,62 @@ function registerIpc(): void {
       beforeActivate(rect)
     }
   })
-  ipcMain.on('ext:dismiss-popup', () => dismissActionPopup())
-  ipcMain.on('ext:permission-answer', (_e, id: unknown, granted: unknown) => {
+  ipcMain.on(CH.ext.dismissPopup, () => dismissActionPopup())
+  ipcMain.on(CH.ext.permissionAnswer, (_e, id: unknown, granted: unknown) => {
     if (typeof id === 'string') answerPermissionRequest(id, granted === true)
   })
 
-  ipcMain.on('browser:permission-answer', (_e, id: unknown, granted: unknown) => {
+  ipcMain.on(CH.browser.permissionAnswer, (_e, id: unknown, granted: unknown) => {
     if (typeof id !== 'string') return
     answerPermission(id, granted === true)
   })
 
-  ipcMain.on('browser:permission-cancel', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.permissionCancel, (_e, id: unknown) => {
     if (typeof id !== 'string') return
     const pending = pendingPermissions.get(id)
     if (pending) dropPermissions((p) => p === pending)
   })
 
-  ipcMain.on('browser:download-cancel', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.downloadCancel, (_e, id: unknown) => {
     if (typeof id !== 'string') return
     liveDownloads.get(id)?.cancel()
   })
 
-  ipcMain.on('browser:download-retry', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.downloadRetry, (_e, id: unknown) => {
     if (typeof id !== 'string') return
     const url = downloadSources.get(id)
     if (!url) return
     retryTargets.set(url, id)
-    sendToRenderer('browser:download-event', { id, kind: 'retrying' })
+    sendToRenderer(CH.browser.downloadEvent, { id, kind: 'retrying' })
     session.fromPartition(BROWSER_PARTITION).downloadURL(url)
   })
 
-  ipcMain.on('browser:copy-text', (_e, text: unknown) => {
+  ipcMain.on(CH.browser.copyText, (_e, text: unknown) => {
     if (typeof text !== 'string' || !text) return
     clipboard.writeText(text.slice(0, 8192))
   })
 
-  ipcMain.on('browser:set-muted', (_e, guestId: unknown, muted: unknown) => {
+  ipcMain.on(CH.browser.setMuted, (_e, guestId: unknown, muted: unknown) => {
     if (typeof guestId !== 'number') return
     const contents = webContents.fromId(guestId)
     if (!contents || contents.session !== session.fromPartition(BROWSER_PARTITION)) return
     contents.setAudioMuted(muted === true)
   })
 
-  ipcMain.handle('browser:cert-proceed', (_e, url: string) => {
+  ipcMain.handle(CH.browser.certProceed, (_e, url: string) => {
     const host = certHostOf(typeof url === 'string' ? url : '')
     if (!host) return
     trustedCertHosts.add(host)
   })
   // PLATFORM§12
-  ipcMain.handle('browser:clear-data', async () => {
+  ipcMain.handle(CH.browser.clearData, async () => {
     const ses = session.fromPartition(BROWSER_PARTITION)
     trustedCertHosts.clear()
     await ses.clearData()
     await ses.clearAuthCache()
     await ses.closeAllConnections()
   })
-  ipcMain.on('browser:auth-answer', (_e, id: string, answer: BrowserDialogAnswer) => {
+  ipcMain.on(CH.browser.authAnswer, (_e, id: string, answer: BrowserDialogAnswer) => {
     const respond = pendingAuth.get(id)
     if (!respond) return
     pendingAuth.delete(id)
@@ -5550,7 +5572,7 @@ function registerIpc(): void {
   })
 
   ipcMain.on(
-    'browser:js-dialog',
+    CH.browser.jsDialog,
     (e, request: { kind?: unknown; message?: unknown; defaultValue?: unknown }) => {
       const cancel = { ok: false } satisfies BrowserDialogAnswer
       if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) {
@@ -5577,10 +5599,10 @@ function registerIpc(): void {
         guestId: e.sender.id,
         overlay: isOverlayGuest(e.sender)
       }
-      sendToRenderer('browser:js-dialog', payload)
+      sendToRenderer(CH.browser.jsDialog, payload)
     }
   )
-  ipcMain.on('browser:js-dialog-answer', (_e, id: string, answer: BrowserDialogAnswer) => {
+  ipcMain.on(CH.browser.jsDialogAnswer, (_e, id: string, answer: BrowserDialogAnswer) => {
     const respond = pendingJsDialogs.get(id)
     if (!respond) return
     pendingJsDialogs.delete(id)
@@ -5591,68 +5613,68 @@ function registerIpc(): void {
     )
   })
 
-  ipcMain.handle('preview:readText', async (_e, p: string): Promise<string> => {
+  ipcMain.handle(CH.preview.readText, async (_e, p: string): Promise<string> => {
     if (typeof p !== 'string' || !p) throw new Error('KOLOFT_READ_FAILED')
     return hosts.of(p).readText(p)
   })
-  ipcMain.handle('fs:listDir', (_e, p: string, opts?: { showIgnored?: boolean }) =>
+  ipcMain.handle(CH.fs.listDir, (_e, p: string, opts?: { showIgnored?: boolean }) =>
     hosts.of(p).listDir(p, opts)
   )
-  ipcMain.handle('fs:dirExists', (_e, p: string) =>
+  ipcMain.handle(CH.fs.dirExists, (_e, p: string) =>
     typeof p === 'string' && p ? hosts.of(p).dirExistsOrThrow(p) : false
   )
-  ipcMain.handle('fs:search', (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
+  ipcMain.handle(CH.fs.search, (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
     hosts.of(p).search(p, q, opts)
   )
   const baseArg = sanitizeBase
   const untrackedArg = (u: unknown): boolean => u === true
-  ipcMain.handle('fs:gitChanges', (_e, root: string, base?: unknown) =>
+  ipcMain.handle(CH.fs.gitChanges, (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root
       ? hosts.of(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
       : { base: null, status: {}, numstat: {}, missing: false }
   )
-  ipcMain.handle('fs:gitDiff', (_e, root: string, base?: unknown) =>
+  ipcMain.handle(CH.fs.gitDiff, (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root
       ? hosts.of(root).gitDiff(root, baseArg(base))
       : { text: '', truncated: false, notRepo: true, toplevel: null }
   )
-  ipcMain.handle('fs:gitFileDiff', (_e, p: string, base?: unknown, untracked?: unknown) =>
+  ipcMain.handle(CH.fs.gitFileDiff, (_e, p: string, base?: unknown, untracked?: unknown) =>
     typeof p === 'string' && p
       ? hosts.of(p).gitFileDiff(p, baseArg(base), untrackedArg(untracked))
       : { text: '', truncated: false }
   )
-  ipcMain.handle('fs:gitFileDiffFull', (_e, p: string, base?: unknown, untracked?: unknown) =>
+  ipcMain.handle(CH.fs.gitFileDiffFull, (_e, p: string, base?: unknown, untracked?: unknown) =>
     typeof p === 'string' && p
       ? hosts.of(p).gitFileDiffFull(p, baseArg(base), untrackedArg(untracked))
       : { text: '', truncated: false }
   )
   ipcMain.handle(
-    'fs:searchContent',
+    CH.fs.searchContent,
     (_e, root: string, q: string, opts?: { showIgnored?: boolean }) =>
       typeof root === 'string' && root
         ? hosts.of(root).searchContent(root, q, opts)
         : { hits: [], truncated: false }
   )
-  ipcMain.handle('fs:watchDir', (_e, root: string) =>
+  ipcMain.handle(CH.fs.watchDir, (_e, root: string) =>
     typeof root === 'string' && root
-      ? hosts.of(root).watchDir(root, (r) => sendToRenderer('fs:dir-changed', r))
+      ? hosts.of(root).watchDir(root, (r) => sendToRenderer(CH.fs.dirChanged, r))
       : false
   )
-  ipcMain.on('fs:unwatchDir', (_e, root: string) => {
+  ipcMain.on(CH.fs.unwatchDir, (_e, root: string) => {
     if (typeof root === 'string' && root) hosts.of(root).unwatchDir(root)
   })
-  ipcMain.on('fs:watchFile', (_e, p: string) => {
+  ipcMain.on(CH.fs.watchFile, (_e, p: string) => {
     if (typeof p === 'string' && isAbsoluteOnHost(p))
-      hosts.of(p).watchFile(p, (fp, st) => sendToRenderer('fs:file-changed', fp, st))
+      hosts.of(p).watchFile(p, (fp, st) => sendToRenderer(CH.fs.fileChanged, fp, st))
   })
-  ipcMain.on('fs:unwatchFile', (_e, p: string) => {
+  ipcMain.on(CH.fs.unwatchFile, (_e, p: string) => {
     if (typeof p === 'string' && p) hosts.of(p).unwatchFile(p)
   })
-  ipcMain.on('fs:reveal', (_e, p: string) => {
+  ipcMain.on(CH.fs.reveal, (_e, p: string) => {
     if (typeof p === 'string' && p) hosts.of(p).reveal(p)
   })
-  ipcMain.handle('edit:open', (_e, p: unknown) => hosts.of(p as string).openForEdit(p as string))
-  ipcMain.handle('edit:write', (_e, p: unknown, text: unknown, expect: unknown, opts: unknown) =>
+  ipcMain.handle(CH.edit.open, (_e, p: unknown) => hosts.of(p as string).openForEdit(p as string))
+  ipcMain.handle(CH.edit.write, (_e, p: unknown, text: unknown, expect: unknown, opts: unknown) =>
     hosts
       .of(p as string)
       .writeText(
@@ -5662,54 +5684,54 @@ function registerIpc(): void {
         (opts ?? undefined) as { force?: unknown; eol?: unknown } | undefined
       )
   )
-  ipcMain.handle('edit:create', (_e, dirPath: unknown, name: unknown) =>
+  ipcMain.handle(CH.edit.create, (_e, dirPath: unknown, name: unknown) =>
     hosts.of(dirPath as string).createFile(dirPath as string, name as string)
   )
-  ipcMain.handle('notes:path', (_e, ws: unknown) => {
+  ipcMain.handle(CH.notes.path, (_e, ws: unknown) => {
     if (typeof ws !== 'string' || !ws) return null
     return notesFileOfScope(ws) ?? null
   })
-  ipcMain.handle('github:info', async (_e, root: unknown, force: unknown) => {
+  ipcMain.handle(CH.github.info, async (_e, root: unknown, force: unknown) => {
     if (typeof root !== 'string' || !root) return null
     const { now, settled } = await hosts.of(root).github.info(root, { force: force === true })
     if (settled)
       void settled.then(
-        (info) => sendToRenderer('github:info', root, info),
+        (info) => sendToRenderer(CH.github.info, root, info),
         () => {}
       )
     return now
   })
-  ipcMain.handle('github:target', (_e, root: unknown, what: unknown) => {
+  ipcMain.handle(CH.github.target, (_e, root: unknown, what: unknown) => {
     if (typeof root !== 'string' || !root) return null
     if (what !== 'repo' && what !== 'pulls' && what !== 'pr' && what !== 'compare') return null
     return hosts.of(root).github.target(root, what)
   })
-  ipcMain.handle('github:checks', (_e, root: unknown, pr: unknown): Promise<PrChecks> => {
+  ipcMain.handle(CH.github.checks, (_e, root: unknown, pr: unknown): Promise<PrChecks> => {
     if (typeof root !== 'string' || !root || !Number.isInteger(pr)) {
       return Promise.resolve({ state: 'failed' })
     }
     return hosts.of(root).github.checks(root, pr as number)
   })
-  ipcMain.handle('github:failing-checks-text', (_e, root: unknown, pr: unknown) => {
+  ipcMain.handle(CH.github.failingChecksText, (_e, root: unknown, pr: unknown) => {
     if (typeof root !== 'string' || !root || !Number.isInteger(pr)) return null
     return hosts.of(root).github.failingChecksText(root, pr as number)
   })
-  ipcMain.handle('github:commit', (_e, root: unknown, message: unknown) => {
+  ipcMain.handle(CH.github.commit, (_e, root: unknown, message: unknown) => {
     if (typeof root !== 'string' || !root || typeof message !== 'string') return BAD_GIT_STEP
     const host = hosts.of(root)
     return commitAll((args, network) => host.gitRun(root, args, network), message)
   })
-  ipcMain.handle('github:push', (_e, root: unknown) => {
+  ipcMain.handle(CH.github.push, (_e, root: unknown) => {
     if (typeof root !== 'string' || !root) return BAD_GIT_STEP
     const host = hosts.of(root)
     return pushBranch((args, network) => host.gitRun(root, args, network))
   })
-  ipcMain.handle('github:open-items', (_e, root: unknown) => {
+  ipcMain.handle(CH.github.openItems, (_e, root: unknown) => {
     if (typeof root !== 'string' || !root) return { state: 'no-repo' }
     return hosts.of(root).github.openItems(root)
   })
   ipcMain.handle(
-    'github:pr-worktree',
+    CH.github.prWorktree,
     async (_e, root: unknown, pr: unknown, branch: unknown): Promise<PrWorktreeResult> => {
       if (
         typeof root !== 'string' ||
@@ -5730,7 +5752,7 @@ function registerIpc(): void {
       return r
     }
   )
-  ipcMain.handle('preview:openFileDialog', async () => {
+  ipcMain.handle(CH.preview.openFileDialog, async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
     if (stub) return takeStubbedDialogPick(stub)
     if (!mainWindow) return null
@@ -5739,9 +5761,9 @@ function registerIpc(): void {
     return res.filePaths[0]
   })
 
-  ipcMain.handle('window:isFullScreen', () => mainWindow?.isFullScreen() ?? false)
+  ipcMain.handle(CH.window.isFullScreen, () => mainWindow?.isFullScreen() ?? false)
 
-  ipcMain.handle('workspace:pickFolder', async () => {
+  ipcMain.handle(CH.workspace.pickFolder, async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
     if (stub) return takeStubbedDialogPick(stub)
     if (!mainWindow) return null
@@ -5750,11 +5772,11 @@ function registerIpc(): void {
     return res.filePaths[0]
   })
 
-  ipcMain.on('preview:os-open', (_e, p: string) => {
+  ipcMain.on(CH.preview.osOpen, (_e, p: string) => {
     if (typeof p === 'string' && p) hosts.of(p).osOpen(p)
   })
 
-  ipcMain.on('app:home', (e) => {
+  ipcMain.on(CH.app.home, (e) => {
     try {
       e.returnValue = fs.realpathSync(os.homedir())
     } catch {

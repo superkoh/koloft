@@ -1,27 +1,27 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
 import type { BrowserCommand } from '@shared/types'
 
+export type MenuShortcut =
+  | 'new-session'
+  | 'new-worktree-session'
+  | 'close-tab'
+  | 'find'
+  | 'find-files'
+  | 'check-update'
+  | 'restart-session'
+  | 'add-workspace'
+  | 'new-terminal-tab'
+  | 'save'
+  | 'toggle-keep-awake'
+  | 'focus-notes'
+  | 'next-waiting-session'
+  | 'toggle-sidebar'
+  | 'open-settings'
+  | 'command-palette'
+
 // PLATFORM§7
 export function setupAppMenu(
-  onShortcut: (
-    action:
-      | 'new-session'
-      | 'new-worktree-session'
-      | 'close-tab'
-      | 'find'
-      | 'find-files'
-      | 'check-update'
-      | 'restart-session'
-      | 'add-workspace'
-      | 'new-terminal-tab'
-      | 'save'
-      | 'toggle-keep-awake'
-      | 'focus-notes'
-      | 'next-waiting-session'
-      | 'toggle-sidebar'
-      | 'open-settings'
-      | 'command-palette'
-  ) => void,
+  onShortcut: (action: MenuShortcut) => void,
   onBrowserCommand: (cmd: BrowserCommand) => void,
   keepAwake = false
 ): void {
