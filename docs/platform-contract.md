@@ -1233,7 +1233,8 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   cache, co, codespace, completion, config, copilot, discussion, extension, gist, gpg-key,
   issue, label, licenses, org, pr, preview, project, release, repo, ruleset, run, search,
   secret, skill, ssh-key, status, variable and workflow (`## gh …` headings of
-  `gh help reference`, 2026-10-19, the gh 2.102.0 Koloft ships). Any other first word is
+  `gh help reference`, 2026-10-19, the gh 2.102.0 Koloft ships), where `co` is a default
+  alias for `pr checkout` that the owner can redefine. Any other first word is
   an alias or an installed extension. From gh's docs, inferred, not checked: an alias,
   an extension, `gh copilot`, and the browser, pager or editor named by `gh config set`
   each run another program, which inherits gh's environment (so `GH_TOKEN`); and a short

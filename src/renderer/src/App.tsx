@@ -707,7 +707,9 @@ export default function App(): JSX.Element {
       return
     }
     const { id, backendId, title } = hit.row
-    const listed = st.workspaceRows.some((w) => w.rows.some((r) => r.id === id))
+    const listed = [...st.workspaceRows, ...(st.butlerWorkspace ? [st.butlerWorkspace] : [])].some(
+      (w) => w.rows.some((r) => r.id === id)
+    )
     void resumeSession({ id, backendId, title, restore: !listed })
   }, [])
 

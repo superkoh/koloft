@@ -1368,6 +1368,7 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(launched).toHaveLength(1)
     expect(launched[0].cwd).toBe(BUTLER_FOLDER)
     expect(launched[0].worktree).toBeUndefined()
+    expect(launched[0].trustFolder).toBe(true)
     expect(launched[0].firstPrompt?.startsWith(BUTLER_HELPER_ROLE)).toBe(true)
     expect(launched[0].firstPrompt).toContain('koloft session send cond-id')
   })

@@ -2,8 +2,8 @@
 
 **Constraint**: the owner wants the butler (Alfred by default, Koloft's own session that
 manages every workspace) to hand project work to that project's workspace, and decided
-(2026-10-19) that this rests on the goals and principles in its prompt alone, not on a
-tool gate: the butler may do whatever an ordinary session may.
+that this rests on the goals and principles in its prompt alone, not on a tool gate: the
+butler may do whatever an ordinary session may.
 **Decision**: no gate. The butler runs with the permission an ordinary session gets from
 the owner's "skip permission prompts" setting — with it on, Claude gets
 `--dangerously-skip-permissions` and Codex approvals `never` with the
@@ -16,8 +16,11 @@ the owner's "skip permission prompts" setting — with it on, Claude gets
   in gh's environment. `gh auth` (it could print the token or sign the owner out), and
   `gh alias`, `gh extension`, `gh config`, `gh copilot`, an alias or an extension (each
   can run another program with that environment) are refused, and so is a `--jq` filter
-  that reads the environment. That list protects the token, not the butler's reach, so
-  it holds for every session.
+  that reads the environment. That list only keeps a one-step print or sign-out of the
+  owner's GitHub login out of `koloft gh`; it is no wall: a local session's own `gh`
+  already gets the same token from Koloft's git account wrapper, and git hooks in the
+  folder gh runs in see it too. Sealing it would need every session sandboxed, which
+  the owner chose against.
 **Rejected**: the gate the butler used to have — a PreToolUse hook that let a Claude
 butler run only reading tools and one plain `koloft` command, a Codex butler with
 approvals off inside the `workspace-write` sandbox, and the same hook for Muse and

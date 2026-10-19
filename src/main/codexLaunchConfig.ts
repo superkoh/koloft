@@ -5,7 +5,7 @@ import { record } from './codexObservation'
 import { playwrightMcpEnv } from './browserControlEnv'
 
 // CODEX§27
-export const codexHookOverride = (event: string, command: string): string =>
+const codexHookOverride = (event: string, command: string): string =>
   `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(command)}}]}]`
 
 // CODEX§20

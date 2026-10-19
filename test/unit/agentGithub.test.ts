@@ -39,6 +39,7 @@ describe('koloft gh', () => {
     ['gh extension, which runs any program with the sign-in', ['extension', 'exec', 'x']],
     ['gh ext, its short name', ['ext', 'install', 'evil/gh-x']],
     ['an installed extension or an alias called by its name', ['x']],
+    ['co, an alias the owner may have changed', ['co', '1']],
     ['gh config, which can name a browser gh starts', ['config', 'set', 'browser', 'sh']],
     ['gh copilot, an agent of its own', ['copilot', 'suggest', 'x']]
   ])('refuses %s without running gh', async (_n, args) => {
@@ -51,7 +52,8 @@ describe('koloft gh', () => {
     ['--jq', ['pr', 'view', '1', '--json', 'url', '--jq', '$ENV.GH_TOKEN']],
     ['--jq=', ['api', 'user', '--jq=env.GH_TOKEN']],
     ['-q', ['api', 'user', '-q', 'env']],
-    ['-q with its value attached', ['api', 'user', '-qenv.GH_TOKEN']]
+    ['-q with its value attached', ['api', 'user', '-qenv.GH_TOKEN']],
+    ['-q at the end of a group of short flags', ['api', 'user', '-iq', '$ENV.GH_TOKEN']]
   ])('refuses a %s filter that reads the environment, where the sign-in is', async (_n, args) => {
     const { call, ran } = verb()
     expect(await call(args)).toEqual({ text: GH_JQ_READS_ENV, exit: 1 })

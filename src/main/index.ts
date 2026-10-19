@@ -1376,14 +1376,12 @@ const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> =
   }
 }
 
-async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoice> {
+async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const settings = loadSettings()
   const [preferred, ...others] = backendsFrom(preferredAssistBackend(settings))
   const { enabled } = settings.sessionMethods
   const whyNot = (backend: BackendId): Promise<string | undefined> =>
-    avoid === backend
-      ? Promise.resolve(`${BACKEND_LABEL[backend]} could not start`)
-      : whyAssistCannotRunOn(backend, enabled)
+    whyAssistCannotRunOn(backend, enabled)
   const why = await whyNot(preferred)
   if (!why) return { backend: preferred }
   const whys = [why]
@@ -1573,15 +1571,20 @@ const agentRequests = new AgentRequests({
       // PLATFORM§1 ADR-0036
       run: async (args, tabId, cwd) => {
         await loginEnvReady()
-        const workspace = conductors?.isButlerTab(tabId)
-          ? undefined
-          : sessionBackends.workspaceOfTab(tabId)
+        const workspace =
+          conductors?.isButlerTab(tabId) || inButlerFolder(tabId)
+            ? undefined
+            : sessionBackends.workspaceOfTab(tabId)
         if (!workspace) {
           const pinned = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
           return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
         }
-        if (!isRemoteKey(workspace)) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
-        const onMachine = await gitAccounts?.machineGh(workspace, args)
+        const remote = parseRemoteKey(workspace)
+        if (!remote) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
+        const inItsFolder = cwd.startsWith(remote.path)
+          ? formatRemoteKey(remote.host, cwd)
+          : workspace
+        const onMachine = await gitAccounts?.machineGh(inItsFolder, args)
         if (!onMachine) return { ok: false, out: NO_GITHUB_ACCOUNT_ON_THE_MACHINE }
         return onMachine.code === 0
           ? { ok: true, out: onMachine.stdout }
@@ -4641,11 +4644,14 @@ let paletteMessages = 0
 const PALETTE_TASK_ANSWERS_ITSELF =
   'When this is a question or a piece of writing you can answer from what you know (translate, explain, draft a message), answer it here yourself; start or message a session only for work on files, commands or what a workspace holds.'
 
+function routedTo(workspace: string | undefined): string {
+  return workspace ? `\nKoloft took this to be about the workspace ${workspace}.` : ''
+}
+
 function paletteTask(title: string, text: string, workspace: string | undefined): AssistTask {
-  const about = workspace ? `\nKoloft took this to be about the workspace ${workspace}.` : ''
   return {
     name: title || firstLineName(text),
-    brief: `${text}${about}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
+    brief: `${text}${routedTo(workspace)}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
     ownerWords: text
   }
 }
@@ -4662,7 +4668,7 @@ async function openPaletteTask(
   return running
     ? sendToButler(
         running,
-        `The owner typed this in ⌘P: ${text}`,
+        `The owner typed this in ⌘P: ${text}${routedTo(workspace)}`,
         text,
         PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS
       )

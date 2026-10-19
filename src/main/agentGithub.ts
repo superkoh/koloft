@@ -10,7 +10,6 @@ const GH_OWN_COMMANDS = new Set([
   'attestation',
   'browse',
   'cache',
-  'co',
   'codespace',
   'completion',
   'discussion',
@@ -70,7 +69,9 @@ function jqFilters(args: string[]): string[] {
     if (a === '--jq' || a === '-q') return args[i + 1] === undefined ? [] : [args[i + 1]]
     if (a.startsWith('--jq=')) return [a.slice('--jq='.length)]
     const attached = /^-[A-Za-z]*q=?(.*)$/.exec(a)
-    return attached && !a.startsWith('--') ? [attached[1]] : []
+    if (!attached || a.startsWith('--')) return []
+    if (attached[1]) return [attached[1]]
+    return args[i + 1] === undefined ? [] : [args[i + 1]]
   })
 }
 

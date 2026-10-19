@@ -661,9 +661,14 @@ export const useStore = create<AppState>((set, get) => ({
       get().activateTab(live)
       return
     }
-    void get()
-      .openButler()
-      .then((error) => error && get().showToast(error))
+    const landedOn = get().activeTabId
+    void window.api.conductors.open().then((r) => {
+      if (!r.ok) return get().showToast(r.error)
+      get().setButlerTab(r.tabId)
+      if (get().activeTabId !== landedOn) return
+      window.api.attention.visit(r.tabId)
+      get().activateTab(r.tabId)
+    })
   },
   openButler: async (fresh = false) => {
     const r = await (fresh ? window.api.conductors.startFresh() : window.api.conductors.open())

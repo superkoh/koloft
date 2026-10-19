@@ -352,7 +352,7 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids)$/
+const TAB_MARKER = /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids|allow)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {

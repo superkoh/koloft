@@ -495,6 +495,7 @@ async function startSibling(
     // ADR-0028
     permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
     ownerWords,
+    ...(helperRole && { trustFolder: true }),
     // CODEX§17
     ...(traits.handoverAsRole
       ? { role: preamble, firstPrompt: args.prompt }
@@ -935,15 +936,17 @@ export function sessionVerb(d: SessionVerbDeps): {
     const self = isMe(ref, caller.session, d.conductorOf(ref), caller.tabId)
     if (self && sub === 'screen') return answered(formatScreen('you', await d.screen(caller.tabId)))
     if (self && sub === 'command') {
+      const butler = d.conductorOf(caller.session.sessionId)
       const me =
-        d.conductorOf(caller.session.sessionId) ??
-        openTarget({ ...caller.session, tabId: caller.tabId })
+        butler?.tabId === caller.tabId
+          ? butler
+          : openTarget({ ...caller.session, tabId: caller.tabId })
       return answered(await d.command(caller.tabId, me, text))
     }
     if (self) return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
-    const found = findAmong(rows, sub, ref)
-    if (!found.ok) return refused(found.error)
-    const t = rowTarget(d, found.value)
+    const found = d.conductorOf(ref) ?? findAmong(rows, sub, ref)
+    if ('ok' in found && !found.ok) return refused(found.error)
+    const t = 'ok' in found ? rowTarget(d, found.value) : found
     if (sub === 'screen')
       return t.tabId
         ? answered(formatScreen(t.name, await d.screen(t.tabId)))
