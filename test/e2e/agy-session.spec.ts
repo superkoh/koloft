@@ -185,7 +185,7 @@ async function onlyThisSessionsFiles(page: Page): Promise<void> {
 
 test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501 status, title script, hooks and local API, with only the CLI faked', () => {
   // AGY§1 AGY§7
-  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, the first prompt as -i, the per-folder sign-in switch and the Gemini key; the tab binds to agy's conversation, its row takes agy's title, and its light goes working then done", async ({
+  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch and the Gemini key; the tab binds to agy's conversation, its row takes agy's title, and its light goes working then done", async ({
     env
   }) => {
     const PROMPT = 'Tidy the agy readme'
@@ -214,7 +214,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       expect(fs.realpathSync(call.cwd)).toBe(env.workspaces.a)
       expect(call.argv[0]).toBe(`--gemini_dir=${accountHome(env)}`)
       expect(call.argv[1]).toMatch(/^--csrf_token=[0-9a-f]{48}$/)
-      expect(call.argv.slice(2)).toEqual(['-i', PROMPT])
+      expect(call.argv.slice(2)).toEqual(['--dangerously-skip-permissions', '-i', PROMPT])
       expect(call.env.WSL_INTEROP).toBe('koloft')
       expect(call.env.GEMINI_API_KEY).toBe(true)
       expect(readCalls(env)).toHaveLength(0)
@@ -330,7 +330,10 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
       await history.getByRole('button').filter({ hasText: 'first topic' }).click()
       await expect.poll(() => sessionCalls(env).length).toBe(2)
-      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([`--conversation=${old.id}`])
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${old.id}`
+      ])
     } finally {
       await quitAndClose(app)
     }
@@ -345,6 +348,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     gitInit(env.workspaces.a)
     gitCommitAll(env.workspaces.a)
     seedConductor(env)
+    seedSettings(env, { skipPermissions: false })
     const fake = await startFakeDiscord(env)
     const { app, page } = await connected(env, fake)
     try {
@@ -536,7 +540,10 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(agyRows(page)).toHaveClass(/cold/)
       await agyRows(page).click()
       await expect.poll(() => sessionCalls(env).length).toBe(2)
-      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([`--conversation=${id}`])
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
       await expect.poll(async () => (await boundAgy(page)).id).toBe(id)
     } finally {
       await quitAndClose(app)
@@ -564,7 +571,10 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       page = await app.firstWindow()
       await waitBooted(page)
       await expect.poll(() => sessionCalls(env).length, { timeout: 30_000 }).toBe(2)
-      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([`--conversation=${id}`])
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
       await expect(agyRows(page)).toHaveCount(1)
       await expect(agyRows(page)).toContainText('survive a restart')
       await expect(agyRows(page)).toHaveClass(/st-(waiting|idle)/, { timeout: 30_000 })
@@ -614,6 +624,40 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         )
       ) as { modelProvider?: string }
       expect(own.modelProvider).toBe('gemini')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§3
+  test('with no agy on this Mac, Sign in with Google in Settings ▸ Accounts says it installs it first, then one terminal tab runs the official installer and goes straight on to agy on the new account’s own folder', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_AGY_CMD = path.join(env.home, '.local', 'bin', 'agy')
+    env.launchEnv.KOLOFT_TEST_TOOL_INSTALLER = path.join(
+      __dirname,
+      'fixtures',
+      'fake-tool-installer.js'
+    )
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in with Google' }).click()
+      const dialog = page.locator('.acct-add')
+      await dialog.locator('input[type="text"]').fill('fresh')
+      await expect(dialog.locator('.field-hint')).toContainText(
+        'Antigravity is not on this Mac yet, so the tab installs it first.'
+      )
+      await dialog.getByRole('button', { name: 'Sign in', exact: true }).click()
+
+      await expect
+        .poll(() => agyCalls(env).map((c) => c.geminiDir), { timeout: 30_000 })
+        .toContain(path.join(env.userData, 'agy-homes', 'fresh'))
+      expect(fs.readFileSync(path.join(env.home, 'fake-tool-installs.txt'), 'utf8')).toBe('agy\n')
     } finally {
       await quitAndClose(app)
     }

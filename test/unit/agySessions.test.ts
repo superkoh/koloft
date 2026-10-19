@@ -41,6 +41,7 @@ let created: { id: string; argv: string[]; env: NodeJS.ProcessEnv }[]
 let agentTools: boolean
 let picked: AgyHomePick | undefined
 let apiKey: string | undefined
+let skipPermissions: boolean
 let assist: { role: string; allow: string[] } | undefined
 let machine: {
   launches: AgyMachineLaunch[]
@@ -155,6 +156,7 @@ beforeEach(() => {
   agentTools = false
   picked = { account: 'work', home: path.join(home, 'agy-homes', 'work') }
   apiKey = undefined
+  skipPermissions = false
   assist = undefined
   apiAnswers = false
   trajectory = undefined
@@ -202,6 +204,7 @@ beforeEach(() => {
     playwrightBin: tools,
     browserEndpoint: () => '',
     builtInStatusLine: () => undefined,
+    skipPermissions: () => skipPermissions,
     assistOf: () => assist,
     conductorGate: {
       script: gateScript,
@@ -312,6 +315,21 @@ describe('AgySessions launch', () => {
       ['--mode', 'accept-edits'],
       ['--dangerously-skip-permissions', `--conversation=${A}`]
     ])
+  })
+
+  it('skips every ask when "Skip permission prompts" is on in Accounts, here and on a remote machine, but never over a permission picked for this launch, and a session started that way asks again on resume once the setting is off', async () => {
+    skipPermissions = true
+    const id = await boundTab()
+    await launch({ permission: 'acceptEdits' })
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    expect(created[0].argv.slice(2)).toEqual(['--dangerously-skip-permissions'])
+    expect(created[1].argv.slice(2)).toEqual(['--mode', 'accept-edits'])
+    expect(machine.launches[0].program.run).toContain("'--dangerously-skip-permissions'")
+    expect(sessions.launchedBypassingChecks(id)).toBe(true)
+    await sessions.stop(id)
+    skipPermissions = false
+    await sessions.resume({ sessionId: agySessionKey(A), cwd: repo })
+    expect(created[3].argv.slice(2)).toEqual([`--conversation=${A}`])
   })
 
   it("keeps the account's sign-in in its own folder instead of the shared macOS Keychain, and routes to its API key when it has one", async () => {

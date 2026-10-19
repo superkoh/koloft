@@ -69,6 +69,7 @@ import {
   gitProbes,
   occupantName,
   planResume,
+  rebuildsTheWorktree,
   worktreeHomeRoot,
   type GitOut,
   type ResumeProbes
@@ -116,6 +117,7 @@ async function rebuildWorktree(
   const branchLives =
     (await git(root, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
   // PLATFORM§30
+  await git(root, ['worktree', 'remove', spec.worktreePath])
   const args = branchLives
     ? ['worktree', 'add', spec.worktreePath, spec.branch]
     : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
@@ -867,16 +869,22 @@ export class ClaudeBackend implements SessionBackend {
       }
       worktree = req.worktree
     }
-    if (mode === 'rebuild') {
-      const plan = home ? await this.machineResumePlan(host, sid) : await this.localResumePlan(sid)
-      if (plan.action === 'direct') cwd = host.keyed(plan.cwd)
-      else if (
-        plan.action !== 'rebuild' ||
-        !GIT_REF_RE.test(plan.branch) ||
-        !GIT_REF_RE.test(plan.baseRef) ||
-        !(await rebuildWorktree(plan, hostGit(host), !home))
-      ) {
-        return { ok: false, code: 'rebuild-failed' }
+    const rebuildable = !home || !!this.d.workspaces()?.findRow(sid)?.worktreeState
+    if (await rebuildsTheWorktree(req.mode, async () => !rebuildable || host.dirExists(cwd))) {
+      const plan = home
+        ? await this.machineResumePlan(host, sid)
+        : await this.localWorktreePlan(sid)
+      if (plan.action === 'rebuild') {
+        if (
+          !GIT_REF_RE.test(plan.branch) ||
+          !GIT_REF_RE.test(plan.baseRef) ||
+          !(await rebuildWorktree(plan, hostGit(host), !home))
+        ) {
+          return { ok: false, code: 'rebuild-failed' }
+        }
+      } else if (req.mode === 'rebuild') {
+        if (plan.action !== 'direct') return { ok: false, code: 'rebuild-failed' }
+        cwd = host.keyed(plan.cwd)
       }
     }
     if (!home) {
@@ -908,6 +916,10 @@ export class ClaudeBackend implements SessionBackend {
 
   private async localResumePlan(sessionId: string): Promise<ResumePlan> {
     if (await this.runningElsewhere(sessionId)) return { action: 'unavailable', reason: 'running' }
+    return this.localWorktreePlan(sessionId)
+  }
+
+  private localWorktreePlan(sessionId: string): Promise<ResumePlan> {
     const workspaces = this.d.workspaces()
     return planResume(
       workspaces?.findRow(sessionId),

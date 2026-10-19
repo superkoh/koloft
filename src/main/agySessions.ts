@@ -120,6 +120,7 @@ export interface AgySessionDeps extends StoredSessionDeps {
   playwrightBin: string
   browserEndpoint(tabId: string): string
   builtInStatusLine(account: string): string | undefined
+  skipPermissions(): boolean
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
   agent: {
@@ -477,7 +478,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
     const allow = opts.allow ?? assist?.allow ?? []
-    const permission = opts.permission ?? 'default'
+    const permission = this.permissionOf(opts)
     const tabId = this.deps.pty.nextId()
     const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
@@ -559,7 +560,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         resource,
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
-        permission,
+        permission: opts.permission ?? 'default',
+        bypassing: permission === 'bypass',
         account: pick.account,
         pid,
         api: pid ? new AgyApi(pid, token) : undefined,
@@ -598,7 +600,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     ])
     this.assertStarting()
     const tabId = this.deps.pty.nextId()
-    const permission = opts.permission ?? 'default'
+    const permission = this.permissionOf(opts)
     const trusted = freshWorktree || opts.trustFolder
     const trust = [where.path, parseRemoteKey(workspace)?.path ?? where.path].filter(
       (d, i, all) => all.indexOf(d) === i
@@ -674,7 +676,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       resource,
       explicitStop: false,
       resumeKey: opts.resumeSessionId,
-      permission,
+      permission: opts.permission ?? 'default',
+      bypassing: permission === 'bypass',
       account: pick.account,
       remote: { host: where.host, tmuxName: plan.tmuxName },
       log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere),

@@ -480,7 +480,7 @@ import {
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
-import { installLine, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
+import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -573,8 +573,7 @@ const panelOpenOn: Record<
   BackendId,
   (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
 > = {
-  claude: async (tabId, sessionId) =>
-    !sessionId || tracker.remoteOf(tabId) ? undefined : claudeShowsAPanel(sessionId),
+  claude: async (_tabId, sessionId) => (sessionId ? claudeShowsAPanel(sessionId) : undefined),
   codex: async () => undefined,
   muse: async (tabId, _sessionId, screen) => {
     const lines = screen ?? (await screenLines(tabId))
@@ -591,7 +590,8 @@ const slash = new SlashCommands({
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId, screen) => {
     const s = sessionOfTab(tabId)
-    return s && panelOpenOn[s.backendId](tabId, s.sessionId, screen)
+    if (!s || capabilitiesFor(s.backendId, s.host).panelSeen !== true) return undefined
+    return panelOpenOn[s.backendId](tabId, s.sessionId, screen)
   },
   screen: screenLines,
   nextMirrorPull: (tabId) => {
@@ -650,7 +650,9 @@ const closedTabs = new Map<string, LeftTab | null>()
 function watchForWorktreeRemoval(tabId: string, data: string): void {
   let exit = claudeTabExits.get(tabId)
   if (!exit) {
-    if (ptyMgr.get(tabId)?.kind !== 'claude' || tracker.remoteOf(tabId)) return
+    const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
+    if (!backend || capabilitiesFor(backend, hostOfTab(tabId)).worktreeRemovalFollowed !== true)
+      return
     claudeTabExits.set(tabId, (exit = { watch: new WorktreeRemovalWatch() }))
   }
   if (!exit.watch.started(data)) return
@@ -1092,7 +1094,7 @@ function watchedByDiscord(all: Conductors, s: { tabId: string; conductor?: strin
 function syncAnswerable(): void {
   if (!hookRegDir || !conductors) return
   for (const s of allSessions()) {
-    if (s.backendId !== 'claude' || !s.alive || s.remote) continue
+    if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
     const on = discordConnected && watchedByDiscord(conductors, s)
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
@@ -1181,6 +1183,10 @@ function watchPickRequests(pickDir: string): fs.FSWatcher | null {
 
 function machineOfTab(tabId: string): string | undefined {
   return remoteHostOfTab(tabId) ?? codexSessions?.machineOfTab(tabId)
+}
+
+function hostOfTab(tabId: string): HostId {
+  return machineOfTab(tabId) ? 'ssh' : 'local'
 }
 
 function agentToolsFor(backend: BackendId, host: HostId): boolean {
@@ -1570,7 +1576,7 @@ const agentRequests = new AgentRequests({
   session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    return !!backend && agentToolsFor(backend, machineOfTab(tabId) ? 'ssh' : 'local')
+    return !!backend && agentToolsFor(backend, hostOfTab(tabId))
   },
   alive: pidAlive
 })
@@ -1904,29 +1910,31 @@ function noteHomeAccount(name: string, kind: HomeKind): void {
   pushAccounts()
 }
 
+const HOME_BACKEND: Record<HomeKind, BackendId> = {
+  'codex-home': 'codex',
+  'muse-home': 'muse',
+  'agy-home': 'agy'
+}
+
 const homeLogin: Record<
   HomeKind,
-  (
-    name: string
-  ) => Promise<{ binary: string; env: Record<string, string>; args?: string[] } | undefined>
+  (name: string) => Promise<{ binary?: string; env: Record<string, string>; args?: string[] }>
 > = {
   // CODEX§15
   'codex-home': async (name) => {
-    const binary = (await codexSessions?.availability())?.available && codexSessions?.cliBinary
-    if (!binary) return undefined
+    const available = (await codexSessions?.availability())?.available
     const home = codexHomeOf(app.getPath('userData'), name)
     prepareCodexHome(home, codexSharedConfig())
-    return { binary, env: { CODEX_HOME: home } }
+    return { binary: available ? codexSessions?.cliBinary : undefined, env: { CODEX_HOME: home } }
   },
   // MUSE§13
-  'muse-home': async (name) => {
-    const serve = await museServeFor(name)
-    return serve && { binary: serve.binary, env: museAccountEnv(museHomeFor(name)) }
-  },
+  'muse-home': async (name) => ({
+    binary: (await museServeFor(name))?.binary,
+    env: museAccountEnv(museHomeFor(name))
+  }),
   // AGY§5 AGY§7
   'agy-home': async (name) => {
     const binary = await agyBinary()
-    if (!binary) return undefined
     const home = agyHomeFor(name)
     const apiKey = await agyApiKeyOf(name)
     setAgyApiKeyRoute(home, !!apiKey)
@@ -1951,12 +1959,18 @@ async function signInToHome(kind: HomeKind, name: string, again: boolean): Promi
     : validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
   const login = await homeLogin[kind](name)
-  if (!login) return { ok: false, error: 'unavailable' }
   noteHomeAccount(name, kind)
   const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
   const args = (login.args ?? ['login']).map(shq).join(' ')
-  const tab = homeShellTab(`${assignments.join(' ')} ${shq(login.binary)} ${args} && exit`)
+  const signIn = (quotedBinary: string): string =>
+    `${assignments.join(' ')} ${quotedBinary} ${args} && exit`
+  const tab = homeShellTab(
+    login.binary
+      ? signIn(shq(login.binary))
+      : installThen(HOME_BACKEND[kind], signIn, process.env.KOLOFT_TEST_TOOL_INSTALLER)
+  )
   signInPtys.set(tab.tabId, { kind, name })
+  if (!login.binary) toolInstallPtys.add(tab.tabId)
   return { ok: true, ...tab }
 }
 
@@ -2155,7 +2169,9 @@ function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
 const toolInstallPtys = new Set<string>()
 
 function installTool(backend: BackendId): { tabId: string; cwd: string } {
-  const tab = homeShellTab(installLine(backend, process.env.KOLOFT_TEST_TOOL_INSTALLER))
+  const tab = homeShellTab(
+    installThen(backend, () => 'exit', process.env.KOLOFT_TEST_TOOL_INSTALLER)
+  )
   toolInstallPtys.add(tab.tabId)
   return tab
 }
@@ -2735,6 +2751,7 @@ app.whenReady().then(() => {
       pickHome: pickAgyHome,
       apiKeyOf: agyApiKeyOf,
       builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),
+      skipPermissions: () => loadSettings().skipPermissions,
       assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
       conductorGate: {
         script: hookPaths.agyGateScript,

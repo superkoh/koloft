@@ -280,7 +280,7 @@ export function welcomeTarget(
   return live.find((w) => w.workspace.path === lastPath) ?? live[0] ?? null
 }
 
-function workspaceOfRow(rows: WorkspaceRows[], rowId: string): string | null {
+export function workspaceOfRow(rows: WorkspaceRows[], rowId: string): string | null {
   return (
     rows.find((w) => !w.workspace.missing && w.rows.some((r) => r.id === rowId))?.workspace.path ??
     null

@@ -4,6 +4,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
+import { storedBackend } from '../../src/main/backends/stored'
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/codexTransport'
 import type { MachineLogin } from '../../src/main/remote/codexMachine'
@@ -265,6 +266,33 @@ describe('CodexSessions', () => {
     expect(sessions.members().has(codexSessionKey(A))).toBe(true)
   })
 
+  it('looks at each history folder on disk once per history list, not on every rows read (the shared stored-sessions rows, so Muse and Antigravity too)', async () => {
+    mocks.request.mockImplementation(async (_method, params) =>
+      params.archived
+        ? { data: [] }
+        : {
+            data: [
+              { id: A, cwd: repo },
+              { id: B, cwd: repo }
+            ]
+          }
+    )
+    await sessions.refreshHistory()
+    const projectInfo = vi.spyOn(deps, 'projectInfo')
+    const stat = vi.spyOn(fs, 'statSync')
+    expect(sessions.rows(repo)).toHaveLength(2)
+    expect(projectInfo).toHaveBeenCalledTimes(1)
+    expect(stat).toHaveBeenCalledTimes(1)
+    sessions.rows(repo)
+    sessions.rows(other)
+    expect(projectInfo).toHaveBeenCalledTimes(1)
+    expect(stat).toHaveBeenCalledTimes(1)
+    await sessions.refreshHistory()
+    sessions.rows(repo)
+    expect(projectInfo).toHaveBeenCalledTimes(2)
+    expect(stat).toHaveBeenCalledTimes(2)
+  })
+
   it('calls a thread gone only once a listing finished without it, never before the first listing, after a failed one or while a listing runs', async () => {
     const listed = codexSessionKey(A)
     const unlisted = codexSessionKey(B)
@@ -504,6 +532,43 @@ describe('CodexSessions', () => {
     await sessions.stopAll()
     expect(leftWorktree).toHaveBeenCalledTimes(1)
     expect(fs.existsSync(worktree)).toBe(true)
+  })
+
+  it('a resume or a restart whose deleted worktree cannot be rebuilt answers rebuild-failed, and a plain resume of the deleted folder answers cwd-missing, as a Claude Code resume does', async () => {
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w2')
+    fs.mkdirSync(worktree, { recursive: true })
+    const resource: WorktreeResource = {
+      id: randomUUID(),
+      originalCwd: repo,
+      worktreePath: worktree,
+      worktreeName: 'w2',
+      worktreeBranch: 'worktree-w2',
+      originalHeadCommit: 'a'.repeat(40),
+      state: 'ready',
+      managed: true
+    }
+    sessions.store.putResource(resource)
+    vi.spyOn(sessions.worktrees, 'create').mockResolvedValue(resource)
+    vi.spyOn(sessions.worktrees, 'rebuild').mockRejectedValue(
+      new Error('The missing worktree is locked; unlock it before rebuilding')
+    )
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w2' })
+    bind(0, A, worktree)
+    await sessions.stop(launched.id, undefined, true)
+    fs.rmSync(worktree, { recursive: true })
+    const backend = storedBackend(sessions, {} as never, {} as never)
+    const key = codexSessionKey(A)
+
+    await expect(
+      backend.resume({ sessionId: key, cwd: worktree, mode: 'rebuild' })
+    ).resolves.toEqual({ ok: false, code: 'rebuild-failed' })
+    await expect(backend.resume({ sessionId: key, cwd: worktree })).resolves.toEqual({
+      ok: false,
+      code: 'rebuild-failed'
+    })
+    await expect(
+      backend.resume({ sessionId: key, cwd: worktree, mode: 'direct' })
+    ).resolves.toEqual({ ok: false, code: 'cwd-missing' })
   })
 
   it('a restarting session reads as running from the old run stopping until the new one starts, and cold again, with the sidebar told, when the new one fails', async () => {

@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
@@ -5,7 +6,10 @@ import { test, expect, launchApp, runInTerminal } from './helpers/app'
 import { writeClaudeWrapper, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
+  gitCommitAll,
+  gitInit,
   openMenu,
+  openWorktreeSession,
   processAlive,
   readCalls,
   resumedId,
@@ -619,6 +623,53 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         await second.app.close().catch(() => {})
       }
     })
+
+    for (const [how, deleteTree] of [
+      [
+        'with git worktree remove',
+        (ws: string, dir: string) =>
+          execFileSync('git', ['-C', ws, 'worktree', 'remove', '--force', '--force', dir])
+      ],
+      [
+        'in Finder, which leaves git still registering it',
+        (_ws: string, dir: string) => fs.rmSync(dir, { recursive: true, force: true })
+      ]
+    ] as const) {
+      test(`T16: restarting a worktree session whose folder was deleted ${how} rebuilds the worktree and resumes the same session in it, in place`, async ({
+        env
+      }) => {
+        test.setTimeout(180_000)
+        const ws = env.workspaces.a
+        gitInit(ws)
+        fs.writeFileSync(path.join(ws, '.gitignore'), 'NOTES.md\n')
+        gitCommitAll(ws)
+        const { app, page } = await launch(env)
+        try {
+          await waitBooted(page)
+          const dlg = await openWorktreeSession(page, 'ws-a')
+          await dlg.getByRole('textbox').click()
+          await page.keyboard.type('gone')
+          await page.keyboard.press('Enter')
+          await expect(dlg).toHaveCount(0)
+          const row = page.locator('.ws-tab', { hasText: SESSION_TITLE })
+          await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+          const [first] = await waitForCalls(env, 1)
+
+          const wtDir = path.join(ws, '.claude', 'worktrees', 'gone')
+          deleteTree(ws, wtDir)
+          expect(fs.existsSync(wtDir)).toBe(false)
+          await triggerRestart(app)
+
+          const calls = await waitForCalls(env, 2, 60_000)
+          expect(resumedId(calls[1])).toBe(first.sessionId)
+          expect(fs.realpathSync(calls[1].cwd)).toBe(fs.realpathSync(wtDir))
+          await expect(page.locator('.ws-tab', { hasText: SESSION_TITLE })).toHaveCount(1)
+          await backAfterRelaunch(page, SESSION_TITLE)
+        } finally {
+          await app.close().catch(() => {})
+        }
+      })
+    }
   })
 
   test.describe('fault tolerance', () => {

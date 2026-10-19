@@ -281,8 +281,7 @@ export interface AccountView extends AccountMeta {
 }
 
 export type SignInResult =
-  | { ok: true; tabId: string; cwd: string }
-  | { ok: false; error: 'invalid-name' | 'duplicate' | 'unavailable' }
+  { ok: true; tabId: string; cwd: string } | { ok: false; error: 'invalid-name' | 'duplicate' }
 
 export interface LoginProgress {
   phase: 'starting' | 'browser' | 'saved' | 'failed'
@@ -1039,7 +1038,7 @@ export interface KoloftApi {
     flowStats(): Promise<FlowStats[]>
     resize(id: string, cols: number, rows: number): void
     kill(id: string, restarting?: boolean): void
-    onData(cb: (d: TerminalData) => void): () => void
+    onData(id: string, cb: (data: string) => void): () => void
     onExit(cb: (e: TerminalExit) => void): () => void
     onProcessTitle(cb: (t: TerminalProcessTitle) => void): () => void
     onCwd(cb: (c: TerminalCwd) => void): () => void
@@ -1636,9 +1635,11 @@ export interface SessionResumeRequest {
   trustFolder?: boolean
 }
 
+export type ResumeFailure = 'cwd-missing' | 'invalid-args' | 'rebuild-failed'
+
 export type SessionResumeResult =
   | { ok: true; id: string; cwd: string; kind?: TabKind }
-  | { ok: false; code: 'cwd-missing' | 'invalid-args' | 'rebuild-failed' }
+  | { ok: false; code: ResumeFailure }
   | { ok: false; code: 'backend'; message: string }
 
 export type ResumePlan =

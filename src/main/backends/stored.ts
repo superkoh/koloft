@@ -4,7 +4,7 @@ import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import type { MuseSessions } from '../museSessions'
 import type { AgySessions } from '../agySessions'
-import { dirExistsSync, planResume, type ResumeProbes } from '../resumePlan'
+import { dirExistsSync, planResume, ResumeRefused, type ResumeProbes } from '../resumePlan'
 
 export function storedBackend(
   sessions: CodexSessions | MuseSessions | AgySessions,
@@ -28,6 +28,7 @@ export function storedBackend(
       try {
         return { ok: true, kind: sessions.id, ...(await sessions.resume(req)) }
       } catch (error) {
+        if (error instanceof ResumeRefused) return { ok: false, code: error.code }
         return {
           ok: false,
           code: 'backend',

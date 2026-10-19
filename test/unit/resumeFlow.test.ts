@@ -12,6 +12,7 @@ import {
   resumeFailureMessage,
   resumeInFlight,
   resumeSession,
+  runResume,
   UNAVAILABLE_NOTICE,
   STILL_RUNNING_NOTICE
 } from '../../src/renderer/src/resumeFlow'
@@ -191,6 +192,28 @@ describe('the click-time placeholder: the store holds the target before the firs
     api.resumePlan = () => Promise.reject(new Error('ipc down'))
     await resumeSession({ id: 'sid-fail', backendId: 'claude', title: 'Never lands' })
     expect(useStore.getState().resumeLaunch).toBeNull()
+  })
+})
+
+describe('a rebuild that fails', () => {
+  it('offers the resume in the workspace the row sits in, not the deleted worktree the request ran from', async () => {
+    const api = stubApi() as unknown as { resume: () => Promise<unknown> }
+    api.resume = async () => ({ ok: false, code: 'rebuild-failed' })
+    useStore.setState({
+      workspaceRows: [{ workspace: { path: '/repo' }, rows: [{ id: target.id }] }] as never,
+      resumeDialog: null
+    })
+    await runResume(target, {
+      ...rebuildRequest(target, rebuildPlan),
+      cwd: '/repo/.claude/worktrees/session-tab'
+    })
+    expect(useStore.getState().resumeDialog).toEqual({
+      kind: 'escape',
+      target,
+      worktreeName: 'session-tab',
+      cwd: '/repo'
+    })
+    useStore.setState({ workspaceRows: [], resumeDialog: null })
   })
 })
 

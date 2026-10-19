@@ -2,6 +2,7 @@ import { isSessionKind, type SessionBackend } from './agentUi'
 import type { ResumePlan, SessionResumeRequest, SessionResumeResult } from '@shared/types'
 import { basename } from '@shared/preview'
 import { markRestoreLaunch, useStore, type Tab } from './store'
+import { workspaceOfRow } from './sessionRows'
 
 export interface ResumeTarget {
   backendId: SessionBackend
@@ -121,7 +122,7 @@ export async function runResume(target: ResumeTarget, req: SessionResumeRequest)
           kind: 'escape',
           target,
           worktreeName: basename(req.rebuild.worktreePath),
-          cwd: req.cwd
+          cwd: workspaceOfRow(st.workspaceRows, target.id) ?? req.cwd
         })
         return
       }
