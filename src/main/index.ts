@@ -250,6 +250,8 @@ import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
+import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
+import { SessionSync, type SyncSession } from './sessionSync'
 import {
   GithubLookup,
   ghOpenCounts,
@@ -736,6 +738,7 @@ function onSessionsChanged(): SessionInfo[] {
   rememberOpenTabs(all)
   sessionAccounts?.note(all)
   syncRelayBindings(all)
+  void sessionSync.observe(syncSessionsOf(all))
   return all
 }
 
@@ -1390,6 +1393,45 @@ async function queueCodexMessage(tabId: string, text: string, clientId: string):
   if (!codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')
   await codexSessions.queueMessage(tabId, text, clientId)
 }
+
+const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
+  Promise.all(
+    paths.map(async (onMachine) => {
+      const dir = formatRemoteKey(machine, onMachine)
+      const common = (await hosts.of(dir).gitOut(dir, COMMON_GIT_DIR))?.trim()
+      return common ? formatRemoteKey(machine, common) : null
+    })
+  )
+)
+
+function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
+  return all.flatMap((s) =>
+    s.alive && !s.conductor && s.sessionId && (s.backendId === 'claude' || s.backendId === 'codex')
+      ? [
+          {
+            tabId: s.tabId,
+            sessionId: s.sessionId,
+            backendId: s.backendId,
+            title: s.title,
+            treeRoot: s.treeRoot,
+            files: s.files,
+            liveWrites: s.liveWrites
+          }
+        ]
+      : []
+  )
+}
+
+const sessionSync = new SessionSync({
+  idle: (tabId) =>
+    tracker.turnOver(tabId) && !asksTheOwner(tabId) && (codexSessions?.queueDrained(tabId) ?? true),
+  modeOf: (tabId) => sessionBackends.permissionClass(tabId),
+  repoOf: (dir) => syncRepoKeys.resolve(dir),
+  gitOut: (dir, args) => hosts.of(dir).gitOut(dir, args),
+  queue: queueCodexMessage,
+  sendLine: sendPeerLine,
+  type: (tabId, keys) => ptyMgr.type(tabId, keys)
+})
 
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
@@ -2567,9 +2609,14 @@ app.whenReady().then(() => {
     ptyMgr.wakeReady(tabId)
     slash.turnOver(tabId, over)
     void discordLive?.refresh(tabId)
+    if (!over) return
+    sessionSync.flush(tabId)
+    const workspace = pinnedWorkspaceOfTab(tabId)
+    if (workspace) freshness?.fetchSoon(workspace)
   })
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
+    sessionSync.flush(t.tabId)
     const conductor = !!conductors?.heldResident(t.tabId)
     if (conductor && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
@@ -3161,6 +3208,7 @@ app.whenReady().then(() => {
     busy: (wsPath) => busyInCheckout(allSessions(), wsPath) > 0,
     toast: (text) => sendToRenderer('cron:toast', text),
     onChange: () => workspaceMgr?.restampLive(),
+    onDefaultMoved: (move) => void sessionSync.defaultMoved(move, syncSessionsOf(allSessions())),
     runner: (wsPath) => {
       const key = parseRemoteKey(wsPath)
       return key && !remoteSync?.connected(key.host) ? null : hosts.of(wsPath).freshness

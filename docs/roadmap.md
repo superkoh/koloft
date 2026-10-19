@@ -86,7 +86,7 @@ Reopen one of these only with new evidence, not a new argument.
   `koloft session send` for Codex), which the receiving session sees as a message it can
   judge. Faked keystrokes land in whatever that TUI's input box holds at the time.
   Broadcast input above is a feature for the *person*, with the rows they picked.
-  Three exceptions, all the owner's decisions. First, a conductor's `koloft session send`
+  Four exceptions, all the owner's decisions. First, a conductor's `koloft session send`
   to a Claude session on another machine over ssh is typed into its terminal, because
   that session's message socket is on the other machine where Koloft cannot reach it.
   Koloft types only when that session's turn has ended and it shows no dialog; its state
@@ -94,7 +94,11 @@ Reopen one of these only with new evidence, not a new argument.
   where Claude queues it. Second, a conductor's `koloft session command` types a slash
   command, because a message delivers `/compact` as plain text (CC§12, CODEX§21); Koloft
   types it only when that session is idle with no question or menu showing. Third, a
-  conductor's `koloft session keys` presses keys in a session (CC§12, CODEX§25).
+  conductor's `koloft session keys` presses keys in a session (CC§12, CODEX§25). Fourth,
+  Koloft's own notice — the default branch moved, or another open session of the
+  repository changed a file this one changed too — wakes the sessions it concerns, and
+  into a Claude session on another machine over ssh it is typed, only once that
+  session's turn has ended and it shows no dialog.
 
 - **A one-click Review button that starts a sibling to review the diff** (#222) — a
   session already starts its own sibling session or subagent to review its changes

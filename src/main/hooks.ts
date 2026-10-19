@@ -12,7 +12,7 @@ import {
   conductorGateCommand
 } from './conductorGate'
 import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
-import { FROM_A_SESSION, type ModeClass } from './crossSessionMessage'
+import { FROM_A_SESSION, FROM_KOLOFT, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
 export interface HookPaths {
@@ -143,7 +143,7 @@ fi
 input="$(cat | tr -d '\\n')"
 ${QUOTE_PROMPT_FN}
 case "$input" in
-  *'"prompt":"${FROM_A_SESSION}'*) ;;
+  *'"prompt":"${FROM_A_SESSION}'*|*'"prompt":"${FROM_KOLOFT}'*) ;;
   *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
 esac
 remind_reply_language UserPromptSubmit
@@ -331,7 +331,7 @@ case "$event" in
             flag=${shq(NOT_FROM_THE_RELAY)}
           fi
           ;;
-        *'"prompt":"<cross-session-message '*|*'"prompt":"<task-notification>'*|*'"prompt":"<agent-message '*) ;;
+        *'"prompt":"<cross-session-message '*|*'"prompt":"<task-notification>'*|*'"prompt":"<agent-message '*|*'"prompt":"${FROM_KOLOFT}'*) ;;
         *)
           ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS}
           [ -f "$reg/$tab.conductor" ] && : > "$reg/$tab.typed"

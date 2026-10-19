@@ -150,13 +150,13 @@ export function machineClaudeArgs(
           : undefined
   })
   if (!argv.ok) return argv
-  const unwatched = !spec.resumeSessionId && spec.firstPrompt !== undefined
+  const fresh = !spec.resumeSessionId
   return {
     ok: true,
     args: [
       ...argv.argv.slice(1),
-      ...(unwatched && spec.name ? ['--name', spec.name] : []),
-      ...(unwatched && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
+      ...(fresh && spec.name ? ['--name', spec.name] : []),
+      ...(fresh && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
     ]
   }
 }
@@ -497,8 +497,8 @@ if [ "$2" = 1 ]; then
   if ${NETWORK_ENV} git -C "$r" fetch --quiet --no-auto-maintenance origin "\${def#origin/}" >/dev/null 2>&1
   then f=1; else f=0; fi
 fi
-c=$(g rev-list --left-right --count "HEAD...$def") && d=$(g status --porcelain -uno --ignore-submodules=all) || exit 1
-printf '%s\\n%s\\n%s\\n' "$f" "$c" "\${d:+dirty}"`
+c=$(g rev-list --left-right --count "HEAD...$def") && d=$(g status --porcelain -uno --ignore-submodules=all) && t=$(g rev-parse "$def") || exit 1
+printf '%s\\n%s\\n%s\\n%s\\n' "$f" "$c" "\${d:+dirty}" "$t"`
 
 const PULLED = 'KOLOFT_PULLED'
 
@@ -513,7 +513,8 @@ ${FRESHNESS}
 exit $ok`
 
 export function parseFreshness(stdout: string): GitSnapshot | null {
-  const [branch, head, defRef, flags, fetchHead, fetched, counts, dirty] = stdout.split('\n')
+  const [branch, head, defRef, flags, fetchHead, fetched, counts, dirty, defHead] =
+    stdout.split('\n')
   if (!branch || !head || fetchHead === undefined) return null
   const [linked, subs] = flags.split(' ')
   const snapshot: GitSnapshot = {
@@ -533,7 +534,8 @@ export function parseFreshness(stdout: string): GitSnapshot | null {
       fetched: fetched === '-' ? null : fetched === '1',
       fetchHeadAt: parseFingerprint(fetchHead)?.mtimeMs ?? null,
       ...lr,
-      dirty: dirty === 'dirty'
+      dirty: dirty === 'dirty',
+      defHead: defHead ?? ''
     }
   }
 }

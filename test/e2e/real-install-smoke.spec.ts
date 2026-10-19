@@ -117,10 +117,7 @@ test('REAL-INSTALL: the welcome installs Codex, then Claude Code, with the offic
     expect(fs.existsSync(path.join(env.home, '.local', 'bin', 'claude'))).toBe(true)
 
     const found = await page.evaluate(() => window.api.sessions.backends(true))
-    expect(found.map((b) => [b.id, b.available])).toEqual([
-      ['claude', true],
-      ['codex', true]
-    ])
+    expect(found.filter((b) => b.available).map((b) => b.id)).toEqual(['claude', 'codex'])
   } finally {
     await quitAndClose(app)
   }
