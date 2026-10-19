@@ -42,6 +42,7 @@ import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { mixesBackends } from '../sessionRows'
 import { Switch } from './settings/Switch'
+import '../cronJobs.css'
 
 const DAY_CHIPS: { d: number; label: string }[] = [
   { d: 1, label: 'Mon' },

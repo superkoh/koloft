@@ -1,0 +1,83 @@
+.tbu-slot {
+  flex: 0 0 auto;
+  display: flex;
+}
+.tbu {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  padding: 4px 3px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.tbu-bar {
+  position: relative;
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--bg-4);
+  overflow: hidden;
+  transition: background 0.15s var(--ease);
+}
+.tbu-bar.total {
+  width: 8px;
+  border-radius: 3px;
+  margin-right: 4px;
+}
+.tbu-group {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+}
+.tbu > * + .tbu-group {
+  margin-left: 4px;
+}
+.tbu-bar.total .tbu-fill,
+.tbu-bar.total .tbu-fable {
+  border-radius: 3px;
+}
+.tbu:hover .tbu-bar {
+  background: var(--line-2);
+}
+.tbu-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-radius: 2px;
+  min-height: 4px;
+  background: var(--good);
+}
+.tbu-fill.warn {
+  background: var(--amber);
+}
+.tbu-fill.bad {
+  background: var(--red);
+}
+.tbu-fill.cold {
+  background: var(--fg-cold);
+}
+.tbu-fill.acc {
+  background: var(--accent);
+}
+.tbu-fable {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-radius: 2px;
+  background: var(--fable);
+}
+.tbu-gap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--bg-4);
+}
+.tbu-bar.stale .tbu-fill,
+.tbu-bar.stale .tbu-fable {
+  opacity: 0.5;
+}

@@ -80,6 +80,7 @@ import {
   removeUnsavedNote,
   saveAll
 } from '../unsavedGuard'
+import '../workspaceSidebar.css'
 
 const FORCE_CLOSE_FAILED_NOTICE =
   'Could not force close — the session may be running outside Koloft.'
