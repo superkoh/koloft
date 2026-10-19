@@ -1,7 +1,28 @@
 import fs from 'fs'
 import path from 'path'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
-import type { BackendSessionRow, ResumePlan } from '@shared/types'
+import type {
+  BackendSessionRow,
+  ResumeFailure,
+  ResumePlan,
+  SessionResumeRequest
+} from '@shared/types'
+
+export class ResumeRefused extends Error {
+  constructor(
+    readonly code: ResumeFailure,
+    message: string
+  ) {
+    super(message)
+  }
+}
+
+export async function rebuildsTheWorktree(
+  mode: SessionResumeRequest['mode'],
+  treeThere: () => Promise<boolean>
+): Promise<boolean> {
+  return mode === 'rebuild' || (!mode && !(await treeThere()))
+}
 
 export interface ResumeProbes {
   dirExists(p: string): boolean | Promise<boolean>
