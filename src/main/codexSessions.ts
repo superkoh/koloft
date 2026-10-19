@@ -972,6 +972,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         resumeKey: opts.resumeSessionId,
         account: picked.account,
         permission,
+        bypassing: permission === 'bypass',
         machine,
         releaseTools: openShim?.release ?? ((): void => {})
       }

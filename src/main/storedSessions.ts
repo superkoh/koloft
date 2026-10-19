@@ -65,6 +65,7 @@ export interface StoredRun {
   explicitStop: boolean
   resumeKey?: string
   permission: LaunchPermission
+  bypassing: boolean
   launchName?: string
   releaseTools(): void
 }
@@ -84,6 +85,7 @@ export interface StoredSessionDeps {
   gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }
   remoteDirExists?(dir: string): Promise<boolean>
   remoteTreeIo?(cwd: string): TreeIo
+  skipPermissions?(): boolean
 }
 
 export interface StartContext {
@@ -521,7 +523,12 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   launchedBypassingChecks(tabId: string): boolean {
-    return this.runs.get(tabId)?.permission === 'bypass'
+    return !!this.runs.get(tabId)?.bypassing
+  }
+
+  protected permissionOf(opts: CreateTabOptions): LaunchPermission {
+    const asked = opts.permission ?? 'default'
+    return asked === 'default' && this.deps.skipPermissions?.() ? 'bypass' : asked
   }
 
   archive(key: string): boolean {

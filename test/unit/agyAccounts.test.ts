@@ -96,6 +96,7 @@ describe("mergeAgySettings (agy's settings.json in an account's folder, AGY§4 A
     writeJson(settingsOf(home), { colorScheme: 'light', trustedWorkspaces: ['/w/own'] })
     mergeAgySettings(home, owners, { ...koloft, statusLine: '/k/status' })
     expect(readJson(settingsOf(home))).toEqual({
+      altScreenMode: 'always',
       colorScheme: 'dark',
       title: { type: 'command', command: '/bin/sh "/k/koloft-agy-title"' },
       statusLine: { type: 'command', command: '/k/status', stack_with_default: true },
@@ -110,6 +111,14 @@ describe("mergeAgySettings (agy's settings.json in an account's folder, AGY§4 A
       statusLine: { type: 'command', command: '/owner/status' },
       modelProvider: 'gemini'
     })
+  })
+
+  it('starts agy in its no-flickering mode, the prompt kept at the bottom, unless a settings file holds another rendering mode', () => {
+    mergeAgySettings(home, owners, koloft)
+    expect(readJson(settingsOf(home)).altScreenMode).toBe('always')
+    writeJson(settingsOf(owners), { altScreenMode: 'never' })
+    mergeAgySettings(home, owners, koloft)
+    expect(readJson(settingsOf(home)).altScreenMode).toBe('never')
   })
 
   it("writes agy's own form (keys sorted, two-space indent, owner-only), so agy does not rewrite the file", () => {
