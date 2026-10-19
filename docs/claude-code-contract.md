@@ -1131,8 +1131,8 @@ other bullets of §9 were not re-measured on this build.
   `skipDangerousModePermissionPrompt: true`** — that is the key the dialog writes on
   "Yes, I accept" (read off the 2.1.263 binary's own dialog code with `strings`). The
   older `bypassPermissionsModeAccepted: true` in `~/.claude.json` is still honored as a
-  gate (a throwaway `$HOME` carrying only that key started with no screen), so anything
-  that wants to know whether this Mac will stall must check BOTH.
+  gate (a throwaway `$HOME` carrying only that key started with no screen). Koloft reads
+  neither: every launch carries the key in its own `--settings` file (next point).
 - **The same key inside a `--settings` file skips the screen too.** With
   `{"skipDangerousModePermissionPrompt": true}` in a file passed as `--settings <file>`,
   both `--dangerously-skip-permissions` and `--permission-mode bypassPermissions` open

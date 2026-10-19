@@ -522,7 +522,12 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
   }) => {
     test.setTimeout(180_000)
     withWhatsNew(env, [['0.1.2', 'the newer thing']])
-    seedSettings(env, { onboardingSeen: true, lastSeenVersion: '0.1.0', assist: null })
+    seedSettings(env, {
+      onboardingSeen: true,
+      lastSeenVersion: '0.1.0',
+      assist: null,
+      skipPermissionsAgreed: undefined
+    })
     const claudeSettings = path.join(env.home, '.claude', 'settings.json')
     fs.writeFileSync(claudeSettings, JSON.stringify({ model: 'opus' }))
 
@@ -543,9 +548,10 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
 
       await assist.locator('.choice', { hasText: 'Yes, don’t ask' }).click()
       await expect
-        .poll(() => JSON.parse(fs.readFileSync(claudeSettings, 'utf8')), { timeout: 20_000 })
-        .toEqual({ model: 'opus', skipDangerousModePermissionPrompt: true })
+        .poll(() => settingsOnDisk(env).skipPermissionsAgreed, { timeout: 20_000 })
+        .toBe(true)
       await expect(assist.locator('.choice', { hasText: 'Yes, don’t ask' })).toHaveCount(0)
+      expect(JSON.parse(fs.readFileSync(claudeSettings, 'utf8'))).toEqual({ model: 'opus' })
 
       await assist
         .locator('.choice')

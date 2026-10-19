@@ -104,7 +104,6 @@ interface AppState {
   settingsFocus: SettingsFocus
   welcomeActive: boolean
   onboardingStep: number
-  bypassAccepted: boolean | null
   accounts: AccountView[] | null
   signIn: { tabId: string; backToSettings: boolean } | null
   accountLogin: LoginFlowState | null
@@ -187,7 +186,6 @@ interface AppState {
   openGitAccounts: (focus?: 'git-token', machine?: string) => void
   setWelcomeActive: (on: boolean) => void
   setOnboardingStep: (step: number) => void
-  setBypassAccepted: (accepted: boolean) => void
   setAccounts: (accounts: AccountView[]) => void
   showSignInTab: (tabId: string) => void
   beginLogin: (reauthName?: string) => void
@@ -493,7 +491,6 @@ export const useStore = create<AppState>((set, get) => ({
   gitAccountsMachine: undefined,
   welcomeActive: false,
   onboardingStep: 1,
-  bypassAccepted: null,
   accounts: null,
   signIn: null,
   accountLogin: null,
@@ -809,7 +806,6 @@ export const useStore = create<AppState>((set, get) => ({
     }),
   setWelcomeActive: (welcomeActive) => set({ welcomeActive }),
   setOnboardingStep: (onboardingStep) => set({ onboardingStep }),
-  setBypassAccepted: (bypassAccepted) => set({ bypassAccepted }),
   setAccounts: (accounts) => set({ accounts }),
   showSignInTab: (tabId) =>
     set((s) => ({

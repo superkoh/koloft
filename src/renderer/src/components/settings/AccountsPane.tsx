@@ -157,7 +157,13 @@ export function AccountsPane(): JSX.Element {
         </div>
         <Switch
           checked={settings.skipPermissions}
-          onChange={(on) => update({ skipPermissions: on })}
+          onChange={(on) =>
+            update(
+              on
+                ? { skipPermissions: true, skipPermissionsAgreed: true }
+                : { skipPermissions: false }
+            )
+          }
         />
       </div>
       <div className="set-row">
