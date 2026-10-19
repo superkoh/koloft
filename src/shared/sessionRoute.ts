@@ -102,6 +102,8 @@ Go down these rules in order and take the first that fits:
   {"issue": <number>} when the message names an issue number,
   or {"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}
 
+Copy the JSON shape of the rule you took exactly: a rule 1 reply always has "hand": "assist", and only a rule 6 reply has "worktree".
+
 Reply with that one JSON object and nothing else, adding to it:
  "title": <a very short title in the language of the message, at most 16 Chinese characters or 6 words>,
  "why": <one short sentence in the language of the message, naming the rule you took>`
