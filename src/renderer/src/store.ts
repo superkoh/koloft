@@ -58,7 +58,7 @@ export interface Tab {
   sessionId?: string
   alive: boolean
   resuming?: boolean
-  restarting?: true
+  respawning?: true
   jobId?: string
   asleep?: true
   ghost?: string
@@ -389,7 +389,7 @@ export function boundSessionId(
 
 export function workbenchOwnerLive(s: Pick<AppState, 'sessions' | 'tabs'>, tab: Tab): boolean {
   if (!hasWorkbench(tab)) return false
-  if (tab.restarting) return true
+  if (tab.respawning) return true
   const sess = s.sessions.find((x) => x.tabId === tab.id)
   if (sess && !sess.alive) return false
   return !!boundSessionId(s, tab.id)
@@ -710,8 +710,11 @@ export const useStore = create<AppState>((set, get) => ({
       }
       restartedPtys.add(oldId)
       const title = sess?.title ?? tab.title
-      get().setTabTitle(oldId, title)
-      set((s) => ({ tabs: s.tabs.map((x) => (x.id === oldId ? { ...x, restarting: true } : x)) }))
+      set((s) => ({
+        tabs: s.tabs.map((x) =>
+          x.id === oldId ? { ...x, title, ...(live ? { respawning: true as const } : {}) } : x
+        )
+      }))
       window.api.terminal.kill(oldId, true)
       void window.api.sessions
         .resume({ sessionId: resumeId, cwd })
@@ -743,7 +746,7 @@ export const useStore = create<AppState>((set, get) => ({
                     cwd: res.cwd,
                     sessionId: resumeId,
                     alive: true,
-                    restarting: undefined
+                    respawning: undefined
                   }
                 : x
             ),
@@ -756,9 +759,10 @@ export const useStore = create<AppState>((set, get) => ({
         })
         .catch(() => {
           set((s) => ({
-            tabs: s.tabs.map((x) => (x.id === oldId ? { ...x, restarting: undefined } : x))
+            tabs: s.tabs.map((x) =>
+              x.id === oldId ? { ...x, alive: false, respawning: undefined } : x
+            )
           }))
-          get().setTabAlive(oldId, false)
         })
         .finally(() => restarting.delete(oldId))
     }
