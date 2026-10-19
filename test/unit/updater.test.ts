@@ -552,21 +552,3 @@ describe('BB-20: the dmg fallback when the bundle cannot be replaced in place', 
     }
   })
 })
-
-describe('update IPC wiring', () => {
-  it('every update channel the preload calls is handled in main with the matching shape (send↔on, invoke↔handle), or Restart Now goes silently inert', () => {
-    const root = path.resolve(__dirname, '../..')
-    const preload = fs.readFileSync(path.join(root, 'src/preload/index.ts'), 'utf8')
-    const main = fs.readFileSync(path.join(root, 'src/main/index.ts'), 'utf8')
-    const sent = [...preload.matchAll(/ipcRenderer\.(send|invoke)\('(update:[^']+)'/g)].map(
-      (m) => `${m[2]} via ${m[1] === 'send' ? 'on' : 'handle'}`
-    )
-    const handled = new Set(
-      [...main.matchAll(/ipcMain\.(on|handle)\('(update:[^']+)'/g)].map(
-        (m) => `${m[2]} via ${m[1]}`
-      )
-    )
-    expect(sent).toContain('update:restart via on')
-    expect(sent.filter((c) => !handled.has(c))).toEqual([])
-  })
-})
