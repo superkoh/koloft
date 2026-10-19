@@ -915,8 +915,8 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   **Haiku 5.5 (`claude-haiku-5-5`) $0.10/$0.50, 1M**, the default `haiku` alias since
   CC 2.1.293 (so the §9 one-shot title runs on it); prompts over 100K tokens cost
   $0.50/$2.50 (changelog and the skill's catalog), a tier Koloft does not apply — it
-  prices every token at the short-prompt rate, as it does for Codex's long-context
-  tier (CODEX§13). Both bare ids were in transcripts on the dev Mac on 2026-10-11
+  prices every token at the short-prompt rate (Codex's long-context tier, CODEX§13, is
+  applied per request; this one is not). Both bare ids were in transcripts on the dev Mac on 2026-10-11
   (17 and 5 records).
 
 Evidence: probe edge shapes curl-verified 2026-08-17; latency measured 2026-08-19–20;
