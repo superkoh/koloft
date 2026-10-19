@@ -126,14 +126,12 @@ async function rebuildWorktree(
 
 interface RemoteExitDrop {
   name: string
-  raw: { event?: string; reason?: string }
+  raw: { event?: string; reason?: string; sessionId?: string }
 }
 
 function remoteExitIn(name: string, obj: unknown, sid: string): RemoteExitDrop | undefined {
   const raw = obj as RemoteExitDrop['raw'] | null
-  return raw?.event === 'end' && JSON.stringify(raw).includes(`"${sid}"`)
-    ? { name, raw }
-    : undefined
+  return raw?.event === 'end' && raw.sessionId === sid ? { name, raw } : undefined
 }
 
 async function remoteExitOnDisk(
@@ -152,7 +150,8 @@ async function remoteExitOnDisk(
     const full = path.join(mirrorDir, name)
     try {
       if ((await fs.promises.stat(full)).mtimeMs < since) continue
-      const hit = remoteExitIn(name, JSON.parse(await fs.promises.readFile(full, 'utf8')), sid)
+      const text = await fs.promises.readFile(full, 'utf8')
+      const hit = text.includes(sid) ? remoteExitIn(name, JSON.parse(text), sid) : undefined
       if (hit) return hit
     } catch {}
   }
@@ -165,10 +164,7 @@ export class ClaudeBackend implements SessionBackend {
   private statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
   private statusLogDraining = new Map<string, boolean>()
   private watchedHookMirrors = new Map<string, () => void>()
-  private remoteExitWaits = new Map<
-    string,
-    { sid: string; settle: (hit: RemoteExitDrop) => void }
-  >()
+  private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
@@ -423,7 +419,7 @@ export class ClaudeBackend implements SessionBackend {
     const isNews = machine ? makeDropDedupe() : null
     const handle = (obj: unknown, full: string): void => {
       if (machine) {
-        for (const { sid, settle } of this.remoteExitWaits.values()) {
+        for (const { sid, settle } of this.remoteExitWaits) {
           const hit = remoteExitIn(path.basename(full), obj, sid)
           if (hit) settle(hit)
         }
@@ -695,7 +691,7 @@ export class ClaudeBackend implements SessionBackend {
     title?: string
   ): Promise<void> {
     this.d.remoteSync()?.pokeNow(host)
-    const hit = sid ? await this.remoteExitReport(mirrorDir, tabId, sid) : undefined
+    const hit = sid ? await this.remoteExitReport(mirrorDir, sid) : undefined
     if (hit && EVICTING_END_REASONS.has(hit.raw.reason ?? '')) {
       const stillBound = !!sid && this.d.tracker.list().some((t) => t.alive && t.sessionId === sid)
       if (sid && !stillBound)
@@ -710,26 +706,24 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   // PLATFORM§28
-  private remoteExitReport(
-    mirrorDir: string,
-    tabId: string,
-    sid: string
-  ): Promise<RemoteExitDrop | undefined> {
+  private remoteExitReport(mirrorDir: string, sid: string): Promise<RemoteExitDrop | undefined> {
     // PLATFORM§34
     const since = Date.now() - REMOTE_EXIT_SLACK_MS
     return new Promise((resolve) => {
-      const settle = (hit: RemoteExitDrop | undefined): void => {
-        if (this.remoteExitWaits.get(tabId)?.settle !== settle) return
-        this.remoteExitWaits.delete(tabId)
-        clearTimeout(lastLook)
-        resolve(hit)
+      const wait = {
+        sid,
+        settle: (hit: RemoteExitDrop | undefined): void => {
+          if (!this.remoteExitWaits.delete(wait)) return
+          clearTimeout(lastLook)
+          resolve(hit)
+        }
       }
       const lastLook = setTimeout(
-        () => void remoteExitOnDisk(mirrorDir, sid, since).then(settle),
+        () => void remoteExitOnDisk(mirrorDir, sid, since).then(wait.settle),
         REMOTE_EXIT_WAIT_MS
       )
-      this.remoteExitWaits.set(tabId, { sid, settle })
-      void remoteExitOnDisk(mirrorDir, sid, since).then((hit) => hit && settle(hit))
+      this.remoteExitWaits.add(wait)
+      void remoteExitOnDisk(mirrorDir, sid, since).then((hit) => hit && wait.settle(hit))
     })
   }
 

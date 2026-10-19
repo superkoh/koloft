@@ -398,7 +398,6 @@ interface Tracked {
   statusSeq: number
   caughtUp: boolean
   jsonlListener?: () => void
-  titleListener?: () => void
   sidecarTitle: string | null
   meter: UsageMeter
   subagentFiles: Map<string, SubagentFile>
@@ -1027,10 +1026,7 @@ export class SessionTracker extends SessionRuntime {
 
   // PLATFORM§28
   private unwatchTranscript(t: Tracked): void {
-    if (!t.info.jsonlPath) return
-    if (t.jsonlListener) fs.unwatchFile(t.info.jsonlPath, t.jsonlListener)
-    if (t.titleListener) fs.unwatchFile(this.sidecarOf(t.info.jsonlPath), t.titleListener)
-    t.titleListener = undefined
+    if (t.info.jsonlPath && t.jsonlListener) fs.unwatchFile(t.info.jsonlPath, t.jsonlListener)
   }
 
   private async readSidecarTitle(t: Tracked): Promise<void> {
@@ -1041,10 +1037,6 @@ export class SessionTracker extends SessionRuntime {
       title = (await fs.promises.readFile(this.sidecarOf(file), 'utf8')).trim() || null
     } catch {}
     if (t.info.jsonlPath !== file || this.tracked.get(t.info.tabId) !== t) return
-    if (title !== null && !t.titleListener) {
-      t.titleListener = (): void => void this.readSidecarTitle(t)
-      fs.watchFile(this.sidecarOf(file), { interval: 500 }, t.titleListener)
-    }
     if (title === t.sidecarTitle) return
     t.sidecarTitle = title
     this.recompute(t)
@@ -1069,7 +1061,10 @@ export class SessionTracker extends SessionRuntime {
       t.inode = undefined
     }
     if (t.subagentTimer) clearInterval(t.subagentTimer)
-    t.subagentTimer = setInterval(() => void this.parse(t), SUBAGENT_SCAN_MS)
+    t.subagentTimer = setInterval(() => {
+      void this.readSidecarTitle(t)
+      void this.parse(t)
+    }, SUBAGENT_SCAN_MS)
     this.recompute(t)
     void this.parse(t)
   }
@@ -1198,7 +1193,6 @@ export class SessionTracker extends SessionRuntime {
 
   private async parseOnce(t: Tracked): Promise<void> {
     if (!t.info.jsonlPath) return
-    if (!t.titleListener) void this.readSidecarTitle(t)
     let mainChanged = false
     const st = await this.followRelocation(t)
     const p = t.info.jsonlPath
@@ -1311,6 +1305,8 @@ export class SessionTracker extends SessionRuntime {
   }
 
   private async tailSubagentFile(t: Tracked, file: string, sst: SubagentFile): Promise<boolean> {
+    const stale = (): boolean =>
+      this.tracked.get(t.info.tabId) !== t || t.subagentFiles.get(file) !== sst
     let st: fs.Stats
     try {
       st = await fs.promises.stat(file)
@@ -1325,14 +1321,14 @@ export class SessionTracker extends SessionRuntime {
     sst.activeMs = Date.now()
     if (sst.teammate === undefined) {
       sst.teammate = await readTeammateFlag(file)
-      if (this.tracked.get(t.info.tabId) !== t || t.subagentFiles.get(file) !== sst) return false
+      if (stale()) return false
     }
     if (sst.teammate) t.teammateActiveMs = sst.activeMs
     let folded = false
     while (sst.offset < st.size) {
       const from = sst.offset
       const lines = await readAppendedLines(file, st.size, sst)
-      if (this.tracked.get(t.info.tabId) !== t || t.subagentFiles.get(file) !== sst) return false
+      if (stale()) return false
       if (lines === null || sst.offset === from) break
       for (const line of lines) {
         const obj = parseRecord(line)

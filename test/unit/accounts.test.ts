@@ -111,6 +111,7 @@ describe('U3 · registry persistence', () => {
       { ...base, name: 'badmodel', baseUrl: 'https://ok.test', model: 'a"; touch /tmp/pwned; #' }
     ]
     fs.writeFileSync(settingsFile, JSON.stringify(raw))
+    rereadSettingsOnNextLoad()
     const kept = loadSettings().accounts
     expect(kept.map((a) => a.name)).toEqual(['good', 'badmodel'])
     expect(kept[0].model).toBe('glm-5.2[1m]')
@@ -130,14 +131,15 @@ describe('U3 · registry persistence', () => {
     expect(fs.readFileSync(settingsFile, 'utf8')).not.toContain('sk-ant')
   })
 
-  it('settings.json is read once: later loads never touch the disk, each hands back its own copy, and a save is seen by the next load', () => {
-    saveSettings({ keepAwake: false })
+  it('settings.json is read once: later loads and saves never read it again, each load hands back its own copy, and a save is seen by the next load', () => {
     const reads = vi.spyOn(fs, 'readFileSync')
     loadSettings().accounts.push(meta({ name: 'only-in-a-copy' }))
     expect(loadSettings().accounts).toEqual([])
-    expect(reads.mock.calls.filter(([p]) => p === settingsFile)).toHaveLength(1)
+    saveSettings({ keepAwake: false })
+    expect(loadSettings().keepAwake).toBe(false)
     saveSettings({ keepAwake: true })
     expect(loadSettings().keepAwake).toBe(true)
+    expect(reads.mock.calls.filter(([p]) => p === settingsFile)).toHaveLength(1)
     reads.mockRestore()
   })
 
@@ -152,6 +154,7 @@ describe('U3 · registry persistence', () => {
       { name: 'other', kind: 'not-a-kind', enabled: true }
     ]
     fs.writeFileSync(settingsFile, JSON.stringify(raw))
+    rereadSettingsOnNextLoad()
     expect(loadSettings().accounts.map((a) => a.name)).toEqual(['ok-name'])
   })
 })
@@ -296,6 +299,7 @@ describe('U3 · fable capability + §08 downgrade clock', () => {
       { ...base, name: 'evil', fableCheckedAt: 'DROP TABLE' }
     ]
     fs.writeFileSync(settingsFile, JSON.stringify(raw))
+    rereadSettingsOnNextLoad()
     const accs = loadSettings().accounts
     expect(accs.find((a) => a.name === 'good')?.fableCheckedAt).toBe(123)
     expect(accs.find((a) => a.name === 'evil')?.fableCheckedAt).toBeUndefined()

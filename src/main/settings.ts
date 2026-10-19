@@ -37,9 +37,12 @@ export function rereadSettingsOnNextLoad(): void {
 export function saveSettings(patch: Partial<Settings>): Settings {
   const merged: Settings = { ...loadSettings(), ...patch }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
+  const text = JSON.stringify(merged, null, 2)
   try {
-    writeAtomically(settingsFile(), JSON.stringify(merged, null, 2))
-  } catch {}
-  rereadSettingsOnNextLoad()
+    writeAtomically(settingsFile(), text)
+    cached = sanitizeLoadedSettings(JSON.parse(text))
+  } catch {
+    rereadSettingsOnNextLoad()
+  }
   return merged
 }
