@@ -43,6 +43,11 @@ import type {
   WorkspaceRows
 } from '@shared/types'
 
+const terminalDataSinks = new Map<string, Set<(data: string) => void>>()
+ipcRenderer.on('terminal:data', (_e, d: TerminalData) =>
+  terminalDataSinks.get(d.id)?.forEach((cb) => cb(d.data))
+)
+
 const api: KoloftApi = {
   isDev: ipcRenderer.sendSync('app:isDev') as boolean,
   domRenderer: process.env.KOLOFT_DOM_RENDERER === '1',
@@ -67,10 +72,13 @@ const api: KoloftApi = {
     flowStats: () => ipcRenderer.invoke('terminal:flowStats'),
     resize: (id, cols, rows) => ipcRenderer.send('terminal:resize', id, cols, rows),
     kill: (id, restarting) => ipcRenderer.send('terminal:kill', id, restarting),
-    onData: (cb) => {
-      const handler = (_e: unknown, d: TerminalData): void => cb(d)
-      ipcRenderer.on('terminal:data', handler)
-      return () => ipcRenderer.removeListener('terminal:data', handler)
+    onData: (id, cb) => {
+      const sinks = terminalDataSinks.get(id) ?? new Set()
+      terminalDataSinks.set(id, sinks.add(cb))
+      return () => {
+        sinks.delete(cb)
+        if (!sinks.size) terminalDataSinks.delete(id)
+      }
     },
     onExit: (cb) => {
       const handler = (_e: unknown, e: TerminalExit): void => cb(e)
