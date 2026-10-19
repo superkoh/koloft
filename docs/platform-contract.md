@@ -1080,6 +1080,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   itself**; without a `.gitignore` line the parent shows an untracked `.claude/`.
   `--exclude-standard` honours an uncommitted `.gitignore`.
 - **`git worktree add <path>` refuses a path that already exists.**
+- **`git worktree add <path>` also refuses a path whose folder was deleted with `rm -rf`
+  while git still registers it** ("is a missing but already registered worktree; use
+  'add -f' to override, or 'prune' or 'remove' to clear"; `git worktree list` shows it
+  `prunable`). `git worktree remove <path>` on that missing folder clears the
+  registration and keeps the branch, after which `add` works; it matches the
+  registration through a symlinked spelling of the path (`/var/…` for a tree added as
+  `/private/var/…`), answers "is not a working tree" for a path git never registered,
+  and refuses a locked one. A tree deleted with `git worktree remove` leaves nothing
+  registered. (Measured, git 2.54.0, macOS, 2026-10-18, on a throwaway repo.)
 - **`git worktree remove` (no `--force`) removes a tree whose only extra files are
   ignored** (`node_modules/`, `out/`), and refuses one with uncommitted or untracked
   files. **It refuses a locked tree** ("cannot remove a locked working tree"), and a

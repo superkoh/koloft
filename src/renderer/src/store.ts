@@ -30,7 +30,7 @@ import type { LoginFlowState } from './components/settings/loginFlow'
 import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
-import { selectionRoot } from './sessionRows'
+import { selectionRoot, workspaceOfRow } from './sessionRows'
 import {
   activateTab as activateWbTab,
   closeTab as closeWbTab,
@@ -700,12 +700,25 @@ export const useStore = create<AppState>((set, get) => ({
         return
       }
       restartedPtys.add(oldId)
-      get().setTabTitle(oldId, sess?.title ?? tab.title)
+      const title = sess?.title ?? tab.title
+      get().setTabTitle(oldId, title)
       window.api.terminal.kill(oldId, true)
       void window.api.sessions
         .resume({ sessionId: resumeId, cwd })
         .then((res) => {
-          if (!res.ok) throw new Error(res.code)
+          if (!res.ok) {
+            const main =
+              res.code === 'rebuild-failed' ? workspaceOfRow(get().workspaceRows, resumeId) : null
+            if (main) {
+              get().setResumeDialog({
+                kind: 'escape',
+                target: { backendId: backend, id: resumeId, title },
+                worktreeName: basename(cwd),
+                cwd: main
+              })
+            }
+            throw new Error(res.code)
+          }
           if (!get().tabs.some((x) => x.id === oldId)) {
             window.api.terminal.kill(res.id)
             return

@@ -1635,9 +1635,11 @@ export interface SessionResumeRequest {
   trustFolder?: boolean
 }
 
+export type ResumeFailure = 'cwd-missing' | 'invalid-args' | 'rebuild-failed'
+
 export type SessionResumeResult =
   | { ok: true; id: string; cwd: string; kind?: TabKind }
-  | { ok: false; code: 'cwd-missing' | 'invalid-args' | 'rebuild-failed' }
+  | { ok: false; code: ResumeFailure }
   | { ok: false; code: 'backend'; message: string }
 
 export type ResumePlan =

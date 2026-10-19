@@ -19,7 +19,12 @@ import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
-import { dirExistsSync as dirExists, occupantName } from './resumePlan'
+import {
+  dirExistsSync as dirExists,
+  occupantName,
+  rebuildsTheWorktree,
+  ResumeRefused
+} from './resumePlan'
 import type { CliRuntime } from './cliRuntime'
 import { isNewer } from './releaseNotes'
 import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
@@ -611,7 +616,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     if (!available.available) throw new Error(available.reason)
     let cwd = opts.cwd
     if (typeof cwd !== 'string' || !isAbsoluteOnHost(cwd) || !(await this.dirThere(cwd)))
-      throw new Error('The session folder is missing.')
+      throw new ResumeRefused('cwd-missing', 'The session folder is missing.')
     const workspace = this.workspaceFor(cwd)
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error(`This ${this.label} session is already open.`)
@@ -762,13 +767,19 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       ? this.store.getResource(m.worktreeResourceId)
       : this.store.listResources().find((r) => r.worktreePath === t?.cwd)
     let cwd = m?.cwd ?? t!.cwd
-    const treeRemoved = !req.mode && !!resource && !(await this.dirThere(resource.worktreePath))
-    if (req.mode === 'rebuild' || treeRemoved) {
-      if (!resource) throw new Error('The worktree has no saved recovery record.')
-      resource = await this.worktrees.rebuild(resource.id)
+    if (
+      await rebuildsTheWorktree(
+        req.mode,
+        async () => !resource || this.dirThere(resource.worktreePath)
+      )
+    ) {
+      if (!resource) throw new ResumeRefused('rebuild-failed')
+      resource = await this.worktrees.rebuild(resource.id).catch(() => {
+        throw new ResumeRefused('rebuild-failed')
+      })
       cwd = resource.worktreePath
     } else if (req.mode === 'renamed') {
-      if (!resource || !req.worktree) throw new Error('The new worktree name is missing.')
+      if (!resource || !req.worktree) throw new ResumeRefused('invalid-args')
       resource = await this.worktrees.prepareRenamed(resource.id, req.worktree)
       cwd = resource.worktreePath
     } else if (req.mode === 'main') {
