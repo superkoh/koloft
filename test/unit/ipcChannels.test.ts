@@ -15,7 +15,8 @@ for (const [group, leaves] of Object.entries(CH))
   for (const [key, value] of Object.entries(leaves)) byPath.set(`CH.${group}.${key}`, value)
 const TABLE = new Set(byPath.values())
 
-const TOKEN = String.raw`(CH\.[a-zA-Z]+\.[a-zA-Z0-9]+|'[a-zA-Z]+:[a-zA-Z0-9:-]+')`
+const QUOTED = String.raw`'[a-zA-Z]+:[a-zA-Z0-9:-]+'`
+const TOKEN = String.raw`(CH\.[a-zA-Z]+\.[a-zA-Z0-9]+|${QUOTED})`
 const channelOf = (token: string): string =>
   token.startsWith('CH.') ? (byPath.get(token) ?? token) : token.slice(1, -1)
 const channels = (text: string, call: string): Set<string> =>
@@ -52,7 +53,7 @@ describe('IPC channels', () => {
   })
 
   it('main and the app preload name every channel through the table, never as a string', () => {
-    const quoted = /'[a-zA-Z]+:[a-zA-Z0-9:-]+'/g
+    const quoted = new RegExp(QUOTED, 'g')
     expect(MAIN.match(quoted)).toBeNull()
     expect(PRELOAD.match(quoted)).toBeNull()
   })

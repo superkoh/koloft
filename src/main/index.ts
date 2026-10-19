@@ -979,7 +979,9 @@ function sendToRenderer(channel: Channel, ...args: unknown[]): boolean {
   }
 }
 
-const MENU_SHORTCUT_CHANNEL: Record<Exclude<MenuShortcut, 'toggle-keep-awake'>, Channel> = {
+const MENU_SHORTCUT_CHANNEL: {
+  [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
+} = {
   'new-session': CH.shortcut.newSession,
   'new-worktree-session': CH.shortcut.newWorktreeSession,
   'close-tab': CH.shortcut.closeTab,
