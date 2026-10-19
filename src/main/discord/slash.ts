@@ -42,6 +42,15 @@ const PANEL_CLOSES_WITHIN_MS = 500
 const ESC_PRESSES_AT_MOST = 3
 // AGY§23
 export const SCREEN_SHOWS_THE_OUTPUT_MS = 1500
+// CC§12 CODEX§21
+const INPUT_ROW_MARK: Partial<Record<BackendId, string>> = { claude: '❯', codex: '›' }
+export const AN_ENTER_LANDS_WITHIN_MS = 2000
+const NO_BREAK_SPACE = / /g
+
+export function stillTyped(lines: string[], text: string, mark: string): boolean {
+  const inputRow = lines.findLast((line) => line.startsWith(mark))
+  return inputRow?.slice(mark.length).replace(NO_BREAK_SPACE, ' ').trim() === text.trim()
+}
 
 export interface SlashTarget {
   name: string
@@ -191,7 +200,20 @@ export class SlashCommands {
     p.timers.push(setTimeout(() => void this.nothingCameBack(tab, p), NOTHING_CAME_BACK_MS))
     p.timers.push(setTimeout(() => this.finish(tab), RESULT_WITHIN_MS))
     p.timers.push(setTimeout(() => void this.readScreen(tab, p), SCREEN_SHOWS_THE_OUTPUT_MS))
+    const backend = this.d.backendOf(tab)
+    const mark = backend && INPUT_ROW_MARK[backend]
+    if (mark)
+      p.timers.push(
+        setTimeout(() => void this.enterAgainIfStillTyped(tab, p, mark), AN_ENTER_LANDS_WITHIN_MS)
+      )
     this.pending.set(tab, p)
+  }
+
+  // CC§12 CODEX§21
+  private async enterAgainIfStillTyped(tab: string, p: Pending, mark: string): Promise<void> {
+    const lines = await this.d.screen(tab).catch(() => undefined)
+    if (this.pending.get(tab) !== p || p.outputs.length || p.worked || p.newKey) return
+    if (lines && stillTyped(lines, p.text, mark)) await this.press(tab, ['\r'])
   }
 
   // AGY§23

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { SessionStatus } from '../../src/shared/types'
 import {
+  AN_ENTER_LANDS_WITHIN_MS,
   MORE_OUTPUT_SETTLES_MS,
   NOTHING_CAME_BACK_MS,
   SCREEN_SHOWS_THE_OUTPUT_MS,
@@ -65,6 +66,34 @@ describe('a slash command typed into a session', () => {
     const { slash, typed } = setup({ backendOf: () => 'codex' })
     await slash.typeWhenIdle(child, '/compact', CHANNEL)
     expect(typed).toEqual(['\x05\x15', '/compact', '\x1b', '\r'])
+  })
+
+  it.each([
+    ['claude', '❯'],
+    ['codex', '›']
+  ] as const)(
+    'in %s, an Enter read together with the Esc before it is lost and leaves the command in the box, so Koloft presses Enter once more',
+    async (backend, mark) => {
+      const { slash, typed, posts } = setup({
+        backendOf: () => backend,
+        screen: async () => [`${mark} /context`]
+      })
+      await slash.typeWhenIdle(child, '/context', CHANNEL)
+      await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS)
+      expect(typed.at(-1)).toBe('\r')
+      expect(typed.filter((k) => k === '\r')).toHaveLength(2)
+      slash.output(TAB, { kind: 'details', text: '## Context Usage' })
+      await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS)
+      expect(typed.filter((k) => k === '\r')).toHaveLength(2)
+      expect(posts).toEqual(['⌨️ **fix-login** ran /context:\n## Context Usage'])
+    }
+  )
+
+  it('presses no second Enter once the command has left the box, even though its echo still shows above it', async () => {
+    const { slash, typed } = setup({ screen: async () => ['❯ /context', '✻ Working…', '❯'] })
+    await slash.typeWhenIdle(child, '/context', CHANNEL)
+    await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS)
+    expect(typed).toEqual(['/context', '\x1b', '\r'])
   })
 
   it('in Antigravity, which keeps no command output on disk, posts what its screen shows and presses Esc to close the panel', async () => {
