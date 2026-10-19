@@ -6353,3 +6353,21 @@ input.ft-newfile {
   font-family: var(--mono);
   font-size: 10.5px;
 }
+
+/* PLATFORM§24 */
+.kt-tip {
+  position: fixed;
+  z-index: 300;
+  max-width: 420px;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  box-shadow: 0 14px 40px -10px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}
