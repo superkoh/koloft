@@ -17,6 +17,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import {
+  IconAssist,
   IconBranch,
   IconCheck,
   IconChevronDown,
@@ -69,7 +70,7 @@ import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
-import { openConductor } from './ConductorsIsland'
+import { ButlerRow } from './ButlerRow'
 import {
   discardAll,
   dirtyInWorkspace,
@@ -255,6 +256,7 @@ const SessionRowView = memo(function SessionRowView({
   parent,
   folded,
   backend,
+  startedBy,
   worktree,
   actions
 }: {
@@ -275,6 +277,7 @@ const SessionRowView = memo(function SessionRowView({
   parent: boolean
   folded: boolean
   backend: BackendId | undefined
+  startedBy: string | undefined
   worktree: string
   actions: SidebarActions
 }): JSX.Element {
@@ -349,6 +352,11 @@ const SessionRowView = memo(function SessionRowView({
         )}
       </div>
       <div className="ws-tab-sub">
+        {startedBy && (
+          <span className="session-backend-icon" title={`started by ${startedBy}`}>
+            <IconAssist size={12} />
+          </span>
+        )}
         {backend && <SessionBackendIcon backend={backend} />}
         <span>{worktree}</span>
       </div>
@@ -527,10 +535,6 @@ function SidebarFloating({
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)
   const storeTabs = useStore((s) => s.tabs)
-  const conductorBindings = useStore((s) => s.settings.discord.bindings)
-  const setBindConductor = useStore((s) => s.setBindConductor)
-  const canBind = (wsPath: string): boolean => !conductorBindings.some((b) => b.scope === wsPath)
-  const canTalk = useStore((s) => !!s.settings.assist?.on)
   const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [fresh, setFresh] = useState<{ path: string; left: number; top: number } | null>(null)
@@ -576,12 +580,7 @@ function SidebarFloating({
 
   const menuItemCount = (t: MenuTarget): number =>
     t.kind === 'workspace'
-      ? workspaceMenuCount({
-          missing: t.missing,
-          isGit: t.isGit,
-          canBind: canBind(t.wsPath),
-          canTalk
-        })
+      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit })
       : t.row.pending
         ? 1
         : t.row.running
@@ -762,28 +761,6 @@ function SidebarFloating({
               >
                 Scheduled jobs…
               </div>
-              {canTalk && (
-                <div
-                  className="mi"
-                  onClick={() => {
-                    setMenu(null)
-                    void openConductor(target.wsPath)
-                  }}
-                >
-                  Talk to Assist
-                </div>
-              )}
-              {canBind(target.wsPath) && (
-                <div
-                  className="mi"
-                  onClick={() => {
-                    setMenu(null)
-                    setBindConductor({ scope: target.wsPath })
-                  }}
-                >
-                  Bind Discord channel…
-                </div>
-              )}
               <div className="sep" />
             </>
           )}
@@ -963,6 +940,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 }): JSX.Element {
   const rows = useStore((s) => s.workspaceRows)
   const welcomeActive = useStore((s) => s.welcomeActive)
+  const butlerName = useStore((s) => s.settings.butler.name)
+  const butlerKeys = useStore((s) => s.settings.assistSessions[0]?.sessionIds)
   const cron = useStore((s) => s.cron)
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)
@@ -1160,6 +1139,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onDragOver={dragOverWorkspaces}
           onDrop={dropWorkspace}
         >
+          <ButlerRow />
           {rows.length === 0 && !welcomeActive && (
             <div className="hint">
               No workspaces yet.
@@ -1224,6 +1204,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                     parent={node.children.length > 0}
                     folded={folded}
                     backend={showBackend ? row.backendId : undefined}
+                    startedBy={
+                      row.parentId && butlerKeys?.includes(row.parentId) ? butlerName : undefined
+                    }
                     worktree={row.worktree}
                     actions={actions}
                   />

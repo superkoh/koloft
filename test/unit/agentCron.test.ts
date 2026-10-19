@@ -54,6 +54,10 @@ function cron(
   const verb = cronVerb({
     runner: () => runner,
     pinnedWorkspaceOf: () => HERE,
+    resolveWorkspace: (ref) =>
+      ref === 'elsewhere'
+        ? { ok: true, value: ELSEWHERE }
+        : { ok: false, error: `no workspace "${ref}"` },
     toast: (t) => toasts.push(t),
     now: () => NOW,
     ...over
@@ -225,6 +229,19 @@ describe('koloft cron: changing tasks', () => {
     expect((await c.run('rm', 'theirs')).exit).not.toBe(0)
     expect((await c.run('off', '1')).exit).not.toBe(0)
     expect(c.runner.state().jobs[0]).toMatchObject({ id: 'other', enabled: true })
+  })
+
+  it('--workspace reaches another workspace’s tasks, also from a session with no workspace of its own like the butler', async () => {
+    const c = cron([job({ id: 'other', workspacePath: ELSEWHERE, name: 'theirs' })], {
+      pinnedWorkspaceOf: () => undefined
+    })
+    expect((await c.run('list', '--workspace', 'elsewhere')).text).toMatch(/theirs/)
+    expect((await c.run('off', 'theirs', '--workspace', 'elsewhere')).exit).toBe(0)
+    expect(c.runner.state().jobs[0]).toMatchObject({ id: 'other', enabled: false })
+    expect(await c.run('list', '--workspace', 'nowhere')).toEqual({
+      text: 'koloft cron: no workspace "nowhere"',
+      exit: 1
+    })
   })
 
   it('refuses every command while the workspace is not pinned', async () => {

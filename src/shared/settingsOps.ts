@@ -4,11 +4,13 @@ import {
   WORLD_CLOCK_MAX,
   sanitizeAccountList,
   type AssistSetting,
+  type ButlerSetting,
   type Settings
 } from './types'
 import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
-import { sanitizeAssistSessions, sanitizeDiscord } from './conductors'
+import { butlerName, sanitizeAssistSessions, sanitizeDiscord } from './conductors'
+import { isRecord } from './workbenchState'
 
 export function buildResetPatch(): Partial<Settings> {
   const {
@@ -19,6 +21,7 @@ export function buildResetPatch(): Partial<Settings> {
     sessionMethods,
     discord,
     assist,
+    butler,
     assistSessions,
     newProjectFolders,
     gitAccounts,
@@ -27,6 +30,7 @@ export function buildResetPatch(): Partial<Settings> {
     gitMachines,
     ...rest
   } = DEFAULT_SETTINGS
+  void butler
   void gitAccounts
   void gitPicks
   void gitSuggestionsDismissed
@@ -78,6 +82,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.assistSessions = sanitizeAssistSessions(merged.assistSessions, merged.discord)
   merged.discord = sanitizeDiscord(merged.discord)
   merged.assist = sanitizeAssist(merged.assist)
+  merged.butler = sanitizeButler(merged.butler)
   merged.newProjectFolders = sanitizeFolderMap(merged.newProjectFolders)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
@@ -87,10 +92,6 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.notesHeight = sanitizeNotesHeight(merged.notesHeight)
   merged.notesFolded =
     typeof merged.notesFolded === 'boolean' ? merged.notesFolded : DEFAULT_SETTINGS.notesFolded
-  merged.conductorsFolded =
-    typeof merged.conductorsFolded === 'boolean'
-      ? merged.conductorsFolded
-      : DEFAULT_SETTINGS.conductorsFolded
   merged.worldClocks = Array.isArray(merged.worldClocks)
     ? [...new Set(merged.worldClocks.filter(isZoneId))].slice(0, WORLD_CLOCK_MAX)
     : []
@@ -114,6 +115,10 @@ function sanitizeAssist(raw: unknown): AssistSetting {
   const assistOn = backendIdOf(backend)
   if (typeof on !== 'boolean' || !assistOn) return null
   return { on, backend: assistOn }
+}
+
+function sanitizeButler(raw: unknown): ButlerSetting {
+  return { name: butlerName(isRecord(raw) ? raw.name : undefined) }
 }
 
 function sanitizeFolderMap(raw: unknown): Record<string, string> {

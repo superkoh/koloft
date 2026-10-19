@@ -35,7 +35,7 @@ function seedBinding(env: E2EEnv): void {
       bindings: [
         {
           id: 'b1',
-          scope: env.workspaces.a,
+          scope: 'global',
           backend: 'claude',
           channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
           sessionIds: [],

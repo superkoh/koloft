@@ -31,6 +31,7 @@ import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
 import { selectionRoot, workspaceOfRow } from './sessionRows'
+import { isButlerTab } from './butlerRows'
 import {
   activateTab as activateWbTab,
   closeTab as closeWbTab,
@@ -155,10 +156,11 @@ interface AppState {
     onDiscard(): void
     onSave(): void | Promise<void>
   } | null
-  conductorTabs: Record<string, string>
+  butlerTab: string | null
   assistTasks: AssistTaskRow[]
   assistAsked: boolean
-  bindConductor: { scope?: string; editId?: string } | null
+  bindButler: boolean
+  renameButler: boolean
   orphanConfirm: string | null
 
   addTab: (t: Tab) => void
@@ -167,6 +169,7 @@ interface AppState {
   adoptTabs: (tabs: AdoptableTab[], activeTabBeforeReload: string | null) => void
   removeTab: (id: string) => void
   closeTab: (id: string) => void
+  openButler: (fresh?: boolean) => Promise<string | null>
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
   setTabAlive: (id: string, alive: boolean) => void
@@ -205,10 +208,11 @@ interface AppState {
   setResumeLaunch: (l: AppState['resumeLaunch']) => void
   setCloseConfirm: (c: AppState['closeConfirm']) => void
   setUnsavedPrompt: (p: AppState['unsavedPrompt']) => void
-  setConductorTab: (scope: string, tabId: string) => void
+  setButlerTab: (tabId: string) => void
   setAssistTasks: (rows: AssistTaskRow[]) => void
   setAssistAsked: (asked: boolean) => void
-  setBindConductor: (b: AppState['bindConductor']) => void
+  setBindButler: (open: boolean) => void
+  setRenameButler: (open: boolean) => void
   setOrphanConfirm: (rowId: string | null) => void
 
   ensureWorkbench: (tabId: string) => Promise<void>
@@ -526,10 +530,11 @@ export const useStore = create<AppState>((set, get) => ({
   closeConfirm: null,
   cron: { jobs: [], live: [], folders: {}, notes: {} },
   unsavedPrompt: null,
-  conductorTabs: {},
+  butlerTab: null,
   assistTasks: [],
   assistAsked: false,
-  bindConductor: null,
+  bindButler: false,
+  renameButler: false,
   orphanConfirm: null,
 
   addTab: (t) => {
@@ -633,9 +638,26 @@ export const useStore = create<AppState>((set, get) => ({
     })
   },
   closeTab: (id) => {
+    const s = get()
+    const closed = s.tabs.find((t) => t.id === id)
+    const toButler =
+      s.activeTabId === id &&
+      isSessionKind(closed?.kind) &&
+      s.settings.assist !== null &&
+      !isButlerTab(s.sessions, s.butlerTab, s.assistTasks, id)
     restoreLaunches.delete(id)
     window.api.terminal.kill(id)
     get().removeTab(id)
+    if (toButler) void get().openButler()
+  },
+  openButler: async (fresh = false) => {
+    const r = await (fresh ? window.api.conductors.startFresh() : window.api.conductors.open())
+    if (!r.ok) return r.error
+    const st = get()
+    st.setButlerTab(r.tabId)
+    window.api.attention.visit(r.tabId)
+    st.activateTab(r.tabId)
+    return null
   },
   setActive: (id) => set({ activeTabId: id }),
   setTabTitle: (id, title) =>
@@ -868,11 +890,11 @@ export const useStore = create<AppState>((set, get) => ({
   setResumeLaunch: (resumeLaunch) => set({ resumeLaunch }),
   setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
   setUnsavedPrompt: (unsavedPrompt) => set({ unsavedPrompt }),
-  setConductorTab: (scope, tabId) =>
-    set((s) => ({ conductorTabs: { ...s.conductorTabs, [scope]: tabId } })),
+  setButlerTab: (butlerTab) => set({ butlerTab }),
   setAssistTasks: (assistTasks) => set({ assistTasks }),
   setAssistAsked: (assistAsked) => set({ assistAsked }),
-  setBindConductor: (bindConductor) => set({ bindConductor }),
+  setBindButler: (bindButler) => set({ bindButler }),
+  setRenameButler: (renameButler) => set({ renameButler }),
   setOrphanConfirm: (orphanConfirm) => set({ orphanConfirm }),
 
   ensureWorkbench: (tabId) => {

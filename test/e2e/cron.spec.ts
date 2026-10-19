@@ -251,7 +251,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       expect(await menuItemTexts(page)).toEqual(
-        expect.arrayContaining(['Scheduled jobs…', 'Talk to Assist'])
+        expect.arrayContaining(['Scheduled jobs…', 'Remove workspace'])
       )
       const shape = await page
         .locator('.menu')

@@ -99,16 +99,47 @@ function writtenBindingsAnOlderKoloftKeeps(env: E2EEnv): void {
 }
 
 test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after the upgrade', () => {
-  for (const where of ['global', 'workspace', 'remote workspace'] as const) {
-    test(`a ${where} Assist on Claude, Assist never chosen: it resumes the same conversation, answers in Discord, and does again after a restart; the settings it writes still keep every binding for an older Koloft`, async ({
+  test('the global Assist on Claude, Assist never chosen, becomes the butler: it resumes the same conversation, answers in Discord, and does again after a restart; the settings it writes still keep its binding for an older Koloft', async ({
+    env
+  }) => {
+    const last = crypto.randomUUID()
+    seedV038(env, { scope: 'global', backend: 'claude', lastSessionKey: last })
+    seedJsonl(env, assistFolder(env, 'global'), { id: last })
+    const fake = await startFakeDiscord(env)
+    try {
+      const first = await upgradedApp(env, fake)
+      await expect
+        .poll(() => assistCalls(env, 'global').map(resumedId), {
+          timeout: ASSIST_STARTS_AND_ANSWERS_MS
+        })
+        .toEqual([last])
+      await answersOnDiscord(fake, 'hello after the upgrade')
+      expect(assistRecordOnDisk(env, 'global')?.lastSessionKey).toBe(last)
+      writtenBindingsAnOlderKoloftKeeps(env)
+      await quitAndClose(first.app)
+
+      const again = await upgradedApp(env, fake)
+      await expect
+        .poll(() => assistCalls(env, 'global').map(resumedId), {
+          timeout: ASSIST_STARTS_AND_ANSWERS_MS
+        })
+        .toEqual([last, last])
+      await answersOnDiscord(fake, 'hello after a restart')
+      await quitAndClose(again.app)
+    } finally {
+      await fake.close()
+    }
+  })
+
+  for (const where of ['workspace', 'remote workspace'] as const) {
+    test(`an owner who bound only a ${where}’s channel finds the butler answering in that channel: a new conversation in the butler’s own folder, the workspace Assist’s own left behind`, async ({
       env
     }) => {
       if (where === 'remote workspace') {
         installFakeRemote(env)
         seedRemoteWorkspace(env)
       }
-      const scope =
-        where === 'global' ? 'global' : where === 'workspace' ? env.workspaces.a : remoteKey(env)
+      const scope = where === 'workspace' ? env.workspaces.a : remoteKey(env)
       const last = crypto.randomUUID()
       seedV038(env, { scope, backend: 'claude', lastSessionKey: last })
       seedJsonl(env, assistFolder(env, scope), { id: last })
@@ -116,23 +147,18 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
       try {
         const first = await upgradedApp(env, fake)
         await expect
-          .poll(() => assistCalls(env, scope).map(resumedId), {
+          .poll(() => assistCalls(env, 'global').map(resumedId), {
             timeout: ASSIST_STARTS_AND_ANSWERS_MS
           })
-          .toEqual([last])
+          .toEqual([undefined])
         await answersOnDiscord(fake, 'hello after the upgrade')
-        expect(assistRecordOnDisk(env, scope)?.lastSessionKey).toBe(last)
+        expect(assistCalls(env, scope)).toEqual([])
         writtenBindingsAnOlderKoloftKeeps(env)
+        const [kept] = (settingsOnDisk(env).discord as { bindings: Record<string, unknown>[] })
+          .bindings
+        expect(kept).toMatchObject({ scope: 'global', channel: CHANNEL })
+        expect(assistRecordOnDisk(env, scope)).toBeUndefined()
         await quitAndClose(first.app)
-
-        const again = await upgradedApp(env, fake)
-        await expect
-          .poll(() => assistCalls(env, scope).map(resumedId), {
-            timeout: ASSIST_STARTS_AND_ANSWERS_MS
-          })
-          .toEqual([last, last])
-        await answersOnDiscord(fake, 'hello after a restart')
-        await quitAndClose(again.app)
       } finally {
         await fake.close()
         if (where === 'remote workspace') killFakeRemote(env)
@@ -185,7 +211,7 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
     }
   })
 
-  test('a session started before the upgrade still reaches the Assist by its old name, Global-conductor', async ({
+  test('a session started before the upgrade still reaches the butler by its old names, Global-conductor and Global-Assist', async ({
     env
   }) => {
     seedV038(env, { scope: 'global', backend: 'claude' })
@@ -202,6 +228,10 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
       await expect
         .poll(() => peerLinesReceived(env), { timeout: ASSIST_STARTS_AND_ANSWERS_MS })
         .toContain('report: done')
+      await runIn(page, centerTerm(page), '/koloft session send Global-Assist "report: again"')
+      await expect
+        .poll(() => peerLinesReceived(env), { timeout: ASSIST_STARTS_AND_ANSWERS_MS })
+        .toContain('report: again')
       await quitAndClose(app)
     } finally {
       await fake.close()

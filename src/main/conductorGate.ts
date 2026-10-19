@@ -2,9 +2,9 @@ import { shq } from '@shared/shellQuote'
 import { CODEX_WAITING_QUESTION_TOOL } from '@shared/agentGuide'
 
 const CONDUCTOR_DENIED =
-  'Koloft: Assist only passes work on. It may read files, write its own memory folder, ask the owner a question and run one plain koloft command per Bash call (no ;, &&, |, >, $ or backticks outside quotes). To get anything else done, start a session with koloft session new or message one with koloft session send.'
+  'Koloft: the butler only passes work on. It may read files, write its own memory folder, ask the owner a question and run one plain koloft command per Bash call (no ;, &&, |, >, $ or backticks outside quotes). To get anything else done, start a session with koloft session new or message one with koloft session send.'
 
-const CODEX_CONDUCTOR_DENIED = `Koloft: Assist only passes work on. It may run shell commands, change files inside its own folder and ask the owner a question with ${CODEX_WAITING_QUESTION_TOOL} (it waits for the answer; ${CODEX_WAITING_QUESTION_TOOL}_async does not). It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.`
+const CODEX_CONDUCTOR_DENIED = `Koloft: the butler only passes work on. It may run shell commands, change files inside its own folder and ask the owner a question with ${CODEX_WAITING_QUESTION_TOOL} (it waits for the answer; ${CODEX_WAITING_QUESTION_TOOL}_async does not). It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.`
 
 const READ_OR_ASK_TOOLS = ['Read', 'Glob', 'Grep', 'Skill', 'ToolSearch', 'AskUserQuestion']
 const WRITE_TOOLS = ['Write', 'Edit']
@@ -135,7 +135,7 @@ ${TOOLS_THE_ALLOW_FILE_NAMES}
 ${DENY_AND_SAY(CODEX_CONDUCTOR_DENIED)}`
 
 const MUSE_CONDUCTOR_DENIED =
-  'Koloft: Assist only passes work on. It may read files, change files inside its own folder, ask the owner a question with request_user_input and run one plain koloft command per bash call (no ;, &&, |, >, $ or backticks outside quotes). It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
+  'Koloft: the butler only passes work on. It may read files, change files inside its own folder, ask the owner a question with request_user_input and run one plain koloft command per bash call (no ;, &&, |, >, $ or backticks outside quotes). It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
 
 // MUSE§9
 const MUSE_READ_TOOLS = [
@@ -173,7 +173,7 @@ ${TOOLS_THE_ALLOW_FILE_NAMES}
 ${DENY_AND_SAY(MUSE_CONDUCTOR_DENIED)}`
 
 const AGY_CONDUCTOR_DENIED =
-  'Koloft: Assist only passes work on. It may run shell commands, read files, change files inside its own folder and ask the owner a question with ask_question. It may not start subagents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
+  'Koloft: the butler only passes work on. It may run shell commands, read files, change files inside its own folder and ask the owner a question with ask_question. It may not start subagents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
 
 // AGY§13
 const AGY_RUN_OR_READ_TOOLS = ['run_command', 'view_file', 'ask_question']
@@ -230,7 +230,7 @@ export function codexGateShell(gateScript: string): string {
 }
 
 export const CODEX_GATE_NOT_TRUSTED =
-  "Codex would not run Koloft's safety check for Assist, so Koloft did not start Assist on Codex."
+  "Codex would not run Koloft's safety check for the butler, so Koloft did not start it on Codex."
 
 export const PLAYWRIGHT_CLI_RULE = 'Bash(playwright-cli '
 

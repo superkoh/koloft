@@ -70,7 +70,7 @@ function seedConductor(env: E2EEnv, backend: 'claude' | 'codex'): void {
       bindings: [
         {
           id: 'b1',
-          scope: env.workspaces.a,
+          scope: 'global',
           backend,
           channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
           sessionIds: [],
@@ -329,7 +329,7 @@ async function closesTheEndedSessionItIsAskedTo(
   await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: 30_000 })
   fake.say(
     OWNER,
-    `The session "${ENDED_TITLE}" in this workspace has ended and I do not need it any more. Take it off the Koloft list for good.`
+    `The session "${ENDED_TITLE}" in the ws-a workspace has ended and I do not need it any more. Take it off the Koloft list for good.`
   )
   await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: A_REAL_MODEL_TURN_MS })
   expect(transcriptRecords(env, endedId)).toHaveLength(seeded)
@@ -364,12 +364,12 @@ function fakeGhSaysMerged(env: E2EEnv): string {
 async function checksGithubItself(fake: FakeDiscord, log: string): Promise<void> {
   fake.say(
     OWNER,
-    'Is pull request 389 merged? Do not start or message any session; check it yourself on GitHub, then reply with its state and its exact title.'
+    'Is pull request 389 of acme/app merged? Do not start or message any session; check it yourself on GitHub, then reply with its state and its exact title.'
   )
   await expect
     .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
     .toContain('PLUM-58')
-  expect(fs.readFileSync(log, 'utf8')).toMatch(/^pr (view|list|checks) .*--repo acme\/app$/m)
+  expect(fs.readFileSync(log, 'utf8')).toMatch(/^pr (view|list|checks) .*(--repo|-R)[= ]acme\/app/m)
 }
 
 function fakeGhOpensIssue(env: E2EEnv): string {
@@ -379,7 +379,7 @@ function fakeGhOpensIssue(env: E2EEnv): string {
 async function opensAnIssueItself(fake: FakeDiscord, log: string): Promise<void> {
   fake.say(
     OWNER,
-    '请在这个仓库开一个 GitHub issue：搜索框输入第一个字以后就失去焦点。不要开会话，也不要叫别的会话做，你自己开，然后把 issue 地址回给我。'
+    '请在 acme/app 仓库开一个 GitHub issue：搜索框输入第一个字以后就失去焦点。不要开会话，也不要叫别的会话做，你自己开，然后把 issue 地址回给我。'
   )
   await expect
     .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
@@ -387,8 +387,8 @@ async function opensAnIssueItself(fake: FakeDiscord, log: string): Promise<void>
   const calls = fs.readFileSync(log, 'utf8')
   const created = /^issue create [\s\S]*?(?=^(?:issue|pr|run) |(?![\s\S]))/m.exec(calls)
   expect(created).not.toBeNull()
-  expect(created![0]).toMatch(/--title=/)
-  expect(created![0]).toMatch(/--repo[= ]acme\/app\b/)
+  expect(created![0]).toMatch(/(--title|-t)[= ]/)
+  expect(created![0]).toMatch(/(--repo|-R)[= ]acme\/app\b/)
   expect(created![0]).not.toMatch(/[　-鿿＀-￯]/)
   expect(calls.slice(0, created!.index)).toMatch(/^issue list /m)
 }
@@ -448,7 +448,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // ADR-0029
-  test('a real Claude conductor told not to ask a session checks a pull request itself with koloft gh, and Koloft adds its workspace’s repository', async ({
+  test('a real Claude conductor told not to ask a session checks a pull request itself with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -461,7 +461,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // ADR-0029
-  test('a real Claude conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, and Koloft adds its workspace’s repository', async ({
+  test('a real Claude conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -514,7 +514,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async () => {
       fake.say(
         OWNER,
-        'Start one new Claude session in this workspace whose task is: "Reply with the word KIWI and nothing else." Then tell me you started it.'
+        'Start one new Claude session in the ws-a workspace whose task is: "Reply with the word KIWI and nothing else." Then tell me you started it.'
       )
       await expect
         .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
@@ -546,7 +546,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async (_app, page) => {
       fake.say(
         OWNER,
-        'Start one new Claude session in this workspace with this first message, word for word: "Right away, before anything else, use the AskUserQuestion tool once to ask me which colour I prefer, with exactly three options: Red, Green and Blue. Then reply with only the colour I picked." Then tell me you started it.'
+        'Start one new Claude session in the ws-a workspace with this first message, word for word: "Right away, before anything else, use the AskUserQuestion tool once to ask me which colour I prefer, with exactly three options: Red, Green and Blue. Then reply with only the colour I picked." Then tell me you started it.'
       )
       await expect
         .poll(() => notices(fake), { timeout: 2 * A_REAL_MODEL_TURN_MS })
@@ -766,7 +766,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       fake.say(OWNER, '/context')
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/Assist\*\* ran \/context:\n## Context Usage/))
+        .toContainEqual(expect.stringMatching(/\*\*Alfred\*\* ran \/context:\n## Context Usage/))
 
       const child = await liveClaudeTab(page)
       await typePrompt(page, child.tabId, 'Say the word MANGO and nothing else.')
@@ -819,7 +819,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       fake.say(OWNER, '/compact')
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toEqual([expect.stringMatching(/Assist\*\* ran \/compact:\nDone\.$/)])
+        .toEqual([expect.stringMatching(/\*\*Alfred\*\* ran \/compact:\nDone\.$/)])
     })
   })
 
@@ -846,7 +846,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async () => {
       fake.say(
         OWNER,
-        'Start one new Codex session (koloft session new --backend codex) in this workspace whose task is: "Reply with the word KIWI and nothing else." Then tell me you started it.'
+        'Start one new Codex session (koloft session new --backend codex --workspace ws-a) in the ws-a workspace whose task is: "Reply with the word KIWI and nothing else." Then tell me you started it.'
       )
       await startedSessionsCardFollowsIt(fake, 'Codex')
     })
@@ -895,7 +895,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // ADR-0029 CODEX§12
-  test('a real Codex conductor, its sandbox without network, checks a pull request itself with koloft gh, and Koloft adds its workspace’s repository', async ({
+  test('a real Codex conductor, its sandbox without network, checks a pull request itself with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
@@ -910,7 +910,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // ADR-0029 CODEX§12
-  test('a real Codex conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, and Koloft adds its workspace’s repository', async ({
+  test('a real Codex conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
@@ -1003,7 +1003,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
             )?.tabId
           fake.say(
             OWNER,
-            `Start one new ${BACKEND_LABEL[child]} session (koloft session new --backend ${child}) in this workspace whose task is: "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_CONDUCTOR_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for it, check on it or read it, and do not read secret.txt yourself; it reports back to you on its own. When its report reaches you, tell me exactly what it reported.`
+            `Start one new ${BACKEND_LABEL[child]} session (koloft session new --backend ${child} --workspace ws-a) in the ws-a workspace whose task is: "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_CONDUCTOR_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for it, check on it or read it, and do not read secret.txt yourself; it reports back to you on its own. When its report reaches you, tell me exactly what it reported.`
           )
           await expect
             .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })

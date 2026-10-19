@@ -130,13 +130,15 @@ export async function listOpenItems(gh: Gh, repo: GithubRepo): Promise<GithubOpe
 
 export async function ghRead(
   args: string[],
-  env?: NodeJS.ProcessEnv
+  env?: NodeJS.ProcessEnv,
+  cwd?: string
 ): Promise<{ ok: boolean; out: string }> {
   try {
     const { stdout } = await execFile('gh', args, {
       timeout: FETCH_TIMEOUT_MS,
       maxBuffer: MAX_BUFFER,
-      ...(env && { env })
+      ...(env && { env }),
+      ...(cwd && { cwd })
     })
     return { ok: true, out: stdout }
   } catch (error) {

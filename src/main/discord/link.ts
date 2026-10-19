@@ -6,12 +6,7 @@ import type {
   DiscordStatus,
   DiscordUser
 } from '@shared/types'
-import {
-  newChannelGuild,
-  newChannelName,
-  newChannelTopic,
-  SET_UP_WITH_ASSIST
-} from '@shared/conductors'
+import { newChannelGuild, NEW_CHANNEL_NAME, NEW_CHANNEL_TOPIC } from '@shared/conductors'
 import { distinctName } from '@shared/sessionRoute'
 import { DiscordGateway } from './gateway'
 import { DiscordHttpError, DiscordRest } from './rest'
@@ -490,7 +485,7 @@ export class DiscordLink {
         if (error.status === NOT_FOUND) return
         if (error.status === MISSING_PERMISSIONS)
           throw new Error(
-            `${error.message}. Invite the bot again (Settings ▸ Discord ▸ ${SET_UP_WITH_ASSIST}), or give it the Manage Threads permission in the server’s settings.`
+            `${error.message}. Invite the bot again (Settings ▸ Discord ▸ Set up), or give it the Manage Threads permission in the server’s settings.`
           )
         throw error
       })
@@ -600,7 +595,6 @@ export class DiscordLink {
 
   // PLATFORM§39
   async newChannel(
-    scope: string,
     bindings: ConductorBinding[],
     saved: DiscordChannel | undefined
   ): Promise<NewChannel> {
@@ -624,10 +618,10 @@ export class DiscordLink {
       (await make({ name: botName, type: CATEGORY }))
     const taken = there.filter((c) => c.type === TEXT_CHANNEL).map((c) => c.name)
     const made = await make({
-      name: distinctName(newChannelName(scope), taken),
+      name: distinctName(NEW_CHANNEL_NAME, taken),
       type: TEXT_CHANNEL,
       parent_id: category.id,
-      topic: newChannelTopic(scope)
+      topic: NEW_CHANNEL_TOPIC
     })
     return {
       channel: { guildId, channelId: made.id, name: made.name },

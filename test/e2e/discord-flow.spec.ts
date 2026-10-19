@@ -66,7 +66,7 @@ function seedConductor(
       bindings: [
         {
           id: 'b1',
-          scope: env.workspaces.a,
+          scope: 'global',
           backend,
           channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
           sessionIds: [],
@@ -706,7 +706,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a channel Koloft cannot post to is reported in another bound channel, as a toast, and next to its binding in Settings ▸ Discord', async ({
+  test('a channel Koloft cannot post to is reported as a toast and next to the butler’s channel in Settings ▸ Discord', async ({
     env
   }) => {
     seedSettings(env, {
@@ -716,16 +716,8 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         userName: OWNER.username,
         bindings: [
           {
-            id: 'b1',
-            scope: env.workspaces.a,
-            backend: 'claude',
-            channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
-            sessionIds: [],
-            touched: []
-          },
-          {
             id: 'b2',
-            scope: env.workspaces.b,
+            scope: 'global',
             backend: 'claude',
             channel: { guildId: '111', channelId: '333', name: 'koloft' },
             sessionIds: [],
@@ -746,7 +738,6 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await page.evaluate((id) => window.api.terminal.write(id, '/need-approval\r'), tab)
       const report = /^Koloft could not post to #koloft in Discord: Discord answered 403/
       await expect(page.locator('.toast')).toHaveText(report)
-      await expect.poll(() => said(fake)).toContainEqual(expect.stringMatching(report))
       await openSettings(page)
       await page.locator('.set-ni', { hasText: 'Discord' }).click()
       await expect(page.locator('.set-main .acct-login-state.bad')).toHaveText(
@@ -1148,7 +1139,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           )
           await expect
             .poll(() => terminalText(page, childTab))
-            .toContain('Will deliver when the ws-a Assist is ready.')
+            .toContain('Will deliver when Alfred is ready.')
           const conductorGot = (): string[] =>
             conductor === 'claude'
               ? peerMessages(env)
@@ -1192,7 +1183,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
   })
 
   for (const backend of ['claude', 'codex'] as const) {
-    test(`a ${backend} conductor reads GitHub through koloft gh: Koloft runs gh with the workspace’s repository added, and refuses a command that would write without running gh`, async ({
+    test(`a ${backend} butler runs any gh command through koloft gh as it is, a merge too, and is refused gh auth without gh running`, async ({
       env
     }) => {
       if (backend === 'codex') installCodex(env)
@@ -1201,55 +1192,19 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       const fake = await startFakeDiscord(env)
       const { app, page } = await connected(env, fake)
       try {
-        fake.say(OWNER, '/koloft gh pr merge 389')
-        fake.say(OWNER, '/koloft gh pr view 389 --json state')
+        fake.say(OWNER, '/koloft gh auth token')
+        fake.say(OWNER, '/koloft gh pr merge 389 --squash --repo acme/app')
         await expect
           .poll(() => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8') : ''), {
             timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
           })
-          .toBe('pr view 389 --json state --repo acme/app\n')
+          .toBe('pr merge 389 --squash --repo acme/app\n')
         if (backend === 'claude') {
           const conductorTab = await tabOf(page, assistRecordOnDisk(env)!.sessionIds[0])
           await expect
             .poll(() => terminalText(page, conductorTab))
-            .toMatch(/koloft: usage: koloft gh pr view[\s\S]*\{"state":"MERGED"\}/)
+            .toMatch(/runs every gh command but auth[\s\S]*\{"state":"MERGED"\}/)
         }
-      } finally {
-        await quitAndClose(app)
-        await fake.close()
-      }
-    })
-
-    test(`a ${backend} conductor opens a GitHub issue through koloft gh: Koloft adds the workspace’s repository, and reads --body-file only from the conductor’s own folder`, async ({
-      env
-    }) => {
-      if (backend === 'codex') installCodex(env)
-      seedConductor(env, backend)
-      const ghLog = installGhForWorkspaceA(env, 'https://github.com/acme/app/issues/7')
-      const ghSaid = (): string => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8') : '')
-      const fake = await startFakeDiscord(env)
-      const { app } = await connected(env, fake)
-      try {
-        fake.say(
-          OWNER,
-          '/koloft gh issue create --title "Login stays blank" --body "- open /login"'
-        )
-        await expect
-          .poll(ghSaid, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-          .toBe('issue create --title=Login stays blank --body=- open /login --repo acme/app\n')
-
-        const conductors = path.join(env.userData, 'conductors')
-        const ownFolder = path.join(conductors, fs.readdirSync(conductors)[0])
-        fs.writeFileSync(path.join(ownFolder, 'body.md'), 'Steps: open /login.')
-        fs.writeFileSync(path.join(env.home, 'secret.txt'), 'not for GitHub')
-        fake.say(OWNER, `/koloft gh issue create --title "Leak" --body-file ${env.home}/secret.txt`)
-        fake.say(OWNER, '/koloft gh issue create --title "From a file" --body-file body.md')
-        await expect
-          .poll(() => ghSaid().split('\n')[1], { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-          .toBe(
-            `issue create --title=From a file --body-file=${fs.realpathSync(path.join(ownFolder, 'body.md'))} --repo acme/app`
-          )
-        expect(ghSaid()).not.toContain('Leak')
       } finally {
         await quitAndClose(app)
         await fake.close()

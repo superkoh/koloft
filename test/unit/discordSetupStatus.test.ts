@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { setupStatusText } from '../../src/main/discord/setupTask'
+import { setupStatusText } from '../../src/main/discord/setupSteps'
 import type { DiscordPhase } from '../../src/shared/types'
 
 function tokenLine(phase: DiscordPhase): string | undefined {

@@ -982,7 +982,7 @@ describe('injected hook script', () => {
       if (res.stdout === '') return 'allow'
       expect(JSON.parse(res.stdout)).toEqual({
         decision: 'deny',
-        reason: expect.stringMatching(/^Koloft: Assist only passes work on\./)
+        reason: expect.stringMatching(/^Koloft: the butler only passes work on\./)
       })
       return 'deny'
     }

@@ -113,9 +113,9 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
-import { ConductorsIsland, setUpDiscordWithAssist } from './components/ConductorsIsland'
+import { RenameButlerDialog, setUpDiscordWithButler } from './components/ButlerRow'
 import { BindConductorDialog } from './components/BindConductorDialog'
-import { conductorOfTab } from './conductorRows'
+import { isButlerTab } from './butlerRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
@@ -1073,18 +1073,12 @@ export default function App(): JSX.Element {
     else if (rowsLoaded && noWorkspaces) setWelcomeActive(true)
   }, [rowsLoaded, onboardingSeen, noWorkspaces, setWelcomeActive])
   const updateOffer = useStore((s) => s.updateOffer)
-  const conductorTabs = useStore((s) => s.conductorTabs)
-  const assistTasks = useStore((s) => s.assistTasks)
-  const assistBindings = useStore((s) => s.settings.discord.bindings)
-  const assistRecords = useStore((s) => s.settings.assistSessions)
-  const assistOn = useStore((s) => !!s.settings.assist?.on)
-  const conductorsFolded = useStore((s) => s.settings.conductorsFolded)
-  const activeConductor = useStore((s) =>
-    activeTabId ? conductorOfTab(s.sessions, conductorTabs, assistTasks, activeTabId) : undefined
+  const butlerActive = useStore(
+    (s) => !!activeTabId && isButlerTab(s.sessions, s.butlerTab, s.assistTasks, activeTabId)
   )
   const activeRowId = useStore((s) => (activeTabId ? rowIdOfTab(s.sessions, activeTabId) : null))
   const currentWs = currentWorkspace(workspaceRows, activeRowId, selectedWs, lastWsPath)
-  const notesWs = activeConductor ?? currentWs
+  const notesWs = butlerActive ? GLOBAL_SCOPE : currentWs
   notesWsRef.current = notesWs
   const [notesFocusWs, setNotesFocusWs] = useState(notesWs)
   if (notesFocusWs !== notesWs) {
@@ -1126,7 +1120,7 @@ export default function App(): JSX.Element {
       return
     }
     if (route?.kind === 'discord') {
-      void setUpDiscordWithAssist(prompt).then((error) => {
+      void setUpDiscordWithButler(prompt).then((error) => {
         if (error) showToast(error)
       })
       return
@@ -1139,11 +1133,7 @@ export default function App(): JSX.Element {
       return
     }
     const toAssist = (title: string, workspace: string | null): void => {
-      void (
-        workspace
-          ? window.api.conductors.tell(workspace, title, prompt)
-          : window.api.conductors.openTask(GLOBAL_SCOPE, title, prompt)
-      ).then((r) => {
+      void window.api.conductors.openTask(title, prompt).then((r) => {
         if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
         requestNew('main', undefined, { prompt, title, path: workspace, worktree: null }, backend)
@@ -1454,7 +1444,7 @@ export default function App(): JSX.Element {
     setNbDragging(true)
     const box = dockRef.current?.getBoundingClientRect()
     const bottom = box?.bottom ?? window.innerHeight
-    const room = (box?.height ?? window.innerHeight) - conductorsHeight
+    const room = box?.height ?? window.innerHeight
     const onMove = (ev: globalThis.MouseEvent): void => {
       setNotesHeight(notesHeightFromDrag(bottom, room, ev.clientY))
     }
@@ -1476,12 +1466,7 @@ export default function App(): JSX.Element {
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
   }, [sidebarHidden])
-  const [conductorsHeight, setConductorsHeight] = useState(0)
-  useLayoutEffect(() => {
-    const island = dockRef.current?.querySelector('.isl-conductors')
-    setConductorsHeight(island ? island.getBoundingClientRect().height + DOCK_GUTTER_PX : 0)
-  }, [assistBindings, assistRecords, assistOn, assistTasks.length, conductorsFolded, sidebarHidden])
-  const notesRoom = dockHeight - conductorsHeight
+  const notesRoom = dockHeight
 
   const [osFullscreen, setOsFullscreen] = useState(false)
   useEffect(() => {
@@ -1586,7 +1571,6 @@ export default function App(): JSX.Element {
               <IconChevronRight size={15} />
             </button>
           )}
-          <ConductorsIsland />
           {notesWs && (
             <div
               className={'gutter-h' + (nbDragging ? ' active' : '') + (notesFolded ? ' idle' : '')}
@@ -1947,6 +1931,7 @@ export default function App(): JSX.Element {
           <CloseSessionDialog />
           <SettingsModal />
           <BindConductorDialog />
+          <RenameButlerDialog />
           <UpdateModal />
           {assistDialogShown && (
             <AssistDialog
