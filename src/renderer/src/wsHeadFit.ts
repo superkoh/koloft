@@ -16,30 +16,30 @@ export function fitGithubCounts(heads: Iterable<HTMLElement>): void {
     if (group && name)
       parts.push({ head, group, name, counts: [...group.children] as HTMLElement[] })
   }
-  for (const { group, counts } of parts) {
+  for (const { group, name, counts } of parts) {
     group.style.display = ''
     for (const c of counts) c.style.display = ''
+    name.style.flexShrink = '0'
+    name.style.maxWidth = `${NAME_KEEPS_PX}px`
   }
-  const keeps = parts.map(({ name }) => Math.min(NAME_KEEPS_PX, name.scrollWidth))
-  parts.forEach(({ name }, i) => (name.style.minWidth = `${keeps[i]}px`))
   const hidden = parts.map(countsToHide)
   parts.forEach(({ group, name, counts }, i) => {
     for (const c of counts.slice(counts.length - hidden[i])) c.style.display = 'none'
     if (hidden[i] === counts.length) group.style.display = 'none'
-    name.style.minWidth = ''
+    name.style.flexShrink = ''
+    name.style.maxWidth = ''
   })
 }
 
-function countsToHide({ head, group, counts }: HeadParts): number {
+function countsToHide({ head, counts }: HeadParts): number {
   const limit = head.getBoundingClientRect().right - parseFloat(getComputedStyle(head).paddingRight)
   let spill = Math.max(...[...head.children].map((c) => c.getBoundingClientRect().right)) - limit
+  if (spill <= SUBPIXEL_SLACK_PX) return 0
   const rights = counts.map((c) => c.getBoundingClientRect().right)
-  const groupStart = group.previousElementSibling!.getBoundingClientRect().right
-  let n = 0
-  while (n < counts.length && spill > SUBPIXEL_SLACK_PX) {
-    const i = counts.length - 1 - n
-    spill -= rights[i] - (i > 0 ? rights[i - 1] : groupStart)
-    n++
+  let shown = counts.length
+  while (shown > 0 && spill > SUBPIXEL_SLACK_PX) {
+    shown--
+    if (shown > 0) spill -= rights[shown] - rights[shown - 1]
   }
-  return n
+  return counts.length - shown
 }
