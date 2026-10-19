@@ -1917,10 +1917,9 @@ function probeCodexAccounts(): Promise<void> {
   return codexProbeRound
 }
 
-type HomeKind = SignInFolderKind
-const signInPtys = new Map<string, { kind: HomeKind; name: string }>()
+const signInPtys = new Map<string, { kind: SignInFolderKind; name: string }>()
 
-function noteHomeAccount(name: string, kind: HomeKind): void {
+function noteHomeAccount(name: string, kind: SignInFolderKind): void {
   const acct = findAccount(name, kind)
   upsertAccountMeta({
     name,
@@ -1934,7 +1933,7 @@ function noteHomeAccount(name: string, kind: HomeKind): void {
 }
 
 const homeLogin: Record<
-  HomeKind,
+  SignInFolderKind,
   (name: string) => Promise<{ binary?: string; env: Record<string, string>; args?: string[] }>
 > = {
   // CODEX§15
@@ -1959,7 +1958,7 @@ const homeLogin: Record<
   }
 }
 
-const probeHomeAccount: Record<HomeKind, (name: string) => Promise<void>> = {
+const probeHomeAccount: Record<SignInFolderKind, (name: string) => Promise<void>> = {
   'codex-home': async (name) => {
     await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
     await probeCodexAccount(name)
@@ -1968,7 +1967,11 @@ const probeHomeAccount: Record<HomeKind, (name: string) => Promise<void>> = {
   'agy-home': (name) => probeAgyAccount(name)
 }
 
-async function signInToHome(kind: HomeKind, name: string, again: boolean): Promise<SignInResult> {
+async function signInToHome(
+  kind: SignInFolderKind,
+  name: string,
+  again: boolean
+): Promise<SignInResult> {
   const v = again
     ? findAccount(name, kind)
       ? 'ok'

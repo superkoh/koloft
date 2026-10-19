@@ -4,6 +4,7 @@ import type {
   AccountView,
   BackendId,
   CodexLimits,
+  SignInBackend,
   UsageSnapshot
 } from './types'
 import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from './types'
@@ -11,12 +12,12 @@ import { BACKEND_LABEL } from './sessionBackend'
 
 export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
   claude: ['oauth', 'apikey', 'custom'],
-  codex: [SIGN_IN_FOLDER_OF.codex],
-  muse: [SIGN_IN_FOLDER_OF.muse],
-  agy: [SIGN_IN_FOLDER_OF.agy]
+  ...(Object.fromEntries(
+    Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [backend, [kind]])
+  ) as Record<SignInBackend, AccountKind[]>)
 }
 
-const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home', 'muse-home', 'agy-home']
+const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', ...SIGN_IN_FOLDER_KINDS]
 
 export function usableAccounts<A extends Pick<AccountMeta, 'kind' | 'enabled' | 'status'>>(
   accounts: readonly A[],
