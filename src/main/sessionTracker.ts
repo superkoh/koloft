@@ -544,6 +544,7 @@ export class SessionTracker extends SessionRuntime {
     if (!alive) this.pendingPicked.delete(tabId)
     const t = this.tracked.get(tabId)
     if (t) {
+      if (!alive) this.stopFollowing(t)
       t.info.alive = alive
       t.info.updatedAt = Date.now()
       this.emitUpdate()
@@ -932,9 +933,13 @@ export class SessionTracker extends SessionRuntime {
     return null
   }
 
-  // PLATFORM§28
   private cleanup(t: Tracked): void {
     this.forget(t.info.tabId)
+    this.stopFollowing(t)
+  }
+
+  // PLATFORM§28
+  private stopFollowing(t: Tracked): void {
     if (t.subagentTimer) clearInterval(t.subagentTimer)
     if (t.landTimer) clearTimeout(t.landTimer)
     if (t.info.jsonlPath) {
