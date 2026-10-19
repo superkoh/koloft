@@ -58,6 +58,7 @@ export interface Tab {
   sessionId?: string
   alive: boolean
   resuming?: boolean
+  respawning?: true
   jobId?: string
   asleep?: true
   ghost?: string
@@ -388,6 +389,14 @@ export function boundSessionId(
   return sess?.sessionId || s.tabs.find((t) => t.id === tabId)?.sessionId || undefined
 }
 
+export function workbenchOwnerLive(s: Pick<AppState, 'sessions' | 'tabs'>, tab: Tab): boolean {
+  if (!hasWorkbench(tab)) return false
+  if (tab.respawning) return true
+  const sess = s.sessions.find((x) => x.tabId === tab.id)
+  if (sess && !sess.alive) return false
+  return !!boundSessionId(s, tab.id)
+}
+
 export function tabForSession(
   s: Pick<AppState, 'sessions' | 'tabs'>,
   sessionId: string
@@ -705,7 +714,11 @@ export const useStore = create<AppState>((set, get) => ({
       }
       restartedPtys.add(oldId)
       const title = sess?.title ?? tab.title
-      get().setTabTitle(oldId, title)
+      set((s) => ({
+        tabs: s.tabs.map((x) =>
+          x.id === oldId ? { ...x, title, ...(live ? { respawning: true as const } : {}) } : x
+        )
+      }))
       window.api.terminal.kill(oldId, true)
       void window.api.sessions
         .resume({ sessionId: resumeId, cwd })
@@ -736,7 +749,8 @@ export const useStore = create<AppState>((set, get) => ({
                     kind: backend,
                     cwd: res.cwd,
                     sessionId: resumeId,
-                    alive: true
+                    alive: true,
+                    respawning: undefined
                   }
                 : x
             ),
@@ -748,7 +762,11 @@ export const useStore = create<AppState>((set, get) => ({
           setTimeout(() => restarting.delete(res.id), RESTART_COOLDOWN_MS)
         })
         .catch(() => {
-          get().setTabAlive(oldId, false)
+          set((s) => ({
+            tabs: s.tabs.map((x) =>
+              x.id === oldId ? { ...x, alive: false, respawning: undefined } : x
+            )
+          }))
         })
         .finally(() => restarting.delete(oldId))
     }

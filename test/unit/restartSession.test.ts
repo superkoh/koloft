@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { ResumeFailure, SessionInfo, WorkspaceRows } from '@shared/types'
-import { useStore, consumeRestartExit } from '../../src/renderer/src/store'
+import { useStore, consumeRestartExit, workbenchOwnerLive } from '../../src/renderer/src/store'
 import {
   allEditTabs,
   allDirtyTabs,
@@ -376,6 +376,56 @@ describe("restartActiveSession vs. the claude→shell revert: the kill's own unt
     expect(after.tabs[0].title).toBe('Long conversation')
     expect(after.tabs[0].sessionId).toBe('sid-I')
     expect(after.openFiles['int2']?.src).toBe('/w/notes.md')
+  })
+
+  it('keeps the Workbench live while the old session reads dead mid-restart, so the tab’s shells are not torn down', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'wl1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.setSessions([session('wl1', { sessionId: 'sid-WL' })])
+    nextPty = { id: 'wl2', cwd: '/w' }
+    createGate = gate()
+
+    s.restartActiveSession()
+    await settle()
+    s.setSessions([session('wl1', { sessionId: 'sid-WL', alive: false })])
+
+    const mid = useStore.getState()
+    expect(workbenchOwnerLive(mid, mid.tabs[0])).toBe(true)
+
+    createGate.open()
+    await settle()
+    s.setSessions([session('wl2', { sessionId: 'sid-WL', alive: false })])
+    const after = useStore.getState()
+    expect(workbenchOwnerLive(after, after.tabs[0])).toBe(false)
+  })
+
+  it('lets the Workbench go when the restart fails, so a dead tab keeps no shells', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'wf1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.setSessions([session('wf1', { sessionId: 'sid-WF' })])
+    createFails = true
+
+    s.restartActiveSession()
+    await settle()
+    s.setSessions([session('wf1', { sessionId: 'sid-WF', alive: false })])
+
+    const failed = useStore.getState()
+    expect(workbenchOwnerLive(failed, failed.tabs[0])).toBe(false)
+  })
+
+  it('leaves a cold Workbench cold while a session that had already ended restarts', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'wd1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.setSessions([session('wd1', { sessionId: 'sid-WD', alive: false })])
+    nextPty = { id: 'wd2', cwd: '/w' }
+    createGate = gate()
+
+    s.restartActiveSession()
+    await settle()
+
+    const mid = useStore.getState()
+    expect(created).toHaveLength(1)
+    expect(workbenchOwnerLive(mid, mid.tabs[0])).toBe(false)
   })
 
   it('an untracked-session update DURING the probe leaves the restarting tab standing', async () => {
