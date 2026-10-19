@@ -17,6 +17,7 @@ import {
   runIn,
   startSessionIn,
   termIds,
+  terminalText,
   waitBooted,
   waitForCalls,
   waitTerminalQuiet,
@@ -175,13 +176,10 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       const { pid } = await startSilentSession(page, env)
       const rows = wsRows(page, WS_A)
       await expect(rows).toHaveCount(1)
-      const tabs = await termIds(page)
-      expect(tabs).toHaveLength(1)
-      await waitTerminalQuiet(page, tabs[0])
-      const before = await page.evaluate(
-        () =>
-          document.querySelector('.term-island .term-wrap:not([style*="none"])')?.textContent ?? ''
-      )
+      await expect.poll(() => termIds(page)).toHaveLength(1)
+      const [tabId] = await termIds(page)
+      await waitTerminalQuiet(page, tabId)
+      const before = await terminalText(page, tabId)
 
       await restart(app, page)
 
@@ -191,10 +189,7 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
       await expect(rows).toHaveCount(1)
       await expect(rows.first()).not.toHaveClass(/\bcold\b/)
-      const after = await page.evaluate(
-        () =>
-          document.querySelector('.term-island .term-wrap:not([style*="none"])')?.textContent ?? ''
-      )
+      const after = await terminalText(page, tabId)
       expect(after).toBe(before)
 
       await runIn(page, centerTerm(page), '/scratch gate-probe')
