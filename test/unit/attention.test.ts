@@ -86,6 +86,47 @@ describe('attention — a mark stays until the session moves again', () => {
   })
 })
 
+describe('attention — a turn that only reports goes once it is seen', () => {
+  it('a turn ending while the session waits on other work is only news, and looking at it clears it', () => {
+    const { t } = makeTracker()
+    t.waitsOnAnother = (tabId) => tabId === 'tab-A'
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.onStatusChange('tab-B', 'working', 'waiting')
+    expect(t.list()).toEqual([
+      expect.objectContaining({ tabId: 'tab-A', fyi: true }),
+      expect.not.objectContaining({ fyi: true })
+    ])
+    t.seen('tab-A')
+    t.seen('tab-B')
+    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-B' })])
+  })
+
+  it('news for the tab being watched never shows', () => {
+    const { t } = makeTracker()
+    t.waitsOnAnother = () => true
+    t.watching = () => 'tab-A'
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    expect(t.list()).toEqual([])
+  })
+
+  it('a finished turn judged as news later turns into news, or goes at once if it is being watched; an approval is never news', () => {
+    const { t } = makeTracker()
+    let watched: string | null = null
+    t.watching = () => watched
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.onStatusChange('tab-B', 'working', 'waiting')
+    t.onStatusChange('tab-C', 'waiting', 'approval')
+    t.markFyi('tab-A')
+    watched = 'tab-B'
+    t.markFyi('tab-B')
+    t.markFyi('tab-C')
+    expect(t.list()).toEqual([
+      expect.objectContaining({ tabId: 'tab-A', fyi: true }),
+      expect.objectContaining({ tabId: 'tab-C', kind: 'approval' })
+    ])
+  })
+})
+
 describe('attention — title and session snapshot survive the session they name', () => {
   it('the raise-time title and session id ride on the event (an exited session is untracked later)', () => {
     const { t } = makeTracker()

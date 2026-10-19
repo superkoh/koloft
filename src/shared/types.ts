@@ -641,6 +641,7 @@ export interface AttentionEvent extends AttentionSubject {
   tabId: string
   kind: AttentionKind
   at: number
+  fyi?: boolean
 }
 
 export interface OsOutletsSeenByTests {
@@ -652,6 +653,10 @@ export const ATTENTION_REASON: Record<AttentionKind, string> = {
   'turn-done': 'turn done — your move',
   approval: 'waiting for your approval',
   exited: 'session exited unexpectedly'
+}
+
+export function attentionReason(e: Pick<AttentionEvent, 'kind' | 'fyi'>): string {
+  return e.fyi ? 'turn done — just letting you know' : ATTENTION_REASON[e.kind]
 }
 
 export interface FlowStats {

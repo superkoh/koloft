@@ -318,7 +318,7 @@ import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
-  ATTENTION_REASON,
+  attentionReason,
   BROWSER_PARTITION,
   DISCORD_OFF,
   PLACEHOLDER_SESSION_TITLE,
@@ -468,6 +468,7 @@ import {
 import { crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
+import { onlyNews, waitsOnOtherWork } from './turnNews'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -534,6 +535,7 @@ const readerDocs = new ReaderDocs({
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
     void readerDocs.turnEnded(tabId, turn)
+    void judgeTurnNews(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
     discordNotices?.turnEnded(tabId, turn.reply)
@@ -564,6 +566,11 @@ sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
+}
+
+async function judgeTurnNews(tabId: string, turn: Turn): Promise<void> {
+  if (conductors?.heldResident(tabId) || attention.waitsOnAnother(tabId)) return
+  if (await onlyNews(assist, turn)) attention.markFyi(tabId)
 }
 
 // CC§14
@@ -677,6 +684,19 @@ const attention = new AttentionTracker((pending, event) => {
   if (event) routeAttentionEvent(event)
 }, loadLastRunAttention())
 attention.asleep = (tabId) => sleepers.has(tabId)
+attention.watching = () => (windowFocused() ? uiActiveTabId : null)
+attention.waitsOnAnother = (tabId) => {
+  const me = sessionOfTab(tabId)
+  return (
+    !!me?.sessionId &&
+    waitsOnOtherWork(
+      me,
+      allSessions(),
+      (id) => startedSessions.parentOfRow(id),
+      (id) => sessionCommand.waitsOnAnother(id)
+    )
+  )
+}
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
@@ -904,7 +924,7 @@ function retractStaleOsNotifications(pending: AttentionEvent[]): void {
 }
 
 function osNotificationText(event: AttentionEvent): { title: string; body: string } {
-  const reason = ATTENTION_REASON[event.kind]
+  const reason = attentionReason(event)
   const folder = projectFolderName(event)
   return {
     title: event.title || PLACEHOLDER_SESSION_TITLE,
@@ -2353,6 +2373,7 @@ function createWindow(): void {
     sendToRenderer(CH.window.focus, true)
     if (blurredAt && Date.now() - blurredAt > WEBGL_REPAIR_BLUR_MS) requestWebglRepair()
     blurredAt = 0
+    if (uiActiveTabId) attention.seen(uiActiveTabId)
     void freshness?.sweep({ host: null })
   })
   mainWindow.on('blur', () => {
@@ -4983,6 +5004,7 @@ function registerIpc(): void {
   ipcMain.on(CH.attention.activeTab, (_e, id: string | null) => {
     uiActiveTabId = typeof id === 'string' && id ? id : null
     if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
+    if (uiActiveTabId && windowFocused()) attention.seen(uiActiveTabId)
     rememberOpenTabs()
   })
 

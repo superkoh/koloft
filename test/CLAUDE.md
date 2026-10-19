@@ -199,7 +199,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - The test window never has OS focus. Read focus from `focusOwner` /
   `document.activeElement`, never `document.hasFocus()` (platform ledger §10). Every
   finished turn leaves an attention mark, seen through `pendingAttention(page)`, and
-  only the session working again clears it — looking at the tab never does. No OS
+  only the session working again clears it — looking at the tab clears only a mark that
+  is only news (`fyi`). No OS
   notification or Dock badge is ever shown; what one would have said is recorded
   instead and read with `osOutlets(app)` (helpers/app.ts). A case about what a user
   watching the tab is spared (the sound, the notification) calls

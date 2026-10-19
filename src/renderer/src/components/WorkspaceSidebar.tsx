@@ -34,7 +34,7 @@ import {
 } from '../icons'
 import type { BackendId, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
-import { ATTENTION_REASON } from '@shared/types'
+import { attentionReason } from '@shared/types'
 import { popoverX } from '@shared/accountUsage'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
@@ -1243,7 +1243,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                     cron={isCronRow}
                     resident={!!row.resident}
                     title={shownTitle(row.title, sess?.title)}
-                    callingReason={calling && ATTENTION_REASON[calling.kind]}
+                    callingReason={calling && attentionReason(calling)}
                     badgeText={badge?.text}
                     badgeLines={badge?.lines.join('\n')}
                     badgeHeading={badge?.heading}

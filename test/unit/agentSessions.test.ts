@@ -93,6 +93,7 @@ function harness(
 ): {
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
   turnEnded: (tabId: string, reply: string, said?: string) => void
+  waitsOnAnother: (sessionId: string) => boolean
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -202,6 +203,7 @@ function harness(
         reply,
         at: 1
       }),
+    waitsOnAnother: inner.waitsOnAnother,
     launched,
     queued,
     closed,
@@ -587,6 +589,17 @@ describe('koloft session send', () => {
         expect.stringMatching(/^\(From the session "me title".*\) What did you find\?$/)
       ])
     )
+  })
+
+  it('the sender waits on another session until the one it wrote to ends its turn', async () => {
+    const all = sessions()
+    const me = all.find((s) => s.tabId === 'me')!.sessionId
+    const { verb, turnEnded, waitsOnAnother } = harness(all)
+    expect(waitsOnAnother(me)).toBe(false)
+    expect((await verb(['send', 'cx', 'Run', 'the tests'], from('me'))).exit).toBe(0)
+    expect(waitsOnAnother(me)).toBe(true)
+    turnEnded('cx', 'All green.')
+    expect(waitsOnAnother(me)).toBe(false)
   })
 
   it('a Muse session reaches an open Muse or Codex session: typed into a Muse one once it is idle, queued on a Codex one, both marked with who sent it', async () => {

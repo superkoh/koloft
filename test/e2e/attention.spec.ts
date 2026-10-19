@@ -1,5 +1,8 @@
+import fs from 'fs'
+import path from 'path'
+import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
-import { installCodex } from './helpers/env'
+import { installCodex, seedSettings } from './helpers/env'
 import { codexRows, startCodex } from './helpers/codex'
 import {
   centerTerm,
@@ -14,6 +17,17 @@ import {
 } from './helpers/p1'
 
 const PAST_TWO_LIVENESS_SWEEPS_MS = 6_000
+
+async function lookAtTheWindow(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    win.isFocused = () => true
+    win.emit('focus')
+  })
+}
+
+const markOn = async (page: Page, tabId: string) =>
+  (await pendingAttention(page)).find((e) => e.tabId === tabId)
 
 test.describe('attention markers come from real session-status transitions (shim → hooks → tracker → attention set)', () => {
   test('a finished turn pends attention and a red dot on its row, visiting the tab keeps both, and only the session working again clears them', async ({
@@ -82,6 +96,60 @@ test.describe('attention markers come from real session-status transitions (shim
 
     await runIn(page, centerTerm(page), '/busy')
     await expect(bell.locator('.ws-unread-count')).toHaveText('1', { timeout: 15_000 })
+  })
+
+  test('a turn that ends while a session it started still works is only news, told by code alone: looking at it clears the dot', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const parentTab = (await page.locator('.ws-tab.active').getAttribute('data-tab-id'))!
+      await expect.poll(() => markOn(page, parentTab), { timeout: 25_000 }).toBeTruthy()
+      const type = (line: string): Promise<void> =>
+        page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [parentTab, line])
+      await type('/koloft session new -- /busy')
+      await waitForCalls(env, 2)
+      await expect(page.locator('.ws-tab.st-working')).toHaveCount(1, { timeout: 20_000 })
+      await type('reporting back')
+      await expect
+        .poll(async () => (await markOn(page, parentTab))?.fyi, { timeout: 20_000 })
+        .toBe(true)
+      await page.locator(`.ws-tab[data-tab-id="${parentTab}"]`).click()
+      await expect(page.locator(`.ws-tab[data-tab-id="${parentTab}"]`)).toHaveClass(/\bactive\b/)
+      expect(await markOn(page, parentTab)).toBeTruthy()
+      await lookAtTheWindow(app)
+      await expect.poll(() => markOn(page, parentTab)).toBeUndefined()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('with Assist on, a finished turn the Assist reads as a report is only news: looking at it clears the dot', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), 'NEWS')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const tab = (await page.locator('.ws-tab.active').getAttribute('data-tab-id'))!
+      await expect.poll(async () => (await markOn(page, tab))?.fyi, { timeout: 30_000 }).toBe(true)
+      await expect(page.locator('.ws-tab-unread')).toHaveAttribute(
+        'title',
+        'turn done — just letting you know'
+      )
+      await lookAtTheWindow(app)
+      await expect.poll(() => markOn(page, tab)).toBeUndefined()
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   test('a graceful /exit clears pending and never raises exited, not even after two liveness sweeps', async ({

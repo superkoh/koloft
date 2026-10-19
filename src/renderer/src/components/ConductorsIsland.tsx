@@ -2,7 +2,7 @@ import { useEffect, useState, type JSX, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { IconAssist, IconChevronDown, IconChevronUp, IconClose, IconPlus } from '../icons'
 import { channelLabel, conductorName, GLOBAL_SCOPE, scopeName } from '@shared/conductors'
-import { ATTENTION_REASON, type AssistTaskRow, type SessionInfo } from '@shared/types'
+import { attentionReason, type AssistTaskRow, type SessionInfo } from '@shared/types'
 import { useStore } from '../store'
 import { rowStateClass } from '../sessionRows'
 import { assistScopes, conductorsNeedYou, conductorTab } from '../conductorRows'
@@ -208,7 +208,7 @@ export function ConductorsIsland(): JSX.Element {
                         <i>{scopeName(scope)}</i>
                       </span>
                       {calling && (
-                        <span className="ws-tab-unread" title={ATTENTION_REASON[calling.kind]} />
+                        <span className="ws-tab-unread" title={attentionReason(calling)} />
                       )}
                     </div>
                     <div className="ws-tab-sub">
@@ -230,9 +230,7 @@ export function ConductorsIsland(): JSX.Element {
                     <span className="ws-tab-title">
                       <i>{task.name}</i>
                     </span>
-                    {calling && (
-                      <span className="ws-tab-unread" title={ATTENTION_REASON[calling.kind]} />
-                    )}
+                    {calling && <span className="ws-tab-unread" title={attentionReason(calling)} />}
                     <button
                       className="icobtn ws-tab-fold"
                       title="Close"
