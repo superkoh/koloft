@@ -1017,7 +1017,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 
   const listRef = useRef<HTMLDivElement>(null)
   const fitHeads = useCallback((): void => {
-    listRef.current?.querySelectorAll<HTMLElement>('.ws-head').forEach(fitGithubCounts)
+    const list = listRef.current
+    if (list) fitGithubCounts(list.querySelectorAll<HTMLElement>('.ws-head'))
   }, [])
   useLayoutEffect(fitHeads, [rows, fitHeads])
   useEffect(() => {
