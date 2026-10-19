@@ -50,3 +50,41 @@ export async function onlyNews(assist: Assist, turn: Turn): Promise<boolean> {
   })
   return answer?.trim().toUpperCase().startsWith('NEWS') ?? false
 }
+
+export interface NewsJudgeDeps {
+  isNews(turn: Turn): Promise<boolean>
+  awaitingVerdict(tabId: string): boolean
+  markFyi(tabId: string): void
+}
+
+export class NewsJudge {
+  private round = new Map<string, number>()
+  private unjudged = new Map<string, Turn>()
+
+  constructor(private readonly d: NewsJudgeDeps) {}
+
+  turnEnded(tabId: string, turn: Turn): void {
+    this.nextRound(tabId)
+    this.unjudged.set(tabId, turn)
+    this.marked(tabId)
+  }
+
+  prompted(tabId: string): void {
+    this.nextRound(tabId)
+    this.unjudged.delete(tabId)
+  }
+
+  marked(tabId: string): void {
+    const turn = this.unjudged.get(tabId)
+    if (!turn || !this.d.awaitingVerdict(tabId)) return
+    this.unjudged.delete(tabId)
+    const round = this.round.get(tabId)
+    void this.d.isNews(turn).then((news) => {
+      if (news && this.round.get(tabId) === round) this.d.markFyi(tabId)
+    })
+  }
+
+  private nextRound(tabId: string): void {
+    this.round.set(tabId, (this.round.get(tabId) ?? 0) + 1)
+  }
+}

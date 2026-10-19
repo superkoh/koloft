@@ -142,14 +142,16 @@ test.describe('attention markers come from real session-status transitions (shim
       const page = await app.firstWindow()
       await waitBooted(page)
       await startSessionIn(page, 'ws-a')
-      const tab = (await page.locator('.ws-tab.active').getAttribute('data-tab-id'))!
-      await expect.poll(async () => (await markOn(page, tab))?.fyi, { timeout: 45_000 }).toBe(true)
+      await runIn(page, centerTerm(page), '/answer the build is green')
+      await expect
+        .poll(async () => (await pendingAttention(page)).map((m) => m.fyi), { timeout: 30_000 })
+        .toEqual([true])
       await expect(page.locator('.ws-tab-unread')).toHaveAttribute(
         'title',
         'turn done — just letting you know'
       )
       await lookAtTheWindow(app)
-      await expect.poll(() => markOn(page, tab)).toBeUndefined()
+      await expect.poll(() => pendingAttention(page)).toEqual([])
     } finally {
       await quitAndClose(app)
     }
@@ -224,8 +226,7 @@ test.describe('attention markers come from real session-status transitions (shim
       await waitBooted(page)
       const { pid } = await startCodex(page, env)
       const row = codexRows(page)
-      await row.click()
-      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(1)
 
       killSession(pid, env)
 

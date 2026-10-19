@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { onlyNews, waitsOnOtherWork, type Helper } from '../../src/main/turnNews'
+import { NewsJudge, onlyNews, waitsOnOtherWork, type Helper } from '../../src/main/turnNews'
 import type { Turn } from '../../src/shared/turns'
 
 const turn = (reply: string): Turn => ({ said: [], reply, at: 1 })
@@ -31,6 +31,51 @@ describe('waitsOnOtherWork — what Koloft itself can see a session waiting on',
     expect(waitsOnOtherWork({ sessionId: 'me' }, helpers, parentOf, nobodyOwes)).toBe(false)
     helpers[0].status = 'approval'
     expect(waitsOnOtherWork({ sessionId: 'me' }, helpers, parentOf, nobodyOwes)).toBe(true)
+  })
+})
+
+describe('NewsJudge — each finished turn is judged once, and only its own mark takes the verdict', () => {
+  function judge() {
+    const verdicts: ((news: boolean) => void)[] = []
+    const marked = new Set<string>()
+    const fyi: string[] = []
+    const j = new NewsJudge({
+      isNews: () => new Promise((resolve) => verdicts.push(resolve)),
+      awaitingVerdict: (tabId) => marked.has(tabId),
+      markFyi: (tabId) => fyi.push(tabId)
+    })
+    const settle = async (news: boolean): Promise<void> => {
+      verdicts.shift()?.(news)
+      await Promise.resolve()
+    }
+    return { j, marked, fyi, verdicts, settle }
+  }
+
+  it('asks once the turn and its mark are both in, in either order, and a flapping mark keeps the verdict', async () => {
+    const { j, marked, fyi, verdicts, settle } = judge()
+    j.turnEnded('tab-A', turn('Done.'))
+    expect(verdicts).toHaveLength(0)
+    marked.add('tab-A')
+    j.marked('tab-A')
+    j.marked('tab-A')
+    expect(verdicts).toHaveLength(1)
+    await settle(true)
+    expect(fyi).toEqual(['tab-A'])
+
+    marked.add('tab-B')
+    j.marked('tab-B')
+    j.turnEnded('tab-B', turn('Merge it?'))
+    await settle(false)
+    expect(fyi).toEqual(['tab-A'])
+  })
+
+  it('a verdict that comes back after the owner wrote again is dropped', async () => {
+    const { j, marked, fyi, settle } = judge()
+    marked.add('tab-A')
+    j.turnEnded('tab-A', turn('Done.'))
+    j.prompted('tab-A')
+    await settle(true)
+    expect(fyi).toEqual([])
   })
 })
 

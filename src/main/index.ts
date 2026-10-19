@@ -468,7 +468,7 @@ import {
 import { crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
-import { onlyNews, waitsOnOtherWork } from './turnNews'
+import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -535,14 +535,16 @@ const readerDocs = new ReaderDocs({
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
     void readerDocs.turnEnded(tabId, turn)
-    turnsToJudge.set(tabId, turn)
-    judgeTurnNews(tabId)
+    newsJudge.turnEnded(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
     discordNotices?.turnEnded(tabId, turn.reply)
     sessionCommand.turnEnded(tabId, turn)
   },
-  prompted: consumeOutletDedupe,
+  prompted: (tabId) => {
+    consumeOutletDedupe(tabId)
+    newsJudge.prompted(tabId)
+  },
   bound: (tabId, key) => {
     attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
@@ -569,15 +571,11 @@ function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
 
-const turnsToJudge = new Map<string, Turn>()
-
-function judgeTurnNews(tabId: string): void {
-  const turn = turnsToJudge.get(tabId)
-  const raisedAt = attention.unjudgedTurnDone(tabId)
-  if (!turn || raisedAt === undefined) return
-  turnsToJudge.delete(tabId)
-  void onlyNews(assist, turn).then((news) => news && attention.markFyi(tabId, raisedAt))
-}
+const newsJudge = new NewsJudge({
+  isNews: (turn) => onlyNews(assist, turn),
+  awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
+  markFyi: (tabId) => attention.markFyi(tabId)
+})
 
 // CC§14
 function asksTheOwner(tabId: string): boolean {
@@ -691,7 +689,7 @@ const attention = new AttentionTracker((pending, event) => {
 }, loadLastRunAttention())
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
-attention.turnDone = (tabId) => judgeTurnNews(tabId)
+attention.turnDone = (tabId) => newsJudge.marked(tabId)
 attention.waitsOnAnother = (tabId) => {
   const me = sessionOfTab(tabId)
   return (
@@ -2665,7 +2663,6 @@ app.whenReady().then(() => {
     if (conductor && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     discordNotices?.onStatus(t.tabId, t.prev, t.next)
-    if (t.next === 'working') turnsToJudge.delete(t.tabId)
     void discordLive?.refresh(t.tabId)
     if (!(conductor && t.next === 'waiting'))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))

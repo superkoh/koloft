@@ -67,14 +67,14 @@ export class AttentionTracker {
     return this.pending.get(tabId)?.kind === 'approval'
   }
 
-  unjudgedTurnDone(tabId: string): number | undefined {
+  awaitingVerdict(tabId: string): boolean {
     const cur = this.pending.get(tabId)
-    return cur?.kind === 'turn-done' && !cur.fyi ? cur.at : undefined
+    return cur?.kind === 'turn-done' && !cur.fyi
   }
 
-  markFyi(tabId: string, raisedAt: number): void {
+  markFyi(tabId: string): void {
     const cur = this.pending.get(tabId)
-    if (cur?.kind !== 'turn-done' || cur.fyi || cur.at !== raisedAt) return
+    if (cur?.kind !== 'turn-done' || cur.fyi) return
     if (this.watching() === tabId) return this.drop(tabId)
     this.pending.set(tabId, { ...cur, fyi: true })
     this.onChange(this.list(), null)
