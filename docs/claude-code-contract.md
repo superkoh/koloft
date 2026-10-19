@@ -1324,7 +1324,8 @@ other bullets of §9 were not re-measured on this build.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
 branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`,
-`src/main/claudeTrust.ts`, the env scrub in `src/main/ptyManager.ts`,
+`src/main/claudeTrust.ts`, the env scrubs in `src/main/ptyManager.ts` and
+`scripts/code-review.mjs`,
 `src/main/leftovers.ts`, the warm-up `claude -p ok --max-turns 1` in
 `src/main/remote/launch.ts`, and the remote launch and trust in
 `src/main/host/sshHost.ts`.
@@ -2066,3 +2067,46 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   `agent-tools-real-smoke.spec.ts`), a Chinese note then `ls` (75 ms) or `sleep 2`: the
   hook still read the previous turn's English reply both times, and saw the Chinese note
   at the next tool call.
+
+## §20 `/code-review <level>` run under `claude -p`
+
+How established: 2026-10-17 to 10-19, CC 2.1.302, on this Mac, from inside a Koloft tab
+through the claude shim: 317 runs of `claude -p "/code-review <level>
+origin/main...HEAD" --model claude-opus-5-5 --output-format json --allowedTools
+'Bash(git:*)' Read Grep Glob Agent`, 3 at a time, each in a fresh checkout of a past
+Koloft PR, the parent session's markers removed as §9 says. The levels' steps were
+read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10-19).
+
+- **The level picks the review's steps and also sets the model's thinking effort.**
+  For Opus 5.5, `medium` and `high` run the same steps and differ only in effort.
+  `low` reads the diff once and opens no other file.
+- **Only `low` skips test files.** Its steps say test and fixture hunks are not
+  reviewed at that level; `medium`'s and `high`'s say nothing of the kind. `low` named
+  no file under `test/` in 52 runs; `medium` did 16 times in 104.
+- **`low` stops part way on a big diff.** On diffs over about 100 KB, 7 of 52 `low`
+  runs said they had read only the first part, and still answered `(none)`.
+- **Two runs of one level on one diff find different things.** Of the known bugs four
+  `medium` runs per PR caught, each was caught by only one of the four.
+- **What each choice caught, cost and took.** The 26 PRs were 8 that brought in 12
+  bugs fixed later, 9 with an old fix reverted into them and 9 that never needed a fix;
+  a Fable judge marked which findings named a known bug. "×3" is three fresh runs
+  merged; its range is every 3-of-4 subset of four runs (high end) against each bug's
+  chance per run taken as independent (low end).
+
+  | | later-fixed bugs caught, of 12 | per PR, list price | median / slowest run |
+  |---|---|---|---|
+  | `low` ×1 | 0 | $0.22 | 0.3 / 0.9 min |
+  | `medium` ×1 | 1.0 | $0.89 | 2.7 / 9.4 min |
+  | `medium` ×3 | 2.3–3.0 | $2.66 | 3.1 / 9.4 min |
+  | `high` ×2 | 2.4–2.7 | $3.07 | 4.9 / 20.1 min |
+  | `high` ×3 | 2.9–3.5 | $4.61 | 5.1 / 20.1 min |
+  | `xhigh` ×1 | 2.5 | $6.31 | 17.8 / 29 min |
+  | `max` ×1 | 1 of the 2 it finished | about $132 | 88–103 min |
+
+  In a blind sample of 35 `medium` findings, 2 were real defects, 19 right but minor,
+  8 suggestions and 6 wrong.
+- **Three at once hit no limit at `medium` or `high`.** None of their 208 runs came back
+  with a usage-limit result; 3 of 5 `max` runs did.
+- **The findings are the result text.** `(none)` means the review found nothing.
+
+Koloft dependents: `scripts/code-review.mjs` and ADR-0040.
