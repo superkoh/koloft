@@ -114,6 +114,7 @@ interface AppState {
   sidebarWidth: number
   notesHeight: number
   workspaceRows: WorkspaceRows[]
+  butlerWorkspace: WorkspaceRows | null
   toast: string | null
   toastReveal: string | null
   workbenchOpen: Record<string, boolean>
@@ -505,6 +506,7 @@ export const useStore = create<AppState>((set, get) => ({
   sidebarWidth: DEFAULT_SETTINGS.sidebarWidth,
   notesHeight: DEFAULT_SETTINGS.notesHeight,
   workspaceRows: [],
+  butlerWorkspace: null,
   toast: null,
   toastReveal: null,
   workbenchOpen: {},
@@ -881,11 +883,17 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ workbenchWidth: w, workbenchWidths: { ...s.workbenchWidths, [tabId]: w } })),
   setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
   setNotesHeight: (notesHeight) => set({ notesHeight }),
-  setWorkspaceRows: (workspaceRows) =>
-    set((s) => ({
-      workspaceRows,
-      selectedWs: workspaceRows.some((w) => w.workspace.path === s.selectedWs) ? s.selectedWs : null
-    })),
+  setWorkspaceRows: (all) =>
+    set((s) => {
+      const workspaceRows = all.filter((w) => !w.workspace.butler)
+      return {
+        workspaceRows,
+        butlerWorkspace: all.find((w) => w.workspace.butler) ?? null,
+        selectedWs: workspaceRows.some((w) => w.workspace.path === s.selectedWs)
+          ? s.selectedWs
+          : null
+      }
+    }),
   showToast: (msg, reveal) => {
     if (toastTimer) clearTimeout(toastTimer)
     toastTimer = setTimeout(() => {

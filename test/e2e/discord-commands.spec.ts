@@ -12,7 +12,7 @@ import {
   waitBooted,
   waitConductorStarted,
   assistRecordOnDisk,
-  waitForCallsBesideConductors,
+  waitForCalls,
   wsRows,
   oneStillRunning
 } from './helpers/p1'
@@ -118,7 +118,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
         .poll(() => fake.commands.map((c) => c.name).sort())
         .toEqual(['clear', 'compact', 'run'])
       await startSessionIn(page, 'ws-a')
-      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
+      const child = (await waitForCalls(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
 
       const listed = await choices(fake, '')
@@ -250,7 +250,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-a')
-      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
+      const child = (await waitForCalls(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
       const tab = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.sessionId === child
@@ -346,7 +346,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-a')
-      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
+      const child = (await waitForCalls(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
 
       fake.say(OWNER, `/koloft session command ${child} /context`)

@@ -9,7 +9,6 @@ import {
   type ConductorDeps
 } from '../../src/main/discord/conductors'
 import type { AssistRecord, BackendId, DiscordSettings } from '@shared/types'
-import { CODEX_GATE_NOT_TRUSTED } from '../../src/main/conductorGate'
 
 const CHANNEL = { guildId: '100', channelId: '200', name: 'global' }
 const DEADLINE_MS = 1000
@@ -29,7 +28,6 @@ let toasts: string[]
 let taskPushes: number
 let transcripts: Set<string>
 let choice: AssistBackendChoice
-let codexRefusesTheGate: boolean
 let release: () => void
 let testRun = 0
 
@@ -48,20 +46,17 @@ function make(): Conductors {
     save: (d) => void (saved = d),
     saveQuietly: (d) => void quiet.push(d),
     saveRecords: (r) => void (records = r),
-    backend: async (avoid) =>
-      avoid ? { backend: avoid === 'codex' ? 'claude' : 'codex' } : choice,
+    backend: async () => choice,
     tabAlive: (tabId) => !killed.includes(tabId),
     liveTabFor: () => undefined,
     runningElsewhere: async () => false,
     transcriptExists: async (_backend, key) => transcripts.has(key),
     start: async (l) => {
-      if (codexRefusesTheGate && l.backend === 'codex') throw new Error(CODEX_GATE_NOT_TRUSTED)
       started.push({ cwd: l.cwd, role: l.role, title: l.title, backend: l.backend })
       await new Promise<void>((r) => (release = r))
       return `tab-${started.length}`
     },
     resume: async (l) => {
-      if (codexRefusesTheGate && l.backend === 'codex') throw new Error(CODEX_GATE_NOT_TRUSTED)
       resumed.push(l.key)
       return `tab-resumed-${l.key}`
     },
@@ -109,7 +104,6 @@ beforeEach(() => {
   taskPushes = 0
   transcripts = new Set()
   choice = { backend: 'claude' }
-  codexRefusesTheGate = false
   release = () => {}
 })
 
@@ -158,32 +152,40 @@ describe('the butler', () => {
     expect(started[0].title).toBe('Jeeves')
     expect(started[0].role).toMatch(/^Who you are\nYou are Jeeves, the owner's butler in Koloft/)
     expect(started[0].role).not.toContain('[Discord]')
+    c.onBound('tab-1', 's1')
     c.bind(CHANNEL, 'claude')
-    expect(c.identityOfLaunch(conductorFolder(userData))?.role).toContain('start with [Discord]')
+    expect(c.identityOfLaunch(conductorFolder(userData), 's1')?.role).toContain(
+      'start with [Discord]'
+    )
   })
 
   // ADR-0029
   it('its folder is recognised whether the launch names it through a symlink or by its real path', () => {
+    records = [{ scope: 'global', sessionIds: ['s1'] }]
     const real = fs.realpathSync(userData)
     const linked = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-link-')), 'userData')
     fs.symlinkSync(real, linked)
     userData = linked
     const c = make()
     fs.mkdirSync(conductorFolder(linked), { recursive: true })
-    expect(c.identityOfLaunch(conductorFolder(real))?.scope).toBe('global')
-    expect(c.identityOfLaunch(conductorFolder(linked))?.scope).toBe('global')
+    expect(c.identityOfLaunch(conductorFolder(real), 's1')?.scope).toBe('global')
+    expect(c.identityOfLaunch(conductorFolder(linked), 's1')?.scope).toBe('global')
     userData = real
   })
 
   // ADR-0029
-  it('a launch in its folder is the butler by the folder alone, so any resume or wake gets its role and its gate; a workspace Assist’s old folder is no longer one', () => {
+  it('a resume of a recorded butler session in its folder is the butler, so it gets its role back; a fresh launch or another session there is a helper it started, and a workspace Assist’s old folder is no butler at all', () => {
+    records = [{ scope: 'global', sessionIds: ['s1', 'codex:local:t1'] }]
     const c = make()
     fs.mkdirSync(conductorFolder(userData), { recursive: true })
-    expect(c.identityOfLaunch(conductorFolder(userData) + '/')?.role).toMatch(/^Who you are/)
-    expect(c.identityOfLaunch('/ws/a')).toBeUndefined()
+    expect(c.identityOfLaunch(conductorFolder(userData) + '/', 's1')?.role).toMatch(/^Who you are/)
+    expect(c.identityOfLaunch(conductorFolder(userData), 't1')?.role).toMatch(/^Who you are/)
+    expect(c.identityOfLaunch(conductorFolder(userData))).toBeUndefined()
+    expect(c.identityOfLaunch(conductorFolder(userData), 'helper-1')).toBeUndefined()
+    expect(c.identityOfLaunch('/ws/a', 's1')).toBeUndefined()
     const oldWorkspaceAssist = path.join(userData, 'conductors', '0123456789abcdef')
     fs.mkdirSync(oldWorkspaceAssist, { recursive: true })
-    expect(c.identityOfLaunch(oldWorkspaceAssist)).toBeUndefined()
+    expect(c.identityOfLaunch(oldWorkspaceAssist, 's1')).toBeUndefined()
   })
 
   it('every session it binds stays hidden and the newest is the one to resume', async () => {
@@ -235,36 +237,6 @@ describe('the butler', () => {
     c.onPtyExit('tab-1', false)
     choice = { error: 'Alfred cannot start: no.' }
     expect(await c.open()).toEqual({ ok: false, error: 'Alfred cannot start: no.' })
-  })
-
-  // ADR-0029 CODEX§27
-  it('when Codex would not run the safety check, the butler and its ⌘P tasks start on Claude instead and say why', async () => {
-    choice = { backend: 'codex' }
-    codexRefusesTheGate = true
-    const c = make()
-    await opened(c)
-    await openedTask(c, 'T')
-    expect(started.map((s) => s.backend)).toEqual(['claude', 'claude'])
-    expect(toasts).toEqual([
-      `Alfred runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`,
-      `Alfred runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`
-    ])
-  })
-
-  // ADR-0029 CODEX§27
-  it('a Codex butler that has talked before and is refused its safety check on resume starts a new conversation on Claude and says why', async () => {
-    const codexThread = 'codex:local:11111111-1111-4111-8111-111111111111'
-    records = [{ scope: 'global', sessionIds: [codexThread], lastSessionKey: codexThread }]
-    transcripts.add(codexThread)
-    choice = { backend: 'codex' }
-    codexRefusesTheGate = true
-    await opened(make())
-    expect(resumed).toEqual([])
-    expect(started.map((s) => s.backend)).toEqual(['claude'])
-    expect(toasts).toEqual([
-      `Alfred runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`,
-      'Alfred now runs on Claude, so it starts a new conversation.'
-    ])
   })
 
   it('one that never binds before the deadline is closed and reported, and its tab counts as the butler’s until it is gone', async () => {

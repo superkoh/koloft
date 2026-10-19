@@ -29,12 +29,12 @@ session pushes work into one that asks more than it does.
 the claimed class no longer matches and the message would be held. So the Assist's
 settings take `crossSessionInbound: "accept"` (CC§13), which removes the hold for the
 Assist alone: any local session's message reaches it whatever class it claims. This is
-acceptable because the Assist's gate (ADR-0029) already limits what it can do, whoever
-asked.
+acceptable because every session may already press keys in any other session with
+`koloft session keys`, so the hold would stop nothing a session could not do anyway.
 **Spoof check, and its limit**: the Assist's role tells it a message starting with
 `[Discord]` is the owner's own words. Koloft notes the id of every Discord message it
 sends in `<tab>.discord-ids`, and the Assist's `UserPromptSubmit` hook flags a
 `[Discord]` message whose id is not there. That file is readable by any program the same
 user runs, so the check only catches a session that writes `[Discord]` by accident (for
 example in a `koloft session send`); a program set on pretending to be the owner can
-read an id and is stopped only by the gate.
+read an id, and nothing stops it.

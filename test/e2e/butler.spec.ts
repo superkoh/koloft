@@ -2,15 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import {
-  installCodex,
-  installMuse,
-  museCalls,
-  museSaid,
-  seedSettings,
-  type E2EEnv
-} from './helpers/env'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { installCodex, installMuse, museCalls, seedSettings, type E2EEnv } from './helpers/env'
 import {
   assistRecordOnDisk,
   centerTerm,
@@ -21,7 +14,7 @@ import {
   notesOnDisk,
   notesPath,
   openMenu,
-  readCalls,
+  readAllCalls,
   runIn,
   seedJsonl,
   sendShortcut,
@@ -29,7 +22,7 @@ import {
   startSessionIn,
   waitBooted,
   resumedId,
-  waitForCalls,
+  waitForAllCalls,
   wsRows
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
@@ -44,9 +37,6 @@ import {
 } from './helpers/remote'
 import { GLOBAL_SCOPE } from '../../src/shared/conductors'
 import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
-
-const GATE_HOOK_ON_THE_COMMAND_LINE =
-  'hooks.PreToolUse=[{hooks=[{type="command",command="sh \\"$KOLOFT_CODEX_GATE\\""}]}]'
 
 test.setTimeout(120_000)
 
@@ -79,16 +69,15 @@ function codexServers(env: E2EEnv): { argv: string[]; codexGate: string | null }
     .map((line) => JSON.parse(line))
 }
 
-function gateTrustTables(env: E2EEnv): number {
-  const config = fs.readFileSync(path.join(env.home, '.codex', 'config.toml'), 'utf8')
-  return config.split('[hooks.state."/<session-flags>/config.toml:pre_tool_use:0:0"]').length - 1
+function butlerSettingsOf(call: { argv: string[] }): {
+  hooks: Record<string, { hooks: { command: string }[] }[] | undefined>
+  crossSessionInbound?: string
+} {
+  return JSON.parse(fs.readFileSync(call.argv[call.argv.indexOf('--settings') + 1], 'utf8'))
 }
 
 function gateSays(call: { argv: string[] }, event: unknown): string {
-  const settings = JSON.parse(
-    fs.readFileSync(call.argv[call.argv.indexOf('--settings') + 1], 'utf8')
-  ) as { hooks: Record<string, { hooks: { command: string }[] }[] | undefined> }
-  const command = settings.hooks.PreToolUse?.[0].hooks[0].command
+  const command = butlerSettingsOf(call).hooks.PreToolUse?.[0].hooks[0].command
   if (!command) return 'no gate'
   const res = spawnSync('/bin/sh', ['-c', command], {
     input: JSON.stringify(event),
@@ -125,8 +114,8 @@ async function butlerTabId(page: Page, env: E2EEnv): Promise<string> {
   return live.tabId
 }
 
-function butlerCalls(env: E2EEnv): ReturnType<typeof readCalls> {
-  return readCalls(env).filter((c) => c.cwd === butlerFolder(env))
+function butlerCalls(env: E2EEnv): ReturnType<typeof readAllCalls> {
+  return readAllCalls(env).filter((c) => c.cwd === butlerFolder(env))
 }
 
 function shownTermText(page: Page): Promise<string> {
@@ -210,7 +199,7 @@ async function launched(
 
 test.describe('The butler: one global session at the top of the sessions list, kept out of every workspace list', () => {
   // ADR-0029
-  test('the butler is the first row of the sessions list, opens in its own folder under userData, may only read and run koloft, stays out of the workspace rows across /clear, raises no turn-done mark, and its menu binds, changes and unbinds its one Discord channel', async ({
+  test('the butler is the first row of the sessions list, opens in its own folder under userData with no gate and the owner’s skip-permissions setting, stays out of the workspace rows across /clear, and its menu binds, changes and unbinds its one Discord channel', async ({
     env
   }) => {
     const { page, close } = await launched(env)
@@ -229,7 +218,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await closeMenu(page)
 
       await openButler(page)
-      const call = (await waitForCalls(env, 1))[0]
+      const call = (await waitForAllCalls(env, 1))[0]
       expect(call.cwd).toBe(butlerFolder(env))
       expect(call.argv).toContain('--plugin-dir')
       expect(call.argv).not.toContain('--append-system-prompt-file')
@@ -239,16 +228,13 @@ test.describe('The butler: one global session at the top of the sessions list, k
         tool_name: 'Write',
         tool_input: { file_path: path.join(env.workspaces.a, 'x') }
       }
-      expect(gateSays(call, write)).toBe('deny')
-      expect(gateSays(call, { tool_name: 'Bash', tool_input: { command: 'koloft help' } })).toBe(
-        'allow'
-      )
+      expect(gateSays(call, write)).toBe('no gate')
+      expect(call.argv).toContain('--dangerously-skip-permissions')
 
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
       await expect(wsRows(page, 'ws-b')).toHaveCount(0)
       const tabId = await butlerTabId(page, env)
-      expect((await pendingAttention(page)).filter((e) => e.tabId === tabId)).toEqual([])
 
       await page.evaluate((id) => window.api.terminal.write(id, '/clear\r'), tabId)
       await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(2)
@@ -284,6 +270,32 @@ test.describe('The butler: one global session at the top of the sessions list, k
       expect(
         (await page.evaluate(() => window.api.sessions.list())).some((s) => s.tabId === tabId)
       ).toBe(true)
+    } finally {
+      await close()
+    }
+  })
+
+  test('without --workspace the butler starts a helper in its own folder: it hangs under the butler row, is told the butler’s goals and to report back, shares the butler’s note, and is no workspace row', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env)
+    try {
+      await openButler(page)
+      const tabId = await butlerTabId(page, env)
+      await page.evaluate(
+        (id) => window.api.terminal.write(id, '/koloft session new -- look into the logs\r'),
+        tabId
+      )
+      const [, helper] = await waitForAllCalls(env, 2, 60_000)
+      expect(helper.cwd).toBe(butlerFolder(env))
+      expect(helper.firstPrompt).toContain("You are Alfred, the owner's butler in Koloft")
+      expect(helper.firstPrompt).toContain('This session is not Alfred itself')
+      const helperRow = page.locator('.isl-butler .ws-subtabs > .ws-tab')
+      await expect(helperRow).toHaveCount(1, { timeout: 60_000 })
+      await expect(wsRows(page, 'ws-a')).toHaveCount(0)
+      await expect(wsRows(page, 'ws-b')).toHaveCount(0)
+      await helperRow.click()
+      await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · Alfred')
     } finally {
       await close()
     }
@@ -358,7 +370,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
   })
 
   // ADR-0029
-  test('a Codex butler gets its role as developer instructions, runs in its own folder with approvals off and the workspace-write sandbox, and its session stays out of the workspace rows', async ({
+  test('a Codex butler gets its role as developer instructions, runs in its own folder with no gate and the owner’s skip-permissions setting — approvals never and the danger-full-access sandbox, like any tab — and its session stays out of the workspace rows', async ({
     env
   }) => {
     installCodex(env)
@@ -374,15 +386,15 @@ test.describe('The butler: one global session at the top of the sessions list, k
           )
         )
       ).toBe(true)
-      const butlerServers = servers.filter((s) => s.codexGate)
-      expect(butlerServers.length).toBeGreaterThan(0)
-      for (const s of butlerServers) expect(s.argv).toContain(GATE_HOOK_ON_THE_COMMAND_LINE)
-      expect(gateTrustTables(env)).toBe(1)
+      for (const s of servers) {
+        expect(s.codexGate).toBeNull()
+        expect(s.argv.some((a) => a.startsWith('hooks.PreToolUse='))).toBe(false)
+      }
       const tui = firstCodexCall(env)
       expect(tui.cwd).toBe(butlerFolder(env))
-      expect(tui.argv[tui.argv.indexOf('-s') + 1]).toBe('workspace-write')
+      expect(tui.argv[tui.argv.indexOf('-s') + 1]).toBe('danger-full-access')
       expect(tui.argv[tui.argv.indexOf('-a') + 1]).toBe('never')
-      expect(readCalls(env)).toEqual([])
+      expect(readAllCalls(env)).toEqual([])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
     } finally {
@@ -390,8 +402,8 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
-  // ADR-0029 MUSE§9 MUSE§12
-  test('a Muse butler is told its role when its session starts, never stops to ask, runs in its own folder, its hook lets it write only inside that folder, and its session stays out of the workspace rows', async ({
+  // ADR-0029 MUSE§12
+  test('a Muse butler is told its role when its session starts, runs in its own folder with the owner’s skip-permissions setting like any tab, and its session stays out of the workspace rows', async ({
     env
   }) => {
     installMuse(env)
@@ -401,51 +413,12 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
       const [call] = museCalls(env)
       expect(call.cwd).toBe(butlerFolder(env))
-      expect(call.argv).toEqual(['--approval-mode', 'never', '--sandbox-network', 'enabled'])
-      const tabId = await butlerTabId(page, env)
-      const type = (line: string): Promise<void> =>
-        page.evaluate(([id, text]) => window.api.terminal.write(id, text + '\r'), [tabId, line])
-      await type('/write ../escaped.md')
-      await expect
-        .poll(() => museSaid(env, call.sessionId).join('\n'))
-        .toContain('Blocked: Koloft: the butler only passes work on')
-      expect(fs.existsSync(path.join(path.dirname(call.cwd), 'escaped.md'))).toBe(false)
-      await type('/write notes.md')
-      await expect.poll(() => fs.existsSync(path.join(call.cwd, 'notes.md'))).toBe(true)
+      expect(call.argv).toEqual(['--permission-profile', ':unrestricted'])
       const told = fs.readFileSync(path.join(env.home, 'fake-muse-told.jsonl'), 'utf8')
       expect(told).toContain(BUTLER_ROLE_OPENS)
-      expect(readCalls(env)).toEqual([])
+      expect(readAllCalls(env)).toEqual([])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
-    } finally {
-      await close()
-    }
-  })
-
-  // ADR-0029 CODEX§27
-  test('a Codex butler whose safety check Codex will not trust never starts on Codex: Koloft trusts the check once, asks again, refuses, and opens the butler on Claude instead, saying why', async ({
-    env
-  }) => {
-    installCodex(env)
-    fs.writeFileSync(path.join(env.home, 'fake-codex-hook-untrusted'), '')
-    const { page, close } = await launched(env, { assist: { on: true, backend: 'codex' } })
-    try {
-      await butlerRow(page).click()
-      await expect(
-        page.locator('.toast', {
-          hasText: "Alfred runs on Claude this time: Codex would not run Koloft's safety check"
-        })
-      ).toBeVisible()
-      await expect(butlerRow(page)).toHaveClass(/st-waiting/, { timeout: 60_000 })
-
-      expect(fs.existsSync(path.join(env.home, 'fake-codex-calls.jsonl'))).toBe(false)
-      const butlerServers = codexServers(env).filter((s) => s.codexGate)
-      expect(butlerServers.length).toBeGreaterThan(0)
-      for (const s of butlerServers) expect(s.argv).toContain(GATE_HOOK_ON_THE_COMMAND_LINE)
-      expect(gateTrustTables(env)).toBe(1)
-      const claude = readCalls(env)
-      expect(claude).toHaveLength(1)
-      expect(claude[0].cwd).toBe(butlerFolder(env))
     } finally {
       await close()
     }
@@ -496,7 +469,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
     try {
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
-      const claudeId = (await waitForCalls(env, 1))[0].sessionId
+      const claudeId = (await waitForAllCalls(env, 1))[0].sessionId
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await newSessionInWith(page, 'ws-b', 'Codex')
@@ -549,9 +522,9 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
     installCodex(env)
     const { page, close } = await launched(env)
     try {
-      await startSessionIn(page, 'ws-b')
-      const elsewhere = (await waitForCalls(env, 1))[0].sessionId
-      await startSessionIn(page, 'ws-a')
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
+      const elsewhere = (await waitForAllCalls(env, 1))[0].sessionId
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
 
       const workspaces = await koloftRun(page, 'workspace list')
       expect(workspaces.exit).toBe(0)
@@ -614,21 +587,21 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
   })
 })
 
-test.describe('The butler without Discord: talked to from the sidebar, gated however its session is started', () => {
+test.describe('The butler without Discord: talked to from the sidebar, the butler however its session is started', () => {
   // ADR-0029
-  test('with no Discord at all the butler row says it is not on Discord, and resuming its session the ordinary way is still gated and kept out of the workspace rows', async ({
+  test('with no Discord at all the butler row says it is not on Discord, and resuming its session the ordinary way is still the butler, ungated, and kept out of the workspace rows', async ({
     env
   }) => {
     const { page, close } = await launched(env)
     try {
       await openButler(page)
-      const first = (await waitForCalls(env, 1))[0]
+      const first = (await waitForAllCalls(env, 1))[0]
       expect(first.cwd).toBe(butlerFolder(env))
       const write = {
         tool_name: 'Write',
         tool_input: { file_path: path.join(env.workspaces.a, 'x') }
       }
-      expect(gateSays(first, write)).toBe('deny')
+      expect(gateSays(first, write)).toBe('no gate')
       await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
       await expect(butlerRow(page).locator('.ws-tab-sub')).toHaveText(NOT_ON_DISCORD)
 
@@ -644,9 +617,10 @@ test.describe('The butler without Discord: talked to from the sidebar, gated how
         sessionId: key,
         cwd: first.cwd
       })
-      const resumed = (await waitForCalls(env, 2))[1]
+      const resumed = (await waitForAllCalls(env, 2))[1]
       expect(resumedId(resumed)).toBe(key)
-      expect(gateSays(resumed, write)).toBe('deny')
+      expect(gateSays(resumed, write)).toBe('no gate')
+      expect(butlerSettingsOf(resumed).crossSessionInbound).toBe('accept')
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
     } finally {
@@ -661,14 +635,10 @@ test.describe('The butler without Discord: talked to from the sidebar, gated how
     try {
       const setup = page.getByRole('dialog', { name: 'Koloft Assist' })
       await expect(setup).toBeVisible()
-      await setup.getByRole('button', { name: 'Not now' }).click()
-      await expect(setup).toHaveCount(0)
       await expect(butlerRow(page)).toHaveClass(/\bcold\b/)
       await expect(butlerRow(page).locator('.ws-tab-title')).toHaveText('Alfred · Butler')
       await expect(butlerRow(page).locator('.ws-tab-sub')).toHaveText('Not set up — click to start')
-      await butlerRow(page).click()
-      await expect(setup).toBeVisible()
-      expect(readCalls(env)).toEqual([])
+      expect(readAllCalls(env)).toEqual([])
     } finally {
       await close()
     }

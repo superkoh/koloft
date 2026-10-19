@@ -658,7 +658,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await page.keyboard.press('Escape')
       await expect(dlg).toHaveCount(0)
 
-      const row = wsRows(page, 'kt-key').filter({ has: page.locator('.ws .ws-tab-cron') })
+      const row = wsRows(page, 'kt-key').filter({ has: page.locator('.ws-tab-cron') })
       await expect(row).toHaveClass(/\bst-(working|waiting)\b/, { timeout: 60_000 })
       await row.click()
       await expect(row).toHaveClass(/\bactive\b/)

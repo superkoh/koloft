@@ -18,13 +18,11 @@ import { assistTaskName, GLOBAL_SCOPE, newerSnowflake, peerNamesOf } from '@shar
 import { assistTaskRole, butlerRole } from '@shared/agentGuide'
 import { errorText } from '../agentRequests'
 import { realpathSafe } from '../projectInfo'
-import { CODEX_GATE_NOT_TRUSTED } from '../conductorGate'
 
 export interface ConductorLaunch {
   backend: BackendId
   cwd: string
   role: string
-  allow?: string[]
   title: string
   firstPrompt?: string
 }
@@ -41,7 +39,6 @@ export interface AssistTask {
 export interface AssistIdentity {
   scope: string
   role: string
-  allow: string[]
   task?: string
 }
 
@@ -53,7 +50,7 @@ export interface ConductorDeps {
   save(discord: DiscordSettings): void
   saveQuietly(discord: DiscordSettings): void
   saveRecords(records: AssistRecord[]): void
-  backend(avoid?: BackendId): Promise<AssistBackendChoice>
+  backend(): Promise<AssistBackendChoice>
   tabAlive(tabId: string): boolean
   liveTabFor(backend: BackendId, key: string): string | undefined
   runningElsewhere(backend: BackendId, key: string): Promise<boolean>
@@ -179,9 +176,13 @@ export class Conductors {
     return (
       peerNamesOf(this.d.name()).includes(ref) ||
       [...this.launchedAs].some((name) => peerNamesOf(name).includes(ref)) ||
-      !!this.record()?.sessionIds.some(
-        (key) => key === ref || identityOf(key).nativeSessionId === ref
-      )
+      this.recorded(ref)
+    )
+  }
+
+  private recorded(ref: string): boolean {
+    return !!this.record()?.sessionIds.some(
+      (key) => key === ref || identityOf(key).nativeSessionId === ref
     )
   }
 
@@ -235,10 +236,11 @@ export class Conductors {
   // ADR-0029
   identityOfLaunch(cwd: string, resumeKey?: string): AssistIdentity | undefined {
     const launched = realpathSafe(path.resolve(cwd))
-    if (realpathSafe(conductorFolder(this.d.userData)) !== launched) return undefined
-    const task = resumeKey ? this.tasks.find((t) => t.key === resumeKey) : undefined
-    if (task) return { scope: GLOBAL_SCOPE, role: task.role, allow: [], task: task.name }
-    return { scope: GLOBAL_SCOPE, role: this.role(), allow: [] }
+    if (realpathSafe(conductorFolder(this.d.userData)) !== launched || !resumeKey) return undefined
+    const task = this.tasks.find((t) => t.key === resumeKey)
+    if (task) return { scope: GLOBAL_SCOPE, role: task.role, task: task.name }
+    if (!this.recorded(resumeKey)) return undefined
+    return { scope: GLOBAL_SCOPE, role: this.role() }
   }
 
   private role(): string {
@@ -445,28 +447,11 @@ export class Conductors {
     return { backend, cwd, role: this.role(), title }
   }
 
-  // ADR-0029 CODEX§27
-  private async onClaudeIfCodexRefusedTheGate(
-    choice: AssistBackendPick,
-    open: (choice: AssistBackendPick) => Promise<ConductorOpenResult>
-  ): Promise<ConductorOpenResult> {
-    const result = await open(choice)
-    if (result.ok || choice.backend !== 'codex' || result.error !== CODEX_GATE_NOT_TRUSTED)
-      return result
-    const fallback = await this.d.backend('codex')
-    if ('error' in fallback) return refusal(fallback.error)
-    this.d.toast(
-      `${this.d.name()} runs on ${BACKEND_LABEL[fallback.backend]} this time: ${CODEX_GATE_NOT_TRUSTED}`
-    )
-    return open({ backend: fallback.backend })
-  }
-
   private async openNow(): Promise<ConductorOpenResult> {
     const tab = this.liveTab()
     if (tab) return { ok: true, tabId: tab }
     const choice = await this.d.backend()
-    if ('error' in choice) return refusal(choice.error)
-    return this.onClaudeIfCodexRefusedTheGate(choice, (c) => this.openOn(c))
+    return 'error' in choice ? refusal(choice.error) : this.openOn(choice)
   }
 
   private async openOn(choice: AssistBackendPick): Promise<ConductorOpenResult> {
@@ -510,8 +495,7 @@ export class Conductors {
     const running = this.tasks.find((t) => t.name === task.name)
     if (running) return { ok: true, tabId: running.tabId }
     const choice = await this.d.backend()
-    if ('error' in choice) return refusal(choice.error)
-    return this.onClaudeIfCodexRefusedTheGate(choice, (c) => this.openTaskOn(task, c))
+    return 'error' in choice ? refusal(choice.error) : this.openTaskOn(task, choice)
   }
 
   private async openTaskOn(

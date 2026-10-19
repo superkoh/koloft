@@ -5,13 +5,13 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, installFakeGh, setGithubFixture, type E2EEnv } from './helpers/env'
 import {
   gitInit,
-  readCalls,
+  readAllCalls,
   sendShortcut,
   setNextSessionTitle,
   settingsOnDisk,
   startSessionIn,
   waitBooted,
-  waitForCalls,
+  waitForAllCalls,
   wsRows,
   type ClaudeCall
 } from './helpers/p1'
@@ -98,7 +98,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await ask(app, page, PROMPT)
       await page.keyboard.press('Enter')
 
-      const [call] = await waitForCalls(env, 1, 30_000)
+      const [call] = await waitForAllCalls(env, 1, 30_000)
       await expect(palette(page)).toHaveCount(0)
       await expect(page.locator('.modal')).toHaveCount(0)
       expect(call.argv.join(' ')).toContain('-w palette-search')
@@ -133,7 +133,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       expect(fs.realpathSync(call.cwd)).toBe(fs.realpathSync(env.workspaces.b))
       expect(call.argv).not.toContain('--name')
       expect(call.argv[call.argv.length - 1]).toBe(PROMPT)
-      expect(readCalls(env)).toHaveLength(0)
+      expect(readAllCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
     }
@@ -153,7 +153,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       assistAnswers(env, { workspace: 1, worktree: 'main', title: 'Look', sure: true })
       await ask(app, page, 'look at the build')
       await page.keyboard.press('Enter')
-      const [atOnce] = await waitForCalls(env, 1, 30_000)
+      const [atOnce] = await waitForAllCalls(env, 1, 30_000)
       expect(fs.realpathSync(atOnce.cwd)).toBe(fs.realpathSync(env.workspaces.a))
       const first = atOnce.argv.join(' ').match(fresh)?.[1]
       expect(first).toBeDefined()
@@ -165,7 +165,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await ask(app, page, 'read the readme')
       await page.keyboard.press('Enter')
       await picker.locator('.cb-row', { hasText: 'ws-a' }).click()
-      const calls = await waitForCalls(env, 2, 30_000)
+      const calls = await waitForAllCalls(env, 2, 30_000)
       const second = calls[1].argv.join(' ').match(fresh)?.[1]
       expect(second).toBeDefined()
       expect(second).not.toBe(first)
@@ -199,7 +199,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await ask(app, page, 'handle #218 and add a test')
       await page.keyboard.press('Enter')
 
-      const [call] = await waitForCalls(env, 1, 30_000)
+      const [call] = await waitForAllCalls(env, 1, 30_000)
       expect(call.argv.join(' ')).toContain('-w issue-218')
       expect(nameOf(call)).toBe('Issue 218')
       const sent = textAfterDashes(call)
@@ -215,7 +215,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect.poll(() => fs.existsSync(made), { timeout: 30_000 }).toBe(true)
       await ask(app, page, 'more on #218')
       await page.keyboard.press('Enter')
-      const calls = await waitForCalls(env, 2, 30_000)
+      const calls = await waitForAllCalls(env, 2, 30_000)
       expect(calls[1].argv.join(' ')).toContain('-w issue-218-2 ')
     } finally {
       await quitAndClose(app)
@@ -247,7 +247,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       assistAnswers(env, 'not an answer')
       await ask(app, page, 'fix the build')
       await page.keyboard.press('Enter')
-      const [assist] = await waitForCalls(env, 1, 30_000)
+      const [assist] = await waitForAllCalls(env, 1, 30_000)
       expect(assist.cwd).toBe(path.join(env.userData, 'conductors', 'global'))
       await expect
         .poll(() => page.evaluate(() => window.api.conductors.tasks()))
@@ -262,9 +262,9 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect(page.locator('.toast')).toContainText('Koloft Assist is off')
       await expect(picker).toBeVisible()
       await page.keyboard.press('Enter')
-      const calls = await waitForCalls(env, 2)
+      const calls = await waitForAllCalls(env, 2)
       expect(textAfterDashes(calls[1])).toBe('tidy the changelog')
-      expect(readCalls(env)).toHaveLength(2)
+      expect(readAllCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }
@@ -285,7 +285,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       assistAnswers(env, { hand: 'koloft', title: 'Dark mode', why: 'A Koloft setting.' })
       await ask(app, page, 'turn on dark mode')
       await page.keyboard.press('Enter')
-      const [global] = await waitForCalls(env, 1, 30_000)
+      const [global] = await waitForAllCalls(env, 1, 30_000)
       await expect(page.locator('.modal')).toHaveCount(0)
       expect(global.cwd).toBe(path.join(env.userData, 'conductors', 'global'))
       await expect.poll(tasks).toEqual([{ tabId: expect.any(String), name: 'Dark mode' }])
@@ -303,13 +303,13 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         .poll(() => peerLines(env), { timeout: 30_000 })
         .toContain('The owner typed this in ⌘P: and dim the sidebar too')
       expect(ownerWords()).toBe('and dim the sidebar too')
-      expect(readCalls(env)).toHaveLength(1)
+      expect(readAllCalls(env)).toHaveLength(1)
       expect(await tasks()).toHaveLength(1)
 
       assistAnswers(env, { hand: 'discord', title: 'Discord' })
       await ask(app, page, 'set up Discord')
       await page.keyboard.press('Enter')
-      const butler = (await waitForCalls(env, 2, 30_000))[1]
+      const butler = (await waitForAllCalls(env, 2, 30_000))[1]
       expect(butler.cwd).toBe(path.join(env.userData, 'conductors', 'global'))
       await expect
         .poll(() => peerLines(env), { timeout: 30_000 })
@@ -319,7 +319,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       assistAnswers(env, { hand: 'assist', workspace: 2, title: 'Ask ws-b' })
       await ask(app, page, 'ask ws-b about the release')
       await page.keyboard.press('Enter')
-      const calls = await waitForCalls(env, 3, 30_000)
+      const calls = await waitForAllCalls(env, 3, 30_000)
       expect(calls[2].cwd).toBe(path.join(env.userData, 'conductors', 'global'))
       await expect.poll(tasks).toContainEqual({ tabId: expect.any(String), name: 'Ask ws-b' })
     } finally {
@@ -345,7 +345,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       })
       await page.keyboard.press('Escape')
       await expect(settings).toHaveCount(0)
-      expect(readCalls(env)).toHaveLength(0)
+      expect(readAllCalls(env)).toHaveLength(0)
 
       setNextSessionTitle(env, 'Alpha jump target')
       await startSessionIn(page, 'ws-a')
@@ -357,7 +357,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await page.keyboard.press('Enter')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/\bactive\b/, { timeout: 30_000 })
       expect(assistWasAsked(env)).toContain('[1.1] Alpha jump target')
-      expect(readCalls(env)).toHaveLength(2)
+      expect(readAllCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }
@@ -383,7 +383,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect(page.locator('.toast')).toHaveText(/fast-forwarded 2 commits/, {
         timeout: 30_000
       })
-      const [call] = await waitForCalls(env, 1)
+      const [call] = await waitForAllCalls(env, 1)
       expect(call.argv.join(' ')).toContain('-w catch-up')
       expect(nameOf(call)).toBe('Catch up')
       expect(textAfterDashes(call)).toBe('catch up with main')
@@ -416,7 +416,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await dlg.getByRole('textbox', { name: 'Folder name' }).press('Enter')
       await expect(dlg).toHaveCount(0)
 
-      const [call] = await waitForCalls(env, 1)
+      const [call] = await waitForAllCalls(env, 1)
       expect(fs.realpathSync(call.cwd)).toBe(path.join(parent, 'ledger'))
       expect(textAfterDashes(call)).toBe('start a new bookkeeping site')
       await expect(wsRows(page, 'ledger')).toHaveCount(1, { timeout: 30_000 })
@@ -426,7 +426,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
 
       await ask(app, page, 'another bookkeeping site')
       await page.keyboard.press('Enter')
-      const calls = await waitForCalls(env, 2, 30_000)
+      const calls = await waitForAllCalls(env, 2, 30_000)
       await expect(dlg).toHaveCount(0)
       expect(fs.realpathSync(calls[1].cwd)).toBe(path.join(parent, 'ledger-2'))
       expect(textAfterDashes(calls[1])).toBe('another bookkeeping site')
@@ -452,7 +452,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         await waitBooted(page)
         await ask(app, page, 'check the deploy script')
         await page.keyboard.press('Enter')
-        const [onRemote] = await waitForCalls(env, 1, 90_000)
+        const [onRemote] = await waitForAllCalls(env, 1, 90_000)
         expect(onRemote.cwd).toBe(remoteDir(env))
         expect(textAfterDashes(onRemote)).toBe('check the deploy script')
         expect(nameOf(onRemote)).toBe('Deploy check')
@@ -466,7 +466,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         await made.getByRole('textbox', { name: 'In' }).press('Enter')
         await expect(made).toHaveCount(0)
 
-        const calls = await waitForCalls(env, 2, 90_000)
+        const calls = await waitForAllCalls(env, 2, 90_000)
         expect(calls[1].cwd).toBe(path.join(remoteParent, 'crawler'))
         expect(fs.statSync(path.join(remoteParent, 'crawler')).isDirectory()).toBe(true)
         await expect(wsRows(page, 'crawler')).toHaveCount(1, { timeout: 60_000 })

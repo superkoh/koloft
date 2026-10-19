@@ -38,6 +38,11 @@ export interface ClaudeCall {
 }
 
 export function readCalls(env: E2EEnv): ClaudeCall[] {
+  const conductors = path.join(env.userData, 'conductors')
+  return readAllCalls(env).filter((c) => path.dirname(c.cwd) !== conductors)
+}
+
+export function readAllCalls(env: E2EEnv): ClaudeCall[] {
   if (!fs.existsSync(env.claudeCalls)) return []
   return fs
     .readFileSync(env.claudeCalls, 'utf8')
@@ -63,9 +68,13 @@ export async function waitForCalls(
   return calls()
 }
 
-export function waitForCallsBesideConductors(env: E2EEnv, count: number): Promise<ClaudeCall[]> {
-  const conductors = path.join(env.userData, 'conductors')
-  return waitForCalls(env, count, undefined, (c) => path.dirname(c.cwd) !== conductors)
+export async function waitForAllCalls(
+  env: E2EEnv,
+  count: number,
+  timeout = 40_000
+): Promise<ClaudeCall[]> {
+  await expect.poll(() => readAllCalls(env).length, { timeout }).toBeGreaterThanOrEqual(count)
+  return readAllCalls(env)
 }
 
 export function assistRecordOnDisk(env: E2EEnv, scope?: string): AssistRecord | undefined {
@@ -568,11 +577,12 @@ export function terminalText(page: Page, tabId: string): Promise<string> {
 }
 
 export function termIds(page: Page): Promise<string[]> {
-  return page.evaluate(() =>
-    Object.keys(
+  return page.evaluate(() => {
+    const butler = document.querySelector('.isl-butler > .ws-tab')?.getAttribute('data-tab-id')
+    return Object.keys(
       (window as unknown as { __koloftTerms?: Record<string, unknown> }).__koloftTerms ?? {}
-    )
-  )
+    ).filter((id) => id !== butler)
+  })
 }
 
 const SHELL_READY_ONCE_QUIET_FOR_MS = 700

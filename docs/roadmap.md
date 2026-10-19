@@ -44,8 +44,8 @@ when it works. That is what "judged against" means.
   Every session also reads what any session said, and sends to, resumes, stops and
   starts any session in any workspace, of any kind, closes an ended one on this computer,
   and runs any `gh` command but `gh auth` through `koloft gh`. The butler (Alfred, Koloft's
-  own session for all workspaces) does all of that too, but only passes work on
-  (ADR-0029), and a Claude butler keeps its own memory.
+  own session for all workspaces) does all of that too from a folder of its own, with no
+  gate: its prompt asks it to pass project work to that project's workspace (ADR-0029).
   A Claude session on another machine over ssh has the same command; its answers take
   a few seconds longer.
 

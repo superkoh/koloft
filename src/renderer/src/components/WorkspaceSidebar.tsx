@@ -941,6 +941,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const rows = useStore((s) => s.workspaceRows)
   const welcomeActive = useStore((s) => s.welcomeActive)
   const butlerName = useStore((s) => s.settings.butler.name)
+  const butlerWorkspace = useStore((s) => s.butlerWorkspace)
   const butlerKeys = useStore((s) => s.settings.assistSessions[0]?.sessionIds)
   const cron = useStore((s) => s.cron)
   const sessions = useStore((s) => s.sessions)
@@ -1015,7 +1016,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 
   const actions = useMemo<SidebarActions>(() => {
     const rowTarget = (id: string): Extract<MenuTarget, { kind: 'session' }> => {
-      const w = useStore.getState().workspaceRows.find((w) => w.rows.some((r) => r.id === id))!
+      const { workspaceRows, butlerWorkspace } = useStore.getState()
+      const w = [...workspaceRows, ...(butlerWorkspace ? [butlerWorkspace] : [])].find((w) =>
+        w.rows.some((r) => r.id === id)
+      )!
       return { kind: 'session', wsPath: w.workspace.path, row: w.rows.find((r) => r.id === id)! }
     }
     const wsTarget = (path: string): MenuTarget => {
@@ -1129,6 +1133,72 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     })
   }
 
+  const rowRenderer = (
+    wsPath: string,
+    sessionRows: SessionRow[]
+  ): ((node: RowNode<SessionRow>) => JSX.Element) => {
+    const showBackend = mixesBackends(sessionRows)
+    const cronPrefixes = cronWorktreePrefixes.get(wsPath) ?? []
+    const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
+      const { row } = node
+      const tabId = look.tabOf(row)
+      const calling = look.attentionOn(row.id, tabId)
+      const sess = tabId ? look.sessionOn(tabId) : undefined
+      const stateCls = statusUnavailable(sess)
+        ? ''
+        : rowStateClass(row.running, sess?.status, row.pending, sess?.turnOver)
+      const badge = sessionActivityBadge(sess, leftovers[row.id])
+      const launching = resumeLaunch?.id === row.id
+      const active = launching || (!resumeLaunch && !!tabId && tabId === activeTabId)
+      const resumingNow = !row.running && !row.pending && (launching || look.hasAliveTab(row.id))
+      const shownCls = resumingNow ? rowStateClass(false, undefined, true) : stateCls
+      const isCronRow =
+        capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
+        ((!!tabId && cronLiveTabs.has(tabId)) ||
+          cronLiveSessions.has(row.id) ||
+          (row.worktree !== 'main' && cronPrefixes.some((p) => row.worktree.startsWith(p))))
+      const folded = node.children.length > 0 && !!foldedRows[row.id]
+      const hidden = folded ? rowsUnder(node) : []
+      return (
+        <Fragment key={row.id}>
+          <SessionRowView
+            id={row.id}
+            className={'ws-tab ' + shownCls + (active ? ' active' : '')}
+            tabId={tabId}
+            tooltip={
+              row.running || row.pending
+                ? undefined
+                : relTime(row.mtime, now.getTime()) +
+                  (row.invalidCwd
+                    ? ' — worktree deleted; click to rebuild and resume'
+                    : ' — click to resume')
+            }
+            cron={isCronRow}
+            resident={!!row.resident}
+            title={shownTitle(row.title, sess?.title)}
+            callingReason={calling && ATTENTION_REASON[calling.kind]}
+            badgeText={badge?.text}
+            badgeLines={badge?.lines.join('\n')}
+            badgeHeading={badge?.heading}
+            badgeRunning={!!badge?.running}
+            callingHidden={callingAmong(hidden)}
+            hiddenCount={hidden.length}
+            parent={node.children.length > 0}
+            folded={folded}
+            backend={showBackend ? row.backendId : undefined}
+            startedBy={row.parentId && butlerKeys?.includes(row.parentId) ? butlerName : undefined}
+            worktree={row.worktree}
+            actions={actions}
+          />
+          {node.children.length > 0 && !folded && (
+            <div className="ws-subtabs">{node.children.map(sessionRow)}</div>
+          )}
+        </Fragment>
+      )
+    }
+    return sessionRow
+  }
+
   return (
     <>
       <div className="island flat isl-sessions">
@@ -1139,7 +1209,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onDragOver={dragOverWorkspaces}
           onDrop={dropWorkspace}
         >
-          <ButlerRow />
+          <ButlerRow>
+            {butlerWorkspace &&
+              sessionTree(butlerWorkspace.rows).map(
+                rowRenderer(butlerWorkspace.workspace.path, butlerWorkspace.rows)
+              )}
+          </ButlerRow>
           {rows.length === 0 && !welcomeActive && (
             <div className="hint">
               No workspaces yet.
@@ -1154,68 +1229,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             const door = doorFor(ws.isGit)
             const callingInside = open ? 0 : callingAmong(sessionRows)
             const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, now)
-            const showBackend = mixesBackends(sessionRows)
-            const cronPrefixes = cronWorktreePrefixes.get(ws.path) ?? []
-            const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
-              const { row } = node
-              const tabId = look.tabOf(row)
-              const calling = look.attentionOn(row.id, tabId)
-              const sess = tabId ? look.sessionOn(tabId) : undefined
-              const stateCls = statusUnavailable(sess)
-                ? ''
-                : rowStateClass(row.running, sess?.status, row.pending, sess?.turnOver)
-              const badge = sessionActivityBadge(sess, leftovers[row.id])
-              const launching = resumeLaunch?.id === row.id
-              const active = launching || (!resumeLaunch && !!tabId && tabId === activeTabId)
-              const resumingNow =
-                !row.running && !row.pending && (launching || look.hasAliveTab(row.id))
-              const shownCls = resumingNow ? rowStateClass(false, undefined, true) : stateCls
-              const isCronRow =
-                capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
-                ((!!tabId && cronLiveTabs.has(tabId)) ||
-                  cronLiveSessions.has(row.id) ||
-                  (row.worktree !== 'main' && cronPrefixes.some((p) => row.worktree.startsWith(p))))
-              const folded = node.children.length > 0 && !!foldedRows[row.id]
-              const hidden = folded ? rowsUnder(node) : []
-              return (
-                <Fragment key={row.id}>
-                  <SessionRowView
-                    id={row.id}
-                    className={'ws-tab ' + shownCls + (active ? ' active' : '')}
-                    tabId={tabId}
-                    tooltip={
-                      row.running || row.pending
-                        ? undefined
-                        : relTime(row.mtime, now.getTime()) +
-                          (row.invalidCwd
-                            ? ' — worktree deleted; click to rebuild and resume'
-                            : ' — click to resume')
-                    }
-                    cron={isCronRow}
-                    resident={!!row.resident}
-                    title={shownTitle(row.title, sess?.title)}
-                    callingReason={calling && ATTENTION_REASON[calling.kind]}
-                    badgeText={badge?.text}
-                    badgeLines={badge?.lines.join('\n')}
-                    badgeHeading={badge?.heading}
-                    badgeRunning={!!badge?.running}
-                    callingHidden={callingAmong(hidden)}
-                    hiddenCount={hidden.length}
-                    parent={node.children.length > 0}
-                    folded={folded}
-                    backend={showBackend ? row.backendId : undefined}
-                    startedBy={
-                      row.parentId && butlerKeys?.includes(row.parentId) ? butlerName : undefined
-                    }
-                    worktree={row.worktree}
-                    actions={actions}
-                  />
-                  {node.children.length > 0 && !folded && (
-                    <div className="ws-subtabs">{node.children.map(sessionRow)}</div>
-                  )}
-                </Fragment>
-              )
-            }
+            const sessionRow = rowRenderer(ws.path, sessionRows)
             return (
               <div
                 className={

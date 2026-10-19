@@ -515,7 +515,6 @@ export interface CreateTabOptions {
   ownerTabId?: string
   role?: string
   ownerWords?: string
-  allow?: string[]
   conductor?: boolean
   trustFolder?: boolean
 }
@@ -1584,6 +1583,7 @@ export interface WorkspaceRows {
     gitAccount?: WorkspaceGitAccount
     gitPickable?: boolean
     remote?: { host: string; path: string; connected: boolean; problem?: string }
+    butler?: true
   }
   rows: SessionRow[]
 }
@@ -1627,6 +1627,7 @@ export interface SessionResumeRequest {
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
   role?: string
   conductor?: boolean
+  permission?: LaunchPermission
   trustFolder?: boolean
 }
 

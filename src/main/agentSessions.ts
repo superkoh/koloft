@@ -341,6 +341,8 @@ export interface SessionVerbDeps {
   whatIsLeft(target: ClosableSession): Promise<string[]>
   closeSoon(target: ClosableSession): void
   isButler(tabId: string): boolean
+  butlerFolder(): string
+  butlerHelperRole(): string
   sidebar(): WorkspaceRows[]
   worktrees(workspace: string): Promise<WorktreeInfo[]>
   readTurns(key: string, n: number): Promise<Turn[]>
@@ -452,7 +454,8 @@ async function startSibling(
   workspace: string,
   conductorTab: string | undefined,
   ownerWords: string | undefined,
-  oweReply: (tabId: string) => void
+  oweReply: (tabId: string) => void,
+  helperRole?: string
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
   const traits = PEER_TRAITS[backend]
@@ -465,7 +468,7 @@ async function startSibling(
     assist: conductorTab !== undefined,
     ownerWords
   }
-  const [name, preamble] = await Promise.all([
+  const [name, handover] = await Promise.all([
     !traits.namedAtLaunch
       ? undefined
       : (args.name ??
@@ -477,6 +480,7 @@ async function startSibling(
         )),
     handoverInOwnersLanguage(caller, d.assist)
   ])
+  const preamble = helperRole ? `${helperRole}\n\n${handover}` : handover
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
   const worktree =
     gitWorkspace && (args.worktree || caller.assist)
@@ -670,8 +674,8 @@ const ANSWER_USAGE =
   'koloft session answer: give an id or name, then an option number, yes, no or your own words, like: koloft session answer fix-login 2'
 const WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS = 10 * 60_000
 const SHOWS_NOTHING_WHILE_CLOSED = 'it is not open, so it shows no question.'
-const BUTLER_NEEDS_WORKSPACE =
-  'koloft session new: say which workspace with --workspace <workspace>; "koloft workspace list" shows them.'
+const NO_WORKTREE_IN_BUTLER_FOLDER =
+  'koloft session new: your own folder is no git repository, so -w needs --workspace <workspace>; "koloft workspace list" shows them.'
 
 const COMMAND_USAGE = `koloft session command: give an id or name (or "me" for yourself), then one slash command, like: koloft session command fix-login /compact`
 const SCREEN_USAGE = `koloft session screen: give an id or name (or "me" for yourself), like: koloft session screen fix-login`
@@ -1019,7 +1023,11 @@ export function sessionVerb(d: SessionVerbDeps): {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
       const where = parsed.value.workspace
-      const start = async (workspace: string, conductorTab?: string): Promise<AgentReply> => {
+      const start = async (
+        workspace: string,
+        conductorTab?: string,
+        helperRole?: string
+      ): Promise<AgentReply> => {
         const ownerWords = await ownerWordsOf(caller.session)
         return startSibling(
           d,
@@ -1028,16 +1036,19 @@ export function sessionVerb(d: SessionVerbDeps): {
           workspace,
           conductorTab,
           ownerWords,
-          (tab) => replyOwed.set(tab, { owner: caller.session.sessionId })
+          (tab) => replyOwed.set(tab, { owner: caller.session.sessionId }),
+          helperRole
         )
       }
-      const startIn = (where: string): Promise<AgentReply> => {
+      if (where !== undefined) {
         const target = startableWorkspace(where, d.pinnedWorkspaces())
-        if (!target.ok) return Promise.resolve(refused(`koloft session new: ${target.error}`))
+        if (!target.ok) return refused(`koloft session new: ${target.error}`)
         return start(target.value, butler ? caller.tabId : undefined)
       }
-      if (where !== undefined) return startIn(where)
-      if (butler) return refused(BUTLER_NEEDS_WORKSPACE)
+      if (butler) {
+        if (parsed.value.worktree !== undefined) return refused(NO_WORKTREE_IN_BUTLER_FOLDER)
+        return start(d.butlerFolder(), caller.tabId, d.butlerHelperRole())
+      }
       return ws ? start(ws) : refused(NO_WORKSPACE)
     }
     if (butler && Object.hasOwn(SESSION_ACT_USAGE, sub)) return sessionAct(sub, rest, caller, true)

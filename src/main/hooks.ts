@@ -3,25 +3,13 @@ import fs from 'fs'
 import path from 'path'
 import type { StatusLineSetting } from './statusline'
 import { shq } from '@shared/shellQuote'
-import {
-  AGY_CONDUCTOR_GATE_SCRIPT,
-  CODEX_CONDUCTOR_GATE_SCRIPT,
-  CONDUCTOR_GATE_SCRIPT,
-  MUSE_CONDUCTOR_GATE_SCRIPT,
-  codexGateShell,
-  conductorGateCommand
-} from './conductorGate'
 import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
 import { FROM_A_SESSION, FROM_KOLOFT, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 
 export interface HookPaths {
   hookScript: string
-  gateScript: string
-  codexGate: string
   codexReplyLanguage: string
-  museGateScript: string
-  agyGateScript: string
   settingsDir: string
   regDir: string
 }
@@ -364,7 +352,7 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor|said|said\.task-first|allow|typed|discord-ids)$/
+const TAB_MARKER = /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -395,29 +383,10 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   const hookScript = path.join(hookDir, 'sessionstart.sh')
   fs.writeFileSync(hookScript, HOOK_SCRIPT, { mode: 0o755 })
   fs.chmodSync(hookScript, 0o755)
-  const gateScript = path.join(hookDir, 'conductor-gate.js')
-  fs.writeFileSync(gateScript, CONDUCTOR_GATE_SCRIPT)
-  const codexGateScript = path.join(hookDir, 'codex-conductor-gate.js')
-  fs.writeFileSync(codexGateScript, CODEX_CONDUCTOR_GATE_SCRIPT)
-  const codexGate = path.join(hookDir, 'codex-conductor-gate.sh')
-  fs.writeFileSync(codexGate, codexGateShell(codexGateScript))
   const codexReplyLanguage = path.join(hookDir, 'codex-reply-language.sh')
   fs.writeFileSync(codexReplyLanguage, CODEX_REPLY_LANGUAGE_SCRIPT)
-  const museGateScript = path.join(hookDir, 'muse-conductor-gate.js')
-  fs.writeFileSync(museGateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
-  const agyGateScript = path.join(hookDir, 'agy-conductor-gate.js')
-  fs.writeFileSync(agyGateScript, AGY_CONDUCTOR_GATE_SCRIPT)
 
-  return {
-    hookScript,
-    gateScript,
-    codexGate,
-    codexReplyLanguage,
-    museGateScript,
-    agyGateScript,
-    settingsDir,
-    regDir
-  }
+  return { hookScript, codexReplyLanguage, settingsDir, regDir }
 }
 
 // CC§8
@@ -494,10 +463,6 @@ export function removeConductorMarker(regDir: string, tabId: string): void {
   fs.rmSync(conductorMarker(regDir, tabId), { force: true })
 }
 
-function allowFile(regDir: string, tabId: string): string {
-  return path.join(regDir, `${tabId}.allow`)
-}
-
 export function discordIdsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.discord-ids`)
 }
@@ -521,12 +486,6 @@ export function quotedPrompt(regDir: string, tabId: string): string | undefined 
   }
 }
 
-export function writeAllowFile(regDir: string, tabId: string, allow: readonly string[]): string {
-  const file = allowFile(regDir, tabId)
-  fs.writeFileSync(file, JSON.stringify(allow))
-  return file
-}
-
 export function markAnswerable(regDir: string, tabId: string, on: boolean): void {
   const file = path.join(regDir, `${tabId}.answerable`)
   if (on) fs.writeFileSync(file, '')
@@ -534,11 +493,7 @@ export function markAnswerable(regDir: string, tabId: string, on: boolean): void
 }
 
 export function forgetAssistMarkers(regDir: string, tabId: string): void {
-  for (const file of [
-    allowFile(regDir, tabId),
-    discordIdsFile(regDir, tabId),
-    path.join(regDir, `${tabId}.typed`)
-  ])
+  for (const file of [discordIdsFile(regDir, tabId), path.join(regDir, `${tabId}.typed`)])
     fs.rmSync(file, { force: true })
 }
 
@@ -557,22 +512,8 @@ export function writeTabHookSettings(
   const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
   // CC§13
   if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
-  if (conductor) {
-    // ADR-0029 CC§15
-    ;(settings.hooks as Record<string, unknown>).PreToolUse = [
-      {
-        matcher: '*',
-        hooks: [
-          {
-            type: 'command',
-            command: conductorGateCommand(paths.gateScript, allowFile(paths.regDir, tabId))
-          }
-        ]
-      }
-    ]
-    // CC§13 ADR-0028
-    settings.crossSessionInbound = 'accept'
-  }
+  // CC§13 ADR-0028
+  if (conductor) settings.crossSessionInbound = 'accept'
   const out = path.join(paths.settingsDir, `${tabId}.json`)
   fs.writeFileSync(out, JSON.stringify(settings))
   return out

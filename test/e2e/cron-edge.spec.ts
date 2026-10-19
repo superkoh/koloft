@@ -212,7 +212,7 @@ function napWithinOneCalendarDay(now: Date): { due: Date; until: Date } {
 }
 
 function edCronRows(page: Page): Locator {
-  return wsRows(page, 'ws-a').filter({ has: page.locator('.ws .ws-tab-cron') })
+  return wsRows(page, 'ws-a').filter({ has: page.locator('.ws-tab-cron') })
 }
 
 function edWorktreeArg(argv: string[]): string | undefined {

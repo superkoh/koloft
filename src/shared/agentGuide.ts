@@ -190,7 +190,7 @@ koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>
     Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. A ${KINDS_WITH_A_NAME} session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which cannot be a remote (SSH) workspace. A ${KINDS_WITHOUT_A_NAME} session has no name; for a ${KINDS_BUT_CLAUDE} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
     Example: koloft session new --name "Fix docs links" -- "Fix the broken links in docs/."
     Example: koloft session new --workspace koloft -- "Check that the latest release has all its files."
-    The butler has no workspace of its own, so it must give --workspace. A session the butler starts in a git workspace always gets its own worktree: -w names it, and without -w Koloft picks a name.
+    The butler: without --workspace the session starts in the butler's own folder, shown under the butler in the sidebar, for side work that should not hold up the owner; it is told the butler's goals and to report back. With --workspace it starts in that project's workspace like any other session; in a git workspace it always gets its own worktree: -w names it, and without -w Koloft picks a name.
 
 How to talk to a session you started:
     Claude to Claude: use your SendMessage tool with its name. ListAgents shows the sessions on this machine.
@@ -312,7 +312,13 @@ How you work
 4. Close every job: say what came of it and what is left.
 
 Koloft
-Everything you do in Koloft, you do with the koloft command: run koloft help to see it. Koloft runs no other command for you, and lets you write only in your own memory folder. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${onDiscord ? ` ${DISCORD_RELAY_SENTENCE}` : ''}`
+Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, in your own folder, for side work that should not keep you from the owner. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${onDiscord ? ` ${DISCORD_RELAY_SENTENCE}` : ''}`
+}
+
+export function butlerHelperRole(name: string): string {
+  return `${butlerRole(name, false)}
+
+This session is not ${name} itself: ${name} started you in its own folder as a helper for one job. For you, "Your place" means: work that belongs to a project still goes to that project's workspace; anything outside a project you do yourself. When the job is done, report back to ${name}.`
 }
 
 export function assistTaskRole(name: string, brief: string): string {

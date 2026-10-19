@@ -169,11 +169,11 @@ async function storedJobs(env: E2EEnv, count: number): Promise<CronJob[]> {
 }
 
 function cronRows(page: Page, wsName: string): Locator {
-  return wsRows(page, wsName).filter({ has: page.locator('.ws .ws-tab-cron') })
+  return wsRows(page, wsName).filter({ has: page.locator('.ws-tab-cron') })
 }
 
 function plainRows(page: Page, wsName: string): Locator {
-  return wsRows(page, wsName).filter({ hasNot: page.locator('.ws .ws-tab-cron') })
+  return wsRows(page, wsName).filter({ hasNot: page.locator('.ws-tab-cron') })
 }
 
 function nextRow(page: Page, wsName: string): Locator {
@@ -258,7 +258,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         .evaluate((el) =>
           Array.from(el.children).map((c) => (c.classList.contains('sep') ? 'sep' : 'mi'))
         )
-      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
+      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
 
       await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
       await expect(cronDialog(page)).toBeVisible()

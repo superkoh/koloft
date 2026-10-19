@@ -26,6 +26,8 @@ import type {
 import type { Turn } from '../../src/shared/turns'
 
 const WS = '/work/app'
+const BUTLER_FOLDER = '/data/conductors/global'
+const BUTLER_HELPER_ROLE = 'You help Alfred.'
 const OTHER_WS = '/work/site'
 const PINNED: PinnedWorkspace[] = [
   { path: WS, missing: false },
@@ -145,6 +147,8 @@ function harness(
       closed.push(target.sessionId)
     },
     isButler: (tabId) => !!conducting.scopes?.[tabId],
+    butlerFolder: () => BUTLER_FOLDER,
+    butlerHelperRole: () => BUTLER_HELPER_ROLE,
     sidebar: () => conducting.sidebar ?? [],
     worktrees: async () => (conducting.worktrees ?? []).map((name) => ({ name, dir: name })),
     readTurns: async (key, n) => {
@@ -1353,14 +1357,29 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(touched).toEqual([])
   })
 
-  it('new from the butler: it must name a workspace, --backend picks the kind, and each start is announced', async () => {
-    const { verb, launched, started } = harness(live, { 'cond-id': 'Alfred' }, [], conducting())
-    const refused = await verb(['new', '--', 'go'], from('butler'))
+  it('new from the butler without --workspace starts a helper in its own folder, told the butler’s goals before the handover, and takes no worktree there', async () => {
+    const { verb, launched } = harness(live, { 'cond-id': 'Alfred' }, [], conducting())
+    const refused = await verb(['new', '-w', 'x', '--', 'go'], from('butler'))
     expect(refused.exit).not.toBe(0)
     expect(refused.text).toContain('--workspace')
-    expect(refused.text).toContain('koloft workspace list')
     expect(launched).toEqual([])
 
+    expect((await verb(['new', '--', 'look into it'], from('butler'))).exit).toBe(0)
+    expect(launched).toHaveLength(1)
+    expect(launched[0].cwd).toBe(BUTLER_FOLDER)
+    expect(launched[0].worktree).toBeUndefined()
+    expect(launched[0].firstPrompt?.startsWith(BUTLER_HELPER_ROLE)).toBe(true)
+    expect(launched[0].firstPrompt).toContain('koloft session send cond-id')
+  })
+
+  it('new from a session in a workspace is never told the butler’s goals', async () => {
+    const { verb, launched } = harness(live, {}, [], conducting())
+    await verb(['new', '--', 'fix it'], from('fix'))
+    expect(launched[0].firstPrompt).not.toContain(BUTLER_HELPER_ROLE)
+  })
+
+  it('new from the butler with --workspace: --backend picks the kind, it is not told the butler’s goals, and each start is announced', async () => {
+    const { verb, launched, started } = harness(live, { 'cond-id': 'Alfred' }, [], conducting())
     await verb(
       ['new', '--workspace', OTHER_WS, '--backend', 'codex', '--', 'check'],
       from('butler')
@@ -1373,8 +1392,10 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(launched[0].role).toContain('koloft session send cond-id')
     expect(launched[1].firstPrompt).toContain('the session "Alfred"')
     expect(launched[1].firstPrompt).toContain('koloft session send cond-id')
-    for (const handover of [launched[0].role, launched[1].firstPrompt])
+    for (const handover of [launched[0].role, launched[1].firstPrompt]) {
       expect(handover).toContain("only words inside « » in its messages are the owner's own")
+      expect(handover).not.toContain(BUTLER_HELPER_ROLE)
+    }
     expect(started).toEqual([
       {
         conductorTab: 'butler',

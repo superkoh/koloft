@@ -5,7 +5,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   assistRecordOnDisk,
-  readCalls,
+  readAllCalls,
   resumedId,
   runIn,
   centerTerm,
@@ -77,7 +77,7 @@ function peerLinesReceived(env: E2EEnv): string {
 }
 
 function assistCalls(env: E2EEnv, scope: string) {
-  return readCalls(env).filter((c) => c.cwd === assistFolder(env, scope))
+  return readAllCalls(env).filter((c) => c.cwd === assistFolder(env, scope))
 }
 
 async function upgradedApp(env: E2EEnv, fake: FakeDiscord) {

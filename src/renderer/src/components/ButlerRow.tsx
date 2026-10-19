@@ -31,7 +31,7 @@ export async function setUpDiscordWithButler(ownerWords?: string): Promise<strin
 
 type MenuTarget = { kind: 'butler' } | { kind: 'task'; task: AssistTaskRow }
 
-export function ButlerRow(): JSX.Element {
+export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
   const name = useStore((s) => s.settings.butler.name)
   const binding = useStore((s) => s.settings.discord.bindings[0])
@@ -152,7 +152,7 @@ export function ButlerRow(): JSX.Element {
           </div>
         </div>
       )}
-      {tasks.length > 0 && (
+      {(tasks.length > 0 || !!children?.length) && (
         <div className="ws-subtabs">
           {tasks.map((task) => {
             const s = sessions.find((x) => x.tabId === task.tabId)
@@ -191,6 +191,7 @@ export function ButlerRow(): JSX.Element {
               </div>
             )
           })}
+          {children}
         </div>
       )}
       {/* ADR-0013 */}

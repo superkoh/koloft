@@ -114,7 +114,6 @@ import {
   saidFile,
   seedOwnerWords,
   setupHooks,
-  writeAllowFile,
   writeTabHookSettings
 } from './hooks'
 import {
@@ -390,6 +389,7 @@ import type {
   AttentionSubject,
   SessionResumeRequest,
   SessionRow,
+  WorkspaceRows,
   SearchSnippet,
   SpawnedTab,
   AdoptableTab,
@@ -408,7 +408,13 @@ import type {
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
-import { Conductors, type AssistBackendChoice, type AssistTask } from './discord/conductors'
+import { butlerHelperRole } from '@shared/agentGuide'
+import {
+  conductorFolder,
+  Conductors,
+  type AssistBackendChoice,
+  type AssistTask
+} from './discord/conductors'
 import { firstLineName } from './sessionTitle'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
@@ -1276,6 +1282,14 @@ function remoteHostOfTab(tabId: string): string | undefined {
   return ptyMgr.get(tabId)?.remoteHost
 }
 
+function projectRows(): WorkspaceRows[] {
+  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.butler)
+}
+
+function inButlerFolder(tabId: string): boolean {
+  return sessionBackends.workspaceOfTab(tabId) === conductorFolder(app.getPath('userData'))
+}
+
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
   const workspace = sessionBackends.workspaceOfTab(tabId)
   return workspace && workspaceMgr?.isPinned(workspace) ? workspace : undefined
@@ -1295,9 +1309,10 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
       : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
   },
   notesFileOf: (tabId) => {
-    const scope = conductors?.isButlerTab(tabId)
-      ? GLOBAL_SCOPE
-      : sessionBackends.workspaceOfTab(tabId)
+    const scope =
+      conductors?.isButlerTab(tabId) || inButlerFolder(tabId)
+        ? GLOBAL_SCOPE
+        : sessionBackends.workspaceOfTab(tabId)
     return scope ? notesFileOfScope(scope) : undefined
   }
 })
@@ -1456,6 +1471,8 @@ const sessionDeps: SessionVerbDeps = {
   closeSoon: (target) =>
     setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!conductors?.isButlerTab(tabId),
+  butlerFolder: () => conductorFolder(app.getPath('userData')),
+  butlerHelperRole: () => butlerHelperRole(butlerNameNow()),
   sidebar: () => workspaceMgr?.rows() ?? [],
   worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
@@ -1523,7 +1540,7 @@ const agentRequests = new AgentRequests({
     }),
     ...notesAndWorkbenchVerbs,
     session: sessionCommand.verb,
-    workspace: workspaceVerb({ sidebar: () => workspaceMgr?.rows() ?? [] }),
+    workspace: workspaceVerb({ sidebar: projectRows }),
     discord: discordVerb({
       channelOf: (tabId) => conductors?.bindingOfTab(tabId)?.channel.channelId,
       send: async (channelId, files, text) => {
@@ -2672,10 +2689,6 @@ app.whenReady().then(() => {
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-      conductorGate: {
-        script: hookPaths.codexGate,
-        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
-      },
       replyLanguageScript: hookPaths.codexReplyLanguage,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
@@ -2703,10 +2716,6 @@ app.whenReady().then(() => {
       openShimRoot: path.join(userData, 'muse-open'),
       pickHome: pickMuseHome,
       assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-      conductorGate: {
-        script: hookPaths.museGateScript,
-        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
-      },
       skipPermissions: () => loadSettings().skipPermissions,
       serversAmong: async (pid, commands) =>
         museServersAmong(await sharedProcessTable.fresh(), pid, commands),
@@ -2753,10 +2762,6 @@ app.whenReady().then(() => {
       builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),
       skipPermissions: () => loadSettings().skipPermissions,
       assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-      conductorGate: {
-        script: hookPaths.agyGateScript,
-        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
-      },
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,
@@ -2856,6 +2861,7 @@ app.whenReady().then(() => {
     hiddenRow: (id) => !!conductors?.conductorOf(id) || sessionsLeavingTheirWorktree.has(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
+    butlerFolder: conductorFolder(userData),
     sessionsOnDiskOrRunning: (ids) =>
       conductors?.forgetGone(
         (key) =>
@@ -2895,8 +2901,8 @@ app.whenReady().then(() => {
           kind: l.backend,
           cwd: l.cwd,
           role: l.role,
-          allow: l.allow,
           conductor: true,
+          permission: ownersPermission(),
           trustFolder: true,
           firstPrompt: l.firstPrompt,
           name: !PEER_TRAITS[l.backend].namedAtLaunch
@@ -2914,6 +2920,7 @@ app.whenReady().then(() => {
         mode: 'direct',
         role: l.role,
         conductor: true,
+        permission: ownersPermission(),
         trustFolder: true
       })
       if (!res.ok) throw new Error(res.code === 'backend' ? res.message : couldNotStart(l.title))
@@ -4582,6 +4589,10 @@ function butlerNameNow(): string {
   return loadSettings().butler.name
 }
 
+function ownersPermission(): 'bypass' | 'default' {
+  return loadSettings().skipPermissions ? 'bypass' : 'default'
+}
+
 function conductorDestination(b: ConductorBinding): Destination {
   return {
     id: b.id,
@@ -5105,7 +5116,7 @@ function registerIpc(): void {
     assistRuns.set(id, run)
     try {
       return await routeSession(
-        { rows: () => mgr.rows(), worktrees: (p) => mgr.worktrees(p), assist },
+        { rows: projectRows, worktrees: (p) => mgr.worktrees(p), assist },
         message,
         run.signal
       )

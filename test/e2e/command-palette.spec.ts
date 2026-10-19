@@ -20,7 +20,7 @@ import {
   setNextSessionTitle,
   startSessionIn,
   waitBooted,
-  waitForCalls,
+  waitForAllCalls,
   wsRows
 } from './helpers/p1'
 
@@ -183,7 +183,7 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
       await page.keyboard.press('Enter')
 
       await expect(page.locator('.modal')).toHaveCount(0)
-      const calls = await waitForCalls(env, 1, 90_000)
+      const calls = await waitForAllCalls(env, 1, 90_000)
       const last = calls[calls.length - 1]
       expect(resumedId(last)).toBe(seeded)
       expect(last.cwd).toBe(remoteDir(env))

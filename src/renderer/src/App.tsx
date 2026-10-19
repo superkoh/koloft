@@ -1073,10 +1073,13 @@ export default function App(): JSX.Element {
     else if (rowsLoaded && noWorkspaces) setWelcomeActive(true)
   }, [rowsLoaded, onboardingSeen, noWorkspaces, setWelcomeActive])
   const updateOffer = useStore((s) => s.updateOffer)
-  const butlerActive = useStore(
-    (s) => !!activeTabId && isButlerTab(s.sessions, s.butlerTab, s.assistTasks, activeTabId)
-  )
   const activeRowId = useStore((s) => (activeTabId ? rowIdOfTab(s.sessions, activeTabId) : null))
+  const butlerActive = useStore(
+    (s) =>
+      !!activeTabId &&
+      (isButlerTab(s.sessions, s.butlerTab, s.assistTasks, activeTabId) ||
+        !!s.butlerWorkspace?.rows.some((r) => r.id === activeRowId))
+  )
   const currentWs = currentWorkspace(workspaceRows, activeRowId, selectedWs, lastWsPath)
   const notesWs = butlerActive ? GLOBAL_SCOPE : currentWs
   notesWsRef.current = notesWs
