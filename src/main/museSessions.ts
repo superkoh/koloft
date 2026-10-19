@@ -135,7 +135,6 @@ interface MuseLaunch {
 
 interface MuseRun extends StoredRun {
   account: string
-  bypassing: boolean
   pid?: number
   startedAt: number
   boundAt: number
@@ -436,10 +435,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     })
   }
 
-  launchedBypassingChecks(tabId: string): boolean {
-    return !!this.runs.get(tabId)?.bypassing
-  }
-
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {
     if (!this.binary) throw new Error('Muse Code is unavailable.')
     return { binary: this.binary, env: this.env }
@@ -525,11 +520,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   protected async startRun(ctx: StartContext, launch: MuseLaunch): Promise<MuseRun> {
     return isRemoteKey(ctx.cwd) ? this.startRemoteRun(ctx, launch) : this.startLocalRun(ctx, launch)
-  }
-
-  private permissionOf(opts: CreateTabOptions): LaunchPermission {
-    const asked = opts.permission ?? 'default'
-    return asked === 'default' && this.deps.skipPermissions() ? 'bypass' : asked
   }
 
   // ADR-0030 MUSE§13 MUSE§17
