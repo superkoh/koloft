@@ -856,7 +856,7 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   `fallback_3p: "claude-fable-5"` (pointer, not run).
   `CLAUDE_CONFIG_DIR` does NOT isolate credentials on macOS (official docs —
   credentials always go through the system Keychain). `claude setup-token` is the
-  official login flow: it prints the authorization URL and, on success, the token on
+  official login flow for a long-lived, inference-only token (scope below): it prints the authorization URL and, on success, the token on
   its output. **CC's Bash-tool children inherit the parent claude's full env**, so
   nested claude calls inherit the injected token (inferred, not checked).
 - **CC's safety classifier can silently swap the model**: a blocked fable request is
@@ -885,17 +885,14 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   answered 403 `oauth_scope_insufficient` (needs `user:profile` or `user:office`), so the
   organization id the claim's path needs is out of reach; the usage read answered 429
   twice and showed nothing. So a session Koloft starts — Assist's too — cannot use
-  `/limit-reset` (inferred from the gate, not run).
-- **`claude setup-token` can only ever mint a `user:inference` token.** Read 2026-10-19
-  from the 2.1.303 binary (`strings`): the authorize URL's `scope` is the fixed list
-  `["user:inference"]` whenever the flow runs with `inferenceOnly`, which the login
-  command sets exactly for `setup-token`, and that call passes no OAuth client of its own
-  (the only thing that would replace the list). The full
-  `/login` asks for `org:create_api_key user:profile user:inference
-  user:sessions:claude_code user:mcp_servers user:file_upload` (plus `user:plugins` when
-  registered), and its tokens expire and refresh. So plan usage from `/api/oauth/usage`
-  (and the saved limit resets above) needs a full `/login` per account, kept and
-  refreshed by Koloft — the setup-token login Koloft uses today cannot reach it.
+  `/limit-reset` (inferred from the gate, not run). Where the narrow scope comes from,
+  read from the 2.1.303 binary (`strings`, 2026-10-19): the authorize URL asks for
+  `scope=user:inference` alone when the flow runs `inferenceOnly`, which the login
+  command sets for `setup-token`; the full `/login` asks for `org:create_api_key
+  user:profile user:inference user:sessions:claude_code user:mcp_servers
+  user:file_upload`, plus `user:plugins` when the OAuth config's
+  `PLUGINS_SCOPE_REGISTERED` is set. Whether any flag, variable or server setting widens
+  the `setup-token` list: not probed.
 - **The 5h window's reset time moves forward between probes** — the window is rolling.
   (Inferred, not checked.)
 - **Remote Control refuses the long-lived token Koloft injects.** Measured 2026-10-01,
