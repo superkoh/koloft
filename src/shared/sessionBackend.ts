@@ -153,17 +153,16 @@ const EVERYTHING: Capabilities = {
   worktreeRemovalFollowed: true
 }
 
-const ON_A_MACHINE: Capabilities = {
+const OUTSIDE_LOCAL_CLAUDE: Capabilities = {
   ...EVERYTHING,
-  browserControl: PENDING,
   askHookWaitsForDiscord: PENDING,
   panelSeen: PENDING,
   worktreeRemovalFollowed: PENDING
 }
 
-const CLAUDE_HOOKS_AND_EXIT_ONLY = {
-  askHookWaitsForDiscord: PENDING,
-  worktreeRemovalFollowed: PENDING
+const ON_A_MACHINE: Capabilities = {
+  ...OUTSIDE_LOCAL_CLAUDE,
+  browserControl: PENDING
 }
 
 const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
@@ -173,16 +172,16 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
     ssh: ON_A_MACHINE
   },
   codex: {
-    local: { ...EVERYTHING, ...CLAUDE_HOOKS_AND_EXIT_ONLY, panelSeen: PENDING },
+    local: OUTSIDE_LOCAL_CLAUDE,
     // CODEX§16
     ssh: ON_A_MACHINE
   },
   muse: {
-    local: { ...EVERYTHING, ...CLAUDE_HOOKS_AND_EXIT_ONLY },
+    local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: true },
     ssh: { ...ON_A_MACHINE, panelSeen: true }
   },
   agy: {
-    local: { ...EVERYTHING, ...CLAUDE_HOOKS_AND_EXIT_ONLY, panelSeen: PENDING },
+    local: OUTSIDE_LOCAL_CLAUDE,
     ssh: ON_A_MACHINE
   }
 }

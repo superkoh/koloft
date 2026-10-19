@@ -569,17 +569,17 @@ function asksTheOwner(tabId: string): boolean {
   return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
 }
 
-const panelOpenOn: Partial<
-  Record<
-    BackendId,
-    (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
-  >
+const panelOpenOn: Record<
+  BackendId,
+  (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
 > = {
   claude: async (_tabId, sessionId) => (sessionId ? claudeShowsAPanel(sessionId) : undefined),
+  codex: async () => undefined,
   muse: async (tabId, _sessionId, screen) => {
     const lines = screen ?? (await screenLines(tabId))
     return lines && !museShowsItsInputBox(lines)
-  }
+  },
+  agy: async () => undefined
 }
 
 const slash = new SlashCommands({
@@ -590,8 +590,8 @@ const slash = new SlashCommands({
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId, screen) => {
     const s = sessionOfTab(tabId)
-    if (!s || capabilitiesFor(s.backendId, hostOfTab(tabId)).panelSeen !== true) return undefined
-    return panelOpenOn[s.backendId]?.(tabId, s.sessionId, screen)
+    if (!s || capabilitiesFor(s.backendId, s.host).panelSeen !== true) return undefined
+    return panelOpenOn[s.backendId](tabId, s.sessionId, screen)
   },
   screen: screenLines,
   nextMirrorPull: (tabId) => {
@@ -1094,11 +1094,7 @@ function watchedByDiscord(all: Conductors, s: { tabId: string; conductor?: strin
 function syncAnswerable(): void {
   if (!hookRegDir || !conductors) return
   for (const s of allSessions()) {
-    if (
-      !s.alive ||
-      capabilitiesFor(s.backendId, hostOfTab(s.tabId)).askHookWaitsForDiscord !== true
-    )
-      continue
+    if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
     const on = discordConnected && watchedByDiscord(conductors, s)
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)

@@ -8,7 +8,7 @@ import {
   SESSION_BACKENDS,
   sessionKey,
   shownAsInstalled,
-  type Capability
+  type Capabilities
 } from '@shared/sessionBackend'
 import type { BackendId, BackendSessionInfo, BackendSessionRow, HostId } from '@shared/types'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
@@ -239,23 +239,7 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(remote.browserControl).not.toBe(true)
   })
 
-  const SHARED_ROWS = ['workbench', 'scheduledTasks', 'agentTools', 'browserControl'] as const
-  const sharedRowsOf = (backend: BackendId, host: HostId): Capability[] =>
-    SHARED_ROWS.map((row) => capabilitiesFor(backend, host)[row])
-
-  it('gives a Codex, Muse or Antigravity session on this Mac a Workbench, scheduled tasks, the koloft command and browser control', () => {
-    for (const backend of SESSION_BACKENDS)
-      expect(sharedRowsOf(backend, 'local')).toEqual(sharedRowsOf('claude', 'local'))
-  })
-
-  // CODEX§16
-  it('gives a remote Codex, Muse or Antigravity tab what a remote Claude tab has', () => {
-    for (const backend of SESSION_BACKENDS)
-      expect(sharedRowsOf(backend, 'ssh')).toEqual(sharedRowsOf('claude', 'ssh'))
-  })
-
-  // CC§4 CC§11 CC§14
-  it.each([
+  const ROWS_ONLY_SOME_TABS_HAVE: [string, keyof Capabilities, string[]][] = [
     [
       "Koloft's ask hook holds a question until Discord answers it only in a Claude Code tab on this Mac; on a machine the hook only records it and a Discord button presses the key, and other agents have no such hook",
       'askHookWaitsForDiscord',
@@ -271,12 +255,34 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       'worktreeRemovalFollowed',
       ['claude/local']
     ]
-  ] as const)('%s', (_rule, row, on) => {
+  ]
+  const sharedRowsOf = (backend: BackendId, host: HostId): Partial<Capabilities> =>
+    Object.fromEntries(
+      Object.entries(capabilitiesFor(backend, host)).filter(
+        ([row]) => !ROWS_ONLY_SOME_TABS_HAVE.some(([, only]) => only === row)
+      )
+    )
+  const HOSTS: HostId[] = ['local', 'ssh']
+
+  it('gives a Codex, Muse or Antigravity session on this Mac a Workbench, scheduled tasks, the koloft command and browser control', () => {
     for (const backend of SESSION_BACKENDS)
-      for (const host of ['local', 'ssh'] as const)
-        expect(capabilitiesFor(backend, host)[row] === true, `${backend}/${host}`).toBe(
-          (on as readonly string[]).includes(`${backend}/${host}`)
-        )
+      expect(sharedRowsOf(backend, 'local')).toEqual(sharedRowsOf('claude', 'local'))
+  })
+
+  // CODEX§16
+  it('gives a remote Codex, Muse or Antigravity tab what a remote Claude tab has', () => {
+    for (const backend of SESSION_BACKENDS)
+      expect(sharedRowsOf(backend, 'ssh')).toEqual(sharedRowsOf('claude', 'ssh'))
+  })
+
+  // CC§4 CC§11 CC§14
+  it.each(ROWS_ONLY_SOME_TABS_HAVE)('%s', (_rule, row, on) => {
+    const tabsWithIt = SESSION_BACKENDS.flatMap((backend) =>
+      HOSTS.filter((host) => capabilitiesFor(backend, host)[row] === true).map(
+        (host) => `${backend}/${host}`
+      )
+    )
+    expect(tabsWithIt).toEqual(on)
   })
 })
 
