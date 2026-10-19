@@ -256,6 +256,24 @@ describe('SessionTracker — title resolution priority', () => {
     expect(s.title).toBe('Sidecar Name')
   })
 
+  it('a sidecar <id>.title is never polled on its own: it is read at bind and on the 5 s rescan, so one written or renamed later still shows', async () => {
+    const watchFile = vi.spyOn(fs, 'watchFile')
+    onTestFinished(() => watchFile.mockRestore())
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    tracker.track('tabT2s', cwd)
+    const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'first' }, cwd }])
+    const sidecar = file.replace(/\.jsonl$/, '.title')
+    tracker.bindSession('tabT2s', file, SID, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'first')
+
+    fs.writeFileSync(sidecar, 'Sidecar Name\n')
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'Sidecar Name')
+    fs.writeFileSync(sidecar, 'Renamed\n')
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'Renamed')
+    expect(watchFile.mock.calls.map(([p]) => p)).toEqual([file])
+  })
+
   it('a session name (custom-title, from --name or /rename) beats the first prompt, the latest one wins, and the sidecar still beats it', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()

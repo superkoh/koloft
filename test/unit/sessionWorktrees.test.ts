@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import { SessionStore } from '../../src/main/sessionStore'
 import { SessionWorktrees } from '../../src/main/sessionWorktrees'
 
@@ -32,8 +33,9 @@ beforeEach(() => {
   worktrees = new SessionWorktrees(store)
 })
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks()
+  await BackgroundFile.whenAllWritten()
   fs.rmSync(directory, { recursive: true, force: true })
 })
 

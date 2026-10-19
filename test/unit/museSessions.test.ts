@@ -12,6 +12,7 @@ import {
   type MuseMachine,
   type MuseSessionDeps
 } from '../../src/main/museSessions'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import { museSessionKey } from '../../src/main/sessionStore'
 import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
@@ -208,6 +209,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await sessions.stopAll()
+  await BackgroundFile.whenAllWritten()
   fs.rmSync(home, { recursive: true, force: true })
 })
 

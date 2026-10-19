@@ -1492,12 +1492,13 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()).toBe(
         baseline
       )
-      const saved = JSON.parse(fs.readFileSync(path.join(env.userData, 'sessions.json'), 'utf8'))
-      expect(Object.keys(saved.resources)).toEqual([resourceId])
-      expect(saved.resources[resourceId].state).toBe('ready')
-      expect(Object.values(saved.members)).toEqual([
-        expect.objectContaining({ worktreeResourceId: resourceId })
-      ])
+      const saved = (): { resources: Record<string, { state: string }>; members: object } =>
+        JSON.parse(fs.readFileSync(path.join(env.userData, 'sessions.json'), 'utf8'))
+      await expect
+        .poll(() => Object.values(saved().members))
+        .toEqual([expect.objectContaining({ worktreeResourceId: resourceId })])
+      expect(Object.keys(saved().resources)).toEqual([resourceId])
+      expect(saved().resources[resourceId].state).toBe('ready')
       expect(readCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
