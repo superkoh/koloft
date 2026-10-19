@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { ResumeFailure, SessionInfo, WorkspaceRows } from '@shared/types'
 import { useStore, consumeRestartExit } from '../../src/renderer/src/store'
+import { mainRequest, runResume } from '../../src/renderer/src/resumeFlow'
 import {
   allEditTabs,
   allDirtyTabs,
@@ -695,7 +696,7 @@ describe('restartActiveSession: respawn failure', () => {
     expect(refused.tabs[0].alive).toBe(false)
   })
 
-  it('a deleted worktree that cannot be rebuilt offers the same resume in the main checkout a cold-row resume offers', async () => {
+  it('a deleted worktree that cannot be rebuilt offers the same resume in the main checkout a cold-row resume offers, and taking it replaces the dead tab in place', async () => {
     const s = useStore.getState()
     s.addTab({ id: 'gone1', kind: 'codex', title: 'Codex', cwd: '/w', alive: true })
     s.setSessions([
@@ -720,10 +721,30 @@ describe('restartActiveSession: respawn failure', () => {
     expect(after.tabs[0].alive).toBe(false)
     expect(after.resumeDialog).toEqual({
       kind: 'escape',
-      target: { backendId: 'codex', id: 'codex:local:thread-g', title: 'Gone tree' },
+      target: {
+        backendId: 'codex',
+        id: 'codex:local:thread-g',
+        title: 'Gone tree',
+        replacesTab: 'gone1'
+      },
       worktreeName: 'feat',
       cwd: '/w'
     })
+
+    createRefuses = null
+    const escape = after.resumeDialog
+    if (escape?.kind !== 'escape') throw new Error('no escape dialog')
+    await runResume(escape.target, mainRequest(escape.target, escape.cwd))
+
+    const resumed = useStore.getState()
+    expect(resumed.tabs).toHaveLength(1)
+    expect(resumed.tabs[0]).toMatchObject({
+      id: 'pty-new',
+      kind: 'codex',
+      sessionId: 'codex:local:thread-g',
+      alive: true
+    })
+    expect(resumed.activeTabId).toBe('pty-new')
   })
 })
 

@@ -163,6 +163,10 @@ interface AppState {
 
   addTab: (t: Tab) => void
   addTabQuiet: (t: Tab) => void
+  takeOverTab: (
+    oldId: string,
+    next: { id: string; kind: Tab['kind']; cwd: string; sessionId: string }
+  ) => void
   setCron: (s: CronState) => void
   adoptTabs: (tabs: AdoptableTab[], activeTabBeforeReload: string | null) => void
   removeTab: (id: string) => void
@@ -552,6 +556,14 @@ export const useStore = create<AppState>((set, get) => ({
           }
     )
   },
+  takeOverTab: (oldId, next) => {
+    set((s) => ({
+      tabs: s.tabs.map((x) => (x.id === oldId ? { ...x, ...next, alive: true } : x)),
+      activeTabId: s.activeTabId === oldId ? next.id : s.activeTabId,
+      ...panelStateMoved(s, oldId, next.id)
+    }))
+    tabStateMoved(oldId, next.id, next.sessionId)
+  },
   setCron: (cron) => set({ cron }),
   adoptTabs: (tabs, activeTabBeforeReload) => {
     const fresh = tabs.filter((a) => !get().tabs.some((t) => t.id === a.id))
@@ -712,7 +724,7 @@ export const useStore = create<AppState>((set, get) => ({
             if (main) {
               get().setResumeDialog({
                 kind: 'escape',
-                target: { backendId: backend, id: resumeId, title },
+                target: { backendId: backend, id: resumeId, title, replacesTab: oldId },
                 worktreeName: basename(cwd),
                 cwd: main
               })
@@ -723,23 +735,12 @@ export const useStore = create<AppState>((set, get) => ({
             window.api.terminal.kill(res.id)
             return
           }
-          set((s) => ({
-            tabs: s.tabs.map((x) =>
-              x.id === oldId
-                ? {
-                    ...x,
-                    id: res.id,
-                    kind: backend,
-                    cwd: res.cwd,
-                    sessionId: resumeId,
-                    alive: true
-                  }
-                : x
-            ),
-            activeTabId: s.activeTabId === oldId ? res.id : s.activeTabId,
-            ...panelStateMoved(s, oldId, res.id)
-          }))
-          tabStateMoved(oldId, res.id, resumeId)
+          get().takeOverTab(oldId, {
+            id: res.id,
+            kind: backend,
+            cwd: res.cwd,
+            sessionId: resumeId
+          })
           restarting.add(res.id)
           setTimeout(() => restarting.delete(res.id), RESTART_COOLDOWN_MS)
         })

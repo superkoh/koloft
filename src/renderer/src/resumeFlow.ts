@@ -10,6 +10,7 @@ export interface ResumeTarget {
   title: string
   restore?: boolean
   wake?: boolean
+  replacesTab?: string
 }
 
 type RebuildPlan = Extract<ResumePlan, { action: 'rebuild' }>
@@ -130,9 +131,15 @@ export async function runResume(target: ResumeTarget, req: SessionResumeRequest)
       st.showToast(resumeFailureMessage(res.code, 'message' in res ? res.message : undefined))
       return
     }
+    const kind = res.kind ?? target.backendId
+    const replaced = target.replacesTab
+    if (replaced && useStore.getState().tabs.some((t) => t.id === replaced)) {
+      st.takeOverTab(replaced, { id: res.id, kind, cwd: res.cwd, sessionId: target.id })
+      return
+    }
     st.addTab({
       id: res.id,
-      kind: res.kind ?? target.backendId,
+      kind,
       title: target.title,
       cwd: res.cwd,
       sessionId: target.id,
