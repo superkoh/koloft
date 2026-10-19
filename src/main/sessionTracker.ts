@@ -121,9 +121,11 @@ function taskNotificationText(obj: TranscriptRecord): string | null {
 }
 
 // CC§8
-function readTeammateFlag(jsonl: string): boolean | undefined {
+async function readTeammateFlag(jsonl: string): Promise<boolean | undefined> {
   try {
-    const meta = JSON.parse(fs.readFileSync(jsonl.replace(/\.jsonl$/, '.meta.json'), 'utf8'))
+    const meta = JSON.parse(
+      await fs.promises.readFile(jsonl.replace(/\.jsonl$/, '.meta.json'), 'utf8')
+    )
     return meta?.taskKind === 'in_process_teammate'
   } catch {
     return undefined
@@ -131,24 +133,24 @@ function readTeammateFlag(jsonl: string): boolean | undefined {
 }
 
 // CC§8
-function listSubagentJsonls(dir: string): string[] {
+async function listSubagentJsonls(dir: string): Promise<string[]> {
   const out: string[] = []
-  const walk = (d: string, depth: number): void => {
+  const walk = async (d: string, depth: number): Promise<void> => {
     if (depth > 6 || out.length >= 500) return
     let ents: fs.Dirent[]
     try {
-      ents = fs.readdirSync(d, { withFileTypes: true })
+      ents = await fs.promises.readdir(d, { withFileTypes: true })
     } catch {
       return
     }
     for (const e of ents) {
       const full = path.join(d, e.name)
-      if (e.isDirectory()) walk(full, depth + 1)
+      if (e.isDirectory()) await walk(full, depth + 1)
       else if (e.isFile() && e.name.endsWith('.jsonl')) out.push(full)
       if (out.length >= 500) return
     }
   }
-  walk(dir, 0)
+  await walk(dir, 0)
   return out
 }
 
@@ -1292,14 +1294,13 @@ export class SessionTracker extends SessionRuntime {
     const rescan = now - t.subagentScanMs >= SUBAGENT_SCAN_MS
     if (rescan) {
       t.subagentScanMs = now
-      const dir = path.join(path.dirname(p), t.info.sessionId, 'subagents')
-      for (const f of listSubagentJsonls(dir)) {
-        let sst = t.subagentFiles.get(f)
-        if (!sst) {
-          sst = { offset: 0, tail: Buffer.alloc(0), activeMs: now }
-          t.subagentFiles.set(f, sst)
-        }
-        if (sst.teammate === undefined) sst.teammate = readTeammateFlag(f)
+      const files = t.subagentFiles
+      const found = await listSubagentJsonls(
+        path.join(path.dirname(p), t.info.sessionId, 'subagents')
+      )
+      if (this.tracked.get(t.info.tabId) !== t || t.subagentFiles !== files) return false
+      for (const f of found) {
+        if (!files.has(f)) files.set(f, { offset: 0, tail: Buffer.alloc(0), activeMs: now })
       }
     }
     const due = [...t.subagentFiles].filter(
@@ -1322,7 +1323,10 @@ export class SessionTracker extends SessionRuntime {
     }
     if (st.size === sst.offset) return false
     sst.activeMs = Date.now()
-    if (sst.teammate === undefined) sst.teammate = readTeammateFlag(file)
+    if (sst.teammate === undefined) {
+      sst.teammate = await readTeammateFlag(file)
+      if (this.tracked.get(t.info.tabId) !== t || t.subagentFiles.get(file) !== sst) return false
+    }
     if (sst.teammate) t.teammateActiveMs = sst.activeMs
     let folded = false
     while (sst.offset < st.size) {
