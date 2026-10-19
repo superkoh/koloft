@@ -595,8 +595,8 @@
         <h3 id="session-sync">Open sessions hear what changed</h3>
         <p>
           When a fetch finds that origin's main branch has moved, say because a pull request was
-          merged, Koloft sends a message to every open Claude Code or Codex session in that
-          repository that sits on another branch and does not have those commits yet. The fetch is
+          merged, Koloft sends a message to every open session in that repository, whichever agent
+          runs it, that sits on another branch and does not have those commits yet. The fetch is
           Koloft's own (every five minutes, while Auto-fetch is on) or <code>Fetch now</code>.
           Assist's own sessions are not told, nor is a session on the main branch itself: the behind
           number, Pull and Auto-pull serve it. Commits that came in while Koloft was closed are not
