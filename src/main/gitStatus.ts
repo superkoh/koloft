@@ -149,6 +149,8 @@ function parseNumstatInto(out: GitNumstatMap, stdout: string, toplevel: string):
   }
 }
 
+const SESSION_WORKTREES_DIR = '.claude/worktrees/'
+
 export interface StatusOutputs {
   nameStatus: string | null
   others: string | null
@@ -161,7 +163,7 @@ export function statusFrom(toplevel: string, o: StatusOutputs): GitStatusMap {
   if (o.nameStatus !== null) parseNameStatusInto(out, o.nameStatus, toplevel)
   if (o.others !== null) {
     for (const rel of o.others.split('\0')) {
-      if (rel) out[path.join(toplevel, rel)] = 'untracked'
+      if (rel && !rel.startsWith(SESSION_WORKTREES_DIR)) out[path.join(toplevel, rel)] = 'untracked'
     }
   }
   if (o.nameStatus === null && o.porcelain !== null) parsePorcelainInto(out, o.porcelain, toplevel)
