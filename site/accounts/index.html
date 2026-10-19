@@ -208,11 +208,13 @@
         <p>
           Sign in to Codex runs <code>codex login</code> in a terminal tab. Each sign-in becomes its
           own Codex home, a folder that holds that one login. The sign-in tab says
-          <code>Codex sign in: &lt;name&gt;</code> above the terminal, with a Cancel button. New
-          Codex sessions start on the least-used one, and skip one that has hit its limit while
-          another is free; when all have hit it, Koloft takes turns. Settings and the
-          <code>Account usage</code> panel show each account's use for each limit Codex reports
-          (such as 5 hours and a week), its credits, and the resets it has saved, like
+          <code>Codex sign in: &lt;name&gt;</code> above the terminal, with a Cancel button. If this
+          Mac has no <code>codex</code> yet, the dialog says so and the same tab runs its official
+          installer first, then goes on to the sign-in; Sign in to Muse and Antigravity's Sign in
+          with Google do the same. New Codex sessions start on the least-used one, and skip one that
+          has hit its limit while another is free; when all have hit it, Koloft takes turns.
+          Settings and the <code>Account usage</code> panel show each account's use for each limit
+          Codex reports (such as 5 hours and a week), its credits, and the resets it has saved, like
           <code>62,500 credits · 3 resets saved, first expires 10-21 09:00</code>.
         </p>
         <p>
@@ -246,7 +248,11 @@
           Keychain and is handed to <code>agy</code> when a session starts. An account signed in
           with Google shows how much of its <code>5h</code> and <code>7d</code> allowance is used,
           in Settings and in the <code>Account usage</code> panel. New Antigravity sessions take
-          turns between your accounts.
+          turns between your accounts. With <code>Skip permission prompts</code> on (it is on at
+          first), an Antigravity session, here or on a machine, runs with no permission asks, as
+          Claude Code and Muse do; a permission picked for one launch, like a scheduled job's, still
+          wins. The session draws in agy's no-flickering full-screen mode, unless your own agy
+          settings pick another.
         </p>
 
         <h2 id="assist">Assist</h2>

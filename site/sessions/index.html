@@ -283,10 +283,11 @@
           <li>
             Not everything you type starts a session. Words about Koloft itself ("turn on dark
             mode", "set up Discord") go to Assist as a task; "open settings" or "check for updates"
-            just does it; "ask &lt;folder&gt; …" goes to that folder's Assist. Ask for a session by
-            what it was doing ("go to the session that was fixing login"), and <kbd>⌘P</kbd> jumps
-            to it, starting nothing. A question, a translation, or work that fits more than one
-            folder ("fix the tests") goes to the Global Assist, which answers in its own tab.
+            just does it; "ask &lt;folder&gt; …" or "how's &lt;folder&gt; doing …" goes to that
+            folder's Assist. Ask for a session by what it was doing ("go to the session that was
+            fixing login"), and <kbd>⌘P</kbd> jumps to it, starting nothing. A question, a
+            translation, or work that fits more than one folder ("fix the tests") goes to the Global
+            Assist, which answers in its own tab.
           </li>
           <li>
             With Assist off, the button reads <code>Start a session</code> (with more than one
@@ -356,7 +357,11 @@
           <li>
             A session whose worktree is gone stays in the list. Hover its row and the tip reads
             <code>worktree deleted; click to rebuild and resume</code>; a click makes the worktree
-            again and resumes the same session in it. Claude and Codex both do this.
+            again and resumes the same session in it. A restart (<kbd>⇧⌘R</kbd>) of a session whose
+            worktree was deleted does the same. Claude and Codex both do this. When the worktree
+            cannot be made again, a box titled <code>Could not rebuild the worktree</code> offers
+            <code>Resume in main without isolation</code>: the same session goes on in the folder
+            itself, so every file it touches lands there.
           </li>
           <li>
             In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in
@@ -585,6 +590,33 @@
           <code>can't reach origin from &lt;machine&gt; — check its network or credentials.</code>
           While the machine is not connected, Fetch now and Pull are greyed out and the last counts
           stay. The GitHub part and the Account part work as above.
+        </p>
+
+        <h3 id="session-sync">Open sessions hear about it too</h3>
+        <p>
+          When a fetch (Koloft's own every five minutes, or <code>Fetch now</code>) finds that
+          origin's main branch has moved, say because a pull request was merged, every open Claude
+          Code or Codex session in that repository that sits on another branch and does not have
+          those commits yet gets a message from Koloft:
+          <code
+            >(From Koloft:) origin/main moved from … to …, with 2 new commits: "…", "…". It changed
+            files you changed too: ….</code
+          >
+          The last part names the files the session itself had changed. Nobody asks it to merge or
+          rebase; what to do is the agent's call. A session on the main branch itself is not told:
+          the behind number, Pull and Auto-pull serve it.
+        </p>
+        <p>
+          When two open sessions of one repository write the same file, each is told:
+          <code>The session "…" changed files you changed too: ….</code> In the same folder, the
+          message says to read the file again before editing it; in two worktrees, it says the two
+          branches may conflict when both reach main. Only files the agent wrote through its own
+          tools count, not ones a shell command wrote.
+        </p>
+        <p>
+          A Claude Code session on this Mac gets the message at once, even mid-task. A Codex
+          session, here or on a machine, and a Claude Code session on a machine get it once their
+          turn is over. Muse and Antigravity sessions are not told.
         </p>
 
         <p class="next">Next page → <a href="../workbench/">The Workbench</a></p>
