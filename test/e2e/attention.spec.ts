@@ -94,7 +94,7 @@ test.describe('attention markers come from real session-status transitions (shim
     await sendShortcut(app, 'shortcut:next-waiting-session')
     await expect(activeIn('ws-a')).toHaveCount(1)
 
-    await runIn(page, centerTerm(page), '/busy')
+    await page.evaluate((id) => window.api.terminal.write(id, '/busy\r'), aTab!)
     await expect(bell.locator('.ws-unread-count')).toHaveText('1', { timeout: 15_000 })
   })
 
