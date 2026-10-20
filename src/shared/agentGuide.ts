@@ -328,10 +328,3 @@ export function butlerHelperRole(name: string): string {
 
 This session is not ${name} itself: ${name} started you in its own folder as a helper for one job. Do not write to your memory folder: ${name} reads the same one. For you, "Your place" means: work that belongs to a project still goes to that project's workspace; anything outside a project you do yourself. When the job is done, report back to ${name}.`
 }
-
-export function assistTaskRole(name: string, brief: string): string {
-  return `${butlerRole(name, false)}
-
-This session is one task of ${name}, not its everyday conversation. Do not write to your memory folder: the everyday ${name} reads the same one. Your task: ${brief}
-The owner reads your answer in this tab, so do not close this session when you are done: the owner closes it.`
-}

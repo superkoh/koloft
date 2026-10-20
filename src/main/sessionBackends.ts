@@ -62,7 +62,6 @@ export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
   isButlerSession: (tabOrSessionId: string) => boolean = () => false
-  assistTaskOf: (tabId: string) => string | undefined = () => undefined
   turnOver: (tabId: string) => boolean = () => false
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
 
@@ -154,7 +153,6 @@ export class SessionBackends {
         host: s.remote ? 'ssh' : hostOf(s.cwd),
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
         butler: this.isButlerSession(s.tabId) || this.isButlerSession(s.sessionId),
-        assistTask: this.assistTaskOf(s.tabId),
         turnOver: this.turnOver(s.tabId),
         docVerdicts: s.sessionId ? this.docVerdictsOf(s.sessionId) : undefined
       }))

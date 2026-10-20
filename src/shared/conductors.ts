@@ -60,10 +60,6 @@ export function peerNamesOf(name: string): string[] {
   return [asPeerName(name), ...OLD_BUTLER_PEER_NAMES]
 }
 
-export function assistTaskName(name: string, task: string): string {
-  return `${name}-${task}`
-}
-
 export function setUpWith(name: string): string {
   return `Set up with ${name}`
 }

@@ -22,11 +22,17 @@ let saved: DiscordSettings
 let session: ButlerSession
 let quiet: DiscordSettings[]
 let rescans: number
-let started: { cwd: string; role: string; title: string; backend: BackendId }[]
+let started: {
+  cwd: string
+  role: string
+  title: string
+  backend: BackendId
+  firstPrompt?: string
+  ownerWords?: string
+}[]
 let resumed: string[]
 let killed: string[]
 let toasts: string[]
-let taskPushes: number
 let transcripts: Set<string>
 let choice: AssistBackendChoice
 let release: () => void
@@ -53,7 +59,14 @@ function make(): Butler {
     runningElsewhere: async () => false,
     transcriptExists: async (_backend, key) => transcripts.has(key),
     start: async (l) => {
-      started.push({ cwd: l.cwd, role: l.role, title: l.title, backend: l.backend })
+      started.push({
+        cwd: l.cwd,
+        role: l.role,
+        title: l.title,
+        backend: l.backend,
+        firstPrompt: l.firstPrompt,
+        ownerWords: l.ownerWords
+      })
       await new Promise<void>((r) => (release = r))
       return `tab-${started.length}`
     },
@@ -63,7 +76,6 @@ function make(): Butler {
     },
     kill: onlyWhileItsTestRuns((tabId: string) => void killed.push(tabId)),
     rowsChanged: () => void rescans++,
-    tasksChanged: onlyWhileItsTestRuns(() => void taskPushes++),
     toast: onlyWhileItsTestRuns((t: string) => void toasts.push(t)),
     bindDeadlineMs: DEADLINE_MS
   }
@@ -73,16 +85,6 @@ function make(): Butler {
 async function opened(c: Butler): Promise<string> {
   const before = started.length
   const opening = c.open()
-  await vi.waitFor(() => expect(started).toHaveLength(before + 1))
-  release()
-  const r = await opening
-  if (!r.ok) throw new Error(r.error)
-  return r.tabId
-}
-
-async function openedTask(c: Butler, task: string, words = 'do it'): Promise<string> {
-  const before = started.length
-  const opening = c.openTask({ name: task, brief: words, ownerWords: words })
   await vi.waitFor(() => expect(started).toHaveLength(before + 1))
   release()
   const r = await opening
@@ -103,7 +105,6 @@ beforeEach(() => {
   resumed = []
   killed = []
   toasts = []
-  taskPushes = 0
   transcripts = new Set()
   choice = { backend: 'claude' }
   release = () => {}
@@ -204,10 +205,40 @@ describe('the butler', () => {
     ])
     expect(c.isButlerSession('someone-else')).toBe(false)
 
-    c.onPtyExit(tab, false)
+    c.onPtyExit(tab)
     transcripts.add('s2')
     expect(await c.open()).toEqual({ ok: true, tabId: 'tab-resumed-s2' })
     expect(resumed).toEqual(['s2'])
+  })
+
+  // ADR-0031 AGY§8
+  it('opened to be told something, starts a new conversation on those words with the owner’s words saved, and says so; resumed or already open, it is started on nothing', async () => {
+    const c = make()
+    const words = { prompt: 'The owner typed this in ⌘P: hi', ownerWords: 'hi' }
+    const opening = c.open(words)
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    expect((await opening).startedWith).toBe(words)
+    expect(started[0]).toMatchObject({ firstPrompt: words.prompt, ownerWords: 'hi' })
+    expect(await c.open(words)).toEqual({ ok: true, tabId: 'tab-1' })
+
+    c.onBound('tab-1', 's1')
+    c.onPtyExit('tab-1')
+    transcripts.add('s1')
+    expect(await c.open(words)).toEqual({ ok: true, tabId: 'tab-resumed-s1' })
+  })
+
+  it('asked twice while it starts, even with the same words, starts once on the first asker’s words, and tells both whose they were', async () => {
+    const c = make()
+    const first = { prompt: 'same', ownerWords: 'same' }
+    const second = { prompt: 'same', ownerWords: 'same' }
+    const a = c.open(first)
+    const b = c.open(second)
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    expect((await a).startedWith).toBe(first)
+    expect((await b).startedWith).toBe(first)
+    expect(started).toHaveLength(1)
   })
 
   it('a tab resumed some other way and bound to the last session is taken as the butler again', () => {
@@ -249,7 +280,7 @@ describe('the butler', () => {
     const c = make()
     await opened(c)
     expect(toasts).toEqual(['Alfred runs on Codex this time: why.'])
-    c.onPtyExit('tab-1', false)
+    c.onPtyExit('tab-1')
     choice = { error: 'Alfred cannot start: no.' }
     expect(await c.open()).toEqual({ ok: false, error: 'Alfred cannot start: no.' })
   })
@@ -265,7 +296,7 @@ describe('the butler', () => {
     expect(killed).toEqual(['tab-1'])
     expect(toasts).toEqual(['Alfred did not start.'])
     expect(c.isButlerSession('tab-1')).toBe(true)
-    c.onPtyExit('tab-1', false)
+    c.onPtyExit('tab-1')
     expect(c.isButlerSession('tab-1')).toBe(false)
   })
 
@@ -325,69 +356,13 @@ describe('the butler', () => {
     c.forgetGone((key) => onDisk.has(key))
     expect(rescans).toBe(0)
   })
-})
-
-describe('a ⌘P task of the butler', () => {
-  it('is a second session in the same folder, named after the butler, told its task, starting from the owner’s words, and never the butler’s everyday conversation', async () => {
-    const c = make()
-    const tab = await openedTask(c, 'Translate', 'Translate this.')
-    expect(tab).toBe('tab-1')
-    expect(started[0].cwd).toBe(conductorFolder(userData))
-    expect(started[0].title).toBe('Alfred-Translate')
-    expect(started[0].role).toContain('Your task: Translate this.')
-    expect(started[0].role).toContain('do not close this session')
-    expect(c.isButlerTab('tab-1')).toBe(true)
-    expect(c.channelOfTab('tab-1')).toBeUndefined()
-    expect(c.taskRows()).toEqual([{ tabId: 'tab-1', name: 'Translate' }])
-    c.onBound('tab-1', 'task-key')
-    expect(session).toEqual({ sessionIds: ['task-key'] })
-    expect(c.identityOfLaunch(conductorFolder(userData), 'task-key')?.role).toContain(
-      'Your task: Translate this.'
-    )
-    expect(await c.openTask({ name: 'Translate', brief: 'again', ownerWords: 'again' })).toEqual({
-      ok: true,
-      tabId: 'tab-1'
-    })
-  })
 
   it('while it starts, a session that has no id yet is not taken for the butler’s', async () => {
     const c = make()
-    const opening = c.openTask({ name: 'Translate', brief: 'b', ownerWords: 'b' })
+    const opening = c.open()
     await vi.waitFor(() => expect(started).toHaveLength(1))
     expect(c.isButlerSession('')).toBe(false)
     release()
     await opening
-  })
-
-  it('asked for twice while it starts starts once, and both get its tab', async () => {
-    const c = make()
-    const task = { name: 'Translate', brief: 'b', ownerWords: 'b' }
-    const first = c.openTask(task)
-    const second = c.openTask(task)
-    await vi.waitFor(() => expect(started).toHaveLength(1))
-    release()
-    expect(await first).toEqual({ ok: true, tabId: 'tab-1' })
-    expect(await second).toEqual({ ok: true, tabId: 'tab-1' })
-    expect(c.taskRows()).toHaveLength(1)
-  })
-
-  it('that sleeps stays listed and is found again when it wakes in a new tab; closing it ends it', async () => {
-    const c = make()
-    await openedTask(c, 'Translate')
-    c.onBound('tab-1', 'task-key')
-    c.onPtyExit('tab-1', true)
-    expect(c.taskRows()).toHaveLength(1)
-    c.onBound('tab-woken', 'task-key')
-    expect(c.taskRows()).toEqual([{ tabId: 'tab-woken', name: 'Translate' }])
-    c.closeTask('tab-woken')
-    expect(killed).toEqual(['tab-woken'])
-    expect(c.taskRows()).toEqual([])
-  })
-
-  it('whose session ends on its own leaves the list', async () => {
-    const c = make()
-    await openedTask(c, 'Translate')
-    c.onPtyExit('tab-1', false)
-    expect(c.taskRows()).toEqual([])
   })
 })

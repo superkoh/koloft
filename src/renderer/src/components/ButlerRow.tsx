@@ -1,8 +1,8 @@
-import { useEffect, useState, type JSX, type MouseEvent } from 'react'
+import { useState, type JSX, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { IconAssist, IconClose } from '../icons'
 import { butlerName, butlerTitle, channelLabel, renamedButler } from '@shared/conductors'
-import { attentionReason, type AssistTaskRow, type SessionInfo } from '@shared/types'
+import { attentionReason } from '@shared/types'
 import { preferredAssistBackend } from '@shared/sessionBackend'
 import { useStore } from '../store'
 import { rowStateClass } from '../sessionRows'
@@ -22,14 +22,15 @@ export async function openButler(fresh = false): Promise<void> {
 export async function setUpDiscordWithButler(ownerWords?: string): Promise<string | null> {
   const r = await window.api.discord.setUpWithButler(ownerWords)
   if (!r.ok) return r.error
-  const st = useStore.getState()
-  st.setButlerTab(r.tabId)
-  st.setSettingsOpen(false)
-  visitTab(r.tabId)
+  useStore.getState().setSettingsOpen(false)
+  showButler(r.tabId)
   return null
 }
 
-type MenuTarget = { kind: 'butler' } | { kind: 'task'; task: AssistTaskRow }
+export function showButler(tabId: string): void {
+  useStore.getState().setButlerTab(tabId)
+  visitTab(tabId)
+}
 
 export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
@@ -42,33 +43,18 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
   const attention = useStore((s) => s.attention)
   const activeTabId = useStore((s) => s.activeTabId)
   const opened = useStore((s) => s.butlerTab)
-  const tasks = useStore((s) => s.assistTasks)
-  const setAssistTasks = useStore((s) => s.setAssistTasks)
   const setAssistAsked = useStore((s) => s.setAssistAsked)
   const setBindButler = useStore((s) => s.setBindButler)
   const setRenameButler = useStore((s) => s.setRenameButler)
-  const [menu, setMenu] = useState<{ target: MenuTarget; left: number; top: number } | null>(null)
+  const [menu, setMenu] = useState<{ left: number; top: number } | null>(null)
   useDismissOnOutside(!!menu, setMenu)
 
-  useEffect(() => {
-    void window.api.conductors.tasks().then(setAssistTasks)
-    return window.api.conductors.onTasks(setAssistTasks)
-  }, [setAssistTasks])
-
   const backend = preferredAssistBackend({ assist, sessionMethods })
-  const callingFor = (tabId: string | undefined, keys: readonly string[]) =>
-    attention.find(
-      (e) => (!!tabId && e.tabId === tabId) || (!!e.sessionId && keys.includes(e.sessionId))
-    )
-  const taskKeys = new Set(sessions.filter((s) => s.assistTask).map((s) => s.sessionId))
   const tabId = butlerTabOf(sessions, opened, tabs)
   const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
-  const calling = callingFor(
-    tabId,
-    butlerKeys.filter((key) => !taskKeys.has(key))
+  const calling = attention.find(
+    (e) => (!!tabId && e.tabId === tabId) || (!!e.sessionId && butlerKeys.includes(e.sessionId))
   )
-
-  const openTask = (task: AssistTaskRow): void => visitTab(task.tabId)
 
   const item = (label: string, run: () => void, cls = 'mi', key?: string): JSX.Element => (
     <div
@@ -84,36 +70,28 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
     </div>
   )
 
-  const menuItems = (target: MenuTarget): JSX.Element[] => {
-    if (target.kind === 'task')
-      return [
-        item('Open', () => openTask(target.task), 'mi', '↩'),
-        <div key="sep" className="sep" />,
-        item('Close', () => void window.api.conductors.closeTask(target.task.tabId))
-      ]
-    return [
-      item('Open', () => void openButler(), 'mi', '↩'),
-      item('Rename…', () => setRenameButler(true)),
-      item('Start a fresh conversation', () => void openButler(true)),
-      <div key="sep" className="sep" />,
-      ...(channel
-        ? [
-            item('Change Discord channel…', () => setBindButler(true)),
-            item('Unbind Discord', () => void window.api.conductors.unbind(), 'mi danger')
-          ]
-        : [item('Bind Discord channel…', () => setBindButler(true))])
-    ]
-  }
+  const menuItems = [
+    item('Open', () => void openButler(), 'mi', '↩'),
+    item('Rename…', () => setRenameButler(true)),
+    item('Start a fresh conversation', () => void openButler(true)),
+    <div key="sep" className="sep" />,
+    ...(channel
+      ? [
+          item('Change Discord channel…', () => setBindButler(true)),
+          item('Unbind Discord', () => void window.api.conductors.unbind(), 'mi danger')
+        ]
+      : [item('Bind Discord channel…', () => setBindButler(true))])
+  ]
 
-  const showMenu = (e: MouseEvent<HTMLElement>, target: MenuTarget): void => {
+  const showMenu = (e: MouseEvent<HTMLElement>): void => {
     e.preventDefault()
     e.stopPropagation()
-    setMenu({ target, ...menuPosFor(e.currentTarget, menuItems(target).length) })
+    setMenu(menuPosFor(e.currentTarget, menuItems.length))
   }
 
-  const stateClass = (tab: string | undefined, s: SessionInfo | undefined): string =>
-    rowStateClass(!!tab, s?.status, !!tab && !s, s?.turnOver) +
-    (tab && tab === activeTabId ? ' active' : '')
+  const stateClass =
+    rowStateClass(!!tabId, sess?.status, !!tabId && !sess, sess?.turnOver) +
+    (tabId && tabId === activeTabId ? ' active' : '')
 
   const title = (
     <>
@@ -137,10 +115,10 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
         </div>
       ) : (
         <div
-          className={'ws-tab ' + stateClass(tabId, sess)}
+          className={'ws-tab ' + stateClass}
           data-tab-id={tabId}
           onClick={() => void openButler()}
-          onContextMenu={(e) => showMenu(e, { kind: 'butler' })}
+          onContextMenu={showMenu}
         >
           <div className="ws-tab-main">
             {title}
@@ -152,53 +130,12 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
           </div>
         </div>
       )}
-      {(tasks.length > 0 || !!children?.length) && (
-        <div className="ws-subtabs">
-          {tasks.map((task) => {
-            const s = sessions.find((x) => x.tabId === task.tabId)
-            const taskCalling = callingFor(task.tabId, [])
-            return (
-              <div
-                key={task.tabId}
-                className={'ws-tab ' + stateClass(task.tabId, s)}
-                data-tab-id={task.tabId}
-                onClick={() => openTask(task)}
-                onContextMenu={(e) => showMenu(e, { kind: 'task', task })}
-              >
-                <div className="ws-tab-main">
-                  <span className="ws-tab-title">
-                    <i>{task.name}</i>
-                  </span>
-                  {taskCalling && (
-                    <span className="ws-tab-unread" title={attentionReason(taskCalling)} />
-                  )}
-                  <button
-                    className="icobtn ws-tab-fold"
-                    title="Close"
-                    aria-label="Close"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void window.api.conductors.closeTask(task.tabId)
-                    }}
-                  >
-                    <IconClose size={12} />
-                  </button>
-                </div>
-                <div className="ws-tab-sub">
-                  <SessionBackendIcon backend={s?.backendId ?? backend} />
-                  <span>{`${name} task`}</span>
-                </div>
-              </div>
-            )
-          })}
-          {children}
-        </div>
-      )}
+      {!!children?.length && <div className="ws-subtabs">{children}</div>}
       {/* ADR-0013 */}
       {createPortal(
         menu && (
           <div className="menu" style={{ left: menu.left, top: menu.top }}>
-            {menuItems(menu.target)}
+            {menuItems}
           </div>
         ),
         document.body

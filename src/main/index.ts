@@ -388,6 +388,8 @@ import type {
   CreateTabResult,
   CronSaveInput,
   ConductorOpenResult,
+  PaletteHandOff,
+  PaletteRequest,
   ConductorSaveResult,
   DiscordChannel,
   ProbeErrorKind,
@@ -421,13 +423,7 @@ import type {
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { butlerHelperRole } from '@shared/agentGuide'
-import {
-  conductorFolder,
-  Butler,
-  type AssistBackendChoice,
-  type AssistTask
-} from './discord/butler'
-import { firstLineName } from './sessionTitle'
+import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
 import { setupStatusText } from './discord/setupSteps'
@@ -467,6 +463,7 @@ import { workbenchVerbs } from './agentWorkbench'
 import {
   resolveWorkspace,
   sessionVerb,
+  WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS,
   workspaceVerb,
   type ClosableSession,
   type SessionScreen,
@@ -570,7 +567,6 @@ const sessionBackends = new SessionBackends({
   }
 })
 sessionBackends.isButlerSession = (id) => !!butler?.isButlerSession(id)
-sessionBackends.assistTaskOf = (tabId) => butler?.taskNameOf(tabId)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 function allSessions(): SessionInfo[] {
@@ -1483,9 +1479,14 @@ async function typeOnceReady(tabId: string, text: string): Promise<void> {
     await ptyMgr.type(tabId, [text, '\r'])
 }
 
+function tabIdle(tabId: string): boolean {
+  return (
+    tracker.turnOver(tabId) && !asksTheOwner(tabId) && (codexSessions?.queueDrained(tabId) ?? true)
+  )
+}
+
 const sessionSync = new SessionSync({
-  idle: (tabId) =>
-    tracker.turnOver(tabId) && !asksTheOwner(tabId) && (codexSessions?.queueDrained(tabId) ?? true),
+  idle: tabIdle,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   repoOf: (dir) => syncRepoKeys.resolve(dir),
   gitOut: (dir, args) => hosts.of(dir).gitOut(dir, args),
@@ -2946,6 +2947,7 @@ app.whenReady().then(() => {
           permission: ownersPermission(),
           trustFolder: true,
           firstPrompt: l.firstPrompt,
+          ownerWords: l.ownerWords,
           name: !PEER_TRAITS[l.backend].namedAtLaunch
             ? undefined
             : reachedBySendMessage(l.backend)
@@ -2977,7 +2979,6 @@ app.whenReady().then(() => {
     },
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
-    tasksChanged: () => sendToRenderer(CH.conductors.tasks, butler?.taskRows() ?? []),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     bindDeadlineMs: cronBindDeadlineMs()
   })
@@ -4579,15 +4580,15 @@ async function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpe
 }
 
 async function tellButler(text: string, ownerWords: string): Promise<ConductorOpenResult> {
-  const wasOpen = !!butler?.liveTab()
-  const opened = await butler?.open()
+  const first = { prompt: text, ownerWords }
+  const opened = await butler?.open(first)
   if (!opened) return { ok: false, error: STILL_STARTING }
   if (!opened.ok) return opened
-  const waitMs = wasOpen ? PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS : cronBindDeadlineMs()
-  void sendToButler(opened.tabId, text, ownerWords, waitMs).then((sent) => {
-    if (!sent.ok) sendToRenderer(CH.cron.toast, sent.error)
-  })
-  return opened
+  if (opened.startedWith !== first)
+    void sendToButler(opened.tabId, text, ownerWords).then((sent) => {
+      if (!sent.ok) sendToRenderer(CH.cron.toast, sent.error)
+    })
+  return { ok: true, tabId: opened.tabId }
 }
 
 async function bindWithNewChannel(): Promise<ConductorSaveResult> {
@@ -4648,52 +4649,49 @@ function commandIntoButler(text: string): string {
   return `Koloft will type ${text} into ${butlerNameNow()} once its turn ends, and post what it prints in Discord.`
 }
 
-const PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS = 10_000
-let paletteMessages = 0
+let butlerMessages = 0
 
-const PALETTE_TASK_ANSWERS_ITSELF =
-  'When this is a question or a piece of writing you can answer from what you know (translate, explain, draft a message), answer it here yourself; start or message a session only for work on files, commands or what a workspace holds.'
-
-function routedTo(workspace: string | undefined): string {
-  return workspace ? `\nKoloft took this to be about the workspace ${workspace}.` : ''
+function fromPalette({ words, about, at }: PaletteRequest): string {
+  const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
+  const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
+  return `The owner typed this in ⌘P: ${words}${where}${routed}`
 }
 
-function paletteTask(title: string, text: string, workspace: string | undefined): AssistTask {
-  return {
-    name: title || firstLineName(text),
-    brief: `${text}${routedTo(workspace)}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
-    ownerWords: text
-  }
+function busyButler(): SessionInfo | undefined {
+  const tab = butler?.liveTab()
+  const session = tab ? sessionOfTab(tab) : undefined
+  if (!session?.sessionId || tracker.statusOf(session.tabId) === undefined) return undefined
+  return tabIdle(session.tabId) ? undefined : session
 }
 
-async function openPaletteTask(
-  title: string,
-  text: string,
-  workspace?: string
-): Promise<ConductorOpenResult> {
-  const all = butler
-  if (!all) return { ok: false, error: STILL_STARTING }
-  const task = paletteTask(title, text, workspace)
-  const running = all.runningTaskTab(task.name)
-  return running
-    ? sendToButler(
-        running,
-        `The owner typed this in ⌘P: ${text}${routedTo(workspace)}`,
-        text,
-        PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS
-      )
-    : all.openTask(task)
+async function handFromPalette(request: PaletteRequest): Promise<PaletteHandOff> {
+  const text = fromPalette(request)
+  const busy = busyButler()
+  if (!busy) return tellButler(text, request.words)
+  const tabId = await sessionCommand.startButlerHelper(busy, {
+    prompt: text,
+    name: request.title,
+    ownerWords: request.words
+  })
+  if (!tabId)
+    return { ok: false, error: `${butlerNameNow()} is busy, and Koloft could not start a helper.` }
+  if (!guard?.queue.list().some((q) => q.tabId === tabId)) return { ok: true, tabId, helper: true }
+  sendToRenderer(
+    CH.cron.toast,
+    `${butlerNameNow()} is busy, so a helper takes this; it is queued and starts once this Mac has room.`
+  )
+  return { ok: true, tabId, queued: true }
 }
 
 async function sendToButler(
   tabId: string,
   text: string,
-  ownerWords: string,
-  waitMs: number
+  ownerWords: string
 ): Promise<ConductorOpenResult> {
-  const id = `koloft-palette-${++paletteMessages}`
+  const id = `koloft-butler-${++butlerMessages}`
+  const until = Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS
   const route = messagingOf(backendIdOf(ptyMgr.get(tabId)?.kind) ?? 'claude', false)
-  if (!(await tabReady(tabId, waitMs, route === 'typed')))
+  if (!(await tabReady(tabId, until - Date.now(), route === 'typed')))
     return { ok: false, error: `${butlerNameNow()} did not get ready in time.` }
   try {
     if (route === 'queue') await queueCodexMessage(tabId, text, id)
@@ -4703,7 +4701,7 @@ async function sendToButler(
       if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }
       // ADR-0031
       if (hookRegDir) seedOwnerWords(saidFile(hookRegDir, tabId), ownerWords)
-      await sendPeerLine(tabId, line, waitMs)
+      await sendPeerLine(tabId, line, until - Date.now())
     }
   } catch (error) {
     return { ok: false, error: errorText(error) }
@@ -5248,11 +5246,9 @@ function registerIpc(): void {
     CH.conductors.startFresh,
     () => butler?.startFresh() ?? { ok: false, error: STILL_STARTING }
   )
-  ipcMain.handle(CH.conductors.openTask, (_e, title: string, text: string, workspace?: string) =>
-    openPaletteTask(title, text, typeof workspace === 'string' ? workspace : undefined)
+  ipcMain.handle(CH.conductors.fromPalette, (_e, request: PaletteRequest) =>
+    handFromPalette(request)
   )
-  ipcMain.handle(CH.conductors.closeTask, (_e, tabId: string) => butler?.closeTask(tabId))
-  ipcMain.handle(CH.conductors.tasks, () => butler?.taskRows() ?? [])
   ipcMain.handle(CH.discord.status, () => discordLink?.status() ?? DISCORD_OFF)
   ipcMain.handle(CH.discord.pair, (_e, isMe: unknown) => {
     const owner = discordLink?.pair(isMe === true)
