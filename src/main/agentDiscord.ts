@@ -85,16 +85,22 @@ async function shot(
   if (before.length !== 1) return refused(DISCORD_USAGE, EXIT_USAGE)
   const url = pageUrl(before[0], cwd)
   if (!url) return refused(NOT_A_PAGE)
-  const { files, shownHeight, pageHeight } = await d.shoot(url)
+  const { files, shown, page } = await d.shoot(url)
   await d.send(channelId, files, text)
   const sent =
     files.length === 1
       ? 'Sent a picture of the page to Discord.'
       : `Sent the page to Discord as ${files.length} pictures, top to bottom.`
   return answered(
-    shownHeight < pageHeight
-      ? `${sent} The page is ${pageHeight} pixels tall; the pictures stop at ${shownHeight}.`
-      : sent
+    [
+      sent,
+      ...(shown.height < page.height
+        ? [`The page is ${page.height} pixels tall; the pictures stop at ${shown.height}.`]
+        : []),
+      ...(shown.width < page.width
+        ? [`The page is ${page.width} pixels wide; the pictures show its left ${shown.width}.`]
+        : [])
+    ].join(' ')
   )
 }
 

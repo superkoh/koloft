@@ -14,7 +14,7 @@ beforeEach(() => {
 })
 afterEach(() => fs.rmSync(cwd, { recursive: true, force: true }))
 
-function verb(butler: boolean, pageHeight = 900) {
+function verb(butler: boolean, pageHeight = 900, pageWidth = 1280) {
   const sent: { channelId: string; files: DiscordFile[]; text: string }[] = []
   const shot: string[] = []
   let bound = 0
@@ -28,8 +28,8 @@ function verb(butler: boolean, pageHeight = 900) {
       const files = pageHeight > 8000 ? ['page-1.png', 'page-2.png'] : ['page.png']
       return {
         files: files.map((name) => ({ name, data: Buffer.from(name) })),
-        shownHeight: Math.min(pageHeight, 16000),
-        pageHeight
+        shown: { width: Math.min(pageWidth, 8000), height: Math.min(pageHeight, 16000) },
+        page: { width: pageWidth, height: pageHeight }
       }
     },
     status: () => 'Bot token: saved',
@@ -120,10 +120,10 @@ describe('koloft discord shot', () => {
     ])
   })
 
-  it('opens a web address as it is, and says how many pictures a tall page took and where they stop', async () => {
-    const { call, shot } = verb(true, 20000)
+  it('opens a web address as it is, and says how many pictures a tall page took and where they stop, down and across', async () => {
+    const { call, shot } = verb(true, 20000, 9000)
     expect(await call(['shot', 'http://localhost:5173/'])).toEqual({
-      text: 'Sent the page to Discord as 2 pictures, top to bottom. The page is 20000 pixels tall; the pictures stop at 16000.',
+      text: 'Sent the page to Discord as 2 pictures, top to bottom. The page is 20000 pixels tall; the pictures stop at 16000. The page is 9000 pixels wide; the pictures show its left 8000.',
       exit: 0
     })
     expect(shot).toEqual(['http://localhost:5173/'])

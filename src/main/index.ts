@@ -556,6 +556,7 @@ const sessionBackends = new SessionBackends({
     attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
     butler?.onBound(tabId, key)
+    discordTyping?.refresh(tabId)
     startedSessions.bound(tabId, key)
     slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
@@ -3058,7 +3059,6 @@ app.whenReady().then(() => {
   secretAsks = secrets
   const interactions = new Interactions({
     owner: () => butlerNow.owner(),
-    isButlerChannel: (channelId) => butlerNow.isButlerChannel(channelId),
     run: async (text) => commandIntoButler(text),
     press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? secrets.press(i) : buttons.press(i)),
     submit: (i) => secrets.submit(i),

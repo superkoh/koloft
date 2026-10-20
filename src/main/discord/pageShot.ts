@@ -12,6 +12,7 @@ const FONTS_LOAD_WITHIN_MS = 5000
 const A_CAPTURE_ANSWERS_WITHIN_MS = 20_000
 const MOST_PICTURES = 10
 const SMALLER_PICTURE_QUALITY = 80
+const MB = 1024 * 1024
 
 interface Size {
   width: number
@@ -69,11 +70,12 @@ async function capture(wc: WebContents, clip: Clip, quality?: number): Promise<S
 }
 
 const PAGE_STUCK = 'The page stopped answering, so Koloft could not take its picture.'
+
 // PLATFORM§16
-async function load(wc: WebContents, url: string): Promise<void> {
-  await wc.loadURL(url)
-  if (wc.isLoading())
-    await new Promise<void>((resolve) => wc.once('did-stop-loading', () => resolve()))
+async function settled(wc: WebContents): Promise<void> {
+  if (!wc.isLoading()) return
+  const stopped = new Promise<void>((resolve) => wc.once('did-stop-loading', () => resolve()))
+  await within(stopped, PAGE_LOADS_WITHIN_MS, 'still loading').catch(() => undefined)
 }
 
 async function pageSize(wc: WebContents): Promise<{ size: Size; ratio: number }> {
@@ -91,8 +93,8 @@ async function pageSize(wc: WebContents): Promise<{ size: Size; ratio: number }>
 
 export interface PagePictures {
   files: DiscordFile[]
-  shownHeight: number
-  pageHeight: number
+  shown: Size
+  page: Size
 }
 
 // PLATFORM§16
@@ -104,11 +106,12 @@ export async function shootPage(url: string): Promise<PagePictures> {
   wc.setWindowOpenHandler(() => ({ action: 'deny' }))
   view.setBounds({ x: 0, y: 0, width: VIEW_WIDTH, height: VIEW_HEIGHT })
   try {
-    await within(load(wc, url), PAGE_LOADS_WITHIN_MS, 'it did not finish loading in time.').catch(
+    await within(wc.loadURL(url), PAGE_LOADS_WITHIN_MS, 'it did not load in time.').catch(
       (error: unknown) => {
         throw new Error(`Koloft could not open ${url}: ${(error as Error).message}`)
       }
     )
+    await settled(wc)
     await within(
       wc.executeJavaScript('document.fonts.ready.then(() => true)'),
       FONTS_LOAD_WITHIN_MS,
@@ -123,10 +126,18 @@ export async function shootPage(url: string): Promise<PagePictures> {
     for (const [i, clip] of clips.entries()) {
       let shot = await capture(wc, clip)
       if (shot.data.length > BYTES_PER_FILE) shot = await capture(wc, clip, SMALLER_PICTURE_QUALITY)
+      if (shot.data.length > BYTES_PER_FILE)
+        throw new Error(
+          `A picture of ${url} is ${(shot.data.length / MB).toFixed(1)} MB even as a JPEG; Discord takes at most 20 MB.`
+        )
       const part = clips.length > 1 ? `-${i + 1}` : ''
       files.push({ name: `page${part}.${shot.format === 'png' ? 'png' : 'jpg'}`, data: shot.data })
     }
-    return { files, shownHeight: last.y + last.height, pageHeight: size.height }
+    return {
+      files,
+      shown: { width: last.width, height: last.y + last.height },
+      page: size
+    }
   } finally {
     wc.close()
   }

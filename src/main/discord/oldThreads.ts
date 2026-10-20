@@ -28,14 +28,18 @@ export class OldThreads {
       .botThreadsUnder(channel.guildId, channel.channelId)
       .catch(() => undefined)
     if (!threads) return
-    for (const id of threads) await this.d.link.archiveThread(id).catch(() => undefined)
-    this.d.markArchived()
+    let failed = 0
+    for (const id of threads) await this.d.link.archiveThread(id).catch(() => void failed++)
+    if (!failed) this.d.markArchived()
   }
 
   private isOld(channelId: string): Promise<boolean> {
     let known = this.botThreads.get(channelId)
     if (!known) {
-      known = this.d.link.isBotThread(channelId).catch(() => false)
+      known = this.d.link.isBotThread(channelId).catch(() => {
+        this.botThreads.delete(channelId)
+        return false
+      })
       this.botThreads.set(channelId, known)
     }
     return known
@@ -50,10 +54,11 @@ export class OldThreads {
     if (!(await this.isOld(m.channelId))) return
     const text = this.reply()
     const told = this.toldAt.get(m.channelId)
-    if (!text || (told !== undefined && this.d.now() - told < ONE_REPLY_PER_THREAD_WITHIN_MS))
-      return
-    this.toldAt.set(m.channelId, this.d.now())
-    await this.d.link.post(m.channelId, text, m.id).catch(() => undefined)
+    if (text && (told === undefined || this.d.now() - told >= ONE_REPLY_PER_THREAD_WITHIN_MS)) {
+      this.toldAt.set(m.channelId, this.d.now())
+      await this.d.link.post(m.channelId, text, m.id).catch(() => undefined)
+    }
+    await this.d.link.archiveThread(m.channelId).catch(() => undefined)
   }
 
   async onInteraction(i: DiscordInteraction): Promise<void> {

@@ -31,7 +31,6 @@ function setup(over: Partial<InteractionDeps> = {}) {
   const submitted: DiscordInteraction[] = []
   const deps: InteractionDeps = {
     owner: () => OWNER,
-    isButlerChannel: (c) => c === CHANNEL,
     press: async (i) => void pressed.push(i),
     submit: async (i) => void submitted.push(i),
     run: async (text) => {
@@ -67,18 +66,16 @@ describe('Discord slash commands', () => {
     ])
   })
 
-  it('a button pressed in the butler’s channel is handed on as a press, never run as a command; one anywhere else is left alone', async () => {
+  it('a button pressed is handed on as a press, never run as a command', async () => {
     const { interactions, runs, pressed } = setup()
     await interactions.handle(interaction({ type: 3, customId: 'ask:x:0' }))
-    await interactions.handle(interaction({ channelId: THREAD, type: 3, customId: 'ask:y:0' }))
     expect(pressed.map((i) => i.customId)).toEqual(['ask:x:0'])
     expect(runs).toEqual([])
   })
 
-  it('a form sent in the butler’s channel is handed on as a submission, never run as a command; one anywhere else is left alone', async () => {
+  it('a form sent is handed on as a submission, never run as a command', async () => {
     const { interactions, runs, pressed, submitted } = setup()
     await interactions.handle(interaction({ type: 5, customId: 'secret:x' }))
-    await interactions.handle(interaction({ channelId: THREAD, type: 5, customId: 'secret:y' }))
     expect(submitted.map((i) => i.customId)).toEqual(['secret:x'])
     expect(pressed).toEqual([])
     expect(runs).toEqual([])
@@ -97,12 +94,6 @@ describe('Discord slash commands', () => {
     await interactions.handle(interaction({ userId: '666', options: { command: '/clear' } }))
     expect(runs).toEqual([])
     expect(replies).toEqual([{ type: 4, data: { content: ONLY_THE_OWNER, flags: 64 } }])
-  })
-
-  it('a channel that is not this Koloft’s butler’s gets no answer from it, so another Koloft on the same bot can answer', async () => {
-    const { interactions, replies } = setup()
-    await interactions.handle(interaction({ channelId: '999', options: { command: '/clear' } }))
-    expect(replies).toEqual([])
   })
 
   it('a /run whose text is not a slash command is refused privately', async () => {

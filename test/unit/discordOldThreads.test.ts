@@ -11,8 +11,9 @@ const CHANNEL: DiscordChannel = { guildId: '1', channelId: '200', name: 'global'
 const OLD = '701'
 const OTHER = '800'
 
-function setup(over: { listFails?: boolean; archiveFails?: string[] } = {}) {
+function setup(over: { listFails?: boolean; archiveFails?: string[]; lookupFails?: number } = {}) {
   let now = 1_000_000
+  let lookupFails = over.lookupFails ?? 0
   let archived = false
   const archivedThreads: string[] = []
   const posts: { channelId: string; text: string; replyTo?: string }[] = []
@@ -26,6 +27,7 @@ function setup(over: { listFails?: boolean; archiveFails?: string[] } = {}) {
       },
       isBotThread: async (channelId) => {
         lookups.push(channelId)
+        if (lookupFails-- > 0) throw new Error('Discord is not connected.')
         return channelId === OLD
       },
       archiveThread: async (id) => {
@@ -80,17 +82,17 @@ describe('session threads an older Koloft opened under the butler’s channel', 
     expect(t.archived()).toBe(true)
   })
 
-  it('a thread Discord will not archive is skipped and the rest still are; a list Discord will not give is tried again on the next connect', async () => {
+  it('a thread Discord will not archive is skipped and the rest still are, and the job is tried again on the next connect, as it is when Discord will not give the list', async () => {
     const skipped = setup({ archiveFails: [OLD] })
     await skipped.threads.archiveOnce()
     expect(skipped.archivedThreads).toEqual(['702'])
-    expect(skipped.archived()).toBe(true)
+    expect(skipped.archived()).toBe(false)
     const unlisted = setup({ listFails: true })
     await unlisted.threads.archiveOnce()
     expect(unlisted.archived()).toBe(false)
   })
 
-  it('the owner writing in one gets one reply sending them to the butler’s channel, and no second within the quiet time', async () => {
+  it('the owner writing in one gets one reply sending them to the butler’s channel, and no second within the quiet time; the thread, opened again by the message, is archived again each time', async () => {
     const t = setup()
     await t.threads.onMessage(message('1', OLD))
     await t.threads.onMessage(message('2', OLD))
@@ -101,6 +103,15 @@ describe('session threads an older Koloft opened under the butler’s channel', 
       { channelId: OLD, text: talkToTheButler('Alfred', CHANNEL), replyTo: '3' }
     ])
     expect(t.posts[0].text).toBe('Koloft no longer reads this thread. Talk to Alfred in <#200>.')
+    expect(t.archivedThreads).toEqual([OLD, OLD, OLD])
+  })
+
+  it('a lookup that fails is not remembered, so the next message in the thread is looked up again', async () => {
+    const t = setup({ lookupFails: 1 })
+    await t.threads.onMessage(message('1', OLD))
+    await t.threads.onMessage(message('2', OLD))
+    expect(t.lookups).toEqual([OLD, OLD])
+    expect(t.posts.map((p) => p.replyTo)).toEqual(['2'])
   })
 
   it('a slash command or a button pressed in one is answered privately with the same line, every time, so Discord never says the app did not respond', async () => {

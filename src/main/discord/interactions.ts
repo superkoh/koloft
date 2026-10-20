@@ -51,7 +51,6 @@ function commandTextOf(i: DiscordInteraction): string {
 
 export interface InteractionDeps {
   owner(): string | undefined
-  isButlerChannel(channelId: string): boolean
   run(text: string): Promise<string>
   press(i: DiscordInteraction): Promise<void>
   submit(i: DiscordInteraction): Promise<void>
@@ -62,7 +61,6 @@ export class Interactions {
   constructor(private d: InteractionDeps) {}
 
   async handle(i: DiscordInteraction): Promise<void> {
-    if (!this.d.isButlerChannel(i.channelId)) return
     if (i.type === COMPONENT_INTERACTION) return this.d.press(i).catch(() => undefined)
     if (i.type === FORM_SUBMIT_INTERACTION) return this.d.submit(i).catch(() => undefined)
     if (i.type !== COMMAND_INTERACTION) return
