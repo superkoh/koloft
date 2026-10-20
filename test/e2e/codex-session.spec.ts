@@ -46,6 +46,7 @@ import {
 import { portOffset } from '../../src/shared/worktreeName'
 import {
   addWorkspace,
+  butlerRow,
   centerTerm,
   agentRow,
   chooseBackend,
@@ -53,6 +54,7 @@ import {
   dialogPrimary,
   gitCommitAll,
   gitInit,
+  landsOnTheButler,
   newSessionInWith,
   oneStillRunning,
   openMenu,
@@ -1050,8 +1052,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       await newSessionInWith(page, 'ws-a', 'Codex')
       await expect(page.locator('.toast-msg')).toContainText('exit code 3', { timeout: 20_000 })
       await expect.poll(() => termIds(page)).toHaveLength(0)
+      await landsOnTheButler(page)
+      const butlerTab = await butlerRow(page).getAttribute('data-tab-id')
       await page.waitForTimeout(CODEX_TRANSPORT_STOP_WORST_CASE_MS)
-      expect(await pendingAttention(page)).toEqual([])
+      expect((await pendingAttention(page)).filter((e) => e.tabId !== butlerTab)).toEqual([])
     } finally {
       await quitAndClose(app)
     }

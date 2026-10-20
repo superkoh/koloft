@@ -150,14 +150,14 @@ test.describe('Workbench titlebar toggle, and the panel seam with the retired au
     const calls = await waitForCalls(env, 2)
     const [sessA, sessB] = calls
     await wsRows(page, 'ws-a').first().click()
-    await expect(page.locator('.ws-tab.active')).toHaveCount(1)
+    await expect(page.locator('.ws .ws-tab.active')).toHaveCount(1)
 
     await sendShortcut(app, 'shortcut:restart-session')
     const after = await waitForCalls(env, 3)
     const i = after[2].argv.indexOf('--resume')
     expect(after[2].argv[i + 1]).toBe(sessA.sessionId)
     expect(processAlive(sessB.pid)).toBe(true)
-    await expect(page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })).toHaveCount(2)
+    await expect(page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })).toHaveCount(2)
   })
 
   test('T-MIG-08: a v2 layout with the retired terminal mode, its strip and the island block upgrades to v6 — workspaces and entry kept, strip and island dropped, panel collapsed but usable', async ({

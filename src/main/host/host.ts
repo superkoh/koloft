@@ -42,7 +42,6 @@ export interface ClaudeLaunch {
   ownerWords?: string
   name?: string
   role?: string
-  allow?: string[]
   conductor?: boolean
 }
 

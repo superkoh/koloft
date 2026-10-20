@@ -54,8 +54,8 @@ function channelRow(dlg: Locator, name: string): Locator {
   })
 }
 
-async function bindChannel(page: Page, wsName: string): Promise<void> {
-  await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+async function bindButlerChannel(page: Page): Promise<void> {
+  await openMenu(page, page.locator('.isl-butler > .ws-tab'))
   await page.locator('.menu .mi', { hasText: 'Bind Discord channel…' }).click()
   const dlg = page.getByRole('dialog', { name: 'Bind a Discord channel' })
   await expect(dlg).toBeVisible()
@@ -65,10 +65,8 @@ async function bindChannel(page: Page, wsName: string): Promise<void> {
 }
 
 async function allTerminals(page: Page): Promise<string> {
-  const unfold = page.locator('.isl-conductors').getByRole('button', { name: 'Unfold' })
-  if (await unfold.count()) await unfold.click()
   await page
-    .locator('.isl-conductors .ws-tab')
+    .locator('.isl-butler > .ws-tab')
     .click({ timeout: 5000 })
     .catch(() => undefined)
   await page.waitForTimeout(CONDUCTOR_SCREEN_DRAWS_AFTER_IT_IS_SHOWN_MS)
@@ -115,6 +113,7 @@ async function withRemoteWorkspaceConductor(
 ): Promise<void> {
   seedSettings(env, {
     hintsOff: true,
+    assist: { on: true, backend: 'claude' },
     discord: { userId: OWNER.id, userName: OWNER.username, bindings: [] }
   })
   const fake = await startFakeDiscord(env)
@@ -132,7 +131,7 @@ async function withRemoteWorkspaceConductor(
     await expect(wsGroup(page, 'kt-key').locator('.ws-conn')).toHaveClass(/\bon\b/, {
       timeout: BACKGROUND_CONNECT_MS
     })
-    await bindChannel(page, 'kt-key')
+    await bindButlerChannel(page)
     await body({ page, lab, fake })
   } finally {
     await test.info().attach('channel', { body: said(fake).join('\n────\n') || '(nothing)' })

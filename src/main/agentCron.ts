@@ -60,7 +60,12 @@ export interface CronCommand {
   sub: Sub
   ref?: string
   patch: CronPatch
+  workspace?: string
 }
+
+const WORKSPACE_FLAG = '--workspace'
+
+export const CRON_NEEDS_A_WORKSPACE = `${NOT_PINNED} Or name one with ${WORKSPACE_FLAG} <workspace>; "koloft workspace list" shows them.`
 
 export function parseSchedule(flag: string, value: string): Parsed<Schedule> {
   if (flag === '--every') {
@@ -126,6 +131,7 @@ export function parseCronArgs(args: string[]): Parsed<CronCommand> {
   const patch: CronPatch = {}
   const nameWords: string[] = []
   let nameEnded = false
+  let workspace: string | undefined
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i]
     if (arg === '--') {
@@ -134,10 +140,15 @@ export function parseCronArgs(args: string[]): Parsed<CronCommand> {
     }
     if (arg.startsWith('--')) {
       nameEnded = nameWords.length > 0
-      if (!VALUE_FLAGS.includes(arg)) return fail(`there is no ${arg} option.`)
+      if (!VALUE_FLAGS.includes(arg) && arg !== WORKSPACE_FLAG)
+        return fail(`there is no ${arg} option.`)
       const value = rest[i + 1]
       if (value === undefined || value === '--') return fail(`${arg} needs a value.`)
       i++
+      if (arg === WORKSPACE_FLAG) {
+        workspace = value
+        continue
+      }
       const error = applyFlag(patch, arg, value)
       if (error) return fail(error)
       continue
@@ -160,7 +171,7 @@ export function parseCronArgs(args: string[]): Parsed<CronCommand> {
     if (patch.task === undefined) return fail('put what to do after --, like: -- "Run the tests"')
   }
   if (sub === 'edit' && Object.keys(patch).length === 0) return fail('say what to change.')
-  return { ok: true, value: { sub, ref, patch } }
+  return { ok: true, value: { sub, ref, patch, ...(workspace !== undefined && { workspace }) } }
 }
 
 export function newJobInput(
@@ -282,6 +293,7 @@ export interface CronRunnerApi {
 export interface CronVerbDeps {
   runner(): CronRunnerApi | null
   pinnedWorkspaceOf(tabId: string): string | undefined
+  resolveWorkspace(ref: string): Parsed<string>
   toast(text: string): void
   now(): Date
 }
@@ -290,8 +302,11 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
   return async (args, caller): Promise<AgentReply> => {
     const parsed = parseCronArgs(args)
     if (!parsed.ok) return refused(`koloft cron: ${parsed.error}`, EXIT_USAGE)
-    const workspace = d.pinnedWorkspaceOf(caller.tabId)
-    if (!workspace) return refused(NOT_PINNED)
+    const named = parsed.value.workspace
+    const resolved = named === undefined ? undefined : d.resolveWorkspace(named)
+    if (resolved && !resolved.ok) return refused(`koloft cron: ${resolved.error}`)
+    const workspace = resolved ? resolved.value : d.pinnedWorkspaceOf(caller.tabId)
+    if (!workspace) return refused(CRON_NEEDS_A_WORKSPACE)
     const runner = d.runner()
     if (!runner) return refused(RUNNER_NOT_READY)
     const { sub, ref, patch } = parsed.value

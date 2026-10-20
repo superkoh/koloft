@@ -54,7 +54,7 @@ function closeConfirm(page: Page): Locator {
 }
 
 async function closeTabPastAnyConfirm(app: ElectronApplication, page: Page): Promise<void> {
-  await page.locator('.ws-tab.active').first().click()
+  await page.locator('.ws .ws-tab.active').first().click()
   await sendShortcut(app, 'shortcut:close-tab')
   const confirm = closeConfirm(page)
   if (await confirm.isVisible({ timeout: 4000 }).catch(() => false)) {

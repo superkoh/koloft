@@ -18,7 +18,6 @@ import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
 import { MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
 import { browserControlEnv } from './browserControlEnv'
-import { allowsTheBrowser, conductorGateCommand } from './conductorGate'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -27,7 +26,6 @@ import {
 } from './programStatus'
 import {
   AGY_COST_ENV,
-  AGY_GATE_ENV,
   AGY_LOG_ENV,
   AGY_OWNER_TITLE_ENV,
   AGY_START_ENV,
@@ -121,8 +119,7 @@ export interface AgySessionDeps extends StoredSessionDeps {
   browserEndpoint(tabId: string): string
   builtInStatusLine(account: string): string | undefined
   skipPermissions(): boolean
-  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
-  conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
+  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   agent: {
     enabled(remote: boolean): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -477,10 +474,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
-    const allow = opts.allow ?? assist?.allow ?? []
     const permission = this.permissionOf(opts)
     const tabId = this.deps.pty.nextId()
-    const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
+    const endpoint = this.deps.browserEndpoint(tabId)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('agy')] : []),
@@ -514,17 +510,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       fs.writeFileSync(log, '')
       if (instructions) fs.writeFileSync(startFile, sessionStartOutput(instructions))
       const token = randomBytes(24).toString('hex')
-      const gate = conductor
-        ? conductorGateCommand(
-            this.deps.conductorGate.script,
-            this.deps.conductorGate.writeAllow(tabId, allow)
-          )
-        : undefined
       const ownerTitle = ownersTitleCommand(gemini)
       const argv = [
         `--gemini_dir=${pick.home}`,
         `--csrf_token=${token}`,
-        ...agyArgs(opts, resumeId, conductor ? 'bypass' : permission)
+        ...agyArgs(opts, resumeId, permission)
       ]
       this.parsers.set(tabId, new ProgramStatusParser())
       const handle = this.deps.pty.create({
@@ -544,7 +534,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           ...(instructions ? { [AGY_START_ENV]: startFile } : {}),
           [AGY_COST_ENV]: path.join(dir, 'agy-cost'),
           ANT_ACCOUNT: pick.account,
-          ...(gate ? { [AGY_GATE_ENV]: gate } : {}),
           ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
           ...agyAccountEnv(apiKey),
           ...browserControlEnv(tabId, endpoint)

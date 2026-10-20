@@ -185,14 +185,13 @@ const api: KoloftApi = {
     }
   },
   conductors: {
-    save: (input) => ipcRenderer.invoke(CH.conductors.save, input),
-    saveWithNewChannel: (input) => ipcRenderer.invoke(CH.conductors.saveWithNewChannel, input),
-    unbind: (id) => ipcRenderer.invoke(CH.conductors.unbind, id),
-    open: (scope) => ipcRenderer.invoke(CH.conductors.open, scope),
-    startFresh: (scope) => ipcRenderer.invoke(CH.conductors.startFresh, scope),
-    openTask: (scope, title, brief) =>
-      ipcRenderer.invoke(CH.conductors.openTask, scope, title, brief),
-    tell: (scope, title, text) => ipcRenderer.invoke(CH.conductors.tell, scope, title, text),
+    bind: (channel) => ipcRenderer.invoke(CH.conductors.bind, channel),
+    bindNewChannel: () => ipcRenderer.invoke(CH.conductors.bindNewChannel),
+    unbind: () => ipcRenderer.invoke(CH.conductors.unbind),
+    open: () => ipcRenderer.invoke(CH.conductors.open),
+    startFresh: () => ipcRenderer.invoke(CH.conductors.startFresh),
+    openTask: (title, brief, workspace) =>
+      ipcRenderer.invoke(CH.conductors.openTask, title, brief, workspace),
     closeTask: (tabId) => ipcRenderer.invoke(CH.conductors.closeTask, tabId),
     tasks: () => ipcRenderer.invoke(CH.conductors.tasks),
     onTasks: (cb) => {
@@ -210,7 +209,7 @@ const api: KoloftApi = {
     },
     pair: (isMe) => ipcRenderer.invoke(CH.discord.pair, isMe),
     channels: () => ipcRenderer.invoke(CH.discord.channels),
-    setUpWithAssist: (ownerWords) => ipcRenderer.invoke(CH.discord.setUpWithAssist, ownerWords)
+    setUpWithButler: (ownerWords) => ipcRenderer.invoke(CH.discord.setUpWithButler, ownerWords)
   },
   attention: {
     list: () => ipcRenderer.invoke(CH.attention.list),

@@ -336,11 +336,11 @@ export interface Settings {
   agentTools: boolean
   notesHeight: number
   notesFolded: boolean
-  conductorsFolded: boolean
   keepAwake: boolean
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
+  butler: ButlerSetting
   newProjectFolders: Record<string, string>
   hintsSeen: string[]
   hintsOff: boolean
@@ -355,6 +355,13 @@ export interface Settings {
 
 export type AssistSetting = { on: boolean; backend: BackendId } | null
 
+export interface ButlerSetting {
+  name: string
+  formerNames: string[]
+}
+
+export const DEFAULT_BUTLER_NAME = 'Alfred'
+
 export interface AssistRecord {
   scope: string
   sessionIds: string[]
@@ -363,7 +370,6 @@ export interface AssistRecord {
 
 export interface AssistTaskRow {
   tabId: string
-  scope: string
   name: string
 }
 
@@ -395,15 +401,6 @@ export interface DiscordSettings {
   userName?: string
   bindings: ConductorBinding[]
   category?: DiscordChannel
-}
-
-export interface NewChannelInput {
-  id?: string
-  scope: string
-}
-
-export interface ConductorSaveInput extends NewChannelInput {
-  channel: DiscordChannel
 }
 
 export type DiscordPhase =
@@ -473,11 +470,11 @@ export const DEFAULT_SETTINGS: Settings = {
   agentTools: true,
   notesHeight: 260,
   notesFolded: false,
-  conductorsFolded: true,
   keepAwake: true,
   worldClocks: [],
   onboardingSeen: false,
   assist: null,
+  butler: { name: DEFAULT_BUTLER_NAME, formerNames: [] },
   newProjectFolders: {},
   hintsSeen: [],
   hintsOff: false,
@@ -528,7 +525,6 @@ export interface CreateTabOptions {
   ownerTabId?: string
   role?: string
   ownerWords?: string
-  allow?: string[]
   conductor?: boolean
   trustFolder?: boolean
 }
@@ -1340,13 +1336,12 @@ export interface KoloftApi {
     onToast(cb: (text: string) => void): () => void
   }
   conductors: {
-    save(input: ConductorSaveInput): Promise<ConductorSaveResult>
-    saveWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult>
-    unbind(bindingId: string): Promise<void>
-    open(scope: string): Promise<ConductorOpenResult>
-    startFresh(scope: string): Promise<ConductorOpenResult>
-    openTask(scope: string, title: string, brief: string): Promise<ConductorOpenResult>
-    tell(scope: string, title: string, text: string): Promise<ConductorOpenResult>
+    bind(channel: DiscordChannel): Promise<ConductorSaveResult>
+    bindNewChannel(): Promise<ConductorSaveResult>
+    unbind(): Promise<void>
+    open(): Promise<ConductorOpenResult>
+    startFresh(): Promise<ConductorOpenResult>
+    openTask(title: string, brief: string, workspace?: string): Promise<ConductorOpenResult>
     closeTask(tabId: string): Promise<void>
     tasks(): Promise<AssistTaskRow[]>
     onTasks(cb: (rows: AssistTaskRow[]) => void): () => void
@@ -1356,7 +1351,7 @@ export interface KoloftApi {
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
     channels(): Promise<DiscordChannel[]>
-    setUpWithAssist(ownerWords?: string): Promise<ConductorOpenResult>
+    setUpWithButler(ownerWords?: string): Promise<ConductorOpenResult>
   }
 }
 
@@ -1601,6 +1596,7 @@ export interface WorkspaceRows {
     gitAccount?: WorkspaceGitAccount
     gitPickable?: boolean
     remote?: { host: string; path: string; connected: boolean; problem?: string }
+    butler?: true
   }
   rows: SessionRow[]
 }
@@ -1644,6 +1640,7 @@ export interface SessionResumeRequest {
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
   role?: string
   conductor?: boolean
+  permission?: LaunchPermission
   trustFolder?: boolean
 }
 

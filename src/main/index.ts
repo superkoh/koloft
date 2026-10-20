@@ -99,6 +99,7 @@ import {
   guestMenuItems,
   isAppNavigation,
   isAttachmentResponse,
+  isUnderAnyRoot,
   jsDialogFor,
   standardUserAgent
 } from './browserSecurity'
@@ -114,7 +115,6 @@ import {
   saidFile,
   seedOwnerWords,
   setupHooks,
-  writeAllowFile,
   writeTabHookSettings
 } from './hooks'
 import {
@@ -377,10 +377,9 @@ import type {
   CreateTabResult,
   CronSaveInput,
   ConductorOpenResult,
-  ConductorSaveInput,
-  NewChannelInput,
   ConductorSaveResult,
   ConductorBinding,
+  DiscordChannel,
   ProbeErrorKind,
   LeftoverProcess,
   ResumePlan,
@@ -392,6 +391,7 @@ import type {
   AttentionSubject,
   SessionResumeRequest,
   SessionRow,
+  WorkspaceRows,
   SearchSnippet,
   SpawnedTab,
   AdoptableTab,
@@ -410,6 +410,7 @@ import type {
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
+import { butlerHelperRole } from '@shared/agentGuide'
 import {
   conductorFolder,
   Conductors,
@@ -419,7 +420,7 @@ import {
 import { firstLineName } from './sessionTitle'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
-import { DISCORD_SETUP_TASK, DISCORD_SETUP_TASK_NAME, setupStatusText } from './discord/setupTask'
+import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { Notices, type NoticeSubject } from './discord/notices'
@@ -428,7 +429,7 @@ import { secretVerb } from './agentSecret'
 import { SessionThreads } from './discord/threads'
 import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
-import { SlashCommands, type SlashTarget } from './discord/slash'
+import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
@@ -446,12 +447,10 @@ import { githubVerb, repoFlagOf } from './agentGithub'
 import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
 import {
   asPeerName,
-  conductorName,
   GLOBAL_SCOPE,
   inviteLink,
-  isAssistScope,
   isDiscordId,
-  scopeName
+  NEW_CHANNEL_NAME
 } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
@@ -459,7 +458,7 @@ import {
   resolveWorkspace,
   sessionChoices,
   sessionVerb,
-  targetIn,
+  targetOf,
   workspaceVerb,
   type ClosableSession,
   type SessionScreen,
@@ -564,7 +563,6 @@ const sessionBackends = new SessionBackends({
   }
 })
 sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
-sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
 sessionBackends.assistTaskOf = (tabId) => conductors?.taskNameOf(tabId)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
@@ -620,9 +618,17 @@ const slash = new SlashCommands({
     backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
       ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
       : undefined,
-  post: (channelId, text) => discordRelay?.say(channelId, text),
-  card: (channelId, card) => discordRelay?.card(channelId, card)
+  post: slashReply,
+  card: (to, card) =>
+    'channelId' in to
+      ? discordRelay?.card(to.channelId, card)
+      : to.tell(`${card.header}\n${card.body}`)
 })
+
+function slashReply(to: SlashReplyTo, text: string): void {
+  if ('channelId' in to) discordRelay?.say(to.channelId, text)
+  else to.tell(text)
+}
 tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
   sessionBackends.observe(tabId, { type: 'turn-ended', turn })
 )
@@ -1136,7 +1142,7 @@ async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestio
 
 function watchedByDiscord(all: Conductors, s: { tabId: string; conductor?: string }): boolean {
   if (s.conductor) return all.heldResident(s.tabId)
-  return all.covers(sessionBackends.workspaceOfTab(s.tabId))
+  return all.covers()
 }
 
 function syncAnswerable(): void {
@@ -1311,22 +1317,26 @@ function remoteHostOfTab(tabId: string): string | undefined {
   return ptyMgr.get(tabId)?.remoteHost
 }
 
+function projectRows(): WorkspaceRows[] {
+  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.butler)
+}
+
+function butlerSide(tabId: string): boolean {
+  return (
+    !!conductors?.isButlerTab(tabId) ||
+    sessionBackends.workspaceOfTab(tabId) === conductorFolder(app.getPath('userData'))
+  )
+}
+
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
   const workspace = sessionBackends.workspaceOfTab(tabId)
   return workspace && workspaceMgr?.isPinned(workspace) ? workspace : undefined
 }
 
 function notesFileOfScope(scope: string): string | undefined {
-  return isAssistScope(scope, (s) => !!workspaceMgr?.isPinned(s))
+  return scope === GLOBAL_SCOPE || workspaceMgr?.isPinned(scope)
     ? ensureNotesFile(notesBaseDir(), scope)
     : undefined
-}
-
-function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
-  return (args, caller) => {
-    const reason = conductors?.noWorkspaceReason(caller.tabId)
-    return reason ? refused(`koloft: ${reason}`) : verb(args, caller)
-  }
 }
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
@@ -1337,7 +1347,7 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
       : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
   },
   notesFileOf: (tabId) => {
-    const scope = conductors?.scopeOfTab(tabId) ?? sessionBackends.workspaceOfTab(tabId)
+    const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
     return scope ? notesFileOfScope(scope) : undefined
   }
 })
@@ -1401,14 +1411,12 @@ const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> =
   }
 }
 
-async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoice> {
+async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const settings = loadSettings()
   const [preferred, ...others] = backendsFrom(preferredAssistBackend(settings))
   const { enabled } = settings.sessionMethods
   const whyNot = (backend: BackendId): Promise<string | undefined> =>
-    avoid === backend
-      ? Promise.resolve(`${BACKEND_LABEL[backend]} could not start`)
-      : whyAssistCannotRunOn(backend, enabled)
+    whyAssistCannotRunOn(backend, enabled)
   const why = await whyNot(preferred)
   if (!why) return { backend: preferred }
   const whys = [why]
@@ -1417,16 +1425,16 @@ async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoi
     if (!otherWhy)
       return {
         backend: other,
-        because: `Assist runs on ${BACKEND_LABEL[other]} this time: ${why}.`
+        because: `${butlerNameNow()} runs on ${BACKEND_LABEL[other]} this time: ${why}.`
       }
     whys.push(otherWhy)
   }
   return {
-    error: `Assist cannot start: ${whys.join(', and ')}. Check Settings ▸ Accounts.`
+    error: `${butlerNameNow()} cannot start: ${whys.join(', and ')}. Check Settings ▸ Accounts.`
   }
 }
-const COMMAND_NEEDS_DISCORD =
-  'koloft session command posts what the command printed in Discord, so it needs an Assist bound to a Discord channel.'
+const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
+  'Koloft has picked no GitHub account for this workspace on its machine; pick one in Settings ▸ Accounts ▸ Git, or run gh there yourself.'
 
 // CC§13
 async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
@@ -1505,7 +1513,9 @@ const sessionDeps: SessionVerbDeps = {
   whatIsLeft: whatClosingWouldLose,
   closeSoon: (target) =>
     setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
-  conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
+  isButler: (tabId) => !!conductors?.isButlerTab(tabId),
+  butlerFolder: () => conductorFolder(app.getPath('userData')),
+  butlerHelperRole: () => butlerHelperRole(butlerNameNow()),
   sidebar: () => workspaceMgr?.rows() ?? [],
   worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
@@ -1534,8 +1544,7 @@ const sessionDeps: SessionVerbDeps = {
   },
   undelivered: (callerTab, target, why) => {
     const caller = conductors?.bindingOfTab(callerTab)
-    const b =
-      caller ?? (target.assistScope ? conductors?.bindingOfScope(target.assistScope) : undefined)
+    const b = caller ?? (target.butler ? conductors?.butlerBinding() : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
     if (!b) return void sendToRenderer(CH.cron.toast, text)
     discordRelay?.say(b.channel.channelId, `⚠ ${text}`)
@@ -1547,13 +1556,11 @@ const sessionDeps: SessionVerbDeps = {
     conductors?.touchWhenBound(conductorTab, tabId)
     void discordThreads?.place(b, { tabId, name, workspace, backend }, true)
   },
-  command: async (callerTab, target, text) => {
+  command: async (callerTab, target, text, tellCaller) => {
     if (!conductors) throw new Error(STILL_STARTING)
     const b = conductors.bindingOfTab(callerTab)
-    if (!b) throw new Error(COMMAND_NEEDS_DISCORD)
-    return target.assistScope === b.scope
-      ? commandIntoConductor(b, text)
-      : commandInto(b, target, text)
+    if (!b) return typeCommandInto(target, text, { tell: tellCaller })
+    return target.butler ? commandIntoConductor(b, text) : commandInto(b, target, text)
   },
   screen: screenOf
 }
@@ -1562,27 +1569,25 @@ const sessionCommand = sessionVerb(sessionDeps)
 const agentRequests = new AgentRequests({
   verbs: {
     ...BUILTIN_VERBS,
-    cron: unlessWorkspacelessConductor(
-      cronVerb({
-        runner: () => cronRunner,
-        pinnedWorkspaceOf: pinnedWorkspaceOfTab,
-        toast: (text) => sendToRenderer(CH.cron.toast, text),
-        now: () => new Date()
-      })
-    ),
+    cron: cronVerb({
+      runner: () => cronRunner,
+      pinnedWorkspaceOf: pinnedWorkspaceOfTab,
+      resolveWorkspace: (ref) => {
+        const found = resolveWorkspace(ref, workspaceMgr?.pinnedPaths() ?? [])
+        return found.ok ? { ok: true, value: found.value.path } : found
+      },
+      toast: (text) => sendToRenderer(CH.cron.toast, text),
+      now: () => new Date()
+    }),
     ...notesAndWorkbenchVerbs,
     session: sessionCommand.verb,
-    workspace: workspaceVerb({
-      conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
-      sidebar: () => workspaceMgr?.rows() ?? []
-    }),
+    workspace: workspaceVerb({ sidebar: projectRows }),
     discord: discordVerb({
       channelOf: (tabId) => conductors?.bindingOfTab(tabId)?.channel.channelId,
       send: async (channelId, files, text) => {
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
       },
-      isSetupTask: (tabId) => conductors?.taskNameOf(tabId) === DISCORD_SETUP_TASK_NAME,
       status: () =>
         setupStatusText(
           discordLink?.status() ?? DISCORD_OFF,
@@ -1595,13 +1600,7 @@ const agentRequests = new AgentRequests({
         const appId = discordLink?.status().applicationId
         return appId ? inviteLink(appId) : null
       },
-      bindNewChannel: async (ref) => {
-        if (ref === GLOBAL_SCOPE) return bindWithNewChannel({ scope: ref })
-        const found = resolveWorkspace(ref, workspaceMgr?.pinnedPaths() ?? [])
-        return found.ok
-          ? bindWithNewChannel({ scope: found.value.path })
-          : { ok: false, error: found.error }
-      }
+      bindNewChannel: bindWithNewChannel
     }),
     [SECRET_VERB]: secretVerb({
       ask: (a) =>
@@ -1612,21 +1611,24 @@ const agentRequests = new AgentRequests({
       sleep
     }),
     gh: githubVerb({
-      scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
-      folderOf: (scope) => conductorFolder(app.getPath('userData'), scope),
-      repoOf: async (scope) =>
-        scope === GLOBAL_SCOPE ? null : hosts.of(scope).github.ownerSlashName(scope),
-      // PLATFORM§1
-      run: async (args, scope) => {
+      // PLATFORM§1 ADR-0036
+      run: async (args, tabId, cwd) => {
         await loginEnvReady()
-        const env =
-          scope === GLOBAL_SCOPE
-            ? await gitAccounts?.ghEnvForRepo(
-                repoFlagOf(args),
-                (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
-              )
-            : await gitAccounts?.ghEnv(scope)
-        return ghRead(args, env)
+        const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
+        if (!workspace) {
+          const pinned = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+          return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
+        }
+        const remote = parseRemoteKey(workspace)
+        if (!remote) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
+        const inItsFolder = isUnderAnyRoot(cwd, [remote.path])
+          ? formatRemoteKey(remote.host, cwd)
+          : workspace
+        const onMachine = await gitAccounts?.machineGh(inItsFolder, args)
+        if (!onMachine) return { ok: false, out: NO_GITHUB_ACCOUNT_ON_THE_MACHINE }
+        return onMachine.code === 0
+          ? { ok: true, out: onMachine.stdout }
+          : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
       }
     })
   },
@@ -2723,10 +2725,6 @@ app.whenReady().then(() => {
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-      conductorGate: {
-        script: hookPaths.codexGate,
-        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
-      },
       replyLanguageScript: hookPaths.codexReplyLanguage,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
@@ -2754,10 +2752,6 @@ app.whenReady().then(() => {
       openShimRoot: path.join(userData, 'muse-open'),
       pickHome: pickMuseHome,
       assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-      conductorGate: {
-        script: hookPaths.museGateScript,
-        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
-      },
       skipPermissions: () => loadSettings().skipPermissions,
       serversAmong: async (pid, commands) =>
         museServersAmong(await sharedProcessTable.fresh(), pid, commands),
@@ -2804,10 +2798,6 @@ app.whenReady().then(() => {
       builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),
       skipPermissions: () => loadSettings().skipPermissions,
       assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-      conductorGate: {
-        script: hookPaths.agyGateScript,
-        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
-      },
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,
@@ -2907,6 +2897,7 @@ app.whenReady().then(() => {
     hiddenRow: (id) => !!conductors?.conductorOf(id) || sessionsLeavingTheirWorktree.has(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
+    butlerFolder: conductorFolder(userData),
     sessionsOnDiskOrRunning: (ids) =>
       conductors?.forgetGone(
         (key) =>
@@ -2926,6 +2917,7 @@ app.whenReady().then(() => {
   })
   conductors = new Conductors({
     userData,
+    butler: () => loadSettings().butler,
     load: () => loadSettings().discord,
     loadRecords: () => loadSettings().assistSessions,
     save: (discord) => {
@@ -2934,7 +2926,6 @@ app.whenReady().then(() => {
     },
     saveQuietly: (discord) => void saveSettings({ discord }),
     saveRecords: (assistSessions) => void commitSettings({ assistSessions }),
-    isPinned: (scope) => workspaceMgr?.isPinned(scope) ?? false,
     backend: assistBackendChoice,
     tabAlive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     liveTabFor: (backend, key) => sessionBackends.get(backend).aliveTabFor(key),
@@ -2946,8 +2937,8 @@ app.whenReady().then(() => {
           kind: l.backend,
           cwd: l.cwd,
           role: l.role,
-          allow: l.allow,
           conductor: true,
+          permission: ownersPermission(),
           trustFolder: true,
           firstPrompt: l.firstPrompt,
           name: !PEER_TRAITS[l.backend].namedAtLaunch
@@ -2965,6 +2956,7 @@ app.whenReady().then(() => {
         mode: 'direct',
         role: l.role,
         conductor: true,
+        permission: ownersPermission(),
         trustFolder: true
       })
       if (!res.ok) throw new Error(res.code === 'backend' ? res.message : couldNotStart(l.title))
@@ -2979,13 +2971,11 @@ app.whenReady().then(() => {
       return res.id
     },
     kill: killTabFromMain,
-    say: (channelId, text) => discordRelay?.say(channelId, text),
     rowsChanged: () => workspaceMgr?.refresh(),
     tasksChanged: () => sendToRenderer(CH.conductors.tasks, conductors?.taskRows() ?? []),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     bindDeadlineMs: cronBindDeadlineMs()
   })
-  conductors.keepPinned(workspaceMgr.pinnedPaths().map((w) => w.path))
   conductors.followBackend(preferredAssistBackend(loadSettings()))
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
@@ -3003,7 +2993,7 @@ app.whenReady().then(() => {
     onMessage: (m) => discordRelay?.onMessage(m),
     onInteraction: (i) => void interactions.handle(i),
     onReady: () => {
-      for (const b of conductors?.bindings() ?? []) void conductors?.open(b.scope)
+      if (conductors?.butlerBinding()) void conductors.open()
       void discordRelay?.catchUp()
       registerSlashCommands()
     },
@@ -3075,13 +3065,13 @@ app.whenReady().then(() => {
   const interactions = new Interactions({
     owner: () => conductorsNow.owner(),
     routeOf: (channelId) => conductorsNow.routeOf(channelId),
-    choices: (b) => [
-      { name: `This channel’s Assist (${scopeName(b.scope)})`, value: MYSELF },
-      ...sessionChoices(sessionDeps, b.scope)
+    choices: () => [
+      { name: `This channel’s ${butlerNameNow()}`, value: MYSELF },
+      ...sessionChoices(sessionDeps)
     ],
     run: async (b, session, text) => {
       if (session === MYSELF) return commandIntoConductor(b, text)
-      const found = await targetIn(sessionDeps, b.scope, session)
+      const found = await targetOf(sessionDeps, session)
       if (!found.ok) throw new Error(found.error)
       return commandInto(b, found.value, text)
     },
@@ -3106,7 +3096,7 @@ app.whenReady().then(() => {
       open: async () => {
         const open = liveTab()
         if (open) return open
-        const found = await targetIn(sessionDeps, b.scope, key)
+        const found = await targetOf(sessionDeps, key)
         if (!found.ok)
           throw new Error(
             `${name} is no longer in the session list (it was closed for good), so it cannot be woken.`
@@ -3114,7 +3104,9 @@ app.whenReady().then(() => {
         return found.value.tabId ?? found.value.open()
       },
       typeCommand: (tab, command) =>
-        slash.typeWhenIdle({ name, tabId: tab, conductor: false }, command, threadId),
+        slash.typeWhenIdle({ name, tabId: tab, conductor: false }, command, {
+          channelId: threadId
+        }),
       seen: (id) => conductorsNow.setThreadLastMessage(threadId, id)
     }
   }
@@ -4599,64 +4591,95 @@ async function saveDiscordToken(token: string): Promise<boolean> {
   return saved
 }
 
-function openDiscordSetup(ownerWords?: string): Promise<ConductorOpenResult> {
-  if (!conductors) return Promise.resolve({ ok: false, error: STILL_STARTING })
-  return conductors.openTask(GLOBAL_SCOPE, { ...DISCORD_SETUP_TASK, ownerWords })
+const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
+const SET_UP_DISCORD_HOW =
+  '(Koloft: start a helper for it in your own folder, with koloft session new and no --workspace; it must be Claude Code or Codex, which have the Workbench browser, so add --backend claude if you are neither. Tell it to run koloft discord setup, follow those steps, report back to you, and then close itself with koloft session close.)'
+
+async function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
+  const words = ownerWords ?? SET_UP_DISCORD_WORDS
+  return tellButler(`The owner asked you: ${words} ${SET_UP_DISCORD_HOW}`, words)
 }
 
-async function bindWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult> {
+async function tellButler(text: string, ownerWords: string): Promise<ConductorOpenResult> {
+  const wasOpen = !!conductors?.liveTab()
+  const opened = await conductors?.open()
+  if (!opened) return { ok: false, error: STILL_STARTING }
+  if (!opened.ok) return opened
+  const waitMs = wasOpen ? PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS : cronBindDeadlineMs()
+  void sendToButler(opened.tabId, text, ownerWords, waitMs).then((sent) => {
+    if (!sent.ok) sendToRenderer(CH.cron.toast, sent.error)
+  })
+  return opened
+}
+
+async function bindWithNewChannel(): Promise<ConductorSaveResult> {
   const link = discordLink
   const bound = conductors
   if (!bound || !link) return { ok: false, error: STILL_STARTING }
-  const saved = await bound.saveWithNewChannel(
-    input,
-    preferredAssistBackend(loadSettings()),
-    (scope, category) => link.newChannel(scope, bound.bindings(), category)
+  const saved = await bound.bindNewChannel(preferredAssistBackend(loadSettings()), (category) =>
+    link.newChannel(bound.bindings(), category)
   )
   if (saved.ok) registerSlashCommands()
   return saved
 }
 
+function butlerNameNow(): string {
+  return loadSettings().butler.name
+}
+
+function ownersPermission(): 'bypass' | 'default' {
+  return loadSettings().skipPermissions ? 'bypass' : 'default'
+}
+
 function conductorDestination(b: ConductorBinding): Destination {
   return {
     id: b.id,
-    name: 'Assist',
+    name: butlerNameNow(),
     conductor: true,
-    liveTab: () => conductors?.liveTab(b.scope),
+    liveTab: () => conductors?.liveTab(),
     open: async () => {
-      const opened = await conductors?.open(b.scope)
+      const opened = await conductors?.open()
       if (!opened) throw new Error(STILL_STARTING)
       if (!opened.ok) throw new Error(opened.error)
       return opened.tabId
     },
     typeCommand: (tabId, command) =>
-      slash.typeWhenIdle(
-        { name: `the ${conductorName(b.scope)}`, tabId, conductor: true },
-        command,
-        b.channel.channelId
-      ),
+      slash.typeWhenIdle({ name: butlerNameNow(), tabId, conductor: true }, command, {
+        channelId: b.channel.channelId
+      }),
     seen: (id) => conductors?.setLastMessage(b.id, id)
   }
 }
 
 async function commandInto(b: ConductorBinding, t: Target, text: string): Promise<string> {
   const channelId = (await discordThreads?.place(b, t)) ?? b.channel.channelId
-  const target = (tabId: string): SlashTarget => {
+  return typeCommandInto(t, text, { channelId }, (tabId) =>
     conductors?.touchNowAndNext(b.id, t.key, tabId)
-    return { name: t.name, tabId, conductor: false }
+  )
+}
+
+function typeCommandInto(
+  t: Target,
+  text: string,
+  to: SlashReplyTo,
+  onTab?: (tabId: string) => void
+): string {
+  const target = (tabId: string): SlashTarget => {
+    onTab?.(tabId)
+    return { name: t.name, tabId, conductor: !!t.butler }
   }
-  if (t.tabId) return slash.run(target(t.tabId), text, channelId)
+  if (t.tabId) return slash.run(target(t.tabId), text, to)
   void t
     .open()
-    .then((tabId) => slash.typeWhenIdle(target(tabId), text, channelId))
-    .catch((error: unknown) => discordRelay?.say(channelId, `⚠ ${errorText(error)}`))
-  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and posts what it prints in Discord.`
+    .then((tabId) => slash.typeWhenIdle(target(tabId), text, to))
+    .catch((error: unknown) => slashReply(to, `⚠ ${errorText(error)}`))
+  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and will ${replyWhere(to)}.`
 }
 
 function commandIntoConductor(b: ConductorBinding, text: string): string {
   if (!discordRelay) throw new Error(STILL_STARTING)
   discordRelay.command(conductorDestination(b), text, b.channel.channelId)
-  return `Koloft will type ${text} into the ${conductorName(b.scope)} once its turn ends, and post what it prints in Discord.`
+  return `Koloft will type ${text} into ${butlerNameNow()} once its turn ends, and post what it prints in Discord.`
 }
 
 const PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS = 10_000
@@ -4665,55 +4688,56 @@ let paletteMessages = 0
 const PALETTE_TASK_ANSWERS_ITSELF =
   'When this is a question or a piece of writing you can answer from what you know (translate, explain, draft a message), answer it here yourself; start or message a session only for work on files, commands or what a workspace holds.'
 
-function paletteTask(title: string, text: string): AssistTask {
+function routedTo(workspace: string | undefined): string {
+  return workspace ? `\nKoloft took this to be about the workspace ${workspace}.` : ''
+}
+
+function paletteTask(title: string, text: string, workspace: string | undefined): AssistTask {
   return {
     name: title || firstLineName(text),
-    brief: `${text}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
-    staysOpen: true,
+    brief: `${text}${routedTo(workspace)}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
     ownerWords: text
   }
 }
 
-async function tellAssist(
-  scope: string,
-  title: string,
-  text: string
-): Promise<ConductorOpenResult> {
-  const tabId = conductors?.liveTab(scope)
-  return tabId ? sendPaletteText(scope, tabId, text) : openPaletteTask(scope, title, text)
-}
-
 async function openPaletteTask(
-  scope: string,
   title: string,
-  text: string
+  text: string,
+  workspace?: string
 ): Promise<ConductorOpenResult> {
   const all = conductors
   if (!all) return { ok: false, error: STILL_STARTING }
-  const task = paletteTask(title, text)
-  const running = all.runningTaskTab(scope, task.name)
-  return running ? sendPaletteText(scope, running, text) : all.openTask(scope, task)
+  const task = paletteTask(title, text, workspace)
+  const running = all.runningTaskTab(task.name)
+  return running
+    ? sendToButler(
+        running,
+        `The owner typed this in ⌘P: ${text}${routedTo(workspace)}`,
+        text,
+        PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS
+      )
+    : all.openTask(task)
 }
 
-async function sendPaletteText(
-  scope: string,
+async function sendToButler(
   tabId: string,
-  text: string
+  text: string,
+  ownerWords: string,
+  waitMs: number
 ): Promise<ConductorOpenResult> {
   const id = `koloft-palette-${++paletteMessages}`
   const route = messagingOf(backendIdOf(ptyMgr.get(tabId)?.kind) ?? 'claude', false)
-  if (!(await tabReady(tabId, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS, route === 'typed')))
-    return { ok: false, error: `The ${conductorName(scope)} did not get ready in time.` }
+  if (!(await tabReady(tabId, waitMs, route === 'typed')))
+    return { ok: false, error: `${butlerNameNow()} did not get ready in time.` }
   try {
     if (route === 'queue') await queueCodexMessage(tabId, text, id)
-    else if (route === 'typed')
-      await ptyMgr.type(tabId, [`The owner typed this in ⌘P: ${text}`, '\r'])
+    else if (route === 'typed') await ptyMgr.type(tabId, [text, '\r'])
     else {
-      const line = crossSessionLine('prompting', `The owner typed this in ⌘P: ${text}`, id)
+      const line = crossSessionLine('prompting', text, id)
       if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }
       // ADR-0031
-      if (hookRegDir) seedOwnerWords(saidFile(hookRegDir, tabId), text)
-      await sendPeerLine(tabId, line, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS)
+      if (hookRegDir) seedOwnerWords(saidFile(hookRegDir, tabId), ownerWords)
+      await sendPeerLine(tabId, line, waitMs)
     }
   } catch (error) {
     return { ok: false, error: errorText(error) }
@@ -4723,19 +4747,18 @@ async function sendPaletteText(
 
 function conductorTarget(ref: string): Target | undefined {
   const all = conductors
-  const scope = all?.scopeOf(ref)
-  if (!all || !scope) return undefined
-  const tabId = all.liveTab(scope)
+  if (!all?.isButler(ref)) return undefined
+  const tabId = all.liveTab()
   return {
-    key: `conductor:${scope}`,
-    name: `the ${conductorName(scope)}`,
+    key: 'butler',
+    name: butlerNameNow(),
     backend:
       (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || preferredAssistBackend(loadSettings()),
     remote: false,
     tabId,
-    assistScope: scope,
+    butler: true,
     open: async () => {
-      const opened = await all.open(scope)
+      const opened = await all.open()
       if (!opened.ok) throw new Error(opened.error)
       return opened.tabId
     }
@@ -5128,7 +5151,7 @@ function registerIpc(): void {
     assistRuns.set(id, run)
     try {
       return await routeSession(
-        { rows: () => mgr.rows(), worktrees: (p) => mgr.worktrees(p), assist },
+        { rows: projectRows, worktrees: (p) => mgr.worktrees(p), assist },
         message,
         run.signal
       )
@@ -5208,7 +5231,6 @@ function registerIpc(): void {
     const r = workspaceMgr?.remove(p)
     if (r?.removed) {
       cronRunner?.removeWorkspace(p)
-      conductors?.removeWorkspace(p)
       for (const id of marked) attention.clearSession(id)
     }
     return r
@@ -5229,46 +5251,38 @@ function registerIpc(): void {
     const marked = markedSessionsOf(p)
     workspaceMgr?.removeConfirmed(p)
     cronRunner?.removeWorkspace(p)
-    conductors?.removeWorkspace(p)
     for (const id of marked) attention.clearSession(id)
   })
-  ipcMain.handle(CH.conductors.save, (_e, input: ConductorSaveInput) => {
-    const channel = input?.channel
+  ipcMain.handle(CH.conductors.bind, (_e, channel: DiscordChannel | undefined) => {
     if (
-      typeof input?.scope !== 'string' ||
       !isDiscordId(channel?.guildId) ||
       !isDiscordId(channel.channelId) ||
       typeof channel.name !== 'string'
     )
       return { ok: false, error: 'Pick a channel.' }
     const { guildId, channelId, name } = channel
-    const saved = conductors?.save(
-      { id: input.id, scope: input.scope, channel: { guildId, channelId, name } },
+    const saved = conductors?.bind(
+      { guildId, channelId, name },
       preferredAssistBackend(loadSettings())
     ) ?? { ok: false, error: STILL_STARTING }
     if (saved.ok) registerSlashCommands()
     return saved
   })
-  ipcMain.handle(CH.conductors.saveWithNewChannel, (_e, input: NewChannelInput) =>
-    bindWithNewChannel({ id: input.id, scope: input.scope })
-  )
-  ipcMain.handle(CH.conductors.unbind, (_e, id: string) => {
-    conductors?.unbind(id)
+  ipcMain.handle(CH.conductors.bindNewChannel, () => bindWithNewChannel())
+  ipcMain.handle(CH.conductors.unbind, () => {
+    conductors?.unbind()
     syncAnswerable()
   })
   ipcMain.handle(
     CH.conductors.open,
-    (_e, scope: string) => conductors?.open(scope) ?? { ok: false, error: STILL_STARTING }
+    () => conductors?.open() ?? { ok: false, error: STILL_STARTING }
   )
   ipcMain.handle(
     CH.conductors.startFresh,
-    (_e, scope: string) => conductors?.startFresh(scope) ?? { ok: false, error: STILL_STARTING }
+    () => conductors?.startFresh() ?? { ok: false, error: STILL_STARTING }
   )
-  ipcMain.handle(CH.conductors.openTask, (_e, scope: string, title: string, text: string) =>
-    openPaletteTask(scope, title, text)
-  )
-  ipcMain.handle(CH.conductors.tell, (_e, scope: string, title: string, text: string) =>
-    tellAssist(scope, title, text)
+  ipcMain.handle(CH.conductors.openTask, (_e, title: string, text: string, workspace?: string) =>
+    openPaletteTask(title, text, typeof workspace === 'string' ? workspace : undefined)
   )
   ipcMain.handle(CH.conductors.closeTask, (_e, tabId: string) => conductors?.closeTask(tabId))
   ipcMain.handle(CH.conductors.tasks, () => conductors?.taskRows() ?? [])
@@ -5278,8 +5292,8 @@ function registerIpc(): void {
     if (owner) conductors?.setOwner(owner)
   })
   ipcMain.handle(CH.discord.channels, () => discordLink?.channels() ?? [])
-  ipcMain.handle(CH.discord.setUpWithAssist, (_e, ownerWords?: string) =>
-    openDiscordSetup(ownerWords)
+  ipcMain.handle(CH.discord.setUpWithButler, (_e, ownerWords?: string) =>
+    setUpDiscordWithButler(typeof ownerWords === 'string' ? ownerWords : undefined)
   )
   ipcMain.handle(CH.workspace.move, (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)

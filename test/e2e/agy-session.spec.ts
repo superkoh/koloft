@@ -22,7 +22,7 @@ import {
   newSessionInWith,
   openMenu,
   processAlive,
-  readCalls,
+  readAllCalls,
   runIn,
   sendShortcut,
   waitBooted,
@@ -121,7 +121,7 @@ function seedConductor(env: E2EEnv): void {
       bindings: [
         {
           id: 'b1',
-          scope: env.workspaces.a,
+          scope: 'global',
           backend: 'claude',
           channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
           sessionIds: [],
@@ -217,7 +217,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       expect(call.argv.slice(2)).toEqual(['--dangerously-skip-permissions', '-i', PROMPT])
       expect(call.env.WSL_INTEROP).toBe('koloft')
       expect(call.env.GEMINI_API_KEY).toBe(true)
-      expect(readCalls(env)).toHaveLength(0)
+      expect(readAllCalls(env)).toHaveLength(0)
 
       const row = agyRows(page)
       await expect(row).toHaveClass(/st-working/, { timeout: 30_000 })
@@ -686,7 +686,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await askBox.fill(PROMPT)
       await page.keyboard.press('Enter')
 
-      await expect.poll(() => readCalls(env).length, { timeout: 40_000 }).toBe(1)
+      await expect.poll(() => readAllCalls(env).length, { timeout: 40_000 }).toBe(1)
       const shots = path.join(env.userData, 'agy-one-shots')
       const oneShots = agyCalls(env).filter(
         (c) => c.argv.includes('-p') && !c.argv.includes('/usage')

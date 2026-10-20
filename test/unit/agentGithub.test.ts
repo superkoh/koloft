@@ -1,160 +1,89 @@
 import { describe, it, expect } from 'vitest'
-import fs from 'fs'
-import os from 'os'
-import path from 'path'
 import type { SessionInfo } from '../../src/shared/types'
 import {
   githubVerb,
-  GH_BODY_FILE_OUTSIDE_OWN_FOLDER,
-  GH_NEEDS_A_REPO,
-  GH_ONLY_A_CONDUCTOR,
-  GH_USAGE
+  GH_JQ_READS_ENV,
+  GH_PASSES_THROUGH,
+  GH_REFUSED,
+  GH_USAGE,
+  repoFlagOf
 } from '../../src/main/agentGithub'
 
-function verb(
-  opts: { scope?: string; repo?: string | null; out?: string; ok?: boolean; folder?: string } = {}
-) {
-  const ran: string[][] = []
-  const folder = opts.folder ?? '/c'
+function verb(opts: { out?: string; ok?: boolean } = {}) {
+  const ran: { args: string[]; tabId: string; cwd: string }[] = []
   const run = githubVerb({
-    scopeOf: () => ('scope' in opts ? opts.scope : '/ws/app'),
-    folderOf: () => folder,
-    repoOf: async () => ('repo' in opts ? (opts.repo ?? null) : 'octo/app'),
-    run: async (args) => {
-      ran.push(args)
+    run: async (args, tabId, cwd) => {
+      ran.push({ args, tabId, cwd })
       return { ok: opts.ok ?? true, out: opts.out ?? 'OPEN' }
     }
   })
   const call = (args: string[]) =>
-    run(args, { tabId: 'pty-1', cwd: folder, session: {} as SessionInfo })
+    run(args, { tabId: 'pty-1', cwd: '/ws/app', session: {} as SessionInfo })
   return { call, ran }
 }
 
-function conductorFolderWithAFileBeside(): { folder: string; inside: string; outside: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-gh-')))
-  const folder = path.join(root, 'conductor')
-  fs.mkdirSync(folder)
-  const inside = path.join(folder, 'body.md')
-  const outside = path.join(root, 'secret.txt')
-  fs.writeFileSync(inside, 'body')
-  fs.writeFileSync(outside, 'secret')
-  return { folder, inside, outside }
-}
-
 describe('koloft gh', () => {
-  it('runs a read with the workspace’s repository filled in and prints what gh said', async () => {
-    const { call, ran } = verb({ out: '{"state":"MERGED"}' })
-    expect(await call(['pr', 'view', '389', '--json', 'state'])).toEqual({
-      text: '{"state":"MERGED"}',
-      exit: 0
-    })
-    expect(ran).toEqual([['pr', 'view', '389', '--json', 'state', '--repo', 'octo/app']])
-  })
-
   it.each([
-    ['--repo given', ['issue', 'list', '--repo', 'a/b']],
-    ['--repo= given', ['run', 'list', '--repo=a/b']],
-    ['a full URL', ['pr', 'checks', 'https://github.com/a/b/pull/3']]
-  ])('leaves the repository alone with %s, even for the global conductor', async (_n, args) => {
-    const { call, ran } = verb({ repo: null })
-    expect((await call(args)).exit).toBe(0)
-    expect(ran).toEqual([args])
-  })
-
-  it('asks the global conductor for --repo when nothing names one', async () => {
-    const { call, ran } = verb({ repo: null })
-    expect(await call(['pr', 'list'])).toEqual({ text: GH_NEEDS_A_REPO, exit: 1 })
-    expect(ran).toEqual([])
-  })
-
-  it.each([
-    ['a command that writes', ['pr', 'merge', '389']],
+    ['a read', ['pr', 'view', '389', '--json', 'state']],
+    ['a merge', ['pr', 'merge', '389', '--squash']],
     ['a comment', ['issue', 'comment', '5', '--body', 'x']],
-    ['an issue created with an assignee', ['issue', 'create', '--title', 't', '--assignee', 'a']],
-    ['an issue created with a word that is no flag', ['issue', 'create', '5', '--title', 't']],
-    ['an issue created with a flag left without its value', ['issue', 'create', '--title']],
-    ['gh api', ['api', 'repos/a/b', '-X', 'DELETE']],
-    ['a jq filter that can read the environment', ['pr', 'view', '1', '--jq', '$ENV']],
-    ['a flag outside the list, given with =', ['pr', 'view', '1', '--web=true']],
-    ['no command', []]
+    ['gh api', ['api', 'repos/a/b']]
+  ])('runs %s as it is, where the session runs, and prints what gh said', async (_n, args) => {
+    const { call, ran } = verb({ out: 'done' })
+    expect(await call(args)).toEqual({ text: 'done', exit: 0 })
+    expect(ran).toEqual([{ args, tabId: 'pty-1', cwd: '/ws/app' }])
+  })
+
+  it.each([
+    ['gh auth, which can print the token or sign the owner out', ['auth', 'token']],
+    ['gh alias, which can run gh auth under another name', ['alias', 'set', 'x', 'auth token']],
+    ['gh extension, which runs any program with the sign-in', ['extension', 'exec', 'x']],
+    ['gh ext, its short name', ['ext', 'install', 'evil/gh-x']],
+    ['an installed extension or an alias called by its name', ['x']],
+    ['co, an alias the owner may have changed', ['co', '1']],
+    ['gh config, which can name a browser gh starts', ['config', 'set', 'browser', 'sh']],
+    ['gh copilot, an agent of its own', ['copilot', 'suggest', 'x']]
   ])('refuses %s without running gh', async (_n, args) => {
     const { call, ran } = verb()
-    expect(await call(args)).toEqual({ text: GH_USAGE, exit: 2 })
+    expect(await call(args)).toEqual({ text: GH_REFUSED, exit: 1 })
     expect(ran).toEqual([])
   })
 
-  it('opens an issue with the workspace’s repository filled in, a body that starts with a dash kept as the body, and prints its address', async () => {
-    const { call, ran } = verb({ out: 'https://github.com/octo/app/issues/7\n' })
-    expect(
-      await call([
-        'issue',
-        'create',
-        '--title',
-        'Login stays blank',
-        '--body',
-        '- open /login\n- it stays white',
-        '--label=bug'
-      ])
-    ).toEqual({ text: 'https://github.com/octo/app/issues/7\n', exit: 0 })
-    expect(ran).toEqual([
-      [
-        'issue',
-        'create',
-        '--title=Login stays blank',
-        '--body=- open /login\n- it stays white',
-        '--label=bug',
-        '--repo',
-        'octo/app'
-      ]
-    ])
-  })
-
-  it('opens an issue in the repository the global conductor names, and asks for one when it names none', async () => {
-    const { call, ran } = verb({ repo: null })
-    expect(await call(['issue', 'create', '--title', 't', '--body', 'b'])).toEqual({
-      text: GH_NEEDS_A_REPO,
-      exit: 1
-    })
-    expect(
-      (await call(['issue', 'create', '--repo', 'a/b', '--title', 't', '--body', 'b'])).exit
-    ).toBe(0)
-    expect(ran).toEqual([['issue', 'create', '--repo=a/b', '--title=t', '--body=b']])
-  })
-
-  it('reads --body-file from the conductor’s own folder, given relative to where it runs', async () => {
-    const { folder, inside } = conductorFolderWithAFileBeside()
-    const { call, ran } = verb({ folder })
-    expect((await call(['issue', 'create', '--title', 't', '--body-file', 'body.md'])).exit).toBe(0)
-    expect(ran).toEqual([
-      ['issue', 'create', '--title=t', `--body-file=${inside}`, '--repo', 'octo/app']
-    ])
-  })
-
-  type Folder = ReturnType<typeof conductorFolderWithAFileBeside>
   it.each([
-    ['a file outside the conductor’s own folder', (f: Folder) => f.outside],
-    ['a way out of the folder through ..', () => '../secret.txt'],
-    [
-      'a link in the folder that points outside it',
-      (f: Folder) => {
-        fs.symlinkSync(f.outside, path.join(f.folder, 'link.md'))
-        return 'link.md'
-      }
-    ],
-    ['standard input', () => '-']
-  ])('refuses --body-file naming %s without running gh', async (_n, pick) => {
-    const f = conductorFolderWithAFileBeside()
-    const { call, ran } = verb({ folder: f.folder })
-    expect(await call(['issue', 'create', '--title', 't', '--body-file', pick(f)])).toEqual({
-      text: GH_BODY_FILE_OUTSIDE_OWN_FOLDER,
-      exit: 1
-    })
+    ['--jq', ['pr', 'view', '1', '--json', 'url', '--jq', '$ENV.GH_TOKEN']],
+    ['--jq=', ['api', 'user', '--jq=env.GH_TOKEN']],
+    ['-q', ['api', 'user', '-q', 'env']],
+    ['-q with its value attached', ['api', 'user', '-qenv.GH_TOKEN']],
+    ['-q at the end of a group of short flags', ['api', 'user', '-iq', '$ENV.GH_TOKEN']]
+  ])('refuses a %s filter that reads the environment, where the sign-in is', async (_n, args) => {
+    const { call, ran } = verb()
+    expect(await call(args)).toEqual({ text: GH_JQ_READS_ENV, exit: 1 })
     expect(ran).toEqual([])
   })
 
-  it('is refused to a session that is not a conductor', async () => {
-    const { call, ran } = verb({ scope: undefined })
-    expect(await call(['pr', 'view', '1'])).toEqual({ text: GH_ONLY_A_CONDUCTOR, exit: 1 })
+  it.each([
+    ['git, as repo clone does', ['repo', 'clone', 'o/r', 'x', '--', '--upload-pack=env']],
+    ['ssh, as codespace ssh does', ['codespace', 'ssh', '--', '-o', 'ProxyCommand=env']]
+  ])(
+    'refuses words after -- that gh hands to %s, which runs with the sign-in',
+    async (_n, args) => {
+      const { call, ran } = verb()
+      expect(await call(args)).toEqual({ text: GH_PASSES_THROUGH, exit: 1 })
+      expect(ran).toEqual([])
+    }
+  )
+
+  it('lets a --jq filter read a field whose name only contains env', async () => {
+    const { call, ran } = verb()
+    const args = ['run', 'view', '7', '--json', 'jobs', '--jq', '.jobs[].environment']
+    expect((await call(args)).exit).toBe(0)
+    expect(ran).toHaveLength(1)
+  })
+
+  it('refuses no command at all', async () => {
+    const { call, ran } = verb()
+    expect(await call([])).toEqual({ text: GH_USAGE, exit: 2 })
+    expect(await call(['--version'])).toEqual({ text: GH_USAGE, exit: 2 })
     expect(ran).toEqual([])
   })
 
@@ -172,5 +101,13 @@ describe('koloft gh', () => {
     expect(exit).toBe(0)
     expect(text.length).toBeLessThan(21_000)
     expect(text).toMatch(/cut at \d+ characters; ask for less/)
+  })
+
+  it('finds the repository the butler names, for picking its GitHub account', () => {
+    expect(repoFlagOf(['pr', 'list', '--repo', 'a/b'])).toBe('a/b')
+    expect(repoFlagOf(['pr', 'list', '--repo=a/b'])).toBe('a/b')
+    expect(repoFlagOf(['pr', 'list', '-R', 'a/b'])).toBe('a/b')
+    expect(repoFlagOf(['pr', 'list', '-Ra/b'])).toBe('a/b')
+    expect(repoFlagOf(['pr', 'list'])).toBeUndefined()
   })
 })

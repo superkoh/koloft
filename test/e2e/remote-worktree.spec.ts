@@ -30,7 +30,7 @@ import {
 test.afterEach(({ env }) => killFakeRemote(env))
 
 async function closeActiveTab(app: ElectronApplication, page: Page): Promise<void> {
-  await page.locator('.ws-tab.active').first().click()
+  await page.locator('.ws .ws-tab.active').first().click()
   await sendShortcut(app, 'shortcut:close-tab')
   const confirm = page.locator('.modal', { hasText: 'Close running session?' })
   if (await confirm.isVisible({ timeout: 4000 }).catch(() => false)) {

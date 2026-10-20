@@ -12,6 +12,8 @@ vi.mock('../../src/renderer/src/components/SessionBackendIcon', () => ({
   }
 }))
 
+vi.mock('../../src/renderer/src/components/ButlerRow', () => ({ ButlerRow: () => null }))
+
 const { useStore } = await import('../../src/renderer/src/store')
 const { WorkspaceSidebar } = await import('../../src/renderer/src/components/WorkspaceSidebar')
 

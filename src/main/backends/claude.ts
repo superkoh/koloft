@@ -841,7 +841,6 @@ export class ClaudeBackend implements SessionBackend {
       cols: opts.cols,
       rows: opts.rows,
       role: opts.role,
-      allow: opts.allow,
       conductor: opts.conductor,
       trustFolder: opts.trustFolder
     })
@@ -904,6 +903,7 @@ export class ClaudeBackend implements SessionBackend {
       rows: req.rows,
       role: req.role,
       conductor: req.conductor,
+      permission: req.permission,
       trustFolder: req.trustFolder
     })
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }

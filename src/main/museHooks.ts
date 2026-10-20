@@ -84,7 +84,6 @@ export function writeMuseHooks(
   shimDir: string,
   requestDir: string,
   context?: string,
-  gate?: string,
   ownerWords?: string
 ): string {
   const script = path.join(shimDir, 'muse-hook')
@@ -98,19 +97,15 @@ export function writeMuseHooks(
     file,
     hooksJson(
       (event) =>
-        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)}`,
-      gate
+        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)}`
     )
   )
   return file
 }
 
-function hooksJson(command: (event: MuseHookName) => string, gate?: string): string {
+function hooksJson(command: (event: MuseHookName) => string): string {
   const run = (line: string): unknown[] => [{ hooks: [{ type: 'command', command: line }] }]
-  const hooks = Object.fromEntries([
-    ...EVENTS.map((event) => [event, run(command(event))]),
-    ...(gate ? [['PreToolUse', run(gate)]] : [])
-  ])
+  const hooks = Object.fromEntries(EVENTS.map((event) => [event, run(command(event))]))
   return JSON.stringify({ hooks })
 }
 

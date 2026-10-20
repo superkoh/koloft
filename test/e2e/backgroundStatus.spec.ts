@@ -23,7 +23,7 @@ async function dumpState(page: Page, steps: Step[], info: TestInfo, home: string
     out.push(`+${s.at - t0}ms (this step ${s.at - prev}ms) ${s.name}`)
   })
   try {
-    const rows = await page.locator('.ws-tab').evaluateAll((els) => els.map((e) => e.className))
+    const rows = await page.locator('.ws .ws-tab').evaluateAll((els) => els.map((e) => e.className))
     out.push(`rows: ${JSON.stringify(rows)}`)
     out.push(`attention: ${JSON.stringify(await pendingAttention(page))}`)
     const term = await page.evaluate(() => {
@@ -78,23 +78,23 @@ async function dumpState(page: Page, steps: Step[], info: TestInfo, home: string
 }
 
 const greenWithRunningMarker = (page: Page) =>
-  oneStillRunning(page.locator('.ws-tab.st-waiting.st-bg-run'))
+  oneStillRunning(page.locator('.ws .ws-tab.st-waiting.st-bg-run'))
 
 async function expectGreenAndRunningThroughTheFixtures5sBackgroundWindow(
   page: Page
 ): Promise<void> {
   for (let i = 0; i < 3; i++) {
     await page.waitForTimeout(700)
-    await expect(page.locator('.ws-tab.st-working')).toHaveCount(0)
+    await expect(page.locator('.ws .ws-tab.st-working')).toHaveCount(0)
     expect(await pendingAttention(page)).toHaveLength(0)
     await expect(greenWithRunningMarker(page)).toBeVisible()
   }
 }
 
 async function expectDrainedThenTurnDone(page: Page, timeout: number): Promise<void> {
-  await expect(page.locator('.ws-tab .ws-tab-parked')).toHaveCount(0, { timeout })
-  await expect(page.locator('.ws-tab.st-waiting')).toBeVisible()
-  await expect(page.locator('.ws-tab.st-bg-run')).toHaveCount(0)
+  await expect(page.locator('.ws .ws-tab .ws-tab-parked')).toHaveCount(0, { timeout })
+  await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible()
+  await expect(page.locator('.ws .ws-tab.st-bg-run')).toHaveCount(0)
   await expect
     .poll(() => pendingAttention(page), { timeout: 10_000 })
     .toMatchObject([{ kind: 'turn-done' }])
@@ -112,7 +112,7 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
     await startSessionIn(page, 'ws-a')
     stamp(steps, 'claude launched')
 
-    await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+    await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
     stamp(steps, 'startup turn rested')
 
     await runIn(page, centerTerm(page), '/bg-work')
@@ -142,7 +142,7 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
 
-    await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+    await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
 
     await runIn(page, centerTerm(page), '/bg-shell')
     await expect(greenWithRunningMarker(page)).toBeVisible({ timeout: 15_000 })
@@ -160,7 +160,7 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
 
-    await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+    await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
 
     await runIn(page, centerTerm(page), '/bg-reported')
     await expect(greenWithRunningMarker(page)).toBeVisible({ timeout: 15_000 })
@@ -184,10 +184,10 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
 
-    await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+    await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
 
     await runIn(page, centerTerm(page), '/bg-monitor')
-    const badge = page.locator('.ws-tab .ws-tab-parked')
+    const badge = page.locator('.ws .ws-tab .ws-tab-parked')
     await expect(badge).toHaveText('⏸ 1', { timeout: 15_000 })
     await badge.click()
     const card = page.locator('.tbu-pop.parked')
@@ -196,7 +196,7 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
     await expect(page.locator('.menu')).toHaveCount(0)
     await page.keyboard.press('Escape')
     await expect(card).toHaveCount(0)
-    await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 15_000 })
     await expect
       .poll(() => pendingAttention(page), { timeout: 10_000 })
       .toMatchObject([{ kind: 'turn-done' }])

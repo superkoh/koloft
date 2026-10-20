@@ -1,11 +1,11 @@
 import { useState, type JSX } from 'react'
 import { IconPlus } from '../../icons'
-import { channelLabel, scopeName, SET_UP_WITH_ASSIST } from '@shared/conductors'
+import { butlerTitle, channelLabel, setUpWith } from '@shared/conductors'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '../../store'
-import { setUpDiscordWithAssist } from '../ConductorsIsland'
+import { setUpDiscordWithButler } from '../ButlerRow'
 import {
-  MESSAGE_CONTENT_BY_HAND,
+  messageContentByHand,
   statusClass,
   statusText,
   useDiscordStatus
@@ -14,18 +14,20 @@ import '../../accounts.css'
 
 export function DiscordPane(): JSX.Element {
   const discord = useStore((s) => s.settings.discord)
-  const setBindConductor = useStore((s) => s.setBindConductor)
+  const name = useStore((s) => s.settings.butler.name)
+  const setBindButler = useStore((s) => s.setBindButler)
   const loaded = useDiscordStatus()
   const [assistError, setAssistError] = useState('')
+  const [binding] = discord.bindings
 
-  const setUpWithAssist = async (): Promise<void> => {
-    setAssistError((await setUpDiscordWithAssist()) ?? '')
+  const setUpWithButler = async (): Promise<void> => {
+    setAssistError((await setUpDiscordWithButler()) ?? '')
   }
 
   const head = (
     <div className="set-ph">
       <h3>Discord</h3>
-      <p>Talk to Assist from Discord. Each Assist is a normal session bound to one channel.</p>
+      <p>Talk to {name} from Discord, in one channel of your server.</p>
     </div>
   )
   if (!loaded) return head
@@ -38,15 +40,15 @@ export function DiscordPane(): JSX.Element {
       {head}
       <div className="set-row">
         <div className="set-lab">
-          <b>Let Assist set up Discord</b>
+          <b>Let {name} set up Discord</b>
           <small>
             {setUp
-              ? 'Already set up. Run it again to fix a problem, change the bot or add a server: Assist skips the steps that are done.'
-              : 'Assist opens the Discord website in its Workbench browser and does each step it can. You sign in, type your password and pass the "I am human" checks. Already have a bot? Assist can use it too.'}
+              ? `Already set up. Run it again to fix a problem, change the bot or add a server: the steps that are done are skipped.`
+              : `${name} starts a session that opens the Discord website in its Workbench browser and does each step it can. You sign in, type your password and pass the "I am human" checks. Already have a bot? It can use that too.`}
           </small>
         </div>
-        <button className="btn-primary" onClick={() => void setUpWithAssist()}>
-          {SET_UP_WITH_ASSIST}
+        <button className="btn-primary" onClick={() => void setUpWithButler()}>
+          {setUpWith(name)}
         </button>
       </div>
       {assistError && <div className="acct-login-state bad">{assistError}</div>}
@@ -57,7 +59,7 @@ export function DiscordPane(): JSX.Element {
           <div className="set-row">
             <div className="set-lab">
               <b>Your Discord account</b>
-              <small>Only messages from this user reach Assist.</small>
+              <small>Only messages from this user reach {name}.</small>
             </div>
             <span className="acct-note">
               {discord.userId
@@ -95,8 +97,8 @@ export function DiscordPane(): JSX.Element {
               <b>Status</b>
               <small>
                 {status.phase === 'intents'
-                  ? MESSAGE_CONTENT_BY_HAND
-                  : 'The bot reads only the bound channels. Koloft keeps the bot’s Message Content on, so it can read what you type.'}
+                  ? messageContentByHand(name)
+                  : 'The bot reads only the bound channel. Koloft keeps the bot’s Message Content on, so it can read what you type.'}
               </small>
             </div>
             <div className={'acct-login-state' + statusClass(status)}>{statusText(status)}</div>
@@ -109,38 +111,44 @@ export function DiscordPane(): JSX.Element {
                   ? 'Known once the bot is connected.'
                   : status.guilds.length
                     ? `The bot is in ${status.guilds.map((g) => g.name).join(', ')}.`
-                    : `The bot is not in a server you own yet. ${SET_UP_WITH_ASSIST} invites it.`}
+                    : `The bot is not in a server you own yet. ${setUpWith(name)} invites it.`}
               </small>
             </div>
           </div>
 
-          <div className="set-grp">Bindings</div>
+          <div className="set-grp">Channel</div>
           <div className="acct-section">
             <div className="acct-list">
-              {discord.bindings.map((b) => (
-                <div className="acct-row" key={b.id}>
+              {binding && (
+                <div className="acct-row">
                   <div className="acct-main">
-                    <span className="acct-name">{scopeName(b.scope)}</span>
-                    <span className="acct-note">{channelLabel(b)}</span>
+                    <span className="acct-name">{butlerTitle(name)}</span>
+                    <span className="acct-note">{channelLabel(binding)}</span>
                     <button
                       className="acct-x"
                       title="Unbind"
-                      onClick={() => void window.api.conductors.unbind(b.id)}
+                      onClick={() => void window.api.conductors.unbind()}
                     >
                       Unbind
                     </button>
                   </div>
-                  {status.failing[b.channel.channelId] && (
+                  {status.failing[binding.channel.channelId] && (
                     <div className="acct-login-state bad">
-                      Cannot post here: {status.failing[b.channel.channelId]}
+                      Cannot post here: {status.failing[binding.channel.channelId]}
                     </div>
                   )}
                 </div>
-              ))}
+              )}
             </div>
             <div className="acct-foot">
-              <button className="mini" onClick={() => setBindConductor({})}>
-                <IconPlus size={14} /> Bind a channel…
+              <button className="mini" onClick={() => setBindButler(true)}>
+                {binding ? (
+                  'Change channel…'
+                ) : (
+                  <>
+                    <IconPlus size={14} /> Bind a channel…
+                  </>
+                )}
               </button>
             </div>
           </div>

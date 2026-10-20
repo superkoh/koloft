@@ -38,6 +38,11 @@ export interface ClaudeCall {
 }
 
 export function readCalls(env: E2EEnv): ClaudeCall[] {
+  const conductors = path.join(env.userData, 'conductors')
+  return readAllCalls(env).filter((c) => path.dirname(c.cwd) !== conductors)
+}
+
+export function readAllCalls(env: E2EEnv): ClaudeCall[] {
   if (!fs.existsSync(env.claudeCalls)) return []
   return fs
     .readFileSync(env.claudeCalls, 'utf8')
@@ -63,9 +68,13 @@ export async function waitForCalls(
   return calls()
 }
 
-export function waitForCallsBesideConductors(env: E2EEnv, count: number): Promise<ClaudeCall[]> {
-  const conductors = path.join(env.userData, 'conductors')
-  return waitForCalls(env, count, undefined, (c) => path.dirname(c.cwd) !== conductors)
+export async function waitForAllCalls(
+  env: E2EEnv,
+  count: number,
+  timeout = 40_000
+): Promise<ClaudeCall[]> {
+  await expect.poll(() => readAllCalls(env).length, { timeout }).toBeGreaterThanOrEqual(count)
+  return readAllCalls(env)
 }
 
 export function assistRecordOnDisk(env: E2EEnv, scope?: string): AssistRecord | undefined {
@@ -381,6 +390,14 @@ export function wsGroup(page: Page, wsName: string): Locator {
   return page.locator('.ws').filter({ has: page.locator('.ws-head', { hasText: wsName }) })
 }
 
+export function butlerRow(page: Page): Locator {
+  return page.locator('.isl-butler > .ws-tab')
+}
+
+export async function landsOnTheButler(page: Page): Promise<void> {
+  await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+}
+
 export function wsRows(page: Page, wsName: string): Locator {
   return wsGroup(page, wsName).locator('.ws-tab')
 }
@@ -467,7 +484,7 @@ export async function startSessionIn(
     .click()
   await expect(rows).toHaveCount(before + 1, { timeout: 30_000 })
   await expect(page.locator('.modal')).toHaveCount(0)
-  await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+  await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
   if (opts.remote) {
     await expect(rows.filter({ hasText: FAKE_SESSION_TITLE })).toHaveCount(titledBefore + 1, {
       timeout: 60_000
@@ -587,11 +604,12 @@ export function terminalText(page: Page, tabId: string): Promise<string> {
 }
 
 export function termIds(page: Page): Promise<string[]> {
-  return page.evaluate(() =>
-    Object.keys(
+  return page.evaluate(() => {
+    const butler = document.querySelector('.isl-butler > .ws-tab')?.getAttribute('data-tab-id')
+    return Object.keys(
       (window as unknown as { __koloftTerms?: Record<string, unknown> }).__koloftTerms ?? {}
-    )
-  )
+    ).filter((id) => id !== butler)
+  })
 }
 
 const TERMINAL_QUIET_ONCE_UNCHANGED_FOR_MS = 700

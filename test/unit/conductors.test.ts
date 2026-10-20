@@ -1,76 +1,82 @@
 import { describe, it, expect } from 'vitest'
 import {
-  bindingProblem,
+  butlerName,
   GLOBAL_SCOPE,
-  keepPinnedScopes,
   newChannelGuild,
-  newChannelName,
+  peerNamesOf,
+  renamedButler,
   sanitizeDiscord
 } from '@shared/conductors'
 import { buildResetPatch, sanitizeLoadedSettings, sanitizeSettingsPatch } from '@shared/settingsOps'
 import type { ConductorBinding } from '@shared/types'
 
-function binding(id: string, scope: string, channelId: string): ConductorBinding {
+function binding(
+  id: string,
+  scope: string,
+  channelId: string,
+  lastMessageId?: string
+): ConductorBinding {
   return {
     id,
     scope,
     backend: 'claude',
     channel: { guildId: '100', channelId, name: `ch-${channelId}` },
-    touched: []
+    touched: [],
+    ...(lastMessageId ? { lastMessageId } : {})
   }
 }
-
-describe('bindingProblem', () => {
-  const bound = [binding('g', GLOBAL_SCOPE, '1'), binding('a', '/ws/a', '2')]
-
-  it('allows one global conductor only', () => {
-    expect(bindingProblem(bound, { scope: GLOBAL_SCOPE, channelId: '9' })).toBe(
-      'Global already has an Assist.'
-    )
-  })
-
-  it('allows one conductor per workspace', () => {
-    expect(bindingProblem(bound, { scope: '/ws/a', channelId: '9' })).toBe(
-      'a already has an Assist.'
-    )
-  })
-
-  it('allows one conductor per channel', () => {
-    expect(bindingProblem(bound, { scope: '/ws/b', channelId: '2' })).toBe(
-      'That channel is already bound to the a Assist.'
-    )
-  })
-
-  it('lets a conductor keep its own scope and channel when it changes', () => {
-    expect(bindingProblem(bound, { id: 'a', scope: '/ws/a', channelId: '2' })).toBeUndefined()
-  })
-})
 
 describe('sanitizeDiscord', () => {
   it('starts with no bindings', () => {
     expect(sanitizeDiscord(undefined)).toEqual({ bindings: [] })
   })
 
-  it('drops a broken binding, one whose channel has no name, and a second one for a scope or channel already taken', () => {
-    const nameless = binding('nameless', '/ws/c', '5')
+  it('keeps only the global channel once workspaces had channels of their own: the butler listens there alone', () => {
     const doc = sanitizeDiscord({
       bindings: [
-        binding('a', '/ws/a', '1'),
-        binding('dup-scope', '/ws/a', '2'),
-        binding('dup-channel', '/ws/b', '1'),
-        { ...binding('bad', 'relative/path', '3') },
-        { ...nameless, channel: { guildId: '100', channelId: '5' } },
-        binding('b', '/ws/b', '4')
+        binding('a', '/ws/a', '1', '900'),
+        binding('g', GLOBAL_SCOPE, '2', '100'),
+        binding('b', '/ws/b', '3')
       ]
     })
-    expect(doc.bindings.map((b) => b.id)).toEqual(['a', 'b'])
+    expect(doc.bindings.map((b) => [b.id, b.scope, b.channel.channelId])).toEqual([
+      ['g', GLOBAL_SCOPE, '2']
+    ])
+  })
+
+  it('turns the workspace channel last written in into the butler’s, for an owner who never bound #global', () => {
+    const doc = sanitizeDiscord({
+      bindings: [
+        binding('a', '/ws/a', '1', '1000'),
+        binding('b', 'ssh://box/srv/b', '2', '1500000000000000001'),
+        binding('c', '/ws/c', '3')
+      ]
+    })
+    expect(doc.bindings).toEqual([{ ...binding('b', GLOBAL_SCOPE, '2', '1500000000000000001') }])
+  })
+
+  it('takes the first workspace channel when none was ever written in', () => {
+    const doc = sanitizeDiscord({
+      bindings: [binding('a', '/ws/a', '1'), binding('b', '/ws/b', '2')]
+    })
+    expect(doc.bindings.map((b) => [b.id, b.scope])).toEqual([['a', GLOBAL_SCOPE]])
+  })
+
+  it('drops a broken binding and one whose channel has no name', () => {
+    const doc = sanitizeDiscord({
+      bindings: [
+        { ...binding('bad', 'relative/path', '3') },
+        { ...binding('nameless', GLOBAL_SCOPE, '5'), channel: { guildId: '100', channelId: '5' } }
+      ]
+    })
+    expect(doc.bindings).toEqual([])
   })
 
   it('keeps each session’s thread across a restart, and drops one with no thread id or no session', () => {
     const doc = sanitizeDiscord({
       bindings: [
         {
-          ...binding('a', '/ws/a', '1'),
+          ...binding('g', GLOBAL_SCOPE, '1'),
           threads: [
             { threadId: '9', keys: ['k1', 'k2'], name: 'Fix login', lastMessageId: '12' },
             { threadId: 'nope', keys: ['k3'] },
@@ -108,19 +114,34 @@ describe('the server a new channel goes in', () => {
   })
 })
 
-describe('a new channel’s name', () => {
-  it('is #global for the global Assist and the folder name for a workspace, written the way Discord stores it', () => {
-    expect(newChannelName(GLOBAL_SCOPE)).toBe('global')
-    expect(newChannelName('/Users/me/My Project.v2 项目')).toBe('my-projectv2-项目')
+describe('the butler’s name', () => {
+  it('is Alfred until the owner picks another, and stays one short line', () => {
+    expect(butlerName(undefined)).toBe('Alfred')
+    expect(butlerName('   ')).toBe('Alfred')
+    expect(butlerName('  Jeeves \n the second ')).toBe('Jeeves the second')
+    expect(butlerName('x'.repeat(100))).toHaveLength(40)
   })
 
-  it('adds the machine for a remote workspace, without the user and with its dots as hyphens', () => {
-    expect(newChannelName('ssh://me@devbox.lan/home/me/ws-b')).toBe('ws-b-devbox-lan')
-    expect(newChannelName('ssh://box/srv/api')).toBe('api-box')
+  it('other sessions still reach the butler by the names the global Assist had', () => {
+    expect(peerNamesOf('Jeeves')).toEqual(['Jeeves', 'Global-Assist', 'Global-conductor'])
+  })
+
+  it('a rename keeps every name the butler had before, and survives a save from the window, a restart and a settings reset', () => {
+    const once = renamedButler({ name: 'Alfred', formerNames: [] }, ' Jeeves ')
+    const back = renamedButler(renamedButler(once, 'Bunter'), 'Alfred')
+    expect(once).toEqual({ name: 'Jeeves', formerNames: ['Alfred'] })
+    expect(back).toEqual({ name: 'Alfred', formerNames: ['Jeeves', 'Bunter'] })
+    expect(sanitizeSettingsPatch({ butler: back })).toEqual({ butler: back })
+    expect(buildResetPatch()).not.toHaveProperty('butler')
+    expect(sanitizeLoadedSettings({ butler: back }).butler).toEqual(back)
+    expect(sanitizeLoadedSettings({ butler: { name: 'Jeeves' } }).butler).toEqual({
+      name: 'Jeeves',
+      formerNames: []
+    })
   })
 })
 
-describe('loading settings written before Assist records existed', () => {
+describe('loading settings written before the butler', () => {
   const v038 = {
     discord: {
       userId: '555',
@@ -130,17 +151,17 @@ describe('loading settings written before Assist records existed', () => {
           sessionIds: ['old-1', 'old-2'],
           lastSessionKey: 'old-2'
         },
-        { ...binding('a', '/ws/a', '2'), backend: 'codex', sessionIds: [] }
+        { ...binding('a', '/ws/a', '2'), backend: 'codex', sessionIds: ['ws-1'] }
       ]
     }
   }
 
-  it('moves each binding’s sessions to its scope’s Assist record, one to one, and the binding keeps its Discord parts', () => {
+  it('the global Assist’s conversation becomes the butler’s, and a workspace Assist’s is left behind', () => {
     const s = sanitizeLoadedSettings(v038)
     expect(s.assistSessions).toEqual([
       { scope: GLOBAL_SCOPE, sessionIds: ['old-1', 'old-2'], lastSessionKey: 'old-2' }
     ])
-    expect(s.discord.bindings.map((b) => b.id)).toEqual(['g', 'a'])
+    expect(s.discord.bindings.map((b) => b.id)).toEqual(['g'])
     expect(s.discord.bindings[0]).not.toHaveProperty('sessionIds')
   })
 
@@ -150,31 +171,34 @@ describe('loading settings written before Assist records existed', () => {
     expect(twice.assistSessions).toEqual(once.assistSessions)
     const newer = sanitizeLoadedSettings({
       ...v038,
-      assistSessions: [{ scope: GLOBAL_SCOPE, sessionIds: ['new-1'], lastSessionKey: 'new-1' }]
+      assistSessions: [
+        { scope: GLOBAL_SCOPE, sessionIds: ['new-1'], lastSessionKey: 'new-1' },
+        { scope: '/ws/a', sessionIds: ['ws-2'], lastSessionKey: 'ws-2' }
+      ]
     })
     expect(newer.assistSessions).toEqual([
       { scope: GLOBAL_SCOPE, sessionIds: ['new-1', 'old-1', 'old-2'], lastSessionKey: 'new-1' }
     ])
   })
 
-  it('every binding it writes back still has the backend an older Koloft needs to keep it', () => {
+  it('the binding it writes back still has the backend an older Koloft needs to keep it', () => {
     const written = JSON.parse(JSON.stringify(sanitizeLoadedSettings(v038)))
     for (const b of written.discord.bindings) expect(['claude', 'codex']).toContain(b.backend)
-    expect(sanitizeDiscord(written.discord).bindings).toHaveLength(2)
+    expect(sanitizeDiscord(written.discord).bindings).toHaveLength(1)
+  })
+
+  it('the Assist setting is kept as it was, so the owner is not asked to agree to skipping permissions again', () => {
+    const s = sanitizeLoadedSettings({
+      ...v038,
+      assist: { on: false, backend: 'codex' },
+      skipPermissions: true
+    })
+    expect(s.assist).toEqual({ on: false, backend: 'codex' })
+    expect(s.skipPermissionsAgreed).toBe(true)
   })
 
   it('Assist records are left out of a settings reset and of what the window may write', () => {
     expect(buildResetPatch()).not.toHaveProperty('assistSessions')
     expect(sanitizeSettingsPatch({ assistSessions: [], fontSize: 12 })).toEqual({ fontSize: 12 })
-  })
-})
-
-describe('keepPinnedScopes', () => {
-  it('drops a workspace binding whose workspace is no longer pinned and keeps the global one', () => {
-    const kept = keepPinnedScopes(
-      [binding('g', GLOBAL_SCOPE, '1'), binding('a', '/ws/a', '2'), binding('b', '/ws/b', '3')],
-      ['/ws/b']
-    )
-    expect(kept.map((b) => b.id)).toEqual(['g', 'b'])
   })
 })

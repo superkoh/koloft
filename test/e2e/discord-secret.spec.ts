@@ -6,7 +6,7 @@ import {
   terminalText,
   waitBooted,
   waitConductorStarted,
-  waitForCallsBesideConductors
+  waitForCalls
 } from './helpers/p1'
 import {
   OPEN_A_FORM,
@@ -35,7 +35,7 @@ function seedBinding(env: E2EEnv): void {
       bindings: [
         {
           id: 'b1',
-          scope: env.workspaces.a,
+          scope: 'global',
           backend: 'claude',
           channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
           sessionIds: [],
@@ -48,7 +48,7 @@ function seedBinding(env: E2EEnv): void {
 
 async function sessionTab(page: Page, env: E2EEnv): Promise<string> {
   await startSessionIn(page, 'ws-a')
-  const sessionId = (await waitForCallsBesideConductors(env, 1))[0].sessionId
+  const sessionId = (await waitForCalls(env, 1))[0].sessionId
   const all = await page.evaluate(() => window.api.sessions.list())
   return all.find((s) => s.sessionId === sessionId)!.tabId
 }

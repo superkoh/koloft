@@ -1229,6 +1229,21 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (`gh issue list --search=-label:bug` listed issues without the label). What a
   successful create prints is not probed (no test repository was used). (2026-10-09, gh
   2.89.0, by hand against superkoh/koloft, stdin from `/dev/null`.)
+- **gh's own top-level commands** are agent-task, alias, api, attestation, auth, browse,
+  cache, co, codespace, completion, config, copilot, discussion, extension, gist, gpg-key,
+  issue, label, licenses, org, pr, preview, project, release, repo, ruleset, run, search,
+  secret, skill, ssh-key, status, variable and workflow (`## gh …` headings of
+  `gh help reference`, 2026-10-19, the gh 2.102.0 Koloft ships), where `co` is a default
+  alias for `pr checkout` that the owner can redefine. Any other first word is
+  an alias or an installed extension. From gh's docs, inferred, not checked: an alias,
+  an extension, `gh copilot`, and the browser, pager or editor named by `gh config set`
+  each run another program, which inherits gh's environment (so `GH_TOKEN`); and a short
+  flag takes its value attached (`-qenv`, `-Ro/r`) as cobra/pflag flags do.
+- **Words after `--` go to another program**: `gh repo clone`, `gh repo fork` and
+  `gh gist clone` hand them to git (`-- <gitflags>`, where git's `--upload-pack=<cmd>`
+  runs any program), `gh codespace ssh` to ssh and `gh codespace cp` to scp (their
+  `### gh …` lines in `gh help reference`, 2026-10-19, gh 2.102.0). No other command
+  takes `--`.
 
 ## §33 ssh
 

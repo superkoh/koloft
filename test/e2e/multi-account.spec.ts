@@ -893,7 +893,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
     await openSettings(page)
     await expect(claudeAccounts(page).locator('.acct-empty')).toBeVisible()
 
-    const tabsBefore = await page.locator('.ws-tab').count()
+    const tabsBefore = await page.locator('.ws .ws-tab').count()
     await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Sign in' }).click()
     await page.locator('.acct-add input[type="text"]').fill('bravo')
     await page.locator('.acct-add-actions button', { hasText: 'Sign in' }).click()
@@ -915,7 +915,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
     expect(acct.fable).toBe('yes')
 
     await expect(page.locator('.acct-login-state.ok')).toContainText('Saved bravo')
-    expect(await page.locator('.ws-tab').count()).toBe(tabsBefore)
+    expect(await page.locator('.ws .ws-tab').count()).toBe(tabsBefore)
 
     await expect
       .poll(() =>

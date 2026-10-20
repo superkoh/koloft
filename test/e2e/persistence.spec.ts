@@ -38,7 +38,7 @@ test('restart (T-LIFE-09 across a real relaunch): the open session comes back ru
   const page2 = await app2.firstWindow()
   await page2.waitForLoadState('domcontentloaded')
 
-  const row = page2.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+  const row = page2.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
   await expect(row).toBeVisible({ timeout: 20_000 })
   await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 30_000 })
   await expect(row).toHaveClass(/\bactive\b/)
@@ -69,7 +69,7 @@ test('an unread red dot survives a real relaunch on the session’s row, which c
   await page1.waitForLoadState('domcontentloaded')
   await waitBooted(page1)
   await startSessionIn(page1, 'ws-a')
-  await expect(page1.locator('.ws-tab.st-waiting .ws-tab-unread')).toHaveCount(1, {
+  await expect(page1.locator('.ws .ws-tab.st-waiting .ws-tab-unread')).toHaveCount(1, {
     timeout: 25_000
   })
   await app1.close()
@@ -77,7 +77,7 @@ test('an unread red dot survives a real relaunch on the session’s row, which c
   const app2 = await launchApp(env)
   const page2 = await app2.firstWindow()
   await page2.waitForLoadState('domcontentloaded')
-  const row = page2.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+  const row = page2.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
   await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
   await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
   await expect.poll(() => pendingAttention(page2)).toMatchObject([{ kind: 'turn-done' }])

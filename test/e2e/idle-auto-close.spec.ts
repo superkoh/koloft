@@ -43,7 +43,7 @@ test('an idle session goes to sleep quietly, its needs-you mark unseen and kept:
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     await waitBooted(page)
-    const row = (title: string): Locator => page.locator('.ws-tab', { hasText: title })
+    const row = (title: string): Locator => page.locator('.ws .ws-tab', { hasText: title })
 
     setNextSessionTitle(env, 'Idle A')
     await startSessionIn(page, 'ws-a')
@@ -133,7 +133,7 @@ test('a Keep running session never goes to sleep for being idle, while an ordina
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     await waitBooted(page)
-    const row = (title: string): Locator => page.locator('.ws-tab', { hasText: title })
+    const row = (title: string): Locator => page.locator('.ws .ws-tab', { hasText: title })
 
     setNextSessionTitle(env, 'Resident A')
     await startSessionIn(page, 'ws-a')

@@ -21,7 +21,7 @@ import { withoutBlankEdges } from './messageText'
 import { freshWorktreeName } from '@shared/sessionRoute'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { basename } from '@shared/preview'
-import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
+import { scopeName } from '@shared/conductors'
 import { ageLabel } from '@shared/freshnessOps'
 import { MAX_READ_TURNS, type Turn } from '@shared/turns'
 import { MYSELF, slashCommandProblem } from '@shared/slashCommands'
@@ -30,7 +30,6 @@ import {
   errorText,
   EXIT_USAGE,
   fail,
-  ONLY_ASSIST,
   refused,
   splitAtDashes,
   type AgentCaller,
@@ -162,10 +161,13 @@ function workspaceLabel(wsPath: string): string {
 
 interface PlacedRow {
   workspace: string
+  shownAs: string
   row: SessionRow
   title: string
   live?: SessionInfo
 }
+
+const THE_BUTLERS_FOLDER = "the butler's own folder"
 
 function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): PlacedRow[] {
   return sidebar.flatMap((w) =>
@@ -173,13 +175,15 @@ function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): PlacedRo
       .filter((row) => !row.pending)
       .map((row) => {
         const live = sessions.find((s) => s.alive && s.sessionId === row.id)
-        return { workspace: w.workspace.path, row, title: live?.title ?? row.title, live }
+        return {
+          workspace: w.workspace.path,
+          shownAs: w.workspace.butler ? THE_BUTLERS_FOLDER : workspaceLabel(w.workspace.path),
+          row,
+          title: live?.title ?? row.title,
+          live
+        }
       })
   )
-}
-
-function inScope(scope: string | undefined, workspace: string): boolean {
-  return scope === undefined || scope === GLOBAL_SCOPE || scope === workspace
 }
 
 function peerNamesOf(d: SessionVerbDeps, placed: PlacedRow[]): Promise<(string | null)[]> {
@@ -195,7 +199,7 @@ function rowLines(
   now: number,
   asking: (tabId: string) => boolean
 ): string[] {
-  return placed.map(({ workspace, row, title, live: info }, i) => {
+  return placed.map(({ workspace, shownAs, row, title, live: info }, i) => {
     const parts = [
       title,
       BACKEND_LABEL[row.backendId],
@@ -206,7 +210,7 @@ function rowLines(
     ]
     if (names[i]) parts.push(`name: ${names[i]}`)
     parts.push(...starterPart(starters[i]))
-    if (withWorkspace) parts.push(`workspace: ${workspaceLabel(workspace)}`)
+    if (withWorkspace) parts.push(`workspace: ${shownAs}`)
     return parts.join(' · ')
   })
 }
@@ -345,7 +349,9 @@ export interface SessionVerbDeps {
   closable(): ClosableSession[]
   whatIsLeft(target: ClosableSession): Promise<string[]>
   closeSoon(target: ClosableSession): void
-  conductorScope(tabId: string): string | undefined
+  isButler(tabId: string): boolean
+  butlerFolder(): string
+  butlerHelperRole(): string
   sidebar(): WorkspaceRows[]
   worktrees(workspace: string): Promise<WorktreeInfo[]>
   readTurns(key: string, n: number): Promise<Turn[]>
@@ -362,7 +368,12 @@ export interface SessionVerbDeps {
   stop(tabId: string): void
   answer(tabId: string, reply: string): Promise<string | undefined>
   undelivered(callerTab: string, target: Target, why: string): void
-  command(callerTab: string, target: Target, text: string): Promise<string>
+  command(
+    callerTab: string,
+    target: Target,
+    text: string,
+    tellCaller: (said: string) => void
+  ): Promise<string>
   screen(tabId: string): Promise<SessionScreen>
   started(
     conductorTab: string,
@@ -382,16 +393,15 @@ export interface Target {
   remote: boolean
   workspace?: string
   tabId?: string
-  assistScope?: string
+  butler?: true
   open(): Promise<string>
 }
 
 const SESSION_USAGE =
   'koloft session: use list, read, new, send, command, screen, keys, answer, resume, stop or close. Run "koloft help" to see how.'
 const READ_USAGE = `koloft session read: give an id or name, and if you like --last <1 to ${MAX_READ_TURNS}>, like: koloft session read fix-login --last 3`
-const CONDUCTOR_LIST_USAGE =
-  'koloft session list: it takes no options here; it lists every session you look after.'
-export const NOT_IN_YOUR_WORKSPACE = 'That session is not in your workspace.'
+const BUTLER_LIST_USAGE =
+  'koloft session list: it takes no options here; it lists every session in every workspace.'
 const SEND_USAGE =
   'koloft session send: give an id or name, then the message, like: koloft session send <id> "Tell me what you found."'
 const NO_WORKSPACE = 'koloft session: Koloft does not know which workspace this session is in.'
@@ -458,7 +468,8 @@ async function startSibling(
   workspace: string,
   conductorTab: string | undefined,
   ownerWords: string | undefined,
-  oweReply: (tabId: string) => void
+  oweReply: (tabId: string) => void,
+  helperRole?: string
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
   const traits = PEER_TRAITS[backend]
@@ -471,7 +482,7 @@ async function startSibling(
     assist: conductorTab !== undefined,
     ownerWords
   }
-  const [name, preamble] = await Promise.all([
+  const [name, handover] = await Promise.all([
     !traits.namedAtLaunch
       ? undefined
       : (args.name ??
@@ -483,6 +494,7 @@ async function startSibling(
         )),
     handoverInOwnersLanguage(caller, d.assist)
   ])
+  const preamble = helperRole ? `${helperRole}\n\n${handover}` : handover
   const gitWorkspace = d.sidebar().some((w) => w.workspace.path === workspace && w.workspace.isGit)
   const worktree =
     gitWorkspace && (args.worktree || caller.assist)
@@ -497,6 +509,7 @@ async function startSibling(
     // ADR-0028
     permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
     ownerWords,
+    ...(helperRole && { trustFolder: true }),
     // CODEX§17
     ...(traits.handoverAsRole
       ? { role: preamble, firstPrompt: args.prompt }
@@ -570,15 +583,6 @@ function matchRow(
   )
 }
 
-function findInScope(
-  d: SessionVerbDeps,
-  verb: string,
-  ref: string,
-  callerTabId: string
-): Promise<Parsed<PlacedRow>> {
-  return findIn(d, verb, ref, d.conductorScope(callerTabId))
-}
-
 function rowTarget(d: SessionVerbDeps, p: PlacedRow): Target {
   return {
     key: p.row.id,
@@ -600,63 +604,45 @@ function starterRow(
   return id === undefined ? undefined : placedRows(d.sidebar(), open).find((r) => r.row.id === id)
 }
 
-export async function targetIn(
-  d: SessionVerbDeps,
-  scope: string,
-  ref: string
-): Promise<Parsed<Target>> {
-  const found = await findIn(d, 'command', ref, scope)
+export async function targetOf(d: SessionVerbDeps, ref: string): Promise<Parsed<Target>> {
+  const found = await findRow(d, 'command', ref)
   return found.ok ? { ok: true, value: rowTarget(d, found.value) } : found
 }
 
-export function sessionChoices(
-  d: SessionVerbDeps,
-  scope: string
-): { name: string; value: string }[] {
-  return placedRows(d.sidebar(), d.allSessions())
-    .filter((p) => inScope(scope, p.workspace))
-    .map((p) => ({
-      name: `${p.title} · ${BACKEND_LABEL[p.row.backendId]}${scope === GLOBAL_SCOPE ? ` · ${scopeName(p.workspace)}` : ''}`,
-      value: p.row.id
-    }))
+export function sessionChoices(d: SessionVerbDeps): { name: string; value: string }[] {
+  return placedRows(d.sidebar(), d.allSessions()).map((p) => ({
+    name: `${p.title} · ${BACKEND_LABEL[p.row.backendId]} · ${scopeName(p.workspace)}`,
+    value: p.row.id
+  }))
 }
 
-interface ScopedRows {
+interface NamedRows {
   all: PlacedRow[]
-  mine: PlacedRow[]
   names: (string | null)[]
 }
 
-async function rowsIn(d: SessionVerbDeps, scope: string | undefined): Promise<ScopedRows> {
+async function allRows(d: SessionVerbDeps): Promise<NamedRows> {
   const all = placedRows(d.sidebar(), d.allSessions())
-  const mine = all.filter((p) => inScope(scope, p.workspace))
-  return { all, mine, names: await peerNamesOf(d, mine) }
+  return { all, names: await peerNamesOf(d, all) }
 }
 
-function namesARow({ all, mine, names }: ScopedRows, ref: string): boolean {
-  return matchRow(mine, ref, names) !== null || matchRow(all, ref) !== null
+function namesARow({ all, names }: NamedRows, ref: string): boolean {
+  return matchRow(all, ref, names) !== null
 }
 
-async function findIn(
-  d: SessionVerbDeps,
-  verb: string,
-  ref: string,
-  scope: string | undefined
-): Promise<Parsed<PlacedRow>> {
-  return findAmong(await rowsIn(d, scope), verb, ref)
+async function findRow(d: SessionVerbDeps, verb: string, ref: string): Promise<Parsed<PlacedRow>> {
+  return findAmong(await allRows(d), verb, ref)
 }
 
-function findAmong({ all, mine, names }: ScopedRows, verb: string, ref: string): Parsed<PlacedRow> {
-  const hit = matchRow(mine, ref, names)
+function findAmong({ all, names }: NamedRows, verb: string, ref: string): Parsed<PlacedRow> {
+  const hit = matchRow(all, ref, names)
   if (hit && !hit.ok) return fail(`koloft session ${verb}: ${hit.error}`)
   if (hit) {
-    const name = names[mine.indexOf(hit.value)]
+    const name = names[all.indexOf(hit.value)]
     return { ok: true, value: name ? { ...hit.value, title: name } : hit.value }
   }
   return fail(
-    matchRow(all, ref)
-      ? `koloft session ${verb}: ${NOT_IN_YOUR_WORKSPACE}`
-      : `koloft session ${verb}: there is no session "${ref}". Run "koloft session list" to see them.`
+    `koloft session ${verb}: there is no session "${ref}". Run "koloft session list" to see them.`
   )
 }
 
@@ -668,7 +654,7 @@ async function readSession(
   const args = parseReadArgs(rest)
   if (!args.ok) return refused(args.error, EXIT_USAGE)
   const { ref, last } = args.value
-  const found = await findInScope(d, 'read', ref, callerTabId)
+  const found = await findRow(d, 'read', ref)
   if (!found.ok) return refused(found.error)
   const { row, title } = found.value
   const turns = await d.readTurns(row.id, last)
@@ -676,12 +662,8 @@ async function readSession(
   return answered(turns.length > 0 ? formatTurns(turns) : `${title} has said nothing yet.`)
 }
 
-async function endedInScope(
-  d: SessionVerbDeps,
-  ref: string,
-  scope: string
-): Promise<Parsed<ClosableSession>> {
-  const found = await findIn(d, 'close', ref, scope)
+async function endedSession(d: SessionVerbDeps, ref: string): Promise<Parsed<ClosableSession>> {
+  const found = await findRow(d, 'close', ref)
   if (!found.ok) return found
   const { row, title, live, workspace } = found.value
   if (live)
@@ -697,7 +679,6 @@ async function endedInScope(
 }
 
 export const THAT_IS_YOU = 'That is you.'
-const ONLY_A_CONDUCTOR = `${ONLY_ASSIST} can do this.`
 const TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS = 2_000
 const REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS =
   AGENT_SHIM_WAITS_MS - TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS
@@ -708,10 +689,8 @@ const ANSWER_USAGE =
   'koloft session answer: give an id or name, then an option number, yes, no or your own words, like: koloft session answer fix-login 2'
 const WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS = 10 * 60_000
 const SHOWS_NOTHING_WHILE_CLOSED = 'it is not open, so it shows no question.'
-const BACKEND_IS_FOR_CONDUCTORS = 'koloft session new: only Assist can pick --backend.'
-const GLOBAL_NEEDS_WORKSPACE =
-  'koloft session new: say which workspace with --workspace <workspace>; "koloft workspace list" shows them.'
-const ONLY_YOUR_WORKSPACE = 'koloft session new: you can only start sessions in your own workspace.'
+const NO_WORKTREE_IN_BUTLER_FOLDER =
+  'koloft session new: your own folder is no git repository, so -w needs --workspace <workspace>; "koloft workspace list" shows them.'
 
 const COMMAND_USAGE = `koloft session command: give an id or name (or "me" for yourself), then one slash command, like: koloft session command fix-login /compact`
 const SCREEN_USAGE = `koloft session screen: give an id or name (or "me" for yourself), like: koloft session screen fix-login`
@@ -722,7 +701,7 @@ function seeAndPress(ref: string): string {
   return `To answer it anyway, see what it shows with koloft session screen ${arg}, then press the keys with koloft session keys ${arg} <keys>.`
 }
 
-const CONDUCTOR_ACT_USAGE: Record<string, string> = {
+const SESSION_ACT_USAGE: Record<string, string> = {
   send: SEND_USAGE,
   command: COMMAND_USAGE,
   screen: SCREEN_USAGE,
@@ -959,19 +938,38 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (!to) return
     const session = d.allSessions().find((s) => s.tabId === tabId)
     if (!session) return
-    deliver('send', to, sessionSays(session, turn.reply), { tabId, session }, false)
-      .then((reply) => reply.exit === 0 || d.undelivered(tabId, to, reply.text))
-      .catch((error: unknown) => d.undelivered(tabId, to, errorText(error)))
+    deliverOrReport({ tabId, session }, to, sessionSays(session, turn.reply))
   }
 
-  const conductorAct = async (
+  const deliverOrReport = (
+    from: Pick<AgentCaller, 'tabId' | 'session'>,
+    to: Target,
+    text: string
+  ): void =>
+    void deliver('send', to, text, from, false)
+      .then((reply) => reply.exit === 0 || d.undelivered(from.tabId, to, reply.text))
+      .catch((error: unknown) => d.undelivered(from.tabId, to, errorText(error)))
+
+  const commandFrom = (caller: AgentCaller, text: string, into?: Target): Promise<string> => {
+    const butler = d.conductorOf(caller.session.sessionId)
+    const me =
+      butler?.tabId === caller.tabId
+        ? butler
+        : openTarget({ ...caller.session, tabId: caller.tabId })
+    return d.command(caller.tabId, into ?? me, text, (said) =>
+      deliverOrReport(caller, me, `${FROM_KOLOFT}${said}`)
+    )
+  }
+
+  const sessionAct = async (
     sub: string,
     rest: string[],
-    caller: AgentCaller
+    caller: AgentCaller,
+    asButler: boolean
   ): Promise<AgentReply> => {
     const takesWords = sub === 'send' || sub === 'answer' || sub === 'command' || sub === 'keys'
     const resume = splitAtDashes(rest)
-    const rows = await rowsIn(d, d.conductorScope(caller.tabId))
+    const rows = await allRows(d)
     const split = takesWords
       ? nameThenWords(
           rest,
@@ -984,22 +982,18 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (!split.ok) return refused(`koloft session ${sub}: ${split.error}`, EXIT_USAGE)
     const { ref, tail } = split.value
     const text = sub === 'resume' ? resume.after : tail.join(' ').trim()
-    if (!ref || (takesWords && !text)) return refused(CONDUCTOR_ACT_USAGE[sub], EXIT_USAGE)
+    if (!ref || (takesWords && !text)) return refused(SESSION_ACT_USAGE[sub], EXIT_USAGE)
     if (sub === 'command') {
       const problem = slashCommandProblem(text)
       if (problem) return refused(`koloft session command: ${problem}`, EXIT_USAGE)
     }
     const self = isMe(ref, caller.session, d.conductorOf(ref), caller.tabId)
     if (self && sub === 'screen') return answered(formatScreen('you', await d.screen(caller.tabId)))
-    if (self && sub === 'command') {
-      const me = d.conductorOf(caller.session.sessionId)
-      if (!me) return refused(`koloft session command: ${ONLY_A_CONDUCTOR}`)
-      return answered(await d.command(caller.tabId, me, text))
-    }
+    if (self && sub === 'command') return answered(await commandFrom(caller, text))
     if (self) return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
-    const found = findAmong(rows, sub, ref)
-    if (!found.ok) return refused(found.error)
-    const t = rowTarget(d, found.value)
+    const found = d.conductorOf(ref) ?? findAmong(rows, sub, ref)
+    if ('ok' in found && !found.ok) return refused(found.error)
+    const t = 'ok' in found ? rowTarget(d, found.value) : found
     if (sub === 'screen')
       return t.tabId
         ? answered(formatScreen(t.name, await d.screen(t.tabId)))
@@ -1011,7 +1005,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     }
     if (sub === 'keys' && !t.tabId) return refused(`koloft session keys: ${t.name} is not open.`)
     d.touch(caller.tabId, t.key)
-    if (sub === 'command') return answered(await d.command(caller.tabId, t, text))
+    if (sub === 'command') return answered(await commandFrom(caller, text, t))
     if (sub === 'keys' && t.tabId) {
       const tab = t.tabId
       const owed = d.asking(tab) ? { owner: caller.session.sessionId } : undefined
@@ -1039,7 +1033,9 @@ export function sessionVerb(d: SessionVerbDeps): {
       await (opening.get(t.key) ?? t.open())
       return answered(`Resumed ${t.name}.`)
     }
-    return deliver(sub, t, ownerSays(text), caller, true)
+    return asButler
+      ? deliver(sub, t, ownerSays(text), caller, true)
+      : deliver(sub, t, sessionSays(caller.session, text), caller, false)
   }
 
   const verb: AgentVerb = async (args, caller): Promise<AgentReply> => {
@@ -1047,18 +1043,17 @@ export function sessionVerb(d: SessionVerbDeps): {
     const ws = d.workspaceOf(caller.tabId)
     const sessionsIn = (workspace: string): SessionInfo[] =>
       d.allSessions().filter((s) => d.workspaceOf(s.tabId) === workspace)
-    const scope = d.conductorScope(caller.tabId)
-    if (sub === 'list' && scope !== undefined) {
-      if (rest.length > 0) return refused(CONDUCTOR_LIST_USAGE, EXIT_USAGE)
-      const everyRow = placedRows(d.sidebar(), d.allSessions())
-      const placed = everyRow.filter((p) => inScope(scope, p.workspace))
+    const butler = d.isButler(caller.tabId)
+    if (sub === 'list' && butler) {
+      if (rest.length > 0) return refused(BUTLER_LIST_USAGE, EXIT_USAGE)
+      const placed = placedRows(d.sidebar(), d.allSessions())
       if (placed.length === 0) return answered('There are no sessions to look after.')
       return answered(
         rowLines(
           placed,
           await peerNamesOf(d, placed),
-          placedStarters(d, everyRow, placed, caller.session),
-          scope === GLOBAL_SCOPE,
+          placedStarters(d, placed, placed, caller.session),
+          true,
           Date.now(),
           d.asking
         ).join('\n')
@@ -1078,7 +1073,11 @@ export function sessionVerb(d: SessionVerbDeps): {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
       const where = parsed.value.workspace
-      const start = async (workspace: string, conductorTab?: string): Promise<AgentReply> => {
+      const start = async (
+        workspace: string,
+        conductorTab?: string,
+        helperRole?: string
+      ): Promise<AgentReply> => {
         const ownerWords = await ownerWordsOf(caller.session)
         return startSibling(
           d,
@@ -1087,24 +1086,22 @@ export function sessionVerb(d: SessionVerbDeps): {
           workspace,
           conductorTab,
           ownerWords,
-          (tab) => replyOwed.set(tab, { owner: caller.session.sessionId })
+          (tab) => replyOwed.set(tab, { owner: caller.session.sessionId }),
+          helperRole
         )
       }
-      if (scope !== undefined) {
-        if (scope === GLOBAL_SCOPE && where === undefined) return refused(GLOBAL_NEEDS_WORKSPACE)
-        const target = startableWorkspace(where ?? scope, d.pinnedWorkspaces())
+      if (where !== undefined) {
+        const target = startableWorkspace(where, d.pinnedWorkspaces())
         if (!target.ok) return refused(`koloft session new: ${target.error}`)
-        if (scope !== GLOBAL_SCOPE && target.value !== scope) return refused(ONLY_YOUR_WORKSPACE)
-        return start(target.value, caller.tabId)
+        return start(target.value, butler ? caller.tabId : undefined)
       }
-      if (parsed.value.backend !== undefined) return refused(BACKEND_IS_FOR_CONDUCTORS, EXIT_USAGE)
-      if (where === undefined) return ws ? start(ws) : refused(NO_WORKSPACE)
-      const target = startableWorkspace(where, d.pinnedWorkspaces())
-      if (!target.ok) return refused(`koloft session new: ${target.error}`)
-      return start(target.value)
+      if (butler) {
+        if (parsed.value.worktree !== undefined) return refused(NO_WORKTREE_IN_BUTLER_FOLDER)
+        return start(d.butlerFolder(), caller.tabId, d.butlerHelperRole())
+      }
+      return ws ? start(ws) : refused(NO_WORKSPACE)
     }
-    if (scope !== undefined && Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
-      return conductorAct(sub, rest, caller)
+    if (butler && Object.hasOwn(SESSION_ACT_USAGE, sub)) return sessionAct(sub, rest, caller, true)
     if (sub === 'send') {
       const open = d.allSessions()
       const parent = starterRow(d, caller, open)
@@ -1118,28 +1115,23 @@ export function sessionVerb(d: SessionVerbDeps): {
       const { ref, tail } = split.value
       const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
+      const said = sessionSays(caller.session, text)
       const to = starter(ref)
       if (to) replyOwed.delete(caller.tabId)
-      if (to) return deliver('send', to, sessionSays(caller.session, text), caller, false)
+      if (to) return deliver('send', to, said, caller, false)
+      if (matchOpen(open, ref) === null) return sessionAct(sub, rest, caller, false)
       const target = findSiblingTarget(open, ref, caller.session.backendId)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
-      return deliver(
-        'send',
-        openTarget(target.value),
-        sessionSays(caller.session, text),
-        caller,
-        false
-      )
+      return deliver('send', openTarget(target.value), said, caller, false)
     }
-    if (Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
-      return refused(`koloft session ${sub}: ${ONLY_A_CONDUCTOR}`)
+    if (Object.hasOwn(SESSION_ACT_USAGE, sub)) return sessionAct(sub, rest, caller, false)
     if (sub === 'close') {
       const ref = rest.length > 0 ? rest.join(' ') : undefined
       let target: ClosableSession = caller.session
       if (ref !== undefined) {
         const mine = d.closable().filter((s) => d.startedSessions.startedBy(s, caller.session))
         let hit = await findClosable(mine, ref, d.peerNames())
-        if (!hit.ok && scope !== undefined) hit = await endedInScope(d, ref, scope)
+        if (!hit.ok) hit = await endedSession(d, ref)
         if (!hit.ok) return refused(hit.error)
         target = hit.value
       }
@@ -1162,18 +1154,13 @@ export function sessionVerb(d: SessionVerbDeps): {
 }
 
 export interface WorkspaceVerbDeps {
-  conductorScope(tabId: string): string | undefined
   sidebar(): WorkspaceRows[]
 }
 
-export const ONLY_THE_GLOBAL_CONDUCTOR =
-  'koloft workspace list: only the global Assist can list workspaces.'
-
 export function workspaceVerb(d: WorkspaceVerbDeps): AgentVerb {
-  return (args, caller) => {
+  return (args) => {
     if (args.length !== 1 || args[0] !== 'list')
       return refused('koloft workspace: use list, like: koloft workspace list', EXIT_USAGE)
-    if (d.conductorScope(caller.tabId) !== GLOBAL_SCOPE) return refused(ONLY_THE_GLOBAL_CONDUCTOR)
     const lines = d
       .sidebar()
       .map(({ workspace, rows }) =>

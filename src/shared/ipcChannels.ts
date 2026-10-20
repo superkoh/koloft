@@ -73,13 +73,12 @@ export const CH = {
     toast: 'cron:toast'
   },
   conductors: {
-    save: 'conductors:save',
-    saveWithNewChannel: 'conductors:saveWithNewChannel',
+    bind: 'conductors:bind',
+    bindNewChannel: 'conductors:bindNewChannel',
     unbind: 'conductors:unbind',
     open: 'conductors:open',
     startFresh: 'conductors:startFresh',
     openTask: 'conductors:openTask',
-    tell: 'conductors:tell',
     closeTask: 'conductors:closeTask',
     tasks: 'conductors:tasks'
   },
@@ -87,7 +86,7 @@ export const CH = {
     status: 'discord:status',
     pair: 'discord:pair',
     channels: 'discord:channels',
-    setUpWithAssist: 'discord:setUpWithAssist'
+    setUpWithButler: 'discord:setUpWithButler'
   },
   attention: {
     list: 'attention:list',

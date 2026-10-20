@@ -8,7 +8,7 @@ test('usage never renders in Koloft chrome: no head band, no card, single-purpos
   await waitBooted(page)
   await startSessionIn(page, 'ws-a')
 
-  await expect(page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })).toBeVisible({
+  await expect(page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })).toBeVisible({
     timeout: 25_000
   })
 
@@ -16,7 +16,7 @@ test('usage never renders in Koloft chrome: no head band, no card, single-purpos
   await expect(page.locator('.term-usage')).toHaveCount(0)
   await expect(page.locator('.usage-card')).toHaveCount(0)
 
-  await expect(page.locator('.ws-tab .us')).toHaveCount(0)
+  await expect(page.locator('.ws .ws-tab .us')).toHaveCount(0)
   await expect(page.locator('.sb-rollup')).toHaveCount(0)
 })
 
@@ -32,7 +32,7 @@ test('an ANT_ACCOUNT inherited from Koloft’s own launcher never labels a sessi
     await page.waitForLoadState('domcontentloaded')
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
-    await expect(page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })).toBeVisible({
+    await expect(page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })).toBeVisible({
       timeout: 25_000
     })
 

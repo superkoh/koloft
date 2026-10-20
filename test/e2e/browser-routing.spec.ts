@@ -61,7 +61,7 @@ async function guestUrls(app: ElectronApplication): Promise<string[]> {
 async function runningSession(page: Page): Promise<void> {
   await waitBooted(page)
   await startSessionIn(page, 'ws-a')
-  await expect(page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })).toBeVisible({
+  await expect(page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })).toBeVisible({
     timeout: 40_000
   })
   await expect(auxIcon(page, 'Workbench')).toHaveAttribute('aria-disabled', 'false', {

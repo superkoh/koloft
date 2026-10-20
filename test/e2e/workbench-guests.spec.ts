@@ -70,14 +70,14 @@ test.describe('Workbench web guests: no layout change tears one down, the tab ca
     expect(await inGuest<number>(page, 'scrollY')).toBeGreaterThan(0)
 
     await startSessionIn(page, 'ws-a')
-    await expect(page.locator('.ws-tab')).toHaveCount(2, { timeout: 25_000 })
+    await expect(page.locator('.ws .ws-tab')).toHaveCount(2, { timeout: 25_000 })
     await page
       .locator('.hint-card[data-hint="worktree"]')
       .getByRole('button', { name: 'Got it', exact: true })
       .click()
-    await page.locator('.ws-tab').nth(1).click()
+    await page.locator('.ws .ws-tab').nth(1).click()
     await expect(workbenchPanel(page)).toBeVisible()
-    await page.locator('.ws-tab').nth(0).click()
+    await page.locator('.ws .ws-tab').nth(0).click()
 
     await expect
       .poll(() => inGuest<string>(page, `document.getElementById('f').value`))
