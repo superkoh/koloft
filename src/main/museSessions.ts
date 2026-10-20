@@ -36,6 +36,7 @@ import {
   MUSE_HOOKS_ENV,
   museHook,
   writeMuseHooks,
+  type MuseHold,
   type MuseHook
 } from './museHooks'
 import {
@@ -578,6 +579,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const permission = this.permissionOf(opts)
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
     const agentTools = this.deps.agent.enabled(true)
+    const tabId = opts.tabId ?? this.deps.pty.nextId()
     const plan = await remote.machine(host).launchMuse({
       cwd,
       fallbackCwd: workspace !== cwd ? workspace : undefined,
@@ -589,10 +591,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       context: agentTools ? koloftPrompt('muse') : undefined,
       skill: agentTools ? agentSkillMarkdown() : undefined,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
-      ownerWords: opts.ownerWords
+      ownerWords: opts.ownerWords,
+      holdWhileBusy: !!this.deps.holdWhileBusy?.(tabId)
     })
     this.assertStarting()
-    const tabId = this.deps.pty.nextId()
     this.parsers.set(tabId, new ProgramStatusParser())
     try {
       const handle = this.deps.pty.create({
@@ -653,7 +655,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const role = opts.role ?? assist?.role
     if (opts.trustFolder || assist) trustMuseFolder(env, cwd)
     const trust = !!resource && museTrustsFolder(this.env, workspace)
-    const tabId = this.deps.pty.nextId()
+    const tabId = opts.tabId ?? this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
     this.assertStarting()
     const permission = this.permissionOf(opts)
@@ -665,12 +667,14 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       ...(role ? [role] : [])
     ]
     let bound: MuseRun | undefined
+    const hold = this.deps.holdWhileBusy?.(tabId) ? this.deps.holdScript : undefined
     const tools = this.startTools(
       (target) => this.deps.events(tabId, { type: 'open', target }),
       (hook) => bound && this.onHook(bound, hook),
       agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
       instructions.join('\n\n') || undefined,
-      opts.ownerWords
+      opts.ownerWords,
+      hold && { ...hold, tabId }
     )
     const argv = this.museArgv(opts, approvalFlags(permission), trust)
     this.parsers.set(tabId, new ProgramStatusParser())
@@ -716,7 +720,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     hook: (hook: MuseHook) => void,
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
     context: string | undefined,
-    ownerWords: string | undefined
+    ownerWords: string | undefined,
+    hold: MuseHold | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -742,7 +747,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords)
+      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, hold)
       return {
         dir: shimDir,
         env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },

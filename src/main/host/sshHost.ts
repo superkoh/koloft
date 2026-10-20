@@ -65,6 +65,7 @@ import {
 } from '../remote/ssh'
 import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
 import { remoteMuseHooks, sessionStartContext } from '../museHooks'
+import { HOLD_FILE } from '../hooks'
 import { claudeArgv } from '../claudeArgs'
 import type { SummaryRow } from '../agyStore'
 import {
@@ -111,6 +112,7 @@ export interface MuseMachineLaunch {
   skill?: string
   portOffset?: number
   ownerWords?: string
+  holdWhileBusy?: boolean
 }
 
 export interface MuseMachinePlan {
@@ -914,7 +916,12 @@ export class SshHost implements Host {
         const tabDir = tabPackageDir(d.userData, tabId)
         const contextFile = spec.context ? `$HOME/.koloft/tabs/${tabId}.ctx.json` : undefined
         const files: Record<string, string> = {
-          [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
+          [`${tabId}.hooks.json`]: remoteMuseHooks(
+            hookScript,
+            tabId,
+            contextFile,
+            spec.holdWhileBusy ? `${remoteMachineDir(pkg.name)}/${HOLD_FILE}` : undefined
+          )
         }
         if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
         if (spec.skill) files[`${tabId}.skill.md`] = spec.skill

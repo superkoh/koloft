@@ -262,7 +262,8 @@ describe('CronRunner — starting one run', () => {
         model: undefined,
         permission: 'default',
         firstPrompt: '/koloft.release-dmg patch',
-        name: 'Nightly report'
+        name: 'Nightly report',
+        manual: false
       }
     ])
     expect(h.toasts).toEqual(['⏰ Nightly report started'])
@@ -749,6 +750,44 @@ describe('CronRunner — a live run growing up', () => {
     await h.fireTimers(T0 + 5 * SEC)
     expect(h.killTab).toHaveBeenCalledTimes(1)
     expect(h.jobs[0].history[0]).toMatchObject({ state: 'failed', note: 'Claude did not start' })
+  })
+
+  it('a run queued for a busy machine has no start deadline until it really starts', async () => {
+    let start!: (o: 'started' | 'dropped' | 'failed') => void
+    const startsLater = new Promise<'started' | 'dropped' | 'failed'>((r) => (start = r))
+    const h = makeHarness([makeJob()], {
+      bindDeadlineMs: 5 * SEC,
+      launch: vi.fn(() => ({ ok: true, tabId: 'tab-1', startsLater }) as LaunchResult)
+    })
+    await h.runner.runNow('j1')
+    expect(h.runner.state().live[0].state).toBe('queued')
+    await h.fireTimers(T0 + 60 * SEC)
+    expect(h.killTab).not.toHaveBeenCalled()
+    start('started')
+    await startsLater
+    await Promise.resolve()
+    expect(h.runner.state().live[0].state).toBe('launching')
+    await h.fireTimers(T0 + 70 * SEC)
+    expect(h.killTab).toHaveBeenCalledTimes(1)
+  })
+
+  it('a queued run taken off the queue reads closed; one whose launch then failed reads failed', async () => {
+    for (const [outcome, line] of [
+      ['dropped', { state: 'closed', note: 'taken off the queue before it started' }],
+      ['failed', { state: 'failed', note: 'Claude exited before it started' }]
+    ] as const) {
+      const h = makeHarness([makeJob()], {
+        launch: vi.fn(
+          () =>
+            ({ ok: true, tabId: 'tab-1', startsLater: Promise.resolve(outcome) }) as LaunchResult
+        )
+      })
+      await h.runner.runNow('j1')
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(h.jobs[0].history[0], outcome).toMatchObject(line)
+      expect(h.runner.state().live).toEqual([])
+    }
   })
 
   it('a new turn after done goes back to running', async () => {

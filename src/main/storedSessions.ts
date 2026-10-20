@@ -26,6 +26,7 @@ import {
   ResumeRefused
 } from './resumePlan'
 import type { CliRuntime } from './cliRuntime'
+import type { HoldScript } from './hooks'
 import { isNewer } from './releaseNotes'
 import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
@@ -91,6 +92,8 @@ export interface StoredSessionDeps {
   remoteDirExists?(dir: string): Promise<boolean>
   remoteTreeIo?(cwd: string): TreeIo
   skipPermissions?(): boolean
+  holdWhileBusy?(tabId: string): boolean
+  holdScript?: HoldScript
 }
 
 export interface StartContext {

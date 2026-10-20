@@ -23,7 +23,7 @@ export function relTime(mtimeMs: number, nowMs: number): string {
   return `${s}s ago`
 }
 
-function shortDur(ms: number): string {
+export function shortDur(ms: number): string {
   const m = Math.floor(ms / 60_000)
   if (m >= 60) return `${Math.floor(m / 60)}h`
   return m >= 1 ? `${m}m` : '<1m'

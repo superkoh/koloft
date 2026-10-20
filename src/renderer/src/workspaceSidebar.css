@@ -236,6 +236,10 @@
   background: linear-gradient(180deg, var(--accent), transparent 70%);
   animation: barFlow 1.2s linear infinite;
 }
+.ws-tab.st-queued::before {
+  background: var(--fg-cold);
+  opacity: 0.5;
+}
 .ws-tab:hover {
   background: var(--bg-3);
   color: var(--fg);
@@ -333,7 +337,8 @@
 .recent-row .ws-tab-sub {
   opacity: 0.7;
 }
-.ws-tab.st-pending .ws-tab-title {
+.ws-tab.st-pending .ws-tab-title,
+.ws-tab.st-queued .ws-tab-title {
   font-style: italic;
   color: var(--fg-cold);
   font-weight: 400;

@@ -72,6 +72,12 @@ export const CH = {
     state: 'cron:state',
     toast: 'cron:toast'
   },
+  machine: {
+    state: 'machine:state',
+    now: 'machine:now',
+    free: 'machine:free',
+    drop: 'machine:drop'
+  },
   conductors: {
     bind: 'conductors:bind',
     bindNewChannel: 'conductors:bindNewChannel',

@@ -42,28 +42,31 @@ const OWN_WORKTREE_RULE =
 const SHARED_CHECKOUT_RULE =
   'If this session does not run in a worktree of its own, never create or switch branches here: other sessions share this checkout.'
 
+const ONE_SESSION_PER_PULL_REQUEST =
+  'When one task will end in several pull requests, start one such session for each pull request; this session then only plans the order, hands out the work and collects the results.'
+
 const HELPER_RULES: Record<BackendId, string[]> = {
   claude: [
-    `${OWN_WORKTREE_RULE}, and instead of giving a subagent or a workflow agent a worktree of its own. ${SHARED_CHECKOUT_RULE}`,
+    `${OWN_WORKTREE_RULE}, and instead of giving a subagent or a workflow agent a worktree of its own. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
     'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
     'Dozens of similar small jobs, like checking 40 files the same way: do not start a workflow yourself. Suggest one to the owner, say about how many agents it would run, and start it only when the owner asks for it.',
     'A side job that finishes on its own and only hands you back an answer, like searching or reading many files: a subagent. Use Explore to search and read, or a fork when it needs what this conversation already knows.',
     'Anything else: do it yourself, in this session.'
   ],
   codex: [
-    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE}`,
+    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
     'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
     'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a sub-agent (spawn_agent) when the owner asked for sub-agents or for work in the background; otherwise do it yourself. Your sub-agents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
     'Anything else: do it yourself, in this session.'
   ],
   muse: [
-    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE}`,
+    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
     'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
     'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a subagent (subagent_spawn) when the owner asked for subagents or for work in the background; otherwise do it yourself. Your subagents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
     'Anything else: do it yourself, in this session.'
   ],
   agy: [
-    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE}`,
+    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
     'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
     'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a subagent (invoke_subagent) when the owner asked for subagents or for work in the background; otherwise do it yourself. Your subagents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
     'Anything else: do it yourself, in this session.'
