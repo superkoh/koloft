@@ -620,11 +620,11 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     }
   })
 
-  test('slash commands on the real Claude: the owner’s "/context" runs in the conductor and its report reaches the channel; /compact from Discord compacts the conductor and posts Compacted', async ({
+  test('slash commands on the real Claude: the owner’s "/context" runs in the conductor and its report reaches the channel; /compact from Discord compacts the conductor and posts Compacted; the owner’s "/koloft session list" runs as the koloft skill and the conductor’s own answer reaches the channel, with no ⌨️ card for it', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
-    test.setTimeout(3 * A_REAL_MODEL_TURN_MS + 120_000)
+    test.setTimeout(4 * A_REAL_MODEL_TURN_MS + 120_000)
     const fake = await realClaudeConductor(env)
     await withConductor(env, fake, async () => {
       await answersWholeInTheChannel(fake)
@@ -637,6 +637,15 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => ran(fake).at(-1), { timeout: A_REAL_MODEL_TURN_MS })
         .toMatch(/\*\*Alfred\*\* ran \/compact:\nCompacted/)
+
+      const heardBefore = conductorSaid(fake).length
+      fake.say(OWNER, '/koloft session list')
+      await expect
+        .poll(() => conductorSaid(fake).slice(heardBefore).join('\n'), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toMatch(/session/i)
+      expect(ran(fake).filter((p) => p.includes('ran /koloft'))).toEqual([])
     })
   })
 

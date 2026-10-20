@@ -427,6 +427,15 @@ Unless a bullet below says more, it is inferred, not checked.
   (`claude-opus-4-20250514`, `claude-sonnet-4-20250514`).
 - **The Stop hook can fire a moment before the turn's assistant record is flushed** to
   the jsonl (seen live on 2.1.263), so a reader that trusts Stop has to poll for it.
+- **A typed `/koloft <args>` runs Koloft's plugin skill `koloft:koloft` as a model turn,
+  and nothing before its reply is a prompt** (2026-10-20, CC 2.1.304, the butler's claude
+  in Koloft, e2e temp HOME, `/koloft session list` sent from the fake Discord, so typed,
+  Esc, Enter; 3 runs). The screen showed `❯ /koloft:koloft session list`. The turn's
+  records: a `user` record (`origin.kind` `human`) whose string content is
+  `<command-message>koloft:koloft</command-message>\n<command-name>/koloft:koloft</command-name>\n<command-args>session list</command-args>`,
+  the skill body as an `isMeta` user record whose content is an array, the hooks'
+  attachments, a Bash `tool_use`, its result, the reply text, `stop_hook_summary`. No
+  `<local-command-stdout>` is written.
 - **What a slash command leaves in the jsonl** (2026-10-04/05, CC 2.1.289 and 2.1.290,
   every record of the runs read):
   - Its output is the text inside `<local-command-stdout>…</local-command-stdout>`, in

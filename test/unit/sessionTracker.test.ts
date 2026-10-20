@@ -1944,6 +1944,37 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     ])
   })
 
+  // CC§2
+  it('a turn a skill command started, whose Stop comes before its reply is on disk, still ends once with that reply', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    const ended: { turn: { reply: string } }[] = []
+    tracker.on('turn-ended', (e) => ended.push(e))
+    tracker.track('tabSkill', cwd)
+    const sid = '55555555-5555-4555-8555-555555555555'
+    const file = writeJsonl(cwd, sid, [human('earlier question', 1), said(text('earlier'), 2)])
+    tracker.bindSession('tabSkill', file, sid, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabSkill' && x.title === 'earlier question')
+
+    fs.appendFileSync(
+      file,
+      JSON.stringify(
+        human(
+          '<command-message>koloft:koloft</command-message>\n<command-name>/koloft:koloft</command-name>\n<command-args>session list</command-args>',
+          30
+        )
+      ) + '\n'
+    )
+    fs.appendFileSync(file, JSON.stringify(said(bash, 31)) + '\n')
+    tracker.receive('tabSkill', { type: 'stop' })
+    setTimeout(
+      () => fs.appendFileSync(file, JSON.stringify(said(text('No sessions.'), 33)) + '\n'),
+      TURN_TEXT_WAIT_SHORTENED_MS / 3
+    )
+    await expect.poll(() => ended.length, { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 }).toBe(1)
+    expect(ended[0].turn.reply).toBe('No sessions.')
+  })
+
   // CC§14
   it('any tool call, a question or a command, raises tool-done with its name and input once its result lands, but one finished before the bind does not', async () => {
     const cwd = makeWorkspace({})
