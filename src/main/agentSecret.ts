@@ -5,7 +5,7 @@ import type { SecretAsk } from './discord/secretAsks'
 export const SECRET_USAGE =
   'koloft: usage: koloft secret page <css selector> | koloft secret url "<sign-in address>"'
 export const NO_DISCORD =
-  "koloft: Koloft asks the owner for a secret only in this session's Discord thread, and no Discord channel covers this session. Ask the owner to do this step at the Mac."
+  "koloft: Koloft asks the owner for a secret only in the butler's Discord channel, and no Discord channel is bound. Ask the owner to do this step at the Mac."
 export const NOT_IN_TIME = 'koloft: the owner did not answer in time; nothing was passed on.'
 export const NO_SUCH_FIELD =
   "koloft: no single field matches that selector in this session's Workbench pages (the Koloft window has to be open). Give a selector that matches exactly one input box."

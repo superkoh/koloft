@@ -478,7 +478,6 @@ export class SessionTracker extends SessionRuntime {
     )
   leftBehind?: (sessionId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
-  dialogsWatched: (tabId: string) => boolean = () => true
 
   track(tabId: string, cwd: string, remote?: RemoteTab): void {
     const prev = this.tracked.get(tabId)
@@ -1495,7 +1494,7 @@ export class SessionTracker extends SessionRuntime {
       const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
       for (const b of content) {
         if (!b || b.type !== 'tool_use') continue
-        if (liveNow && typeof b.id === 'string' && this.dialogsWatched(t.info.tabId)) {
+        if (liveNow && typeof b.id === 'string') {
           if (t.openTools.size >= UNACKED_TOOL_CAP)
             t.openTools.delete(t.openTools.keys().next().value as string)
           t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })

@@ -18,7 +18,7 @@ export function DiscordPane(): JSX.Element {
   const setBindButler = useStore((s) => s.setBindButler)
   const loaded = useDiscordStatus()
   const [assistError, setAssistError] = useState('')
-  const [binding] = discord.bindings
+  const channel = discord.channel
 
   const setUpWithButler = async (): Promise<void> => {
     setAssistError((await setUpDiscordWithButler()) ?? '')
@@ -119,11 +119,11 @@ export function DiscordPane(): JSX.Element {
           <div className="set-grp">Channel</div>
           <div className="acct-section">
             <div className="acct-list">
-              {binding && (
+              {channel && (
                 <div className="acct-row">
                   <div className="acct-main">
                     <span className="acct-name">{butlerTitle(name)}</span>
-                    <span className="acct-note">{channelLabel(binding)}</span>
+                    <span className="acct-note">{channelLabel(channel)}</span>
                     <button
                       className="acct-x"
                       title="Unbind"
@@ -132,9 +132,9 @@ export function DiscordPane(): JSX.Element {
                       Unbind
                     </button>
                   </div>
-                  {status.failing[binding.channel.channelId] && (
+                  {status.failing[channel.channelId] && (
                     <div className="acct-login-state bad">
-                      Cannot post here: {status.failing[binding.channel.channelId]}
+                      Cannot post here: {status.failing[channel.channelId]}
                     </div>
                   )}
                 </div>
@@ -142,7 +142,7 @@ export function DiscordPane(): JSX.Element {
             </div>
             <div className="acct-foot">
               <button className="mini" onClick={() => setBindButler(true)}>
-                {binding ? (
+                {channel ? (
                   'Change channel…'
                 ) : (
                   <>

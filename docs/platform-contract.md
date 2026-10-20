@@ -593,6 +593,40 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `webContents.reload()` / `reloadIgnoringCache()`, an in-page `location.reload()`,
   `Page.navigate`, `Page.stopLoading`, Playwright's back/forward and DevTools' own reload
   of that guest each left the host alone.
+- **A page nobody sees can be captured whole, through CDP.** Measured 2026-10-19,
+  Electron 43.7.3, macOS 27.0 on a Retina screen (device scale 2), by a scratch main
+  script loading a 3200 px tall page (blue top, red bottom) from a `file://` path and
+  from a `127.0.0.1` server, with the Dock icon hidden:
+  - In a `BrowserWindow` built with `show: false`, a `WebContentsView` added to no
+    window (bounds set), and a `WebContentsView` inside a hidden window, `debugger`
+    `Page.captureScreenshot` with `captureBeyondViewport: true` and a clip of
+    `Page.getLayoutMetrics`' `cssContentSize` answered in about 0.2 s with the whole
+    page at device scale (2560×6400, the red bottom present). No window became visible
+    or focused (`getFocusedWindow()` stayed null).
+  - `webContents.capturePage()` gave only the viewport in the hidden window, and threw
+    "Current display surface not available for capture" for a view in no window or in
+    a hidden window. Making the hidden window as tall as the page
+    (`setContentSize`) and then `capturePage()` gave the whole page.
+  - With `paintWhenInitiallyHidden: false`, `capturePage()` threw the same error and the
+    CDP capture never answered. `webPreferences.offscreen: true` captured at scale 1; in
+    a view in no window it ignored the bounds (CDP saw a page 61 px wide) and
+    `capturePage()` came back empty. A view with no bounds set: "Cannot take
+    screenshot with 0 width."
+  - **One capture is at most 16384 device pixels on a side** (the GPU's
+    `max_texture_size`): at device scale 2, an 8000 px tall page captured
+    (2560×16000), an 8400 px one never answered. Past the limit the capture hangs
+    rather than fails, and the GPU process logs "Invalid size … max_texture_size=16384"
+    and restarts. Two ways under it,
+    both measured: `clip.scale` 0.5 (a 16000 px page as 1280×16000), or clips of at
+    most 8000 CSS px down the page (a 40000 px page as five 2560×16000 images in
+    1.3 s, the last ending in red).
+  - **A page that sends itself elsewhere while loading resolves `loadURL` early.**
+    Measured 2026-10-20, same Electron, a `WebContentsView` in no window loading pages
+    from a `127.0.0.1` server: a 302, a `location.replace` in the first script and a
+    `<meta http-equiv="refresh" content="0">` each resolved `loadURL` (none rejected)
+    while `isLoading()` was still true; after `did-stop-loading` the view showed the
+    page it was sent to. A `history.pushState` changed only the address. A redirect
+    from a 300 ms timer had not happened by `did-stop-loading` plus 0.8 s.
 - **A second `about:blank` load is a second navigation**: a CDP client that grabbed the
   page between the two is left holding a detached frame (measured with a real client).
 - **`webContents.debugger` and the DevTools window can hold one guest at the same time**,
@@ -1556,6 +1590,34 @@ Gateway (the live connection that pushes events):
   /channels/{parent}/messages/{thread}` answered 200), and `DELETE` on it answered
   `204`. Whether re-inviting the bot with a link that asks for more permissions
   updates an existing bot role was not probed.
+- **Week-long threads, and bringing an archived thread back** — measured 2026-10-19 with
+  the test bot on a server with no boosts (`premium_tier` 0, no `features`), REST only,
+  in a channel made for the probe and deleted afterwards:
+  - `auto_archive_duration: 10080` was accepted and kept (read back from `thread_metadata`)
+    on a thread made on a message and on one made with `POST /channels/{id}/threads`
+    (`type: 11`, no opener message); so were 4320, a later `PATCH` of 60 and back to
+    10080, and a channel's `default_auto_archive_duration: 10080`. A value outside the
+    list (5000) answered 400, 50035 `ENUM_TYPE_COERCE`.
+  - Thread creates in that channel drew from one bucket: `x-ratelimit-limit` 50,
+    `reset-after` 300 s (50 creates per 5 minutes), a message-based create and a
+    standalone one alike. Whether a second channel draws from the same bucket was not
+    measured, nor how many active threads a server may hold.
+  - `POST /channels/{thread}/messages` by the bot into a thread it had just archived
+    answered 200, and the thread read back open (`archived: false`, a new
+    `archive_timestamp`). So did a post into a thread archived and `locked` (the bot's
+    role had Manage Threads).
+  - `PATCH /channels/{thread}` with `{archived: false}` answered 200 and a post after it
+    200; `{archived: false, name}` in one call opened it and renamed it (200).
+  - `GET /guilds/{id}/threads/active` answered 200 with `{threads, members, has_more}`;
+    each thread carries `type` (11 public), `parent_id` (its channel) and `owner_id`
+    (the bot for its own threads), and a thread the bot had archived was not listed
+    (2026-10-20, same bot and server). `GET /channels/{thread}` carries the same three;
+    a text channel has `type` 0 and no `owner_id`. A post whose `content` holds
+    `<#channelId>` with `allowed_mentions: {parse: []}` answered 200 and kept the text as
+    sent; that the app shows it as a link to the channel is from Discord's docs.
+  - Archiving and opening one thread back and forth within a second answered 429
+    (`x-ratelimit-scope: shared`, `retry_after` 0.5–1.4 s) while the bucket (10 per
+    15 s) still had calls left.
 - **Showing a state that keeps changing** — measured 2026-10-08 with the same bot on
   the owner's server, REST only, in a channel no conductor is bound to, with a Components
   V2 card (`flags` `1 << 15 | 1 << 12`) that had a thread on it:

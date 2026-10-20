@@ -3,12 +3,12 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import {
-  Conductors,
+  Butler,
   conductorFolder,
   type AssistBackendChoice,
-  type ConductorDeps
-} from '../../src/main/discord/conductors'
-import type { AssistRecord, BackendId, DiscordSettings } from '@shared/types'
+  type ButlerDeps
+} from '../../src/main/discord/butler'
+import type { BackendId, ButlerSession, DiscordSettings } from '@shared/types'
 
 const CHANNEL = { guildId: '100', channelId: '200', name: 'global' }
 const DEADLINE_MS = 1000
@@ -19,7 +19,7 @@ let userData: string
 let name: string
 let formerNames: string[]
 let saved: DiscordSettings
-let records: AssistRecord[]
+let session: ButlerSession
 let quiet: DiscordSettings[]
 let rescans: number
 let started: {
@@ -38,21 +38,21 @@ let choice: AssistBackendChoice
 let release: () => void
 let testRun = 0
 
-function make(): Conductors {
+function make(): Butler {
   const run = testRun
   const onlyWhileItsTestRuns =
     <A extends unknown[]>(record: (...args: A) => void) =>
     (...args: A): void => {
       if (run === testRun) record(...args)
     }
-  const deps: ConductorDeps = {
+  const deps: ButlerDeps = {
     userData,
     butler: () => ({ name, formerNames }),
     load: () => saved,
-    loadRecords: () => records,
+    loadSession: () => session,
     save: (d) => void (saved = d),
     saveQuietly: (d) => void quiet.push(d),
-    saveRecords: (r) => void (records = r),
+    saveSession: (s) => void (session = s),
     backend: async () => choice,
     tabAlive: (tabId) => !killed.includes(tabId),
     liveTabFor: () => undefined,
@@ -79,10 +79,10 @@ function make(): Conductors {
     toast: onlyWhileItsTestRuns((t: string) => void toasts.push(t)),
     bindDeadlineMs: DEADLINE_MS
   }
-  return new Conductors(deps)
+  return new Butler(deps)
 }
 
-async function opened(c: Conductors): Promise<string> {
+async function opened(c: Butler): Promise<string> {
   const before = started.length
   const opening = c.open()
   await vi.waitFor(() => expect(started).toHaveLength(before + 1))
@@ -97,8 +97,8 @@ beforeEach(() => {
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
   name = 'Alfred'
   formerNames = []
-  saved = { bindings: [] }
-  records = []
+  saved = {}
+  session = { sessionIds: [] }
   quiet = []
   rescans = 0
   started = []
@@ -129,7 +129,7 @@ describe('the butler', () => {
   })
 
   it('is found by its name, by the names the global Assist had, and by any session it bound', () => {
-    records = [{ scope: 'global', sessionIds: ['s7'] }]
+    session = { sessionIds: ['s7'] }
     name = 'Jeeves'
     const c = make()
     for (const ref of ['Jeeves', 'Global-Assist', 'Global-conductor', 's7'])
@@ -156,7 +156,7 @@ describe('the butler', () => {
     expect(started[0].role).toMatch(/^Who you are\nYou are Jeeves, the owner's butler in Koloft/)
     expect(started[0].role).not.toContain('[Discord]')
     c.onBound('tab-1', 's1')
-    c.bind(CHANNEL, 'claude')
+    c.bind(CHANNEL)
     expect(c.identityOfLaunch(conductorFolder(userData), 's1')?.role).toContain(
       'start with [Discord]'
     )
@@ -164,21 +164,21 @@ describe('the butler', () => {
 
   // ADR-0029
   it('its folder is recognised whether the launch names it through a symlink or by its real path', () => {
-    records = [{ scope: 'global', sessionIds: ['s1'] }]
+    session = { sessionIds: ['s1'] }
     const real = fs.realpathSync(userData)
     const linked = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-link-')), 'userData')
     fs.symlinkSync(real, linked)
     userData = linked
     const c = make()
     fs.mkdirSync(conductorFolder(linked), { recursive: true })
-    expect(c.identityOfLaunch(conductorFolder(real), 's1')?.scope).toBe('global')
-    expect(c.identityOfLaunch(conductorFolder(linked), 's1')?.scope).toBe('global')
+    expect(c.identityOfLaunch(conductorFolder(real), 's1')).toBeDefined()
+    expect(c.identityOfLaunch(conductorFolder(linked), 's1')).toBeDefined()
     userData = real
   })
 
   // ADR-0029
   it('a resume of a recorded butler session in its folder is the butler, so it gets its role back; a fresh launch or another session there is a helper it started, and a workspace Assist’s old folder is no butler at all', () => {
-    records = [{ scope: 'global', sessionIds: ['s1', 'codex:local:t1'] }]
+    session = { sessionIds: ['s1', 'codex:local:t1'] }
     const c = make()
     fs.mkdirSync(conductorFolder(userData), { recursive: true })
     expect(c.identityOfLaunch(conductorFolder(userData) + '/', 's1')?.role).toMatch(/^Who you are/)
@@ -197,13 +197,13 @@ describe('the butler', () => {
     c.onBound(tab, 's1')
     c.onBound(tab, 's2')
     c.onBound(tab, 's2')
-    expect(records).toEqual([{ scope: 'global', sessionIds: ['s1', 's2'], lastSessionKey: 's2' }])
-    expect([c.conductorOf('s1'), c.conductorOf('s2'), c.conductorOf(tab)]).toEqual([
-      'global',
-      'global',
-      'global'
+    expect(session).toEqual({ sessionIds: ['s1', 's2'], lastSessionKey: 's2' })
+    expect([c.isButlerSession('s1'), c.isButlerSession('s2'), c.isButlerSession(tab)]).toEqual([
+      true,
+      true,
+      true
     ])
-    expect(c.conductorOf('someone-else')).toBeUndefined()
+    expect(c.isButlerSession('someone-else')).toBe(false)
 
     c.onPtyExit(tab)
     transcripts.add('s2')
@@ -242,15 +242,28 @@ describe('the butler', () => {
   })
 
   it('a tab resumed some other way and bound to the last session is taken as the butler again', () => {
-    records = [{ scope: 'global', sessionIds: ['s1'], lastSessionKey: 's1' }]
+    session = { sessionIds: ['s1'], lastSessionKey: 's1' }
     const c = make()
     c.onBound('tab-from-the-sidebar', 's1')
     expect(c.isButlerTab('tab-from-the-sidebar')).toBe(true)
     expect(c.liveTab()).toBe('tab-from-the-sidebar')
   })
 
+  it('a fresh conversation forgets which session to resume but still hides the old ones', async () => {
+    session = { sessionIds: ['s1'], lastSessionKey: 's1' }
+    transcripts.add('s1')
+    const c = make()
+    const opening = c.startFresh()
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    await opening
+    expect(resumed).toEqual([])
+    expect(session).toEqual({ sessionIds: ['s1'] })
+    expect(c.isButlerSession('s1')).toBe(true)
+  })
+
   it('when its backend changes, the next open starts a new conversation on it and says so once', async () => {
-    records = [{ scope: 'global', sessionIds: [CLAUDE_KEY], lastSessionKey: CLAUDE_KEY }]
+    session = { sessionIds: [CLAUDE_KEY], lastSessionKey: CLAUDE_KEY }
     transcripts.add(CLAUDE_KEY)
     choice = { backend: 'codex' }
     const c = make()
@@ -259,7 +272,7 @@ describe('the butler', () => {
     expect(resumed).toEqual([])
     expect(toasts).toEqual(['Alfred now runs on Codex, so it starts a new conversation.'])
     c.onBound('tab-1', CODEX_KEY)
-    expect(records[0].lastSessionKey).toBe(CODEX_KEY)
+    expect(session.lastSessionKey).toBe(CODEX_KEY)
   })
 
   it('when the chosen backend cannot run, it starts on the other one and says why; with neither, nothing starts', async () => {
@@ -282,130 +295,74 @@ describe('the butler', () => {
     vi.advanceTimersByTime(DEADLINE_MS)
     expect(killed).toEqual(['tab-1'])
     expect(toasts).toEqual(['Alfred did not start.'])
-    expect(c.conductorOf('tab-1')).toBe('global')
+    expect(c.isButlerSession('tab-1')).toBe(true)
     c.onPtyExit('tab-1')
-    expect(c.conductorOf('tab-1')).toBeUndefined()
+    expect(c.isButlerSession('tab-1')).toBe(false)
   })
 
-  it('only while bound to Discord is it kept awake; unbinding keeps its conversation and its tab', async () => {
+  it('only while bound to Discord is it kept awake and its channel known by its tab; unbinding keeps its conversation and its tab', async () => {
     const c = make()
-    c.bind(CHANNEL, 'claude')
+    c.bind(CHANNEL)
     const tab = await opened(c)
     c.onBound(tab, 's1')
-    expect(c.heldResident(tab)).toBe(true)
+    expect(c.channelOfTab(tab)).toBe('200')
+    expect(c.channelOfTab('another-tab')).toBeUndefined()
     c.unbind()
-    expect(saved.bindings).toEqual([])
+    expect(saved.channel).toBeUndefined()
     expect(killed).toEqual([])
-    expect(c.heldResident(tab)).toBe(false)
+    expect(c.channelOfTab(tab)).toBeUndefined()
     expect(c.isButlerTab(tab)).toBe(true)
-    expect(records[0].lastSessionKey).toBe('s1')
+    expect(session.lastSessionKey).toBe('s1')
   })
 
-  it('binding again changes the one channel instead of adding a second, keeping its threads and last message', () => {
-    saved = {
-      bindings: [
-        {
-          id: 'b1',
-          scope: 'global',
-          backend: 'claude',
-          channel: CHANNEL,
-          touched: [],
-          lastMessageId: '9',
-          threads: [{ threadId: '7', keys: ['k1'] }]
-        }
-      ]
-    }
+  it('binding again changes the one channel; the last message read is kept only when it is the same channel', () => {
+    saved = { channel: CHANNEL, lastMessageId: '9' }
     const c = make()
-    c.bind({ ...CHANNEL, channelId: '201' }, 'claude')
-    expect(saved.bindings).toEqual([
-      {
-        id: 'b1',
-        scope: 'global',
-        backend: 'claude',
-        channel: { ...CHANNEL, channelId: '201' },
-        touched: [],
-        lastMessageId: '9',
-        threads: [{ threadId: '7', keys: ['k1'] }]
-      }
-    ])
+    c.bind(CHANNEL)
+    expect(saved).toEqual({ channel: CHANNEL, lastMessageId: '9' })
+    c.bind({ ...CHANNEL, channelId: '201' })
+    expect(saved.channel).toEqual({ ...CHANNEL, channelId: '201' })
+    expect(saved.lastMessageId).toBeUndefined()
+    expect(c.isButlerChannel('201')).toBe(true)
+    expect(c.isButlerChannel('200')).toBe(false)
   })
 
-  it('binding writes its backend onto the binding, and a backend change rewrites it, so an older Koloft still reads it', () => {
+  it('the last Discord message is saved a second later or at quit, never going back, and without a rescan of the sidebar rows', () => {
     const c = make()
-    c.bind(CHANNEL, 'claude')
-    c.followBackend('codex')
-    expect(saved.bindings.map((b) => b.backend)).toEqual(['codex'])
-  })
-
-  it('a session it touched is saved at once, and the last Discord message a second later or at quit, neither with a rescan of the sidebar rows', async () => {
-    const c = make()
-    c.bind(CHANNEL, 'claude')
-    const id = c.bindings()[0].id
-    const tab = await opened(c)
+    c.bind(CHANNEL)
     rescans = 0
-    c.touch(tab, 's9')
-    expect(quiet.at(-1)?.bindings[0].touched).toEqual(['s9'])
-
     vi.useFakeTimers()
-    c.setLastMessage(id, '101')
-    c.setLastMessage(id, '102')
-    expect(quiet).toHaveLength(1)
+    c.setLastMessage('101')
+    c.setLastMessage('102')
+    c.setLastMessage('100')
+    expect(quiet).toHaveLength(0)
     vi.advanceTimersByTime(1000)
-    expect(quiet.map((d) => d.bindings[0].lastMessageId)).toEqual([undefined, '102'])
-    c.setLastMessage(id, '103')
+    expect(quiet.map((d) => d.lastMessageId)).toEqual(['102'])
+    c.setLastMessage('103')
     c.flush()
-    expect(quiet.at(-1)?.bindings[0].lastMessageId).toBe('103')
+    expect(quiet.at(-1)?.lastMessageId).toBe('103')
     expect(rescans).toBe(0)
   })
 
-  it('forgets the session ids, touched sessions and threads whose transcript is gone and keeps the rest', () => {
-    saved = {
-      bindings: [
-        {
-          id: 'b1',
-          scope: 'global',
-          backend: 'claude',
-          channel: CHANNEL,
-          touched: ['kept-2', 'gone-2'],
-          threads: [
-            { threadId: '7', keys: ['gone-3'] },
-            { threadId: '8', keys: ['gone-4', 'kept-3'] }
-          ]
-        }
-      ]
-    }
-    records = [{ scope: 'global', sessionIds: ['gone-1', 'kept-1'], lastSessionKey: 'gone-1' }]
+  it('forgets the session ids whose transcript is gone and keeps the rest', () => {
+    session = { sessionIds: ['gone-1', 'kept-1'], lastSessionKey: 'gone-1' }
     const c = make()
-    const onDisk = new Set(['kept-1', 'kept-2', 'kept-3'])
+    const onDisk = new Set(['kept-1'])
     c.forgetGone((key) => onDisk.has(key))
-    expect(quiet.at(-1)?.bindings[0]).toMatchObject({
-      touched: ['kept-2'],
-      threads: [{ threadId: '8', keys: ['kept-3'] }]
-    })
-    expect(records).toEqual([{ scope: 'global', sessionIds: ['kept-1'] }])
-    expect(c.conductorOf('gone-1')).toBeUndefined()
-    expect(c.conductorOf('kept-1')).toBe('global')
+    expect(session).toEqual({ sessionIds: ['kept-1'] })
+    expect(c.isButlerSession('gone-1')).toBe(false)
+    expect(c.isButlerSession('kept-1')).toBe(true)
+    rescans = 0
     c.forgetGone((key) => onDisk.has(key))
-    expect(quiet).toHaveLength(1)
+    expect(rescans).toBe(0)
   })
 
-  it('a session id is kept by one thread only: keeping it in another moves it there, once, and a thread left with no session goes', () => {
-    saved = {
-      bindings: [
-        {
-          id: 'b1',
-          scope: 'global',
-          backend: 'claude',
-          channel: CHANNEL,
-          touched: [],
-          threads: [{ threadId: '7', keys: ['k1'] }]
-        }
-      ]
-    }
+  it('while it starts, a session that has no id yet is not taken for the butler’s', async () => {
     const c = make()
-    c.keepThread('b1', '8', 'k1')
-    c.keepThread('b1', '8', 'k1')
-    expect(c.bindings()[0].threads).toEqual([{ threadId: '8', keys: ['k1'] }])
-    expect(c.threadOfChannel('7')).toBeUndefined()
+    const opening = c.open()
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    expect(c.isButlerSession('')).toBe(false)
+    release()
+    await opening
   })
 })

@@ -14,10 +14,9 @@ export function BindConductorDialog(): JSX.Element | null {
 }
 
 function BindForm(): JSX.Element {
-  const bindings = useStore((s) => s.settings.discord.bindings)
+  const editing = useStore((s) => s.settings.discord.channel)
   const name = useStore((s) => s.settings.butler.name)
   const setBindButler = useStore((s) => s.setBindButler)
-  const editing = bindings[0]
   const [channels, setChannels] = useState<DiscordChannel[] | null>(null)
   const [channel, setChannel] = useState<DiscordChannel | typeof NEW | undefined>(
     editing ? undefined : NEW
@@ -27,14 +26,14 @@ function BindForm(): JSX.Element {
   const status = useDiscordStatus()
   const appId = status?.applicationId
   const owner = useStore((s) => s.settings.discord.userId)
-  const guildId = newChannelGuild(bindings, status?.guilds ?? [], owner)
+  const guildId = newChannelGuild(editing, status?.guilds ?? [], owner)
   const guildName = status?.guilds.find((g) => g.id === guildId)?.name
   const newName = distinctName(
     NEW_CHANNEL_NAME,
     (channels ?? []).filter((c) => c.guildId === guildId).map((c) => c.name)
   )
   const close = (): void => setBindButler(false)
-  const editedChannelId = editing?.channel.channelId
+  const editedChannelId = editing?.channelId
 
   useEffect(() => {
     let alive = true

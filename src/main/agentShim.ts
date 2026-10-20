@@ -27,6 +27,7 @@ const REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS = 250
 
 export const OWNER_TYPES_A_SECRET_WITHIN_MS = 9 * 60_000
 const SECRET_REPLY_OUTLIVES_THE_ASK_MS = 60_000
+const PAGE_PICTURES_REACH_DISCORD_WITHIN_MS = 10 * 60_000
 
 const body = (waitsMs: number, pollMs = SHIM_POLL_MS): string => `
 ${NEWID_FN}
@@ -47,6 +48,7 @@ fi
 waits=0
 limit=${waitsMs / pollMs}
 [ "$1" = ${SECRET_VERB} ] && limit=${(OWNER_TYPES_A_SECRET_WITHIN_MS + SECRET_REPLY_OUTLIVES_THE_ASK_MS) / pollMs}
+[ "$1" = discord ] && [ "$2" = shot ] && limit=${PAGE_PICTURES_REACH_DISCORD_WITHIN_MS / pollMs}
 while [ ! -f "$res" ] && [ "$waits" -lt "$limit" ]; do sleep ${pollMs / 1000}; waits=$((waits+1)); done
 if [ ! -f "$res" ]; then
   rm -f "$req" 2>/dev/null

@@ -82,7 +82,6 @@ export interface StoredSessionDeps {
   projectInfo(p: string): ProjectInfo
   changed(): void
   replaced?(oldKey: string, newKey: string): void
-  memberRemoved?(key: string): void
   leftWorktree?(resource: WorktreeResource): Promise<void>
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
@@ -547,9 +546,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   protected removeMember(key: string): boolean {
-    const removed = this.store.removeMember(key)
-    if (removed) this.deps.memberRemoved?.(key)
-    return removed
+    return this.store.removeMember(key)
   }
 
   launch(

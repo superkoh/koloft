@@ -238,7 +238,7 @@ koloft session close [<id or name>]
 
 PASSWORDS, CODES AND SIGN-INS
 
-When a step needs the owner's password or a one-time code, Koloft asks the owner for it in this session's Discord thread and passes it on itself: you never see it. Never ask the owner to write a password or code in a message. If no Discord channel covers this session, these are refused: ask the owner to do the step at the Mac.
+When a step needs the owner's password or a one-time code, Koloft asks the owner for it in the butler's Discord channel, on a card that names this session, and passes it on itself: you never see it. Never ask the owner to write a password or code in a message. If no Discord channel is bound, these are refused: ask the owner to do the step at the Mac.
 
 sudo
     In a command with no terminal, Koloft's sudo asks the owner for the password. The owner may be on a phone: run the command with a long timeout (10 minutes) or in the background. Each new command asks again, so put all the sudo steps in one command line. A script that runs /usr/bin/sudo itself cannot be answered. Inside the Codex sandbox sudo cannot run at all.
@@ -257,6 +257,11 @@ DISCORD
 koloft discord send <file>... [-- "<text>"]
     Only for the butler: send files, pictures or screenshots to the Discord channel the owner talks to you in, with an optional line of text. You run in a folder of your own, so give a workspace file its full path. At most 20 MB per file. Use it when the owner wants to see a file or a screenshot; a path you only mention in your reply is not sent.
     Example: koloft discord send shot.png -- "The login page now."
+
+koloft discord shot <file or web address> [-- "<text>"]
+    Only for the butler: Koloft opens the page out of sight (an HTML file, a localhost page or any web page), takes a picture of the whole page and sends it to the same channel, with an optional line of text. A page taller than one picture comes as several, top to bottom.
+    Example: koloft discord shot /Users/me/plan/page.html -- "The plan page."
+    Example: koloft discord shot http://localhost:5173 -- "The app as it runs now."
 
 koloft discord setup
     Print the steps to set up Discord for the owner (a bot, a server and the butler's channel), which use the commands below. Follow them in a session with a Workbench browser on this computer; the butler starts one for it.

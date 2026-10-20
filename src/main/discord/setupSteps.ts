@@ -30,7 +30,7 @@ function tokenState(phase: DiscordStatus['phase']): string {
 
 export function setupStatusText(s: DiscordStatus, discord: DiscordSettings): string {
   const owned = ownedGuilds(s.guilds, discord.userId)
-  const [bound] = discord.bindings
+  const bound = discord.channel
   return [
     `Bot token: ${tokenState(s.phase)}`,
     `Connection: ${s.phase}${s.botName ? ` as ${s.botName}` : ''}`,
