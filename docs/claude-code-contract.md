@@ -1871,7 +1871,8 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
 - **The same holds in an interactive session.** 2026-10-08, CC 2.1.294, the
   `discord-real-smoke` case for a Claude conductor: Koloft's own gate, a pty session
   with `--dangerously-skip-permissions`, asked to write a file — the file was not
-  written and the transcript held `PreToolUse:<tool> hook error`.
+  written and the transcript held `PreToolUse:<tool> hook error`. That case went with
+  the gate (ADR-0029); nothing has re-measured this since.
 - **The hook's input names the transcript.** 2026-10-09, CC 2.1.295, `claude -p` with a
   `PreToolUse` hook that logged its input, asked to Write a file then Edit it: each
   input held `session_id`, `transcript_path` (absolute,

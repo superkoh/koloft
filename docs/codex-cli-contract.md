@@ -1193,7 +1193,8 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   said it could not save across sessions and wrote nothing. With an `AGENTS.md` seeded
   beforehand saying "This file is your memory folder. When the owner asks you to remember
   something, add it here as one short line", the same rule plus Koloft's conductor gate
-  (section 27): a thread started before the seed and resumed after it wrote the fact into
+  (section 27; the butler has run without that gate since ADR-0029, and this was not
+  measured again without it): a thread started before the seed and resumed after it wrote the fact into
   `AGENTS.md` with `apply_patch` (`*** Add File: <absolute path>`), and a new thread on a
   new app-server answered it; on resume Codex adds a fresh AGENTS.md message before the
   new turn. `features.memories` (stable, off by default) was tried too: per `CODEX_HOME`,
