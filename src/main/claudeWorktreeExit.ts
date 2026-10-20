@@ -4,7 +4,11 @@ import { worktreeHomeRoot } from './resumePlan'
 import { stripTerminalCodes } from './terminalCodes'
 
 // CC§4
-const CLAUDE_CLEARS_ITS_TITLE_THEN_STARTS_REMOVING_THE_WORKTREE = '\x1b]0;\x07Removing worktree…'
+const CLAUDE_CLEARS_ITS_TITLE = '\x1b]0;\x07'
+// CC§4
+const CLAUDE_STARTS_REMOVING_THE_WORKTREE = 'Removing worktree…'
+// CC§4
+const ROOM_FOR_THE_RESUME_HINT_CLAUDE_PRINTS_FIRST = 1024
 // CC§4
 const CLAUDE_REMOVED_THE_WORKTREE = 'Worktree removed'
 
@@ -17,16 +21,27 @@ export class WorktreeRemovalWatch {
       this.saidSince += data
       return false
     }
-    const mark = CLAUDE_CLEARS_ITS_TITLE_THEN_STARTS_REMOVING_THE_WORKTREE
-    const seam = this.tail + data.slice(0, mark.length - 1)
-    const inSeam = seam.indexOf(mark)
-    const at = inSeam >= 0 ? inSeam - this.tail.length : data.indexOf(mark)
-    if (inSeam < 0 && at < 0) {
-      this.tail = (this.tail + data).slice(1 - mark.length)
-      return false
+    const seen = this.tail + data
+    let title = seen.indexOf(CLAUDE_CLEARS_ITS_TITLE)
+    while (title >= 0) {
+      const afterTitle = title + CLAUDE_CLEARS_ITS_TITLE.length
+      const removing = seen.indexOf(CLAUDE_STARTS_REMOVING_THE_WORKTREE, afterTitle)
+      if (removing >= 0 && removing - afterTitle <= ROOM_FOR_THE_RESUME_HINT_CLAUDE_PRINTS_FIRST) {
+        this.saidSince = seen.slice(removing + CLAUDE_STARTS_REMOVING_THE_WORKTREE.length)
+        return true
+      }
+      const roomEnds =
+        afterTitle +
+        ROOM_FOR_THE_RESUME_HINT_CLAUDE_PRINTS_FIRST +
+        CLAUDE_STARTS_REMOVING_THE_WORKTREE.length
+      if (seen.length < roomEnds) {
+        this.tail = seen.slice(title)
+        return false
+      }
+      title = seen.indexOf(CLAUDE_CLEARS_ITS_TITLE, afterTitle)
     }
-    this.saidSince = data.slice(at + mark.length)
-    return true
+    this.tail = seen.slice(1 - CLAUDE_CLEARS_ITS_TITLE.length)
+    return false
   }
 
   failure(): string | undefined {

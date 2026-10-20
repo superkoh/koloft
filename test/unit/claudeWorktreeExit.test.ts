@@ -13,6 +13,23 @@ describe('telling that Claude Code has started removing its worktree', () => {
     expect(watch.started('Worktree removed.\r\n')).toBe(false)
   })
 
+  it('sees "Removing worktree…" after the resume hint Claude prints between it and the empty title once the session has a message', () => {
+    const afterExit =
+      '\x1b[?25h\x1b7\x1b[r\x1b8\x1b]0;\x07\x1b[2m\x1b[22m\r\n\x1b[2mResume this session with:\x1b[22m\r\n\x1b[2mclaude --resume ff35b062-cfbb-4ea9-9bc7-803eb5a905dd\x1b[22m\r\n\x1b[2m\x1b[22mRemoving worktree…\r\n'
+    const watch = new WorktreeRemovalWatch()
+    const cut = afterExit.indexOf('--resume') + 5
+    expect(watch.started('\x1b[20;3H⏳ Removing worktree…' + afterExit.slice(0, cut))).toBe(false)
+    expect(watch.started(afterExit.slice(cut))).toBe(true)
+    watch.started('Worktree removed. Uncommitted changes were discarded.\r\n')
+    expect(watch.failure()).toBeUndefined()
+  })
+
+  it('does not take "Removing worktree…" far after an empty title for the exit, but still sees a later one', () => {
+    const watch = new WorktreeRemovalWatch()
+    expect(watch.started('\x1b]0;\x07' + 'x'.repeat(4096) + 'Removing worktree…\r\n')).toBe(false)
+    expect(watch.started(CLAUDE_STARTS_REMOVING)).toBe(true)
+  })
+
   it('does not take reply text that says "Removing worktree…" for the exit', () => {
     const watch = new WorktreeRemovalWatch()
     expect(watch.started('\x1b[12;3HRemoving worktree…\r\n')).toBe(false)

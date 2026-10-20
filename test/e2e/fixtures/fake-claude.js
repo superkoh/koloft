@@ -550,7 +550,9 @@ function removalMs() {
 
 // CC§4
 function removeWorktree(then) {
-  process.stdout.write('\x1b]0;\x07Removing worktree…\r\n')
+  process.stdout.write(
+    `\x1b]0;\x07\x1b[2m\x1b[22m\r\n\x1b[2mResume this session with:\x1b[22m\r\n\x1b[2mclaude --resume ${sessionId}\x1b[22m\r\n\x1b[2m\x1b[22mRemoving worktree…\r\n`
+  )
   setTimeout(() => {
     if (fs.existsSync(path.join(home, 'fake-claude-remove-fails'))) {
       process.stdout.write(
