@@ -19,6 +19,7 @@ import {
   processAlive,
   readCalls,
   resumedId,
+  runClaudeElsewhere,
   runIn,
   seedJsonl,
   setNextSessionTitle,
@@ -291,6 +292,34 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await expect(row).toHaveClass(/\bactive\b/)
     } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  // CC§11
+  test('a cold row whose session another live claude process still runs is not resumed: a notice says so and no claude starts', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const id = seedJsonl(env, env.workspaces.a, { summary: 'Running elsewhere session' })
+    const stopOther = runClaudeElsewhere(env, id)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const row = page.locator('.ws-tab', { hasText: 'Running elsewhere session' })
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await row.click()
+
+      await expect(page.locator('.toast', { hasText: /still running/ })).toBeVisible({
+        timeout: 10_000
+      })
+      await expect(page.locator('.terminals .empty', { hasText: 'Resuming' })).toHaveCount(0)
+      await expect(row).toHaveClass(/\bcold\b/)
+      expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      stopOther()
       await app.close().catch(() => {})
     }
   })
