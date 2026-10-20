@@ -14,10 +14,6 @@ export interface Turn {
 
 export const MAX_READ_TURNS = 20
 
-function isEmpty(turn: Turn): boolean {
-  return !turn.said.length && !turn.reply
-}
-
 export class TurnLog {
   private turns: Turn[] = []
   private ended = new WeakSet<Turn>()
@@ -40,19 +36,14 @@ export class TurnLog {
     return last && !this.ended.has(last) ? last : undefined
   }
 
-  begin(): void {
-    const open = this.open()
-    if (!open || open.reply) this.start()
-  }
-
   end(turn: Turn): boolean {
     if (this.ended.has(turn)) return false
     this.ended.add(turn)
-    return !isEmpty(turn)
+    return true
   }
 
   last(n: number): Turn[] {
-    return this.turns.filter((t) => !isEmpty(t)).slice(-n)
+    return this.turns.slice(-n)
   }
 
   private start(): Turn {

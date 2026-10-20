@@ -1945,10 +1945,10 @@ describe('SessionTracker — what each turn said: the owner, another session, an
   })
 
   // CC§2
-  it('a skill command record opens a turn of its own, live and on disk: it ends once with its reply even when its Stop comes before any of it is on disk, and a command that leaves no reply ends no turn and shows none', async () => {
+  it('a skill command is the owner’s line that opens its turn, live and on disk, so the turn ends once with its reply even when its Stop comes before any of it is on disk; a built-in command opens no turn', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
-    const ended: { turn: { reply: string } }[] = []
+    const ended: { turn: { said: { who: string; text: string }[]; reply: string } }[] = []
     tracker.on('turn-ended', (e) => ended.push(e))
     tracker.track('tabSkill', cwd)
     const sid = '55555555-5555-4555-8555-555555555555'
@@ -1956,31 +1956,33 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     tracker.bindSession('tabSkill', file, sid, cwd)
     await waitFor(tracker, (x) => x.tabId === 'tabSkill' && x.title === 'earlier question')
 
-    const command = (name: string, args: string, s: number): string =>
-      JSON.stringify(
-        human(
-          `<command-message>${name}</command-message>\n<command-name>/${name}</command-name>\n<command-args>${args}</command-args>`,
-          s
-        )
-      ) + '\n'
-    fs.appendFileSync(file, command('koloft:koloft', 'session list', 30))
+    const skill = human(
+      '<command-message>koloft:koloft</command-message>\n<command-name>/koloft:koloft</command-name>\n<command-args>session list</command-args>',
+      30
+    )
+    fs.appendFileSync(file, JSON.stringify(skill) + '\n')
     tracker.receive('tabSkill', { type: 'stop' })
     setTimeout(() => {
       fs.appendFileSync(file, JSON.stringify(said(bash, 31)) + '\n')
       fs.appendFileSync(file, JSON.stringify(said(text('No sessions.'), 33)) + '\n')
     }, TURN_TEXT_WAIT_SHORTENED_MS / 3)
     await expect.poll(() => ended.length, { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 }).toBe(1)
+    expect(ended[0].turn.said.map((l) => [l.who, l.text])).toEqual([
+      ['owner', '/koloft:koloft session list']
+    ])
     expect(ended[0].turn.reply).toBe('No sessions.')
 
-    fs.appendFileSync(file, command('context', '', 40))
-    tracker.receive('tabSkill', { type: 'stop' })
-    await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
+    const builtIn = human(
+      '<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>haiku</command-args>',
+      40
+    )
+    fs.appendFileSync(file, JSON.stringify(builtIn) + '\n')
+    const replies = (turns: { reply: string }[] | undefined): string[] | undefined =>
+      turns?.map((t) => t.reply)
+    await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS))
     expect(ended).toHaveLength(1)
-    expect(tracker.turnsOf(sid, 5)?.map((t) => t.reply)).toEqual(['earlier', 'No sessions.'])
-    expect((await transcriptTurns(file, 5)).map((t) => t.reply)).toEqual([
-      'earlier',
-      'No sessions.'
-    ])
+    expect(replies(tracker.turnsOf(sid, 5))).toEqual(['earlier', 'No sessions.'])
+    expect(replies(await transcriptTurns(file, 5))).toEqual(['earlier', 'No sessions.'])
   })
 
   // CC§14
