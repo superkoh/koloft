@@ -248,7 +248,6 @@ import {
   type RunLeftovers
 } from './cronRunner'
 import { FREE_SUFFIX, HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
-import type { InTurn } from './launchQueue'
 import { readTheMachine, signalLog } from './machineRoom'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
@@ -1502,9 +1501,7 @@ const sessionDeps: SessionVerbDeps = {
   peerNames: () => sessionBackends.peerNames(),
   launch: async (options) => {
     const title = options.name ?? BACKEND_LABEL[options.kind]
-    const turn = launchInTurn(options, title)
-    if (!turn) return launchQuietTab(options, title)
-    return turn.queued ? turn.tabId : turn.started
+    return launchQuietTab(options, title)
   },
   waiting: {
     list: () => guard?.queue.list() ?? [],
@@ -4357,34 +4354,6 @@ async function launchQuietTab(
   return r.id
 }
 
-function launchInTurn(
-  options: CreateTabOptions & { kind: BackendId },
-  title: string,
-  jobId?: string
-): InTurn | null {
-  if (!guard) return null
-  const tabId = ptyMgr.nextId()
-  const cwd = options.cwd ?? ''
-  const turn = guard.launchInBackground(
-    { tabId, kind: options.kind, cwd, title, jobId },
-    () => launchQuietTab({ ...options, tabId }, title, jobId),
-    !isRemoteKey(cwd)
-  )
-  void turn.started.then((id) => {
-    if (id) void handOverHeldMessages(id)
-  })
-  return turn
-}
-
-const HELD_MESSAGES_WAIT_FOR_THE_FIRST_TURN_MS = 30 * 60_000
-
-async function handOverHeldMessages(tabId: string): Promise<void> {
-  const held = guard?.queue.takeHeld(tabId) ?? []
-  if (!held.length) return
-  if (!(await tabReady(tabId, HELD_MESSAGES_WAIT_FOR_THE_FIRST_TURN_MS, true))) return
-  for (const send of held) await send().catch(() => undefined)
-}
-
 function remoteHookMirrors(): string[] {
   const hosts = new Set(ptyTabIds().flatMap((id) => machineOfTab(id) ?? []))
   return [...hosts].map((host) => mirrorHookDir(app.getPath('userData'), host))
@@ -4742,9 +4711,7 @@ async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
       name: req.name,
       scheduled: true
     }
-    const turn = req.manual ? null : launchInTurn(options, req.name, req.jobId)
-    if (turn?.queued) return { ok: true, tabId: turn.tabId, startsLater: turn.outcome }
-    const tabId = await (turn ? turn.started : launchQuietTab(options, req.name, req.jobId))
+    const tabId = await launchQuietTab(options, req.name, req.jobId)
     return tabId ? { ok: true, tabId } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
