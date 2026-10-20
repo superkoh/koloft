@@ -2,6 +2,7 @@ import path from 'path'
 import { barePath } from '@shared/remoteKey'
 import type { PreviewItem } from '@shared/types'
 import { FROM_KOLOFT } from './crossSessionMessage'
+import type { NoticeFile } from './hooks'
 
 const NAMED_AT_MOST = 10
 
@@ -24,9 +25,7 @@ export interface DefaultMove {
 export interface SessionSyncDeps {
   repoOf(dir: string): Promise<string | null>
   gitOut(dir: string, args: string[]): Promise<string | null>
-  unread(tabId: string): Promise<boolean>
-  leave(tabId: string, text: string): Promise<void>
-  drop(tabId: string): Promise<void>
+  notice(tabId: string): NoticeFile | undefined
 }
 
 interface SameFiles {
@@ -109,10 +108,9 @@ export class SessionSync {
       const liveWrites = s.liveWrites ?? 0
       const was = this.seen.get(s.tabId)
       if (!was || was.sessionId !== s.sessionId) {
-        if (was) {
-          this.forget(s.tabId)
-          this.write(s.tabId, () => this.d.drop(s.tabId))
-        }
+        if (was && this.notices.has(s.tabId))
+          this.write(s.tabId, async () => this.d.notice(s.tabId)?.drop())
+        if (was) this.forget(s.tabId)
         this.seen.set(s.tabId, { sessionId: s.sessionId, liveWrites, stamps, live: new Set() })
         continue
       }
@@ -127,7 +125,11 @@ export class SessionSync {
       was.stamps = stamps
     }
     const open = new Set(sessions.map((s) => s.tabId))
-    for (const tabId of [...this.seen.keys()]) if (!open.has(tabId)) this.forget(tabId)
+    for (const tabId of [...this.seen.keys()])
+      if (!open.has(tabId)) {
+        this.forget(tabId)
+        this.writes.delete(tabId)
+      }
     for (const [writer, wrote] of fresh) await this.tellOthers(writer, wrote, sessions)
   }
 
@@ -182,11 +184,13 @@ export class SessionSync {
 
   private leave(tabId: string, add: (n: Notice) => void): void {
     this.write(tabId, async () => {
+      const file = this.d.notice(tabId)
+      if (!file) return
       const unread = this.notices.get(tabId)
-      const n = unread && (await this.d.unread(tabId)) ? unread : { sameFiles: new Map() }
+      const n = unread && (await file.unread()) ? unread : { sameFiles: new Map() }
       add(n)
       this.notices.set(tabId, n)
-      await this.d.leave(tabId, noticeText(n))
+      await file.leave(noticeText(n))
     })
   }
 

@@ -27,12 +27,14 @@ function rig(repos: Record<string, string>) {
       if (args[0] === 'log') return `${SUBJECTS[args[2]]}\n`
       return 'src/store.ts\nREADME.md\n'
     },
-    unread: async (tabId) => left.has(tabId),
-    leave: async (tabId, text) => {
-      left.set(tabId, text)
-      got.push({ tabId, text })
-    },
-    drop: async (tabId) => void left.delete(tabId)
+    notice: (tabId) => ({
+      unread: async () => left.has(tabId),
+      leave: async (text) => {
+        left.set(tabId, text)
+        got.push({ tabId, text })
+      },
+      drop: async () => void left.delete(tabId)
+    })
   })
   return { sync, got, left }
 }

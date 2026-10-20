@@ -8,6 +8,7 @@ import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
 import { FROM_A_SESSION, FROM_KOLOFT, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 import { REMOTE_HOOK_DIR } from './remote/paths'
+import { writeWholeBeforeVisible } from './jsonDrops'
 import {
   CODEX_HOLDS_LESS_THAN_ITS_EXEC_WALL_S,
   HOLD_HOOK_TIMEOUT_S,
@@ -86,7 +87,7 @@ export const NOTICE_ENV = 'KOLOFT_NOTICE'
 export const NOTICE_SUFFIX = '.notice'
 
 export const TAKE_NOTICE_FN = `take_notice() {
-  [ -n "$notice" ] && mv -f "$notice" "$notice.$$" 2>/dev/null || return 0
+  [ -f "$notice" ] && mv -f "$notice" "$notice.$$" 2>/dev/null || return 0
   cat "$notice.$$"
   rm -f "$notice.$$"
 }`
@@ -114,9 +115,9 @@ remind_reply_language() {
 }`
 
 // CC§15 CODEX§27
-const REMIND_AFTER_A_TOOL = `raw="$(cat)"
-  input="$(printf '%s' "$raw" | grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1)"
-  case "$raw" in *'"agent_id"'*) notice="" ;; esac
+const REMIND_AFTER_A_TOOL = `fields="$(grep -o -E '"(transcript_path|agent_id)"[[:space:]]*:[[:space:]]*"[^"]*"')"
+  input="$(printf '%s\\n' "$fields" | grep -F '"transcript_path"' | head -n 1)"
+  case "$fields" in *'"agent_id"'*) notice="" ;; esac
   remind_reply_language PostToolUse`
 
 // CC§19
@@ -555,11 +556,7 @@ export interface NoticeFile {
 export function localNotice(file: string): NoticeFile {
   return {
     unread: async () => fs.existsSync(file),
-    leave: async (text) => {
-      const part = `${file}.${process.pid}.part`
-      await fs.promises.writeFile(part, noticeLine(text))
-      await fs.promises.rename(part, file)
-    },
+    leave: async (text) => writeWholeBeforeVisible(file, noticeLine(text)),
     drop: () => fs.promises.rm(file, { force: true })
   }
 }
