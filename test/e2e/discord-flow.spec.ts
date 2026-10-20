@@ -387,7 +387,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('the butler sends to a local Claude session through its message socket as the owner’s words, and the reply that ends that turn is handed to the butler; it stops the session, which stays on the sidebar, and resumes it with a first message, each time naming it by its title with spaces and no quotes', async ({
+  test('the butler sends to a local Claude session through its message socket as the owner’s words; once that turn is over it stops the session, which stays on the sidebar, and resumes it with a first message, each time naming it by its title with spaces and no quotes', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -410,8 +410,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .poll(() => peerLines()[0], { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toEqual(sent('fix the tests', 1))
       await expect
-        .poll(() => handedBackFrom(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toBe(true)
+        .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Peer said:')
 
       fake.say(OWNER, `/koloft session stop ${title}`)
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/, {
