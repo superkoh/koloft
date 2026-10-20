@@ -126,31 +126,24 @@ describe('Discord slash commands', () => {
 })
 
 describe('reading an interaction from the Gateway', () => {
-  it('takes the user from member in a server, and marks the option being typed', () => {
+  it('takes the user from member in a server, and each option by its name', () => {
     expect(
       interactionOf({
         id: '1',
         token: 't',
-        type: 4,
+        type: 2,
         channel_id: CHANNEL,
         member: { user: { id: OWNER } },
-        data: {
-          name: 'run',
-          options: [
-            { name: 'command', value: '/x' },
-            { name: 'session', value: 'fi', focused: true }
-          ]
-        }
+        data: { name: 'compact', options: [{ name: 'focus', value: 'the plan' }] }
       })
     ).toEqual({
       id: '1',
       token: 't',
-      type: 4,
+      type: 2,
       channelId: CHANNEL,
       userId: OWNER,
-      command: 'run',
-      options: { command: '/x', session: 'fi' },
-      focused: 'session'
+      command: 'compact',
+      options: { focus: 'the plan' }
     })
   })
 

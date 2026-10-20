@@ -68,11 +68,28 @@ async function capture(
   return { format, data: Buffer.from(r.data, 'base64') }
 }
 
+const PAGE_STUCK = 'The page stopped answering, so Koloft could not take its picture.'
+// PLATFORM§16
+async function load(wc: WebContents, url: string): Promise<void> {
+  await wc.loadURL(url)
+  if (wc.isLoading())
+    await new Promise<void>((resolve) => wc.once('did-stop-loading', () => resolve()))
+}
+
 async function pageSize(wc: WebContents): Promise<{ size: Size; ratio: number }> {
-  const metrics = (await wc.debugger.sendCommand('Page.getLayoutMetrics')) as {
-    cssContentSize: Size
-  }
-  const ratio = Number(await wc.executeJavaScript('window.devicePixelRatio')) || 1
+  const metrics = (await within(
+    wc.debugger.sendCommand('Page.getLayoutMetrics'),
+    A_CAPTURE_ANSWERS_WITHIN_MS,
+    PAGE_STUCK
+  )) as { cssContentSize: Size }
+  const ratio =
+    Number(
+      await within(
+        wc.executeJavaScript('window.devicePixelRatio'),
+        A_CAPTURE_ANSWERS_WITHIN_MS,
+        PAGE_STUCK
+      )
+    ) || 1
   const width = Math.min(
     Math.ceil(metrics.cssContentSize.width),
     Math.floor(LONGEST_SIDE_THAT_CAPTURED_PX / ratio)
@@ -95,7 +112,7 @@ export async function shootPage(url: string): Promise<PagePictures> {
   wc.setWindowOpenHandler(() => ({ action: 'deny' }))
   view.setBounds({ x: 0, y: 0, width: VIEW_WIDTH, height: VIEW_HEIGHT })
   try {
-    await within(wc.loadURL(url), PAGE_LOADS_WITHIN_MS, `${url} did not load in time.`).catch(
+    await within(load(wc, url), PAGE_LOADS_WITHIN_MS, 'it did not finish loading in time.').catch(
       (error: unknown) => {
         throw new Error(`Koloft could not open ${url}: ${(error as Error).message}`)
       }
@@ -108,6 +125,8 @@ export async function shootPage(url: string): Promise<PagePictures> {
     wc.debugger.attach('1.3')
     const { size, ratio } = await pageSize(wc)
     const rows = pictureRows(size, ratio)
+    if (!rows.length)
+      throw new Error(`${url} is an empty page: there is nothing to take a picture of.`)
     const rowHeight = Math.floor(LONGEST_SIDE_THAT_CAPTURED_PX / ratio)
     const files: DiscordFile[] = []
     let shownHeight = 0

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { SessionStatus } from '../../src/shared/types'
-import { ButlerTyping, TYPING_RENEWED_EVERY_MS } from '../../src/main/discord/liveStatus'
+import { ButlerTyping, TYPING_RENEWED_EVERY_MS } from '../../src/main/discord/butlerTyping'
 
 function setup() {
   const status = new Map<string, SessionStatus>()

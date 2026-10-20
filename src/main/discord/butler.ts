@@ -153,6 +153,7 @@ export class Butler {
   }
 
   isButlerSession(tabOrSessionId: string): boolean {
+    if (!tabOrSessionId) return false
     return (
       tabOrSessionId === this.resident ||
       !!this.taskOfTab(tabOrSessionId) ||

@@ -352,6 +352,15 @@ describe('a ⌘P task of the butler', () => {
     })
   })
 
+  it('while it starts, a session that has no id yet is not taken for the butler’s', async () => {
+    const c = make()
+    const opening = c.openTask({ name: 'Translate', brief: 'b', ownerWords: 'b' })
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    expect(c.isButlerSession('')).toBe(false)
+    release()
+    await opening
+  })
+
   it('asked for twice while it starts starts once, and both get its tab', async () => {
     const c = make()
     const task = { name: 'Translate', brief: 'b', ownerWords: 'b' }

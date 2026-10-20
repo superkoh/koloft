@@ -16,7 +16,8 @@ import type { PagePictures } from './discord/pageShot'
 
 export const DISCORD_USAGE =
   'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | setup | status | token --from-page | reload | invite | bind --new-channel'
-export const NOT_A_PAGE = 'koloft: give one HTML file, or one http, https or file address.'
+export const NOT_A_PAGE =
+  'koloft: give one HTML file that is there, or one address that starts with http://, https:// or file:// (like http://localhost:5173).'
 export const NOT_THE_BUTLER =
   'koloft: only the butler bound to a Discord channel can send to Discord.'
 

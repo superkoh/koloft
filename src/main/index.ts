@@ -423,7 +423,7 @@ import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
 import { secretVerb } from './agentSecret'
-import { ButlerTyping } from './discord/liveStatus'
+import { ButlerTyping } from './discord/butlerTyping'
 import { shootPage } from './discord/pageShot'
 import { AskButtons } from './discord/buttons'
 import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
@@ -2882,6 +2882,8 @@ app.whenReady().then(() => {
     save: (discord) => {
       void commitSettings({ discord })
       syncAnswerable()
+      const tab = butler?.liveTab()
+      if (tab) discordTyping?.refresh(tab)
     },
     saveQuietly: (discord) => void saveSettings({ discord }),
     saveSession: (butlerSession) => void commitSettings({ butlerSession }),
@@ -4488,6 +4490,8 @@ function ownersPermission(): 'bypass' | 'default' {
   return loadSettings().skipPermissions ? 'bypass' : 'default'
 }
 
+const NO_CHANNEL_BOUND = 'No Discord channel is bound.'
+
 function butlerDestination(): Destination {
   return {
     name: butlerNameNow(),
@@ -4500,7 +4504,7 @@ function butlerDestination(): Destination {
     },
     typeCommand: async (tabId, command) => {
       const channelId = butler?.channel()?.channelId
-      if (!channelId) throw new Error('No Discord channel is bound.')
+      if (!channelId) throw new Error(NO_CHANNEL_BOUND)
       await slash.typeWhenIdle({ name: butlerNameNow(), tabId, conductor: true }, command, {
         channelId
       })
@@ -4521,7 +4525,8 @@ function typeCommandInto(t: Target, text: string, to: SlashReplyTo): string {
 
 function commandIntoButler(text: string): string {
   const channelId = butler?.channel()?.channelId
-  if (!discordRelay || !channelId) throw new Error(STILL_STARTING)
+  if (!discordRelay) throw new Error(STILL_STARTING)
+  if (!channelId) throw new Error(NO_CHANNEL_BOUND)
   discordRelay.command(butlerDestination(), text, channelId)
   return `Koloft will type ${text} into ${butlerNameNow()} once its turn ends, and post what it prints in Discord.`
 }

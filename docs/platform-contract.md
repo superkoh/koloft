@@ -620,6 +620,13 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
     both measured: `clip.scale` 0.5 (a 16000 px page as 1280×16000), or clips of at
     most 8000 CSS px down the page (a 40000 px page as five 2560×16000 images in
     1.3 s, the last ending in red).
+  - **A page that sends itself elsewhere while loading resolves `loadURL` early.**
+    Measured 2026-10-20, same Electron, a `WebContentsView` in no window loading pages
+    from a `127.0.0.1` server: a 302, a `location.replace` in the first script and a
+    `<meta http-equiv="refresh" content="0">` each resolved `loadURL` (none rejected)
+    while `isLoading()` was still true; after `did-stop-loading` the view showed the
+    page it was sent to. A `history.pushState` changed only the address. A redirect
+    from a 300 ms timer had not happened by `did-stop-loading` plus 0.8 s.
 - **A second `about:blank` load is a second navigation**: a CDP client that grabbed the
   page between the two is left holding a detached frame (measured with a real client).
 - **`webContents.debugger` and the DevTools window can hold one guest at the same time**,
