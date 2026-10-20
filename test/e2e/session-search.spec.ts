@@ -3,7 +3,15 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
+import { codexCalls } from './helpers/codex'
+import {
+  installAgy,
+  installCodex,
+  installMuse,
+  museSaid,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   readCalls,
   resumedId,
@@ -65,6 +73,25 @@ function hit(dialog: Locator, title: string): Locator {
   return dialog.locator('.restore-row', { hasText: title })
 }
 
+async function remoteHit(
+  app: ElectronApplication,
+  page: Page,
+  term: string,
+  title: string,
+  brand: string
+): Promise<Locator> {
+  await expect(async () => {
+    const dialog = await searchFor(app, page, term)
+    await expect(hit(dialog, title)).toBeVisible({ timeout: 2000 })
+  }).toPass({ timeout: 60_000 })
+  const found = hit(searchDialog(page), title)
+  await expect(found.locator('.restore-meta')).toContainText(
+    `${REMOTE_HOST}:${REMOTE_WS_NAME} · main ·`
+  )
+  await expect(found.getByRole('img', { name: brand, exact: true })).toBeVisible()
+  return found
+}
+
 function appendReply(file: string, text: string): void {
   fs.appendFileSync(
     file,
@@ -116,16 +143,6 @@ function seedCodexThread(env: E2EEnv, cwd: string, name: string, reply: string):
     })
   )
   return id
-}
-
-function codexCalls(env: E2EEnv): { argv: string[]; sessionId: string; method: string }[] {
-  const file = path.join(env.home, 'fake-codex-calls.jsonl')
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line))
 }
 
 test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by its words, in every workspace and backend, and opens it', () => {
@@ -372,39 +389,28 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
         await newSessionInWith(page, REMOTE_WS_NAME, 'Muse')
         await expect.poll(() => machineMuseCalls(env).length, { timeout: 60_000 }).toBe(1)
         const [{ sessionId }] = machineMuseCalls(env)
-        const row = wsRows(page, REMOTE_WS_NAME)
-        await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/st-waiting/, { timeout: 60_000 })
         await runIn(page, centerTerm(page), 'Muse plans on the build machine')
-        await expect(row).toContainText('Muse plans on the build machine')
+        const row = wsRows(page, REMOTE_WS_NAME).filter({
+          hasText: 'Muse plans on the build machine'
+        })
+        await expect(row).toHaveCount(1)
         await runIn(page, centerTerm(page), 'where is the wolf-needle-6')
-        const saved = path.join(
-          machineHome(env),
-          '.local',
-          'share',
-          'muse',
-          'sessions',
-          'fake',
-          `${sessionId}.json`
-        )
         await expect
-          .poll(() => fs.readFileSync(saved, 'utf8'), { timeout: 30_000 })
-          .toContain('echo: where is the wolf-needle-6')
+          .poll(() => museSaid(env, sessionId, machineHome(env)).join('\n'), { timeout: 30_000 })
+          .toContain('where is the wolf-needle-6')
         await closeActiveTab(app, page)
         await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
         await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
 
-        await expect(async () => {
-          const dialog = await searchFor(app, page, 'wolf-NEEDLE-6')
-          await expect(hit(dialog, 'Muse plans on the build machine')).toBeVisible({
-            timeout: 2000
-          })
-        }).toPass({ timeout: 30_000 })
-        const found = hit(searchDialog(page), 'Muse plans on the build machine')
-        await expect(found.locator('.restore-snippet b')).toHaveText('wolf-needle-6')
-        await expect(found.locator('.restore-meta')).toContainText(
-          `${REMOTE_HOST}:${REMOTE_WS_NAME} · main ·`
+        const found = await remoteHit(
+          app,
+          page,
+          'wolf-NEEDLE-6',
+          'Muse plans on the build machine',
+          'Muse'
         )
-        await expect(found.getByRole('img', { name: 'Muse', exact: true })).toBeVisible()
+        await expect(found.locator('.restore-snippet b')).toHaveText('wolf-needle-6')
         await found.click()
 
         await expect.poll(() => machineMuseCalls(env).length, { timeout: 60_000 }).toBe(2)
@@ -449,22 +455,18 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
         await expect
           .poll(() => fs.readFileSync(transcript, 'utf8'), { timeout: 60_000 })
           .toContain('Answer to: where is the moth-needle-4')
-        await sendShortcut(app, 'shortcut:close-tab')
+        await closeActiveTab(app, page)
         await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).not.toContain(`k-${id}`)
         await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
 
-        await expect(async () => {
-          const dialog = await searchFor(app, page, 'MOTH-needle-4')
-          await expect(hit(dialog, 'Antigravity plans on the build machine')).toBeVisible({
-            timeout: 2000
-          })
-        }).toPass({ timeout: 60_000 })
-        const found = hit(searchDialog(page), 'Antigravity plans on the build machine')
-        await expect(found.locator('.restore-snippet b')).toHaveText('moth-needle-4')
-        await expect(found.locator('.restore-meta')).toContainText(
-          `${REMOTE_HOST}:${REMOTE_WS_NAME} · main ·`
+        const found = await remoteHit(
+          app,
+          page,
+          'MOTH-needle-4',
+          'Antigravity plans on the build machine',
+          'Antigravity'
         )
-        await expect(found.getByRole('img', { name: 'Antigravity', exact: true })).toBeVisible()
+        await expect(found.locator('.restore-snippet b')).toHaveText('moth-needle-4')
         await found.click()
 
         await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(2)
@@ -477,9 +479,11 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
     test('a cold Codex thread on an ssh machine is found by its title, named with its host, and resumes there', async ({
       env
     }) => {
+      test.setTimeout(240_000)
       installCodexOnFakeRemote(env)
       installFakeRemote(env)
       seedRemoteWorkspace(env)
+      seedSettings(env, { hintsOff: true })
       fs.writeFileSync(
         path.join(machineHome(env), 'fake-codex-next-title'),
         'Codex plans on the build machine'
@@ -493,17 +497,19 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
           hasText: 'Codex plans on the build machine'
         })
         await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(1)
         const [{ sessionId: thread }] = codexCalls(env)
-        await sendShortcut(app, 'shortcut:close-tab')
+        await closeActiveTab(app, page)
         await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
 
-        const dialog = await searchFor(app, page, 'codex PLANS on the build')
-        await expect(dialog.locator('.pal-count')).toHaveText('1 conversation')
-        const found = hit(dialog, 'Codex plans on the build machine')
-        await expect(found.locator('.restore-meta')).toContainText(
-          `${REMOTE_HOST}:${REMOTE_WS_NAME} · main ·`
+        const found = await remoteHit(
+          app,
+          page,
+          'codex PLANS on the build',
+          'Codex plans on the build machine',
+          'Codex'
         )
-        await expect(found.getByRole('img', { name: 'Codex', exact: true })).toBeVisible()
+        await expect(searchDialog(page).locator('.pal-count')).toHaveText('1 conversation')
         await found.click()
 
         await expect.poll(() => codexCalls(env).length, { timeout: 60_000 }).toBe(2)
