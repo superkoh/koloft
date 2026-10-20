@@ -24,9 +24,10 @@ describe('telling that Claude Code has started removing its worktree', () => {
     expect(watch.failure()).toBeUndefined()
   })
 
-  it('does not take "Removing worktree…" far after an empty title for the exit, but still sees a later one', () => {
+  it('does not take "Removing worktree…" for the exit when anything but the resume hint came between it and the empty title, but still sees a later one', () => {
     const watch = new WorktreeRemovalWatch()
-    expect(watch.started('\x1b]0;\x07' + 'x'.repeat(4096) + 'Removing worktree…\r\n')).toBe(false)
+    expect(watch.started('\x1b]0;\x07\r\n⏺ The line Claude prints is\r\n')).toBe(false)
+    expect(watch.started('Removing worktree…\r\n')).toBe(false)
     expect(watch.started(CLAUDE_STARTS_REMOVING)).toBe(true)
   })
 

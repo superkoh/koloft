@@ -8,12 +8,25 @@ const CLAUDE_CLEARS_ITS_TITLE = '\x1b]0;\x07'
 // CC§4
 const CLAUDE_STARTS_REMOVING_THE_WORKTREE = 'Removing worktree…'
 // CC§4
-const ROOM_FOR_THE_RESUME_HINT_CLAUDE_PRINTS_FIRST = 1024
+const CLAUDE_RESUME_HINT_HEAD = 'Resume this session with:'
+// CC§4
+const CLAUDE_RESUME_HINT_COMMAND = 'claude --resume '
 // CC§4
 const CLAUDE_REMOVED_THE_WORKTREE = 'Worktree removed'
 
+function onlyTheResumeHintSoFar(printed: string): boolean {
+  const lines = stripTerminalCodes(printed)
+    .split(/[\r\n]+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (lines.length === 0) return true
+  if (lines[0] !== CLAUDE_RESUME_HINT_HEAD || lines.length > 2) return false
+  return lines.length === 1 || lines[1].startsWith(CLAUDE_RESUME_HINT_COMMAND)
+}
+
 export class WorktreeRemovalWatch {
   private tail = ''
+  private sinceTitle: string | undefined
   private saidSince: string | undefined
 
   started(data: string): boolean {
@@ -21,27 +34,33 @@ export class WorktreeRemovalWatch {
       this.saidSince += data
       return false
     }
-    const seen = this.tail + data
-    let title = seen.indexOf(CLAUDE_CLEARS_ITS_TITLE)
-    while (title >= 0) {
-      const afterTitle = title + CLAUDE_CLEARS_ITS_TITLE.length
-      const removing = seen.indexOf(CLAUDE_STARTS_REMOVING_THE_WORKTREE, afterTitle)
-      if (removing >= 0 && removing - afterTitle <= ROOM_FOR_THE_RESUME_HINT_CLAUDE_PRINTS_FIRST) {
-        this.saidSince = seen.slice(removing + CLAUDE_STARTS_REMOVING_THE_WORKTREE.length)
-        return true
-      }
-      const roomEnds =
-        afterTitle +
-        ROOM_FOR_THE_RESUME_HINT_CLAUDE_PRINTS_FIRST +
-        CLAUDE_STARTS_REMOVING_THE_WORKTREE.length
-      if (seen.length < roomEnds) {
-        this.tail = seen.slice(title)
+    if (this.sinceTitle === undefined) {
+      const mark = CLAUDE_CLEARS_ITS_TITLE
+      const seam = this.tail + data.slice(0, mark.length - 1)
+      const inSeam = seam.indexOf(mark)
+      const at = data.indexOf(mark)
+      if (inSeam < 0 && at < 0) {
+        this.tail = (this.tail + data).slice(1 - mark.length)
         return false
       }
-      title = seen.indexOf(CLAUDE_CLEARS_ITS_TITLE, afterTitle)
+      this.tail = ''
+      this.sinceTitle = ''
+      data =
+        inSeam >= 0
+          ? seam.slice(inSeam + mark.length) + data.slice(mark.length - 1)
+          : data.slice(at + mark.length)
     }
-    this.tail = seen.slice(1 - CLAUDE_CLEARS_ITS_TITLE.length)
-    return false
+    this.sinceTitle += data
+    const removing = this.sinceTitle.indexOf(CLAUDE_STARTS_REMOVING_THE_WORKTREE)
+    if (removing >= 0 && onlyTheResumeHintSoFar(this.sinceTitle.slice(0, removing))) {
+      this.saidSince = this.sinceTitle.slice(removing + CLAUDE_STARTS_REMOVING_THE_WORKTREE.length)
+      return true
+    }
+    const wholeLines = this.sinceTitle.slice(0, this.sinceTitle.lastIndexOf('\n') + 1)
+    if (removing < 0 && onlyTheResumeHintSoFar(wholeLines)) return false
+    const rest = this.sinceTitle
+    this.sinceTitle = undefined
+    return this.started(rest)
   }
 
   failure(): string | undefined {

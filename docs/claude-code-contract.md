@@ -620,14 +620,14 @@ the same files into a worktree Koloft makes or rebuilds itself.
 
 - **Removing happens before the exit, in the open, and can take seconds.** After a Remove
   (or a silent clean removal) CC leaves its screen, writes `ESC ] 0 ; BEL` (an empty
-  window title) and then the line `Removing worktree…` (U+2026) — at once when the session
-  has no message; once it has one, the dim lines `Resume this session with:` and
-  `claude --resume <id>` (§1) come between (measured 2026-10-20 on
-  CC 2.1.303 and 2.1.304, a `-w` session with one turn, fullscreen and with
-  `CLAUDE_CODE_NO_FLICKER=0`, python pty, raw bytes; the TUI's own `⏳ Removing worktree…`
-  is drawn before the empty title) — deletes the
-  folder, deletes the branch `worktree-<name>`, prints one result line, runs the
-  SessionEnd hooks and only then exits. Success lines start with `Worktree removed`
+  window title), then the line `Removing worktree…` (U+2026), deletes the folder, deletes
+  the branch `worktree-<name>`, prints one result line, runs the SessionEnd hooks and
+  only then exits. The line follows the title at once only while the session has no
+  message; once it has one, the two dim lines `Resume this session with:` and `claude
+  --resume <id>` (§1) come between them, and nothing else does. The TUI's own
+  `⏳ Removing worktree…` is drawn before the empty title. (Measured 2026-10-20 on CC
+  2.1.303 and 2.1.304: a `-w` session with one turn, in fullscreen and with
+  `CLAUDE_CODE_NO_FLICKER=0`, a python pty, the raw bytes saved.) Success lines start with `Worktree removed`
   (`Worktree removed (no changes)`, `Worktree removed.`, `Worktree removed. Uncommitted
   changes were discarded.`); the others name the trouble (`Could not finish removing the
   worktree at …`, `Removing the worktree at … did not finish within …`, `Stopped waiting
