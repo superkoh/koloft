@@ -18,6 +18,7 @@ import {
   readCalls,
   runIn,
   startSessionIn,
+  switchToRow,
   waitBooted,
   waitForCalls,
   wsRows
@@ -145,8 +146,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
 
       await pretendWindowFocused(app2)
-      await row.click()
-      await expect(centerTerm(page2)).toBeVisible({ timeout: 30_000 })
+      await switchToRow(page2, row)
       await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
       await runIn(page2, centerTerm(page2), '/busy')
       await expect(row.locator('.ws-tab-unread')).toHaveCount(0, { timeout: 60_000 })

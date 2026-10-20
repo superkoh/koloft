@@ -66,6 +66,7 @@ import {
   settingsOnDisk,
   snap,
   startSessionIn,
+  switchToRow,
   termIds,
   waitBooted,
   worktreeDialog,
@@ -1256,7 +1257,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await waitBooted(page)
       await expect.poll(() => termIds(page)).toEqual(ids)
       await expect(codexRows(page)).not.toHaveClass(/cold/)
-      await codexRows(page).click()
+      await switchToRow(page, codexRows(page))
       await runIn(page, centerTerm(page), 'hold after reload')
       await expect(codexRows(page)).toHaveClass(/st-working/)
       await page.keyboard.press('Control+C')
