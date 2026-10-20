@@ -295,6 +295,9 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
           .toMatch(/"type":"text","text":"GREEN/)
+        await expect
+          .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^(waiting|idle)$/)
 
         fake.say(OWNER, `/koloft session command ${remote.sessionId} /compact`)
         await expect
