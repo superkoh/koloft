@@ -19,6 +19,7 @@ import { NAME_KEEPS_PX } from '../../src/renderer/src/wsHeadFit'
 
 const COUNTS_TIMEOUT = 30_000
 const LONG_NAME = 'payments-gateway-service'
+const NARROWER_THAN_ANY_SIDEBAR = 100
 
 function headFit(
   page: Page,
@@ -94,16 +95,18 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
     env
   }) => {
     const fx = setupGitFixture(env, LONG_NAME)
-    setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: LONG_NAME, issues: 128, prs: 37 } })
-    seedSettings(env, { sidebarWidth: 200 })
+    setGithubFixture(env, {
+      [fx.clone]: { owner: 'acme', repo: LONG_NAME, issues: 12345, prs: 4321 }
+    })
+    seedSettings(env, { sidebarWidth: NARROWER_THAN_ANY_SIDEBAR })
     const { app, page } = await launchSettled(env)
     try {
       await expect(gitMark(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
         timeout: COUNTS_TIMEOUT
       })
       const fit = await headFit(page, LONG_NAME)
-      expect(fit.shown).not.toEqual(['128 open issues', '37 open pull requests'])
-      expect(fit.shown).not.toEqual(['37 open pull requests'])
+      expect(fit.shown).not.toEqual(['12345 open issues', '4321 open pull requests'])
+      expect(fit.shown).not.toEqual(['4321 open pull requests'])
       expect(fit.clipped).toBe(0)
       expect(fit.spill).toBeLessThanOrEqual(0.5)
       expect(fit.nameWidth).toBeGreaterThanOrEqual(Math.min(NAME_KEEPS_PX, fit.nameNeeds))
