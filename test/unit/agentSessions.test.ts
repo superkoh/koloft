@@ -154,6 +154,7 @@ function harness(
     },
     waiting: {
       list: () => waiting,
+      notStartedYet: () => waiting,
       hold: (tabId, send) => {
         if (!waiting.some((q) => q.tabId === tabId)) return false
         held.push({ tabId, send })
@@ -1814,7 +1815,7 @@ describe('a session started while the machine is busy waits in a queue', () => {
   it('the caller hears it is queued and not to start it again, and the list shows it waiting', async () => {
     const h = harness([session('me', 'claude')], {}, [], { busy: true })
     const reply = await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('me'))
-    expect(reply.text).toMatch(/^Queued session "tests" \(new-tab\): this machine is busy/)
+    expect(reply.text).toMatch(/^Queued session "tests" \(new-tab\)/)
     expect(reply.text).toContain('Do not start it again.')
     const list = await h.verb(['list'], from('me'))
     expect(list.text).toMatch(
@@ -1837,9 +1838,19 @@ describe('a session started while the machine is busy waits in a queue', () => {
     expect(h.queued[0].text).toContain('Also lint.')
   })
 
-  it('a Claude session messaging a queued Claude session is told to use SendMessage once it starts, nothing is kept', async () => {
+  it('a message to a queued session whose name has several words is kept for it too', async () => {
+    const h = harness([session('me', 'muse')], {}, [], { busy: true })
+    await h.verb(['new', '--name', 'fix login', '--', 'Fix the login.'], from('me'))
+    const sent = await h.verb(['send', 'fix', 'login', 'Also lint.'], from('me'))
+    expect(sent.text).toContain('your message is kept')
+    expect(h.held.map((x) => x.tabId)).toEqual(['new-tab'])
+  })
+
+  it('a Claude session starting or messaging a queued Claude session is told to use SendMessage once it starts, nothing is kept', async () => {
     const h = harness([session('me', 'claude')], {}, [], { busy: true })
-    await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('me'))
+    const reply = await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('me'))
+    expect(reply.text).toContain('once it starts, talk to it with SendMessage to "tests"')
+    expect(reply.text).not.toContain('koloft session send')
     const sent = await h.verb(['send', 'tests', 'Also lint.'], from('me'))
     expect(sent.text).toContain('once it starts, talk to it with SendMessage to "tests"')
     expect(h.held).toEqual([])

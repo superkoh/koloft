@@ -248,7 +248,7 @@ import {
   type LeftTab,
   type RunLeftovers
 } from './cronRunner'
-import { HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
+import { FREE_SUFFIX, HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
 import type { InTurn } from './launchQueue'
 import { readTheMachine, signalLog } from './machineRoom'
 import { giveWay, readTaggedTable } from './machineTrees'
@@ -1527,6 +1527,7 @@ const sessionDeps: SessionVerbDeps = {
   },
   waiting: {
     list: () => guard?.queue.list() ?? [],
+    notStartedYet: () => guard?.queue.notStartedYet() ?? [],
     hold: (tabId, send) => !!guard?.queue.hold(tabId, send),
     drop: (tabId) => !!guard?.queue.drop(tabId)
   },
@@ -2555,7 +2556,7 @@ app.whenReady().then(() => {
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
     heldDirs: () => remoteHookMirrors(),
     freeOnMachine: freeOnMachine,
-    isRemote: (tabId) => !!tracker.remoteOf(tabId),
+    isRemote: (tabId) => !!machineOfTab(tabId),
     changed: (state) => sendToRenderer(CH.machine.state, state),
     readTrees: readTaggedTable,
     giveWay: process.platform === 'darwin' ? giveWay : async () => {}
@@ -2642,6 +2643,7 @@ app.whenReady().then(() => {
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
+    forgetFreeOnMachine(e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
@@ -4501,19 +4503,33 @@ async function handOverHeldMessages(tabId: string): Promise<void> {
 }
 
 function remoteHookMirrors(): string[] {
-  const hosts = new Set(ptyTabIds().flatMap((id) => tracker.remoteOf(id)?.host ?? []))
+  const hosts = new Set(ptyTabIds().flatMap((id) => machineOfTab(id) ?? []))
   return [...hosts].map((host) => mirrorHookDir(app.getPath('userData'), host))
 }
 
+const freedOnMachine = new Map<string, string>()
+
 async function freeOnMachine(tabId: string): Promise<void> {
-  const host = tracker.remoteOf(tabId)?.host
+  const host = machineOfTab(tabId)
   if (!host) return
   await loginEnvReady()
   await runSsh(
     host,
-    remoteShCommand(`mkdir -p "${REMOTE_HOOK_DIR}" && : > "${REMOTE_HOOK_DIR}/$1.free"`, [tabId]),
+    remoteShCommand(`mkdir -p "${REMOTE_HOOK_DIR}" && : > "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [
+      tabId
+    ]),
     { controlDir: remoteControlDir }
   )
+  freedOnMachine.set(tabId, host)
+}
+
+function forgetFreeOnMachine(tabId: string): void {
+  const host = freedOnMachine.get(tabId)
+  if (!host) return
+  freedOnMachine.delete(tabId)
+  void runSsh(host, remoteShCommand(`rm -f "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [tabId]), {
+    controlDir: remoteControlDir
+  }).catch(() => undefined)
 }
 
 const RESUMES_AT_ONCE = 4

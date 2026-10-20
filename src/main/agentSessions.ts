@@ -340,6 +340,7 @@ export async function findClosable(
 
 export interface WaitingLaunches {
   list(): QueuedLaunch[]
+  notStartedYet(): QueuedLaunch[]
   hold(tabId: string, sendOnceStarted: () => Promise<unknown>): boolean
   drop(tabId: string): boolean
 }
@@ -361,7 +362,7 @@ function queuedStartedBy(
   ref: string
 ): QueuedLaunch | undefined {
   return d.waiting
-    .list()
+    .notStartedYet()
     .find(
       (q) =>
         (q.tabId === ref || q.title === ref) &&
@@ -556,7 +557,11 @@ async function startSibling(
   if (conductorTab) d.started(conductorTab, tabId, name ?? unnamed, workspace, backend)
   if (d.waiting.list().some((q) => q.tabId === tabId))
     return answered(
-      `Queued ${name ? `session "${name}"` : unnamed} (${tabId}): this machine is busy, so it starts once there is room. Do not start it again. "koloft session list" shows it as queued; "koloft session send ${tabId} <message>" is kept and handed to it once it starts; "koloft session close ${tabId}" takes it off the queue.`
+      `Queued ${name ? `session "${name}"` : unnamed} (${tabId}): Koloft starts it in turn, once this machine has room. Do not start it again. "koloft session list" shows it as queued; ${
+        name && reachedBySendMessage(backend) && reachedBySendMessage(me.backendId)
+          ? `once it starts, talk to it with SendMessage to "${name}"`
+          : `"koloft session send ${tabId} <message>" is kept and handed to it once it starts`
+      }; "koloft session close ${tabId}" takes it off the queue.`
     )
   if (conductorTab) {
     return answered(
@@ -1147,7 +1152,10 @@ export function sessionVerb(d: SessionVerbDeps): {
         d.conductorOf(ref) ?? (parent && matchRow([parent], ref) ? rowTarget(d, parent) : undefined)
       const split = nameThenWords(
         rest,
-        (ref) => starter(ref) !== undefined || matchOpen(open, ref) !== null
+        (ref) =>
+          starter(ref) !== undefined ||
+          matchOpen(open, ref) !== null ||
+          queuedStartedBy(d, caller.session, ref) !== undefined
       )
       if (!split.ok) return refused(`koloft session send: ${split.error}`, EXIT_USAGE)
       const { ref, tail } = split.value

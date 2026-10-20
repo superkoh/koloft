@@ -23,6 +23,7 @@ export const HOLD_HOOK_TIMEOUT_S = 3600
 export const HOLD_GIVES_UP_BEFORE_THE_HOOK_TIMEOUT_S = 3500
 export const REMOTE_BUSY_BELOW_FREE_MEMORY_PERCENT = 10
 const HOLD_LOOKS_AROUND_EVERY_S = 5
+const RELEASE_CLAIM_SUFFIX = '.claim'
 const HELD_FILE = /^(.+)\.\d+\.held$/
 // CODEX§27 MUSE§9 AGY§13
 const SHELL_TOOLS = ['Bash', 'bash', 'run_command']
@@ -37,7 +38,7 @@ const HOLD_BRANCH = `  hold|hold-self)
     busy_here() {
       [ -n "$cores" ] || cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
       if [ -r /proc/loadavg ]; then load="$(cut -d' ' -f1 /proc/loadavg)"
-      else load="$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')"; fi
+      else load="$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}' | tr , .)"; fi
       pressure="$(sysctl -n kern.memorystatus_vm_pressure_level 2>/dev/null || echo 1)"
       free="$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{if (t) print int(a*100/t); else print 100}' /proc/meminfo 2>/dev/null || echo 100)"
       awk -v l="$load" -v c="$cores" -v p="$pressure" -v f="$free" 'BEGIN{exit !(l >= ${BUSY_AT_LOAD_PER_CORE} * c || p >= ${MEMORY_PRESSURE_WARNING} || f < ${REMOTE_BUSY_BELOW_FREE_MEMORY_PERCENT})}'
@@ -70,8 +71,9 @@ const HOLD_BRANCH = `  hold|hold-self)
       [ $((n % ${HOLD_LOOKS_AROUND_EVERY_S})) -eq 0 ] || continue
       kill -0 "$PPID" 2>/dev/null || exit 0
       [ "$(ps -o ppid= -p "$PPID" 2>/dev/null | tr -d ' ')" = "$gp" ] || exit 0
-      if ! busy && turn_now "$now"; then
+      if ! busy && turn_now "$now" && mkdir "$reg/release-$(date +%s)${RELEASE_CLAIM_SUFFIX}" 2>/dev/null; then
         printf '%s\\n' "$((now + ${GAP_AFTER_A_COMMAND_MS / 1000}))" > "$reg/${RELEASE_AFTER_FILE}"
+        find "$reg" -maxdepth 1 -name 'release-*${RELEASE_CLAIM_SUFFIX}' -mmin +1 -exec rmdir {} + 2>/dev/null
         break
       fi
     done
@@ -157,6 +159,8 @@ export class ResourceGuard {
       this.queue.pump()
       this.held = this.readHeld()
       this.push()
+    } catch (err) {
+      this.d.log(`[koloft] machine: could not look at the machine: ${String(err)}`)
     } finally {
       this.ticking = false
     }
@@ -228,14 +232,15 @@ export class ResourceGuard {
       return true
     }
     if (!this.background.has(tabId)) return false
+    this.background.delete(tabId)
     try {
       if (this.d.isRemote(tabId)) await this.d.freeOnMachine(tabId)
       else fs.writeFileSync(path.join(this.d.regDir, `${tabId}${FREE_SUFFIX}`), '')
     } catch (err) {
+      this.background.add(tabId)
       this.d.log(`[koloft] machine: could not free ${tabId}: ${String(err)}`)
       return false
     }
-    this.background.delete(tabId)
     await this.liftTab(tabId)
     delete this.held[tabId]
     this.push()

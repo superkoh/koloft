@@ -119,6 +119,19 @@ describe('the hook that holds a background session’s next command while the ma
     expect(after).toBeGreaterThan(Date.now() / 1000)
   }, 15_000)
 
+  it('of two commands that see the machine turn roomy in the same second, only one goes; the other waits out the gap', async () => {
+    busy()
+    const a = hold(BASH_TOOL('npm run build'))
+    const b = hold(BASH_TOOL('npm test'))
+    await until(() => heldFiles().length === 2)
+    fs.rmSync(path.join(dir, BUSY_MARKER))
+    await Promise.race([a.done, b.done])
+    await new Promise((r) => setTimeout(r, 1500))
+    expect(heldFiles()).toHaveLength(1)
+    fs.writeFileSync(path.join(dir, 'tab-1.free'), '')
+    await Promise.all([a.done, b.done])
+  }, 20_000)
+
   it('lets go when the owner frees the session while it waits', async () => {
     busy()
     const h = hold(BASH_TOOL('npm run build'))

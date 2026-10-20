@@ -32,7 +32,7 @@ const proc = (
   ...opts
 })
 
-function setup(rows: TaggedProcess[]) {
+function setup(rows: TaggedProcess[], freeOnMachine = async (): Promise<void> => {}) {
   const reading = { pressure: 2, load1: 1 }
   const ways: string[] = []
   const clock = { now: 1_000_000 }
@@ -43,7 +43,7 @@ function setup(rows: TaggedProcess[]) {
     now: () => clock.now,
     log: () => {},
     heldDirs: () => [],
-    freeOnMachine: async () => {},
+    freeOnMachine,
     isRemote: (tab) => tab === 'remote',
     changed: () => {},
     readTrees: async () => rows,
@@ -140,6 +140,25 @@ describe('giving way while the machine is busy', () => {
     expect(turn.queued).toBe(false)
     expect(await turn.outcome).toBe('started')
     expect(guard.isBackground('remote')).toBe(true)
+  })
+
+  it('the owner typing a line into a remote background session frees it on its machine once, not once per key', async () => {
+    let calls = 0
+    let answer!: () => void
+    const { guard } = setup([], () => {
+      calls++
+      return new Promise((resolve) => (answer = resolve))
+    })
+    guard.launchInBackground(
+      { tabId: 'remote', kind: 'claude', cwd: 'ssh://box/srv', title: 't' },
+      async () => 'remote',
+      false
+    )
+    const keys = [guard.free('remote'), guard.free('remote'), guard.free('remote')]
+    answer()
+    expect(await Promise.all(keys)).toEqual([true, false, false])
+    expect(calls).toBe(1)
+    expect(guard.isBackground('remote')).toBe(false)
   })
 
   it('a remote session’s tools run on its own machine, so nothing here is slowed for it', async () => {

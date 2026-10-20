@@ -26,7 +26,7 @@ export interface InTurn {
 
 export class LaunchQueue {
   private entries: Entry[] = []
-  private starting = new Set<string>()
+  private starting = new Map<string, Entry>()
   private dropped = new Set<string>()
   private held = new Map<string, HeldSend[]>()
   private nextLaunchAt = 0
@@ -34,14 +34,11 @@ export class LaunchQueue {
   constructor(private d: LaunchQueueDeps) {}
 
   list(): QueuedLaunch[] {
-    return this.entries.map(({ tabId, kind, cwd, title, jobId, since }) => ({
-      tabId,
-      kind,
-      cwd,
-      title,
-      jobId,
-      since
-    }))
+    return this.entries.map(plain)
+  }
+
+  notStartedYet(): QueuedLaunch[] {
+    return [...this.entries, ...this.starting.values()].map(plain)
   }
 
   has(tabId: string): boolean {
@@ -58,7 +55,7 @@ export class LaunchQueue {
       return this.dropped.delete(q.tabId) ? 'dropped' : 'failed'
     })
     if (!this.entries.length && this.mayLaunchNow()) {
-      this.claimGap(GAP_BETWEEN_LAUNCHES_ON_A_ROOMY_MACHINE_MS)
+      this.claimGap()
       this.run(entry)
       return { tabId: q.tabId, queued: false, started, outcome }
     }
@@ -69,9 +66,7 @@ export class LaunchQueue {
 
   pump(): void {
     if (!this.entries.length || !this.mayLaunchNow()) return
-    this.claimGap(
-      this.d.room.busy ? GAP_AFTER_A_LAUNCH_MS : GAP_BETWEEN_LAUNCHES_ON_A_ROOMY_MACHINE_MS
-    )
+    this.claimGap()
     this.run(this.entries[0])
   }
 
@@ -111,20 +106,27 @@ export class LaunchQueue {
     return !this.d.room.holding && this.d.now() >= this.nextLaunchAt
   }
 
-  private claimGap(gapMs: number): void {
-    this.nextLaunchAt = this.d.now() + gapMs
+  private claimGap(): void {
+    this.nextLaunchAt =
+      this.d.now() +
+      (this.d.room.busy ? GAP_AFTER_A_LAUNCH_MS : GAP_BETWEEN_LAUNCHES_ON_A_ROOMY_MACHINE_MS)
   }
 
   private run(entry: Entry): void {
     this.entries = this.entries.filter((e) => e !== entry)
-    this.starting.add(entry.tabId)
+    this.starting.set(entry.tabId, entry)
     this.d.changed()
     entry
       .start()
       .catch(() => null)
       .then((id) => {
         this.starting.delete(entry.tabId)
+        if (!id) this.held.delete(entry.tabId)
         entry.settle(id)
       })
   }
+}
+
+function plain({ tabId, kind, cwd, title, jobId, since }: QueuedLaunch): QueuedLaunch {
+  return { tabId, kind, cwd, title, jobId, since }
 }

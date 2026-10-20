@@ -450,7 +450,7 @@ export class CronRunner {
       }
       this.live.set(res.tabId, run)
       if (res.startsLater) {
-        this.d.toast(`⏰ ${job.name} queued: the machine is busy`)
+        this.d.toast(`⏰ ${job.name} queued: it starts in turn, once the machine has room`)
         void res.startsLater.then((outcome) => this.leftTheQueue(run, outcome))
       } else this.launched(job, run)
       this.refreshFolders()

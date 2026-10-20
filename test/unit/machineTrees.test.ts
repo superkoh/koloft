@@ -45,6 +45,11 @@ describe('which processes belong to which session tab', () => {
     expect(chrome.cpuPercent).toBe(40)
   })
 
+  it('reads cpu written with a decimal comma, as ps prints it under a German locale', () => {
+    const [row] = parseTaggedTable('  201   200   50000  90,5 node vitest KOLOFT_TAB_ID=pty-1')
+    expect(row.cpuPercent).toBe(90.5)
+  })
+
   it('counts the shared docker VM apart, since no session can be named for it', () => {
     expect(trees.sharedVmBytes).toBe(1400000 * 1024)
   })

@@ -10,7 +10,7 @@ export interface TaggedProcess {
   vm: boolean
 }
 
-const ROW = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s(.*)$/
+const ROW = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\d.,]+)\s(.*)$/
 const TAB_TAG = /(?:^|\s)KOLOFT_(?:TAB_ID|HOLD_TAB)=(\S+)/
 const AGENT_PROGRAM =
   /^(?:\S*\/)?(?:node\s+\S*\/(?:claude|codex|muse|agy)(?:\.js)?\s|node\s+\S*\/(?:claude-code|codex)\/\S*\s|(?:claude|codex|muse|agy)(?:\s|$))/
@@ -28,7 +28,7 @@ export function parseTaggedTable(stdout: string): TaggedProcess[] {
       pid: Number(m[1]),
       ppid: Number(m[2]),
       rssBytes: Number(m[3]) * 1024,
-      cpuPercent: Number(m[4]),
+      cpuPercent: Number(m[4].replace(',', '.')),
       agent: AGENT_PROGRAM.test(text),
       tab: TAB_TAG.exec(text)?.[1],
       vm: SHARED_VM.test(text)
