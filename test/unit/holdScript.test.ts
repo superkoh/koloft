@@ -128,17 +128,17 @@ describe('the hook that holds a background session’s next command while the ma
     expect(r.ms).toBeLessThan(4000)
   }, 15_000)
 
-  it('gives up waiting after the most it may wait, and lets the command run', async () => {
+  it('gives up waiting after the most it may wait, counted in whole seconds, and lets the command run', async () => {
     busy()
-    const r = await hold(BASH_TOOL('npm run build'), 2).done
+    const r = await hold(BASH_TOOL('npm run build'), 3).done
     expect(r).toMatchObject({ code: 0, out: '' })
     expect(r.ms).toBeGreaterThanOrEqual(2000)
-    expect(r.ms).toBeLessThan(5000)
+    expect(r.ms).toBeLessThan(6000)
   }, 15_000)
 
   it('waits its turn behind a release that just happened, even on a roomy machine', async () => {
     fs.writeFileSync(path.join(dir, RELEASE_AFTER_FILE), `${Math.ceil(Date.now() / 1000) + 600}\n`)
-    const r = await hold(BASH_TOOL('npm run build'), 2).done
+    const r = await hold(BASH_TOOL('npm run build'), 3).done
     expect(r.ms).toBeGreaterThanOrEqual(2000)
   }, 15_000)
 })
