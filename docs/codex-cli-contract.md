@@ -2028,3 +2028,38 @@ the configured sandbox.
     `sandbox_workspace_write.writable_roots`, commit and push ran with no question.
 - Not probed yet: a push to the real github.com from a Codex turn.
 
+## 30. A PreToolUse hook that waits before it lets a command run
+
+**Checked on 2026-10-19 with standalone Codex CLI 0.162.0**, real model turns
+(`gpt-6.1-sol`, effort low) through `codex app-server --stdio` in a throwaway
+`CODEX_HOME` holding a copy of this Mac's login (deleted afterwards), the hook given with
+`-c hooks.PreToolUse=[{hooks=[{type="command",command="…",timeout=N}]}]` and trusted as
+in section 27. The hook was a Node script that slept, then exited 0 printing nothing; the
+turn asked for a shell `echo hi > out.txt`.
+
+- **`timeout` is in seconds; left out it is 600** (`hooks/list` shows `timeoutSec: 600`;
+  read, not waited out). A hook that outlived it (`timeout=5`, 20 s sleep) was killed: the
+  client got `hook/completed` `status: "failed"` with `hook timed out after 5s`, and the
+  **command ran anyway**; the model saw a normal result.
+- **A hook that waited 75 s, 130 s (`timeout=3600`) or 300 s let the command run** once it
+  exited: 80.0, 135.9 and 304.8 s for the whole turn.
+- **A wait longer than about 31 s costs model requests.** The model runs commands through
+  a code-mode `exec` tool that returns after a 31 s wall time ("Script running with cell ID
+  1 / Wall time 31.0 seconds") while the hook still holds the command; the model then calls
+  `wait` about every 12 s, each a new model request of 15–16.5k input tokens (mostly
+  cached) and 31 output tokens. Some of those requests also carry a line such as "The shell
+  call is still pending." (about once a minute, from 83 s on). Totals for the turn: 2
+  requests and 29,942 tokens with no wait, 8 and 121,463 at 75 s, 15 and 231,440 at 130 s,
+  27 and 427,325 at 300 s.
+- **A hook entry may carry `matcher` and `timeout`, and the trust hash covers them.**
+  2026-10-19, codex-cli 0.162.0, a throwaway `CODEX_HOME`, `hooks/list` only (no model
+  turn): `-c hooks.PreToolUse=[{matcher="Bash",hooks=[{type="command",command="…",timeout=60}]}]`
+  listed `matcher: "Bash"`, `timeoutSec: 60`; without them `matcher: null`,
+  `timeoutSec: 600`. The same command string with and without them gave different
+  `currentHash` values (`sha256:101e5f…` against `sha256:26f729…`), so the hash is of the
+  whole hook entry, not the command string alone (section 27 measured only entries that
+  differed in their command). Not probed: that a model turn skips the hook for a tool the
+  `matcher` does not name.
+- Not probed yet: whether a wait under 31 s costs anything at all (the cutoff), and the
+  same in a full-screen TUI tab instead of a bare app-server.
+

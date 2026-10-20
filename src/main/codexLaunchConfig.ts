@@ -4,9 +4,9 @@ import type { CreateTabOptions, LaunchPermission } from '@shared/types'
 import { record } from './codexObservation'
 import { playwrightMcpEnv } from './browserControlEnv'
 
-// CODEX§27
-const codexHookOverride = (event: string, command: string): string =>
-  `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(command)}}]}]`
+// CODEX§27 CODEX§30
+const codexHookOverride = ({ event, command, matcher, timeout }: KoloftHook): string =>
+  `hooks.${event}=[{${matcher ? `matcher=${JSON.stringify(matcher)},` : ''}hooks=[{type="command",command=${JSON.stringify(command)}${timeout ? `,timeout=${timeout}` : ''}}]}]`
 
 // CODEX§20
 export const CODEX_ASKS_AND_WAITS = 'features.default_mode_request_user_input=true'
@@ -76,10 +76,11 @@ export function seedAssistMemory(folder: string): void {
 export interface KoloftHook {
   event: string
   command: string
+  matcher?: string
+  timeout?: number
 }
 
-export const hookOverrides = (hooks: KoloftHook[]): string[] =>
-  hooks.map(({ event, command }) => codexHookOverride(event, command))
+export const hookOverrides = (hooks: KoloftHook[]): string[] => hooks.map(codexHookOverride)
 
 interface Permissions {
   approval: 'never' | 'on-request'

@@ -275,6 +275,18 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   approve (fake model).
 - Hook stdout is capped at 16 384 bytes; above it the hook fails and nothing it
   printed is used.
+- **A `PreToolUse` hook may hold a command for 10 minutes; at its timeout the command
+  runs.** 1.4.9 in Docker (`koloft-muse-probe7`), fake model, `muse exec … --approval-mode
+  never --disable-sandbox --trust-workspace`, a hook that slept then exited 0 printing
+  nothing, the model asking `bash` for `echo hi > out.txt`, 2026-10-19: a 75 s sleep with
+  no timeout and a 130 s sleep with `"timeout": 3600` let it run (turn 80 s, 135 s); a
+  15-minute sleep with no timeout was killed at 600 s and the command then ran; a 20 s
+  sleep with `"timeout": 5` was killed at 5 s (`status="timed_out"` in muse's trace) and
+  the command ran, the model seeing a normal result. No model request was made while a
+  hook held. The per-entry field is `timeout`, in seconds: writing `timeout_ms` instead
+  made muse read the whole file as a schema needing `schema_version`
+  (`Hooks: 0 runnable · 1 warning … missing_schema_version` on stderr), and every hook in
+  it silently stopped running.
 
 ## §10 Workspace trust
 

@@ -285,10 +285,11 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
   `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
   `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, `KOLOFT_TEST_REAL_WINDOW`
-  (real-window layer), the session timing knobs
+  (real-window layer), `KOLOFT_TEST_MACHINE_FILE` (JSON `{pressure, load1,
+  backgroundWork}` read in place of the Mac's own numbers), the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
-  `KOLOFT_FILE_DIALOG_FILE` and `KOLOFT_UPDATE_FIXTURE` are read on every use, so a
-  spec may rewrite them after launch.
+  `KOLOFT_FILE_DIALOG_FILE`, `KOLOFT_UPDATE_FIXTURE` and `KOLOFT_TEST_MACHINE_FILE` are
+  read on every use, so a spec may rewrite them after launch.
 - Not env vars: `window.__koloftTerms` (terminal text), `__koloftShortcutsReady` /
   `__koloftRowsReady` (the renderer is ready for keys), main's
   `globalThis.__koloftOsOutlets` (read through `osOutlets`), and `installGitSpawnLog`

@@ -31,6 +31,8 @@ import {
   AGY_START_ENV,
   agyLogLine,
   koloftHookEntry,
+  localAgyHold,
+  machineAgyHold,
   runWithSh,
   sessionStartOutput,
   writeAgyScripts,
@@ -82,6 +84,8 @@ import {
   type AgyMachinePlan,
   type RemoteAgyConfig
 } from './remote/agyTab'
+import { remoteMachineDir } from './remote/paths'
+import { HOLD_TAB_ENV } from './hooks'
 import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { agySessionKey } from './sessionStore'
@@ -475,7 +479,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
     const permission = this.permissionOf(opts)
-    const tabId = this.deps.pty.nextId()
+    const tabId = opts.tabId ?? this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
     const instructions = [
@@ -494,7 +498,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       statusLine: this.deps.builtInStatusLine(pick.account),
       apiKey: !!apiKey
     })
-    mergeAgyHooks(pick.home, gemini, koloftHookEntry(runWithSh(scripts.hook)))
+    const hold = this.deps.holdScript
+    mergeAgyHooks(
+      pick.home,
+      gemini,
+      koloftHookEntry(runWithSh(scripts.hook), hold && localAgyHold(hold))
+    )
     let bound: AgyRun | undefined
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -536,7 +545,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           ANT_ACCOUNT: pick.account,
           ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
           ...agyAccountEnv(apiKey),
-          ...browserControlEnv(tabId, endpoint)
+          ...browserControlEnv(tabId, endpoint),
+          ...(this.deps.holdWhileBusy?.(tabId) ? { [HOLD_TAB_ENV]: tabId } : {})
         },
         resumeSessionId: opts.resumeSessionId,
         extraEnv: resource ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) } : {}
@@ -588,7 +598,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       machine.readAgyConfig(pick.account)
     ])
     this.assertStarting()
-    const tabId = this.deps.pty.nextId()
+    const tabId = opts.tabId ?? this.deps.pty.nextId()
     const permission = this.permissionOf(opts)
     const trusted = freshWorktree || opts.trustFolder
     const trust = [where.path, parseRemoteKey(workspace)?.path ?? where.path].filter(
@@ -605,7 +615,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     })
     const hooks = mergedAgyHooks(
       config.ownersHooks,
-      koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE))
+      koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE), machineAgyHold(remoteMachineDir(m)))
     )
     const instructions = [
       ...(this.deps.agent.enabled(true) ? [koloftPrompt('agy')] : []),
@@ -620,7 +630,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       env: {
         ANT_ACCOUNT: pick.account,
         ...(apiKey ? { [AGY_KEY_FROM_KOLOFT]: apiKey } : {}),
-        ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {})
+        ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
+        ...(this.deps.holdWhileBusy?.(tabId) ? { [HOLD_TAB_ENV]: tabId } : {})
       },
       program: agyTab({
         tabId,

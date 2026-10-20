@@ -107,6 +107,7 @@ import { directoryListingHtml } from './dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
+  HOLD_FILE,
   HOOK_SCRIPT,
   forgetAssistMarkers,
   markAnswerable,
@@ -152,6 +153,7 @@ import {
   mirrorAgyGemini,
   mirrorHookDir,
   mirrorProjectsRoot,
+  REMOTE_HOOK_DIR,
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
@@ -239,7 +241,17 @@ import {
   prepareCodexHome
 } from './codexAccounts'
 import { shq } from '@shared/shellQuote'
-import { CronRunner, type LaunchRequest, type LeftTab, type RunLeftovers } from './cronRunner'
+import {
+  CronRunner,
+  type LaunchRequest,
+  type LaunchResult,
+  type LeftTab,
+  type RunLeftovers
+} from './cronRunner'
+import { FREE_SUFFIX, HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
+import type { InTurn } from './launchQueue'
+import { readTheMachine, signalLog } from './machineRoom'
+import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
@@ -1070,6 +1082,7 @@ function machinePackage(): MachinePackage {
     [ENSURE_CODEX_FILE]: ENSURE_CODEX_SH,
     ...replyLanguageFiles(CODEX_REPLY_LANGUAGE_SCRIPT),
     'hook.sh': HOOK_SCRIPT,
+    [HOLD_FILE]: HOLD_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
@@ -1116,6 +1129,7 @@ let askButtons: AskButtons | null = null
 let secretAsks: SecretAsks | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
+let guard: ResourceGuard | undefined
 let writeHookSettings:
   ((tabId: string, allowKoloft: boolean, conductor: boolean) => string) | undefined
 const PLAIN_KOLOFT_SHIM = {
@@ -1505,7 +1519,18 @@ const sessionDeps: SessionVerbDeps = {
   allSessions: () => allSessions().filter((s) => !s.conductor),
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => sessionBackends.peerNames(),
-  launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
+  launch: async (options) => {
+    const title = options.name ?? BACKEND_LABEL[options.kind]
+    const turn = launchInTurn(options, title)
+    if (!turn) return launchQuietTab(options, title)
+    return turn.queued ? turn.tabId : turn.started
+  },
+  waiting: {
+    list: () => guard?.queue.list() ?? [],
+    notStartedYet: () => guard?.queue.notStartedYet() ?? [],
+    hold: (tabId, send) => !!guard?.queue.hold(tabId, send),
+    drop: (tabId) => !!guard?.queue.drop(tabId)
+  },
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
@@ -2519,9 +2544,24 @@ app.whenReady().then(() => {
       tabId,
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
       allowKoloft,
-      conductor
+      conductor,
+      !!guard?.isBackground(tabId)
     )
   hookRegDir = hookPaths.regDir
+  guard = new ResourceGuard({
+    regDir: hookPaths.regDir,
+    cores: os.cpus().length,
+    read: readTheMachine,
+    now: Date.now,
+    log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
+    heldDirs: () => remoteHookMirrors(),
+    freeOnMachine: freeOnMachine,
+    isRemote: (tabId) => !!machineOfTab(tabId),
+    changed: (state) => sendToRenderer(CH.machine.state, state),
+    readTrees: readTaggedTable,
+    giveWay: process.platform === 'darwin' ? giveWay : async () => {}
+  })
+  guard.start()
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
   const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
@@ -2602,6 +2642,8 @@ app.whenReady().then(() => {
     tabLifecycle.emit('exit', exit)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
+    guard?.forget(e.id)
+    forgetFreeOnMachine(e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
@@ -2700,7 +2742,9 @@ app.whenReady().then(() => {
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
     memberRemoved: (key: string) => discordThreads?.left(key),
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
-    error: (message: string) => sendToRenderer(CH.cron.toast, message)
+    error: (message: string) => sendToRenderer(CH.cron.toast, message),
+    holdWhileBusy: (tabId: string) => !!guard?.isBackground(tabId),
+    holdScript: { file: hookPaths.hold, regDir: hookPaths.regDir }
   }
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
@@ -4430,6 +4474,64 @@ async function launchQuietTab(
   return r.id
 }
 
+function launchInTurn(
+  options: CreateTabOptions & { kind: BackendId },
+  title: string,
+  jobId?: string
+): InTurn | null {
+  if (!guard) return null
+  const tabId = ptyMgr.nextId()
+  const cwd = options.cwd ?? ''
+  const turn = guard.launchInBackground(
+    { tabId, kind: options.kind, cwd, title, jobId },
+    () => launchQuietTab({ ...options, tabId }, title, jobId),
+    !isRemoteKey(cwd)
+  )
+  void turn.started.then((id) => {
+    if (id) void handOverHeldMessages(id)
+  })
+  return turn
+}
+
+const HELD_MESSAGES_WAIT_FOR_THE_FIRST_TURN_MS = 30 * 60_000
+
+async function handOverHeldMessages(tabId: string): Promise<void> {
+  const held = guard?.queue.takeHeld(tabId) ?? []
+  if (!held.length) return
+  if (!(await tabReady(tabId, HELD_MESSAGES_WAIT_FOR_THE_FIRST_TURN_MS, true))) return
+  for (const send of held) await send().catch(() => undefined)
+}
+
+function remoteHookMirrors(): string[] {
+  const hosts = new Set(ptyTabIds().flatMap((id) => machineOfTab(id) ?? []))
+  return [...hosts].map((host) => mirrorHookDir(app.getPath('userData'), host))
+}
+
+const freedOnMachine = new Map<string, string>()
+
+async function freeOnMachine(tabId: string): Promise<void> {
+  const host = machineOfTab(tabId)
+  if (!host) return
+  await loginEnvReady()
+  await runSsh(
+    host,
+    remoteShCommand(`mkdir -p "${REMOTE_HOOK_DIR}" && : > "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [
+      tabId
+    ]),
+    { controlDir: remoteControlDir }
+  )
+  freedOnMachine.set(tabId, host)
+}
+
+function forgetFreeOnMachine(tabId: string): void {
+  const host = freedOnMachine.get(tabId)
+  if (!host) return
+  freedOnMachine.delete(tabId)
+  void runSsh(host, remoteShCommand(`rm -f "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [tabId]), {
+    controlDir: remoteControlDir
+  }).catch(() => undefined)
+}
+
 const RESUMES_AT_ONCE = 4
 
 function restoreOpenTabs(): string | undefined {
@@ -4765,25 +4867,22 @@ function conductorTarget(ref: string): Target | undefined {
   }
 }
 
-async function launchCronRun(
-  req: LaunchRequest
-): Promise<{ ok: true; tabId: string } | { ok: false }> {
+async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
   try {
-    const tabId = await launchQuietTab(
-      {
-        kind: req.backend,
-        cwd: req.cwd,
-        worktree: req.worktree,
-        model: req.model,
-        effort: req.effort,
-        permission: req.permission,
-        firstPrompt: req.firstPrompt,
-        name: req.name,
-        scheduled: true
-      },
-      req.name,
-      req.jobId
-    )
+    const options: CreateTabOptions & { kind: BackendId } = {
+      kind: req.backend,
+      cwd: req.cwd,
+      worktree: req.worktree,
+      model: req.model,
+      effort: req.effort,
+      permission: req.permission,
+      firstPrompt: req.firstPrompt,
+      name: req.name,
+      scheduled: true
+    }
+    const turn = req.manual ? null : launchInTurn(options, req.name, req.jobId)
+    if (turn?.queued) return { ok: true, tabId: turn.tabId, startsLater: turn.outcome }
+    const tabId = await (turn ? turn.started : launchQuietTab(options, req.name, req.jobId))
     return tabId ? { ok: true, tabId } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
@@ -4893,7 +4992,13 @@ const hosts = new Hosts(
           pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
+          machineHookSettings(
+            tabId,
+            dir,
+            loadSettings().statuslineBuiltin,
+            allowKoloft,
+            !!guard?.isBackground(tabId)
+          )
       }
     })
 )
@@ -4961,8 +5066,15 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => writeToTab(id, data))
+  ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
+    if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
+    writeToTab(id, data)
+  })
+  ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
+  ipcMain.handle(CH.machine.now, () => guard?.state() ?? null)
+  ipcMain.handle(CH.machine.drop, (_e, tabId: string) => !!guard?.queue.drop(tabId))
   ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
+    if (guard?.isBackground(id)) void guard.free(id)
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })

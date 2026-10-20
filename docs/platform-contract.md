@@ -2186,3 +2186,49 @@ server unless a line says so.
   helper exiting 1); sudo 1.9.13p3 in a Debian bookworm container and over ssh between two
   containers, with a test user's real password; the dialog in a tart 2.40.1 macOS 27.0 VM
   with SIP on and Accessibility granted (§52).
+
+## §59 How busy a Mac is, and making work give way
+
+- **Node's `os.freemem()` counts only free pages, which macOS keeps near zero.** With the
+  machine roomy (memory pressure level 1, 61–65% free by `memory_pressure -Q`),
+  `os.freemem()` read 0.25 GB of 16 GB while `vm_stat` free + inactive + speculative +
+  purgeable came to 5.2 GB. So "free memory" for a busy check is read elsewhere.
+- **`sysctl -n kern.memorystatus_vm_pressure_level` is the kernel's own verdict**: 1
+  normal, 2 warning, 4 critical; one read takes about 2 ms. Holding more incompressible
+  memory (random bytes, 512 MB a step, 1.5 s apart) kept it at 1 up to +4.0 GB
+  (`kern.memorystatus_level` 64% → 58%); at +4.5 GB it went to 2 and the free level to
+  36%, the compressor from 3.3 to 7.6 GB. The process exiting put it back at 1 and 62%.
+- **Load averages on a busy night are far above the core count.** The `uptime` lines in
+  this Mac's (10 cores: 4 performance, 6 efficiency) Claude Code transcripts of
+  2026-10-14 to 10-19 read 1.3–15 on ordinary days and 70–200 on the nights it stalled;
+  on 10-17, at load 154, free + inactive memory was still 2.5 GB.
+- **`taskpolicy -b` keeps the foreground fast; `nice` does not.** With 40 CPU-bound node
+  processes started next to a foreground node process, a fixed 230 ms piece of foreground
+  work took 1785 ms at normal priority, 1828 ms with `nice -n 20`, 361 ms with
+  `taskpolicy -c utility`, and 230–236 ms with `taskpolicy -b` — set at launch, by
+  `taskpolicy -b -p <pid>` on running processes, or on a parent before it starts its
+  children (they inherit it).
+- **The cost falls on the work given way**: alone on an idle machine the same work took
+  230–278 ms normally, 1330–1560 ms under `-b` (and under `-c background`), 231–277 ms
+  under `-c utility`. `taskpolicy -B -p <pid>` lifts it at once (240 → 1323 → 257 ms on
+  one running process).
+- **A pty under `-b` still works, but stalls for seconds under load.** A `node -p` run in a
+  node-pty zsh answered in 37 ms idle (plain, `-c utility`) and 95 ms under `-b -p`; with
+  40 busy processes, 37 ms plain, 940 ms (worst 1182) under `-c utility`, 4453 ms (worst
+  7696) under `-b`. `koloft session list` from a `-b` shell with 40 busy processes took
+  258–531 ms. A hidden Electron 43.7.3 window loaded and ran script under `-b` (491 ms against
+  176 ms).
+- **A process's environment can be read after it leaves its parent, but not every
+  process's.** `ps -axEww -o pid=,command=` over about 600 processes took 18 ms and showed
+  the environment of 39; a node process started with `detached: true` from a parent that
+  then exited (its parent became 1) still showed a variable set at its launch. `/bin/sleep`
+  and the 7 Google Chrome processes Playwright started (`channel: 'chrome'`, which stay
+  under the process that launched them, 931 MB in all) showed none.
+- **A colima container is invisible from the Mac, and its VM keeps what it took.** colima's
+  VM is one `com.apple.Virtualization.VirtualMachine` process under launchd (`docker info`:
+  4 CPUs, 4 GB). A container that grew to its 1 GB limit (`tail /dev/zero`) was not in
+  the Mac's `ps`; the VM process went from 142 MB to 1.45 GB resident and stayed there
+  after the container was killed, while `free -m` inside the VM said 280 MB used.
+- Measured 2026-10-19 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, 16 GB,
+  Node 24.13.0, Google Chrome 155, colima with Docker, by scripts run from a Koloft Claude Code
+  tab.
