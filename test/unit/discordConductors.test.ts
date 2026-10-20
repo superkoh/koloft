@@ -17,6 +17,7 @@ const CODEX_KEY = 'codex:019a-thread'
 
 let userData: string
 let name: string
+let formerNames: string[]
 let saved: DiscordSettings
 let records: AssistRecord[]
 let quiet: DiscordSettings[]
@@ -41,6 +42,7 @@ function make(): Conductors {
   const deps: ConductorDeps = {
     userData,
     name: () => name,
+    formerNames: () => formerNames,
     load: () => saved,
     loadRecords: () => records,
     save: (d) => void (saved = d),
@@ -93,6 +95,7 @@ beforeEach(() => {
   testRun++
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
   name = 'Alfred'
+  formerNames = []
   saved = { bindings: [] }
   records = []
   quiet = []
@@ -135,12 +138,12 @@ describe('the butler', () => {
     expect(c.isButler('Global')).toBe(false)
   })
 
-  it('renamed while it runs, it still answers to the name it started under, which its sessions were told', async () => {
-    const c = make()
-    await opened(c)
+  it('renamed, it still answers to every name it had before, which its sessions were told', () => {
     name = 'Jeeves'
-    expect(c.isButler('Alfred')).toBe(true)
-    expect(c.isButler('Jeeves')).toBe(true)
+    formerNames = ['Alfred', 'Bunter Two']
+    const c = make()
+    for (const ref of ['Jeeves', 'Alfred', 'Bunter-Two']) expect(c.isButler(ref)).toBe(true)
+    expect(c.isButler('Wooster')).toBe(false)
   })
 
   it('starts in the global Assist’s folder under userData, named and told its role by its current name; on Discord the role says how the owner’s Discord messages reach it', async () => {

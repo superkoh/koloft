@@ -301,7 +301,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
-  test('Rename… names the butler: its row, the Notes title while it is open and the name on disk change, and a settings reset keeps the name', async ({
+  test('Rename… names the butler: its row, the Notes title while it is open and the name on disk change, the old name is kept on disk, and a settings reset keeps both', async ({
     env
   }) => {
     const { page, close } = await launched(env, { fontSize: 17 })
@@ -317,14 +317,16 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await expect(dlg).toHaveCount(0)
       await expect(butlerRow(page).locator('.ws-tab-title')).toHaveText('Jeeves · Butler')
       await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · Jeeves')
-      await expect.poll(() => settingsOnDisk(env).butler).toEqual({ name: 'Jeeves' })
+      await expect
+        .poll(() => settingsOnDisk(env).butler)
+        .toEqual({ name: 'Jeeves', formerNames: ['Alfred'] })
 
       await openSettings(page)
       await page.locator('.set-ni', { hasText: 'About' }).click()
       await page.getByRole('button', { name: 'Reset…' }).click()
       await page.locator('.set-confirm').getByRole('button', { name: 'Reset' }).click()
       await expect.poll(() => settingsOnDisk(env).fontSize).toBe(13)
-      expect(settingsOnDisk(env).butler).toEqual({ name: 'Jeeves' })
+      expect(settingsOnDisk(env).butler).toEqual({ name: 'Jeeves', formerNames: ['Alfred'] })
       await page.keyboard.press('Escape')
       await expect(butlerRow(page).locator('.ws-tab-title')).toHaveText('Jeeves · Butler')
     } finally {
@@ -562,6 +564,25 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
     }
   })
 
+  test('a plain session with no Discord runs a slash command in another session and is handed what it printed, as a message from Koloft', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env)
+    try {
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
+      const target = (await waitForAllCalls(env, 1))[0].sessionId
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      const ran = await koloftRun(page, `session command ${target} /context`)
+      expect(ran.exit).toBe(0)
+      expect(ran.text).toContain('hand you what it prints')
+      await expect
+        .poll(() => peerLines(env), { timeout: 60_000 })
+        .toMatch(/\(From Koloft:\) ⌨️ \*\*[^*]+\*\* ran \/context:/)
+    } finally {
+      await close()
+    }
+  })
+
   test('closing an ordinary session’s tab lands on the butler, opening it when it was not open; closing the butler’s own tab does not open it again', async ({
     env
   }) => {
@@ -584,6 +605,33 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
       expect(butlerCalls(env)).toHaveLength(1)
+    } finally {
+      await close()
+    }
+  })
+
+  test('a watched session that ends by itself lands on the butler too; one that ends while the owner watches another leaves the screen where it is', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env)
+    try {
+      await startSessionIn(page, 'ws-a')
+      await runIn(page, centerTerm(page), '/exit')
+      await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: 30_000 })
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+
+      const before = readAllCalls(env).length
+      await startSessionIn(page, 'ws-a')
+      const unwatched = (await waitForAllCalls(env, before + 1))
+        .slice(before)
+        .find((c) => c.cwd === env.workspaces.a)
+      if (!unwatched) throw new Error('the ws-a session did not start')
+      await startSessionIn(page, 'ws-b')
+      expect((await koloftRun(page, `session stop ${unwatched.sessionId}`)).exit).toBe(0)
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
+      await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
+      await expect(wsRows(page, 'ws-b')).toHaveClass(/\bactive\b/)
+      await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
     } finally {
       await close()
     }

@@ -105,11 +105,13 @@ function harness(
   started: Started[]
   answers: { tabId: string; reply: string }[]
   commands: { callerTab: string; key: string; text: string }[]
+  tells: ((said: string) => void)[]
   undelivered: { callerTab: string; name: string; why: string }[]
   startedSessions: StartedSessions
 } {
   const answers: { tabId: string; reply: string }[] = []
   const commands: { callerTab: string; key: string; text: string }[] = []
+  const tells: ((said: string) => void)[] = []
   const undelivered: { callerTab: string; name: string; why: string }[] = []
   const launched: Launch[] = []
   const queued: { tabId: string; text: string; clientId?: string }[] = []
@@ -187,8 +189,9 @@ function harness(
     undelivered: (callerTab, target, why) => {
       undelivered.push({ callerTab, name: target.name, why })
     },
-    command: async (callerTab, target, text) => {
+    command: async (callerTab, target, text, tellCaller) => {
       commands.push({ callerTab, key: target.key, text })
+      tells.push(tellCaller)
       return `Typing ${text} into ${target.name}.`
     },
     screen: async (tabId) =>
@@ -216,6 +219,7 @@ function harness(
     started,
     answers,
     commands,
+    tells,
     undelivered,
     startedSessions
   }
@@ -1189,6 +1193,23 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       { callerTab: 'fix', key: 'fix-id', text: '/compact' }
     ])
     expect(h.touched.map((t) => t.key)).toEqual(['fix-id'])
+  })
+
+  it('what a command printed is handed back to the session that ran it as a message from Koloft, for a Claude and a Codex caller', async () => {
+    const h = harness(live, {}, [], conducting())
+    await h.verb(['command', 'site-build', '/context'], from('fix'))
+    await h.verb(['command', 'fix-login', '/compact'], from('cx'))
+    h.tells[0]('Context: 12% used')
+    h.tells[1]('Compacted.')
+    await vi.waitFor(() => {
+      expect(h.lines.find((l) => l.tabId === 'fix')?.line).toContain(
+        '(From Koloft:) Context: 12% used'
+      )
+      expect(h.queued).toContainEqual(
+        expect.objectContaining({ tabId: 'cx', text: '(From Koloft:) Compacted.' })
+      )
+    })
+    expect(h.undelivered).toEqual([])
   })
 
   it('command refuses text that is not a slash command', async () => {

@@ -10,7 +10,7 @@ import {
 
 const TAB = 'pty-child-1'
 const turnIsOver = (s: SessionStatus): boolean => s === 'waiting' || s === 'idle'
-const CHANNEL = '222'
+const CHANNEL = { channelId: '222' }
 
 function setup(over: Partial<SlashDeps> = {}) {
   let status: SessionStatus = 'waiting'

@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import { BACKEND_LABEL, preferredAssistBackend, SESSION_BACKENDS } from '@shared/sessionBackend'
-import { butlerName, butlerTitle } from '@shared/conductors'
+import { butlerName, butlerTitle, renamedButler } from '@shared/conductors'
 import { useStore } from '../../store'
 import { useAssistSetup } from '../../useAssistSetup'
 import { ASSIST_COST_LINE, ASSIST_RUNS_ON } from '../AssistSetup'
@@ -12,7 +12,8 @@ const NO_ACCOUNT_LINE = 'no account — add one in Settings ▸ Accounts'
 
 export function AssistSection(): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
-  const name = useStore((s) => s.settings.butler.name)
+  const butler = useStore((s) => s.settings.butler)
+  const name = butler.name
   const runsOn = useStore((s) => preferredAssistBackend(s.settings))
   const update = useSettingsUpdate()
   const setup = useAssistSetup()
@@ -23,7 +24,7 @@ export function AssistSection(): JSX.Element {
   const commitName = (): void => {
     const next = butlerName(nameDraft)
     setNameDraft(next)
-    if (next !== name) update({ butler: { name: next } })
+    if (next !== name) update({ butler: renamedButler(butler, next) })
   }
 
   return (

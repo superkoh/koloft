@@ -359,7 +359,12 @@ export interface SessionVerbDeps {
   stop(tabId: string): void
   answer(tabId: string, reply: string): Promise<string | undefined>
   undelivered(callerTab: string, target: Target, why: string): void
-  command(callerTab: string, target: Target, text: string): Promise<string>
+  command(
+    callerTab: string,
+    target: Target,
+    text: string,
+    tellCaller: (said: string) => void
+  ): Promise<string>
   screen(tabId: string): Promise<SessionScreen>
   started(
     conductorTab: string,
@@ -935,14 +940,16 @@ export function sessionVerb(d: SessionVerbDeps): {
     }
     const self = isMe(ref, caller.session, d.conductorOf(ref), caller.tabId)
     if (self && sub === 'screen') return answered(formatScreen('you', await d.screen(caller.tabId)))
-    if (self && sub === 'command') {
-      const butler = d.conductorOf(caller.session.sessionId)
-      const me =
-        butler?.tabId === caller.tabId
-          ? butler
-          : openTarget({ ...caller.session, tabId: caller.tabId })
-      return answered(await d.command(caller.tabId, me, text))
-    }
+    const butler = d.conductorOf(caller.session.sessionId)
+    const me =
+      butler?.tabId === caller.tabId
+        ? butler
+        : openTarget({ ...caller.session, tabId: caller.tabId })
+    const tellMe = (said: string): void =>
+      void deliver('send', me, `${FROM_KOLOFT}${said}`, caller, false)
+        .then((reply) => reply.exit === 0 || d.undelivered(caller.tabId, me, reply.text))
+        .catch((error: unknown) => d.undelivered(caller.tabId, me, errorText(error)))
+    if (self && sub === 'command') return answered(await d.command(caller.tabId, me, text, tellMe))
     if (self) return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
     const found = d.conductorOf(ref) ?? findAmong(rows, sub, ref)
     if ('ok' in found && !found.ok) return refused(found.error)
@@ -958,7 +965,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     }
     if (sub === 'keys' && !t.tabId) return refused(`koloft session keys: ${t.name} is not open.`)
     d.touch(caller.tabId, t.key)
-    if (sub === 'command') return answered(await d.command(caller.tabId, t, text))
+    if (sub === 'command') return answered(await d.command(caller.tabId, t, text, tellMe))
     if (sub === 'keys' && t.tabId) {
       const tab = t.tabId
       const owed = d.asking(tab) ? { owner: caller.session.sessionId } : undefined

@@ -45,6 +45,7 @@ export interface AssistIdentity {
 export interface ConductorDeps {
   userData: string
   name(): string
+  formerNames(): string[]
   load(): DiscordSettings
   loadRecords(): AssistRecord[]
   save(discord: DiscordSettings): void
@@ -106,7 +107,6 @@ export class Conductors {
   private opening = new Map<string, Promise<ConductorOpenResult>>()
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
   private pendingTouch = new Map<string, string>()
-  private launchedAs = new Set<string>()
 
   constructor(private d: ConductorDeps) {
     this.discord = d.load()
@@ -174,8 +174,7 @@ export class Conductors {
 
   isButler(ref: string): boolean {
     return (
-      peerNamesOf(this.d.name()).includes(ref) ||
-      [...this.launchedAs].some((name) => peerNamesOf(name).includes(ref)) ||
+      [this.d.name(), ...this.d.formerNames()].some((name) => peerNamesOf(name).includes(ref)) ||
       this.recorded(ref)
     )
   }
@@ -442,9 +441,7 @@ export class Conductors {
   private launchFor(backend: BackendId): ConductorLaunch {
     const cwd = conductorFolder(this.d.userData)
     fs.mkdirSync(cwd, { recursive: true })
-    const title = this.d.name()
-    this.launchedAs.add(title)
-    return { backend, cwd, role: this.role(), title }
+    return { backend, cwd, role: this.role(), title: this.d.name() }
   }
 
   private async openNow(): Promise<ConductorOpenResult> {

@@ -4,6 +4,7 @@ import {
   GLOBAL_SCOPE,
   newChannelGuild,
   peerNamesOf,
+  renamedButler,
   sanitizeDiscord
 } from '@shared/conductors'
 import { buildResetPatch, sanitizeLoadedSettings, sanitizeSettingsPatch } from '@shared/settingsOps'
@@ -125,13 +126,17 @@ describe('the butler’s name', () => {
     expect(peerNamesOf('Jeeves')).toEqual(['Jeeves', 'Global-Assist', 'Global-conductor'])
   })
 
-  it('a rename survives a save from the window and a settings reset', () => {
-    expect(sanitizeSettingsPatch({ butler: { name: 'Jeeves' } })).toEqual({
-      butler: { name: 'Jeeves' }
-    })
+  it('a rename keeps every name the butler had before, and survives a save from the window, a restart and a settings reset', () => {
+    const once = renamedButler({ name: 'Alfred', formerNames: [] }, ' Jeeves ')
+    const back = renamedButler(renamedButler(once, 'Bunter'), 'Alfred')
+    expect(once).toEqual({ name: 'Jeeves', formerNames: ['Alfred'] })
+    expect(back).toEqual({ name: 'Alfred', formerNames: ['Jeeves', 'Bunter'] })
+    expect(sanitizeSettingsPatch({ butler: back })).toEqual({ butler: back })
     expect(buildResetPatch()).not.toHaveProperty('butler')
+    expect(sanitizeLoadedSettings({ butler: back }).butler).toEqual(back)
     expect(sanitizeLoadedSettings({ butler: { name: 'Jeeves' } }).butler).toEqual({
-      name: 'Jeeves'
+      name: 'Jeeves',
+      formerNames: []
     })
   })
 })

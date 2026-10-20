@@ -605,8 +605,11 @@ const slash = new SlashCommands({
     backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
       ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
       : undefined,
-  post: (channelId, text) => discordRelay?.say(channelId, text),
-  card: (channelId, card) => discordRelay?.card(channelId, card)
+  post: (to, text) => ('channelId' in to ? discordRelay?.say(to.channelId, text) : to.tell(text)),
+  card: (to, card) =>
+    'channelId' in to
+      ? discordRelay?.card(to.channelId, card)
+      : to.tell(`${card.header}\n${card.body}`)
 })
 tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
   sessionBackends.observe(tabId, { type: 'turn-ended', turn })
@@ -1400,8 +1403,6 @@ async function assistBackendChoice(): Promise<AssistBackendChoice> {
 }
 const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
   'Koloft has picked no GitHub account for this workspace on its machine; pick one in Settings ▸ Accounts ▸ Git, or run gh there yourself.'
-const COMMAND_NEEDS_DISCORD =
-  "koloft session command posts what the command printed in Discord, so it needs the butler's Discord channel."
 
 // CC§13
 async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
@@ -1513,10 +1514,10 @@ const sessionDeps: SessionVerbDeps = {
     conductors?.touchWhenBound(conductorTab, tabId)
     void discordThreads?.place(b, { tabId, name, workspace, backend }, true)
   },
-  command: async (callerTab, target, text) => {
+  command: async (callerTab, target, text, tellCaller) => {
     if (!conductors) throw new Error(STILL_STARTING)
-    const b = conductors.butlerBinding()
-    if (!b) throw new Error(COMMAND_NEEDS_DISCORD)
+    const b = conductors.bindingOfTab(callerTab)
+    if (!b) return commandHandedBack(target, text, tellCaller)
     return target.butler ? commandIntoConductor(b, text) : commandInto(b, target, text)
   },
   screen: screenOf
@@ -2885,6 +2886,7 @@ app.whenReady().then(() => {
   conductors = new Conductors({
     userData,
     name: butlerNameNow,
+    formerNames: () => loadSettings().butler.formerNames,
     load: () => loadSettings().discord,
     loadRecords: () => loadSettings().assistSessions,
     save: (discord) => {
@@ -3071,7 +3073,9 @@ app.whenReady().then(() => {
         return found.value.tabId ?? found.value.open()
       },
       typeCommand: (tab, command) =>
-        slash.typeWhenIdle({ name, tabId: tab, conductor: false }, command, threadId),
+        slash.typeWhenIdle({ name, tabId: tab, conductor: false }, command, {
+          channelId: threadId
+        }),
       seen: (id) => conductorsNow.setThreadLastMessage(threadId, id)
     }
   }
@@ -4558,7 +4562,7 @@ async function saveDiscordToken(token: string): Promise<boolean> {
 
 const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
 const SET_UP_DISCORD_HOW =
-  '(Koloft: start a Claude Code or Codex session for it, which have a Workbench browser, in a workspace on this computer, and tell it to run koloft discord setup and follow those steps.)'
+  '(Koloft: start a helper for it in your own folder, with koloft session new and no --workspace; it must be Claude Code or Codex, which have the Workbench browser, so add --backend claude if you are neither. Tell it to run koloft discord setup, follow those steps, report back to you, and then close itself with koloft session close.)'
 
 async function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
   const words = ownerWords ?? SET_UP_DISCORD_WORDS
@@ -4609,11 +4613,9 @@ function conductorDestination(b: ConductorBinding): Destination {
       return opened.tabId
     },
     typeCommand: (tabId, command) =>
-      slash.typeWhenIdle(
-        { name: butlerNameNow(), tabId, conductor: true },
-        command,
-        b.channel.channelId
-      ),
+      slash.typeWhenIdle({ name: butlerNameNow(), tabId, conductor: true }, command, {
+        channelId: b.channel.channelId
+      }),
     seen: (id) => conductors?.setLastMessage(b.id, id)
   }
 }
@@ -4624,12 +4626,22 @@ async function commandInto(b: ConductorBinding, t: Target, text: string): Promis
     conductors?.touchNowAndNext(b.id, t.key, tabId)
     return { name: t.name, tabId, conductor: false }
   }
-  if (t.tabId) return slash.run(target(t.tabId), text, channelId)
+  if (t.tabId) return slash.run(target(t.tabId), text, { channelId })
   void t
     .open()
-    .then((tabId) => slash.typeWhenIdle(target(tabId), text, channelId))
+    .then((tabId) => slash.typeWhenIdle(target(tabId), text, { channelId }))
     .catch((error: unknown) => discordRelay?.say(channelId, `⚠ ${errorText(error)}`))
   return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and posts what it prints in Discord.`
+}
+
+function commandHandedBack(t: Target, text: string, tell: (said: string) => void): string {
+  const target = (tabId: string): SlashTarget => ({ name: t.name, tabId, conductor: !!t.butler })
+  if (t.tabId) return slash.run(target(t.tabId), text, { tell })
+  void t
+    .open()
+    .then((tabId) => slash.typeWhenIdle(target(tabId), text, { tell }))
+    .catch((error: unknown) => tell(`⚠ ${errorText(error)}`))
+  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and hands you what it prints.`
 }
 
 function commandIntoConductor(b: ConductorBinding, text: string): string {

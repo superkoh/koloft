@@ -9,7 +9,7 @@ import {
 } from './types'
 import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
-import { butlerName, sanitizeAssistSessions, sanitizeDiscord } from './conductors'
+import { butlerName, butlerSetting, sanitizeAssistSessions, sanitizeDiscord } from './conductors'
 import { isRecord } from './workbenchState'
 
 export function buildResetPatch(): Partial<Settings> {
@@ -118,7 +118,12 @@ function sanitizeAssist(raw: unknown): AssistSetting {
 }
 
 function sanitizeButler(raw: unknown): ButlerSetting {
-  return { name: butlerName(isRecord(raw) ? raw.name : undefined) }
+  const doc = isRecord(raw) ? raw : {}
+  const former = Array.isArray(doc.formerNames) ? doc.formerNames : []
+  return butlerSetting(
+    butlerName(doc.name),
+    former.filter((n): n is string => typeof n === 'string').map(butlerName)
+  )
 }
 
 function sanitizeFolderMap(raw: unknown): Record<string, string> {

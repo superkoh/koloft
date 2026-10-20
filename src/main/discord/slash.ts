@@ -62,14 +62,16 @@ export interface SlashDeps {
   exclusive(tabId: string, typing: () => Promise<boolean>): Promise<boolean>
   typeNow(tabId: string, keys: string[]): Promise<void>
   outputOnlyOnScreen(tabId: string): Promise<string | undefined> | undefined
-  post(channelId: string, text: string): void
-  card(channelId: string, card: Card): void
+  post(to: SlashReplyTo, text: string): void
+  card(to: SlashReplyTo, card: Card): void
 }
+
+export type SlashReplyTo = { channelId: string } | { tell(text: string): void }
 
 interface Pending {
   target: SlashTarget
   text: string
-  channelId: string
+  to: SlashReplyTo
   typedAt: number
   keyBefore?: string
   outputs: CommandOutput[]
@@ -136,18 +138,19 @@ export class SlashCommands {
     return this.pending.has(tab)
   }
 
-  run(target: SlashTarget, text: string, channelId: string): string {
+  run(target: SlashTarget, text: string, to: SlashReplyTo): string {
     if (this.d.asking(target.tabId)) return waitingForAnswer(target.name, text)
+    const where = 'channelId' in to ? 'post what it prints in Discord' : 'hand you what it prints'
     const ack = this.d.takesTyping(target.tabId)
-      ? `Typing ${text} into ${target.name}; Koloft posts what it prints in Discord.`
-      : `${target.name} is busy; Koloft will type ${text} once its turn ends, and post what it prints in Discord.`
-    void this.typeWhenIdle(target, text, channelId).catch((error: unknown) =>
-      this.d.post(channelId, `⚠ ${errorText(error)}`)
+      ? `Typing ${text} into ${target.name}; Koloft will ${where}.`
+      : `${target.name} is busy; Koloft will type ${text} once its turn ends, and ${where}.`
+    void this.typeWhenIdle(target, text, to).catch((error: unknown) =>
+      this.d.post(to, `⚠ ${errorText(error)}`)
     )
     return ack
   }
 
-  async typeWhenIdle(target: SlashTarget, text: string, channelId: string): Promise<void> {
+  async typeWhenIdle(target: SlashTarget, text: string, to: SlashReplyTo): Promise<void> {
     const tab = target.tabId
     const until = Date.now() + WAITS_FOR_IDLE_MS
     const idle = (): boolean => this.d.takesTyping(tab)
@@ -162,7 +165,7 @@ export class SlashCommands {
         if (!idle()) return false
         panel = (await this.d.panelOpen(tab)) === true
         if (panel) return false
-        this.arm(target, text, channelId)
+        this.arm(target, text, to)
         await this.d.typeNow(tab, commandKeys(text, this.d.backendOf(tab)))
         return true
       })
@@ -174,13 +177,13 @@ export class SlashCommands {
     }
   }
 
-  private arm(target: SlashTarget, text: string, channelId: string): void {
+  private arm(target: SlashTarget, text: string, to: SlashReplyTo): void {
     const tab = target.tabId
     this.finish(tab)
     const p: Pending = {
       target,
       text,
-      channelId,
+      to,
       typedAt: Date.now(),
       keyBefore: this.d.keyOf(tab),
       outputs: [],
@@ -284,7 +287,7 @@ export class SlashCommands {
 
   closed(tab: string): void {
     const p = this.take(tab)
-    if (p) this.d.post(p.channelId, `⌨️ ${p.target.name} closed before ${p.text} printed anything.`)
+    if (p) this.d.post(p.to, `⌨️ ${p.target.name} closed before ${p.text} printed anything.`)
   }
 
   private finish(tab: string): void {
@@ -295,7 +298,7 @@ export class SlashCommands {
       readable || p.screen ? Promise.resolve(p.screen) : this.d.screen(tab).catch(() => undefined)
     void screen.then((lines) => {
       const card = resultCard(p, lines)
-      if (card) this.d.card(p.channelId, card)
+      if (card) this.d.card(p.to, card)
     })
   }
 

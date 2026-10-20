@@ -348,6 +348,7 @@ export type AssistSetting = { on: boolean; backend: BackendId } | null
 
 export interface ButlerSetting {
   name: string
+  formerNames: string[]
 }
 
 export const DEFAULT_BUTLER_NAME = 'Alfred'
@@ -464,7 +465,7 @@ export const DEFAULT_SETTINGS: Settings = {
   worldClocks: [],
   onboardingSeen: false,
   assist: null,
-  butler: { name: DEFAULT_BUTLER_NAME },
+  butler: { name: DEFAULT_BUTLER_NAME, formerNames: [] },
   newProjectFolders: {},
   hintsSeen: [],
   hintsOff: false,

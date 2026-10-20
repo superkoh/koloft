@@ -12,7 +12,7 @@ export function requestCloseTab(tabId: string | null): void {
   const close = (): void => {
     // ADR-0023
     if (tab.sessionId) releaseResume(tab.sessionId)
-    st.closeTabByOwner(tab.id)
+    st.closeTab(tab.id)
   }
   if (intent.kind === 'confirm') {
     st.setCloseConfirm({

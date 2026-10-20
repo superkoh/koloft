@@ -1,5 +1,6 @@
 import type {
   AssistRecord,
+  ButlerSetting,
   ConductorBinding,
   DiscordChannel,
   DiscordGuild,
@@ -34,6 +35,14 @@ export function scopeName(scope: string): string {
 export function butlerName(raw: unknown): string {
   const name = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : ''
   return name.slice(0, BUTLER_NAME_MAX_CHARS) || DEFAULT_BUTLER_NAME
+}
+
+export function butlerSetting(name: string, formerNames: string[]): ButlerSetting {
+  return { name, formerNames: [...new Set(formerNames)].filter((n) => n !== name) }
+}
+
+export function renamedButler(current: ButlerSetting, typed: string): ButlerSetting {
+  return butlerSetting(butlerName(typed), [...current.formerNames, current.name])
 }
 
 export function butlerTitle(name: string): string {

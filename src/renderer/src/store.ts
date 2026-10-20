@@ -170,7 +170,7 @@ interface AppState {
   adoptTabs: (tabs: AdoptableTab[], activeTabBeforeReload: string | null) => void
   removeTab: (id: string) => void
   closeTab: (id: string) => void
-  closeTabByOwner: (id: string) => void
+  landOnButler: () => void
   openButler: (fresh?: boolean) => Promise<string | null>
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
@@ -299,6 +299,16 @@ function killTerminalsOf(tabId: string): string[] {
   }
   return ids
 }
+function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
+  const leaving = s.tabs.find((t) => t.id === tabId)
+  return (
+    s.activeTabId === tabId &&
+    isSessionKind(leaving?.kind) &&
+    butlerSetUp({ assist: s.settings.assist, binding: s.settings.discord.bindings[0] }) &&
+    !isButlerTab(s.sessions, s.butlerTab, s.assistTasks, tabId)
+  )
+}
+
 function samePersistedTabs(a: WorkbenchTabSet, b: WorkbenchTabSet): boolean {
   const x = persistTabs(a)
   const y = persistTabs(b)
@@ -597,6 +607,7 @@ export const useStore = create<AppState>((set, get) => ({
     }))
   },
   removeTab: (id) => {
+    const toButler = watchedSessionLeavesForButler(get(), id)
     killTerminalsOf(id)
     endEditsOf(id)
     set((s) => {
@@ -639,22 +650,14 @@ export const useStore = create<AppState>((set, get) => ({
         followsAgentBrowser
       }
     })
+    if (toButler) get().landOnButler()
   },
   closeTab: (id) => {
     restoreLaunches.delete(id)
     window.api.terminal.kill(id)
     get().removeTab(id)
   },
-  closeTabByOwner: (id) => {
-    const s = get()
-    const closed = s.tabs.find((t) => t.id === id)
-    const toButler =
-      s.activeTabId === id &&
-      isSessionKind(closed?.kind) &&
-      butlerSetUp({ assist: s.settings.assist, binding: s.settings.discord.bindings[0] }) &&
-      !isButlerTab(s.sessions, s.butlerTab, s.assistTasks, id)
-    s.closeTab(id)
-    if (!toButler) return
+  landOnButler: () => {
     const live = butlerTabOf(get().sessions, get().butlerTab, get().tabs)
     if (live) {
       window.api.attention.visit(live)

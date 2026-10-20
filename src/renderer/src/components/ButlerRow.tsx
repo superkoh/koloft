@@ -1,7 +1,7 @@
 import { useEffect, useState, type JSX, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { IconAssist, IconClose } from '../icons'
-import { butlerName, butlerTitle, channelLabel } from '@shared/conductors'
+import { butlerName, butlerTitle, channelLabel, renamedButler } from '@shared/conductors'
 import { ATTENTION_REASON, type AssistTaskRow, type SessionInfo } from '@shared/types'
 import { preferredAssistBackend } from '@shared/sessionBackend'
 import { useStore } from '../store'
@@ -213,13 +213,13 @@ export function RenameButlerDialog(): JSX.Element | null {
 }
 
 function RenameForm(): JSX.Element {
-  const current = useStore((s) => s.settings.butler.name)
+  const butler = useStore((s) => s.settings.butler)
   const setRenameButler = useStore((s) => s.setRenameButler)
-  const [typed, setTyped] = useState(current)
+  const [typed, setTyped] = useState(butler.name)
   const name = butlerName(typed)
   const close = (): void => setRenameButler(false)
   const submit = (): void => {
-    updateSettings({ butler: { name } })
+    updateSettings({ butler: renamedButler(butler, name) })
     close()
   }
   // ADR-0013
