@@ -29,6 +29,9 @@ const A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS = 180_000
 const PAST_TWO_IDLE_MIRROR_PULLS_YET_BEFORE_CLAUDES_IDLE_NOTICE_MS = 45_000
 const CONDUCTOR_SCREEN_DRAWS_AFTER_IT_IS_SHOWN_MS = 2000
 const PAST_THE_PASTE_THAT_SWALLOWS_AN_EARLY_ENTER_MS = 1000
+// CC§2
+const AN_ASK_USER_QUESTION_CALL_NOT_ITS_LISTING =
+  /"type":"tool_use","id":"[^"]+","name":"AskUserQuestion"/
 
 test.describe.configure({ timeout: 420_000 })
 test.beforeAll(() =>
@@ -267,6 +270,10 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
           (s) => s.alive && !s.butler
         )!
         const transcript = (): string => transcriptOnTarget(lab, remote.sessionId)
+        const remoteStatus = async (): Promise<string | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.sessionId === remote.sessionId
+          )?.status
 
         fake.say(
           OWNER,
@@ -286,7 +293,10 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
         )
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
-          .toMatch(/"name":"AskUserQuestion"/)
+          .toMatch(AN_ASK_USER_QUESTION_CALL_NOT_ITS_LISTING)
+        await expect
+          .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toBe('approval')
         fake.say(OWNER, `/koloft session answer ${remote.sessionId} 2`)
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
@@ -300,10 +310,6 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
           .toContainEqual(
             expect.stringMatching(/ran \/compact:\nCompacted \(ctrl\+o to see full summary\)/)
           )
-        const remoteStatus = async (): Promise<string | undefined> =>
-          (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => s.sessionId === remote.sessionId
-          )?.status
         await expect
           .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toMatch(/^(waiting|idle)$/)
