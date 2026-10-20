@@ -31,6 +31,7 @@ import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
 import { selectionRoot, workspaceOfRow } from './sessionRows'
+import { butlerSetUp, butlerTabOf, isButlerTab } from './butlerRows'
 import {
   activateTab as activateWbTab,
   closeTab as closeWbTab,
@@ -58,6 +59,7 @@ export interface Tab {
   sessionId?: string
   alive: boolean
   resuming?: boolean
+  respawning?: true
   jobId?: string
   asleep?: true
   ghost?: string
@@ -98,6 +100,7 @@ interface AppState {
   sessions: SessionInfo[]
   leftovers: Record<string, LeftoverProcess[]>
   attention: AttentionEvent[]
+  revealRow: { tabId: string } | null
   settings: Settings
   settingsOpen: boolean
   settingsPane: SettingsPaneId | null
@@ -113,6 +116,7 @@ interface AppState {
   sidebarWidth: number
   notesHeight: number
   workspaceRows: WorkspaceRows[]
+  butlerWorkspace: WorkspaceRows | null
   toast: string | null
   toastReveal: string | null
   workbenchOpen: Record<string, boolean>
@@ -155,10 +159,11 @@ interface AppState {
     onDiscard(): void
     onSave(): void | Promise<void>
   } | null
-  conductorTabs: Record<string, string>
+  butlerTab: string | null
   assistTasks: AssistTaskRow[]
   assistAsked: boolean
-  bindConductor: { scope?: string; editId?: string } | null
+  bindButler: boolean
+  renameButler: boolean
   orphanConfirm: string | null
 
   addTab: (t: Tab) => void
@@ -167,12 +172,15 @@ interface AppState {
   adoptTabs: (tabs: AdoptableTab[], activeTabBeforeReload: string | null) => void
   removeTab: (id: string) => void
   closeTab: (id: string) => void
+  landOnButler: () => void
+  openButler: (fresh?: boolean) => Promise<string | null>
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
   setTabAlive: (id: string, alive: boolean) => void
   setTabAsleep: (id: string) => void
 
   activateTab: (id: string) => void
+  revealTab: (id: string) => void
   restartActiveSession: () => void
 
   setSessions: (s: SessionInfo[]) => void
@@ -205,10 +213,11 @@ interface AppState {
   setResumeLaunch: (l: AppState['resumeLaunch']) => void
   setCloseConfirm: (c: AppState['closeConfirm']) => void
   setUnsavedPrompt: (p: AppState['unsavedPrompt']) => void
-  setConductorTab: (scope: string, tabId: string) => void
+  setButlerTab: (tabId: string) => void
   setAssistTasks: (rows: AssistTaskRow[]) => void
   setAssistAsked: (asked: boolean) => void
-  setBindConductor: (b: AppState['bindConductor']) => void
+  setBindButler: (open: boolean) => void
+  setRenameButler: (open: boolean) => void
   setOrphanConfirm: (rowId: string | null) => void
 
   ensureWorkbench: (tabId: string) => Promise<void>
@@ -293,6 +302,16 @@ function killTerminalsOf(tabId: string): string[] {
   }
   return ids
 }
+function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
+  const leaving = s.tabs.find((t) => t.id === tabId)
+  return (
+    s.activeTabId === tabId &&
+    isSessionKind(leaving?.kind) &&
+    butlerSetUp({ assist: s.settings.assist, binding: s.settings.discord.bindings[0] }) &&
+    !isButlerTab(s.sessions, s.butlerTab, s.assistTasks, tabId)
+  )
+}
+
 function samePersistedTabs(a: WorkbenchTabSet, b: WorkbenchTabSet): boolean {
   const x = persistTabs(a)
   const y = persistTabs(b)
@@ -384,6 +403,14 @@ export function boundSessionId(
 ): string | undefined {
   const sess = s.sessions.find((x) => x.tabId === tabId)
   return sess?.sessionId || s.tabs.find((t) => t.id === tabId)?.sessionId || undefined
+}
+
+export function workbenchOwnerLive(s: Pick<AppState, 'sessions' | 'tabs'>, tab: Tab): boolean {
+  if (!hasWorkbench(tab)) return false
+  if (tab.respawning) return true
+  const sess = s.sessions.find((x) => x.tabId === tab.id)
+  if (sess && !sess.alive) return false
+  return !!boundSessionId(s, tab.id)
 }
 
 export function tabForSession(
@@ -484,6 +511,7 @@ export const useStore = create<AppState>((set, get) => ({
   sessions: [],
   leftovers: {},
   attention: [],
+  revealRow: null,
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
   settingsPane: null,
@@ -500,6 +528,7 @@ export const useStore = create<AppState>((set, get) => ({
   sidebarWidth: DEFAULT_SETTINGS.sidebarWidth,
   notesHeight: DEFAULT_SETTINGS.notesHeight,
   workspaceRows: [],
+  butlerWorkspace: null,
   toast: null,
   toastReveal: null,
   workbenchOpen: {},
@@ -526,10 +555,11 @@ export const useStore = create<AppState>((set, get) => ({
   closeConfirm: null,
   cron: { jobs: [], live: [], folders: {}, notes: {} },
   unsavedPrompt: null,
-  conductorTabs: {},
+  butlerTab: null,
   assistTasks: [],
   assistAsked: false,
-  bindConductor: null,
+  bindButler: false,
+  renameButler: false,
   orphanConfirm: null,
 
   addTab: (t) => {
@@ -589,6 +619,7 @@ export const useStore = create<AppState>((set, get) => ({
     }))
   },
   removeTab: (id) => {
+    const toButler = watchedSessionLeavesForButler(get(), id)
     killTerminalsOf(id)
     endEditsOf(id)
     set((s) => {
@@ -631,11 +662,30 @@ export const useStore = create<AppState>((set, get) => ({
         followsAgentBrowser
       }
     })
+    if (toButler) get().landOnButler()
   },
   closeTab: (id) => {
     restoreLaunches.delete(id)
     window.api.terminal.kill(id)
     get().removeTab(id)
+  },
+  landOnButler: () => {
+    const live = butlerTabOf(get().sessions, get().butlerTab, get().tabs)
+    if (live) return get().activateTab(live)
+    const landedOn = get().activeTabId
+    void window.api.conductors.open().then((r) => {
+      if (!r.ok) return get().showToast(r.error)
+      get().setButlerTab(r.tabId)
+      if (get().activeTabId === landedOn) get().activateTab(r.tabId)
+    })
+  },
+  openButler: async (fresh = false) => {
+    const r = await (fresh ? window.api.conductors.startFresh() : window.api.conductors.open())
+    if (!r.ok) return r.error
+    const st = get()
+    st.setButlerTab(r.tabId)
+    st.activateTab(r.tabId)
+    return null
   },
   setActive: (id) => set({ activeTabId: id }),
   setTabTitle: (id, title) =>
@@ -669,6 +719,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (activateOnceSpawned) return
     set({ activeTabId: id, resumeLaunch: null })
   },
+  revealTab: (id) => set({ revealRow: { tabId: id } }),
 
   restartActiveSession: () => {
     const { tabs, activeTabId, sessions } = get()
@@ -701,7 +752,11 @@ export const useStore = create<AppState>((set, get) => ({
       }
       restartedPtys.add(oldId)
       const title = sess?.title ?? tab.title
-      get().setTabTitle(oldId, title)
+      set((s) => ({
+        tabs: s.tabs.map((x) =>
+          x.id === oldId ? { ...x, title, ...(live ? { respawning: true as const } : {}) } : x
+        )
+      }))
       window.api.terminal.kill(oldId, true)
       void window.api.sessions
         .resume({ sessionId: resumeId, cwd })
@@ -732,7 +787,8 @@ export const useStore = create<AppState>((set, get) => ({
                     kind: backend,
                     cwd: res.cwd,
                     sessionId: resumeId,
-                    alive: true
+                    alive: true,
+                    respawning: undefined
                   }
                 : x
             ),
@@ -744,7 +800,11 @@ export const useStore = create<AppState>((set, get) => ({
           setTimeout(() => restarting.delete(res.id), RESTART_COOLDOWN_MS)
         })
         .catch(() => {
-          get().setTabAlive(oldId, false)
+          set((s) => ({
+            tabs: s.tabs.map((x) =>
+              x.id === oldId ? { ...x, alive: false, respawning: undefined } : x
+            )
+          }))
         })
         .finally(() => restarting.delete(oldId))
     }
@@ -846,11 +906,17 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ workbenchWidth: w, workbenchWidths: { ...s.workbenchWidths, [tabId]: w } })),
   setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
   setNotesHeight: (notesHeight) => set({ notesHeight }),
-  setWorkspaceRows: (workspaceRows) =>
-    set((s) => ({
-      workspaceRows,
-      selectedWs: workspaceRows.some((w) => w.workspace.path === s.selectedWs) ? s.selectedWs : null
-    })),
+  setWorkspaceRows: (all) =>
+    set((s) => {
+      const workspaceRows = all.filter((w) => !w.workspace.butler)
+      return {
+        workspaceRows,
+        butlerWorkspace: all.find((w) => w.workspace.butler) ?? null,
+        selectedWs: workspaceRows.some((w) => w.workspace.path === s.selectedWs)
+          ? s.selectedWs
+          : null
+      }
+    }),
   showToast: (msg, reveal) => {
     if (toastTimer) clearTimeout(toastTimer)
     toastTimer = setTimeout(() => {
@@ -868,11 +934,11 @@ export const useStore = create<AppState>((set, get) => ({
   setResumeLaunch: (resumeLaunch) => set({ resumeLaunch }),
   setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
   setUnsavedPrompt: (unsavedPrompt) => set({ unsavedPrompt }),
-  setConductorTab: (scope, tabId) =>
-    set((s) => ({ conductorTabs: { ...s.conductorTabs, [scope]: tabId } })),
+  setButlerTab: (butlerTab) => set({ butlerTab }),
   setAssistTasks: (assistTasks) => set({ assistTasks }),
   setAssistAsked: (assistAsked) => set({ assistAsked }),
-  setBindConductor: (bindConductor) => set({ bindConductor }),
+  setBindButler: (bindButler) => set({ bindButler }),
+  setRenameButler: (renameButler) => set({ renameButler }),
   setOrphanConfirm: (orphanConfirm) => set({ orphanConfirm }),
 
   ensureWorkbench: (tabId) => {

@@ -22,7 +22,7 @@ import {
   newSessionInWith,
   openMenu,
   processAlive,
-  readCalls,
+  readAllCalls,
   runIn,
   sendShortcut,
   waitBooted,
@@ -121,7 +121,7 @@ function seedConductor(env: E2EEnv): void {
       bindings: [
         {
           id: 'b1',
-          scope: env.workspaces.a,
+          scope: 'global',
           backend: 'claude',
           channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
           sessionIds: [],
@@ -185,7 +185,7 @@ async function onlyThisSessionsFiles(page: Page): Promise<void> {
 
 test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501 status, title script, hooks and local API, with only the CLI faked', () => {
   // AGY§1 AGY§7
-  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch and the Gemini key; the tab binds to agy's conversation, its row takes agy's title, and its light goes working then done", async ({
+  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch and the Gemini key; the tab binds to agy's conversation, its row takes agy's title, and its light goes working then done, leaving a red dot and the bell's count though its tab is on screen", async ({
     env
   }) => {
     const PROMPT = 'Tidy the agy readme'
@@ -217,12 +217,14 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       expect(call.argv.slice(2)).toEqual(['--dangerously-skip-permissions', '-i', PROMPT])
       expect(call.env.WSL_INTEROP).toBe('koloft')
       expect(call.env.GEMINI_API_KEY).toBe(true)
-      expect(readCalls(env)).toHaveLength(0)
+      expect(readAllCalls(env)).toHaveLength(0)
 
       const row = agyRows(page)
       await expect(row).toHaveClass(/st-working/, { timeout: 30_000 })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
       await expect(row).toContainText(PROMPT, { timeout: 30_000 })
+      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+      await expect(page.locator('.aux-ico.waiting-bell .ws-unread-count')).toHaveText('1')
       const { id } = await boundAgy(page)
       expect(transcriptOf(env, id)).toContain(`Answer to: ${PROMPT}`)
     } finally {
@@ -684,7 +686,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await askBox.fill(PROMPT)
       await page.keyboard.press('Enter')
 
-      await expect.poll(() => readCalls(env).length, { timeout: 40_000 }).toBe(1)
+      await expect.poll(() => readAllCalls(env).length, { timeout: 40_000 }).toBe(1)
       const shots = path.join(env.userData, 'agy-one-shots')
       const oneShots = agyCalls(env).filter(
         (c) => c.argv.includes('-p') && !c.argv.includes('/usage')

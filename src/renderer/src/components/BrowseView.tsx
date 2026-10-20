@@ -52,6 +52,7 @@ import {
   showIgnoredKey
 } from './filesModel'
 import '../browseView.css'
+import '../fileTree.css'
 
 export function ignoredTitle(name: string): string {
   return HIDDEN_BY_DEFAULT_NAMES.has(name)

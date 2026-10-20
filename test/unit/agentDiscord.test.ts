@@ -3,9 +3,9 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import type { SessionInfo } from '../../src/shared/types'
-import { discordVerb, NOT_A_CONDUCTOR, NOT_THE_SETUP_TASK } from '../../src/main/agentDiscord'
+import { discordVerb, NOT_THE_BUTLER } from '../../src/main/agentDiscord'
 import { EXIT_USAGE } from '../../src/main/agentRequests'
-import { GLOBAL_SCOPE } from '../../src/shared/conductors'
+import { DISCORD_SETUP_STEPS } from '../../src/main/discord/setupSteps'
 import type { DiscordFile } from '../../src/main/discord/link'
 
 let cwd: string
@@ -14,50 +14,47 @@ beforeEach(() => {
 })
 afterEach(() => fs.rmSync(cwd, { recursive: true, force: true }))
 
-function verb(conductor: boolean, setupTask = false) {
+function verb(butler: boolean) {
   const sent: { channelId: string; files: DiscordFile[]; text: string }[] = []
-  const bound: string[] = []
+  let bound = 0
   const run = discordVerb({
-    channelOf: () => (conductor ? '222' : undefined),
+    channelOf: () => (butler ? '222' : undefined),
     send: async (channelId, files, text) => {
       sent.push({ channelId, files, text })
     },
-    isSetupTask: () => setupTask,
     status: () => 'Bot token: saved',
     tokenFromPage: async () => 'Saved the bot token.',
     reload: async () => 'Reloaded.',
     invite: () => 'https://discord.com/oauth2/authorize?client_id=700',
-    bindNewChannel: async (scope) => {
-      bound.push(scope)
+    bindNewChannel: async () => {
+      bound++
       return { ok: true }
     }
   })
   const call = (args: string[]) => run(args, { tabId: 'pty-1', cwd, session: {} as SessionInfo })
-  return { call, sent, bound }
+  return { call, sent, bound: () => bound }
 }
 
 describe('koloft discord setup commands', () => {
-  it('answer only the global Assist’s Discord setup task, and nothing runs for anyone else', async () => {
-    const { call, bound } = verb(true, false)
-    for (const args of [
-      ['status'],
-      ['token', '--from-page'],
-      ['invite'],
-      ['bind', '--new-channel']
-    ])
-      expect(await call(args)).toEqual({ text: NOT_THE_SETUP_TASK, exit: 1 })
-    expect(bound).toEqual([])
-  })
-
-  it('bind --new-channel binds the global Assist, or the workspace named after --workspace', async () => {
-    const { call, bound } = verb(false, true)
+  it('run for any session, so the one the butler starts to set Discord up can use them', async () => {
+    const { call, bound } = verb(false)
+    expect(await call(['setup'])).toEqual({ text: DISCORD_SETUP_STEPS, exit: 0 })
+    expect(await call(['status'])).toEqual({ text: 'Bot token: saved', exit: 0 })
+    expect(await call(['token', '--from-page'])).toEqual({
+      text: 'Saved the bot token.',
+      exit: 0
+    })
     expect(await call(['bind', '--new-channel'])).toEqual({
       text: 'Bound to a new channel.',
       exit: 0
     })
-    expect((await call(['bind', '--new-channel', '--workspace', '/ws/a'])).exit).toBe(0)
-    expect((await call(['bind', '--new-channel', '--workspace'])).exit).toBe(EXIT_USAGE)
-    expect(bound).toEqual([GLOBAL_SCOPE, '/ws/a'])
+    expect(bound()).toBe(1)
+  })
+
+  it('bind takes no workspace: there is only the butler’s channel', async () => {
+    const { call, bound } = verb(false)
+    expect((await call(['bind', '--new-channel', '--workspace', '/ws/a'])).exit).toBe(EXIT_USAGE)
+    expect(bound()).toBe(0)
   })
 })
 
@@ -78,10 +75,10 @@ describe('koloft discord send', () => {
     ])
   })
 
-  it('is refused to a session that is not a conductor', async () => {
+  it('is refused to a session that is not the butler', async () => {
     fs.writeFileSync(path.join(cwd, 'a.txt'), 'a')
     const { call, sent } = verb(false)
-    expect(await call(['send', 'a.txt'])).toEqual({ text: NOT_A_CONDUCTOR, exit: 1 })
+    expect(await call(['send', 'a.txt'])).toEqual({ text: NOT_THE_BUTLER, exit: 1 })
     expect(sent).toEqual([])
   })
 

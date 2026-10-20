@@ -18,12 +18,21 @@ export const ACCOUNT_KINDS: readonly AccountKind[] = [
   'agy-home'
 ]
 
-export type SignInFolderKind = Extract<AccountKind, 'codex-home' | 'muse-home' | 'agy-home'>
-export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = [
-  'codex-home',
-  'muse-home',
-  'agy-home'
-] satisfies SignInFolderKind[]
+// CODEX§15 MUSE§13 AGY§5
+export const SIGN_IN_FOLDER_OF = {
+  codex: 'codex-home',
+  muse: 'muse-home',
+  agy: 'agy-home'
+} as const satisfies Partial<Record<BackendId, AccountKind>>
+
+export type SignInBackend = keyof typeof SIGN_IN_FOLDER_OF
+export type SignInFolderKind = (typeof SIGN_IN_FOLDER_OF)[SignInBackend]
+
+export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = Object.values(SIGN_IN_FOLDER_OF)
+
+export const BACKEND_OF_SIGN_IN_FOLDER = Object.fromEntries(
+  Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [kind, backend])
+) as Record<SignInFolderKind, SignInBackend>
 
 export const isSignInFolderKind = (kind: unknown): kind is SignInFolderKind =>
   SIGN_IN_FOLDER_KINDS.some((k) => k === kind)
@@ -327,11 +336,11 @@ export interface Settings {
   agentTools: boolean
   notesHeight: number
   notesFolded: boolean
-  conductorsFolded: boolean
   keepAwake: boolean
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
+  butler: ButlerSetting
   newProjectFolders: Record<string, string>
   hintsSeen: string[]
   hintsOff: boolean
@@ -346,6 +355,13 @@ export interface Settings {
 
 export type AssistSetting = { on: boolean; backend: BackendId } | null
 
+export interface ButlerSetting {
+  name: string
+  formerNames: string[]
+}
+
+export const DEFAULT_BUTLER_NAME = 'Alfred'
+
 export interface AssistRecord {
   scope: string
   sessionIds: string[]
@@ -354,7 +370,6 @@ export interface AssistRecord {
 
 export interface AssistTaskRow {
   tabId: string
-  scope: string
   name: string
 }
 
@@ -386,15 +401,6 @@ export interface DiscordSettings {
   userName?: string
   bindings: ConductorBinding[]
   category?: DiscordChannel
-}
-
-export interface NewChannelInput {
-  id?: string
-  scope: string
-}
-
-export interface ConductorSaveInput extends NewChannelInput {
-  channel: DiscordChannel
 }
 
 export type DiscordPhase =
@@ -464,11 +470,11 @@ export const DEFAULT_SETTINGS: Settings = {
   agentTools: true,
   notesHeight: 260,
   notesFolded: false,
-  conductorsFolded: true,
   keepAwake: true,
   worldClocks: [],
   onboardingSeen: false,
   assist: null,
+  butler: { name: DEFAULT_BUTLER_NAME, formerNames: [] },
   newProjectFolders: {},
   hintsSeen: [],
   hintsOff: false,
@@ -519,7 +525,6 @@ export interface CreateTabOptions {
   ownerTabId?: string
   role?: string
   ownerWords?: string
-  allow?: string[]
   conductor?: boolean
   trustFolder?: boolean
 }
@@ -641,7 +646,7 @@ export interface AttentionEvent extends AttentionSubject {
   tabId: string
   kind: AttentionKind
   at: number
-  resurrected?: boolean
+  fyi?: boolean
 }
 
 export interface OsOutletsSeenByTests {
@@ -653,6 +658,10 @@ export const ATTENTION_REASON: Record<AttentionKind, string> = {
   'turn-done': 'turn done — your move',
   approval: 'waiting for your approval',
   exited: 'session exited unexpectedly'
+}
+
+export function attentionReason(e: Pick<AttentionEvent, 'kind' | 'fyi'>): string {
+  return e.fyi ? 'turn done — just letting you know' : ATTENTION_REASON[e.kind]
 }
 
 export interface FlowStats {
@@ -1083,7 +1092,6 @@ export interface KoloftApi {
   attention: {
     list(): Promise<AttentionEvent[]>
     activeTab(id: string | null): void
-    visit(id: string): void
     onActivateTab(cb: (tabId: string) => void): () => void
     onChanged(cb: (pending: AttentionEvent[]) => void): () => void
   }
@@ -1328,13 +1336,12 @@ export interface KoloftApi {
     onToast(cb: (text: string) => void): () => void
   }
   conductors: {
-    save(input: ConductorSaveInput): Promise<ConductorSaveResult>
-    saveWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult>
-    unbind(bindingId: string): Promise<void>
-    open(scope: string): Promise<ConductorOpenResult>
-    startFresh(scope: string): Promise<ConductorOpenResult>
-    openTask(scope: string, title: string, brief: string): Promise<ConductorOpenResult>
-    tell(scope: string, title: string, text: string): Promise<ConductorOpenResult>
+    bind(channel: DiscordChannel): Promise<ConductorSaveResult>
+    bindNewChannel(): Promise<ConductorSaveResult>
+    unbind(): Promise<void>
+    open(): Promise<ConductorOpenResult>
+    startFresh(): Promise<ConductorOpenResult>
+    openTask(title: string, brief: string, workspace?: string): Promise<ConductorOpenResult>
     closeTask(tabId: string): Promise<void>
     tasks(): Promise<AssistTaskRow[]>
     onTasks(cb: (rows: AssistTaskRow[]) => void): () => void
@@ -1344,7 +1351,7 @@ export interface KoloftApi {
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
     channels(): Promise<DiscordChannel[]>
-    setUpWithAssist(ownerWords?: string): Promise<ConductorOpenResult>
+    setUpWithButler(ownerWords?: string): Promise<ConductorOpenResult>
   }
 }
 
@@ -1589,6 +1596,7 @@ export interface WorkspaceRows {
     gitAccount?: WorkspaceGitAccount
     gitPickable?: boolean
     remote?: { host: string; path: string; connected: boolean; problem?: string }
+    butler?: true
   }
   rows: SessionRow[]
 }
@@ -1632,6 +1640,7 @@ export interface SessionResumeRequest {
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
   role?: string
   conductor?: boolean
+  permission?: LaunchPermission
   trustFolder?: boolean
 }
 

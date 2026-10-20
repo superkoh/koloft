@@ -1,19 +1,23 @@
 import type {
   AssistRecord,
+  ButlerSetting,
   ConductorBinding,
   DiscordChannel,
   DiscordGuild,
   DiscordSettings,
   SessionThread
 } from './types'
+import { DEFAULT_BUTLER_NAME } from './types'
 import { basename } from './preview'
-import { isAbsoluteOnHost, parseRemoteKey, remoteCopyText } from './remoteKey'
+import { isAbsoluteOnHost, parseRemoteKey } from './remoteKey'
 import { backendIdOf } from './sessionBackend'
 import { isRecord } from './workbenchState'
 
 export const GLOBAL_SCOPE = 'global'
 
 const DISCORD_ID_RE = /^\d{1,30}$/
+
+const BUTLER_NAME_MAX_CHARS = 40
 
 export function isDiscordId(value: unknown): value is string {
   return typeof value === 'string' && DISCORD_ID_RE.test(value)
@@ -28,49 +32,52 @@ export function scopeName(scope: string): string {
   return basename(parseRemoteKey(scope)?.path ?? scope)
 }
 
-export function conductorName(scope: string): string {
-  return `${scopeName(scope)} Assist`
+export function butlerName(raw: unknown): string {
+  const name = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : ''
+  return name.slice(0, BUTLER_NAME_MAX_CHARS) || DEFAULT_BUTLER_NAME
+}
+
+export function butlerSetting(name: string, formerNames: string[]): ButlerSetting {
+  return { name, formerNames: [...new Set(formerNames)].filter((n) => n !== name) }
+}
+
+export function butlerNames(b: ButlerSetting): string[] {
+  return [b.name, ...b.formerNames]
+}
+
+export function renamedButler(current: ButlerSetting, typed: string): ButlerSetting {
+  return butlerSetting(butlerName(typed), [...current.formerNames, current.name])
+}
+
+export function butlerTitle(name: string): string {
+  return `${name} · Butler`
 }
 
 export function asPeerName(title: string): string {
   return title.replace(/\s+/g, '-')
 }
 
-export function peerNamesOf(scope: string): string[] {
-  return [asPeerName(conductorName(scope)), asPeerName(`${scopeName(scope)} conductor`)]
+const OLD_BUTLER_PEER_NAMES = ['Global-Assist', 'Global-conductor']
+
+export function peerNamesOf(name: string): string[] {
+  return [asPeerName(name), ...OLD_BUTLER_PEER_NAMES]
 }
 
-export function assistTaskName(scope: string, task: string): string {
-  return `${conductorName(scope)}-${task}`
+export function assistTaskName(name: string, task: string): string {
+  return `${name}-${task}`
 }
 
-export const SET_UP_WITH_ASSIST = 'Set up with Assist'
+export function setUpWith(name: string): string {
+  return `Set up with ${name}`
+}
 
 export function channelLabel(binding: Pick<ConductorBinding, 'channel'>): string {
   return `#${binding.channel.name}`
 }
 
-// PLATFORM§39
-function discordChannelName(raw: string): string {
-  return raw.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '')
-}
+export const NEW_CHANNEL_NAME = 'global'
 
-function machineName(host: string): string {
-  return host.replace(/^.*@/, '').replace(/\./g, '-')
-}
-
-export function newChannelName(scope: string): string {
-  if (scope === GLOBAL_SCOPE) return 'global'
-  const remote = parseRemoteKey(scope)
-  const folder = basename(remote?.path ?? scope)
-  return discordChannelName(remote ? `${folder}-${machineName(remote.host)}` : folder)
-}
-
-export function newChannelTopic(scope: string): string {
-  if (scope === GLOBAL_SCOPE) return 'Koloft · global Assist, all workspaces'
-  const remote = parseRemoteKey(scope)
-  return remote ? remoteCopyText(remote.host, remote.path) : scope
-}
+export const NEW_CHANNEL_TOPIC = 'Koloft · your butler, for all workspaces'
 
 const INVITE_PERMISSIONS = 326417615952
 
@@ -90,26 +97,6 @@ export function newChannelGuild(
   const owned = ownedGuilds(guilds, ownerId).map((g) => g.id)
   const bound = bindings.map((b) => b.channel.guildId).find((id) => owned.includes(id))
   return bound ?? owned[0]
-}
-
-export function bindingProblem(
-  bindings: ConductorBinding[],
-  wanted: { id?: string; scope: string; channelId?: string }
-): string | undefined {
-  const others = bindings.filter((b) => b.id !== wanted.id)
-  if (others.some((b) => b.scope === wanted.scope))
-    return `${scopeName(wanted.scope)} already has an Assist.`
-  const taken = wanted.channelId && others.find((b) => b.channel.channelId === wanted.channelId)
-  if (taken) return `That channel is already bound to the ${conductorName(taken.scope)}.`
-  return undefined
-}
-
-export function isAssistScope(scope: string, isPinned: (scope: string) => boolean): boolean {
-  return scope === GLOBAL_SCOPE || isPinned(scope)
-}
-
-export function keepPinnedScopes<T extends { scope: string }>(items: T[], pinned: string[]): T[] {
-  return items.filter((b) => b.scope === GLOBAL_SCOPE || pinned.includes(b.scope))
 }
 
 function strings(raw: unknown): string[] {
@@ -203,7 +190,20 @@ export function sanitizeAssistSessions(raw: unknown, rawDiscord: unknown): Assis
         : { lastSessionKey: lifted.lastSessionKey })
     }
   }
-  return records
+  return records.filter((r) => r.scope === GLOBAL_SCOPE)
+}
+
+function lastUsed(bindings: ConductorBinding[]): ConductorBinding | undefined {
+  return bindings.reduce<ConductorBinding | undefined>((best, b) => {
+    if (!best) return b
+    if (!b.lastMessageId) return best
+    return !best.lastMessageId || newerSnowflake(b.lastMessageId, best.lastMessageId) ? b : best
+  }, undefined)
+}
+
+function butlerBinding(bindings: ConductorBinding[]): ConductorBinding | undefined {
+  const kept = bindings.find((b) => b.scope === GLOBAL_SCOPE) ?? lastUsed(bindings)
+  return kept && { ...kept, scope: GLOBAL_SCOPE }
 }
 
 export function sanitizeDiscord(raw: unknown): DiscordSettings {
@@ -211,10 +211,9 @@ export function sanitizeDiscord(raw: unknown): DiscordSettings {
   const bindings: ConductorBinding[] = []
   for (const item of Array.isArray(doc.bindings) ? doc.bindings : []) {
     const b = cleanBinding(item)
-    if (!b || bindings.some((x) => x.id === b.id)) continue
-    if (bindingProblem(bindings, { scope: b.scope, channelId: b.channel.channelId })) continue
-    bindings.push(b)
+    if (b) bindings.push(b)
   }
+  const kept = butlerBinding(bindings)
   const category = cleanChannel(doc.category)
   return {
     ...(category ? { category } : {}),
@@ -224,6 +223,6 @@ export function sanitizeDiscord(raw: unknown): DiscordSettings {
           ...(typeof doc.userName === 'string' ? { userName: doc.userName } : {})
         }
       : {}),
-    bindings
+    bindings: kept ? [kept] : []
   }
 }

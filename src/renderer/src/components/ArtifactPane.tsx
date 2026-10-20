@@ -19,6 +19,7 @@ import { InlineDiff } from './InlineDiff'
 import { baseUnresolved } from './changesModel'
 import { parseUnifiedDiff } from '../inlineDiff'
 import { highlightCode, langForPath } from '../highlight'
+import '../artifactPane.css'
 
 interface Sym {
   name: string

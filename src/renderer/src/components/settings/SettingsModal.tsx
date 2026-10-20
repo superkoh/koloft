@@ -27,6 +27,7 @@ import { DiscordPane } from './DiscordPane'
 import { AssistPane } from './AssistPane'
 import { BsDiscord } from 'react-icons/bs'
 import { SETTINGS_PANES, type SettingsPaneId } from '@shared/paletteFeatures'
+import '../../settings.css'
 
 function ClearBrowsingData(): JSX.Element {
   const [asking, setAsking] = useState(false)

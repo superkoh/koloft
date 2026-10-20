@@ -8,6 +8,7 @@ import { splitPath } from './filesModel'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
 import { FilesTabLabel, useChangeTotals } from './FilesTabLabel'
 import { docLanding, previewDocs, type PreviewDoc } from './workbenchPreviewModel'
+import '../fileTree.css'
 
 const WATCHLESS_REFRESH_SPARING_SSH_MS = 10_000
 

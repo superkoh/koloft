@@ -23,8 +23,8 @@ import { placeKoloftSkill, readJson } from './museAccounts'
 import { mapAtMost } from './mapAtMost'
 import { agentSkillMarkdown } from './agentPlugin'
 import { pidAlive } from './leftovers'
+import { inputBoxDraft } from './inputBox'
 import { browserControlEnv } from './browserControlEnv'
-import { allowsTheBrowser, conductorGateCommand } from './conductorGate'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -95,8 +95,7 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   pickHome(resumeSessionId?: string): { account: string; env: Record<string, string> } | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
-  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
-  conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
+  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   skipPermissions(): boolean
   serversAmong(pid: number, commands: Map<string, string>): Promise<Set<string>>
   agent: {
@@ -178,15 +177,9 @@ function mirrorLine(raw: string): Record<string, unknown> | undefined {
 // MUSE§11
 const KEYS_TAKE_AFTER_A_DIALOG_SHOWS_MS = 2000
 
-const INPUT_BOX_RULE = /^─.*─{8,}$/
-const INPUT_ROW_MARK = '❯'
-
 // MUSE§11
 export function museShowsItsInputBox(lines: string[]): boolean {
-  const rules = lines.flatMap((line, i) => (INPUT_BOX_RULE.test(line.trim()) ? [i] : []))
-  if (rules.length < 2) return false
-  const [above, below] = rules.slice(-2)
-  return below === above + 2 && lines[above + 1].trim().startsWith(INPUT_ROW_MARK)
+  return inputBoxDraft(lines) !== undefined
 }
 
 // MUSE§1
@@ -204,14 +197,10 @@ const MUSE: CliSpec = {
 // MUSE§14
 const MUSE_UPDATE_TIMEOUT_MS = 5 * 60_000
 
-// ADR-0029 ADR-0038 MUSE§15
-function approvalFlags(permission: LaunchPermission | 'conductor'): string[] {
+// ADR-0038 MUSE§15
+function approvalFlags(permission: LaunchPermission): string[] {
   if (permission === 'bypass') return ['--permission-profile', ':unrestricted']
-  return [
-    ...(permission === 'conductor' ? ['--approval-mode', 'never'] : ['--approval-judge', 'off']),
-    '--sandbox-network',
-    'enabled'
-  ]
+  return ['--approval-judge', 'off', '--sandbox-network', 'enabled']
 }
 
 // MUSE§8
@@ -662,11 +651,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
-    const allow = opts.allow ?? assist?.allow ?? []
     if (opts.trustFolder || assist) trustMuseFolder(env, cwd)
     const trust = !!resource && museTrustsFolder(this.env, workspace)
     const tabId = this.deps.pty.nextId()
-    const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
+    const endpoint = this.deps.browserEndpoint(tabId)
     this.assertStarting()
     const permission = this.permissionOf(opts)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
@@ -682,15 +670,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       (hook) => bound && this.onHook(bound, hook),
       agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
       instructions.join('\n\n') || undefined,
-      conductor
-        ? conductorGateCommand(
-            this.deps.conductorGate.script,
-            this.deps.conductorGate.writeAllow(tabId, allow)
-          )
-        : undefined,
       opts.ownerWords
     )
-    const argv = this.museArgv(opts, approvalFlags(conductor ? 'conductor' : permission), trust)
+    const argv = this.museArgv(opts, approvalFlags(permission), trust)
     this.parsers.set(tabId, new ProgramStatusParser())
     try {
       const handle = this.deps.pty.create({
@@ -734,7 +716,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     hook: (hook: MuseHook) => void,
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
     context: string | undefined,
-    gate: string | undefined,
     ownerWords: string | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const tools = startToolShim(
@@ -761,7 +742,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(shimDir, requestDir, context, gate, ownerWords)
+      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords)
       return {
         dir: shimDir,
         env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },

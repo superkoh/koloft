@@ -14,7 +14,6 @@ import type { AgyMachineLaunch, RemoteAgyConfig } from '../../src/main/remote/ag
 import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
-import { AGY_CONDUCTOR_GATE_SCRIPT } from '../../src/main/conductorGate'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
 import { appendConversation, ownerTyped, writeSummaries } from './helpers/agyStore'
 
@@ -43,7 +42,7 @@ let agentTools: boolean
 let picked: AgyHomePick | undefined
 let apiKey: string | undefined
 let skipPermissions: boolean
-let assist: { role: string; allow: string[] } | undefined
+let assist: { role: string } | undefined
 let machine: {
   launches: AgyMachineLaunch[]
   ended: string[]
@@ -174,8 +173,6 @@ beforeEach(() => {
   }
   mirror = path.join(home, 'mirror-hooks')
   fs.mkdirSync(mirror)
-  const gateScript = path.join(home, 'agy-conductor-gate.js')
-  fs.writeFileSync(gateScript, AGY_CONDUCTOR_GATE_SCRIPT)
   let tab = 0
   pty = Object.assign(new EventEmitter(), {
     nextId: vi.fn(() => `pty-${++tab}`),
@@ -207,14 +204,6 @@ beforeEach(() => {
     builtInStatusLine: () => undefined,
     skipPermissions: () => skipPermissions,
     assistOf: () => assist,
-    conductorGate: {
-      script: gateScript,
-      writeAllow: (tabId, allow) => {
-        const file = path.join(home, `${tabId}.allow.json`)
-        fs.writeFileSync(file, JSON.stringify(allow))
-        return file
-      }
-    },
     agent: { enabled: () => agentTools, answer: vi.fn() },
     gitAccounts: { configEnv: (env) => env, ghWrapper: path.join(tools, 'gh') },
     remote: {
@@ -385,36 +374,28 @@ describe('AgySessions launch', () => {
   })
 })
 
-describe('Assist on Antigravity', () => {
-  const verdict = (out: string): string | undefined => (out ? JSON.parse(out).decision : undefined)
-
-  it('never stops to ask, trusts its folder, and is told its role instead of the session guide', async () => {
+describe('The butler on Antigravity', () => {
+  // ADR-0029
+  it('asks as the owner’s permission setting says, like any tab, trusts its folder, and is told its role instead of the session guide', async () => {
     agentTools = true
-    assist = { role: 'You are the Assist of ws.', allow: [] }
+    assist = { role: 'You are the butler.' }
     const { id } = await launch()
-    expect(created[0].argv).toContain('--dangerously-skip-permissions')
+    expect(created[0].argv).not.toContain('--dangerously-skip-permissions')
     expect(sessions.trustsFolder(repo)).toBe(true)
     const told = JSON.parse(hook(id, 'SessionStart'))
-    expect(told.injectSteps[0].systemMessage.systemMessage).toBe('You are the Assist of ws.')
+    expect(told.injectSteps[0].systemMessage.systemMessage).toBe('You are the butler.')
+    skipPermissions = true
+    await launch()
+    expect(created[1].argv).toContain('--dangerously-skip-permissions')
   })
 
-  // ADR-0029 AGY§12 AGY§13
-  it('puts every tool call through the Assist gate with the tools its task allows: writing inside its folder passes, a subagent is stopped before it runs', async () => {
-    assist = { role: 'r', allow: ['search_web'] }
-    const { id } = await launch()
-    const tool = (name: string, args: Record<string, unknown> = {}): string | undefined =>
-      verdict(hook(id, 'PreToolUse', { toolCall: { name, args } }))
-    expect(tool('run_command', { CommandLine: 'koloft session list' })).toBeUndefined()
-    expect(tool('write_to_file', { TargetFile: path.join(repo, 'notes.md') })).toBeUndefined()
-    expect(tool('search_web', { query: 'x' })).toBeUndefined()
-    expect(tool('write_to_file', { TargetFile: '/etc/hosts' })).toBe('deny')
-    expect(tool('invoke_subagent', { Subagents: [] })).toBe('deny')
-  })
-
-  it('a plain session runs no tool gate', async () => {
-    const { id } = await launch()
-    expect(tabEnv(id).KOLOFT_AGY_GATE).toBeUndefined()
-    expect(hook(id, 'PreToolUse', { toolCall: { name: 'invoke_subagent', args: {} } })).toBe('')
+  // ADR-0029
+  it('no session runs a tool gate, the butler included', async () => {
+    const plain = await launch()
+    assist = { role: 'r' }
+    const butler = await launch()
+    for (const { id } of [plain, butler])
+      expect(hook(id, 'PreToolUse', { toolCall: { name: 'invoke_subagent', args: {} } })).toBe('')
   })
 })
 

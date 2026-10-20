@@ -727,7 +727,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTsB)}`)
 
     const rowFor = (title: string): Locator =>
-      page.locator('.ws-tab').filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
+      page.locator('.ws .ws-tab').filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
     await expect(rowFor('Session A')).toHaveCount(1, { timeout: 40_000 })
     await expect(rowFor('Session B')).toHaveCount(1, { timeout: 40_000 })
     const rowA = rowFor('Session A')

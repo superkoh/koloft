@@ -2,8 +2,14 @@ import fs from 'fs'
 import path from 'path'
 import type { CreateTabOptions, LaunchPermission } from '@shared/types'
 import { record } from './codexObservation'
-import { CODEX_GATE_HOOK_COMMAND, codexHookOverride } from './conductorGate'
 import { playwrightMcpEnv } from './browserControlEnv'
+
+// CODEX§27
+const codexHookOverride = (event: string, command: string): string =>
+  `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(command)}}]}]`
+
+// CODEX§20
+export const CODEX_ASKS_AND_WAITS = 'features.default_mode_request_user_input=true'
 
 export const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
   'context-used',
@@ -43,16 +49,14 @@ const runsPlaywrightMcp = (word: string): boolean =>
 const KEY_THE_CODEX_FLAG_PARSER_TAKES = /^[A-Za-z0-9_-]+$/
 
 // CODEX§26
-export function playwrightEnvOverrides(mcpServers: unknown, approveTools = false): string[] {
+export function playwrightEnvOverrides(mcpServers: unknown): string[] {
   return Object.entries(record(mcpServers)).flatMap(([name, raw]) => {
     const entry = record(raw)
     const words = [entry.command, ...(Array.isArray(entry.args) ? entry.args : [])]
     if (!KEY_THE_CODEX_FLAG_PARSER_TAKES.test(name)) return []
     if (!words.some((w) => typeof w === 'string' && runsPlaywrightMcp(w))) return []
     return [
-      `mcp_servers.${name}.env_vars=${mergedList(entry.env_vars, Object.keys(playwrightMcpEnv('')))}`,
-      // CODEX§26
-      ...(approveTools ? [`mcp_servers.${name}.default_tools_approval_mode="approve"`] : [])
+      `mcp_servers.${name}.env_vars=${mergedList(entry.env_vars, Object.keys(playwrightMcpEnv('')))}`
     ]
   })
 }
@@ -74,8 +78,6 @@ export interface KoloftHook {
   command: string
 }
 
-export const GATE_HOOK: KoloftHook = { event: 'PreToolUse', command: CODEX_GATE_HOOK_COMMAND }
-
 export const hookOverrides = (hooks: KoloftHook[]): string[] =>
   hooks.map(({ event, command }) => codexHookOverride(event, command))
 
@@ -90,9 +92,6 @@ export const PERMISSIONS: Record<LaunchPermission, Permissions | undefined> = {
   acceptEdits: { approval: 'on-request', sandbox: 'workspace-write' },
   bypass: { approval: 'never', sandbox: 'danger-full-access' }
 }
-
-// ADR-0029 CODEX§12
-export const CONDUCTOR_PERMISSIONS: Permissions = { approval: 'never', sandbox: 'workspace-write' }
 
 // CODEX§11 CODEX§16
 export function machineTrustedFolderFlags(ownConfig: Record<string, unknown>): string[] {

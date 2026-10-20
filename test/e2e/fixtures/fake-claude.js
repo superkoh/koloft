@@ -93,6 +93,7 @@ let sessionId = argVal('--session-id') || argVal('--resume') || require('crypto'
 const settingsPath = argVal('--settings')
 // CC§2
 const launchCwd = fs.realpathSync(process.cwd())
+const launchedInTheButlersFolder = path.basename(path.dirname(launchCwd)) === 'conductors'
 const home = process.env.HOME || require('os').homedir()
 
 function writeCallLog(effCwd) {
@@ -231,7 +232,7 @@ function reportedBackgroundMs() {
 }
 
 function nextFreshLaunchTitleFromFile() {
-  if (argVal('--resume')) return null
+  if (argVal('--resume') || launchedInTheButlersFolder) return null
   const f = path.join(home, 'fake-claude-next-title')
   try {
     const v = fs.readFileSync(f, 'utf8').trim()

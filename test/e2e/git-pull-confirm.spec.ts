@@ -31,9 +31,9 @@ test.describe('Git freshness · Pull & Start confirms only over a root session m
       fx.originAhead(3)
       await fetchNowInGitPanel(page, 'repo')
       await expect(page.locator('.ws-behind')).toHaveText('3', { timeout: 30_000 })
-      await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+      await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
       await runIn(page, centerTerm(page), '/busy')
-      await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('.ws .ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
 
       const dlg = await openPicker(app, page)
       await expect(dialogPrimary(dlg)).toContainText('Pull & Start', { timeout: 30_000 })
@@ -65,7 +65,7 @@ test.describe('Git freshness · Pull & Start confirms only over a root session m
       await expect(dlg).toBeFocused()
       await snap(page, 'T-GP-05-cancelled')
 
-      await expect(page.locator('.ws-tab.cold')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.cold')).toHaveCount(0)
       await dialogPrimary(dlg).click()
       await expect(confirm).toBeVisible()
       await expect(confirm.locator('button', { hasText: 'Pull anyway' })).toBeFocused()
@@ -75,7 +75,7 @@ test.describe('Git freshness · Pull & Start confirms only over a root session m
       })
       await expect(page.locator('.ws-behind')).toHaveCount(0)
       await expect(rows).toHaveCount(2, { timeout: 40_000 })
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
       await snap(page, 'T-GP-05-pulled')
     } finally {
       await app.close().catch(() => {})
@@ -98,7 +98,7 @@ test.describe('Git freshness · Pull & Start confirms only over a root session m
         await startSessionIn(page, 'repo', method === 'Codex' ? { method } : {})
         const rows = wsRows(page, 'repo')
         await expect(rows).toHaveCount(1)
-        await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+        await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
 
         fx.originAhead(3)
         await fetchNowInGitPanel(page, 'repo')

@@ -240,6 +240,14 @@ method. A recheck adds its date, version and command to the bullet.
   `Error invoking remote method '<channel>': Error: <original message>` (the original
   text is everything after the `': Error: ` that ends this prefix; a message may itself
   contain `Error: `).
+- **A module that two preload inputs both import breaks the sandboxed guest
+  preload.** electron-vite puts the shared module in `out/preload/chunks/<name>.js`
+  and has each preload `require("./chunks/<name>.js")`; the guest frame preload runs
+  sandboxed (§14), cannot load that file, and stops working. Measured 2026-10-19,
+  Electron 43.7.3 / electron-vite 5.0.0: with `src/preload/guest.ts` importing the
+  shared channel table, the built `guest.js` required the chunk and browser-routing's
+  "a middle-click on a link in a guest page opens it as a background tab" failed twice;
+  with the plain strings back it passed.
 
 ## §7 Electron: menus and keys
 
@@ -1248,6 +1256,21 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (`gh issue list --search=-label:bug` listed issues without the label). What a
   successful create prints is not probed (no test repository was used). (2026-10-09, gh
   2.89.0, by hand against superkoh/koloft, stdin from `/dev/null`.)
+- **gh's own top-level commands** are agent-task, alias, api, attestation, auth, browse,
+  cache, co, codespace, completion, config, copilot, discussion, extension, gist, gpg-key,
+  issue, label, licenses, org, pr, preview, project, release, repo, ruleset, run, search,
+  secret, skill, ssh-key, status, variable and workflow (`## gh …` headings of
+  `gh help reference`, 2026-10-19, the gh 2.102.0 Koloft ships), where `co` is a default
+  alias for `pr checkout` that the owner can redefine. Any other first word is
+  an alias or an installed extension. From gh's docs, inferred, not checked: an alias,
+  an extension, `gh copilot`, and the browser, pager or editor named by `gh config set`
+  each run another program, which inherits gh's environment (so `GH_TOKEN`); and a short
+  flag takes its value attached (`-qenv`, `-Ro/r`) as cobra/pflag flags do.
+- **Words after `--` go to another program**: `gh repo clone`, `gh repo fork` and
+  `gh gist clone` hand them to git (`-- <gitflags>`, where git's `--upload-pack=<cmd>`
+  runs any program), `gh codespace ssh` to ssh and `gh codespace cp` to scp (their
+  `### gh …` lines in `gh help reference`, 2026-10-19, gh 2.102.0). No other command
+  takes `--`.
 
 ## §33 ssh
 

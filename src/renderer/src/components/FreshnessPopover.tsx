@@ -34,6 +34,7 @@ import {
   type PullNote
 } from '../freshnessView'
 import { PullConfirm } from './PullConfirm'
+import '../accounts.css'
 
 const BLANK_ICON = <svg width={14} height={14} viewBox="0 0 24 24" />
 

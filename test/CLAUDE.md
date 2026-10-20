@@ -83,7 +83,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`); `--version` prints a
     version above any minimum, so the shim's version check never updates it.
   - files: `fake-claude-delay` (ms before it binds), `-next-title` (title of the next
-    fresh launch, used once), `-no-status` (binds but never reports a run-state),
+    fresh launch outside the butler's folder, used once), `-no-status` (binds but never reports a run-state),
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
     closes its tab kills it), `-bg-ms` (how long `/bg-reported`'s background work runs,
@@ -197,13 +197,14 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   (helpers/blackbox.ts); `clickAppMenuItem` waits for the shortcut listeners, not for
   the first rows push. Find a dialog by its visible title.
 - The test window never has OS focus. Read focus from `focusOwner` /
-  `document.activeElement`, never `document.hasFocus()` (platform ledger §10). For the
-  same reason no tab is ever "watched": every finished turn leaves an attention mark,
-  seen only through `pendingAttention(page)`. No OS notification or Dock badge is ever
-  shown; what one would have said is recorded instead and read with `osOutlets(app)`
-  (helpers/app.ts). A case about what a focused user clears calls
-  `pretendWindowFocused(app)`: main then reads its window as focused, and the click it
-  makes counts as "watching".
+  `document.activeElement`, never `document.hasFocus()` (platform ledger §10). Every
+  finished turn leaves an attention mark, seen through `pendingAttention(page)`, and
+  only the session working again clears it — looking at the tab clears only a mark that
+  is only news (`fyi`). No OS
+  notification or Dock badge is ever shown; what one would have said is recorded
+  instead and read with `osOutlets(app)` (helpers/app.ts). A case about what a user
+  watching the tab is spared (the sound, the notification) calls
+  `pretendWindowFocused(app)`: main then reads its window as focused.
 - Never reach real OS UI or the developer's own state. No native dialog: stub and count
   it (restart-session `countConfirmationsInsteadOfShowingThem`). File pickers answer
   from a queue (`answerFileDialog`; an empty queue means "cancelled"); add workspaces

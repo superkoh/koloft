@@ -157,17 +157,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     expect(quoteBeforeModelCall(path.join(dir, 'missing.jsonl'))).toBeUndefined()
   })
 
-  it("passes a tool call to the tab's gate on stdin and prints the gate's verdict", () => {
-    const seen = path.join(dir, 'seen.json')
-    const gate = `cat > '${seen}'; printf '{"decision":"deny","reason":"no"}'`
-    const input = { conversationId: 'c1', toolCall: { name: 'search_web', args: {} } }
-    expect(hook('PreToolUse', input, { KOLOFT_AGY_GATE: gate })).toBe(
-      '{"decision":"deny","reason":"no"}'
-    )
-    expect(JSON.parse(fs.readFileSync(seen, 'utf8'))).toEqual(input)
-  })
-
-  it('prints nothing at all for a tool call when the tab has no gate, since agy reads even {} as a deny', () => {
+  it('prints nothing at all for a tool call, since agy reads even {} as a deny', () => {
     expect(
       hook('PreToolUse', { conversationId: 'c1', toolCall: { name: 'run_command', args: {} } })
     ).toBe('')

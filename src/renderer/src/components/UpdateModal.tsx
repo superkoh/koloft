@@ -3,6 +3,7 @@ import { IconClose } from '../icons'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { useStore } from '../store'
+import '../updateModal.css'
 
 const md = new MarkdownIt({ html: false, linkify: false, breaks: false })
 

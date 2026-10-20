@@ -28,7 +28,7 @@ const ONE_CLOSE_WINDOW_WITH_MARGIN_MS = 4000
 const FULLSCREEN_TUI_MOUSE_AND_FOCUS_REPORTS_ON =
   '\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1004h\x1b[?1006h'
 
-test('an idle session goes to sleep quietly once its needs-you mark is seen (window focus is not a rule): its process ends but its row, tab and screen stay; an unsaved edit and the open tab keep their process; clicking it wakes the same session in that tab, and a line typed while it wakes reaches it with nothing from the mouse moves and focus reports its screen sent meanwhile', async ({
+test('an idle session goes to sleep quietly, its needs-you mark unseen and kept: its process ends but its row, red dot, tab and screen stay; an unsaved edit and the open tab keep their process; clicking it wakes the same session in that tab, and a line typed while it wakes reaches it with nothing from the mouse moves and focus reports its screen sent meanwhile', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -43,7 +43,7 @@ test('an idle session goes to sleep quietly once its needs-you mark is seen (win
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     await waitBooted(page)
-    const row = (title: string): Locator => page.locator('.ws-tab', { hasText: title })
+    const row = (title: string): Locator => page.locator('.ws .ws-tab', { hasText: title })
 
     setNextSessionTitle(env, 'Idle A')
     await startSessionIn(page, 'ws-a')
@@ -65,14 +65,6 @@ test('an idle session goes to sleep quietly once its needs-you mark is seen (win
     await expect(row('Open C')).toHaveClass(/\bactive\b/)
 
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(3)
-    await page.waitForTimeout(ONE_CLOSE_WINDOW_WITH_MARGIN_MS)
-    expect(processAlive(a.pid)).toBe(true)
-
-    await row('Idle A').click()
-    await row('Unsaved B').click()
-    await row('Open C').click()
-    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
-    await expect(row('Open C')).toHaveClass(/\bactive\b/)
 
     const asleepTab = await row('Idle A').getAttribute('data-tab-id')
     await expect.poll(() => processAlive(a.pid), { timeout: 40_000 }).toBe(false)
@@ -80,6 +72,8 @@ test('an idle session goes to sleep quietly once its needs-you mark is seen (win
     await expect(row('Idle A')).toHaveClass(/\bst-idle\b/)
     await expect(row('Idle A')).not.toHaveClass(/\bactive\b/)
     expect(await row('Idle A').getAttribute('data-tab-id')).toBe(asleepTab)
+    expect((await pendingAttention(page)).map((e) => e.tabId)).toContain(asleepTab)
+    await expect(row('Idle A').locator('.ws-tab-unread')).toHaveCount(1)
     const frozen = await terminalText(page, asleepTab!)
     expect(frozen).toContain(a.sessionId)
     expect(frozen).not.toContain('Resume this session with')
@@ -126,7 +120,7 @@ test('an idle session goes to sleep quietly once its needs-you mark is seen (win
   }
 })
 
-test('a Keep running session never goes to sleep for being idle, while an unmarked one beside it does', async ({
+test('a Keep running session never goes to sleep for being idle, while an ordinary one beside it does, needs-you mark and all', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -139,7 +133,7 @@ test('a Keep running session never goes to sleep for being idle, while an unmark
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     await waitBooted(page)
-    const row = (title: string): Locator => page.locator('.ws-tab', { hasText: title })
+    const row = (title: string): Locator => page.locator('.ws .ws-tab', { hasText: title })
 
     setNextSessionTitle(env, 'Resident A')
     await startSessionIn(page, 'ws-a')
@@ -156,10 +150,6 @@ test('a Keep running session never goes to sleep for being idle, while an unmark
     await waitForCalls(env, 3)
 
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(3)
-    await row('Resident A').click()
-    await row('Idle C').click()
-    await row('Open B').click()
-    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
 
     await expect.poll(() => processAlive(c.pid), { timeout: 40_000 }).toBe(false)
     expect(processAlive(a.pid)).toBe(true)

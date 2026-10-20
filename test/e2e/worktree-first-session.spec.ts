@@ -35,7 +35,7 @@ test.describe('the first session in a newly added repo is a worktree session', (
       await page.keyboard.press('Enter')
       await expect(dlg).toHaveCount(0)
 
-      const row = page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+      const row = page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
       await expect.poll(async () => row.isVisible(), { timeout: 30_000 }).toBe(true)
       await expect(row.locator('.ws-tab-sub')).toHaveText('feat1')
 
@@ -70,7 +70,7 @@ test.describe('the first session in a newly added repo is a worktree session', (
       await page.keyboard.press('Enter')
       await expect(dlg).toHaveCount(0)
 
-      const row = page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+      const row = page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
       await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
       const [first] = await waitForCalls(env, 1)
       expect(first.portOffset).toBe(String(portOffset('feat2')))

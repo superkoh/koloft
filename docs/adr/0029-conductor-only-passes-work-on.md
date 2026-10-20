@@ -1,44 +1,31 @@
-# 0029 A conductor only passes work on, and Koloft enforces it
+# 0029 The butler has no gate; it runs in a folder of its own
 
-**Constraint**: the owner wants a conductor (Assist, Koloft's own session) to
-hand work to sessions, not do it itself. Words in its role text are a request the model
-may ignore; the owner asked for a guarantee.
-**Decision**: Koloft takes the conductor's hands away, on top of the role text.
-- A Claude conductor gets a PreToolUse hook (CC§15) that lets through only reading
-  tools, a question to the owner (which reaches Discord) and a Bash call that is one
-  plain `koloft …` command, plus what the tab's allow file names; everything else is
-  denied, whatever the permission mode.
-- A Codex conductor runs with approvals off and the `workspace-write` sandbox, whose
-  writable places are only its own folder and `/tmp` (CODEX§12), where `koloft` drops
-  its requests. It may still run commands that only read.
-- So the sandbox keeps a Codex conductor off the code, every conductor runs in a
-  folder of its own under Koloft's data folder, never in its workspace; the workspace a
-  conductor's `koloft` commands act on comes from its binding instead of its folder.
-- The price: a conductor cannot take a screenshot, drive a browser (unless its allow
-  file names the tool) or change a file —
-  it asks a session to — and `koloft discord send` and `koloft open` need absolute
-  paths into the workspace.
-- Holes, each the owner's choice, so a conductor need not take a session's word
-  for a fact, lose what the owner taught it, or start a session just to file an issue.
-  `koloft gh` runs a `gh` command in Koloft's own process, from a list of subcommands
-  and flags: reads, and one write, `issue create` with only a title, a body (or a body
-  file inside the conductor's own folder), labels and a repository; a Claude conductor
-  may Write or Edit inside its own memory folder, the `memory` folder beside the
-  transcript the hook names.
-- `issue create` is let through although the gate cannot tell who asked for it (the
-  reason a merge is not, below): a stray issue is a note the owner closes, while a
-  merge changes `main`. That only the owner's own message may ask for one is role
-  text, not a guarantee, so the flags stay few — no assignee, project or template —
-  and a body file must lie in the conductor's own folder, so text injected into a page
-  cannot have Koloft post any file on the Mac in one step.
-- Rejected for those: letting `gh` and `git` through the gate. A Codex conductor's
-  sandbox has no network, so `gh` fails there, and opening the network would let
-  `gh pr merge` through; `git log` reads a checkout that is stale until a fetch, which
-  writes. Also rejected: a conductor merging a pull request when the owner says so —
-  the gate sees the call, never who asked for it.
-**Rejected**: running a workspace conductor in its workspace (where it used to run).
-Relative paths would resolve there and the repository's own instructions would load,
-but a Codex sandbox cannot shut out its own folder, so the code would stay writable.
-Also rejected: `--disallowedTools` for Claude, which cannot narrow Bash to `koloft`; and
-Codex approvals on request, which would let a "yes" from Discord lift the sandbox for
-the conductor itself.
+**Constraint**: the owner wants the butler (Alfred by default, Koloft's own session that
+manages every workspace) to hand project work to that project's workspace, and decided
+that this rests on the goals and principles in its prompt alone, not on a tool gate: the
+butler may do whatever an ordinary session may.
+**Decision**: no gate. The butler runs with the permission an ordinary session gets from
+the owner's "skip permission prompts" setting — with it on, Claude gets
+`--dangerously-skip-permissions` and Codex approvals `never` with the
+`danger-full-access` sandbox; with it off, each asks as usual — at start and at resume.
+- It runs in a folder of its own under Koloft's data folder (`conductors/global`), never
+  in a workspace: its memory stays put (Claude keys memory by the folder; Codex reads
+  `AGENTS.md` there), and a launch in that folder with a recorded butler session is the
+  butler again, so a resume from anywhere gets its role.
+- `koloft gh` runs gh's own commands in Koloft's process with the picked account's token
+  in gh's environment. `gh auth` (it could print the token or sign the owner out), and
+  `gh alias`, `gh extension`, `gh config`, `gh copilot`, an alias or an extension (each
+  can run another program with that environment) are refused, and so is a `--jq` filter
+  that reads the environment. That list only keeps a one-step print or sign-out of the
+  owner's GitHub login out of `koloft gh`; it is no wall: a local session's own `gh`
+  already gets the same token from Koloft's git account wrapper, and git hooks in the
+  folder gh runs in see it too. Sealing it would need every session sandboxed, which
+  the owner chose against.
+**Rejected**: the gate the butler used to have — a PreToolUse hook that let a Claude
+butler run only reading tools and one plain `koloft` command, a Codex butler with
+approvals off inside the `workspace-write` sandbox, and the same hook for Muse and
+Antigravity. The owner reversed it: it made the butler start sessions even for a
+question it could answer from a file, and a Codex hook Codex would not trust kept the
+butler off Codex entirely. Also rejected: running the butler in a workspace, where the
+repository's own instructions would load and relative paths would point into that
+project.

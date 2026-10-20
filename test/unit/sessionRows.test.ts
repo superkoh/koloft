@@ -505,7 +505,7 @@ describe('mixesBackends (when a row list shows method icons)', () => {
   })
 })
 
-describe('nextWaitingTab (⌘J: the session that has waited longest for you)', () => {
+describe('nextWaitingTab (⌘J and the bell: walk the waiting sessions, longest wait first)', () => {
   const tabs = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
 
   it('picks the oldest mark of any kind, whatever order the list holds them in', () => {
@@ -517,12 +517,15 @@ describe('nextWaitingTab (⌘J: the session that has waited longest for you)', (
     expect(nextWaitingTab(pending, null, tabs)).toBe('b')
   })
 
-  it('skips the tab you are already on', () => {
+  it('from a waiting tab goes to the one that waited next longest, and from the last back to the first', () => {
     const pending: AttentionEvent[] = [
+      { tabId: 'c', kind: 'turn-done', at: 30 },
       { tabId: 'a', kind: 'turn-done', at: 10 },
       { tabId: 'b', kind: 'turn-done', at: 20 }
     ]
     expect(nextWaitingTab(pending, 'a', tabs)).toBe('b')
+    expect(nextWaitingTab(pending, 'b', tabs)).toBe('c')
+    expect(nextWaitingTab(pending, 'c', tabs)).toBe('a')
   })
 
   it('skips a mark whose tab is gone, so the press lands on a live session instead of silently clearing that mark', () => {
@@ -533,9 +536,16 @@ describe('nextWaitingTab (⌘J: the session that has waited longest for you)', (
     expect(nextWaitingTab(pending, null, tabs)).toBe('c')
   })
 
-  it('answers nothing when nothing else waits', () => {
+  it('finds a mark from the last run on the tab that now holds its session, such as one restored asleep under a new id', () => {
+    const pending: AttentionEvent[] = [
+      { tabId: 'before-restart', kind: 'turn-done', at: 1, sessionId: 's-1' }
+    ]
+    expect(nextWaitingTab(pending, null, [{ id: 'asleep-1', sessionId: 's-1' }])).toBe('asleep-1')
+  })
+
+  it('stays on the tab you are on when it is the only one waiting, and answers nothing when none waits', () => {
     expect(nextWaitingTab([], null, tabs)).toBeUndefined()
-    expect(nextWaitingTab([{ tabId: 'a', kind: 'turn-done', at: 1 }], 'a', tabs)).toBeUndefined()
+    expect(nextWaitingTab([{ tabId: 'a', kind: 'turn-done', at: 1 }], 'a', tabs)).toBe('a')
   })
 })
 

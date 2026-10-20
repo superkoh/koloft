@@ -46,6 +46,7 @@ import {
 import { portOffset } from '../../src/shared/worktreeName'
 import {
   addWorkspace,
+  butlerRow,
   centerTerm,
   agentRow,
   chooseBackend,
@@ -53,6 +54,7 @@ import {
   dialogPrimary,
   gitCommitAll,
   gitInit,
+  landsOnTheButler,
   newSessionInWith,
   oneStillRunning,
   openMenu,
@@ -1050,8 +1052,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       await newSessionInWith(page, 'ws-a', 'Codex')
       await expect(page.locator('.toast-msg')).toContainText('exit code 3', { timeout: 20_000 })
       await expect.poll(() => termIds(page)).toHaveLength(0)
+      await landsOnTheButler(page)
+      const butlerTab = await butlerRow(page).getAttribute('data-tab-id')
       await page.waitForTimeout(CODEX_TRANSPORT_STOP_WORST_CASE_MS)
-      expect(await pendingAttention(page)).toEqual([])
+      expect((await pendingAttention(page)).filter((e) => e.tabId !== butlerTab)).toEqual([])
     } finally {
       await quitAndClose(app)
     }
@@ -1096,8 +1100,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await waitBooted(page)
       await startCodex(page, env)
       const row = codexRows(page)
-      await row.click()
-      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(1)
       const notifiedBefore = (await osOutlets(app)).notifications.length
       await runIn(page, centerTerm(page), 'spawn child')
       const running = oneStillRunning(row)
@@ -1330,7 +1333,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex session’s unread red dot survives a Koloft restart on its row, which comes back running, and clicking the row in a focused window clears it', async ({
+  test('a Codex session’s unread red dot survives a Koloft restart on its row, which comes back running, and stays when the row is clicked in a focused window', async ({
     env
   }) => {
     installCodex(env)
@@ -1353,7 +1356,8 @@ test.describe('Codex sessions through the real method chooser, process transport
 
       await pretendWindowFocused(app)
       await codexRows(page).click()
-      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(0)
+      await expect(codexRows(page)).toHaveClass(/\bactive\b/)
+      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
       expect(codexCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)

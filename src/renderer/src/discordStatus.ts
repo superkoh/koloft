@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { SET_UP_WITH_ASSIST } from '@shared/conductors'
+import { setUpWith } from '@shared/conductors'
 import type { DiscordStatus } from '@shared/types'
 
 export function useDiscordStatus(): DiscordStatus | null {
@@ -42,4 +42,6 @@ export function statusClass(s: DiscordStatus): string {
   return s.phase === 'token' || s.phase === 'intents' ? ' bad' : ''
 }
 
-export const MESSAGE_CONTENT_BY_HAND = `Koloft could not turn Message Content on. Click ${SET_UP_WITH_ASSIST} above: Assist does that with you. Koloft checks again every 30 seconds.`
+export function messageContentByHand(name: string): string {
+  return `Koloft could not turn Message Content on. Click ${setUpWith(name)} above: ${name} does that with you. Koloft checks again every 30 seconds.`
+}

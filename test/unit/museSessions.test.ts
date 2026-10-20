@@ -17,7 +17,6 @@ import { museSessionKey } from '../../src/main/sessionStore'
 import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
-import { MUSE_CONDUCTOR_GATE_SCRIPT } from '../../src/main/conductorGate'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
 
 const mocks = vi.hoisted(() => ({
@@ -54,8 +53,7 @@ let started: number
 let agentTools: boolean
 let endpoint: string
 let picked: { account: string; env: Record<string, string> } | undefined
-let assist: { role: string; allow: string[] } | undefined
-let gateScript: string
+let assist: { role: string } | undefined
 let skipPermissions: boolean
 let servers: Set<string>
 
@@ -148,8 +146,6 @@ beforeEach(() => {
   assist = undefined
   skipPermissions = false
   servers = new Set()
-  gateScript = path.join(home, 'muse-conductor-gate.js')
-  fs.writeFileSync(gateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
   let tab = 0
   pty = Object.assign(new EventEmitter(), {
     nextId: vi.fn(() => `pty-${++tab}`),
@@ -188,14 +184,6 @@ beforeEach(() => {
     playwrightBin: tools,
     browserEndpoint: () => endpoint,
     assistOf: () => assist,
-    conductorGate: {
-      script: gateScript,
-      writeAllow: (tabId, allow) => {
-        const file = path.join(home, `${tabId}.allow.json`)
-        fs.writeFileSync(file, JSON.stringify(allow))
-        return file
-      }
-    },
     skipPermissions: () => skipPermissions,
     serversAmong: async () => servers,
     agent: { enabled: () => agentTools, answer: vi.fn() },
@@ -373,58 +361,32 @@ describe('a Muse session open in another process', () => {
   })
 })
 
-describe('Assist on Muse', () => {
-  const decision = (out: string): string | undefined =>
-    out ? JSON.parse(out).hookSpecificOutput.permissionDecision : undefined
-
-  it('never stops to ask, trusts its folder, and is told its role instead of the session guide', async () => {
+describe('The butler on Muse', () => {
+  // ADR-0029
+  it('asks as the owner’s permission setting says, like any tab, gets the Workbench browser, trusts its folder, and is told its role instead of the session guide', async () => {
     agentTools = true
     endpoint = 'ws://127.0.0.1:9/cdp/x'
-    assist = { role: 'You are the Assist of ws.', allow: [] }
+    assist = { role: 'You are the butler.' }
     const { id } = await launch()
-    expect(created[0].argv).toEqual(['--approval-mode', 'never', '--sandbox-network', 'enabled'])
-    expect(created[0].env.KOLOFT_BROWSER_CDP).toBeUndefined()
+    expect(created[0].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
+    expect(created[0].env.KOLOFT_BROWSER_CDP).toBe(endpoint)
     expect(museTrustsFolder({ HOME: home }, repo)).toBe(true)
     const told = JSON.parse(hook(id, 'SessionStart', { session_id: A, source: 'startup' }))
-    expect(told.hookSpecificOutput.additionalContext).toBe('You are the Assist of ws.')
-  })
-
-  it('an Assist task allowed the browser gets the Workbench browser', async () => {
-    endpoint = 'ws://127.0.0.1:9/cdp/x'
-    assist = { role: 'r', allow: ['Bash(playwright-cli *)'] }
+    expect(told.hookSpecificOutput.additionalContext).toBe('You are the butler.')
+    skipPermissions = true
     await launch()
-    expect(created[0].argv).toEqual(['--approval-mode', 'never', '--sandbox-network', 'enabled'])
-    expect(created[0].env.KOLOFT_BROWSER_CDP).toBe(endpoint)
+    expect(created[1].argv).toEqual(['--permission-profile', ':unrestricted'])
   })
 
-  // ADR-0029 MUSE§9
-  it('may read, write only inside its own folder and run one plain koloft command or one its task names per bash call, like a Claude Assist, never answered with an allow muse refuses; every other muse tool is stopped before it runs', async () => {
-    assist = { role: 'r', allow: ['Bash(playwright-cli click)'] }
-    const { id } = await launch()
-    const tool = (
-      tool_name: string,
-      tool_input: Record<string, unknown> = {}
-    ): string | undefined =>
-      decision(hook(id, 'PreToolUse', { session_id: A, tool_name, tool_input }))
-    expect(tool('bash', { command: 'koloft session list' })).toBeUndefined()
-    expect(tool('bash', { command: 'playwright-cli click e5' })).toBeUndefined()
-    expect(tool('bash', { command: 'playwright-cli eval x' })).toBe('deny')
-    expect(tool('bash', { command: 'rm -rf ../workspace' })).toBe('deny')
-    expect(tool('bash', { command: 'koloft session list; rm -rf ..' })).toBe('deny')
-    expect(tool('read_file', { path: '/etc/hosts' })).toBeUndefined()
-    expect(tool('read_skill', { name: 'koloft' })).toBeUndefined()
-    expect(tool('write_file', { path: 'notes.md', content: 'x' })).toBeUndefined()
-    expect(tool('edit_file', { path: path.join(repo, 'a', 'b.md') })).toBeUndefined()
-    expect(tool('write_file', { path: '../outside.md', content: 'x' })).toBe('deny')
-    expect(tool('edit_file', { path: '/etc/hosts' })).toBe('deny')
-    for (const other of ['subagent_spawn', 'web_fetch', 'add_memory', 'cron_create'])
-      expect(tool(other)).toBe('deny')
-  })
-
-  it('a plain session gets no tool gate', async () => {
+  // ADR-0029
+  it('no session gets a tool gate, the butler included', async () => {
     await launch()
-    const hooks = JSON.parse(fs.readFileSync(created[0].env.TBH_MANAGED_HOOKS_PATH!, 'utf8')).hooks
-    expect(hooks.PreToolUse).toBeUndefined()
+    assist = { role: 'r' }
+    await launch()
+    for (const tab of created) {
+      const hooks = JSON.parse(fs.readFileSync(tab.env.TBH_MANAGED_HOOKS_PATH!, 'utf8')).hooks
+      expect(hooks.PreToolUse).toBeUndefined()
+    }
   })
 })
 

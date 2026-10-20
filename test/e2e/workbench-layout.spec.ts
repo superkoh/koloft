@@ -191,7 +191,7 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
   }) => {
     await startSessionIn(page, 'ws-a')
     await startSessionIn(page, 'ws-a')
-    const rows = page.locator('.ws-tab')
+    const rows = page.locator('.ws .ws-tab')
     await expect(rows).toHaveCount(2, { timeout: 20_000 })
     const rowB = rows.nth(0)
     const rowA = rows.nth(1)
@@ -486,7 +486,7 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
     }
 
     const rowTitled = (page: Page, title: string): ReturnType<Page['locator']> =>
-      page.locator('.ws-tab').filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
+      page.locator('.ws .ws-tab').filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
 
     test('WB-L11: under the shipped default a new session starts with the panel collapsed', async ({
       app,

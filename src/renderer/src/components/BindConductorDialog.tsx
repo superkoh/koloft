@@ -1,41 +1,23 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { IconClose, IconLinkOut, IconPlus } from '../icons'
-import {
-  channelLabel,
-  GLOBAL_SCOPE,
-  inviteLink,
-  newChannelGuild,
-  newChannelName,
-  newChannelTopic,
-  scopeName,
-  SET_UP_WITH_ASSIST
-} from '@shared/conductors'
+import { inviteLink, NEW_CHANNEL_NAME, newChannelGuild, setUpWith } from '@shared/conductors'
 import { distinctName } from '@shared/sessionRoute'
 import type { DiscordChannel } from '@shared/types'
 import { useStore } from '../store'
 import { useDiscordStatus } from '../discordStatus'
-import { shortenHome } from '../browseModel'
 
 const NEW = 'new'
 
 export function BindConductorDialog(): JSX.Element | null {
-  const request = useStore((s) => s.bindConductor)
-  if (!request) return null
-  return <BindForm key={request.editId ?? request.scope ?? ''} {...request} />
+  const open = useStore((s) => s.bindButler)
+  return open ? <BindForm /> : null
 }
 
-function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.Element {
+function BindForm(): JSX.Element {
   const bindings = useStore((s) => s.settings.discord.bindings)
-  const workspaceRows = useStore((s) => s.workspaceRows)
-  const setBindConductor = useStore((s) => s.setBindConductor)
-  const editing = editId ? bindings.find((b) => b.id === editId) : undefined
-  const scopes = editing
-    ? [editing.scope]
-    : [GLOBAL_SCOPE, ...workspaceRows.map((w) => w.workspace.path)]
-  const takenBy = (s: string) => bindings.find((b) => b.scope === s && b.id !== editId)
-  const [picked, setPicked] = useState<string | undefined>(
-    editing?.scope ?? (scope && !takenBy(scope) ? scope : scopes.find((s) => !takenBy(s)))
-  )
+  const name = useStore((s) => s.settings.butler.name)
+  const setBindButler = useStore((s) => s.setBindButler)
+  const editing = bindings[0]
   const [channels, setChannels] = useState<DiscordChannel[] | null>(null)
   const [channel, setChannel] = useState<DiscordChannel | typeof NEW | undefined>(
     editing ? undefined : NEW
@@ -47,15 +29,11 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
   const owner = useStore((s) => s.settings.discord.userId)
   const guildId = newChannelGuild(bindings, status?.guilds ?? [], owner)
   const guildName = status?.guilds.find((g) => g.id === guildId)?.name
-  const newName =
-    picked &&
-    distinctName(
-      newChannelName(picked),
-      (channels ?? []).filter((c) => c.guildId === guildId).map((c) => c.name)
-    )
-  const close = (): void => setBindConductor(null)
-  const channelTakenBy = (c: DiscordChannel) =>
-    bindings.find((b) => b.channel.channelId === c.channelId && b.id !== editId)
+  const newName = distinctName(
+    NEW_CHANNEL_NAME,
+    (channels ?? []).filter((c) => c.guildId === guildId).map((c) => c.name)
+  )
+  const close = (): void => setBindButler(false)
   const editedChannelId = editing?.channel.channelId
 
   useEffect(() => {
@@ -85,21 +63,20 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
       }
       if (e.key !== 'Escape') return
       e.stopPropagation()
-      setBindConductor(null)
+      setBindButler(false)
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [setBindConductor])
+  }, [setBindButler])
 
   const submit = async (): Promise<void> => {
-    if (busy || !picked) return
+    if (busy) return
     if (!channel || (channel === NEW && !guildId)) return setError({ text: 'Pick a channel.' })
     setBusy(true)
-    const input = { id: editId, scope: picked }
     const r =
       channel === NEW
-        ? await window.api.conductors.saveWithNewChannel(input)
-        : await window.api.conductors.save({ ...input, channel })
+        ? await window.api.conductors.bindNewChannel()
+        : await window.api.conductors.bind(channel)
     setBusy(false)
     if (r.ok) return close()
     setError({ text: r.error, reinvite: r.cannotMakeChannels })
@@ -123,37 +100,10 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
           </span>
         </div>
         <div className="modal-body">
-          <span className="flabel">Scope</span>
-          <div className="wt-list">
-            {scopes.map((s) => {
-              const taken = takenBy(s)
-              return (
-                <div
-                  key={s}
-                  className={'cb-row' + (taken ? ' dim' : '') + (s === picked ? ' hot' : '')}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    if (taken) return
-                    setPicked(s)
-                    setError(null)
-                  }}
-                >
-                  <span className="wt-name">{scopeName(s)}</span>
-                  <span className="note">
-                    {taken
-                      ? `already bound · ${channelLabel(taken)}`
-                      : s === GLOBAL_SCOPE
-                        ? 'all workspaces'
-                        : shortenHome(s, window.api.home)}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
           <span className="flabel">Channel</span>
           {channels && (guildId || channels.length > 0) && (
             <div className="wt-list">
-              {guildId && newName && (
+              {guildId && (
                 <div
                   className={'cb-row' + (channel === NEW ? ' hot' : '')}
                   onMouseDown={(e) => e.preventDefault()}
@@ -165,35 +115,24 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
                   <span className="wt-name">
                     <IconPlus size={14} /> New channel #{newName}
                   </span>
-                  <span className="note">
-                    {picked === GLOBAL_SCOPE
-                      ? 'Koloft makes it'
-                      : `topic: ${newChannelTopic(picked)}`}
-                  </span>
+                  <span className="note">Koloft makes it</span>
                 </div>
               )}
-              {channels.map((c) => {
-                const taken = channelTakenBy(c)
-                return (
-                  <div
-                    key={c.channelId}
-                    className={
-                      'cb-row' +
-                      (taken ? ' dim' : '') +
-                      (channel !== NEW && c.channelId === channel?.channelId ? ' hot' : '')
-                    }
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      if (taken) return
-                      setChannel(c)
-                      setError(null)
-                    }}
-                  >
-                    <span className="wt-name">#{c.name}</span>
-                    {taken && <span className="note">bound to {scopeName(taken.scope)}</span>}
-                  </div>
-                )
-              })}
+              {channels.map((c) => (
+                <div
+                  key={c.channelId}
+                  className={
+                    'cb-row' + (channel !== NEW && c.channelId === channel?.channelId ? ' hot' : '')
+                  }
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setChannel(c)
+                    setError(null)
+                  }}
+                >
+                  <span className="wt-name">#{c.name}</span>
+                </div>
+              ))}
             </div>
           )}
           <p className={'field-hint' + (error ? ' bad' : '')}>
@@ -215,14 +154,14 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
             ) : channels === null ? (
               'Loading your channels…'
             ) : !guildId && channels.length === 0 ? (
-              `No channels yet. Finish Settings ▸ Discord ▸ ${SET_UP_WITH_ASSIST} first.`
+              `No channels yet. Click Settings ▸ Discord ▸ ${setUpWith(name)} first.`
             ) : channel === NEW && guildId ? (
               <>
                 Koloft makes the new channel in your server <b>{guildName}</b>, under your bot’s
-                category, and writes the full path in its topic. Or pick a channel you already have.
+                category. Or pick a channel you already have.
               </>
             ) : (
-              'Channels come from your server through the bot. Each workspace binds one channel; the global Assist binds one.'
+              `Channels come from your server through the bot. You talk to ${name} in the one you pick.`
             )}
           </p>
         </div>
@@ -233,7 +172,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
           <button
             className="btn-primary"
             data-default="true"
-            disabled={busy || !picked}
+            disabled={busy}
             onClick={() => void submit()}
           >
             {editing ? 'Save' : 'Bind'}

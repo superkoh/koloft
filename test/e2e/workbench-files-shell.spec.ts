@@ -136,7 +136,7 @@ test.describe('Workbench files tab shell: view switch, base picker, filter menu 
   }) => {
     await startSessionIn(page, 'ws-a')
     await startSessionIn(page, 'ws-a')
-    const rows = page.locator('.ws-tab')
+    const rows = page.locator('.ws .ws-tab')
     await expect(rows).toHaveCount(2, { timeout: 25_000 })
     await dismissWorktreeHintCardCoveringTheRows(page)
     const rowB = rows.nth(0)

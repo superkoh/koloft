@@ -47,16 +47,8 @@ import {
 import type { MachinePackage } from './remote/launch'
 import { problemOf, sshLinkBroke, type RunResult } from './remote/ssh'
 import {
-  allowsTheBrowser,
-  ASSIST_ALLOW_ENV,
-  CODEX_GATE_ENV,
-  CODEX_GATE_NOT_TRUSTED,
-  CODEX_ASKS_AND_WAITS
-} from './conductorGate'
-import {
-  CONDUCTOR_PERMISSIONS,
+  CODEX_ASKS_AND_WAITS,
   developerInstructions,
-  GATE_HOOK,
   hookOverrides,
   launchChoiceArgs,
   machineTrustedFolderFlags,
@@ -184,8 +176,7 @@ export interface CodexSessionDeps extends StoredSessionDeps {
   machine?: CodexMachineDeps
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(resumeSessionId?: string): { account: string; home: string; notice?: string } | undefined
-  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
-  conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
+  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   replyLanguageScript: string
   browserEndpoint(tabId: string): string
   openShimRoot: string
@@ -283,7 +274,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return home ? { ...this.processEnv, CODEX_HOME: home } : this.processEnv
   }
 
-  // ADR-0029 CODEX§27
+  // CODEX§27
   private async trustKoloftHooks(
     launch: CodexProcessOptions,
     configFile: string,
@@ -455,7 +446,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       .catch(() => ({}))
   }
 
-  private async browserOverrides(home: string, cwd: string, conductor: boolean): Promise<string[]> {
+  private async browserOverrides(home: string, cwd: string): Promise<string[]> {
     const readConfig = (): Promise<unknown> =>
       this.withRpc(home, (rpc) => rpc.request('config/read', { cwd }))
     // CODEX§28
@@ -467,7 +458,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const cacheDir = path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright')
     fs.mkdirSync(cacheDir, { recursive: true })
     return [
-      ...playwrightEnvOverrides(config.mcp_servers, conductor),
+      ...playwrightEnvOverrides(config.mcp_servers),
       ...browserSandboxOverrides(config.sandbox_workspace_write, cacheDir)
     ]
   }
@@ -665,14 +656,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const assist = machine ? undefined : this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = !machine && (opts.conductor || !!assist)
     const role = opts.role ?? assist?.role
-    const allow = opts.allow ?? assist?.allow ?? []
     if (opts.trustFolder || assist) trust(cwd, this.envFor(home))
     if (conductor && (opts.trustFolder || assist)) seedAssistMemory(cwd)
     const tabId = this.deps.pty.nextId()
-    // ADR-0029
-    const endpoint =
-      machine || (conductor && !allowsTheBrowser(allow)) ? '' : this.deps.browserEndpoint(tabId)
-    const browser = endpoint ? await this.browserOverrides(home, cwd, conductor) : []
+    const endpoint = machine ? '' : this.deps.browserEndpoint(tabId)
+    const browser = endpoint ? await this.browserOverrides(home, cwd) : []
     // CODEX§29
     const gitNetwork = (await this.deps.gitAccounts.picked(cwd))
       ? ['sandbox_workspace_write.network_access=true']
@@ -712,17 +700,13 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       ...(role ? [role] : [])
     ]
     const permission = opts.permission ?? 'default'
-    const permissions = conductor ? CONDUCTOR_PERMISSIONS : PERMISSIONS[permission]
+    const permissions = PERMISSIONS[permission]
     const processOptions: CodexProcessOptions = {
       binary,
       env,
       sessionEnv: {
         ...(resource && { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }),
         ...(machine ? { KOLOFT_TAB_ID: tabId } : browserControlEnv(tabId, endpoint)),
-        ...(conductor && {
-          [CODEX_GATE_ENV]: this.deps.conductorGate.script,
-          [ASSIST_ALLOW_ENV]: this.deps.conductorGate.writeAllow(tabId, allow)
-        }),
         ...(said && {
           [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
           [CODEX_SAID_ENV]: said
@@ -738,7 +722,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         CODEX_ASKS_AND_WAITS
       ]
     }
-    const hooks = [...(conductor ? [GATE_HOOK] : []), ...CODEX_REPLY_LANGUAGE_HOOKS]
+    const hooks = CODEX_REPLY_LANGUAGE_HOOKS
     let transport: CodexTransport | undefined
     try {
       const askMachineTrust = !!machine && !permissions && !opts.resumeSessionId
@@ -756,11 +740,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       const launchFlags = trustedThere
         ? machineTrustedFolderFlags(ownConfig)
         : permissionFlags(permissions)
-      // ADR-0029 ADR-0031
+      // ADR-0031
       const trusted = machine
         ? new Set(hookTrust.map((h) => h.command))
         : await this.trustKoloftHooks(processOptions, codexConfigFile(this.envFor(home)), hooks)
-      if (conductor && !trusted.has(GATE_HOOK.command)) throw new Error(CODEX_GATE_NOT_TRUSTED)
       this.assertStarting()
       const serverConfig = [
         ...processOptions.configOverrides!,
@@ -850,8 +833,6 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       await transport?.stop()
       openShim?.release()
       if (machine) fs.rmSync(this.machineDeps().tabDir(tabId), { recursive: true, force: true })
-      const allowFile = processOptions.sessionEnv?.[ASSIST_ALLOW_ENV]
-      if (allowFile) fs.rmSync(allowFile, { force: true })
       throw error
     }
   }

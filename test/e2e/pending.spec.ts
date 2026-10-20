@@ -42,7 +42,7 @@ test.describe('pending row: what a launch owns before Claude reports a session i
     try {
       await startMainSession(app, page)
 
-      const pending = page.locator('.ws-tab.st-pending')
+      const pending = page.locator('.ws .ws-tab.st-pending')
       await expect(pending).toHaveCount(1, { timeout: 20_000 })
       await expect(pending.locator('.ws-tab-title')).toHaveText('Starting…')
       await expect(pending.locator('.ws-tab-sub')).toHaveText('main')
@@ -50,13 +50,13 @@ test.describe('pending row: what a launch owns before Claude reports a session i
       await expect(page.locator('.term-wrap:visible').first()).toContainText('delayed bind', {
         timeout: 30_000
       })
-      await expect(page.locator('.ws-tab')).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
       await snap(page, 'T-LIFE-01')
 
-      const row = page.locator('.ws-tab', { hasText: 'Fake session: project notes' })
+      const row = page.locator('.ws .ws-tab', { hasText: 'Fake session: project notes' })
       await expect(row).toHaveCount(1, { timeout: 40_000 })
-      await expect(page.locator('.ws-tab')).toHaveCount(1)
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0)
       await expect(row.locator('.ws-tab-sub')).toHaveText('main')
       await expect(row).not.toHaveClass(/\bcold\b/)
     } finally {
@@ -74,7 +74,7 @@ test.describe('pending row: what a launch owns before Claude reports a session i
     const { app, page } = await launch(env)
     try {
       await startMainSession(app, page)
-      const pending = page.locator('.ws-tab.st-pending')
+      const pending = page.locator('.ws .ws-tab.st-pending')
       await expect(pending).toHaveCount(1, { timeout: 20_000 })
       const [first] = await waitForCalls(env, 1)
 
@@ -83,7 +83,7 @@ test.describe('pending row: what a launch owns before Claude reports a session i
       await snap(page, 'T-LIFE-02')
       await page.locator('.menu .mi', { hasText: 'Cancel' }).click()
 
-      await expect(page.locator('.ws-tab')).toHaveCount(0, { timeout: 30_000 })
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => processAlive(first.pid), { timeout: 30_000 }).toBe(false)
 
       await startMainSession(app, page)
@@ -91,7 +91,7 @@ test.describe('pending row: what a launch owns before Claude reports a session i
       await expect(pending).toHaveClass(/\bactive\b/)
       const calls = await waitForCalls(env, 2)
       await sendShortcut(app, 'shortcut:close-tab')
-      await expect(page.locator('.ws-tab')).toHaveCount(0, { timeout: 30_000 })
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => processAlive(calls[1].pid), { timeout: 30_000 }).toBe(false)
     } finally {
       await app.close().catch(() => {})
@@ -111,7 +111,7 @@ test.describe('pending row: what a launch owns before Claude reports a session i
       await waitForCalls(env, 1)
       await expect(page.locator('.toast-msg')).toContainText('exit code 1', { timeout: 20_000 })
       await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
-      await expect(page.locator('.ws-tab')).toHaveCount(0, { timeout: 30_000 })
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0, { timeout: 30_000 })
     } finally {
       await app.close().catch(() => {})
     }

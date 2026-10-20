@@ -251,14 +251,14 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       expect(await menuItemTexts(page)).toEqual(
-        expect.arrayContaining(['Scheduled jobs…', 'Talk to Assist'])
+        expect.arrayContaining(['Scheduled jobs…', 'Remove workspace'])
       )
       const shape = await page
         .locator('.menu')
         .evaluate((el) =>
           Array.from(el.children).map((c) => (c.classList.contains('sep') ? 'sep' : 'mi'))
         )
-      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
+      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
 
       await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
       await expect(cronDialog(page)).toBeVisible()
@@ -369,7 +369,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       ).toBe(true)
 
       await expect(plainRows(page, 'ws-a')).toHaveClass(/\bactive\b/)
-      await expect(page.locator('.ws-tab.active .ws-tab-cron')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.active .ws-tab-cron')).toHaveCount(0)
       await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toEqual(['block', 'none'])
 
       expect(call.argv).toContain('--session-id')
@@ -487,7 +487,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(row).toHaveClass(/\bactive\b/)
       await sendShortcut(app, 'shortcut:close-tab')
 
-      await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
+      await expect(page.locator('.isl-butler > .ws-tab')).toHaveClass(/\bactive\b/, {
+        timeout: 30_000
+      })
+      await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toEqual(['block'])
       await expect(page.locator('.modal')).toHaveCount(0)
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await expect(row.locator('.ws-tab-cron')).toHaveCount(1)
@@ -1348,7 +1351,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(run).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(page.locator('.modal')).toHaveCount(0)
-      await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
+      await expect(page.locator('.isl-butler > .ws-tab')).toHaveClass(/\bactive\b/, {
+        timeout: 30_000
+      })
+      await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toEqual(['block'])
     } finally {
       await app.close().catch(() => {})
     }

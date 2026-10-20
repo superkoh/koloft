@@ -311,7 +311,7 @@ describe('U4 · accounts:add IPC wiring', () => {
     const root = path.resolve(__dirname, '../..')
     const preload = fs.readFileSync(path.join(root, 'src/preload/index.ts'), 'utf8')
     const call = preload.match(
-      /add:\s*\(([^)]*)\)\s*=>\s*ipcRenderer\.invoke\('accounts:add',([^)]*)\)/
+      /add:\s*\(([^)]*)\)\s*=>\s*ipcRenderer\.invoke\(CH\.accounts\.add,([^)]*)\)/
     )
     expect(call, 'accounts.add is not a direct ipcRenderer.invoke').not.toBeNull()
     const params = call![1].split(',').map((s) => s.trim())

@@ -165,14 +165,33 @@ export function rowsUnder<R extends { id: string; parentId?: string }>(node: Row
   return node.children.flatMap((child) => [child.row, ...rowsUnder(child)])
 }
 
+function markOn(
+  e: AttentionEvent,
+  tabId: string | undefined,
+  sessionId: string | undefined
+): boolean {
+  return e.tabId === tabId || (!!sessionId && e.sessionId === sessionId)
+}
+
+export function waitingTabs(
+  pending: readonly AttentionEvent[],
+  tabs: readonly { id: string; sessionId?: string }[]
+): string[] {
+  const waiting: string[] = []
+  for (const e of [...pending].sort((a, b) => a.at - b.at)) {
+    const tab = tabs.find((t) => markOn(e, t.id, t.sessionId))
+    if (tab && !waiting.includes(tab.id)) waiting.push(tab.id)
+  }
+  return waiting
+}
+
 export function nextWaitingTab(
   pending: readonly AttentionEvent[],
   activeTabId: string | null,
-  tabs: readonly { id: string }[]
+  tabs: readonly { id: string; sessionId?: string }[]
 ): string | undefined {
-  return pending
-    .filter((e) => e.tabId !== activeTabId && tabs.some((t) => t.id === e.tabId))
-    .sort((a, b) => a.at - b.at)[0]?.tabId
+  const waiting = waitingTabs(pending, tabs)
+  return waiting[(waiting.indexOf(activeTabId ?? '') + 1) % waiting.length]
 }
 
 export function liveTabOf(
@@ -237,8 +256,7 @@ export function rowLookups<S extends { sessionId: string; tabId: string; alive: 
       return liveTabOfSession.get(row.id)?.tabId ?? openTabOfSession.get(row.id)?.id
     },
     sessionOn: (tabId) => sessionOnTab.get(tabId),
-    attentionOn: (rowId, tabId) =>
-      attention.find((e) => e.sessionId === rowId || e.tabId === tabId),
+    attentionOn: (rowId, tabId) => attention.find((e) => markOn(e, tabId, rowId)),
     hasAliveTab: (sessionId) => aliveTabSessions.has(sessionId)
   }
 }

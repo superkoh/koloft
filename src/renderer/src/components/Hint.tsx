@@ -7,6 +7,7 @@ import { useStore } from '../store'
 import { isSessionKind } from '../agentUi'
 import { BACKEND_LABEL, capabilitiesFor } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
+import '../hint.css'
 
 const CAPTURE_BEFORE_XTERM = true
 const CARD_W = 268

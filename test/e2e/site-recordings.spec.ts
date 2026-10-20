@@ -357,20 +357,16 @@ test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what wa
   }
 })
 
-test('assist: Assist starts a real claude session that adds GET /health and reports back', async ({
+test('assist: the butler starts a real claude session that adds GET /health and reports back', async ({
   env
 }) => {
   test.skip(!HAVE_REAL_CLAUDE, 'needs a real claude and its login')
   test.setTimeout(900_000)
-  const { app, page } = await launchReal(env, {
-    assist: { on: true, backend: 'claude' },
-    conductorsFolded: false
-  })
+  const { app, page } = await launchReal(env, { assist: { on: true, backend: 'claude' } })
   try {
     const film = startFilm(page, 800)
     await page.waitForTimeout(1500)
-    await page.locator('.ws-head', { hasText: 'tidewatch' }).click({ button: 'right' })
-    await page.locator('.menu .mi', { hasText: 'Talk to Assist' }).click()
+    await page.locator('.isl-butler > .ws-tab').click()
     await page.waitForTimeout(12_000)
     await ask(page, "add a health check to tidewatch and tell me when it's done")
     const child = wsRows(page, 'tidewatch').first()

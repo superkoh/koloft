@@ -2,6 +2,7 @@ import { useMemo, type JSX } from 'react'
 import type { GitNumstatMap, GitStatusMap } from '@shared/types'
 import type { ChangeTotals } from './changesModel'
 import { changeTotals } from './workbenchPreviewModel'
+import '../fileTree.css'
 
 export function useChangeTotals(
   git: GitStatusMap,

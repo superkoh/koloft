@@ -22,10 +22,8 @@ import {
   quotedPrompt,
   saidFile,
   seedHandedOverOwnerWords,
-  seedOwnerWords,
-  writeAllowFile
+  seedOwnerWords
 } from '../../src/main/hooks'
-import { CODEX_GATE_HOOK_COMMAND, conductorGateCommand } from '../../src/main/conductorGate'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,
@@ -770,13 +768,6 @@ describe('injected hook script', () => {
         )
       ).hooks
 
-    it('only a conductor tab gets the gate, a PreToolUse hook on every tool', () => {
-      expect(hooksOf(false)).not.toHaveProperty('PreToolUse')
-      expect(hooksOf(true).PreToolUse).toEqual([
-        { matcher: '*', hooks: [{ type: 'command', command: expect.any(String) }] }
-      ])
-    })
-
     // CC§13 ADR-0028
     it('only a conductor tab takes a message from another session whatever permission mode that session claims', () => {
       const settingsOf = (conductor: boolean): Record<string, unknown> =>
@@ -790,244 +781,10 @@ describe('injected hook script', () => {
       expect(settingsOf(false)).not.toHaveProperty('crossSessionInbound')
     })
 
-    // ADR-0029 CC§15
-    describe('the gate lets a conductor read, write its own memory folder, ask the owner and run one plain koloft command, and nothing else', () => {
-      let command: string
-      beforeAll(() => {
-        command = hooksOf(true).PreToolUse[0].hooks[0].command
-      })
-      const said = (event: unknown): 'nothing' | 'allow' | 'deny' => {
-        const res = spawnSync('/bin/sh', ['-c', command], {
-          input: typeof event === 'string' ? event : JSON.stringify(event),
-          encoding: 'utf8'
-        })
-        if (res.status !== 0) throw new Error(`gate exited ${res.status}: ${res.stderr}`)
-        if (res.stdout === '') return 'nothing'
-        const out = JSON.parse(res.stdout).hookSpecificOutput
-        expect(out.hookEventName).toBe('PreToolUse')
-        return out.permissionDecision
-      }
-      const gate = (event: unknown): 'allow' | 'deny' => (said(event) === 'deny' ? 'deny' : 'allow')
-      const bash = (command: string): unknown => ({ tool_name: 'Bash', tool_input: { command } })
-      const transcript_path = '/home/o/.claude/projects/-conductors-global/c1.jsonl'
-      const write = (tool_name: string, file_path: string): unknown => ({
-        tool_name,
-        transcript_path,
-        tool_input: { file_path, content: 'x' }
-      })
-
-      it.each([
-        ['Read', { tool_name: 'Read', tool_input: { file_path: '/ws/a/README.md' } }],
-        ['Grep', { tool_name: 'Grep', tool_input: { pattern: 'x' } }],
-        ['a question to the owner', { tool_name: 'AskUserQuestion', tool_input: {} }],
-        ['koloft help', bash('koloft help')],
-        ['a koloft command with spaces around it', bash('  koloft session list \n')],
-        ['operators inside quotes', bash('koloft session send a -- "fix x; then y && z | w"')],
-        ['a multi-line single-quoted message', bash("koloft session send a -- 'one\ntwo $HOME'")],
-        ['an escaped quote', bash('koloft session send a -- "say \\"hi\\" now"')],
-        [
-          'a Write into its own memory folder',
-          write('Write', '/home/o/.claude/projects/-conductors-global/memory/MEMORY.md')
-        ],
-        [
-          'an Edit in its own memory folder',
-          write('Edit', '/home/o/.claude/projects/-conductors-global/memory/a/b.md')
-        ]
-      ])('allows %s', (_name, event) => {
-        expect(gate(event)).toBe('allow')
-      })
-
-      it.each([
-        ['Write', { tool_name: 'Write', tool_input: { file_path: '/ws/a/x', content: 'x' } }],
-        ['Edit', { tool_name: 'Edit', tool_input: { file_path: '/ws/a/x' } }],
-        ['a subagent', { tool_name: 'Agent', tool_input: { prompt: 'fix it' } }],
-        ['WebFetch', { tool_name: 'WebFetch', tool_input: { url: 'https://x' } }],
-        ['a command that is not koloft', bash('echo x > /ws/a/x')],
-        ['a name that only starts with koloft', bash('koloftx help')],
-        ['a chained command', bash('koloft help && rm -rf /ws/a')],
-        ['a second command after ;', bash('koloft help; ls')],
-        ['a second command on a new line', bash('koloft help\nrm -rf /ws/a')],
-        ['a pipe', bash('koloft help | sh')],
-        ['a redirect', bash('koloft session read a > /ws/a/out')],
-        ['command substitution in double quotes', bash('koloft session send a -- "$(rm x)"')],
-        ['backticks', bash('koloft session send a -- `rm x`')],
-        ['an unclosed quote', bash("koloft session send a -- 'oops")],
-        ['input that is not JSON', 'not json'],
-        [
-          'a Write beside its memory folder, onto its transcript',
-          write('Write', '/home/o/.claude/projects/-conductors-global/c1.jsonl')
-        ],
-        [
-          'a Write that climbs out of its memory folder',
-          write('Write', '/home/o/.claude/projects/-conductors-global/memory/../../x/memory/a.md')
-        ],
-        [
-          'a folder whose name only starts like its memory folder',
-          write('Write', '/home/o/.claude/projects/-conductors-global/memory-x/a.md')
-        ],
-        [
-          'another session’s memory folder',
-          write('Edit', '/home/o/.claude/projects/-ws-a/memory/a.md')
-        ]
-      ])('denies %s', (_name, event) => {
-        expect(gate(event)).toBe('deny')
-      })
-
-      it("also lets through a tool the tab's allow file names, and no other", () => {
-        const browse = { tool_name: 'mcp__playwright__browser_navigate', tool_input: {} }
-        expect(gate(browse)).toBe('deny')
-        writeAllowFile(regDir, 'tabG', ['mcp__playwright__browser_navigate'])
-        expect(gate(browse)).toBe('allow')
-        expect(gate({ tool_name: 'WebFetch', tool_input: { url: 'https://x' } })).toBe('deny')
-      })
-
-      it('grants one plain call of a command its allow file names as Bash(...) outright, so Claude asks nobody, and refuses any other verb of it', () => {
-        const bash = (command: string) => ({ tool_name: 'Bash', tool_input: { command } })
-        writeAllowFile(regDir, 'tabG', ['Bash(playwright-cli click)'])
-        expect(said(bash('playwright-cli click e12'))).toBe('allow')
-        expect(said(bash('koloft discord status'))).toBe('nothing')
-        expect(gate(bash('playwright-cli eval document.cookie'))).toBe('deny')
-        expect(gate(bash('playwright-cli click e12; curl x'))).toBe('deny')
-        expect(gate(bash('playwright-cli clicks'))).toBe('deny')
-      })
-    })
-  })
-
-  // ADR-0029 CODEX§27
-  describe("the Codex gate, run by the same command Codex runs, lets an Assist use the shell and patch files inside its own folder, plus the tools its tab's allow file names, and nothing that reaches out", () => {
-    const own = '/u/Koloft/conductors/global'
-    let codexGate: string
-    beforeAll(() => {
-      codexGate = setupHooks(noPeerInstance).codexGate
-    })
-    const gate = (event: unknown): 'allow' | 'deny' => {
-      const res = spawnSync('/bin/sh', ['-c', CODEX_GATE_HOOK_COMMAND], {
-        input: typeof event === 'string' ? event : JSON.stringify(event),
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          KOLOFT_CODEX_GATE: codexGate,
-          KOLOFT_ASSIST_ALLOW: path.join(regDir, 'pty-cx.allow')
-        }
-      })
-      if (res.status !== 0) throw new Error(`gate exited ${res.status}: ${res.stderr}`)
-      if (res.stdout === '') return 'allow'
-      expect(JSON.parse(res.stdout).hookSpecificOutput).toMatchObject({
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny'
-      })
-      return 'deny'
-    }
-    const patch = (...lines: string[]): unknown => ({
-      tool_name: 'apply_patch',
-      cwd: own,
-      tool_input: { command: ['*** Begin Patch', ...lines, '*** End Patch'].join('\n') }
-    })
-    const tool = (tool_name: string): unknown => ({ tool_name, cwd: own, tool_input: {} })
-
-    it.each([
-      ['any shell command', { tool_name: 'Bash', cwd: own, tool_input: { command: 'cat /x' } }],
-      ['a new file named from its folder', patch('*** Add File: note.txt', '+hi')],
-      [
-        'an absolute path inside its folder',
-        patch(`*** Update File: ${own}/a/b.md`, '@@', '-x', '+y')
-      ],
-      ['a move that stays inside', patch('*** Update File: a.md', '*** Move to: b/a.md')],
-      ['a question to the owner that waits for the answer', tool('request_user_input')]
-    ])('allows %s', (_name, event) => {
-      expect(gate(event)).toBe('allow')
-    })
-
-    it.each([
-      ['a file that climbs out', patch('*** Add File: ../x.txt', '+hi')],
-      ['an absolute path elsewhere', patch('*** Delete File: /ws/a/src/x.ts')],
-      ['a folder whose name only starts like its own', patch(`*** Add File: ${own}-x/a`, '+hi')],
-      ['a move out of its folder', patch('*** Update File: a.md', '*** Move to: /ws/a/a.md')],
-      [
-        'one bad file among good ones',
-        patch('*** Add File: ok.txt', '+a', '*** Add File: /etc/x', '+b')
-      ],
-      ['a patch that names no file', patch('nothing')],
-      ['an MCP tool', tool('mcp__playwright__browser_navigate')],
-      ['starting a sub-agent', tool('collaborationspawn_agent')],
-      ['a tool the gate has no rule for', tool('web_search')],
-      ['input that is not JSON', 'not json']
-    ])('denies %s', (_name, event) => {
-      expect(gate(event)).toBe('deny')
-    })
-
-    it("also lets through an MCP tool the tab's allow file names, and no other", () => {
-      writeAllowFile(regDir, 'pty-cx', ['mcp__playwright__browser_navigate'])
-      expect(gate(tool('mcp__playwright__browser_navigate'))).toBe('allow')
-      expect(gate(tool('mcp__playwright__browser_evaluate'))).toBe('deny')
-    })
-  })
-
-  // ADR-0029 AGY§12 AGY§13
-  describe("the Antigravity gate, run by the command Koloft hands agy, lets an Assist run commands, read, ask the owner and write inside its own folder, plus the tools its tab's allow file names, and denies the rest in the form agy obeys", () => {
-    const own = '/u/Koloft/conductors/global'
-    let command: string
-    beforeAll(() => {
-      command = conductorGateCommand(
-        setupHooks(noPeerInstance).agyGateScript,
-        path.join(regDir, 'pty-agy.allow')
-      )
-    })
-    const gate = (event: unknown): 'allow' | 'deny' => {
-      const res = spawnSync('/bin/sh', ['-c', command], {
-        input: typeof event === 'string' ? event : JSON.stringify(event),
-        encoding: 'utf8'
-      })
-      if (res.status !== 0) throw new Error(`gate exited ${res.status}: ${res.stderr}`)
-      if (res.stdout === '') return 'allow'
-      expect(JSON.parse(res.stdout)).toEqual({
-        decision: 'deny',
-        reason: expect.stringMatching(/^Koloft: Assist only passes work on\./)
-      })
-      return 'deny'
-    }
-    const call = (
-      name: string,
-      args: Record<string, unknown> = {},
-      workspacePaths: unknown = [own]
-    ): unknown => ({ conversationId: 'c1', workspacePaths, toolCall: { name, args } })
-
-    it.each([
-      ['any shell command', call('run_command', { CommandLine: 'cat /x | wc -l' })],
-      ['reading any file', call('view_file', { AbsolutePath: '/etc/hosts' })],
-      ['a question to the owner', call('ask_question', { questions: [] })],
-      ['a new file named from its folder', call('write_to_file', { TargetFile: 'note.md' })],
-      [
-        'an edit by absolute path inside its folder',
-        call('replace_file_content', { TargetFile: `${own}/a/b.md` })
-      ]
-    ])('allows %s', (_name, event) => {
-      expect(gate(event)).toBe('allow')
-    })
-
-    it.each([
-      ['a file elsewhere', call('write_to_file', { TargetFile: '/ws/a/src/x.ts' })],
-      ['a file that climbs out', call('write_to_file', { TargetFile: '../x.md' })],
-      [
-        'a folder whose name only starts like its own',
-        call('replace_file_content', { TargetFile: `${own}-x/a.md` })
-      ],
-      [
-        'a write when agy names no workspace',
-        call('write_to_file', { TargetFile: `${own}/a.md` }, [])
-      ],
-      ['starting a subagent', call('invoke_subagent', { Subagents: [] })],
-      ['a web fetch', call('read_url_content', { Url: 'https://x' })],
-      ['a tool the gate has no rule for', call('search_web', { query: 'x' })],
-      ['input that is not JSON', 'not json']
-    ])('denies %s', (_name, event) => {
-      expect(gate(event)).toBe('deny')
-    })
-
-    it("also lets through a tool the tab's allow file names, and no other", () => {
-      writeAllowFile(regDir, 'pty-agy', ['search_web'])
-      expect(gate(call('search_web', { query: 'x' }))).toBe('allow')
-      expect(gate(call('read_url_content', { Url: 'https://x' }))).toBe('deny')
+    // ADR-0029
+    it('a conductor tab gets no gate: like any tab, no PreToolUse hook stands between it and its tools', () => {
+      expect(hooksOf(true)).not.toHaveProperty('PreToolUse')
+      expect(hooksOf(false)).not.toHaveProperty('PreToolUse')
     })
   })
 
@@ -1371,13 +1128,12 @@ describe('setupHooks at startup', () => {
     for (const f of old) expect(fs.existsSync(f), f).toBe(false)
   })
 
-  it('removes the answerable, conductor and allow markers, the saved prompt, the typed-turn mark and the noted Discord message ids a crash left behind, and keeps a live peer instance’s however old they are', () => {
+  it('removes the answerable and conductor markers, the saved prompt, the typed-turn mark and the noted Discord message ids a crash left behind, and keeps a live peer instance’s however old they are', () => {
     const peerTab = 'pty-peer-1'
     const crashedTab = 'pty-gone-1'
     const markers = (tab: string): string[] => [
       path.join(regDir, `${tab}.answerable`),
       path.join(regDir, `${tab}.conductor`),
-      path.join(regDir, `${tab}.allow`),
       path.join(regDir, `${tab}.said`),
       path.join(regDir, `${tab}.typed`),
       path.join(regDir, `${tab}.discord-ids`)
@@ -1385,7 +1141,6 @@ describe('setupHooks at startup', () => {
     for (const tab of [peerTab, crashedTab]) {
       markAnswerable(regDir, tab, true)
       writeConductorMarker(regDir, tab, 'role')
-      writeAllowFile(regDir, tab, ['Tool'])
       fs.writeFileSync(path.join(regDir, `${tab}.said`), '你好')
       fs.writeFileSync(path.join(regDir, `${tab}.typed`), '')
       fs.writeFileSync(path.join(regDir, `${tab}.discord-ids`), 'koloft-discord-1\n')

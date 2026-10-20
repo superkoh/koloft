@@ -12,7 +12,7 @@ import {
   waitBooted,
   waitConductorStarted,
   assistRecordOnDisk,
-  waitForCallsBesideConductors,
+  waitForCalls,
   wsRows,
   oneStillRunning
 } from './helpers/p1'
@@ -42,7 +42,7 @@ function seedConductor(env: E2EEnv): void {
       bindings: [
         {
           id: 'b1',
-          scope: env.workspaces.a,
+          scope: 'global',
           backend: 'claude',
           channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
           sessionIds: [],
@@ -118,7 +118,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
         .poll(() => fake.commands.map((c) => c.name).sort())
         .toEqual(['clear', 'compact', 'run'])
       await startSessionIn(page, 'ws-a')
-      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
+      const child = (await waitForCalls(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
 
       const listed = await choices(fake, '')
@@ -170,7 +170,9 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       fake.say(OWNER, '/clear')
       await expect
         .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([expect.stringMatching(/Assist\*\* ran \/clear:\nIt is a new conversation now/)])
+        .toEqual([
+          expect.stringMatching(/\*\*Alfred\*\* ran \/clear:\nIt is a new conversation now/)
+        ])
       expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
       await expect.poll(() => assistRecordOnDisk(env)?.lastSessionKey).not.toBe(before)
       expect(said(fake).join('\n')).not.toContain('[Discord] /clear')
@@ -248,7 +250,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-a')
-      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
+      const child = (await waitForCalls(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
       const tab = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.sessionId === child
@@ -344,7 +346,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-a')
-      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
+      const child = (await waitForCalls(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
 
       fake.say(OWNER, `/koloft session command ${child} /context`)
