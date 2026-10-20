@@ -3,12 +3,14 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, type E2EEnv } from './helpers/env'
+import { installAgy, installCodex, installMuse, seedSettings, type E2EEnv } from './helpers/env'
 import {
   readCalls,
   resumedId,
   runIn,
   centerTerm,
+  closeActiveTab,
+  newSessionInWith,
   seedJsonl,
   sendShortcut,
   startSessionIn,
@@ -18,8 +20,17 @@ import {
   wsRows
 } from './helpers/p1'
 import {
+  agyReady,
+  boundRemoteAgy,
+  installCodexOnFakeRemote,
   installFakeRemote,
+  installMuseOnMachine,
+  installRemoteAgy,
   killFakeRemote,
+  liveTmuxSessions,
+  machineAgyCalls,
+  machineHome,
+  machineMuseCalls,
   mirrorProjectDir,
   REMOTE_HOST,
   REMOTE_WS_NAME,
@@ -107,7 +118,7 @@ function seedCodexThread(env: E2EEnv, cwd: string, name: string, reply: string):
   return id
 }
 
-function codexCalls(env: E2EEnv): { argv: string[]; sessionId: string }[] {
+function codexCalls(env: E2EEnv): { argv: string[]; sessionId: string; method: string }[] {
   const file = path.join(env.home, 'fake-codex-calls.jsonl')
   if (!fs.existsSync(file)) return []
   return fs
@@ -340,6 +351,163 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
         const last = calls[calls.length - 1]
         expect(resumedId(last)).toBe(remote)
         expect(last.cwd).toBe(remoteDir(env))
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test('a cold Muse session on an ssh machine is found by words said after its title, read from its log on the machine, named with its host, and resumes there', async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      installMuse(env)
+      installFakeRemote(env)
+      installMuseOnMachine(env)
+      seedRemoteWorkspace(env)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await newSessionInWith(page, REMOTE_WS_NAME, 'Muse')
+        await expect.poll(() => machineMuseCalls(env).length, { timeout: 60_000 }).toBe(1)
+        const [{ sessionId }] = machineMuseCalls(env)
+        const row = wsRows(page, REMOTE_WS_NAME)
+        await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        await runIn(page, centerTerm(page), 'Muse plans on the build machine')
+        await expect(row).toContainText('Muse plans on the build machine')
+        await runIn(page, centerTerm(page), 'where is the wolf-needle-6')
+        const saved = path.join(
+          machineHome(env),
+          '.local',
+          'share',
+          'muse',
+          'sessions',
+          'fake',
+          `${sessionId}.json`
+        )
+        await expect
+          .poll(() => fs.readFileSync(saved, 'utf8'), { timeout: 30_000 })
+          .toContain('echo: where is the wolf-needle-6')
+        await closeActiveTab(app, page)
+        await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
+        await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
+
+        await expect(async () => {
+          const dialog = await searchFor(app, page, 'wolf-NEEDLE-6')
+          await expect(hit(dialog, 'Muse plans on the build machine')).toBeVisible({
+            timeout: 2000
+          })
+        }).toPass({ timeout: 30_000 })
+        const found = hit(searchDialog(page), 'Muse plans on the build machine')
+        await expect(found.locator('.restore-snippet b')).toHaveText('wolf-needle-6')
+        await expect(found.locator('.restore-meta')).toContainText(
+          `${REMOTE_HOST}:${REMOTE_WS_NAME} · main ·`
+        )
+        await expect(found.getByRole('img', { name: 'Muse', exact: true })).toBeVisible()
+        await found.click()
+
+        await expect.poll(() => machineMuseCalls(env).length, { timeout: 60_000 }).toBe(2)
+        expect(machineMuseCalls(env)[1].argv.slice(-2)).toEqual(['resume', sessionId])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test('a cold Antigravity session on an ssh machine is found by words said after its title, in its mirrored transcript, named with its host, and resumes there', async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      installAgy(env)
+      installFakeRemote(env)
+      installRemoteAgy(env)
+      seedRemoteWorkspace(env)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+        await agyReady(page)
+        await runIn(page, centerTerm(page), 'Antigravity plans on the build machine')
+        const row = wsRows(page, REMOTE_WS_NAME).filter({
+          hasText: 'Antigravity plans on the build machine'
+        })
+        await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        const { id } = await boundRemoteAgy(page)
+        await runIn(page, centerTerm(page), 'where is the moth-needle-4')
+        const transcript = path.join(
+          machineHome(env),
+          '.gemini',
+          'antigravity-cli',
+          'brain',
+          id,
+          '.system_generated',
+          'logs',
+          'transcript.jsonl'
+        )
+        await expect
+          .poll(() => fs.readFileSync(transcript, 'utf8'), { timeout: 60_000 })
+          .toContain('Answer to: where is the moth-needle-4')
+        await sendShortcut(app, 'shortcut:close-tab')
+        await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).not.toContain(`k-${id}`)
+        await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
+
+        await expect(async () => {
+          const dialog = await searchFor(app, page, 'MOTH-needle-4')
+          await expect(hit(dialog, 'Antigravity plans on the build machine')).toBeVisible({
+            timeout: 2000
+          })
+        }).toPass({ timeout: 60_000 })
+        const found = hit(searchDialog(page), 'Antigravity plans on the build machine')
+        await expect(found.locator('.restore-snippet b')).toHaveText('moth-needle-4')
+        await expect(found.locator('.restore-meta')).toContainText(
+          `${REMOTE_HOST}:${REMOTE_WS_NAME} · main ·`
+        )
+        await expect(found.getByRole('img', { name: 'Antigravity', exact: true })).toBeVisible()
+        await found.click()
+
+        await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(2)
+        expect(machineAgyCalls(env)[1].argv).toContain(`--conversation=${id}`)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+    test('a cold Codex thread on an ssh machine is found by its title, named with its host, and resumes there', async ({
+      env
+    }) => {
+      installCodexOnFakeRemote(env)
+      installFakeRemote(env)
+      seedRemoteWorkspace(env)
+      fs.writeFileSync(
+        path.join(machineHome(env), 'fake-codex-next-title'),
+        'Codex plans on the build machine'
+      )
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
+        const row = wsRows(page, REMOTE_WS_NAME).filter({
+          hasText: 'Codex plans on the build machine'
+        })
+        await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+        const [{ sessionId: thread }] = codexCalls(env)
+        await sendShortcut(app, 'shortcut:close-tab')
+        await expect(row).toHaveClass(/cold/, { timeout: 30_000 })
+
+        const dialog = await searchFor(app, page, 'codex PLANS on the build')
+        await expect(dialog.locator('.pal-count')).toHaveText('1 conversation')
+        const found = hit(dialog, 'Codex plans on the build machine')
+        await expect(found.locator('.restore-meta')).toContainText(
+          `${REMOTE_HOST}:${REMOTE_WS_NAME} · main ·`
+        )
+        await expect(found.getByRole('img', { name: 'Codex', exact: true })).toBeVisible()
+        await found.click()
+
+        await expect.poll(() => codexCalls(env).length, { timeout: 60_000 }).toBe(2)
+        expect(codexCalls(env)[1]).toMatchObject({ method: 'thread/resume', sessionId: thread })
       } finally {
         await quitAndClose(app)
       }

@@ -2,9 +2,9 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { launchApp } from './app'
-import { installCodex, type E2EEnv } from './env'
-import { encodeCwd, killSession, waitBooted } from './p1'
+import { expect, launchApp } from './app'
+import { agyCalls, installCodex, type AgyCall, type E2EEnv } from './env'
+import { encodeCwd, killSession, terminalText, termIds, waitBooted } from './p1'
 
 export const REMOTE_HOST = 'devbox'
 
@@ -215,6 +215,39 @@ export function installRemoteAgy(env: E2EEnv): void {
   const settings = path.join(machineHome(env), '.gemini', 'antigravity-cli', 'settings.json')
   fs.mkdirSync(path.dirname(settings), { recursive: true })
   fs.writeFileSync(settings, JSON.stringify({ trustedWorkspaces: [remoteDir(env)] }))
+}
+
+export function machineAgyCalls(env: E2EEnv): AgyCall[] {
+  return agyCalls(env, machineHome(env)).filter((c) => !c.argv.includes('-p'))
+}
+
+export async function agyReady(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        for (const id of await termIds(page))
+          if ((await terminalText(page, id)).includes('Antigravity CLI')) return true
+        return false
+      },
+      { timeout: 90_000 }
+    )
+    .toBe(true)
+}
+
+export async function boundRemoteAgy(page: Page): Promise<{ tabId: string; id: string }> {
+  let found: { tabId: string; id: string } | undefined
+  await expect
+    .poll(
+      async () => {
+        const all = await page.evaluate(() => window.api.sessions.list())
+        const s = all.find((x) => x.backendId === 'agy' && x.alive && x.nativeSessionId)
+        found = s && { tabId: s.tabId, id: s.nativeSessionId! }
+        return !!found
+      },
+      { timeout: 60_000 }
+    )
+    .toBe(true)
+  return found!
 }
 
 export const MAC_CODEX_ACCESS_TOKEN = 'mac-access-token-for-the-machine'

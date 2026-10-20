@@ -5319,12 +5319,10 @@ function registerIpc(): void {
 
   const sessionSearch = new SessionSearch({
     candidates: () => {
-      const localPins = (workspaceMgr?.pinnedPaths() ?? [])
-        .map((w) => w.path)
-        .filter((p) => !parseRemoteKey(p))
+      const pins = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
       return [
         ...(workspaceMgr?.searchableRows() ?? []),
-        ...storedSessions().flatMap((s) => s.searchable(localPins))
+        ...storedSessions().flatMap((s) => s.searchable(pins))
       ]
     },
     backendSnippets: async (term, signal) =>
