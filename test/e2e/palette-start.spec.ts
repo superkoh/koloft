@@ -321,6 +321,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         .poll(() => peerLines(env), { timeout: 30_000 })
         .toContain('The owner typed this in ⌘P: and dim the sidebar too')
       expect(peerLines(env).trim().split('\n').at(-1)).not.toContain('The owner was in')
+      expect(peerLines(env)).not.toContain('turn on dark mode')
       expect(ownerWords()).toBe('and dim the sidebar too')
 
       assistAnswers(env, { hand: 'discord', title: 'Discord' })

@@ -108,7 +108,8 @@ describe("claude's own session registry: the socket a session takes messages on"
     const later = path.join(dir, 'sessions')
     const waiting = whenMessagingSocket(SID, 60_000, later, startOf)
     await new Promise((r) => setTimeout(r, 50))
-    fs.mkdirSync(later, { recursive: true })
+    expect(fs.existsSync(later)).toBe(false)
+    fs.mkdirSync(later)
     fs.writeFileSync(
       path.join(later, '29948.json'),
       JSON.stringify({

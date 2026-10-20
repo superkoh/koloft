@@ -33,7 +33,7 @@ export interface ButlerFirstWords {
   ownerWords: string
 }
 
-export type ButlerOpenResult = ConductorOpenResult & { startedWith?: string }
+export type ButlerOpenResult = ConductorOpenResult & { startedWith?: ButlerFirstWords }
 
 export type AssistBackendPick = { backend: BackendId; because?: string }
 export type AssistBackendChoice = AssistBackendPick | { error: string }
@@ -443,7 +443,7 @@ export class Conductors {
       )
     else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
-    let startedWith: string | undefined
+    let startedWith: ButlerFirstWords | undefined
     try {
       if (resumable) {
         const live = this.d.liveTabFor(launch.backend, key)
@@ -458,7 +458,7 @@ export class Conductors {
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
       if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
       else {
-        startedWith = first?.prompt
+        startedWith = first
         // ADR-0031 AGY§8
         tabId = await this.d.start({
           ...launch,

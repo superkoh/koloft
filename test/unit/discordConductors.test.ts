@@ -218,7 +218,7 @@ describe('the butler', () => {
     const opening = c.open(words)
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()
-    expect(await opening).toEqual({ ok: true, tabId: 'tab-1', startedWith: words.prompt })
+    expect((await opening).startedWith).toBe(words)
     expect(started[0]).toMatchObject({ firstPrompt: words.prompt, ownerWords: 'hi' })
     expect(await c.open(words)).toEqual({ ok: true, tabId: 'tab-1' })
 
@@ -226,6 +226,19 @@ describe('the butler', () => {
     c.onPtyExit('tab-1')
     transcripts.add('s1')
     expect(await c.open(words)).toEqual({ ok: true, tabId: 'tab-resumed-s1' })
+  })
+
+  it('asked twice while it starts, even with the same words, starts once on the first asker’s words, and tells both whose they were', async () => {
+    const c = make()
+    const first = { prompt: 'same', ownerWords: 'same' }
+    const second = { prompt: 'same', ownerWords: 'same' }
+    const a = c.open(first)
+    const b = c.open(second)
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    expect((await a).startedWith).toBe(first)
+    expect((await b).startedWith).toBe(first)
+    expect(started).toHaveLength(1)
   })
 
   it('a tab resumed some other way and bound to the last session is taken as the butler again', () => {

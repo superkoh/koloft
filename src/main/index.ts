@@ -4595,13 +4595,15 @@ async function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpe
 }
 
 async function tellButler(text: string, ownerWords: string): Promise<ConductorOpenResult> {
-  const opened = await conductors?.open({ prompt: text, ownerWords })
+  const first = { prompt: text, ownerWords }
+  const opened = await conductors?.open(first)
   if (!opened) return { ok: false, error: STILL_STARTING }
-  if (!opened.ok || opened.startedWith === text) return opened
-  void sendToButler(opened.tabId, text, ownerWords).then((sent) => {
-    if (!sent.ok) sendToRenderer(CH.cron.toast, sent.error)
-  })
-  return opened
+  if (!opened.ok) return opened
+  if (opened.startedWith !== first)
+    void sendToButler(opened.tabId, text, ownerWords).then((sent) => {
+      if (!sent.ok) sendToRenderer(CH.cron.toast, sent.error)
+    })
+  return { ok: true, tabId: opened.tabId }
 }
 
 async function bindWithNewChannel(): Promise<ConductorSaveResult> {
