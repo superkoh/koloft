@@ -1,32 +1,23 @@
 import fs from 'fs'
 import path from 'path'
-import { randomUUID } from 'crypto'
 import type {
-  AssistRecord,
   AssistTaskRow,
   BackendId,
+  ButlerSession,
   ButlerSetting,
-  ConductorBinding,
   ConductorOpenResult,
   ConductorSaveResult,
   DiscordChannel,
-  DiscordSettings,
-  SessionThread
+  DiscordSettings
 } from '@shared/types'
 import { CannotMakeChannels, type NewChannel } from './link'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
-import {
-  assistTaskName,
-  butlerNames,
-  GLOBAL_SCOPE,
-  newerSnowflake,
-  peerNamesOf
-} from '@shared/conductors'
+import { assistTaskName, butlerNames, newerSnowflake, peerNamesOf } from '@shared/conductors'
 import { assistTaskRole, butlerRole } from '@shared/agentGuide'
 import { errorText } from '../agentRequests'
 import { realpathSafe } from '../projectInfo'
 
-export interface ConductorLaunch {
+export interface ButlerLaunch {
   backend: BackendId
   cwd: string
   role: string
@@ -43,27 +34,21 @@ export interface AssistTask {
   ownerWords: string
 }
 
-export interface AssistIdentity {
-  scope: string
-  role: string
-  task?: string
-}
-
-export interface ConductorDeps {
+export interface ButlerDeps {
   userData: string
   butler(): ButlerSetting
   load(): DiscordSettings
-  loadRecords(): AssistRecord[]
+  loadSession(): ButlerSession
   save(discord: DiscordSettings): void
   saveQuietly(discord: DiscordSettings): void
-  saveRecords(records: AssistRecord[]): void
+  saveSession(session: ButlerSession): void
   backend(): Promise<AssistBackendChoice>
   tabAlive(tabId: string): boolean
   liveTabFor(backend: BackendId, key: string): string | undefined
   runningElsewhere(backend: BackendId, key: string): Promise<boolean>
   transcriptExists(backend: BackendId, key: string): Promise<boolean>
-  start(launch: ConductorLaunch): Promise<string | null>
-  resume(launch: ConductorLaunch & { key: string }): Promise<string | null>
+  start(launch: ButlerLaunch): Promise<string | null>
+  resume(launch: ButlerLaunch & { key: string }): Promise<string | null>
   kill(tabId: string): void
   rowsChanged(): void
   tasksChanged(): void
@@ -78,49 +63,37 @@ export function conductorFolder(userData: string): string {
   return path.join(userData, 'conductors', 'global')
 }
 
-interface BoundThread {
-  binding: ConductorBinding
-  thread: SessionThread
-}
-
 interface RunningTask extends AssistTask {
   role: string
   tabId: string
   key?: string
 }
 
-function keptKeys(
-  threads: SessionThread[] | undefined,
-  keep: (key: string) => boolean,
-  stays?: string
-): SessionThread[] {
-  return (threads ?? [])
-    .map((t) => ({ ...t, keys: t.keys.filter(keep) }))
-    .filter((t) => t.keys.length || t.threadId === stays)
-}
-
 function refusal(error: string): ConductorOpenResult {
   return { ok: false, error }
 }
 
-export class Conductors {
+export class Butler {
   private discord: DiscordSettings
-  private records: AssistRecord[]
+  private session: ButlerSession
   private resident: string | undefined
   private tasks: RunningTask[] = []
   private pendingSave: ReturnType<typeof setTimeout> | null = null
   private stopping = new Set<string>()
   private opening = new Map<string, Promise<ConductorOpenResult>>()
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
-  private pendingTouch = new Map<string, string>()
 
-  constructor(private d: ConductorDeps) {
+  constructor(private d: ButlerDeps) {
     this.discord = d.load()
-    this.records = d.loadRecords()
+    this.session = d.loadSession()
   }
 
-  bindings(): ConductorBinding[] {
-    return this.discord.bindings
+  channel(): DiscordChannel | undefined {
+    return this.discord.channel
+  }
+
+  lastMessageId(): string | undefined {
+    return this.discord.lastMessageId
   }
 
   private write(patch: Partial<DiscordSettings>): void {
@@ -129,22 +102,10 @@ export class Conductors {
     this.d.rowsChanged()
   }
 
-  private change(id: string, change: (b: ConductorBinding) => ConductorBinding): void {
-    this.discord = {
-      ...this.discord,
-      bindings: this.discord.bindings.map((b) => (b.id === id ? change(b) : b))
-    }
-  }
-
-  private writeRecords(records: AssistRecord[]): void {
-    this.records = records
-    this.d.saveRecords(records)
+  private changeSession(change: (s: ButlerSession) => ButlerSession): void {
+    this.session = change(this.session)
+    this.d.saveSession(this.session)
     this.d.rowsChanged()
-  }
-
-  private changeRecord(change: (r: AssistRecord) => AssistRecord): void {
-    const current = this.record() ?? { scope: GLOBAL_SCOPE, sessionIds: [] }
-    this.writeRecords([change(current)])
   }
 
   flush(): void {
@@ -154,28 +115,16 @@ export class Conductors {
     this.d.saveQuietly(this.discord)
   }
 
-  binding(id: string): ConductorBinding | undefined {
-    return this.discord.bindings.find((b) => b.id === id)
-  }
-
-  butlerBinding(): ConductorBinding | undefined {
-    return this.discord.bindings[0]
-  }
-
-  record(): AssistRecord | undefined {
-    return this.records[0]
-  }
-
   private taskOfTab(tabId: string): RunningTask | undefined {
     return this.tasks.find((t) => t.tabId === tabId)
   }
 
-  bindingOfTab(tabId: string): ConductorBinding | undefined {
-    return tabId === this.resident ? this.butlerBinding() : undefined
+  channelOfTab(tabId: string): string | undefined {
+    return tabId === this.resident ? this.discord.channel?.channelId : undefined
   }
 
-  bindingOfChannel(channelId: string): ConductorBinding | undefined {
-    return this.discord.bindings.find((b) => b.channel.channelId === channelId)
+  isButlerChannel(channelId: string): boolean {
+    return this.discord.channel?.channelId === channelId
   }
 
   isButler(ref: string): boolean {
@@ -186,19 +135,9 @@ export class Conductors {
   }
 
   private recorded(ref: string): boolean {
-    return !!this.record()?.sessionIds.some(
+    return this.session.sessionIds.some(
       (key) => key === ref || identityOf(key).nativeSessionId === ref
     )
-  }
-
-  touchWhenBound(butlerTab: string, tabId: string): void {
-    const b = this.bindingOfTab(butlerTab)
-    if (b) this.pendingTouch.set(tabId, b.id)
-  }
-
-  touchNowAndNext(id: string, key: string, tabId: string | undefined): void {
-    this.touchFor(id, key)
-    if (tabId) this.pendingTouch.set(tabId, id)
   }
 
   liveTab(): string | undefined {
@@ -206,20 +145,20 @@ export class Conductors {
     return tab && this.d.tabAlive(tab) ? tab : undefined
   }
 
-  setLastMessage(id: string, messageId: string): void {
-    const last = this.binding(id)?.lastMessageId
+  setLastMessage(messageId: string): void {
+    const last = this.discord.lastMessageId
     if (last && !newerSnowflake(messageId, last)) return
-    this.change(id, (b) => ({ ...b, lastMessageId: messageId }))
+    this.discord = { ...this.discord, lastMessageId: messageId }
     this.pendingSave ??= setTimeout(() => this.flush(), LAST_MESSAGE_SAVE_DELAY_MS)
   }
 
-  conductorOf(tabOrSessionId: string): string | undefined {
-    const ours =
+  isButlerSession(tabOrSessionId: string): boolean {
+    return (
       tabOrSessionId === this.resident ||
       !!this.taskOfTab(tabOrSessionId) ||
       this.stopping.has(tabOrSessionId) ||
-      !!this.record()?.sessionIds.includes(tabOrSessionId)
-    return ours ? GLOBAL_SCOPE : undefined
+      this.session.sessionIds.includes(tabOrSessionId)
+    )
   }
 
   taskNameOf(tabId: string): string | undefined {
@@ -227,11 +166,7 @@ export class Conductors {
   }
 
   heldResident(tabId: string): boolean {
-    return tabId === this.resident && !!this.butlerBinding()
-  }
-
-  covers(): boolean {
-    return !!this.butlerBinding()
+    return tabId === this.resident && !!this.discord.channel
   }
 
   isButlerTab(tabId: string): boolean {
@@ -239,135 +174,31 @@ export class Conductors {
   }
 
   // ADR-0029
-  identityOfLaunch(cwd: string, resumeKey?: string): AssistIdentity | undefined {
+  identityOfLaunch(cwd: string, resumeKey?: string): { role: string } | undefined {
     const launched = realpathSafe(path.resolve(cwd))
     if (realpathSafe(conductorFolder(this.d.userData)) !== launched || !resumeKey) return undefined
     const task = this.tasks.find((t) => t.key === resumeKey)
-    if (task) return { scope: GLOBAL_SCOPE, role: task.role, task: task.name }
+    if (task) return { role: task.role }
     if (!this.recorded(resumeKey)) return undefined
-    return { scope: GLOBAL_SCOPE, role: this.role() }
+    return { role: this.role() }
   }
 
   private role(): string {
-    return butlerRole(this.d.butler().name, !!this.butlerBinding())
-  }
-
-  touch(tabId: string, key: string): void {
-    const b = this.bindingOfTab(tabId)
-    if (b) this.touchFor(b.id, key)
-  }
-
-  private touchFor(id: string, key: string): void {
-    if (this.binding(id)?.touched.includes(key)) return
-    this.change(id, (x) => ({ ...x, touched: [...x.touched, key] }))
-    this.d.saveQuietly(this.discord)
-  }
-
-  private findThread(match: (t: SessionThread) => boolean): BoundThread | undefined {
-    for (const binding of this.discord.bindings) {
-      const thread = binding.threads?.find(match)
-      if (thread) return { binding, thread }
-    }
-    return undefined
-  }
-
-  threadOfKey(key: string): BoundThread | undefined {
-    return this.findThread((t) => t.keys.includes(key))
-  }
-
-  threadOfChannel(channelId: string): BoundThread | undefined {
-    return this.findThread((t) => t.threadId === channelId)
-  }
-
-  routeOf(channelId: string): { binding: ConductorBinding; sessionKey?: string } | undefined {
-    const binding = this.bindingOfChannel(channelId)
-    if (binding) return { binding }
-    const found = this.threadOfChannel(channelId)
-    const sessionKey = found?.thread.keys.at(-1)
-    return found && sessionKey ? { binding: found.binding, sessionKey } : undefined
-  }
-
-  keepThread(bindingId: string, threadId: string, key: string): void {
-    if (this.threadOfKey(key)?.thread.threadId === threadId) return
-    this.discord = {
-      ...this.discord,
-      bindings: this.discord.bindings.map((b) => {
-        const others = keptKeys(b.threads, (k) => k !== key, threadId)
-        if (b.id !== bindingId) return { ...b, threads: others }
-        const known = others.some((t) => t.threadId === threadId)
-        return {
-          ...b,
-          threads: known
-            ? others.map((t) => (t.threadId === threadId ? { ...t, keys: [...t.keys, key] } : t))
-            : [...others, { threadId, keys: [key] }]
-        }
-      })
-    }
-    this.d.saveQuietly(this.discord)
-  }
-
-  private changeThread(bindingId: string, threadId: string, patch: Partial<SessionThread>): void {
-    this.change(bindingId, (b) => ({
-      ...b,
-      threads: (b.threads ?? []).map((t) => (t.threadId === threadId ? { ...t, ...patch } : t))
-    }))
-  }
-
-  setThreadLastMessage(threadId: string, messageId: string): void {
-    const found = this.threadOfChannel(threadId)
-    if (!found) return
-    const last = found.thread.lastMessageId
-    if (last && !newerSnowflake(messageId, last)) return
-    this.changeThread(found.binding.id, threadId, { lastMessageId: messageId })
-    this.pendingSave ??= setTimeout(() => this.flush(), LAST_MESSAGE_SAVE_DELAY_MS)
-  }
-
-  nameThread(threadId: string, name: string): void {
-    const found = this.threadOfChannel(threadId)
-    if (!found || found.thread.name === name) return
-    this.changeThread(found.binding.id, threadId, { name })
-    this.d.saveQuietly(this.discord)
-  }
-
-  dropThread(threadId: string): void {
-    const found = this.threadOfChannel(threadId)
-    if (!found) return
-    this.change(found.binding.id, (b) => ({
-      ...b,
-      threads: (b.threads ?? []).filter((t) => t.threadId !== threadId)
-    }))
-    this.d.saveQuietly(this.discord)
+    return butlerRole(this.d.butler().name, !!this.discord.channel)
   }
 
   forgetGone(stillOnDisk: (key: string) => boolean): void {
-    let changed = false
-    const bindings = this.discord.bindings.map((b) => {
-      const touched = b.touched.filter(stillOnDisk)
-      const threads = keptKeys(b.threads, stillOnDisk)
-      const threadKeys = (list?: SessionThread[]): number =>
-        (list ?? []).reduce((n, t) => n + t.keys.length, 0)
-      if (touched.length === b.touched.length && threadKeys(threads) === threadKeys(b.threads))
-        return b
-      changed = true
-      return { ...b, touched, threads }
-    })
-    if (changed) {
-      this.discord = { ...this.discord, bindings }
-      this.d.saveQuietly(this.discord)
-    }
-    const r = this.record()
-    if (!r) return
-    const sessionIds = r.sessionIds.filter(stillOnDisk)
-    const keepLast = !r.lastSessionKey || stillOnDisk(r.lastSessionKey)
-    if (sessionIds.length === r.sessionIds.length && keepLast) return
-    const { lastSessionKey, ...rest } = r
-    this.writeRecords([
-      { ...rest, sessionIds, ...(keepLast && lastSessionKey ? { lastSessionKey } : {}) }
-    ])
+    const s = this.session
+    const sessionIds = s.sessionIds.filter(stillOnDisk)
+    const keepLast = !s.lastSessionKey || stillOnDisk(s.lastSessionKey)
+    if (sessionIds.length === s.sessionIds.length && keepLast) return
+    this.changeSession(() => ({
+      sessionIds,
+      ...(keepLast && s.lastSessionKey ? { lastSessionKey: s.lastSessionKey } : {})
+    }))
   }
 
   async bindNewChannel(
-    backend: BackendId,
     make: (category: DiscordChannel | undefined) => Promise<NewChannel>
   ): Promise<ConductorSaveResult> {
     let made: NewChannel
@@ -381,37 +212,22 @@ export class Conductors {
       }
     }
     this.discord = { ...this.discord, category: made.category }
-    return this.bind(made.channel, backend)
+    return this.bind(made.channel)
   }
 
-  bind(channel: DiscordChannel, backend: BackendId): ConductorSaveResult {
-    const current = this.butlerBinding()
-    this.write({
-      bindings: [
-        current
-          ? { ...current, backend, channel }
-          : { id: randomUUID(), scope: GLOBAL_SCOPE, backend, channel, touched: [] }
-      ]
-    })
+  bind(channel: DiscordChannel): ConductorSaveResult {
+    const same = this.discord.channel?.channelId === channel.channelId
+    this.write({ channel, lastMessageId: same ? this.discord.lastMessageId : undefined })
     return { ok: true }
   }
 
-  followBackend(backend: BackendId): void {
-    if (this.discord.bindings.every((b) => b.backend === backend)) return
-    this.write({ bindings: this.discord.bindings.map((b) => ({ ...b, backend })) })
-  }
-
   unbind(): void {
-    this.write({ bindings: [] })
+    this.write({ channel: undefined, lastMessageId: undefined })
   }
 
   startFresh(): Promise<ConductorOpenResult> {
     this.stopResident()
-    this.changeRecord((r) => {
-      const { lastSessionKey, ...rest } = r
-      void lastSessionKey
-      return rest
-    })
+    this.changeSession((s) => ({ sessionIds: s.sessionIds }))
     return this.open()
   }
 
@@ -444,7 +260,7 @@ export class Conductors {
     return opening
   }
 
-  private launchFor(backend: BackendId): ConductorLaunch {
+  private launchFor(backend: BackendId): ButlerLaunch {
     const cwd = conductorFolder(this.d.userData)
     fs.mkdirSync(cwd, { recursive: true })
     return { backend, cwd, role: this.role(), title: this.d.butler().name }
@@ -458,9 +274,8 @@ export class Conductors {
   }
 
   private async openOn(choice: AssistBackendPick): Promise<ConductorOpenResult> {
-    if (!this.record()) this.changeRecord((r) => r)
     const launch = this.launchFor(choice.backend)
-    const key = this.record()?.lastSessionKey
+    const key = this.session.lastSessionKey
     const resumable = key !== undefined && identityOf(key).backendId === launch.backend
     if (key !== undefined && !resumable)
       this.d.toast(
@@ -506,11 +321,10 @@ export class Conductors {
     choice: AssistBackendPick
   ): Promise<ConductorOpenResult> {
     if (choice.because) this.d.toast(choice.because)
-    if (!this.record()) this.changeRecord((r) => r)
     const { name } = this.d.butler()
     const role = assistTaskRole(name, task.brief)
     const title = assistTaskName(name, task.name)
-    const launch: ConductorLaunch = {
+    const launch: ButlerLaunch = {
       ...this.launchFor(choice.backend),
       role,
       title,
@@ -579,40 +393,35 @@ export class Conductors {
     this.deadlines.delete(tabId)
   }
 
+  private remember(key: string, last: boolean): void {
+    this.changeSession((s) => ({
+      ...s,
+      sessionIds: s.sessionIds.includes(key) ? s.sessionIds : [...s.sessionIds, key],
+      ...(last ? { lastSessionKey: key } : {})
+    }))
+  }
+
   onBound(tabId: string, key: string): void {
-    const toucher = this.pendingTouch.get(tabId)
-    if (toucher) {
-      this.pendingTouch.delete(tabId)
-      this.touchFor(toucher, key)
-      return
-    }
     const task = this.taskOfTab(tabId) ?? this.tasks.find((t) => t.key === key)
     if (task) {
       this.forgetTab(tabId)
       const moved = task.tabId !== tabId
       task.tabId = tabId
       task.key = key
-      this.changeRecord((r) =>
-        r.sessionIds.includes(key) ? r : { ...r, sessionIds: [...r.sessionIds, key] }
-      )
+      this.remember(key, false)
       if (moved) this.d.tasksChanged()
       return
     }
     if (tabId !== this.resident) {
-      if (this.record()?.lastSessionKey !== key || this.liveTab()) return
+      if (this.session.lastSessionKey !== key || this.liveTab()) return
       this.resident = tabId
     }
     this.forgetTab(tabId)
-    this.changeRecord((r) => ({
-      ...r,
-      sessionIds: r.sessionIds.includes(key) ? r.sessionIds : [...r.sessionIds, key],
-      lastSessionKey: key
-    }))
+    this.remember(key, true)
   }
 
   onPtyExit(tabId: string, asleep: boolean): void {
     this.stopping.delete(tabId)
-    this.pendingTouch.delete(tabId)
     if (tabId === this.resident) this.resident = undefined
     this.forgetTab(tabId)
     const task = asleep ? undefined : this.taskOfTab(tabId)

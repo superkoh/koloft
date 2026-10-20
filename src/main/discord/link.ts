@@ -1,5 +1,4 @@
 import type {
-  ConductorBinding,
   DiscordChannel,
   DiscordGuild,
   DiscordPhase,
@@ -21,7 +20,6 @@ const TEXT_CHANNEL = 0
 const CATEGORY = 4
 const MESSAGE_CONTENT = 1 << 18
 const MESSAGE_CONTENT_LIMITED = 1 << 19
-const NOT_FOUND = 404
 const MISSING_PERMISSIONS = 403
 const FILES_PER_MESSAGE = 10
 const BYTES_PER_MESSAGE = 25 * 1024 * 1024
@@ -66,12 +64,10 @@ export const AUTOCOMPLETE_INTERACTION = 4
 export const FORM_SUBMIT_INTERACTION = 5
 const REPLY_TO_INTERACTION = 4
 const ONLY_THE_SENDER_SEES_IT = 64
-const PUBLIC_THREAD_KEPT_A_WEEK_MINUTES = 10080
 
 export function privately(content: string): unknown {
   return { type: REPLY_TO_INTERACTION, data: { content, flags: ONLY_THE_SENDER_SEES_IT } }
 }
-const THREAD_NAME_LIMIT = 100
 
 export interface DiscordInteraction {
   id: string
@@ -179,7 +175,6 @@ export interface DiscordLinkDeps {
   onInteraction(i: DiscordInteraction): void
   onReady(): void
   postFailed(channelId: string, error: string): void
-  channelGone(channelId: string): void
 }
 
 interface Author {
@@ -446,62 +441,12 @@ export class DiscordLink {
     await this.api().request('POST', `/channels/${channelId}/typing`)
   }
 
-  // PLATFORM§39
-  async startThread(channelId: string, messageId: string, name: string): Promise<string> {
-    const thread = await this.api().request<{ id: string }>(
-      'POST',
-      `/channels/${channelId}/messages/${messageId}/threads`,
-      {
-        name: name.slice(0, THREAD_NAME_LIMIT),
-        auto_archive_duration: PUBLIC_THREAD_KEPT_A_WEEK_MINUTES
-      }
-    )
-    return thread.id
-  }
-
-  addToThread(threadId: string, userId: string): Promise<unknown> {
-    return this.api().request('PUT', `/channels/${threadId}/thread-members/${userId}`)
-  }
-
-  // PLATFORM§39
-  renameThread(threadId: string, name: string): Promise<unknown> {
-    return this.api().request('PATCH', `/channels/${threadId}`, {
-      name: name.slice(0, THREAD_NAME_LIMIT)
-    })
-  }
-
-  archiveThread(threadId: string): Promise<unknown> {
-    return this.api().request('PATCH', `/channels/${threadId}`, { archived: true })
-  }
-
-  // PLATFORM§39
-  async deleteThread(channelId: string, threadId: string): Promise<void> {
-    await this.starting
-    await this.api().sent(`/channels/${threadId}/messages`)
-    await this.api()
-      .request('DELETE', `/channels/${threadId}`)
-      .catch((error: unknown) => {
-        if (!(error instanceof DiscordHttpError)) throw error
-        if (error.status === NOT_FOUND) return
-        if (error.status === MISSING_PERMISSIONS)
-          throw new Error(
-            `${error.message}. Invite the bot again (Settings ▸ Discord ▸ Set up), or give it the Manage Threads permission in the server’s settings.`
-          )
-        throw error
-      })
-    await this.api()
-      .request('DELETE', `/channels/${channelId}/messages/${threadId}`)
-      .catch(() => undefined)
-  }
-
   private async postMessage(channelId: string, body: unknown): Promise<unknown> {
     try {
       const sent = await this.api().request('POST', `/channels/${channelId}/messages`, body)
       if (this.failing.delete(channelId)) this.d.push(this.status())
       return sent
     } catch (error) {
-      if (error instanceof DiscordHttpError && error.status === NOT_FOUND)
-        this.d.channelGone(channelId)
       if (error instanceof DiscordHttpError && !this.failing.has(channelId)) {
         this.failing.set(channelId, error.message)
         this.d.push(this.status())
@@ -595,12 +540,12 @@ export class DiscordLink {
 
   // PLATFORM§39
   async newChannel(
-    bindings: ConductorBinding[],
+    bound: DiscordChannel | undefined,
     saved: DiscordChannel | undefined
   ): Promise<NewChannel> {
     await this.starting
     const api = this.api()
-    const guildId = newChannelGuild(bindings, [...this.guilds.values()], this.d.owner())
+    const guildId = newChannelGuild(bound, [...this.guilds.values()], this.d.owner())
     if (!guildId) throw new Error(NO_OWNED_SERVER)
     const route = `/guilds/${guildId}/channels`
     const there = await api.request<RawChannel[]>('GET', route)

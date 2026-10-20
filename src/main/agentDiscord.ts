@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { pathToFileURL } from 'url'
 import type { ConductorSaveResult } from '@shared/types'
 import {
   answered,
@@ -11,9 +12,11 @@ import {
 } from './agentRequests'
 import { BYTES_PER_FILE, type DiscordFile } from './discord/link'
 import { DISCORD_SETUP_STEPS } from './discord/setupSteps'
+import type { PagePictures } from './discord/pageShot'
 
 export const DISCORD_USAGE =
-  'koloft: usage: koloft discord send <file>... [-- "<text>"] | setup | status | token --from-page | reload | invite | bind --new-channel'
+  'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | setup | status | token --from-page | reload | invite | bind --new-channel'
+export const NOT_A_PAGE = 'koloft: give one HTML file, or one http, https or file address.'
 export const NOT_THE_BUTLER =
   'koloft: only the butler bound to a Discord channel can send to Discord.'
 
@@ -22,6 +25,7 @@ const MB = 1024 * 1024
 export interface DiscordVerbDeps {
   channelOf(tabId: string): string | undefined
   send(channelId: string, files: DiscordFile[], text: string): Promise<void>
+  shoot(url: string): Promise<PagePictures>
   status(): string
   tokenFromPage(tabId: string): Promise<string>
   reload(tabId: string): Promise<string>
@@ -58,6 +62,39 @@ async function send(
   return answered('Sent to Discord.')
 }
 
+function pageUrl(target: string, cwd: string): string | undefined {
+  if (/^(https?|file):\/\//i.test(target)) return target
+  const full = path.resolve(cwd, target)
+  return fs.statSync(full, { throwIfNoEntry: false })?.isFile()
+    ? pathToFileURL(full).href
+    : undefined
+}
+
+async function shot(
+  d: DiscordVerbDeps,
+  rest: string[],
+  tabId: string,
+  cwd: string
+): Promise<AgentReply> {
+  const channelId = d.channelOf(tabId)
+  if (!channelId) return refused(NOT_THE_BUTLER)
+  const { before, after: text } = splitAtDashes(rest)
+  if (before.length !== 1) return refused(DISCORD_USAGE, EXIT_USAGE)
+  const url = pageUrl(before[0], cwd)
+  if (!url) return refused(NOT_A_PAGE)
+  const { files, shownHeight, pageHeight } = await d.shoot(url)
+  await d.send(channelId, files, text)
+  const sent =
+    files.length === 1
+      ? 'Sent a picture of the page to Discord.'
+      : `Sent the page to Discord as ${files.length} pictures, top to bottom.`
+  return answered(
+    shownHeight < pageHeight
+      ? `${sent} The page is ${pageHeight} pixels tall; the pictures stop at ${shownHeight}.`
+      : sent
+  )
+}
+
 async function setup(
   d: DiscordVerbDeps,
   sub: string,
@@ -85,6 +122,7 @@ export function discordVerb(d: DiscordVerbDeps): AgentVerb {
   return async (args, caller) => {
     const [sub, ...rest] = args
     if (sub === 'send') return send(d, rest, caller.tabId, caller.cwd)
+    if (sub === 'shot') return shot(d, rest, caller.tabId, caller.cwd)
     return setup(d, sub, rest, caller.tabId)
   }
 }

@@ -34,8 +34,8 @@ type MenuTarget = { kind: 'butler' } | { kind: 'task'; task: AssistTaskRow }
 export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
   const name = useStore((s) => s.settings.butler.name)
-  const binding = useStore((s) => s.settings.discord.bindings[0])
-  const record = useStore((s) => s.settings.assistSessions[0])
+  const channel = useStore((s) => s.settings.discord.channel)
+  const butlerKeys = useStore((s) => s.settings.butlerSession.sessionIds)
   const sessionMethods = useStore((s) => s.settings.sessionMethods)
   const sessions = useStore((s) => s.sessions)
   const tabs = useStore((s) => s.tabs)
@@ -65,7 +65,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
   const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
   const calling = callingFor(
     tabId,
-    (record?.sessionIds ?? []).filter((key) => !taskKeys.has(key))
+    butlerKeys.filter((key) => !taskKeys.has(key))
   )
 
   const openTask = (task: AssistTaskRow): void => visitTab(task.tabId)
@@ -96,7 +96,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
       item('Rename…', () => setRenameButler(true)),
       item('Start a fresh conversation', () => void openButler(true)),
       <div key="sep" className="sep" />,
-      ...(binding
+      ...(channel
         ? [
             item('Change Discord channel…', () => setBindButler(true)),
             item('Unbind Discord', () => void window.api.conductors.unbind(), 'mi danger')
@@ -128,7 +128,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
 
   return (
     <div className="ws-tabs isl-butler">
-      {!butlerSetUp({ assist, binding }) ? (
+      {!butlerSetUp({ assist, channel }) ? (
         <div className="ws-tab cold" onClick={() => setAssistAsked(true)}>
           <div className="ws-tab-main">{title}</div>
           <div className="ws-tab-sub">
@@ -148,7 +148,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
           </div>
           <div className="ws-tab-sub">
             <SessionBackendIcon backend={sess?.backendId ?? backend} />
-            <span>{binding ? channelLabel(binding) : NOT_ON_DISCORD}</span>
+            <span>{channel ? channelLabel(channel) : NOT_ON_DISCORD}</span>
           </div>
         </div>
       )}

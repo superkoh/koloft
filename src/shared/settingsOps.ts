@@ -9,7 +9,7 @@ import {
 } from './types'
 import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
-import { butlerName, butlerSetting, sanitizeAssistSessions, sanitizeDiscord } from './conductors'
+import { butlerName, butlerSetting, sanitizeButlerSession, sanitizeDiscord } from './conductors'
 import { isRecord } from './workbenchState'
 
 export function buildResetPatch(): Partial<Settings> {
@@ -22,7 +22,7 @@ export function buildResetPatch(): Partial<Settings> {
     discord,
     assist,
     butler,
-    assistSessions,
+    butlerSession,
     newProjectFolders,
     gitAccounts,
     gitPicks,
@@ -36,7 +36,7 @@ export function buildResetPatch(): Partial<Settings> {
   void gitSuggestionsDismissed
   void gitMachines
   void assist
-  void assistSessions
+  void butlerSession
   void newProjectFolders
   void accounts
   void skipPermissions
@@ -51,7 +51,7 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
   const {
     accounts,
     discord,
-    assistSessions,
+    butlerSession,
     gitAccounts,
     gitPicks,
     gitSuggestionsDismissed,
@@ -64,13 +64,14 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
   void gitMachines
   void accounts
   void discord
-  void assistSessions
+  void butlerSession
   return rest
 }
 
 export function sanitizeLoadedSettings(raw: unknown): Settings {
   const doc: Partial<Settings> = raw && typeof raw === 'object' ? (raw as Partial<Settings>) : {}
-  const merged = { ...DEFAULT_SETTINGS, ...doc }
+  const { assistSessions, ...kept } = doc as Partial<Settings> & { assistSessions?: unknown }
+  const merged: Settings = { ...DEFAULT_SETTINGS, ...kept }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
   merged.gitAccounts = sanitizeGitAccounts(merged.gitAccounts)
@@ -79,7 +80,11 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
     ? merged.gitSuggestionsDismissed.filter((r): r is string => typeof r === 'string')
     : []
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
-  merged.assistSessions = sanitizeAssistSessions(merged.assistSessions, merged.discord)
+  merged.butlerSession = sanitizeButlerSession(
+    'butlerSession' in doc ? doc.butlerSession : undefined,
+    assistSessions,
+    merged.discord
+  )
   merged.discord = sanitizeDiscord(merged.discord)
   merged.assist = sanitizeAssist(merged.assist)
   merged.butler = sanitizeButler(merged.butler)

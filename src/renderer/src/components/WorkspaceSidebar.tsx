@@ -945,7 +945,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const welcomeActive = useStore((s) => s.welcomeActive)
   const butlerName = useStore((s) => s.settings.butler.name)
   const butlerWorkspace = useStore((s) => s.butlerWorkspace)
-  const butlerKeys = useStore((s) => s.settings.assistSessions[0]?.sessionIds)
+  const butlerKeys = useStore((s) => s.settings.butlerSession.sessionIds)
   const cron = useStore((s) => s.cron)
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)

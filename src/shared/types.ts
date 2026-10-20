@@ -346,7 +346,7 @@ export interface Settings {
   hintsOff: boolean
   lastSeenVersion: string
   discord: DiscordSettings
-  assistSessions: AssistRecord[]
+  butlerSession: ButlerSession
   gitAccounts: GitAccount[]
   gitPicks: GitRepoPick[]
   gitSuggestionsDismissed: string[]
@@ -362,8 +362,7 @@ export interface ButlerSetting {
 
 export const DEFAULT_BUTLER_NAME = 'Alfred'
 
-export interface AssistRecord {
-  scope: string
+export interface ButlerSession {
   sessionIds: string[]
   lastSessionKey?: string
 }
@@ -379,27 +378,11 @@ export interface DiscordChannel {
   name: string
 }
 
-export interface ConductorBinding {
-  id: string
-  scope: string
-  backend: BackendId
-  channel: DiscordChannel
-  lastMessageId?: string
-  touched: string[]
-  threads?: SessionThread[]
-}
-
-export interface SessionThread {
-  threadId: string
-  keys: string[]
-  name?: string
-  lastMessageId?: string
-}
-
 export interface DiscordSettings {
   userId?: string
   userName?: string
-  bindings: ConductorBinding[]
+  channel?: DiscordChannel
+  lastMessageId?: string
   category?: DiscordChannel
 }
 
@@ -479,8 +462,8 @@ export const DEFAULT_SETTINGS: Settings = {
   hintsSeen: [],
   hintsOff: false,
   lastSeenVersion: '',
-  discord: { bindings: [] },
-  assistSessions: [],
+  discord: {},
+  butlerSession: { sessionIds: [] },
   gitAccounts: [],
   gitPicks: [],
   gitSuggestionsDismissed: [],
@@ -757,7 +740,7 @@ export interface DocVerdict {
 }
 
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
-  conductor?: string
+  butler?: boolean
   assistTask?: string
   turnOver?: boolean
   docVerdicts?: Record<string, DocVerdict>

@@ -356,8 +356,7 @@ export interface SessionVerbDeps {
   worktrees(workspace: string): Promise<WorktreeInfo[]>
   readTurns(key: string, n: number): Promise<Turn[]>
   quotedPrompt(tabId: string): string | undefined
-  touch(tabId: string, key: string): void
-  conductorOf(ref: string): Target | undefined
+  butlerTarget(ref: string): Target | undefined
   resume(row: SessionRow): Promise<string>
   ready(tabId: string, ms: number, turnEnded: boolean): Promise<boolean>
   asking(tabId: string): boolean
@@ -375,13 +374,6 @@ export interface SessionVerbDeps {
     tellCaller: (said: string) => void
   ): Promise<string>
   screen(tabId: string): Promise<SessionScreen>
-  started(
-    conductorTab: string,
-    tabId: string,
-    name: string,
-    workspace: string,
-    backend: BackendId
-  ): void
 }
 
 export type SessionScreen = { lines: string[]; notes: string[] } | { error: string }
@@ -520,7 +512,6 @@ async function startSibling(
   d.startedSessions.started(tabId, me.sessionId)
   const unnamed = aSessionOf(backend)
   if (conductorTab) {
-    d.started(conductorTab, tabId, name ?? unnamed, workspace, backend)
     return answered(
       `Started ${name ? `session "${name}"` : unnamed} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
     )
@@ -609,13 +600,6 @@ export async function targetOf(d: SessionVerbDeps, ref: string): Promise<Parsed<
   return found.ok ? { ok: true, value: rowTarget(d, found.value) } : found
 }
 
-export function sessionChoices(d: SessionVerbDeps): { name: string; value: string }[] {
-  return placedRows(d.sidebar(), d.allSessions()).map((p) => ({
-    name: `${p.title} · ${BACKEND_LABEL[p.row.backendId]} · ${scopeName(p.workspace)}`,
-    value: p.row.id
-  }))
-}
-
 interface NamedRows {
   all: PlacedRow[]
   names: (string | null)[]
@@ -646,11 +630,7 @@ function findAmong({ all, names }: NamedRows, verb: string, ref: string): Parsed
   )
 }
 
-async function readSession(
-  d: SessionVerbDeps,
-  rest: string[],
-  callerTabId: string
-): Promise<AgentReply> {
+async function readSession(d: SessionVerbDeps, rest: string[]): Promise<AgentReply> {
   const args = parseReadArgs(rest)
   if (!args.ok) return refused(args.error, EXIT_USAGE)
   const { ref, last } = args.value
@@ -658,7 +638,6 @@ async function readSession(
   if (!found.ok) return refused(found.error)
   const { row, title } = found.value
   const turns = await d.readTurns(row.id, last)
-  d.touch(callerTabId, row.id)
   return answered(turns.length > 0 ? formatTurns(turns) : `${title} has said nothing yet.`)
 }
 
@@ -788,7 +767,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   const holderOf = (sessionId: string): OwnerWordsHolder | undefined => {
     const open = d.allSessions().find((s) => s.sessionId === sessionId)
     if (open) return open
-    const assist = d.conductorOf(sessionId)
+    const assist = d.butlerTarget(sessionId)
     return assist && { sessionId, tabId: assist.tabId, backendId: assist.backend }
   }
 
@@ -934,7 +913,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     replyOwed.delete(tabId)
     if (!turn.reply.trim()) return
     const parent = placedRows(d.sidebar(), d.allSessions()).find((p) => p.row.id === owner)
-    const to = d.conductorOf(owner) ?? (parent && rowTarget(d, parent))
+    const to = d.butlerTarget(owner) ?? (parent && rowTarget(d, parent))
     if (!to) return
     const session = d.allSessions().find((s) => s.tabId === tabId)
     if (!session) return
@@ -951,7 +930,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       .catch((error: unknown) => d.undelivered(from.tabId, to, errorText(error)))
 
   const commandFrom = (caller: AgentCaller, text: string, into?: Target): Promise<string> => {
-    const butler = d.conductorOf(caller.session.sessionId)
+    const butler = d.butlerTarget(caller.session.sessionId)
     const me =
       butler?.tabId === caller.tabId
         ? butler
@@ -974,8 +953,8 @@ export function sessionVerb(d: SessionVerbDeps): {
       ? nameThenWords(
           rest,
           (r) =>
-            isMe(r, caller.session, d.conductorOf(r), caller.tabId) ||
-            d.conductorOf(r) !== undefined ||
+            isMe(r, caller.session, d.butlerTarget(r), caller.tabId) ||
+            d.butlerTarget(r) !== undefined ||
             namesARow(rows, r)
         )
       : wholeName(sub === 'resume' ? resume.before : rest)
@@ -987,11 +966,11 @@ export function sessionVerb(d: SessionVerbDeps): {
       const problem = slashCommandProblem(text)
       if (problem) return refused(`koloft session command: ${problem}`, EXIT_USAGE)
     }
-    const self = isMe(ref, caller.session, d.conductorOf(ref), caller.tabId)
+    const self = isMe(ref, caller.session, d.butlerTarget(ref), caller.tabId)
     if (self && sub === 'screen') return answered(formatScreen('you', await d.screen(caller.tabId)))
     if (self && sub === 'command') return answered(await commandFrom(caller, text))
     if (self) return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
-    const found = d.conductorOf(ref) ?? findAmong(rows, sub, ref)
+    const found = d.butlerTarget(ref) ?? findAmong(rows, sub, ref)
     if ('ok' in found && !found.ok) return refused(found.error)
     const t = 'ok' in found ? rowTarget(d, found.value) : found
     if (sub === 'screen')
@@ -1004,7 +983,6 @@ export function sessionVerb(d: SessionVerbDeps): {
       return answered(`Closed ${t.name}. It stays in the list and can be resumed.`)
     }
     if (sub === 'keys' && !t.tabId) return refused(`koloft session keys: ${t.name} is not open.`)
-    d.touch(caller.tabId, t.key)
     if (sub === 'command') return answered(await commandFrom(caller, text, t))
     if (sub === 'keys' && t.tabId) {
       const tab = t.tabId
@@ -1059,7 +1037,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         ).join('\n')
       )
     }
-    if (sub === 'read') return readSession(d, rest, caller.tabId)
+    if (sub === 'read') return readSession(d, rest)
     if (sub === 'list') {
       const listsOther = rest.length === 2 && rest[0] === '--workspace'
       if (rest.length > 0 && !listsOther) return refused(LIST_USAGE, EXIT_USAGE)
@@ -1106,7 +1084,8 @@ export function sessionVerb(d: SessionVerbDeps): {
       const open = d.allSessions()
       const parent = starterRow(d, caller, open)
       const starter = (ref: string): Target | undefined =>
-        d.conductorOf(ref) ?? (parent && matchRow([parent], ref) ? rowTarget(d, parent) : undefined)
+        d.butlerTarget(ref) ??
+        (parent && matchRow([parent], ref) ? rowTarget(d, parent) : undefined)
       const split = nameThenWords(
         rest,
         (ref) => starter(ref) !== undefined || matchOpen(open, ref) !== null
