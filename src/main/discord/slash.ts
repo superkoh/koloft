@@ -11,6 +11,7 @@ import { accentOf, CONDUCTOR_ACCENT, type Card } from './cards'
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
 export const NOTHING_CAME_BACK_MS = 8000
 export const MORE_OUTPUT_SETTLES_MS = 1500
+// CC§2
 export const A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS = 10_000
 export const RESULT_WITHIN_MS = 10 * 60_000
 const ESC = '\x1b'
@@ -278,7 +279,11 @@ export class SlashCommands {
 
   private settleOnceItsTurnEnds(tab: string, p: Pending): void {
     const waitsForTheTurnEnd =
-      this.d.backendOf(tab) === 'claude' && !p.turnEnded && !p.outputs.length && !p.newKey
+      this.d.backendOf(tab) === 'claude' &&
+      !p.turnEnded &&
+      p.reply === undefined &&
+      !p.outputs.length &&
+      !p.newKey
     this.settleSoon(
       tab,
       p,

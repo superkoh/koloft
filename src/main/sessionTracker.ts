@@ -301,8 +301,7 @@ function claudeTurnPieces(obj: TranscriptRecord | null): TurnPiece[] {
     const who = raw === null ? null : whoTyped(obj, raw)
     if (raw === null || !who) return []
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
-    const typedByAPerson = (obj.origin as { kind?: unknown } | undefined)?.kind === 'human'
-    const command = typedByAPerson && !obj.isMeta ? promptCommandText(raw) : null
+    const command = obj.isMeta ? null : promptCommandText(raw)
     if (command) return [{ line: { who, text: command, at }, midTurn: false }]
     if (
       obj.isMeta ||
