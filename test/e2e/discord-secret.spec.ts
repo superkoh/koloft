@@ -32,16 +32,7 @@ function seedBinding(env: E2EEnv): void {
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,
-      bindings: [
-        {
-          id: 'b1',
-          scope: 'global',
-          backend: 'claude',
-          channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
-          sessionIds: [],
-          touched: []
-        }
-      ]
+      channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' }
     }
   })
 }
@@ -58,9 +49,8 @@ function type(page: Page, tab: string, line: string): Promise<void> {
 }
 
 async function secretCard(fake: FakeDiscord, header: RegExp): Promise<FakePost> {
-  const threads = (): string[] => fake.threads.map((t) => t.id)
   const card = (): FakePost | undefined =>
-    fake.posted.find((p) => threads().includes(p.channelId) && header.test(p.content))
+    fake.posted.find((p) => p.channelId === CHANNEL && header.test(p.content))
   await expect.poll(card, { timeout: CONDUCTOR_STARTS_MS }).toBeTruthy()
   return card()!
 }
@@ -80,7 +70,7 @@ function nowhereInDiscord(fake: FakeDiscord, typed: string): void {
 }
 
 test.describe('Discord secrets: the owner gives a session a password or sign-in address from Discord, which Koloft passes on and Discord never shows', () => {
-  test('sudo’s password helper posts a card with the command in the session’s thread; the owner’s button opens a form, and what is typed there reaches sudo and nothing else', async ({
+  test('sudo’s password helper posts a card with the command in the butler’s channel, naming the session and its workspace; the owner’s button opens a form, and what is typed there reaches sudo and nothing else', async ({
     env
   }) => {
     seedBinding(env)
@@ -97,7 +87,7 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
         tab,
         `/sh "$(dirname "$(command -v koloft)")/koloft-askpass" 'Password:' && echo got-it`
       )
-      const card = await secretCard(fake, /sudo password/)
+      const card = await secretCard(fake, /^🔑 \*\*.+ · ws-a\*\* asks for your sudo password/)
       expect(card.content).toContain('sudo asked: Password:')
       const typed = 'hunter2-sudo "x" \\'
       await enter(fake, card, typed)
@@ -118,7 +108,7 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
     }
   })
 
-  test('koloft secret page names the page’s site and the field to the owner, fills what the owner typed into it, submits the form, and empties a field the page kept', async ({
+  test('koloft secret page names the page’s site and the field to the owner in the butler’s channel, fills what the owner typed into it, submits the form, and empties a field the page kept', async ({
     env
   }) => {
     seedBinding(env)
@@ -140,7 +130,10 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
       const guest = await guestByUrl(app, '/login')
       await expect(guest.locator('#pw')).toBeVisible()
       await type(page, tab, '/koloft secret page "#pw"')
-      const card = await secretCard(fake, /fill in a field on a web page/)
+      const card = await secretCard(
+        fake,
+        /^🔑 \*\*.+ · ws-a\*\* asks you to fill in a field on a web page/
+      )
       expect(card.content).toContain(`Page: ${server.origin}`)
       expect(card.content).toContain('Field: Password')
       const typed = 'hunter2-page'
@@ -159,7 +152,7 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
     }
   })
 
-  test('koloft secret url shows the owner the sign-in address and opens the 127.0.0.1 address the owner pastes on the session’s machine', async ({
+  test('koloft secret url shows the owner the sign-in address in the butler’s channel and opens the 127.0.0.1 address the owner pastes on the session’s machine', async ({
     env
   }) => {
     seedBinding(env)
@@ -177,7 +170,10 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
       await waitConductorStarted(env, CONDUCTOR_STARTS_MS)
       const tab = await sessionTab(page, env)
       await type(page, tab, '/koloft secret url "https://auth.example.test/authorize?client=x"')
-      const card = await secretCard(fake, /address a sign-in ends on/)
+      const card = await secretCard(
+        fake,
+        /^🔑 \*\*.+ · ws-a\*\* needs the address a sign-in ends on/
+      )
       expect(card.content).toContain('https://auth.example.test/authorize?client=x')
       const pasted = server.url('/auth/callback?code=c-1&state=s-1')
       await enter(fake, card, pasted)
@@ -189,6 +185,24 @@ test.describe('Discord secrets: the owner gives a session a password or sign-in 
       await quitAndClose(app)
       await fake.close()
       await server.close()
+    }
+  })
+
+  test('the butler’s own secret card in its channel names only the butler', async ({ env }) => {
+    seedBinding(env)
+    const fake = await startFakeDiscord(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => fake.identifies).toBe(1)
+      await waitConductorStarted(env, CONDUCTOR_STARTS_MS)
+      fake.say(OWNER, '/koloft secret url "https://auth.example.test/authorize?client=b"')
+      const card = await secretCard(fake, /^🔑 \*\*Alfred\*\* needs the address a sign-in ends on/)
+      expect(card.content).toContain('https://auth.example.test/authorize?client=b')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
     }
   })
 })

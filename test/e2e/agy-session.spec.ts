@@ -30,7 +30,7 @@ import {
   wsGroup,
   wsRows
 } from './helpers/p1'
-import { startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
+import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
 import { WORKBENCH, workbenchIcon, workbenchPanel } from './helpers/workbench'
 
 test.setTimeout(120_000)
@@ -118,23 +118,9 @@ function seedConductor(env: E2EEnv): void {
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,
-      bindings: [
-        {
-          id: 'b1',
-          scope: 'global',
-          backend: 'claude',
-          channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
-          sessionIds: [],
-          touched: []
-        }
-      ]
+      channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' }
     }
   })
-}
-
-function threadPosts(fake: FakeDiscord): FakePost[] {
-  const ids = fake.threads.filter((t) => t.parentId === CHANNEL).map((t) => t.id)
-  return fake.posted.filter((p) => ids.includes(p.channelId))
 }
 
 async function connected(
@@ -342,7 +328,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   })
 
   // AGY§14 AGY§16
-  test('a file agy asks to write shows the row waiting; the conductor answering yes with koloft session answer allows it through the local API, the file is written, and the Changes list shows it as this session’s', async ({
+  test('a file agy asks to write shows the row waiting for approval; the butler answering yes with koloft session answer allows it through the local API, the file is written, and the Changes list shows it as this session’s', async ({
     env
   }) => {
     installAgy(env)
@@ -360,17 +346,9 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const { tabId, id } = await boundAgy(page)
       await page.evaluate((t) => window.api.terminal.write(t, '/write agy-notes.txt\r'), tabId)
       const target = path.join(env.workspaces.a, 'agy-notes.txt')
-      await expect
-        .poll(
-          () =>
-            threadPosts(fake)
-              .map((p) => p.content)
-              .join('\n\n'),
-          {
-            timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
-          }
-        )
-        .toContain(target)
+      await expect(agyRows(page)).toHaveClass(/\bst-approval\b/, {
+        timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+      })
       expect(fs.existsSync(target)).toBe(false)
 
       fake.say(OWNER, `/koloft session answer ${id} yes`)

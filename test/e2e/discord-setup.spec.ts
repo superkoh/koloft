@@ -115,9 +115,11 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
       await dlg.locator('.cb-row', { hasText: '#koloft-all' }).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg).toHaveCount(0)
-      expect(discordOnDisk(env).bindings).toMatchObject([
-        { scope: 'global', channel: { guildId: '111', channelId: '222', name: 'koloft-all' } }
-      ])
+      expect(discordOnDisk(env).channel).toEqual({
+        guildId: '111',
+        channelId: '222',
+        name: 'koloft-all'
+      })
     } finally {
       await close()
     }
@@ -128,7 +130,7 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
   }) => {
     seedSettings(env, {
       hintsOff: true,
-      discord: { userId: STRANGER.id, userName: STRANGER.username, bindings: [] }
+      discord: { userId: STRANGER.id, userName: STRANGER.username }
     })
     const fake = await startFakeDiscord(env)
     fake.appOwner = OWNER
@@ -205,7 +207,7 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
   }) => {
     seedSettings(env, {
       hintsOff: true,
-      discord: { userId: OWNER.id, userName: OWNER.username, bindings: [] }
+      discord: { userId: OWNER.id, userName: OWNER.username }
     })
     const fake = await startFakeDiscord(env)
     fake.rateLimitChannelPosts = 1
@@ -231,7 +233,7 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
         topic: 'Koloft · your butler, for all workspaces'
       })
       expect(discordOnDisk(env)).toMatchObject({
-        bindings: [{ scope: 'global', channel: { channelId: global?.id, name: 'global' } }],
+        channel: { channelId: global?.id, name: 'global' },
         category: { channelId: category?.id }
       })
       await expect(pane.locator('.acct-row', { hasText: 'Alfred · Butler' })).toContainText(
@@ -248,9 +250,11 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
       await change.locator('.modal-foot .btn-primary').click()
       await expect(change).toHaveCount(0)
       expect(fake.made.filter((c) => c.type === CATEGORY)).toHaveLength(1)
-      expect(discordOnDisk(env).bindings).toMatchObject([
-        { scope: 'global', channel: { channelId: '222', name: 'koloft-all' } }
-      ])
+      expect(discordOnDisk(env).channel).toEqual({
+        guildId: '111',
+        channelId: '222',
+        name: 'koloft-all'
+      })
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -262,7 +266,7 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
   }) => {
     seedSettings(env, {
       hintsOff: true,
-      discord: { userId: OWNER.id, userName: OWNER.username, bindings: [] }
+      discord: { userId: OWNER.id, userName: OWNER.username }
     })
     const fake = await startFakeDiscord(env)
     fake.refuseChannels = true
@@ -284,9 +288,11 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
       await dlg.locator('.cb-row', { hasText: '#koloft-all' }).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg).toHaveCount(0)
-      expect(discordOnDisk(env).bindings).toMatchObject([
-        { scope: 'global', channel: { channelId: '222', name: 'koloft-all' } }
-      ])
+      expect(discordOnDisk(env).channel).toEqual({
+        guildId: '111',
+        channelId: '222',
+        name: 'koloft-all'
+      })
       expect(fake.made).toEqual([])
     } finally {
       await quitAndClose(app)
@@ -299,7 +305,7 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
   }) => {
     seedSettings(env, {
       hintsOff: true,
-      discord: { userId: OWNER.id, userName: OWNER.username, bindings: [] }
+      discord: { userId: OWNER.id, userName: OWNER.username }
     })
     const { page, close } = await launched(env, { closeOnIdentify: 4014 })
     try {
