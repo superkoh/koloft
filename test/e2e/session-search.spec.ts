@@ -442,9 +442,11 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
         await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
         const { id } = await boundRemoteAgy(page)
         await runIn(page, centerTerm(page), 'where is the moth-needle-4')
-        const transcript = path.join(
-          machineHome(env),
-          '.gemini',
+        const mirrored = path.join(
+          env.userData,
+          'remote',
+          REMOTE_HOST,
+          'agy-gemini',
           'antigravity-cli',
           'brain',
           id,
@@ -453,7 +455,7 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
           'transcript.jsonl'
         )
         await expect
-          .poll(() => fs.readFileSync(transcript, 'utf8'), { timeout: 60_000 })
+          .poll(() => fs.readFileSync(mirrored, 'utf8'), { timeout: 60_000 })
           .toContain('Answer to: where is the moth-needle-4')
         await closeActiveTab(app, page)
         await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).not.toContain(`k-${id}`)
