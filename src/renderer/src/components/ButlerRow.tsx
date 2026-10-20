@@ -22,11 +22,14 @@ export async function openButler(fresh = false): Promise<void> {
 export async function setUpDiscordWithButler(ownerWords?: string): Promise<string | null> {
   const r = await window.api.discord.setUpWithButler(ownerWords)
   if (!r.ok) return r.error
-  const st = useStore.getState()
-  st.setButlerTab(r.tabId)
-  st.setSettingsOpen(false)
-  visitTab(r.tabId)
+  useStore.getState().setSettingsOpen(false)
+  showButler(r.tabId)
   return null
+}
+
+export function showButler(tabId: string): void {
+  useStore.getState().setButlerTab(tabId)
+  visitTab(tabId)
 }
 
 export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX.Element {

@@ -412,7 +412,6 @@ import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { butlerHelperRole } from '@shared/agentGuide'
 import { conductorFolder, Conductors, type AssistBackendChoice } from './discord/conductors'
-import { firstLineName } from './sessionTitle'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
 import { setupStatusText } from './discord/setupSteps'
@@ -454,6 +453,7 @@ import {
   sessionChoices,
   sessionVerb,
   targetOf,
+  WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS,
   workspaceVerb,
   type ClosableSession,
   type SessionScreen,
@@ -4597,7 +4597,7 @@ async function tellButler(text: string, ownerWords: string): Promise<ConductorOp
   const opened = await conductors?.open()
   if (!opened) return { ok: false, error: STILL_STARTING }
   if (!opened.ok) return opened
-  const waitMs = wasOpen ? PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS : cronBindDeadlineMs()
+  const waitMs = wasOpen ? WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS : cronBindDeadlineMs()
   void sendToButler(opened.tabId, text, ownerWords, waitMs).then((sent) => {
     if (!sent.ok) sendToRenderer(CH.cron.toast, sent.error)
   })
@@ -4674,16 +4674,11 @@ function commandIntoConductor(b: ConductorBinding, text: string): string {
   return `Koloft will type ${text} into ${butlerNameNow()} once its turn ends, and post what it prints in Discord.`
 }
 
-const PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS = 10_000
-let paletteMessages = 0
+let butlerMessages = 0
 
-function fromPalette(
-  text: string,
-  about: string | undefined,
-  inWorkspace: string | undefined
-): string {
-  const where = inWorkspace ? `\nThe owner was in the workspace ${inWorkspace} at the time.` : ''
-  const routed = about ? `\nKoloft took this to be about the workspace ${about}.` : ''
+function fromPalette(text: string, about: string | undefined, at: string | undefined): string {
+  const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
+  const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
   return `The owner typed this in ⌘P: ${text}${where}${routed}`
 }
 
@@ -4693,7 +4688,7 @@ async function sendToButler(
   ownerWords: string,
   waitMs: number
 ): Promise<ConductorOpenResult> {
-  const id = `koloft-palette-${++paletteMessages}`
+  const id = `koloft-butler-${++butlerMessages}`
   const route = messagingOf(backendIdOf(ptyMgr.get(tabId)?.kind) ?? 'claude', false)
   if (!(await tabReady(tabId, waitMs, route === 'typed')))
     return { ok: false, error: `${butlerNameNow()} did not get ready in time.` }

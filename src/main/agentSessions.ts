@@ -687,7 +687,7 @@ const RESUME_USAGE =
 const STOP_USAGE = 'koloft session stop: give an id or name, like: koloft session stop fix-login'
 const ANSWER_USAGE =
   'koloft session answer: give an id or name, then an option number, yes, no or your own words, like: koloft session answer fix-login 2'
-const WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS = 10 * 60_000
+export const WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS = 10 * 60_000
 const SHOWS_NOTHING_WHILE_CLOSED = 'it is not open, so it shows no question.'
 const NO_WORKTREE_IN_BUTLER_FOLDER =
   'koloft session new: your own folder is no git repository, so -w needs --workspace <workspace>; "koloft workspace list" shows them.'

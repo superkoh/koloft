@@ -102,7 +102,7 @@ import {
   RESTORE_FAILED_NOTICE,
   wakeTab
 } from './resumeFlow'
-import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './sessionClick'
+import { openSessionRow, visitAndReveal, visitNextWaiting } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { UnsavedDialog } from './components/UnsavedDialog'
@@ -115,7 +115,7 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
-import { RenameButlerDialog, setUpDiscordWithButler } from './components/ButlerRow'
+import { RenameButlerDialog, setUpDiscordWithButler, showButler } from './components/ButlerRow'
 import { BindConductorDialog } from './components/BindConductorDialog'
 import { everyWorkspaceRows, isButlerTab } from './butlerRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
@@ -1134,15 +1134,11 @@ export default function App(): JSX.Element {
       return
     }
     const toButler = (title: string, about: string | null): void => {
-      const at = butlerActive ? undefined : (currentWs ?? undefined)
+      const at = activeTabWs ?? undefined
       void window.api.conductors.fromPalette(prompt, about ?? undefined, at).then((r) => {
-        if (!r.ok) {
-          showToast(r.error)
-          requestNew('main', undefined, { prompt, title, path: about, worktree: null }, backend)
-          return
-        }
-        useStore.getState().setButlerTab(r.tabId)
-        visitTab(r.tabId)
+        if (r.ok) return showButler(r.tabId)
+        showToast(r.error)
+        requestNew('main', undefined, { prompt, title, path: about, worktree: null }, backend)
       })
     }
     if (route?.kind === 'feature') {

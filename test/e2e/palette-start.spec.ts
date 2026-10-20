@@ -4,6 +4,7 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, installFakeGh, setGithubFixture, type E2EEnv } from './helpers/env'
 import {
+  butlerRow,
   gitInit,
   readAllCalls,
   sendShortcut,
@@ -67,8 +68,6 @@ function peerLines(env: E2EEnv): string {
   const f = path.join(env.home, 'fake-claude-peer.jsonl')
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
 }
-
-const butlerRow = (page: Page): Locator => page.locator('.isl-butler > .ws-tab')
 
 function butlerFolder(env: E2EEnv): string {
   return path.join(env.userData, 'conductors', 'global')
