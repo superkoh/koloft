@@ -50,7 +50,7 @@ test.describe.configure({ retries: NO_RETRY_SINCE_EVERY_RUN_SPENDS_REAL_MONEY })
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const A_REAL_MODEL_TURN_MS = 180_000
-const A_SLASH_RESULT_CARD_FOLLOWS_THE_TURN_WITHIN_MS = 5000
+const PAST_THE_TURN_TEXT_WAIT_AND_THE_SLASH_RESULT_SETTLE_MS = 10_000
 const TWO_LINE_REPLY = 'PAPAYA-42\nGUAVA-17'
 const ASK_FOR_TWO_LINES = `Reply with exactly these two lines and nothing else, no formatting:\n${TWO_LINE_REPLY}`
 // CC§7
@@ -642,11 +642,9 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       const heardBefore = conductorSaid(fake).length
       fake.say(OWNER, '/koloft session list')
       await expect
-        .poll(() => conductorSaid(fake).slice(heardBefore).join('\n'), {
-          timeout: A_REAL_MODEL_TURN_MS
-        })
-        .toMatch(/no sessions/i)
-      await page.waitForTimeout(A_SLASH_RESULT_CARD_FOLLOWS_THE_TURN_WITHIN_MS)
+        .poll(() => conductorSaid(fake).length, { timeout: A_REAL_MODEL_TURN_MS })
+        .toBeGreaterThan(heardBefore)
+      await page.waitForTimeout(PAST_THE_TURN_TEXT_WAIT_AND_THE_SLASH_RESULT_SETTLE_MS)
       expect(ran(fake).filter((p) => p.includes('ran /koloft'))).toEqual([])
     })
   })

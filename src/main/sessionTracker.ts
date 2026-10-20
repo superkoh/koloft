@@ -214,6 +214,9 @@ export const INTERRUPT_TEXTS = new Set([
 // CC§2
 const IMAGE_PLACEHOLDER = /\[Image(?: #\d+)?\]/g
 
+// CC§9
+const COMMAND_RECORD = /^<command-(name|message|args|contents)>/
+
 export function classifyUserPrompt(text: string): {
   genuine: boolean
   title: string | null
@@ -224,7 +227,7 @@ export function classifyUserPrompt(text: string): {
   let isCommand = false
   let commandName: string | null = null
   // CC§9
-  if (/^<command-(name|message|args|contents)>/.test(text)) {
+  if (COMMAND_RECORD.test(text)) {
     isCommand = true
     const m = text.match(/<command-args>([\s\S]*?)<\/command-args>/)
     candidate = m ? m[1] : ''
@@ -280,7 +283,7 @@ export function whoTyped(record: { origin?: unknown }, text: string): 'owner' | 
   return kind === 'peer' ? 'peer' : null
 }
 
-type TurnPiece = { line: SaidLine; midTurn: boolean } | 'tool'
+type TurnPiece = { line: SaidLine; midTurn: boolean } | 'tool' | 'command'
 
 // CC§2 CC§13
 function claudeTurnPieces(obj: TranscriptRecord | null): TurnPiece[] {
@@ -292,6 +295,7 @@ function claudeTurnPieces(obj: TranscriptRecord | null): TurnPiece[] {
     const who = raw === null ? null : whoTyped(obj, raw)
     if (raw === null || !who) return []
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
+    if (!obj.isMeta && COMMAND_RECORD.test(raw)) return ['command']
     if (
       obj.isMeta ||
       compactionSummary(obj) ||
@@ -329,6 +333,10 @@ export function lastTurnsOfLines(
   for (const line of lines) {
     for (const piece of claudeTurnPieces(parseRecord(line))) {
       if (piece === 'tool') continue
+      if (piece === 'command') {
+        log.begin()
+        continue
+      }
       const before = log.open()
       log.add(piece.line, piece.midTurn)
       if (log.open() !== before) started++
@@ -558,8 +566,6 @@ export class SessionTracker extends SessionRuntime {
       return
     }
     if (t && turnOf(event)) t.compactingFrom = undefined
-    // CC§2
-    if (event.type === 'prompt' && t?.caughtUp && t.turns.begin()) t.replyDone = false
     if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
@@ -1442,7 +1448,10 @@ export class SessionTracker extends SessionRuntime {
     }
     for (const piece of claudeTurnPieces(obj)) {
       if (piece === 'tool') t.replyDone = false
-      else {
+      else if (piece === 'command') {
+        t.turns.begin()
+        t.replyDone = false
+      } else {
         t.turns.add(piece.line, piece.midTurn)
         t.replyDone = piece.line.who === 'assistant'
       }

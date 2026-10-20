@@ -1945,7 +1945,7 @@ describe('SessionTracker — what each turn said: the owner, another session, an
   })
 
   // CC§2
-  it('a turn a skill command started, which no prompt record opens, ends once with its reply even when its Stop comes before any of it is on disk, and a prompt that leaves nothing at all ends no turn', async () => {
+  it('a skill command record opens a turn of its own, live and on disk: it ends once with its reply even when its Stop comes before any of it is on disk, and a command that leaves no reply ends no turn and shows none', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     const ended: { turn: { reply: string } }[] = []
@@ -1956,16 +1956,14 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     tracker.bindSession('tabSkill', file, sid, cwd)
     await waitFor(tracker, (x) => x.tabId === 'tabSkill' && x.title === 'earlier question')
 
-    tracker.receive('tabSkill', { type: 'prompt' })
-    fs.appendFileSync(
-      file,
+    const command = (name: string, args: string, s: number): string =>
       JSON.stringify(
         human(
-          '<command-message>koloft:koloft</command-message>\n<command-name>/koloft:koloft</command-name>\n<command-args>session list</command-args>',
-          30
+          `<command-message>${name}</command-message>\n<command-name>/${name}</command-name>\n<command-args>${args}</command-args>`,
+          s
         )
       ) + '\n'
-    )
+    fs.appendFileSync(file, command('koloft:koloft', 'session list', 30))
     tracker.receive('tabSkill', { type: 'stop' })
     setTimeout(() => {
       fs.appendFileSync(file, JSON.stringify(said(bash, 31)) + '\n')
@@ -1974,11 +1972,15 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     await expect.poll(() => ended.length, { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 }).toBe(1)
     expect(ended[0].turn.reply).toBe('No sessions.')
 
-    tracker.receive('tabSkill', { type: 'prompt' })
+    fs.appendFileSync(file, command('context', '', 40))
     tracker.receive('tabSkill', { type: 'stop' })
     await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
     expect(ended).toHaveLength(1)
     expect(tracker.turnsOf(sid, 5)?.map((t) => t.reply)).toEqual(['earlier', 'No sessions.'])
+    expect((await transcriptTurns(file, 5)).map((t) => t.reply)).toEqual([
+      'earlier',
+      'No sessions.'
+    ])
   })
 
   // CC§14
