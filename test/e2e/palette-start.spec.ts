@@ -408,6 +408,42 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     })
   }
 
+  test('while the butler is busy and the Mac has no room, the helper for ⌘P work is queued under the butler and the owner is told so, and the screen stays on the butler', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const machine = path.join(env.home, 'machine.json')
+    fs.writeFileSync(machine, JSON.stringify({ pressure: 2, load1: 1, backgroundWork: true }))
+    env.launchEnv.KOLOFT_TEST_MACHINE_FILE = machine
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await ask(app, page, 'turn on dark mode')
+      await page.keyboard.press('Enter')
+      await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
+      await page.evaluate((id) => window.api.terminal.write(id, '/busy\r'), butlerTab)
+      await expect(butlerRow(page)).toHaveClass(BUSY_ROW, { timeout: 30_000 })
+      await expect
+        .poll(() => page.evaluate(() => window.api.machine.now().then((s) => s?.busy)), {
+          timeout: 20_000
+        })
+        .toBe(true)
+
+      assistAnswers(env, { hand: 'koloft', title: 'Dim sidebar' })
+      await ask(app, page, 'and dim the sidebar too')
+      await page.keyboard.press('Enter')
+      await expect(page.locator('.toast')).toContainText('it is queued', { timeout: 30_000 })
+      await expect(
+        page.locator('.isl-butler .ws-subtabs > .ws-tab.st-queued', { hasText: 'Dim sidebar' })
+      ).toHaveCount(1)
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   for (const [backend, install] of [
     ['muse', installMuse],
     ['agy', installAgy]

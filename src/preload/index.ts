@@ -200,7 +200,7 @@ const api: KoloftApi = {
     unbind: () => ipcRenderer.invoke(CH.conductors.unbind),
     open: () => ipcRenderer.invoke(CH.conductors.open),
     startFresh: () => ipcRenderer.invoke(CH.conductors.startFresh),
-    fromPalette: (text, about, at) => ipcRenderer.invoke(CH.conductors.fromPalette, text, about, at)
+    fromPalette: (request) => ipcRenderer.invoke(CH.conductors.fromPalette, request)
   },
   discord: {
     status: () => ipcRenderer.invoke(CH.discord.status),

@@ -1141,8 +1141,12 @@ export default function App(): JSX.Element {
     }
     const toButler = (title: string, about: string | null): void => {
       const at = activeTabWs ?? undefined
-      void window.api.conductors.fromPalette(prompt, about ?? undefined, at).then((r) => {
-        if (r.ok) return r.helper ? visitTab(r.tabId) : showButler(r.tabId)
+      const request = { words: prompt, title: title || undefined, about: about ?? undefined, at }
+      void window.api.conductors.fromPalette(request).then((r) => {
+        if (r.ok) {
+          if (r.queued) return
+          return r.helper ? visitTab(r.tabId) : showButler(r.tabId)
+        }
         showToast(r.error)
         requestNew('main', undefined, { prompt, title, path: about, worktree: null }, backend)
       })

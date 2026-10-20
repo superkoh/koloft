@@ -56,6 +56,12 @@ import type { Assist } from './assist'
 import { keysFor } from './typeKeys'
 import type { StartedSessions } from './startedSessions'
 
+export interface ButlerHelperTask {
+  prompt: string
+  name?: string
+  ownerWords: string
+}
+
 export interface NewSessionArgs {
   name?: string
   workspace?: string
@@ -832,7 +838,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
   turnEnded(tabId: string, turn: Turn): void
   waitsOnAnother(sessionId: string): boolean
-  startButlerHelper(butler: SessionInfo, prompt: string, ownerWords: string): Promise<string | null>
+  startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
 } {
   const opening = new Map<string, Promise<string | null>>()
   let queued = 0
@@ -1242,13 +1248,12 @@ export function sessionVerb(d: SessionVerbDeps): {
 
   const startButlerHelper = async (
     butler: SessionInfo,
-    prompt: string,
-    ownerWords: string
+    { prompt, name, ownerWords }: ButlerHelperTask
   ): Promise<string | null> =>
     (
       await launchSibling(
         d,
-        { prompt },
+        { prompt, name },
         butler,
         d.butlerFolder(),
         butler.tabId,

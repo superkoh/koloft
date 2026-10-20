@@ -429,8 +429,15 @@ export type ConductorSaveResult =
 
 export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 
+export interface PaletteRequest {
+  words: string
+  title?: string
+  about?: string
+  at?: string
+}
+
 export type PaletteHandOff =
-  { ok: true; tabId: string; helper?: true } | { ok: false; error: string }
+  { ok: true; tabId: string; helper?: true; queued?: true } | { ok: false; error: string }
 
 export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
 export type HintId = (typeof HINT_IDS)[number]
@@ -1371,7 +1378,7 @@ export interface KoloftApi {
     unbind(): Promise<void>
     open(): Promise<ConductorOpenResult>
     startFresh(): Promise<ConductorOpenResult>
-    fromPalette(text: string, about?: string, at?: string): Promise<PaletteHandOff>
+    fromPalette(request: PaletteRequest): Promise<PaletteHandOff>
   }
   discord: {
     status(): Promise<DiscordStatus>
