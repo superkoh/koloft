@@ -4,8 +4,6 @@ import path from 'path'
 import { execFile } from 'child_process'
 
 const REGISTRY_DIR = path.join(os.homedir(), '.claude', 'sessions')
-const POLL_WHILE_THE_REGISTRY_FOLDER_IS_MISSING_MS = 500
-
 // CC§11
 function processStartUtc(pid: number): Promise<string | null> {
   return new Promise((resolve) => {
@@ -125,13 +123,11 @@ export function whenMessagingSocket(
 ): Promise<string | null> {
   return new Promise((resolve) => {
     let watcher: fs.FSWatcher | undefined
-    let poll: ReturnType<typeof setInterval> | undefined
     let settled = false
     const settle = (socket: string | null): void => {
       if (settled) return
       settled = true
       clearTimeout(deadline)
-      clearInterval(poll)
       watcher?.close()
       resolve(socket)
     }
@@ -142,10 +138,9 @@ export function whenMessagingSocket(
       Math.max(0, ms)
     )
     try {
+      fs.mkdirSync(dir, { recursive: true })
       watcher = fs.watch(dir, check)
-    } catch {
-      poll = setInterval(check, POLL_WHILE_THE_REGISTRY_FOLDER_IS_MISSING_MS)
-    }
+    } catch {}
     check()
   })
 }

@@ -4593,12 +4593,10 @@ async function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpe
 }
 
 async function tellButler(text: string, ownerWords: string): Promise<ConductorOpenResult> {
-  const wasOpen = !!conductors?.liveTab()
   const opened = await conductors?.open()
   if (!opened) return { ok: false, error: STILL_STARTING }
   if (!opened.ok) return opened
-  const waitMs = wasOpen ? WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS : cronBindDeadlineMs()
-  void sendToButler(opened.tabId, text, ownerWords, waitMs).then((sent) => {
+  void sendToButler(opened.tabId, text, ownerWords).then((sent) => {
     if (!sent.ok) sendToRenderer(CH.cron.toast, sent.error)
   })
   return opened
@@ -4685,12 +4683,12 @@ function fromPalette(text: string, about: string | undefined, at: string | undef
 async function sendToButler(
   tabId: string,
   text: string,
-  ownerWords: string,
-  waitMs: number
+  ownerWords: string
 ): Promise<ConductorOpenResult> {
   const id = `koloft-butler-${++butlerMessages}`
+  const until = Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS
   const route = messagingOf(backendIdOf(ptyMgr.get(tabId)?.kind) ?? 'claude', false)
-  if (!(await tabReady(tabId, waitMs, route === 'typed')))
+  if (!(await tabReady(tabId, until - Date.now(), route === 'typed')))
     return { ok: false, error: `${butlerNameNow()} did not get ready in time.` }
   try {
     if (route === 'queue') await queueCodexMessage(tabId, text, id)
@@ -4700,7 +4698,7 @@ async function sendToButler(
       if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }
       // ADR-0031
       if (hookRegDir) seedOwnerWords(saidFile(hookRegDir, tabId), ownerWords)
-      await sendPeerLine(tabId, line, waitMs)
+      await sendPeerLine(tabId, line, until - Date.now())
     }
   } catch (error) {
     return { ok: false, error: errorText(error) }
