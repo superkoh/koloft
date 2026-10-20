@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
-import { execFileSync, spawnSync } from 'child_process'
+import { execFileSync, spawn, spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { expect } from './app'
 import type { E2EEnv } from './env'
@@ -217,6 +217,25 @@ function seedOwnership(env: E2EEnv, id: string): void {
 export function withMember(members: unknown, id: string): string[] {
   const list = Array.isArray(members) ? (members as string[]) : []
   return list.includes(id) ? list : [...list, id]
+}
+
+// CC§11
+export function runClaudeElsewhere(env: E2EEnv, sessionId: string): () => void {
+  const other = spawn('sleep', ['600'], { stdio: 'ignore' })
+  const pid = other.pid
+  if (!pid) throw new Error('could not start the stand-in claude process')
+  const procStart = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+    env: { ...process.env, TZ: 'UTC' }
+  })
+    .toString()
+    .trim()
+  const registry = path.join(env.home, '.claude', 'sessions')
+  fs.mkdirSync(registry, { recursive: true })
+  fs.writeFileSync(
+    path.join(registry, `${pid}.json`),
+    JSON.stringify({ pid, sessionId, procStart })
+  )
+  return () => other.kill()
 }
 
 export function seedJsonl(env: E2EEnv, bucketDir: string, opts: SeedOptions = {}): string {
