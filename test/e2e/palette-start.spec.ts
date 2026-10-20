@@ -38,6 +38,7 @@ import {
 test.afterEach(({ env }) => killFakeRemote(env))
 
 const PROMPT = 'Fold the session search into the command palette'
+const BUSY_ROW = /\bst-(working|approval)\b/
 
 const palette = (page: Page): Locator => page.locator('.modal.palette')
 const askBox = (page: Page): Locator => palette(page).getByRole('textbox', { name: 'Ask or jump' })
@@ -346,6 +347,66 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await quitAndClose(app)
     }
   })
+
+  const keepsBusy: Record<
+    'claude' | 'codex' | 'muse' | 'agy',
+    { install: (env: E2EEnv) => void; busy: string }
+  > = {
+    claude: { install: () => {}, busy: '/busy' },
+    codex: { install: installCodex, busy: 'hold this turn open' },
+    muse: { install: installMuse, busy: '/approve' },
+    agy: { install: installAgy, busy: '/busy' }
+  }
+
+  for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
+    const { install, busy } = keepsBusy[backend]
+    test(`while a ${backend} butler is busy, what ⌘P cannot do starts at once in a helper of the butler's, under its row, which the screen moves to`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      install(env)
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await page.evaluate(
+          (b) => window.api.settings.set({ assist: { on: true, backend: b } }),
+          backend
+        )
+        await ask(app, page, 'turn on dark mode')
+        await page.keyboard.press('Enter')
+        await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
+        await page.evaluate(
+          ([id, line]) => window.api.terminal.write(id, line + '\r'),
+          [butlerTab, busy]
+        )
+        await expect(butlerRow(page)).toHaveClass(BUSY_ROW, { timeout: 30_000 })
+
+        await ask(app, page, 'and dim the sidebar too')
+        await page.keyboard.press('Enter')
+        const helper = page.locator('.isl-butler .ws-subtabs > .ws-tab')
+        await expect(helper).toHaveCount(1, { timeout: 60_000 })
+        await expect(helper).toHaveClass(/\bactive\b/)
+        const helperTab = (await helper.getAttribute('data-tab-id')) ?? ''
+        expect(helperTab).not.toBe(butlerTab)
+        await expect
+          .poll(
+            async () =>
+              (
+                JSON.stringify([readAllCalls(env), codexCalls(env)]) +
+                codexWireText(env) +
+                (await terminalText(page, helperTab))
+              ).replace(/\s+/g, ''),
+            { timeout: 60_000 }
+          )
+          .toContain('Theownertypedthisin⌘P:anddimthesidebartoo')
+        await expect(butlerRow(page)).toHaveClass(BUSY_ROW)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 
   for (const [backend, install] of [
     ['muse', installMuse],

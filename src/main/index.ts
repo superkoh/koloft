@@ -4800,7 +4800,10 @@ async function handFromPalette(ownerWords: string, text: string): Promise<Palett
   const tabId = await sessionCommand.startButlerHelper(busy, text, ownerWords)
   return tabId
     ? { ok: true, tabId, helper: true }
-    : { ok: false, error: `${butlerNameNow()} is busy, and Koloft could not start a helper for it.` }
+    : {
+        ok: false,
+        error: `${butlerNameNow()} is busy, and Koloft could not start a helper for it.`
+      }
 }
 
 async function sendToButler(
