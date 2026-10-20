@@ -467,6 +467,10 @@ server of the opening note and with `--provider echo`; October 2026.
   `/clear` writes the new session's registry file with the same pid, so the wrapper
   follows it. Typed text followed by Enter in one write lands in the input box unsent;
   an Enter sent a second later submits it.
+- The gap Koloft's `typeKeys` leaves between a text and its Enter is enough: muse 1.4.10
+  (`1.4.10-R6427.1`) on `--provider echo` inside tmux 3.3a (Docker, Linux, a pty attached
+  with `tmux attach`, October 2026), text then Enter 0 ms apart stays in the box (2 of 2
+  tries), 300 ms apart it submits (2 of 2), 1000 ms apart it submits (2 of 2).
 - On Linux, muse 1.4.10 (`Muse Code 1.4.10 (1.4.10-R6427.1)`, official installer, Docker,
   `--provider echo`) still writes the live registry of §4 under
   `museHome/runtime/muse/sessions`, with `process_generation_hint: "pid=<pid>"`; nothing
