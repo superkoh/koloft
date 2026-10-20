@@ -85,6 +85,7 @@ last_note() {
 
 export const NOTICE_ENV = 'KOLOFT_NOTICE'
 export const NOTICE_SUFFIX = '.notice'
+export const NOTICE_THIS_TURN = '.turn'
 
 export const TAKE_NOTICE_FN = `take_notice() {
   [ -f "$notice" ] && mv -f "$notice" "$notice.$$" 2>/dev/null || return 0
@@ -562,17 +563,23 @@ export function noticeLine(text: string): string {
   return JSON.stringify(`${text}\n\n`).slice(1, -1)
 }
 
+export type NoticeKept = 'fresh' | 'merged'
+
 export interface NoticeFile {
-  unread(): Promise<boolean>
-  leave(text: string): Promise<void>
+  leave(fresh: string, merged?: string): Promise<NoticeKept>
   drop(): Promise<void>
 }
 
 export function localNotice(file: string): NoticeFile {
   return {
-    unread: async () => fs.existsSync(file),
-    leave: async (text) => writeWholeBeforeVisible(file, noticeLine(text)),
-    drop: () => fs.promises.rm(file, { force: true })
+    leave: async (fresh, merged) => {
+      const kept: NoticeKept = merged !== undefined && fs.existsSync(file) ? 'merged' : 'fresh'
+      writeWholeBeforeVisible(file, noticeLine(kept === 'merged' ? merged! : fresh))
+      return kept
+    },
+    drop: async () => {
+      for (const f of [file, `${file}${NOTICE_THIS_TURN}`]) fs.rmSync(f, { force: true })
+    }
   }
 }
 

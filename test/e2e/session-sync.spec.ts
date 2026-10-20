@@ -250,9 +250,14 @@ async function toldBeforeTheTurnEnds(
   for (const s of sessions)
     await expect.poll(() => s.heard(homes.agents), { timeout }).toMatch(told)
   await expect(wsRows(page, ws).and(page.locator('.st-working'))).toHaveCount(0, { timeout })
-  const marks = await pendingAttention(page)
-  for (const tab of tabs)
-    expect(marks.filter((m) => m.tabId === tab).map((m) => m.kind)).toEqual(['turn-done'])
+  for (const [i, tab] of tabs.entries())
+    await expect
+      .poll(
+        async () =>
+          (await pendingAttention(page)).filter((m) => m.tabId === tab).map((m) => m.kind),
+        { message: sessions[i].backendId, timeout }
+      )
+      .toEqual(['turn-done'])
   for (const tab of tabs)
     expect(fs.existsSync(path.join(homes.notices, `${tab}.notice`))).toBe(false)
 }

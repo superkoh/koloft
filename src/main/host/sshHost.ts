@@ -65,7 +65,13 @@ import {
 } from '../remote/ssh'
 import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
 import { remoteMuseHooks, sessionStartContext } from '../museHooks'
-import { HOLD_FILE, noticeLine, remoteNoticeFile, type NoticeFile } from '../hooks'
+import {
+  HOLD_FILE,
+  NOTICE_THIS_TURN,
+  noticeLine,
+  remoteNoticeFile,
+  type NoticeFile
+} from '../hooks'
 import { claudeArgv } from '../claudeArgs'
 import type { SummaryRow } from '../agyStore'
 import {
@@ -547,6 +553,12 @@ const PULLED_TAIL = new RegExp(`\\n${PULLED} (\\d+)\\n([\\s\\S]*)$`)
 const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
 cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
+const leaveNoticeOnMachine = (file: string): string => `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
+IFS= read -r fresh; IFS= read -r merged
+t="$fresh"; k=fresh
+[ -n "$merged" ] && [ -f "${file}" ] && { t="$merged"; k=merged; }
+printf '%s' "$t" > "${file}.part" && mv -f "${file}.part" "${file}" && printf '%s' "$k"`
+
 const RESIZE_SETTLE_MS = 200
 
 const REMOTE_FILE_LIST_FRESH_MS = 30_000
@@ -889,13 +901,14 @@ export class SshHost implements Host {
   notice(tabId: string): NoticeFile {
     const file = remoteNoticeFile(tabId)
     return {
-      unread: async () => (await this.sh(`[ -f "${file}" ]`, [])).code === 0,
-      leave: async (text) => {
-        const leave = `mkdir -p "${REMOTE_HOOK_DIR}" && cat > "${file}.part" && mv -f "${file}.part" "${file}"`
-        await this.sh(leave, [], { input: Buffer.from(noticeLine(text)) })
+      leave: async (fresh, merged) => {
+        const both = `${noticeLine(fresh)}\n${merged === undefined ? '' : noticeLine(merged)}\n`
+        const r = await this.sh(leaveNoticeOnMachine(file), [], { input: Buffer.from(both) })
+        if (r.code !== 0) throw new Error(problemOf(r))
+        return r.stdout.toString('utf8') === 'merged' ? 'merged' : 'fresh'
       },
       drop: async () => {
-        await this.sh(`rm -f "${file}"`, [])
+        await this.sh(`rm -f "${file}" "${file}${NOTICE_THIS_TURN}"`, [])
       }
     }
   }

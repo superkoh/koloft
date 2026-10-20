@@ -69,6 +69,13 @@ function short(sha: string): string {
   return sha.slice(0, 7)
 }
 
+function copyOf(n: Notice): Notice {
+  return {
+    move: n.move,
+    sameFiles: new Map([...n.sameFiles].map(([tab, o]) => [tab, { ...o, files: new Set(o.files) }]))
+  }
+}
+
 function noticeText(n: Notice): string {
   const parts: string[] = []
   const m = n.move
@@ -108,9 +115,10 @@ export class SessionSync {
       const liveWrites = s.liveWrites ?? 0
       const was = this.seen.get(s.tabId)
       if (!was || was.sessionId !== s.sessionId) {
-        if (was && this.notices.has(s.tabId))
+        if (was) {
+          this.forget(s.tabId)
           this.write(s.tabId, async () => this.d.notice(s.tabId)?.drop())
-        if (was) this.forget(s.tabId)
+        }
         this.seen.set(s.tabId, { sessionId: s.sessionId, liveWrites, stamps, live: new Set() })
         continue
       }
@@ -186,11 +194,13 @@ export class SessionSync {
     this.write(tabId, async () => {
       const file = this.d.notice(tabId)
       if (!file) return
+      const fresh: Notice = { sameFiles: new Map() }
+      add(fresh)
       const unread = this.notices.get(tabId)
-      const n = unread && (await file.unread()) ? unread : { sameFiles: new Map() }
-      add(n)
-      this.notices.set(tabId, n)
-      await file.leave(noticeText(n))
+      const merged = unread && copyOf(unread)
+      if (merged) add(merged)
+      const kept = await file.leave(noticeText(fresh), merged && noticeText(merged))
+      this.notices.set(tabId, kept === 'merged' && merged ? merged : fresh)
     })
   }
 

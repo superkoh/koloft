@@ -28,10 +28,12 @@ function rig(repos: Record<string, string>) {
       return 'src/store.ts\nREADME.md\n'
     },
     notice: (tabId) => ({
-      unread: async () => left.has(tabId),
-      leave: async (text) => {
+      leave: async (fresh, merged) => {
+        const kept = merged !== undefined && left.has(tabId) ? 'merged' : 'fresh'
+        const text = kept === 'merged' ? merged! : fresh
         left.set(tabId, text)
         got.push({ tabId, text })
+        return kept
       },
       drop: async () => void left.delete(tabId)
     })

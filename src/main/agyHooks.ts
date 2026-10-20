@@ -5,7 +5,9 @@ import { record } from './codexObservation'
 import {
   HOLD_FILE,
   HOLD_TAB_ENV,
+  KEEP_GOING_FOR_THE_NOTICE_FN,
   NOTICE_ENV,
+  NOTICE_THIS_TURN,
   QUOTED_PROMPT_BYTES,
   REPLY_LANGUAGE_AFTER_QUOTE,
   REPLY_LANGUAGE_BEFORE_QUOTE,
@@ -22,8 +24,6 @@ export const AGY_LOG_POINTER_SUFFIX = '.agy-log'
 export const AGY_OWNER_TITLE_ENV = 'KOLOFT_AGY_OWNER_TITLE'
 export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
 
-const THIS_TURN = '.turn'
-
 // AGY§12
 const EVENTS = ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'] as const
 type AgyHookName = (typeof EVENTS)[number]
@@ -35,11 +35,12 @@ event="$1"
 input="$(cat)"
 log="$${AGY_LOG_ENV}"
 notice="$${NOTICE_ENV}"
+turn=""; [ -n "$notice" ] && turn="$notice${NOTICE_THIS_TURN}"
 ${TAKE_NOTICE_FN}
-if [ "$event" = "Stop" ] && [ -n "$notice" ]; then
-  told="$(take_notice)"
-  [ -n "$told" ] && { printf '{"decision":"block","reason":"%s"}' "$told"; exit 0; }
-  rm -f "$notice${THIS_TURN}"
+${KEEP_GOING_FOR_THE_NOTICE_FN}
+if [ "$event" = "Stop" ]; then
+  keep_going_for_the_notice && exit 0
+  [ -n "$turn" ] && rm -f "$turn"
 fi
 [ -n "$log" ] && { printf '{"event":"%s","input":' "$event"; printf '%s' "$input" | tr -d '\\n'; printf '}\\n'; } >> "$log" 2>/dev/null
 case "$event" in
@@ -48,8 +49,11 @@ case "$event" in
     tp="$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"transcriptPath" *: *"\\([^"]*\\)".*/\\1/p')"
     said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\\\n//p' | sed -E 's/\\\\n<\\/USER_REQUEST>.*//; s/^.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//; s/\\\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c ${QUOTED_PROMPT_BYTES} | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\\\u[0-9a-fA-F]{0,3}$//; s/\\\\+$//')"
     [ -n "$said" ] && said=${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$said"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
-    [ -n "$notice" ] && take_notice >> "$notice${THIS_TURN}"
-    told="$([ -n "$notice" ] && cat "$notice${THIS_TURN}" 2>/dev/null)$said"
+    if [ -n "$turn" ]; then
+      case "$(printf '%s' "$input" | tr -d ' \\n')" in *'"invocationNum":0'[,}]*) rm -f "$turn" ;; esac
+      [ -f "$notice" ] && take_notice >> "$turn"
+    fi
+    told="$([ -n "$turn" ] && cat "$turn" 2>/dev/null)$said"
     [ -n "$told" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}' "$told"
     ;;
 esac

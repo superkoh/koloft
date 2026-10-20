@@ -137,7 +137,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     ).toBe('第二句 "quoted" next line')
   })
 
-  it('hands what Koloft left for the tab to every model call of the turn it lands in, ahead of the quote, even with no prompt to quote; its file goes at once and the notice at the turn’s end', () => {
+  it('hands what Koloft left for the tab to every model call of the turn it lands in, ahead of the quote, even with no prompt to quote; its file goes at once and the notice at the turn’s end, or at the next turn’s first call when a turn ended with no Stop', () => {
     const notice = path.join(dir, 'tab.notice')
     const env = { KOLOFT_NOTICE: notice }
     const ephemeral = (transcriptPath: string): string | undefined => {
@@ -155,6 +155,12 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
 
     fs.writeFileSync(notice, noticeLine('(From Koloft:) main moved.'))
     expect(ephemeral(path.join(dir, 'missing.jsonl'))).toBe('(From Koloft:) main moved.\n\n')
+    const nextTurn = hook(
+      'PreInvocation',
+      { conversationId: 'c1', invocationNum: 0, transcriptPath: transcriptWith('next') },
+      env
+    )
+    expect(JSON.parse(nextTurn).injectSteps[0].ephemeralMessage).toMatch(/^The user's latest/)
   })
 
   // AGY§12
