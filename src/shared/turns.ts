@@ -36,10 +36,18 @@ export class TurnLog {
     return last && !this.ended.has(last) ? last : undefined
   }
 
+  begin(): boolean {
+    if (this.open()) return false
+    this.start()
+    return true
+  }
+
   end(turn: Turn): boolean {
     if (this.ended.has(turn)) return false
     this.ended.add(turn)
-    return true
+    if (turn.said.length || turn.reply) return true
+    this.turns = this.turns.filter((t) => t !== turn)
+    return false
   }
 
   last(n: number): Turn[] {

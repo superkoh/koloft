@@ -50,6 +50,7 @@ test.describe.configure({ retries: NO_RETRY_SINCE_EVERY_RUN_SPENDS_REAL_MONEY })
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const A_REAL_MODEL_TURN_MS = 180_000
+const A_SLASH_RESULT_CARD_FOLLOWS_THE_TURN_WITHIN_MS = 5000
 const TWO_LINE_REPLY = 'PAPAYA-42\nGUAVA-17'
 const ASK_FOR_TWO_LINES = `Reply with exactly these two lines and nothing else, no formatting:\n${TWO_LINE_REPLY}`
 // CC§7
@@ -626,7 +627,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
     test.setTimeout(4 * A_REAL_MODEL_TURN_MS + 120_000)
     const fake = await realClaudeConductor(env)
-    await withConductor(env, fake, async () => {
+    await withConductor(env, fake, async (_app, page) => {
       await answersWholeInTheChannel(fake)
       fake.say(OWNER, '/context')
       await expect
@@ -644,7 +645,8 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         .poll(() => conductorSaid(fake).slice(heardBefore).join('\n'), {
           timeout: A_REAL_MODEL_TURN_MS
         })
-        .toMatch(/session/i)
+        .toMatch(/no sessions/i)
+      await page.waitForTimeout(A_SLASH_RESULT_CARD_FOLLOWS_THE_TURN_WITHIN_MS)
       expect(ran(fake).filter((p) => p.includes('ran /koloft'))).toEqual([])
     })
   })

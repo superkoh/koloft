@@ -1945,7 +1945,7 @@ describe('SessionTracker — what each turn said: the owner, another session, an
   })
 
   // CC§2
-  it('a turn a skill command started, whose Stop comes before its reply is on disk, still ends once with that reply', async () => {
+  it('a turn a skill command started, which no prompt record opens, ends once with its reply even when its Stop comes before any of it is on disk, and a prompt that leaves nothing at all ends no turn', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     const ended: { turn: { reply: string } }[] = []
@@ -1956,6 +1956,7 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     tracker.bindSession('tabSkill', file, sid, cwd)
     await waitFor(tracker, (x) => x.tabId === 'tabSkill' && x.title === 'earlier question')
 
+    tracker.receive('tabSkill', { type: 'prompt' })
     fs.appendFileSync(
       file,
       JSON.stringify(
@@ -1965,14 +1966,19 @@ describe('SessionTracker — what each turn said: the owner, another session, an
         )
       ) + '\n'
     )
-    fs.appendFileSync(file, JSON.stringify(said(bash, 31)) + '\n')
     tracker.receive('tabSkill', { type: 'stop' })
-    setTimeout(
-      () => fs.appendFileSync(file, JSON.stringify(said(text('No sessions.'), 33)) + '\n'),
-      TURN_TEXT_WAIT_SHORTENED_MS / 3
-    )
+    setTimeout(() => {
+      fs.appendFileSync(file, JSON.stringify(said(bash, 31)) + '\n')
+      fs.appendFileSync(file, JSON.stringify(said(text('No sessions.'), 33)) + '\n')
+    }, TURN_TEXT_WAIT_SHORTENED_MS / 3)
     await expect.poll(() => ended.length, { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 }).toBe(1)
     expect(ended[0].turn.reply).toBe('No sessions.')
+
+    tracker.receive('tabSkill', { type: 'prompt' })
+    tracker.receive('tabSkill', { type: 'stop' })
+    await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
+    expect(ended).toHaveLength(1)
+    expect(tracker.turnsOf(sid, 5)?.map((t) => t.reply)).toEqual(['earlier', 'No sessions.'])
   })
 
   // CC§14

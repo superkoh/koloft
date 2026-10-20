@@ -420,7 +420,6 @@ interface Tracked {
   turns: TurnLog
   replyDone: boolean
   endingTurn?: { turn: TalkTurn; deadline: ReturnType<typeof setTimeout> }
-  stopBeforeItsTurnAt?: number
   inode?: number
   swept?: boolean
   relocatedCwd?: string
@@ -559,6 +558,8 @@ export class SessionTracker extends SessionRuntime {
       return
     }
     if (t && turnOf(event)) t.compactingFrom = undefined
+    // CC§2
+    if (event.type === 'prompt' && t?.caughtUp && t.turns.begin()) t.replyDone = false
     if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
@@ -649,23 +650,13 @@ export class SessionTracker extends SessionRuntime {
     if (!t) return
     await this.parse(t).catch(() => {})
     const turn = t.turns.open()
-    if (this.tracked.get(tabId) !== t) return
-    if (!turn) {
-      t.stopBeforeItsTurnAt = Date.now()
-      return
-    }
+    if (this.tracked.get(tabId) !== t || !turn) return
     if (t.replyDone) return this.finishTurn(t, turn)
     clearTimeout(t.endingTurn?.deadline)
     t.endingTurn = {
       turn,
       deadline: setTimeout(() => this.finishTurn(t, turn), TURN_TEXT_WAIT_MS)
     }
-  }
-
-  private stopWaitsForThisTurn(t: Tracked): boolean {
-    return (
-      t.stopBeforeItsTurnAt !== undefined && Date.now() - t.stopBeforeItsTurnAt < TURN_TEXT_WAIT_MS
-    )
   }
 
   private finishTurn(t: Tracked, turn: TalkTurn): void {
@@ -1024,7 +1015,6 @@ export class SessionTracker extends SessionRuntime {
     t.replyDone = false
     clearTimeout(t.endingTurn?.deadline)
     t.endingTurn = undefined
-    t.stopBeforeItsTurnAt = undefined
     if (!keepBindMs) t.bindMs = Date.now()
     t.resetMs = Date.now()
   }
@@ -1450,7 +1440,6 @@ export class SessionTracker extends SessionRuntime {
         t.lastMainActivityTs = recTs
       }
     }
-    const openBefore = t.turns.open()
     for (const piece of claudeTurnPieces(obj)) {
       if (piece === 'tool') t.replyDone = false
       else {
@@ -1460,11 +1449,6 @@ export class SessionTracker extends SessionRuntime {
     }
     const ending = t.endingTurn?.turn
     if (ending && (t.replyDone || ending !== t.turns.open())) this.finishTurn(t, ending)
-    const opened = t.turns.open()
-    if (opened && opened !== openBefore && !opened.said.length && this.stopWaitsForThisTurn(t)) {
-      t.stopBeforeItsTurnAt = undefined
-      this.finishTurn(t, opened)
-    }
     if (obj.type === 'user') {
       this.ingestSpawnAck(t, obj)
       this.ingestToolDone(t, obj)

@@ -435,7 +435,9 @@ Unless a bullet below says more, it is inferred, not checked.
   `<command-message>koloft:koloft</command-message>\n<command-name>/koloft:koloft</command-name>\n<command-args>session list</command-args>`,
   the skill body as an `isMeta` user record whose content is an array, the hooks'
   attachments, a Bash `tool_use`, its result, the reply text, `stop_hook_summary`. No
-  `<local-command-stdout>` is written.
+  `<local-command-stdout>` is written. UserPromptSubmit fired for it, as for a custom
+  command (§17): Koloft saw the session go to working, and the hook's
+  `hook_additional_context` attachment is in the turn.
 - **What a slash command leaves in the jsonl** (2026-10-04/05, CC 2.1.289 and 2.1.290,
   every record of the runs read):
   - Its output is the text inside `<local-command-stdout>…</local-command-stdout>`, in
