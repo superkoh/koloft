@@ -8,12 +8,7 @@ import type {
   WorkspaceRows,
   WorktreeInfo
 } from '@shared/types'
-import {
-  ASSIST_SAYS_OPENING_IN_OLDER_TRANSCRIPTS,
-  BUTLER_SAYS_OPENING,
-  DISCORD_PREFIX,
-  ownerSays
-} from '@shared/agentGuide'
+import { BUTLER_SAYS_OPENING, DISCORD_PREFIX, ownerSays } from '@shared/agentGuide'
 import {
   BACKEND_LABEL,
   PEER_TRAITS,
@@ -781,6 +776,8 @@ const SESSION_SAYS_OPENING = `${FROM_A_SESSION}"`
 export function sessionSays(from: SessionInfo, text: string): string {
   return `${SESSION_SAYS_OPENING}${from.title}", id ${idToReach(from)}:) ${text}`
 }
+
+const ASSIST_SAYS_OPENING_IN_OLDER_TRANSCRIPTS = "(From Assist, Koloft's AI, for your owner."
 
 const KOLOFT_ENVELOPES = [
   SESSION_SAYS_OPENING,

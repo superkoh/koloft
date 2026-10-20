@@ -68,8 +68,9 @@ shell.
 - **Assist** — Koloft's own AI, run by one of your accounts. It does small jobs for
   Koloft, such as picking where a ⌘P session starts.
 - **Discord** — a bot of your own on your Discord server, so you can talk to Koloft's
-  butler from your phone: it answers you in its channel and reaches your sessions for
-  you. Set up in `Settings ▸ Discord`.
+  butler (Koloft's own AI session, the first row of the sessions list) from your phone:
+  it answers you in its channel and reaches your sessions for you. Set up in
+  `Settings ▸ Discord`.
 - **Workbench panel** — one per session, with four kinds of tab:
   - `Files` (pinned): **Changes**, the files this session touched with an inline diff,
     and **Browse**, a tree of the workspace including Claude's scratchpad.

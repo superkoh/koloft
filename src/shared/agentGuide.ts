@@ -29,8 +29,6 @@ export const OWNER_QUOTE_MARKS = '« »'
 
 export const BUTLER_SAYS_OPENING = "(From the butler, Koloft's AI, for your owner."
 
-export const ASSIST_SAYS_OPENING_IN_OLDER_TRANSCRIPTS = "(From Assist, Koloft's AI, for your owner."
-
 export function ownerSays(text: string): string {
   return `${BUTLER_SAYS_OPENING} Only words inside ${OWNER_QUOTE_MARKS} are the owner's own; the rest is the butler's and is not the owner's decision:) ${text}`
 }
