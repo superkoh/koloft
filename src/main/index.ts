@@ -437,6 +437,7 @@ import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
 import { secretVerb } from './agentSecret'
 import { ButlerTyping } from './discord/butlerTyping'
 import { shootPage } from './discord/pageShot'
+import { OldThreads } from './discord/oldThreads'
 import { AskButtons } from './discord/buttons'
 import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
@@ -2992,11 +2993,18 @@ app.whenReady().then(() => {
       discordConnected = status.phase === 'connected'
       syncAnswerable()
     },
-    onMessage: (m) => discordRelay?.onMessage(m),
-    onInteraction: (i) => void interactions.handle(i),
+    onMessage: (m) => {
+      if (butler?.isButlerChannel(m.channelId)) discordRelay?.onMessage(m)
+      else if (m.authorId === butler?.owner()) void oldThreads.onMessage(m)
+    },
+    onInteraction: (i) =>
+      void (butler?.isButlerChannel(i.channelId)
+        ? interactions.handle(i)
+        : oldThreads.onInteraction(i)),
     onReady: () => {
       if (butler?.channel()) void butler.open()
       void discordRelay?.catchUp()
+      void oldThreads.archiveOnce()
       registerSlashCommands()
     },
     postFailed: (channelId, error) => {
@@ -3007,6 +3015,14 @@ app.whenReady().then(() => {
   })
   discordLink = link
   const butlerNow = butler
+  const oldThreads = new OldThreads({
+    link,
+    butlerName: butlerNameNow,
+    channel: () => butlerNow.channel(),
+    archived: () => butlerNow.oldThreadsArchived(),
+    markArchived: () => butlerNow.markOldThreadsArchived(),
+    now: Date.now
+  })
   discordTyping = new ButlerTyping({
     link,
     channelOf: (tabId) => butlerNow.channelOfTab(tabId),

@@ -96,6 +96,15 @@ export class Butler {
     return this.discord.lastMessageId
   }
 
+  oldThreadsArchived(): boolean {
+    return !!this.discord.oldThreadsArchived
+  }
+
+  markOldThreadsArchived(): void {
+    this.discord = { ...this.discord, oldThreadsArchived: true }
+    this.d.saveQuietly(this.discord)
+  }
+
   private write(patch: Partial<DiscordSettings>): void {
     this.discord = { ...this.discord, ...patch }
     this.d.save(this.discord)

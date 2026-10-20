@@ -201,6 +201,7 @@ export function sanitizeDiscord(raw: unknown): DiscordSettings {
           ...(typeof doc.userName === 'string' ? { userName: doc.userName } : {})
         }
       : {}),
-    ...boundChannel(doc)
+    ...boundChannel(doc),
+    ...(doc.oldThreadsArchived === true ? { oldThreadsArchived: true } : {})
   }
 }

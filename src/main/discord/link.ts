@@ -199,6 +199,15 @@ interface RawChannel {
   type: number
 }
 
+interface RawThread {
+  id: string
+  type: number
+  parent_id?: string
+  owner_id?: string
+}
+
+const THREAD_TYPES = [10, 11, 12]
+
 export interface NewChannel {
   channel: DiscordChannel
   category: DiscordChannel
@@ -241,6 +250,7 @@ function messageOf(m: RawMessage): DiscordMessage {
 
 export class DiscordLink {
   private phase: DiscordPhase = 'off'
+  private botId?: string
   private botName?: string
   private applicationId?: string
   private appOwner?: DiscordUser
@@ -288,6 +298,7 @@ export class DiscordLink {
     this.gateway?.stop()
     this.gateway = null
     this.rest = null
+    this.botId = undefined
     this.botName = undefined
     this.applicationId = undefined
     this.appOwner = undefined
@@ -327,10 +338,11 @@ export class DiscordLink {
     const rest = new DiscordRest(apiUrl, token)
     try {
       const [me, app] = await Promise.all([
-        rest.request<{ username: string }>('GET', '/users/@me'),
+        rest.request<{ id: string; username: string }>('GET', '/users/@me'),
         rest.request<RawApplication>('GET', '/oauth2/applications/@me')
       ])
       if (generation !== this.generation) return
+      this.botId = me.id
       this.botName = me.username
       this.applicationId = app.id
       if (app.owner && !app.team) {
@@ -432,6 +444,27 @@ export class DiscordLink {
   // PLATFORM§39
   async typing(channelId: string): Promise<void> {
     await this.api().request('POST', `/channels/${channelId}/typing`)
+  }
+
+  // PLATFORM§39
+  async botThreadsUnder(guildId: string, parentId: string): Promise<string[]> {
+    const { threads } = await this.api().request<{ threads: RawThread[] }>(
+      'GET',
+      `/guilds/${guildId}/threads/active`
+    )
+    return threads
+      .filter((t) => t.parent_id === parentId && t.owner_id === this.botId)
+      .map((t) => t.id)
+  }
+
+  // PLATFORM§39
+  async isBotThread(channelId: string): Promise<boolean> {
+    const c = await this.api().request<RawThread>('GET', `/channels/${channelId}`)
+    return THREAD_TYPES.includes(c.type) && !!this.botId && c.owner_id === this.botId
+  }
+
+  archiveThread(threadId: string): Promise<unknown> {
+    return this.api().request('PATCH', `/channels/${threadId}`, { archived: true })
   }
 
   private async postMessage(channelId: string, body: unknown): Promise<unknown> {

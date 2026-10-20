@@ -28,6 +28,7 @@ import {
 } from './helpers/p1'
 import {
   callbackText,
+  FAKE_BOT_ID,
   startFakeDiscord,
   type FakeDiscord,
   type FakePost
@@ -356,6 +357,42 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect
         .poll(() => fake.reactions)
         .toContainEqual({ messageId: answer, emoji: '✅', on: true })
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('the session threads an older Koloft opened under the butler’s channel are archived on the first connect, once; the owner writing or running a command in one is pointed to the butler’s channel, and nothing reaches any session', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const OLD = '7001'
+    fake.threads = [
+      { id: OLD, parent_id: CHANNEL, owner_id: FAKE_BOT_ID },
+      { id: '7002', parent_id: CHANNEL, owner_id: FAKE_BOT_ID },
+      { id: '7003', parent_id: CHANNEL, owner_id: OWNER.id },
+      { id: '7004', parent_id: '333', owner_id: FAKE_BOT_ID }
+    ]
+    const { app } = await connected(env, fake)
+    try {
+      await expect.poll(() => discordOnDisk(env).oldThreadsArchived).toBe(true)
+      expect(fake.archived).toEqual([OLD, '7002'])
+      const pointer = `Koloft no longer reads this thread. Talk to Alfred in <#${CHANNEL}>.`
+
+      const said = fake.say(OWNER, 'is this still on?', { channelId: OLD })
+      await expect
+        .poll(() => fake.posted.filter((p) => p.channelId === OLD))
+        .toEqual([expect.objectContaining({ content: pointer, replyTo: said })])
+      fake.say(OWNER, 'hello?', { channelId: OLD })
+      const ran = fake.interact(OWNER, 'run', { command: '/context' }, { channelId: OLD })
+      await expect
+        .poll(() => fake.callbacks.filter((c) => c.interactionId === ran).map(callbackText))
+        .toEqual([pointer])
+      expect(fake.posted.filter((p) => p.channelId === OLD)).toHaveLength(1)
+      const butlerSaw = transcriptText(env, butlerSessionOnDisk(env)!.sessionIds[0])
+      expect(butlerSaw).not.toMatch(/still on|hello\?|\/context/)
     } finally {
       await quitAndClose(app)
       await fake.close()

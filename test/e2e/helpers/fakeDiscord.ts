@@ -78,6 +78,15 @@ function cardText(components: RawComponent[]): { text: string; buttons: FakeButt
   return { text: texts.join('\n'), buttons }
 }
 
+export interface FakeThread {
+  id: string
+  parent_id: string
+  owner_id: string
+}
+
+export const FAKE_BOT_ID = '900'
+const PUBLIC_THREAD = 11
+
 export interface FakeReaction {
   messageId: string
   emoji: string
@@ -129,6 +138,8 @@ export interface FakeDiscord {
   history: Record<string, FakeHistoryMessage[]>
   commands: FakeCommand[]
   callbacks: FakeCallback[]
+  threads: FakeThread[]
+  archived: string[]
   press(author: FakeAuthor, button: FakeButton, channelId: string): string
   submit(author: FakeAuthor, formId: string, typed: string, channelId: string): string
   say(
@@ -152,6 +163,7 @@ const COMMANDS_ROUTE = /^\/applications\/\d+\/guilds\/\d+\/commands$/
 const CALLBACK_ROUTE = /^\/interactions\/(\d+)\/[^/]+\/callback$/
 const REACTION_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/reactions\/([^/]+)\/@me$/
 const ATTACHMENT_ROUTE = /^\/attachments\/(.+)$/
+const CHANNEL_ROUTE = /^\/channels\/(\d+)$/
 
 function bodyOf(req: http.IncomingMessage): Promise<Buffer> {
   return new Promise((resolve) => {
@@ -221,6 +233,8 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     history: {},
     commands: [],
     callbacks: [],
+    threads: [],
+    archived: [],
     press: (author, button, channelId) => {
       const id = String(++nextId)
       for (const ws of sockets)
@@ -334,7 +348,14 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
   }
 
   const routes: Record<string, () => unknown> = {
-    '/users/@me': () => ({ id: '900', username: FAKE_BOT, bot: true }),
+    '/users/@me': () => ({ id: FAKE_BOT_ID, username: FAKE_BOT, bot: true }),
+    [`/guilds/${FAKE_GUILD.id}/threads/active`]: () => ({
+      threads: fake.threads
+        .filter((t) => !fake.archived.includes(t.id))
+        .map((t) => ({ ...t, type: PUBLIC_THREAD })),
+      members: [],
+      has_more: false
+    }),
     '/oauth2/applications/@me': () => ({
       id: FAKE_APPLICATION_ID,
       bot_public: false,
@@ -371,6 +392,18 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       const made = { ...asked, id: String(++nextId) }
       fake.made.push(made)
       return { status: 201, body: made }
+    }
+    const channel = CHANNEL_ROUTE.exec(route)
+    if (channel && req.method === 'GET') {
+      const thread = fake.threads.find((t) => t.id === channel[1])
+      const plain = FAKE_CHANNELS.find((c) => c.id === channel[1])
+      if (thread) return { status: 200, body: { ...thread, type: PUBLIC_THREAD } }
+      return plain ? { status: 200, body: plain } : { status: 404, body: { message: 'no' } }
+    }
+    if (channel && req.method === 'PATCH') {
+      const { archived } = JSON.parse((await bodyOf(req)).toString()) as { archived?: boolean }
+      if (archived) fake.archived.push(channel[1])
+      return { status: 200, body: { id: channel[1] } }
     }
     const attachment = ATTACHMENT_ROUTE.exec(route)
     if (attachment) return { status: 200, body: attachments.get(attachment[1]) ?? '' }

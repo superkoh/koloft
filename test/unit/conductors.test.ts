@@ -30,11 +30,19 @@ describe('sanitizeDiscord', () => {
     expect(sanitizeDiscord(undefined)).toEqual({})
   })
 
-  it('keeps the butler’s channel and the last message it read across a restart', () => {
-    expect(sanitizeDiscord({ userId: '555', channel: channel('2'), lastMessageId: '90' })).toEqual({
+  it('keeps the butler’s channel, the last message it read and that the old threads were archived, across a restart', () => {
+    expect(
+      sanitizeDiscord({
+        userId: '555',
+        channel: channel('2'),
+        lastMessageId: '90',
+        oldThreadsArchived: true
+      })
+    ).toEqual({
       userId: '555',
       channel: channel('2'),
-      lastMessageId: '90'
+      lastMessageId: '90',
+      oldThreadsArchived: true
     })
   })
 

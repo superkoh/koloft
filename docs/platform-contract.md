@@ -1608,6 +1608,13 @@ Gateway (the live connection that pushes events):
     role had Manage Threads).
   - `PATCH /channels/{thread}` with `{archived: false}` answered 200 and a post after it
     200; `{archived: false, name}` in one call opened it and renamed it (200).
+  - `GET /guilds/{id}/threads/active` answered 200 with `{threads, members, has_more}`;
+    each thread carries `type` (11 public), `parent_id` (its channel) and `owner_id`
+    (the bot for its own threads), and a thread the bot had archived was not listed
+    (2026-10-20, same bot and server). `GET /channels/{thread}` carries the same three;
+    a text channel has `type` 0 and no `owner_id`. A post whose `content` holds
+    `<#channelId>` with `allowed_mentions: {parse: []}` answered 200 and kept the text as
+    sent; that the app shows it as a link to the channel is from Discord's docs.
   - Archiving and opening one thread back and forth within a second answered 429
     (`x-ratelimit-scope: shared`, `retry_after` 0.5–1.4 s) while the bucket (10 per
     15 s) still had calls left.

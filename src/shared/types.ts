@@ -384,6 +384,7 @@ export interface DiscordSettings {
   channel?: DiscordChannel
   lastMessageId?: string
   category?: DiscordChannel
+  oldThreadsArchived?: true
 }
 
 export type DiscordPhase =
