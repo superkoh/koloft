@@ -368,11 +368,6 @@ export interface AssistRecord {
   lastSessionKey?: string
 }
 
-export interface AssistTaskRow {
-  tabId: string
-  name: string
-}
-
 export interface DiscordChannel {
   guildId: string
   channelId: string
@@ -758,7 +753,6 @@ export interface DocVerdict {
 
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
   conductor?: string
-  assistTask?: string
   turnOver?: boolean
   docVerdicts?: Record<string, DocVerdict>
 }
@@ -1341,10 +1335,7 @@ export interface KoloftApi {
     unbind(): Promise<void>
     open(): Promise<ConductorOpenResult>
     startFresh(): Promise<ConductorOpenResult>
-    openTask(title: string, brief: string, workspace?: string): Promise<ConductorOpenResult>
-    closeTask(tabId: string): Promise<void>
-    tasks(): Promise<AssistTaskRow[]>
-    onTasks(cb: (rows: AssistTaskRow[]) => void): () => void
+    fromPalette(text: string, about?: string, at?: string): Promise<ConductorOpenResult>
   }
   discord: {
     status(): Promise<DiscordStatus>

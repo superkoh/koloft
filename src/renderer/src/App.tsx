@@ -1075,7 +1075,7 @@ export default function App(): JSX.Element {
   const butlerActive = useStore(
     (s) =>
       !!activeTabId &&
-      (isButlerTab(s.sessions, s.butlerTab, s.assistTasks, activeTabId) ||
+      (isButlerTab(s.sessions, s.butlerTab, activeTabId) ||
         !!s.butlerWorkspace?.rows.some((r) => r.id === activeRowId))
   )
   const currentWs = currentWorkspace(workspaceRows, activeRowId, selectedWs, lastWsPath)
@@ -1133,11 +1133,16 @@ export default function App(): JSX.Element {
       pickWorkspaceForTyped({ prompt, title: '' }, backend)
       return
     }
-    const toAssist = (title: string, workspace: string | null): void => {
-      void window.api.conductors.openTask(title, prompt, workspace ?? undefined).then((r) => {
-        if (r.ok) return visitTab(r.tabId)
-        showToast(r.error)
-        requestNew('main', undefined, { prompt, title, path: workspace, worktree: null }, backend)
+    const toButler = (title: string, about: string | null): void => {
+      const at = butlerActive ? undefined : (currentWs ?? undefined)
+      void window.api.conductors.fromPalette(prompt, about ?? undefined, at).then((r) => {
+        if (!r.ok) {
+          showToast(r.error)
+          requestNew('main', undefined, { prompt, title, path: about, worktree: null }, backend)
+          return
+        }
+        useStore.getState().setButlerTab(r.tabId)
+        visitTab(r.tabId)
       })
     }
     if (route?.kind === 'feature') {
@@ -1151,18 +1156,18 @@ export default function App(): JSX.Element {
         .find((w) => w.workspace.path === route.path)
         ?.rows.find((r) => r.id === route.id)
       if (row) openSessionRow(row, route.path)
-      else toAssist(route.title, null)
+      else toButler(route.title, null)
       return
     }
     if (route?.kind === 'assist') {
-      toAssist(route.title, route.path)
+      toButler(route.title, route.path)
       return
     }
     const ws =
       route?.kind === 'workspace' &&
       workspaceRows.find((w) => w.workspace.path === route.path && !w.workspace.missing)
     if (route?.kind !== 'workspace' || !ws) {
-      toAssist(route?.title ?? '', null)
+      toButler(route?.title ?? '', null)
       return
     }
     const pending: PendingStart = {

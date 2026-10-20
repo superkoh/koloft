@@ -411,12 +411,7 @@ import type {
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { butlerHelperRole } from '@shared/agentGuide'
-import {
-  conductorFolder,
-  Conductors,
-  type AssistBackendChoice,
-  type AssistTask
-} from './discord/conductors'
+import { conductorFolder, Conductors, type AssistBackendChoice } from './discord/conductors'
 import { firstLineName } from './sessionTitle'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
@@ -563,7 +558,6 @@ const sessionBackends = new SessionBackends({
   }
 })
 sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
-sessionBackends.assistTaskOf = (tabId) => conductors?.taskNameOf(tabId)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 function allSessions(): SessionInfo[] {
@@ -2940,7 +2934,6 @@ app.whenReady().then(() => {
           conductor: true,
           permission: ownersPermission(),
           trustFolder: true,
-          firstPrompt: l.firstPrompt,
           name: !PEER_TRAITS[l.backend].namedAtLaunch
             ? undefined
             : reachedBySendMessage(l.backend)
@@ -2972,7 +2965,6 @@ app.whenReady().then(() => {
     },
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
-    tasksChanged: () => sendToRenderer(CH.conductors.tasks, conductors?.taskRows() ?? []),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     bindDeadlineMs: cronBindDeadlineMs()
   })
@@ -4685,38 +4677,14 @@ function commandIntoConductor(b: ConductorBinding, text: string): string {
 const PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS = 10_000
 let paletteMessages = 0
 
-const PALETTE_TASK_ANSWERS_ITSELF =
-  'When this is a question or a piece of writing you can answer from what you know (translate, explain, draft a message), answer it here yourself; start or message a session only for work on files, commands or what a workspace holds.'
-
-function routedTo(workspace: string | undefined): string {
-  return workspace ? `\nKoloft took this to be about the workspace ${workspace}.` : ''
-}
-
-function paletteTask(title: string, text: string, workspace: string | undefined): AssistTask {
-  return {
-    name: title || firstLineName(text),
-    brief: `${text}${routedTo(workspace)}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
-    ownerWords: text
-  }
-}
-
-async function openPaletteTask(
-  title: string,
+function fromPalette(
   text: string,
-  workspace?: string
-): Promise<ConductorOpenResult> {
-  const all = conductors
-  if (!all) return { ok: false, error: STILL_STARTING }
-  const task = paletteTask(title, text, workspace)
-  const running = all.runningTaskTab(task.name)
-  return running
-    ? sendToButler(
-        running,
-        `The owner typed this in ⌘P: ${text}${routedTo(workspace)}`,
-        text,
-        PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS
-      )
-    : all.openTask(task)
+  about: string | undefined,
+  inWorkspace: string | undefined
+): string {
+  const where = inWorkspace ? `\nThe owner was in the workspace ${inWorkspace} at the time.` : ''
+  const routed = about ? `\nKoloft took this to be about the workspace ${about}.` : ''
+  return `The owner typed this in ⌘P: ${text}${where}${routed}`
 }
 
 async function sendToButler(
@@ -5281,11 +5249,16 @@ function registerIpc(): void {
     CH.conductors.startFresh,
     () => conductors?.startFresh() ?? { ok: false, error: STILL_STARTING }
   )
-  ipcMain.handle(CH.conductors.openTask, (_e, title: string, text: string, workspace?: string) =>
-    openPaletteTask(title, text, typeof workspace === 'string' ? workspace : undefined)
+  ipcMain.handle(CH.conductors.fromPalette, (_e, text: string, about?: unknown, at?: unknown) =>
+    tellButler(
+      fromPalette(
+        text,
+        typeof about === 'string' ? about : undefined,
+        typeof at === 'string' ? at : undefined
+      ),
+      text
+    )
   )
-  ipcMain.handle(CH.conductors.closeTask, (_e, tabId: string) => conductors?.closeTask(tabId))
-  ipcMain.handle(CH.conductors.tasks, () => conductors?.taskRows() ?? [])
   ipcMain.handle(CH.discord.status, () => discordLink?.status() ?? DISCORD_OFF)
   ipcMain.handle(CH.discord.pair, (_e, isMe: unknown) => {
     const owner = discordLink?.pair(isMe === true)

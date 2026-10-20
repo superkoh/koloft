@@ -79,7 +79,7 @@ describe('TabLifecycle', () => {
     ])
   })
 
-  it('teardown clears attention before Claude Code can mark a crash, and tells conductors whether the tab only fell asleep', () => {
+  it('teardown clears attention before Claude Code can mark a crash, and tells the butler last', () => {
     const { lifecycle, calls } = wired()
     lifecycle.emit('teardown', exitOf({ crashed: true, exitCode: 1, left: { treeRoot: '/repo' } }))
     expect(calls).toEqual([
@@ -89,10 +89,8 @@ describe('TabLifecycle', () => {
       'owner.stop t1 1',
       'workspaces.launchEnded t1',
       'cron.onPtyExit t1 /repo',
-      'conductors.onPtyExit t1 false'
+      'conductors.onPtyExit t1'
     ])
-    lifecycle.emit('teardown', exitOf({ asleep: true }))
-    expect(calls.at(-1)).toBe('conductors.onPtyExit t1 true')
   })
 
   it('a stored session killed by a signal is stopped with code -1, and a failed stop is a toast', async () => {
@@ -126,9 +124,9 @@ describe('TabLifecycle', () => {
     expect(calls).toEqual(['workspaces.onTrackerUpdate', 'workspaces.onTrackerUpdate'])
   })
 
-  it('a sleeping tab closed for good ends its conductor task and refreshes the workspaces list', () => {
+  it('a sleeping tab closed for good is told to the butler and refreshes the workspaces list', () => {
     const { lifecycle, calls } = wired()
     lifecycle.emit('forgotten', 't1')
-    expect(calls).toEqual(['conductors.onPtyExit t1 false', 'workspaces.onTrackerUpdate'])
+    expect(calls).toEqual(['conductors.onPtyExit t1', 'workspaces.onTrackerUpdate'])
   })
 })

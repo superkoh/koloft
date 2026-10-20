@@ -78,10 +78,10 @@ export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems
   })
   lifecycle.on('teardown', ({ tabId }) => s.workspaces()?.launchEnded(tabId))
   lifecycle.on('teardown', ({ tabId, left }) => s.cron()?.onPtyExit(tabId, left))
-  lifecycle.on('teardown', ({ tabId, asleep }) => s.conductors()?.onPtyExit(tabId, asleep))
+  lifecycle.on('teardown', ({ tabId }) => s.conductors()?.onPtyExit(tabId))
 
   lifecycle.on('slept', () => s.workspaces()?.onTrackerUpdate())
   lifecycle.on('woken', () => s.workspaces()?.onTrackerUpdate())
-  lifecycle.on('forgotten', (tabId) => s.conductors()?.onPtyExit(tabId, false))
+  lifecycle.on('forgotten', (tabId) => s.conductors()?.onPtyExit(tabId))
   lifecycle.on('forgotten', () => s.workspaces()?.onTrackerUpdate())
 }

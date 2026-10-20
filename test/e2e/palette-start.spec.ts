@@ -68,6 +68,17 @@ function peerLines(env: E2EEnv): string {
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
 }
 
+const butlerRow = (page: Page): Locator => page.locator('.isl-butler > .ws-tab')
+
+function butlerFolder(env: E2EEnv): string {
+  return path.join(env.userData, 'conductors', 'global')
+}
+
+function codexWireText(env: E2EEnv): string {
+  const f = path.join(env.home, 'fake-codex-wire.jsonl')
+  return fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
+}
+
 function codexCalls(env: E2EEnv): { argv: string[]; cwd: string }[] {
   const file = path.join(env.home, 'fake-codex-calls.jsonl')
   if (!fs.existsSync(file)) return []
@@ -222,7 +233,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('⏎ asks AI even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words; an answer it cannot use hands the words to a global Assist task, and with Assist off the workspace picker opens and the session starts on the pick', async ({
+  test('⏎ asks AI even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words; an answer it cannot use hands the words to the butler, and with Assist off the workspace picker opens and the session starts on the pick', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -247,11 +258,12 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       assistAnswers(env, 'not an answer')
       await ask(app, page, 'fix the build')
       await page.keyboard.press('Enter')
-      const [assist] = await waitForAllCalls(env, 1, 30_000)
-      expect(assist.cwd).toBe(path.join(env.userData, 'conductors', 'global'))
+      const [butler] = await waitForAllCalls(env, 1, 30_000)
+      expect(butler.cwd).toBe(butlerFolder(env))
       await expect
-        .poll(() => page.evaluate(() => window.api.conductors.tasks()))
-        .toEqual([{ tabId: expect.any(String), name: 'fix the build' }])
+        .poll(() => peerLines(env), { timeout: 30_000 })
+        .toContain('The owner typed this in ⌘P: fix the build')
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
       await expect(page.locator('.modal')).toHaveCount(0)
 
       await page.evaluate(() =>
@@ -271,7 +283,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
   })
 
   // ADR-0031
-  test('words about Koloft itself go to a task of the butler with them as its brief and its first prompt, so its reply language and its children quote the owner’s words — a second such request under the title of a task still open reaches that task as a message — "set up Discord" reaches the butler itself as a message, and "ask <workspace> …" opens a task of the butler', async ({
+  test('what ⌘P cannot do itself reaches the butler as a message, opening it first when it is not open: the owner’s words, the workspace they were in unless they were on the butler, and the workspace Koloft took it to be about — words about Koloft, "ask <workspace> …" and "set up Discord" alike, with the owner’s words saved as the butler’s, and no session of its own', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -279,49 +291,75 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      const tasks = (): Promise<{ tabId: string; name: string }[]> =>
-        page.evaluate(() => window.api.conductors.tasks())
+      await startSessionIn(page, 'ws-a')
 
       assistAnswers(env, { hand: 'koloft', title: 'Dark mode', why: 'A Koloft setting.' })
       await ask(app, page, 'turn on dark mode')
       await page.keyboard.press('Enter')
-      const [global] = await waitForAllCalls(env, 1, 30_000)
+      const butler = (await waitForAllCalls(env, 2, 30_000))[1]
+      expect(butler.cwd).toBe(butlerFolder(env))
       await expect(page.locator('.modal')).toHaveCount(0)
-      expect(global.cwd).toBe(path.join(env.userData, 'conductors', 'global'))
-      await expect.poll(tasks).toEqual([{ tabId: expect.any(String), name: 'Dark mode' }])
-      expect(textAfterDashes(global)).toBe('turn on dark mode')
-      const [{ tabId: darkMode }] = await tasks()
+      await expect
+        .poll(() => peerLines(env), { timeout: 60_000 })
+        .toContain('The owner typed this in ⌘P: turn on dark mode')
+      expect(peerLines(env)).toMatch(/The owner was in the workspace [^"]*ws-a at the time\./)
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
+      const butlerTab = await butlerRow(page).getAttribute('data-tab-id')
       const ownerWords = (): string => {
-        const f = path.join(env.userData, 'hook-sessions', `${darkMode}.said`)
+        const f = path.join(env.userData, 'hook-sessions', `${butlerTab}.said`)
         return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim() : ''
       }
-      await expect.poll(ownerWords, { timeout: 30_000 }).toBe('turn on dark mode')
+      expect(ownerWords()).toBe('turn on dark mode')
 
       await ask(app, page, 'and dim the sidebar too')
       await page.keyboard.press('Enter')
       await expect
         .poll(() => peerLines(env), { timeout: 30_000 })
         .toContain('The owner typed this in ⌘P: and dim the sidebar too')
+      expect(peerLines(env).trim().split('\n').at(-1)).not.toContain('The owner was in')
       expect(ownerWords()).toBe('and dim the sidebar too')
-      expect(readAllCalls(env)).toHaveLength(1)
-      expect(await tasks()).toHaveLength(1)
 
       assistAnswers(env, { hand: 'discord', title: 'Discord' })
       await ask(app, page, 'set up Discord')
       await page.keyboard.press('Enter')
-      const butler = (await waitForAllCalls(env, 2, 30_000))[1]
-      expect(butler.cwd).toBe(path.join(env.userData, 'conductors', 'global'))
       await expect
         .poll(() => peerLines(env), { timeout: 30_000 })
         .toContain('The owner asked you: set up Discord')
-      expect(await tasks()).toHaveLength(1)
 
       assistAnswers(env, { hand: 'assist', workspace: 2, title: 'Ask ws-b' })
       await ask(app, page, 'ask ws-b about the release')
       await page.keyboard.press('Enter')
-      const calls = await waitForAllCalls(env, 3, 30_000)
-      expect(calls[2].cwd).toBe(path.join(env.userData, 'conductors', 'global'))
-      await expect.poll(tasks).toContainEqual({ tabId: expect.any(String), name: 'Ask ws-b' })
+      await expect
+        .poll(() => peerLines(env), { timeout: 30_000 })
+        .toContain('The owner typed this in ⌘P: ask ws-b about the release')
+      expect(peerLines(env).trim().split('\n').at(-1)).toMatch(
+        /Koloft took this to be about the workspace [^"]*ws-b\./
+      )
+      expect(readAllCalls(env)).toHaveLength(2)
+      await expect(page.locator('.isl-butler .ws-subtabs')).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex butler gets what ⌘P cannot do as a message too', async ({ env }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.settings.set({ assist: { on: true, backend: 'codex' } }))
+      await ask(app, page, 'turn on dark mode')
+      await page.keyboard.press('Enter')
+      await expect
+        .poll(() => codexCalls(env).some((c) => c.cwd === butlerFolder(env)), { timeout: 30_000 })
+        .toBe(true)
+      await expect
+        .poll(() => codexWireText(env), { timeout: 60_000 })
+        .toContain('The owner typed this in ⌘P: turn on dark mode')
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
+      expect(readAllCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
     }
