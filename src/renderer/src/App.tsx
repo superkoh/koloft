@@ -46,6 +46,7 @@ import type {
   SessionSearchHit,
   WorkspaceRows
 } from '@shared/types'
+import { SIDEBAR_MIN } from '@shared/types'
 import {
   useStore,
   openInterceptedFile,
@@ -153,7 +154,6 @@ import {
 } from '@shared/paletteFeatures'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
-const SIDEBAR_MIN = 240
 const RECENT_MAX = 3
 const CENTER_TERMINAL_MAX_COLS = 120
 

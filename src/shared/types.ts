@@ -428,6 +428,8 @@ export type HintId = (typeof HINT_IDS)[number]
 
 export const WORLD_CLOCK_MAX = 3
 
+export const SIDEBAR_MIN = 240
+
 export const DEFAULT_SETTINGS: Settings = {
   sessionMethods: {
     defaultBackend: 'claude',

@@ -16,10 +16,11 @@ import {
   remoteKey
 } from './helpers/remote'
 import { NAME_KEEPS_PX } from '../../src/renderer/src/wsHeadFit'
+import { SIDEBAR_MIN } from '../../src/shared/types'
 
 const COUNTS_TIMEOUT = 30_000
 const LONG_NAME = 'payments-gateway-service'
-const NARROWER_THAN_ANY_SIDEBAR = 100
+const ONE_COUNT_FITS_AT_SIDEBAR_MIN = { issues: 12345, prs: 4321 }
 
 function headFit(
   page: Page,
@@ -96,17 +97,19 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
   }) => {
     const fx = setupGitFixture(env, LONG_NAME)
     setGithubFixture(env, {
-      [fx.clone]: { owner: 'acme', repo: LONG_NAME, issues: 12345, prs: 4321 }
+      [fx.clone]: { owner: 'acme', repo: LONG_NAME, ...ONE_COUNT_FITS_AT_SIDEBAR_MIN }
     })
-    seedSettings(env, { sidebarWidth: NARROWER_THAN_ANY_SIDEBAR })
+    seedSettings(env, { sidebarWidth: SIDEBAR_MIN })
     const { app, page } = await launchSettled(env)
     try {
       await expect(gitMark(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
         timeout: COUNTS_TIMEOUT
       })
+      await expect(page.locator('.side')).toHaveJSProperty('offsetWidth', SIDEBAR_MIN)
+      await expect
+        .poll(async () => (await headFit(page, LONG_NAME)).shown)
+        .toEqual(['12345 open issues'])
       const fit = await headFit(page, LONG_NAME)
-      expect(fit.shown).not.toEqual(['12345 open issues', '4321 open pull requests'])
-      expect(fit.shown).not.toEqual(['4321 open pull requests'])
       expect(fit.clipped).toBe(0)
       expect(fit.spill).toBeLessThanOrEqual(0.5)
       expect(fit.nameWidth).toBeGreaterThanOrEqual(Math.min(NAME_KEEPS_PX, fit.nameNeeds))
@@ -138,7 +141,7 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
   }) => {
     const fx = setupGitFixture(env, LONG_NAME)
     setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: LONG_NAME, issues: 128, prs: 37 } })
-    seedSettings(env, { sidebarWidth: 200 })
+    seedSettings(env, { sidebarWidth: SIDEBAR_MIN })
     const { app, page } = await launchSettled(env)
     try {
       await expect(gitMark(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
