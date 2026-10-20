@@ -42,18 +42,18 @@ function shotSession(): Electron.Session {
   return ses
 }
 
-export function pictureRows(page: Size, devicePixelRatio: number): number[] {
-  const rowHeight = Math.floor(LONGEST_SIDE_THAT_CAPTURED_PX / devicePixelRatio)
-  const rows: number[] = []
-  for (let y = 0; y < page.height && rows.length < MOST_PICTURES; y += rowHeight) rows.push(y)
-  return rows
+type Clip = Size & { y: number }
+
+export function pictureClips(page: Size, devicePixelRatio: number): Clip[] {
+  const side = Math.floor(LONGEST_SIDE_THAT_CAPTURED_PX / devicePixelRatio)
+  const width = Math.min(page.width, side)
+  const clips: Clip[] = []
+  for (let y = 0; y < page.height && clips.length < MOST_PICTURES; y += side)
+    clips.push({ y, width, height: Math.min(side, page.height - y) })
+  return clips
 }
 
-async function capture(
-  wc: WebContents,
-  clip: Size & { y: number },
-  quality?: number
-): Promise<Shot> {
+async function capture(wc: WebContents, clip: Clip, quality?: number): Promise<Shot> {
   const format = quality ? 'jpeg' : 'png'
   const r = (await within(
     wc.debugger.sendCommand('Page.captureScreenshot', {
@@ -77,24 +77,16 @@ async function load(wc: WebContents, url: string): Promise<void> {
 }
 
 async function pageSize(wc: WebContents): Promise<{ size: Size; ratio: number }> {
-  const metrics = (await within(
-    wc.debugger.sendCommand('Page.getLayoutMetrics'),
+  const [metrics, ratio] = await within(
+    Promise.all([
+      wc.debugger.sendCommand('Page.getLayoutMetrics') as Promise<{ cssContentSize: Size }>,
+      wc.executeJavaScript('window.devicePixelRatio') as Promise<number>
+    ]),
     A_CAPTURE_ANSWERS_WITHIN_MS,
     PAGE_STUCK
-  )) as { cssContentSize: Size }
-  const ratio =
-    Number(
-      await within(
-        wc.executeJavaScript('window.devicePixelRatio'),
-        A_CAPTURE_ANSWERS_WITHIN_MS,
-        PAGE_STUCK
-      )
-    ) || 1
-  const width = Math.min(
-    Math.ceil(metrics.cssContentSize.width),
-    Math.floor(LONGEST_SIDE_THAT_CAPTURED_PX / ratio)
   )
-  return { size: { width, height: Math.ceil(metrics.cssContentSize.height) }, ratio }
+  const { width, height } = metrics.cssContentSize
+  return { size: { width: Math.ceil(width), height: Math.ceil(height) }, ratio: ratio || 1 }
 }
 
 export interface PagePictures {
@@ -124,21 +116,17 @@ export async function shootPage(url: string): Promise<PagePictures> {
     ).catch(() => undefined)
     wc.debugger.attach('1.3')
     const { size, ratio } = await pageSize(wc)
-    const rows = pictureRows(size, ratio)
-    if (!rows.length)
-      throw new Error(`${url} is an empty page: there is nothing to take a picture of.`)
-    const rowHeight = Math.floor(LONGEST_SIDE_THAT_CAPTURED_PX / ratio)
+    const clips = pictureClips(size, ratio)
+    const last = clips.at(-1)
+    if (!last) throw new Error(`${url} is an empty page: there is nothing to take a picture of.`)
     const files: DiscordFile[] = []
-    let shownHeight = 0
-    for (const [i, y] of rows.entries()) {
-      const clip = { y, width: size.width, height: Math.min(rowHeight, size.height - y) }
+    for (const [i, clip] of clips.entries()) {
       let shot = await capture(wc, clip)
       if (shot.data.length > BYTES_PER_FILE) shot = await capture(wc, clip, SMALLER_PICTURE_QUALITY)
-      const part = rows.length > 1 ? `-${i + 1}` : ''
+      const part = clips.length > 1 ? `-${i + 1}` : ''
       files.push({ name: `page${part}.${shot.format === 'png' ? 'png' : 'jpg'}`, data: shot.data })
-      shownHeight = y + clip.height
     }
-    return { files, shownHeight, pageHeight: size.height }
+    return { files, shownHeight: last.y + last.height, pageHeight: size.height }
   } finally {
     wc.close()
   }

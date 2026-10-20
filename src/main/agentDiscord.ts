@@ -1,7 +1,8 @@
 import fs from 'fs'
 import path from 'path'
-import { pathToFileURL } from 'url'
+import { fileURLToPath } from 'url'
 import type { ConductorSaveResult } from '@shared/types'
+import { routeFor, schemeOf } from '@shared/browserRoute'
 import {
   answered,
   EXIT_USAGE,
@@ -17,7 +18,7 @@ import type { PagePictures } from './discord/pageShot'
 export const DISCORD_USAGE =
   'koloft: usage: koloft discord send <file>... [-- "<text>"] | shot <file or web address> [-- "<text>"] | setup | status | token --from-page | reload | invite | bind --new-channel'
 export const NOT_A_PAGE =
-  'koloft: give one HTML file that is there, or one address that starts with http://, https:// or file:// (like http://localhost:5173).'
+  'koloft: give one HTML file that is there, or one web address that starts with http:// or https:// (like http://localhost:5173).'
 export const NOT_THE_BUTLER =
   'koloft: only the butler bound to a Discord channel can send to Discord.'
 
@@ -64,10 +65,11 @@ async function send(
 }
 
 function pageUrl(target: string, cwd: string): string | undefined {
-  if (/^(https?|file):\/\//i.test(target)) return target
-  const full = path.resolve(cwd, target)
-  return fs.statSync(full, { throwIfNoEntry: false })?.isFile()
-    ? pathToFileURL(full).href
+  const route = routeFor(schemeOf(target) ? target : path.resolve(cwd, target), 'agent')
+  if (route.dest !== 'browser') return undefined
+  if (schemeOf(route.target) !== 'file:') return route.target
+  return fs.statSync(fileURLToPath(route.target), { throwIfNoEntry: false })?.isFile()
+    ? route.target
     : undefined
 }
 

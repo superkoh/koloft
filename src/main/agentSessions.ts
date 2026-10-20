@@ -595,11 +595,6 @@ function starterRow(
   return id === undefined ? undefined : placedRows(d.sidebar(), open).find((r) => r.row.id === id)
 }
 
-export async function targetOf(d: SessionVerbDeps, ref: string): Promise<Parsed<Target>> {
-  const found = await findRow(d, 'command', ref)
-  return found.ok ? { ok: true, value: rowTarget(d, found.value) } : found
-}
-
 interface NamedRows {
   all: PlacedRow[]
   names: (string | null)[]

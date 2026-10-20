@@ -26,7 +26,8 @@ export class ButlerTyping {
     if (!channelId) return
     const type = (): void => void this.d.link.typing(channelId).catch(() => undefined)
     type()
-    this.typers.set(tabId, { channelId, timer: setInterval(type, TYPING_RENEWED_EVERY_MS) })
+    const renew = (): void => (this.d.channelOf(tabId) === channelId ? type() : this.refresh(tabId))
+    this.typers.set(tabId, { channelId, timer: setInterval(renew, TYPING_RENEWED_EVERY_MS) })
   }
 
   forget(tabId: string): void {

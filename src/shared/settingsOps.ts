@@ -80,11 +80,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
     ? merged.gitSuggestionsDismissed.filter((r): r is string => typeof r === 'string')
     : []
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
-  merged.butlerSession = sanitizeButlerSession(
-    'butlerSession' in doc ? doc.butlerSession : undefined,
-    assistSessions,
-    merged.discord
-  )
+  merged.butlerSession = sanitizeButlerSession(doc.butlerSession, assistSessions, merged.discord)
   merged.discord = sanitizeDiscord(merged.discord)
   merged.assist = sanitizeAssist(merged.assist)
   merged.butler = sanitizeButler(merged.butler)

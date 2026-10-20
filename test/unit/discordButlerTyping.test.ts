@@ -37,6 +37,19 @@ describe('"Koloft is typing…" shows in the butler’s channel while the butler
     expect(t.typed).toEqual(['10', '10'])
   })
 
+  it('unbinding or moving the channel while the butler works stops the typing where it was by the next renewal', async () => {
+    vi.useFakeTimers()
+    const t = setup()
+    t.channels.set('b1', '10')
+    t.status.set('b1', 'working')
+    t.typing.refresh('b1')
+    t.channels.set('b1', '11')
+    await vi.advanceTimersByTimeAsync(TYPING_RENEWED_EVERY_MS)
+    t.channels.delete('b1')
+    await vi.advanceTimersByTimeAsync(TYPING_RENEWED_EVERY_MS * 2)
+    expect(t.typed).toEqual(['10', '11'])
+  })
+
   it('a session that is not the butler types nowhere, however it works', async () => {
     vi.useFakeTimers()
     const t = setup()

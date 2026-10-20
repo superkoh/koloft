@@ -632,7 +632,7 @@ tracker.heldTabs = () => {
   const held = new Set(dirtyTabIds)
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
   for (const s of allSessions())
-    if (butler?.heldResident(s.tabId) || workspaceMgr?.isResident(s.sessionId)) held.add(s.tabId)
+    if (butler?.channelOfTab(s.tabId) || workspaceMgr?.isResident(s.sessionId)) held.add(s.tabId)
   return held
 }
 tracker.needsUser = (id) => attention.waitsOnApproval(id)
@@ -1127,7 +1127,7 @@ function syncAnswerable(): void {
   if (!hookRegDir || !all) return
   for (const s of allSessions()) {
     if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
-    const on = discordConnected && all.heldResident(s.tabId)
+    const on = discordConnected && !!all.channelOfTab(s.tabId)
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -2632,7 +2632,7 @@ app.whenReady().then(() => {
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
     sessionSync.flush(t.tabId)
-    const onDiscord = !!butler?.heldResident(t.tabId)
+    const onDiscord = !!butler?.channelOfTab(t.tabId)
     if (onDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     discordTyping?.refresh(t.tabId)
@@ -2882,8 +2882,6 @@ app.whenReady().then(() => {
     save: (discord) => {
       void commitSettings({ discord })
       syncAnswerable()
-      const tab = butler?.liveTab()
-      if (tab) discordTyping?.refresh(tab)
     },
     saveQuietly: (discord) => void saveSettings({ discord }),
     saveSession: (butlerSession) => void commitSettings({ butlerSession }),
@@ -4505,7 +4503,7 @@ function butlerDestination(): Destination {
     typeCommand: async (tabId, command) => {
       const channelId = butler?.channel()?.channelId
       if (!channelId) throw new Error(NO_CHANNEL_BOUND)
-      await slash.typeWhenIdle({ name: butlerNameNow(), tabId, conductor: true }, command, {
+      await slash.typeWhenIdle({ name: butlerNameNow(), tabId, butler: true }, command, {
         channelId
       })
     },
@@ -4514,7 +4512,7 @@ function butlerDestination(): Destination {
 }
 
 function typeCommandInto(t: Target, text: string, to: SlashReplyTo): string {
-  const target = (tabId: string): SlashTarget => ({ name: t.name, tabId, conductor: !!t.butler })
+  const target = (tabId: string): SlashTarget => ({ name: t.name, tabId, butler: !!t.butler })
   if (t.tabId) return slash.run(target(t.tabId), text, to)
   void t
     .open()

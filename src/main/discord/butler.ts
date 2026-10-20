@@ -166,10 +166,6 @@ export class Butler {
     return this.taskOfTab(tabId)?.name
   }
 
-  heldResident(tabId: string): boolean {
-    return tabId === this.resident && !!this.discord.channel
-  }
-
   isButlerTab(tabId: string): boolean {
     return tabId === this.resident || !!this.taskOfTab(tabId)
   }
