@@ -5,6 +5,7 @@ import { seedSettings } from './helpers/env'
 import {
   gitInit,
   killSession,
+  landsOnTheButler,
   pickerDialog,
   seedJsonl,
   sendShortcut,
@@ -92,7 +93,7 @@ test.describe('S4: the centre with no session running — onboarding with nothin
     }
   })
 
-  test('T-LIFE-17: the last session exiting cleanly hands the centre back to the panel, cold rows still listed', async ({
+  test('T-LIFE-17: the last session exiting cleanly lands on the butler, and closing the butler hands the centre back to the panel, cold rows still listed', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -110,6 +111,8 @@ test.describe('S4: the centre with no session running — onboarding with nothin
       await expect(page.locator('.ws .ws-tab', { hasText: 'Recent A session' })).toHaveCount(1)
 
       await runInTerminal(page, '/exit')
+      await landsOnTheButler(page)
+      await sendShortcut(app, 'shortcut:close-tab')
 
       const panel = page.locator('.w-empty')
       await expect(panel).toBeVisible({ timeout: 30_000 })
@@ -122,7 +125,7 @@ test.describe('S4: the centre with no session running — onboarding with nothin
     }
   })
 
-  test('T-LIFE-12: with nothing selected the panel targets the workspace last worked in, until a restart', async ({
+  test('T-LIFE-12: with nothing selected (the butler closed too) the panel targets the workspace last worked in, until a restart', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -142,6 +145,8 @@ test.describe('S4: the centre with no session running — onboarding with nothin
       const [sessionB] = await waitForCalls(env, 1)
       killSession(sessionB.pid, env)
       await expect(rowB).toHaveClass(/\bcold\b/, { timeout: 40_000 })
+      await landsOnTheButler(page1)
+      await sendShortcut(app1, 'shortcut:close-tab')
       const panel = page1.locator('.w-empty')
       await expect(panel).toBeVisible({ timeout: 20_000 })
 

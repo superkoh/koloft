@@ -6,6 +6,7 @@ import {
   centerTerm,
   clickAppMenuItem,
   focusOwner,
+  landsOnTheButler,
   openSessionTerminal,
   panelTerm,
   runIn,
@@ -235,7 +236,8 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     await centerTerm(page).click()
     await closeTab(app)
 
-    await expect(page.locator('.w-empty')).toBeVisible({ timeout: 20_000 })
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bcold\b/, { timeout: 20_000 })
+    await landsOnTheButler(page)
   })
 
   test('WB-K01b: with the panel focused the same ⌘W closes a tab and spares the session', async ({

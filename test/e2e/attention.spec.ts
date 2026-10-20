@@ -159,18 +159,19 @@ test.describe('attention markers come from real session-status transitions (shim
     }
   })
 
-  test('a graceful /exit clears pending and never raises exited, not even after two liveness sweeps', async ({
+  test('a graceful /exit clears its pending mark and never raises exited, not even after two liveness sweeps', async ({
     page
   }) => {
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
     await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
+    const tab = (await page.locator('.ws .ws-tab.active').getAttribute('data-tab-id'))!
 
     // CC§1
     await runIn(page, centerTerm(page), '/exit')
-    await expect.poll(() => pendingAttention(page), { timeout: 15_000 }).toHaveLength(0)
+    await expect.poll(() => markOn(page, tab), { timeout: 15_000 }).toBeUndefined()
     await page.waitForTimeout(PAST_TWO_LIVENESS_SWEEPS_MS)
-    expect(await pendingAttention(page)).toHaveLength(0)
+    expect(await markOn(page, tab)).toBeUndefined()
   })
 
   test('T-LIFE-04: a hard-killed claude turns its row cold in place, keeping its title', async ({

@@ -5,8 +5,8 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { rowsWithSub } from './helpers/blackbox'
 import { runGit } from './helpers/gitFixture'
 import {
-  FAKE_SESSION_TITLE,
   gitInit,
+  landsOnTheButler,
   openWorktreeSession,
   startSessionIn,
   terminalText,
@@ -74,9 +74,7 @@ test.describe('leaving a worktree session with /exit', () => {
       await exitChoosingRemove(page, tabId)
       await expect(worktreeRow(page, 'leaving')).toHaveCount(0, { timeout: 4000 })
       expect(fs.existsSync(wt)).toBe(true)
-      await expect(
-        page.locator('.ws .ws-tab.active', { hasText: FAKE_SESSION_TITLE }).locator('.ws-tab-sub')
-      ).toHaveText('main')
+      await landsOnTheButler(page)
 
       await expect.poll(() => fs.existsSync(wt), { timeout: 30_000 }).toBe(false)
       expect(branchExists(env.workspaces.a, 'worktree-leaving')).toBe(false)

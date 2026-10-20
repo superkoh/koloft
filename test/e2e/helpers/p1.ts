@@ -390,6 +390,14 @@ export function wsGroup(page: Page, wsName: string): Locator {
   return page.locator('.ws').filter({ has: page.locator('.ws-head', { hasText: wsName }) })
 }
 
+export function butlerRow(page: Page): Locator {
+  return page.locator('.isl-butler > .ws-tab')
+}
+
+export async function landsOnTheButler(page: Page): Promise<void> {
+  await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+}
+
 export function wsRows(page: Page, wsName: string): Locator {
   return wsGroup(page, wsName).locator('.ws-tab')
 }

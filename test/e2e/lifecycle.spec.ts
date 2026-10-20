@@ -12,6 +12,7 @@ import {
   gitInit,
   gitWorktreeAdd,
   killSession,
+  landsOnTheButler,
   layoutOnDisk,
   menuItemTexts,
   openMenu,
@@ -83,6 +84,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
 
     killSession(hard.pid, env)
     await expect(hardRow).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+    await landsOnTheButler(page)
 
     await gracefulRow.click()
     await expect(centerTerm(page)).toBeVisible()
@@ -106,7 +108,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
     await expect(
       page.locator(
-        '.ws .ws-tab.st-working, .ws-tab.st-waiting, .ws-tab.st-approval, .ws-tab.st-idle'
+        '.ws .ws-tab.st-working, .ws .ws-tab.st-waiting, .ws .ws-tab.st-approval, .ws .ws-tab.st-idle'
       )
     ).toHaveCount(0)
     await snap(page, 'T-LIFE-04')
@@ -156,7 +158,9 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
 
     await page.waitForTimeout(SILENCE_LONGER_THAN_TWO_LIVENESS_SWEEPS_OF_2500_MS)
-    expect(await pendingAttention(page)).toHaveLength(0)
+    expect(
+      (await pendingAttention(page)).filter((e) => e.sessionId === call.sessionId)
+    ).toHaveLength(0)
     await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
     await expect(row).toHaveClass(/\bcold\b/)
   })
@@ -186,7 +190,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     expect(layoutOnDisk(env).members).toContain(call.sessionId)
   })
 
-  test('T-LIFE-05: a session that dies closes its tab, says killed by signal in a toast, and leaves a cold, unselected row', async ({
+  test('T-LIFE-05: a session that dies closes its tab, says killed by signal in a toast, lands on the butler, and leaves a cold, unselected row', async ({
     page,
     env
   }) => {
@@ -200,8 +204,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     killSession(session.pid, env)
     // PLATFORM§29
     await expect(page.locator('.toast-msg')).toContainText('killed by signal', { timeout: 20_000 })
-    await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
-    await expect(page.locator('.w-empty')).toBeVisible({ timeout: 20_000 })
+    await landsOnTheButler(page)
     await expect(row).toHaveClass(/\bcold\b/, { timeout: 40_000 })
     await expect(row).not.toHaveClass(/\bactive\b/)
 

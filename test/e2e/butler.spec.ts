@@ -6,6 +6,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, installMuse, museCalls, seedSettings, type E2EEnv } from './helpers/env'
 import {
   assistRecordOnDisk,
+  butlerRow,
   centerTerm,
   closeMenu,
   menuItemTexts,
@@ -84,10 +85,6 @@ function gateSays(call: { argv: string[] }, event: unknown): string {
     encoding: 'utf8'
   })
   return res.stdout === '' ? 'allow' : JSON.parse(res.stdout).hookSpecificOutput.permissionDecision
-}
-
-function butlerRow(page: Page): Locator {
-  return page.locator('.isl-butler > .ws-tab')
 }
 
 function channelRow(dlg: Locator, name: string): Locator {
@@ -569,9 +566,9 @@ test.describe('Ordinary sessions: every koloft command, on any session in any wo
   }) => {
     const { page, close } = await launched(env)
     try {
-      await startSessionIn(page, 'ws-b', { method: 'Claude' })
+      await startSessionIn(page, 'ws-b')
       const target = (await waitForAllCalls(env, 1))[0].sessionId
-      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      await startSessionIn(page, 'ws-a')
       const ran = await koloftRun(page, `session command ${target} /context`)
       expect(ran.exit).toBe(0)
       expect(ran.text).toContain('hand you what it prints')

@@ -595,7 +595,7 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
       'Discard',
       'Save'
     ])
-    await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
+    await expect(wsRows(page, 'ws-a')).toHaveClass(/\bcold\b/, { timeout: 20_000 })
     expect(fs.readFileSync(ed.config, 'utf8')).toBe(ed.configBody)
 
     await modal(page).getByRole('button', { name: 'Save', exact: true }).click()
