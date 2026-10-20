@@ -81,10 +81,20 @@ last_note() {
     head -c ${QUOTED_NOTE_BYTES} | whole_chars
 }`
 
+export const NOTICE_ENV = 'KOLOFT_NOTICE'
+export const NOTICE_SUFFIX = '.notice'
+
+export const TAKE_NOTICE_FN = `take_notice() {
+  [ -n "$notice" ] && mv -f "$notice" "$notice.$$" 2>/dev/null || return 0
+  cat "$notice.$$"
+  rm -f "$notice.$$"
+}`
+
 // CC§17 CC§19 CODEX§27
-export const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
+export const REMIND_REPLY_LANGUAGE_FN = `${TAKE_NOTICE_FN}
+remind_reply_language() {
   quote="$(cat "$said" 2>/dev/null)"
-  context="$2"
+  context="$(take_notice)$2"
   if [ -n "$quote" ]; then
     lang="$(language_in "$quote")"
     if [ -z "$lang" ]; then
@@ -149,6 +159,7 @@ export const codexHoldHook = (event: HoldEvent): KoloftHook => ({
 export const CODEX_REPLY_LANGUAGE_SCRIPT = `#!/usr/bin/env bash
 said="$${CODEX_SAID_ENV}"
 [ -n "$said" ] || exit 0
+notice="$${NOTICE_ENV}"
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$1" = "tool" ]; then
@@ -195,6 +206,7 @@ reg="$1"; tab="$2"; event="$3"
 # CC§14
 [ "$event" = "ask" ] && { [ ! -f "$reg/$tab.answerable" ] || [ -f "$reg/$tab.typed" ]; } && event="asked"
 said="$reg/$tab.said"
+notice="$reg/$tab${NOTICE_SUFFIX}"
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$event" = "tool" ]; then
@@ -381,7 +393,8 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids|allow)$/
+const TAB_MARKER =
+  /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids|allow|notice)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -516,6 +529,14 @@ export function discordIdsFile(regDir: string, tabId: string): string {
 
 export function saidFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.said`)
+}
+
+export function noticeFile(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}${NOTICE_SUFFIX}`)
+}
+
+export function noticeLine(text: string): string {
+  return JSON.stringify(`${text}\n\n`).slice(1, -1)
 }
 
 // ADR-0031

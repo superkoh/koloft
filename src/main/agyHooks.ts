@@ -5,9 +5,11 @@ import { record } from './codexObservation'
 import {
   HOLD_FILE,
   HOLD_TAB_ENV,
+  NOTICE_ENV,
   QUOTED_PROMPT_BYTES,
   REPLY_LANGUAGE_AFTER_QUOTE,
   REPLY_LANGUAGE_BEFORE_QUOTE,
+  TAKE_NOTICE_FN,
   type HoldEvent,
   type HoldScript
 } from './hooks'
@@ -30,13 +32,17 @@ export const AGY_HOOK_SCRIPT = `#!/bin/sh
 event="$1"
 input="$(cat)"
 log="$${AGY_LOG_ENV}"
+notice="$${NOTICE_ENV}"
+${TAKE_NOTICE_FN}
 [ -n "$log" ] && { printf '{"event":"%s","input":' "$event"; printf '%s' "$input" | tr -d '\\n'; printf '}\\n'; } >> "$log" 2>/dev/null
 case "$event" in
   SessionStart) [ -f "$${AGY_START_ENV}" ] && cat "$${AGY_START_ENV}" ;;
   PreInvocation)
     tp="$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"transcriptPath" *: *"\\([^"]*\\)".*/\\1/p')"
     said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\\\n//p' | sed -E 's/\\\\n<\\/USER_REQUEST>.*//; s/^.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//; s/\\\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c ${QUOTED_PROMPT_BYTES} | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\\\u[0-9a-fA-F]{0,3}$//; s/\\\\+$//')"
-    [ -n "$said" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s%s%s"}]}' ${shq(REPLY_LANGUAGE_BEFORE_QUOTE)} "$said" ${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+    [ -n "$said" ] && said=${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$said"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+    told="$(take_notice)$said"
+    [ -n "$told" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}' "$told"
     ;;
 esac
 exit 0

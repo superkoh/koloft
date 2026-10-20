@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { SessionSync, type SyncSession, type DefaultMove } from '../../src/main/sessionSync'
 import { FROM_KOLOFT } from '../../src/main/crossSessionMessage'
-import type { BackendId } from '../../src/shared/types'
 
 const HOLDS_THE_TIP = '/r/held'
 const ON_MAIN = '/r/root'
@@ -10,11 +9,9 @@ const B = 'b'.repeat(40)
 const C = 'c'.repeat(40)
 const SUBJECTS: Record<string, string> = { [`${A}..${B}`]: 'fix: login', [`${B}..${C}`]: 'feat: y' }
 
-function rig(repos: Record<string, string>, busy: Set<string> = new Set()) {
-  const got: { tabId: string; how: string; text: string }[] = []
+function rig(repos: Record<string, string>) {
+  const got: { tabId: string; text: string }[] = []
   const sync = new SessionSync({
-    idle: (tabId) => !busy.has(tabId),
-    modeOf: () => 'bypass',
     repoOf: async (dir) => repos[dir] ?? null,
     gitOut: async (dir, args) => {
       if (args[0] === 'merge-base') return dir === HOLDS_THE_TIP ? '' : null
@@ -22,14 +19,7 @@ function rig(repos: Record<string, string>, busy: Set<string> = new Set()) {
       if (args[0] === 'log') return `${SUBJECTS[args[2]]}\n`
       return 'src/store.ts\nREADME.md\n'
     },
-    queue: async (tabId, text) => void got.push({ tabId, how: 'queue', text }),
-    sendLine: async (tabId, line) =>
-      void got.push({
-        tabId,
-        how: 'peerLine',
-        text: JSON.parse(line).message.content.split('\n')[1]
-      }),
-    type: async (tabId, text) => void got.push({ tabId, how: 'typed', text })
+    leave: async (tabId, text) => void got.push({ tabId, text })
   })
   return { sync, got }
 }
@@ -38,13 +28,11 @@ function session(
   tabId: string,
   treeRoot: string,
   writes: [string, number][] = [],
-  live = 0,
-  backendId: BackendId = 'claude'
+  live = 0
 ): SyncSession {
   return {
     tabId,
     sessionId: `s-${tabId}`,
-    backendId,
     title: `Session ${tabId}`,
     treeRoot,
     files: writes.map(([src, wroteAt]) => ({ src, label: src, access: 'wrote', wroteAt })),
@@ -77,58 +65,24 @@ describe('telling open sessions what changed around them', () => {
     expect(got).toHaveLength(1)
   })
 
-  it('a local Claude session hears at once even mid-turn; a busy Codex, ssh Claude, Muse or Antigravity session hears when its turn ends, in one message however often main moved meanwhile', async () => {
-    const ssh = 'ssh://box/r/ssh'
-    const busy = new Set(['cc', 'cx', 'ssh', 'mu', 'ag'])
-    const { sync, got } = rig(
-      {
-        '/r/ws': 'repo',
-        '/r/cc': 'repo',
-        '/r/cx': 'repo',
-        [ssh]: 'repo',
-        '/r/mu': 'repo',
-        '/r/ag': 'repo'
-      },
-      busy
-    )
-    const all = [
-      session('cc', '/r/cc'),
-      session('cx', '/r/cx', [], 0, 'codex'),
-      session('ssh', ssh),
-      session('mu', '/r/mu', [], 0, 'muse'),
-      session('ag', '/r/ag', [], 0, 'agy')
-    ]
+  it('each move of main is left for the session at once, one notice per move, never held for the end of a turn', async () => {
+    const { sync, got } = rig({ '/r/ws': 'repo', '/r/a': 'repo', 'ssh://box/r/b': 'repo' })
+    const all = [session('a', '/r/a'), session('b', 'ssh://box/r/b')]
     await sync.defaultMoved(MOVE, all)
     await sync.defaultMoved({ ...MOVE, from: B, to: C }, all)
-    expect(got.map((g) => `${g.tabId} ${g.how}`)).toEqual(['cc peerLine', 'cc peerLine'])
-
-    sync.flush('cx')
-    expect(got).toHaveLength(2)
-    busy.clear()
-    sync.flush('cx')
-    sync.flush('ssh')
-    sync.flush('mu')
-    sync.flush('ag')
-    expect(got.slice(2).map((g) => `${g.tabId} ${g.how}`)).toEqual([
-      'cx queue',
-      'ssh typed',
-      'mu typed',
-      'ag typed'
-    ])
+    expect(got.map((g) => g.tabId)).toEqual(['a', 'b', 'a', 'b'])
     expect(got[2].text).toContain(
-      'origin/main moved from aaaaaaa to ccccccc, with 2 new commits: "feat: y", "fix: login".'
+      'origin/main moved from bbbbbbb to ccccccc, with 1 new commit: "feat: y".'
     )
-    sync.flush('cx')
-    expect(got).toHaveLength(6)
   })
 
   it('a write made while open tells each other open session of the same repository that changed the same file, both ways and once; writes a resumed session brings back from its history never count', async () => {
     const { sync, got } = rig({ '/r/a': 'repo', '/r/b': 'repo', '/x/c': 'elsewhere' })
     const a = (wroteAt: number, live: number) =>
-      session('a', '/r/a', [['/r/a/src/store.ts', wroteAt]], live, 'codex')
+      session('a', '/r/a', [['/r/a/src/store.ts', wroteAt]], live)
     const b = (wroteAt: number, live: number) =>
-      session('b', '/r/b', [['/r/b/src/store.ts', wroteAt]], live, 'codex')
-    const c = session('c', '/x/c', [['/x/c/src/store.ts', 10]], 1, 'codex')
+      session('b', '/r/b', [['/r/b/src/store.ts', wroteAt]], live)
+    const c = session('c', '/x/c', [['/x/c/src/store.ts', 10]], 1)
     await sync.observe([a(1, 0), session('b', '/r/b'), session('c', '/x/c')])
     await sync.observe([a(1, 0), b(10, 1), c])
     expect(got).toEqual([])

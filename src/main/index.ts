@@ -110,6 +110,8 @@ import {
   HOOK_SCRIPT,
   forgetAssistMarkers,
   markAnswerable,
+  noticeFile,
+  noticeLine,
   pruneStale,
   quotedPrompt,
   saidFile,
@@ -1455,7 +1457,6 @@ function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
           {
             tabId: s.tabId,
             sessionId: s.sessionId,
-            backendId: s.backendId,
             title: s.title,
             treeRoot: s.treeRoot,
             files: s.files,
@@ -1470,28 +1471,22 @@ async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
   return (await storedOwnerOf(tabId)?.deliver?.(tabId, text)) ?? false
 }
 
-const NOTICE_WAITS_FOR_THE_TURN_MS = 10_000
-
-async function typeOnceReady(tabId: string, text: string): Promise<void> {
-  if (await deliverViaOwner(tabId, text)) return
-  if (await tabReady(tabId, NOTICE_WAITS_FOR_THE_TURN_MS, true))
-    await ptyMgr.type(tabId, [text, '\r'])
-}
-
 function tabIdle(tabId: string): boolean {
   return (
     tracker.turnOver(tabId) && !asksTheOwner(tabId) && (codexSessions?.queueDrained(tabId) ?? true)
   )
 }
 
+async function leaveNotice(tabId: string, text: string): Promise<void> {
+  const host = remoteHostOfTab(tabId)
+  if (host) return hosts.machine(host).leaveNotice(tabId, noticeLine(text))
+  if (hookRegDir) await fs.promises.appendFile(noticeFile(hookRegDir, tabId), noticeLine(text))
+}
+
 const sessionSync = new SessionSync({
-  idle: tabIdle,
-  modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   repoOf: (dir) => syncRepoKeys.resolve(dir),
   gitOut: (dir, args) => hosts.of(dir).gitOut(dir, args),
-  queue: queueCodexMessage,
-  sendLine: sendPeerLine,
-  type: typeOnceReady
+  leave: leaveNotice
 })
 
 const sessionDeps: SessionVerbDeps = {
@@ -2667,13 +2662,11 @@ app.whenReady().then(() => {
     ptyMgr.wakeReady(tabId)
     slash.turnOver(tabId, over)
     if (!over) return
-    sessionSync.flush(tabId)
     const workspace = pinnedWorkspaceOfTab(tabId)
     if (workspace) freshness?.fetchSoon(workspace)
   })
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
-    sessionSync.flush(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
     if (onDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
@@ -2704,7 +2697,8 @@ app.whenReady().then(() => {
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
     error: (message: string) => sendToRenderer(CH.cron.toast, message),
     holdWhileBusy: (tabId: string) => !!guard?.isBackground(tabId),
-    holdScript: { file: hookPaths.hold, regDir: hookPaths.regDir }
+    holdScript: { file: hookPaths.hold, regDir: hookPaths.regDir },
+    hookRegDir: hookPaths.regDir
   }
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {

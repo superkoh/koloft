@@ -321,7 +321,8 @@ function tui() {
     }
     const turnId = crypto.randomUUID()
     status('state=working:app=muse')
-    fire('UserPromptSubmit', { prompt: text, turn_id: turnId })
+    for (const out of fire('UserPromptSubmit', { prompt: text, turn_id: turnId }))
+      if (out) append('fake-muse-prompt-context.jsonl', { sessionId: session.id, out })
     session.items.push({
       itemId: crypto.randomUUID(),
       kind: 'userMessage',

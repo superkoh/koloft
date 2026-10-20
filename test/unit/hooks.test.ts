@@ -19,6 +19,8 @@ import {
   writeConductorMarker,
   removeConductorMarker,
   markAnswerable,
+  noticeFile,
+  noticeLine,
   quotedPrompt,
   saidFile,
   seedHandedOverOwnerWords,
@@ -653,6 +655,31 @@ describe('injected hook script', () => {
       ).toBe('change it once more')
     })
 
+    it('what Koloft left for a Claude or Codex tab reaches the model once, ahead of the reminder, at its next prompt or tool call, and its file goes', () => {
+      const first = `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb: "fix: \\"login\\"".`
+      const second = `${FROM_KOLOFT}The session "Fix docs" changed files you changed too: a.ts.`
+      const left = noticeFile(regDir, 'tabNotice')
+      fs.writeFileSync(left, noticeLine(first) + noticeLine(second))
+      const head = `${first}\n\n${second}\n\nThe user's latest message begins: «check the sidebar»`
+      const told = reminder(prompt('tabNotice', 'check the sidebar'), 'UserPromptSubmit')
+      expect(told.slice(0, head.length)).toBe(head)
+      expect(fs.existsSync(left)).toBe(false)
+      expect(reminder(tool('tabNotice'), 'PostToolUse')).toMatch(/^The user's latest message/)
+      fs.writeFileSync(left, noticeLine(first))
+      expect(reminder(tool('tabNotice'), 'PostToolUse')).toMatch(/^\(From Koloft:\) origin/)
+      expect(reminder(tool('tabNotice'), 'PostToolUse')).toMatch(/^The user's latest message/)
+
+      const notice = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-')), 'n')
+      fs.writeFileSync(notice, noticeLine(second))
+      const codexTool = spawnSync('bash', [codexReplyLanguage, 'tool'], {
+        input: '{}',
+        encoding: 'utf8',
+        env: { ...process.env, KOLOFT_CODEX_SAID: `${notice}.said`, KOLOFT_NOTICE: notice }
+      }).stdout
+      expect(reminder(codexTool, 'PostToolUse')).toBe(`${second}\n\n`)
+      expect(fs.existsSync(notice)).toBe(false)
+    })
+
     // ADR-0031
     it('a Claude child Koloft saved the owner’s last words for is quoted by those words, not by its handed-over task in whatever language, Koloft reads them back whole for the next child down, and the owner’s next prompt replaces them', async () => {
       const ownerWords = '帮我看看 "侧栏" 为什么\n变宽了 « » \\ 😀'
@@ -1128,7 +1155,7 @@ describe('setupHooks at startup', () => {
     for (const f of old) expect(fs.existsSync(f), f).toBe(false)
   })
 
-  it('removes the answerable and conductor markers, the saved prompt, the typed-turn mark and the noted Discord message ids a crash left behind, and keeps a live peer instance’s however old they are', () => {
+  it('removes the answerable and conductor markers, the saved prompt, the typed-turn mark, the noted Discord message ids and the notice left for the tab a crash left behind, and keeps a live peer instance’s however old they are', () => {
     const peerTab = 'pty-peer-1'
     const crashedTab = 'pty-gone-1'
     const markers = (tab: string): string[] => [
@@ -1136,9 +1163,11 @@ describe('setupHooks at startup', () => {
       path.join(regDir, `${tab}.conductor`),
       path.join(regDir, `${tab}.said`),
       path.join(regDir, `${tab}.typed`),
-      path.join(regDir, `${tab}.discord-ids`)
+      path.join(regDir, `${tab}.discord-ids`),
+      noticeFile(regDir, tab)
     ]
     for (const tab of [peerTab, crashedTab]) {
+      fs.writeFileSync(noticeFile(regDir, tab), noticeLine('main moved'))
       markAnswerable(regDir, tab, true)
       writeConductorMarker(regDir, tab, 'role')
       fs.writeFileSync(path.join(regDir, `${tab}.said`), '你好')

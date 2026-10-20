@@ -1,20 +1,13 @@
 import path from 'path'
-import { messagingOf, type Messaging } from '@shared/sessionBackend'
-import { barePath, isRemoteKey } from '@shared/remoteKey'
-import type { BackendId, PreviewItem } from '@shared/types'
-import {
-  FROM_KOLOFT,
-  MESSAGE_SOCKET_SHOWS_WITHIN_MS,
-  crossSessionLine,
-  type ModeClass
-} from './crossSessionMessage'
+import { barePath } from '@shared/remoteKey'
+import type { PreviewItem } from '@shared/types'
+import { FROM_KOLOFT } from './crossSessionMessage'
 
 const NAMED_AT_MOST = 10
 
 export interface SyncSession {
   tabId: string
   sessionId: string
-  backendId: BackendId
   title: string
   treeRoot: string
   files?: PreviewItem[]
@@ -29,25 +22,9 @@ export interface DefaultMove {
 }
 
 export interface SessionSyncDeps {
-  idle(tabId: string): boolean
-  modeOf(tabId: string): ModeClass
   repoOf(dir: string): Promise<string | null>
   gitOut(dir: string, args: string[]): Promise<string | null>
-  queue(tabId: string, text: string, clientId: string): Promise<void>
-  sendLine(tabId: string, line: string, ms: number): Promise<void>
-  type(tabId: string, text: string): Promise<void>
-}
-
-interface SameFiles {
-  name: string
-  sameFolder: boolean
-  files: Set<string>
-}
-
-interface Pending {
-  route: Messaging
-  move?: { defRef: string; from: string; to: string; subjects: string[]; yours: Set<string> }
-  sameFiles: Map<string, SameFiles>
+  leave(tabId: string, text: string): Promise<void>
 }
 
 interface Seen {
@@ -80,34 +57,10 @@ function short(sha: string): string {
   return sha.slice(0, 7)
 }
 
-function noticeText(p: Pending): string {
-  const parts: string[] = []
-  const m = p.move
-  if (m) {
-    const commits = m.subjects.map((s) => `"${s}"`)
-    parts.push(
-      `${m.defRef} moved from ${short(m.from)} to ${short(m.to)}, with ${m.subjects.length} new commit${m.subjects.length === 1 ? '' : 's'}: ${listed(commits)}.`
-    )
-    if (m.yours.size) parts.push(`It changed files you changed too: ${listed([...m.yours])}.`)
-    parts.push('Whether your work needs it now is your call; nobody asks you to merge or rebase.')
-  }
-  for (const o of p.sameFiles.values()) {
-    parts.push(`The session "${o.name}" changed files you changed too: ${listed([...o.files])}.`)
-    parts.push(
-      o.sameFolder
-        ? 'It works in your folder, so read them again before you edit them.'
-        : 'It works in another worktree of this repository, so your two branches may conflict when both reach main.'
-    )
-  }
-  return `${FROM_KOLOFT}${parts.join(' ')}`
-}
-
 export class SessionSync {
-  private pending = new Map<string, Pending>()
   private seen = new Map<string, Seen>()
   private told = new Map<string, Set<string>>()
   private tips = new Map<string, string>()
-  private sent = 0
 
   constructor(private d: SessionSyncDeps) {}
 
@@ -162,52 +115,27 @@ export class SessionSync {
       this.d.gitOut(move.wsPath, ['log', '--format=%s', `${move.from}..${move.to}`]),
       this.d.gitOut(move.wsPath, ['diff', '--name-only', move.from, move.to])
     ])
-    const subjects = lines(log)
+    const commits = lines(log).map((s) => `"${s}"`)
     const changed = new Set(lines(diff))
     for (const s of told) {
       const yours = written(s)
         .map((f) => inTree(s, f.src))
         .filter((rel): rel is string => rel !== null && changed.has(rel))
-      const p = this.of(s)
-      p.move = {
-        defRef: move.defRef,
-        from: p.move?.from ?? move.from,
-        to: move.to,
-        subjects: [...subjects, ...(p.move?.subjects ?? [])],
-        yours: new Set([...(p.move?.yours ?? []), ...yours])
-      }
-      this.flush(s.tabId)
+      this.leave(s.tabId, [
+        `${move.defRef} moved from ${short(move.from)} to ${short(move.to)}, with ${commits.length} new commit${commits.length === 1 ? '' : 's'}: ${listed(commits)}.`,
+        ...(yours.length ? [`It changed files you changed too: ${listed(yours)}.`] : []),
+        'Whether your work needs it now is your call; nobody asks you to merge or rebase.'
+      ])
     }
   }
 
-  flush(tabId: string): void {
-    const p = this.pending.get(tabId)
-    if (!p || (p.route !== 'peerLine' && !this.d.idle(tabId))) return
-    this.pending.delete(tabId)
-    void this.deliver(tabId, p.route, noticeText(p)).catch(() => undefined)
-  }
-
   forget(tabId: string): void {
-    this.pending.delete(tabId)
     this.seen.delete(tabId)
     this.told.delete(tabId)
   }
 
-  private async deliver(tabId: string, route: Messaging, text: string): Promise<void> {
-    const id = `koloft-sync-${++this.sent}`
-    if (route === 'queue') return this.d.queue(tabId, text, id)
-    if (route === 'typed') return this.d.type(tabId, text)
-    const line = crossSessionLine(this.d.modeOf(tabId), text, id)
-    if (line) await this.d.sendLine(tabId, line, MESSAGE_SOCKET_SHOWS_WITHIN_MS)
-  }
-
-  private of(s: SyncSession): Pending {
-    const p = this.pending.get(s.tabId) ?? {
-      route: messagingOf(s.backendId, isRemoteKey(s.treeRoot)),
-      sameFiles: new Map()
-    }
-    this.pending.set(s.tabId, p)
-    return p
+  private leave(tabId: string, parts: string[]): void {
+    void this.d.leave(tabId, `${FROM_KOLOFT}${parts.join(' ')}`).catch(() => undefined)
   }
 
   private async tellOthers(
@@ -242,14 +170,11 @@ export class SessionSync {
       return true
     })
     if (!untold.length) return
-    const p = this.of(to)
-    const entry = p.sameFiles.get(about.tabId) ?? {
-      name: about.title,
-      sameFolder,
-      files: new Set()
-    }
-    for (const rel of untold) entry.files.add(rel)
-    p.sameFiles.set(about.tabId, entry)
-    this.flush(to.tabId)
+    this.leave(to.tabId, [
+      `The session "${about.title}" changed files you changed too: ${listed(untold)}.`,
+      sameFolder
+        ? 'It works in your folder, so read them again before you edit them.'
+        : 'It works in another worktree of this repository, so your two branches may conflict when both reach main.'
+    ])
   }
 }

@@ -65,7 +65,7 @@ import {
 } from '../remote/ssh'
 import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
 import { remoteMuseHooks, sessionStartContext } from '../museHooks'
-import { HOLD_FILE } from '../hooks'
+import { HOLD_FILE, NOTICE_SUFFIX } from '../hooks'
 import { claudeArgv } from '../claudeArgs'
 import type { SummaryRow } from '../agyStore'
 import {
@@ -548,6 +548,8 @@ const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
 cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
 
+const LEAVE_NOTICE = `mkdir -p "${REMOTE_HOOK_DIR}" && cat >> "${REMOTE_HOOK_DIR}/$1${NOTICE_SUFFIX}"`
+
 const RESIZE_SETTLE_MS = 200
 
 const REMOTE_FILE_LIST_FRESH_MS = 30_000
@@ -885,6 +887,10 @@ export class SshHost implements Host {
 
   async answerAgent(requestId: string, reply: string): Promise<void> {
     await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
+  }
+
+  async leaveNotice(tabId: string, line: string): Promise<void> {
+    await this.sh(LEAVE_NOTICE, [tabId], { input: Buffer.from(line) })
   }
 
   // CC§9 ADR-0026

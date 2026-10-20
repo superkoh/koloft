@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
   installAgy,
   installCodex,
@@ -22,7 +22,7 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
-import { fakeCodexLog, startCodex } from './helpers/codex'
+import { startCodex } from './helpers/codex'
 import {
   REMOTE_WS_NAME,
   addRemoteWorkspace,
@@ -31,25 +31,22 @@ import {
   installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
-  machineCodexLog,
   machineHome,
   remoteDir,
   remoteKey
 } from './helpers/remote'
+import type { AttentionEvent, BackendId } from '../../src/shared/types'
 
 const NOTICE_ARRIVES_WITHIN_MS = 30_000
 const REMOTE_NOTICE_ARRIVES_WITHIN_MS = 60_000
 const LOCAL_SESSION_BINDS_WITHIN_MS = 30_000
 const REMOTE_SESSION_BINDS_WITHIN_MS = 90_000
 const told =
-  /\(From Koloft:\) origin\/main moved from \w{7} to \w{7}, with 1 new commit: \\?"fix: login keeps the session\\?"\./
+  /\(From Koloft:\) origin\/main moved from \w{7} to \w{7}, with 1 new commit: "fix: login keeps the session"\./
 const toldSameFile =
   /changed files you changed too: shared\.txt\. It works in your folder, so read them again before you edit them\./
 
-interface WireFrame {
-  direction: string
-  frame: { method?: string; params?: { input?: { text?: string }[] } }
-}
+type Heard = (home: string) => string
 
 function checkoutWithOrigin(ws: string, home: string): string {
   const origin = path.join(home, 'sync-origin.git')
@@ -68,27 +65,6 @@ function checkoutWithOrigin(ws: string, home: string): string {
   return author
 }
 
-function machineTranscripts(env: E2EEnv): string {
-  return jsonlUnder(path.join(machineHome(env), '.claude', 'projects'))
-}
-
-function jsonlUnder(dir: string): string {
-  if (!fs.existsSync(dir)) return ''
-  return fs
-    .readdirSync(dir, { recursive: true, encoding: 'utf8' })
-    .filter((f) => f.endsWith('.jsonl'))
-    .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
-    .join('\n')
-}
-
-function machineCodexHeard(env: E2EEnv): string {
-  return machineCodexLog<WireFrame>(env, 'fake-codex-wire.jsonl')
-    .filter((w) => w.direction === 'client' && w.frame.method === 'thread/queue/add')
-    .flatMap((w) => w.frame.params?.input ?? [])
-    .map((i) => i.text ?? '')
-    .join('\n')
-}
-
 function pushUpstream(author: string, subject: string): void {
   fs.writeFileSync(path.join(author, 'upstream.txt'), `${subject}\n`)
   runGit(author, 'add', '-A')
@@ -96,31 +72,53 @@ function pushUpstream(author: string, subject: string): void {
   runGit(author, 'push', '-q', 'origin', 'main')
 }
 
-function claudeHeard(env: E2EEnv): string {
-  const f = path.join(env.home, 'fake-claude-peer.jsonl')
-  return fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
+function records(file: string): Record<string, unknown>[] {
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as Record<string, unknown>)
 }
 
-function codexHeard(env: E2EEnv): string {
-  return fakeCodexLog<WireFrame>(env, 'fake-codex-wire.jsonl')
-    .filter((w) => w.direction === 'client' && w.frame.method === 'thread/queue/add')
-    .flatMap((w) => w.frame.params?.input ?? [])
-    .map((i) => i.text ?? '')
-    .join('\n')
+function additionalContext(hookOutput: unknown): string {
+  return (JSON.parse(String(hookOutput)) as { hookSpecificOutput: { additionalContext: string } })
+    .hookSpecificOutput.additionalContext
 }
 
-function museHeard(home: string): string {
-  const dir = path.join(home, '.local', 'share', 'muse', 'sessions', 'fake')
+const claudeHeard: Heard = (home) => {
+  const dir = path.join(home, '.claude', 'projects')
   if (!fs.existsSync(dir)) return ''
   return fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
+    .readdirSync(dir, { recursive: true, encoding: 'utf8' })
+    .filter((f) => f.endsWith('.jsonl'))
+    .flatMap((f) => records(path.join(dir, f)))
+    .flatMap((r) => {
+      const a = r.attachment as { type?: string; content?: string[] } | undefined
+      return a?.type === 'hook_additional_context' ? (a.content ?? []) : []
+    })
     .join('\n')
 }
 
-function agyHeard(home: string): string {
-  return jsonlUnder(path.join(home, '.gemini', 'antigravity-cli', 'brain'))
+const codexHeard: Heard = (home) =>
+  records(path.join(home, 'fake-codex-hook-output.jsonl'))
+    .filter((r) => r.stdout)
+    .map((r) => additionalContext(r.stdout))
+    .join('\n')
+
+const museHeard: Heard = (home) =>
+  records(path.join(home, 'fake-muse-prompt-context.jsonl'))
+    .map((r) => additionalContext(r.out))
+    .join('\n')
+
+const agyHeard: Heard = (home) =>
+  records(path.join(home, 'fake-agy-injected.jsonl'))
+    .flatMap((r) => (r.ephemeralMessages as string[] | undefined) ?? [])
+    .join('\n')
+
+async function tabOf(page: Page, backendId: BackendId): Promise<string> {
+  const all = await page.evaluate(() => window.api.sessions.list())
+  return all.find((s) => s.backendId === backendId && s.alive)!.tabId
 }
 
 async function bound(page: Page, backendId: string, timeout: number): Promise<void> {
@@ -174,8 +172,40 @@ async function claudeThenCodex(page: Page, env: E2EEnv, beforeCodex = async () =
   await startCodex(page, env)
 }
 
-test.describe('open sessions hear what changed around them, from Koloft, without anyone asking', () => {
-  test('when origin/main moves, a Claude session and a Codex session open on a feature branch of that repository are each told which commits came in', async ({
+async function marksOnceAllWait(
+  page: Page,
+  ws: string,
+  timeout: number
+): Promise<AttentionEvent[]> {
+  await expect(wsRows(page, ws).and(page.locator('.st-working'))).toHaveCount(0, { timeout })
+  return (await pendingAttention(page)).sort((a, b) => a.tabId.localeCompare(b.tabId))
+}
+
+async function heldThenHandedIn(
+  page: Page,
+  sessions: { backendId: BackendId; heard: Heard }[],
+  homes: { notices: string; agents: string },
+  marks: AttentionEvent[],
+  said: RegExp,
+  timeout: number
+): Promise<void> {
+  const tabs = await Promise.all(sessions.map((s) => tabOf(page, s.backendId)))
+  const left = tabs.map((tab) => path.join(homes.notices, `${tab}.notice`))
+  for (const file of left) await expect.poll(() => fs.existsSync(file), { timeout }).toBe(true)
+  for (const s of sessions) expect(s.heard(homes.agents), s.backendId).not.toMatch(said)
+  expect((await pendingAttention(page)).sort((a, b) => a.tabId.localeCompare(b.tabId))).toEqual(
+    marks
+  )
+
+  for (const tab of tabs)
+    await page.evaluate((id) => window.api.terminal.write(id, 'look again\r'), tab)
+  for (const s of sessions)
+    await expect.poll(() => s.heard(homes.agents), { timeout }).toMatch(said)
+  for (const file of left) expect(fs.existsSync(file), file).toBe(false)
+}
+
+test.describe('open sessions hear what changed around them, from Koloft, at their next prompt or tool call, never as a turn of their own', () => {
+  test('when origin/main moves, a Claude session and a Codex session open on a feature branch of that repository are each told which commits came in, with their next prompt; their red dots stay as they were and no turn starts for it', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -188,18 +218,28 @@ test.describe('open sessions hear what changed around them, from Koloft, without
       await waitBooted(page)
       await claudeThenCodex(page, env)
       await fetchNow(page, ws)
+      const marks = await marksOnceAllWait(page, 'ws-a', NOTICE_ARRIVES_WITHIN_MS)
 
       pushUpstream(author, 'fix: login keeps the session')
       await fetchNow(page, ws)
 
-      await expect.poll(() => claudeHeard(env), { timeout: NOTICE_ARRIVES_WITHIN_MS }).toMatch(told)
-      await expect.poll(() => codexHeard(env), { timeout: NOTICE_ARRIVES_WITHIN_MS }).toMatch(told)
+      await heldThenHandedIn(
+        page,
+        [
+          { backendId: 'claude', heard: claudeHeard },
+          { backendId: 'codex', heard: codexHeard }
+        ],
+        { notices: path.join(env.userData, 'hook-sessions'), agents: env.home },
+        marks,
+        told,
+        NOTICE_ARRIVES_WITHIN_MS
+      )
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('when a Codex session writes a file a Claude session in the same folder wrote, each is told the other changed it and to read it again', async ({
+  test('when a Codex session writes a file a Claude session in the same folder wrote, each is told the other changed it and to read it again, with its next prompt', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -214,22 +254,27 @@ test.describe('open sessions hear what changed around them, from Koloft, without
         await runIn(page, centerTerm(page), '/write shared.txt')
         await expect.poll(() => fs.existsSync(shared), { timeout: 30_000 }).toBe(true)
       })
-      expect(claudeHeard(env)).toBe('')
 
       await runIn(page, centerTerm(page), '/write shared.txt')
+      const marks = await marksOnceAllWait(page, 'ws-a', NOTICE_ARRIVES_WITHIN_MS)
 
-      await expect
-        .poll(() => claudeHeard(env), { timeout: NOTICE_ARRIVES_WITHIN_MS })
-        .toMatch(toldSameFile)
-      await expect
-        .poll(() => codexHeard(env), { timeout: NOTICE_ARRIVES_WITHIN_MS })
-        .toMatch(toldSameFile)
+      await heldThenHandedIn(
+        page,
+        [
+          { backendId: 'claude', heard: claudeHeard },
+          { backendId: 'codex', heard: codexHeard }
+        ],
+        { notices: path.join(env.userData, 'hook-sessions'), agents: env.home },
+        marks,
+        toldSameFile,
+        NOTICE_ARRIVES_WITHIN_MS
+      )
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('when origin/main moves, a Muse session and an Antigravity session open on a feature branch of that repository are each told which commits came in, once their turn is over', async ({
+  test('when origin/main moves, a Muse session and an Antigravity session open on a feature branch of that repository are each told which commits came in, with their next prompt; their red dots stay as they were and no turn starts for it', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -246,22 +291,28 @@ test.describe('open sessions hear what changed around them, from Koloft, without
       await waitBooted(page)
       await museThenAgy(page, 'ws-a', LOCAL_SESSION_BINDS_WITHIN_MS)
       await fetchNow(page, ws)
+      const marks = await marksOnceAllWait(page, 'ws-a', NOTICE_ARRIVES_WITHIN_MS)
 
       pushUpstream(author, 'fix: login keeps the session')
       await fetchNow(page, ws)
 
-      await expect
-        .poll(() => museHeard(env.home), { timeout: NOTICE_ARRIVES_WITHIN_MS })
-        .toMatch(told)
-      await expect
-        .poll(() => agyHeard(env.home), { timeout: NOTICE_ARRIVES_WITHIN_MS })
-        .toMatch(told)
+      await heldThenHandedIn(
+        page,
+        [
+          { backendId: 'muse', heard: museHeard },
+          { backendId: 'agy', heard: agyHeard }
+        ],
+        { notices: path.join(env.userData, 'hook-sessions'), agents: env.home },
+        marks,
+        told,
+        NOTICE_ARRIVES_WITHIN_MS
+      )
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('when an Antigravity session writes a file a Muse session in the same folder wrote, each is told the other changed it and to read it again, once its turn is over', async ({
+  test('when an Antigravity session writes a file a Muse session in the same folder wrote, each is told the other changed it and to read it again, with its next prompt', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -280,22 +331,27 @@ test.describe('open sessions hear what changed around them, from Koloft, without
         await runIn(page, centerTerm(page), '/write shared.txt')
         await expect.poll(() => fs.existsSync(shared), { timeout: 30_000 }).toBe(true)
       })
-      expect(museHeard(env.home)).not.toMatch(toldSameFile)
 
       await runIn(page, centerTerm(page), '/write shared.txt')
+      const marks = await marksOnceAllWait(page, 'ws-a', NOTICE_ARRIVES_WITHIN_MS)
 
-      await expect
-        .poll(() => museHeard(env.home), { timeout: NOTICE_ARRIVES_WITHIN_MS })
-        .toMatch(toldSameFile)
-      await expect
-        .poll(() => agyHeard(env.home), { timeout: NOTICE_ARRIVES_WITHIN_MS })
-        .toMatch(toldSameFile)
+      await heldThenHandedIn(
+        page,
+        [
+          { backendId: 'muse', heard: museHeard },
+          { backendId: 'agy', heard: agyHeard }
+        ],
+        { notices: path.join(env.userData, 'hook-sessions'), agents: env.home },
+        marks,
+        toldSameFile,
+        NOTICE_ARRIVES_WITHIN_MS
+      )
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('on another machine over ssh, a Claude session on a feature branch hears it typed in once its turn is over and a Codex session through its queue there, when origin/main moves on that machine', async ({
+  test('on another machine over ssh, a Claude session and a Codex session on a feature branch are told with their next prompt there, when origin/main moves on that machine; their red dots stay as they were', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -313,23 +369,32 @@ test.describe('open sessions hear what changed around them, from Koloft, without
         wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'Codex fixture session' })
       ).toHaveClass(/st-waiting/, { timeout: 60_000 })
       await fetchNow(page, remoteKey(env))
+      const marks = await marksOnceAllWait(page, REMOTE_WS_NAME, REMOTE_NOTICE_ARRIVES_WITHIN_MS)
 
       pushUpstream(author, 'fix: login keeps the session')
       await fetchNow(page, remoteKey(env))
 
-      await expect
-        .poll(() => machineTranscripts(env), { timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS })
-        .toMatch(told)
-      await expect
-        .poll(() => machineCodexHeard(env), { timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS })
-        .toMatch(told)
+      await heldThenHandedIn(
+        page,
+        [
+          { backendId: 'claude', heard: claudeHeard },
+          { backendId: 'codex', heard: codexHeard }
+        ],
+        {
+          notices: path.join(machineHome(env), '.koloft', 'hook-sessions'),
+          agents: machineHome(env)
+        },
+        marks,
+        told,
+        REMOTE_NOTICE_ARRIVES_WITHIN_MS
+      )
     } finally {
       await quitAndClose(app)
       killFakeRemote(env)
     }
   })
 
-  test('on another machine over ssh, a Muse session and an Antigravity session on a feature branch each hear it once their turn is over, when origin/main moves on that machine', async ({
+  test('on another machine over ssh, a Muse session and an Antigravity session on a feature branch are told with their next prompt there, when origin/main moves on that machine; their red dots stay as they were', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -344,16 +409,25 @@ test.describe('open sessions hear what changed around them, from Koloft, without
       await addRemoteWorkspace(page, env)
       await museThenAgy(page, REMOTE_WS_NAME, REMOTE_SESSION_BINDS_WITHIN_MS)
       await fetchNow(page, remoteKey(env))
+      const marks = await marksOnceAllWait(page, REMOTE_WS_NAME, REMOTE_NOTICE_ARRIVES_WITHIN_MS)
 
       pushUpstream(author, 'fix: login keeps the session')
       await fetchNow(page, remoteKey(env))
 
-      await expect
-        .poll(() => museHeard(machineHome(env)), { timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS })
-        .toMatch(told)
-      await expect
-        .poll(() => agyHeard(machineHome(env)), { timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS })
-        .toMatch(told)
+      await heldThenHandedIn(
+        page,
+        [
+          { backendId: 'muse', heard: museHeard },
+          { backendId: 'agy', heard: agyHeard }
+        ],
+        {
+          notices: path.join(machineHome(env), '.koloft', 'hook-sessions'),
+          agents: machineHome(env)
+        },
+        marks,
+        told,
+        REMOTE_NOTICE_ARRIVES_WITHIN_MS
+      )
     } finally {
       await quitAndClose(app)
       killFakeRemote(env)

@@ -15,6 +15,11 @@ import { HOLD_HOOK_TIMEOUT_S, HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { handoverPreamble, withHandover } from '../../src/main/handover'
 import { LineTail } from '../../src/main/museSessionLog'
+import {
+  REPLY_LANGUAGE_AFTER_QUOTE,
+  REPLY_LANGUAGE_BEFORE_QUOTE,
+  noticeLine
+} from '../../src/main/hooks'
 
 let dir: string
 let log: string
@@ -130,6 +135,28 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     expect(
       quoteBeforeModelCall(transcriptWith('first words', '第二句 "quoted"\n\nnext line'))
     ).toBe('第二句 "quoted" next line')
+  })
+
+  it('hands what Koloft left for the tab to the next model call ahead of the quote, once, with no prompt to quote too, and its file goes', () => {
+    const notice = path.join(dir, 'tab.notice')
+    const ephemeral = (transcriptPath: string): string | undefined => {
+      const out = hook(
+        'PreInvocation',
+        { conversationId: 'c1', transcriptPath },
+        {
+          KOLOFT_NOTICE: notice
+        }
+      )
+      return out ? (JSON.parse(out).injectSteps[0].ephemeralMessage as string) : undefined
+    }
+    fs.writeFileSync(notice, noticeLine('(From Koloft:) origin/main moved: "fix: \\"x\\"".'))
+    expect(ephemeral(transcriptWith('look around'))).toBe(
+      `(From Koloft:) origin/main moved: "fix: \\"x\\"".\n\n${REPLY_LANGUAGE_BEFORE_QUOTE}look around${REPLY_LANGUAGE_AFTER_QUOTE}`
+    )
+    expect(fs.existsSync(notice)).toBe(false)
+    expect(ephemeral(transcriptWith('look around'))).toMatch(/^The user's latest/)
+    fs.writeFileSync(notice, noticeLine('(From Koloft:) main moved.'))
+    expect(ephemeral(path.join(dir, 'missing.jsonl'))).toBe('(From Koloft:) main moved.\n\n')
   })
 
   // ADR-0031

@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { spawn, spawnSync } from 'child_process'
 import { MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from '../../src/main/museRemote'
-import { seedHandedOverOwnerWords } from '../../src/main/hooks'
+import { NOTICE_SUFFIX, noticeLine, seedHandedOverOwnerWords } from '../../src/main/hooks'
 
 const SID = '019a0000-0000-7000-8000-000000000001'
 const python = spawnSync('python3', ['-c', 'import pty, termios'], { encoding: 'utf8' })
@@ -216,6 +216,22 @@ describe('muse-hook.sh, the hook a remote Muse tab runs', () => {
     const said = JSON.parse(run('PostToolUse', '{"session_id":"a","tool_name":"read_file"}'))
     expect(said.hookSpecificOutput.hookEventName).toBe('PostToolUse')
     expect(said.hookSpecificOutput.additionalContext).toContain('The user writes Chinese')
+  })
+
+  it('hands what Koloft left for the tab on the machine to the next prompt or tool call, once, and its file goes', () => {
+    const m = machine()
+    const script = path.join(m.home, 'muse-hook.sh')
+    fs.writeFileSync(script, REMOTE_MUSE_HOOK_SH)
+    for (const dir of ['hook-sessions', 'tabs'])
+      fs.mkdirSync(path.join(m.home, '.koloft', dir), { recursive: true })
+    const notice = path.join(m.home, '.koloft', 'hook-sessions', `pty-1${NOTICE_SUFFIX}`)
+    fs.writeFileSync(notice, noticeLine('(From Koloft:) origin/main moved.'))
+    const run = (event: string, input: string): string =>
+      spawnSync('bash', [script, 'pty-1', event], { env: m.env, input, encoding: 'utf8' }).stdout
+    const told = JSON.parse(run('PostToolUse', '{"session_id":"a","tool_name":"read_file"}'))
+    expect(told.hookSpecificOutput.additionalContext).toBe('(From Koloft:) origin/main moved.\n\n')
+    expect(fs.existsSync(notice)).toBe(false)
+    expect(run('PostToolUse', '{"session_id":"a","tool_name":"read_file"}')).toBe('')
   })
 
   it("a session another session started keeps the owner's language past the English task it was handed", () => {

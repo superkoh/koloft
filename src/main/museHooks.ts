@@ -61,6 +61,7 @@ const HOOK_SCRIPT = museHookScript(
 dir="$1"
 event="$2"
 said="$4"
+notice="$5"
 [ -d "$dir" ] || exit 0
 ${NEWID_FN}`,
   `id="$(newid)"
@@ -90,7 +91,8 @@ export function writeMuseHooks(
   requestDir: string,
   context?: string,
   ownerWords?: string,
-  hold?: MuseHold
+  hold?: MuseHold,
+  notice = ''
 ): string {
   const script = path.join(shimDir, 'muse-hook')
   fs.writeFileSync(script, HOOK_SCRIPT, { mode: 0o755 })
@@ -103,7 +105,7 @@ export function writeMuseHooks(
     file,
     hooksJson(
       (event) =>
-        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)}`,
+        `/bin/bash ${shq(script)} ${shq(requestDir)} ${event} ${shq(contextFile)} ${shq(saidFile)} ${shq(notice)}`,
       hold && `/bin/bash ${shq(hold.file)} ${shq(hold.regDir)} ${shq(hold.tabId)} hold`
     )
   )

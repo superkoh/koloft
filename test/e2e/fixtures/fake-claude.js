@@ -1412,10 +1412,13 @@ function handleLine(line) {
     return
   }
   if (!text) return void process.stdout.write('> ')
-  fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: text })
+  const context = hookContext(
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: text })
+  )
   const meta = usageMeta()
   append([
     { type: 'user', message: { role: 'user', content: text }, cwd },
+    ...context,
     {
       type: 'assistant',
       version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
