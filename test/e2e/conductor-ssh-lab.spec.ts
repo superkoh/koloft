@@ -150,7 +150,7 @@ async function typeIntoRemote(page: Page, tabId: string, text: string): Promise<
 }
 
 test.describe('The butler on this Mac looking after a Claude session on an SSH machine (Docker)', () => {
-  test('E-SSH-C1: the butler types a message into the remote session; the session’s question shows its row waiting for approval and is answered by the butler with koloft session answer, and the next with koloft session keys, pressed through ssh and tmux; the reply that ends that turn is handed to the butler, whose answer reaches the channel; no other card reaches it than the ⌨️ result card of the fake’s /koloft session send (the fake’s /koloft runs no model turn, unlike the real claude’s koloft skill, whose answer takes that card’s place)', async ({
+  test('E-SSH-C1: the butler types a message into the remote session; the session’s question shows its row waiting for approval and is answered by the butler with koloft session answer, and the next with koloft session keys, pressed through ssh and tmux; the reply that ends that turn is handed to the butler, whose answer reaches the channel; the only card that reaches it is the ⌨️ screen card of the fake’s /koloft session send (the fake’s /koloft runs no model turn, unlike the real claude’s koloft skill, whose answer takes that card’s place)', async ({
     env
   }) => {
     await withRemoteWorkspaceConductor(
@@ -207,10 +207,14 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
             { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS }
           )
           .toBe(true)
-        const fakesKoloftResult = `⌨️ **Alfred** ran /koloft session send ${remote.sessionId} `
         expect(
-          fake.posted.filter((p) => p.card && !p.content.startsWith(fakesKoloftResult))
-        ).toEqual([])
+          fake.posted.filter((p) => p.card).map((p) => p.content.split('\n').slice(0, 2))
+        ).toEqual([
+          [
+            `⌨️ **Alfred** ran /koloft session send ${remote.sessionId} hello from Discord:`,
+            'It printed nothing Koloft can read, so here is its screen:'
+          ]
+        ])
       }
     )
   })
