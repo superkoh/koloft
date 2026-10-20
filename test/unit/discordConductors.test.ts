@@ -22,7 +22,14 @@ let saved: DiscordSettings
 let records: AssistRecord[]
 let quiet: DiscordSettings[]
 let rescans: number
-let started: { cwd: string; role: string; title: string; backend: BackendId }[]
+let started: {
+  cwd: string
+  role: string
+  title: string
+  backend: BackendId
+  firstPrompt?: string
+  ownerWords?: string
+}[]
 let resumed: string[]
 let killed: string[]
 let toasts: string[]
@@ -52,7 +59,14 @@ function make(): Conductors {
     runningElsewhere: async () => false,
     transcriptExists: async (_backend, key) => transcripts.has(key),
     start: async (l) => {
-      started.push({ cwd: l.cwd, role: l.role, title: l.title, backend: l.backend })
+      started.push({
+        cwd: l.cwd,
+        role: l.role,
+        title: l.title,
+        backend: l.backend,
+        firstPrompt: l.firstPrompt,
+        ownerWords: l.ownerWords
+      })
       await new Promise<void>((r) => (release = r))
       return `tab-${started.length}`
     },
@@ -195,6 +209,23 @@ describe('the butler', () => {
     transcripts.add('s2')
     expect(await c.open()).toEqual({ ok: true, tabId: 'tab-resumed-s2' })
     expect(resumed).toEqual(['s2'])
+  })
+
+  // ADR-0031 AGY§8
+  it('opened to be told something, starts a new conversation on those words with the owner’s words saved, and says so; resumed or already open, it is started on nothing', async () => {
+    const c = make()
+    const words = { prompt: 'The owner typed this in ⌘P: hi', ownerWords: 'hi' }
+    const opening = c.open(words)
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    expect(await opening).toEqual({ ok: true, tabId: 'tab-1', startedWith: words.prompt })
+    expect(started[0]).toMatchObject({ firstPrompt: words.prompt, ownerWords: 'hi' })
+    expect(await c.open(words)).toEqual({ ok: true, tabId: 'tab-1' })
+
+    c.onBound('tab-1', 's1')
+    c.onPtyExit('tab-1')
+    transcripts.add('s1')
+    expect(await c.open(words)).toEqual({ ok: true, tabId: 'tab-resumed-s1' })
   })
 
   it('a tab resumed some other way and bound to the last session is taken as the butler again', () => {

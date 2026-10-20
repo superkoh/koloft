@@ -24,7 +24,16 @@ export interface ConductorLaunch {
   cwd: string
   role: string
   title: string
+  firstPrompt?: string
+  ownerWords?: string
 }
+
+export interface ButlerFirstWords {
+  prompt: string
+  ownerWords: string
+}
+
+export type ButlerOpenResult = ConductorOpenResult & { startedWith?: string }
 
 export type AssistBackendPick = { backend: BackendId; because?: string }
 export type AssistBackendChoice = AssistBackendPick | { error: string }
@@ -395,14 +404,11 @@ export class Conductors {
     this.d.save(this.discord)
   }
 
-  open(): Promise<ConductorOpenResult> {
-    return this.once('', () => this.openNow())
+  open(first?: ButlerFirstWords): Promise<ButlerOpenResult> {
+    return this.once('', () => this.openNow(first))
   }
 
-  private once(
-    key: string,
-    start: () => Promise<ConductorOpenResult>
-  ): Promise<ConductorOpenResult> {
+  private once(key: string, start: () => Promise<ButlerOpenResult>): Promise<ButlerOpenResult> {
     const inflight = this.opening.get(key)
     if (inflight) return inflight
     const opening = start().finally(() => this.opening.delete(key))
@@ -416,14 +422,17 @@ export class Conductors {
     return { backend, cwd, role: this.role(), title: this.d.butler().name }
   }
 
-  private async openNow(): Promise<ConductorOpenResult> {
+  private async openNow(first?: ButlerFirstWords): Promise<ButlerOpenResult> {
     const tab = this.liveTab()
     if (tab) return { ok: true, tabId: tab }
     const choice = await this.d.backend()
-    return 'error' in choice ? refusal(choice.error) : this.openOn(choice)
+    return 'error' in choice ? refusal(choice.error) : this.openOn(choice, first)
   }
 
-  private async openOn(choice: AssistBackendPick): Promise<ConductorOpenResult> {
+  private async openOn(
+    choice: AssistBackendPick,
+    first?: ButlerFirstWords
+  ): Promise<ButlerOpenResult> {
     if (!this.record()) this.changeRecord((r) => r)
     const launch = this.launchFor(choice.backend)
     const key = this.record()?.lastSessionKey
@@ -434,6 +443,7 @@ export class Conductors {
       )
     else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
+    let startedWith: string | undefined
     try {
       if (resumable) {
         const live = this.d.liveTabFor(launch.backend, key)
@@ -446,14 +456,23 @@ export class Conductors {
       }
       const hasTranscript =
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
-      tabId = hasTranscript ? await this.d.resume({ ...launch, key }) : await this.d.start(launch)
+      if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
+      else {
+        startedWith = first?.prompt
+        // ADR-0031 AGY§8
+        tabId = await this.d.start({
+          ...launch,
+          firstPrompt: first?.prompt,
+          ownerWords: first?.ownerWords
+        })
+      }
     } catch (error) {
       return refusal(errorText(error))
     }
     if (!tabId) return refusal(`${launch.title} could not start.`)
     this.resident = tabId
     this.armDeadline(tabId, launch.title)
-    return { ok: true, tabId }
+    return { ok: true, tabId, startedWith }
   }
 
   private armDeadline(tabId: string, title: string): void {

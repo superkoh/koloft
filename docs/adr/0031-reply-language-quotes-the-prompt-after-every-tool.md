@@ -87,9 +87,11 @@ Koloft saves them) and Codex 0.162 (`codex exec`, the preamble as developer inst
 hook) each replied and ran `koloft session send` with a result in the owner's language
 8 / 8; Opus wrote one short English note mid-turn in 6 of its 8 runs, translated or not,
 Codex none. What the owner types in ⌘P counts as their words too:
-they reach a Claude butler as a message from another session, which the hook never quotes,
-so Koloft writes them as its saved words itself — trusting a "typed in ⌘P" prefix instead
-would let any session forge the owner's words. A Codex child gets the same sentence in its developer
+a butler Koloft starts for them starts on Koloft's message as its first prompt with the
+owner's words saved as its own, as a child does; a running Claude butler gets the message
+from another session, which the hook never quotes, so Koloft writes them as its saved words
+itself — trusting a "typed in ⌘P" prefix instead would let any session forge the owner's
+words. A Codex child gets the same sentence in its developer
 instructions, and its hooks start from the owner's words and skip its handed-over task.
 Measured 2026-10-16 with fresh sessions, an English task and the shipped hook: Opus 5.5
 (`claude -p`) answered in Chinese 0 / 2 without the owner's words and 2 / 2 with them,

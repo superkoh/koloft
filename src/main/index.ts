@@ -2934,6 +2934,8 @@ app.whenReady().then(() => {
           conductor: true,
           permission: ownersPermission(),
           trustFolder: true,
+          firstPrompt: l.firstPrompt,
+          ownerWords: l.ownerWords,
           name: !PEER_TRAITS[l.backend].namedAtLaunch
             ? undefined
             : reachedBySendMessage(l.backend)
@@ -4593,9 +4595,9 @@ async function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpe
 }
 
 async function tellButler(text: string, ownerWords: string): Promise<ConductorOpenResult> {
-  const opened = await conductors?.open()
+  const opened = await conductors?.open({ prompt: text, ownerWords })
   if (!opened) return { ok: false, error: STILL_STARTING }
-  if (!opened.ok) return opened
+  if (!opened.ok || opened.startedWith === text) return opened
   void sendToButler(opened.tabId, text, ownerWords).then((sent) => {
     if (!sent.ok) sendToRenderer(CH.cron.toast, sent.error)
   })
