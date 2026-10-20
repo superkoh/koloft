@@ -1015,7 +1015,22 @@ function markIdle(c, fullyIdle = true) {
   streamPush(c, { status: IDLE, executorLoopStatus: IDLE, fullyIdle })
 }
 function fireStop(c, fields) {
-  fireHook('Stop', c.id, { error: '', executionNum: c.executions++, fullyIdle: true, ...fields })
+  return fireHook('Stop', c.id, {
+    error: '',
+    executionNum: c.executions++,
+    fullyIdle: true,
+    ...fields
+  })
+}
+// AGY§12
+function stopBlockedWith(outs) {
+  for (const out of outs) {
+    try {
+      const parsed = JSON.parse(out)
+      if (parsed.decision === 'block') return parsed.reason
+    } catch {}
+  }
+  return undefined
 }
 async function finishTurn(turn, reply, options = {}) {
   const {
@@ -1027,7 +1042,17 @@ async function finishTurn(turn, reply, options = {}) {
   const c = turn.conv
   await modelCall(turn, { content: reply })
   say(reply)
-  fireStop(c, { fullyIdle, terminationReason })
+  const blocked = stopBlockedWith(fireStop(c, { fullyIdle, terminationReason }))
+  if (typeof blocked === 'string') {
+    appendJsonl(sentinel('fake-agy-injected.jsonl'), {
+      event: 'stop-blocked',
+      conversationId: c.id,
+      reason: blocked
+    })
+    await modelCall(turn, { content: `Stop said: ${blocked}` })
+    say(`Stop said: ${blocked}`)
+    fireStop(c, { fullyIdle, terminationReason })
+  }
   markIdle(c, fullyIdle)
   setAgentState(agentState)
   if (ending === 'done') {

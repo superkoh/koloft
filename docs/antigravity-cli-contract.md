@@ -583,6 +583,17 @@ Nothing ran against Google's real servers.
   request was made while a hook held. Not run on the Mac build (it would sign in through
   the owner's browser and keychain).
 
+- **A `Stop` hook printing `{"decision":"block","reason":"<text>"}` (or `"decision":
+  "continue"`) keeps the turn going with `<text>`.** 2026-10-20, agy 1.4.3 Linux arm64
+  (manifest build, sha512 checked) in Docker, fake Gemini server, `-p "say hi"
+  --dangerously-skip-permissions --output-format json`, the hook acting once: the server
+  got one more request whose last user content was `<SYSTEM_MESSAGE>\nStop hook blocked
+  termination: <text>\n</SYSTEM_MESSAGE>`; PreInvocation and PostInvocation fired again,
+  then Stop again (`executionNum` 1, `terminationReason` `NO_TOOL_CALL`); `num_turns`
+  stayed 1. The text is kept in the transcript. A hook that always blocks gets 10
+  continuations; the 11th block is ignored. `injectSteps` from a `Stop` hook is dropped
+  (`unknown field "injectSteps"` in agy's log). Not run in the TUI.
+
 ## §13 Tools
 
 - The model gets 13 tools: `view_file`, `run_command`, `manage_task`,

@@ -15,6 +15,11 @@ import { HOLD_HOOK_TIMEOUT_S, HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { handoverPreamble, withHandover } from '../../src/main/handover'
 import { LineTail } from '../../src/main/museSessionLog'
+import {
+  REPLY_LANGUAGE_AFTER_QUOTE,
+  REPLY_LANGUAGE_BEFORE_QUOTE,
+  noticeLine
+} from '../../src/main/hooks'
 
 let dir: string
 let log: string
@@ -130,6 +135,48 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     expect(
       quoteBeforeModelCall(transcriptWith('first words', '第二句 "quoted"\n\nnext line'))
     ).toBe('第二句 "quoted" next line')
+  })
+
+  it('hands what Koloft left for the tab to every model call of the turn it lands in, ahead of the quote, even with no prompt to quote; its file goes at once and the notice at the turn’s end, or at the next turn’s first call when a turn ended with no Stop', () => {
+    const notice = path.join(dir, 'tab.notice')
+    const env = { KOLOFT_NOTICE: notice }
+    const ephemeral = (transcriptPath: string): string | undefined => {
+      const out = hook('PreInvocation', { conversationId: 'c1', transcriptPath }, env)
+      return out ? (JSON.parse(out).injectSteps[0].ephemeralMessage as string) : undefined
+    }
+    const moved = '(From Koloft:) origin/main moved: "fix: \\"x\\"".'
+    fs.writeFileSync(notice, noticeLine(moved))
+    const told = `${moved}\n\n${REPLY_LANGUAGE_BEFORE_QUOTE}look around${REPLY_LANGUAGE_AFTER_QUOTE}`
+    expect(ephemeral(transcriptWith('look around'))).toBe(told)
+    expect(fs.existsSync(notice)).toBe(false)
+    expect(ephemeral(transcriptWith('look around'))).toBe(told)
+    hook('Stop', { conversationId: 'c1' }, env)
+    expect(ephemeral(transcriptWith('look around'))).toMatch(/^The user's latest/)
+
+    fs.writeFileSync(notice, noticeLine('(From Koloft:) main moved.'))
+    expect(ephemeral(path.join(dir, 'missing.jsonl'))).toBe('(From Koloft:) main moved.\n\n')
+    const nextTurn = hook(
+      'PreInvocation',
+      { conversationId: 'c1', invocationNum: 0, transcriptPath: transcriptWith('next') },
+      env
+    )
+    expect(JSON.parse(nextTurn).injectSteps[0].ephemeralMessage).toMatch(/^The user's latest/)
+  })
+
+  // AGY§12
+  it('a loop about to end with a notice Koloft left still unread keeps going with it instead, logging no Stop for Koloft to end the turn on; the Stop after that is logged as usual', () => {
+    const notice = path.join(dir, 'tab.notice')
+    const env = { KOLOFT_NOTICE: notice }
+    fs.writeFileSync(notice, noticeLine('(From Koloft:) main moved.'))
+    expect(JSON.parse(hook('Stop', { conversationId: 'c1' }, env))).toEqual({
+      decision: 'block',
+      reason: '(From Koloft:) main moved.\n\n'
+    })
+    expect(fs.existsSync(log)).toBe(false)
+    expect(hook('Stop', { conversationId: 'c1' }, env)).toBe('')
+    expect(logged()).toEqual([
+      { hook: { event: 'Stop', conversationId: 'c1', input: { conversationId: 'c1' } } }
+    ])
   })
 
   // ADR-0031

@@ -93,6 +93,7 @@ export interface StoredSessionDeps {
   skipPermissions?(): boolean
   holdWhileBusy?(tabId: string): boolean
   holdScript?: HoldScript
+  hookRegDir?: string
 }
 
 export interface StartContext {

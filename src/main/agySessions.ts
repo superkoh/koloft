@@ -85,7 +85,7 @@ import {
   type RemoteAgyConfig
 } from './remote/agyTab'
 import { remoteMachineDir } from './remote/paths'
-import { HOLD_TAB_ENV } from './hooks'
+import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile } from './hooks'
 import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { agySessionKey } from './sessionStore'
@@ -542,6 +542,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           [AGY_LOG_ENV]: log,
           ...(instructions ? { [AGY_START_ENV]: startFile } : {}),
           [AGY_COST_ENV]: path.join(dir, 'agy-cost'),
+          ...(this.deps.hookRegDir && { [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId) }),
           ANT_ACCOUNT: pick.account,
           ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
           ...agyAccountEnv(apiKey),

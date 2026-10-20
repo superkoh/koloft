@@ -70,6 +70,8 @@ import {
   CODEX_SAID_ENV,
   codexHoldHook,
   HOLD_TAB_ENV,
+  NOTICE_ENV,
+  noticeFile,
   seedHandedOverOwnerWords
 } from './hooks'
 import {
@@ -715,7 +717,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         ...(machine ? { KOLOFT_TAB_ID: tabId } : browserControlEnv(tabId, endpoint)),
         ...(said && {
           [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
-          [CODEX_SAID_ENV]: said
+          [CODEX_SAID_ENV]: said,
+          ...(this.deps.hookRegDir && { [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId) })
         }),
         ...(holdHere && {
           [CODEX_HOLD_SCRIPT_ENV]: holdHere.file,
