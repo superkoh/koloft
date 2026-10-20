@@ -76,6 +76,12 @@ function nameOf(call: ClaudeCall): string | undefined {
 // PLATFORM§28
 const REGISTRATION_SWEPT_BEFORE_THE_FIRST_HOOK_MS = 2000
 
+async function pressEnterAt(page: Page): Promise<number> {
+  const at = Date.now()
+  await page.keyboard.press('Enter')
+  return at
+}
+
 async function butlerTurnEnded(page: Page, butlerTab: string | null, since: number): Promise<void> {
   await expect
     .poll(
@@ -317,8 +323,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       fs.writeFileSync(env.claudeDelayFile, String(REGISTRATION_SWEPT_BEFORE_THE_FIRST_HOOK_MS))
       assistAnswers(env, { hand: 'koloft', title: 'Dark mode', why: 'A Koloft setting.' })
       await ask(app, page, 'turn on dark mode')
-      let sent = Date.now()
-      await page.keyboard.press('Enter')
+      const darkModeSent = await pressEnterAt(page)
       const butler = (await waitForAllCalls(env, 2, 30_000))[1]
       expect(butler.cwd).toBe(butlerFolder(env))
       await expect(page.locator('.modal')).toHaveCount(0)
@@ -332,27 +337,26 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim() : ''
       }
       await expect.poll(ownerWords, { timeout: 30_000 }).toBe('turn on dark mode')
-      await butlerTurnEnded(page, butlerTab, sent)
+      await butlerTurnEnded(page, butlerTab, darkModeSent)
+      fs.rmSync(env.claudeDelayFile, { force: true })
 
       await ask(app, page, 'and dim the sidebar too')
-      sent = Date.now()
-      await page.keyboard.press('Enter')
+      const dimSent = await pressEnterAt(page)
       await expect
         .poll(() => peerLines(env), { timeout: 30_000 })
         .toContain('The owner typed this in ⌘P: and dim the sidebar too')
       expect(peerLines(env).trim().split('\n').at(-1)).not.toContain('The owner was in')
       expect(peerLines(env)).not.toContain('turn on dark mode')
       expect(ownerWords()).toBe('and dim the sidebar too')
-      await butlerTurnEnded(page, butlerTab, sent)
+      await butlerTurnEnded(page, butlerTab, dimSent)
 
       assistAnswers(env, { hand: 'discord', title: 'Discord' })
       await ask(app, page, 'set up Discord')
-      sent = Date.now()
-      await page.keyboard.press('Enter')
+      const discordSent = await pressEnterAt(page)
       await expect
         .poll(() => peerLines(env), { timeout: 30_000 })
         .toContain('The owner asked you: set up Discord')
-      await butlerTurnEnded(page, butlerTab, sent)
+      await butlerTurnEnded(page, butlerTab, discordSent)
 
       assistAnswers(env, { hand: 'assist', workspace: 2, title: 'Ask ws-b' })
       await ask(app, page, 'ask ws-b about the release')
