@@ -12,21 +12,29 @@ const CLAUDE_RESUME_HINT_HEAD = 'Resume this session with:'
 // CC§4
 const CLAUDE_RESUME_HINT_COMMAND = 'claude --resume '
 // CC§4
+const MOST_BYTES_OF_THE_RESUME_HINT = 512
+// CC§4
 const CLAUDE_REMOVED_THE_WORKTREE = 'Worktree removed'
 
-function onlyTheResumeHintSoFar(printed: string): boolean {
-  const lines = stripTerminalCodes(printed)
+function printedLines(s: string): string[] {
+  return stripTerminalCodes(s)
     .split(/[\r\n]+/)
     .map((line) => line.trim())
     .filter(Boolean)
-  if (lines.length === 0) return true
-  if (lines[0] !== CLAUDE_RESUME_HINT_HEAD || lines.length > 2) return false
-  return lines.length === 1 || lines[1].startsWith(CLAUDE_RESUME_HINT_COMMAND)
+}
+
+function nothingOrTheResumeHint(between: string): boolean {
+  if (between === '') return true
+  const lines = printedLines(between)
+  return (
+    lines.length === 2 &&
+    lines[0] === CLAUDE_RESUME_HINT_HEAD &&
+    lines[1].startsWith(CLAUDE_RESUME_HINT_COMMAND)
+  )
 }
 
 export class WorktreeRemovalWatch {
-  private tail = ''
-  private sinceTitle: string | undefined
+  private pending = ''
   private saidSince: string | undefined
 
   started(data: string): boolean {
@@ -34,41 +42,34 @@ export class WorktreeRemovalWatch {
       this.saidSince += data
       return false
     }
-    if (this.sinceTitle === undefined) {
-      const mark = CLAUDE_CLEARS_ITS_TITLE
-      const seam = this.tail + data.slice(0, mark.length - 1)
-      const inSeam = seam.indexOf(mark)
-      const at = data.indexOf(mark)
-      if (inSeam < 0 && at < 0) {
-        this.tail = (this.tail + data).slice(1 - mark.length)
-        return false
+    this.pending += data
+    const seen = this.pending
+    const mark = CLAUDE_CLEARS_ITS_TITLE
+    const line = CLAUDE_STARTS_REMOVING_THE_WORKTREE
+    let keepFrom = seen.length + 1 - mark.length
+    for (let title = seen.indexOf(mark); title >= 0; title = seen.indexOf(mark, title + 1)) {
+      const after = title + mark.length
+      for (
+        let removing = seen.indexOf(line, after);
+        removing >= 0 && removing - after <= MOST_BYTES_OF_THE_RESUME_HINT;
+        removing = seen.indexOf(line, removing + 1)
+      ) {
+        if (nothingOrTheResumeHint(seen.slice(after, removing))) {
+          this.saidSince = seen.slice(removing + line.length)
+          this.pending = ''
+          return true
+        }
       }
-      this.tail = ''
-      this.sinceTitle = ''
-      data =
-        inSeam >= 0
-          ? seam.slice(inSeam + mark.length) + data.slice(mark.length - 1)
-          : data.slice(at + mark.length)
+      if (seen.length - after < MOST_BYTES_OF_THE_RESUME_HINT + line.length)
+        keepFrom = Math.min(keepFrom, title)
     }
-    this.sinceTitle += data
-    const removing = this.sinceTitle.indexOf(CLAUDE_STARTS_REMOVING_THE_WORKTREE)
-    if (removing >= 0 && onlyTheResumeHintSoFar(this.sinceTitle.slice(0, removing))) {
-      this.saidSince = this.sinceTitle.slice(removing + CLAUDE_STARTS_REMOVING_THE_WORKTREE.length)
-      return true
-    }
-    const wholeLines = this.sinceTitle.slice(0, this.sinceTitle.lastIndexOf('\n') + 1)
-    if (removing < 0 && onlyTheResumeHintSoFar(wholeLines)) return false
-    const rest = this.sinceTitle
-    this.sinceTitle = undefined
-    return this.started(rest)
+    this.pending = seen.slice(Math.max(0, keepFrom))
+    return false
   }
 
   failure(): string | undefined {
     if (this.saidSince === undefined) return undefined
-    const lines = stripTerminalCodes(this.saidSince)
-      .split(/[\r\n]+/)
-      .map((line) => line.trim())
-      .filter(Boolean)
+    const lines = printedLines(this.saidSince)
     return lines.some((line) => line.startsWith(CLAUDE_REMOVED_THE_WORKTREE)) ? undefined : lines[0]
   }
 }

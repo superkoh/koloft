@@ -28,6 +28,7 @@ describe('telling that Claude Code has started removing its worktree', () => {
     const watch = new WorktreeRemovalWatch()
     expect(watch.started('\x1b]0;\x07\r\n⏺ The line Claude prints is\r\n')).toBe(false)
     expect(watch.started('Removing worktree…\r\n')).toBe(false)
+    expect(watch.started('\x1b]0;\x07\x1b[12;3HRemoving worktree…\r\n')).toBe(false)
     expect(watch.started(CLAUDE_STARTS_REMOVING)).toBe(true)
   })
 

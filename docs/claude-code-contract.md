@@ -624,7 +624,8 @@ the same files into a worktree Koloft makes or rebuilds itself.
   the branch `worktree-<name>`, prints one result line, runs the SessionEnd hooks and
   only then exits. The line follows the title at once only while the session has no
   message; once it has one, the two dim lines `Resume this session with:` and `claude
-  --resume <id>` (§1) come between them, and nothing else does. The TUI's own
+  --resume <id>` (§1) come between them, and nothing else does: 119 bytes with a session
+  id and their colour codes, on both builds. The TUI's own
   `⏳ Removing worktree…` is drawn before the empty title. (Measured 2026-10-20 on CC
   2.1.303 and 2.1.304: a `-w` session with one turn, in fullscreen and with
   `CLAUDE_CODE_NO_FLICKER=0`, a python pty, the raw bytes saved.) Success lines start with `Worktree removed`
