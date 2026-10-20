@@ -199,19 +199,23 @@ async function marksOnceAllWait(
 
 async function heldThenHandedIn(
   page: Page,
-  sessions: { backendId: BackendId; heard: Heard }[],
+  sessions: { backendId: BackendId; heard: Heard; wroteJustNow?: boolean }[],
   homes: { notices: string; agents: string },
   marks: AttentionEvent[],
   said: RegExp,
   timeout: number
 ): Promise<void> {
   const tabs = await Promise.all(sessions.map((s) => tabOf(page, s.backendId)))
+  const waiting = sessions.flatMap((s, i) => (s.wroteJustNow ? [] : [tabs[i]]))
   const left = tabs.map((tab) => path.join(homes.notices, `${tab}.notice`))
-  for (const file of left) await expect.poll(() => fs.existsSync(file), { timeout }).toBe(true)
-  for (const s of sessions) expect(s.heard(homes.agents), s.backendId).not.toMatch(said)
-  expect((await pendingAttention(page)).sort((a, b) => a.tabId.localeCompare(b.tabId))).toEqual(
-    marks
-  )
+  for (const [i, s] of sessions.entries()) {
+    if (s.wroteJustNow) continue
+    await expect.poll(() => fs.existsSync(left[i]), { timeout }).toBe(true)
+    expect(s.heard(homes.agents), s.backendId).not.toMatch(said)
+  }
+  const marksOf = (all: AttentionEvent[]): AttentionEvent[] =>
+    all.filter((m) => waiting.includes(m.tabId))
+  expect(marksOf(await pendingAttention(page))).toEqual(marksOf(marks))
 
   for (const tab of tabs)
     await page.evaluate((id) => window.api.terminal.write(id, 'look again\r'), tab)
@@ -456,7 +460,7 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     }
   })
 
-  test('when a Codex session writes a file a Claude session in the same folder wrote, each is told the other changed it and to read it again, with its next prompt', async ({
+  test('when a Codex session writes a file a Claude session in the same folder wrote, each is told the other changed it and to read it again: the waiting Claude session with its next prompt, its red dot as it was', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -468,8 +472,14 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
       const page = await app.firstWindow()
       await waitBooted(page)
       await claudeThenCodex(page, env, async () => {
+        const before = Date.now()
         await runIn(page, centerTerm(page), '/write shared.txt')
         await expect.poll(() => fs.existsSync(shared), { timeout: 30_000 }).toBe(true)
+        await expect
+          .poll(async () => (await pendingAttention(page)).some((m) => m.at > before), {
+            timeout: NOTICE_ARRIVES_WITHIN_MS
+          })
+          .toBe(true)
       })
 
       await runIn(page, centerTerm(page), '/write shared.txt')
@@ -479,7 +489,7 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
         page,
         [
           { backendId: 'claude', heard: claudeHeard },
-          { backendId: 'codex', heard: codexHeard }
+          { backendId: 'codex', heard: codexHeard, wroteJustNow: true }
         ],
         { notices: path.join(env.userData, 'hook-sessions'), agents: env.home },
         marks,
@@ -529,7 +539,7 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     }
   })
 
-  test('when an Antigravity session writes a file a Muse session in the same folder wrote, each is told the other changed it and to read it again, with its next prompt', async ({
+  test('when an Antigravity session writes a file a Muse session in the same folder wrote, each is told the other changed it and to read it again: the waiting Muse session with its next prompt, its red dot as it was', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -547,6 +557,7 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
       await museThenAgy(page, 'ws-a', LOCAL_SESSION_BINDS_WITHIN_MS, async () => {
         await runIn(page, centerTerm(page), '/write shared.txt')
         await expect.poll(() => fs.existsSync(shared), { timeout: 30_000 }).toBe(true)
+        await marksOnceAllWait(page, 'ws-a', NOTICE_ARRIVES_WITHIN_MS)
       })
 
       await runIn(page, centerTerm(page), '/write shared.txt')
@@ -556,7 +567,7 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
         page,
         [
           { backendId: 'muse', heard: museHeard },
-          { backendId: 'agy', heard: agyHeard }
+          { backendId: 'agy', heard: agyHeard, wroteJustNow: true }
         ],
         { notices: path.join(env.userData, 'hook-sessions'), agents: env.home },
         marks,
