@@ -161,7 +161,7 @@ your Mac
           </li>
           <li>
             Make your butler's channel. Koloft makes #global in a category named after your bot, and
-            binds it to your butler. Bind means tie the channel to it.
+            ties it to your butler.
           </li>
         </ol>
         <p>
@@ -210,9 +210,8 @@ your Mac
           <span class="why">(only Discord goes; the butler and its conversation stay)</span>.
         </p>
         <p>
-          Your butler always runs on your Mac, in a folder of its own under Koloft's data folder.
-          While it has a channel, it opens as soon as Koloft connects to Discord, and it never goes
-          to <a href="../sessions/">sleep</a> the way an idle session does.
+          While your butler has a channel, it opens as soon as Koloft connects to Discord, and it
+          never goes to <a href="../sessions/#sleep">sleep</a> the way an idle session does.
         </p>
         <p>
           Coming from an older Koloft, where each folder could have its own channel? The Global
@@ -245,7 +244,7 @@ your Mac
           the session's reply back to the butler once its turn ends, and the butler tells you. A
           session's question shows only at the Mac: ask your butler what it is waiting on, and tell
           it what to pick. It reads the session's screen and answers, or presses the keys, as you
-          would at the Mac.
+          would at the Mac. See <a href="../accounts/#what-it-can-do">what your butler can do</a>.
         </p>
 
         <h3 id="secrets">Passwords and codes</h3>
@@ -285,7 +284,7 @@ your Mac
         <ul class="dash">
           <li>
             <code>/run</code> — type a command into your butler, like <code>/context</code> or
-            <code>/model haiku</code>
+            <code>/model haiku</code> for a butler on Claude; each agent has its own commands
           </li>
           <li><code>/clear</code> — start a new conversation with your butler</li>
           <li>
@@ -312,57 +311,6 @@ your Mac
           as several, top to bottom, at most 10.
         </p>
 
-        <h3 id="what-assist-can-do">What your butler can do</h3>
-        <p>
-          It works through the <a href="../agents/">koloft command</a>, like every session. In every
-          folder of the sidebar, it can:
-        </p>
-        <ul class="dash">
-          <li>list every session in every folder, open or closed, and list your folders</li>
-          <li>
-            start a session in a folder on this Mac, in a worktree of its own when the folder is a
-            git repo; or start a helper in its own folder for a side job, which hangs under its row
-            and reports back
-          </li>
-          <li>
-            hear a session's reply: when it hands work to a session, or answers its question, Koloft
-            passes that session's reply back to it the moment the turn ends
-          </li>
-          <li>read, message, resume and stop sessions, and run a slash command in them</li>
-          <li>
-            see their screen, answer their questions, and press keys in them as you would at the
-            Mac: pick an option, move through a menu, approve, refuse or cancel
-          </li>
-          <li>
-            close the sessions it started, and, when you ask, any other session on your Mac that has
-            ended
-          </li>
-          <li>read and add to its own <a href="../workbench/#note">note</a></li>
-          <li>
-            set up <a href="../scheduled/">scheduled jobs</a> in any folder, naming the folder each
-            time
-          </li>
-          <li>
-            use GitHub with <code>koloft gh</code>, naming the repository each time (see
-            <a href="../agents/">agents</a> for what <code>koloft gh</code> refuses)
-          </li>
-          <li>send you files and pictures of pages on Discord</li>
-        </ul>
-        <p>It cannot:</p>
-        <ul class="dash">
-          <li>start a session in a <a href="../remote/">remote folder</a></li>
-          <li>close a session that is still open <span class="why">(stop it first)</span></li>
-          <li>
-            close a session on another machine
-            <span class="why">(Koloft cannot check what closing it there would lose)</span>
-          </li>
-        </ul>
-        <p>
-          It has no tool limits of its own: it follows your <code>Skip permission prompts</code>
-          setting (Settings ▸ Accounts) like any session. It is told that work belonging to a
-          project goes to that project's sessions, and to ask you before deleting or undoing
-          anything.
-        </p>
         <p>
           A message you send while Koloft is closed gets one answer: "Koloft was offline, this
           message was not delivered."
@@ -416,12 +364,10 @@ your Mac
             </tbody>
           </table>
         </div>
-        <p>Long text is split into several messages, not cut short.</p>
+        <p>
+          Long text is split into several messages, not cut short. Only a button label gets cut.
+        </p>
         <ul class="dash">
-          <li>
-            Never a session's transcript (the written record of a session): only what your butler
-            writes, and the cards above.
-          </li>
           <li>
             Only your account, the one Settings ▸ Discord shows, is heard. Other people and bots are
             ignored, and their commands and button presses refused.
@@ -441,32 +387,20 @@ your Mac
           </li>
         </ul>
 
-        <h2>Kinds of session</h2>
-        <p>
-          Your butler runs on the agent Settings ▸ Assist ▸ Runs on picks: Claude, Codex, Muse or
-          Antigravity, always on your Mac. It reaches every kind of session the same way, with
-          <code>koloft session send</code>, <code>answer</code> and <code>keys</code>:
-        </p>
-        <ul class="dash">
-          <li>Claude on your Mac gets a message at once, through its own message socket.</li>
-          <li>Codex, here or on another machine, gets it in line, when Codex is ready.</li>
-          <li>Muse and Antigravity get it typed in once their turn is over.</li>
-          <li>
-            A Claude session on another machine gets it typed in once its turn has ended; the butler
-            is told it will be delivered then.
-          </li>
-        </ul>
-
         <h2>What it won't do</h2>
         <ul class="dash">
           <li>
             <s class="struck">post your whole transcript</s>
-            <span class="why">(only what your butler writes, and the cards above)</span>
+            <span class="why"
+              >(no session's transcript, the written record of a session: only what your butler
+              writes, and the cards above)</span
+            >
           </li>
           <li>
             <s class="struck">post your sessions' news</s>
             <span class="why"
-              >(sessions get no threads, cards or typing; ask your butler how one is doing)</span
+              >(sessions get no threads, news cards or typing; ask your butler how one is
+              doing)</span
             >
           </li>
           <li>
