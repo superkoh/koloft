@@ -2,7 +2,7 @@ import fs from 'fs'
 import http from 'http'
 import os from 'os'
 import path from 'path'
-import { execFileSync } from 'child_process'
+import { execFileSync, spawn, spawnSync } from 'child_process'
 import { pathToFileURL } from 'url'
 import { EventEmitter } from 'events'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,6 +16,8 @@ import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
 import { appendConversation, ownerTyped, writeSummaries } from './helpers/agyStore'
+import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
+import { BUSY_MARKER } from '../../src/main/machineRoom'
 
 const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
 vi.mock('../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
@@ -371,6 +373,49 @@ describe('AgySessions launch', () => {
     fs.writeFileSync(path.join(home, 'lock-holders'), '')
     await sessions.resume({ sessionId: agySessionKey(A), cwd: repo })
     expect(created[0].argv).toContain(`--conversation=${A}`)
+  })
+})
+
+describe('a background Antigravity tab while the Mac is busy (ADR-0043 AGY§12)', () => {
+  it("holds the background tab's next run_command, here and on a remote machine, and never an owner's tab, though both share the account's hooks file", async () => {
+    const reg = path.join(home, 'reg')
+    fs.mkdirSync(reg)
+    const file = path.join(home, 'hold.sh')
+    fs.writeFileSync(file, HOLD_SCRIPT)
+    fs.writeFileSync(path.join(reg, BUSY_MARKER), '')
+    sessions['deps'].holdScript = { file, regDir: reg }
+    sessions['deps'].holdWhileBusy = (tabId) => tabId.endsWith('-bg')
+    const owner = await launch()
+    const background = await launch({ tabId: 'pty-bg' })
+    const hooks = JSON.parse(
+      fs.readFileSync(path.join(picked!.home, 'config', 'hooks.json'), 'utf8')
+    )
+    const [, hold] = hooks.koloft.PreToolUse[0].hooks
+    const input = JSON.stringify({
+      conversationId: A,
+      toolCall: { name: 'run_command', args: { CommandLine: 'npm test' } }
+    })
+    const owners = spawnSync('/bin/sh', ['-c', hold.command], {
+      input,
+      encoding: 'utf8',
+      env: tabEnv(owner.id),
+      timeout: 3000
+    })
+    expect(owners).toMatchObject({ status: 0, stdout: '' })
+    const kid = spawn('/bin/sh', ['-c', hold.command], { env: tabEnv(background.id) })
+    kid.stdin.end(input)
+    await vi.waitFor(
+      () => expect(fs.readdirSync(reg).some((n) => /^pty-bg\.\d+\.held$/.test(n))).toBe(true),
+      { timeout: 3000 }
+    )
+    fs.writeFileSync(path.join(reg, 'pty-bg.free'), '')
+    await new Promise((resolve) => kid.on('exit', resolve))
+
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r-bg' })
+    const [spec] = machine.launches
+    expect(spec.env.KOLOFT_HOLD_TAB).toBe('pty-r-bg')
+    const there = JSON.parse(spec.program.files['pty-r-bg.hooks.json'])
+    expect(there.koloft.PreToolUse[0].hooks[1].command).toMatch(/ hold-self$/)
   })
 })
 

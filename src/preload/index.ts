@@ -29,6 +29,7 @@ import type {
   SessionSearchHits,
   SpawnedTab,
   CronState,
+  MachineState,
   DiscordStatus,
   AssistTaskRow,
   AttentionEvent,
@@ -183,6 +184,16 @@ const api: KoloftApi = {
       ipcRenderer.on(CH.cron.toast, handler)
       return () => ipcRenderer.removeListener(CH.cron.toast, handler)
     }
+  },
+  machine: {
+    onState: (cb) => {
+      const handler = (_e: unknown, s: MachineState): void => cb(s)
+      ipcRenderer.on(CH.machine.state, handler)
+      return () => ipcRenderer.removeListener(CH.machine.state, handler)
+    },
+    now: () => ipcRenderer.invoke(CH.machine.now),
+    free: (tabId) => ipcRenderer.invoke(CH.machine.free, tabId),
+    drop: (tabId) => ipcRenderer.invoke(CH.machine.drop, tabId)
   },
   conductors: {
     bind: (channel) => ipcRenderer.invoke(CH.conductors.bind, channel),

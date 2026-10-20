@@ -63,9 +63,13 @@ import {
   type KoloftHook
 } from './codexLaunchConfig'
 import {
+  CODEX_HOLD_REG_ENV,
+  CODEX_HOLD_SCRIPT_ENV,
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_REPLY_LANGUAGE_HOOKS,
   CODEX_SAID_ENV,
+  codexHoldHook,
+  HOLD_TAB_ENV,
   seedHandedOverOwnerWords
 } from './hooks'
 import {
@@ -658,7 +662,9 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const role = opts.role ?? assist?.role
     if (opts.trustFolder || assist) trust(cwd, this.envFor(home))
     if (conductor && (opts.trustFolder || assist)) seedAssistMemory(cwd)
-    const tabId = this.deps.pty.nextId()
+    const tabId = opts.tabId ?? this.deps.pty.nextId()
+    const holding = !!this.deps.holdWhileBusy?.(tabId)
+    const holdHere = holding && !machine ? this.deps.holdScript : undefined
     const endpoint = machine ? '' : this.deps.browserEndpoint(tabId)
     const browser = endpoint ? await this.browserOverrides(home, cwd) : []
     // CODEX§29
@@ -710,6 +716,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         ...(said && {
           [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
           [CODEX_SAID_ENV]: said
+        }),
+        ...(holdHere && {
+          [CODEX_HOLD_SCRIPT_ENV]: holdHere.file,
+          [CODEX_HOLD_REG_ENV]: holdHere.regDir,
+          [HOLD_TAB_ENV]: tabId
         })
       },
       cwd,
@@ -722,7 +733,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         CODEX_ASKS_AND_WAITS
       ]
     }
-    const hooks = CODEX_REPLY_LANGUAGE_HOOKS
+    // ADR-0043
+    const hooks: KoloftHook[] = (machine ? holding : holdHere)
+      ? [...CODEX_REPLY_LANGUAGE_HOOKS, codexHoldHook(machine ? 'hold-self' : 'hold')]
+      : CODEX_REPLY_LANGUAGE_HOOKS
     let transport: CodexTransport | undefined
     try {
       const askMachineTrust = !!machine && !permissions && !opts.resumeSessionId

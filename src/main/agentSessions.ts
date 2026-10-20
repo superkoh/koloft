@@ -1,6 +1,7 @@
 import type {
   BackendId,
   CreateTabOptions,
+  QueuedLaunch,
   SessionInfo,
   SessionRow,
   SessionStatus,
@@ -337,12 +338,45 @@ export async function findClosable(
   )
 }
 
+export interface WaitingLaunches {
+  list(): QueuedLaunch[]
+  notStartedYet(): QueuedLaunch[]
+  hold(tabId: string, sendOnceStarted: () => Promise<unknown>): boolean
+  drop(tabId: string): boolean
+}
+
+function queuedLines(d: SessionVerbDeps, me: SessionInfo, workspace: string): string[] {
+  const now = Date.now()
+  return d.waiting
+    .list()
+    .filter((q) => d.workspaceOf(q.tabId) === workspace || q.cwd === workspace)
+    .map(
+      (q) =>
+        `- "${q.title}" (${q.tabId}): queued, waiting for the machine to have room (since ${ageLabel(q.since, now)})${d.startedSessions.startedBy({ sessionId: '', tabId: q.tabId }, me) ? ' — started by: you' : ''}`
+    )
+}
+
+function queuedStartedBy(
+  d: SessionVerbDeps,
+  me: SessionInfo,
+  ref: string
+): QueuedLaunch | undefined {
+  return d.waiting
+    .notStartedYet()
+    .find(
+      (q) =>
+        (q.tabId === ref || q.title === ref) &&
+        d.startedSessions.startedBy({ sessionId: '', tabId: q.tabId }, me)
+    )
+}
+
 export interface SessionVerbDeps {
   workspaceOf(tabId: string): string | undefined
   allSessions(): SessionInfo[]
   pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): PeerNameOf
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
+  waiting: WaitingLaunches
   assist: Assist
   queue(tabId: string, text: string, clientId?: string): Promise<void>
   startedSessions: StartedSessions
@@ -448,6 +482,7 @@ async function listSessions(
   const notOpen = everyRow.filter((p) => p.workspace === workspace && !open.has(p.row.id))
   const lines = [
     ...openSessionLines(listed, me.tabId, d.asking),
+    ...queuedLines(d, me, workspace),
     ...rowLines(notOpen, [], placedStarters(d, everyRow, notOpen, me), false, Date.now(), d.asking)
   ]
   return answered(lines.join('\n') || 'This workspace has no sessions.')
@@ -511,6 +546,14 @@ async function startSibling(
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
   const unnamed = aSessionOf(backend)
+  if (d.waiting.list().some((q) => q.tabId === tabId))
+    return answered(
+      `Queued ${name ? `session "${name}"` : unnamed} (${tabId}): Koloft starts it in turn, once this machine has room. Do not start it again. "koloft session list" shows it as queued; ${
+        name && reachedBySendMessage(backend) && reachedBySendMessage(me.backendId)
+          ? `once it starts, talk to it with SendMessage to "${name}"`
+          : `"koloft session send ${tabId} <message>" is kept and handed to it once it starts`
+      }; "koloft session close ${tabId}" takes it off the queue.`
+    )
   if (conductorTab) {
     return answered(
       `Started ${name ? `session "${name}"` : unnamed} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
@@ -1083,13 +1126,31 @@ export function sessionVerb(d: SessionVerbDeps): {
         (parent && matchRow([parent], ref) ? rowTarget(d, parent) : undefined)
       const split = nameThenWords(
         rest,
-        (ref) => starter(ref) !== undefined || matchOpen(open, ref) !== null
+        (ref) =>
+          starter(ref) !== undefined ||
+          matchOpen(open, ref) !== null ||
+          queuedStartedBy(d, caller.session, ref) !== undefined
       )
       if (!split.ok) return refused(`koloft session send: ${split.error}`, EXIT_USAGE)
       const { ref, tail } = split.value
       const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const said = sessionSays(caller.session, text)
+      const queued = queuedStartedBy(d, caller.session, ref)
+      if (
+        queued &&
+        reachedBySendMessage(queued.kind) &&
+        reachedBySendMessage(caller.session.backendId)
+      )
+        return refused(
+          `koloft session send: "${queued.title}" is still queued for the machine; once it starts, talk to it with SendMessage to "${queued.title}".`
+        )
+      const sendOnceStarted = async (): Promise<AgentReply> =>
+        verb(['send', queued?.tabId ?? ref, text], caller)
+      if (queued && d.waiting.hold(queued.tabId, sendOnceStarted))
+        return answered(
+          `"${queued.title}" is still queued for the machine; your message is kept and handed to it once it starts.`
+        )
       const to = starter(ref)
       if (to) replyOwed.delete(caller.tabId)
       if (to) return deliver('send', to, said, caller, false)
@@ -1102,6 +1163,9 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (sub === 'close') {
       const ref = rest.length > 0 ? rest.join(' ') : undefined
       let target: ClosableSession = caller.session
+      const queued = ref !== undefined ? queuedStartedBy(d, caller.session, ref) : undefined
+      if (queued && d.waiting.drop(queued.tabId))
+        return answered(`Took "${queued.title}" off the queue; it will not start.`)
       if (ref !== undefined) {
         const mine = d.closable().filter((s) => d.startedSessions.startedBy(s, caller.session))
         let hit = await findClosable(mine, ref, d.peerNames())

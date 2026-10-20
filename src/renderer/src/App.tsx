@@ -882,6 +882,12 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
+    const set = useStore.getState().setMachine
+    void window.api.machine.now().then(set)
+    return window.api.machine.onState(set)
+  }, [])
+
+  useEffect(() => {
     const off = window.api.sessions.onUpdate((sessions) => {
       setSessions(sessions)
       for (const s of sessions) {
