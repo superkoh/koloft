@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import type { SessionInfo } from '../../src/shared/types'
-import { discordVerb, NOT_THE_BUTLER } from '../../src/main/agentDiscord'
+import { discordVerb, NOT_A_PAGE, NOT_THE_BUTLER } from '../../src/main/agentDiscord'
 import { EXIT_USAGE } from '../../src/main/agentRequests'
 import { DISCORD_SETUP_STEPS } from '../../src/main/discord/setupSteps'
 import type { DiscordFile } from '../../src/main/discord/link'
@@ -14,13 +14,23 @@ beforeEach(() => {
 })
 afterEach(() => fs.rmSync(cwd, { recursive: true, force: true }))
 
-function verb(butler: boolean) {
+function verb(butler: boolean, pageHeight = 900) {
   const sent: { channelId: string; files: DiscordFile[]; text: string }[] = []
+  const shot: string[] = []
   let bound = 0
   const run = discordVerb({
     channelOf: () => (butler ? '222' : undefined),
     send: async (channelId, files, text) => {
       sent.push({ channelId, files, text })
+    },
+    shoot: async (url) => {
+      shot.push(url)
+      const files = pageHeight > 8000 ? ['page-1.png', 'page-2.png'] : ['page.png']
+      return {
+        files: files.map((name) => ({ name, data: Buffer.from(name) })),
+        shownHeight: Math.min(pageHeight, 16000),
+        pageHeight
+      }
     },
     status: () => 'Bot token: saved',
     tokenFromPage: async () => 'Saved the bot token.',
@@ -32,7 +42,7 @@ function verb(butler: boolean) {
     }
   })
   const call = (args: string[]) => run(args, { tabId: 'pty-1', cwd, session: {} as SessionInfo })
-  return { call, sent, bound: () => bound }
+  return { call, sent, shot, bound: () => bound }
 }
 
 describe('koloft discord setup commands', () => {
@@ -93,5 +103,39 @@ describe('koloft discord send', () => {
       exit: 1
     })
     expect(sent).toEqual([])
+  })
+})
+
+describe('koloft discord shot', () => {
+  it('opens a file named relative to the butler’s folder as a file address, and sends its picture with the text after --', async () => {
+    fs.writeFileSync(path.join(cwd, 'plan page.html'), '<p>plan</p>')
+    const { call, sent, shot } = verb(true)
+    expect(await call(['shot', 'plan page.html', '--', 'The', 'plan.'])).toEqual({
+      text: 'Sent a picture of the page to Discord.',
+      exit: 0
+    })
+    expect(shot).toEqual([`file://${encodeURI(path.join(cwd, 'plan page.html'))}`])
+    expect(sent.map((s) => [s.channelId, s.text, s.files.map((f) => f.name)])).toEqual([
+      ['222', 'The plan.', ['page.png']]
+    ])
+  })
+
+  it('opens a web address as it is, and says how many pictures a tall page took and where they stop', async () => {
+    const { call, shot } = verb(true, 20000)
+    expect(await call(['shot', 'http://localhost:5173/'])).toEqual({
+      text: 'Sent the page to Discord as 2 pictures, top to bottom. The page is 20000 pixels tall; the pictures stop at 16000.',
+      exit: 0
+    })
+    expect(shot).toEqual(['http://localhost:5173/'])
+  })
+
+  it('refuses a file that is not there, a second page, and any session that is not the butler', async () => {
+    fs.writeFileSync(path.join(cwd, 'a.html'), 'a')
+    const butler = verb(true)
+    expect(await butler.call(['shot', 'missing.html'])).toEqual({ text: NOT_A_PAGE, exit: 1 })
+    expect((await butler.call(['shot', 'a.html', 'a.html'])).exit).toBe(EXIT_USAGE)
+    const other = verb(false)
+    expect(await other.call(['shot', 'a.html'])).toEqual({ text: NOT_THE_BUTLER, exit: 1 })
+    expect([...butler.shot, ...other.shot]).toEqual([])
   })
 })

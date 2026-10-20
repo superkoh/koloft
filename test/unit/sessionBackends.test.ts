@@ -106,9 +106,9 @@ describe('session backend boundary', () => {
     ])
   })
 
-  it('marks a conductor’s session, by its tab or its session id, with the conductor it belongs to, and never offers a conductor’s session from history', async () => {
+  it('marks the butler’s session, by its tab or its session id, and never offers the butler’s session from history', async () => {
     const registry = new SessionBackends(lifecycle())
-    registry.conductorOf = (id) => ({ 'conductor-tab': 'b1', 'old-conductor-session': 'b2' })[id]
+    registry.isButlerSession = (id) => id === 'conductor-tab' || id === 'old-conductor-session'
     const session = (tabId: string, sessionId: string): BackendSessionInfo => ({
       tabId,
       sessionId,
@@ -125,7 +125,7 @@ describe('session backend boundary', () => {
         session('t3', 'x')
       ])
     )
-    expect(registry.list().map((s) => s.conductor)).toEqual(['b1', 'b2', undefined])
+    expect(registry.list().map((s) => s.butler)).toEqual([true, true, false])
     expect((await registry.historyRows('/repo', () => {})).map((r) => r.id)).toEqual(['plain'])
   })
 
