@@ -84,9 +84,7 @@ export const CH = {
     unbind: 'conductors:unbind',
     open: 'conductors:open',
     startFresh: 'conductors:startFresh',
-    openTask: 'conductors:openTask',
-    closeTask: 'conductors:closeTask',
-    tasks: 'conductors:tasks'
+    fromPalette: 'conductors:fromPalette'
   },
   discord: {
     status: 'discord:status',
