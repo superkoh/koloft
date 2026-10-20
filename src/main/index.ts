@@ -377,6 +377,7 @@ import type {
   CreateTabResult,
   CronSaveInput,
   ConductorOpenResult,
+  PaletteHandOff,
   ConductorSaveResult,
   ConductorBinding,
   DiscordChannel,
@@ -4684,6 +4685,22 @@ function fromPalette(text: string, about: string | undefined, at: string | undef
   return `The owner typed this in ⌘P: ${text}${where}${routed}`
 }
 
+function busyButler(): SessionInfo | undefined {
+  const tab = conductors?.liveTab()
+  const butler = tab ? allSessions().find((s) => s.tabId === tab) : undefined
+  if (!tab || !butler?.sessionId) return undefined
+  return !tracker.turnOver(tab) || asksTheOwner(tab) ? butler : undefined
+}
+
+async function handFromPalette(ownerWords: string, text: string): Promise<PaletteHandOff> {
+  const busy = busyButler()
+  if (!busy) return tellButler(text, ownerWords)
+  const tabId = await sessionCommand.startButlerHelper(busy, text, ownerWords)
+  return tabId
+    ? { ok: true, tabId, helper: true }
+    : { ok: false, error: `${butlerNameNow()} is busy, and Koloft could not start a helper for it.` }
+}
+
 async function sendToButler(
   tabId: string,
   text: string,
@@ -5247,13 +5264,13 @@ function registerIpc(): void {
     () => conductors?.startFresh() ?? { ok: false, error: STILL_STARTING }
   )
   ipcMain.handle(CH.conductors.fromPalette, (_e, text: string, about?: unknown, at?: unknown) =>
-    tellButler(
+    handFromPalette(
+      text,
       fromPalette(
         text,
         typeof about === 'string' ? about : undefined,
         typeof at === 'string' ? at : undefined
-      ),
-      text
+      )
     )
   )
   ipcMain.handle(CH.discord.status, () => discordLink?.status() ?? DISCORD_OFF)

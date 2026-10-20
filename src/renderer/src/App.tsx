@@ -102,7 +102,7 @@ import {
   RESTORE_FAILED_NOTICE,
   wakeTab
 } from './resumeFlow'
-import { openSessionRow, visitAndReveal, visitNextWaiting } from './sessionClick'
+import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { UnsavedDialog } from './components/UnsavedDialog'
@@ -1136,7 +1136,7 @@ export default function App(): JSX.Element {
     const toButler = (title: string, about: string | null): void => {
       const at = activeTabWs ?? undefined
       void window.api.conductors.fromPalette(prompt, about ?? undefined, at).then((r) => {
-        if (r.ok) return showButler(r.tabId)
+        if (r.ok) return r.helper ? visitTab(r.tabId) : showButler(r.tabId)
         showToast(r.error)
         requestNew('main', undefined, { prompt, title, path: about, worktree: null }, backend)
       })
