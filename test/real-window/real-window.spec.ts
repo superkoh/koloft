@@ -1,6 +1,12 @@
 import fs from 'fs'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test as e2eTest, expect, launchApp, quitAndClose } from '../e2e/helpers/app'
+import {
+  test as e2eTest,
+  expect,
+  launchApp,
+  pendingAttention,
+  quitAndClose
+} from '../e2e/helpers/app'
 import { seedSettings, type E2EEnv } from '../e2e/helpers/env'
 import {
   FAKE_SESSION_TITLE,
@@ -179,7 +185,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     screenshot(testInfo.outputPath('window-moved.png'))
   })
 
-  test('a turn that ends while Koloft is in the background draws its count on the Dock icon, and coming back clears it', async ({
+  test('a turn that ends while Koloft is in the background draws its count on the Dock icon; coming back keeps it, and only the session working again clears it', async ({
     shown: { app, page }
   }, testInfo) => {
     const tabId = await sessionIn(page, 'ws-a')
@@ -188,6 +194,9 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('1')
     screenshot(testInfo.outputPath('dock-badge.png'))
     await comeBackThroughTheDock(app)
+    expect(await pendingAttention(page)).toHaveLength(1)
+    expect(dockBadgeDrawn(DOCK_NAME)).toBe('1')
+    await page.evaluate(([id, line]) => window.api.terminal.write(id, line), [tabId, '/busy\r'])
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('')
   })
 
