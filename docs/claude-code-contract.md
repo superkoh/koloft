@@ -362,11 +362,11 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   `requestRef`. The `prompt_snapshot` attachment (`systemPrompt`, `tools`, …; 56 KB in
   `-p`, 115–127 KB interactive) is older — 2.1.299 writes it too. Both it and
   `api-request-shape` hold every tool's definition as `{"name":"<Tool>",…}`, so from a
-  session's first turn its transcript matches `"name":"AskUserQuestion"` before any call;
-  a call is the `{"type":"tool_use","id":…,"name":…}` block of an `assistant` record
-  (2026-10-20, 2.1.303 and 2.1.304 on the Docker SSH lab: E-SSH-C2's poll for the bare
-  name matched before the second prompt was even typed; the call's PermissionRequest
-  reached the Mac ~10 s later). None of the three
+  session's first turn its transcript matches `"name":"AskUserQuestion"` before any call
+  (2026-10-20, linux-arm64 2.1.303 and 2.1.304 in the Docker SSH lab, sonnet: a grep of
+  the transcript for that string, sampled every 0.3 s, matched after the first turn and
+  before the prompt asking for the tool was typed; the call's PermissionRequest came
+  ~10 s later). None of the three
   carries `cwd`; the shape and `api-request` records carry `sessionId`, `timestamp` and
   `version`, the blob only `sessionId`. Every Koloft reader that parses records picks
   them by `type` (`extractJsonlMeta`, `extractJsonlTail`, `lastTurnsOfLines`, the usage
