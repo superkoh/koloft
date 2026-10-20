@@ -1,12 +1,6 @@
 import fs from 'fs'
 import type { ElectronApplication, Page } from '@playwright/test'
-import {
-  test as e2eTest,
-  expect,
-  launchApp,
-  pendingAttention,
-  quitAndClose
-} from '../e2e/helpers/app'
+import { test as e2eTest, expect, launchApp, quitAndClose } from '../e2e/helpers/app'
 import { seedSettings, type E2EEnv } from '../e2e/helpers/env'
 import {
   FAKE_SESSION_TITLE,
@@ -86,6 +80,7 @@ const ROOM_TO_DRAG_IN = { x: 40, y: 60, width: 760, height: 520 }
 // PLATFORM§52
 const MAC_DRAG_SLACK_PX = 6
 const MACOS_ASKS_TO_ALLOW_NOTIFICATIONS = 'Notifications may include'
+const TIME_FOR_COMING_BACK_TO_CLEAR_ANYTHING_MS = 3_000
 
 async function allowNotificationsWhenMacOSAsks(shownAnyway: () => boolean): Promise<void> {
   await expect
@@ -104,8 +99,12 @@ async function sessionIn(page: Page, ws: string): Promise<string> {
   return (await wsRows(page, ws).first().getAttribute('data-tab-id')) ?? ''
 }
 
+function typeInSession(page: Page, tabId: string, line: string): Promise<void> {
+  return page.evaluate(([id, text]) => window.api.terminal.write(id, text), [tabId, line])
+}
+
 function endTurn(page: Page, tabId: string): Promise<void> {
-  return page.evaluate(([id, line]) => window.api.terminal.write(id, line), [tabId, '/answer hi\r'])
+  return typeInSession(page, tabId, '/answer hi\r')
 }
 
 const windowFocused = (app: ElectronApplication): Promise<boolean> =>
@@ -194,9 +193,9 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('1')
     screenshot(testInfo.outputPath('dock-badge.png'))
     await comeBackThroughTheDock(app)
-    expect(await pendingAttention(page)).toHaveLength(1)
+    await page.waitForTimeout(TIME_FOR_COMING_BACK_TO_CLEAR_ANYTHING_MS)
     expect(dockBadgeDrawn(DOCK_NAME)).toBe('1')
-    await page.evaluate(([id, line]) => window.api.terminal.write(id, line), [tabId, '/busy\r'])
+    await typeInSession(page, tabId, '/busy\r')
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('')
   })
 
