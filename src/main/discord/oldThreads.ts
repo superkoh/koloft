@@ -8,6 +8,7 @@ export const talkToTheButler = (name: string, channel: DiscordChannel): string =
 
 export interface OldThreadDeps {
   link: Pick<DiscordLink, 'botThreadsUnder' | 'isBotThread' | 'archiveThread' | 'post' | 'respond'>
+  owner(): string | undefined
   butlerName(): string
   channel(): DiscordChannel | undefined
   archived(): boolean
@@ -28,12 +29,12 @@ export class OldThreads {
       .botThreadsUnder(channel.guildId, channel.channelId)
       .catch(() => undefined)
     if (!threads) return
-    let failed = 0
-    for (const id of threads) await this.d.link.archiveThread(id).catch(() => void failed++)
-    if (!failed) this.d.markArchived()
+    const archived = await Promise.allSettled(threads.map((id) => this.d.link.archiveThread(id)))
+    if (archived.every((r) => r.status === 'fulfilled')) this.d.markArchived()
   }
 
-  private isOld(channelId: string): Promise<boolean> {
+  private isOld(channelId: string, author: string): Promise<boolean> {
+    if (author !== this.d.owner()) return Promise.resolve(false)
     let known = this.botThreads.get(channelId)
     if (!known) {
       known = this.d.link.isBotThread(channelId).catch(() => {
@@ -51,18 +52,20 @@ export class OldThreads {
   }
 
   async onMessage(m: DiscordMessage): Promise<void> {
-    if (!(await this.isOld(m.channelId))) return
-    const text = this.reply()
+    if (!(await this.isOld(m.channelId, m.authorId))) return
+    const now = this.d.now()
     const told = this.toldAt.get(m.channelId)
-    if (text && (told === undefined || this.d.now() - told >= ONE_REPLY_PER_THREAD_WITHIN_MS)) {
-      this.toldAt.set(m.channelId, this.d.now())
+    const text =
+      (told === undefined || now - told >= ONE_REPLY_PER_THREAD_WITHIN_MS) && this.reply()
+    if (text) {
+      this.toldAt.set(m.channelId, now)
       await this.d.link.post(m.channelId, text, m.id).catch(() => undefined)
     }
     await this.d.link.archiveThread(m.channelId).catch(() => undefined)
   }
 
   async onInteraction(i: DiscordInteraction): Promise<void> {
-    if (!(await this.isOld(i.channelId))) return
+    if (!(await this.isOld(i.channelId, i.userId))) return
     const text = this.reply()
     if (text) await this.d.link.respond(i, privately(text)).catch(() => undefined)
   }

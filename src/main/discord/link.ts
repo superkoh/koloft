@@ -23,7 +23,8 @@ const MESSAGE_CONTENT_LIMITED = 1 << 19
 const MISSING_PERMISSIONS = 403
 const FILES_PER_MESSAGE = 10
 const BYTES_PER_MESSAGE = 25 * 1024 * 1024
-export const BYTES_PER_FILE = 20 * 1024 * 1024
+export const MB = 1024 * 1024
+export const BYTES_PER_FILE = 20 * MB
 
 const DISCORD_GATEWAY_URL = 'wss://gateway.discord.gg'
 
@@ -460,7 +461,7 @@ export class DiscordLink {
   // PLATFORM§39
   async isBotThread(channelId: string): Promise<boolean> {
     const c = await this.api().request<RawThread>('GET', `/channels/${channelId}`)
-    return THREAD_TYPES.includes(c.type) && !!this.botId && c.owner_id === this.botId
+    return THREAD_TYPES.includes(c.type) && c.owner_id === this.botId
   }
 
   archiveThread(threadId: string): Promise<unknown> {

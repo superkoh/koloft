@@ -37,6 +37,7 @@ function setup(over: { listFails?: boolean; archiveFails?: string[]; lookupFails
       post: async (channelId, text, replyTo) => void posts.push({ channelId, text, replyTo }),
       respond: async (i, body) => void responses.push({ channelId: i.channelId, body })
     },
+    owner: () => '555',
     butlerName: () => 'Alfred',
     channel: () => CHANNEL,
     archived: () => archived,
@@ -54,10 +55,10 @@ function setup(over: { listFails?: boolean; archiveFails?: string[]; lookupFails
   }
 }
 
-const message = (id: string, channelId: string): DiscordMessage => ({
+const message = (id: string, channelId: string, authorId = '555'): DiscordMessage => ({
   id,
   channelId,
-  authorId: '555',
+  authorId,
   bot: false,
   content: 'hello',
   attachments: []
@@ -128,6 +129,15 @@ describe('session threads an older Koloft opened under the butler’s channel', 
         body: { type: 4, data: { content: talkToTheButler('Alfred', CHANNEL), flags: 64 } }
       }
     ])
+  })
+
+  it('someone other than the owner writing or pressing in one gets nothing', async () => {
+    const t = setup()
+    await t.threads.onMessage(message('1', OLD, '666'))
+    await t.threads.onInteraction({ ...interaction(OLD), userId: '666' })
+    expect(t.posts).toEqual([])
+    expect(t.responses).toEqual([])
+    expect(t.lookups).toEqual([])
   })
 
   it('a channel that is not one of the bot’s threads gets nothing, and is looked up only once', async () => {

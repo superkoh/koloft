@@ -2996,7 +2996,7 @@ app.whenReady().then(() => {
     },
     onMessage: (m) => {
       if (butler?.isButlerChannel(m.channelId)) discordRelay?.onMessage(m)
-      else if (m.authorId === butler?.owner()) void oldThreads.onMessage(m)
+      else void oldThreads.onMessage(m)
     },
     onInteraction: (i) =>
       void (butler?.isButlerChannel(i.channelId)
@@ -3018,6 +3018,7 @@ app.whenReady().then(() => {
   const butlerNow = butler
   const oldThreads = new OldThreads({
     link,
+    owner: () => butlerNow.owner(),
     butlerName: butlerNameNow,
     channel: () => butlerNow.channel(),
     archived: () => butlerNow.oldThreadsArchived(),

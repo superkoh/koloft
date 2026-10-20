@@ -1,5 +1,5 @@
 import { session, WebContentsView, type WebContents } from 'electron'
-import { BYTES_PER_FILE, type DiscordFile } from './link'
+import { BYTES_PER_FILE, MB, type DiscordFile } from './link'
 
 const SHOT_PARTITION = 'koloft-page-shot'
 const VIEW_WIDTH = 1280
@@ -12,7 +12,6 @@ const FONTS_LOAD_WITHIN_MS = 5000
 const A_CAPTURE_ANSWERS_WITHIN_MS = 20_000
 const MOST_PICTURES = 10
 const SMALLER_PICTURE_QUALITY = 80
-const MB = 1024 * 1024
 
 interface Size {
   width: number
@@ -75,7 +74,7 @@ const PAGE_STUCK = 'The page stopped answering, so Koloft could not take its pic
 async function settled(wc: WebContents): Promise<void> {
   if (!wc.isLoading()) return
   const stopped = new Promise<void>((resolve) => wc.once('did-stop-loading', () => resolve()))
-  await within(stopped, PAGE_LOADS_WITHIN_MS, 'still loading').catch(() => undefined)
+  await within(stopped, PAGE_LOADS_WITHIN_MS, '').catch(() => undefined)
 }
 
 async function pageSize(wc: WebContents): Promise<{ size: Size; ratio: number }> {
@@ -128,7 +127,7 @@ export async function shootPage(url: string): Promise<PagePictures> {
       if (shot.data.length > BYTES_PER_FILE) shot = await capture(wc, clip, SMALLER_PICTURE_QUALITY)
       if (shot.data.length > BYTES_PER_FILE)
         throw new Error(
-          `A picture of ${url} is ${(shot.data.length / MB).toFixed(1)} MB even as a JPEG; Discord takes at most 20 MB.`
+          `A picture of ${url} is ${(shot.data.length / MB).toFixed(1)} MB even as a JPEG; Discord takes at most ${BYTES_PER_FILE / MB} MB.`
         )
       const part = clips.length > 1 ? `-${i + 1}` : ''
       files.push({ name: `page${part}.${shot.format === 'png' ? 'png' : 'jpg'}`, data: shot.data })

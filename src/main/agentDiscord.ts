@@ -11,7 +11,7 @@ import {
   type AgentReply,
   type AgentVerb
 } from './agentRequests'
-import { BYTES_PER_FILE, type DiscordFile } from './discord/link'
+import { BYTES_PER_FILE, MB, type DiscordFile } from './discord/link'
 import { DISCORD_SETUP_STEPS } from './discord/setupSteps'
 import type { PagePictures } from './discord/pageShot'
 
@@ -21,8 +21,6 @@ export const NOT_A_PAGE =
   'koloft: give one HTML file that is there, or one web address that starts with http:// or https:// (like http://localhost:5173).'
 export const NOT_THE_BUTLER =
   'koloft: only the butler bound to a Discord channel can send to Discord.'
-
-const MB = 1024 * 1024
 
 export interface DiscordVerbDeps {
   channelOf(tabId: string): string | undefined
@@ -94,13 +92,13 @@ async function shot(
   return answered(
     [
       sent,
-      ...(shown.height < page.height
-        ? [`The page is ${page.height} pixels tall; the pictures stop at ${shown.height}.`]
-        : []),
-      ...(shown.width < page.width
-        ? [`The page is ${page.width} pixels wide; the pictures show its left ${shown.width}.`]
-        : [])
-    ].join(' ')
+      shown.height < page.height &&
+        `The page is ${page.height} pixels tall; the pictures stop at ${shown.height}.`,
+      shown.width < page.width &&
+        `The page is ${page.width} pixels wide; the pictures show its left ${shown.width}.`
+    ]
+      .filter(Boolean)
+      .join(' ')
   )
 }
 
