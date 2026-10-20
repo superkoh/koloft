@@ -33,7 +33,7 @@ type MuseHookName = (typeof EVENTS)[number]
 
 export const HOOK_DROP_PREFIX = 'hook-'
 
-// MUSE§12 ADR-0031
+// MUSE§9 MUSE§12 ADR-0031
 export function museHookScript(head: string, keep: string): string {
   return `#!/bin/bash
 ${head}
@@ -41,6 +41,7 @@ ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 ${QUOTE_PROMPT_FN}
 input="$(cat | tr -d '\\n')"
+[ "$event" = "Stop" ] && keep_going_for_the_notice && exit 0
 ${keep}
 case "$event" in
   SessionStart) [ -f "$3" ] && cat "$3" ;;

@@ -157,6 +157,22 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     expect(ephemeral(path.join(dir, 'missing.jsonl'))).toBe('(From Koloft:) main moved.\n\n')
   })
 
+  // AGY§12
+  it('a loop about to end with a notice Koloft left still unread keeps going with it instead, logging no Stop for Koloft to end the turn on; the Stop after that is logged as usual', () => {
+    const notice = path.join(dir, 'tab.notice')
+    const env = { KOLOFT_NOTICE: notice }
+    fs.writeFileSync(notice, noticeLine('(From Koloft:) main moved.'))
+    expect(JSON.parse(hook('Stop', { conversationId: 'c1' }, env))).toEqual({
+      decision: 'block',
+      reason: '(From Koloft:) main moved.\n\n'
+    })
+    expect(fs.existsSync(log)).toBe(false)
+    expect(hook('Stop', { conversationId: 'c1' }, env)).toBe('')
+    expect(logged()).toEqual([
+      { hook: { event: 'Stop', conversationId: 'c1', input: { conversationId: 'c1' } } }
+    ])
+  })
+
   // ADR-0031
   it('leaves out the handover Koloft puts before a task it hands to a new session', () => {
     const task = withHandover(

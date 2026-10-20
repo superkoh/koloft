@@ -96,9 +96,10 @@ Reopen one of these only with new evidence, not a new argument.
   types it only when that session is idle with no question or menu showing. Third,
   `koloft session keys` presses keys in a session (CC§12, CODEX§25). Koloft's own
   notice — the default branch moved, or another open session of the repository changed
-  a file this one changed too — is neither typed nor sent: it waits for the session's
-  next prompt or tool call and rides in with it, so it never starts a turn, never
-  touches the red dot, and leaves no reply behind.
+  a file this one changed too — is neither typed nor sent: a session at work gets it at
+  its next tool call or just before its turn would end, a waiting one with its next
+  prompt, so it never starts a turn, never touches the red dot of a waiting session, and
+  leaves no reply of its own behind.
 
 - **A one-click Review button that starts a sibling to review the diff** (#222) — a
   session already starts its own sibling session or subagent to review its changes

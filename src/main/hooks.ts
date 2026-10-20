@@ -92,8 +92,17 @@ export const TAKE_NOTICE_FN = `take_notice() {
   rm -f "$notice.$$"
 }`
 
+// CC§21 CODEX§27
+export const KEEP_GOING_FOR_THE_NOTICE_FN = `keep_going_for_the_notice() {
+  case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 1 ;; esac
+  told="$(take_notice)"
+  [ -n "$told" ] || return 1
+  printf '{"decision":"block","reason":"%s"}\\n' "$told"
+}`
+
 // CC§17 CC§19 CODEX§27
 export const REMIND_REPLY_LANGUAGE_FN = `${TAKE_NOTICE_FN}
+${KEEP_GOING_FOR_THE_NOTICE_FN}
 remind_reply_language() {
   quote="$(cat "$said" 2>/dev/null)"
   context="$(take_notice)$2"
@@ -148,7 +157,8 @@ const codexReplyLanguageHook = (event: string): string =>
   `sh "$${CODEX_REPLY_LANGUAGE_ENV}" ${event}`
 export const CODEX_REPLY_LANGUAGE_HOOKS = [
   { event: 'UserPromptSubmit', command: codexReplyLanguageHook('prompt') },
-  { event: 'PostToolUse', command: codexReplyLanguageHook('tool') }
+  { event: 'PostToolUse', command: codexReplyLanguageHook('tool') },
+  { event: 'Stop', command: codexReplyLanguageHook('stop') }
 ]
 
 export const CODEX_HOLD_SCRIPT_ENV = 'KOLOFT_HOLD_SCRIPT'
@@ -175,6 +185,10 @@ if [ "$1" = "tool" ]; then
   exit 0
 fi
 input="$(cat | tr -d '\\n')"
+if [ "$1" = "stop" ]; then
+  keep_going_for_the_notice
+  exit 0
+fi
 ${QUOTE_PROMPT_FN}
 case "$input" in
   *'"prompt":"${FROM_A_SESSION}'*|*'"prompt":"${FROM_KOLOFT}'*) ;;
@@ -288,6 +302,7 @@ case "$event" in
     done
     ;;
   prompt|stop|notify)
+    [ "$event" = "stop" ] && keep_going_for_the_notice && exit 0
     msg="$(printf '%s' "$input" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | tr -d '"\\\\[:cntrl:]')"
     sid="$(session_id)"
     # CC§8

@@ -36,6 +36,11 @@ input="$(cat)"
 log="$${AGY_LOG_ENV}"
 notice="$${NOTICE_ENV}"
 ${TAKE_NOTICE_FN}
+if [ "$event" = "Stop" ] && [ -n "$notice" ]; then
+  told="$(take_notice)"
+  [ -n "$told" ] && { printf '{"decision":"block","reason":"%s"}' "$told"; exit 0; }
+  rm -f "$notice${THIS_TURN}"
+fi
 [ -n "$log" ] && { printf '{"event":"%s","input":' "$event"; printf '%s' "$input" | tr -d '\\n'; printf '}\\n'; } >> "$log" 2>/dev/null
 case "$event" in
   SessionStart) [ -f "$${AGY_START_ENV}" ] && cat "$${AGY_START_ENV}" ;;
@@ -47,7 +52,6 @@ case "$event" in
     told="$([ -n "$notice" ] && cat "$notice${THIS_TURN}" 2>/dev/null)$said"
     [ -n "$told" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}' "$told"
     ;;
-  Stop) [ -n "$notice" ] && rm -f "$notice${THIS_TURN}" ;;
 esac
 exit 0
 `

@@ -235,6 +235,21 @@ describe('injected hook script', () => {
     ])
   })
 
+  // CC§21
+  it('a turn about to end with a notice Koloft left still unread keeps going with it instead: Stop hands the notice back as the reason to go on and reports no end, and the Stop after that ends the turn as usual', () => {
+    const moved = `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb.`
+    fs.writeFileSync(noticeFile(regDir, 'tabStop'), noticeLine(moved))
+    const held = fire('tabStop', 'stop', { hook_event_name: 'Stop', stop_hook_active: false })
+    expect(JSON.parse(held)).toEqual({ decision: 'block', reason: `${moved}\n\n` })
+    expect(fs.existsSync(path.join(regDir, 'tabStop.status.jsonl'))).toBe(false)
+    expect(fs.existsSync(noticeFile(regDir, 'tabStop'))).toBe(false)
+
+    fs.writeFileSync(noticeFile(regDir, 'tabStop'), noticeLine(moved))
+    expect(fire('tabStop', 'stop', { hook_event_name: 'Stop', stop_hook_active: true })).toBe('')
+    expect(readStatusLog('tabStop')).toMatchObject([{ event: 'stop' }])
+    expect(fs.existsSync(noticeFile(regDir, 'tabStop'))).toBe(true)
+  })
+
   // CC§5
   it.each(['prompt', 'stop', 'notify'])(
     'a %s report names the session it belongs to, so a /fork copy sharing the log is told apart',
@@ -687,6 +702,20 @@ describe('injected hook script', () => {
       expect(codexTool({ tool_name: 'Bash', agent_id: 'a1' })).toBe('')
       expect(reminder(codexTool({ tool_name: 'Bash' }), 'PostToolUse')).toBe(`${moved}\n\n`)
       expect(fs.existsSync(notice)).toBe(false)
+
+      const codexStop = (input: unknown): string =>
+        spawnSync('bash', [codexReplyLanguage, 'stop'], {
+          input: JSON.stringify(input),
+          encoding: 'utf8',
+          env: { ...process.env, KOLOFT_CODEX_SAID: `${notice}.said`, KOLOFT_NOTICE: notice }
+        }).stdout
+      fs.writeFileSync(notice, noticeLine(moved))
+      expect(codexStop({ stop_hook_active: true })).toBe('')
+      expect(JSON.parse(codexStop({ stop_hook_active: false }))).toEqual({
+        decision: 'block',
+        reason: `${moved}\n\n`
+      })
+      expect(codexStop({ stop_hook_active: false })).toBe('')
     })
 
     // ADR-0031

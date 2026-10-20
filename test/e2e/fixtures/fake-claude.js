@@ -290,8 +290,9 @@ function fireHook(event, payload) {
   if (!cmd) return ''
   // CC§1
   const body = 'session_id' in payload ? payload : { ...payload, session_id: sessionId }
+  let out = ''
   try {
-    return cp.execSync(cmd, {
+    out = cp.execSync(cmd, {
       input: JSON.stringify(body),
       stdio: ['pipe', 'pipe', 'ignore'],
       encoding: 'utf8',
@@ -301,6 +302,35 @@ function fireHook(event, payload) {
   } catch {
     return ''
   }
+  if (event === 'stop' && !payload.stop_hook_active) keepGoingIfStopped(out, payload)
+  return out
+}
+
+// CC§21
+function keepGoingIfStopped(out, payload) {
+  let reason
+  try {
+    const parsed = JSON.parse(out)
+    if (parsed.decision === 'block') reason = parsed.reason
+  } catch {
+    return
+  }
+  if (typeof reason !== 'string') return
+  append([
+    {
+      type: 'user',
+      isMeta: true,
+      message: { role: 'user', content: `Stop hook feedback:\n${reason}` },
+      cwd
+    },
+    {
+      type: 'assistant',
+      timestamp: new Date().toISOString(),
+      message: { role: 'assistant', content: [{ type: 'text', text: `Stop said: ${reason}` }] },
+      cwd
+    }
+  ])
+  fireHook('stop', { ...payload, stop_hook_active: true })
 }
 
 function append(lines) {

@@ -234,6 +234,27 @@ describe('muse-hook.sh, the hook a remote Muse tab runs', () => {
     expect(run('PostToolUse', '{"session_id":"a","tool_name":"read_file"}')).toBe('')
   })
 
+  // MUSE§9
+  it('a turn about to end with a notice Koloft left still unread keeps going with it instead, with no Stop in the mirror for Koloft to end the turn on; the Stop after that is mirrored as usual', () => {
+    const m = machine()
+    const script = path.join(m.home, 'muse-hook.sh')
+    fs.writeFileSync(script, REMOTE_MUSE_HOOK_SH)
+    for (const dir of ['hook-sessions', 'tabs'])
+      fs.mkdirSync(path.join(m.home, '.koloft', dir), { recursive: true })
+    const notice = path.join(m.home, '.koloft', 'hook-sessions', `pty-1${NOTICE_SUFFIX}`)
+    const mirror = path.join(m.home, '.koloft', 'hook-sessions', 'pty-1.muse.jsonl')
+    fs.writeFileSync(notice, noticeLine('(From Koloft:) origin/main moved.'))
+    const run = (input: string): string =>
+      spawnSync('bash', [script, 'pty-1', 'Stop'], { env: m.env, input, encoding: 'utf8' }).stdout
+    expect(JSON.parse(run('{"session_id":"a","stop_hook_active":false}'))).toEqual({
+      decision: 'block',
+      reason: '(From Koloft:) origin/main moved.\n\n'
+    })
+    expect(fs.existsSync(mirror)).toBe(false)
+    expect(run('{"session_id":"a","stop_hook_active":true}')).toBe('')
+    expect(lines(mirror)).toMatchObject([{ t: 'hook', event: 'Stop' }])
+  })
+
   it("a session another session started keeps the owner's language past the English task it was handed", () => {
     const m = machine()
     const script = path.join(m.home, 'muse-hook.sh')

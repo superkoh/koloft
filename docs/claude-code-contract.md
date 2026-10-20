@@ -2162,3 +2162,23 @@ read from the 2.1.302 binary, and the test-file rule again from 2.1.303 (2026-10
 - **The findings are the result text.** `(none)` means the review found nothing.
 
 Koloft dependents: `scripts/code-review.mjs` and ADR-0040.
+
+## §21 A Stop hook can keep the turn going with text of its own
+
+2026-10-20, CC 2.1.304, `claude -p "Say hello in three words." --model haiku` in a scratch
+folder with a `--settings` file whose `Stop` hook printed
+`{"decision":"block","reason":"<text>"}` once (a marker file), and a logging
+`UserPromptSubmit` hook; 1 run.
+
+- **The model goes on in the same turn and reads `<text>`.** It answered the text (the
+  word the text asked for appeared), and `-p` ended normally after that second answer.
+- **The transcript holds `<text>` twice, both kept out of the owner's words:** a `user`
+  record with `isMeta: true` and content `Stop hook feedback:\n<text>`, and an
+  `attachment` `{type: "hook_blocking_error", hookEvent: "Stop"}`; the model was sent it as
+  a system message `Stop hook blocking error from command: "<command>": <text>`.
+- **Stop fires again when that answer ends**, with the same `prompt_id`,
+  `"stop_hook_active":true` and the new answer as `last_assistant_message`; the first
+  Stop had `"stop_hook_active":false`. No `UserPromptSubmit` fired for the second answer.
+
+Koloft dependents: the Stop branch of `HOOK_SCRIPT` and the Codex reply-language script
+in `src/main/hooks.ts`.

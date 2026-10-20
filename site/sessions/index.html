@@ -625,12 +625,13 @@
           made while the session was open in Koloft; each file is named once per pair of sessions.
         </p>
         <p>
-          Koloft never starts a turn for it. The message waits for the session's next prompt, from
-          you or anyone else, or its next tool call while it works, and goes in alongside it, so a
-          session that was waiting for you keeps its red dot, and no reply to the message alone
-          fills its conversation. This holds for every agent, here or on a machine. You do not see
-          the message in the terminal; the agent does. An Antigravity session sees it for the rest
-          of that turn only.
+          Koloft never starts a turn for it. A session at work gets the message after its next tool
+          call, or, if it was about to stop, just before it stops: it reads it and then stops,
+          without anyone prompting it. A session that was waiting for you gets it with its next
+          prompt, from you or anyone else, so it keeps its red dot, and no reply to the message
+          alone fills its conversation. This holds for every agent, here or on a machine. You do not
+          see the message in the terminal; the agent does. An Antigravity session sees it for the
+          rest of that turn only.
         </p>
 
         <p class="next">Next page → <a href="../workbench/">The Workbench</a></p>
