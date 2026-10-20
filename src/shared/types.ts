@@ -368,11 +368,6 @@ export interface AssistRecord {
   lastSessionKey?: string
 }
 
-export interface AssistTaskRow {
-  tabId: string
-  name: string
-}
-
 export interface DiscordChannel {
   guildId: string
   channelId: string
@@ -433,6 +428,16 @@ export type ConductorSaveResult =
   { ok: true } | { ok: false; error: string; cannotMakeChannels?: boolean }
 
 export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
+
+export interface PaletteRequest {
+  words: string
+  title?: string
+  about?: string
+  at?: string
+}
+
+export type PaletteHandOff =
+  { ok: true; tabId: string; helper?: true; queued?: true } | { ok: false; error: string }
 
 export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
 export type HintId = (typeof HINT_IDS)[number]
@@ -785,7 +790,6 @@ export interface DocVerdict {
 
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
   conductor?: string
-  assistTask?: string
   turnOver?: boolean
   docVerdicts?: Record<string, DocVerdict>
 }
@@ -1374,10 +1378,7 @@ export interface KoloftApi {
     unbind(): Promise<void>
     open(): Promise<ConductorOpenResult>
     startFresh(): Promise<ConductorOpenResult>
-    openTask(title: string, brief: string, workspace?: string): Promise<ConductorOpenResult>
-    closeTask(tabId: string): Promise<void>
-    tasks(): Promise<AssistTaskRow[]>
-    onTasks(cb: (rows: AssistTaskRow[]) => void): () => void
+    fromPalette(request: PaletteRequest): Promise<PaletteHandOff>
   }
   discord: {
     status(): Promise<DiscordStatus>

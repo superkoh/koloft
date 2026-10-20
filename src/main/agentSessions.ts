@@ -56,6 +56,12 @@ import type { Assist } from './assist'
 import { keysFor } from './typeKeys'
 import type { StartedSessions } from './startedSessions'
 
+export interface ButlerHelperTask {
+  prompt: string
+  name?: string
+  ownerWords: string
+}
+
 export interface NewSessionArgs {
   name?: string
   workspace?: string
@@ -507,9 +513,56 @@ async function startSibling(
   helperRole?: string
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
-  const traits = PEER_TRAITS[backend]
-  if (!traits.namedAtLaunch && args.name !== undefined)
+  if (!PEER_TRAITS[backend].namedAtLaunch && args.name !== undefined)
     return refused(hasNoName(backend), EXIT_USAGE)
+  const launched = await launchSibling(
+    d,
+    args,
+    me,
+    workspace,
+    conductorTab,
+    ownerWords,
+    oweReply,
+    helperRole
+  )
+  if (!launched) return refused('koloft session new: Koloft could not start the session.')
+  const { tabId, name } = launched
+  const unnamed = aSessionOf(backend)
+  if (d.waiting.list().some((q) => q.tabId === tabId))
+    return answered(
+      `Queued ${name ? `session "${name}"` : unnamed} (${tabId}): Koloft starts it in turn, once this machine has room. Do not start it again. "koloft session list" shows it as queued; ${
+        name && reachedBySendMessage(backend) && reachedBySendMessage(me.backendId)
+          ? `once it starts, talk to it with SendMessage to "${name}"`
+          : `"koloft session send ${tabId} <message>" is kept and handed to it once it starts`
+      }; "koloft session close ${tabId}" takes it off the queue.`
+    )
+  if (conductorTab)
+    return answered(
+      `Started ${name ? `session "${name}"` : unnamed} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
+    )
+  const listHint =
+    args.workspace === undefined
+      ? 'koloft session list'
+      : `koloft session list --workspace ${JSON.stringify(workspace)}`
+  return answered(
+    reachedBySendMessage(backend)
+      ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
+      : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : unnamed} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
+  )
+}
+
+async function launchSibling(
+  d: SessionVerbDeps,
+  args: NewSessionArgs,
+  me: SessionInfo,
+  workspace: string,
+  conductorTab: string | undefined,
+  ownerWords: string | undefined,
+  oweReply: (tabId: string) => void,
+  helperRole?: string
+): Promise<{ tabId: string; name: string | undefined } | null> {
+  const backend = args.backend ?? me.backendId
+  const traits = PEER_TRAITS[backend]
   const caller: SessionCaller = {
     name: (await d.peerNames()(me)) ?? (reachedBySendMessage(me.backendId) ? me.title : undefined),
     id: idToReach(me),
@@ -550,33 +603,11 @@ async function startSibling(
       ? { role: preamble, firstPrompt: args.prompt }
       : { firstPrompt: withHandover(preamble, args.prompt) })
   })
-  if (!tabId) return refused('koloft session new: Koloft could not start the session.')
+  if (!tabId) return null
   oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
-  const unnamed = aSessionOf(backend)
-  if (conductorTab) d.started(conductorTab, tabId, name ?? unnamed, workspace, backend)
-  if (d.waiting.list().some((q) => q.tabId === tabId))
-    return answered(
-      `Queued ${name ? `session "${name}"` : unnamed} (${tabId}): Koloft starts it in turn, once this machine has room. Do not start it again. "koloft session list" shows it as queued; ${
-        name && reachedBySendMessage(backend) && reachedBySendMessage(me.backendId)
-          ? `once it starts, talk to it with SendMessage to "${name}"`
-          : `"koloft session send ${tabId} <message>" is kept and handed to it once it starts`
-      }; "koloft session close ${tabId}" takes it off the queue.`
-    )
-  if (conductorTab) {
-    return answered(
-      `Started ${name ? `session "${name}"` : unnamed} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
-    )
-  }
-  const listHint =
-    args.workspace === undefined
-      ? 'koloft session list'
-      : `koloft session list --workspace ${JSON.stringify(workspace)}`
-  return answered(
-    reachedBySendMessage(backend)
-      ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
-      : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : unnamed} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
-  )
+  if (conductorTab) d.started(conductorTab, tabId, name ?? aSessionOf(backend), workspace, backend)
+  return { tabId, name }
 }
 
 function parseReadArgs(rest: string[]): Parsed<{ ref: string; last: number }> {
@@ -730,7 +761,7 @@ const RESUME_USAGE =
 const STOP_USAGE = 'koloft session stop: give an id or name, like: koloft session stop fix-login'
 const ANSWER_USAGE =
   'koloft session answer: give an id or name, then an option number, yes, no or your own words, like: koloft session answer fix-login 2'
-const WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS = 10 * 60_000
+export const WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS = 10 * 60_000
 const SHOWS_NOTHING_WHILE_CLOSED = 'it is not open, so it shows no question.'
 const NO_WORKTREE_IN_BUTLER_FOLDER =
   'koloft session new: your own folder is no git repository, so -w needs --workspace <workspace>; "koloft workspace list" shows them.'
@@ -807,6 +838,7 @@ export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
   turnEnded(tabId: string, turn: Turn): void
   waitsOnAnother(sessionId: string): boolean
+  startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
 } {
   const opening = new Map<string, Promise<string | null>>()
   let queued = 0
@@ -1214,7 +1246,24 @@ export function sessionVerb(d: SessionVerbDeps): {
     return refused(SESSION_USAGE, EXIT_USAGE)
   }
 
-  return { verb, turnEnded, waitsOnAnother }
+  const startButlerHelper = async (
+    butler: SessionInfo,
+    { prompt, name, ownerWords }: ButlerHelperTask
+  ): Promise<string | null> =>
+    (
+      await launchSibling(
+        d,
+        { prompt, name },
+        butler,
+        d.butlerFolder(),
+        butler.tabId,
+        ownerWords,
+        (tab) => replyOwed.set(tab, { owner: butler.sessionId }),
+        d.butlerHelperRole()
+      )
+    )?.tabId ?? null
+
+  return { verb, turnEnded, waitsOnAnother, startButlerHelper }
 }
 
 export interface WorkspaceVerbDeps {

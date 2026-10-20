@@ -684,7 +684,7 @@ describe('injected hook script', () => {
       const typed = '把 "侧栏" 调暗\n一点 \\ 😀'
       seedOwnerWords(saidFile(regDir, 'tabLangPalette'), typed)
       const palette = JSON.parse(
-        crossSessionLine('prompting', `The owner typed this in ⌘P: ${typed}`, 'koloft-palette-1')!
+        crossSessionLine('prompting', `The owner typed this in ⌘P: ${typed}`, 'koloft-butler-1')!
       ).message.content
       expect(reminder(prompt('tabLangPalette', palette), 'UserPromptSubmit')).toMatch(
         writesIn('Chinese')

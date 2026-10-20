@@ -115,7 +115,7 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
-import { RenameButlerDialog, setUpDiscordWithButler } from './components/ButlerRow'
+import { RenameButlerDialog, setUpDiscordWithButler, showButler } from './components/ButlerRow'
 import { BindConductorDialog } from './components/BindConductorDialog'
 import { everyWorkspaceRows, isButlerTab } from './butlerRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
@@ -1081,7 +1081,7 @@ export default function App(): JSX.Element {
   const butlerActive = useStore(
     (s) =>
       !!activeTabId &&
-      (isButlerTab(s.sessions, s.butlerTab, s.assistTasks, activeTabId) ||
+      (isButlerTab(s.sessions, s.butlerTab, activeTabId) ||
         !!s.butlerWorkspace?.rows.some((r) => r.id === activeRowId))
   )
   const currentWs = currentWorkspace(workspaceRows, activeRowId, selectedWs, lastWsPath)
@@ -1139,11 +1139,16 @@ export default function App(): JSX.Element {
       pickWorkspaceForTyped({ prompt, title: '' }, backend)
       return
     }
-    const toAssist = (title: string, workspace: string | null): void => {
-      void window.api.conductors.openTask(title, prompt, workspace ?? undefined).then((r) => {
-        if (r.ok) return visitTab(r.tabId)
+    const toButler = (title: string, about: string | null): void => {
+      const at = activeTabWs ?? undefined
+      const request = { words: prompt, title: title || undefined, about: about ?? undefined, at }
+      void window.api.conductors.fromPalette(request).then((r) => {
+        if (r.ok) {
+          if (r.queued) return
+          return r.helper ? visitTab(r.tabId) : showButler(r.tabId)
+        }
         showToast(r.error)
-        requestNew('main', undefined, { prompt, title, path: workspace, worktree: null }, backend)
+        requestNew('main', undefined, { prompt, title, path: about, worktree: null }, backend)
       })
     }
     if (route?.kind === 'feature') {
@@ -1157,18 +1162,18 @@ export default function App(): JSX.Element {
         .find((w) => w.workspace.path === route.path)
         ?.rows.find((r) => r.id === route.id)
       if (row) openSessionRow(row, route.path)
-      else toAssist(route.title, null)
+      else toButler(route.title, null)
       return
     }
     if (route?.kind === 'assist') {
-      toAssist(route.title, route.path)
+      toButler(route.title, route.path)
       return
     }
     const ws =
       route?.kind === 'workspace' &&
       workspaceRows.find((w) => w.workspace.path === route.path && !w.workspace.missing)
     if (route?.kind !== 'workspace' || !ws) {
-      toAssist(route?.title ?? '', null)
+      toButler(route?.title ?? '', null)
       return
     }
     const pending: PendingStart = {
