@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { SessionStatus } from '../../src/shared/types'
 import {
-  A_REPLY_LANDS_AFTER_ITS_STOP_WITHIN_MS,
+  A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS,
   AN_ENTER_LANDS_WITHIN_MS,
   MORE_OUTPUT_SETTLES_MS,
   NOTHING_CAME_BACK_MS,
@@ -168,12 +168,12 @@ describe('a slash command typed into a session', () => {
     await slash.typeWhenIdle(child, '/compact', CHANNEL)
     setStatus('working')
     setStatus('waiting')
-    await vi.advanceTimersByTimeAsync(A_REPLY_LANDS_AFTER_ITS_STOP_WITHIN_MS)
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual(['⌨️ **fix-login** ran /compact:\nDone.'])
   })
 
   // CC§2
-  it('waits past the end of a turn the command started for its reply, which may land on disk after the Stop, and posts that reply, not Done.', async () => {
+  it('in Claude, a turn the command started that has printed nothing settles when that turn ends, whose reply can land after the Stop, and posts the reply, not Done.; with no turn end it says Done. at last', async () => {
     const { slash, posts, setStatus } = setup()
     await slash.typeWhenIdle(child, '/koloft session list', CHANNEL)
     setStatus('working')
@@ -183,6 +183,12 @@ describe('a slash command typed into a session', () => {
     slash.turnEnded(TAB, { said: [], reply: 'No sessions.', at: Date.now() })
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual(['⌨️ **fix-login** ran /koloft session list:\nNo sessions.'])
+
+    await slash.typeWhenIdle(child, '/review', CHANNEL)
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS)
+    expect(posts.at(-1)).toBe('⌨️ **fix-login** ran /review:\nDone.')
   })
 
   it('in a remote tab, waits after the turn ends for one more mirror pull, so output the transcript brings late, like "Compacted", is in the card', async () => {
