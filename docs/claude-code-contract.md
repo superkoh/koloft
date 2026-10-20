@@ -110,7 +110,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   versions). Measured 2026-10-14 on 2.1.296 and 2.1.299, python pty 120, 60 and 50
   columns, scratch `HOME`, no login (one `hello` typed first), named and unnamed, plain
   folder and a `-w` keep exit; the lines come dim right after the screen reset, since the
-  default (not fullscreen) mode uses no alternate screen. Koloft does not read this hint.
+  default (not fullscreen) mode uses no alternate screen. Koloft reads this hint only to
+  see past it to a worktree removal's first line (§4).
 - **A resumed session's SessionStart hook reports the LAUNCH directory as cwd, not the
   worktree** — the re-enter happens after the hook (E8). Seen again 2026-10-09 on CC
   2.1.295, real sessions on the dev Mac that Koloft resumed from the repo root after a

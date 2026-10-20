@@ -12,7 +12,7 @@ const CLAUDE_RESUME_HINT_HEAD = 'Resume this session with:'
 // CC§4
 const CLAUDE_RESUME_HINT_COMMAND = 'claude --resume '
 // CC§4
-const MOST_BYTES_OF_THE_RESUME_HINT = 512
+const ROOM_FOR_A_RESUME_HINT_FOUR_TIMES_THE_MEASURED_ONE = 512
 // CC§4
 const CLAUDE_REMOVED_THE_WORKTREE = 'Worktree removed'
 
@@ -51,7 +51,7 @@ export class WorktreeRemovalWatch {
       const after = title + mark.length
       for (
         let removing = seen.indexOf(line, after);
-        removing >= 0 && removing - after <= MOST_BYTES_OF_THE_RESUME_HINT;
+        removing >= 0 && removing - after <= ROOM_FOR_A_RESUME_HINT_FOUR_TIMES_THE_MEASURED_ONE;
         removing = seen.indexOf(line, removing + 1)
       ) {
         if (nothingOrTheResumeHint(seen.slice(after, removing))) {
@@ -60,7 +60,7 @@ export class WorktreeRemovalWatch {
           return true
         }
       }
-      if (seen.length - after < MOST_BYTES_OF_THE_RESUME_HINT + line.length)
+      if (seen.length - after < ROOM_FOR_A_RESUME_HINT_FOUR_TIMES_THE_MEASURED_ONE + line.length)
         keepFrom = Math.min(keepFrom, title)
     }
     this.pending = seen.slice(Math.max(0, keepFrom))
