@@ -108,7 +108,6 @@ function useRealCodex(env: E2EEnv): void {
   )
   env.launchEnv.KOLOFT_CODEX_CMD = spot
   env.launchEnv.CODEX_HOME = home
-  seedSettings(env, { skipPermissions: true })
 }
 
 function addClaudeAccountToKeychain(env: E2EEnv): void {
@@ -662,6 +661,21 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
+  // ADR-0029
+  test('a real Codex conductor, permission checks skipped, writes a file in a workspace itself when told to, as any session may', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
+    seedConductor(env, 'codex')
+    useRealCodex(env)
+    seedSettings(env, { skipPermissions: true })
+    const fake = await startFakeDiscord(env)
+    await withConductor(env, fake, async () => {
+      await writesInTheWorkspaceItself(env, fake)
+    })
+  })
+
   // ADR-0029 CODEX§11
   test('a real Codex conductor whose tab closed is resumed by the owner’s next message, on the same thread, with the permission it started with, so it still writes in a workspace itself when told to', async ({
     env
@@ -670,6 +684,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
     seedConductor(env, 'codex')
     useRealCodex(env)
+    seedSettings(env, { skipPermissions: true })
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async (_app, page) => {
       await answersWholeInTheChannel(fake)
@@ -689,7 +704,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
-  // ADR-0029 CODEX§12
+  // ADR-0029
   test('a real Codex conductor checks a pull request itself with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
@@ -704,7 +719,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
-  // ADR-0029 CODEX§12
+  // ADR-0029
   test('a real Codex conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
