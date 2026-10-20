@@ -1,15 +1,18 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { spawnSync } from 'child_process'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { spawn, spawnSync } from 'child_process'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   agyLogLine,
   koloftHookEntry,
+  localAgyHold,
   runWithSh,
   writeAgyScripts,
   type AgyScripts
 } from '../../src/main/agyHooks'
+import { HOLD_HOOK_TIMEOUT_S, HOLD_SCRIPT } from '../../src/main/resourceGuard'
+import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { handoverPreamble, withHandover } from '../../src/main/handover'
 import { LineTail } from '../../src/main/museSessionLog'
 
@@ -155,6 +158,40 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       }
     }
     expect(quoteBeforeModelCall(path.join(dir, 'missing.jsonl'))).toBeUndefined()
+  })
+
+  // ADR-0043 AGY§12
+  it('holds a run_command while the Mac is busy only in a tab Koloft marked as background, under an hour-long timeout, since agy denies a tool whose hook it kills', async () => {
+    const reg = path.join(dir, 'reg')
+    fs.mkdirSync(reg)
+    const file = path.join(dir, 'hold.sh')
+    fs.writeFileSync(file, HOLD_SCRIPT)
+    fs.writeFileSync(path.join(reg, BUSY_MARKER), '')
+    const [group] = koloftHookEntry(runWithSh(scripts.hook), localAgyHold({ file, regDir: reg }))
+      .PreToolUse as { matcher: string; hooks: { command: string; timeout?: number }[] }[]
+    const [, hold] = group.hooks
+    expect(hold.timeout).toBe(HOLD_HOOK_TIMEOUT_S)
+    const input = JSON.stringify({
+      conversationId: 'c1',
+      toolCall: { name: 'run_command', args: { CommandLine: 'npm test' } }
+    })
+    const owners = spawnSync('/bin/sh', ['-c', hold.command], {
+      input,
+      encoding: 'utf8',
+      env: BASE_ENV,
+      timeout: 3000
+    })
+    expect(owners).toMatchObject({ status: 0, stdout: '' })
+    const kid = spawn('/bin/sh', ['-c', hold.command], {
+      env: { ...BASE_ENV, KOLOFT_HOLD_TAB: 'pty-bg' }
+    })
+    kid.stdin.end(input)
+    await vi.waitFor(
+      () => expect(fs.readdirSync(reg).some((n) => /^pty-bg\.\d+\.held$/.test(n))).toBe(true),
+      { timeout: 3000 }
+    )
+    fs.writeFileSync(path.join(reg, 'pty-bg.free'), '')
+    await new Promise((resolve) => kid.on('exit', resolve))
   })
 
   it('prints nothing at all for a tool call, since agy reads even {} as a deny', () => {

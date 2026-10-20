@@ -19,6 +19,7 @@ import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
 import type {
   BackendId,
   CreateTabOptions,
+  QueuedLaunch,
   SessionInfo,
   SessionRow,
   WorkspaceRows
@@ -74,6 +75,7 @@ interface Conducting {
   translation?: string | null
   asking?: string[]
   worktrees?: string[]
+  busy?: boolean
 }
 
 interface Started {
@@ -109,6 +111,8 @@ function harness(
   tells: ((said: string) => void)[]
   undelivered: { callerTab: string; name: string; why: string }[]
   startedSessions: StartedSessions
+  waiting: QueuedLaunch[]
+  held: { tabId: string; message: string }[]
 } {
   const answers: { tabId: string; reply: string }[] = []
   const commands: { callerTab: string; key: string; text: string }[] = []
@@ -124,6 +128,8 @@ function harness(
   const resumed: string[] = []
   const stopped: string[] = []
   const started: Started[] = []
+  const waiting: QueuedLaunch[] = []
+  const held: { tabId: string; message: string }[] = []
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-started-'))
   const startedSessions = new StartedSessions(() => path.join(dir, 'started-sessions.json'))
   const inner = sessionVerb({
@@ -136,7 +142,28 @@ function harness(
         peerNames[sessionId] ?? null,
     launch: async (spec) => {
       launched.push(spec)
+      if (conducting.busy)
+        waiting.push({
+          tabId: 'new-tab',
+          kind: spec.kind,
+          cwd: spec.cwd ?? '',
+          title: spec.name ?? 'untitled',
+          since: Date.now()
+        })
       return 'new-tab'
+    },
+    waiting: {
+      list: () => waiting,
+      hold: (tabId, message) => {
+        if (!waiting.some((q) => q.tabId === tabId)) return false
+        held.push({ tabId, message })
+        return true
+      },
+      drop: (tabId) => {
+        const before = waiting.length
+        waiting.splice(0, waiting.length, ...waiting.filter((q) => q.tabId !== tabId))
+        return waiting.length < before
+      }
     },
     assist: async (job) =>
       (job.system === 'You translate.' ? conducting.translation : conducting.titleReply) ?? null,
@@ -223,7 +250,9 @@ function harness(
     commands,
     tells,
     undelivered,
-    startedSessions
+    startedSessions,
+    waiting,
+    held
   }
 }
 
@@ -1778,5 +1807,51 @@ describe('koloft workspace list', () => {
         'gone · /work/gone · 0 open · folder missing',
         'api · box:/srv/api · 1 open'
       ])
+  })
+})
+
+describe('a session started while the machine is busy waits in a queue', () => {
+  it('the caller hears it is queued and not to start it again, and the list shows it waiting', async () => {
+    const h = harness([session('me', 'claude')], {}, [], { busy: true })
+    const reply = await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('me'))
+    expect(reply.text).toMatch(/^Queued session "tests" \(new-tab\): this machine is busy/)
+    expect(reply.text).toContain('Do not start it again.')
+    const list = await h.verb(['list'], from('me'))
+    expect(list.text).toMatch(
+      /"tests" \(new-tab\): queued, waiting for the machine to have room \(since just now\) — started by: you/
+    )
+  })
+
+  it('a message to it is kept for when it starts, and closing it takes it off the queue', async () => {
+    const h = harness([session('me', 'claude')], {}, [], { busy: true })
+    await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('me'))
+    const sent = await h.verb(['send', 'new-tab', 'Also lint.'], from('me'))
+    expect(sent.text).toContain('is still queued for the machine; your message is kept')
+    expect(h.held).toHaveLength(1)
+    expect(h.held[0].message).toContain('Also lint.')
+    expect(h.queued).toEqual([])
+    const closed = await h.verb(['close', 'tests'], from('me'))
+    expect(closed.text).toBe('Took "tests" off the queue; it will not start.')
+    expect(h.waiting).toEqual([])
+    expect(h.closed).toEqual([])
+  })
+
+  it('a session the butler starts is placed under the butler even when it has to queue', async () => {
+    const h = harness([session('butler', 'claude')], {}, [], {
+      busy: true,
+      scopes: { butler: 'global' }
+    })
+    const reply = await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('butler'))
+    expect(reply.text).toMatch(/^Queued session "tests"/)
+    expect(h.started.map((s) => s.tabId)).toEqual(['new-tab'])
+  })
+
+  it('a queued session another session started is not this caller’s to message or close', async () => {
+    const h = harness([session('me', 'claude'), session('other', 'claude')], {}, [], { busy: true })
+    await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('other'))
+    await h.verb(['send', 'tests', 'hi'], from('me'))
+    expect(h.held).toEqual([])
+    await h.verb(['close', 'tests'], from('me'))
+    expect(h.waiting).toHaveLength(1)
   })
 })

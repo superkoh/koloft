@@ -1153,4 +1153,15 @@ describe('setupHooks at startup', () => {
     for (const f of markers(peerTab)) expect(fs.existsSync(f), f).toBe(true)
     for (const f of markers(crashedTab)) expect(fs.existsSync(f), f).toBe(false)
   })
+
+  // ADR-0043
+  it('writes the hold script a background Codex, Muse or Antigravity tab runs before each shell command, which lets it run at once on a roomy Mac', () => {
+    const { hold } = setupHooks(noPeerInstance)
+    const res = spawnSync('bash', [hold, regDir, 'tabH', 'hold'], {
+      input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'npm test' } }),
+      encoding: 'utf8',
+      timeout: 5000
+    })
+    expect(res).toMatchObject({ status: 0, stdout: '' })
+  })
 })

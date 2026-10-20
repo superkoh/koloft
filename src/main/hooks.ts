@@ -2,17 +2,34 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import type { StatusLineSetting } from './statusline'
+import type { KoloftHook } from './codexLaunchConfig'
 import { shq } from '@shared/shellQuote'
 import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
 import { FROM_A_SESSION, FROM_KOLOFT, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
+import {
+  CODEX_HOLDS_LESS_THAN_ITS_EXEC_WALL_S,
+  HOLD_HOOK_TIMEOUT_S,
+  HOLD_SCRIPT
+} from './resourceGuard'
+
+export type HoldEvent = 'hold' | 'hold-self'
 
 export interface HookPaths {
   hookScript: string
   codexReplyLanguage: string
+  hold: string
   settingsDir: string
   regDir: string
 }
+
+export interface HoldScript {
+  file: string
+  regDir: string
+}
+
+export const HOLD_FILE = 'hold.sh'
+export const HOLD_TAB_ENV = 'KOLOFT_HOLD_TAB'
 
 // ADR-0031
 export const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
@@ -115,6 +132,18 @@ export const CODEX_REPLY_LANGUAGE_HOOKS = [
   { event: 'UserPromptSubmit', command: codexReplyLanguageHook('prompt') },
   { event: 'PostToolUse', command: codexReplyLanguageHook('tool') }
 ]
+
+export const CODEX_HOLD_SCRIPT_ENV = 'KOLOFT_HOLD_SCRIPT'
+export const CODEX_HOLD_REG_ENV = 'KOLOFT_HOLD_REG'
+// CODEX§30
+const CODEX_HOLD_HOOK_OUTLASTS_ITS_HOLD_S = 60
+// CODEX§27 CODEX§30
+export const codexHoldHook = (event: HoldEvent): KoloftHook => ({
+  event: 'PreToolUse',
+  matcher: 'Bash',
+  timeout: CODEX_HOLD_HOOK_OUTLASTS_ITS_HOLD_S,
+  command: `bash "$${CODEX_HOLD_SCRIPT_ENV}" "$${CODEX_HOLD_REG_ENV}" "$${HOLD_TAB_ENV}" ${event} ${CODEX_HOLDS_LESS_THAN_ITS_EXEC_WALL_S}`
+})
 
 // ADR-0031 CODEX§27
 export const CODEX_REPLY_LANGUAGE_SCRIPT = `#!/usr/bin/env bash
@@ -385,8 +414,10 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   fs.chmodSync(hookScript, 0o755)
   const codexReplyLanguage = path.join(hookDir, 'codex-reply-language.sh')
   fs.writeFileSync(codexReplyLanguage, CODEX_REPLY_LANGUAGE_SCRIPT)
+  const hold = path.join(hookDir, HOLD_FILE)
+  fs.writeFileSync(hold, HOLD_SCRIPT)
 
-  return { hookScript, codexReplyLanguage, settingsDir, regDir }
+  return { hookScript, codexReplyLanguage, hold, settingsDir, regDir }
 }
 
 // CC§8
@@ -407,7 +438,8 @@ export function hookSettings(
   tabId: string,
   statusLine?: StatusLineSetting,
   quote: (s: string) => string = shq,
-  dialogs: 'wait-for-answer' | 'record-only' = 'wait-for-answer'
+  dialogs: 'wait-for-answer' | 'record-only' = 'wait-for-answer',
+  hold?: { script: string; event: HoldEvent }
 ): Record<string, unknown> {
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
@@ -415,6 +447,21 @@ export function hookSettings(
     skipDangerousModePermissionPrompt: true,
     env: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' },
     hooks: {
+      // CC§15
+      ...(hold && {
+        PreToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [
+              {
+                type: 'command',
+                command: `bash ${quote(hold.script)} ${quote(regDir)} ${quote(tabId)} ${hold.event}`,
+                timeout: HOLD_HOOK_TIMEOUT_S
+              }
+            ]
+          }
+        ]
+      }),
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
       SessionEnd: [{ hooks: [{ type: 'command', command: cmd('end') }] }],
       UserPromptSubmit: [{ hooks: [{ type: 'command', command: cmd('prompt') }] }],
@@ -505,11 +552,20 @@ export function writeTabHookSettings(
   tabId: string,
   statusLine?: StatusLineSetting,
   allowKoloft = false,
-  conductor = false
+  conductor = false,
+  holdWhileBusy = false
 ): string {
   fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
-  const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
+  const settings = hookSettings(
+    paths.hookScript,
+    paths.regDir,
+    tabId,
+    statusLine,
+    shq,
+    'wait-for-answer',
+    holdWhileBusy ? { script: paths.hold, event: 'hold' } : undefined
+  )
   // CC§13
   if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
   // CC§13 ADR-0028

@@ -35,7 +35,7 @@ import {
   REMOTE_HOOK_DIR,
   tabPackageDir
 } from '../remote/paths'
-import { hookSettings, KOLOFT_ALLOW_RULE, removeConductorMarker } from '../hooks'
+import { HOLD_FILE, hookSettings, KOLOFT_ALLOW_RULE, removeConductorMarker } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
@@ -829,6 +829,7 @@ export class ClaudeBackend implements SessionBackend {
     const host = this.d.hosts.of(root)
     if (opts.worktree && !opts.scheduled && !opts.resumeSessionId) await host.trustFolder(root)
     return this.createTab(host, {
+      tabId: opts.tabId,
       root,
       resumeSessionId: opts.resumeSessionId,
       worktree: opts.worktree,
@@ -968,7 +969,7 @@ export class ClaudeBackend implements SessionBackend {
 
   private async createTab(
     host: Host,
-    spec: ClaudeLaunch & { cols?: number; rows?: number; trustFolder?: boolean }
+    spec: ClaudeLaunch & { tabId?: string; cols?: number; rows?: number; trustFolder?: boolean }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const workspaces = this.d.workspaces()
@@ -981,6 +982,7 @@ export class ClaudeBackend implements SessionBackend {
     if (!plan.ok) return plan
     const machine = plan.machine
     const handle = this.d.pty.create({
+      id: spec.tabId,
       kind: 'claude',
       koloftShim: {
         hookSettings: (tabId) =>
@@ -1068,7 +1070,8 @@ export function machineHookSettings(
   tabId: string,
   machineDir: string,
   statusline: boolean,
-  allowKoloft: boolean
+  allowKoloft: boolean,
+  holdWhileBusy = false
 ): Record<string, unknown> {
   const remoteStatusLine: StatusLineSetting | undefined = statusline
     ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
@@ -1079,7 +1082,8 @@ export function machineHookSettings(
     tabId,
     remoteStatusLine,
     dq,
-    'record-only'
+    'record-only',
+    holdWhileBusy ? { script: `${machineDir}/${HOLD_FILE}`, event: 'hold-self' } : undefined
   )
   // CC§13
   if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE

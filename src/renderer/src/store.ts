@@ -15,6 +15,7 @@ import {
   type SessionWorkbenchState,
   type LoginProgress,
   type LeftoverProcess,
+  type MachineState,
   type SessionInfo,
   type TabKind,
   type Settings,
@@ -141,6 +142,7 @@ interface AppState {
   resumeDialog: ResumeDialogState | null
   resumeLaunch: { id: string; title: string } | null
   cron: CronState
+  machine: MachineState | null
   closeConfirm: {
     tabId: string
     title: string
@@ -169,6 +171,7 @@ interface AppState {
   addTab: (t: Tab) => void
   addTabQuiet: (t: Tab) => void
   setCron: (s: CronState) => void
+  setMachine: (s: MachineState | null) => void
   adoptTabs: (tabs: AdoptableTab[], activeTabBeforeReload: string | null) => void
   removeTab: (id: string) => void
   closeTab: (id: string) => void
@@ -554,6 +557,7 @@ export const useStore = create<AppState>((set, get) => ({
   resumeLaunch: null,
   closeConfirm: null,
   cron: { jobs: [], live: [], folders: {}, notes: {} },
+  machine: null,
   unsavedPrompt: null,
   butlerTab: null,
   assistTasks: [],
@@ -583,6 +587,7 @@ export const useStore = create<AppState>((set, get) => ({
     )
   },
   setCron: (cron) => set({ cron }),
+  setMachine: (machine) => set({ machine }),
   adoptTabs: (tabs, activeTabBeforeReload) => {
     const fresh = tabs.filter((a) => !get().tabs.some((t) => t.id === a.id))
     if (!fresh.length) {

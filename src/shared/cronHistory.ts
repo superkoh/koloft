@@ -44,6 +44,7 @@ export function histEnd(h: HistoryLine): number {
 }
 
 export const LIVE_WORDS: Record<LiveRun['state'], string> = {
+  queued: 'queued — waiting for the machine',
   launching: 'starting',
   running: 'working',
   done: 'done — waiting for you'

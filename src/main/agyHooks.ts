@@ -3,10 +3,16 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { record } from './codexObservation'
 import {
+  HOLD_FILE,
+  HOLD_TAB_ENV,
   QUOTED_PROMPT_BYTES,
   REPLY_LANGUAGE_AFTER_QUOTE,
-  REPLY_LANGUAGE_BEFORE_QUOTE
+  REPLY_LANGUAGE_BEFORE_QUOTE,
+  type HoldEvent,
+  type HoldScript
 } from './hooks'
+import { HOLD_HOOK_TIMEOUT_S } from './resourceGuard'
+import { REMOTE_HOOK_DIR } from './remote/paths'
 
 export const AGY_LOG_ENV = 'KOLOFT_AGY_LOG'
 export const AGY_START_ENV = 'KOLOFT_AGY_START'
@@ -74,15 +80,32 @@ export function runWithSh(file: string): string {
   return `/bin/sh ${shq(file)}`
 }
 
+const holdCommand = (file: string, regDir: string, event: HoldEvent): string =>
+  `bash ${file} ${regDir} "$${HOLD_TAB_ENV}" ${event}`
+
+// ADR-0043
+export const localAgyHold = ({ file, regDir }: HoldScript): string =>
+  holdCommand(shq(file), shq(regDir), 'hold')
+
+// ADR-0043
+export const machineAgyHold = (machineDir: string): string =>
+  holdCommand(`"${machineDir}/${HOLD_FILE}"`, `"${REMOTE_HOOK_DIR}"`, 'hold-self')
+
 // AGY§12
-export function koloftHookEntry(runScript: string): Record<string, unknown> {
+export function koloftHookEntry(runScript: string, hold?: string): Record<string, unknown> {
   const command = (event: AgyHookName): string => `${runScript} ${event}`
   const flat = (event: AgyHookName): unknown[] => [{ type: 'command', command: command(event) }]
-  const matched = (event: AgyHookName): unknown[] => [{ matcher: '*', hooks: flat(event) }]
+  const matched = (event: AgyHookName, ...more: unknown[]): unknown[] => [
+    { matcher: '*', hooks: [...flat(event), ...more] }
+  ]
   return {
     SessionStart: flat('SessionStart'),
     PreInvocation: flat('PreInvocation'),
-    PreToolUse: matched('PreToolUse'),
+    // AGY§12
+    PreToolUse: matched(
+      'PreToolUse',
+      ...(hold ? [{ type: 'command', command: hold, timeout: HOLD_HOOK_TIMEOUT_S }] : [])
+    ),
     PostToolUse: matched('PostToolUse'),
     Stop: flat('Stop')
   }

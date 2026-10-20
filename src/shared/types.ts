@@ -506,6 +506,7 @@ export interface BackendAvailability {
 export type LaunchPermission = 'default' | 'acceptEdits' | 'bypass'
 
 export interface CreateTabOptions {
+  tabId?: string
   worktreeResourceId?: string
   kind: TabKind
   cwd?: string
@@ -527,6 +528,32 @@ export interface CreateTabOptions {
   ownerWords?: string
   conductor?: boolean
   trustFolder?: boolean
+}
+
+export interface QueuedLaunch {
+  tabId: string
+  kind: BackendId
+  cwd: string
+  title: string
+  jobId?: string
+  since: number
+}
+
+export interface HeldCommand {
+  since: number
+  command: string
+}
+
+export interface MachineState {
+  busy: boolean
+  pressure: number | null
+  load1: number
+  cores: number
+  queued: QueuedLaunch[]
+  held: Record<string, HeldCommand>
+  background: string[]
+  memory: Record<string, number>
+  sharedVmBytes: number
 }
 
 export type CreateTabResult =
@@ -1335,6 +1362,12 @@ export interface KoloftApi {
     onState(cb: (s: CronState) => void): () => void
     onToast(cb: (text: string) => void): () => void
   }
+  machine: {
+    onState(cb: (s: MachineState) => void): () => void
+    now(): Promise<MachineState | null>
+    free(tabId: string): Promise<boolean>
+    drop(tabId: string): Promise<boolean>
+  }
   conductors: {
     bind(channel: DiscordChannel): Promise<ConductorSaveResult>
     bindNewChannel(): Promise<ConductorSaveResult>
@@ -1404,7 +1437,7 @@ export interface CronFile {
   jobs: CronJob[]
 }
 
-export type LiveState = 'launching' | 'running' | 'done'
+export type LiveState = 'queued' | 'launching' | 'running' | 'done'
 
 export interface LiveRun {
   jobId: string

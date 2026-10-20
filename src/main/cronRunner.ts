@@ -38,6 +38,7 @@ import {
   type Due
 } from './cronScheduler'
 import type { TidyResult } from './sessionClose'
+import type { LaunchOutcome } from './launchQueue'
 
 const MAX_WORKTREE_NAME = 64
 const STAMP_LEN = 12
@@ -75,7 +76,8 @@ export async function worktreeNameFor(
   return withSuffix(base, `-${randomBytes(2).toString('hex')}`)
 }
 
-export type LaunchResult = { ok: true; tabId: string } | { ok: false }
+export type LaunchResult =
+  { ok: true; tabId: string; startsLater?: Promise<LaunchOutcome> } | { ok: false }
 
 export interface LeftTab {
   treeRoot?: string
@@ -97,6 +99,7 @@ export interface LaunchRequest {
   permission: LaunchPermission
   firstPrompt: string
   name: string
+  manual: boolean
 }
 
 type MaybeAsync<T> = T | Promise<T>
@@ -429,7 +432,8 @@ export class CronRunner {
         effort: job.effort,
         permission: LAUNCH_PERMISSION[job.permission],
         firstPrompt: job.task,
-        name: job.name
+        name: job.name,
+        manual
       })
       if (!res.ok) {
         this.fail(job, dueAt, mark, `${BACKEND_LABEL[backend]} exited before it started`)
@@ -438,15 +442,17 @@ export class CronRunner {
       const run: LiveRun = {
         jobId: job.id,
         tabId: res.tabId,
-        state: 'launching',
+        state: res.startsLater ? 'queued' : 'launching',
         startedAt: this.d.now(),
         dueAt,
         ...(worktree ? { worktree } : {}),
         ...mark
       }
       this.live.set(res.tabId, run)
-      this.d.toast(`⏰ ${job.name} started`)
-      this.armTimer(res.tabId, this.d.bindDeadlineMs, () => this.onDeadline(res.tabId))
+      if (res.startsLater) {
+        this.d.toast(`⏰ ${job.name} queued: the machine is busy`)
+        void res.startsLater.then((outcome) => this.leftTheQueue(run, outcome))
+      } else this.launched(job, run)
       this.refreshFolders()
       this.push()
       return { ok: true }
@@ -483,6 +489,37 @@ export class CronRunner {
     if (t === undefined) return
     this.d.clearTimeout(t)
     this.timers.delete(tabId)
+  }
+
+  private launched(job: CronJob, run: LiveRun): void {
+    this.d.toast(`⏰ ${job.name} started`)
+    this.armTimer(run.tabId, this.d.bindDeadlineMs, () => this.onDeadline(run.tabId))
+  }
+
+  private leftTheQueue(run: LiveRun, outcome: LaunchOutcome): void {
+    if (this.live.get(run.tabId) !== run || run.state !== 'queued') return
+    const job = this.byId(run.jobId)
+    if (outcome === 'started') {
+      run.state = 'launching'
+      if (job) this.launched(job, run)
+      this.push()
+      return
+    }
+    this.live.delete(run.tabId)
+    this.refreshFolders()
+    if (!job) return this.push()
+    if (outcome === 'failed')
+      return this.fail(
+        job,
+        run.dueAt,
+        run.manual ? MANUAL : {},
+        `${BACKEND_LABEL[cronBackend(job)]} exited before it started`
+      )
+    this.writeHistory(job, {
+      ...lineOf(run),
+      state: 'closed',
+      note: 'taken off the queue before it started'
+    })
   }
 
   private onDeadline(tabId: string): void {

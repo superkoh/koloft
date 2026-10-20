@@ -1879,7 +1879,14 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   `hook_event_name`, `tool_name`, `tool_input` (`file_path` absolute for Write and Edit)
   and `tool_use_id`. The auto-memory folder is `memory/` beside that transcript (seen
   for Koloft's global conductor).
-- Not run: a `Task` subagent's own tool calls under the hook.
+- **A hook may hold the call for minutes, and a subagent's calls go through it too.**
+  2026-10-19, CC 2.1.304, `claude -p` (haiku, an empty MCP config, a temp folder), a
+  `PreToolUse` hook on `Bash` that slept, then exited 0 printing nothing: with no
+  `timeout` key a 75 s sleep, and with `"timeout": 900` a 130 s sleep, both let the
+  command run (`echo hi > out.txt` written), the turn finished normally (80 s, 135 s) and
+  the reply showed nothing of the wait. A general-purpose subagent asked to run the same
+  command fired the hook with `agent_id` and `agent_type` in its input; a 20 s hold there
+  let it run too. The default `timeout` was not found (it is at least 75 s).
 - **A hook that cannot run lets the call through unless `onFailure: "block"` is set.**
   Since 2.1.295 a command or HTTP hook entry takes `onFailure: "continue" | "block"`,
   default `continue` (read from the 2.1.296 binary, 2026-10-11, not run): a hook that

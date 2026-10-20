@@ -571,6 +571,17 @@ Nothing ran against Google's real servers.
     whole.
   - `PreInvocation` printing `{"injectSteps":[{"ephemeralMessage":"…"}]}` adds it as
     the last user content of that one request; copies do not pile up.
+- **A `PreToolUse` hook gets about 30 s unless its entry sets `timeout` (seconds), and one
+  that runs out DENIES the tool.** 1.4.2 Linux arm64 in Docker, fake model, `-p …
+  --dangerously-skip-permissions --output-format json`, a hook that slept then exited 0
+  printing nothing before a `run_command`, 2026-10-19: a 75 s sleep with no `timeout` and a
+  20 s sleep with `"timeout": 5` were cut at ~30 s and ~5 s, the command did not run, and
+  the model read `Encountered error in tool execution: JSON hook
+  "jsonhook__wait_PreToolUse_0_0" failed: command failed: signal: killed` (`-p` still exit
+  0). The hook's own `node` process lived on after that kill and wrote its "released"
+  line later. A 130 s sleep with `"timeout": 3600` let the command run (130 s). No model
+  request was made while a hook held. Not run on the Mac build (it would sign in through
+  the owner's browser and keychain).
 
 ## §13 Tools
 
