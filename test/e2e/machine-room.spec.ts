@@ -16,7 +16,7 @@ const settingsOf = (env: E2EEnv, tabId: string): { hooks: Record<string, unknown
   JSON.parse(fs.readFileSync(path.join(env.userData, 'hooks', 'settings', `${tabId}.json`), 'utf8'))
 
 test.describe('while the Mac is busy, a session started for someone else waits for the machine', () => {
-  test('a session another one starts queues, starts once background work stops keeping the Mac busy, and only it waits before its commands; the owner frees it from the row', async ({
+  test('a session another one starts queues, a Claude caller is told to reach it with SendMessage once it starts, it starts once background work stops keeping the Mac busy, and only it waits before its commands; the owner frees it from the row', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -49,6 +49,14 @@ test.describe('while the Mac is busy, a session started for someone else waits f
       await queued.click({ button: 'right' })
       await expect(page.locator('.menu .mi')).toHaveText(['Start now', 'Close'])
       await page.keyboard.press('Escape')
+
+      await page.evaluate(
+        (id) => window.api.terminal.write(id!, '/koloft session send helper keep it short\r'),
+        owner
+      )
+      await expect
+        .poll(() => terminalText(page, owner!), { timeout: 30_000 })
+        .toContain('once it starts, talk to it with SendMessage to "helper"')
 
       fs.writeFileSync(machine, JSON.stringify({ pressure: 2, load1: 1, backgroundWork: false }))
       await expect(page.locator('.ws-tab.st-queued')).toHaveCount(0, { timeout: 20_000 })

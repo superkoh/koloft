@@ -1527,7 +1527,7 @@ const sessionDeps: SessionVerbDeps = {
   },
   waiting: {
     list: () => guard?.queue.list() ?? [],
-    hold: (tabId, message) => !!guard?.queue.hold(tabId, message),
+    hold: (tabId, send) => !!guard?.queue.hold(tabId, send),
     drop: (tabId) => !!guard?.queue.drop(tabId)
   },
   assist,
@@ -4497,10 +4497,7 @@ async function handOverHeldMessages(tabId: string): Promise<void> {
   const held = guard?.queue.takeHeld(tabId) ?? []
   if (!held.length) return
   if (!(await tabReady(tabId, HELD_MESSAGES_WAIT_FOR_THE_FIRST_TURN_MS, true))) return
-  for (const text of held) {
-    if (await sessionDeps.deliver(tabId, text)) continue
-    await sendPeerLine(tabId, text, HELD_MESSAGES_WAIT_FOR_THE_FIRST_TURN_MS).catch(() => undefined)
-  }
+  for (const send of held) await send().catch(() => undefined)
 }
 
 function remoteHookMirrors(): string[] {

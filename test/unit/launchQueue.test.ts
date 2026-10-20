@@ -104,13 +104,15 @@ describe('a background launch waits its turn', () => {
     const { q, launch } = setup(true)
     let finish!: (id: string) => void
     launch('a', () => new Promise((resolve) => (finish = resolve)))
-    expect(q.hold('a', 'one')).toBe(true)
+    const one = async (): Promise<string> => 'one'
+    const two = async (): Promise<string> => 'two'
+    expect(q.hold('a', one)).toBe(true)
     q.startNow('a')
-    expect(q.hold('a', 'two')).toBe(true)
-    expect(q.hold('not-queued', 'x')).toBe(false)
+    expect(q.hold('a', two)).toBe(true)
+    expect(q.hold('not-queued', one)).toBe(false)
     finish('a')
     await settled()
-    expect(q.hold('a', 'late')).toBe(false)
-    expect(q.takeHeld('a')).toEqual(['one', 'two'])
+    expect(q.hold('a', one)).toBe(false)
+    expect(q.takeHeld('a')).toEqual([one, two])
   })
 })

@@ -340,7 +340,7 @@ export async function findClosable(
 
 export interface WaitingLaunches {
   list(): QueuedLaunch[]
-  hold(tabId: string, message: string): boolean
+  hold(tabId: string, sendOnceStarted: () => Promise<unknown>): boolean
   drop(tabId: string): boolean
 }
 
@@ -1155,7 +1155,17 @@ export function sessionVerb(d: SessionVerbDeps): {
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const said = sessionSays(caller.session, text)
       const queued = queuedStartedBy(d, caller.session, ref)
-      if (queued && d.waiting.hold(queued.tabId, said))
+      if (
+        queued &&
+        reachedBySendMessage(queued.kind) &&
+        reachedBySendMessage(caller.session.backendId)
+      )
+        return refused(
+          `koloft session send: "${queued.title}" is still queued for the machine; once it starts, talk to it with SendMessage to "${queued.title}".`
+        )
+      const sendOnceStarted = async (): Promise<AgentReply> =>
+        verb(['send', queued?.tabId ?? ref, text], caller)
+      if (queued && d.waiting.hold(queued.tabId, sendOnceStarted))
         return answered(
           `"${queued.title}" is still queued for the machine; your message is kept and handed to it once it starts.`
         )

@@ -15,6 +15,7 @@ export interface LaunchQueueDeps {
 }
 
 export type LaunchOutcome = 'started' | 'dropped' | 'failed'
+export type HeldSend = () => Promise<unknown>
 
 export interface InTurn {
   tabId: string
@@ -27,7 +28,7 @@ export class LaunchQueue {
   private entries: Entry[] = []
   private starting = new Set<string>()
   private dropped = new Set<string>()
-  private held = new Map<string, string[]>()
+  private held = new Map<string, HeldSend[]>()
   private nextLaunchAt = 0
 
   constructor(private d: LaunchQueueDeps) {}
@@ -92,15 +93,15 @@ export class LaunchQueue {
     return true
   }
 
-  hold(tabId: string, message: string): boolean {
+  hold(tabId: string, send: HeldSend): boolean {
     if (!this.has(tabId)) return false
     const pile = this.held.get(tabId)
-    if (pile) pile.push(message)
-    else this.held.set(tabId, [message])
+    if (pile) pile.push(send)
+    else this.held.set(tabId, [send])
     return true
   }
 
-  takeHeld(tabId: string): string[] {
+  takeHeld(tabId: string): HeldSend[] {
     const pile = this.held.get(tabId) ?? []
     this.held.delete(tabId)
     return pile

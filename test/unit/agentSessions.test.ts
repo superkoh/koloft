@@ -112,7 +112,7 @@ function harness(
   undelivered: { callerTab: string; name: string; why: string }[]
   startedSessions: StartedSessions
   waiting: QueuedLaunch[]
-  held: { tabId: string; message: string }[]
+  held: { tabId: string; send: () => Promise<unknown> }[]
 } {
   const answers: { tabId: string; reply: string }[] = []
   const commands: { callerTab: string; key: string; text: string }[] = []
@@ -129,7 +129,7 @@ function harness(
   const stopped: string[] = []
   const started: Started[] = []
   const waiting: QueuedLaunch[] = []
-  const held: { tabId: string; message: string }[] = []
+  const held: { tabId: string; send: () => Promise<unknown> }[] = []
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-started-'))
   const startedSessions = new StartedSessions(() => path.join(dir, 'started-sessions.json'))
   const inner = sessionVerb({
@@ -154,9 +154,9 @@ function harness(
     },
     waiting: {
       list: () => waiting,
-      hold: (tabId, message) => {
+      hold: (tabId, send) => {
         if (!waiting.some((q) => q.tabId === tabId)) return false
-        held.push({ tabId, message })
+        held.push({ tabId, send })
         return true
       },
       drop: (tabId) => {
@@ -1822,14 +1822,32 @@ describe('a session started while the machine is busy waits in a queue', () => {
     )
   })
 
-  it('a message to it is kept for when it starts, and closing it takes it off the queue', async () => {
-    const h = harness([session('me', 'claude')], {}, [], { busy: true })
-    await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('me'))
+  it('a message to it is kept and, once it has started, sent the way any message to an open session is', async () => {
+    const sessions = [session('me', 'codex')]
+    const h = harness(sessions, {}, [], { busy: true })
+    await h.verb(['new', '--', 'Run the tests.'], from('me'))
     const sent = await h.verb(['send', 'new-tab', 'Also lint.'], from('me'))
     expect(sent.text).toContain('is still queued for the machine; your message is kept')
-    expect(h.held).toHaveLength(1)
-    expect(h.held[0].message).toContain('Also lint.')
     expect(h.queued).toEqual([])
+    h.waiting.splice(0)
+    sessions.push(session('new-tab', 'codex'))
+    await h.held[0].send()
+    expect(h.queued).toHaveLength(1)
+    expect(h.queued[0].tabId).toBe('new-tab')
+    expect(h.queued[0].text).toContain('Also lint.')
+  })
+
+  it('a Claude session messaging a queued Claude session is told to use SendMessage once it starts, nothing is kept', async () => {
+    const h = harness([session('me', 'claude')], {}, [], { busy: true })
+    await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('me'))
+    const sent = await h.verb(['send', 'tests', 'Also lint.'], from('me'))
+    expect(sent.text).toContain('once it starts, talk to it with SendMessage to "tests"')
+    expect(h.held).toEqual([])
+  })
+
+  it('closing a queued session takes it off the queue', async () => {
+    const h = harness([session('me', 'claude')], {}, [], { busy: true })
+    await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('me'))
     const closed = await h.verb(['close', 'tests'], from('me'))
     expect(closed.text).toBe('Took "tests" off the queue; it will not start.')
     expect(h.waiting).toEqual([])
