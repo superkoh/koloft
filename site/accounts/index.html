@@ -46,7 +46,7 @@
           <a href="../#palette">⌘P</a>
           <a href="../#sessions">Sessions</a>
           <a href="../#workbench">Workbench</a>
-          <a href="../#assist">Assist</a>
+          <a href="../#assist">Butler</a>
           <a href="../features/">Features</a>
           <a href="../sessions/" aria-current="page">Docs</a>
           <a href="../changelog/">Changelog</a>
@@ -261,12 +261,13 @@
           the next launch.
         </p>
 
-        <h2 id="assist">Assist</h2>
+        <h2 id="assist">Assist and your butler</h2>
         <p>
           <mark class="hl">Assist</mark> is Koloft's own AI. One of your accounts runs it. It does
-          small jobs for Koloft, and you can talk to it. Settings ▸ Assist is where you turn it on
-          or off and pick the agent it runs on: Claude, Codex, Muse or Antigravity. That one pick
-          counts for the small jobs and for every Assist you talk to.
+          small jobs for Koloft, and it runs your butler, the AI you talk to. Settings ▸ Assist has
+          three rows: <code>Koloft Assist</code> turns the small jobs on or off;
+          <code>Runs on</code> picks the agent, Claude, Codex, Muse or Antigravity, for the small
+          jobs and for your butler; <code>Name</code> is your butler's name.
         </p>
         <p>The small jobs:</p>
         <ul class="dash">
@@ -280,25 +281,6 @@
             <a href="../sessions/#find">find any session</a>)
           </li>
         </ul>
-        <p>Talking to it:</p>
-        <ul class="dash">
-          <li>
-            the Assist block in the sidebar, under the sessions list. It is always there, Discord or
-            not. Global comes first; it looks after every folder. Then each folder's Assist you have
-            talked to or bound to Discord (right-click the folder ▸ Talk to Assist). Then the tasks
-            Assist is running for you, such as setting up Discord. With Assist off and nothing bound
-            to Discord, it shows one grey Assist row; click it to set Assist up.
-          </li>
-          <li>
-            from your phone, once an Assist has a Discord channel (see
-            <a href="../discord/">discord</a>)
-          </li>
-          <li>from <kbd>⌘P</kbd> (see <a href="../sessions/#find">find any session</a>)</li>
-        </ul>
-        <p>
-          Assist only passes work on and never changes your files itself (see
-          <a href="../discord/#what-assist-can-do">what Assist can do</a>).
-        </p>
         <ul class="dash">
           <li>
             on Claude it uses Haiku, on Codex GPT-6 Luna, on Muse and Antigravity their default
@@ -306,9 +288,65 @@
             far less than one cent
           </li>
           <li>
-            with Assist off, the small jobs run without AI: a session an agent starts is named after
-            the first line of its task, the card lists every doc the agent wrote, and
-            <kbd>⌘P</kbd> opens the folder picker. An Assist on Discord keeps working either way.
+            with Koloft Assist off, the small jobs run without AI: a session an agent starts is
+            named after the first line of its task, the card lists every doc the agent wrote, and
+            <kbd>⌘P</kbd> opens the folder picker. Your butler keeps working either way.
+          </li>
+        </ul>
+
+        <h3 id="butler">Your butler</h3>
+        <figure class="shot" style="--ar: 930 / 340; --w: min(465px, 100cqw)">
+          <div class="frame">
+            <img
+              src="../img/u-butler-menu.webp"
+              width="930"
+              height="340"
+              loading="lazy"
+              alt="The top of the sessions list: the row Alfred · Butler, with #global under it, above the tidewatch folder. Its right-click menu is open: Open, Rename…, Start a fresh conversation, Change Discord channel…, Unbind Discord."
+            />
+          </div>
+          <figcaption>your butler, first in the sessions list, with its menu open</figcaption>
+        </figure>
+        <p>
+          Your <mark class="hl">butler</mark> is the AI you talk to in Koloft. It is called Alfred
+          until you give it another name. It is one session, on the agent Settings ▸ Assist ▸ Runs
+          on picks, and it runs on your Mac in a folder of its own, not in one of your projects.
+          Tell it what you want and it reaches your sessions for you: it starts, reads, messages,
+          answers and closes them, in every folder. It follows your
+          <code>Skip permission prompts</code> setting like any session.
+        </p>
+        <ul class="dash">
+          <li>
+            Its row, <code>Alfred · Butler</code>, is the first row of the sessions list. Under the
+            name is its Discord channel, or <code>not on Discord</code>. Before Assist is set up,
+            the row is grey and says <code>Not set up — click to start</code>.
+          </li>
+          <li>
+            Click the row to open it. Right-click it for <code>Open</code>, <code>Rename…</code>,
+            <code>Start a fresh conversation</code>, and <code>Bind Discord channel…</code> (or
+            <code>Change Discord channel…</code> and <code>Unbind Discord</code> once it has one).
+          </li>
+          <li>
+            <code>Rename…</code> (or Settings ▸ Assist ▸ Name) changes the name in its row, in the
+            note's title and on Discord. Other sessions still reach it by every name it has had.
+          </li>
+          <li>
+            Side jobs it does through helpers: a session it starts without naming a folder runs in
+            the butler's own folder, hangs under its row, and reports back to it when done.
+          </li>
+          <li>
+            When the session tab you are looking at goes away (you close it, it exits, or it
+            crashes), Koloft shows your butler, opening it if it was not open, once the butler is
+            set up. Closing the butler's own tab goes back to the tab before.
+          </li>
+          <li>
+            Like any session it goes to sleep after a quiet half hour, unless it has a Discord
+            channel or is marked <a href="../sessions/#keep-running">Keep running</a>.
+          </li>
+          <li>
+            You can also talk to it from your phone, once it has a Discord channel (see
+            <a href="../discord/">discord</a>), and from <kbd>⌘P</kbd> (see
+            <a href="../sessions/#find">find any session</a>).
           </li>
         </ul>
 
