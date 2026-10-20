@@ -102,4 +102,23 @@ describe("claude's own session registry: the socket a session takes messages on"
     expect(await waiting).toBe('/tmp/cc-socks/29948.sock')
     expect(await whenMessagingSocket('not-running', 100, dir, startOf)).toBeNull()
   })
+
+  it('finds the first claude ever run on this Mac, whose registry folder did not exist yet when Koloft began to wait', async () => {
+    const startOf = async (): Promise<string | null> => START
+    const later = path.join(dir, 'sessions')
+    const waiting = whenMessagingSocket(SID, 60_000, later, startOf)
+    await new Promise((r) => setTimeout(r, 50))
+    fs.mkdirSync(later)
+    fs.writeFileSync(
+      path.join(later, '29948.json'),
+      JSON.stringify({
+        pid: 29948,
+        sessionId: SID,
+        procStart: START,
+        messagingSocketPath: '/tmp/cc-socks/29948.sock'
+      })
+    )
+    const soon = new Promise((r) => setTimeout(() => r('still waiting'), 5_000))
+    expect(await Promise.race([waiting, soon])).toBe('/tmp/cc-socks/29948.sock')
+  })
 })
