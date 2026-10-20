@@ -3,6 +3,7 @@ import type { SessionInfo } from '../../src/shared/types'
 import {
   githubVerb,
   GH_JQ_READS_ENV,
+  GH_PASSES_THROUGH,
   GH_REFUSED,
   GH_USAGE,
   repoFlagOf
@@ -59,6 +60,18 @@ describe('koloft gh', () => {
     expect(await call(args)).toEqual({ text: GH_JQ_READS_ENV, exit: 1 })
     expect(ran).toEqual([])
   })
+
+  it.each([
+    ['git, as repo clone does', ['repo', 'clone', 'o/r', 'x', '--', '--upload-pack=env']],
+    ['ssh, as codespace ssh does', ['codespace', 'ssh', '--', '-o', 'ProxyCommand=env']]
+  ])(
+    'refuses words after -- that gh hands to %s, which runs with the sign-in',
+    async (_n, args) => {
+      const { call, ran } = verb()
+      expect(await call(args)).toEqual({ text: GH_PASSES_THROUGH, exit: 1 })
+      expect(ran).toEqual([])
+    }
+  )
 
   it('lets a --jq filter read a field whose name only contains env', async () => {
     const { call, ran } = verb()

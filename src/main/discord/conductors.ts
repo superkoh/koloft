@@ -5,6 +5,7 @@ import type {
   AssistRecord,
   AssistTaskRow,
   BackendId,
+  ButlerSetting,
   ConductorBinding,
   ConductorOpenResult,
   ConductorSaveResult,
@@ -14,7 +15,13 @@ import type {
 } from '@shared/types'
 import { CannotMakeChannels, type NewChannel } from './link'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
-import { assistTaskName, GLOBAL_SCOPE, newerSnowflake, peerNamesOf } from '@shared/conductors'
+import {
+  assistTaskName,
+  butlerNames,
+  GLOBAL_SCOPE,
+  newerSnowflake,
+  peerNamesOf
+} from '@shared/conductors'
 import { assistTaskRole, butlerRole } from '@shared/agentGuide'
 import { errorText } from '../agentRequests'
 import { realpathSafe } from '../projectInfo'
@@ -44,8 +51,7 @@ export interface AssistIdentity {
 
 export interface ConductorDeps {
   userData: string
-  name(): string
-  formerNames(): string[]
+  butler(): ButlerSetting
   load(): DiscordSettings
   loadRecords(): AssistRecord[]
   save(discord: DiscordSettings): void
@@ -174,7 +180,7 @@ export class Conductors {
 
   isButler(ref: string): boolean {
     return (
-      [this.d.name(), ...this.d.formerNames()].some((name) => peerNamesOf(name).includes(ref)) ||
+      butlerNames(this.d.butler()).some((name) => peerNamesOf(name).includes(ref)) ||
       this.recorded(ref)
     )
   }
@@ -243,7 +249,7 @@ export class Conductors {
   }
 
   private role(): string {
-    return butlerRole(this.d.name(), !!this.butlerBinding())
+    return butlerRole(this.d.butler().name, !!this.butlerBinding())
   }
 
   touch(tabId: string, key: string): void {
@@ -441,7 +447,7 @@ export class Conductors {
   private launchFor(backend: BackendId): ConductorLaunch {
     const cwd = conductorFolder(this.d.userData)
     fs.mkdirSync(cwd, { recursive: true })
-    return { backend, cwd, role: this.role(), title: this.d.name() }
+    return { backend, cwd, role: this.role(), title: this.d.butler().name }
   }
 
   private async openNow(): Promise<ConductorOpenResult> {
@@ -501,7 +507,7 @@ export class Conductors {
   ): Promise<ConductorOpenResult> {
     if (choice.because) this.d.toast(choice.because)
     if (!this.record()) this.changeRecord((r) => r)
-    const name = this.d.name()
+    const { name } = this.d.butler()
     const role = assistTaskRole(name, task.brief)
     const title = assistTaskName(name, task.name)
     const launch: ConductorLaunch = {

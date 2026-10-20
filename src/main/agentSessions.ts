@@ -161,10 +161,13 @@ function workspaceLabel(wsPath: string): string {
 
 interface PlacedRow {
   workspace: string
+  shownAs: string
   row: SessionRow
   title: string
   live?: SessionInfo
 }
+
+const THE_BUTLERS_FOLDER = "the butler's own folder"
 
 function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): PlacedRow[] {
   return sidebar.flatMap((w) =>
@@ -172,7 +175,13 @@ function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): PlacedRo
       .filter((row) => !row.pending)
       .map((row) => {
         const live = sessions.find((s) => s.alive && s.sessionId === row.id)
-        return { workspace: w.workspace.path, row, title: live?.title ?? row.title, live }
+        return {
+          workspace: w.workspace.path,
+          shownAs: w.workspace.butler ? THE_BUTLERS_FOLDER : workspaceLabel(w.workspace.path),
+          row,
+          title: live?.title ?? row.title,
+          live
+        }
       })
   )
 }
@@ -190,7 +199,7 @@ function rowLines(
   now: number,
   asking: (tabId: string) => boolean
 ): string[] {
-  return placed.map(({ workspace, row, title, live: info }, i) => {
+  return placed.map(({ workspace, shownAs, row, title, live: info }, i) => {
     const parts = [
       title,
       BACKEND_LABEL[row.backendId],
@@ -201,7 +210,7 @@ function rowLines(
     ]
     if (names[i]) parts.push(`name: ${names[i]}`)
     parts.push(...starterPart(starters[i]))
-    if (withWorkspace) parts.push(`workspace: ${workspaceLabel(workspace)}`)
+    if (withWorkspace) parts.push(`workspace: ${shownAs}`)
     return parts.join(' · ')
   })
 }
@@ -929,9 +938,27 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (!to) return
     const session = d.allSessions().find((s) => s.tabId === tabId)
     if (!session) return
-    deliver('send', to, sessionSays(session, turn.reply), { tabId, session }, false)
-      .then((reply) => reply.exit === 0 || d.undelivered(tabId, to, reply.text))
-      .catch((error: unknown) => d.undelivered(tabId, to, errorText(error)))
+    deliverOrReport({ tabId, session }, to, sessionSays(session, turn.reply))
+  }
+
+  const deliverOrReport = (
+    from: Pick<AgentCaller, 'tabId' | 'session'>,
+    to: Target,
+    text: string
+  ): void =>
+    void deliver('send', to, text, from, false)
+      .then((reply) => reply.exit === 0 || d.undelivered(from.tabId, to, reply.text))
+      .catch((error: unknown) => d.undelivered(from.tabId, to, errorText(error)))
+
+  const commandFrom = (caller: AgentCaller, text: string, into?: Target): Promise<string> => {
+    const butler = d.conductorOf(caller.session.sessionId)
+    const me =
+      butler?.tabId === caller.tabId
+        ? butler
+        : openTarget({ ...caller.session, tabId: caller.tabId })
+    return d.command(caller.tabId, into ?? me, text, (said) =>
+      deliverOrReport(caller, me, `${FROM_KOLOFT}${said}`)
+    )
   }
 
   const sessionAct = async (
@@ -962,16 +989,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     }
     const self = isMe(ref, caller.session, d.conductorOf(ref), caller.tabId)
     if (self && sub === 'screen') return answered(formatScreen('you', await d.screen(caller.tabId)))
-    const butler = d.conductorOf(caller.session.sessionId)
-    const me =
-      butler?.tabId === caller.tabId
-        ? butler
-        : openTarget({ ...caller.session, tabId: caller.tabId })
-    const tellMe = (said: string): void =>
-      void deliver('send', me, `${FROM_KOLOFT}${said}`, caller, false)
-        .then((reply) => reply.exit === 0 || d.undelivered(caller.tabId, me, reply.text))
-        .catch((error: unknown) => d.undelivered(caller.tabId, me, errorText(error)))
-    if (self && sub === 'command') return answered(await d.command(caller.tabId, me, text, tellMe))
+    if (self && sub === 'command') return answered(await commandFrom(caller, text))
     if (self) return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
     const found = d.conductorOf(ref) ?? findAmong(rows, sub, ref)
     if ('ok' in found && !found.ok) return refused(found.error)
@@ -987,7 +1005,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     }
     if (sub === 'keys' && !t.tabId) return refused(`koloft session keys: ${t.name} is not open.`)
     d.touch(caller.tabId, t.key)
-    if (sub === 'command') return answered(await d.command(caller.tabId, t, text, tellMe))
+    if (sub === 'command') return answered(await commandFrom(caller, text, t))
     if (sub === 'keys' && t.tabId) {
       const tab = t.tabId
       const owed = d.asking(tab) ? { owner: caller.session.sessionId } : undefined

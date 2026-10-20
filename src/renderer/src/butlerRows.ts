@@ -1,4 +1,17 @@
-import type { AssistSetting, AssistTaskRow, ConductorBinding, SessionInfo } from '@shared/types'
+import type {
+  AssistSetting,
+  AssistTaskRow,
+  ConductorBinding,
+  SessionInfo,
+  WorkspaceRows
+} from '@shared/types'
+
+export function everyWorkspaceRows(s: {
+  workspaceRows: WorkspaceRows[]
+  butlerWorkspace: WorkspaceRows | null
+}): WorkspaceRows[] {
+  return s.butlerWorkspace ? [...s.workspaceRows, s.butlerWorkspace] : s.workspaceRows
+}
 
 export function butlerSetUp(s: {
   assist: AssistSetting

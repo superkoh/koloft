@@ -72,6 +72,7 @@ import { basename } from '@shared/preview'
 import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
 import { ButlerRow } from './ButlerRow'
+import { everyWorkspaceRows } from '../butlerRows'
 import {
   discardAll,
   dirtyInWorkspace,
@@ -1006,7 +1007,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     if (!reveal) return
     const st = useStore.getState()
     const lookNow = rowLookups(st.sessions, st.tabs, st.attention)
-    for (const w of [...st.workspaceRows, ...(st.butlerWorkspace ? [st.butlerWorkspace] : [])]) {
+    for (const w of everyWorkspaceRows(st)) {
       const row = w.rows.find((r) => lookNow.tabOf(r) === reveal.tabId)
       if (!row) continue
       setCollapsed((c) => (c[w.workspace.path] ? { ...c, [w.workspace.path]: false } : c))
@@ -1046,8 +1047,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 
   const actions = useMemo<SidebarActions>(() => {
     const rowTarget = (id: string): Extract<MenuTarget, { kind: 'session' }> => {
-      const { workspaceRows, butlerWorkspace } = useStore.getState()
-      const w = [...workspaceRows, ...(butlerWorkspace ? [butlerWorkspace] : [])].find((w) =>
+      const w = everyWorkspaceRows(useStore.getState()).find((w) =>
         w.rows.some((r) => r.id === id)
       )!
       return { kind: 'session', wsPath: w.workspace.path, row: w.rows.find((r) => r.id === id)! }

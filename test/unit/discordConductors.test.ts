@@ -41,8 +41,7 @@ function make(): Conductors {
     }
   const deps: ConductorDeps = {
     userData,
-    name: () => name,
-    formerNames: () => formerNames,
+    butler: () => ({ name, formerNames }),
     load: () => saved,
     loadRecords: () => records,
     save: (d) => void (saved = d),

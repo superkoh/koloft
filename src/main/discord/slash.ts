@@ -76,6 +76,10 @@ export interface SlashDeps {
 
 export type SlashReplyTo = { channelId: string } | { tell(text: string): void }
 
+export function replyWhere(to: SlashReplyTo): string {
+  return 'channelId' in to ? 'post what it prints in Discord' : 'hand you what it prints'
+}
+
 interface Pending {
   target: SlashTarget
   text: string
@@ -148,7 +152,7 @@ export class SlashCommands {
 
   run(target: SlashTarget, text: string, to: SlashReplyTo): string {
     if (this.d.asking(target.tabId)) return waitingForAnswer(target.name, text)
-    const where = 'channelId' in to ? 'post what it prints in Discord' : 'hand you what it prints'
+    const where = replyWhere(to)
     const ack = this.d.takesTyping(target.tabId)
       ? `Typing ${text} into ${target.name}; Koloft will ${where}.`
       : `${target.name} is busy; Koloft will type ${text} once its turn ends, and ${where}.`

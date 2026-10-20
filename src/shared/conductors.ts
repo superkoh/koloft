@@ -41,6 +41,10 @@ export function butlerSetting(name: string, formerNames: string[]): ButlerSettin
   return { name, formerNames: [...new Set(formerNames)].filter((n) => n !== name) }
 }
 
+export function butlerNames(b: ButlerSetting): string[] {
+  return [b.name, ...b.formerNames]
+}
+
 export function renamedButler(current: ButlerSetting, typed: string): ButlerSetting {
   return butlerSetting(butlerName(typed), [...current.formerNames, current.name])
 }

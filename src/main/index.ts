@@ -99,6 +99,7 @@ import {
   guestMenuItems,
   isAppNavigation,
   isAttachmentResponse,
+  isUnderAnyRoot,
   jsDialogFor,
   standardUserAgent
 } from './browserSecurity'
@@ -427,7 +428,7 @@ import { secretVerb } from './agentSecret'
 import { SessionThreads } from './discord/threads'
 import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
-import { SlashCommands, type SlashTarget } from './discord/slash'
+import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
@@ -616,12 +617,17 @@ const slash = new SlashCommands({
     backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
       ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
       : undefined,
-  post: (to, text) => ('channelId' in to ? discordRelay?.say(to.channelId, text) : to.tell(text)),
+  post: slashReply,
   card: (to, card) =>
     'channelId' in to
       ? discordRelay?.card(to.channelId, card)
       : to.tell(`${card.header}\n${card.body}`)
 })
+
+function slashReply(to: SlashReplyTo, text: string): void {
+  if ('channelId' in to) discordRelay?.say(to.channelId, text)
+  else to.tell(text)
+}
 tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
   sessionBackends.observe(tabId, { type: 'turn-ended', turn })
 )
@@ -1314,8 +1320,11 @@ function projectRows(): WorkspaceRows[] {
   return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.butler)
 }
 
-function inButlerFolder(tabId: string): boolean {
-  return sessionBackends.workspaceOfTab(tabId) === conductorFolder(app.getPath('userData'))
+function butlerSide(tabId: string): boolean {
+  return (
+    !!conductors?.isButlerTab(tabId) ||
+    sessionBackends.workspaceOfTab(tabId) === conductorFolder(app.getPath('userData'))
+  )
 }
 
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
@@ -1337,10 +1346,7 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
       : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
   },
   notesFileOf: (tabId) => {
-    const scope =
-      conductors?.isButlerTab(tabId) || inButlerFolder(tabId)
-        ? GLOBAL_SCOPE
-        : sessionBackends.workspaceOfTab(tabId)
+    const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
     return scope ? notesFileOfScope(scope) : undefined
   }
 })
@@ -1552,7 +1558,7 @@ const sessionDeps: SessionVerbDeps = {
   command: async (callerTab, target, text, tellCaller) => {
     if (!conductors) throw new Error(STILL_STARTING)
     const b = conductors.bindingOfTab(callerTab)
-    if (!b) return commandHandedBack(target, text, tellCaller)
+    if (!b) return typeCommandInto(target, text, { tell: tellCaller })
     return target.butler ? commandIntoConductor(b, text) : commandInto(b, target, text)
   },
   screen: screenOf
@@ -1607,17 +1613,14 @@ const agentRequests = new AgentRequests({
       // PLATFORM§1 ADR-0036
       run: async (args, tabId, cwd) => {
         await loginEnvReady()
-        const workspace =
-          conductors?.isButlerTab(tabId) || inButlerFolder(tabId)
-            ? undefined
-            : sessionBackends.workspaceOfTab(tabId)
+        const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
         if (!workspace) {
           const pinned = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
           return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
         }
         const remote = parseRemoteKey(workspace)
         if (!remote) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
-        const inItsFolder = cwd.startsWith(remote.path)
+        const inItsFolder = isUnderAnyRoot(cwd, [remote.path])
           ? formatRemoteKey(remote.host, cwd)
           : workspace
         const onMachine = await gitAccounts?.machineGh(inItsFolder, args)
@@ -2916,8 +2919,7 @@ app.whenReady().then(() => {
   })
   conductors = new Conductors({
     userData,
-    name: butlerNameNow,
-    formerNames: () => loadSettings().butler.formerNames,
+    butler: () => loadSettings().butler,
     load: () => loadSettings().discord,
     loadRecords: () => loadSettings().assistSessions,
     save: (discord) => {
@@ -4653,26 +4655,27 @@ function conductorDestination(b: ConductorBinding): Destination {
 
 async function commandInto(b: ConductorBinding, t: Target, text: string): Promise<string> {
   const channelId = (await discordThreads?.place(b, t)) ?? b.channel.channelId
-  const target = (tabId: string): SlashTarget => {
+  return typeCommandInto(t, text, { channelId }, (tabId) =>
     conductors?.touchNowAndNext(b.id, t.key, tabId)
-    return { name: t.name, tabId, conductor: false }
-  }
-  if (t.tabId) return slash.run(target(t.tabId), text, { channelId })
-  void t
-    .open()
-    .then((tabId) => slash.typeWhenIdle(target(tabId), text, { channelId }))
-    .catch((error: unknown) => discordRelay?.say(channelId, `⚠ ${errorText(error)}`))
-  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and posts what it prints in Discord.`
+  )
 }
 
-function commandHandedBack(t: Target, text: string, tell: (said: string) => void): string {
-  const target = (tabId: string): SlashTarget => ({ name: t.name, tabId, conductor: !!t.butler })
-  if (t.tabId) return slash.run(target(t.tabId), text, { tell })
+function typeCommandInto(
+  t: Target,
+  text: string,
+  to: SlashReplyTo,
+  onTab?: (tabId: string) => void
+): string {
+  const target = (tabId: string): SlashTarget => {
+    onTab?.(tabId)
+    return { name: t.name, tabId, conductor: !!t.butler }
+  }
+  if (t.tabId) return slash.run(target(t.tabId), text, to)
   void t
     .open()
-    .then((tabId) => slash.typeWhenIdle(target(tabId), text, { tell }))
-    .catch((error: unknown) => tell(`⚠ ${errorText(error)}`))
-  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and hands you what it prints.`
+    .then((tabId) => slash.typeWhenIdle(target(tabId), text, to))
+    .catch((error: unknown) => slashReply(to, `⚠ ${errorText(error)}`))
+  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and will ${replyWhere(to)}.`
 }
 
 function commandIntoConductor(b: ConductorBinding, text: string): string {

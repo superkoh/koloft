@@ -117,7 +117,7 @@ import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
 import { RenameButlerDialog, setUpDiscordWithButler } from './components/ButlerRow'
 import { BindConductorDialog } from './components/BindConductorDialog'
-import { isButlerTab } from './butlerRows'
+import { everyWorkspaceRows, isButlerTab } from './butlerRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
@@ -705,9 +705,7 @@ export default function App(): JSX.Element {
       return
     }
     const { id, backendId, title } = hit.row
-    const listed = [...st.workspaceRows, ...(st.butlerWorkspace ? [st.butlerWorkspace] : [])].some(
-      (w) => w.rows.some((r) => r.id === id)
-    )
+    const listed = everyWorkspaceRows(st).some((w) => w.rows.some((r) => r.id === id))
     void resumeSession({ id, backendId, title, restore: !listed })
   }, [])
 

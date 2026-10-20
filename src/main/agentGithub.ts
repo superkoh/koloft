@@ -43,6 +43,11 @@ const READS_THE_ENVIRONMENT = /\benv\b|\$ENV/
 export const GH_JQ_READS_ENV =
   'koloft: a --jq filter may not read the environment, which holds the GitHub sign-in.'
 
+const HANDS_THE_REST_TO_ANOTHER_PROGRAM = '--'
+
+export const GH_PASSES_THROUGH =
+  'koloft: koloft gh takes no --: gh hands what follows it to git, ssh or scp, which run with the GitHub sign-in.'
+
 const REPLY_CHARS_A_TURN_HOLDS = 20_000
 
 export interface GithubVerbDeps {
@@ -82,6 +87,8 @@ export function githubVerb(d: GithubVerbDeps): AgentVerb {
     if (!command || command.startsWith('-')) return refused(GH_USAGE, EXIT_USAGE)
     if (!GH_OWN_COMMANDS.has(command)) return refused(GH_REFUSED)
     if (jqFilters(args).some((f) => READS_THE_ENVIRONMENT.test(f))) return refused(GH_JQ_READS_ENV)
+    // PLATFORM§32
+    if (args.includes(HANDS_THE_REST_TO_ANOTHER_PROGRAM)) return refused(GH_PASSES_THROUGH)
     const { ok, out } = await d.run(args, caller.tabId, caller.cwd)
     if (!ok) return refused(`koloft: gh ${args.slice(0, 2).join(' ')}: ${out}`)
     if (out.length <= REPLY_CHARS_A_TURN_HOLDS) return answered(out)

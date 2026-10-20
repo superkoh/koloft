@@ -930,6 +930,29 @@ describe('the butler’s view of sessions: every workspace', () => {
     })
   })
 
+  it('a helper in the butler’s own folder is listed under that folder, not under its path on disk', async () => {
+    const helper = row('helper-id', {
+      title: 'Set up Discord',
+      cwd: BUTLER_FOLDER,
+      mtime: Date.now() - 2 * 3600_000
+    })
+    const butlerFolder: WorkspaceRows = {
+      workspace: {
+        path: BUTLER_FOLDER,
+        missing: false,
+        isGit: false,
+        hasHistory: false,
+        butler: true
+      },
+      rows: [helper]
+    }
+    const withHelper = [...rows, butlerFolder]
+    const { verb } = harness(live, {}, [], { ...conducting, sidebar: withHelper })
+    expect((await verb(['list'], from('butler'))).text).toContain(
+      "Set up Discord · Claude · local · closed · last active 2 h ago · id: helper-id · workspace: the butler's own folder"
+    )
+  })
+
   it('the butler sees an open session that shows the owner a question as asking, not as working or done', async () => {
     const { verb } = harness(live, {}, [], { ...conducting, asking: ['fix'] })
     expect((await verb(['list'], from('butler'))).text.split('\n')[0]).toBe(

@@ -1239,6 +1239,11 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   an extension, `gh copilot`, and the browser, pager or editor named by `gh config set`
   each run another program, which inherits gh's environment (so `GH_TOKEN`); and a short
   flag takes its value attached (`-qenv`, `-Ro/r`) as cobra/pflag flags do.
+- **Words after `--` go to another program**: `gh repo clone`, `gh repo fork` and
+  `gh gist clone` hand them to git (`-- <gitflags>`, where git's `--upload-pack=<cmd>`
+  runs any program), `gh codespace ssh` to ssh and `gh codespace cp` to scp (their
+  `### gh …` lines in `gh help reference`, 2026-10-19, gh 2.102.0). No other command
+  takes `--`.
 
 ## §33 ssh
 
