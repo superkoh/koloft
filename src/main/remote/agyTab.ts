@@ -3,7 +3,7 @@ import { record } from '../codexObservation'
 import { AGY_APP_DIR, TOP_LEVEL_ROWS } from '../agyStore'
 import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
 import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
-import { NOTICE_ENV, NOTICE_SUFFIX } from '../hooks'
+import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
 import { remoteShCommand } from './install'
 import type { TabSpec } from './launch'
 import { REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
@@ -101,7 +101,7 @@ export function agyTab(s: AgyTabSpec): AgyProgram {
     seed('auth.json', `${own}/antigravity-oauth-token`),
     `unset ${AGY_KEY_ENV}; [ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
     `${AGY_LOG_ENV}="${REMOTE_HOOK_DIR}/${agyLogName(s.tabId)}"`,
-    `${NOTICE_ENV}="${REMOTE_HOOK_DIR}/${s.tabId}${NOTICE_SUFFIX}"`,
+    `${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"`,
     ...(s.start ? [`${AGY_START_ENV}="$T.start.json"`] : []),
     `export ${exported.join(' ')}`,
     `exec agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`

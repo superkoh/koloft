@@ -3,7 +3,7 @@ import { PROGRAM_STATUS_REPLY } from './programStatus'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SAID_MARKS } from './museSessionLog'
 import { museHookScript } from './museHooks'
-import { NOTICE_SUFFIX } from './hooks'
+import { remoteNoticeFile } from './hooks'
 import { KOLOFT_SKILL, MUSE_STOPS_WHEN_THIS_LINK_DANGLES } from './museAccounts'
 
 export const MUSE_WRAP_FILE = 'muse-wrap.py'
@@ -313,7 +313,7 @@ export const REMOTE_MUSE_HOOK_SH = museHookScript(
   `f="${REMOTE_HOOK_DIR}/$1${MIRROR_SUFFIX}"
 event="$2"
 said="$HOME/.koloft/tabs/$1.said"
-notice="${REMOTE_HOOK_DIR}/$1${NOTICE_SUFFIX}"`,
+notice="${remoteNoticeFile('$1')}"`,
   `p="$(mktemp 2>/dev/null)" || exit 0
 printf '{"t":"hook","event":"%s","input":%s}\\n' "$event" "$input" > "$p" && cat "$p" >> "$f"
 rm -f "$p"`

@@ -655,28 +655,37 @@ describe('injected hook script', () => {
       ).toBe('change it once more')
     })
 
-    it('what Koloft left for a Claude or Codex tab reaches the model once, ahead of the reminder, at its next prompt or tool call, and its file goes', () => {
-      const first = `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb: "fix: \\"login\\"".`
-      const second = `${FROM_KOLOFT}The session "Fix docs" changed files you changed too: a.ts.`
+    it('what Koloft left for a Claude or Codex tab reaches the model once, ahead of the reminder, at its next prompt or tool call of its own — never a subagent’s — and its file goes', () => {
+      const moved = `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb: "fix: \\"login\\"".`
       const left = noticeFile(regDir, 'tabNotice')
-      fs.writeFileSync(left, noticeLine(first) + noticeLine(second))
-      const head = `${first}\n\n${second}\n\nThe user's latest message begins: «check the sidebar»`
+      fs.writeFileSync(left, noticeLine(moved))
+      const head = `${moved}\n\nThe user's latest message begins: «check the sidebar»`
       const told = reminder(prompt('tabNotice', 'check the sidebar'), 'UserPromptSubmit')
       expect(told.slice(0, head.length)).toBe(head)
       expect(fs.existsSync(left)).toBe(false)
       expect(reminder(tool('tabNotice'), 'PostToolUse')).toMatch(/^The user's latest message/)
-      fs.writeFileSync(left, noticeLine(first))
+
+      fs.writeFileSync(left, noticeLine(moved))
+      const subagentTool = fire('tabNotice', 'tool', {
+        session_id: 's1',
+        agent_id: 'a1',
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Read'
+      })
+      expect(reminder(subagentTool, 'PostToolUse')).toMatch(/^The user's latest message/)
       expect(reminder(tool('tabNotice'), 'PostToolUse')).toMatch(/^\(From Koloft:\) origin/)
-      expect(reminder(tool('tabNotice'), 'PostToolUse')).toMatch(/^The user's latest message/)
+      expect(fs.existsSync(left)).toBe(false)
 
       const notice = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-')), 'n')
-      fs.writeFileSync(notice, noticeLine(second))
-      const codexTool = spawnSync('bash', [codexReplyLanguage, 'tool'], {
-        input: '{}',
-        encoding: 'utf8',
-        env: { ...process.env, KOLOFT_CODEX_SAID: `${notice}.said`, KOLOFT_NOTICE: notice }
-      }).stdout
-      expect(reminder(codexTool, 'PostToolUse')).toBe(`${second}\n\n`)
+      const codexTool = (input: unknown): string =>
+        spawnSync('bash', [codexReplyLanguage, 'tool'], {
+          input: JSON.stringify(input),
+          encoding: 'utf8',
+          env: { ...process.env, KOLOFT_CODEX_SAID: `${notice}.said`, KOLOFT_NOTICE: notice }
+        }).stdout
+      fs.writeFileSync(notice, noticeLine(moved))
+      expect(codexTool({ tool_name: 'Bash', agent_id: 'a1' })).toBe('')
+      expect(reminder(codexTool({ tool_name: 'Bash' }), 'PostToolUse')).toBe(`${moved}\n\n`)
       expect(fs.existsSync(notice)).toBe(false)
     })
 

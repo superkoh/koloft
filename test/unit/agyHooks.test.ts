@@ -137,24 +137,22 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     ).toBe('第二句 "quoted" next line')
   })
 
-  it('hands what Koloft left for the tab to the next model call ahead of the quote, once, with no prompt to quote too, and its file goes', () => {
+  it('hands what Koloft left for the tab to every model call of the turn it lands in, ahead of the quote, even with no prompt to quote; its file goes at once and the notice at the turn’s end', () => {
     const notice = path.join(dir, 'tab.notice')
+    const env = { KOLOFT_NOTICE: notice }
     const ephemeral = (transcriptPath: string): string | undefined => {
-      const out = hook(
-        'PreInvocation',
-        { conversationId: 'c1', transcriptPath },
-        {
-          KOLOFT_NOTICE: notice
-        }
-      )
+      const out = hook('PreInvocation', { conversationId: 'c1', transcriptPath }, env)
       return out ? (JSON.parse(out).injectSteps[0].ephemeralMessage as string) : undefined
     }
-    fs.writeFileSync(notice, noticeLine('(From Koloft:) origin/main moved: "fix: \\"x\\"".'))
-    expect(ephemeral(transcriptWith('look around'))).toBe(
-      `(From Koloft:) origin/main moved: "fix: \\"x\\"".\n\n${REPLY_LANGUAGE_BEFORE_QUOTE}look around${REPLY_LANGUAGE_AFTER_QUOTE}`
-    )
+    const moved = '(From Koloft:) origin/main moved: "fix: \\"x\\"".'
+    fs.writeFileSync(notice, noticeLine(moved))
+    const told = `${moved}\n\n${REPLY_LANGUAGE_BEFORE_QUOTE}look around${REPLY_LANGUAGE_AFTER_QUOTE}`
+    expect(ephemeral(transcriptWith('look around'))).toBe(told)
     expect(fs.existsSync(notice)).toBe(false)
+    expect(ephemeral(transcriptWith('look around'))).toBe(told)
+    hook('Stop', { conversationId: 'c1' }, env)
     expect(ephemeral(transcriptWith('look around'))).toMatch(/^The user's latest/)
+
     fs.writeFileSync(notice, noticeLine('(From Koloft:) main moved.'))
     expect(ephemeral(path.join(dir, 'missing.jsonl'))).toBe('(From Koloft:) main moved.\n\n')
   })

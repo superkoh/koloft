@@ -109,15 +109,16 @@ import {
   HOLD_FILE,
   HOOK_SCRIPT,
   forgetAssistMarkers,
+  localNotice,
   markAnswerable,
   noticeFile,
-  noticeLine,
   pruneStale,
   quotedPrompt,
   saidFile,
   seedOwnerWords,
   setupHooks,
-  writeTabHookSettings
+  writeTabHookSettings,
+  type NoticeFile
 } from './hooks'
 import {
   formatRemoteKey,
@@ -1477,16 +1478,18 @@ function tabIdle(tabId: string): boolean {
   )
 }
 
-async function leaveNotice(tabId: string, text: string): Promise<void> {
-  const host = remoteHostOfTab(tabId)
-  if (host) return hosts.machine(host).leaveNotice(tabId, noticeLine(text))
-  if (hookRegDir) await fs.promises.appendFile(noticeFile(hookRegDir, tabId), noticeLine(text))
+function noticeOf(tabId: string): NoticeFile | undefined {
+  const host = machineOfTab(tabId)
+  if (host) return hosts.machine(host).notice(tabId)
+  return hookRegDir ? localNotice(noticeFile(hookRegDir, tabId)) : undefined
 }
 
 const sessionSync = new SessionSync({
   repoOf: (dir) => syncRepoKeys.resolve(dir),
   gitOut: (dir, args) => hosts.of(dir).gitOut(dir, args),
-  leave: leaveNotice
+  unread: async (tabId) => !!(await noticeOf(tabId)?.unread()),
+  leave: async (tabId, text) => noticeOf(tabId)?.leave(text),
+  drop: async (tabId) => noticeOf(tabId)?.drop()
 })
 
 const sessionDeps: SessionVerbDeps = {

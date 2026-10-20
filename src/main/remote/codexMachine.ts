@@ -27,7 +27,7 @@ import {
   HOLD_FILE,
   HOLD_TAB_ENV,
   NOTICE_ENV,
-  NOTICE_SUFFIX
+  remoteNoticeFile
 } from '../hooks'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
@@ -131,7 +131,7 @@ rm -f "$S".*
 ${ownerWords}${LOGIN_PATH_TOO}
 (
 ${exports}  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
-  ${CODEX_REPLY_LANGUAGE_ENV}="$M/${REPLY_LANGUAGE_FILE}"; ${CODEX_SAID_ENV}="$S.said"; ${NOTICE_ENV}="${REMOTE_HOOK_DIR}/${s.tabId}${NOTICE_SUFFIX}"
+  ${CODEX_REPLY_LANGUAGE_ENV}="$M/${REPLY_LANGUAGE_FILE}"; ${CODEX_SAID_ENV}="$S.said"; ${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"
   export ${CODEX_REPLY_LANGUAGE_ENV} ${CODEX_SAID_ENV} ${NOTICE_ENV}
   ${CODEX_HOLD_SCRIPT_ENV}="$M/${HOLD_FILE}"; ${CODEX_HOLD_REG_ENV}="${REMOTE_HOOK_DIR}"; ${HOLD_TAB_ENV}=${s.tabId}
   export ${CODEX_HOLD_SCRIPT_ENV} ${CODEX_HOLD_REG_ENV} ${HOLD_TAB_ENV}

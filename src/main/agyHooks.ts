@@ -22,6 +22,8 @@ export const AGY_LOG_POINTER_SUFFIX = '.agy-log'
 export const AGY_OWNER_TITLE_ENV = 'KOLOFT_AGY_OWNER_TITLE'
 export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
 
+const THIS_TURN = '.turn'
+
 // AGY§12
 const EVENTS = ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'] as const
 type AgyHookName = (typeof EVENTS)[number]
@@ -41,9 +43,11 @@ case "$event" in
     tp="$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"transcriptPath" *: *"\\([^"]*\\)".*/\\1/p')"
     said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\\\n//p' | sed -E 's/\\\\n<\\/USER_REQUEST>.*//; s/^.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//; s/\\\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c ${QUOTED_PROMPT_BYTES} | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\\\u[0-9a-fA-F]{0,3}$//; s/\\\\+$//')"
     [ -n "$said" ] && said=${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$said"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
-    told="$(take_notice)$said"
+    [ -n "$notice" ] && take_notice >> "$notice${THIS_TURN}"
+    told="$([ -n "$notice" ] && cat "$notice${THIS_TURN}" 2>/dev/null)$said"
     [ -n "$told" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}' "$told"
     ;;
+  Stop) [ -n "$notice" ] && rm -f "$notice${THIS_TURN}" ;;
 esac
 exit 0
 `

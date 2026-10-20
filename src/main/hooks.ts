@@ -7,6 +7,7 @@ import { shq } from '@shared/shellQuote'
 import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
 import { FROM_A_SESSION, FROM_KOLOFT, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
+import { REMOTE_HOOK_DIR } from './remote/paths'
 import {
   CODEX_HOLDS_LESS_THAN_ITS_EXEC_WALL_S,
   HOLD_HOOK_TIMEOUT_S,
@@ -112,6 +113,12 @@ remind_reply_language() {
   printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\\n' "$1" "$context"
 }`
 
+// CC§15 CODEX§27
+const REMIND_AFTER_A_TOOL = `raw="$(cat)"
+  input="$(printf '%s' "$raw" | grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1)"
+  case "$raw" in *'"agent_id"'*) notice="" ;; esac
+  remind_reply_language PostToolUse`
+
 // CC§19
 export const QUOTE_PROMPT_FN = `quote_prompt() {
   printf '%s' "$input" |
@@ -163,9 +170,7 @@ notice="$${NOTICE_ENV}"
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$1" = "tool" ]; then
-  input="$(grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1)"
-  cat >/dev/null
-  remind_reply_language PostToolUse
+  ${REMIND_AFTER_A_TOOL}
   exit 0
 fi
 input="$(cat | tr -d '\\n')"
@@ -210,9 +215,7 @@ notice="$reg/$tab${NOTICE_SUFFIX}"
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$event" = "tool" ]; then
-  input="$(grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1)"
-  cat >/dev/null
-  remind_reply_language PostToolUse
+  ${REMIND_AFTER_A_TOOL}
   exit 0
 fi
 input="$(cat | tr -d '\\n')"
@@ -394,7 +397,7 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
 }
 
 const TAB_MARKER =
-  /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids|allow|notice)$/
+  /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids|allow|notice(\.\w+)*)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -535,8 +538,30 @@ export function noticeFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}${NOTICE_SUFFIX}`)
 }
 
+export function remoteNoticeFile(tabId: string): string {
+  return `${REMOTE_HOOK_DIR}/${tabId}${NOTICE_SUFFIX}`
+}
+
 export function noticeLine(text: string): string {
   return JSON.stringify(`${text}\n\n`).slice(1, -1)
+}
+
+export interface NoticeFile {
+  unread(): Promise<boolean>
+  leave(text: string): Promise<void>
+  drop(): Promise<void>
+}
+
+export function localNotice(file: string): NoticeFile {
+  return {
+    unread: async () => fs.existsSync(file),
+    leave: async (text) => {
+      const part = `${file}.${process.pid}.part`
+      await fs.promises.writeFile(part, noticeLine(text))
+      await fs.promises.rename(part, file)
+    },
+    drop: () => fs.promises.rm(file, { force: true })
+  }
 }
 
 // ADR-0031

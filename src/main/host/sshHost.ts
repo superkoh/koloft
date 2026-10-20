@@ -65,7 +65,7 @@ import {
 } from '../remote/ssh'
 import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
 import { remoteMuseHooks, sessionStartContext } from '../museHooks'
-import { HOLD_FILE, NOTICE_SUFFIX } from '../hooks'
+import { HOLD_FILE, noticeLine, remoteNoticeFile, type NoticeFile } from '../hooks'
 import { claudeArgv } from '../claudeArgs'
 import type { SummaryRow } from '../agyStore'
 import {
@@ -547,9 +547,6 @@ const PULLED_TAIL = new RegExp(`\\n${PULLED} (\\d+)\\n([\\s\\S]*)$`)
 const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
 cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
-
-const LEAVE_NOTICE = `mkdir -p "${REMOTE_HOOK_DIR}" && cat >> "${REMOTE_HOOK_DIR}/$1${NOTICE_SUFFIX}"`
-
 const RESIZE_SETTLE_MS = 200
 
 const REMOTE_FILE_LIST_FRESH_MS = 30_000
@@ -889,8 +886,18 @@ export class SshHost implements Host {
     await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
   }
 
-  async leaveNotice(tabId: string, line: string): Promise<void> {
-    await this.sh(LEAVE_NOTICE, [tabId], { input: Buffer.from(line) })
+  notice(tabId: string): NoticeFile {
+    const file = remoteNoticeFile(tabId)
+    return {
+      unread: async () => (await this.sh(`[ -f "${file}" ]`, [])).code === 0,
+      leave: async (text) => {
+        const leave = `mkdir -p "${REMOTE_HOOK_DIR}" && cat > "${file}.part" && mv -f "${file}.part" "${file}"`
+        await this.sh(leave, [], { input: Buffer.from(noticeLine(text)) })
+      },
+      drop: async () => {
+        await this.sh(`rm -f "${file}"`, [])
+      }
+    }
   }
 
   // CC§9 ADR-0026
