@@ -28,6 +28,7 @@ import {
   IconAddProject,
   IconChevronRight,
   IconKeepAwake,
+  IconNotifications,
   IconOpenedPage,
   IconSettings,
   IconSidebarLeft,
@@ -49,6 +50,7 @@ import {
   useStore,
   openInterceptedFile,
   boundSessionId,
+  workbenchOwnerLive,
   consumeRestartExit,
   conversationTabFor,
   tabForSession,
@@ -66,7 +68,6 @@ import {
   DOCK_GUTTER_PX,
   liveTabOf,
   mixesBackends,
-  nextWaitingTab,
   notesHeightFromDrag,
   paneWidthFromDrag,
   PREVIEW_CARD_WIDTH_PX,
@@ -74,6 +75,7 @@ import {
   relTime,
   selectionRoot,
   sessionsNeedYou,
+  waitingTabs,
   welcomeQuietLine,
   welcomeTarget
 } from './sessionRows'
@@ -100,7 +102,7 @@ import {
   RESTORE_FAILED_NOTICE,
   wakeTab
 } from './resumeFlow'
-import { openSessionRow, visitTab } from './sessionClick'
+import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { UnsavedDialog } from './components/UnsavedDialog'
@@ -151,6 +153,7 @@ import {
 } from '@shared/paletteFeatures'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
+const SIDEBAR_MIN = 240
 const RECENT_MAX = 3
 const CENTER_TERMINAL_MAX_COLS = 120
 
@@ -295,7 +298,7 @@ export default function App(): JSX.Element {
   const setNotesHeight = useStore((s) => s.setNotesHeight)
   const notesFolded = useStore((s) => s.settings.notesFolded)
   const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
-  const callingCount = useStore((s) => (s.settings.sidebarHidden ? s.attention.length : 0))
+  const waitingCount = useStore((s) => waitingTabs(s.attention, s.tabs).length)
   const selectedWs = useStore((s) => s.selectedWs)
   const [notesFocus, setNotesFocus] = useState(0)
   const [nbDragging, setNbDragging] = useState(false)
@@ -680,11 +683,7 @@ export default function App(): JSX.Element {
   }, [returnFocus, setNotesFolded, setSidebarHidden])
 
   useEffect(() => {
-    return window.api.shortcuts.onNextWaitingSession(() => {
-      const st = useStore.getState()
-      const tabId = nextWaitingTab(st.attention, st.activeTabId, st.tabs)
-      if (tabId) visitTab(tabId)
-    })
+    return window.api.shortcuts.onNextWaitingSession(visitNextWaiting)
   }, [])
 
   useEffect(() => {
@@ -702,7 +701,6 @@ export default function App(): JSX.Element {
     const st = useStore.getState()
     const tabId = liveTabOf(hit.row.id, st.sessions, st.tabs)
     if (tabId) {
-      window.api.attention.visit(tabId)
       st.activateTab(tabId)
       return
     }
@@ -960,7 +958,7 @@ export default function App(): JSX.Element {
   }, [activeTabId])
 
   useEffect(() => {
-    return window.api.attention.onActivateTab((tabId) => useStore.getState().activateTab(tabId))
+    return window.api.attention.onActivateTab(visitAndReveal)
   }, [])
 
   useEffect(() => {
@@ -1028,7 +1026,7 @@ export default function App(): JSX.Element {
     window.api.settings.get().then((s) => {
       setSettings(s)
       setWorkbenchWidth(s.workbenchWidth)
-      setSidebarWidth(s.sidebarWidth)
+      setSidebarWidth(Math.max(SIDEBAR_MIN, s.sidebarWidth))
       setNotesHeight(s.notesHeight)
     })
     const off = window.api.settings.onUpdate(setSettings)
@@ -1246,16 +1244,7 @@ export default function App(): JSX.Element {
   const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined
   const panelWidth = (panelTab ? workbenchWidths[panelTab] : undefined) ?? workbenchWidth
   const liveTabIds = useStore(
-    useShallow((s) =>
-      s.tabs
-        .filter((t) => {
-          if (!hasWorkbench(t)) return false
-          const sess = s.sessions.find((x) => x.tabId === t.id)
-          if (sess && !sess.alive) return false
-          return !!boundSessionId(s, t.id)
-        })
-        .map((t) => t.id)
-    )
+    useShallow((s) => s.tabs.filter((t) => workbenchOwnerLive(s, t)).map((t) => t.id))
   )
   const liveTabs = useMemo(() => new Set(liveTabIds), [liveTabIds])
   const panelSid = landed.sessionId
@@ -1389,7 +1378,6 @@ export default function App(): JSX.Element {
   }, [])
   const panelOpenKnown = useStore((s) => !!panelTab && !!s.workbenchFetched[panelTab])
   const previewShown = panelOpenKnown && panelReady && !panelShown && previewFits
-  const SIDEBAR_MIN = 200
   const startVResize = (e: MouseEvent): void => {
     e.preventDefault()
     beginLayoutDrag()
@@ -1860,13 +1848,23 @@ export default function App(): JSX.Element {
       <button
         className={'aux-ico sb-toggle' + (sidebarHidden ? '' : ' on')}
         onClick={toggleSidebar}
-        title={'Sidebar (⌘B)' + (callingCount ? ` — ${sessionsNeedYou(callingCount)}` : '')}
+        title="Sidebar (⌘B)"
         aria-label="Sidebar"
         aria-pressed={!sidebarHidden}
       >
         <IconSidebarLeft size={18} />
-        {callingCount > 0 && <span className="ws-tab-parked ws-unread-count">{callingCount}</span>}
       </button>
+      {waitingCount > 0 && (
+        <button
+          className="aux-ico waiting-bell"
+          onClick={visitNextWaiting}
+          title={`${sessionsNeedYou(waitingCount)} — click for the next one (⌘J)`}
+          aria-label="Next waiting session"
+        >
+          <IconNotifications size={18} />
+          <span className="ws-tab-parked ws-unread-count">{waitingCount}</span>
+        </button>
+      )}
       {/* ADR-0013 */}
       {createPortal(
         <>

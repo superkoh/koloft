@@ -136,9 +136,9 @@
             About half an hour after a session goes quiet (its light turns dim green), it goes to
             sleep: its program stops, but its row, its tab, its screen and its Workbench stay as
             they were. Click the row, or let something send it a message, and the same session wakes
-            in that tab. It stays awake while you look at it, while it still has a red dot, or while
-            a shell tab or an unsaved file is open in it. A session marked Keep running never sleeps
-            (see <a href="#keep-running">below</a>).
+            in that tab. It stays awake while you look at it, while it waits for your OK, or while a
+            shell tab or an unsaved file is open in it. A red dot stays on it while it sleeps. A
+            session marked Keep running never sleeps (see <a href="#keep-running">below</a>).
           </li>
           <li>
             Quit Koloft and open it again, and every session comes back the way it was: the ones
@@ -195,8 +195,17 @@
             which. It sits beside the light; it does not replace it.
           </li>
           <li>
-            Click the row and the dot goes. It is still there after you quit and reopen Koloft
-            (after a restart it always reads "turn done").
+            Looking at the session does not clear the dot. It goes when the session works again: you
+            send it something, answer its question or give your OK, or another session or your
+            Assist does. It also goes when you close the tab or archive the session. It is still
+            there after you quit and reopen Koloft (after a restart it always reads "turn done").
+          </li>
+          <li>
+            One kind of dot goes once you look at it: a turn that only reports. That is a turn that
+            ends while the session waits on other work Koloft can see (a session it started or wrote
+            to that is still busy, or a background job it left running), or, with Assist on, a turn
+            whose reply Assist reads as asking you for nothing. Hover the dot: it says "just letting
+            you know".
           </li>
           <li>
             The number on the Dock icon counts these dots. Turn off Dock badge in Settings ▸
@@ -204,10 +213,12 @@
           </li>
           <li>A folded folder shows how many of its sessions are calling.</li>
           <li>
-            <kbd>⌘J</kbd> (View ▸ Next Waiting Session) takes you to the session with the oldest red
-            dot, in any folder, and clears it. Press it again for the next one. When no dot is left,
-            it does nothing. It wakes a sleeping session the way a click does. It skips a closed row
-            with a dot; a click still resumes that one.
+            While any session is calling, a <mark class="hl">bell</mark> with the count sits next to
+            the sidebar button, even with the sidebar hidden. Click it, or press <kbd>⌘J</kbd> (View
+            ▸ Next Waiting Session), to go to the session that has waited longest, in any folder;
+            the sidebar opens its folder and scrolls to its row. Click again for the next one; after
+            the last it starts over. It wakes a sleeping session the way a click does. It skips a
+            closed row with a dot; a click still resumes that one.
           </li>
         </ul>
 
@@ -283,10 +294,11 @@
           <li>
             Not everything you type starts a session. Words about Koloft itself ("turn on dark
             mode", "set up Discord") go to Assist as a task; "open settings" or "check for updates"
-            just does it; "ask &lt;folder&gt; …" goes to that folder's Assist. Ask for a session by
-            what it was doing ("go to the session that was fixing login"), and <kbd>⌘P</kbd> jumps
-            to it, starting nothing. A question, a translation, or work that fits more than one
-            folder ("fix the tests") goes to the Global Assist, which answers in its own tab.
+            just does it; "ask &lt;folder&gt; …" or "how's &lt;folder&gt; doing …" goes to that
+            folder's Assist. Ask for a session by what it was doing ("go to the session that was
+            fixing login"), and <kbd>⌘P</kbd> jumps to it, starting nothing. A question, a
+            translation, or work that fits more than one folder ("fix the tests") goes to the Global
+            Assist, which answers in its own tab.
           </li>
           <li>
             With Assist off, the button reads <code>Start a session</code> (with more than one
@@ -356,7 +368,11 @@
           <li>
             A session whose worktree is gone stays in the list. Hover its row and the tip reads
             <code>worktree deleted; click to rebuild and resume</code>; a click makes the worktree
-            again and resumes the same session in it. Claude and Codex both do this.
+            again and resumes the same session in it. Restarting it (<kbd>⇧⌘R</kbd>) does the same.
+            When the worktree cannot be made again, a box titled
+            <code>Could not rebuild the worktree</code> offers
+            <code>Resume in main without isolation</code>: the same session goes on in the folder
+            itself, so every file it touches lands there. Claude and Codex both do all of this.
           </li>
           <li>
             In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in
@@ -585,6 +601,33 @@
           <code>can't reach origin from &lt;machine&gt; — check its network or credentials.</code>
           While the machine is not connected, Fetch now and Pull are greyed out and the last counts
           stay. The GitHub part and the Account part work as above.
+        </p>
+
+        <h3 id="session-sync">Open sessions hear what changed</h3>
+        <p>
+          When a fetch finds that origin's main branch has moved, say because a pull request was
+          merged, Koloft sends a message to every open Claude Code or Codex session in that
+          repository that sits on another branch and does not have those commits yet. The fetch is
+          Koloft's own (every five minutes, while Auto-fetch is on) or <code>Fetch now</code>.
+          Assist's own sessions are not told, nor is a session on the main branch itself: the behind
+          number, Pull and Auto-pull serve it. Commits that came in while Koloft was closed are not
+          announced either. The message reads:
+          <code>(From Koloft:) origin/main moved from … to …, with 2 new commits: "…", "…". …</code>
+          When those commits touch files the session itself had changed, it names them, and it ends
+          by saying that nobody asks the session to merge or rebase: what to do is the agent's call.
+        </p>
+        <p>
+          When two open sessions of one repository write the same file, each is told:
+          <code>The session "…" changed files you changed too: ….</code> If both sit in the same
+          folder, the message says to read the file again before editing it; if they sit in two
+          worktrees, it says the two branches may conflict when both reach main. Only files the
+          agent wrote through its own tools count, not ones a shell command wrote, and only writes
+          made while the session was open in Koloft; each file is named once per pair of sessions.
+        </p>
+        <p>
+          A Claude Code session here gets the message at once, even mid-task. A Codex session, here
+          or on a machine, and a Claude Code session on a machine get it once their turn is over.
+          Muse and Antigravity sessions are not told.
         </p>
 
         <p class="next">Next page → <a href="../workbench/">The Workbench</a></p>

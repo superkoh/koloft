@@ -3,6 +3,7 @@ import type { PreviewItem } from '@shared/types'
 import { WebView } from './WebView'
 import { renderMarkdown } from '../markdown'
 import { MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
+import '../previewViewer.css'
 
 export interface MdHeading {
   id: string

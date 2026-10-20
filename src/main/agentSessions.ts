@@ -754,11 +754,13 @@ interface OwedReply {
 export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
   turnEnded(tabId: string, turn: Turn): void
+  waitsOnAnother(sessionId: string): boolean
 } {
   const opening = new Map<string, Promise<string | null>>()
   let queued = 0
   let lined = 0
   const replyOwed = new Map<string, OwedReply>()
+  const messagedBy = new Map<string, Set<string>>()
 
   // ADR-0031
   const ownerWordsOf = async (
@@ -820,6 +822,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     text: string,
     line: string | undefined,
     until: number,
+    from: string,
     assist?: string
   ): Promise<string> => {
     const tab = t.tabId ?? (await openReady(t, until))
@@ -830,7 +833,9 @@ export function sessionVerb(d: SessionVerbDeps): {
           asked: messagingOf(t.backend, !!t.remote) === 'queue' ? text : undefined
         }
       : undefined
-    return owing(tab, owed, () => sendInto(t, tab, text, line, until))
+    const sent = await owing(tab, owed, () => sendInto(t, tab, text, line, until))
+    messagedBy.set(tab, (messagedBy.get(tab) ?? new Set()).add(from))
+    return sent
   }
 
   const sendInto = async (
@@ -885,17 +890,34 @@ export function sessionVerb(d: SessionVerbDeps): {
         text,
         line,
         Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS,
+        caller.session.sessionId,
         assist
       )
       return answered(asking ? `${sent} ${readsItAfterTheQuestion(t.name)}` : sent)
     }
-    void sendNow(t, text, line, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS, assist).catch(
-      (error: unknown) => d.undelivered(caller.tabId, t, errorText(error))
-    )
+    void sendNow(
+      t,
+      text,
+      line,
+      Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS,
+      caller.session.sessionId,
+      assist
+    ).catch((error: unknown) => d.undelivered(caller.tabId, t, errorText(error)))
     return answered(`Will deliver when ${t.name} is ready.`)
   }
 
+  const waitsOnAnother = (sessionId: string): boolean =>
+    d
+      .allSessions()
+      .some(
+        (s) =>
+          s.alive &&
+          (s.status === 'working' || s.status === 'approval') &&
+          (replyOwed.get(s.tabId)?.owner === sessionId || !!messagedBy.get(s.tabId)?.has(sessionId))
+      )
+
   const turnEnded = (tabId: string, turn: Turn): void => {
+    messagedBy.delete(tabId)
     const owed = replyOwed.get(tabId)
     if (!owed) return
     const { owner, asked } = owed
@@ -1110,7 +1132,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     return refused(SESSION_USAGE, EXIT_USAGE)
   }
 
-  return { verb, turnEnded }
+  return { verb, turnEnded, waitsOnAnother }
 }
 
 export interface WorkspaceVerbDeps {

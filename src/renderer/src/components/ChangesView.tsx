@@ -44,6 +44,8 @@ import {
   type HunkPrompt
 } from './changesModel'
 import '../changesView.css'
+import '../fileTree.css'
+import '../inlineDiff.css'
 
 export interface ChangesViewProps {
   root: string

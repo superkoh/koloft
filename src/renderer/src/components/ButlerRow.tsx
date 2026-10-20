@@ -2,7 +2,7 @@ import { useEffect, useState, type JSX, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { IconAssist, IconClose } from '../icons'
 import { butlerName, butlerTitle, channelLabel, renamedButler } from '@shared/conductors'
-import { ATTENTION_REASON, type AssistTaskRow, type SessionInfo } from '@shared/types'
+import { attentionReason, type AssistTaskRow, type SessionInfo } from '@shared/types'
 import { preferredAssistBackend } from '@shared/sessionBackend'
 import { useStore } from '../store'
 import { rowStateClass } from '../sessionRows'
@@ -144,7 +144,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
         >
           <div className="ws-tab-main">
             {title}
-            {calling && <span className="ws-tab-unread" title={ATTENTION_REASON[calling.kind]} />}
+            {calling && <span className="ws-tab-unread" title={attentionReason(calling)} />}
           </div>
           <div className="ws-tab-sub">
             <SessionBackendIcon backend={sess?.backendId ?? backend} />
@@ -170,7 +170,7 @@ export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX
                     <i>{task.name}</i>
                   </span>
                   {taskCalling && (
-                    <span className="ws-tab-unread" title={ATTENTION_REASON[taskCalling.kind]} />
+                    <span className="ws-tab-unread" title={attentionReason(taskCalling)} />
                   )}
                   <button
                     className="icobtn ws-tab-fold"

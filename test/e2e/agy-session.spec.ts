@@ -185,7 +185,7 @@ async function onlyThisSessionsFiles(page: Page): Promise<void> {
 
 test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501 status, title script, hooks and local API, with only the CLI faked', () => {
   // AGY§1 AGY§7
-  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch and the Gemini key; the tab binds to agy's conversation, its row takes agy's title, and its light goes working then done", async ({
+  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch and the Gemini key; the tab binds to agy's conversation, its row takes agy's title, and its light goes working then done, leaving a red dot and the bell's count though its tab is on screen", async ({
     env
   }) => {
     const PROMPT = 'Tidy the agy readme'
@@ -223,6 +223,8 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(row).toHaveClass(/st-working/, { timeout: 30_000 })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
       await expect(row).toContainText(PROMPT, { timeout: 30_000 })
+      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+      await expect(page.locator('.aux-ico.waiting-bell .ws-unread-count')).toHaveText('1')
       const { id } = await boundAgy(page)
       expect(transcriptOf(env, id)).toContain(`Answer to: ${PROMPT}`)
     } finally {

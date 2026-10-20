@@ -1,16 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { SessionStatus } from '../../src/shared/types'
 import {
+  AN_ENTER_LANDS_WITHIN_MS,
   MORE_OUTPUT_SETTLES_MS,
   NOTHING_CAME_BACK_MS,
   SCREEN_SHOWS_THE_OUTPUT_MS,
   SlashCommands,
+  commandKeys,
   type SlashDeps
 } from '../../src/main/discord/slash'
 
 const TAB = 'pty-child-1'
 const turnIsOver = (s: SessionStatus): boolean => s === 'waiting' || s === 'idle'
 const CHANNEL = { channelId: '222' }
+const RULE = '─'.repeat(40)
 
 function setup(over: Partial<SlashDeps> = {}) {
   let status: SessionStatus = 'waiting'
@@ -65,6 +68,37 @@ describe('a slash command typed into a session', () => {
     const { slash, typed } = setup({ backendOf: () => 'codex' })
     await slash.typeWhenIdle(child, '/compact', CHANNEL)
     expect(typed).toEqual(['\x05\x15', '/compact', '\x1b', '\r'])
+  })
+
+  it.each([
+    ['claude', [RULE, '❯ /context', RULE, '  ⏵⏵ bypass permissions on']],
+    ['muse', [RULE, '❯ /context', RULE]],
+    ['codex', ['› /context', '', '  GPT-6.1-Sol default']]
+  ] as const)(
+    'in %s, an Enter read together with the Esc before it is lost and leaves the command in the box, so Koloft presses Enter once more',
+    async (backend, screen) => {
+      const { slash, typed, posts } = setup({
+        backendOf: () => backend,
+        screen: async () => [...screen]
+      })
+      await slash.typeWhenIdle(child, '/context', CHANNEL)
+      const keys = [...commandKeys('/context', backend), '\r']
+      await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS)
+      expect(typed).toEqual(keys)
+      slash.output(TAB, { kind: 'details', text: '## Context Usage' })
+      await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS)
+      expect(typed).toEqual(keys)
+      expect(posts).toEqual(['⌨️ **fix-login** ran /context:\n## Context Usage'])
+    }
+  )
+
+  it('presses no second Enter into a panel the command opened, though the command’s echo still shows above it', async () => {
+    const { slash, typed } = setup({
+      screen: async () => ['❯ /config', RULE, '  Settings', '  Theme  dark']
+    })
+    await slash.typeWhenIdle(child, '/config', CHANNEL)
+    await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS)
+    expect(typed).toEqual(['/config', '\x1b', '\r'])
   })
 
   it('in Antigravity, which keeps no command output on disk, posts what its screen shows and presses Esc to close the panel', async () => {

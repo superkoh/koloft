@@ -24,6 +24,7 @@ import { useStore } from '../store'
 import { useInstalledBackends } from '../useInstalledBackends'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { dropPosFor } from './WorkspaceSidebar'
+import '../workspacePicker.css'
 
 export type SessionLaunchOptions = Pick<
   CreateTabOptions,

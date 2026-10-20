@@ -37,11 +37,6 @@
   min-height: 0;
 }
 
-.fv-artifact-hd {
-  height: 32px;
-  background: var(--bg-1);
-}
-
 .fv-empty {
   flex: 1;
   display: flex;
@@ -53,15 +48,6 @@
   text-align: center;
 }
 
-.fv-menu {
-  top: 34px;
-  right: auto;
-  left: auto;
-}
-.fv-filters {
-  width: 236px;
-  right: 9px;
-}
 .fv-fgroup {
   padding: 4px 0 2px;
 }

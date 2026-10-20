@@ -30,6 +30,7 @@ import {
   SessionLaunchStatus,
   useSessionLaunch
 } from './SessionLaunchButtons'
+import '../workspacePicker.css'
 
 export function WorkspacePicker({
   mode,

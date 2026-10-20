@@ -1096,8 +1096,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await waitBooted(page)
       await startCodex(page, env)
       const row = codexRows(page)
-      await row.click()
-      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(1)
       const notifiedBefore = (await osOutlets(app)).notifications.length
       await runIn(page, centerTerm(page), 'spawn child')
       const running = oneStillRunning(row)
@@ -1330,7 +1329,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex session’s unread red dot survives a Koloft restart on its row, which comes back running, and clicking the row in a focused window clears it', async ({
+  test('a Codex session’s unread red dot survives a Koloft restart on its row, which comes back running, and stays when the row is clicked in a focused window', async ({
     env
   }) => {
     installCodex(env)
@@ -1353,7 +1352,8 @@ test.describe('Codex sessions through the real method chooser, process transport
 
       await pretendWindowFocused(app)
       await codexRows(page).click()
-      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(0)
+      await expect(codexRows(page)).toHaveClass(/\bactive\b/)
+      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
       expect(codexCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)

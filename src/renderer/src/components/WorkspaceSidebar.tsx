@@ -35,7 +35,7 @@ import {
 } from '../icons'
 import type { BackendId, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
-import { ATTENTION_REASON } from '@shared/types'
+import { attentionReason } from '@shared/types'
 import { popoverX } from '@shared/accountUsage'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
@@ -66,6 +66,7 @@ import { requestCloseTab } from '../closeFlow'
 import { freshnessShown } from '@shared/freshnessOps'
 import { behindBadge, countLabel, openIssuesLabel, openPullsLabel } from '../freshnessView'
 import { fitGithubCounts } from '../wsHeadFit'
+import { rowSelector } from '../hints'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
@@ -80,6 +81,7 @@ import {
   removeUnsavedNote,
   saveAll
 } from '../unsavedGuard'
+import '../workspaceSidebar.css'
 
 const FORCE_CLOSE_FAILED_NOTICE =
   'Could not force close — the session may be running outside Koloft.'
@@ -999,6 +1001,34 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     return () => ro.disconnect()
   }, [fitHeads])
 
+  const reveal = useStore((s) => s.revealRow)
+  useLayoutEffect(() => {
+    if (!reveal) return
+    const st = useStore.getState()
+    const lookNow = rowLookups(st.sessions, st.tabs, st.attention)
+    for (const w of [...st.workspaceRows, ...(st.butlerWorkspace ? [st.butlerWorkspace] : [])]) {
+      const row = w.rows.find((r) => lookNow.tabOf(r) === reveal.tabId)
+      if (!row) continue
+      setCollapsed((c) => (c[w.workspace.path] ? { ...c, [w.workspace.path]: false } : c))
+      const byId = new Map(w.rows.map((r) => [r.id, r]))
+      setFoldedRows((f) => {
+        let next = f
+        const seen = new Set<string>()
+        for (let at = row.parentId; at && !seen.has(at); at = byId.get(at)?.parentId) {
+          seen.add(at)
+          if (next[at]) next = { ...next, [at]: false }
+        }
+        return next
+      })
+      const frame = requestAnimationFrame(() =>
+        listRef.current
+          ?.querySelector(rowSelector(reveal.tabId))
+          ?.scrollIntoView({ block: 'nearest' })
+      )
+      return () => cancelAnimationFrame(frame)
+    }
+  }, [reveal])
+
   const now = new Date()
   const look = rowLookups(sessions, storeTabs, attention)
   const callingAmong = (list: SessionRow[]): number =>
@@ -1176,7 +1206,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             cron={isCronRow}
             resident={!!row.resident}
             title={shownTitle(row.title, sess?.title)}
-            callingReason={calling && ATTENTION_REASON[calling.kind]}
+            callingReason={calling && attentionReason(calling)}
             badgeText={badge?.text}
             badgeLines={badge?.lines.join('\n')}
             badgeHeading={badge?.heading}

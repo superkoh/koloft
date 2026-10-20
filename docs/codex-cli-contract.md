@@ -707,8 +707,7 @@ a higher "long context" price for prompts above 272K tokens; Codex's window on t
 the short-context price is used — **no longer true for `gpt-6.1-sol`**: on 2026-10-16
 the `models_cache.json` a fresh throwaway home got from `model/list` on 0.162.1 and on
 0.163.0 gives it a `context_window` of 500000 (the other six 272000), so a prompt above
-272K tokens on it is billed at the long-context price Koloft's table does not hold
-(`pricing.ts` prices every OpenAI model at the short-context rate; the context meter
+272K tokens on it is billed at the long-context price (the context meter
 reads `modelContextWindow` from the wire, not the table). The same page on 2026-10-16
 ("Long context: >272K input tokens", input / cached / output): `gpt-6.1-sol` 4 / 0.20 /
 15, `gpt-6-astra` 20 / 2 / 75, `gpt-6-sol` 4 / 0.4 / 15, `gpt-6-luna` 0.2 / 0.02 / 0.75,
@@ -1494,7 +1493,10 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   CR showed "Unrecognized command '/co'" and sent nothing; `/compact`, Esc, CR and
   `/new`, Esc, CR ran those commands. A trailing space closes the popup too (`/co `
   + CR: Unrecognized). Esc and CR must be separate writes: `\x1b\r` in one write is read
-  as Alt+Enter and adds a line; 30 ms apart works.
+  as Alt+Enter and adds a line; 30 ms apart works. Rechecked 2026-10-19 on Codex CLI
+  0.162.0 (`codex --no-daemon` in a python pty, a temporary `CODEX_HOME` holding a fake
+  API key, the screen read through `pyte`): `/status` then `\x1b\r` in one write left
+  `› /status` in the composer, unsent; a lone CR 2 s later ran it.
 - **An unknown command** (`/comapct`, `/stauts`, with or without a trailing space) shows
   "Unrecognized command '…'" and sends nothing, and the text stays in the box with the
   cursor at its start. Esc leaves it there; Ctrl-E then Ctrl-U empties the box; Ctrl-U
@@ -1582,8 +1584,7 @@ message" (3 runs).
   established by `agent-tools-real-smoke.spec.ts` › "a real Codex holds the failing
   checks of PR #3 in its composer unsent …"). Both paste cases passed again on 0.162.1
   (the npm package, 2026-10-11).
-- Codex on a remote machine is not a tab Koloft starts yet (§16), so the paste over ssh
-  and tmux is not probed for Codex.
+- The paste over ssh and tmux is not probed for Codex.
 
 ## 24. Searching the words of every thread
 

@@ -5,6 +5,7 @@ import type { SessionRow } from '@shared/types'
 import { basename } from '@shared/preview'
 import { mixesBackends, relTime } from '../sessionRows'
 import { mayBeRunningElsewhere } from '../resumeFlow'
+import '../restoreDialog.css'
 
 export function RestoreDialog({
   wsPath,

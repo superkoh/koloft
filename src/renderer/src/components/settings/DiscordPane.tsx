@@ -10,6 +10,7 @@ import {
   statusText,
   useDiscordStatus
 } from '../../discordStatus'
+import '../../accounts.css'
 
 export function DiscordPane(): JSX.Element {
   const discord = useStore((s) => s.settings.discord)

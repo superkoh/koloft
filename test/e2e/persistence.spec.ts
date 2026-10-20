@@ -1,7 +1,15 @@
 import fs from 'fs'
 import path from 'path'
 import { test, expect, launchApp, pendingAttention, pretendWindowFocused } from './helpers/app'
-import { FAKE_SESSION_TITLE, readCalls, resumedId, startSessionIn, waitBooted } from './helpers/p1'
+import {
+  centerTerm,
+  FAKE_SESSION_TITLE,
+  readCalls,
+  resumedId,
+  runIn,
+  startSessionIn,
+  waitBooted
+} from './helpers/p1'
 
 const DEBOUNCED_SAVES_LAND_MS = 1500
 const ROOM_FOR_A_WRONG_RESPAWN_MS = 2000
@@ -53,7 +61,7 @@ test('restart (T-LIFE-09 across a real relaunch): the open session comes back ru
   await app2.close()
 })
 
-test('an unread red dot survives a real relaunch on the session’s row, which comes back running, and clicking the row in a focused window clears it', async ({
+test('an unread red dot survives a real relaunch on the session’s row, which comes back running; clicking the row in a focused window keeps it, and a new prompt clears it', async ({
   env
 }) => {
   const app1 = await launchApp(env)
@@ -76,7 +84,10 @@ test('an unread red dot survives a real relaunch on the session’s row, which c
 
   await pretendWindowFocused(app2)
   await row.click()
-  await expect(row.locator('.ws-tab-unread')).toHaveCount(0)
+  await expect(row).toHaveClass(/\bactive\b/)
+  await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+  await runIn(page2, centerTerm(page2), '/busy')
+  await expect(row.locator('.ws-tab-unread')).toHaveCount(0, { timeout: 15_000 })
   await app2.close()
 })
 

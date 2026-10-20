@@ -213,7 +213,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     }
   })
 
-  test('with the sidebar hidden, the sidebar button carries the Dock badge’s count, and the approval card points at the button until the sidebar comes back', async ({
+  test('with the sidebar hidden, the bell beside the sidebar button carries the Dock badge’s count, and the approval card points at the sidebar button until the sidebar comes back', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -232,7 +232,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       await typeIntoHiddenRow(page, b, '/need-approval')
       await expect(card(page, 'approval')).toBeVisible({ timeout: 30_000 })
       await expectAnchoredAt(page, sidebarButton)
-      const count = page.locator(`${sidebarButton} .ws-unread-count`)
+      const count = page.locator('.aux-ico.waiting-bell .ws-unread-count')
       await expect
         .poll(
           async () => {
@@ -247,7 +247,6 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       await clickAppMenuItem(app, page, 'toggle-sidebar')
       await expect(page.locator('.side')).toBeVisible()
       await expectAnchoredAt(page, rowSel(b))
-      await expect(count).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }

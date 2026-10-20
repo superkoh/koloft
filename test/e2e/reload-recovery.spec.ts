@@ -67,7 +67,6 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
     const rowA = wsRows(page, 'ws-a').first()
     await rowA.click()
     await expect(rowA).toHaveClass(/\bactive\b/)
-    await expect.poll(() => pendingAttention(page), { timeout: 15_000 }).toHaveLength(1)
     const ids = await termIds(page)
     expect(ids).toHaveLength(2)
 
@@ -76,9 +75,7 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
     await expect.poll(() => termIds(page), { timeout: 30_000 }).toEqual(ids)
     await expect(rowA).toHaveClass(/\bactive\b/, { timeout: 30_000 })
     await expect(wsRows(page, 'ws-b').first()).not.toHaveClass(/\bactive\b/)
-    await expect.poll(() => pendingAttention(page), { timeout: 15_000 }).toHaveLength(1)
-    await wsRows(page, 'ws-b').first().click()
-    await expect.poll(() => pendingAttention(page), { timeout: 15_000 }).toHaveLength(0)
+    await expect.poll(() => pendingAttention(page), { timeout: 15_000 }).toHaveLength(2)
   })
 
   test('T-REL-03: a crashed renderer auto-recovers and re-adopts (the production path)', async ({
