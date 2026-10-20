@@ -55,8 +55,10 @@ test.describe('while the Mac is busy, a session started for someone else waits f
         owner
       )
       await expect
-        .poll(() => terminalText(page, owner!), { timeout: 30_000 })
-        .toContain('once it starts, talk to it with SendMessage to "helper"')
+        .poll(async () => (await terminalText(page, owner!)).replace(/\n/g, ''), {
+          timeout: 30_000
+        })
+        .toContain('is still queued for the machine; once it starts, talk to it with SendMessage')
 
       fs.writeFileSync(machine, JSON.stringify({ pressure: 2, load1: 1, backgroundWork: false }))
       await expect(page.locator('.ws-tab.st-queued')).toHaveCount(0, { timeout: 20_000 })
