@@ -1114,6 +1114,15 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     return () => ro.disconnect()
   }, [fitHeads])
 
+  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
+  const wasHidden = useRef(sidebarHidden)
+  useEffect(() => {
+    const shownAgain = wasHidden.current && !sidebarHidden
+    wasHidden.current = sidebarHidden
+    const st = useStore.getState()
+    if (shownAgain && st.activeTabId) st.revealTab(st.activeTabId)
+  }, [sidebarHidden])
+
   const reveal = useStore((s) => s.revealRow)
   useLayoutEffect(() => {
     if (!reveal) return
