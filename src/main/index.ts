@@ -303,7 +303,6 @@ import {
 } from '@shared/browserRoute'
 import {
   cdpEnvDir,
-  hostComposing,
   relayClientEvicted,
   relayEndpoint,
   relayStripChanged,
@@ -316,6 +315,7 @@ import {
   relayAttached,
   type RelayDeps
 } from './cdpRelay'
+import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
   permissionAsk,
@@ -4520,7 +4520,11 @@ function guestPagesOf(tabId: string): GuestPage[] {
     .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
     .map((wc) => ({
       url: () => wc.getURL(),
-      run: (script: string) => wc.executeJavaScript(script),
+      // PLATFORM§10
+      run: async (script: string) => {
+        await compositionDone()
+        return await wc.executeJavaScript(script)
+      },
       reload: () =>
         new Promise<void>((resolve) => {
           wc.once('did-stop-loading', () => resolve())
