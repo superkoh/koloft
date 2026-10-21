@@ -9,6 +9,7 @@ import {
   useState,
   type JSX
 } from 'react'
+import { createPortal } from 'react-dom'
 import { IconDownload, IconMore } from '../icons'
 import { routeFor } from '@shared/browserRoute'
 import { CDP_GUEST_ID_RETRIES, CDP_GUEST_ID_RETRY_MS } from '@shared/cdpBudget'
@@ -1525,7 +1526,14 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         />
       )}
 
-      {dialog && <BrowserModal dialog={dialog} onAnswer={onDialogAnswer} />}
+      {/* ADR-0013 */}
+      {dialog &&
+        createPortal(
+          <div className="wb-dialog">
+            <BrowserModal dialog={dialog} onAnswer={onDialogAnswer} />
+          </div>,
+          document.body
+        )}
     </div>
   )
 })

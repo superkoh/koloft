@@ -171,7 +171,11 @@ function caretInShell(): boolean {
 }
 
 function focusedWorkbench(): HTMLElement | null {
-  return (document.activeElement?.closest('.wb-panel[data-surface]') as HTMLElement | null) ?? null
+  return (
+    (document.activeElement?.closest(
+      '.wb-panel[data-surface], .wb-dialog'
+    ) as HTMLElement | null) ?? null
+  )
 }
 
 const NOTES_ISLAND = '.isl-notes'

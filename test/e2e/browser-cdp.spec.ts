@@ -7,6 +7,7 @@ import {
   openSessionTerminal,
   panelTerm,
   runIn,
+  sendShortcut,
   startSessionIn,
   waitBooted
 } from './helpers/p1'
@@ -295,6 +296,64 @@ test.describe('CDP relay driven by a real Playwright client over the endpoint Ko
         expect(await answering).toBe(true)
         await expect(modal).toHaveCount(0, { timeout: 20_000 })
         await expect(p.locator('#out')).toHaveText('confirm:true', { timeout: 20_000 })
+      } finally {
+        await browser.close().catch(() => {})
+      }
+    })
+  })
+
+  // ADR-0013
+  test('a dialog from a page an agent drives while the Workbench is closed shows over the window and is answered there', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(240_000)
+    await withServer(async (server) => {
+      const url = await drivenSession(page, env)
+      await closeBrowser(page)
+      const browser = await connect(page, url)
+      try {
+        const p = await browser.contexts()[0].newPage()
+        await p.goto(server.page('/ask-staged', '<title>Ask</title><body>staged</body>'))
+        await expect(page.locator(BROWSER.stagedGuest)).toHaveCount(1, { timeout: 30_000 })
+
+        const answering = p.evaluate(() => confirm('go on?'))
+        const modal = page.locator(BROWSER.modal)
+        await expect(modal).toBeInViewport({ timeout: 30_000 })
+        await expect(modal).toContainText('go on?')
+        await modal.locator('.btn-primary').first().click()
+        expect(await answering).toBe(true)
+        await expect(modal).toHaveCount(0, { timeout: 20_000 })
+      } finally {
+        await browser.close().catch(() => {})
+      }
+    })
+  })
+
+  test('⌘W while typing in a page dialog closes that web tab, not the session tab', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(240_000)
+    await withServer(async (server) => {
+      const url = await drivenSession(page, env)
+      const browser = await connect(page, url)
+      try {
+        const p = await browser.contexts()[0].newPage()
+        await p.goto(server.page('/ask-name', '<title>Name</title><body>name</body>'))
+        await openBrowser(page)
+        await tabByTitle(page, 'Name').click()
+        await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
+
+        void p.evaluate(() => prompt('your name?')).catch(() => {})
+        const field = page.locator(`${BROWSER.modal} .bmodal-field`)
+        await expect(field).toBeFocused({ timeout: 30_000 })
+        await sendShortcut(app, 'shortcut:close-tab')
+
+        await expect(openTabs(page)).toHaveCount(0, { timeout: 20_000 })
+        await expect(page.locator('.ws .ws-tab')).toHaveCount(1)
+        await expect(page.locator('.ws .ws-tab.cold')).toHaveCount(0)
       } finally {
         await browser.close().catch(() => {})
       }
