@@ -86,20 +86,31 @@ export class BackgroundLedger {
 
   // CC§8
   noteNotification(text: string): ReadonlySet<string> {
-    for (const [notice] of text.matchAll(/<task-notification>[\s\S]*?<\/task-notification>/g)) {
-      const id = notice.match(/<task-id>([^<]+)<\/task-id>/)?.[1]
+    const blocks = [...text.matchAll(/<task-notification>[\s\S]*?<\/task-notification>/g)]
+    const notices = blocks.length ? blocks.map(([notice]) => notice) : [text]
+    const gone = new Set<string>()
+    let finished = false
+    for (const notice of notices) {
+      const ids = [...notice.matchAll(/<task-id>([^<]+)<\/task-id>/g)].map((m) => m[1])
+      const st = notice
+        .match(/<status>([^<]*)<\/status>/)?.[1]
+        ?.trim()
+        .toLowerCase()
+      if (st && TERMINAL_TASK_STATUSES.has(st)) {
+        finished = true
+        for (const m of notice.matchAll(/<tool-use-id>([^<]+)<\/tool-use-id>/g))
+          this.live.delete(m[1])
+        for (const id of ids) gone.add(id)
+        continue
+      }
       const monitorEvent = notice.match(/<summary>Monitor event: "?([^<]*?)"?<\/summary>/)
-      if (!id || !monitorEvent) continue
-      this.monitors.add(id)
-      if (!this.taskLabels.has(id)) this.taskLabels.set(id, monitorEvent[1])
+      if (!monitorEvent) continue
+      for (const id of ids) {
+        this.monitors.add(id)
+        if (!this.taskLabels.has(id)) this.taskLabels.set(id, monitorEvent[1])
+      }
     }
-    const st = text
-      .match(/<status>([^<]*)<\/status>/)?.[1]
-      ?.trim()
-      .toLowerCase()
-    if (!st || !TERMINAL_TASK_STATUSES.has(st)) return NOTHING_FINISHED
-    for (const m of text.matchAll(/<tool-use-id>([^<]+)<\/tool-use-id>/g)) this.live.delete(m[1])
-    const gone = new Set([...text.matchAll(/<task-id>([^<]+)<\/task-id>/g)].map((m) => m[1]))
+    if (!finished) return NOTHING_FINISHED
     for (const id of gone) {
       this.monitors.delete(id)
       this.taskLabels.delete(id)

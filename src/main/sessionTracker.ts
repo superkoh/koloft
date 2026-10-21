@@ -389,6 +389,7 @@ export interface RemoteTab {
 interface Tracked {
   info: SessionInfo
   compactingFrom?: Turn
+  idleCompaction?: boolean
   launchCwd: string
   readOffset: number
   tailBuf: Buffer
@@ -560,7 +561,10 @@ export class SessionTracker extends SessionRuntime {
       if (t) this.compaction(t, event)
       return
     }
-    if (t && turnOf(event)) t.compactingFrom = undefined
+    if (t && turnOf(event)) {
+      t.compactingFrom = undefined
+      t.idleCompaction = false
+    }
     if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
@@ -576,8 +580,8 @@ export class SessionTracker extends SessionRuntime {
   ): void {
     const tabId = t.info.tabId
     if (event.type === 'compacting') {
-      const claudeCompactsAFinishedTurnOnItsOwn = event.trigger === 'auto' && this.turnOver(tabId)
-      if (claudeCompactsAFinishedTurnOnItsOwn) return
+      t.idleCompaction = event.trigger === 'auto' && this.turnOver(tabId)
+      if (t.idleCompaction) return
       t.compactingFrom = this.turnNow(tabId) ?? 'ended'
       this.recordHookTurn(tabId, 'working')
       return
@@ -585,6 +589,13 @@ export class SessionTracker extends SessionRuntime {
     const from = t.compactingFrom
     t.compactingFrom = undefined
     if (from && this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, from)
+  }
+
+  takeIdleCompaction(tabId: string): boolean {
+    const t = this.tracked.get(tabId)
+    if (!t?.idleCompaction) return false
+    t.idleCompaction = false
+    return true
   }
 
   setStatus(tabId: string, status: SessionStatus): void {
@@ -698,12 +709,11 @@ export class SessionTracker extends SessionRuntime {
     const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
     let idleTeammates = 0
     for (const task of list) {
-      if (t.ledger.isMonitor(task.id)) {
+      if (task.type === 'shell') {
         const label = t.ledger.labelOf(task.id) ?? task.id
-        parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
-      } else if (task.type === 'shell') {
-        const label = t.ledger.labelOf(task.id) ?? task.id
-        if (!procs) {
+        if (t.ledger.isMonitor(task.id)) {
+          parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
+        } else if (!procs) {
           trusted = true
           run(task, 'command', label)
         } else {
