@@ -705,11 +705,12 @@ export class SessionTracker extends SessionRuntime {
     const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
     let idleTeammates = 0
     for (const task of list) {
-      if (task.type === 'shell') {
+      if (t.ledger.isMonitor(task.id)) {
         const label = t.ledger.labelOf(task.id) ?? task.id
-        if (t.ledger.isMonitor(task.id)) {
-          parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
-        } else if (!procs) {
+        parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
+      } else if (task.type === 'shell') {
+        const label = t.ledger.labelOf(task.id) ?? task.id
+        if (!procs) {
           trusted = true
           run(task, 'command', label)
         } else {

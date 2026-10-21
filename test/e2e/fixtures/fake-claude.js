@@ -1070,6 +1070,46 @@ function handleLine(line) {
     return
   }
   // CC§8
+  if (text === '/bg-plugin-monitor') {
+    const notification =
+      '<task-notification>\n<task-id>mon_plugin_e2e</task-id>\n' +
+      '<summary>Monitor event: "service errors"</summary>\n' +
+      '<event>15:05 ERROR connection dropped</event>\n</task-notification>'
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: notification })
+    const meta = usageMeta()
+    append([
+      {
+        type: 'user',
+        timestamp: new Date().toISOString(),
+        origin: { kind: 'task-notification', producer: 'session-task' },
+        message: { role: 'user', content: notification },
+        cwd
+      },
+      {
+        type: 'assistant',
+        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        requestId: meta.requestId,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'assistant',
+          id: meta.id,
+          model: meta.model,
+          content: [{ type: 'text', text: 'A network blip, nothing for you to do.' }],
+          usage: meta.usage
+        },
+        cwd
+      }
+    ])
+    fireHook('stop', {
+      hook_event_name: 'Stop',
+      background_tasks: [
+        { id: 'mon_plugin_e2e', type: 'shell', status: 'running', description: 'watch.sh' }
+      ]
+    })
+    process.stdout.write('[fake-claude] plugin monitor event answered\r\n> ')
+    return
+  }
+  // CC§8
   if (text === '/bg-monitor') {
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     const monToolUseId = 'toolu_monitor_e2e'
