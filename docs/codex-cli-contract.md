@@ -286,7 +286,7 @@ and 26 passed on 0.162.1. On 0.163.0 (2026-10-16): sections 1 (`thread/list` sha
 see there), 13/14 (`model/list`, the default model), 17 (a message queued mid-turn), 20
 (the waiting question), 21 (the slash popup) and 25 (the TUI's startup bytes, OSC 7501,
 the leader key) were measured again, and the same e2e specs passed; they passed again on
-0.163.0 on 2026-10-17, 2026-10-19 and 2026-10-20 (no newer Codex on any of those days). Still only on
+0.163.0 on 2026-10-17, 2026-10-19, 2026-10-20 and 2026-10-21 (no newer Codex on any of those days). Still only on
 0.153.4 or 0.159.3, and so inferred for 0.161+:
 section 1's update-notice key, 2, 3 (the approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` / `commandActions` shapes,
 the `open` shim), 13 (token-usage fields) and 14 (first prompt, `-m`,
