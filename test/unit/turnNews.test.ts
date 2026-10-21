@@ -69,6 +69,18 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
     expect(fyi).toEqual(['tab-A'])
   })
 
+  it('a mark raised again for the same turn, as when Claude compacts while idle, takes the verdict already given without asking again', async () => {
+    const { j, marked, fyi, verdicts, settle } = judge()
+    marked.add('tab-A')
+    j.turnEnded('tab-A', turn('Done, nothing for you to do.'))
+    await settle(true)
+    expect(fyi).toEqual(['tab-A'])
+
+    j.marked('tab-A')
+    expect(verdicts).toHaveLength(0)
+    expect(fyi).toEqual(['tab-A', 'tab-A'])
+  })
+
   it('a verdict that comes back after the owner wrote again is dropped', async () => {
     const { j, marked, fyi, settle } = judge()
     marked.add('tab-A')

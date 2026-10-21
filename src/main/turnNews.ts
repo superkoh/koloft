@@ -57,34 +57,35 @@ export interface NewsJudgeDeps {
   markFyi(tabId: string): void
 }
 
+interface LastTurn {
+  turn: Turn
+  asked?: boolean
+  news?: boolean
+}
+
 export class NewsJudge {
-  private round = new Map<string, number>()
-  private unjudged = new Map<string, Turn>()
+  private last = new Map<string, LastTurn>()
 
   constructor(private readonly d: NewsJudgeDeps) {}
 
   turnEnded(tabId: string, turn: Turn): void {
-    this.nextRound(tabId)
-    this.unjudged.set(tabId, turn)
+    this.last.set(tabId, { turn })
     this.marked(tabId)
   }
 
   prompted(tabId: string): void {
-    this.nextRound(tabId)
-    this.unjudged.delete(tabId)
+    this.last.delete(tabId)
   }
 
   marked(tabId: string): void {
-    const turn = this.unjudged.get(tabId)
-    if (!turn || !this.d.awaitingVerdict(tabId)) return
-    this.unjudged.delete(tabId)
-    const round = this.round.get(tabId)
-    void this.d.isNews(turn).then((news) => {
-      if (news && this.round.get(tabId) === round) this.d.markFyi(tabId)
+    const last = this.last.get(tabId)
+    if (!last || !this.d.awaitingVerdict(tabId)) return
+    if (last.news) return this.d.markFyi(tabId)
+    if (last.asked) return
+    last.asked = true
+    void this.d.isNews(last.turn).then((news) => {
+      last.news = news
+      if (news && this.last.get(tabId) === last) this.d.markFyi(tabId)
     })
-  }
-
-  private nextRound(tabId: string): void {
-    this.round.set(tabId, (this.round.get(tabId) ?? 0) + 1)
   }
 }

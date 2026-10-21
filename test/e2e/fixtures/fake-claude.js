@@ -859,6 +859,37 @@ function handleLine(line) {
     process.stdout.write(`\r\n[fake-claude] compacted -> session ${sessionId}\r\n> `)
     return
   }
+  // CC§1
+  if (text === '/compact-while-idle') {
+    fireHook('compacting', { hook_event_name: 'PreCompact', trigger: 'auto' })
+    fireHook('start', {
+      session_id: sessionId,
+      transcript_path: transcript,
+      cwd,
+      hook_event_name: 'SessionStart',
+      source: 'compact'
+    })
+    append([
+      {
+        type: 'user',
+        isCompactSummary: true,
+        isVisibleInTranscriptOnly: true,
+        message: {
+          role: 'user',
+          content: 'This session is being continued from a previous conversation.'
+        },
+        cwd
+      },
+      {
+        type: 'system',
+        subtype: 'informational',
+        content: 'Compacted while idle, before the prompt cache expired',
+        cwd
+      }
+    ])
+    process.stdout.write(`\r\n[fake-claude] compacted while idle\r\n> `)
+    return
+  }
   // CC§2
   if (text === '/context') {
     append([

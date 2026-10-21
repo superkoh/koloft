@@ -106,7 +106,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     (the same for any shell command, as Claude's Bash tool would run it with the
     session's env, ending `sh exit=<code>`), `/clear`,
     `/compact` (PreCompact, a compact SessionStart, then the "Compacted" line Claude
-    writes), `/context` (the two records Claude writes for it), `/resume <id>`, `/exit` (also
+    writes), `/compact-while-idle` (PreCompact and a compact SessionStart with no
+    SessionEnd, as Claude compacts an idle session on its own), `/context` (the two
+    records Claude writes for it), `/resume <id>`, `/exit` (also
     `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
     remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
