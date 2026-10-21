@@ -1176,7 +1176,9 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   thread showed, the reply was `{}`, `thread/name/updated` carried that name, no other
   title came in the next 90 s, and `thread/read` still gave the name after the turn.
   `thread/name/set` on a thread the TUI had already titled replaced its title. One run
-  of each.
+  of each. The method is in the request list of Codex CLI 0.161.0 too
+  (`codex app-server generate-json-schema --experimental`, `ClientRequest.json`), not
+  run there.
 - **A resume never takes new developer instructions; a start's own instructions replace
   the `-c` ones.** 2026-10-16, Codex CLI 0.162.0, `gpt-6.1-sol`, an app-server client as in
   section 27. With `-c developer_instructions=` naming codeword ZEBRA: two turns, and a
