@@ -663,6 +663,11 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   where two had just opened). A failed `Target.setAutoAttach` reads as "there is no
   browser" and rejects the whole connection. The handshake has 30 s in all, and the
   default command timeout is also 30 s.
+- **`playwright-cli` gives each action 5 s by default** (`timeouts.action: 5e3`,
+  navigation 60 s), read 2026-10-21 in the default config of the playwright-core that
+  `@playwright/cli` bundles in this repo's `node_modules`. A relay that holds a click
+  longer than that makes the agent's action fail on its side while the command still
+  runs later.
 - **Target id must equal main-frame id.** Playwright stores a page's session by target
   id and looks it up by main-frame id (crPage.ts); in Chrome both are the same 32-hex
   string, so made-up target ids break every page action with "Frame has been detached"
