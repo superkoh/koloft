@@ -177,6 +177,7 @@ interface AgyRun extends StoredRun {
   shown?: string
   log: LineTail
   title?: AgyTitleState
+  givenTitle?: string
   touched: Map<string, FileAcc>
   liveWrites: number
   background?: BackgroundItem
@@ -560,6 +561,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         resource,
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
+        launchName: opts.name,
+        givenTitle: opts.name,
         permission: opts.permission ?? 'default',
         bypassing: permission === 'bypass',
         account: pick.account,
@@ -779,6 +782,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const key = agySessionKey(conversationId, run.remote?.host)
     const known = this.history.get(key)
     const switched = !!run.info && !!known
+    if (run.info) run.givenTitle = undefined
     run.touched.clear()
     run.liveWrites = 0
     run.background = undefined
@@ -916,6 +920,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§8 AGY§11
   private async takeListedTitle(run: AgyRun, id: string, again = false): Promise<void> {
+    const given = run.givenTitle
     const listed = run.remote
       ? this.deps.remote
           .machine(run.remote.host)
@@ -924,8 +929,20 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       : listAgyConversations(this.gemini)
     const name = (await listed.catch(() => [])).find((e) => e.id === id)?.name
     if (!name && again) this.takeListedTitleSoon(run, id)
-    if (name && run.info?.nativeSessionId === id && name !== run.info.title)
-      this.retitle(run.info, name)
+    if (!name || run.info?.nativeSessionId !== id) return
+    if (given && name !== given) return this.rename(run, id, given)
+    if (name !== run.info.title) this.retitle(run.info, name)
+  }
+
+  // AGY§16
+  private async rename(run: AgyRun, id: string, title: string): Promise<void> {
+    const renamed = await run.api?.rename(id, title).then(
+      () => true,
+      () => false
+    )
+    if (!renamed) return
+    if (run.givenTitle === title) run.givenTitle = undefined
+    if (run.info?.nativeSessionId === id) this.retitle(run.info, title)
   }
 
   // AGY§8

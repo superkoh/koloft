@@ -445,12 +445,12 @@ describe('koloft session new', () => {
     expect(launched[0].firstPrompt).toContain('"me title"')
   })
 
-  it('a Codex caller starts a Codex sibling told, beside its first message, to report back to its thread id, so the task alone is what Codex names the thread by; the caller gets the tab id to reach it by', async () => {
+  it('a Codex caller starts a Codex sibling titled from its task and told, beside its first message, to report back to its thread id, so its first message is the task alone; the caller gets the tab id to reach it by', async () => {
     const { verb, launched } = harness([session('me', 'codex', { nativeSessionId: CODEX_THREAD })])
     const reply = await verb(['new', '--', 'Check the tests.'], from('me'))
     expect(launched[0]).toMatchObject({
       kind: 'codex',
-      name: undefined,
+      name: 'Check the tests.',
       firstPrompt: 'Check the tests.'
     })
     expect(launched[0].role).toContain(`koloft session send ${CODEX_THREAD}`)
@@ -585,11 +585,24 @@ describe('koloft session new', () => {
     expect(launched).toEqual([])
   })
 
-  it('a Codex caller cannot name the new session', async () => {
-    const { verb, launched } = harness([session('me', 'codex', { nativeSessionId: CODEX_THREAD })])
-    const reply = await verb(['new', '--name', 'x', '--', 'go'], from('me'))
-    expect(reply).toMatchObject({ exit: EXIT_USAGE })
-    expect(launched).toEqual([])
+  it('a Codex or Antigravity sibling takes its --name, or a title made from its task; one in a remote workspace, Antigravity, cannot be named and gets no made-up title, since Koloft cannot reach that agy’s local API', async () => {
+    const REMOTE = 'ssh://box/srv/api'
+    const { verb, launched } = harness([
+      session('cx', 'codex', { nativeSessionId: CODEX_THREAD }),
+      session('ag', 'agy'),
+      session('far', 'agy', { host: 'ssh', cwd: REMOTE, treeRoot: REMOTE })
+    ])
+    expect((await verb(['new', '--name', 'x', '--', 'go'], from('cx'))).exit).toBe(0)
+    expect((await verb(['new', '--', 'Look around.'], from('ag'))).exit).toBe(0)
+    const refused = await verb(['new', '--name', 'x', '--', 'go'], from('far'))
+    expect(refused).toMatchObject({ exit: EXIT_USAGE })
+    expect(refused.text).toContain('an Antigravity session in a remote workspace has no name')
+    expect((await verb(['new', '--', 'Look around.'], from('far'))).exit).toBe(0)
+    expect(launched.map((l) => [l.kind, l.name])).toEqual([
+      ['codex', 'x'],
+      ['agy', 'Look around.'],
+      ['agy', undefined]
+    ])
   })
 })
 

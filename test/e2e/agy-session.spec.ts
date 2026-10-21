@@ -171,7 +171,7 @@ async function onlyThisSessionsFiles(page: Page): Promise<void> {
 
 test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501 status, title script, hooks and local API, with only the CLI faked', () => {
   // AGY§1 AGY§7
-  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch and the Gemini key; the tab binds to agy's conversation, its row takes agy's title, and its light goes working then done, leaving a red dot and the bell's count though its tab is on screen", async ({
+  test("an Antigravity session picked from the split button's agent list runs agy on the account's own folder with Koloft's API token, no permission asks (Skip permission prompts is on by default), the first prompt as -i, the per-folder sign-in switch and the Gemini key; the tab binds to agy's conversation, its row takes the title Assist made, and its light goes working then done, leaving a red dot and the bell's count though its tab is on screen", async ({
     env
   }) => {
     const PROMPT = 'Tidy the agy readme'
@@ -208,7 +208,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const row = agyRows(page)
       await expect(row).toHaveClass(/st-working/, { timeout: 30_000 })
       await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
-      await expect(row).toContainText(PROMPT, { timeout: 30_000 })
+      await expect(row).toContainText('Agy readme', { timeout: 30_000 })
       await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
       await expect(page.locator('.aux-ico.waiting-bell .ws-unread-count')).toHaveText('1')
       const { id } = await boundAgy(page)
@@ -381,7 +381,8 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   })
 
   // AGY§16
-  test('a session that agy started with koloft session new reports back with koloft session send: the message reaches agy through its local API, marked with who sent it, and agy answers it', async ({
+  // AGY§16
+  test('a session that agy started with koloft session new --name keeps that name as its row title, and Koloft renames the conversation in agy to it through agy’s local API; it reports back with koloft session send: the message reaches agy through its local API, marked with who sent it, and agy answers it', async ({
     env
   }) => {
     installAgy(env)
@@ -397,7 +398,11 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const parent = await boundAgy(page)
 
       await page.evaluate(
-        (t) => window.api.terminal.write(t, '!koloft session new -- report back when done\r'),
+        (t) =>
+          window.api.terminal.write(
+            t,
+            '!koloft session new --name kid-agy -- report back when done\r'
+          ),
         parent.tabId
       )
       const kidRow = wsGroup(page, 'ws-a').locator(
@@ -405,6 +410,14 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       )
       await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       const kidTab = (await kidRow.getAttribute('data-tab-id'))!
+      const renames = (): unknown[] =>
+        apiCalls(env)
+          .filter((c) => c.method === 'UpdateConversationAnnotations')
+          .map((c) => c.body)
+      await expect
+        .poll(renames, { timeout: 30_000 })
+        .toContainEqual(expect.objectContaining({ annotations: { title: 'kid-agy' } }))
+      await expect(kidRow.locator('.ws-tab-title', { hasText: /^kid-agy$/ })).toHaveCount(1)
       await page.evaluate(
         ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
         [kidTab, `!koloft session send ${parent.id} all done`]
