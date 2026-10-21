@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { spawn } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
@@ -342,6 +343,47 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect.poll(() => museCalls(env).length).toBe(2)
       expect(museCalls(env)[1].sessionId).toBe(first.sessionId)
     } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§4
+  test('a cold row whose session another live muse process still holds is not resumed: the notice names Muse and no muse starts', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    const other = spawn('sleep', ['600'], { stdio: 'ignore' })
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startMuse(page, env)
+      await runIn(page, centerTerm(page), 'keep me')
+      await expect(museRows(page)).toHaveClass(/st-waiting/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await expect(museRows(page)).toHaveClass(/cold/)
+
+      const registry = path.join(env.home, '.local', 'share', 'muse', 'runtime', 'muse', 'sessions')
+      fs.mkdirSync(registry, { recursive: true })
+      fs.writeFileSync(
+        path.join(registry, `${first.sessionId}.json`),
+        JSON.stringify({
+          schema_version: 1,
+          session_id: first.sessionId,
+          process_generation_hint: `pid=${other.pid}`
+        })
+      )
+      await museRows(page).click()
+      await expect(
+        page.locator('.toast', { hasText: /still running in another Muse process/ })
+      ).toBeVisible({ timeout: 10_000 })
+      await expect(museRows(page)).toHaveClass(/cold/)
+      expect(museCalls(env)).toHaveLength(1)
+    } finally {
+      other.kill()
       await quitAndClose(app)
     }
   })
