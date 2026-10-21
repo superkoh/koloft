@@ -348,7 +348,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
   })
 
   // MUSE§4
-  test('a cold row whose session another live muse process still holds is not resumed: the notice names Muse and no muse starts', async ({
+  test('a cold row whose session another live muse process still holds is not resumed: the notice names the muse process and no muse starts', async ({
     env
   }) => {
     installMuse(env)
@@ -378,7 +378,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       )
       await museRows(page).click()
       await expect(
-        page.locator('.toast', { hasText: /still running in another Muse process/ })
+        page.locator('.toast', { hasText: /still running in another muse process/ })
       ).toBeVisible({ timeout: 10_000 })
       await expect(museRows(page)).toHaveClass(/cold/)
       expect(museCalls(env)).toHaveLength(1)

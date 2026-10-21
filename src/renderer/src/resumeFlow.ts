@@ -1,4 +1,3 @@
-import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { isSessionKind, type SessionBackend } from './agentUi'
 import type { ResumePlan, SessionResumeRequest, SessionResumeResult } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -27,7 +26,7 @@ export type ResumeStep =
 
 export const UNAVAILABLE_NOTICE = "This session's directory no longer exists — transcript only."
 export function stillRunningNotice(backend: SessionBackend): string {
-  return `This session is still running in another ${BACKEND_LABEL[backend]} process — resuming it would start a second copy.`
+  return `This session is still running in another ${backend} process — resuming it would start a second copy.`
 }
 export const RESTORE_FAILED_NOTICE = 'Failed to restore session.'
 
