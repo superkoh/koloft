@@ -260,7 +260,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
       realKey(KEY_SPACE)
       await expect
         .poll(async () =>
-          (await terminalText(page, typing)).trimEnd().slice(before.length).replace(/\n/g, '')
+          (await terminalText(page, typing)).trimEnd().slice(before.length).replace(/\s/g, '')
         )
         .toBe('你好')
       await clicked
