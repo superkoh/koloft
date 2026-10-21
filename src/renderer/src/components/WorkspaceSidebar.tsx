@@ -1114,18 +1114,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     return () => ro.disconnect()
   }, [fitHeads])
 
-  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
-  const wasHidden = useRef(sidebarHidden)
-  useEffect(() => {
-    const shownAgain = wasHidden.current && !sidebarHidden
-    wasHidden.current = sidebarHidden
-    const st = useStore.getState()
-    if (shownAgain && st.activeTabId) st.revealTab(st.activeTabId)
-  }, [sidebarHidden])
-
   const reveal = useStore((s) => s.revealRow)
+  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
+  const revealed = useRef<typeof reveal>(null)
   useLayoutEffect(() => {
-    if (!reveal) return
+    if (!reveal || reveal === revealed.current || sidebarHidden) return
+    revealed.current = reveal
     const st = useStore.getState()
     const lookNow = rowLookups(st.sessions, st.tabs, st.attention)
     for (const w of everyWorkspaceRows(st)) {
@@ -1149,7 +1143,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       )
       return () => cancelAnimationFrame(frame)
     }
-  }, [reveal])
+  }, [reveal, sidebarHidden])
 
   const now = new Date()
   const look = rowLookups(sessions, storeTabs, attention)

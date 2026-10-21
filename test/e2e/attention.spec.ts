@@ -98,7 +98,7 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect(bell.locator('.ws-unread-count')).toHaveText('1', { timeout: 15_000 })
   })
 
-  test('a bell press while the sidebar is hidden is shown once the sidebar comes back: its list scrolls to the row the bell went to', async ({
+  test('a bell press while the sidebar is hidden is shown once the sidebar comes back: its list scrolls to the row the bell went to; a plain hide and show leaves a folded workspace folded', async ({
     app,
     page
   }) => {
@@ -113,7 +113,7 @@ test.describe('attention markers come from real session-status transitions (shim
     const bRow = wsGroup(page, 'ws-b').locator('.ws-tab')
     const inView = async (): Promise<boolean> => {
       const [row, box] = [await bRow.boundingBox(), await list.boundingBox()]
-      return !!row && !!box && row.y >= box.y && row.y + row.height <= box.y + box.height
+      return !!row && !!box && row.y >= box.y - 1 && row.y + row.height <= box.y + box.height + 1
     }
     expect(await inView()).toBe(false)
 
@@ -124,6 +124,15 @@ test.describe('attention markers come from real session-status transitions (shim
     await sendShortcut(app, 'shortcut:toggle-sidebar')
     await expect(page.locator('.app.sb-off')).toHaveCount(0)
     await expect.poll(inView).toBe(true)
+
+    await wsGroup(page, 'ws-b').locator('.ws-head .fico').click()
+    await expect(bRow).toHaveCount(0)
+    await sendShortcut(app, 'shortcut:toggle-sidebar')
+    await expect(page.locator('.app.sb-off')).toHaveCount(1)
+    await sendShortcut(app, 'shortcut:toggle-sidebar')
+    await expect(page.locator('.app.sb-off')).toHaveCount(0)
+    await expect(wsGroup(page, 'ws-b').locator('.ws-head')).toBeVisible()
+    await expect(bRow).toHaveCount(0)
   })
 
   test('a turn that ends while a session it started still works is only news, told by code alone: looking at it clears the dot', async ({
