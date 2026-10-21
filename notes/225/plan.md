@@ -1,6 +1,6 @@
 ## Plan: Settings ▸ Usage — cost history by day, session, workspace and model
 
-Checked against `main` by an independent reviewer on 2026-10-16 (13 points). Folded in: the Claude de-dup key keeps the largest value per field, not the first line (point 1); the empty state uses `.acct-empty`, the header stays `.set-ph` (2); file names fixed (3); the CSS prefix is `.costs-*`, so `usage.spec.ts`'s `.usage-card` check stays meaningful (4); Codex `cache_write_input_tokens` is booked (5); across-file key counts stated (6); remote reach stated (7); the worker finishes once started and errors end "reading" (8); lines are streamed and filtered before `JSON.parse` (9); cache size stated (10); tests listed (11); `workspaceFor` gets one scope per batch (13). Not taken: dropping the "Day" list view (12) — the mockup the owner saw has it.
+Rewritten 2026-10-21 for all eight kinds of session tab (four agents, local and SSH). Checked against `main` by an independent reviewer on 2026-10-16 (13 points). Folded in: the Claude de-dup key keeps the largest value per field, not the first line (point 1); the empty state uses `.acct-empty`, the header stays `.set-ph` (2); file names fixed (3); the CSS prefix is `.costs-*`, so `usage.spec.ts`'s `.usage-card` check stays meaningful (4); Codex `cache_write_input_tokens` is booked (5); across-file key counts stated (6); remote reach stated (7); the worker finishes once started and errors end "reading" (8); lines are streamed and filtered before `JSON.parse` (9); cache size stated (10); tests listed (11); `workspaceFor` gets one scope per batch (13). Not taken: dropping the "Day" list view (12) — the mockup the owner saw has it.
 
 ### What the user sees and does
 
@@ -8,8 +8,8 @@ A new **Usage** page in Settings (⌘, or the palette: "Settings ▸ Usage"). On
 
 1. A range switch: 7 days · 30 days · 90 days · All.
 2. Two big numbers: cost in the range and number of sessions.
-3. One bar chart, one bar per day, one colour (so no legend). Hovering a bar shows that day's total and its Claude Code / Codex parts — the only place the split is shown.
-4. A switch — Day · Session · Workspace · Model — that changes the list under the chart. Each row shows a name, a small line of context (workspace · model · days), tokens, and cost. A Codex row wears a CODEX badge, a remote row an SSH badge. A model Koloft has no price for shows its tokens and "no price" instead of a dollar figure. Money and tokens are written the way the status line already writes them (`formatCost`, `formatTokens` in `src/shared/usageFormat.ts`): `$6.40`, `$31.4`, `$132`; `410k`, `2.41M`.
+3. One bar chart, one bar per day, one colour (so no legend). Hovering a bar shows that day's total and its part per agent (Claude Code, Codex, Muse, Antigravity; only those above zero) — the only place the split is shown.
+4. A switch — Day · Session · Workspace · Model — that changes the list under the chart. Each row shows a name, a small line of context (workspace · model · days), tokens, and cost. A Codex row wears a CODEX badge, a Muse row a MUSE badge, an Antigravity row an ANTIGRAVITY badge, a remote row an SSH badge. A model Koloft has no price for shows its tokens and "no price" instead of a dollar figure. Money and tokens are written the way the status line already writes them (`formatCost`, `formatTokens` in `src/shared/usageFormat.ts`): `$6.40`, `$31.4`, `$132`; `410k`, `2.41M`.
 5. One line of small print: the figures are API list price for the same tokens — a subscription is not billed per token, so this is a yardstick, not a bill.
 6. While the files are still being read, the chart and list are replaced by the Settings empty-state box (`.acct-empty`, as in Settings ▸ Accounts) saying "Reading usage…"; the pane header stays the usual `.set-ph`. It is swapped for the numbers the moment the read ends. On this Mac the first read takes about 10 s; later opens re-read only files that changed, so they take well under a second.
 
@@ -26,7 +26,11 @@ Both tools write one file per session, and both files hold the tokens of every m
 | Local Claude Code | The transcripts the sidebar already lists (`~/.claude/projects/<slug>/<id>.jsonl`: expose the per-workspace `transcriptFileById` that `readBuckets`/`listJsonl` in `src/main/workspaces.ts` already build, instead of walking again), plus each session's sub-agent transcripts (`<slug>/<sessionId>/subagents/**/*.jsonl`, CC§8, no file cap), which fold into the parent. One `assistant` line with `message.usage` = one call. One record per `message.id` + `requestId`, keeping the **largest value of each token field** across its lines — measured here: in 462 of 5611 keys the lines differ and the last has the bigger `output_tokens` (streamed-so-far counts), so the tracker's first-line rule is ~15 % low on output (filed separately; CC§2's "the same usage object is written several times" gets a dated correction). A line with no `message.id` counts each time (CC§2); `isSidechain` lines count; a `<synthetic>` model line is skipped | The line's `timestamp` through `localDayKey` · `message.model` · the workspace the walk found the file under |
 | Remote Claude Code (SSH) | The same lines, from the copy of the machine's `~/.claude/projects` that Koloft already pulls with rsync (`src/main/remote/sync.ts`; root from `mirrorProjectsRoot` in `src/main/remote/paths.ts`). The pull includes `<slug>*/*.jsonl` and `<slug>*/*/**` with `--delete`, so sub-agent folders come too; only slugs of pinned remote workspaces are mirrored | Same · same · `ssh://machine/path` |
 | Local Codex | Every `rollout-*.jsonl` under the default Codex home's `sessions/` **and** `archived_sessions/`. One `token_usage_record` line = one request to the model; its `payload.usage` block is booked once per `payload.response_id`. Never `turn_token_usage` or `thread_token_usage`: those are running sums that repeat. Tokens map as the live frame does today (CODEX§13, as `codexObservation.ts` books them: input = `input_tokens − cached_input_tokens`, cache read = `cached_input_tokens`, cache write = `cache_write_input_tokens`, output = `output_tokens`; `reasoning_output_tokens` is inside `output_tokens`, see Measured). A child-agent rollout (`session_meta.payload.source.subagent.thread_spawn.parent_thread_id`) folds into its parent thread, like a Claude sub-agent | The record's own `timestamp` (ISO, through `localDayKey`) · the `turn_context` line with the same `turn_id` — so a thread that changes model mid-way prices each turn right · `session_meta.payload.cwd` through `CodexSessions.workspaceFor` (private today; expose it) |
-| Remote Codex | Exists since #688: see "Since 2026-10-16" below | — |
+| Remote Codex (SSH, #688) | The same rollout lines, from the machine's own Codex home `$HOME/.koloft/codex-home/sessions/` and `archived_sessions/` (`src/main/remote/codexMachine.ts`, CODEX§16). Today the mirror does **not** bring them: `remote/sync.ts` pulls transcripts, hook files and `extraPulls`, and `extraPulls` holds only Antigravity's `brain` folder (`index.ts`, the `targets()` of the sync). New: a second `extraPulls` entry for a machine with Codex history (`codexSessions.machinesWithTabs()` or a listed remote thread) pulls both folders into `<userData>/remote/<host>/codex-sessions/`, `--delete` like the others | Same · same · `session_meta.payload.cwd` on the machine as `ssh://machine/path` |
+| Local Muse Code | `museHome/sessions/YYYY/MM/DD/<id>/session.jsonl` (MUSE§2), plus each `subagent/<child>/session.jsonl`, which folds into the parent. One `runtime.session` record with `payload.kind == "run"` and `payload.event.kind == "model_completed"` = one call, its `payload.event.usage` booked once; `goal_usage_attribution` records are never booked (they repeat the same numbers, MUSE§2). Tokens: input = `input_tokens − cached_tokens` (not probed which way Muse counts; the fake-server run had `cached_tokens == cache_read_tokens`, see Not probed), cache read = `cache_read_tokens`, cache write = `cache_write_tokens`, output = `output_tokens`. **No price**: `pricing.ts` has no Meta models, so Muse rows show tokens and "no price" | The record's time through `localDayKey` · `payload.event.model` · the session's cwd through the same `workspaceFor` the Muse history list uses |
+| Remote Muse Code (SSH) | The same file on the machine. Today it is **not** mirrored (the Muse `mirrorDir` is the hook folder only; history comes from `muse serve` over ssh, which is not known to return usage). New: an `extraPulls` entry for a machine with Muse history pulls `museHome/sessions/` into `<userData>/remote/<host>/muse-sessions/` | Same · same · `ssh://machine/path` |
+| Local Antigravity | `brain/<id>/.system_generated/logs/transcript.jsonl` (AGY§8): each `PLANNER_RESPONSE` line with tokens = one call. Tokens: input = `input_tokens` (already net of cache, AGY§8), cache read = `cache_read_tokens`, output = `output_tokens` (thinking included). The model is in no transcript line: it is read from `conversations/<id>.db` `gen_metadata` (one protobuf row per call, in `PLANNER_RESPONSE` order, `modelVersion` at `[1, 19]`) with `node:sqlite` read-only, as `agyStore.ts` already reads the summaries db, and a small protobuf field walk (no schema). A call with no matching row is priced at the conversation's configured model (`executor_metadata` `[10, 1, 28]`). The title call writes neither, so it is not counted (Left out) | `created_at` through `localDayKey` · the `gen_metadata` model · the conversation's `workspace_uris` from `conversation_summaries.db`, through `workspaceFor` |
+| Remote Antigravity (SSH) | The `brain` folder is mirrored already (`<userData>/remote/<host>/agy-gemini/…`), so the tokens are on the Mac. The `conversations/` dbs are not: the agy `extraPulls` entry gains `conversations/*.db` (about 450 KB each), so the model is read the same way | Same · same · `ssh://machine/path` |
 
 **Every Codex account is covered by one read.** `prepareCodexHome` (`src/main/codexAccounts.ts`, CODEX§15) makes every account home's `sessions/` and `archived_sessions/` a link into the default home's (`$CODEX_HOME` or `~/.codex`), and moved the files an older home already had into the shared folder. So reading the default home's two folders once covers every account. Per-account cost is not shown (Left out).
 
@@ -36,22 +40,25 @@ Both tools write one file per session, and both files hold the tokens of every m
 
 **The read runs off the main thread.** A new worker `src/main/usageScanWorker.ts`, imported as `'./usageScanWorker?nodeWorker'` exactly like `transcriptSearchWorker` (`src/main/index.ts`, `// PLATFORM§4`). Main lists the files (both tools, local and mirror) and their `mtime`/`size`, keeps the cache entries that still match, and hands the rest to the worker as `workerData: { files }`. The worker reads each file as a stream line by line (`readline`), skips a line without `"usage"` (Claude) or `token_usage_record` / `turn_context` / `session_meta` (Codex) before `JSON.parse`, wraps each file in try/catch so one bad file loses only itself, and posts one message per parsed file; main merges it into the cache as it arrives. On the worker's `exit` or `error` the cache is saved, "reading" ends and the renderer gets `usage:changed` once. Only one worker runs at a time and it finishes once started (closing the modal does not stop it, so a short peek still completes the first read); a `usage:read` while it runs returns the cache plus `reading: true` and starts nothing. The two scanners are pure functions (`scanClaudeLines`, `scanCodexLines`) the 5-line worker wraps. Cache size: records are per session·day·model, so ~250k usage lines here collapse to roughly 5–10k records, a JSON file of a few MB. `workspaceFor` is called with one scope per batch. IPC: `usage:read` (the cache's records plus `reading: true|false`) and `usage:changed`. This Mac: 3809 Claude files, 3.7 GB, ~9–11 s and ~300 MB peak for the first read; Codex 46 files, 89 MB, 0.6 s.
 
-### Since 2026-10-16: three more kinds of session tab (to fold in before building the page)
+The three kinds added after 2026-10-16 (Codex over SSH, Muse Code, Antigravity) were probed on 2026-10-19 in Docker against fake model servers (`notes/225/probe-2026-10-19/`); the facts are in MUSE§2 and AGY§8. Also: the live Codex cost line prices a request above 272K input at OpenAI's long-context price (#669, PR #786); the page prices each `token_usage_record.usage` the same way, so history and the live line agree.
 
-`main` gained Codex over SSH (#688), Muse Code (#608, #711) and Antigravity (#677) after this plan was checked. Read from the code on 2026-10-18 (`main` 79ee35b0), not yet probed on real files:
+**What each kind costs to add, beyond what is built** (Claude Code local and remote, Codex local are built: `usageScan.ts`, `usageCache.ts`, `usageScanWorker.ts`):
 
-| Tab kind | Where its per-call usage is | On this Mac? |
+| Kind | New code | New copying from the machine |
 |---|---|---|
-| Codex over SSH | rollouts on the machine under `~/.koloft/codex-home/sessions/` (`remote/codexMachine.ts`, CODEX§16); history is read with `thread/list` over ssh, which carries no tokens | No: `remote/sync.ts` pulls `.claude/projects`, `.koloft/hook-sessions` and, through `extraPulls`, only Antigravity's `brain`. Adding the Codex `sessions/` folder to `extraPulls` would bring them, like agy's |
-| Antigravity, local and over SSH | `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript.jsonl`, `PLANNER_RESPONSE` lines with `input_tokens`, `output_tokens`, `cache_read_tokens`, `created_at` (`agyStore.ts`, AGY§) | Yes, remote ones are mirrored to `<userData>/remote/<host>/agy-gemini/…`. But no line names the model, so no price without another source (hook `modelName`, AGY§) |
-| Muse Code, local and over SSH | `~/.local/share/muse/sessions/YYYY/MM/DD/<id>/session.jsonl`; whether it holds per-call tokens and model is not in the code or MUSE§ (not probed yet); no price for Meta models in `pricing.ts` | Local only; the remote `session.jsonl` is not mirrored |
+| Remote Codex | a second `extraPulls` entry; the lister walks the mirror copy | the machine's rollouts, once whole, then changed files only (this Mac's own: 46 files, 89 MB) |
+| Local Muse | `scanMuseLines`; Muse files in the lister | — |
+| Remote Muse | the same, plus an `extraPulls` entry | the machine's `session.jsonl` files |
+| Local Antigravity | `scanAgyLines`, a read-only `gen_metadata` read and a protobuf field walk | — |
+| Remote Antigravity | the same, plus `conversations/*.db` in the agy `extraPulls` entry | ~450 KB per conversation |
 
-Also: the live Codex cost line now prices a request above 272K input at OpenAI's long-context price (#669, PR #786); `scanCodexLines` should price each `token_usage_record.usage` the same way.
+On the page: a Muse row wears a MUSE badge and an Antigravity row an ANTIGRAVITY badge, both in the plain style of the SSH badge (no new colour); the bar's hover lists only the agents that cost something that day. The small print no longer says "Codex counts from install day".
 
 ### Existing users after upgrading
 
 - **Claude Code history fills itself in**, as far as what is on disk: locally `~/.claude/projects` for Koloft's workspaces and their worktree buckets; for a remote machine what the mirror holds (it pulls only while the machine is connected and mirrors deletions).
-- **Codex history fills itself in too**, back to the oldest rollout file in the shared `sessions/` and `archived_sessions/` folders.
+- **Codex history fills itself in too**, back to the oldest rollout file in the shared `sessions/` and `archived_sessions/` folders; a machine's, from its first pull after the upgrade.
+- **Muse and Antigravity history fill themselves in** from the files those tools already keep, locally at once and for a machine from its first pull after the upgrade (which copies that machine's whole history once).
 - Settings, accounts, sessions, bindings: untouched.
 
 ### Left out
@@ -60,12 +67,18 @@ Also: the live Codex cost line now prices a request above 272K input at OpenAI's
 - Cost per account, per turn, or per hour. Budgets, alerts, exports.
 - A split chart (Claude Code vs Codex as two colours): the app's muted palette fails the chart colour checks, so the split lives in the hover only.
 - Watching the folders while the page is open: it re-reads on open and on every `usage:changed`.
+- Antigravity's title call: it writes no transcript line and no `gen_metadata` row (AGY§8), so no file-based count sees it; it is one small flash-lite call per conversation.
+- A price for Muse's models: `pricing.ts` has none, and no list price was found; Muse rows show tokens and "no price".
 
 ### Tests (which test goes red if it breaks)
 
 - `scanClaudeLines` unit cases on fixture lines: a key whose lines grow (`output_tokens` 3 → 1231) books 1231; `<synthetic>` skipped; a no-id line counted each time; `isSidechain` counted; a sub-agent file folds into its parent.
 - `scanCodexLines` unit cases: model from each turn's `turn_context` (a mid-thread switch prices both turns right); `turn_token_usage` / `thread_token_usage` never booked; a child rollout folds into its parent thread; the four token fields map as `codexObservation.ts` does.
 - Cache unit cases: same `mtime`/`size` → not re-parsed; changed → replaced; gone → dropped; a second read during a run starts no second worker.
+- `scanMuseLines` unit cases: one `model_completed` = one call; `goal_usage_attribution` never booked; a subagent file folds into its parent.
+- `scanAgyLines` unit cases: tokens per `PLANNER_RESPONSE`; the n-th `gen_metadata` model prices the n-th call; a call with no row takes the configured model.
+- The sync's unit cases (`remote/sync`): a machine with Codex or Muse history gets the new pull entries; the agy entry includes `conversations/*.db`.
+- E2E: a seeded Muse `session.jsonl` and an Antigravity transcript with its db show on the page with their badges; a remote Claude case through the fake ssh lab (helpers/remote.ts).
 - E2E in `settings.spec.ts`'s pattern (`openSettings`, `.set-ni` "Usage"): seeded Claude transcripts with `message.usage` (`seedJsonl` in `test/e2e/helpers/p1.ts` gains a usage option) and a seeded Codex rollout with `token_usage_record` lines under the e2e `CODEX_HOME` — the page shows the right totals per day / session / workspace / model; `usage.spec.ts` stays green.
 
 ### Not probed yet (said as such, nothing built on them)
@@ -74,6 +87,8 @@ Also: the live Codex cost line now prices a request above 272K input at OpenAI's
 - A `codex exec` rollout (`source: "exec"`) counts as a session of its cwd's workspace. Koloft's own Assist one-shots run `codex exec --ephemeral`, which writes no rollout — inferred, not checked (CODEX§4).
 - Whether a Codex thread resumed from an account home writes its new turns into the same shared file — inferred, not checked from the shared-folder link.
 - The ~300 MB peak during the first read sits in the worker, not main — expected, not measured.
+- Whether Muse's `input_tokens` includes the cached tokens (the fake-server run sent 1100 input with 107 cached and Muse wrote both back unchanged, so it shows only that Muse copies the provider's numbers; which way a Meta provider counts is not probed). Settle on a real Muse account before the Muse scanner ships.
+- The size of a real machine's Codex and Muse session folders, i.e. what the first new pull copies.
 
 ### Measured (goes to `docs/codex-cli-contract.md` §13)
 
@@ -85,6 +100,12 @@ Checked 2026-10-16 on this Mac, `codex-cli 0.162.0` (the live probe used a throw
 - **`reasoning_output_tokens` is inside `output_tokens`**: in all 3753 records where it was above 0, `total_tokens = input_tokens + output_tokens` and reasoning ≤ output.
 - **Size and speed.** Codex: 46 files, 89 MB, 0.6 s. Claude Code: 3809 `*.jsonl`, 3.7 GB, 1.01 M lines (247,810 with usage); 11.2 s then 8.7 s, ~300 MB peak.
 
-### The one decision
+### Decisions
 
 **Where it lives** — decided 2026-10-15: **A, a Settings pane "Usage".**
+
+**Which kinds of session the page counts** — open (2026-10-21):
+
+1. (recommended) All eight: Claude Code, Codex, Muse and Antigravity, on this Mac and on SSH machines. Cost: three new copies from each machine with that history (Codex rollouts, Muse sessions, Antigravity's conversation dbs); Muse rows show tokens with "no price"; the most code (two more scanners, a protobuf field walk, the sync entries).
+2. Everything on this Mac, plus remote Claude Code and remote Antigravity tokens (already copied): no new copying. Cost: remote Codex and remote Muse are missing, and the page must say so; remote Antigravity is priced at the configured model only.
+3. Only what is built: Claude Code (local and remote) and local Codex. Cost: anyone using Muse, Antigravity or remote Codex sees a total that is too low, with a note saying which agents are left out.

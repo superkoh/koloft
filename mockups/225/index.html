@@ -7251,7 +7251,9 @@
         border-color: var(--fable-line);
         background: var(--fable-soft);
       }
-      .acct-badge.ssh {
+      .acct-badge.ssh,
+      .acct-badge.muse,
+      .acct-badge.agy {
         color: var(--fg-dim);
         border-color: var(--line-2);
         background: var(--bg-3);
@@ -7810,8 +7812,9 @@
                 <div
                   class="usage-col"
                   data-day="2026-10-13"
-                  data-claude="10.34"
+                  data-claude="8.39"
                   data-codex="2.75"
+                  data-agy="1.95"
                   tabindex="0"
                   aria-label="2026-10-13: $13.09"
                 >
@@ -7820,8 +7823,9 @@
                 <div
                   class="usage-col today"
                   data-day="2026-10-14"
-                  data-claude="4.90"
+                  data-claude="2.95"
                   data-codex="1.50"
+                  data-agy="1.95"
                   tabindex="0"
                   aria-label="2026-10-14: $6.40"
                 >
@@ -7940,6 +7944,25 @@
               </div>
               <div class="acct-row usage-row">
                 <div class="t">
+                  Draft the docs site<small>site · gemini-3.1-pro · 2 days</small>
+                </div>
+                <span class="acct-badge agy">ANTIGRAVITY</span>
+                <span class="tk">1.30M</span>
+                <span class="c">$3.90</span>
+              </div>
+              <div class="acct-row usage-row">
+                <div class="t">
+                  Sort the test fixtures<small
+                    >ssh://build-box/home/me/site · muse model · 1 day</small
+                  >
+                </div>
+                <span class="acct-badge muse">MUSE</span>
+                <span class="acct-badge ssh">SSH</span>
+                <span class="tk">640k</span>
+                <span class="c none" title="No price for this model yet">no price</span>
+              </div>
+              <div class="acct-row usage-row">
+                <div class="t">
                   Write release notes<small>koloft-releases · claude-haiku-5-5 · 1 day</small>
                 </div>
 
@@ -8029,6 +8052,18 @@
                 <span class="c">$5.20</span>
               </div>
               <div class="acct-row usage-row">
+                <div class="t">gemini-3.1-pro<small>1 session</small></div>
+                <span class="acct-badge agy">ANTIGRAVITY</span>
+                <span class="tk">1.30M</span>
+                <span class="c">$3.90</span>
+              </div>
+              <div class="acct-row usage-row">
+                <div class="t">muse model<small>1 session</small></div>
+                <span class="acct-badge muse">MUSE</span>
+                <span class="tk">640k</span>
+                <span class="c none" title="No price for this model yet">no price</span>
+              </div>
+              <div class="acct-row usage-row">
                 <div class="t">claude-haiku-5-5<small>1 session</small></div>
 
                 <span class="tk">910k</span>
@@ -8045,8 +8080,9 @@
 
           <div class="usage-foot">
             <span class="acct-note"
-              >Claude Code sessions are read from their transcripts, so days before this version
-              count too. Codex sessions count from the day this version was installed.</span
+              >Claude Code, Codex, Muse and Antigravity sessions are read from the files each tool
+              keeps, on this Mac and on your SSH machines, so days before this version count
+              too.</span
             >
             <span class="acct-note"
               >Cost uses the list price Koloft keeps for each model. A model with no price shows its
@@ -8084,17 +8120,22 @@
       const tip = document.getElementById('tip')
       for (const col of document.querySelectorAll('.usage-col')) {
         const show = (e) => {
-          const c = +col.dataset.claude,
-            x = +col.dataset.codex
+          const parts = [
+            ['Claude Code', +col.dataset.claude || 0],
+            ['Codex', +col.dataset.codex || 0],
+            ['Muse', +col.dataset.muse || 0],
+            ['Antigravity', +col.dataset.agy || 0]
+          ].filter(([, usd]) => usd > 0)
+          const total = parts.reduce((sum, [, usd]) => sum + usd, 0)
           tip.innerHTML =
             '<b>' +
             col.dataset.day +
             ' · ' +
-            formatCost(c + x) +
-            '</b><br><span class="k">Claude Code</span> ' +
-            formatCost(c) +
-            ' · <span class="k">Codex</span> ' +
-            formatCost(x)
+            formatCost(total) +
+            '</b><br>' +
+            parts
+              .map(([name, usd]) => '<span class="k">' + name + '</span> ' + formatCost(usd))
+              .join(' · ')
           tip.style.display = 'block'
           const r = col.getBoundingClientRect()
           tip.style.left = Math.min(window.innerWidth - 230, r.left + r.width / 2 - 60) + 'px'

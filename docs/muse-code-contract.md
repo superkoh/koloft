@@ -74,6 +74,15 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the user's words.
 - Muse has no full-text search: `session/list`'s `filter.text` matches name or title
   prefixes only, and `session-index.db` holds only the first prompt.
+- **Tokens per model call** (2026-10-19, Muse Code 1.4.9 Linux arm64, `muse exec` in
+  Docker against a fake model server, numbers checked against what it sent): one
+  `runtime.session` record with `payload.kind == "run"` and `payload.event.kind ==
+  "model_completed"` per call, with `payload.event.model` and `payload.event.usage
+  {input_tokens, output_tokens, cached_tokens, cache_read_tokens, cache_write_tokens,
+  reasoning_tokens}`; `payload.run_id` is the turn. Per call, not running totals. The
+  same numbers are written again as `payload.event.kind == "goal_usage_attribution"`
+  (`record.usage_family: "provider"`), so reading both doubles the total. A subagent's
+  calls are only in its own `subagent/<child>/session.jsonl`.
 
 ## §3 Status: OSC 7501
 
