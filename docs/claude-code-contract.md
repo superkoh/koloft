@@ -773,6 +773,18 @@ never wrote a transcript.
   resets_at } }` and `prompt_cache: { warm, caching_observed, ttl: '5m' | '1h',
   expires_at, requests, misses, expected_rebuilds, hit_ratio, cache_write_tokens,
   miss_recache_tokens, last_miss_at, last_miss_cause: { causes: [] } }`.
+  - **Seen live 2026-10-21, CC 2.1.306**, an interactive haiku session on a
+    subscription account (through Koloft's shim), a `statusLine` command appending its
+    stdin to a file, two one-line turns: before the first reply both are `null`; after
+    it, `prompt_cache` = `{warm: true, caching_observed: true, ttl: "1h", expires_at:
+    <unix seconds, about an hour after the reply>, requests, misses, expected_rebuilds,
+    hit_ratio, cache_write_tokens, miss_recache_tokens, last_miss_at, last_miss_cause:
+    null, miss_causes: {}, recache_tokens_if_cold}` — `miss_causes` and
+    `recache_tokens_if_cold` are new since 2.1.276, and the TTL was **1h**, not 5m.
+    `rate_limits` held `five_hour` and `seven_day` (`used_percentage`, `resets_at`), no
+    `spend_limit`. The bundled ccstatusline 2.2.30 has a `cache-timer` widget that
+    times the cache from the transcript's last reply with a 5-minute TTL unless set
+    otherwise; it does not read `prompt_cache`.
 
 Evidence: binary reading, the CLI reference and two local experiments, 2026-08-07, CC
 2.1.224; render latency measured in live testing (date and CC version not recorded).
