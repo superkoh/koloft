@@ -57,6 +57,7 @@ interface RuntimeEntry extends StatusSignals {
   status?: SessionStatus
   since: number
   wakeupPending: boolean
+  compactingWhileIdle?: boolean
   idleTimer?: ReturnType<typeof setTimeout>
   closeTimer?: ReturnType<typeof setTimeout>
 }
@@ -76,8 +77,8 @@ export class SessionRuntime extends EventEmitter {
   }
 
   turnOver(tabId: string): boolean {
-    const turn = this.entries.get(tabId)?.turn
-    return turn === 'ended' || turn === 'input'
+    const e = this.entries.get(tabId)
+    return (e?.turn === 'ended' || e?.turn === 'input') && !e.compactingWhileIdle
   }
 
   protected turnNow(tabId: string): Turn | undefined {
@@ -101,6 +102,18 @@ export class SessionRuntime extends EventEmitter {
     e.restingSince = undefined
     this.disarmClose(e)
     this.evaluate(tabId, e, Date.now())
+    this.announceTurnOver(tabId, wasOver)
+  }
+
+  setCompactingWhileIdle(tabId: string, compacting: boolean): void {
+    const e = this.entries.get(tabId)
+    if (!e || !!e.compactingWhileIdle === compacting) return
+    const wasOver = this.turnOver(tabId)
+    e.compactingWhileIdle = compacting
+    this.announceTurnOver(tabId, wasOver)
+  }
+
+  private announceTurnOver(tabId: string, wasOver: boolean): void {
     const over = this.turnOver(tabId)
     if (over === wasOver) return
     this.turnOverChanged(tabId)
@@ -148,7 +161,7 @@ export class SessionRuntime extends EventEmitter {
   }
 
   private holdsWork(e: RuntimeEntry): boolean {
-    return e.wakeupPending || e.background.length > 0
+    return e.wakeupPending || e.background.length > 0 || !!e.compactingWhileIdle
   }
 
   private entry(tabId: string): RuntimeEntry {

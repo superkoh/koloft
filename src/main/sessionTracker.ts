@@ -389,7 +389,6 @@ export interface RemoteTab {
 interface Tracked {
   info: SessionInfo
   compactingFrom?: Turn
-  compactingWhileIdle?: boolean
   launchCwd: string
   readOffset: number
   tailBuf: Buffer
@@ -563,7 +562,7 @@ export class SessionTracker extends SessionRuntime {
     }
     if (t && turnOf(event)) {
       t.compactingFrom = undefined
-      t.compactingWhileIdle = false
+      this.setCompactingWhileIdle(tabId, false)
     }
     if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
@@ -580,19 +579,19 @@ export class SessionTracker extends SessionRuntime {
   ): void {
     const tabId = t.info.tabId
     if (event.type === 'compacting') {
-      t.compactingFrom = this.turnNow(tabId) ?? 'ended'
-      t.compactingWhileIdle = event.trigger === 'auto' && t.compactingFrom === 'ended'
+      const from = this.turnNow(tabId) ?? 'ended'
+      if (event.trigger === 'auto' && from === 'ended') {
+        this.setCompactingWhileIdle(tabId, true)
+        return
+      }
+      t.compactingFrom = from
       this.recordHookTurn(tabId, 'working')
       return
     }
+    this.setCompactingWhileIdle(tabId, false)
     const from = t.compactingFrom
     t.compactingFrom = undefined
     if (from && this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, from)
-    t.compactingWhileIdle = false
-  }
-
-  compactingWhileIdle(tabId: string): boolean {
-    return !!this.tracked.get(tabId)?.compactingWhileIdle
   }
 
   setStatus(tabId: string, status: SessionStatus): void {

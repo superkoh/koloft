@@ -1790,35 +1790,20 @@ describe('a compaction the owner asked for', () => {
     await waitFor(tracker, (s) => s.tabId === 'tabK4' && s.status === 'working')
   })
 
-  it('Claude compacting a finished session on its own shows it working, told apart as an idle compaction on both of its edges', async () => {
+  it('Claude compacting a finished session on its own moves no status, but holds the turn open until it is done, so nothing is typed into it meanwhile', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     await bindCaughtUp(tracker, 'tabK5', cwd, initialLines(cwd))
     tracker.setStatus('tabK5', 'waiting')
-    const edges: [string, boolean][] = []
-    tracker.on('status', (e: { next: string }) =>
-      edges.push([e.next, tracker.compactingWhileIdle('tabK5')])
-    )
+    const edges: string[] = []
+    tracker.on('status', (e: { next: string }) => edges.push(`status ${e.next}`))
+    tracker.on('turn-over', (e: { over: boolean }) => edges.push(`over ${e.over}`))
     tracker.receive('tabK5', { type: 'compacting', trigger: 'auto' })
+    expect(tracker.turnOver('tabK5')).toBe(false)
     tracker.receive('tabK5', hook('compacted'))
-    expect(edges).toEqual([
-      ['working', true],
-      ['waiting', true]
-    ])
-    expect(tracker.compactingWhileIdle('tabK5')).toBe(false)
-  })
-
-  it('a compaction the owner asked for, or one Claude runs in the middle of a turn, is not an idle compaction', async () => {
-    const cwd = makeWorkspace()
-    const tracker = newTracker()
-    await bindCaughtUp(tracker, 'tabK6', cwd, initialLines(cwd))
-    tracker.setStatus('tabK6', 'waiting')
-    tracker.receive('tabK6', { type: 'compacting', trigger: 'manual' })
-    expect(tracker.compactingWhileIdle('tabK6')).toBe(false)
-    tracker.receive('tabK6', hook('compacted'))
-    tracker.setStatus('tabK6', 'working')
-    tracker.receive('tabK6', { type: 'compacting', trigger: 'auto' })
-    expect(tracker.compactingWhileIdle('tabK6')).toBe(false)
+    expect(status(tracker, 'tabK5')).toBe('waiting')
+    expect(tracker.turnOver('tabK5')).toBe(true)
+    expect(edges).toEqual(['over false', 'over true'])
   })
 
   it('a compaction in the middle of a turn leaves it working', async () => {

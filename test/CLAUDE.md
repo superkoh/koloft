@@ -107,8 +107,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     session's env, ending `sh exit=<code>`), `/clear`,
     `/compact` (PreCompact, a compact SessionStart, then the "Compacted" line Claude
     writes), `/compact-while-idle` (Claude compacting a finished session on its own:
-    an `auto` PreCompact and a compact SessionStart, with no prompt and no Stop around
-    them), `/context` (the two records Claude writes for it), `/resume <id>`, `/exit` (also
+    the `idle_prompt` Notification, then an `auto` PreCompact and a compact
+    SessionStart, with no prompt and no Stop around them), `/context` (the two records Claude writes for it), `/resume <id>`, `/exit` (also
     `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
     remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,

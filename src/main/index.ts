@@ -551,8 +551,8 @@ const sessionBackends = new SessionBackends({
     consumeOutletDedupe(tabId)
     newsJudge.prompted(tabId)
   },
-  bound: (tabId, key) => {
-    attention.bound(tabId, key)
+  bound: (tabId, key, compaction) => {
+    if (!compaction) attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
     butler?.onBound(tabId, key)
     discordTyping?.refresh(tabId)
@@ -2672,7 +2672,7 @@ app.whenReady().then(() => {
     if (onDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     discordTyping?.refresh(t.tabId)
-    if (!(onDiscord && t.next === 'waiting') && !tracker.compactingWhileIdle(t.tabId))
+    if (!(onDiscord && t.next === 'waiting'))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)

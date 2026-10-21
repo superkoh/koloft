@@ -869,6 +869,11 @@ function handleLine(line) {
     return
   }
   if (text === '/compact-while-idle') {
+    fireHook('notify', {
+      hook_event_name: 'Notification',
+      message: 'Claude is waiting for your input',
+      notification_type: 'idle_prompt'
+    })
     compact(
       'auto',
       { type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'auto' }, cwd },
