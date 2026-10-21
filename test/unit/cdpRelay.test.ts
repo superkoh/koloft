@@ -342,6 +342,61 @@ describe('a socket that closes while its tab is still binding', () => {
   })
 })
 
+// PLATFORM§10
+describe('a client driving a page while the user is mid-word in an input method', () => {
+  async function attachedGuest(): Promise<{ guest: FakeGuest; a: Conn; sessionId: string }> {
+    const guest = fakeGuest(11)
+    const a = await registered()
+    const listed = (await a.cmd('Target.getTargets')).result as {
+      targetInfos: { targetId: string }[]
+    }
+    const targetId = listed.targetInfos[0]?.targetId ?? ''
+    const { sessionId } = (await a.cmd('Target.attachToTarget', { targetId })).result as {
+      sessionId: string
+    }
+    return { guest, a, sessionId }
+  }
+  const evaluated = (guest: FakeGuest): number =>
+    guest.debugger.sendCommand.mock.calls.filter((c) => c[0] === 'Runtime.evaluate').length
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r))
+  }
+
+  it('holds the command until the user finishes the word, then sends it', async () => {
+    const { guest, a, sessionId } = await attachedGuest()
+    relay.hostComposing(true)
+    const reply = a.cmd('Runtime.evaluate', { expression: '1' }, sessionId)
+    await new Promise((r) => setTimeout(r, 200))
+    expect(evaluated(guest)).toBe(0)
+
+    relay.hostComposing(false)
+    expect(await reply).toHaveProperty('result')
+    expect(evaluated(guest)).toBe(1)
+  })
+
+  it('sends the held command anyway once the word has sat untouched for 8 s, so a composition that never ends cannot stall the agent', async () => {
+    const { guest, a, sessionId } = await attachedGuest()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      relay.hostComposing(true)
+      const reply = a.cmd('Runtime.evaluate', { expression: '1' }, sessionId)
+      await settle()
+      await vi.advanceTimersByTimeAsync(7_000)
+      relay.hostComposing(true)
+      await vi.advanceTimersByTimeAsync(7_000)
+      await settle()
+      expect(evaluated(guest)).toBe(0)
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      await settle()
+      expect(evaluated(guest)).toBe(1)
+      expect(await reply).toHaveProperty('result')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 // PLATFORM§16
 describe('a client reloading a page', () => {
   it('reloads that guest by itself and never sends Page.reload to its debugger, which reloads the whole Koloft window', async () => {

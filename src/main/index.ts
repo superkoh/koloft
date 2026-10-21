@@ -303,6 +303,7 @@ import {
 } from '@shared/browserRoute'
 import {
   cdpEnvDir,
+  hostComposing,
   relayClientEvicted,
   relayEndpoint,
   relayStripChanged,
@@ -5409,6 +5410,7 @@ function registerIpc(): void {
     if (typeof sessionId !== 'string' || !Array.isArray(targets)) return
     relayStripChanged(sessionId, targets as BrowserStripTarget[])
   })
+  ipcMain.on(CH.browser.hostComposing, (_e, on: unknown) => hostComposing(on === true))
   ipcMain.on(CH.terminal.screenDone, (_e, answer: unknown) => {
     const a = answer as ScreenAnswer
     if (!a || typeof a.requestId !== 'string') return

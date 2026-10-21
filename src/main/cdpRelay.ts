@@ -68,6 +68,22 @@ function swapIds<T>(value: T, from: string | undefined, to: string | undefined):
 const clients = new Map<string, Client>()
 const snapshots = new Map<string, RelayTarget[]>()
 
+// PLATFORM§10
+const COMPOSITION_LEFT_OPEN_MS = 8_000
+let composingTimer: NodeJS.Timeout | undefined
+const heldWhileComposing: (() => void)[] = []
+
+export function hostComposing(on: boolean): void {
+  clearTimeout(composingTimer)
+  composingTimer = on ? setTimeout(() => hostComposing(false), COMPOSITION_LEFT_OPEN_MS) : undefined
+  if (!on) for (const go of heldWhileComposing.splice(0)) go()
+}
+
+function compositionDone(): Promise<void> {
+  if (!composingTimer) return Promise.resolve()
+  return new Promise((resolve) => heldWhileComposing.push(resolve))
+}
+
 export function cdpEnvDir(): string {
   return path.join(app.getPath('userData'), 'cdp')
 }
@@ -196,6 +212,7 @@ function backendFor(client: Client): RelayBackend {
       publishAttached(client)
     },
     forward: async (targetId, guestId, method, params, sessionId) => {
+      await compositionDone()
       // PLATFORM§9
       if (method === 'Page.captureScreenshot') {
         await d.stage(client.sessionId, tabIdFor(targetId))

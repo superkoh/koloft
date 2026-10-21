@@ -382,6 +382,20 @@ method. A recheck adds its date, version and command to the bullet.
   `buttons` 1**, both from a real mouse and from Playwright.
 - **An HTML drag with no `dataTransfer` payload fires no `dragover`**; at least one
   `setData` call is needed.
+- **A focus change inside any `<webview>` ends the input-method word the user is typing
+  in the host.** Measured 2026-10-21, Electron 43.7.3, macOS 27.0 Pinyin through real
+  keys in a tart VM: with "nihao" mid-composition in a host terminal, a guest page's
+  `element.focus()` or `blur()` — from a CDP client (Playwright `click` on a button or
+  a field, `pressSequentially`, `evaluate`), from main's `executeJavaScript`, with or
+  without `Emulation.setFocusEmulationEnabled`, and after main's
+  `webContents.focus()` on the host — left the host with `compositionstart` and no
+  `compositionend`, and the Space that should pick 你好 typed nothing. The guest was
+  hidden (`visibility:hidden`) in another session's Workbench. A navigation with no
+  autofocus, a screenshot, an `evaluate` that moves no focus and a `fill` into the
+  already-focused field kept the word. Plain typing with no word open is not affected.
+  `webContents.getFocusedWebContents()` named that guest the whole time, while the
+  host's xterm textarea held the caret. A guest page's own script moving focus has the
+  same effect and no host-side hook can stop it.
 
 ## §11 `<webview>` guests: permissions
 

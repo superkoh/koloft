@@ -316,6 +316,7 @@ const api: KoloftApi = {
     setGuestOwner: (guestId, ownerTabId) =>
       ipcRenderer.send(CH.browser.guestOwner, guestId, ownerTabId),
     reportStrip: (sessionId, targets) => ipcRenderer.send(CH.browser.strip, sessionId, targets),
+    reportComposing: (on) => ipcRenderer.send(CH.browser.hostComposing, on),
     onCdpOp: (cb) => {
       const handler = (_e: unknown, op: BrowserCdpOp): void => cb(op)
       ipcRenderer.on(CH.browser.cdpOp, handler)

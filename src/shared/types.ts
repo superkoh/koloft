@@ -1144,6 +1144,7 @@ export interface KoloftApi {
     setOverlayGuest(guestId: number, on: boolean): void
     setGuestOwner(guestId: number, ownerTabId: string): void
     reportStrip(sessionId: string, targets: BrowserStripTarget[]): void
+    reportComposing(on: boolean): void
     onCdpOp(cb: (op: BrowserCdpOp) => void): () => void
     answerCdpOp(res: BrowserCdpOpResult): void
     onCdpAttached(cb: (a: BrowserCdpAttached) => void): () => void
