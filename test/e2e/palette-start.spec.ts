@@ -514,6 +514,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
           .toMatch(
             /Theownertypedthisin⌘P:turnondarkmode\(Theownerwasintheworkspace\S*ws-aatthetime\.\)/
           )
+        await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
         await ask(app, page, 'and dim the sidebar too')
         await page.keyboard.press('Enter')
         await expect
@@ -544,6 +545,10 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         .poll(() => JSON.stringify(codexCalls(env)) + codexWireText(env), { timeout: 60_000 })
         .toContain('The owner typed this in ⌘P: turn on dark mode')
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
+      await expect
+        .poll(() => codexWireText(env), { timeout: 60_000 })
+        .toContain('"method":"turn/completed"')
+      await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       await ask(app, page, 'and dim the sidebar too')
       await page.keyboard.press('Enter')
       await expect
