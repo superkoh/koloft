@@ -125,13 +125,13 @@ describe('injected hook script', () => {
     fire('tabK', 'compacting', { session_id: 's1', trigger: 'manual' })
     fire('tabK', 'start', { session_id: 's1', source: 'compact' })
     fire('tabK', 'start', { session_id: 's2', source: 'clear' })
-    fire('tabK', 'compacting', { session_id: 's2', trigger: 'manual' })
+    fire('tabK', 'compacting', { session_id: 's2', trigger: 'auto' })
     fire('tabK', 'start', { session_id: 's2', source: 'compact' })
-    expect(readStatusLog('tabK').map((r) => [r.event, r.sessionId])).toEqual([
-      ['compacting', 's1'],
-      ['compacted', 's1'],
-      ['compacting', 's2'],
-      ['compacted', 's2']
+    expect(readStatusLog('tabK').map((r) => [r.event, r.sessionId, r.trigger])).toEqual([
+      ['compacting', 's1', 'manual'],
+      ['compacted', 's1', undefined],
+      ['compacting', 's2', 'auto'],
+      ['compacted', 's2', undefined]
     ])
   })
 

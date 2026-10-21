@@ -69,7 +69,11 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   the `idle_prompt` Notification, then about 55 minutes later PreCompact and SessionStart
   `compact`; the transcript gets `compact_boundary` (`trigger: "auto"`), the summary
   record below, and a `system`/`informational` record "Compacted while idle, before the
-  prompt cache expired". When it fires is read from the binaries, not probed (2.1.293,
+  prompt cache expired". **Its PreCompact payload carries `trigger: "auto"`**, measured
+  2026-10-20 on CC 2.1.305: a real interactive session in Koloft's hand-test sandbox,
+  context past `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=100000`, left alone after one turn;
+  53 minutes later Koloft's hook logged the PreCompact with that trigger, then the
+  compact SessionStart, with nothing else between them. When it fires is read from the binaries, not probed (2.1.293,
   2.1.296 and 2.1.299 carry the same code; `strings`, 2026-10-14, correcting a 2.1.295
   reading that took the floor for the default): a server-side flag
   (`tengu_sunny_locket`; with none the mode is `off`), a conversation of at least
@@ -1063,6 +1067,13 @@ inferred, not checked.
     agent (2.1.227). Its agent writes a transcript at once, and the main loop writes ONE
     wrap-up line before its Stop. A fork whose result is already final OMITS
     `background` entirely (2.1.220), rather than setting it false.
+- **A Monitor a plugin starts has no spawn ack; only its events name it.** Seen
+  2026-10-20 in a real CC 2.1.304 transcript (a plugin's monitor, started with the
+  session): no `{taskId, timeoutMs}` record anywhere, yet the task ran for hours and was
+  still running at a turn end. Each event arrives as a `<task-notification>` with
+  `<task-id>` and `<summary>Monitor event: "<description>"</summary>`, no `<tool-use-id>`
+  and no `<status>`; that plugin's first event came right at session start. A
+  model-armed Monitor's events and its 30-minute expiry notice carry the same summary.
 - **A Workflow's agents write transcripts** under `<sid>/subagents/workflows/<runId>/`,
   one level deeper than a plain subagent.
 - **The finish report is a `<task-notification>`** naming both a `<tool-use-id>` and a

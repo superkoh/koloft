@@ -551,8 +551,8 @@ const sessionBackends = new SessionBackends({
     consumeOutletDedupe(tabId)
     newsJudge.prompted(tabId)
   },
-  bound: (tabId, key) => {
-    attention.bound(tabId, key)
+  bound: (tabId, key, idleCompaction) => {
+    if (!idleCompaction) attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
     butler?.onBound(tabId, key)
     discordTyping?.refresh(tabId)

@@ -201,4 +201,21 @@ test.describe('background work (subagents, shells, CC-reported tasks) after the 
       .poll(() => pendingAttention(page), { timeout: 10_000 })
       .toMatchObject([{ kind: 'turn-done' }])
   })
+
+  // CC§8
+  test('a Monitor a plugin started, known only by its event notices, is parked too, so the turn it wakes ends as only news with no Assist asked', async ({
+    page
+  }) => {
+    test.setTimeout(120_000)
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+
+    await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+
+    await runIn(page, centerTerm(page), '/bg-plugin-monitor')
+    await expect(page.locator('.ws .ws-tab .ws-tab-parked')).toHaveText('⏸ 1', { timeout: 15_000 })
+    await expect
+      .poll(() => pendingAttention(page), { timeout: 10_000 })
+      .toMatchObject([{ kind: 'turn-done', fyi: true }])
+  })
 })
