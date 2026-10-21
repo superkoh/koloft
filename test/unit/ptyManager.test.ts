@@ -255,6 +255,26 @@ describe('PtyManager handles after the pty exits', () => {
     mgr.reapDead()
     expect(mgr.get(h.id)).toBeUndefined()
   })
+
+  it("logs a session tab's last output, without terminal codes, when it ends with an error, so a tab that closed too fast to read still says why", () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      new PtyManager().create({ kind: 'codex', koloftShim: SHIM, cwd: os.tmpdir() })
+      mocks.state.data?.('\x1b[31mError: connection refused\x1b[0m\r\n')
+      mocks.state.exit?.({ exitCode: 1 })
+      expect(logged.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(
+        /codex tab .* exited with code 1; its last output:\nError: connection refused/
+      )
+
+      logged.mockClear()
+      new PtyManager().create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
+      mocks.state.data?.('bye\r\n')
+      mocks.state.exit?.({ exitCode: 0 })
+      expect(logged).not.toHaveBeenCalled()
+    } finally {
+      logged.mockRestore()
+    }
+  })
 })
 
 describe('PtyManager.whenReady: waiting until a tab can be typed into', () => {

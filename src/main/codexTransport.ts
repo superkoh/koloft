@@ -471,6 +471,9 @@ export async function createCodexTransport(
   wss.on('error', fail)
   server.on('upgrade', (req, socket, head) => {
     if (accepted || stopping) {
+      console.error(
+        `[koloft] Codex relay refused a ${accepted ? 'second' : 'late'} connection (409)`
+      )
       socket.end('HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n')
       return
     }

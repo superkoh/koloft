@@ -3,10 +3,11 @@ import { EventEmitter } from 'events'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import type { TabKind } from '@shared/types'
+import { exitedAbnormally, type TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { OscCwdParser } from './oscCwd'
+import { stripTerminalCodes } from './terminalCodes'
 import { userShell } from './userShell'
 import { bracketedPaste, typeKeys, typedPieces, withoutMouseAndFocusReports } from './typeKeys'
 
@@ -61,6 +62,8 @@ const LINE_EDITOR_STARTS_READING = /\x1b\[\?(?:2004|1034)h/
 const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
 // PLATFORM§2
 const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
+
+const OUTPUT_KEPT_FOR_A_FAILED_EXIT = 4096
 
 function typeOnceTheShellReads(
   write: (text: string) => void,
@@ -243,8 +246,11 @@ export class PtyManager extends EventEmitter {
     )
 
     const cwdParser = args.util ? new OscCwdParser() : undefined
+    let lastOutput = ''
     proc.onData((data) => {
       watchForReadyShell(data)
+      if (args.kind !== 'shell')
+        lastOutput = (lastOutput + data).slice(-OUTPUT_KEPT_FOR_A_FAILED_EXIT)
       this.emit('data', { id, data })
       const cwd = cwdParser?.push(data)
       if (cwd && cwd !== handle.cwd) {
@@ -254,6 +260,10 @@ export class PtyManager extends EventEmitter {
     })
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
+      if (lastOutput && exitedAbnormally({ exitCode, signal }))
+        console.error(
+          `[koloft] ${args.kind} tab ${id} exited with code ${exitCode}${signal ? ` (signal ${signal})` : ''}; its last output:\n${stripTerminalCodes(lastOutput)}`
+        )
       if (titlePoll) clearInterval(titlePoll)
       for (const file of sourcedFiles) fs.rm(file, { force: true }, () => {})
       this.wakeReady(id)
