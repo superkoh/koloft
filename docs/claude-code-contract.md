@@ -69,7 +69,11 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   the `idle_prompt` Notification, then about 55 minutes later PreCompact and SessionStart
   `compact`; the transcript gets `compact_boundary` (`trigger: "auto"`), the summary
   record below, and a `system`/`informational` record "Compacted while idle, before the
-  prompt cache expired". When it fires is read from the binaries, not probed (2.1.293,
+  prompt cache expired". **Its PreCompact payload carries `trigger: "auto"`**, measured
+  2026-10-20 on CC 2.1.305: a real interactive session in Koloft's hand-test sandbox,
+  context past `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=100000`, left alone after one turn;
+  53 minutes later Koloft's hook logged the PreCompact with that trigger, then the
+  compact SessionStart, with nothing else between them. When it fires is read from the binaries, not probed (2.1.293,
   2.1.296 and 2.1.299 carry the same code; `strings`, 2026-10-14, correcting a 2.1.295
   reading that took the floor for the default): a server-side flag
   (`tengu_sunny_locket`; with none the mode is `off`), a conversation of at least
