@@ -14,6 +14,7 @@ const TEAMMATE_QUIET_MS = 500
 const PROCS_SCAN_MS = 100
 const IDLE_MS = 2000
 const IDLE_CLOSE_MS = 400
+const IDLE_COMPACTION_LIMIT_MS = 500
 const ACK_AGE_PAST_THE_TRUNCATION_TICK_YET_INSIDE_ITS_SILENCE_CAP_MS = SILENCE_MS - 400
 
 let SessionTracker: typeof import('../../src/main/sessionTracker').SessionTracker
@@ -34,6 +35,7 @@ beforeAll(async () => {
   process.env.KOLOFT_PROCS_SCAN_MS = String(PROCS_SCAN_MS)
   process.env.KOLOFT_IDLE_MS = String(IDLE_MS)
   process.env.KOLOFT_IDLE_CLOSE_MS = String(IDLE_CLOSE_MS)
+  process.env.KOLOFT_IDLE_COMPACTION_LIMIT_MS = String(IDLE_COMPACTION_LIMIT_MS)
   projectsRoot = path.join(home, '.claude', 'projects')
   ;({ SessionTracker, encodeCwd, sessionEventFromHook } =
     await import('../../src/main/sessionTracker'))
@@ -49,6 +51,7 @@ afterAll(() => {
   delete process.env.KOLOFT_PROCS_SCAN_MS
   delete process.env.KOLOFT_IDLE_MS
   delete process.env.KOLOFT_IDLE_CLOSE_MS
+  delete process.env.KOLOFT_IDLE_COMPACTION_LIMIT_MS
   fs.rmSync(home, { recursive: true, force: true })
 })
 
@@ -1804,6 +1807,22 @@ describe('a compaction the owner asked for', () => {
     expect(status(tracker, 'tabK5')).toBe('waiting')
     expect(tracker.turnOver('tabK5')).toBe(true)
     expect(edges).toEqual(['over false', 'over true'])
+  })
+
+  it('an idle compaction that never finishes, as when it is cancelled, stops holding the turn after its limit, and a new conversation in the tab drops it at once', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabK6', cwd, initialLines(cwd))
+    tracker.setStatus('tabK6', 'waiting')
+    tracker.receive('tabK6', { type: 'compacting', trigger: 'auto' })
+    expect(tracker.turnOver('tabK6')).toBe(false)
+    await sleep(IDLE_COMPACTION_LIMIT_MS * 2)
+    expect(tracker.turnOver('tabK6')).toBe(true)
+
+    tracker.receive('tabK6', { type: 'compacting', trigger: 'auto' })
+    expect(tracker.turnOver('tabK6')).toBe(false)
+    tracker.bindSession('tabK6', file, SID, cwd, '', '', 'clear')
+    expect(tracker.turnOver('tabK6')).toBe(true)
   })
 
   it('a compaction in the middle of a turn leaves it working', async () => {

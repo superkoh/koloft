@@ -11,6 +11,7 @@ export function envMs(name: string, dflt: number): number {
 const IDLE_MS = envMs('KOLOFT_IDLE_MS', 4 * 60_000)
 // CC§12
 const AUTO_CLOSE_MS = envMs('KOLOFT_IDLE_CLOSE_MS', 30 * 60_000)
+const IDLE_COMPACTION_GIVEN_UP_AFTER_MS = envMs('KOLOFT_IDLE_COMPACTION_LIMIT_MS', 10 * 60_000)
 
 export type Turn = 'working' | 'approval' | 'input' | 'ended'
 
@@ -57,7 +58,7 @@ interface RuntimeEntry extends StatusSignals {
   status?: SessionStatus
   since: number
   wakeupPending: boolean
-  compactingWhileIdle?: boolean
+  compactingWhileIdle?: ReturnType<typeof setTimeout>
   idleTimer?: ReturnType<typeof setTimeout>
   closeTimer?: ReturnType<typeof setTimeout>
 }
@@ -109,7 +110,13 @@ export class SessionRuntime extends EventEmitter {
     const e = this.entries.get(tabId)
     if (!e || !!e.compactingWhileIdle === compacting) return
     const wasOver = this.turnOver(tabId)
+    clearTimeout(e.compactingWhileIdle)
     e.compactingWhileIdle = compacting
+      ? setTimeout(
+          () => this.setCompactingWhileIdle(tabId, false),
+          IDLE_COMPACTION_GIVEN_UP_AFTER_MS
+        )
+      : undefined
     this.announceTurnOver(tabId, wasOver)
   }
 
@@ -141,6 +148,7 @@ export class SessionRuntime extends EventEmitter {
     const e = this.entries.get(tabId)
     if (!e) return
     clearTimeout(e.idleTimer)
+    clearTimeout(e.compactingWhileIdle)
     this.disarmClose(e)
     this.entries.delete(tabId)
   }

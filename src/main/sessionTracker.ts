@@ -580,7 +580,7 @@ export class SessionTracker extends SessionRuntime {
     const tabId = t.info.tabId
     if (event.type === 'compacting') {
       const from = this.turnNow(tabId) ?? 'ended'
-      if (event.trigger === 'auto' && from === 'ended') {
+      if (event.trigger === 'auto' && this.turnOver(tabId)) {
         this.setCompactingWhileIdle(tabId, true)
         return
       }
@@ -863,6 +863,7 @@ export class SessionTracker extends SessionRuntime {
     if (file && file !== t.info.jsonlPath) this.bind(t, file)
     if (source !== 'compact') {
       t.reported = null
+      this.setCompactingWhileIdle(tabId, false)
       this.setBackgroundItems(t, [])
       this.setStatus(tabId, 'waiting')
     }
