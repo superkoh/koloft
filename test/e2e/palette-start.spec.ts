@@ -241,10 +241,11 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('⏎ asks AI even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words; an answer it cannot use hands the words to the butler, and with Assist off the workspace picker opens and the session starts on the pick', async ({
+  test('⏎ asks AI even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words; an answer it cannot use hands the words to the butler with the agent the owner picked, and with Assist off the workspace picker opens and the session starts on the pick', async ({
     env
   }) => {
     test.setTimeout(240_000)
+    installAgy(env)
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -265,10 +266,12 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       const picker = page.getByRole('dialog', { name: 'New Session in…' })
       assistAnswers(env, 'not an answer')
       await ask(app, page, 'fix the build')
-      await page.keyboard.press('Enter')
+      await page.keyboard.press('Shift+Enter')
       const [butler] = await waitForAllCalls(env, 1, 30_000)
       expect(butler.cwd).toBe(butlerFolder(env))
-      expect(textAfterDashes(butler)).toBe('The owner typed this in ⌘P: fix the build')
+      expect(textAfterDashes(butler)).toBe(
+        'The owner typed this in ⌘P: fix the build (The owner picked Antigravity for it: start any session for this with --backend agy.)'
+      )
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
       await expect(page.locator('.modal')).toHaveCount(0)
 
@@ -306,7 +309,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       expect(butler.cwd).toBe(butlerFolder(env))
       await expect(page.locator('.modal')).toHaveCount(0)
       expect(textAfterDashes(butler)).toMatch(
-        /^The owner typed this in ⌘P: turn on dark mode \(The owner was in the workspace \S*ws-a at the time\.\)$/
+        /^The owner typed this in ⌘P: turn on dark mode \(The owner was in the workspace \S*ws-a at the time\.\) \(The owner picked Claude for it: start any session for this with --backend claude\.\)$/
       )
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
       const butlerTab = await butlerRow(page).getAttribute('data-tab-id')
