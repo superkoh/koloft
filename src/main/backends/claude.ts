@@ -803,7 +803,7 @@ export class ClaudeBackend implements SessionBackend {
       this.d.events(obj.tabId, {
         type: 'bound',
         key: nextId,
-        ...(obj.source === 'compact' && { compaction: true })
+        ...(obj.source === 'compact' && tracker.turnOver(obj.tabId) && { idleCompaction: true })
       })
   }
 

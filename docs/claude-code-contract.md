@@ -1059,6 +1059,10 @@ inferred, not checked.
     reads "Command timed out and was moved to the background (ID: …)") or
     `backgroundedByUser` (Ctrl+B).
   - `{taskId, timeoutMs}` — a Monitor.
+  - `{status: 'forked', background: true, agentId}` — a skill forked into a background
+    agent (2.1.227). Its agent writes a transcript at once, and the main loop writes ONE
+    wrap-up line before its Stop. A fork whose result is already final OMITS
+    `background` entirely (2.1.220), rather than setting it false.
 - **A Monitor a plugin starts has no spawn ack; only its events name it.** Seen
   2026-10-20 in a real CC 2.1.304 transcript (a plugin's monitor, started with the
   session): no `{taskId, timeoutMs}` record anywhere, yet the task ran for hours and was
@@ -1066,10 +1070,6 @@ inferred, not checked.
   `<task-id>` and `<summary>Monitor event: "<description>"</summary>`, no `<tool-use-id>`
   and no `<status>`; that plugin's first event came right at session start. A
   model-armed Monitor's events and its 30-minute expiry notice carry the same summary.
-  - `{status: 'forked', background: true, agentId}` — a skill forked into a background
-    agent (2.1.227). Its agent writes a transcript at once, and the main loop writes ONE
-    wrap-up line before its Stop. A fork whose result is already final OMITS
-    `background` entirely (2.1.220), rather than setting it false.
 - **A Workflow's agents write transcripts** under `<sid>/subagents/workflows/<runId>/`,
   one level deeper than a plain subagent.
 - **The finish report is a `<task-notification>`** naming both a `<tool-use-id>` and a

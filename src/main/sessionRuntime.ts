@@ -11,7 +11,6 @@ export function envMs(name: string, dflt: number): number {
 const IDLE_MS = envMs('KOLOFT_IDLE_MS', 4 * 60_000)
 // CC§12
 const AUTO_CLOSE_MS = envMs('KOLOFT_IDLE_CLOSE_MS', 30 * 60_000)
-const IDLE_COMPACTION_GIVEN_UP_AFTER_MS = envMs('KOLOFT_IDLE_COMPACTION_LIMIT_MS', 10 * 60_000)
 
 export type Turn = 'working' | 'approval' | 'input' | 'ended'
 
@@ -58,7 +57,6 @@ interface RuntimeEntry extends StatusSignals {
   status?: SessionStatus
   since: number
   wakeupPending: boolean
-  compactingWhileIdle?: ReturnType<typeof setTimeout>
   idleTimer?: ReturnType<typeof setTimeout>
   closeTimer?: ReturnType<typeof setTimeout>
 }
@@ -78,8 +76,8 @@ export class SessionRuntime extends EventEmitter {
   }
 
   turnOver(tabId: string): boolean {
-    const e = this.entries.get(tabId)
-    return (e?.turn === 'ended' || e?.turn === 'input') && !e.compactingWhileIdle
+    const turn = this.entries.get(tabId)?.turn
+    return turn === 'ended' || turn === 'input'
   }
 
   protected turnNow(tabId: string): Turn | undefined {
@@ -103,24 +101,6 @@ export class SessionRuntime extends EventEmitter {
     e.restingSince = undefined
     this.disarmClose(e)
     this.evaluate(tabId, e, Date.now())
-    this.announceTurnOver(tabId, wasOver)
-  }
-
-  setCompactingWhileIdle(tabId: string, compacting: boolean): void {
-    const e = this.entries.get(tabId)
-    if (!e || !!e.compactingWhileIdle === compacting) return
-    const wasOver = this.turnOver(tabId)
-    clearTimeout(e.compactingWhileIdle)
-    e.compactingWhileIdle = compacting
-      ? setTimeout(
-          () => this.setCompactingWhileIdle(tabId, false),
-          IDLE_COMPACTION_GIVEN_UP_AFTER_MS
-        )
-      : undefined
-    this.announceTurnOver(tabId, wasOver)
-  }
-
-  private announceTurnOver(tabId: string, wasOver: boolean): void {
     const over = this.turnOver(tabId)
     if (over === wasOver) return
     this.turnOverChanged(tabId)
@@ -148,7 +128,6 @@ export class SessionRuntime extends EventEmitter {
     const e = this.entries.get(tabId)
     if (!e) return
     clearTimeout(e.idleTimer)
-    clearTimeout(e.compactingWhileIdle)
     this.disarmClose(e)
     this.entries.delete(tabId)
   }
@@ -169,7 +148,7 @@ export class SessionRuntime extends EventEmitter {
   }
 
   private holdsWork(e: RuntimeEntry): boolean {
-    return e.wakeupPending || e.background.length > 0 || !!e.compactingWhileIdle
+    return e.wakeupPending || e.background.length > 0
   }
 
   private entry(tabId: string): RuntimeEntry {

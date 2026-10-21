@@ -86,12 +86,12 @@ export class BackgroundLedger {
 
   // CC§8
   noteNotification(text: string): ReadonlySet<string> {
-    const monitorEvent = text.match(/<summary>Monitor event: "?([^<]*?)"?<\/summary>/)
-    if (monitorEvent) {
-      for (const m of text.matchAll(/<task-id>([^<]+)<\/task-id>/g)) {
-        this.monitors.add(m[1])
-        if (!this.taskLabels.has(m[1])) this.taskLabels.set(m[1], monitorEvent[1])
-      }
+    for (const [notice] of text.matchAll(/<task-notification>[\s\S]*?<\/task-notification>/g)) {
+      const id = notice.match(/<task-id>([^<]+)<\/task-id>/)?.[1]
+      const monitorEvent = notice.match(/<summary>Monitor event: "?([^<]*?)"?<\/summary>/)
+      if (!id || !monitorEvent) continue
+      this.monitors.add(id)
+      if (!this.taskLabels.has(id)) this.taskLabels.set(id, monitorEvent[1])
     }
     const st = text
       .match(/<status>([^<]*)<\/status>/)?.[1]

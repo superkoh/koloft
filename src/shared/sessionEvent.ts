@@ -26,7 +26,7 @@ export type SessionEvent =
   | { type: 'title'; title: string }
   | { type: 'degraded'; message: string }
   | { type: 'open'; target: string }
-  | { type: 'bound'; key: string; compaction?: boolean }
+  | { type: 'bound'; key: string; idleCompaction?: boolean }
   | { type: 'exited'; clean: boolean; title?: string; sessionId?: string }
   | { type: 'turn-ended'; turn: Turn }
   | {

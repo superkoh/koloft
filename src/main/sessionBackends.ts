@@ -48,7 +48,7 @@ export interface SessionBackend {
 
 export interface SessionLifecycle {
   prompted(tabId: string): void
-  bound(tabId: string, key: string, compaction: boolean): void
+  bound(tabId: string, key: string, idleCompaction: boolean): void
   exited(tabId: string, subject: AttentionSubject): void
   clearAttention(tabId: string): void
   open(tabId: string, target: string): void
@@ -71,8 +71,8 @@ export class SessionBackends {
     switch (event.type) {
       case 'bound':
         this.cleanExitAt.delete(tabId)
-        if (!event.compaction) this.lifecycle.clearAttention(tabId)
-        return this.lifecycle.bound(tabId, event.key, !!event.compaction)
+        if (!event.idleCompaction) this.lifecycle.clearAttention(tabId)
+        return this.lifecycle.bound(tabId, event.key, !!event.idleCompaction)
       case 'exited':
         return this.exited(tabId, event.clean, { title: event.title, sessionId: event.sessionId })
       case 'open':

@@ -560,10 +560,7 @@ export class SessionTracker extends SessionRuntime {
       if (t) this.compaction(t, event)
       return
     }
-    if (t && turnOf(event)) {
-      t.compactingFrom = undefined
-      this.setCompactingWhileIdle(tabId, false)
-    }
+    if (t && turnOf(event)) t.compactingFrom = undefined
     if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
@@ -579,16 +576,12 @@ export class SessionTracker extends SessionRuntime {
   ): void {
     const tabId = t.info.tabId
     if (event.type === 'compacting') {
-      const from = this.turnNow(tabId) ?? 'ended'
-      if (event.trigger === 'auto' && this.turnOver(tabId)) {
-        this.setCompactingWhileIdle(tabId, true)
-        return
-      }
-      t.compactingFrom = from
+      const claudeCompactsAFinishedTurnOnItsOwn = event.trigger === 'auto' && this.turnOver(tabId)
+      if (claudeCompactsAFinishedTurnOnItsOwn) return
+      t.compactingFrom = this.turnNow(tabId) ?? 'ended'
       this.recordHookTurn(tabId, 'working')
       return
     }
-    this.setCompactingWhileIdle(tabId, false)
     const from = t.compactingFrom
     t.compactingFrom = undefined
     if (from && this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, from)
@@ -864,7 +857,6 @@ export class SessionTracker extends SessionRuntime {
     if (file && file !== t.info.jsonlPath) this.bind(t, file)
     if (source !== 'compact') {
       t.reported = null
-      this.setCompactingWhileIdle(tabId, false)
       this.setBackgroundItems(t, [])
       this.setStatus(tabId, 'waiting')
     }
