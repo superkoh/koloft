@@ -300,6 +300,28 @@ describe('the butler', () => {
     expect(c.isButlerSession('tab-1')).toBe(false)
   })
 
+  it('on Antigravity, which makes its conversation only at the first prompt, one opened with nothing to say is not held to the deadline; opened with words, it is', async () => {
+    vi.useFakeTimers()
+    choice = { backend: 'agy' }
+    const c = make()
+    const opening = c.open()
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    await opening
+    vi.advanceTimersByTime(DEADLINE_MS)
+    expect(killed).toEqual([])
+    expect(toasts).toEqual([])
+    c.onBound('tab-1', 'agy:conv-1')
+    c.onPtyExit('tab-1')
+
+    const told = c.open({ prompt: 'set up Discord', ownerWords: 'set up Discord' })
+    await vi.waitFor(() => expect(started).toHaveLength(2))
+    release()
+    await told
+    vi.advanceTimersByTime(DEADLINE_MS)
+    expect(killed).toEqual(['tab-2'])
+  })
+
   it('only while bound to Discord is it kept awake and its channel known by its tab; unbinding keeps its conversation and its tab', async () => {
     const c = make()
     c.bind(CHANNEL)

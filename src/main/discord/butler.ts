@@ -265,6 +265,7 @@ export class Butler {
     else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
     let startedWith: ButlerFirstWords | undefined
+    let bindsOnlyOnceToldSomething = false
     try {
       if (resumable) {
         const live = this.d.liveTabFor(launch.backend, key)
@@ -281,6 +282,7 @@ export class Butler {
       else {
         startedWith = first
         // ADR-0031 AGY§8
+        bindsOnlyOnceToldSomething = launch.backend === 'agy' && !first?.prompt
         tabId = await this.d.start({
           ...launch,
           firstPrompt: first?.prompt,
@@ -292,7 +294,7 @@ export class Butler {
     }
     if (!tabId) return refusal(`${launch.title} could not start.`)
     this.resident = tabId
-    this.armDeadline(tabId, launch.title)
+    if (!bindsOnlyOnceToldSomething) this.armDeadline(tabId, launch.title)
     return { ok: true, tabId, startedWith }
   }
 

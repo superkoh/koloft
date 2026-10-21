@@ -3,7 +3,14 @@ import path from 'path'
 import { spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, installMuse, museCalls, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  installAgy,
+  installCodex,
+  installMuse,
+  museCalls,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   butlerRow,
   butlerSessionOnDisk,
@@ -47,6 +54,8 @@ const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 const BUTLER_ROLE_OPENS = "You are Alfred, the owner's butler in Koloft"
 const ROWS_RESCAN_AND_PUSH_SETTLE_MS = 1500
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
+const SHORT_BIND_DEADLINE_MS = 5_000
+const DEADLINE_FIRED_SETTLE_MS = 1_500
 
 function butlerFolder(env: E2EEnv): string {
   return path.join(env.userData, 'conductors', 'global')
@@ -419,6 +428,28 @@ test.describe('The butler: one global session at the top of the sessions list, k
       expect(readAllCalls(env)).toEqual([])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
+    } finally {
+      await close()
+    }
+  })
+
+  // AGY§8
+  test('an Antigravity butler opened from the sidebar with nothing to say stays open past the start deadline, and its first message binds it', async ({
+    env
+  }) => {
+    installAgy(env)
+    env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
+    const { page, close } = await launched(env, { assist: { on: true, backend: 'agy' } })
+    try {
+      await butlerRow(page).click()
+      await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+      await page.waitForTimeout(SHORT_BIND_DEADLINE_MS + DEADLINE_FIRED_SETTLE_MS)
+      await expect(page.locator('.toast', { hasText: 'did not start' })).toHaveCount(0)
+      await expect(butlerRow(page)).not.toHaveClass(/\bcold\b/)
+
+      await runIn(page, centerTerm(page), 'hello')
+      await expect(butlerRow(page)).toHaveClass(/st-(working|waiting)/, { timeout: 60_000 })
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
     } finally {
       await close()
     }
