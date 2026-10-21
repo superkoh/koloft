@@ -381,7 +381,6 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   })
 
   // AGY§16
-  // AGY§16
   test('a session that agy started with koloft session new --name keeps that name as its row title, and Koloft renames the conversation in agy to it through agy’s local API; it reports back with koloft session send: the message reaches agy through its local API, marked with who sent it, and agy answers it', async ({
     env
   }) => {

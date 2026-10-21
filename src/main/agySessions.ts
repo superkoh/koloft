@@ -771,7 +771,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (state.conversationId && run.info?.nativeSessionId !== state.conversationId)
       this.bindTo(run, state.conversationId)
     if (!run.info) return
-    if (state.title && state.title !== before?.title) this.retitle(run.info, state.title)
+    if (state.title && state.title !== before?.title) {
+      run.givenTitle = undefined
+      this.retitle(run.info, state.title)
+    }
     // AGY§19
     if (state.agentState === 'reviewing' && before?.agentState !== 'reviewing')
       void this.readPlan(run)
@@ -914,7 +917,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   private turnStarted(run: AgyRun): void {
     this.watchCompaction(run)
     const id = run.info?.nativeSessionId
-    if (id && !this.history.get(agySessionKey(id, run.remote?.host))?.name)
+    if (id && !run.givenTitle && !this.history.get(agySessionKey(id, run.remote?.host))?.name)
       this.takeListedTitleSoon(run, id)
   }
 
@@ -930,19 +933,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const name = (await listed.catch(() => [])).find((e) => e.id === id)?.name
     if (!name && again) this.takeListedTitleSoon(run, id)
     if (!name || run.info?.nativeSessionId !== id) return
-    if (given && name !== given) return this.rename(run, id, given)
-    if (name !== run.info.title) this.retitle(run.info, name)
-  }
-
-  // AGY§16
-  private async rename(run: AgyRun, id: string, title: string): Promise<void> {
-    const renamed = await run.api?.rename(id, title).then(
-      () => true,
-      () => false
-    )
-    if (!renamed) return
-    if (run.givenTitle === title) run.givenTitle = undefined
-    if (run.info?.nativeSessionId === id) this.retitle(run.info, title)
+    if (!given) {
+      if (name !== run.info.title) this.retitle(run.info, name)
+      return
+    }
+    run.givenTitle = undefined
+    // AGY§16
+    if (name !== given) void run.api?.rename(id, given).catch(() => undefined)
   }
 
   // AGY§8

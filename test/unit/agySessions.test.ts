@@ -32,6 +32,7 @@ const state = (s: string, extra = ''): string => osc(`state=${s}${extra}:app=ant
 const SERVICE = '/exa.language_server_pb.LanguageServerService/'
 const REAL_PATH = process.env.PATH
 const REMOTE_WS = 'ssh://devbox/home/me/proj'
+const LISTED_TITLE_READ_SETTLES_MS = 300
 
 let home: string
 let repo: string
@@ -582,6 +583,28 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     await sessions.refreshHistory()
     await vi.waitFor(() => expect(sessions.rows(repo)[0].title).toBe('Docs pass'))
     expect(sessions.list()[0].title).toBe('Docs pass')
+  })
+
+  it("the owner's own /rename in agy before Koloft has renamed the conversation wins over the name given at launch", async () => {
+    apiAnswers = true
+    const { id } = await launch({ name: 'Docs pass' })
+    title(id, { conversation_id: A })
+    say(id, state('idle'))
+    title(id, { conversation_id: A, conversation_title: 'My own title' })
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'My own title',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    say(id, state('working'))
+    say(id, state('done'))
+    await new Promise((resolve) => setTimeout(resolve, LISTED_TITLE_READ_SETTLES_MS))
+    expect(sessions.list()[0].title).toBe('My own title')
+    await sessions.refreshHistory()
+    expect(sessions.rows(repo)[0].title).toBe('My own title')
+    expect(sent('UpdateConversationAnnotations')).toEqual([])
   })
 
   it('a name given at launch is dropped once /clear moves the tab to a new conversation, which takes the title agy makes up', async () => {
