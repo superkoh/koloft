@@ -7,8 +7,9 @@ import { expect } from './app'
 import type { E2EEnv } from './env'
 import { assertFixtureDir } from './fixtureGuard'
 import type {
-  AssistRecord,
   BackendAvailability,
+  ButlerSession,
+  DiscordSettings,
   SessionWorkbenchState
 } from '../../../src/shared/types'
 
@@ -77,13 +78,16 @@ export async function waitForAllCalls(
   return readAllCalls(env)
 }
 
-export function assistRecordOnDisk(env: E2EEnv, scope?: string): AssistRecord | undefined {
-  const records = (settingsOnDisk(env).assistSessions as AssistRecord[] | undefined) ?? []
-  return scope === undefined ? records[0] : records.find((r) => r.scope === scope)
+export function butlerSessionOnDisk(env: E2EEnv): ButlerSession | undefined {
+  return settingsOnDisk(env).butlerSession as ButlerSession | undefined
+}
+
+export function discordOnDisk(env: E2EEnv): DiscordSettings {
+  return (settingsOnDisk(env).discord as DiscordSettings | undefined) ?? {}
 }
 
 export async function waitConductorStarted(env: E2EEnv, timeout: number): Promise<void> {
-  const bound = (): number => assistRecordOnDisk(env)?.sessionIds.length ?? 0
+  const bound = (): number => butlerSessionOnDisk(env)?.sessionIds.length ?? 0
   await expect.poll(bound, { timeout }).toBeGreaterThan(0)
 }
 

@@ -287,6 +287,17 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   made muse read the whole file as a schema needing `schema_version`
   (`Hooks: 0 runnable · 1 warning … missing_schema_version` on stderr), and every hook in
   it silently stopped running.
+- **A `Stop` hook printing `{"decision":"block","reason":"<text>"}` keeps the turn going
+  with `<text>`.** 2026-10-20, muse 1.4.9 and 1.4.11 in Docker, fake model server, hooks
+  through `TBH_MANAGED_HOOKS_PATH`, the hook acting once; `muse exec … --json` and the TUI
+  through a pty driver: one more model request in the same turn, `<text>` bare inside the
+  first `developer` message; Stop fired again with the same `turn_id`,
+  `stop_hook_active: true` (`false` the first time) and the new reply as
+  `last_assistant_message`; no second `UserPromptSubmit`; the TUI sent `working` then one
+  `done`, none in between; the session log records `context_block_updated {reason:
+  "hook:stop", …}`; the next turn's request no longer holds `<text>`. A `Stop` hook printing
+  `hookSpecificOutput.additionalContext` is marked failed (`unsupported
+  \`additionalContext\` in hookSpecificOutput of Stop hook output`) and nothing happens.
 
 ## §10 Workspace trust
 

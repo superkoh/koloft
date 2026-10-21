@@ -1,10 +1,4 @@
-import type {
-  AssistSetting,
-  AssistTaskRow,
-  ConductorBinding,
-  SessionInfo,
-  WorkspaceRows
-} from '@shared/types'
+import type { AssistSetting, DiscordChannel, SessionInfo, WorkspaceRows } from '@shared/types'
 
 export function everyWorkspaceRows(s: {
   workspaceRows: WorkspaceRows[]
@@ -15,9 +9,9 @@ export function everyWorkspaceRows(s: {
 
 export function butlerSetUp(s: {
   assist: AssistSetting
-  binding: ConductorBinding | undefined
+  channel: DiscordChannel | undefined
 }): boolean {
-  return s.assist !== null || !!s.binding
+  return s.assist !== null || !!s.channel
 }
 
 type TabState = { id: string; alive: boolean; asleep?: true }
@@ -27,7 +21,7 @@ export function butlerTabOf(
   opened: string | null,
   tabs: readonly TabState[]
 ): string | undefined {
-  const bound = sessions.find((s) => s.alive && s.conductor && !s.assistTask)?.tabId
+  const bound = sessions.find((s) => s.alive && s.butler)?.tabId
   if (bound) return bound
   return opened && tabs.some((t) => t.id === opened && (t.alive || t.asleep)) ? opened : undefined
 }
@@ -35,12 +29,7 @@ export function butlerTabOf(
 export function isButlerTab(
   sessions: readonly SessionInfo[],
   opened: string | null,
-  tasks: readonly AssistTaskRow[],
   tabId: string
 ): boolean {
-  return (
-    !!sessions.find((s) => s.tabId === tabId)?.conductor ||
-    tasks.some((t) => t.tabId === tabId) ||
-    opened === tabId
-  )
+  return !!sessions.find((s) => s.tabId === tabId)?.butler || opened === tabId
 }

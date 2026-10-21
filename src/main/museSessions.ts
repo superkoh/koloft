@@ -80,6 +80,7 @@ import { sleep } from './codexTransport'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
 import { realpathSafe } from './projectInfo'
+import { noticeFile } from './hooks'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
@@ -674,7 +675,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
       instructions.join('\n\n') || undefined,
       opts.ownerWords,
-      hold && { ...hold, tabId }
+      hold && { ...hold, tabId },
+      this.deps.hookRegDir && noticeFile(this.deps.hookRegDir, tabId)
     )
     const argv = this.museArgv(opts, approvalFlags(permission), trust)
     this.parsers.set(tabId, new ProgramStatusParser())
@@ -721,7 +723,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
     context: string | undefined,
     ownerWords: string | undefined,
-    hold: MuseHold | undefined
+    hold: MuseHold | undefined,
+    notice: string | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -747,7 +750,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, hold)
+      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, hold, notice)
       return {
         dir: shimDir,
         env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },

@@ -5,9 +5,10 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, installMuse, museCalls, seedSettings, type E2EEnv } from './helpers/env'
 import {
-  assistRecordOnDisk,
   butlerRow,
+  butlerSessionOnDisk,
   centerTerm,
+  discordOnDisk,
   closeMenu,
   menuItemTexts,
   newSessionInWith,
@@ -37,7 +38,6 @@ import {
   seedRemoteWorkspace
 } from './helpers/remote'
 import { GLOBAL_SCOPE } from '../../src/shared/conductors'
-import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
 
 test.setTimeout(120_000)
 
@@ -50,10 +50,6 @@ const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 
 function butlerFolder(env: E2EEnv): string {
   return path.join(env.userData, 'conductors', 'global')
-}
-
-function bindingsOnDisk(env: E2EEnv): ConductorBinding[] {
-  return (settingsOnDisk(env).discord as DiscordSettings | undefined)?.bindings ?? []
 }
 
 function firstCodexCall(env: E2EEnv): { sessionId: string; argv: string[]; cwd: string } {
@@ -105,7 +101,7 @@ async function butlerMenu(page: Page): Promise<string[]> {
 
 async function butlerTabId(page: Page, env: E2EEnv): Promise<string> {
   const sessions = await page.evaluate(() => window.api.sessions.list())
-  const keys = assistRecordOnDisk(env)?.sessionIds ?? []
+  const keys = butlerSessionOnDisk(env)?.sessionIds ?? []
   const live = sessions.find((s) => s.alive && keys.includes(s.sessionId))
   if (!live) throw new Error('the butler has no live tab')
   return live.tabId
@@ -219,7 +215,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
       expect(call.cwd).toBe(butlerFolder(env))
       expect(call.argv).toContain('--plugin-dir')
       expect(call.argv).not.toContain('--append-system-prompt-file')
-      await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
       await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · Alfred')
       const write = {
         tool_name: 'Write',
@@ -234,8 +230,8 @@ test.describe('The butler: one global session at the top of the sessions list, k
       const tabId = await butlerTabId(page, env)
 
       await page.evaluate((id) => window.api.terminal.write(id, '/clear\r'), tabId)
-      await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(2)
-      expect(assistRecordOnDisk(env)?.lastSessionKey).toBe(assistRecordOnDisk(env)?.sessionIds[1])
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(2)
+      expect(butlerSessionOnDisk(env)?.lastSessionKey).toBe(butlerSessionOnDisk(env)?.sessionIds[1])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
 
@@ -246,9 +242,11 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await channelRow(dlg, CHANNEL_A).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg).toHaveCount(0)
-      expect(bindingsOnDisk(env)).toMatchObject([
-        { scope: GLOBAL_SCOPE, backend: 'claude', channel: { guildId: '111', channelId: '222' } }
-      ])
+      expect(discordOnDisk(env).channel).toEqual({
+        guildId: '111',
+        channelId: '222',
+        name: CHANNEL_A
+      })
       await expect(butlerRow(page).locator('.ws-tab-sub')).toHaveText(`#${CHANNEL_A}`)
       expect(await butlerMenu(page)).toEqual([
         'Open↩',
@@ -258,11 +256,11 @@ test.describe('The butler: one global session at the top of the sessions list, k
         'Unbind Discord'
       ])
 
-      const lastSession = assistRecordOnDisk(env)?.lastSessionKey
+      const lastSession = butlerSessionOnDisk(env)?.lastSessionKey
       await page.locator('.menu .mi', { hasText: 'Unbind Discord' }).click()
-      await expect.poll(() => bindingsOnDisk(env)).toEqual([])
+      await expect.poll(() => discordOnDisk(env).channel).toBeUndefined()
       await expect(butlerRow(page).locator('.ws-tab-sub')).toHaveText(NOT_ON_DISCORD)
-      expect(assistRecordOnDisk(env)?.lastSessionKey).toBe(lastSession)
+      expect(butlerSessionOnDisk(env)?.lastSessionKey).toBe(lastSession)
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       expect(
         (await page.evaluate(() => window.api.sessions.list())).some((s) => s.tabId === tabId)
@@ -376,7 +374,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
     const { page, close } = await launched(env, { assist: { on: true, backend: 'codex' } })
     try {
       await openButler(page)
-      await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
       const servers = codexServers(env)
       expect(
         servers.some((s) =>
@@ -409,7 +407,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
     const { page, close } = await launched(env, { assist: { on: true, backend: 'muse' } })
     try {
       await openButler(page)
-      await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
       const [call] = museCalls(env)
       expect(call.cwd).toBe(butlerFolder(env))
       expect(call.argv).toEqual(['--permission-profile', ':unrestricted'])
@@ -650,10 +648,10 @@ test.describe('The butler without Discord: talked to from the sidebar, the butle
         tool_input: { file_path: path.join(env.workspaces.a, 'x') }
       }
       expect(gateSays(first, write)).toBe('no gate')
-      await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
+      await expect.poll(() => butlerSessionOnDisk(env)?.sessionIds.length).toBe(1)
       await expect(butlerRow(page).locator('.ws-tab-sub')).toHaveText(NOT_ON_DISCORD)
 
-      const key = assistRecordOnDisk(env)!.lastSessionKey!
+      const key = butlerSessionOnDisk(env)!.lastSessionKey!
       const tabId = await butlerTabId(page, env)
       await page.evaluate((id) => window.api.terminal.kill(id), tabId)
       await expect

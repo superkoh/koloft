@@ -1,20 +1,14 @@
 import path from 'path'
-import { messagingOf, type Messaging } from '@shared/sessionBackend'
-import { barePath, isRemoteKey } from '@shared/remoteKey'
-import type { BackendId, PreviewItem } from '@shared/types'
-import {
-  FROM_KOLOFT,
-  MESSAGE_SOCKET_SHOWS_WITHIN_MS,
-  crossSessionLine,
-  type ModeClass
-} from './crossSessionMessage'
+import { barePath } from '@shared/remoteKey'
+import type { PreviewItem } from '@shared/types'
+import { FROM_KOLOFT } from './crossSessionMessage'
+import type { NoticeFile } from './hooks'
 
 const NAMED_AT_MOST = 10
 
 export interface SyncSession {
   tabId: string
   sessionId: string
-  backendId: BackendId
   title: string
   treeRoot: string
   files?: PreviewItem[]
@@ -29,13 +23,9 @@ export interface DefaultMove {
 }
 
 export interface SessionSyncDeps {
-  idle(tabId: string): boolean
-  modeOf(tabId: string): ModeClass
   repoOf(dir: string): Promise<string | null>
   gitOut(dir: string, args: string[]): Promise<string | null>
-  queue(tabId: string, text: string, clientId: string): Promise<void>
-  sendLine(tabId: string, line: string, ms: number): Promise<void>
-  type(tabId: string, text: string): Promise<void>
+  notice(tabId: string): NoticeFile | undefined
 }
 
 interface SameFiles {
@@ -44,8 +34,7 @@ interface SameFiles {
   files: Set<string>
 }
 
-interface Pending {
-  route: Messaging
+interface Notice {
   move?: { defRef: string; from: string; to: string; subjects: string[]; yours: Set<string> }
   sameFiles: Map<string, SameFiles>
 }
@@ -80,18 +69,25 @@ function short(sha: string): string {
   return sha.slice(0, 7)
 }
 
-function noticeText(p: Pending): string {
+function copyOf(n: Notice): Notice {
+  return {
+    move: n.move,
+    sameFiles: new Map([...n.sameFiles].map(([tab, o]) => [tab, { ...o, files: new Set(o.files) }]))
+  }
+}
+
+function noticeText(n: Notice): string {
   const parts: string[] = []
-  const m = p.move
+  const m = n.move
   if (m) {
     const commits = m.subjects.map((s) => `"${s}"`)
     parts.push(
-      `${m.defRef} moved from ${short(m.from)} to ${short(m.to)}, with ${m.subjects.length} new commit${m.subjects.length === 1 ? '' : 's'}: ${listed(commits)}.`
+      `${m.defRef} moved from ${short(m.from)} to ${short(m.to)}, with ${commits.length} new commit${commits.length === 1 ? '' : 's'}: ${listed(commits)}.`
     )
     if (m.yours.size) parts.push(`It changed files you changed too: ${listed([...m.yours])}.`)
     parts.push('Whether your work needs it now is your call; nobody asks you to merge or rebase.')
   }
-  for (const o of p.sameFiles.values()) {
+  for (const o of n.sameFiles.values()) {
     parts.push(`The session "${o.name}" changed files you changed too: ${listed([...o.files])}.`)
     parts.push(
       o.sameFolder
@@ -103,11 +99,11 @@ function noticeText(p: Pending): string {
 }
 
 export class SessionSync {
-  private pending = new Map<string, Pending>()
   private seen = new Map<string, Seen>()
   private told = new Map<string, Set<string>>()
   private tips = new Map<string, string>()
-  private sent = 0
+  private notices = new Map<string, Notice>()
+  private writes = new Map<string, Promise<void>>()
 
   constructor(private d: SessionSyncDeps) {}
 
@@ -119,6 +115,10 @@ export class SessionSync {
       const liveWrites = s.liveWrites ?? 0
       const was = this.seen.get(s.tabId)
       if (!was || was.sessionId !== s.sessionId) {
+        if (was) {
+          this.forget(s.tabId)
+          this.write(s.tabId, async () => this.d.notice(s.tabId)?.drop())
+        }
         this.seen.set(s.tabId, { sessionId: s.sessionId, liveWrites, stamps, live: new Set() })
         continue
       }
@@ -133,7 +133,11 @@ export class SessionSync {
       was.stamps = stamps
     }
     const open = new Set(sessions.map((s) => s.tabId))
-    for (const tabId of [...this.seen.keys()]) if (!open.has(tabId)) this.forget(tabId)
+    for (const tabId of [...this.seen.keys()])
+      if (!open.has(tabId)) {
+        this.forget(tabId)
+        this.writes.delete(tabId)
+      }
     for (const [writer, wrote] of fresh) await this.tellOthers(writer, wrote, sessions)
   }
 
@@ -168,46 +172,41 @@ export class SessionSync {
       const yours = written(s)
         .map((f) => inTree(s, f.src))
         .filter((rel): rel is string => rel !== null && changed.has(rel))
-      const p = this.of(s)
-      p.move = {
-        defRef: move.defRef,
-        from: p.move?.from ?? move.from,
-        to: move.to,
-        subjects: [...subjects, ...(p.move?.subjects ?? [])],
-        yours: new Set([...(p.move?.yours ?? []), ...yours])
-      }
-      this.flush(s.tabId)
+      this.leave(s.tabId, (n) => {
+        n.move = {
+          defRef: move.defRef,
+          from: n.move?.from ?? move.from,
+          to: move.to,
+          subjects: [...subjects, ...(n.move?.subjects ?? [])],
+          yours: new Set([...(n.move?.yours ?? []), ...yours])
+        }
+      })
     }
-  }
-
-  flush(tabId: string): void {
-    const p = this.pending.get(tabId)
-    if (!p || (p.route !== 'peerLine' && !this.d.idle(tabId))) return
-    this.pending.delete(tabId)
-    void this.deliver(tabId, p.route, noticeText(p)).catch(() => undefined)
   }
 
   forget(tabId: string): void {
-    this.pending.delete(tabId)
     this.seen.delete(tabId)
     this.told.delete(tabId)
+    this.notices.delete(tabId)
   }
 
-  private async deliver(tabId: string, route: Messaging, text: string): Promise<void> {
-    const id = `koloft-sync-${++this.sent}`
-    if (route === 'queue') return this.d.queue(tabId, text, id)
-    if (route === 'typed') return this.d.type(tabId, text)
-    const line = crossSessionLine(this.d.modeOf(tabId), text, id)
-    if (line) await this.d.sendLine(tabId, line, MESSAGE_SOCKET_SHOWS_WITHIN_MS)
+  private leave(tabId: string, add: (n: Notice) => void): void {
+    this.write(tabId, async () => {
+      const file = this.d.notice(tabId)
+      if (!file) return
+      const fresh: Notice = { sameFiles: new Map() }
+      add(fresh)
+      const unread = this.notices.get(tabId)
+      const merged = unread && copyOf(unread)
+      if (merged) add(merged)
+      const kept = await file.leave(noticeText(fresh), merged && noticeText(merged))
+      this.notices.set(tabId, kept === 'merged' && merged ? merged : fresh)
+    })
   }
 
-  private of(s: SyncSession): Pending {
-    const p = this.pending.get(s.tabId) ?? {
-      route: messagingOf(s.backendId, isRemoteKey(s.treeRoot)),
-      sameFiles: new Map()
-    }
-    this.pending.set(s.tabId, p)
-    return p
+  private write(tabId: string, job: () => Promise<void>): void {
+    const next = (this.writes.get(tabId) ?? Promise.resolve()).then(job).catch(() => undefined)
+    this.writes.set(tabId, next)
   }
 
   private async tellOthers(
@@ -242,14 +241,14 @@ export class SessionSync {
       return true
     })
     if (!untold.length) return
-    const p = this.of(to)
-    const entry = p.sameFiles.get(about.tabId) ?? {
-      name: about.title,
-      sameFolder,
-      files: new Set()
-    }
-    for (const rel of untold) entry.files.add(rel)
-    p.sameFiles.set(about.tabId, entry)
-    this.flush(to.tabId)
+    this.leave(to.tabId, (n) => {
+      const entry = n.sameFiles.get(about.tabId) ?? {
+        name: about.title,
+        sameFolder,
+        files: new Set()
+      }
+      for (const rel of untold) entry.files.add(rel)
+      n.sameFiles.set(about.tabId, entry)
+    })
   }
 }

@@ -4,7 +4,8 @@ import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
-  assistRecordOnDisk,
+  butlerSessionOnDisk,
+  discordOnDisk,
   readAllCalls,
   resumedId,
   runIn,
@@ -23,6 +24,7 @@ const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = { guildId: '111', channelId: '222', name: 'koloft-all' }
 const ASSIST_STARTS_AND_ANSWERS_MS = 60_000
 const FOLDER_HASH_CHARS = 16
+const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 
 // ADR-0029
 function assistFolder(env: E2EEnv, scope: string): string {
@@ -58,6 +60,29 @@ function seedV038(
   })
 }
 
+function seedV051(env: E2EEnv, last: string, lastMessageId: string): void {
+  seedSettings(env, {
+    hintsOff: true,
+    assist: { on: true, backend: 'claude' },
+    discord: {
+      userId: OWNER.id,
+      userName: OWNER.username,
+      bindings: [
+        {
+          id: 'b1',
+          scope: 'global',
+          backend: 'claude',
+          channel: CHANNEL,
+          lastMessageId,
+          touched: [last],
+          threads: [{ threadId: '900', keys: [last], name: 'An old session · ws-a' }]
+        }
+      ]
+    },
+    assistSessions: [{ scope: 'global', sessionIds: [last], lastSessionKey: last }]
+  })
+}
+
 function said(fake: FakeDiscord): string[] {
   return fake.posted.filter((p) => p.channelId === CHANNEL.channelId).map((p) => p.content)
 }
@@ -88,18 +113,8 @@ async function upgradedApp(env: E2EEnv, fake: FakeDiscord) {
   return { app, page }
 }
 
-function writtenBindingsAnOlderKoloftKeeps(env: E2EEnv): void {
-  const bindings = (settingsOnDisk(env).discord as { bindings: Record<string, unknown>[] }).bindings
-  expect(bindings.length).toBeGreaterThan(0)
-  for (const b of bindings) {
-    expect(['claude', 'codex']).toContain(b.backend)
-    expect(b).toMatchObject({ id: expect.any(String), scope: expect.any(String) })
-    expect(b).not.toHaveProperty('sessionIds')
-  }
-}
-
 test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after the upgrade', () => {
-  test('the global Assist on Claude, Assist never chosen, becomes the butler: it resumes the same conversation, answers in Discord, and does again after a restart; the settings it writes still keep its binding for an older Koloft', async ({
+  test('the global Assist on Claude, Assist never chosen, becomes the butler: it resumes the same conversation, answers in Discord, and does again after a restart; the settings it writes keep its channel', async ({
     env
   }) => {
     const last = crypto.randomUUID()
@@ -114,8 +129,8 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
         })
         .toEqual([last])
       await answersOnDiscord(fake, 'hello after the upgrade')
-      expect(assistRecordOnDisk(env, 'global')?.lastSessionKey).toBe(last)
-      writtenBindingsAnOlderKoloftKeeps(env)
+      expect(butlerSessionOnDisk(env)?.lastSessionKey).toBe(last)
+      expect(discordOnDisk(env).channel).toEqual(CHANNEL)
       await quitAndClose(first.app)
 
       const again = await upgradedApp(env, fake)
@@ -153,11 +168,8 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
           .toEqual([undefined])
         await answersOnDiscord(fake, 'hello after the upgrade')
         expect(assistCalls(env, scope)).toEqual([])
-        writtenBindingsAnOlderKoloftKeeps(env)
-        const [kept] = (settingsOnDisk(env).discord as { bindings: Record<string, unknown>[] })
-          .bindings
-        expect(kept).toMatchObject({ scope: 'global', channel: CHANNEL })
-        expect(assistRecordOnDisk(env, scope)).toBeUndefined()
+        expect(discordOnDisk(env).channel).toEqual(CHANNEL)
+        expect(butlerSessionOnDisk(env)?.sessionIds ?? []).not.toContain(last)
         await quitAndClose(first.app)
       } finally {
         await fake.close()
@@ -179,11 +191,8 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
       expect(resumedId(assistCalls(env, 'global')[0])).toBeUndefined()
       await answersOnDiscord(fake, 'hello from a Codex Assist')
       await expect
-        .poll(() => assistRecordOnDisk(env, 'global')?.lastSessionKey)
+        .poll(() => butlerSessionOnDisk(env)?.lastSessionKey)
         .not.toBe('codex:019a0000-old')
-      expect(
-        (settingsOnDisk(env).discord as { bindings: { backend: string }[] }).bindings[0].backend
-      ).toBe('claude')
       await quitAndClose(app)
     } finally {
       await fake.close()
@@ -219,7 +228,7 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
     try {
       const { app, page } = await upgradedApp(env, fake)
       await expect
-        .poll(() => assistRecordOnDisk(env, 'global')?.sessionIds.length ?? 0, {
+        .poll(() => butlerSessionOnDisk(env)?.sessionIds.length ?? 0, {
           timeout: ASSIST_STARTS_AND_ANSWERS_MS
         })
         .toBeGreaterThan(0)
@@ -232,6 +241,41 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
       await expect
         .poll(() => peerLinesReceived(env), { timeout: ASSIST_STARTS_AND_ANSWERS_MS })
         .toContain('report: again')
+      await quitAndClose(app)
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+test.describe('Upgrade continuity: what v0.51.0 left on disk keeps working after the upgrade', () => {
+  test('the butler’s channel in discord.bindings and its conversation in assistSessions carry over: it resumes that conversation, answers in that channel, says "not delivered" only to owner messages after the last one it saw, and the settings it writes hold both in the new shape', async ({
+    env
+  }) => {
+    const last = crypto.randomUUID()
+    seedV051(env, last, '100')
+    seedJsonl(env, assistFolder(env, 'global'), { id: last })
+    const fake = await startFakeDiscord(env)
+    fake.history[CHANNEL.channelId] = [
+      { id: '99', content: 'already handled', author: OWNER },
+      { id: '101', content: 'while you were away', author: OWNER }
+    ]
+    try {
+      const { app } = await upgradedApp(env, fake)
+      await expect
+        .poll(() => assistCalls(env, 'global').map(resumedId), {
+          timeout: ASSIST_STARTS_AND_ANSWERS_MS
+        })
+        .toEqual([last])
+      await expect
+        .poll(() => fake.posted.filter((p) => p.content === OFFLINE_REPLY).map((p) => p.replyTo))
+        .toEqual(['101'])
+      await answersOnDiscord(fake, 'hello after the upgrade')
+      expect(discordOnDisk(env).channel).toEqual(CHANNEL)
+      expect(discordOnDisk(env)).not.toHaveProperty('bindings')
+      expect(butlerSessionOnDisk(env)?.lastSessionKey).toBe(last)
+      expect(butlerSessionOnDisk(env)?.sessionIds).toContain(last)
+      expect(settingsOnDisk(env)).not.toHaveProperty('assistSessions')
       await quitAndClose(app)
     } finally {
       await fake.close()

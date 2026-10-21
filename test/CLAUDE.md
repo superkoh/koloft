@@ -327,10 +327,11 @@ hand-offs in `<home>/external-opens.txt`. Beyond those, its terminal draws with 
 its symbols.
 
 The owner's step goes through AskUserQuestion, one case at a time: the steps inside
-the question, the outcomes as options. Its card reaches the owner's Discord thread
-when a binding covers the workspace, also from a session another session started
-(discord-flow). The card carries text only — no picture — so name what to look at.
-After the owner answers, check their step in a log or file yourself.
+the question, the outcomes as options. Only the butler's own question reaches the
+owner's Discord, as a card in its channel (discord-flow); a session's question shows
+only at the Mac. The card carries text only, so name what to look at, or have the
+butler send a picture first (`koloft discord send` or `koloft discord shot`). After the
+owner answers, check their step in a log or file yourself.
 
 ## Real-window layer (test/real-window/)
 

@@ -7,6 +7,8 @@ import { shq } from '@shared/shellQuote'
 import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
 import { FROM_A_SESSION, FROM_KOLOFT, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
+import { REMOTE_HOOK_DIR } from './remote/paths'
+import { writeWholeBeforeVisible } from './jsonDrops'
 import {
   CODEX_HOLDS_LESS_THAN_ITS_EXEC_WALL_S,
   HOLD_HOOK_TIMEOUT_S,
@@ -81,10 +83,30 @@ last_note() {
     head -c ${QUOTED_NOTE_BYTES} | whole_chars
 }`
 
+export const NOTICE_ENV = 'KOLOFT_NOTICE'
+export const NOTICE_SUFFIX = '.notice'
+export const NOTICE_THIS_TURN = '.turn'
+
+export const TAKE_NOTICE_FN = `take_notice() {
+  [ -f "$notice" ] && mv -f "$notice" "$notice.$$" 2>/dev/null || return 0
+  cat "$notice.$$"
+  rm -f "$notice.$$"
+}`
+
+// CC§21 CODEX§27
+export const KEEP_GOING_FOR_THE_NOTICE_FN = `keep_going_for_the_notice() {
+  case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 1 ;; esac
+  told="$(take_notice)"
+  [ -n "$told" ] || return 1
+  printf '{"decision":"block","reason":"%s"}\\n' "$told"
+}`
+
 // CC§17 CC§19 CODEX§27
-export const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
+export const REMIND_REPLY_LANGUAGE_FN = `${TAKE_NOTICE_FN}
+${KEEP_GOING_FOR_THE_NOTICE_FN}
+remind_reply_language() {
   quote="$(cat "$said" 2>/dev/null)"
-  context="$2"
+  context="$(take_notice)$2"
   if [ -n "$quote" ]; then
     lang="$(language_in "$quote")"
     if [ -z "$lang" ]; then
@@ -101,6 +123,12 @@ export const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
   [ -n "$context" ] || return 0
   printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\\n' "$1" "$context"
 }`
+
+// CC§15 CODEX§27
+const REMIND_AFTER_A_TOOL = `fields="$(grep -o -E '"(transcript_path|agent_id)"[[:space:]]*:[[:space:]]*"[^"]*"')"
+  input="$(printf '%s\\n' "$fields" | grep -F '"transcript_path"' | head -n 1)"
+  case "$fields" in *'"agent_id"'*) notice="" ;; esac
+  remind_reply_language PostToolUse`
 
 // CC§19
 export const QUOTE_PROMPT_FN = `quote_prompt() {
@@ -130,7 +158,8 @@ const codexReplyLanguageHook = (event: string): string =>
   `sh "$${CODEX_REPLY_LANGUAGE_ENV}" ${event}`
 export const CODEX_REPLY_LANGUAGE_HOOKS = [
   { event: 'UserPromptSubmit', command: codexReplyLanguageHook('prompt') },
-  { event: 'PostToolUse', command: codexReplyLanguageHook('tool') }
+  { event: 'PostToolUse', command: codexReplyLanguageHook('tool') },
+  { event: 'Stop', command: codexReplyLanguageHook('stop') }
 ]
 
 export const CODEX_HOLD_SCRIPT_ENV = 'KOLOFT_HOLD_SCRIPT'
@@ -149,15 +178,18 @@ export const codexHoldHook = (event: HoldEvent): KoloftHook => ({
 export const CODEX_REPLY_LANGUAGE_SCRIPT = `#!/usr/bin/env bash
 said="$${CODEX_SAID_ENV}"
 [ -n "$said" ] || exit 0
+notice="$${NOTICE_ENV}"
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$1" = "tool" ]; then
-  input="$(grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1)"
-  cat >/dev/null
-  remind_reply_language PostToolUse
+  ${REMIND_AFTER_A_TOOL}
   exit 0
 fi
 input="$(cat | tr -d '\\n')"
+if [ "$1" = "stop" ]; then
+  keep_going_for_the_notice
+  exit 0
+fi
 ${QUOTE_PROMPT_FN}
 case "$input" in
   *'"prompt":"${FROM_A_SESSION}'*|*'"prompt":"${FROM_KOLOFT}'*) ;;
@@ -195,12 +227,11 @@ reg="$1"; tab="$2"; event="$3"
 # CC§14
 [ "$event" = "ask" ] && { [ ! -f "$reg/$tab.answerable" ] || [ -f "$reg/$tab.typed" ]; } && event="asked"
 said="$reg/$tab.said"
+notice="$reg/$tab${NOTICE_SUFFIX}"
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$event" = "tool" ]; then
-  input="$(grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1)"
-  cat >/dev/null
-  remind_reply_language PostToolUse
+  ${REMIND_AFTER_A_TOOL}
   exit 0
 fi
 input="$(cat | tr -d '\\n')"
@@ -272,6 +303,7 @@ case "$event" in
     done
     ;;
   prompt|stop|notify)
+    [ "$event" = "stop" ] && keep_going_for_the_notice && exit 0
     msg="$(printf '%s' "$input" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | tr -d '"\\\\[:cntrl:]')"
     sid="$(session_id)"
     # CC§8
@@ -381,7 +413,8 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids|allow)$/
+const TAB_MARKER =
+  /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids|allow|notice(\.\w+)*)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -516,6 +549,38 @@ export function discordIdsFile(regDir: string, tabId: string): string {
 
 export function saidFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.said`)
+}
+
+export function noticeFile(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}${NOTICE_SUFFIX}`)
+}
+
+export function remoteNoticeFile(tabId: string): string {
+  return `${REMOTE_HOOK_DIR}/${tabId}${NOTICE_SUFFIX}`
+}
+
+export function noticeLine(text: string): string {
+  return JSON.stringify(`${text}\n\n`).slice(1, -1)
+}
+
+export type NoticeKept = 'fresh' | 'merged'
+
+export interface NoticeFile {
+  leave(fresh: string, merged?: string): Promise<NoticeKept>
+  drop(): Promise<void>
+}
+
+export function localNotice(file: string): NoticeFile {
+  return {
+    leave: async (fresh, merged) => {
+      const kept: NoticeKept = merged !== undefined && fs.existsSync(file) ? 'merged' : 'fresh'
+      writeWholeBeforeVisible(file, noticeLine(kept === 'merged' ? merged! : fresh))
+      return kept
+    },
+    drop: async () => {
+      for (const f of [file, `${file}${NOTICE_THIS_TURN}`]) fs.rmSync(f, { force: true })
+    }
+  }
 }
 
 // ADR-0031

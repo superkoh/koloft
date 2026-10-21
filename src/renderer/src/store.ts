@@ -7,7 +7,6 @@ import {
   type AccountView,
   type AdoptableTab,
   type ArtifactView,
-  type AssistTaskRow,
   type AttentionEvent,
   type BaseChoice,
   type BrowserJsDialog,
@@ -162,7 +161,6 @@ interface AppState {
     onSave(): void | Promise<void>
   } | null
   butlerTab: string | null
-  assistTasks: AssistTaskRow[]
   assistAsked: boolean
   bindButler: boolean
   renameButler: boolean
@@ -217,7 +215,6 @@ interface AppState {
   setCloseConfirm: (c: AppState['closeConfirm']) => void
   setUnsavedPrompt: (p: AppState['unsavedPrompt']) => void
   setButlerTab: (tabId: string) => void
-  setAssistTasks: (rows: AssistTaskRow[]) => void
   setAssistAsked: (asked: boolean) => void
   setBindButler: (open: boolean) => void
   setRenameButler: (open: boolean) => void
@@ -310,8 +307,8 @@ function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
   return (
     s.activeTabId === tabId &&
     isSessionKind(leaving?.kind) &&
-    butlerSetUp({ assist: s.settings.assist, binding: s.settings.discord.bindings[0] }) &&
-    !isButlerTab(s.sessions, s.butlerTab, s.assistTasks, tabId)
+    butlerSetUp({ assist: s.settings.assist, channel: s.settings.discord.channel }) &&
+    !isButlerTab(s.sessions, s.butlerTab, tabId)
   )
 }
 
@@ -560,7 +557,6 @@ export const useStore = create<AppState>((set, get) => ({
   machine: null,
   unsavedPrompt: null,
   butlerTab: null,
-  assistTasks: [],
   assistAsked: false,
   bindButler: false,
   renameButler: false,
@@ -940,7 +936,6 @@ export const useStore = create<AppState>((set, get) => ({
   setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
   setUnsavedPrompt: (unsavedPrompt) => set({ unsavedPrompt }),
   setButlerTab: (butlerTab) => set({ butlerTab }),
-  setAssistTasks: (assistTasks) => set({ assistTasks }),
   setAssistAsked: (assistAsked) => set({ assistAsked }),
   setBindButler: (bindButler) => set({ bindButler }),
   setRenameButler: (renameButler) => set({ renameButler }),

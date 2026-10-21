@@ -1931,6 +1931,14 @@ stdin/stdout shapes were also read from the binary, which embeds a JSON schema p
   `UserPromptSubmit`, `PreToolUse`, `PostToolUse` and `SubagentStart`: "Always end your
   reply with the word X" made the reply end with X each time. It is saved in the rollout
   as a `developer` message.
+- **A blocked `Stop` keeps the same turn going.** 2026-10-20, codex-cli 0.162.0,
+  `gpt-6.1-sol` low effort, the same Node client and throwaway `CODEX_HOME`, one real turn
+  whose `Stop` hook printed `{"decision":"block","reason":"<text>"}` once: one
+  `turn/started` and one `turn/completed` with one turn id; no `idle` status in between;
+  after the first answer `hook/completed` `status: "blocked"`, then an item
+  `{type: "hookPrompt"}` carrying `<text>`, then a second `final_answer` that obeyed
+  `<text>`, then `Stop` ran again (`"stop_hook_active":true`, compact JSON; the first had
+  `false`) and the turn completed.
 - **`Stop` with `{"decision":"block","reason":"…"}` makes the model go on**, and
   **`PermissionRequest`** answering `{"decision":{"behavior":"allow"}}` runs the command with
   no request reaching the client (`deny` stops it).

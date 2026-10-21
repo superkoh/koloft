@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import type { ConductorBinding } from '../../src/shared/types'
 import {
   Interactions,
   ONLY_THE_OWNER,
@@ -11,14 +10,6 @@ import { interactionOf, sameCommand, type DiscordInteraction } from '../../src/m
 const OWNER = '555'
 const CHANNEL = '222'
 const THREAD = '333'
-
-const binding: ConductorBinding = {
-  id: 'b1',
-  scope: 'global',
-  backend: 'claude',
-  channel: { guildId: '1', channelId: CHANNEL, name: 'koloft-all' },
-  touched: []
-}
 
 function interaction(over: Partial<DiscordInteraction>): DiscordInteraction {
   return {
@@ -35,22 +26,15 @@ function interaction(over: Partial<DiscordInteraction>): DiscordInteraction {
 
 function setup(over: Partial<InteractionDeps> = {}) {
   const replies: unknown[] = []
-  const runs: { session: string; text: string }[] = []
+  const runs: string[] = []
   const pressed: DiscordInteraction[] = []
   const submitted: DiscordInteraction[] = []
   const deps: InteractionDeps = {
     owner: () => OWNER,
-    routeOf: (c) =>
-      c === CHANNEL ? { binding } : c === THREAD ? { binding, sessionKey: 'k1' } : undefined,
     press: async (i) => void pressed.push(i),
     submit: async (i) => void submitted.push(i),
-    choices: () => [
-      { name: 'This channel’s Assist (Global)', value: 'me' },
-      { name: 'fix-login · Claude', value: 'k1' },
-      { name: 'docs · Codex', value: 'k2' }
-    ],
-    run: async (_b, session, text) => {
-      runs.push({ session, text })
+    run: async (text) => {
+      runs.push(text)
       return `Typing ${text}`
     },
     respond: async (_i, body) => void replies.push(body),
@@ -60,39 +44,38 @@ function setup(over: Partial<InteractionDeps> = {}) {
 }
 
 describe('Discord slash commands', () => {
-  it('the owner’s /run types the command into the session picked, and answers at once', async () => {
+  it('the owner’s /run types the command into the butler, and answers at once', async () => {
     const { interactions, replies, runs } = setup()
-    await interactions.handle(interaction({ options: { command: ' /context ', session: 'k1' } }))
-    expect(runs).toEqual([{ session: 'k1', text: '/context' }])
+    await interactions.handle(interaction({ options: { command: ' /context ' } }))
+    expect(runs).toEqual(['/context'])
     expect(replies).toEqual([
       { type: 4, data: { content: 'Typing /context', allowed_mentions: { parse: [] } } }
     ])
   })
 
-  it('with no session picked, the command goes to this channel’s conductor', async () => {
+  it('/clear goes to the butler', async () => {
     const { interactions, runs } = setup()
     await interactions.handle(interaction({ command: 'clear' }))
-    expect(runs).toEqual([{ session: 'me', text: '/clear' }])
+    expect(runs).toEqual(['/clear'])
   })
 
-  it('in a session’s thread, with no session picked, the command goes to that session', async () => {
-    const { interactions, runs } = setup()
-    await interactions.handle(interaction({ channelId: THREAD, command: 'clear' }))
-    expect(runs).toEqual([{ session: 'k1', text: '/clear' }])
+  it('none of the commands asks which session: they all go to the butler', () => {
+    expect(SLASH_COMMANDS.flatMap((c) => c.options ?? []).map((o) => o.name)).toEqual([
+      'command',
+      'focus'
+    ])
   })
 
-  it('a button pressed in a channel or thread Koloft knows is handed on as a press, never run as a command', async () => {
+  it('a button pressed is handed on as a press, never run as a command', async () => {
     const { interactions, runs, pressed } = setup()
-    await interactions.handle(interaction({ channelId: THREAD, type: 3, customId: 'ask:x:0' }))
-    await interactions.handle(interaction({ channelId: '999', type: 3, customId: 'ask:y:0' }))
+    await interactions.handle(interaction({ type: 3, customId: 'ask:x:0' }))
     expect(pressed.map((i) => i.customId)).toEqual(['ask:x:0'])
     expect(runs).toEqual([])
   })
 
-  it('a form sent in a thread Koloft knows is handed on as a submission, never run as a command', async () => {
+  it('a form sent is handed on as a submission, never run as a command', async () => {
     const { interactions, runs, pressed, submitted } = setup()
-    await interactions.handle(interaction({ channelId: THREAD, type: 5, customId: 'secret:x' }))
-    await interactions.handle(interaction({ channelId: '999', type: 5, customId: 'secret:y' }))
+    await interactions.handle(interaction({ type: 5, customId: 'secret:x' }))
     expect(submitted.map((i) => i.customId)).toEqual(['secret:x'])
     expect(pressed).toEqual([])
     expect(runs).toEqual([])
@@ -103,7 +86,7 @@ describe('Discord slash commands', () => {
     await interactions.handle(
       interaction({ command: 'compact', options: { focus: 'keep the test plan' } })
     )
-    expect(runs[0].text).toBe('/compact keep the test plan')
+    expect(runs[0]).toBe('/compact keep the test plan')
   })
 
   it('someone else gets a refusal only they can see, and nothing runs', async () => {
@@ -111,12 +94,6 @@ describe('Discord slash commands', () => {
     await interactions.handle(interaction({ userId: '666', options: { command: '/clear' } }))
     expect(runs).toEqual([])
     expect(replies).toEqual([{ type: 4, data: { content: ONLY_THE_OWNER, flags: 64 } }])
-  })
-
-  it('a channel this Koloft has no conductor in gets no answer from it, so another Koloft on the same bot can answer', async () => {
-    const { interactions, replies } = setup()
-    await interactions.handle(interaction({ channelId: '999', options: { command: '/clear' } }))
-    expect(replies).toEqual([])
   })
 
   it('a /run whose text is not a slash command is refused privately', async () => {
@@ -129,60 +106,35 @@ describe('Discord slash commands', () => {
   it('a failure to start answers with the reason instead of leaving Discord with no reply', async () => {
     const { interactions, replies } = setup({
       run: async () => {
-        throw new Error('there is no session "nope".')
+        throw new Error('Alfred could not start.')
       }
     })
-    await interactions.handle(interaction({ options: { command: '/clear', session: 'nope' } }))
+    await interactions.handle(interaction({ options: { command: '/clear' } }))
     expect(replies[0]).toMatchObject({
-      data: { content: '⚠ there is no session "nope".' }
+      data: { content: '⚠ Alfred could not start.' }
     })
-  })
-
-  it('autocomplete lists the sessions whose name holds what was typed', async () => {
-    const { interactions, replies } = setup()
-    await interactions.handle(
-      interaction({ type: 4, options: { session: 'LOG' }, focused: 'session' })
-    )
-    expect(replies).toEqual([
-      { type: 8, data: { choices: [{ name: 'fix-login · Claude', value: 'k1' }] } }
-    ])
-  })
-
-  it('autocomplete shows someone else no sessions', async () => {
-    const { interactions, replies } = setup()
-    await interactions.handle(
-      interaction({ type: 4, userId: '666', options: { session: '' }, focused: 'session' })
-    )
-    expect(replies).toEqual([{ type: 8, data: { choices: [] } }])
   })
 })
 
 describe('reading an interaction from the Gateway', () => {
-  it('takes the user from member in a server, and marks the option being typed', () => {
+  it('takes the user from member in a server, and each option by its name', () => {
     expect(
       interactionOf({
         id: '1',
         token: 't',
-        type: 4,
+        type: 2,
         channel_id: CHANNEL,
         member: { user: { id: OWNER } },
-        data: {
-          name: 'run',
-          options: [
-            { name: 'command', value: '/x' },
-            { name: 'session', value: 'fi', focused: true }
-          ]
-        }
+        data: { name: 'compact', options: [{ name: 'focus', value: 'the plan' }] }
       })
     ).toEqual({
       id: '1',
       token: 't',
-      type: 4,
+      type: 2,
       channelId: CHANNEL,
       userId: OWNER,
-      command: 'run',
-      options: { command: '/x', session: 'fi' },
-      focused: 'session'
+      command: 'compact',
+      options: { focus: 'the plan' }
     })
   })
 

@@ -3,7 +3,7 @@ import { setupStatusText } from '../../src/main/discord/setupSteps'
 import type { DiscordPhase } from '../../src/shared/types'
 
 function tokenLine(phase: DiscordPhase): string | undefined {
-  return setupStatusText({ phase, guilds: [], failing: {} }, { bindings: [] })
+  return setupStatusText({ phase, guilds: [], failing: {} }, {})
     .split('\n')
     .find((l) => l.startsWith('Bot token:'))
 }
