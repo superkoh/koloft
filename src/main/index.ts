@@ -2672,7 +2672,7 @@ app.whenReady().then(() => {
     if (onDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     discordTyping?.refresh(t.tabId)
-    if (!(onDiscord && t.next === 'waiting'))
+    if (!(onDiscord && t.next === 'waiting') && !tracker.compactingWhileIdle(t.tabId))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)

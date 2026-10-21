@@ -1790,27 +1790,35 @@ describe('a compaction the owner asked for', () => {
     await waitFor(tracker, (s) => s.tabId === 'tabK4' && s.status === 'working')
   })
 
-  it('Claude compacting a finished session on its own is no work: the status never moves', async () => {
+  it('Claude compacting a finished session on its own shows it working, told apart as an idle compaction on both of its edges', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     await bindCaughtUp(tracker, 'tabK5', cwd, initialLines(cwd))
     tracker.setStatus('tabK5', 'waiting')
-    const edges: string[] = []
-    tracker.on('status', (e: { next: string }) => edges.push(e.next))
+    const edges: [string, boolean][] = []
+    tracker.on('status', (e: { next: string }) =>
+      edges.push([e.next, tracker.compactingWhileIdle('tabK5')])
+    )
     tracker.receive('tabK5', { type: 'compacting', trigger: 'auto' })
     tracker.receive('tabK5', hook('compacted'))
-    expect(status(tracker, 'tabK5')).toBe('waiting')
-    expect(edges).toEqual([])
+    expect(edges).toEqual([
+      ['working', true],
+      ['waiting', true]
+    ])
+    expect(tracker.compactingWhileIdle('tabK5')).toBe(false)
   })
 
-  it('Claude compacting on its own in the middle of a turn leaves it working', async () => {
+  it('a compaction the owner asked for, or one Claude runs in the middle of a turn, is not an idle compaction', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     await bindCaughtUp(tracker, 'tabK6', cwd, initialLines(cwd))
+    tracker.setStatus('tabK6', 'waiting')
+    tracker.receive('tabK6', { type: 'compacting', trigger: 'manual' })
+    expect(tracker.compactingWhileIdle('tabK6')).toBe(false)
+    tracker.receive('tabK6', hook('compacted'))
     tracker.setStatus('tabK6', 'working')
     tracker.receive('tabK6', { type: 'compacting', trigger: 'auto' })
-    tracker.receive('tabK6', hook('compacted'))
-    expect(status(tracker, 'tabK6')).toBe('working')
+    expect(tracker.compactingWhileIdle('tabK6')).toBe(false)
   })
 
   it('a compaction in the middle of a turn leaves it working', async () => {

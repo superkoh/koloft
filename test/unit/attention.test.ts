@@ -189,6 +189,16 @@ describe('attention — a session starting again keeps its mark', () => {
     expect(changes.at(-1)?.event).toBeNull()
   })
 
+  it('the same session bound again in its own tab, as after a compaction, leaves its mark exactly as it was', () => {
+    const { t, changes } = makeTracker()
+    t.onStatusChange('tab-A', 'working', 'approval', { sessionId: 'sid-1' })
+    const before = t.list()
+    const changesBefore = changes.length
+    t.bound('tab-A', 'sid-1')
+    expect(t.list()).toEqual(before)
+    expect(changes).toHaveLength(changesBefore)
+  })
+
   it('a tab put to sleep keeps its mark through its process ending, until it is closed', () => {
     const { t } = makeTracker()
     const asleep = new Set(['tab-A'])

@@ -30,7 +30,7 @@ export class AttentionTracker {
 
   bound(tabId: string, sessionId: string): void {
     const carried = this.list().find((e) => e.sessionId === sessionId)
-    if (!carried) return
+    if (!carried || carried.tabId === tabId) return
     for (const e of this.list()) if (e.sessionId === sessionId) this.pending.delete(e.tabId)
     this.pending.set(tabId, { ...carried, tabId, kind: 'turn-done' })
     this.onChange(this.list(), null)

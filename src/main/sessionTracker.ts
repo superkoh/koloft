@@ -86,7 +86,7 @@ export function sessionEventFromHook(
     case 'prompt':
       return { type: 'prompt' }
     case 'compacting':
-      return typeof trigger === 'string' && trigger
+      return trigger === 'auto' || trigger === 'manual'
         ? { type: 'compacting', trigger }
         : { type: 'compacting' }
     case 'compacted':
@@ -389,6 +389,7 @@ export interface RemoteTab {
 interface Tracked {
   info: SessionInfo
   compactingFrom?: Turn
+  compactingWhileIdle?: boolean
   launchCwd: string
   readOffset: number
   tailBuf: Buffer
@@ -560,7 +561,10 @@ export class SessionTracker extends SessionRuntime {
       if (t) this.compaction(t, event)
       return
     }
-    if (t && turnOf(event)) t.compactingFrom = undefined
+    if (t && turnOf(event)) {
+      t.compactingFrom = undefined
+      t.compactingWhileIdle = false
+    }
     if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
@@ -576,16 +580,19 @@ export class SessionTracker extends SessionRuntime {
   ): void {
     const tabId = t.info.tabId
     if (event.type === 'compacting') {
-      const from = this.turnNow(tabId) ?? 'ended'
-      const claudeCompactsOnItsOwnWhileIdle = event.trigger === 'auto' && from !== 'working'
-      if (claudeCompactsOnItsOwnWhileIdle) return
-      t.compactingFrom = from
+      t.compactingFrom = this.turnNow(tabId) ?? 'ended'
+      t.compactingWhileIdle = event.trigger === 'auto' && t.compactingFrom === 'ended'
       this.recordHookTurn(tabId, 'working')
       return
     }
     const from = t.compactingFrom
     t.compactingFrom = undefined
     if (from && this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, from)
+    t.compactingWhileIdle = false
+  }
+
+  compactingWhileIdle(tabId: string): boolean {
+    return !!this.tracked.get(tabId)?.compactingWhileIdle
   }
 
   setStatus(tabId: string, status: SessionStatus): void {
