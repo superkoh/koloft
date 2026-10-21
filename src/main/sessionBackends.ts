@@ -71,7 +71,7 @@ export class SessionBackends {
     switch (event.type) {
       case 'bound':
         this.cleanExitAt.delete(tabId)
-        this.lifecycle.clearAttention(tabId)
+        if (!event.compaction) this.lifecycle.clearAttention(tabId)
         return this.lifecycle.bound(tabId, event.key)
       case 'exited':
         return this.exited(tabId, event.clean, { title: event.title, sessionId: event.sessionId })

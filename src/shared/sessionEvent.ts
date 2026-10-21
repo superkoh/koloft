@@ -17,7 +17,7 @@ export interface AskPayload {
 export type SessionEvent =
   | { type: 'asked'; ask: AskPayload }
   | { type: 'prompt' }
-  | { type: 'compacting' }
+  | { type: 'compacting'; trigger?: string }
   | { type: 'compacted' }
   | { type: 'stop'; reported?: ReportedTask[] }
   | { type: 'notify'; need: 'approval' | 'input' }
@@ -26,7 +26,7 @@ export type SessionEvent =
   | { type: 'title'; title: string }
   | { type: 'degraded'; message: string }
   | { type: 'open'; target: string }
-  | { type: 'bound'; key: string }
+  | { type: 'bound'; key: string; compaction?: boolean }
   | { type: 'exited'; clean: boolean; title?: string; sessionId?: string }
   | { type: 'turn-ended'; turn: Turn }
   | {

@@ -160,42 +160,24 @@ test.describe('attention markers come from real session-status transitions (shim
     }
   })
 
-  test('a report Claude compacts away while idle never comes back as your move: a dot raised again keeps the verdict, and the Assist is not asked twice', async ({
-    env
+  test('Claude compacting a finished session on its own leaves its dot exactly as it was and sends no new notice', async ({
+    app,
+    page
   }) => {
-    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
-    fs.writeFileSync(path.join(env.home, 'fake-claude-assist-reply'), 'NEWS')
-    const judgeAsks = (): number =>
-      fs
-        .readFileSync(path.join(env.home, 'fake-claude-assist-asked.txt'), 'utf8')
-        .split('Reply with the one word ACT or NEWS').length - 1
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      await startSessionIn(page, 'ws-a')
-      await runIn(page, centerTerm(page), '/answer the build is green')
-      await expect
-        .poll(async () => (await pendingAttention(page)).map((m) => m.fyi), { timeout: 30_000 })
-        .toEqual([true])
-      const [reported] = await pendingAttention(page)
-      const asksBefore = judgeAsks()
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
+    const before = await pendingAttention(page)
+    const noticesBefore = (await osOutlets(app)).notifications.length
 
-      await runIn(page, centerTerm(page), '/compact-while-idle')
-      await expect
-        .poll(async () => (await pendingAttention(page)).some((m) => m.at === reported.at), {
-          timeout: 20_000
-        })
-        .toBe(false)
-      const settled = Date.now() + COMPACTION_SETTLE_MS
-      while (Date.now() < settled) {
-        expect((await pendingAttention(page)).filter((m) => !m.fyi)).toEqual([])
-        await page.waitForTimeout(50)
-      }
-      expect(judgeAsks()).toBe(asksBefore)
-    } finally {
-      await quitAndClose(app)
+    await runIn(page, centerTerm(page), '/compact-while-idle')
+    await expect(centerTerm(page)).toContainText('compacted while idle')
+    const settled = Date.now() + COMPACTION_SETTLE_MS
+    while (Date.now() < settled) {
+      expect(await pendingAttention(page)).toEqual(before)
+      await page.waitForTimeout(50)
     }
+    expect((await osOutlets(app)).notifications).toHaveLength(noticesBefore)
   })
 
   test('a graceful /exit clears its pending mark and never raises exited, not even after two liveness sweeps', async ({

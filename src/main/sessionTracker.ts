@@ -77,7 +77,8 @@ export function sessionEventFromHook(
   event?: string,
   message?: string,
   bgl?: unknown,
-  ask?: unknown
+  ask?: unknown,
+  trigger?: unknown
 ): SessionEvent | null {
   switch (event) {
     case 'ask':
@@ -85,7 +86,9 @@ export function sessionEventFromHook(
     case 'prompt':
       return { type: 'prompt' }
     case 'compacting':
-      return { type: 'compacting' }
+      return typeof trigger === 'string' && trigger
+        ? { type: 'compacting', trigger }
+        : { type: 'compacting' }
     case 'compacted':
       return { type: 'compacted' }
     case 'stop':
@@ -554,7 +557,7 @@ export class SessionTracker extends SessionRuntime {
   receive(tabId: string, event: SessionEvent): void {
     const t = this.tracked.get(tabId)
     if (event.type === 'compacting' || event.type === 'compacted') {
-      if (t) this.compaction(t, event.type)
+      if (t) this.compaction(t, event)
       return
     }
     if (t && turnOf(event)) t.compactingFrom = undefined
@@ -567,10 +570,16 @@ export class SessionTracker extends SessionRuntime {
   }
 
   // CC§1
-  private compaction(t: Tracked, phase: 'compacting' | 'compacted'): void {
+  private compaction(
+    t: Tracked,
+    event: Extract<SessionEvent, { type: 'compacting' | 'compacted' }>
+  ): void {
     const tabId = t.info.tabId
-    if (phase === 'compacting') {
-      t.compactingFrom = this.turnNow(tabId) ?? 'ended'
+    if (event.type === 'compacting') {
+      const from = this.turnNow(tabId) ?? 'ended'
+      const claudeCompactsOnItsOwnWhileIdle = event.trigger === 'auto' && from !== 'working'
+      if (claudeCompactsOnItsOwnWhileIdle) return
+      t.compactingFrom = from
       this.recordHookTurn(tabId, 'working')
       return
     }

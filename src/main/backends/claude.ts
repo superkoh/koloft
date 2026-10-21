@@ -586,6 +586,7 @@ export class ClaudeBackend implements SessionBackend {
       bgl?: string
       wake?: number
       ask?: unknown
+      trigger?: string
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
@@ -595,7 +596,7 @@ export class ClaudeBackend implements SessionBackend {
     }
     // CC§8
     if (typeof obj.wake === 'number') this.d.tracker.setWakeupPending(obj.tabId, obj.wake === 1)
-    const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask)
+    const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask, obj.trigger)
     if (event) this.d.events(obj.tabId, event)
   }
 
@@ -798,7 +799,12 @@ export class ClaudeBackend implements SessionBackend {
       }
     }
     if (nextId) workspaces?.onSessionBound(nextId)
-    if (nextId) this.d.events(obj.tabId, { type: 'bound', key: nextId })
+    if (nextId)
+      this.d.events(obj.tabId, {
+        type: 'bound',
+        key: nextId,
+        ...(obj.source === 'compact' && { compaction: true })
+      })
   }
 
   watchRemoteHookMirrors(): void {

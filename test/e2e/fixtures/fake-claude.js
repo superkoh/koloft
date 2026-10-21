@@ -735,6 +735,34 @@ rl.on('line', (line) => {
   pasted = null
   handleLine(whole)
 })
+// CC§1
+function compact(trigger, firstRecord, lastRecord) {
+  fireHook('compacting', { hook_event_name: 'PreCompact', trigger })
+  if (trigger === 'manual')
+    fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason: 'other' })
+  fireHook('start', {
+    session_id: sessionId,
+    transcript_path: transcript,
+    cwd,
+    hook_event_name: 'SessionStart',
+    source: 'compact'
+  })
+  append([
+    firstRecord,
+    {
+      type: 'user',
+      isCompactSummary: true,
+      isVisibleInTranscriptOnly: true,
+      message: {
+        role: 'user',
+        content: 'This session is being continued from a previous conversation.'
+      },
+      cwd
+    },
+    lastRecord
+  ])
+}
+
 function handleLine(line) {
   const text = line.replace(ESC, '').trim()
   if (worktreeChoicePending) {
@@ -825,29 +853,10 @@ function handleLine(line) {
     process.stdout.write(`\r\n[fake-claude] ${entering ? 'entered' : 'left'} ${dest}\r\n> `)
     return
   }
-  // CC§1
   if (text === '/compact') {
-    fireHook('compacting', { hook_event_name: 'PreCompact', trigger: 'manual' })
-    fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason: 'other' })
-    fireHook('start', {
-      session_id: sessionId,
-      transcript_path: transcript,
-      cwd,
-      hook_event_name: 'SessionStart',
-      source: 'compact'
-    })
-    append([
+    compact(
+      'manual',
       { type: 'user', message: { role: 'user', content: '/compact' }, cwd },
-      {
-        type: 'user',
-        isCompactSummary: true,
-        isVisibleInTranscriptOnly: true,
-        message: {
-          role: 'user',
-          content: 'This session is being continued from a previous conversation.'
-        },
-        cwd
-      },
       {
         type: 'system',
         subtype: 'local_command',
@@ -855,38 +864,21 @@ function handleLine(line) {
           '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>',
         cwd
       }
-    ])
+    )
     process.stdout.write(`\r\n[fake-claude] compacted -> session ${sessionId}\r\n> `)
     return
   }
-  // CC§1
   if (text === '/compact-while-idle') {
-    fireHook('compacting', { hook_event_name: 'PreCompact', trigger: 'auto' })
-    fireHook('start', {
-      session_id: sessionId,
-      transcript_path: transcript,
-      cwd,
-      hook_event_name: 'SessionStart',
-      source: 'compact'
-    })
-    append([
-      {
-        type: 'user',
-        isCompactSummary: true,
-        isVisibleInTranscriptOnly: true,
-        message: {
-          role: 'user',
-          content: 'This session is being continued from a previous conversation.'
-        },
-        cwd
-      },
+    compact(
+      'auto',
+      { type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'auto' }, cwd },
       {
         type: 'system',
         subtype: 'informational',
         content: 'Compacted while idle, before the prompt cache expired',
         cwd
       }
-    ])
+    )
     process.stdout.write(`\r\n[fake-claude] compacted while idle\r\n> `)
     return
   }
