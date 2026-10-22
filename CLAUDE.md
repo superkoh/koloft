@@ -205,8 +205,8 @@ Working principles:
   paste a numbered list of cases and leave the person to work through it — they are
   at the keyboard, reading a plan costs them the attention the test needs, and a
   pasted list comes back as "some passed" with no record of which. Decisions go the
-  same way: one per question, your pick first, what each choice costs inside the
-  question — never a list of open questions at the end of a report. Automate every
+  same way: one per question, your pick first, each one's cost inside the
+  question — never a list; once the owner is back, ask them one by one. Automate every
   check you can — a suite, a dev build you drive; the owner hand-tests only a case
   that matters and truly cannot be automated (name it and say why), or a round the
   owner asks for. Even then the AI does every step of the case the ladder in
