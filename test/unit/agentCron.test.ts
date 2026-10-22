@@ -145,6 +145,20 @@ describe('koloft cron: reading the command line', () => {
     })
   })
 
+  it('--once takes a day and a time, and --after a wait like --every', () => {
+    expect(parsedPatch(['edit', '1', '--once', '2026-10-25@14:00'])).toEqual({
+      schedule: { kind: 'once', date: '2026-10-25', at: '14:00' }
+    })
+    expect(parsedPatch(['edit', '1', '--after', '45m'])).toEqual({
+      schedule: { kind: 'after', n: 45, unit: 'minutes' }
+    })
+    expect(parseError(['edit', '1', '--once', '14:00'])).toMatch(/--once like 2026-10-25@14:00/)
+    expect(parseError(['edit', '1', '--after', '2d'])).toMatch(/--after like 30m/)
+    expect(parseError(['edit', '1', '--once', '2026-10-25@14:00', '--after', '2h'])).toMatch(
+      /only one/
+    )
+  })
+
   it('a task name with spaces given without quotes is the run of words before an option or --, and a word after an option that follows the name is still refused', () => {
     expect(parseCronArgs(['run', 'nightly', 'tests'])).toEqual({
       ok: true,
@@ -287,6 +301,19 @@ describe('koloft cron: changing tasks', () => {
       expect.stringMatching(/Fix login.*weekly/),
       expect.stringMatching(/Fix login.*nightly/)
     ])
+  })
+
+  it('a once task whose time has passed is not switched on, and says how to give it a new time; editing in a new time switches it on', async () => {
+    const c = cron([
+      job({ schedule: { kind: 'once', date: '2026-09-02', at: '09:00' }, enabled: false })
+    ])
+    const reply = await c.run('on', '1')
+    expect(reply).toMatchObject({ exit: 1, text: expect.stringMatching(/edit 1 --once/) })
+    expect(c.runner.state().jobs[0].enabled).toBe(false)
+    expect((await c.run('edit', '1', '--name', 'Renamed')).exit).toBe(0)
+    expect(c.runner.state().jobs[0]).toMatchObject({ name: 'Renamed', enabled: false })
+    expect((await c.run('edit', '1', '--once', '2026-09-03@09:00')).exit).toBe(0)
+    expect(c.runner.state().jobs[0].enabled).toBe(true)
   })
 
   it('finds a task whose name has spaces by its unquoted words, not a task named by only the first of them', async () => {

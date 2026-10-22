@@ -1552,3 +1552,194 @@ describe('CronRunner — the state it hands the dialog', () => {
     expect(h.runner.state().notes).toEqual({})
   })
 })
+
+describe('CronRunner — a job that runs once', () => {
+  const once = (at: string, date = '2026-09-02'): Partial<CronJob> => ({
+    schedule: { kind: 'once', date, at }
+  })
+
+  it('runs at its time, turns itself off, and never runs again', async () => {
+    const h = makeHarness([makeJob(once('10:05'))])
+    h.runner.start()
+    await h.tick(at(10, 4))
+    expect(h.launches).toHaveLength(0)
+    await h.tick(at(10, 5, 10))
+    expect(h.launches).toHaveLength(1)
+    expect(h.jobs[0].enabled).toBe(false)
+    h.runner.onPtyExit('tab-1')
+    await h.tick(at(10, 6))
+    expect(h.launches).toHaveLength(1)
+  })
+
+  it('a time that came while Koloft was closed is written missed, not run, and the job turns itself off', async () => {
+    const h = makeHarness([makeJob(once('09:30'))])
+    h.runner.start()
+    await h.tick(at(10, 0, 20))
+    expect(h.launches).toHaveLength(0)
+    expect(h.jobs[0].history).toEqual([{ dueAt: at(9, 30), state: 'missed' }])
+    expect(h.jobs[0].enabled).toBe(false)
+  })
+
+  it('a time that came while a Run now run was still open is skipped, and the job turns itself off', async () => {
+    const h = makeHarness([makeJob(once('10:05'))])
+    h.runner.start()
+    await h.runner.runNow('j1')
+    await h.tick(at(10, 5, 10))
+    expect(h.launches).toHaveLength(1)
+    expect(h.jobs[0].history[0]).toMatchObject({ dueAt: at(10, 5), state: 'skipped' })
+    expect(h.jobs[0].enabled).toBe(false)
+  })
+
+  it('cannot be switched back on once its time has passed', () => {
+    const h = makeHarness([makeJob({ ...once('09:00'), enabled: false })])
+    h.runner.setEnabled('j1', true)
+    expect(h.jobs[0].enabled).toBe(false)
+  })
+
+  it('cannot be saved with a time that has already passed, or a day that does not exist', () => {
+    const h = makeHarness([])
+    const input = (date: string, at: string): CronSaveInput => ({
+      workspacePath: '/ws/a',
+      name: 'Once',
+      task: 'hello',
+      schedule: { kind: 'once', date, at },
+      permission: 'same',
+      enabled: true
+    })
+    expect(h.runner.save(input('2026-09-02', '10:00'))).toEqual({
+      ok: false,
+      errors: ['Pick a time that has not passed yet.']
+    })
+    expect(h.runner.save(input('2026-02-30', '10:00'))).toEqual({
+      ok: false,
+      errors: ['Use a date like 2026-10-25.']
+    })
+    expect(h.runner.save(input('2026-09-02', '10:01')).ok).toBe(true)
+  })
+
+  it('a once job whose time has passed can still be renamed, as long as its time is left alone', () => {
+    const h = makeHarness([makeJob({ ...once('09:00'), enabled: false })])
+    const { id, workspacePath, task, schedule, permission } = h.jobs[0]
+    const r = h.runner.save({
+      id,
+      workspacePath,
+      name: 'Renamed',
+      task,
+      schedule,
+      permission,
+      enabled: false
+    })
+    expect(r.ok).toBe(true)
+    expect(h.jobs[0]).toMatchObject({ name: 'Renamed', enabled: false })
+  })
+})
+
+describe('CronRunner — a job that runs again a while after each run ends', () => {
+  const after = (minutes: number, waitFrom = T0): Partial<CronJob> => ({
+    schedule: { kind: 'after', n: minutes, unit: 'minutes' },
+    waitFrom
+  })
+
+  it('waits from when the last run’s tab is gone, never runs while one is open, and never writes skipped', async () => {
+    const h = makeHarness([makeJob(after(30))])
+    h.runner.start()
+    await h.tick(at(10, 29))
+    expect(h.launches).toHaveLength(0)
+    await h.tick(at(10, 30))
+    expect(h.launches).toHaveLength(1)
+    await h.tick(at(12, 0))
+    expect(h.launches).toHaveLength(1)
+    expect(h.jobs[0].history).toEqual([])
+    h.setClock(at(12, 10))
+    h.runner.onPtyExit('tab-1')
+    await h.tick(at(12, 39))
+    expect(h.launches).toHaveLength(1)
+    await h.tick(at(12, 40))
+    expect(h.launches).toHaveLength(2)
+  })
+
+  it('a run that could not start waits the whole time again before the next try', async () => {
+    const h = makeHarness([makeJob(after(30))])
+    h.flags.dir = false
+    h.runner.start()
+    await h.tick(at(10, 30))
+    await h.tick(at(10, 31))
+    expect(h.jobs[0].history.map((l) => l.state)).toEqual(['failed'])
+    await h.tick(at(11, 0))
+    expect(h.jobs[0].history.map((l) => l.state)).toEqual(['failed', 'failed'])
+  })
+
+  it('a wait that ran out while Koloft was closed runs as soon as it is back, and is never missed', async () => {
+    const h = makeHarness([makeJob(after(30, T0 - 3 * 60 * MIN))])
+    h.runner.start()
+    await h.tick(at(10, 0, 20))
+    expect(h.launches).toHaveLength(1)
+    expect(h.jobs[0].history).toEqual([])
+  })
+
+  it('with no window it is not held: it runs on the first tick once the window is back, however late, and is never missed', async () => {
+    const h = makeHarness([makeJob(after(30))])
+    h.flags.ready = false
+    h.runner.start()
+    await h.tick(at(10, 30))
+    h.runner.onRendererReady()
+    expect(h.launches).toHaveLength(0)
+    h.flags.ready = true
+    await h.tick(at(10, 50))
+    expect(h.launches).toHaveLength(1)
+    expect(h.jobs[0].history).toEqual([])
+  })
+
+  it('saving it or switching it on starts the wait again from that moment', async () => {
+    const h = makeHarness([makeJob({ ...after(30), enabled: false })])
+    h.runner.start()
+    h.setClock(at(11, 0))
+    h.runner.setEnabled('j1', true)
+    await h.tick(at(11, 29))
+    expect(h.launches).toHaveLength(0)
+    h.runner.save({ ...h.jobs[0], workspacePath: '/ws/a', enabled: true })
+    await h.tick(at(11, 30))
+    expect(h.launches).toHaveLength(0)
+    await h.tick(at(11, 59))
+    expect(h.launches).toHaveLength(1)
+  })
+
+  it('a run Koloft quits on ends the moment Koloft quits', async () => {
+    const h = makeHarness([makeJob(after(30))])
+    await h.runner.runNow('j1')
+    h.setClock(at(10, 15))
+    h.runner.quitSweep()
+    expect(h.jobs[0].waitFrom).toBe(at(10, 15))
+  })
+
+  it('the loader keeps when its wait started, and a job that never wrote one waits from its birthday', async () => {
+    const base = { workspacePath: '/ws/a', name: 'Gap', task: 'go', permission: 'same' }
+    const { jobs } = sanitizeCron(
+      {
+        version: 1,
+        jobs: [
+          {
+            ...base,
+            id: 'a',
+            schedule: after(30).schedule,
+            enabled: true,
+            createdAt: T0 - 60 * MIN,
+            waitFrom: T0
+          },
+          {
+            ...base,
+            id: 'b',
+            schedule: after(30).schedule,
+            enabled: true,
+            createdAt: T0 - 60 * MIN
+          }
+        ]
+      },
+      []
+    )
+    const h = makeHarness(jobs)
+    h.runner.start()
+    await h.tick(at(10, 0, 20))
+    expect(h.launches.map((l) => l.jobId)).toEqual(['b'])
+  })
+})
