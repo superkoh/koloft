@@ -101,7 +101,9 @@ export interface ClaudeBackendDeps {
 }
 
 // PLATFORM§28
-const STATUS_LOG_POLL_MS = 1000
+const MIRROR_STATUS_LOG_POLL_MS = 2000
+// PLATFORM§28
+const LOCAL_STATUS_LOG_POLL_MS = 1000
 // CC§1
 const SESSION_END_SETTLE_MS = 800
 // CC§1
@@ -183,7 +185,6 @@ export class ClaudeBackend implements SessionBackend {
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
-  private shimRegistered = new Set<string>()
   agentReply?: (tabId: string, raw: unknown) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -348,7 +349,6 @@ export class ClaudeBackend implements SessionBackend {
     if (!registeredByTabRoot(obj.pid, this.d.pty.pidOf(obj.tabId))) return
     const cwd = obj.cwd && obj.cwd.length ? obj.cwd : os.homedir()
     this.d.tracker.track(obj.tabId, cwd)
-    this.shimRegistered.add(obj.tabId)
     void this.drainStatusLog(statusLogOf(this.hookRegDir, obj.tabId))
   }
 
@@ -363,7 +363,6 @@ export class ClaudeBackend implements SessionBackend {
     this.pickedSkipFlag.delete(tabId)
     this.launchedBypassing.delete(tabId)
     this.heldBeforeStartup.delete(tabId)
-    this.shimRegistered.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     const sid = this.sessionIdOf(tabId)
     const title = this.titleOf(tabId)
@@ -447,13 +446,17 @@ export class ClaudeBackend implements SessionBackend {
       : watchJsonDrops(dir, () => handle)
     const tabNoteFirst = machine
       ? (statusLog: string): void => {
-          const note = statusLog.replace(/\.status\.jsonl$/, '.json')
+          const note = `${statusLog.slice(0, -STATUS_LOG_SUFFIX.length)}.json`
           try {
             handle(JSON.parse(fs.readFileSync(note, 'utf8')), note)
           } catch {}
         }
       : undefined
-    const logs = this.watchStatusLogs(dir, tabNoteFirst)
+    const logs = this.watchStatusLogs(
+      dir,
+      machine ? MIRROR_STATUS_LOG_POLL_MS : LOCAL_STATUS_LOG_POLL_MS,
+      tabNoteFirst
+    )
     return () => {
       drops?.close()
       logs()
@@ -476,7 +479,11 @@ export class ClaudeBackend implements SessionBackend {
     )
   }
 
-  private watchStatusLogs(dir: string, before?: (statusLog: string) => void): () => void {
+  private watchStatusLogs(
+    dir: string,
+    pollMs: number,
+    before?: (statusLog: string) => void
+  ): () => void {
     const drain = (name: string): void => {
       const full = path.join(dir, name)
       before?.(full)
@@ -499,7 +506,7 @@ export class ClaudeBackend implements SessionBackend {
         },
         () => {}
       )
-    }, STATUS_LOG_POLL_MS)
+    }, pollMs)
     return () => {
       watcher?.close()
       clearInterval(poll)
@@ -516,7 +523,7 @@ export class ClaudeBackend implements SessionBackend {
   private beforeItsShimRegistration(statusLog: string): boolean {
     if (path.dirname(statusLog) !== this.hookRegDir) return false
     const tabId = path.basename(statusLog, STATUS_LOG_SUFFIX)
-    return !!this.d.pty.get(tabId) && !this.shimRegistered.has(tabId)
+    return !!this.d.pty.get(tabId) && !this.d.tracker.infoOf(tabId)
   }
 
   private async drainStatusLog(full: string): Promise<void> {

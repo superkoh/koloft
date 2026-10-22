@@ -39,6 +39,7 @@ function backendWithDirs(): {
   events: unknown[]
   writeHookStart(): void
   writeTurn(): void
+  writePrompt(): void
   writeShimRegistration(): void
   watch(): void
 } {
@@ -72,6 +73,7 @@ function backendWithDirs(): {
       logLine({ event: 'prompt' })
       logLine({ event: 'stop' })
     },
+    writePrompt: () => logLine({ event: 'prompt' }),
     writeShimRegistration: () =>
       fs.writeFileSync(
         path.join(shimRegDir, `${sessionId}.json`),
@@ -275,8 +277,8 @@ describe('ClaudeBackend: a local tab binds once both of its start notes are on d
       [tabId, { type: 'stop', reported: undefined }]
     ]
     await vi.waitFor(() => expect(t.events).toEqual(inOrder))
-    await new Promise((r) => setTimeout(r, PAST_A_STATUS_LOG_POLL_MS))
-    expect(t.events).toEqual(inOrder)
+    t.writePrompt()
+    await vi.waitFor(() => expect(t.events).toEqual([...inOrder, [tabId, { type: 'prompt' }]]))
   })
 
   // PLATFORM§28

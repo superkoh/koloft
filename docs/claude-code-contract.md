@@ -197,7 +197,9 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
 Evidence: live experiments E1–E8, 2026-08-10, claude 2.1.227; enums read from CC 2.1.238 source on 2026-08-22. Koloft dependents: the `EVICTING_END_REASONS` whitelist
 in `src/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
 the hook's `cwd` — the launch-directory entry above) and `followWorktreeState` (which
-then moves the root to the worktree the last `worktree-state` names);
+then moves the root to the worktree the last `worktree-state` names); the start line in
+the status log (`HOOK_SCRIPT` in `src/main/hooks.ts`), which `ClaudeBackend` applies in
+order with the turns and holds back until the tab's shim registration;
 `test/e2e/fixtures/fake-claude.js`
 mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
 
