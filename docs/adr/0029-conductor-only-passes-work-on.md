@@ -23,8 +23,9 @@ the owner's "skip permission prompts" setting — with it on, Claude gets
   the owner chose against.
 - In its own folder (and below it) a plain `gh` is `koloft gh`: Koloft's gh wrapper
   hands it over, so the butler reads GitHub with the owner's account whichever command
-  the model picks. Rejected: a line in the butler's prompt naming `koloft gh` — the
-  Claude butler kept running plain `gh`, which is signed in nowhere there.
+  the model picks. Rejected: leaving it to the butler's prompt, which already names
+  `koloft gh` — the Claude butler still ran plain `gh`, which gets none of Koloft's
+  accounts there.
 **Rejected**: the gate the butler used to have — a PreToolUse hook that let a Claude
 butler run only reading tools and one plain `koloft` command, a Codex butler with
 approvals off inside the `workspace-write` sandbox, and the same hook for Muse and

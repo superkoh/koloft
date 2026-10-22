@@ -954,7 +954,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           const conductorTab = await tabOf(page, butlerSessionOnDisk(env)!.sessionIds[0])
           await expect
             .poll(() => terminalText(page, conductorTab))
-            .toMatch(/runs gh's own[\s\S]*\{"state":"MERGED"\}/)
+            .toMatch(/runs gh's own[\s\S]*sh exit=[1-9][\s\S]*\{"state":"MERGED"\}/)
         }
       } finally {
         await quitAndClose(app)
