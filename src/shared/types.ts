@@ -487,12 +487,14 @@ export interface UsageRow extends TokenCounts {
   sessionId: string
   day: string
   model: string
+  surchargeUsd: number
   backend: BackendId
   workspace: string
 }
 
 export interface UsageRead {
   rows: UsageRow[]
+  titles: Record<string, string>
   reading: boolean
 }
 export interface SessionMethods {

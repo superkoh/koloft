@@ -109,6 +109,8 @@ export interface SessionsWithStore {
   readonly store: SessionStore
   readonly worktrees: SessionWorktrees
   rows(workspace: string): BackendSessionRow[]
+  workspacesFor(cwds: string[]): string[]
+  sessionPlace(id: string, host?: string): { workspace: string; title: string } | undefined
   members(): Set<string>
   runningBindings(): Map<string, string>
   threadGone(key: string): boolean
@@ -364,10 +366,18 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     )
   }
   findRow(key: string): BackendSessionRow | undefined {
+    return this.placeOfKey(key)?.row
+  }
+  sessionPlace(id: string, host?: string): { workspace: string; title: string } | undefined {
+    const place = this.placeOfKey(this.keyOf(id, host))
+    return place && { workspace: place.workspace, title: place.row.title }
+  }
+  private placeOfKey(key: string): { workspace: string; row: BackendSessionRow } | undefined {
     const member = this.store.getMember(key)
     const entry = this.history.get(key)
     const workspace = member?.workspacePath ?? (entry ? this.workspaceFor(entry.cwd) : undefined)
-    return workspace ? this.rows(workspace).find((row) => row.id === key) : undefined
+    const row = workspace ? this.rows(workspace).find((r) => r.id === key) : undefined
+    return workspace && row ? { workspace, row } : undefined
   }
   members(): Set<string> {
     return new Set([

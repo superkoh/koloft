@@ -1,10 +1,11 @@
-import type { TokenCounts } from '@shared/pricing'
+import { longContextSurchargeUsd, resolvePricing, type TokenCounts } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 
 export interface UsageRecord extends TokenCounts {
   sessionId: string
   day: string
   model: string
+  surchargeUsd: number
 }
 
 export interface CodexScan {
@@ -17,6 +18,10 @@ const TOKEN_FIELDS = ['inTok', 'outTok', 'cacheWriteTok', 'cacheReadTok'] as con
 
 export const CLAUDE_USAGE_WORDS = ['"usage"']
 export const CODEX_USAGE_WORDS = ['session_meta', 'turn_context', 'token_usage_record']
+export const MUSE_USAGE_WORDS = ['model_completed']
+export const AGY_USAGE_WORDS = ['PLANNER_RESPONSE']
+
+const MICROSECONDS_PER_MS = 1000
 
 function num(x: unknown): number {
   return typeof x === 'number' && isFinite(x) && x > 0 ? x : 0
@@ -38,14 +43,17 @@ function parsedLines(text: string, mustHave: string[]): any[] {
 class RecordsByDayAndModel {
   private byKey = new Map<string, UsageRecord>()
 
-  add(sessionId: string, day: string, model: string, tokens: TokenCounts): void {
+  add(sessionId: string, day: string, model: string, call: TokenCounts): void {
+    const pricing = resolvePricing(model)
+    const surchargeUsd = pricing ? longContextSurchargeUsd(pricing, call) : 0
     const key = sessionId + '\n' + day + '\n' + model
     const rec = this.byKey.get(key)
     if (!rec) {
-      this.byKey.set(key, { sessionId, day, model, ...tokens })
+      this.byKey.set(key, { sessionId, day, model, ...call, surchargeUsd })
       return
     }
-    for (const f of TOKEN_FIELDS) rec[f] += tokens[f]
+    for (const f of TOKEN_FIELDS) rec[f] += call[f]
+    rec.surchargeUsd += surchargeUsd
   }
 
   list(): UsageRecord[] {
@@ -127,4 +135,90 @@ export function scanCodexLines(text: string): CodexScan | null {
   }
   if (!meta || !sessionId) return null
   return { sessionId, cwd: typeof meta.cwd === 'string' ? meta.cwd : '', records: out.list() }
+}
+
+// MUSE§2
+export function scanMuseLines(text: string, sessionId: string): UsageRecord[] {
+  const out = new RecordsByDayAndModel()
+  for (const obj of parsedLines(text, MUSE_USAGE_WORDS)) {
+    const p = obj?.payload
+    const event = p?.event
+    if (obj.payload_type !== 'runtime.session' || p.kind !== 'run') continue
+    if (event?.kind !== 'model_completed' || !event.usage || typeof event.usage !== 'object')
+      continue
+    const day = localDayKey(num(obj.recorded_at) / MICROSECONDS_PER_MS || NaN)
+    if (!day) continue
+    const u = event.usage
+    out.add(sessionId, day, typeof event.model === 'string' ? event.model : '', {
+      inTok: Math.max(0, num(u.input_tokens) - num(u.cached_tokens)),
+      outTok: num(u.output_tokens),
+      cacheReadTok: num(u.cache_read_tokens),
+      cacheWriteTok: num(u.cache_write_tokens)
+    })
+  }
+  return out.list()
+}
+
+// AGY§8
+export function scanAgyLines(
+  text: string,
+  sessionId: string,
+  modelOfCall: string[],
+  configuredModel: string
+): UsageRecord[] {
+  const out = new RecordsByDayAndModel()
+  let call = 0
+  for (const obj of parsedLines(text, AGY_USAGE_WORDS)) {
+    if (obj?.type !== 'PLANNER_RESPONSE') continue
+    const tokens: TokenCounts = {
+      inTok: num(obj.input_tokens),
+      outTok: num(obj.output_tokens),
+      cacheReadTok: num(obj.cache_read_tokens),
+      cacheWriteTok: 0
+    }
+    if (!tokens.inTok && !tokens.outTok && !tokens.cacheReadTok) continue
+    const model = modelOfCall[call++] || configuredModel
+    const day = localDayKey(obj.created_at)
+    if (day) out.add(sessionId, day, model, tokens)
+  }
+  return out.list()
+}
+
+function varint(b: Uint8Array, at: number): [number, number] {
+  let value = 0
+  let scale = 1
+  let i = at
+  for (;;) {
+    if (i >= b.length) return [NaN, i]
+    const c = b[i++]
+    value += (c & 0x7f) * scale
+    if (c < 0x80) return [value, i]
+    scale *= 128
+  }
+}
+
+// AGY§8
+export function protobufString(b: Uint8Array, fieldPath: number[]): string | undefined {
+  let i = 0
+  while (i < b.length) {
+    const [key, afterKey] = varint(b, i)
+    if (isNaN(key)) return undefined
+    const field = Math.floor(key / 8)
+    const wire = key % 8
+    i = afterKey
+    if (wire === 0) i = varint(b, i)[1]
+    else if (wire === 1) i += 8
+    else if (wire === 5) i += 4
+    else if (wire === 2) {
+      const [len, start] = varint(b, i)
+      if (isNaN(len)) return undefined
+      i = start + len
+      if (field !== fieldPath[0]) continue
+      const chunk = b.subarray(start, i)
+      if (fieldPath.length === 1) return Buffer.from(chunk).toString('utf8')
+      const inner = protobufString(chunk, fieldPath.slice(1))
+      if (inner !== undefined) return inner
+    } else return undefined
+  }
+  return undefined
 }

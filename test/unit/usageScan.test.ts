@@ -1,7 +1,13 @@
 process.env.TZ = 'America/Los_Angeles'
 
 import { describe, expect, it } from 'vitest'
-import { scanClaudeLines, scanCodexLines } from '../../src/main/usageScan'
+import {
+  protobufString,
+  scanAgyLines,
+  scanClaudeLines,
+  scanCodexLines,
+  scanMuseLines
+} from '../../src/main/usageScan'
 
 const S = 'sess-1'
 const NOON = '2026-10-15T19:00:00.000Z'
@@ -54,7 +60,8 @@ describe('scanClaudeLines', () => {
         inTok: 12,
         outTok: 1231,
         cacheWriteTok: 100,
-        cacheReadTok: 1000
+        cacheReadTok: 1000,
+        surchargeUsd: 0
       }
     ])
   })
@@ -157,10 +164,27 @@ describe('scanCodexLines', () => {
           inTok: 200,
           cacheReadTok: 800,
           cacheWriteTok: 50,
-          outTok: 30
+          outTok: 30,
+          surchargeUsd: 0
         }
       ]
     })
+  })
+
+  it('books the long-context surcharge per request, so two small requests summed into one record pay none', () => {
+    const long = scanCodexLines(
+      lines(meta(THREAD), turnContext('t1', 'gpt-6.1-sol'), record('t1', 'r1', 300))
+    )
+    const small = scanCodexLines(
+      lines(
+        meta(THREAD),
+        turnContext('t1', 'gpt-6.1-sol'),
+        record('t1', 'r1', 150),
+        record('t1', 'r2', 150)
+      )
+    )
+    expect(long?.records[0].surchargeUsd).toBeCloseTo(0.189, 6)
+    expect(small?.records[0]).toMatchObject({ inTok: 60000, surchargeUsd: 0 })
   })
 
   it('books each request once by its response id and never the turn or thread running sums', () => {
@@ -199,5 +223,85 @@ describe('scanCodexLines', () => {
     )
     expect(scan?.sessionId).toBe(PARENT)
     expect(scan?.records.map((r) => r.sessionId)).toEqual([PARENT])
+  })
+})
+
+function museLine(kind: string, usage: Record<string, number>, model = 'muse-model'): string {
+  return JSON.stringify({
+    recorded_at: Date.parse(NOON) * 1000,
+    payload_type: 'runtime.session',
+    payload: { kind: 'run', run_id: 'run-1', event: { kind, model, usage } }
+  })
+}
+
+describe('scanMuseLines', () => {
+  const u = {
+    input_tokens: 1100,
+    cached_tokens: 100,
+    cache_read_tokens: 100,
+    cache_write_tokens: 7,
+    output_tokens: 11
+  }
+
+  it('books one model_completed record as one call and never its goal_usage_attribution copy', () => {
+    const records = scanMuseLines(
+      lines(museLine('model_completed', u), museLine('goal_usage_attribution', u)),
+      'm1'
+    )
+    expect(records).toEqual([
+      {
+        sessionId: 'm1',
+        day: '2026-10-15',
+        model: 'muse-model',
+        inTok: 1000,
+        cacheReadTok: 100,
+        cacheWriteTok: 7,
+        outTok: 11,
+        surchargeUsd: 0
+      }
+    ])
+  })
+})
+
+function agyLine(type: string, tokens: { in: number; out: number; cache: number }): string {
+  return JSON.stringify({
+    type,
+    created_at: '2026-10-15T19:00:00Z',
+    input_tokens: tokens.in,
+    output_tokens: tokens.out,
+    cache_read_tokens: tokens.cache
+  })
+}
+
+describe('scanAgyLines', () => {
+  const call = { in: 100, out: 20, cache: 300 }
+
+  it("prices the n-th call with the n-th gen_metadata model, and a call with no row at the conversation's configured model", () => {
+    const records = scanAgyLines(
+      lines(
+        agyLine('USER_INPUT', { in: 0, out: 0, cache: 0 }),
+        agyLine('PLANNER_RESPONSE', call),
+        agyLine('GENERIC', call),
+        agyLine('PLANNER_RESPONSE', call),
+        agyLine('PLANNER_RESPONSE', call)
+      ),
+      'c1',
+      ['gemini-3.1-pro', 'gemini-3.6-flash'],
+      'gemini-3.1-pro'
+    )
+    expect(records.map((r) => [r.model, r.inTok, r.outTok, r.cacheReadTok])).toEqual([
+      ['gemini-3.1-pro', 200, 40, 600],
+      ['gemini-3.6-flash', 100, 20, 300]
+    ])
+  })
+})
+
+describe('protobufString', () => {
+  it('finds a string down a field path, stepping over varint fields', () => {
+    const model = [...Buffer.from('gemini-3.1-pro')]
+    const inner = [0x9a, 0x01, model.length, ...model]
+    const outer = Uint8Array.from([0x10, 0xac, 0x02, 0x0a, inner.length, ...inner])
+    expect(protobufString(outer, [1, 19])).toBe('gemini-3.1-pro')
+    expect(protobufString(outer, [1, 18])).toBeUndefined()
   })
 })

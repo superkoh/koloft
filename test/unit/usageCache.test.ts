@@ -13,7 +13,8 @@ function record(sessionId: string, outTok: number): UsageRecord {
     inTok: 1,
     outTok,
     cacheWriteTok: 0,
-    cacheReadTok: 0
+    cacheReadTok: 0,
+    surchargeUsd: 0
   }
 }
 
@@ -28,6 +29,7 @@ let listed: UsageFile[]
 let stats: Map<string, { mtimeMs: number; size: number }>
 let runs: Run[]
 let changes: number
+let places: Map<string, { workspace: string; title: string }>
 
 function cache(): UsageCache {
   return new UsageCache({
@@ -36,6 +38,7 @@ function cache(): UsageCache {
     stat: async (file) => stats.get(file),
     scan: (files, scanned, ended) => void runs.push({ files, scanned, ended }),
     codexWorkspaces: (cwds) => cwds,
+    sessionPlace: (_backend, id) => places.get(id),
     changed: () => void changes++
   })
 }
@@ -60,6 +63,7 @@ beforeEach(() => {
   ])
   runs = []
   changes = 0
+  places = new Map()
 })
 
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
@@ -116,5 +120,20 @@ describe('UsageCache', () => {
     finish(runs[0], { [B]: [] })
     expect(changes).toBe(1)
     expect((await usage.read()).reading).toBe(false)
+  })
+
+  it('puts a Muse or Antigravity file under the workspace and title of the session row with its id', async () => {
+    const M = '/home/.local/share/muse/sessions/2026/10/15/m1/session.jsonl'
+    listed = [{ file: M, backend: 'muse', workspace: '', sessionId: 'm1' }]
+    stats = new Map([[M, { mtimeMs: 1, size: 10 }]])
+    places.set('m1', { workspace: '/ws-muse', title: 'Sort the fixtures' })
+    const usage = cache()
+    await usage.read()
+    finish(runs[0], { [M]: [record('m1', 5)] })
+
+    const read = await usage.read()
+
+    expect(read.rows).toMatchObject([{ sessionId: 'm1', backend: 'muse', workspace: '/ws-muse' }])
+    expect(read.titles).toEqual({ m1: 'Sort the fixtures' })
   })
 })

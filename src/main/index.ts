@@ -54,7 +54,7 @@ import {
 } from './remote/agyTab'
 import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
-import { museConfigHome } from './museSessionLog'
+import { museConfigHome, museHome } from './museSessionLog'
 import { museSignIn, storeMuseKey } from './museServe'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
@@ -5354,7 +5354,9 @@ function registerIpc(): void {
       await workspaceMgr?.firstScan
       return listUsageFiles(
         workspaceMgr?.transcriptFiles() ?? [],
-        path.dirname(codexSharedConfig())
+        path.dirname(codexSharedConfig()),
+        museHome(museSessions?.defaultEnv ?? process.env),
+        path.join(ownersGemini(), AGY_APP_DIR)
       )
     },
     stat: statOf,
@@ -5366,6 +5368,15 @@ function registerIpc(): void {
       worker.once('exit', ended)
     },
     codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
+    sessionPlace: (backend, id) => {
+      if (backend !== 'claude')
+        return storedSessions()
+          .find((s) => s.id === backend)
+          ?.sessionPlace(id)
+      const row = workspaceMgr?.findRow(id)
+      const workspace = workspaceMgr?.workspaceOf(id)
+      return row && workspace ? { workspace, title: row.title } : undefined
+    },
     changed: () => sendToRenderer(CH.usage.changed)
   })
   ipcMain.handle(CH.usage.read, () => usageCache.read())
