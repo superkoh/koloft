@@ -95,7 +95,6 @@ export function reachedBySendMessage(backend: BackendId): boolean {
 }
 
 export interface PeerTraits {
-  namedAtLaunch: boolean
   handoverAsRole: boolean
   quotesOwnerWordsInHooks: boolean
 }
@@ -103,26 +102,27 @@ export interface PeerTraits {
 export const PEER_TRAITS: Record<BackendId, PeerTraits> = {
   // CC§13
   claude: {
-    namedAtLaunch: true,
     handoverAsRole: false,
     quotesOwnerWordsInHooks: true
   },
   // CODEX§17
   codex: {
-    namedAtLaunch: false,
     handoverAsRole: true,
     quotesOwnerWordsInHooks: false
   },
   muse: {
-    namedAtLaunch: true,
     handoverAsRole: false,
     quotesOwnerWordsInHooks: false
   },
   agy: {
-    namedAtLaunch: false,
     handoverAsRole: false,
     quotesOwnerWordsInHooks: false
   }
+}
+
+// AGY§16
+export function namedAtLaunch(backend: BackendId, remote: boolean): boolean {
+  return !(backend === 'agy' && remote)
 }
 
 export function sourceOf(backendId: BackendId, workspacePath: string): SessionSource {

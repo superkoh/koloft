@@ -32,6 +32,7 @@ const state = (s: string, extra = ''): string => osc(`state=${s}${extra}:app=ant
 const SERVICE = '/exa.language_server_pb.LanguageServerService/'
 const REAL_PATH = process.env.PATH
 const REMOTE_WS = 'ssh://devbox/home/me/proj'
+const LISTED_TITLE_READ_SETTLES_MS = 300
 
 let home: string
 let repo: string
@@ -547,6 +548,83 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     say(id, state('done'))
     await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'))
     expect(sessions.rows(repo)[0].title).toBe('Tidy the readme')
+  })
+
+  // AGY§16
+  it('a launch given a name keeps it over the title agy makes up, and renames the conversation in agy to it once agy has listed its own', async () => {
+    apiAnswers = true
+    const { id } = await launch({ name: 'Docs pass' })
+    title(id, { conversation_id: A })
+    say(id, state('idle'))
+    say(id, state('working'))
+    say(id, state('done'))
+    const listed = (rowTitle: string): void =>
+      writeSummaries(gemini, [
+        {
+          conversation_id: A,
+          title: rowTitle,
+          workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+        }
+      ])
+    listed('Tidy the readme')
+    await vi.waitFor(
+      () =>
+        expect(sent('UpdateConversationAnnotations')).toContainEqual({
+          cascadeId: A,
+          annotations: { title: 'Docs pass' },
+          mergeAnnotations: true
+        }),
+      { timeout: 3000 }
+    )
+    expect(sessions.list()[0].title).toBe('Docs pass')
+    listed('Docs pass')
+    say(id, state('working'))
+    say(id, state('done'))
+    await sessions.refreshHistory()
+    await vi.waitFor(() => expect(sessions.rows(repo)[0].title).toBe('Docs pass'))
+    expect(sessions.list()[0].title).toBe('Docs pass')
+  })
+
+  it("the owner's own /rename in agy before Koloft has renamed the conversation wins over the name given at launch", async () => {
+    apiAnswers = true
+    const { id } = await launch({ name: 'Docs pass' })
+    title(id, { conversation_id: A })
+    say(id, state('idle'))
+    title(id, { conversation_id: A, conversation_title: 'My own title' })
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'My own title',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    say(id, state('working'))
+    say(id, state('done'))
+    await new Promise((resolve) => setTimeout(resolve, LISTED_TITLE_READ_SETTLES_MS))
+    expect(sessions.list()[0].title).toBe('My own title')
+    await sessions.refreshHistory()
+    expect(sessions.rows(repo)[0].title).toBe('My own title')
+    expect(sent('UpdateConversationAnnotations')).toEqual([])
+  })
+
+  it('a name given at launch is dropped once /clear moves the tab to a new conversation, which takes the title agy makes up', async () => {
+    apiAnswers = true
+    const { id } = await launch({ name: 'Docs pass' })
+    title(id, { conversation_id: A })
+    say(id, state('idle'))
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    writeSummaries(gemini, [
+      {
+        conversation_id: B,
+        title: 'Next thing',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    say(id, state('working'))
+    say(id, state('done'))
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Next thing'), { timeout: 3000 })
+    expect(sent('UpdateConversationAnnotations')).toEqual([])
   })
 
   it("hands on a finished turn's reply with the owner's own words, and its tokens and cost for the model agy reports", async () => {

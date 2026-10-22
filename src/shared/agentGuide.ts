@@ -1,5 +1,5 @@
 import type { BackendId } from './types'
-import { BACKEND_LABEL, PEER_TRAITS, SESSION_BACKENDS } from './sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS, namedAtLaunch } from './sessionBackend'
 
 const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
   const labels = backends.map((b) => BACKEND_LABEL[b])
@@ -12,14 +12,11 @@ const KINDS_BUT_CLAUDE = kindsOf(
   SESSION_BACKENDS.filter((b) => b !== 'claude'),
   'or'
 )
-const KINDS_WITH_A_NAME = kindsOf(
-  SESSION_BACKENDS.filter((b) => PEER_TRAITS[b].namedAtLaunch),
+const KINDS_UNNAMED_REMOTELY = kindsOf(
+  SESSION_BACKENDS.filter((b) => !namedAtLaunch(b, true)),
   'or'
 )
-const KINDS_WITHOUT_A_NAME = kindsOf(
-  SESSION_BACKENDS.filter((b) => !PEER_TRAITS[b].namedAtLaunch),
-  'or'
-)
+const UNNAMED_IN_A_REMOTE_WORKSPACE = `${/^[AEIOU]/.test(KINDS_UNNAMED_REMOTELY) ? 'An' : 'A'} ${KINDS_UNNAMED_REMOTELY}`
 const BACKEND_CHOICE = SESSION_BACKENDS.join('|')
 const OWN_KIND = SESSION_BACKENDS.map((b) => `${BACKEND_LABEL[b]} starts ${BACKEND_LABEL[b]}`).join(
   ', '
@@ -190,7 +187,7 @@ koloft workspace list
     List the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--model <model>] [--backend ${BACKEND_CHOICE}] -- "<first message>"
-    Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. A ${KINDS_WITH_A_NAME} session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which cannot be a remote (SSH) workspace. A ${KINDS_WITHOUT_A_NAME} session has no name; for a ${KINDS_BUT_CLAUDE} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
+    Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. The session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which cannot be a remote (SSH) workspace. ${UNNAMED_IN_A_REMOTE_WORKSPACE} session in a remote workspace has no name. For a ${KINDS_BUT_CLAUDE} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
     Example: koloft session new --name "Fix docs links" -- "Fix the broken links in docs/."
     Example: koloft session new --workspace koloft -- "Check that the latest release has all its files."
     The butler: without --workspace the session starts in the butler's own folder, shown under the butler in the sidebar, for side work that should not hold up the owner; it is told the butler's goals and to report back. With --workspace it starts in that project's workspace like any other session; in a git workspace it always gets its own worktree: -w names it, and without -w Koloft picks a name.
