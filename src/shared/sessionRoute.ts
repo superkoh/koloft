@@ -105,9 +105,9 @@ ${CHECK_IN_RULE}. It is meant for the sessions already working in one workspace:
   or {"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}
 
 Reply with that one JSON object and nothing else, adding to it:
- "rule": <the number of the rule you took>,
  "title": <a very short title in the language of the message, at most 16 Chinese characters or 6 words>,
- "why": <one short sentence in the language of the message, naming the rule you took>`
+ "why": <one short sentence in the language of the message, naming the rule you took>,
+ "rule": <the number of the rule you named in "why">`
   return { system: ROUTE_SYSTEM, prompt }
 }
 
