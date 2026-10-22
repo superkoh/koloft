@@ -179,6 +179,18 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   two new constants 1024 and 16384 on the skill-hook path). Hooks from a settings file
   are not counted; Koloft's hooks all come from `--settings` and its `SKILL.md` declares
   none.
+- **A session's SessionStart hook has exited before its first UserPromptSubmit hook
+  starts, even when the prompt was given or typed earlier.** So a hook that appends both
+  to one file writes the start first. Measured 2026-10-22 on CC 2.1.308 linux-arm64 in a
+  Docker container with no network (a fake key from `apiKeyHelper`, so the prompt hook
+  fires and the request then fails), four busy loops beside it, a SessionStart hook that
+  sleeps 1 s and hooks that log their entry and exit: 20 runs each of `claude -p`, an
+  interactive `claude -- <prompt>`, an interactive `claude` with the prompt typed and
+  Enter pressed 0.5 s after spawn (before the hook ended), `--resume <id>` typed the
+  same way, and `/clear` followed 0.1 s later by a typed prompt; the prompt hook began
+  after the start hook's exit in all 100. After `/clear`, SessionEnd `clear` had also
+  exited before SessionStart `clear` began. Not probed: the in-TUI `/resume` switch, and
+  `compact` (it can fire mid-turn, with no prompt after it).
 
 Evidence: live experiments E1–E8, 2026-08-10, claude 2.1.227; enums read from CC 2.1.238 source on 2026-08-22. Koloft dependents: the `EVICTING_END_REASONS` whitelist
 in `src/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes

@@ -14,6 +14,7 @@ vi.mock('electron', async () => {
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
 import { answered, replyJson } from '../../src/main/agentRequests'
 import { mirrorHookDir } from '../../src/main/remote/paths'
+import { START_IN_STATUS_LOG } from '../../src/main/hooks'
 
 function fakeTracker(): ClaudeBackendDeps['tracker'] {
   const tracked = new Map<string, { sessionId: string }>()
@@ -37,6 +38,7 @@ function backendWithDirs(): {
   backend: ClaudeBackend
   events: unknown[]
   writeHookStart(): void
+  writeTurn(): void
   writeShimRegistration(): void
   watch(): void
 } {
@@ -52,14 +54,24 @@ function backendWithDirs(): {
     workspaces: () => null,
     events: (id: string, event: unknown) => events.push([id, event])
   } as unknown as ClaudeBackendDeps)
+  const statusLog = path.join(hookRegDir, `${tabId}.status.jsonl`)
+  const logLine = (report: object): void =>
+    fs.appendFileSync(statusLog, `${JSON.stringify({ tabId, sessionId, ...report })}\n`)
   return {
     backend,
     events,
-    writeHookStart: () =>
+    writeHookStart: () => {
+      const note = { event: 'start', source: 'startup', cwd: root, [START_IN_STATUS_LOG]: true }
       fs.writeFileSync(
         path.join(hookRegDir, `${tabId}.json`),
-        JSON.stringify({ tabId, event: 'start', source: 'startup', sessionId, cwd: root })
-      ),
+        JSON.stringify({ tabId, sessionId, ...note })
+      )
+      logLine(note)
+    },
+    writeTurn: () => {
+      logLine({ event: 'prompt' })
+      logLine({ event: 'stop' })
+    },
     writeShimRegistration: () =>
       fs.writeFileSync(
         path.join(shimRegDir, `${sessionId}.json`),
@@ -235,6 +247,8 @@ describe('ClaudeBackend: waiting for a remote session to end before its folder i
   })
 })
 
+const PAST_A_STATUS_LOG_POLL_MS = 2500
+
 describe('ClaudeBackend: a local tab binds once both of its start notes are on disk', () => {
   it("binds the session when claude's SessionStart is read before the shim's registration of the tab", async () => {
     const t = backendWithDirs()
@@ -244,6 +258,25 @@ describe('ClaudeBackend: a local tab binds once both of its start notes are on d
     expect(t.events).toEqual([])
     t.writeShimRegistration()
     await vi.waitFor(() => expect(t.events).toEqual([[tabId, { type: 'bound', key: sessionId }]]))
+  })
+
+  // CC§1
+  it('applies a start written to both files once, and a first turn read before the tab is registered only after it, in the order claude wrote them', async () => {
+    const t = backendWithDirs()
+    t.watch()
+    t.writeHookStart()
+    t.writeTurn()
+    await new Promise((r) => setTimeout(r, PAST_A_STATUS_LOG_POLL_MS))
+    expect(t.events).toEqual([])
+    t.writeShimRegistration()
+    const inOrder = [
+      [tabId, { type: 'bound', key: sessionId }],
+      [tabId, { type: 'prompt' }],
+      [tabId, { type: 'stop', reported: undefined }]
+    ]
+    await vi.waitFor(() => expect(t.events).toEqual(inOrder))
+    await new Promise((r) => setTimeout(r, PAST_A_STATUS_LOG_POLL_MS))
+    expect(t.events).toEqual(inOrder)
   })
 
   // PLATFORM§28

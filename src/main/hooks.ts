@@ -219,6 +219,8 @@ export function seedHandedOverOwnerWords(said: string, ownerWords: string): void
     fs.writeFileSync(said + suffix, text)
 }
 
+export const START_IN_STATUS_LOG = 'inStatusLog'
+
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
 reg="$1"; tab="$2"; event="$3"
@@ -269,7 +271,12 @@ case "$event" in
     if [ "$event" = "start" ] && [ "$KOLOFT_TMUX_FOLLOW" = "1" ] && [ -n "$TMUX" ] && [ -n "$sid" ]; then
       tmux rename-session -t "$TMUX_PANE" "k-$sid" 2>/dev/null
     fi
-    printf '{"tabId":"%s","event":"%s","sessionId":"%s","transcriptPath":"%s","cwd":"%s","reason":"%s","source":"%s","account":"%s","ccVersion":"%s","tmux":"%s"}\\n' "$tab" "$event" "$sid" "$tp" "$cwd" "$reason" "$src" "$acct" "$ver" "$tm" > "$reg/$tab.json"
+    logged=""
+    [ "$event" = "start" ] && logged=',"${START_IN_STATUS_LOG}":true'
+    note="$(printf '{"tabId":"%s","event":"%s","sessionId":"%s","transcriptPath":"%s","cwd":"%s","reason":"%s","source":"%s","account":"%s","ccVersion":"%s","tmux":"%s"%s}' "$tab" "$event" "$sid" "$tp" "$cwd" "$reason" "$src" "$acct" "$ver" "$tm" "$logged")"
+    printf '%s\\n' "$note" > "$reg/$tab.json"
+    # CC§1
+    [ "$event" = "start" ] && printf '%s\\n' "$note" >> "$reg/$tab.status.jsonl"
     # CC§1
     if [ "$event" = "start" ] && [ "$src" = "compact" ]; then
       printf '{"tabId":"%s","event":"compacted","sessionId":"%s","tmux":"%s"}\\n' "$tab" "$sid" "$tm" >> "$reg/$tab.status.jsonl"

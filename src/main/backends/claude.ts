@@ -35,7 +35,13 @@ import {
   REMOTE_HOOK_DIR,
   tabPackageDir
 } from '../remote/paths'
-import { HOLD_FILE, hookSettings, KOLOFT_ALLOW_RULE, removeConductorMarker } from '../hooks'
+import {
+  HOLD_FILE,
+  hookSettings,
+  KOLOFT_ALLOW_RULE,
+  removeConductorMarker,
+  START_IN_STATUS_LOG
+} from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
@@ -61,7 +67,7 @@ import {
   type HookReport
 } from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
-import { oncePerName, watchAndSweepJsonDrops } from '../jsonDrops'
+import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
 import { copyWorktreeIncludes } from '../sessionWorktrees'
 import { GIT_REF_RE } from '../gitSteps'
 import {
@@ -103,6 +109,16 @@ const REMOTE_EXIT_POLL_MS = 500
 const REMOTE_EXIT_SLACK_MS = 30_000
 const LIVENESS_SWEEP_MS = 2500
 const MISSED_SWEEPS_BEFORE_UNTRACK = 2
+const WAIT_FOR_REGISTRATION = 'wait-for-registration'
+
+function statusLogOf(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}.status.jsonl`)
+}
+
+function startTakenFromTheStatusLog(note: unknown): boolean {
+  const n = note as { event?: string; [START_IN_STATUS_LOG]?: unknown } | null
+  return n?.event === 'start' && n[START_IN_STATUS_LOG] === true
+}
 async function rebuildWorktree(
   spec: {
     worktreePath: string
@@ -163,14 +179,13 @@ async function remoteExitOnDisk(
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
   private hookRegDir = ''
-  private statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
+  private statusLogCursors = new Map<string, { offset: number; tail: Buffer; waiting: string[] }>()
   private statusLogDraining = new Map<string, boolean>()
   private watchedHookMirrors = new Map<string, () => void>()
   private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
-  private startsBeforeRegistration = new Map<string, unknown>()
   agentReply?: (tabId: string, raw: unknown) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -335,9 +350,7 @@ export class ClaudeBackend implements SessionBackend {
     if (!registeredByTabRoot(obj.pid, this.d.pty.pidOf(obj.tabId))) return
     const cwd = obj.cwd && obj.cwd.length ? obj.cwd : os.homedir()
     this.d.tracker.track(obj.tabId, cwd)
-    const early = this.startsBeforeRegistration.get(obj.tabId)
-    this.startsBeforeRegistration.delete(obj.tabId)
-    if (early) this.handleHookRegistration(early)
+    void this.drainStatusLog(statusLogOf(this.hookRegDir, obj.tabId))
   }
 
   watchLocalHooks(regDir: string): void {
@@ -351,7 +364,6 @@ export class ClaudeBackend implements SessionBackend {
     this.pickedSkipFlag.delete(tabId)
     this.launchedBypassing.delete(tabId)
     this.heldBeforeStartup.delete(tabId)
-    this.startsBeforeRegistration.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     const sid = this.sessionIdOf(tabId)
     const title = this.titleOf(tabId)
@@ -426,16 +438,13 @@ export class ClaudeBackend implements SessionBackend {
           if (hit) settle(hit)
         }
       }
+      if (startTakenFromTheStatusLog(obj)) return
       if (isNews && !isNews(full, JSON.stringify(obj))) return
       this.handleHookRegistration(obj)
     }
-    const unboundTabNote = (name: string): typeof handle | null => {
-      const tabId = path.basename(name, '.json')
-      return this.d.pty.get(tabId) && !this.sessionIdOf(tabId) ? handle : null
-    }
     const drops = machine
       ? this.watchMachineDrops(dir, machine, handle)
-      : watchAndSweepJsonDrops(dir, () => handle, unboundTabNote)
+      : watchJsonDrops(dir, () => handle)
     const tabNoteFirst = machine
       ? (statusLog: string): void => {
           const note = statusLog.replace(/\.status\.jsonl$/, '.json')
@@ -498,7 +507,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private dropStatusLog(regDir: string, tabId: string): void {
-    const full = path.join(regDir, `${tabId}.status.jsonl`)
+    const full = statusLogOf(regDir, tabId)
     this.statusLogCursors.delete(full)
     this.statusLogDraining.delete(full)
     fs.rm(full, { force: true }, () => {})
@@ -518,24 +527,22 @@ export class ClaudeBackend implements SessionBackend {
           return
         }
         let cur = this.statusLogCursors.get(full)
-        if (!cur) {
-          cur = { offset: 0, tail: Buffer.alloc(0) }
+        if (!cur || size < cur.offset) {
+          cur = { offset: 0, tail: Buffer.alloc(0), waiting: [] }
           this.statusLogCursors.set(full, cur)
         }
-        if (size < cur.offset) {
-          cur.offset = 0
-          cur.tail = Buffer.alloc(0)
-        }
-        if (size <= cur.offset) return
-        const lines = await readAppendedLines(full, size, cur)
+        const grew = size > cur.offset
+        const lines = grew ? await readAppendedLines(full, size, cur) : []
         if (!lines) return
-        for (const line of lines) {
-          if (!line) continue
-          try {
-            this.handleStatusRegistration(JSON.parse(line))
-          } catch {}
+        const queue = [...cur.waiting, ...lines]
+        cur.waiting = []
+        for (const [i, line] of queue.entries()) {
+          if (line && this.waitsForRegistration(line)) {
+            cur.waiting = queue.slice(i)
+            return
+          }
         }
-        again = true
+        again = grew
       }
     } finally {
       this.statusLogDraining.set(full, false)
@@ -579,7 +586,15 @@ export class ClaudeBackend implements SessionBackend {
     )
   }
 
-  private handleStatusRegistration(raw: unknown): void {
+  private waitsForRegistration(line: string): boolean {
+    try {
+      return this.handleStatusRegistration(JSON.parse(line)) === WAIT_FOR_REGISTRATION
+    } catch {
+      return false
+    }
+  }
+
+  private handleStatusRegistration(raw: unknown): typeof WAIT_FOR_REGISTRATION | void {
     const obj = raw as HookReport & {
       tabId?: string
       message?: string
@@ -590,6 +605,9 @@ export class ClaudeBackend implements SessionBackend {
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
+    if (!this.d.tracker.infoOf(obj.tabId)) return WAIT_FOR_REGISTRATION
+    // CC§1
+    if (obj.event === 'start') return this.handleHookRegistration(obj)
     // CC§5
     if (!ownsHookReport(obj, this.sessionIdOf(obj.tabId)) && !this.followMovedConversation(obj)) {
       return
@@ -756,10 +774,6 @@ export class ClaudeBackend implements SessionBackend {
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
-    if (obj.event !== 'end' && !tracker.infoOf(obj.tabId)) {
-      this.startsBeforeRegistration.set(obj.tabId, raw)
-      return
-    }
     // CC§5
     if (!ownsHookReport(obj, this.sessionIdOf(obj.tabId))) return
     if (obj.event === 'end') {
