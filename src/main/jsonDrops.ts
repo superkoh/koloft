@@ -75,6 +75,7 @@ export function watchJsonDrops(
     return fs.watch(dir, (_event, filename) => {
       if (!filename) return
       const name = filename.toString()
+      // PLATFORM§28
       if (inWriteOrder(name)) earlierDrops = readNamedDrop(dir, name, handlerFor, earlierDrops)
       else void readNamedDrop(dir, name, handlerFor)
     })
