@@ -46,7 +46,7 @@
           <a href="../#palette">⌘P</a>
           <a href="../#sessions">Sessions</a>
           <a href="../#workbench">Workbench</a>
-          <a href="../#assist">Assist</a>
+          <a href="../#assist">Butler</a>
           <a href="../features/">Features</a>
           <a href="../sessions/" aria-current="page">Docs</a>
           <a href="../changelog/">Changelog</a>
@@ -107,14 +107,14 @@
           <li><code>koloft diff</code> — show you what changed in a file since the last commit</li>
           <li>
             <code>koloft note</code> — read the <a href="../workbench/#note">note</a> it shows (its
-            folder's, or the Global Assist's own), or add a line to the end of it
+            folder's, or the butler's own), or add a line to the end of it
           </li>
         </ul>
 
         <h3 id="secrets">Passwords and codes</h3>
         <p>
-          When the session needs something only you know, and you are on your phone, it can ask
-          through the session's Discord thread (see
+          When the session needs something only you know, and you are on your phone, it can ask in
+          your butler's Discord channel, on a card that names the session (see
           <a href="../discord/#secrets">passwords and codes on Discord</a>), which says what happens
           to what you type. The agent never sees it.
         </p>
@@ -133,10 +133,7 @@
             phone and paste the last address
           </li>
         </ul>
-        <p>
-          With no Discord channel covering the session, all three are refused with a message that
-          says so.
-        </p>
+        <p>With no Discord channel bound, all three are refused with a message that says so.</p>
 
         <h3>Scheduled jobs</h3>
         <ul class="dash">
@@ -159,12 +156,12 @@
           </li>
           <li>
             <code>koloft session new</code> — start a session of the same kind (a Claude session
-            starts Claude, and so on), in its own git worktree with <code class="nowrap">-w</code>;
-            a worktree name already in use gets <code class="nowrap">-2</code> after it. Only Assist
-            (see below) can pick the other kind, with <code class="nowrap">--backend</code>; and
-            when Assist leaves out <code class="nowrap">-w</code> in a folder git tracks, Koloft
-            still makes one (see <a href="../sessions/#worktrees">worktree sessions</a>). Its row
-            hangs under the session that started it (see
+            starts Claude, and so on), or the kind <code class="nowrap">--backend</code> picks; in
+            its own git worktree with <code class="nowrap">-w</code>; a worktree name already in use
+            gets <code class="nowrap">-2</code> after it. When your butler (see below) starts one in
+            a folder git tracks and leaves out <code class="nowrap">-w</code>, Koloft still makes a
+            worktree (see <a href="../sessions/#worktrees">worktree sessions</a>). Its row hangs
+            under the session that started it (see
             <a href="../sessions/#session-tree">sessions an agent starts</a>). A Claude or Muse
             session it starts gets a short title that <a href="../accounts/#assist">Assist</a> makes
             from its task (with Assist off, the first line of the task), or the name the agent gave
@@ -179,7 +176,7 @@
           <li>
             <code>koloft session send</code> — Codex: message another Codex session (a Claude
             session uses its own SendMessage tool). Any session: report back to the session or
-            Assist that started it, by the id it was given. If that one is asleep or its tab was
+            butler that started it, by the id it was given. If that one is asleep or its tab was
             closed, Koloft starts it again first. The report arrives marked
             <code class="nowrap">(From the session "…", id …:)</code>. When a session that
             <code class="nowrap">session new</code> started ends its first turn without reporting,
@@ -190,13 +187,30 @@
             <code>koloft session close</code> — close itself, or any session started under it with
             <code class="nowrap">session new</code> (by it, by one it started, and so on down the
             chain), for good: its tab, its row in the sidebar, and its worktree and branches if it
-            had one. Koloft says no, and lists what is left, while:
+            had one. When you ask, it may also close any other session on this Mac that has ended
+            (an open one is refused: stop it first). Koloft says no, and lists what is left, while:
             <ul class="dash">
               <li>a file is not committed</li>
               <li>a commit is not on the remote yet</li>
               <li>another open session uses that worktree</li>
             </ul>
           </li>
+          <li>
+            <code>koloft session resume</code> and <code>koloft session stop</code> — resume a
+            closed session, with a first message if it likes; close a session's tab and keep it in
+            the list
+          </li>
+          <li>
+            <code>koloft session screen</code>, <code>koloft session keys</code> and
+            <code>koloft session answer</code> — see what an open session's terminal shows, press
+            keys in it as you would at the Mac, or answer the question it is showing
+          </li>
+          <li>
+            <code>koloft session command</code> — run one slash command (like <code>/compact</code>)
+            in a session, or in itself, once that session is idle; what it printed comes back as a
+            message from Koloft
+          </li>
+          <li><code>koloft workspace list</code> — list the folders in the sidebar</li>
         </ul>
         <p>
           <code class="nowrap">session list</code> and <code class="nowrap">session new</code> take
@@ -216,13 +230,22 @@
           Each command prints its answer, so the agent sees what happened. The agent runs
           <code>koloft help</code> for the rest.
         </p>
+        <h3 id="gh">GitHub</h3>
+        <ul class="dash">
+          <li>
+            <code>koloft gh</code> — run one of <code>gh</code>'s own commands (<code>gh</code> is
+            GitHub's command-line tool) with the GitHub account Koloft picked for the folder, in the
+            session's own folder, and print what it said. Refused: <code>gh auth</code>,
+            <code>alias</code>, <code>extension</code>, <code>config</code> and
+            <code>copilot</code>, aliases and extensions, a <code>--jq</code> filter that reads the
+            environment, and a <code>--</code>, since each could reach the GitHub sign-in
+          </li>
+        </ul>
         <p>
-          <a href="../accounts/#assist">Assist</a> is Koloft's own AI, which you talk to from the
-          sidebar or from Discord. It gets a few more commands: it can answer a session's question,
-          resume it, stop it, close it once it has ended, run a slash command in it, see its screen
-          and press keys in it, send you files, and ask GitHub questions or open an issue with
-          <code>koloft gh</code> (<code>gh</code> is GitHub's command-line tool). See
-          <a href="../discord/#what-assist-can-do">what Assist can do</a>.
+          Your <a href="../accounts/#butler">butler</a>, Koloft's own AI that you talk to from the
+          sidebar or from Discord, uses the same commands. Only it, with a Discord channel bound,
+          can send you files or a picture of a page on Discord. See
+          <a href="../accounts/#what-it-can-do">what your butler can do</a>.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 661; --ar-phone: 710 / 590">

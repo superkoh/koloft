@@ -174,6 +174,15 @@ export class AgyApi {
   }
 
   // AGY§16
+  async rename(conversationId: string, title: string): Promise<void> {
+    await this.call('UpdateConversationAnnotations', {
+      cascadeId: conversationId,
+      annotations: { title },
+      mergeAnnotations: true
+    })
+  }
+
+  // AGY§16
   async allow(conversationId: string, pending: PendingInteraction, allow: boolean): Promise<void> {
     await this.call('HandleCascadeUserInteraction', {
       cascadeId: conversationId,

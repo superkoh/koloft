@@ -17,6 +17,7 @@ import {
 } from './helpers/p1'
 
 const PAST_TWO_LIVENESS_SWEEPS_MS = 6_000
+const COMPACTION_SETTLE_MS = 3_000
 
 async function lookAtTheWindow(app: ElectronApplication): Promise<void> {
   await app.evaluate(({ BrowserWindow }) => {
@@ -98,6 +99,43 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect(bell.locator('.ws-unread-count')).toHaveText('1', { timeout: 15_000 })
   })
 
+  test('a bell press while the sidebar is hidden is shown once the sidebar comes back: its list scrolls to the row the bell went to; a plain hide and show leaves a folded workspace folded', async ({
+    app,
+    page
+  }) => {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-b')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
+    await startSessionIn(page, 'ws-a')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
+    await page.addStyleTag({ content: '.ws-list { max-height: 80px !important; }' })
+    const list = page.locator('.ws-list')
+    await list.evaluate((el) => (el.scrollTop = 0))
+    const bRow = wsGroup(page, 'ws-b').locator('.ws-tab')
+    const inView = async (): Promise<boolean> => {
+      const [row, box] = [await bRow.boundingBox(), await list.boundingBox()]
+      return !!row && !!box && row.y >= box.y - 1 && row.y + row.height <= box.y + box.height + 1
+    }
+    expect(await inView()).toBe(false)
+
+    await sendShortcut(app, 'shortcut:toggle-sidebar')
+    await expect(page.locator('.app.sb-off')).toHaveCount(1)
+    await page.locator('.aux-ico.waiting-bell').click()
+    await expect(bRow).toHaveClass(/\bactive\b/)
+    await sendShortcut(app, 'shortcut:toggle-sidebar')
+    await expect(page.locator('.app.sb-off')).toHaveCount(0)
+    await expect.poll(inView).toBe(true)
+
+    await wsGroup(page, 'ws-b').locator('.ws-head .fico').click()
+    await expect(bRow).toHaveCount(0)
+    await sendShortcut(app, 'shortcut:toggle-sidebar')
+    await expect(page.locator('.app.sb-off')).toHaveCount(1)
+    await sendShortcut(app, 'shortcut:toggle-sidebar')
+    await expect(page.locator('.app.sb-off')).toHaveCount(0)
+    await expect(wsGroup(page, 'ws-b').locator('.ws-head')).toBeVisible()
+    await expect(bRow).toHaveCount(0)
+  })
+
   test('a turn that ends while a session it started still works is only news, told by code alone: looking at it clears the dot', async ({
     env
   }) => {
@@ -157,6 +195,26 @@ test.describe('attention markers come from real session-status transitions (shim
     } finally {
       await quitAndClose(app)
     }
+  })
+
+  test('Claude compacting a finished session on its own leaves its dot exactly as it was and sends no new notice', async ({
+    app,
+    page
+  }) => {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
+    const before = await pendingAttention(page)
+    const noticesBefore = (await osOutlets(app)).notifications.length
+
+    await runIn(page, centerTerm(page), '/compact-while-idle')
+    await expect(centerTerm(page)).toContainText('compacted while idle')
+    const settled = Date.now() + COMPACTION_SETTLE_MS
+    while (Date.now() < settled) {
+      expect(await pendingAttention(page)).toEqual(before)
+      await page.waitForTimeout(50)
+    }
+    expect((await osOutlets(app)).notifications).toHaveLength(noticesBefore)
   })
 
   test('a graceful /exit clears its pending mark and never raises exited, not even after two liveness sweeps', async ({

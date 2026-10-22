@@ -279,7 +279,8 @@ case "$event" in
     ;;
   compacting)
     # CC§1
-    printf '{"tabId":"%s","event":"compacting","sessionId":"%s","tmux":"%s"}\\n' "$tab" "$(session_id)" "$tm" >> "$reg/$tab.status.jsonl"
+    trigger="$(printf '%s' "$input" | sed -n 's/.*"trigger"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | tr -d '"\\\\[:cntrl:]')"
+    printf '{"tabId":"%s","event":"compacting","sessionId":"%s","trigger":"%s","tmux":"%s"}\\n' "$tab" "$(session_id)" "$trigger" "$tm" >> "$reg/$tab.status.jsonl"
     ;;
   ask)
     # CC§14

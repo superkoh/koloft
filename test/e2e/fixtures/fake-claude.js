@@ -580,7 +580,11 @@ function removalMs() {
 
 // CC§4
 function removeWorktree(then) {
-  process.stdout.write('\x1b]0;\x07Removing worktree…\r\n')
+  const hasMessage = fs.existsSync(transcript) && fs.statSync(transcript).size > 0
+  const resumeHint = hasMessage
+    ? `\x1b[2m\x1b[22m\r\n\x1b[2mResume this session with:\x1b[22m\r\n\x1b[2mclaude --resume ${sessionId}\x1b[22m\r\n\x1b[2m\x1b[22m`
+    : ''
+  process.stdout.write(`\x1b]0;\x07${resumeHint}Removing worktree…\r\n`)
   setTimeout(() => {
     if (fs.existsSync(path.join(home, 'fake-claude-remove-fails'))) {
       process.stdout.write(
@@ -735,6 +739,34 @@ rl.on('line', (line) => {
   pasted = null
   handleLine(whole)
 })
+// CC§1
+function compact(trigger, firstRecord, lastRecord) {
+  fireHook('compacting', { hook_event_name: 'PreCompact', trigger })
+  if (trigger === 'manual')
+    fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason: 'other' })
+  fireHook('start', {
+    session_id: sessionId,
+    transcript_path: transcript,
+    cwd,
+    hook_event_name: 'SessionStart',
+    source: 'compact'
+  })
+  append([
+    firstRecord,
+    {
+      type: 'user',
+      isCompactSummary: true,
+      isVisibleInTranscriptOnly: true,
+      message: {
+        role: 'user',
+        content: 'This session is being continued from a previous conversation.'
+      },
+      cwd
+    },
+    lastRecord
+  ])
+}
+
 function handleLine(line) {
   const text = line.replace(ESC, '').trim()
   if (worktreeChoicePending) {
@@ -825,29 +857,10 @@ function handleLine(line) {
     process.stdout.write(`\r\n[fake-claude] ${entering ? 'entered' : 'left'} ${dest}\r\n> `)
     return
   }
-  // CC§1
   if (text === '/compact') {
-    fireHook('compacting', { hook_event_name: 'PreCompact', trigger: 'manual' })
-    fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason: 'other' })
-    fireHook('start', {
-      session_id: sessionId,
-      transcript_path: transcript,
-      cwd,
-      hook_event_name: 'SessionStart',
-      source: 'compact'
-    })
-    append([
+    compact(
+      'manual',
       { type: 'user', message: { role: 'user', content: '/compact' }, cwd },
-      {
-        type: 'user',
-        isCompactSummary: true,
-        isVisibleInTranscriptOnly: true,
-        message: {
-          role: 'user',
-          content: 'This session is being continued from a previous conversation.'
-        },
-        cwd
-      },
       {
         type: 'system',
         subtype: 'local_command',
@@ -855,8 +868,27 @@ function handleLine(line) {
           '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>',
         cwd
       }
-    ])
+    )
     process.stdout.write(`\r\n[fake-claude] compacted -> session ${sessionId}\r\n> `)
+    return
+  }
+  if (text === '/compact-while-idle') {
+    fireHook('notify', {
+      hook_event_name: 'Notification',
+      message: 'Claude is waiting for your input',
+      notification_type: 'idle_prompt'
+    })
+    compact(
+      'auto',
+      { type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'auto' }, cwd },
+      {
+        type: 'system',
+        subtype: 'informational',
+        content: 'Compacted while idle, before the prompt cache expired',
+        cwd
+      }
+    )
+    process.stdout.write(`\r\n[fake-claude] compacted while idle\r\n> `)
     return
   }
   // CC§2
@@ -1039,6 +1071,46 @@ function handleLine(line) {
       process.stdout.write('[fake-claude] bg-reported finished\r\n> ')
     }, reportedBackgroundMs())
     process.stdout.write('[fake-claude] bg-reported running\r\n> ')
+    return
+  }
+  // CC§8
+  if (text === '/bg-plugin-monitor') {
+    const notification =
+      '<task-notification>\n<task-id>mon_plugin_e2e</task-id>\n' +
+      '<summary>Monitor event: "service errors"</summary>\n' +
+      '<event>15:05 ERROR connection dropped</event>\n</task-notification>'
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: notification })
+    const meta = usageMeta()
+    append([
+      {
+        type: 'user',
+        timestamp: new Date().toISOString(),
+        origin: { kind: 'task-notification', producer: 'session-task' },
+        message: { role: 'user', content: notification },
+        cwd
+      },
+      {
+        type: 'assistant',
+        version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,
+        requestId: meta.requestId,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'assistant',
+          id: meta.id,
+          model: meta.model,
+          content: [{ type: 'text', text: 'A network blip, nothing for you to do.' }],
+          usage: meta.usage
+        },
+        cwd
+      }
+    ])
+    fireHook('stop', {
+      hook_event_name: 'Stop',
+      background_tasks: [
+        { id: 'mon_plugin_e2e', type: 'shell', status: 'running', description: 'watch.sh' }
+      ]
+    })
+    process.stdout.write('[fake-claude] plugin monitor event answered\r\n> ')
     return
   }
   // CC§8

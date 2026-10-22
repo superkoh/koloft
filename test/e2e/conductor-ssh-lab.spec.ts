@@ -150,7 +150,7 @@ async function typeIntoRemote(page: Page, tabId: string, text: string): Promise<
 }
 
 test.describe('The butler on this Mac looking after a Claude session on an SSH machine (Docker)', () => {
-  test('E-SSH-C1: the butler types a message into the remote session; the session’s question shows its row waiting for approval and is answered by the butler with koloft session answer, and the next with koloft session keys, pressed through ssh and tmux; the reply that ends that turn is handed to the butler, whose answer reaches the channel', async ({
+  test('E-SSH-C1: the butler types a message into the remote session; the session’s question shows its row waiting for approval and is answered by the butler with koloft session answer, and the next with koloft session keys, pressed through ssh and tmux; the reply that ends that turn is handed to the butler, whose answer reaches the channel; the only card that reaches it is the ⌨️ result card of the fake’s /koloft session send (the fake’s /koloft runs no model turn, unlike the real claude’s koloft skill, whose answer takes that card’s place)', async ({
     env
   }) => {
     await withRemoteWorkspaceConductor(
@@ -207,7 +207,9 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
             { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS }
           )
           .toBe(true)
-        expect(fake.posted.filter((p) => p.card)).toEqual([])
+        expect(fake.posted.filter((p) => p.card).map((p) => p.content.split('\n')[0])).toEqual([
+          `⌨️ **Alfred** ran /koloft session send ${remote.sessionId} hello from Discord:`
+        ])
       }
     )
   })
@@ -267,6 +269,10 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
           (s) => s.alive && !s.butler
         )!
         const transcript = (): string => transcriptOnTarget(lab, remote.sessionId)
+        const remoteStatus = async (): Promise<string | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.sessionId === remote.sessionId
+          )?.status
 
         fake.say(
           OWNER,
@@ -285,12 +291,15 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
           'Call your AskUserQuestion tool once, with the single question "Which colour?" and exactly two options, Red then Green. After I answer, reply with only the colour I picked, in capitals.'
         )
         await expect
-          .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
-          .toMatch(/"name":"AskUserQuestion"/)
+          .poll(remoteStatus, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
+          .toBe('approval')
         fake.say(OWNER, `/koloft session answer ${remote.sessionId} 2`)
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
           .toMatch(/"type":"text","text":"GREEN/)
+        await expect
+          .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^(waiting|idle)$/)
 
         fake.say(OWNER, `/koloft session command ${remote.sessionId} /compact`)
         await expect
@@ -300,10 +309,6 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
           .toContainEqual(
             expect.stringMatching(/ran \/compact:\nCompacted \(ctrl\+o to see full summary\)/)
           )
-        const remoteStatus = async (): Promise<string | undefined> =>
-          (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => s.sessionId === remote.sessionId
-          )?.status
         await expect
           .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toMatch(/^(waiting|idle)$/)

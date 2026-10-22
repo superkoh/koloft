@@ -77,7 +77,8 @@ export function sessionEventFromHook(
   event?: string,
   message?: string,
   bgl?: unknown,
-  ask?: unknown
+  ask?: unknown,
+  trigger?: unknown
 ): SessionEvent | null {
   switch (event) {
     case 'ask':
@@ -85,7 +86,9 @@ export function sessionEventFromHook(
     case 'prompt':
       return { type: 'prompt' }
     case 'compacting':
-      return { type: 'compacting' }
+      return trigger === 'auto' || trigger === 'manual'
+        ? { type: 'compacting', trigger }
+        : { type: 'compacting' }
     case 'compacted':
       return { type: 'compacted' }
     case 'stop':
@@ -214,6 +217,15 @@ export const INTERRUPT_TEXTS = new Set([
 // CC§2
 const IMAGE_PLACEHOLDER = /\[Image(?: #\d+)?\]/g
 
+// CC§2
+const PROMPT_COMMAND =
+  /^<command-message>[\s\S]*?<command-name>([\s\S]*?)<\/command-name>(?:\s*<command-args>([\s\S]*?)<\/command-args>)?/
+
+function promptCommandText(raw: string): string | null {
+  const m = PROMPT_COMMAND.exec(raw)
+  return m ? `${m[1].trim()} ${m[2]?.trim() ?? ''}`.trim() : null
+}
+
 export function classifyUserPrompt(text: string): {
   genuine: boolean
   title: string | null
@@ -292,6 +304,8 @@ function claudeTurnPieces(obj: TranscriptRecord | null): TurnPiece[] {
     const who = raw === null ? null : whoTyped(obj, raw)
     if (raw === null || !who) return []
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
+    const command = obj.isMeta ? null : promptCommandText(raw)
+    if (command) return [{ line: { who, text: command, at }, midTurn: false }]
     if (
       obj.isMeta ||
       compactionSummary(obj) ||
@@ -386,6 +400,7 @@ export interface RemoteTab {
 interface Tracked {
   info: SessionInfo
   compactingFrom?: Turn
+  idleCompaction?: boolean
   launchCwd: string
   readOffset: number
   tailBuf: Buffer
@@ -554,10 +569,13 @@ export class SessionTracker extends SessionRuntime {
   receive(tabId: string, event: SessionEvent): void {
     const t = this.tracked.get(tabId)
     if (event.type === 'compacting' || event.type === 'compacted') {
-      if (t) this.compaction(t, event.type)
+      if (t) this.compaction(t, event)
       return
     }
-    if (t && turnOf(event)) t.compactingFrom = undefined
+    if (t && turnOf(event)) {
+      t.compactingFrom = undefined
+      t.idleCompaction = false
+    }
     if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
@@ -567,9 +585,14 @@ export class SessionTracker extends SessionRuntime {
   }
 
   // CC§1
-  private compaction(t: Tracked, phase: 'compacting' | 'compacted'): void {
+  private compaction(
+    t: Tracked,
+    event: Extract<SessionEvent, { type: 'compacting' | 'compacted' }>
+  ): void {
     const tabId = t.info.tabId
-    if (phase === 'compacting') {
+    if (event.type === 'compacting') {
+      t.idleCompaction = event.trigger === 'auto' && this.turnOver(tabId)
+      if (t.idleCompaction) return
       t.compactingFrom = this.turnNow(tabId) ?? 'ended'
       this.recordHookTurn(tabId, 'working')
       return
@@ -577,6 +600,13 @@ export class SessionTracker extends SessionRuntime {
     const from = t.compactingFrom
     t.compactingFrom = undefined
     if (from && this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, from)
+  }
+
+  takeIdleCompaction(tabId: string): boolean {
+    const t = this.tracked.get(tabId)
+    if (!t?.idleCompaction) return false
+    t.idleCompaction = false
+    return true
   }
 
   setStatus(tabId: string, status: SessionStatus): void {

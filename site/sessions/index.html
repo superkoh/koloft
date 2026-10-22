@@ -46,7 +46,7 @@
           <a href="../#palette">⌘P</a>
           <a href="../#sessions">Sessions</a>
           <a href="../#workbench">Workbench</a>
-          <a href="../#assist">Assist</a>
+          <a href="../#assist">Butler</a>
           <a href="../features/">Features</a>
           <a href="../sessions/" aria-current="page">Docs</a>
           <a href="../changelog/">Changelog</a>
@@ -87,7 +87,7 @@
               src="../img/a-sidebar.webp"
               width="558"
               height="800"
-              alt="The sidebar: the folder tidewatch with a branch sign, 2 behind, 7 open issues and 2 open pull requests, five sessions under it with their branch names, two of them with a red dot; below it the folder harbor-site with one session"
+              alt="Two folders in the sidebar: the folder tidewatch with a branch sign, 2 behind, 7 open issues and 2 open pull requests, five sessions under it with their branch names, two of them with a red dot; below it the folder harbor-site with one session"
             />
           </div>
           <figcaption>
@@ -132,7 +132,7 @@
             <code>No account</code>). Pick the default in Settings ▸ Sessions ▸ Default method.
           </li>
           <li>Click an old row to resume that session.</li>
-          <li>
+          <li id="sleep">
             About half an hour after a session goes quiet (its light turns dim green), it goes to
             sleep: its program stops, but its row, its tab, its screen and its Workbench stay as
             they were. Click the row, or let something send it a message, and the same session wakes
@@ -197,7 +197,7 @@
           <li>
             Looking at the session does not clear the dot. It goes when the session works again: you
             send it something, answer its question or give your OK, or another session or your
-            Assist does. It also goes when you close the tab or archive the session. It is still
+            butler does. It also goes when you close the tab or archive the session. It is still
             there after you quit and reopen Koloft (after a restart it always reads "turn done").
           </li>
           <li>
@@ -292,13 +292,14 @@
             <kbd>⌘N</kbd> above.
           </li>
           <li>
-            Not everything you type starts a session. Words about Koloft itself ("turn on dark
-            mode", "set up Discord") go to Assist as a task; "open settings" or "check for updates"
-            just does it; "ask &lt;folder&gt; …" or "how's &lt;folder&gt; doing …" goes to that
-            folder's Assist. Ask for a session by what it was doing ("go to the session that was
-            fixing login"), and <kbd>⌘P</kbd> jumps to it, starting nothing. A question, a
-            translation, or work that fits more than one folder ("fix the tests") goes to the Global
-            Assist, which answers in its own tab.
+            Not everything you type starts a session. "open settings" or "check for updates" just
+            does it. Ask for a session by what it was doing ("go to the session that was fixing
+            login"), and <kbd>⌘P</kbd> jumps to it, starting nothing. With Koloft Assist on, what
+            <kbd>⌘P</kbd> cannot do by itself goes to your <a href="../accounts/#butler">butler</a>,
+            and the screen moves there: words about Koloft itself ("set up Discord"), "ask
+            &lt;folder&gt; …" (with that folder named), a question, or work that fits more than one
+            folder ("fix the tests"). If the butler is closed, it opens with your words. If it is
+            busy, a helper of the butler takes them instead, under the butler's row.
           </li>
           <li>
             With Assist off, the button reads <code>Start a session</code> (with more than one
@@ -346,9 +347,10 @@
         </p>
         <ul class="dash">
           <li>
-            A session you ask for in <kbd>⌘P</kbd>, and one Assist starts, gets its own worktree too
+            A session you ask for in <kbd>⌘P</kbd>, and one your
+            <a href="../accounts/#butler">butler</a> starts in a project, gets its own worktree too
             in a folder git tracks, never the folder itself and never a worktree that is already
-            there. Assist names it; when it does not, the worktree is called
+            there. Assist or the butler names it; when neither does, the worktree is called
             <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code>. A name already in use
             gets <code class="nowrap">-2</code> after it, then <code class="nowrap">-3</code>.
             Claude Code and Codex both do this, and <kbd>⌘P</kbd> does it on a
@@ -454,8 +456,8 @@
             <code class="nowrap">koloft session close</code>, or by Remove from list), the row moves
             up under the starter's own starter, or to the top if there was none. A row also sits at
             the top when it was started into another folder with
-            <code class="nowrap">--workspace</code>, when an
-            <a href="../accounts/#assist">Assist</a> started it, and always for a session on another
+            <code class="nowrap">--workspace</code>, when your
+            <a href="../accounts/#butler">butler</a> started it, and always for a session on another
             machine.
           </li>
           <li>
@@ -465,6 +467,18 @@
         </ul>
 
         <h2 id="the-sidebar">The sidebar</h2>
+        <p>
+          The first row of the list is your <a href="../accounts/#butler">butler</a>,
+          <code>Alfred · Butler</code>, above every folder. When the session tab you are looking at
+          goes away, Koloft shows the butler.
+        </p>
+        <p>
+          When the Mac is busy (macOS says memory is tight, or the processors have been very busy
+          for half a minute), each open session's row also shows about how much memory it and the
+          programs it started use on your Mac, like <code>≈1.2 GB</code>. For a session on another
+          machine, only what runs on your Mac is counted. Nothing waits or is held back: it is only
+          there so you can see which session is heavy.
+        </p>
         <p>
           Drag a folder's name up or down to reorder the list. The number keys 1 to 9 in the
           <kbd>⌘N</kbd> folder picker follow the new order.
@@ -489,20 +503,6 @@
           <li>
             <a href="../scheduled/">Scheduled jobs…</a>
             <span class="why">— sessions on a timer</span>
-          </li>
-          <li>
-            Talk to Assist
-            <span class="why"
-              >— open this folder's <a href="../accounts/#assist">Assist</a> (there while Assist is
-              on)</span
-            >
-          </li>
-          <li>
-            Bind Discord channel…
-            <span class="why"
-              >— give this folder's Assist a Discord channel (see
-              <a href="../discord/">discord</a>)</span
-            >
           </li>
           <li>Remove workspace <span class="why">— take the folder off the list</span></li>
         </ul>
@@ -608,10 +608,10 @@
           When a fetch finds that origin's main branch has moved, say because a pull request was
           merged, Koloft tells every open session in that repository, whichever agent runs it, that
           sits on another branch and does not have those commits yet. The fetch is Koloft's own
-          (every five minutes, while Auto-fetch is on) or <code>Fetch now</code>. Assist's own
-          sessions are not told, nor is a session on the main branch itself: the behind number, Pull
-          and Auto-pull serve it. Commits that came in while Koloft was closed are not announced
-          either. The message reads:
+          (every five minutes, while Auto-fetch is on) or <code>Fetch now</code>. Your butler is not
+          told, nor is a session on the main branch itself: the behind number, Pull and Auto-pull
+          serve it. Commits that came in while Koloft was closed are not announced either. The
+          message reads:
           <code>(From Koloft:) origin/main moved from … to …, with 2 new commits: "…", "…". …</code>
           When those commits touch files the session itself had changed, it names them, and it ends
           by saying that nobody asks the session to merge or rebase: what to do is the agent's call.

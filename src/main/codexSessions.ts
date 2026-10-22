@@ -682,14 +682,20 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         else if (event.type === 'degraded') this.deps.error(event.message)
         return
       }
-      if (bound && !bound.explicitStop && !bound.stopping)
-        this.bind(
-          bound,
-          machine
-            ? { ...event.thread, cwd: this.machineDeps().keyed(machine, event.thread.cwd) }
-            : event.thread,
-          event.change
-        )
+      if (!bound || bound.explicitStop || bound.stopping) return
+      const name = bound.launchName
+      // CODEX§17
+      if (name)
+        bound.transport
+          .request('thread/name/set', { threadId: event.thread.id, name })
+          .catch((error) => this.deps.error(String(error)))
+      this.bind(
+        bound,
+        machine
+          ? { ...event.thread, cwd: this.machineDeps().keyed(machine, event.thread.cwd) }
+          : event.thread,
+        event.change
+      )
     }
     const agent = this.deps.agent.enabled(machine ? 'ssh' : 'local') ? this.deps.agent : undefined
     const openShim = machine
@@ -838,6 +844,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         transport,
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
+        launchName: opts.name,
         account: picked.account,
         permission,
         bypassing: permission === 'bypass',

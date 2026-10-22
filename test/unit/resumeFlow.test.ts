@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResumePlan } from '@shared/types'
+import { SESSION_BACKENDS } from '@shared/sessionBackend'
 import {
   existingRequest,
   mainRequest,
@@ -13,8 +14,7 @@ import {
   resumeInFlight,
   resumeSession,
   runResume,
-  UNAVAILABLE_NOTICE,
-  STILL_RUNNING_NOTICE
+  UNAVAILABLE_NOTICE
 } from '../../src/renderer/src/resumeFlow'
 import { useStore } from '../../src/renderer/src/store'
 
@@ -77,11 +77,17 @@ describe('planToStep (D6/D8 routing)', () => {
     expect(UNAVAILABLE_NOTICE).toBe("This session's directory no longer exists — transcript only.")
   })
 
-  it('a session still running in another claude is never opened a second time', () => {
-    expect(planToStep({ action: 'unavailable', reason: 'running' }, target)).toEqual({
+  it('a session still running in another process is never opened a second time, and the notice names the process of that session’s own agent', () => {
+    const running: ResumePlan = { action: 'unavailable', reason: 'running' }
+    expect(planToStep(running, target)).toEqual({
       kind: 'notice',
-      message: STILL_RUNNING_NOTICE
+      message:
+        'This session is still running in another claude process — resuming it would start a second copy.'
     })
+    for (const backendId of SESSION_BACKENDS)
+      expect(planToStep(running, { ...target, backendId })).toMatchObject({
+        message: expect.stringContaining(`still running in another ${backendId} process`)
+      })
   })
 })
 

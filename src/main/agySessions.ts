@@ -177,6 +177,7 @@ interface AgyRun extends StoredRun {
   shown?: string
   log: LineTail
   title?: AgyTitleState
+  givenTitle?: string
   touched: Map<string, FileAcc>
   liveWrites: number
   background?: BackgroundItem
@@ -560,6 +561,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         resource,
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
+        launchName: opts.name,
+        givenTitle: opts.name,
         permission: opts.permission ?? 'default',
         bypassing: permission === 'bypass',
         account: pick.account,
@@ -768,7 +771,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (state.conversationId && run.info?.nativeSessionId !== state.conversationId)
       this.bindTo(run, state.conversationId)
     if (!run.info) return
-    if (state.title && state.title !== before?.title) this.retitle(run.info, state.title)
+    if (state.title && state.title !== before?.title) {
+      run.givenTitle = undefined
+      this.retitle(run.info, state.title)
+    }
     // AGY§19
     if (state.agentState === 'reviewing' && before?.agentState !== 'reviewing')
       void this.readPlan(run)
@@ -779,6 +785,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const key = agySessionKey(conversationId, run.remote?.host)
     const known = this.history.get(key)
     const switched = !!run.info && !!known
+    if (run.info) run.givenTitle = undefined
     run.touched.clear()
     run.liveWrites = 0
     run.background = undefined
@@ -910,12 +917,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   private turnStarted(run: AgyRun): void {
     this.watchCompaction(run)
     const id = run.info?.nativeSessionId
-    if (id && !this.history.get(agySessionKey(id, run.remote?.host))?.name)
+    if (id && !run.givenTitle && !this.history.get(agySessionKey(id, run.remote?.host))?.name)
       this.takeListedTitleSoon(run, id)
   }
 
   // AGY§8 AGY§11
   private async takeListedTitle(run: AgyRun, id: string, again = false): Promise<void> {
+    const given = run.givenTitle
     const listed = run.remote
       ? this.deps.remote
           .machine(run.remote.host)
@@ -924,8 +932,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       : listAgyConversations(this.gemini)
     const name = (await listed.catch(() => [])).find((e) => e.id === id)?.name
     if (!name && again) this.takeListedTitleSoon(run, id)
-    if (name && run.info?.nativeSessionId === id && name !== run.info.title)
-      this.retitle(run.info, name)
+    if (!name || run.info?.nativeSessionId !== id) return
+    if (!given) {
+      if (name !== run.info.title) this.retitle(run.info, name)
+      return
+    }
+    run.givenTitle = undefined
+    // AGY§16
+    if (name !== given) void run.api?.rename(id, given).catch(() => undefined)
   }
 
   // AGY§8

@@ -415,6 +415,7 @@ export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; err
 
 export interface PaletteRequest {
   words: string
+  backend: BackendId
   title?: string
   about?: string
   at?: string
@@ -427,6 +428,8 @@ export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'gith
 export type HintId = (typeof HINT_IDS)[number]
 
 export const WORLD_CLOCK_MAX = 3
+
+export const SIDEBAR_MIN = 240
 
 export const DEFAULT_SETTINGS: Settings = {
   sessionMethods: {
@@ -1144,6 +1147,7 @@ export interface KoloftApi {
     setOverlayGuest(guestId: number, on: boolean): void
     setGuestOwner(guestId: number, ownerTabId: string): void
     reportStrip(sessionId: string, targets: BrowserStripTarget[]): void
+    reportComposing(on: boolean): void
     onCdpOp(cb: (op: BrowserCdpOp) => void): () => void
     answerCdpOp(res: BrowserCdpOpResult): void
     onCdpAttached(cb: (a: BrowserCdpAttached) => void): () => void

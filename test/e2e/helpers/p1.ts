@@ -528,6 +528,12 @@ export function centerTerm(page: Page): Locator {
   return page.locator('.term-island .term-wrap:visible .xterm')
 }
 
+export async function switchToRow(page: Page, row: Locator): Promise<void> {
+  await row.click()
+  await expect(row).toHaveClass(/\bactive\b/)
+  await expect(page.locator('.terminals > .empty')).toHaveCount(0)
+}
+
 export async function runIn(page: Page, term: Locator, cmd: string): Promise<void> {
   await term.click()
   await page.keyboard.type(cmd)

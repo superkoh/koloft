@@ -15,7 +15,8 @@ import {
   reachedBySendMessage,
   SESSION_BACKENDS,
   backendIdOf,
-  messagingOf
+  messagingOf,
+  namedAtLaunch
 } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { withoutBlankEdges } from './messageText'
@@ -60,6 +61,7 @@ export interface ButlerHelperTask {
   prompt: string
   name?: string
   ownerWords: string
+  backend: BackendId
 }
 
 export interface NewSessionArgs {
@@ -444,7 +446,7 @@ const aSessionOf = (backend: BackendId): string => {
   return `${/^[AEIOU]/.test(label) ? 'an' : 'a'} ${label} session`
 }
 const hasNoName = (backend: BackendId): string =>
-  `koloft session new: ${aSessionOf(backend)} has no name, so leave out --name. Koloft prints an id to reach it by.`
+  `koloft session new: ${aSessionOf(backend)} in a remote workspace has no name, so leave out --name. Koloft prints an id to reach it by.`
 
 function starterNamer(
   d: SessionVerbDeps,
@@ -505,7 +507,7 @@ async function startSibling(
   helperRole?: string
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
-  if (!PEER_TRAITS[backend].namedAtLaunch && args.name !== undefined)
+  if (!namedAtLaunch(backend, isRemoteKey(workspace)) && args.name !== undefined)
     return refused(hasNoName(backend), EXIT_USAGE)
   const launched = await launchSibling(
     d,
@@ -563,7 +565,7 @@ async function launchSibling(
     ownerWords
   }
   const [name, handover] = await Promise.all([
-    !traits.namedAtLaunch
+    !namedAtLaunch(backend, isRemoteKey(workspace))
       ? undefined
       : (args.name ??
         nameForTask(
@@ -1229,12 +1231,12 @@ export function sessionVerb(d: SessionVerbDeps): {
 
   const startButlerHelper = async (
     butler: SessionInfo,
-    { prompt, name, ownerWords }: ButlerHelperTask
+    { prompt, name, ownerWords, backend }: ButlerHelperTask
   ): Promise<string | null> =>
     (
       await launchSibling(
         d,
-        { prompt, name },
+        { prompt, name, backend },
         butler,
         d.butlerFolder(),
         butler.tabId,

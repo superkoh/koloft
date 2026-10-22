@@ -66,7 +66,7 @@
           <a href="#palette">⌘P</a>
           <a href="#sessions">Sessions</a>
           <a href="#workbench">Workbench</a>
-          <a href="#assist">Assist</a>
+          <a href="#assist">Butler</a>
           <a href="features/">Features</a>
           <a href="sessions/">Docs</a>
           <a href="changelog/">Changelog</a>
@@ -282,8 +282,8 @@
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#phone" /></svg>
             <b>They report back</b>A child reports back with
-            <code>koloft session send</code> (Claude sessions also talk with SendMessage); Assist
-            gets each session's reply back by itself when the turn ends.
+            <code>koloft session send</code> (Claude sessions also talk with SendMessage); your
+            butler gets each session's reply back by itself when the turn ends.
           </div>
         </div>
         <p class="honest">
@@ -353,49 +353,38 @@
               ><svg class="icon" aria-hidden="true"><use href="icons.svg#assist" /></svg></span
             >04 · Talk to Koloft
           </div>
-          <h2>Say it in plain words. <em>Assist runs Koloft for you.</em></h2>
+          <h2>Say it in plain words. <em>Your butler runs Koloft for you.</em></h2>
           <p>
-            Assist is Koloft's own helper. Tell it what you want, here or on your phone: it starts,
-            resumes and stops sessions, closes finished ones, reads what they said, answers their
-            questions and presses their keys. From Discord it also runs slash commands in them, and
-            a folder's Assist sets up scheduled jobs for that folder. It runs your sessions; it is
-            not there to edit your files.
+            Your butler, Alfred until you rename it, is Koloft's own AI, first in the sessions list.
+            Tell it what you want, here or on your phone: it starts, resumes and stops sessions,
+            closes finished ones, reads what they said, answers their questions and presses their
+            keys. A side job goes to a helper of its own, which reports back.
           </p>
-        </div>
-        <div class="glow reveal">
-          <div
-            class="win"
-            data-film="assist"
-            data-phone-crop="0,0,830,700"
-            data-title="Koloft, recorded: Assist starts a session and hears its reply"
-            data-cues='[{"at":16,"to":19,"html":"one plain sentence; Assist starts the session","x":"34%","y":"54%"},{"at":20,"html":"the session reports back by itself","x":"34%","y":"54%"}]'
-          ></div>
         </div>
         <div class="proof reveal">
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#keys" /></svg>
-            <b>It answers and presses keys</b>A session stuck on a question or a menu? Tell Assist
-            “pick the second one”: it reads the screen and presses the keys.
+            <b>It answers and presses keys</b>A session stuck on a question or a menu? Tell your
+            butler “pick the second one”: it reads the screen and presses the keys.
           </div>
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#timer" /></svg>
-            <b>It sets up schedules</b>“Run the tests every night at 2 and write a short report”
-            becomes a scheduled job for that folder.
+            <b>It sets up schedules</b>“Run the tests in tidewatch every night at 2 and write a
+            short report” becomes a scheduled job for that folder.
           </div>
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#wand" /></svg>
-            <b>Ask Koloft itself</b>Type “set up Discord” in <kbd>⌘P</kbd> and Assist takes it as a
-            job, clicking through Discord's site and stopping for you to sign in and pass the human
-            checks.
+            <b>Ask Koloft itself</b>Type “set up Discord” in <kbd>⌘P</kbd> and it goes to your
+            butler, whose helper clicks through Discord's site and stops for you to sign in and pass
+            the human checks.
           </div>
         </div>
         <p class="honest">
-          <span>note</span>Turn Assist on in Settings ▸ Assist. It runs on your Mac; it can message
-          a session in a remote folder, not start one there. It can't change your Settings, apart
-          from setting up its own Discord bot when you ask.
+          <span>note</span>Set it up in Settings ▸ Assist. It runs on your Mac; it can message a
+          session in a remote folder, not start one there.
         </p>
         <a class="more" href="features/#assist"
-          >Everything Assist does
+          >Everything your butler does
           <svg class="icon" aria-hidden="true"><use href="icons.svg#arrow" /></svg
         ></a>
       </section>
@@ -409,34 +398,31 @@
           </div>
           <h2>Away from the Mac? <em>Your sessions come with you.</em></h2>
           <p>
-            Bind Assist to your own Discord bot and talk to it from anywhere. Each session Assist
-            looks after gets its own thread, its questions come as buttons, and a card tells you
-            when it has finished. Your bot, your server: no server of ours in between.
+            Bind your butler to your own Discord bot and talk to it from anywhere, in one channel.
+            It reaches your sessions for you and tells you what they did. Your bot, your server: no
+            server of ours in between.
           </p>
         </div>
         <ol class="steps reveal">
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#phone" /></svg>
-            <b>Say it in the channel</b>“add a health check to tidewatch” goes to Assist on your
-            Mac, which starts the session in that folder.
+            <b>Say it in the channel</b>“add a health check to tidewatch” goes to your butler on
+            your Mac, which starts the session in that folder.
           </li>
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#tree" /></svg>
-            <b>Each session, its own thread</b>A card follows its light: working, waiting for you,
-            finished. Type in the thread and it goes straight to that session.
+            <b>It keeps track</b>Ask how a session is doing, or tell it how to answer one that is
+            waiting: it reads the session, answers it, and tells you in the channel.
           </li>
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#check" /></svg>
-            <b>Answer with a tap</b>A tool asking to run gets Yes / No; a question with one pick
-            gets a button per option. A file you attach reaches the session; ask Assist and it sends
-            files back.
+            <b>Files and pictures</b>A file you attach reaches your butler; ask it and it sends
+            files back, or a picture of a web page.
           </li>
         </ol>
         <p class="honest">
-          <span>note</span>Assist sets the bot up for you; you sign in, click the two buttons
-          Discord lets only you click, and pass its human checks. Questions with several parts get
-          no buttons: with Claude on your Mac, reply in the thread, one line per part; otherwise
-          tell Assist what to pick.
+          <span>note</span>Your butler sets the bot up for you; you sign in, click the two buttons
+          Discord lets only you click, and pass its human checks.
         </p>
         <a class="more" href="discord/"
           >A butler on Discord
@@ -455,7 +441,7 @@
           <p>
             Put a job on a schedule and Koloft starts a fresh session for it every hour, day or
             week; in a git repo, in a worktree of its own. Read what it did in the morning, here or
-            by asking Assist from your phone.
+            by asking your butler from your phone.
           </p>
         </div>
         <div class="grid3 inline">

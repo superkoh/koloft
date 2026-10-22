@@ -286,7 +286,7 @@ and 26 passed on 0.162.1. On 0.163.0 (2026-10-16): sections 1 (`thread/list` sha
 see there), 13/14 (`model/list`, the default model), 17 (a message queued mid-turn), 20
 (the waiting question), 21 (the slash popup) and 25 (the TUI's startup bytes, OSC 7501,
 the leader key) were measured again, and the same e2e specs passed; they passed again on
-0.163.0 on 2026-10-17 and on 2026-10-19 (no newer Codex either day). Still only on
+0.163.0 on 2026-10-17, 2026-10-19, 2026-10-20 and 2026-10-21 (no newer Codex on any of those days). Still only on
 0.153.4 or 0.159.3, and so inferred for 0.161+:
 section 1's update-notice key, 2, 3 (the approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` / `commandActions` shapes,
 the `open` shim), 13 (token-usage fields) and 14 (first prompt, `-m`,
@@ -896,6 +896,15 @@ read-only -m gpt-6-luna -C /tmp -` with the system text and task on stdin exited
 about 2 s, printed only the title on stdout, reported 2,538 tokens on stderr, and wrote
 no rollout into the shared `sessions/`.
 
+**The one-shot sometimes answers 15–45 s late.** 2026-10-19 and 2026-10-20, codex-cli
+0.162.0, `gpt-6-luna`, the same argv: 15 direct runs with a fresh `CODEX_HOME` holding
+only `auth.json` took 2.6–6.8 s, except one that took 43.7 s and still exited 0 with the
+right answer and nothing unusual on stderr. Through `test/unit/sessionRoute.real.test.ts`
+4 of 24 lines (2026-10-19) and 2 of 24 (2026-10-20) were cut off by the 15 s limit; the
+rest took 2.7–9.3 s. Claude's Haiku one-shot answered 24 of 24 under 5 s both nights. So
+a Codex one-shot still running at the limit gets a second run beside it, and the first
+answer wins (#615).
+
 **The login still lands in `auth.json` by default on 0.162.1; a keyring is opt-in.**
 Checked 2026-10-11 with Codex CLI 0.162.1 (the npm package in a scratch folder),
 throwaway `CODEX_HOME`s, a dummy key on stdin: `codex login --with-api-key` printed
@@ -1166,6 +1175,19 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   note, not the task (`agent-tools-real-smoke.spec.ts`). That the title thread never
   reads the developer instructions is inferred, not checked, beyond that spec passing
   (again on 0.162.1, 2026-10-11).
+- **A thread named with `thread/name/set` right after it starts keeps that name: the
+  TUI does not title it.** 2026-10-21, Codex CLI 0.162.0, one real turn each run: a Node
+  client on `codex app-server --listen ws://127.0.0.1:<port>` and a real TUI connected
+  with `--remote` in a pty, given a first prompt, in a scratch `CODEX_HOME` holding a
+  copy of this Mac's login (deleted afterwards). With no name sent, `thread/name/updated`
+  brought the TUI's own title ("Fix README heading typo") about 2.3 s after the thread
+  showed in `thread/list`. With `thread/name/set {threadId, name}` sent the moment the
+  thread showed, the reply was `{}`, `thread/name/updated` carried that name, no other
+  title came in the next 90 s, and `thread/read` still gave the name after the turn.
+  `thread/name/set` on a thread the TUI had already titled replaced its title. One run
+  of each. The method is in the request list of Codex CLI 0.161.0 too
+  (`codex app-server generate-json-schema --experimental`, `ClientRequest.json`), not
+  run there.
 - **A resume never takes new developer instructions; a start's own instructions replace
   the `-c` ones.** 2026-10-16, Codex CLI 0.162.0, `gpt-6.1-sol`, an app-server client as in
   section 27. With `-c developer_instructions=` naming codeword ZEBRA: two turns, and a
@@ -1193,8 +1215,9 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   said it could not save across sessions and wrote nothing. With an `AGENTS.md` seeded
   beforehand saying "This file is your memory folder. When the owner asks you to remember
   something, add it here as one short line", the same rule plus Koloft's conductor gate
-  (section 27): a thread started before the seed and resumed after it wrote the fact into
-  `AGENTS.md` with `apply_patch` (`*** Add File: <absolute path>`), and a new thread on a
+  (section 27; the butler has run without that gate since ADR-0029, and this was not
+  measured again without it): a thread started before the seed and resumed after it
+  wrote the fact into `AGENTS.md` with `apply_patch` (`*** Add File: <absolute path>`), and a new thread on a
   new app-server answered it; on resume Codex adds a fresh AGENTS.md message before the
   new turn. `features.memories` (stable, off by default) was tried too: per `CODEX_HOME`,
   run by a background consolidation agent at app-server start, its notes outside the cwd,

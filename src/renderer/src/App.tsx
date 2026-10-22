@@ -46,6 +46,7 @@ import type {
   SessionSearchHit,
   WorkspaceRows
 } from '@shared/types'
+import { SIDEBAR_MIN } from '@shared/types'
 import {
   useStore,
   openInterceptedFile,
@@ -153,7 +154,6 @@ import {
 } from '@shared/paletteFeatures'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
-const SIDEBAR_MIN = 240
 const RECENT_MAX = 3
 const CENTER_TERMINAL_MAX_COLS = 120
 
@@ -508,6 +508,19 @@ export default function App(): JSX.Element {
       window.removeEventListener('blur', recheck)
       window.removeEventListener('focus', recheck)
       offWindowFocus()
+    }
+  }, [])
+  // PLATFORM§10
+  useEffect(() => {
+    const composing = (): void => window.api.browser.reportComposing(true)
+    const done = (): void => window.api.browser.reportComposing(false)
+    document.addEventListener('compositionstart', composing, true)
+    document.addEventListener('compositionupdate', composing, true)
+    document.addEventListener('compositionend', done, true)
+    return () => {
+      document.removeEventListener('compositionstart', composing, true)
+      document.removeEventListener('compositionupdate', composing, true)
+      document.removeEventListener('compositionend', done, true)
     }
   }, [])
   useEffect(() => {
@@ -1141,7 +1154,13 @@ export default function App(): JSX.Element {
     }
     const toButler = (title: string, about: string | null): void => {
       const at = activeTabWs ?? undefined
-      const request = { words: prompt, title: title || undefined, about: about ?? undefined, at }
+      const request = {
+        words: prompt,
+        backend,
+        title: title || undefined,
+        about: about ?? undefined,
+        at
+      }
       void window.api.conductors.fromPalette(request).then((r) => {
         if (r.ok) {
           if (r.queued) return

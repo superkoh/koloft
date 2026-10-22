@@ -1790,6 +1790,21 @@ describe('a compaction the owner asked for', () => {
     await waitFor(tracker, (s) => s.tabId === 'tabK4' && s.status === 'working')
   })
 
+  it('Claude compacting a finished session on its own, even twice over, moves no status and ends no turn', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabK5', cwd, initialLines(cwd))
+    tracker.setStatus('tabK5', 'waiting')
+    const edges: string[] = []
+    tracker.on('status', (e: { next: string }) => edges.push(`status ${e.next}`))
+    tracker.on('turn-over', (e: { over: boolean }) => edges.push(`over ${e.over}`))
+    tracker.receive('tabK5', { type: 'compacting', trigger: 'auto' })
+    tracker.receive('tabK5', { type: 'compacting', trigger: 'auto' })
+    tracker.receive('tabK5', hook('compacted'))
+    expect(status(tracker, 'tabK5')).toBe('waiting')
+    expect(edges).toEqual([])
+  })
+
   it('a compaction in the middle of a turn leaves it working', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
