@@ -220,6 +220,11 @@ export function seedHandedOverOwnerWords(said: string, ownerWords: string): void
 }
 
 export const START_IN_STATUS_LOG = 'inStatusLog'
+export const STATUS_LOG_SUFFIX = '.status.jsonl'
+
+export function statusLogOf(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}${STATUS_LOG_SUFFIX}`)
+}
 
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
@@ -628,7 +633,7 @@ export function writeTabHookSettings(
   conductor = false,
   holdWhileBusy = false
 ): string {
-  fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
+  fs.rmSync(statusLogOf(paths.regDir, tabId), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
   const settings = hookSettings(
     paths.hookScript,

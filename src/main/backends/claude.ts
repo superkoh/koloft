@@ -40,7 +40,9 @@ import {
   hookSettings,
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
-  START_IN_STATUS_LOG
+  START_IN_STATUS_LOG,
+  STATUS_LOG_SUFFIX,
+  statusLogOf
 } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { keychainRead, listAccounts } from '../accounts'
@@ -99,7 +101,7 @@ export interface ClaudeBackendDeps {
 }
 
 // PLATFORM§28
-const STATUS_LOG_POLL_MS = 2000
+const STATUS_LOG_POLL_MS = 1000
 // CC§1
 const SESSION_END_SETTLE_MS = 800
 // CC§1
@@ -109,11 +111,6 @@ const REMOTE_EXIT_POLL_MS = 500
 const REMOTE_EXIT_SLACK_MS = 30_000
 const LIVENESS_SWEEP_MS = 2500
 const MISSED_SWEEPS_BEFORE_UNTRACK = 2
-const WAIT_FOR_REGISTRATION = 'wait-for-registration'
-
-function statusLogOf(regDir: string, tabId: string): string {
-  return path.join(regDir, `${tabId}.status.jsonl`)
-}
 
 function startTakenFromTheStatusLog(note: unknown): boolean {
   const n = note as { event?: string; [START_IN_STATUS_LOG]?: unknown } | null
@@ -179,13 +176,14 @@ async function remoteExitOnDisk(
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
   private hookRegDir = ''
-  private statusLogCursors = new Map<string, { offset: number; tail: Buffer; waiting: string[] }>()
+  private statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
   private statusLogDraining = new Map<string, boolean>()
   private watchedHookMirrors = new Map<string, () => void>()
   private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
+  private shimRegistered = new Set<string>()
   agentReply?: (tabId: string, raw: unknown) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -350,6 +348,7 @@ export class ClaudeBackend implements SessionBackend {
     if (!registeredByTabRoot(obj.pid, this.d.pty.pidOf(obj.tabId))) return
     const cwd = obj.cwd && obj.cwd.length ? obj.cwd : os.homedir()
     this.d.tracker.track(obj.tabId, cwd)
+    this.shimRegistered.add(obj.tabId)
     void this.drainStatusLog(statusLogOf(this.hookRegDir, obj.tabId))
   }
 
@@ -364,6 +363,7 @@ export class ClaudeBackend implements SessionBackend {
     this.pickedSkipFlag.delete(tabId)
     this.launchedBypassing.delete(tabId)
     this.heldBeforeStartup.delete(tabId)
+    this.shimRegistered.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     const sid = this.sessionIdOf(tabId)
     const title = this.titleOf(tabId)
@@ -486,7 +486,7 @@ export class ClaudeBackend implements SessionBackend {
     try {
       watcher = fs.watch(dir, (_event, filename) => {
         const name = filename?.toString()
-        if (!name || !name.endsWith('.status.jsonl')) return
+        if (!name || !name.endsWith(STATUS_LOG_SUFFIX)) return
         drain(name)
       })
     } catch {}
@@ -494,7 +494,7 @@ export class ClaudeBackend implements SessionBackend {
       void fs.promises.readdir(dir).then(
         (names) => {
           for (const name of names) {
-            if (name.endsWith('.status.jsonl')) drain(name)
+            if (name.endsWith(STATUS_LOG_SUFFIX)) drain(name)
           }
         },
         () => {}
@@ -513,8 +513,14 @@ export class ClaudeBackend implements SessionBackend {
     fs.rm(full, { force: true }, () => {})
   }
 
+  private beforeItsShimRegistration(statusLog: string): boolean {
+    if (path.dirname(statusLog) !== this.hookRegDir) return false
+    const tabId = path.basename(statusLog, STATUS_LOG_SUFFIX)
+    return !!this.d.pty.get(tabId) && !this.shimRegistered.has(tabId)
+  }
+
   private async drainStatusLog(full: string): Promise<void> {
-    if (this.statusLogDraining.get(full)) return
+    if (this.statusLogDraining.get(full) || this.beforeItsShimRegistration(full)) return
     this.statusLogDraining.set(full, true)
     try {
       let again = true
@@ -527,22 +533,24 @@ export class ClaudeBackend implements SessionBackend {
           return
         }
         let cur = this.statusLogCursors.get(full)
-        if (!cur || size < cur.offset) {
-          cur = { offset: 0, tail: Buffer.alloc(0), waiting: [] }
+        if (!cur) {
+          cur = { offset: 0, tail: Buffer.alloc(0) }
           this.statusLogCursors.set(full, cur)
         }
-        const grew = size > cur.offset
-        const lines = grew ? await readAppendedLines(full, size, cur) : []
-        if (!lines) return
-        const queue = [...cur.waiting, ...lines]
-        cur.waiting = []
-        for (const [i, line] of queue.entries()) {
-          if (line && this.waitsForRegistration(line)) {
-            cur.waiting = queue.slice(i)
-            return
-          }
+        if (size < cur.offset) {
+          cur.offset = 0
+          cur.tail = Buffer.alloc(0)
         }
-        again = grew
+        if (size <= cur.offset) return
+        const lines = await readAppendedLines(full, size, cur)
+        if (!lines) return
+        for (const line of lines) {
+          if (!line) continue
+          try {
+            this.handleStatusRegistration(JSON.parse(line))
+          } catch {}
+        }
+        again = true
       }
     } finally {
       this.statusLogDraining.set(full, false)
@@ -586,15 +594,7 @@ export class ClaudeBackend implements SessionBackend {
     )
   }
 
-  private waitsForRegistration(line: string): boolean {
-    try {
-      return this.handleStatusRegistration(JSON.parse(line)) === WAIT_FOR_REGISTRATION
-    } catch {
-      return false
-    }
-  }
-
-  private handleStatusRegistration(raw: unknown): typeof WAIT_FOR_REGISTRATION | void {
+  private handleStatusRegistration(raw: unknown): void {
     const obj = raw as HookReport & {
       tabId?: string
       message?: string
@@ -605,7 +605,6 @@ export class ClaudeBackend implements SessionBackend {
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
-    if (!this.d.tracker.infoOf(obj.tabId)) return WAIT_FOR_REGISTRATION
     // CC§1
     if (obj.event === 'start') return this.handleHookRegistration(obj)
     // CC§5

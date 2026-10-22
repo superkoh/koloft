@@ -247,7 +247,7 @@ describe('ClaudeBackend: waiting for a remote session to end before its folder i
   })
 })
 
-const PAST_A_STATUS_LOG_POLL_MS = 2500
+const PAST_A_STATUS_LOG_POLL_MS = 1500
 
 describe('ClaudeBackend: a local tab binds once both of its start notes are on disk', () => {
   it("binds the session when claude's SessionStart is read before the shim's registration of the tab", async () => {

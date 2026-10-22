@@ -1078,7 +1078,7 @@ inferred, not checked.
   while the files were on disk; the tab then never bound. A worktree-exit case that
   lost one in 3 of 16 runs passed 9 of 9 with the old 1.6 s wait. A 1 s sweep of the
   shim's folder finds the registration; claude's start is also a line in the tab's
-  status log (CC§1), which the 2 s poll of every status log finds.
+  status log (CC§1), which a 1 s poll of every status log finds.
   (2026-10-09, Node 24.13.0 in Electron 43, macOS 27.0.1; files listed from the e2e
   when a row stayed pending.)
 

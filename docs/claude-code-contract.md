@@ -184,11 +184,13 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   to one file writes the start first. Measured 2026-10-22 on CC 2.1.308 linux-arm64 in a
   Docker container with no network (a fake key from `apiKeyHelper`, so the prompt hook
   fires and the request then fails), four busy loops beside it, a SessionStart hook that
-  sleeps 1 s and hooks that log their entry and exit: 20 runs each of `claude -p`, an
+  sleeps 1 s and hooks that log their entry and exit: 40 runs each of `claude -p`, an
   interactive `claude -- <prompt>`, an interactive `claude` with the prompt typed and
-  Enter pressed 0.5 s after spawn (before the hook ended), `--resume <id>` typed the
-  same way, and `/clear` followed 0.1 s later by a typed prompt; the prompt hook began
-  after the start hook's exit in all 100. After `/clear`, SessionEnd `clear` had also
+  Enter pressed 0.5 s after spawn (before the hook ended), and `--resume <id>` typed the
+  same way, plus 20 of `/clear` followed 0.1 s later by a typed prompt. No prompt hook
+  ever began before the start hook's exit; in the 100 runs that counted it (the second
+  20 of each kind and the `/clear` ones), it fired in 99 (one `--resume` run sent no
+  prompt). After `/clear`, SessionEnd `clear` had also
   exited before SessionStart `clear` began. Not probed: the in-TUI `/resume` switch, and
   `compact` (it can fire mid-turn, with no prompt after it).
 
