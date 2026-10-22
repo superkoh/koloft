@@ -67,7 +67,7 @@ function cleanHistory(raw: unknown): HistoryLine[] {
     if (typeof item.sessionId === 'string' && item.sessionId) line.sessionId = item.sessionId
     if (item.removed === true) line.removed = true
     if (typeof item.kept === 'string' && item.kept) line.kept = item.kept
-    if (item.cutOff === true) line.cutOff = true
+    if (item.liveState === 'running' || item.liveState === 'done') line.liveState = item.liveState
     lines.push(line)
   }
   return lines

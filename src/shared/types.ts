@@ -1419,7 +1419,7 @@ export interface HistoryLine {
   sessionId?: string
   removed?: true
   kept?: string
-  cutOff?: true
+  liveState?: 'running' | 'done'
 }
 
 export interface CronFile {

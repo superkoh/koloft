@@ -4394,6 +4394,7 @@ function restoreOpenTabs(): string | undefined {
   void resumeAwake(awake, savedOpenTabs.active).finally(() => {
     openTabsRestored = true
     rememberOpenTabs()
+    cronRunner?.reopeningOver()
     cronRunner?.sweepLeftFolders()
   })
   tabLifecycle.emit('slept')
@@ -4412,7 +4413,8 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
           error: couldNotStart(row.title)
         }))
       : undefined
-    cronRunner?.reopenedIn(id, resumed?.ok ? resumed.tabId : undefined)
+    const reopenedTab = resumed?.ok && ptyMgr.get(resumed.tabId)?.alive ? resumed.tabId : undefined
+    cronRunner?.reopenedIn(id, reopenedTab)
     if (!resumed?.ok) {
       if (resumed) sendToRenderer(CH.cron.toast, resumed.error)
       return
