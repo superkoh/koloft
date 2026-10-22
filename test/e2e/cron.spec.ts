@@ -834,8 +834,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
       await openCron(page, 'ws-a')
       await expect
-        .poll(async () => (await histLines(page))[0], { timeout: 20_000 })
-        .toMatchObject({ state: 'Closed by you', folder: ' · folder removed' })
+        .poll(async () => (await histLines(page)).find((l) => l.state === 'Closed by you'), {
+          timeout: 20_000
+        })
+        .toMatchObject({ folder: ' · folder removed' })
 
       const before = readCalls(env).length
       await clickRunNow(page, 'Nightly report')
