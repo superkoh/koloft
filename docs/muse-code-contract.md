@@ -128,7 +128,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - `session/list {limit?, cursor?}` → `{sessions:[…], nextCursor}`, every folder's
   sessions, without a login. A session carries `sessionId`, `path`, `createdAt`,
   `updatedAt`, `workspaceRoot`, `title`, `name`, `firstUserPrompt`, `kind`, … A new
-  session is missing from the list for 3–5 s.
+  session is missing from the list for 3–5 s. `path` is the session's own
+  `session.jsonl` (§2): checked 2026-10-20 on Muse 1.4.9 in Docker, by `session/list`
+  after a `muse exec --provider echo` run.
 - `muse serve --provider echo` (no login needed) can read a session another muse
   process holds: `session/read` returns its items (`userMessage`, `agentMessage`, … with
   `itemId`, `recordedAt`), and `approval/listPending {sessionId}` returns what it waits

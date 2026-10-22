@@ -371,7 +371,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const onMachines = new Map<string, Map<string, string>>()
     for (const [key, entry] of this.history) {
       const host = hostOfKey(key)
-      if (!host) continue
+      if (!host || !this.deps.remote?.connected(host)) continue
       if (entry.logPath)
         onMachines.set(host, (onMachines.get(host) ?? new Map()).set(entry.logPath, key))
     }

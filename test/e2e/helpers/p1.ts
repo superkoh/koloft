@@ -302,6 +302,17 @@ export async function sendShortcut(app: ElectronApplication, channel: string): P
   }, channel)
 }
 
+export async function closeActiveTab(app: ElectronApplication, page: Page): Promise<void> {
+  await page.locator('.ws .ws-tab.active').first().click()
+  await sendShortcut(app, 'shortcut:close-tab')
+  const confirm = page.locator('.modal', { hasText: 'Close running session?' })
+  if (await confirm.isVisible({ timeout: 4000 }).catch(() => false))
+    await confirm
+      .locator('button', { hasText: /^Close$/ })
+      .first()
+      .click()
+}
+
 export async function clickAppMenuItem(
   app: ElectronApplication,
   page: Page,
