@@ -40,7 +40,7 @@ export type LogRecord = { payloadType: string; payload: Record<string, unknown>;
 
 const MICROSECONDS_PER_MS = 1000
 
-const logRecord = (line: string): LogRecord | undefined => {
+export const logRecord = (line: string): LogRecord | undefined => {
   try {
     const r = record(JSON.parse(line))
     return typeof r.payload_type === 'string'
@@ -80,7 +80,7 @@ export const renamedTo = (r: LogRecord): string | undefined =>
 export const startsATurnByItself = (r: LogRecord): boolean =>
   r.payloadType === 'runtime.session' && record(r.payload.event).kind === 'inbox_item_queued'
 
-const runEvent = (r: LogRecord, kind: string): Record<string, unknown> | undefined => {
+export const runEvent = (r: LogRecord, kind: string): Record<string, unknown> | undefined => {
   const event = record(r.payload.event)
   return r.payloadType === 'runtime.session' &&
     r.payload.kind === 'run' &&

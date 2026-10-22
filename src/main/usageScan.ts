@@ -1,14 +1,10 @@
 import { longContextSurchargeUsd, resolvePricing, type TokenCounts } from '@shared/pricing'
+import type { UsageRecord } from '@shared/types'
 import { localDayKey } from '@shared/usageFormat'
+import { stepOf } from './agyStore'
+import { logRecord, runEvent } from './museSessionLog'
 
-export interface UsageRecord extends TokenCounts {
-  sessionId: string
-  day: string
-  model: string
-  surchargeUsd: number
-}
-
-export interface CodexScan {
+interface CodexScan {
   sessionId: string
   cwd: string
   records: UsageRecord[]
@@ -21,16 +17,13 @@ export const CODEX_USAGE_WORDS = ['session_meta', 'turn_context', 'token_usage_r
 export const MUSE_USAGE_WORDS = ['model_completed']
 export const AGY_USAGE_WORDS = ['PLANNER_RESPONSE']
 
-const MICROSECONDS_PER_MS = 1000
-
 function num(x: unknown): number {
   return typeof x === 'number' && isFinite(x) && x > 0 ? x : 0
 }
 
-function parsedLines(text: string, mustHave: string[]): any[] {
+function parsedLines(text: string): any[] {
   const out: any[] = []
   for (const line of text.split('\n')) {
-    if (!mustHave.some((word) => line.includes(word))) continue
     try {
       out.push(JSON.parse(line))
     } catch {
@@ -72,7 +65,7 @@ interface ClaudeCall {
 export function scanClaudeLines(text: string): UsageRecord[] {
   const calls: ClaudeCall[] = []
   const callByIds = new Map<string, ClaudeCall>()
-  for (const obj of parsedLines(text, CLAUDE_USAGE_WORDS)) {
+  for (const obj of parsedLines(text)) {
     const msg = obj?.message
     if (obj.type !== 'assistant' || !msg?.usage || typeof msg.usage !== 'object') continue
     const model = typeof msg.model === 'string' ? msg.model : ''
@@ -109,7 +102,7 @@ export function scanCodexLines(text: string): CodexScan | null {
   const booked = new Set<string>()
   const out = new RecordsByDayAndModel()
   let sessionId = ''
-  for (const obj of parsedLines(text, CODEX_USAGE_WORDS)) {
+  for (const obj of parsedLines(text)) {
     const p = obj?.payload
     if (!p || typeof p !== 'object') continue
     if (obj.type === 'session_meta' && !meta) {
@@ -140,16 +133,13 @@ export function scanCodexLines(text: string): CodexScan | null {
 // MUSE§2
 export function scanMuseLines(text: string, sessionId: string): UsageRecord[] {
   const out = new RecordsByDayAndModel()
-  for (const obj of parsedLines(text, MUSE_USAGE_WORDS)) {
-    const p = obj?.payload
-    const event = p?.event
-    if (obj.payload_type !== 'runtime.session' || p.kind !== 'run') continue
-    if (event?.kind !== 'model_completed' || !event.usage || typeof event.usage !== 'object')
-      continue
-    const day = localDayKey(num(obj.recorded_at) / MICROSECONDS_PER_MS || NaN)
-    if (!day) continue
-    const u = event.usage
-    out.add(sessionId, day, typeof event.model === 'string' ? event.model : '', {
+  for (const line of text.split('\n')) {
+    const r = logRecord(line)
+    const event = r && runEvent(r, 'model_completed')
+    const u = event?.usage as Record<string, unknown> | undefined
+    const day = localDayKey(r?.atMs)
+    if (!u || typeof u !== 'object' || !day) continue
+    out.add(sessionId, day, typeof event?.model === 'string' ? event.model : '', {
       inTok: Math.max(0, num(u.input_tokens) - num(u.cache_read_tokens)),
       outTok: num(u.output_tokens),
       cacheReadTok: num(u.cache_read_tokens),
@@ -168,18 +158,18 @@ export function scanAgyLines(
 ): UsageRecord[] {
   const out = new RecordsByDayAndModel()
   let call = 0
-  for (const obj of parsedLines(text, AGY_USAGE_WORDS)) {
-    if (obj?.type !== 'PLANNER_RESPONSE') continue
+  for (const line of text.split('\n')) {
+    const step = stepOf(line)
+    if (step?.type !== 'PLANNER_RESPONSE') continue
     const model = modelOfCall[call++] || configuredModel
     const tokens: TokenCounts = {
-      inTok: num(obj.input_tokens),
-      outTok: num(obj.output_tokens),
-      cacheReadTok: num(obj.cache_read_tokens),
+      inTok: num(step.inputTokens),
+      outTok: num(step.outputTokens),
+      cacheReadTok: num(step.cacheReadTokens),
       cacheWriteTok: 0
     }
     if (!tokens.inTok && !tokens.outTok && !tokens.cacheReadTok) continue
-    const day = localDayKey(obj.created_at)
-    if (day) out.add(sessionId, day, model, tokens)
+    if (step.at) out.add(sessionId, localDayKey(step.at), model, tokens)
   }
   return out.list()
 }

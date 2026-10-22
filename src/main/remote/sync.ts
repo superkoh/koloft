@@ -38,11 +38,17 @@ const GIT_INTERVAL_MS = 20_000
 const LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS = 60_000
 const STAY_FAST_AFTER_WORK_OR_INPUT_MS = 30_000
 
+export interface ExtraPull {
+  from: string
+  to: string
+  flags: string[]
+}
+
 export interface RemoteTarget {
   host: string
   mirrorProjectsRoot: string
   mirrorHookDir: string
-  extraPulls?: { from: string; to: string; flags: string[] }[]
+  extraPulls?: ExtraPull[]
   paths: string[]
   hasTabs: boolean
   busy: boolean

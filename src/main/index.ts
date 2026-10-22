@@ -3120,9 +3120,10 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
+      const codexMachines = new Set(codexSessions?.machinesWithTabs())
       const live = new Set([
         ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
-        ...(codexSessions?.machinesWithTabs() ?? [])
+        ...codexMachines
       ])
       const busy = new Set(
         allSessions().flatMap((s) => {
@@ -3145,9 +3146,7 @@ app.whenReady().then(() => {
               ]
             : []),
           ...usagePulls(userData, t.host, {
-            codex:
-              !!codexSessions?.machinesWithTabs().includes(t.host) ||
-              !!codexSessions?.hasHistoryOn(t.host),
+            codex: codexMachines.has(t.host) || !!codexSessions?.hasHistoryOn(t.host),
             muse: !!museSessions?.hasHistoryOn(t.host),
             agy: !!agySessions?.usesHost(t.host)
           })

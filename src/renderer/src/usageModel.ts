@@ -5,7 +5,7 @@ import { localDayKey } from '@shared/usageFormat'
 export type UsageRange = '7d' | '30d' | '90d' | 'all'
 export type UsageGroup = 'day' | 'session' | 'workspace' | 'model'
 
-export const RANGE_DAYS: Record<Exclude<UsageRange, 'all'>, number> = {
+const RANGE_DAYS: Record<Exclude<UsageRange, 'all'>, number> = {
   '7d': 7,
   '30d': 30,
   '90d': 90
@@ -32,10 +32,9 @@ export interface UsageDay {
   byBackend: Partial<Record<BackendId, number>>
 }
 
-export const tokensOf = (r: UsageRow): number =>
-  r.inTok + r.outTok + r.cacheReadTok + r.cacheWriteTok
+const tokensOf = (r: UsageRow): number => r.inTok + r.outTok + r.cacheReadTok + r.cacheWriteTok
 
-export function costOf(r: UsageRow): number | null {
+function costOf(r: UsageRow): number | null {
   const pricing = resolvePricing(r.model)
   return pricing ? costUsdOf(pricing, r) + r.surchargeUsd : null
 }
@@ -81,47 +80,56 @@ const keyFor: Record<UsageGroup, (r: UsageRow) => string> = {
   model: (r) => r.model
 }
 
+interface Sums {
+  workspace: string
+  backends: Set<BackendId>
+  sessions: Set<string>
+  days: Set<string>
+  models: Set<string>
+  tokens: number
+  costUsd: number
+  priced: boolean
+}
+
 export function grouped(rows: UsageRow[], by: UsageGroup): UsageLine[] {
-  const acc = new Map<
-    string,
-    UsageLine & { sessionSet: Set<string>; daySet: Set<string>; modelSet: Set<string> }
-  >()
+  const acc = new Map<string, Sums>()
   for (const r of rows) {
     const key = keyFor[by](r)
-    let line = acc.get(key)
-    if (!line) {
-      line = {
-        key,
-        backends: [],
+    let sums = acc.get(key)
+    if (!sums) {
+      sums = {
         workspace: r.workspace,
-        sessions: 0,
-        days: 0,
-        models: [],
+        backends: new Set(),
+        sessions: new Set(),
+        days: new Set(),
+        models: new Set(),
         tokens: 0,
         costUsd: 0,
-        priced: false,
-        sessionSet: new Set(),
-        daySet: new Set(),
-        modelSet: new Set()
+        priced: false
       }
-      acc.set(key, line)
+      acc.set(key, sums)
     }
-    if (!line.backends.includes(r.backend)) line.backends.push(r.backend)
-    line.sessionSet.add(r.sessionId)
-    line.daySet.add(r.day)
-    line.modelSet.add(r.model)
-    line.tokens += tokensOf(r)
+    sums.backends.add(r.backend)
+    sums.sessions.add(r.sessionId)
+    sums.days.add(r.day)
+    sums.models.add(r.model)
+    sums.tokens += tokensOf(r)
     const cost = costOf(r)
     if (cost !== null) {
-      line.costUsd += cost
-      line.priced = true
+      sums.costUsd += cost
+      sums.priced = true
     }
   }
-  const lines = [...acc.values()].map(({ sessionSet, daySet, modelSet, ...line }) => ({
-    ...line,
-    sessions: sessionSet.size,
-    days: daySet.size,
-    models: [...modelSet]
+  const lines = [...acc].map(([key, s]): UsageLine => ({
+    key,
+    workspace: s.workspace,
+    backends: [...s.backends],
+    sessions: s.sessions.size,
+    days: s.days.size,
+    models: [...s.models],
+    tokens: s.tokens,
+    costUsd: s.costUsd,
+    priced: s.priced
   }))
   return by === 'day'
     ? lines.sort((a, b) => b.key.localeCompare(a.key))

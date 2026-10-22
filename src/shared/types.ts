@@ -483,11 +483,14 @@ export const DEFAULT_SETTINGS: Settings = {
 export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'
 export type HostId = 'local' | 'ssh'
 
-export interface UsageRow extends TokenCounts {
+export interface UsageRecord extends TokenCounts {
   sessionId: string
   day: string
   model: string
   surchargeUsd: number
+}
+
+export interface UsageRow extends UsageRecord {
   backend: BackendId
   workspace: string
 }

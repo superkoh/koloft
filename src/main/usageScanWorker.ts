@@ -25,7 +25,7 @@ async function linesWithAny(file: string, words: string[]): Promise<string> {
 }
 
 // AGY§8
-async function agyModels(db: string): Promise<{ calls: string[]; configured: string }> {
+async function agyModels(db = ''): Promise<{ calls: string[]; configured: string }> {
   if (!fs.existsSync(db)) return { calls: [], configured: '' }
   const { DatabaseSync } = await import('node:sqlite')
   const sqlite = new DatabaseSync(db, { readOnly: true })
@@ -46,38 +46,34 @@ async function agyModels(db: string): Promise<{ calls: string[]; configured: str
   }
 }
 
-async function scan(f: UsageFile): Promise<ScannedFile> {
-  if (f.backend === 'claude')
-    return {
-      file: f.file,
-      records: scanClaudeLines(await linesWithAny(f.file, CLAUDE_USAGE_WORDS))
+async function scan(f: UsageFile): Promise<Omit<ScannedFile, 'file'>> {
+  const sessionId = f.sessionId ?? ''
+  switch (f.backend) {
+    case 'claude':
+      return { records: scanClaudeLines(await linesWithAny(f.file, CLAUDE_USAGE_WORDS)) }
+    case 'muse':
+      return { records: scanMuseLines(await linesWithAny(f.file, MUSE_USAGE_WORDS), sessionId) }
+    case 'agy': {
+      const { calls, configured } = await agyModels(f.db)
+      const text = await linesWithAny(f.file, AGY_USAGE_WORDS)
+      return { records: scanAgyLines(text, sessionId, calls, configured) }
     }
-  if (f.backend === 'muse')
-    return {
-      file: f.file,
-      records: scanMuseLines(await linesWithAny(f.file, MUSE_USAGE_WORDS), f.sessionId ?? '')
-    }
-  if (f.backend === 'agy') {
-    const models = f.db ? await agyModels(f.db) : { calls: [], configured: '' }
-    const text = await linesWithAny(f.file, AGY_USAGE_WORDS)
-    return {
-      file: f.file,
-      records: scanAgyLines(text, f.sessionId ?? '', models.calls, models.configured)
+    case 'codex': {
+      const codex = scanCodexLines(await linesWithAny(f.file, CODEX_USAGE_WORDS))
+      return { records: codex?.records ?? [], cwd: codex?.cwd }
     }
   }
-  const codex = scanCodexLines(await linesWithAny(f.file, CODEX_USAGE_WORDS))
-  return { file: f.file, records: codex?.records ?? [], cwd: codex?.cwd }
 }
 
 async function scanAll(files: UsageFile[]): Promise<void> {
   for (const f of files) {
-    let scanned: ScannedFile
+    let scanned: Omit<ScannedFile, 'file'>
     try {
       scanned = await scan(f)
     } catch {
-      scanned = { file: f.file, records: [] }
+      scanned = { records: [] }
     }
-    parentPort?.postMessage(scanned)
+    parentPort?.postMessage({ file: f.file, ...scanned })
   }
 }
 

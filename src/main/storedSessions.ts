@@ -373,26 +373,23 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     return workspace ? this.rows(workspace).find((row) => row.id === key) : undefined
   }
   hasHistoryOn(host: string): boolean {
-    return [...this.history.keys()].some((key) => hostOfKey(key) === host)
+    for (const key of this.history.keys()) if (hostOfKey(key) === host) return true
+    return false
   }
   sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined {
     const scope = this.rowScope()
-    const titlesIn = new Map<string, Map<string, string>>()
     return (id, host) => {
       const key = this.keyOf(id, host)
       const entry = this.history.get(key)
+      const member = this.store.getMember(key)
       const workspace =
-        this.store.getMember(key)?.workspacePath ??
-        (entry ? this.workspaceFor(entry.cwd, scope) : undefined)
-      if (!workspace) return undefined
-      let titles = titlesIn.get(workspace)
-      if (!titles) {
-        titles = new Map(this.rows(workspace).map((r) => [r.id, r.title]))
-        titlesIn.set(workspace, titles)
-      }
-      const title = titles.get(key)
-      return title === undefined ? undefined : { workspace, title }
+        member?.workspacePath ?? (entry ? this.workspaceFor(entry.cwd, scope) : undefined)
+      const title = entry ? this.titleOf(entry) : member?.title
+      return workspace && title !== undefined ? { workspace, title } : undefined
     }
+  }
+  private titleOf(t: H): string {
+    return t.name || t.preview?.slice(0, 100) || PLACEHOLDER_TITLES[this.id]
   }
   members(): Set<string> {
     return new Set([
@@ -475,7 +472,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       id: key,
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
-      title: t.name || t.preview?.slice(0, 100) || PLACEHOLDER_TITLES[this.id],
+      title: this.titleOf(t),
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? place.worktreeName ?? 'main',
       running: this.readsRunning(key),

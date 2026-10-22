@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { BackendId, UsageRead } from '@shared/types'
 import { BACKEND_PRODUCT } from '@shared/sessionBackend'
 import { isRemoteKey } from '@shared/remoteKey'
+import { basename } from '@shared/preview'
 import { formatCost, formatTokens, localDayKey } from '@shared/usageFormat'
 import {
   chartDays,
@@ -45,8 +46,7 @@ const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' 
 
 function workspaceName(workspace: string): string {
   if (!workspace) return 'Other'
-  if (isRemoteKey(workspace)) return workspace
-  return workspace.split('/').filter(Boolean).pop() ?? workspace
+  return isRemoteKey(workspace) ? workspace : basename(workspace)
 }
 
 function niceMax(max: number): number {
@@ -55,10 +55,10 @@ function niceMax(max: number): number {
   return [1, 2, 4, 5, 10].map((m) => m * step).find((n) => n >= max) ?? max
 }
 
-function Badges({ line }: { line: UsageLine }): JSX.Element {
+function Badges({ backends, ssh }: { backends: BackendId[]; ssh: boolean }): JSX.Element {
   return (
     <>
-      {line.backends.map(
+      {backends.map(
         (b) =>
           b !== 'claude' && (
             <span key={b} className={`acct-badge ${b}`}>
@@ -66,7 +66,7 @@ function Badges({ line }: { line: UsageLine }): JSX.Element {
             </span>
           )
       )}
-      {isRemoteKey(line.workspace) && <span className="acct-badge ssh">SSH</span>}
+      {ssh && <span className="acct-badge ssh">SSH</span>}
     </>
   )
 }
@@ -135,7 +135,7 @@ function Row({
           {titles[line.key] || `${BACKEND_PRODUCT[line.backends[0]]} session`}
           <small>{context.join(' · ')}</small>
         </div>
-        <Badges line={line} />
+        <Badges backends={line.backends} ssh={isRemoteKey(line.workspace)} />
         <span className="tk">{formatTokens(line.tokens)}</span>
         <Cost line={line} />
       </div>
@@ -149,12 +149,12 @@ function Row({
       </div>
       {by === 'workspace' ? (
         <>
-          {isRemoteKey(line.key) && <span className="acct-badge ssh">SSH</span>}
+          <Badges backends={[]} ssh={isRemoteKey(line.key)} />
           <Meter part={part} />
         </>
       ) : (
         <>
-          <Badges line={{ ...line, workspace: '' }} />
+          <Badges backends={line.backends} ssh={false} />
           <span className="tk">{formatTokens(line.tokens)}</span>
         </>
       )}

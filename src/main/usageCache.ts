@@ -1,9 +1,8 @@
 import fs from 'fs'
 import path from 'path'
-import type { BackendId, UsageRead, UsageRow } from '@shared/types'
+import type { BackendId, UsageRead, UsageRecord, UsageRow } from '@shared/types'
 import { formatRemoteKey } from '@shared/remoteKey'
 import { AGY_APP_DIR, agyTranscript, conversationDb } from './agyStore'
-import type { UsageRecord } from './usageScan'
 import { PrivateRecordFile } from './privateFile'
 import { mapAtMost } from './mapAtMost'
 
@@ -119,19 +118,21 @@ export class UsageCache {
 
   private rows(): Pick<UsageRead, 'rows' | 'titles'> {
     const entries = Object.values(this.cached.get()).filter((e) => e.records.length)
-    const codex = entries.filter((e) => e.backend === 'codex')
-    const workspaces = this.deps.codexWorkspaces(
-      codex.map((e) => (e.host && e.cwd ? formatRemoteKey(e.host, e.cwd) : (e.cwd ?? '')))
-    )
-    const codexWorkspace = new Map(codex.map((e, i) => [e, workspaces[i]]))
     const placeOf = this.deps.sessionPlaces()
+    const placed = new Map<CachedFile, string>()
+    for (const e of entries) {
+      if (e.backend === 'claude') continue
+      const own = placeOf(e.backend, e.sessionId ?? e.records[0].sessionId, e.host)
+      if (own) placed.set(e, own.workspace)
+    }
+    const unplacedCodex = entries.filter((e) => e.backend === 'codex' && !placed.has(e))
+    const fromCwd = this.deps.codexWorkspaces(
+      unplacedCodex.map((e) => (e.host && e.cwd ? formatRemoteKey(e.host, e.cwd) : (e.cwd ?? '')))
+    )
+    unplacedCodex.forEach((e, i) => placed.set(e, fromCwd[i]))
     const titles: Record<string, string> = {}
     const rows = entries.flatMap((e) => {
-      const own = e.backend === 'claude' ? undefined : (e.sessionId ?? e.records[0].sessionId)
-      const workspace =
-        (own ? placeOf(e.backend, own, e.host)?.workspace : undefined) ??
-        codexWorkspace.get(e) ??
-        e.workspace
+      const workspace = placed.get(e) ?? e.workspace
       return e.records.map((r): UsageRow => {
         titles[r.sessionId] ??= placeOf(e.backend, r.sessionId, e.host)?.title ?? ''
         return { ...r, backend: e.backend, workspace }
