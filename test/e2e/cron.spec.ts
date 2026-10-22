@@ -11,7 +11,18 @@ import {
   REMOTE_WS_NAME,
   remoteDir
 } from './helpers/remote'
-import { installCodex, seedClaudeTrust, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  agyCalls,
+  installAgy,
+  installCodex,
+  installMuse,
+  museCalls,
+  seedClaudeTrust,
+  seedSettings,
+  trustInAgy,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
 import { codexCalls } from './helpers/codex'
 import { runGit } from './helpers/gitFixture'
 import {
@@ -73,7 +84,7 @@ type WhenSpec =
   | { kind: 'every'; n: number; unit: 'minutes' | 'hours' }
 
 interface JobSpec {
-  agent?: 'Codex'
+  agent?: 'Codex' | 'Muse' | 'Antigravity'
   name: string
   task: string
   when?: WhenSpec
@@ -851,46 +862,80 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
-  test('BB-M08 in Codex: a Codex run left open at quit comes back as the open run, so Run now skips it', async ({
-    env
-  }) => {
-    test.setTimeout(240_000)
-    installCodex(env)
-    gitInit(env.workspaces.a)
-    const app1 = await launchApp(env)
-    try {
-      const page = await app1.firstWindow()
-      await waitBooted(page)
-      const dlg = await openCron(page, 'ws-a')
-      await createJob(page, dlg, { agent: 'Codex', name: 'Nightly report', task: 'look around' })
-      await clickRunNow(page, 'Nightly report')
-      await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Nightly report')
-    } finally {
-      await app1.close().catch(() => {})
+  const agyRunsInPlaceSinceAScheduledRunNeverTrustsItsFreshWorktree = (env: E2EEnv): void => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+  }
+  const STORED_AGENTS: {
+    agent: NonNullable<JobSpec['agent']>
+    setUp: (env: E2EEnv) => void
+    launches: (env: E2EEnv) => number
+  }[] = [
+    {
+      agent: 'Codex',
+      setUp: (env) => {
+        installCodex(env)
+        gitInit(env.workspaces.a)
+      },
+      launches: (env) => codexCalls(env).length
+    },
+    {
+      agent: 'Muse',
+      setUp: (env) => {
+        installMuse(env)
+        trustInMuse(env, env.workspaces.a)
+        gitInit(env.workspaces.a)
+      },
+      launches: (env) => museCalls(env).length
+    },
+    {
+      agent: 'Antigravity',
+      setUp: agyRunsInPlaceSinceAScheduledRunNeverTrustsItsFreshWorktree,
+      launches: (env) =>
+        agyCalls(env).filter((c) => !c.argv.includes('-p') && !c.argv.includes('--version')).length
     }
-    expect(readStore(env)?.jobs[0].history[0].state).toBe('ended')
+  ]
+  for (const { agent, setUp, launches } of STORED_AGENTS) {
+    test(`BB-M08 in ${agent}: a run left open at quit, whose process Koloft stops first, comes back as the open run, so Run now skips it`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      setUp(env)
+      const app1 = await launchApp(env)
+      try {
+        const page = await app1.firstWindow()
+        await waitBooted(page)
+        const dlg = await openCron(page, 'ws-a')
+        await createJob(page, dlg, { agent, name: 'Nightly report', task: 'look around' })
+        await clickRunNow(page, 'Nightly report')
+        await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Nightly report')
+      } finally {
+        await app1.close().catch(() => {})
+      }
+      expect(readStore(env)?.jobs[0].history[0].state).toBe('ended')
 
-    const app2 = await launchApp(env)
-    try {
-      const page = await app2.firstWindow()
-      await waitBooted(page)
-      await waitRunStateBound(cronRows(page, 'ws-a'))
-      await openCron(page, 'ws-a')
-      await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
-        'done — waiting for you',
-        { timeout: 20_000 }
-      )
+      const app2 = await launchApp(env)
+      try {
+        const page = await app2.firstWindow()
+        await waitBooted(page)
+        await waitRunStateBound(cronRows(page, 'ws-a'))
+        await openCron(page, 'ws-a')
+        await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
+          'done — waiting for you',
+          { timeout: 20_000 }
+        )
 
-      const callsWhileOpen = codexCalls(env).length
-      await clickRunNow(page, 'Nightly report')
-      await expect(toastMsg(page)).toHaveText(
-        '⏰ Nightly report skipped: the last run is still open'
-      )
-      expect(codexCalls(env)).toHaveLength(callsWhileOpen)
-    } finally {
-      await app2.close().catch(() => {})
-    }
-  })
+        const launchesWhileOpen = launches(env)
+        await clickRunNow(page, 'Nightly report')
+        await expect(toastMsg(page)).toHaveText(
+          '⏰ Nightly report skipped: the last run is still open'
+        )
+        expect(launches(env)).toBe(launchesWhileOpen)
+      } finally {
+        await app2.close().catch(() => {})
+      }
+    })
+  }
 
   test('BB-M09: switching a job off is shown; on again counts from now', async ({ env }) => {
     test.setTimeout(300_000)
