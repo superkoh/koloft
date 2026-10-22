@@ -613,7 +613,10 @@ export class ClaudeBackend implements SessionBackend {
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
     // CC§1
-    if (obj.event === 'start') return this.handleHookRegistration(obj)
+    if (obj.event === 'start') {
+      if (obj.source !== 'compact' && obj.sessionId === this.sessionIdOf(obj.tabId)) return
+      return this.handleHookRegistration(obj)
+    }
     // CC§5
     if (!ownsHookReport(obj, this.sessionIdOf(obj.tabId)) && !this.followMovedConversation(obj)) {
       return
