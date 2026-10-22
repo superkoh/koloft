@@ -5,6 +5,7 @@ import { app, webContents } from 'electron'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './cdpProtocol'
 import { inputEmulation } from './cdpInput'
+import { compositionDone } from './hostComposition'
 
 export interface RelayDeps {
   sessionForTab(tabId: string): string | null
@@ -114,18 +115,26 @@ function backendFor(client: Client): RelayBackend {
   const live = (): void => {
     if (!client.sessionId) throw new Error('the tab has no running session')
   }
+  // PLATFORM§10
+  const afterUsersWord = async (): Promise<void> => {
+    await compositionDone()
+    if (clients.get(client.tabId) !== client) throw new Error('the client disconnected')
+  }
   return {
     targets: () => (client.sessionId ? asTargets(snapshots.get(client.sessionId) ?? []) : []),
     mount: async (targetId) => {
+      await afterUsersWord()
       live()
       return await d.mount(client.sessionId, tabIdFor(targetId))
     },
     create: async (url) => {
+      await afterUsersWord()
       live()
       const t = await d.create(client.sessionId, url)
       return { ...t, targetId: targetIdFor(t.targetId) }
     },
     close: async (targetId) => {
+      await afterUsersWord()
       live()
       await d.close(client.sessionId, tabIdFor(targetId))
     },
@@ -196,6 +205,7 @@ function backendFor(client: Client): RelayBackend {
       publishAttached(client)
     },
     forward: async (targetId, guestId, method, params, sessionId) => {
+      await afterUsersWord()
       // PLATFORM§9
       if (method === 'Page.captureScreenshot') {
         await d.stage(client.sessionId, tabIdFor(targetId))

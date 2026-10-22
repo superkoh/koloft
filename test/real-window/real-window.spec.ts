@@ -14,6 +14,8 @@ import {
   wsRows
 } from '../e2e/helpers/p1'
 import { claudePrompts } from '../e2e/helpers/workbench'
+import { cdpEndpointOf, connectCdp } from '../e2e/helpers/browser'
+import { startEchoServer } from '../e2e/helpers/fixtureServer'
 import {
   ABC_LAYOUT,
   COMMAND_FLAG,
@@ -231,6 +233,43 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
       screenshot(testInfo.outputPath('pinyin-sent.png'))
     } finally {
       selectInputSource(ABC_LAYOUT)
+    }
+  })
+
+  // PLATFORM§10
+  test('with macOS Pinyin, a word half typed in one session survives another session’s agent clicking into a field of its Workbench page; the click lands once the word is picked', async ({
+    shown: { app, page },
+    env
+  }, testInfo) => {
+    const server = await startEchoServer()
+    await sessionIn(page, 'ws-a')
+    const browser = await connectCdp(page, await cdpEndpointOf(env))
+    const typing = await sessionIn(page, 'ws-b')
+    try {
+      const driven = await browser.contexts()[0].newPage()
+      await driven.goto(server.page('/form', '<body><input id="name"></body>'))
+      await goToBackground(app)
+      // PLATFORM§52
+      selectInputSource(PINYIN_SIMPLIFIED)
+      await comeBackThroughTheDock(app)
+      await clickIntoTerminal(app, page)
+      const before = (await terminalText(page, typing)).trimEnd()
+      typeNihao()
+      const clicked = driven.click('#name')
+      await page.waitForTimeout(1_000)
+      realKey(KEY_SPACE)
+      await expect
+        .poll(async () =>
+          (await terminalText(page, typing)).trimEnd().slice(before.length).replace(/\s/g, '')
+        )
+        .toBe('你好')
+      await clicked
+      expect(await driven.evaluate(() => document.activeElement?.id)).toBe('name')
+      screenshot(testInfo.outputPath('pinyin-kept.png'))
+    } finally {
+      selectInputSource(ABC_LAYOUT)
+      await browser.close().catch(() => {})
+      await server.close()
     }
   })
 })

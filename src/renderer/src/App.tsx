@@ -510,6 +510,19 @@ export default function App(): JSX.Element {
       offWindowFocus()
     }
   }, [])
+  // PLATFORM§10
+  useEffect(() => {
+    const composing = (): void => window.api.browser.reportComposing(true)
+    const done = (): void => window.api.browser.reportComposing(false)
+    document.addEventListener('compositionstart', composing, true)
+    document.addEventListener('compositionupdate', composing, true)
+    document.addEventListener('compositionend', done, true)
+    return () => {
+      document.removeEventListener('compositionstart', composing, true)
+      document.removeEventListener('compositionupdate', composing, true)
+      document.removeEventListener('compositionend', done, true)
+    }
+  }, [])
   useEffect(() => {
     if (!panelFocus) return undefined
     // PLATFORM§25

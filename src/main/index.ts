@@ -315,6 +315,7 @@ import {
   relayAttached,
   type RelayDeps
 } from './cdpRelay'
+import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
   permissionAsk,
@@ -4519,7 +4520,11 @@ function guestPagesOf(tabId: string): GuestPage[] {
     .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
     .map((wc) => ({
       url: () => wc.getURL(),
-      run: (script: string) => wc.executeJavaScript(script),
+      // PLATFORM§10
+      run: async (script: string) => {
+        await compositionDone()
+        return await wc.executeJavaScript(script)
+      },
       reload: () =>
         new Promise<void>((resolve) => {
           wc.once('did-stop-loading', () => resolve())
@@ -5409,6 +5414,7 @@ function registerIpc(): void {
     if (typeof sessionId !== 'string' || !Array.isArray(targets)) return
     relayStripChanged(sessionId, targets as BrowserStripTarget[])
   })
+  ipcMain.on(CH.browser.hostComposing, (_e, on: unknown) => hostComposing(on === true))
   ipcMain.on(CH.terminal.screenDone, (_e, answer: unknown) => {
     const a = answer as ScreenAnswer
     if (!a || typeof a.requestId !== 'string') return

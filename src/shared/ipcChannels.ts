@@ -130,6 +130,7 @@ export const CH = {
     overlayGuest: 'browser:overlay-guest',
     guestOwner: 'browser:guest-owner',
     strip: 'browser:strip',
+    hostComposing: 'browser:host-composing',
     cdpOp: 'browser:cdp-op',
     cdpOpDone: 'browser:cdp-op-done',
     cdpAttached: 'browser:cdp-attached',
