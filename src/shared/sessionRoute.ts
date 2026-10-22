@@ -39,6 +39,8 @@ const SESSIONS_SENT_PER_WORKSPACE = 5
 const PROMPT_MAX_CHARS_SENT = 4000
 const TITLE_MAX_CHARS = 40
 const WHY_MAX_CHARS = 200
+// CODEX§31
+const CHECK_IN_RULE = 1
 
 const ROUTE_SYSTEM = 'You decide who in the Koloft app should take what a person typed.'
 
@@ -89,7 +91,7 @@ ${message.slice(0, PROMPT_MAX_CHARS_SENT)}
 >>>
 
 Go down these rules in order and take the first that fits:
-1. It is meant for the sessions already working in one workspace: it asks how their work is going or whether it is done, or passes them a change to what they are doing ("ask <folder name> …", "tell <folder name> …", "how's <folder name> doing …", "is <folder name> done with …", "问一下 <folder name> …", "告诉 <folder name> …", "跟 <folder name> 说 …", "让 <folder name> 那边 …", "<folder name> 那边 … 好了没"); a plain order for new work, with no hint of work already going on there, is not this: {"hand": "assist", "workspace": <id>}
+${CHECK_IN_RULE}. It is meant for the sessions already working in one workspace: it asks how their work is going or whether it is done, or passes them a change to what they are doing ("ask <folder name> …", "tell <folder name> …", "how's <folder name> doing …", "is <folder name> done with …", "问一下 <folder name> …", "告诉 <folder name> …", "跟 <folder name> 说 …", "让 <folder name> 那边 …", "<folder name> 那边 … 好了没"); a plain order for new work, with no hint of work already going on there, is not this: {"hand": "assist", "workspace": <id>}
 2. It wants Koloft connected to Discord or its Discord set up: {"hand": "discord"}
 3. It wants one of the Koloft features above opened or done ("open settings", "check for updates"): {"hand": "feature", "feature": "<key>"}
 4. It only wants to open or go to one existing session, and one listed session title says the same thing it names (never a guess): {"hand": "session", "session": "<session ref>"}
@@ -103,6 +105,7 @@ Go down these rules in order and take the first that fits:
   or {"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}
 
 Reply with that one JSON object and nothing else, adding to it:
+ "rule": <the number of the rule you took>,
  "title": <a very short title in the language of the message, at most 16 Chinese characters or 6 words>,
  "why": <one short sentence in the language of the message, naming the rule you took>`
   return { system: ROUTE_SYSTEM, prompt }
@@ -185,7 +188,8 @@ export function parseRoute(reply: string | null, list: RouteWorkspace[]): Sessio
   }
   const ws = typeof o.workspace === 'number' ? list[o.workspace - 1] : undefined
   if (!ws) return null
-  if (o.hand === 'assist') return { ...said, kind: 'assist', path: ws.path }
+  if (o.hand === 'assist' || o.rule === CHECK_IN_RULE)
+    return { ...said, kind: 'assist', path: ws.path }
   return {
     ...said,
     kind: 'workspace',

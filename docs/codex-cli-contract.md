@@ -2072,3 +2072,15 @@ turn asked for a shell `echo hi > out.txt`.
 - Not probed yet: whether a wait under 31 s costs anything at all (the cutoff), and the
   same in a full-screen TUI tab instead of a bare app-server.
 
+## 31. A one-shot ⌘P routing answer
+
+2026-10-21, codex-cli 0.162.0, `gpt-6-luna`, the `CODEX_ONE_SHOT` argv with a fresh
+`CODEX_HOME` holding only `auth.json`, the ⌘P routing prompt of `routeJob` and the typed
+lines of `test/unit/sessionRoute.real.test.ts`.
+
+- **It names the right rule but writes another rule's JSON.** For "how's blog doing on
+  the Electron article" (blog is not git) it answered
+  `{"workspace":2,"worktree":"main",…,"why":"规则 1：询问 blog …"}` in 8 of 26 answers:
+  the `why` names rule 1 (hand it to the sessions already working there) while the object
+  has rule 6's shape (start a session there). TODO-AFTER
+
