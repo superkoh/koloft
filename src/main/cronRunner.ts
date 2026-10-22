@@ -277,7 +277,7 @@ export class CronRunner {
   private killedRuns = new Map<string, string>()
   private inFlight = new Set<string>()
   private launching = new Set<string>()
-  private reopening = new Set<string>()
+  private reopening = new Map<string, string | undefined>()
   private held = new Map<string, Due[]>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private lastDue = new Map<string, number>()
@@ -382,7 +382,7 @@ export class CronRunner {
     this.launching.add(job.id)
     const mark = manual ? MANUAL : {}
     try {
-      const open = this.liveRunOf(job.id)
+      const open = this.liveRunOf(job.id) ?? this.runComingBack(job)
       if (open) {
         const newest = job.history[0]
         if (newest && newest.state === 'skipped' && newest.dueAt > open.dueAt) {
@@ -559,7 +559,19 @@ export class CronRunner {
   }
 
   expectReopened(sessionIds: string[]): void {
-    for (const id of sessionIds) this.reopening.add(id)
+    for (const id of sessionIds) this.reopening.set(id, undefined)
+  }
+
+  reopenedIn(sessionId: string, tabId: string | undefined): void {
+    if (!this.reopening.has(sessionId)) return
+    if (tabId) this.reopening.set(sessionId, tabId)
+    else this.reopening.delete(sessionId)
+  }
+
+  private runComingBack(job: CronJob): HistoryLine | undefined {
+    return job.history.find(
+      (h) => h.state === 'ended' && !!h.sessionId && this.reopening.has(h.sessionId)
+    )
   }
 
   private reopenedRun(tabId: string, sessionId: string): LiveRun | undefined {
@@ -577,7 +589,7 @@ export class CronRunner {
       }
       this.live.set(tabId, run)
       this.d.store.save(this.jobs)
-      void this.closeIfFinished(run)
+      if (!line.cutOff) void this.closeIfFinished(run)
       return run
     }
     return undefined
@@ -654,6 +666,8 @@ export class CronRunner {
   }
 
   onPtyExit(tabId: string, left?: LeftTab): void {
+    for (const [sessionId, reopenedTab] of this.reopening)
+      if (reopenedTab === tabId) this.reopening.delete(sessionId)
     const run = this.live.get(tabId)
     if (run) this.closeOut(run)
     const killedJobId = this.killedRuns.get(tabId)
@@ -760,7 +774,11 @@ export class CronRunner {
     for (const run of this.live.values()) {
       const job = this.byId(run.jobId)
       if (!job) continue
-      this.pushLine(job, { ...lineOf(run), state: 'ended' })
+      this.pushLine(job, {
+        ...lineOf(run),
+        state: 'ended',
+        ...(run.state === 'running' ? { cutOff: true } : {})
+      })
     }
     this.live.clear()
     this.d.store.save(this.jobs)

@@ -1419,6 +1419,7 @@ export interface HistoryLine {
   sessionId?: string
   removed?: true
   kept?: string
+  cutOff?: true
 }
 
 export interface CronFile {
