@@ -722,7 +722,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
         ...(run.permission !== 'default' ? { permission: run.permission } : {}),
-        ...(run.launchName || m?.named ? { named: true as const } : {})
+        ...(this.keepsItsOwnTitle && (run.launchName || m?.named) ? { named: true as const } : {})
       })
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)

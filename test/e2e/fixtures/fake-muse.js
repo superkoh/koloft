@@ -528,7 +528,7 @@ function tui() {
     }
     if (text.startsWith('/rename ')) {
       logRecord(session.id, 'session.name.changed', {
-        new_name: text.slice('/rename '.length).trim(),
+        new_name: text.slice('/rename '.length).trim().toLowerCase(),
         source: 'user'
       })
       return
