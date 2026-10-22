@@ -82,6 +82,7 @@ const ROOM_TO_DRAG_IN = { x: 40, y: 60, width: 760, height: 520 }
 // PLATFORM§52
 const MAC_DRAG_SLACK_PX = 6
 const MACOS_ASKS_TO_ALLOW_NOTIFICATIONS = 'Notifications may include'
+const TIME_FOR_COMING_BACK_TO_CLEAR_ANYTHING_MS = 3_000
 
 async function allowNotificationsWhenMacOSAsks(shownAnyway: () => boolean): Promise<void> {
   await expect
@@ -100,8 +101,12 @@ async function sessionIn(page: Page, ws: string): Promise<string> {
   return (await wsRows(page, ws).first().getAttribute('data-tab-id')) ?? ''
 }
 
+function typeInSession(page: Page, tabId: string, line: string): Promise<void> {
+  return page.evaluate(([id, text]) => window.api.terminal.write(id, text), [tabId, line])
+}
+
 function endTurn(page: Page, tabId: string): Promise<void> {
-  return page.evaluate(([id, line]) => window.api.terminal.write(id, line), [tabId, '/answer hi\r'])
+  return typeInSession(page, tabId, '/answer hi\r')
 }
 
 const windowFocused = (app: ElectronApplication): Promise<boolean> =>
@@ -181,7 +186,7 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     screenshot(testInfo.outputPath('window-moved.png'))
   })
 
-  test('a turn that ends while Koloft is in the background draws its count on the Dock icon, and coming back clears it', async ({
+  test('a turn that ends while Koloft is in the background draws its count on the Dock icon; coming back keeps it, and only the session working again clears it', async ({
     shown: { app, page }
   }, testInfo) => {
     const tabId = await sessionIn(page, 'ws-a')
@@ -190,6 +195,9 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('1')
     screenshot(testInfo.outputPath('dock-badge.png'))
     await comeBackThroughTheDock(app)
+    await page.waitForTimeout(TIME_FOR_COMING_BACK_TO_CLEAR_ANYTHING_MS)
+    expect(dockBadgeDrawn(DOCK_NAME)).toBe('1')
+    await typeInSession(page, tabId, '/busy\r')
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('')
   })
 
