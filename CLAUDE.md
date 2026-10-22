@@ -250,8 +250,8 @@ Working principles:
     still report success.
   - Quote a spaced path: '/a b', never /a\ b.
   - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
-  - Find a file before you grep or read it (grep -rl 'word' src): a name
-    made up from a sibling file fails.
+  - Grep or read only paths you saw; else grep -rl 'word' src.
+  - macOS strings -o is offsets: use > file.
   - Read stops at 25,000 tokens (~50 KB), not lines: wc -c a big file, slice it.
   - grep is ugrep and fails on {0,N} spans: use /usr/bin/grep -o -E, N ≤ 255.
   - Findings go in your final message; the harness refuses report files.
