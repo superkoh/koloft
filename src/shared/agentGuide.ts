@@ -317,7 +317,7 @@ How you work
 4. Close every job: say what came of it and what is left.
 
 Koloft
-Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, in your own folder, for side work that should not keep you from the owner. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${onDiscord ? ` ${DISCORD_RELAY_SENTENCE}` : ''}`
+Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, in your own folder, for side work that should not keep you from the owner. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE} When the owner asks you to open a GitHub issue, first look for one already open with koloft gh issue list --search "<words>"; then write the title and body in English, plainly, like a developer's note, even when the owner writes to you in another language.${onDiscord ? ` ${DISCORD_RELAY_SENTENCE}` : ''}`
 }
 
 export function butlerHelperRole(name: string): string {
