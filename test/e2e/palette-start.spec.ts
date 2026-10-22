@@ -475,7 +475,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('while the butler is busy and the Mac has no room, the helper for ⌘P work is queued under the butler and the owner is told so, and the screen stays on the butler', async ({
+  test('while the butler is busy and the Mac has no room, the helper for ⌘P work still starts at once under the butler, is never queued, and the screen moves to it', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -501,11 +501,10 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       assistAnswers(env, { hand: 'koloft', title: 'Dim sidebar' })
       await ask(app, page, 'and dim the sidebar too')
       await page.keyboard.press('Enter')
-      await expect(page.locator('.toast')).toContainText('it is queued', { timeout: 30_000 })
-      await expect(
-        page.locator('.isl-butler .ws-subtabs > .ws-tab.st-queued', { hasText: 'Dim sidebar' })
-      ).toHaveCount(1)
-      await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
+      const helper = page.locator('.isl-butler .ws-subtabs > .ws-tab', { hasText: 'Dim sidebar' })
+      await expect(helper).toHaveCount(1, { timeout: 60_000 })
+      await expect(page.locator('.ws-tab.st-queued')).toHaveCount(0)
+      await expect(helper).toHaveClass(/\bactive\b/)
     } finally {
       await quitAndClose(app)
     }
