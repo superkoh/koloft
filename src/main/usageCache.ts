@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendId, UsageRead, UsageRow } from '@shared/types'
+import { formatRemoteKey } from '@shared/remoteKey'
 import type { UsageRecord } from './usageScan'
 import { PrivateRecordFile } from './privateFile'
 import { mapAtMost } from './mapAtMost'
@@ -11,6 +12,7 @@ export interface UsageFile {
   workspace: string
   sessionId?: string
   db?: string
+  host?: string
 }
 
 export interface SessionPlace {
@@ -40,13 +42,13 @@ export interface UsageCacheDeps {
   stat: (file: string) => Promise<FileStat | undefined>
   scan: (files: UsageFile[], scanned: (file: ScannedFile) => void, ended: () => void) => void
   codexWorkspaces: (cwds: string[]) => string[]
-  sessionPlace: (backend: BackendId, sessionId: string) => SessionPlace | undefined
+  sessionPlace: (backend: BackendId, sessionId: string, host?: string) => SessionPlace | undefined
   changed: () => void
 }
 
 const FILES_AT_ONCE = 16
 const CODEX_ROLLOUT_FOLDERS = ['sessions', 'archived_sessions']
-const MUSE_SESSION_FILE = 'session.jsonl'
+const MUSE_SESSION_FILE_PREFIX = 'session.'
 const MUSE_DATE_DEPTH = 3
 
 export class UsageCache {
@@ -59,13 +61,7 @@ export class UsageCache {
 
   async read(): Promise<UsageRead> {
     if (!this.reading) await this.refresh()
-    const rows = this.rows()
-    const titles: Record<string, string> = {}
-    for (const r of rows) {
-      if (r.sessionId in titles) continue
-      titles[r.sessionId] = this.deps.sessionPlace(r.backend, r.sessionId)?.title ?? ''
-    }
-    return { rows, titles, reading: this.reading }
+    return { ...this.rows(), reading: this.reading }
   }
 
   private async refresh(): Promise<void> {
@@ -104,52 +100,59 @@ export class UsageCache {
     )
   }
 
-  private rows(): UsageRow[] {
-    const entries = Object.values(this.cached.get())
-    const codex = entries.filter((e) => e.backend === 'codex' && e.records.length)
-    const workspaces = this.deps.codexWorkspaces(codex.map((e) => e.cwd ?? ''))
+  private rows(): Pick<UsageRead, 'rows' | 'titles'> {
+    const entries = Object.values(this.cached.get()).filter((e) => e.records.length)
+    const codex = entries.filter((e) => e.backend === 'codex')
+    const workspaces = this.deps.codexWorkspaces(
+      codex.map((e) => (e.host && e.cwd ? formatRemoteKey(e.host, e.cwd) : (e.cwd ?? '')))
+    )
     const codexWorkspace = new Map(codex.map((e, i) => [e, workspaces[i]]))
-    const workspaceOf = (e: CachedFile): string =>
-      codexWorkspace.get(e) ??
-      (e.sessionId ? this.deps.sessionPlace(e.backend, e.sessionId)?.workspace : undefined) ??
-      e.workspace
-    return entries.flatMap((e) => {
-      const workspace = workspaceOf(e)
-      return e.records.map((r) => ({ ...r, backend: e.backend, workspace }))
+    const placeOf = (e: CachedFile, sessionId: string): SessionPlace | undefined =>
+      this.deps.sessionPlace(e.backend, sessionId, e.host)
+    const titles: Record<string, string> = {}
+    const rows = entries.flatMap((e) => {
+      const workspace =
+        codexWorkspace.get(e) ??
+        (e.sessionId ? placeOf(e, e.sessionId)?.workspace : undefined) ??
+        e.workspace
+      return e.records.map((r): UsageRow => {
+        titles[r.sessionId] ??= placeOf(e, r.sessionId)?.title ?? ''
+        return { ...r, backend: e.backend, workspace }
+      })
     })
+    return { rows, titles }
   }
 }
 
-async function filesNamed(dir: string, name: string): Promise<string[]> {
-  let entries: fs.Dirent[]
-  try {
-    entries = await fs.promises.readdir(dir, { withFileTypes: true })
-  } catch {
-    return []
-  }
+export interface UsageHome {
+  host?: string
+  codexHome: string
+  museHome: string
+  agyAppDir: string
+}
+
+// CODEX§13
+async function codexFiles({ host, codexHome }: UsageHome): Promise<UsageFile[]> {
   const found = await Promise.all(
-    entries.map(async (e) => {
-      const p = path.join(dir, e.name)
-      if (e.isDirectory()) return filesNamed(p, name)
-      return e.isFile() && e.name === name ? [p] : []
-    })
+    CODEX_ROLLOUT_FOLDERS.map((folder) => jsonlUnder(path.join(codexHome, folder), 'rollout-'))
   )
-  return found.flat()
+  return found.flat().map((file) => ({ file, backend: 'codex' as const, workspace: '', host }))
 }
 
 // MUSE§2
-async function museFiles(museHome: string): Promise<UsageFile[]> {
+async function museFiles({ host, museHome }: UsageHome): Promise<UsageFile[]> {
   const sessions = path.join(museHome, 'sessions')
-  return (await filesNamed(sessions, MUSE_SESSION_FILE)).map((file) => ({
+  return (await jsonlUnder(sessions, MUSE_SESSION_FILE_PREFIX)).map((file) => ({
     file,
     backend: 'muse' as const,
     workspace: '',
-    sessionId: path.relative(sessions, file).split(path.sep)[MUSE_DATE_DEPTH]
+    sessionId: path.relative(sessions, file).split(path.sep)[MUSE_DATE_DEPTH],
+    host
   }))
 }
 
 // AGY§8
-async function agyFiles(agyAppDir: string): Promise<UsageFile[]> {
+async function agyFiles({ host, agyAppDir }: UsageHome): Promise<UsageFile[]> {
   let ids: string[]
   try {
     ids = await fs.promises.readdir(path.join(agyAppDir, 'brain'))
@@ -161,7 +164,8 @@ async function agyFiles(agyAppDir: string): Promise<UsageFile[]> {
     backend: 'agy' as const,
     workspace: '',
     sessionId: id,
-    db: path.join(agyAppDir, 'conversations', `${id}.db`)
+    db: path.join(agyAppDir, 'conversations', `${id}.db`),
+    host
   }))
 }
 
@@ -185,9 +189,7 @@ async function jsonlUnder(dir: string, namePrefix: string): Promise<string[]> {
 // CC§2 CODEX§13
 export async function listUsageFiles(
   transcripts: { file: string; workspace: string }[],
-  codexHome: string,
-  museHome: string,
-  agyAppDir: string
+  homes: UsageHome[]
 ): Promise<UsageFile[]> {
   const claude = await mapAtMost(transcripts, FILES_AT_ONCE, async ({ file, workspace }) => {
     const subagents = path.join(file.slice(0, -'.jsonl'.length), 'subagents')
@@ -197,15 +199,10 @@ export async function listUsageFiles(
       workspace
     }))
   })
-  const codex = await Promise.all(
-    CODEX_ROLLOUT_FOLDERS.map((folder) => jsonlUnder(path.join(codexHome, folder), 'rollout-'))
+  const others = await Promise.all(
+    homes.flatMap((home) => [codexFiles(home), museFiles(home), agyFiles(home)])
   )
-  return [
-    ...claude.flat(),
-    ...codex.flat().map((file) => ({ file, backend: 'codex' as const, workspace: '' })),
-    ...(await museFiles(museHome)),
-    ...(await agyFiles(agyAppDir))
-  ]
+  return [...claude.flat(), ...others.flat()]
 }
 
 export async function statOf(file: string): Promise<FileStat | undefined> {

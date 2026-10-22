@@ -158,6 +158,7 @@ import {
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
+import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
@@ -3133,17 +3134,24 @@ app.whenReady().then(() => {
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
-        ...(agySessions?.usesHost(t.host)
-          ? {
-              extraPulls: [
+        extraPulls: [
+          ...(agySessions?.usesHost(t.host)
+            ? [
                 {
                   from: AGY_REMOTE_BRAIN,
                   to: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain'),
                   flags: AGY_BRAIN_FLAGS
                 }
               ]
-            }
-          : {}),
+            : []),
+          ...usagePulls(userData, t.host, {
+            codex:
+              !!codexSessions?.machinesWithTabs().includes(t.host) ||
+              !!codexSessions?.hasHistoryOn(t.host),
+            muse: !!museSessions?.hasHistoryOn(t.host),
+            agy: !!agySessions?.usesHost(t.host)
+          })
+        ],
         paths: t.paths,
         hasTabs: live.has(t.host),
         busy: busy.has(t.host)
@@ -5352,12 +5360,18 @@ function registerIpc(): void {
     cacheFile: () => path.join(app.getPath('userData'), 'usage-cache.json'),
     listFiles: async () => {
       await workspaceMgr?.firstScan
-      return listUsageFiles(
-        workspaceMgr?.transcriptFiles() ?? [],
-        path.dirname(codexSharedConfig()),
-        museHome(museSessions?.defaultEnv ?? process.env),
-        path.join(ownersGemini(), AGY_APP_DIR)
-      )
+      const userData = app.getPath('userData')
+      return listUsageFiles(workspaceMgr?.transcriptFiles() ?? [], [
+        {
+          codexHome: path.dirname(codexSharedConfig()),
+          museHome: museHome(museSessions?.defaultEnv ?? process.env),
+          agyAppDir: path.join(ownersGemini(), AGY_APP_DIR)
+        },
+        ...(workspaceMgr?.remoteTargets() ?? []).map(({ host }) => ({
+          host,
+          ...machineUsageDirs(userData, host)
+        }))
+      ])
     },
     stat: statOf,
     scan: (files, scanned, ended) => {
@@ -5368,11 +5382,11 @@ function registerIpc(): void {
       worker.once('exit', ended)
     },
     codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
-    sessionPlace: (backend, id) => {
+    sessionPlace: (backend, id, host) => {
       if (backend !== 'claude')
         return storedSessions()
           .find((s) => s.id === backend)
-          ?.sessionPlace(id)
+          ?.sessionPlace(id, host)
       const row = workspaceMgr?.findRow(id)
       const workspace = workspaceMgr?.workspaceOf(id)
       return row && workspace ? { workspace, title: row.title } : undefined

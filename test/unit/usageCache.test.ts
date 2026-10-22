@@ -136,4 +136,18 @@ describe('UsageCache', () => {
     expect(read.rows).toMatchObject([{ sessionId: 'm1', backend: 'muse', workspace: '/ws-muse' }])
     expect(read.titles).toEqual({ m1: 'Sort the fixtures' })
   })
+
+  it("names a remote Codex rollout's machine path as an ssh workspace before mapping it", async () => {
+    const R = '/ud/remote/box/codex-home/sessions/rollout-1.jsonl'
+    listed = [{ file: R, backend: 'codex', workspace: '', host: 'box' }]
+    stats = new Map([[R, { mtimeMs: 1, size: 10 }]])
+    const usage = cache()
+    await usage.read()
+    runs[0].scanned({ file: R, records: [record('t1', 5)], cwd: '/home/me/site' })
+    runs[0].ended()
+
+    const { rows } = await usage.read()
+
+    expect(rows.map((r) => r.workspace)).toEqual(['ssh://box/home/me/site'])
+  })
 })

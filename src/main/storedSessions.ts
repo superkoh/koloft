@@ -368,6 +368,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   findRow(key: string): BackendSessionRow | undefined {
     return this.placeOfKey(key)?.row
   }
+  hasHistoryOn(host: string): boolean {
+    return [...this.history.keys()].some((key) => hostOfKey(key) === host)
+  }
   sessionPlace(id: string, host?: string): { workspace: string; title: string } | undefined {
     const place = this.placeOfKey(this.keyOf(id, host))
     return place && { workspace: place.workspace, title: place.row.title }
