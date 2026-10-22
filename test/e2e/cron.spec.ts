@@ -809,7 +809,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         'done — waiting for you',
         { timeout: 20_000 }
       )
-      await expect.poll(() => histLines(page), { timeout: 20_000 }).toEqual([])
+      const states = async (): Promise<string[]> => (await histLines(page)).map((l) => l.state)
+      await expect.poll(states, { timeout: 20_000 }).toEqual(['Done — waiting for you'])
 
       const callsWhileOpen = readCalls(env).length
       await clickRunNow(page, 'Nightly report')
@@ -817,8 +818,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         '⏰ Nightly report skipped: the last run is still open'
       )
       await expect
-        .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
-        .toBe('Skipped — the last run was still open')
+        .poll(states, { timeout: 20_000 })
+        .toEqual(['Done — waiting for you', 'Skipped — the last run was still open'])
       expect(readCalls(env)).toHaveLength(callsWhileOpen)
 
       await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)

@@ -278,7 +278,6 @@ export class CronRunner {
   private inFlight = new Set<string>()
   private launching = new Set<string>()
   private reopening = new Set<string>()
-  private closeOnBind = new Set<string>()
   private held = new Map<string, Due[]>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private lastDue = new Map<string, number>()
@@ -383,22 +382,7 @@ export class CronRunner {
     this.launching.add(job.id)
     const mark = manual ? MANUAL : {}
     try {
-      const open = this.liveRunOf(job.id) ?? this.runComingBack(job)
-      if (open) {
-        const newest = job.history[0]
-        if (newest && newest.state === 'skipped' && newest.dueAt > open.dueAt) {
-          newest.count = (newest.count ?? 1) + 1
-          newest.until = dueAt
-          if (manual) newest.manual = true
-          this.d.store.save(this.jobs)
-          this.push()
-          if (manual) this.d.toast(`⏰ ${job.name} skipped: the last run is still open`)
-        } else {
-          this.writeHistory(job, { dueAt, state: 'skipped', count: 1, ...mark })
-          this.d.toast(`⏰ ${job.name} skipped: the last run is still open`)
-        }
-        return { ok: false, reason: 'skipped' }
-      }
+      if (this.skippedForOpenRun(job, dueAt, manual)) return { ok: false, reason: 'skipped' }
 
       if (!(await this.d.dirExists(job.workspacePath))) {
         this.fail(job, dueAt, mark, 'the folder is missing')
@@ -424,6 +408,7 @@ export class CronRunner {
       const worktree = git
         ? await worktreeNameFor(job, dueAt, (n) => this.taken(job.workspacePath, n))
         : undefined
+      if (this.skippedForOpenRun(job, dueAt, manual)) return { ok: false, reason: 'skipped' }
 
       const res = await this.d.launch({
         jobId: job.id,
@@ -461,6 +446,24 @@ export class CronRunner {
     } finally {
       this.launching.delete(job.id)
     }
+  }
+
+  private skippedForOpenRun(job: CronJob, dueAt: number, manual: boolean): boolean {
+    const open = this.liveRunOf(job.id) ?? this.runComingBack(job)
+    if (!open) return false
+    const newest = job.history[0]
+    if (newest && newest.state === 'skipped' && newest.dueAt > open.dueAt) {
+      newest.count = (newest.count ?? 1) + 1
+      newest.until = dueAt
+      if (manual) newest.manual = true
+      this.d.store.save(this.jobs)
+      this.push()
+      if (manual) this.d.toast(`⏰ ${job.name} skipped: the last run is still open`)
+    } else {
+      this.writeHistory(job, { dueAt, state: 'skipped', count: 1, ...(manual ? MANUAL : {}) })
+      this.d.toast(`⏰ ${job.name} skipped: the last run is still open`)
+    }
+    return true
   }
 
   private async taken(root: string, name: string): Promise<boolean> {
@@ -557,7 +560,6 @@ export class CronRunner {
       this.clearTimer(tabId)
     }
     this.push()
-    if (this.closeOnBind.delete(tabId)) void this.closeIfFinished(run)
   }
 
   expectReopened(sessionIds: string[]): void {
@@ -581,7 +583,8 @@ export class CronRunner {
         startedAt: this.d.now()
       }
       this.live.set(tabId, run)
-      if (run.state === 'done') this.closeOnBind.add(tabId)
+      if (run.state === 'done')
+        this.armTimer(tabId, this.d.closeRecheckMs, () => void this.closeIfFinished(run))
       this.d.store.save(this.jobs)
       this.push()
       return
@@ -590,16 +593,20 @@ export class CronRunner {
 
   reopeningOver(): void {
     this.reopening.clear()
-    let changed = false
-    for (const job of this.jobs)
-      for (const h of job.history)
-        if (h.liveState) {
-          delete h.liveState
-          changed = true
-        }
-    if (!changed) return
+    if (!this.dropReopenMarks()) return
     this.d.store.save(this.jobs)
     this.push()
+  }
+
+  private dropReopenMarks(): boolean {
+    let dropped = false
+    for (const job of this.jobs)
+      for (const h of job.history)
+        if (h.liveState && !(h.sessionId && this.reopening.has(h.sessionId))) {
+          delete h.liveState
+          dropped = true
+        }
+    return dropped
   }
 
   private runComingBack(job: CronJob): HistoryLine | undefined {
@@ -678,7 +685,7 @@ export class CronRunner {
 
   onPtyExit(tabId: string, left?: LeftTab): void {
     const run = this.live.get(tabId)
-    if (run) this.closeOut(run)
+    if (run && !this.d.quitting()) this.closeOut(run)
     const killedJobId = this.killedRuns.get(tabId)
     this.killedRuns.delete(tabId)
     if (left) this.onTabGone(left, [run?.jobId, killedJobId], tabId)
@@ -779,7 +786,7 @@ export class CronRunner {
 
   quitSweep(): void {
     this.clearTimers()
-    if (this.live.size === 0) return
+    if (!this.dropReopenMarks() && this.live.size === 0) return
     for (const run of this.live.values()) {
       const job = this.byId(run.jobId)
       if (!job) continue
