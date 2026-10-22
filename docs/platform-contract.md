@@ -262,6 +262,12 @@ method. A recheck adds its date, version and command to the bullet.
   xterm has focus (a plain renderer keydown listener is swallowed by xterm), and it
   takes its key before a focused guest page or xterm can see it. ``"Control+`"`` parses
   on every platform.
+- **A key the page takes for itself never reaches the menu.** With Focus Mode's
+  `CmdOrCtrl+Return` item enabled, a real ⌘⏎ typed into ⌘P's textarea, whose keydown
+  handler calls `preventDefault`, did the palette's work and left Focus Mode off.
+  Measured 2026-10-23, Electron 43.7.3, macOS 27.0 in a tart VM, keys posted through
+  CGEvent (real-window case "⌘⏎ typed on the keyboard in ⌘P"). Whether a ⌘ key the page
+  sees but does not `preventDefault` still reaches the menu: not probed.
 - **Keys typed in a focused `<webview>` never reach the host document's listeners**,
   capture phase included, and a focused guest swallows the app's menu accelerators;
   keys with no accelerator (⌘T) never reach the host at all. Main has to catch them on

@@ -83,6 +83,7 @@ const ROOM_TO_DRAG_IN = { x: 40, y: 60, width: 760, height: 520 }
 const MAC_DRAG_SLACK_PX = 6
 const MACOS_ASKS_TO_ALLOW_NOTIFICATIONS = 'Notifications may include'
 const TIME_FOR_COMING_BACK_TO_CLEAR_ANYTHING_MS = 3_000
+const TIME_FOR_A_MENU_KEY_TO_LAND_MS = 1_500
 
 async function allowNotificationsWhenMacOSAsks(shownAnyway: () => boolean): Promise<void> {
   await expect
@@ -163,7 +164,8 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     screenshot(testInfo.outputPath('palette-open.png'))
   })
 
-  test('⌘⏎ typed on the keyboard in ⌘P, with a session open, reaches the palette and starts the words, instead of the Focus Mode that holds ⌘⏎ outside the palette', async ({
+  // PLATFORM§7
+  test('⌘⏎ typed on the keyboard in ⌘P, with a session open and Focus Mode ready on ⌘⏎, reaches the palette and starts the words, and Focus Mode stays off', async ({
     shown: { app, page }
   }) => {
     await page.evaluate(() => window.api.settings.set({ assist: { on: false, backend: 'claude' } }))
@@ -173,9 +175,20 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     const field = palette(page).getByRole('textbox', { name: 'Ask or jump' })
     await expect(field).toBeFocused()
     await field.fill('read the readme')
+    expect(
+      await app.evaluate(
+        ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('toggle-focus-mode')?.enabled
+      )
+    ).toBe(true)
     realKey(KEY_RETURN, COMMAND_FLAG)
     await expect(page.getByRole('dialog', { name: 'New Session in…' })).toBeVisible()
     await expect(palette(page)).toHaveCount(0)
+    const terminalShown = (): Promise<boolean> =>
+      page.evaluate(
+        () => ((document.querySelector('.term-island') as HTMLElement | null)?.offsetWidth ?? 0) > 0
+      )
+    await page.waitForTimeout(TIME_FOR_A_MENU_KEY_TO_LAND_MS)
+    expect(await terminalShown()).toBe(true)
   })
 
   test('dragging the title bar with the mouse moves the window along with it', async ({
