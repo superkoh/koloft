@@ -1,12 +1,5 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type JSX,
-  type KeyboardEvent
-} from 'react'
+import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { flushSync } from 'react-dom'
 import { IconAiStart, IconFolder, IconSearch } from '../icons'
 import type { BackendId, SearchSnippet, SessionSearchHit } from '@shared/types'
 import { routeInto, type SessionRoute } from '@shared/sessionRoute'
@@ -23,6 +16,7 @@ import {
   paletteSessions,
   paletteWorkspaces,
   pinnedWorkspace,
+  type MentionTyping,
   type PaletteAction,
   type PaletteGroup,
   type PaletteItem,
@@ -82,6 +76,20 @@ function SnippetText({ snippet, short }: { snippet: SearchSnippet; short?: boole
   )
 }
 
+function tipsFor(
+  mode: 'ask' | 'thinking' | 'search',
+  naming: boolean,
+  picked: boolean,
+  listed: boolean
+): string {
+  if (mode === 'thinking') return 'Esc cancel'
+  if (mode === 'search') return '↓↑ move · ⏎ open · Esc back'
+  if (naming) return '↓↑ move · ⏎ pick · Esc'
+  if (picked) return '↓↑ move · ⏎ open · Esc'
+  if (listed) return '↓ pick a match · Esc'
+  return '@ workspace · ⇧⏎ new line · Esc'
+}
+
 export type PaletteRouted = (prompt: string, backend: BackendId, route: SessionRoute | null) => void
 
 export function CommandPalette({
@@ -104,7 +112,7 @@ export function CommandPalette({
   const assistOn = useStore((s) => !!s.settings.assist?.on)
   const [query, setQuery] = useState('')
   const [caret, setCaret] = useState(0)
-  const caretAfterRender = useRef<number | null>(null)
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null)
   const [hotKey, setHotKey] = useState<string | null>(null)
   const [composing, setComposing] = useState(false)
   const [mode, setMode] = useState<'ask' | 'thinking' | 'search'>('ask')
@@ -124,32 +132,34 @@ export function CommandPalette({
   const pin = pinnedWorkspace(query, workspaceItems)
   const typed = (pin ? pin.prompt : query).trim()
   const tagging = mode === 'ask' ? mentionTyping(query, caret) : null
-  const suggestions = tagging ? mentionCandidates(workspaceItems, tagging.typed) : []
-  const suggesting = suggestions.length > 0
-  const scan = mode === 'search' || (!composing && !tagging && worthScanningWhileTyping(typed))
-  const groups: PaletteGroup[] = suggesting
+  const offered = tagging && tagging.start !== dismissedAt ? tagging : null
+  const suggestions = offered ? mentionCandidates(workspaceItems, offered) : []
+  const mention = suggestions.length > 0 ? offered : null
+  const scan = mode === 'search' || (!composing && !mention && worthScanningWhileTyping(typed))
+  const groups: PaletteGroup[] = mention
     ? [{ title: 'Workspaces', items: suggestions }]
     : paletteGroups(sessionItems, workspaceItems, actions, typed, scan ? hits : [])
   const visible = groups.flatMap((g) => g.items)
   const keys = mode === 'search' ? hits.map((h) => h.row.id) : visible.map((i) => i.key)
   const count = keys.length
   const keyAt = keys.indexOf(hotKey ?? '')
-  const at = keyAt >= 0 ? keyAt : (mode === 'search' || suggesting) && count > 0 ? 0 : null
+  const at = keyAt >= 0 ? keyAt : (mode === 'search' || mention) && count > 0 ? 0 : null
   const startIsDefault = mode === 'ask' && at === null && !!typed
   const pick = (i: number | null): void => setHotKey(i === null ? null : keys[i])
 
-  const complete = (ws: PaletteWorkspace): void => {
-    if (!tagging) return
-    const done = completeMention(query, tagging, ws.tag)
-    caretAfterRender.current = done.caret
-    setQuery(done.text)
-    setCaret(done.caret)
-    setHotKey(null)
+  const complete = (word: MentionTyping, ws: PaletteWorkspace): void => {
+    const done = completeMention(query, word, ws.tag)
+    flushSync(() => {
+      setQuery(done.text)
+      setCaret(done.caret)
+      setHotKey(null)
+    })
+    inputRef.current?.setSelectionRange(done.caret, done.caret)
   }
 
   const open = (item: PaletteItem | undefined): void => {
     if (!item || (item.kind === 'action' && item.disabled)) return
-    if (suggesting && item.kind === 'workspace') return complete(item)
+    if (mention && item.kind === 'workspace') return complete(mention, item)
     if (item.kind === 'more') return search()
     if (item.kind === 'hit') return onOpenHit(item.hit)
     onClose()
@@ -234,28 +244,28 @@ export function CommandPalette({
     listRef.current?.querySelector('.hot')?.scrollIntoView({ block: 'nearest' })
   }, [at, query, mode])
 
-  useLayoutEffect(() => {
-    const to = caretAfterRender.current
-    if (to === null) return
-    caretAfterRender.current = null
-    inputRef.current?.setSelectionRange(to, to)
-  }, [query])
-
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (isComposing(e)) return
     if (mode === 'thinking') {
       if (e.key === 'Enter') e.preventDefault()
       return
     }
-    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && count > 0) {
+    const listTakesArrows = !!mention || !query.includes('\n')
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && count > 0 && listTakesArrows) {
       e.preventDefault()
       if (e.key === 'ArrowDown') pick(at === null ? 0 : Math.min(at + 1, count - 1))
       else pick(at ? at - 1 : null)
       return
     }
-    if (e.key === 'Tab' && suggesting) {
+    if (mention && e.key === 'Tab') {
       e.preventDefault()
-      complete(suggestions[at ?? 0])
+      complete(mention, suggestions[at ?? 0])
+      return
+    }
+    if (mention && e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      setDismissedAt(mention.start)
       return
     }
     if (e.key !== 'Enter' || (e.shiftKey && mode === 'ask')) return
@@ -265,7 +275,7 @@ export function CommandPalette({
     else if (mode === 'search') {
       if (at !== null && hits[at]) onOpenHit(hits[at])
     } else if (at !== null && !e.metaKey) open(visible[at])
-    else startOrList({ shiftKey: e.metaKey }, choice, start, () => typed && setListOpen(true))
+    else startOrList(e.metaKey, choice, start, () => typed && setListOpen(true))
   }
 
   const rowOf = (item: PaletteItem): JSX.Element => {
@@ -382,18 +392,7 @@ export function CommandPalette({
     )
   }
 
-  const tips =
-    mode === 'thinking'
-      ? 'Esc cancel'
-      : mode === 'search'
-        ? '↓↑ move · ⏎ open · Esc back'
-        : suggesting
-          ? '↓↑ move · ⏎ pick · Esc'
-          : at !== null
-            ? '↓↑ move · ⏎ open · Esc'
-            : visible.length > 0
-              ? '↓ pick a match · Esc'
-              : '@ workspace · ⇧⏎ new line · Esc'
+  const tips = tipsFor(mode, !!mention, at !== null, visible.length > 0)
 
   return (
     <div className="modal-backdrop palette-top" onClick={onClose}>
@@ -422,9 +421,11 @@ export function CommandPalette({
             readOnly={mode === 'thinking'}
             value={query}
             onChange={(e) => {
-              setQuery(e.target.value)
-              setCaret(e.target.selectionStart)
+              const { value, selectionStart } = e.target
+              setQuery(value)
+              setCaret(selectionStart)
               setHotKey(null)
+              if (mentionTyping(value, selectionStart)?.start !== dismissedAt) setDismissedAt(null)
             }}
             onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
             onCompositionStart={() => setComposing(true)}

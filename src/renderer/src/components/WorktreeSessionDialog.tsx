@@ -289,7 +289,7 @@ export function WorktreeSessionDialog({
       setHot((h) => moveHot(h, names, query, 'up'))
     } else if (e.key === 'Enter' && !isComposing(e)) {
       e.preventDefault()
-      startOrList(e, choice, submit, () => actionable && setListOpen(true))
+      startOrList(e.shiftKey, choice, submit, () => actionable && setListOpen(true))
     }
   }
 

@@ -180,7 +180,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('@ names the workspace: typing @ offers the workspaces with the first one picked, ↓ and ⏎ fill a name in, ⇧⏎ breaks the line, and ⏎ starts there at once without the @ word — past the picker with Assist off, and with Assist on, Assist sees only that workspace and cannot send the work elsewhere', async ({
+  test('@ names the workspace: typing @ offers the workspaces with the first one picked, Esc puts the offer away and leaves the words, ↓ and ⏎ fill a name in, ⇧⏎ breaks the line, and ⏎ starts there at once without the @ word — past the picker with Assist off, and with Assist on, Assist sees only that workspace and cannot send the work elsewhere', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -194,6 +194,12 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await ask(app, page, 'fix the footer ')
       await page.keyboard.type('@ws')
       const suggested = palette(page).getByRole('group', { name: 'Workspaces' })
+      await expect(suggested.locator('.cb-row.hot')).toContainText('ws-a')
+      await page.keyboard.press('Escape')
+      await expect(suggested).toHaveCount(0)
+      await expect(askBox(page)).toHaveValue('fix the footer @ws')
+      await askBox(page).fill('fix the footer ')
+      await page.keyboard.type('@ws')
       await expect(suggested.locator('.cb-row.hot')).toContainText('ws-a')
       await expect(palette(page).getByRole('group', { name: 'Sessions' })).toHaveCount(0)
       await page.keyboard.press('ArrowDown')

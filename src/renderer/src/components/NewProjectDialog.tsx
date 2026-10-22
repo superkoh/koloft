@@ -94,7 +94,7 @@ export function NewProjectDialog({
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
     if (locked || e.key !== 'Enter' || isComposing(e)) return
     e.preventDefault()
-    startOrList(e, choice, submit, () => ready && setListOpen(true))
+    startOrList(e.shiftKey, choice, submit, () => ready && setListOpen(true))
   }
 
   const pick = async (): Promise<void> => {

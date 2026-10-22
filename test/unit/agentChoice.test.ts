@@ -21,8 +21,8 @@ function choice(
   }
 }
 
-const plain = { shiftKey: false }
-const shift = { shiftKey: true }
+const plain = false
+const shift = true
 
 describe('which agent ⏎ and ⇧⏎ start in a new-session dialog', () => {
   it('⏎ always starts the agent the button names', () => {

@@ -165,10 +165,7 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
 }
 
 export function routeInto(route: SessionRoute | null, path: string): SessionRoute {
-  const inside =
-    (route?.kind === 'workspace' || route?.kind === 'assist' || route?.kind === 'session') &&
-    route.path === path
-  if (inside) return route
+  if (route && 'path' in route && route.path === path) return route
   return {
     title: route?.title ?? '',
     why: route?.why ?? '',

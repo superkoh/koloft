@@ -7,7 +7,14 @@ import type {
 } from '@shared/types'
 import { remoteCopyText } from '@shared/remoteKey'
 import { shortenHome } from './browseModel'
-import { rowLookups, rowsUnder, sessionTree, shownTitle, workspaceName } from './sessionRows'
+import {
+  rowLookups,
+  rowsUnder,
+  sessionTree,
+  shownTitle,
+  workspaceName,
+  workspacePlace
+} from './sessionRows'
 
 export interface PaletteSession {
   kind: 'session'
@@ -97,7 +104,7 @@ export function paletteSessions(
   const look = rowLookups(sessions, tabs, attention)
   return rows.flatMap(({ workspace: ws, rows: sessionRows }) => {
     const name = workspaceName(ws)
-    const place = ws.remote ? `${ws.remote.host}:${name}` : name
+    const place = workspacePlace(ws)
     return sessionTree(sessionRows)
       .flatMap((node) => [node.row, ...rowsUnder(node)])
       .map((row): PaletteSession => {
@@ -126,36 +133,49 @@ export function paletteWorkspaces(rows: WorkspaceRows[], home: string): PaletteW
       const note = ws.remote
         ? remoteCopyText(ws.remote.host, ws.remote.path)
         : shortenHome(ws.path, home)
-      const tag = ws.remote ? `${ws.remote.host}:${name}` : name
+      const tag = workspacePlace(ws)
       return { kind: 'workspace', key: `w:${ws.path}`, wsPath: ws.path, name, note, tag }
     })
-  const shared = (tag: string): boolean => items.filter((w) => w.tag === tag).length > 1
-  return items.map((w) => (shared(w.tag) ? { ...w, tag: w.note } : w))
+  const uses = new Map<string, number>()
+  for (const w of items) uses.set(w.tag.toLowerCase(), (uses.get(w.tag.toLowerCase()) ?? 0) + 1)
+  return items.map((w) => (uses.get(w.tag.toLowerCase())! > 1 ? { ...w, tag: w.note } : w))
 }
 
 export interface MentionTyping {
   start: number
   end: number
   typed: string
+  word: string
 }
 
-const startsWord = (text: string, at: number): boolean => at === 0 || /\s/.test(text[at - 1])
+const NAME_CHAR = /[A-Za-z0-9_-]/
+
+const opensMention = (text: string, at: number): boolean =>
+  at === 0 || !NAME_CHAR.test(text[at - 1])
+
+const closesMention = (text: string, at: number): boolean =>
+  at === text.length || !NAME_CHAR.test(text[at])
 
 export function mentionTyping(text: string, caret: number): MentionTyping | null {
-  const start = text.lastIndexOf('@', caret - 1)
-  if (start < 0 || start >= caret || !startsWord(text, start)) return null
-  const typed = text.slice(start + 1, caret)
-  if (/\s/.test(typed)) return null
-  const rest = text.slice(caret).search(/\s/)
-  return { start, end: rest < 0 ? text.length : caret + rest, typed }
+  for (let at = text.lastIndexOf('@', caret - 1); at >= 0 && at < caret;) {
+    if (/\s/.test(text.slice(at, caret))) return null
+    if (opensMention(text, at)) {
+      const rest = text.slice(caret).search(/\s/)
+      const end = rest < 0 ? text.length : caret + rest
+      return { start: at, end, typed: text.slice(at + 1, caret), word: text.slice(at + 1, end) }
+    }
+    at = at === 0 ? -1 : text.lastIndexOf('@', at - 1)
+  }
+  return null
 }
 
 export function mentionCandidates(
   workspaces: PaletteWorkspace[],
-  typed: string
+  at: MentionTyping
 ): PaletteWorkspace[] {
-  const t = typed.toLowerCase()
-  return workspaces.filter((w) => w.tag.toLowerCase().includes(t))
+  const word = at.word.toLowerCase()
+  if (workspaces.some((w) => w.tag.toLowerCase() === word)) return []
+  return workspaces.filter((w) => matchesQuery(w.tag, at.typed))
 }
 
 export function completeMention(
@@ -172,21 +192,22 @@ export function pinnedWorkspace(
   workspaces: PaletteWorkspace[]
 ): { wsPath: string; prompt: string } | null {
   const longestFirst = [...workspaces].sort((a, b) => b.tag.length - a.tag.length)
-  const lower = text.toLowerCase()
   for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
-    if (!startsWord(text, i)) continue
+    if (!opensMention(text, i)) continue
     const ws = longestFirst.find((w) => {
       const end = i + 1 + w.tag.length
       return (
-        lower.startsWith(w.tag.toLowerCase(), i + 1) &&
-        (end === text.length || /\s/.test(text[end]))
+        text.slice(i + 1, end).toLowerCase() === w.tag.toLowerCase() && closesMention(text, end)
       )
     })
     if (ws) {
-      const before = text.slice(0, i).replace(/[ \t]+$/, '')
-      const after = text.slice(i + 1 + ws.tag.length).replace(/^[ \t]+/, '')
-      const joined = /(^|\n)$/.test(before) || /^(\n|$)/.test(after)
-      return { wsPath: ws.wsPath, prompt: (before + (joined ? '' : ' ') + after).trim() }
+      const head = text.slice(0, i)
+      const tail = text.slice(i + 1 + ws.tag.length)
+      const before = head.replace(/[ \t]+$/, '')
+      const after = tail.replace(/^[ \t]+/, '')
+      const spaced =
+        before !== head && after !== tail && !/(^|\n)$/.test(before) && !/^(\n|$)/.test(after)
+      return { wsPath: ws.wsPath, prompt: (before + (spaced ? ' ' : '') + after).trim() }
     }
   }
   return null

@@ -1286,6 +1286,7 @@ export default function App(): JSX.Element {
 
   const terminalReady = panelReady && !!(landed.alive && landed.sessionId)
 
+  // PLATFORM§7
   useEffect(() => {
     window.api.workbench.setAvailable(panelReady && !paletteOpen, terminalReady)
   }, [panelReady, terminalReady, paletteOpen])
