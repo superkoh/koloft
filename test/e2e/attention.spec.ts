@@ -17,6 +17,7 @@ import {
 } from './helpers/p1'
 
 const PAST_TWO_LIVENESS_SWEEPS_MS = 6_000
+const COMPACTION_SETTLE_MS = 3_000
 
 async function lookAtTheWindow(app: ElectronApplication): Promise<void> {
   await app.evaluate(({ BrowserWindow }) => {
@@ -157,6 +158,26 @@ test.describe('attention markers come from real session-status transitions (shim
     } finally {
       await quitAndClose(app)
     }
+  })
+
+  test('Claude compacting a finished session on its own leaves its dot exactly as it was and sends no new notice', async ({
+    app,
+    page
+  }) => {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
+    const before = await pendingAttention(page)
+    const noticesBefore = (await osOutlets(app)).notifications.length
+
+    await runIn(page, centerTerm(page), '/compact-while-idle')
+    await expect(centerTerm(page)).toContainText('compacted while idle')
+    const settled = Date.now() + COMPACTION_SETTLE_MS
+    while (Date.now() < settled) {
+      expect(await pendingAttention(page)).toEqual(before)
+      await page.waitForTimeout(50)
+    }
+    expect((await osOutlets(app)).notifications).toHaveLength(noticesBefore)
   })
 
   test('a graceful /exit clears its pending mark and never raises exited, not even after two liveness sweeps', async ({

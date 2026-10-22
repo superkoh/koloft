@@ -69,7 +69,11 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   the `idle_prompt` Notification, then about 55 minutes later PreCompact and SessionStart
   `compact`; the transcript gets `compact_boundary` (`trigger: "auto"`), the summary
   record below, and a `system`/`informational` record "Compacted while idle, before the
-  prompt cache expired". When it fires is read from the binaries, not probed (2.1.293,
+  prompt cache expired". **Its PreCompact payload carries `trigger: "auto"`**, measured
+  2026-10-20 on CC 2.1.305: a real interactive session in Koloft's hand-test sandbox,
+  context past `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=100000`, left alone after one turn;
+  53 minutes later Koloft's hook logged the PreCompact with that trigger, then the
+  compact SessionStart, with nothing else between them. When it fires is read from the binaries, not probed (2.1.293,
   2.1.296 and 2.1.299 carry the same code; `strings`, 2026-10-14, correcting a 2.1.295
   reading that took the floor for the default): a server-side flag
   (`tengu_sunny_locket`; with none the mode is `off`), a conversation of at least
@@ -360,7 +364,13 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   `api-request` per request (`{type, id, querySource, shapeHash, params, base, keep,
   tail, cacheControl, requestDigest}`, about 1.5 KB). The `assistant` record gained a
   `requestRef`. The `prompt_snapshot` attachment (`systemPrompt`, `tools`, …; 56 KB in
-  `-p`, 115–127 KB interactive) is older — 2.1.299 writes it too. None of the three
+  `-p`, 115–127 KB interactive) is older — 2.1.299 writes it too. Both it and
+  `api-request-shape` hold every tool's definition as `{"name":"<Tool>",…}`, so from a
+  session's first turn its transcript matches `"name":"AskUserQuestion"` before any call
+  (2026-10-20, linux-arm64 2.1.303 and 2.1.304 in the Docker SSH lab, sonnet: a grep of
+  the transcript for that string, sampled every 0.3 s, matched after the first turn and
+  before the prompt asking for the tool was typed; the call's PermissionRequest came
+  ~10 s later). None of the three
   carries `cwd`; the shape and `api-request` records carry `sessionId`, `timestamp` and
   `version`, the blob only `sessionId`. Every Koloft reader that parses records picks
   them by `type` (`extractJsonlMeta`, `extractJsonlTail`, `lastTurnsOfLines`, the usage
@@ -427,6 +437,23 @@ Unless a bullet below says more, it is inferred, not checked.
   (`claude-opus-4-20250514`, `claude-sonnet-4-20250514`).
 - **The Stop hook can fire a moment before the turn's assistant record is flushed** to
   the jsonl (seen live on 2.1.263), so a reader that trusts Stop has to poll for it.
+- **A typed `/koloft <args>` runs Koloft's plugin skill `koloft:koloft` as a model turn,
+  whose only typed record is a `<command-message>` one** (2026-10-20, CC 2.1.304, the butler's claude
+  in Koloft, e2e temp HOME, `/koloft session list` sent from the fake Discord, so typed,
+  Esc, Enter; 3 runs). The screen showed `❯ /koloft:koloft session list`. The turn's
+  records: a `user` record (`origin.kind` `human`) whose string content is
+  `<command-message>koloft:koloft</command-message>\n<command-name>/koloft:koloft</command-name>\n<command-args>session list</command-args>`,
+  the skill body as an `isMeta` user record whose content is an array, the hooks'
+  attachments, a Bash `tool_use`, its result, the reply text, `stop_hook_summary`. No
+  `<local-command-stdout>` is written. UserPromptSubmit fired for it, as for a custom
+  command (§17): Koloft saw the session go to working, and the hook's
+  `hook_additional_context` attachment is in the turn.
+- **A command that runs the model writes its record starting `<command-message>`; a
+  built-in one starts `<command-name>`.** Every such record in this Mac's own
+  transcripts for the koloft repo (2026-10-20, CC 2.1.29x–2.1.304): the skills
+  `claude-api`, `deep-research` and `koloft:koloft` began `<command-message>…`, each
+  followed by its body as an `isMeta` record and a model turn; `/goal`, `/model`,
+  `/effort`, `/advisor` and `/compact` began `<command-name>…`.
 - **What a slash command leaves in the jsonl** (2026-10-04/05, CC 2.1.289 and 2.1.290,
   every record of the runs read):
   - Its output is the text inside `<local-command-stdout>…</local-command-stdout>`, in
@@ -1063,6 +1090,13 @@ inferred, not checked.
     agent (2.1.227). Its agent writes a transcript at once, and the main loop writes ONE
     wrap-up line before its Stop. A fork whose result is already final OMITS
     `background` entirely (2.1.220), rather than setting it false.
+- **A Monitor a plugin starts has no spawn ack; only its events name it.** Seen
+  2026-10-20 in a real CC 2.1.304 transcript (a plugin's monitor, started with the
+  session): no `{taskId, timeoutMs}` record anywhere, yet the task ran for hours and was
+  still running at a turn end. Each event arrives as a `<task-notification>` with
+  `<task-id>` and `<summary>Monitor event: "<description>"</summary>`, no `<tool-use-id>`
+  and no `<status>`; that plugin's first event came right at session start. A
+  model-armed Monitor's events and its 30-minute expiry notice carry the same summary.
 - **A Workflow's agents write transcripts** under `<sid>/subagents/workflows/<runId>/`,
   one level deeper than a plain subagent.
 - **The finish report is a `<task-notification>`** naming both a `<tool-use-id>` and a
@@ -1871,7 +1905,8 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
 - **The same holds in an interactive session.** 2026-10-08, CC 2.1.294, the
   `discord-real-smoke` case for a Claude conductor: Koloft's own gate, a pty session
   with `--dangerously-skip-permissions`, asked to write a file — the file was not
-  written and the transcript held `PreToolUse:<tool> hook error`.
+  written and the transcript held `PreToolUse:<tool> hook error`. That case went with
+  the gate (ADR-0029); nothing has re-measured this since.
 - **The hook's input names the transcript.** 2026-10-09, CC 2.1.295, `claude -p` with a
   `PreToolUse` hook that logged its input, asked to Write a file then Edit it: each
   input held `session_id`, `transcript_path` (absolute,

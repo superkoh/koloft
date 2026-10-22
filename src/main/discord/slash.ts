@@ -11,6 +11,8 @@ import { accentOf, CONDUCTOR_ACCENT, type Card } from './cards'
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
 export const NOTHING_CAME_BACK_MS = 8000
 export const MORE_OUTPUT_SETTLES_MS = 1500
+// CC§2
+export const A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS = 10_000
 export const RESULT_WITHIN_MS = 10 * 60_000
 const ESC = '\x1b'
 const CLOSE_THE_COMMAND_MENU = ESC
@@ -88,6 +90,7 @@ interface Pending {
   keyBefore?: string
   outputs: CommandOutput[]
   worked: boolean
+  turnEnded: boolean
   reply?: string
   newKey?: string
   pressedEsc: boolean
@@ -201,6 +204,7 @@ export class SlashCommands {
       keyBefore: this.d.keyOf(tab),
       outputs: [],
       worked: false,
+      turnEnded: false,
       pressedEsc: false,
       timers: []
     }
@@ -266,21 +270,35 @@ export class SlashCommands {
     })
   }
 
-  private settleSoon(tab: string, p: Pending): void {
+  private settleSoon(tab: string, p: Pending, ms = MORE_OUTPUT_SETTLES_MS): void {
     clearTimeout(p.settle)
     p.settle = setTimeout(() => {
       if (this.pending.get(tab) === p && !p.mirrorPull && this.d.turnOver(tab)) this.finish(tab)
-    }, MORE_OUTPUT_SETTLES_MS)
+    }, ms)
+  }
+
+  private settleOnceItsTurnEnds(tab: string, p: Pending): void {
+    const waitsForTheTurnEnd =
+      this.d.backendOf(tab) === 'claude' &&
+      !p.turnEnded &&
+      p.reply === undefined &&
+      !p.outputs.length &&
+      !p.newKey
+    this.settleSoon(
+      tab,
+      p,
+      waitsForTheTurnEnd ? A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS : MORE_OUTPUT_SETTLES_MS
+    )
   }
 
   private settleAfterMirrorPull(tab: string, p: Pending): void {
     const pull = this.d.nextMirrorPull(tab)
     p.mirrorPull = pull
-    if (!pull) return this.settleSoon(tab, p)
+    if (!pull) return this.settleOnceItsTurnEnds(tab, p)
     void pull.then(() => {
       if (p.mirrorPull !== pull) return
       p.mirrorPull = undefined
-      if (this.pending.get(tab) === p) this.settleSoon(tab, p)
+      if (this.pending.get(tab) === p) this.settleOnceItsTurnEnds(tab, p)
     })
   }
 
@@ -302,7 +320,11 @@ export class SlashCommands {
 
   turnEnded(tab: string, turn: Turn): void {
     const p = this.pending.get(tab)
-    if (p && turn.reply.trim() && turn.at >= p.typedAt) p.reply = turn.reply
+    if (!p || turn.at < p.typedAt) return
+    if (turn.reply.trim()) p.reply = turn.reply
+    if (!p.worked) return
+    p.turnEnded = true
+    if (!p.mirrorPull) this.settleSoon(tab, p)
   }
 
   bound(tab: string, key: string): void {

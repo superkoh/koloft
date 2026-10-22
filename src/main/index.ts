@@ -315,6 +315,7 @@ import {
   relayAttached,
   type RelayDeps
 } from './cdpRelay'
+import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
   permissionAsk,
@@ -551,8 +552,8 @@ const sessionBackends = new SessionBackends({
     consumeOutletDedupe(tabId)
     newsJudge.prompted(tabId)
   },
-  bound: (tabId, key) => {
-    attention.bound(tabId, key)
+  bound: (tabId, key, idleCompaction) => {
+    if (!idleCompaction) attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
     butler?.onBound(tabId, key)
     discordTyping?.refresh(tabId)
@@ -4519,7 +4520,11 @@ function guestPagesOf(tabId: string): GuestPage[] {
     .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
     .map((wc) => ({
       url: () => wc.getURL(),
-      run: (script: string) => wc.executeJavaScript(script),
+      // PLATFORM§10
+      run: async (script: string) => {
+        await compositionDone()
+        return await wc.executeJavaScript(script)
+      },
       reload: () =>
         new Promise<void>((resolve) => {
           wc.once('did-stop-loading', () => resolve())
@@ -4615,10 +4620,11 @@ function commandIntoButler(text: string): string {
 
 let butlerMessages = 0
 
-function fromPalette({ words, about, at }: PaletteRequest): string {
+function fromPalette({ words, backend, about, at }: PaletteRequest): string {
   const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
   const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
-  return `The owner typed this in ⌘P: ${words}${where}${routed}`
+  const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: start any session for this with --backend ${backend}.)`
+  return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
 }
 
 function busyButler(): SessionInfo | undefined {
@@ -4635,7 +4641,8 @@ async function handFromPalette(request: PaletteRequest): Promise<PaletteHandOff>
   const tabId = await sessionCommand.startButlerHelper(busy, {
     prompt: text,
     name: request.title,
-    ownerWords: request.words
+    ownerWords: request.words,
+    backend: request.backend
   })
   if (!tabId)
     return { ok: false, error: `${butlerNameNow()} is busy, and Koloft could not start a helper.` }
@@ -5409,6 +5416,7 @@ function registerIpc(): void {
     if (typeof sessionId !== 'string' || !Array.isArray(targets)) return
     relayStripChanged(sessionId, targets as BrowserStripTarget[])
   })
+  ipcMain.on(CH.browser.hostComposing, (_e, on: unknown) => hostComposing(on === true))
   ipcMain.on(CH.terminal.screenDone, (_e, answer: unknown) => {
     const a = answer as ScreenAnswer
     if (!a || typeof a.requestId !== 'string') return

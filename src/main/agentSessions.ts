@@ -60,6 +60,7 @@ export interface ButlerHelperTask {
   prompt: string
   name?: string
   ownerWords: string
+  backend: BackendId
 }
 
 export interface NewSessionArgs {
@@ -1229,12 +1230,12 @@ export function sessionVerb(d: SessionVerbDeps): {
 
   const startButlerHelper = async (
     butler: SessionInfo,
-    { prompt, name, ownerWords }: ButlerHelperTask
+    { prompt, name, ownerWords, backend }: ButlerHelperTask
   ): Promise<string | null> =>
     (
       await launchSibling(
         d,
-        { prompt, name },
+        { prompt, name, backend },
         butler,
         d.butlerFolder(),
         butler.tabId,
