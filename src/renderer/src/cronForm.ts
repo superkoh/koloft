@@ -4,14 +4,23 @@ import type {
   CronJob,
   CronPermission,
   CronSaveInput,
+  LiveRun,
   Schedule,
   SkillSuggestion
 } from '@shared/types'
 import { CRON_SAVE_MESSAGES as M } from '@shared/cronMessages'
 import { hasWordChar, isValidModelName, NEW_JOB_PERMISSION } from '@shared/cronNames'
-import { describeWhen, isValidSchedule, nextRun, parseHHMM } from '@shared/schedule'
+import { nextDue } from '@shared/cronHistory'
+import {
+  dateOf,
+  describeWhen,
+  isValidSchedule,
+  onceAt,
+  parseDate,
+  parseHHMM
+} from '@shared/schedule'
 
-export type WhenKind = 'daily' | 'weekly' | 'every'
+export type WhenKind = Schedule['kind']
 
 export interface JobFields {
   backend: BackendId
@@ -19,6 +28,7 @@ export interface JobFields {
   task: string
   whenKind: WhenKind
   at: string
+  date: string
   days: number[]
   n: number
   unit: 'minutes' | 'hours'
@@ -29,13 +39,14 @@ export interface JobFields {
   autoClose: boolean
 }
 
-export function emptyFields(backend: BackendId = 'claude'): JobFields {
+export function emptyFields(backend: BackendId = 'claude', now = new Date()): JobFields {
   return {
     backend,
     name: '',
     task: '',
     whenKind: 'daily',
     at: '09:00',
+    date: dateOf(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 12)),
     days: [],
     n: 1,
     unit: 'hours',
@@ -53,8 +64,10 @@ export function permissionAfterSwitch(f: JobFields, backend: BackendId): CronPer
 
 export function fieldsToSchedule(f: JobFields): Schedule | null {
   let s: Schedule
-  if (f.whenKind === 'every') {
-    s = { kind: 'every', n: f.n, unit: f.unit }
+  if (f.whenKind === 'every' || f.whenKind === 'after') {
+    s = { kind: f.whenKind, n: f.n, unit: f.unit }
+  } else if (f.whenKind === 'once') {
+    s = { kind: 'once', date: f.date, at: f.at }
   } else if (f.whenKind === 'weekly') {
     const days = [...new Set(f.days)].sort((a, b) => a - b)
     s = days.length === 7 ? { kind: 'daily', at: f.at } : { kind: 'weekly', days, at: f.at }
@@ -66,15 +79,13 @@ export function fieldsToSchedule(f: JobFields): Schedule | null {
 
 export function scheduleToFields(
   s: Schedule
-): Pick<JobFields, 'whenKind' | 'at' | 'days' | 'n' | 'unit'> {
+): Pick<JobFields, 'whenKind' | 'at' | 'date' | 'days' | 'n' | 'unit'> {
   const blank = emptyFields()
-  if (s.kind === 'daily') {
-    return { whenKind: 'daily', at: s.at, days: blank.days, n: blank.n, unit: blank.unit }
-  }
-  if (s.kind === 'weekly') {
-    return { whenKind: 'weekly', at: s.at, days: [...s.days], n: blank.n, unit: blank.unit }
-  }
-  return { whenKind: 'every', at: blank.at, days: blank.days, n: s.n, unit: s.unit }
+  const { at, date, days, n, unit } = blank
+  if (s.kind === 'daily') return { whenKind: 'daily', at: s.at, date, days, n, unit }
+  if (s.kind === 'weekly') return { whenKind: 'weekly', at: s.at, date, days: [...s.days], n, unit }
+  if (s.kind === 'once') return { whenKind: 'once', at: s.at, date: s.date, days, n, unit }
+  return { whenKind: s.kind, at, date, days, n: s.n, unit: s.unit }
 }
 
 export function modelValue(f: JobFields): string | undefined {
@@ -87,7 +98,7 @@ export type ValidateResult =
   | { ok: true; input: Omit<CronSaveInput, 'workspacePath' | 'id'> }
   | { ok: false; errors: Partial<Record<keyof JobFields, string>> }
 
-export function validate(f: JobFields): ValidateResult {
+export function validate(f: JobFields, now = new Date()): ValidateResult {
   const errors: Partial<Record<keyof JobFields, string>> = {}
 
   const name = f.name.trim()
@@ -104,10 +115,15 @@ export function validate(f: JobFields): ValidateResult {
   if (f.whenKind === 'weekly' && [...new Set(f.days)].length === 0) {
     errors.days = M.days
   }
-  if (f.whenKind !== 'every' && parseHHMM(f.at) === null) {
+  const step = f.whenKind === 'every' || f.whenKind === 'after'
+  if (!step && parseHHMM(f.at) === null) {
     errors.at = M.time
   }
-  if (f.whenKind === 'every') {
+  if (f.whenKind === 'once') {
+    if (parseDate(f.date) === null) errors.date = M.date
+    else if (!errors.at && onceAt(f).getTime() <= now.getTime()) errors.at = M.past
+  }
+  if (step) {
     const cap = f.unit === 'minutes' ? 720 : 24
     if (!Number.isInteger(f.n) || f.n < 1 || f.n > cap) {
       errors.n = M.every
@@ -120,7 +136,7 @@ export function validate(f: JobFields): ValidateResult {
   }
 
   const schedule = fieldsToSchedule(f)
-  if (!schedule && !errors.days && !errors.at && !errors.n) {
+  if (!schedule && !errors.days && !errors.at && !errors.n && !errors.date) {
     errors.at = M.time
   }
 
@@ -164,10 +180,18 @@ export interface Forecast {
   title: string
 }
 
-export function forecastFor(jobs: CronJob[], wsPath: string, now: Date): Forecast | null {
+export function forecastFor(
+  jobs: CronJob[],
+  live: LiveRun[],
+  wsPath: string,
+  now: Date
+): Forecast | null {
   const due = jobs
-    .filter((j) => j.enabled && j.workspacePath === wsPath)
-    .map((j) => ({ job: j, at: nextRun(j.schedule, now) }))
+    .filter((j) => j.workspacePath === wsPath)
+    .flatMap((j) => {
+      const at = nextDue(j, now, live)
+      return at ? [{ job: j, at }] : []
+    })
     .sort((a, b) => a.at.getTime() - b.at.getTime())
   if (due.length === 0) return null
   const first = due[0]

@@ -123,6 +123,11 @@ export function sanitizeCron(
     }
     if (isCronEffort(item.effort)) job.effort = item.effort
     if (item.autoClose === true) job.autoClose = true
+    if (schedule.kind === 'after') {
+      const { waitFrom } = item
+      job.waitFrom =
+        typeof waitFrom === 'number' && Number.isFinite(waitFrom) ? waitFrom : job.createdAt
+    }
     const backend = backendIdOf(item.backend)
     if (backend) job.backend = backend
     seen.add(id)

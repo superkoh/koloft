@@ -2,6 +2,7 @@ import type { Schedule } from '@shared/types'
 
 const MIN = 60_000
 const DAY_MIN = 24 * 60
+const NOON_NO_DST_SNAP_CAN_SHIFT_THE_DAY = 12
 
 export function parseHHMM(at: string): { h: number; m: number } | null {
   if (typeof at !== 'string' || !/^\d\d:\d\d$/.test(at)) return null
@@ -11,8 +12,33 @@ export function parseHHMM(at: string): { h: number; m: number } | null {
   return { h, m }
 }
 
+export function parseDate(date: string): { y: number; mo: number; d: number } | null {
+  if (typeof date !== 'string' || !/^\d{4}-\d\d-\d\d$/.test(date)) return null
+  const y = Number(date.slice(0, 4))
+  const mo = Number(date.slice(5, 7)) - 1
+  const d = Number(date.slice(8, 10))
+  const check = new Date(y, mo, d, NOON_NO_DST_SNAP_CAN_SHIFT_THE_DAY)
+  if (check.getFullYear() !== y || check.getMonth() !== mo || check.getDate() !== d) return null
+  return { y, mo, d }
+}
+
+export function dateOf(t: Date): string {
+  return `${t.getFullYear()}-${p2(t.getMonth() + 1)}-${p2(t.getDate())}`
+}
+
 function isInt(n: unknown): n is number {
   return typeof n === 'number' && Number.isInteger(n)
+}
+
+function isValidStep(s: Record<string, unknown>): boolean {
+  if (!isInt(s.n)) return false
+  if (s.unit === 'minutes') return s.n >= 1 && s.n <= 720
+  if (s.unit === 'hours') return s.n >= 1 && s.n <= 24
+  return false
+}
+
+export function stepMs(s: { n: number; unit: 'minutes' | 'hours' }): number {
+  return (s.unit === 'minutes' ? s.n : s.n * 60) * MIN
 }
 
 export function isValidSchedule(x: unknown): x is Schedule {
@@ -32,11 +58,14 @@ export function isValidSchedule(x: unknown): x is Schedule {
     }
     return true
   }
-  if (s.kind === 'every') {
-    if (!isInt(s.n)) return false
-    if (s.unit === 'minutes') return s.n >= 1 && s.n <= 720
-    if (s.unit === 'hours') return s.n >= 1 && s.n <= 24
-    return false
+  if (s.kind === 'every' || s.kind === 'after') return isValidStep(s)
+  if (s.kind === 'once') {
+    return (
+      typeof s.date === 'string' &&
+      parseDate(s.date) !== null &&
+      typeof s.at === 'string' &&
+      parseHHMM(s.at) !== null
+    )
   }
   return false
 }
@@ -58,9 +87,18 @@ function candidate(y: number, mo: number, date: number, h: number, mi: number): 
   return t
 }
 
-const NOON_NO_DST_SNAP_CAN_SHIFT_THE_DAY = 12
+export function onceAt(s: { date: string; at: string }): Date {
+  const day = parseDate(s.date) ?? { y: 1970, mo: 0, d: 1 }
+  const hm = parseHHMM(s.at) ?? { h: 0, m: 0 }
+  return candidate(day.y, day.mo, day.d, hm.h, hm.m)
+}
 
-export function nextRun(s: Schedule, from: Date): Date {
+export function nextRun(s: Schedule, from: Date): Date | null {
+  if (s.kind === 'after') return null
+  if (s.kind === 'once') {
+    const t = onceAt(s)
+    return t.getTime() > from.getTime() ? t : null
+  }
   if (s.kind === 'every') {
     const step = s.unit === 'minutes' ? s.n : s.n * 60
     let t = new Date(from.getTime())
@@ -110,8 +148,15 @@ export function describeSchedule(s: Schedule): string {
     const names = DOW_ORDER.filter((d) => set.includes(d)).map((d) => DOW[d])
     return `${names.join(', ')} at ${speechTime(s.at)}`
   }
+  if (s.kind === 'once') {
+    const day = parseDate(s.date)
+    const on = day ? `${day.d} ${MON[day.mo]}` : s.date
+    return `Once on ${on} at ${speechTime(s.at)}`
+  }
+  const amount = s.n === 1 ? `1 ${s.unit.slice(0, -1)}` : `${s.n} ${s.unit}`
+  if (s.kind === 'after') return `${amount} after each run ends`
   if (s.n === 1) return s.unit === 'minutes' ? 'Every minute' : 'Every hour'
-  return `Every ${s.n} ${s.unit}`
+  return `Every ${amount}`
 }
 
 function dayGap(t: Date, now: Date): number {

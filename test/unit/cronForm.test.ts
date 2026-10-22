@@ -49,9 +49,11 @@ describe('fieldsToSchedule (BB-E17)', () => {
 
 describe('scheduleToFields', () => {
   it('fills the chips the saved job lights, and leaves the others usable', () => {
+    const date = emptyFields().date
     expect(scheduleToFields({ kind: 'weekly', days: [1, 2], at: '07:30' })).toEqual({
       whenKind: 'weekly',
       at: '07:30',
+      date,
       days: [1, 2],
       n: 1,
       unit: 'hours'
@@ -59,11 +61,23 @@ describe('scheduleToFields', () => {
     expect(scheduleToFields({ kind: 'every', n: 30, unit: 'minutes' })).toEqual({
       whenKind: 'every',
       at: '09:00',
+      date,
       days: [],
       n: 30,
       unit: 'minutes'
     })
     expect(scheduleToFields({ kind: 'daily', at: '21:00' }).whenKind).toBe('daily')
+  })
+
+  it('round-trips the two new kinds through the form', () => {
+    const once: Schedule = { kind: 'once', date: '2026-10-25', at: '14:00' }
+    const after: Schedule = { kind: 'after', n: 45, unit: 'minutes' }
+    expect(fieldsToSchedule(f(scheduleToFields(once)))).toEqual(once)
+    expect(fieldsToSchedule(f(scheduleToFields(after)))).toEqual(after)
+  })
+
+  it('starts a new once job on tomorrow, so 09:00 is never already gone', () => {
+    expect(emptyFields('claude', new Date(2026, 9, 31, 22, 0)).date).toBe('2026-11-01')
   })
 })
 
@@ -150,9 +164,31 @@ describe('validate messages (§7.5)', () => {
     }
   ]
 
+  const NOW = new Date(2026, 9, 22, 12, 0)
+  cases.push(
+    {
+      why: 'a once time that has already passed',
+      fields: good({ whenKind: 'once', date: '2026-10-22', at: '11:59' }),
+      field: 'at',
+      msg: 'Pick a time that has not passed yet.'
+    },
+    {
+      why: 'a once date that does not exist',
+      fields: good({ whenKind: 'once', date: '2026-02-30', at: '09:00' }),
+      field: 'date',
+      msg: 'Use a date like 2026-10-25.'
+    },
+    {
+      why: 'after each run for 25 hours',
+      fields: good({ whenKind: 'after', n: 25, unit: 'hours' }),
+      field: 'n',
+      msg: 'Use a whole number from 1 to 720 minutes or 1 to 24 hours.'
+    }
+  )
+
   for (const c of cases) {
     it(`refuses ${c.why}`, () => {
-      const r = validate(c.fields)
+      const r = validate(c.fields, NOW)
       expect(r.ok).toBe(false)
       if (r.ok) return
       expect(r.errors[c.field]).toBe(c.msg)
@@ -316,7 +352,7 @@ describe('forecastFor', () => {
   })
 
   it('names the nearest switched-on job and counts the rest', () => {
-    const f = forecastFor([job('Late', '21:00'), job('Soonest', '14:00')], '/ws-a', NOW)
+    const f = forecastFor([job('Late', '21:00'), job('Soonest', '14:00')], [], '/ws-a', NOW)
     expect(f?.name).toBe('Soonest')
     expect(f?.id).toBe('id-Soonest')
     expect(f?.more).toBe(1)
@@ -329,23 +365,48 @@ describe('forecastFor', () => {
       job('Elsewhere', '13:30', { workspacePath: '/ws-b' }),
       job('Mine', '21:00')
     ]
-    const f = forecastFor(jobs, '/ws-a', NOW)
+    const f = forecastFor(jobs, [], '/ws-a', NOW)
     expect(f?.name).toBe('Mine')
     expect(f?.more).toBe(0)
   })
 
   it('says nothing at all when every job is switched off', () => {
-    expect(forecastFor([job('Off', '13:00', { enabled: false })], '/ws-a', NOW)).toBeNull()
-    expect(forecastFor([], '/ws-a', NOW)).toBeNull()
+    expect(forecastFor([job('Off', '13:00', { enabled: false })], [], '/ws-a', NOW)).toBeNull()
+    expect(forecastFor([], [], '/ws-a', NOW)).toBeNull()
   })
 
   it('calls a run soon right up to the 60 minute mark', () => {
-    expect(forecastFor([job('Edge', '13:00')], '/ws-a', NOW)?.soon).toBe(true)
-    expect(forecastFor([job('Past', '13:01')], '/ws-a', NOW)?.soon).toBe(false)
+    expect(forecastFor([job('Edge', '13:00')], [], '/ws-a', NOW)?.soon).toBe(true)
+    expect(forecastFor([job('Past', '13:01')], [], '/ws-a', NOW)?.soon).toBe(false)
+  })
+
+  it('counts an after-each-run job from when its last run ended, and leaves it out while a run is open', () => {
+    const after = job('Gap', '00:00', {
+      schedule: { kind: 'after', n: 2, unit: 'hours' },
+      waitFrom: new Date(2026, 8, 2, 11, 30).getTime()
+    })
+    expect(forecastFor([after], [], '/ws-a', NOW)?.at.getHours()).toBe(13)
+    const open = { jobId: after.id, tabId: 't1', state: 'running' as const, startedAt: 0, dueAt: 0 }
+    expect(forecastFor([after], [open], '/ws-a', NOW)).toBeNull()
+  })
+
+  it('shows an after-each-run job that waited long enough as due now, not in the past', () => {
+    const after = job('Gap', '00:00', {
+      schedule: { kind: 'after', n: 1, unit: 'hours' },
+      waitFrom: new Date(2026, 8, 1, 9, 0).getTime()
+    })
+    expect(forecastFor([after], [], '/ws-a', NOW)?.at).toEqual(NOW)
+  })
+
+  it('leaves out a once job whose time has passed', () => {
+    const once = job('Once', '00:00', {
+      schedule: { kind: 'once', date: '2026-09-02', at: '11:00' }
+    })
+    expect(forecastFor([once], [], '/ws-a', NOW)).toBeNull()
   })
 
   it('lists every switched-on job in the hover text, nearest first', () => {
-    const f = forecastFor([job('Late', '21:00'), job('Soonest', '14:00')], '/ws-a', NOW)
+    const f = forecastFor([job('Late', '21:00'), job('Soonest', '14:00')], [], '/ws-a', NOW)
     expect(f?.title).toBe('Soonest · today 14:00\nLate · today 21:00\nScheduled jobs…')
   })
 })

@@ -14,7 +14,8 @@ function at(y: number, mo: number, d: number, h: number, mi: number): Date {
   return new Date(y, mo - 1, d, h, mi, 0, 0)
 }
 
-function wall(d: Date): string {
+function wall(d: Date | null): string {
+  if (!d) return 'none'
   const p = (n: number): string => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
@@ -41,6 +42,26 @@ describe('parseHHMM', () => {
 })
 
 describe('isValidSchedule', () => {
+  it('accepts once on a real date and after-each-run inside the same limits as every', () => {
+    const ok: unknown[] = [
+      { kind: 'once', date: '2026-10-25', at: '14:00' },
+      { kind: 'once', date: '2028-02-29', at: '00:00' },
+      { kind: 'after', n: 1, unit: 'minutes' },
+      { kind: 'after', n: 720, unit: 'minutes' },
+      { kind: 'after', n: 24, unit: 'hours' }
+    ]
+    for (const s of ok) expect(isValidSchedule(s), JSON.stringify(s)).toBe(true)
+    const bad: unknown[] = [
+      { kind: 'once', date: '2026-02-30', at: '14:00' },
+      { kind: 'once', date: '2026-10-25' },
+      { kind: 'once', date: '25/10/2026', at: '14:00' },
+      { kind: 'once', at: '14:00' },
+      { kind: 'after', n: 0, unit: 'minutes' },
+      { kind: 'after', n: 25, unit: 'hours' }
+    ]
+    for (const s of bad) expect(isValidSchedule(s), JSON.stringify(s)).toBe(false)
+  })
+
   it('accepts the three kinds inside their limits', () => {
     const ok: unknown[] = [
       { kind: 'daily', at: '00:00' },
@@ -95,6 +116,18 @@ describe('nextRun — daily and weekly', () => {
   })
 })
 
+describe('nextRun — once and after each run', () => {
+  it('once is its own local time until that time has passed, then there is none', () => {
+    const s: Schedule = { kind: 'once', date: '2026-09-04', at: '09:30' }
+    expect(wall(nextRun(s, at(2026, 9, 2, 10, 0)))).toBe('2026-09-04 09:30')
+    expect(wall(nextRun(s, at(2026, 9, 4, 9, 30)))).toBe('none')
+  })
+
+  it('after each run has no clock time of its own: it hangs on when the last run ended', () => {
+    expect(nextRun({ kind: 'after', n: 2, unit: 'hours' }, at(2026, 9, 2, 10, 0))).toBeNull()
+  })
+})
+
 describe('BB-E14: "Repeat every N" is anchored to midnight, not to the save time', () => {
   it('every 30 minutes lands on :00 and :30', () => {
     const s: Schedule = { kind: 'every', n: 30, unit: 'minutes' }
@@ -129,7 +162,7 @@ describe('BB-E15: daylight saving time', () => {
 
   it('runs a doubled wall-clock time once', () => {
     const s: Schedule = { kind: 'daily', at: '01:30' }
-    const first = nextRun(s, at(2026, 11, 1, 0, 0))
+    const first = nextRun(s, at(2026, 11, 1, 0, 0)) as Date
     expect(wall(first)).toBe('2026-11-01 01:30')
     expect(first.getTimezoneOffset()).toBe(420)
     expect(wall(nextRun(s, first))).toBe('2026-11-02 01:30')
@@ -175,6 +208,18 @@ describe('describeSchedule', () => {
     expect(describeSchedule({ kind: 'every', n: 30, unit: 'minutes' })).toBe('Every 30 minutes')
     expect(describeSchedule({ kind: 'every', n: 1, unit: 'hours' })).toBe('Every hour')
     expect(describeSchedule({ kind: 'every', n: 2, unit: 'hours' })).toBe('Every 2 hours')
+  })
+
+  it('says once on a day, and how long after each run ends', () => {
+    expect(describeSchedule({ kind: 'once', date: '2026-10-25', at: '14:00' })).toBe(
+      'Once on 25 Oct at 14:00'
+    )
+    expect(describeSchedule({ kind: 'after', n: 1, unit: 'hours' })).toBe(
+      '1 hour after each run ends'
+    )
+    expect(describeSchedule({ kind: 'after', n: 30, unit: 'minutes' })).toBe(
+      '30 minutes after each run ends'
+    )
   })
 })
 

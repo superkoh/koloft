@@ -12,7 +12,8 @@ import {
   worktreeHomeOf
 } from '@shared/cronNames'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
-import { isValidSchedule, parseHHMM } from '@shared/schedule'
+import { isValidSchedule, onceAt, parseDate, parseHHMM } from '@shared/schedule'
+import { oncePassed } from '@shared/cronHistory'
 import {
   isCronEffort,
   type BackendId,
@@ -154,9 +155,16 @@ function stripControl(s: string): string {
   return s.replace(/\p{Cc}/gu, '')
 }
 
-function scheduleErrors(s: unknown): string[] {
+function scheduleErrors(s: unknown, now: number): string[] {
   const errs: string[] = []
   const o = (s ?? {}) as Record<string, unknown>
+  if (o.kind === 'once') {
+    if (typeof o.date !== 'string' || parseDate(o.date) === null) errs.push(CRON_SAVE_MESSAGES.date)
+    if (typeof o.at !== 'string' || parseHHMM(o.at) === null) errs.push(CRON_SAVE_MESSAGES.time)
+    if (errs.length === 0 && onceAt(s as { date: string; at: string }).getTime() <= now)
+      errs.push(CRON_SAVE_MESSAGES.past)
+    return errs
+  }
   if (o.kind === 'daily') {
     if (!isValidSchedule(s)) errs.push(CRON_SAVE_MESSAGES.time)
     return errs
@@ -168,7 +176,7 @@ function scheduleErrors(s: unknown): string[] {
     if (errs.length === 0 && !isValidSchedule(s)) errs.push(CRON_SAVE_MESSAGES.days)
     return errs
   }
-  if (o.kind === 'every') {
+  if (o.kind === 'every' || o.kind === 'after') {
     if (!isValidSchedule(s)) errs.push(CRON_SAVE_MESSAGES.every)
     return errs
   }
@@ -208,7 +216,8 @@ function saveErrors(
   c: Clean,
   schedule: unknown,
   workspacePath: unknown,
-  isPinned: (p: string) => boolean
+  isPinned: (p: string) => boolean,
+  now: number
 ): string[] {
   const errs: string[] = []
   if (
@@ -225,7 +234,7 @@ function saveErrors(
   if (!c.task) errs.push(CRON_SAVE_MESSAGES.taskEmpty)
   else if (c.task.startsWith('-')) errs.push(CRON_SAVE_MESSAGES.taskDash)
   else if (c.task.length > 4096) errs.push(CRON_SAVE_MESSAGES.taskLong)
-  errs.push(...scheduleErrors(schedule))
+  errs.push(...scheduleErrors(schedule, now))
   if (c.model !== undefined && !isValidModelName(c.model)) errs.push(CRON_SAVE_MESSAGES.model)
   return errs
 }
@@ -316,13 +325,38 @@ export class CronRunner {
   private onTick(): void {
     const now = this.d.now()
     if (now < this.resumeAt + WAKE_DELAY_MS) return
-    const r = tick(this.jobs, now, this.lastDue, this.d.bootTime)
+    const r = tick(
+      this.jobs,
+      now,
+      this.lastDue,
+      this.d.bootTime,
+      (id) => this.launching.has(id) || this.liveRunOf(id) !== undefined
+    )
     this.lastDue = r.lastDue
+    this.turnOffOnceJobs([...r.fire, ...r.missed])
     this.writeMissed(r.missed)
     for (const f of r.fire) {
       const job = this.byId(f.jobId)
       if (job) void this.runDue(job, f.dueAt, false)
     }
+  }
+
+  private turnOffOnceJobs(dues: Due[]): void {
+    let changed = false
+    for (const { jobId } of dues) {
+      const job = this.byId(jobId)
+      if (job?.schedule.kind !== 'once' || !job.enabled) continue
+      job.enabled = false
+      changed = true
+    }
+    if (!changed) return
+    this.d.store.save(this.jobs)
+    this.push()
+  }
+
+  private restartWait(jobId: string): void {
+    const job = this.byId(jobId)
+    if (job?.schedule.kind === 'after') job.waitFrom = this.d.now()
   }
 
   private writeMissed(missed: Due[]): void {
@@ -410,7 +444,7 @@ export class CronRunner {
       }
 
       if (!this.d.ready()) {
-        if (!manual) {
+        if (!manual && job.schedule.kind !== 'after') {
           const pile = this.held.get(job.id)
           if (pile) pile.push({ jobId: job.id, dueAt })
           else this.held.set(job.id, [{ jobId: job.id, dueAt }])
@@ -471,6 +505,7 @@ export class CronRunner {
   }
 
   private fail(job: CronJob, dueAt: number, mark: object, note: string): void {
+    this.restartWait(job.id)
     this.writeHistory(job, { dueAt, state: 'failed', note, ...mark })
     this.d.toast(`⏰ ${job.name} could not start: ${note}`)
   }
@@ -506,6 +541,7 @@ export class CronRunner {
       return
     }
     this.live.delete(run.tabId)
+    this.restartWait(run.jobId)
     this.refreshFolders()
     if (!job) return this.push()
     if (outcome === 'failed')
@@ -585,6 +621,7 @@ export class CronRunner {
     this.d.killTab(tabId)
     this.d.killed(tabId)
     this.live.delete(tabId)
+    if (run) this.restartWait(run.jobId)
     this.refreshFolders()
   }
 
@@ -597,6 +634,7 @@ export class CronRunner {
     if (!this.isStillDone(run)) return
     if (!busy && left.length === 0) {
       this.live.delete(tabId)
+      this.restartWait(job.id)
       const folder = run.worktree && runFolder(job.workspacePath, run.worktree)
       if (folder) this.inFlight.add(folder)
       void this.d
@@ -638,6 +676,7 @@ export class CronRunner {
   private closeOut(run: LiveRun): void {
     this.clearTimer(run.tabId)
     this.live.delete(run.tabId)
+    this.restartWait(run.jobId)
     this.refreshFolders()
     const job = this.byId(run.jobId)
     if (!job) {
@@ -734,6 +773,7 @@ export class CronRunner {
     for (const run of this.live.values()) {
       const job = this.byId(run.jobId)
       if (!job) continue
+      this.restartWait(job.id)
       this.pushLine(job, { ...lineOf(run), state: 'ended' })
     }
     this.live.clear()
@@ -752,7 +792,13 @@ export class CronRunner {
 
   save(input: CronSaveInput): CronSaveResult {
     const c = clean(input)
-    const errors = saveErrors(c, input.schedule, input.workspacePath, (p) => this.d.isPinned(p))
+    const errors = saveErrors(
+      c,
+      input.schedule,
+      input.workspacePath,
+      (p) => this.d.isPinned(p),
+      this.d.now()
+    )
     if (errors.length > 0) return { ok: false, errors }
     const schedule = input.schedule as Schedule
 
@@ -762,6 +808,7 @@ export class CronRunner {
       delete existing.model
       delete existing.effort
       delete existing.autoClose
+      delete existing.waitFrom
       Object.assign(existing, c, {
         workspacePath: input.workspacePath,
         schedule,
@@ -781,6 +828,7 @@ export class CronRunner {
       }
       this.jobs.push(job)
     }
+    this.restartWait(job.id)
     this.lastDue.delete(job.id)
     this.held.delete(job.id)
     this.d.store.save(this.jobs)
@@ -791,8 +839,9 @@ export class CronRunner {
 
   setEnabled(jobId: string, on: boolean): void {
     const job = this.byId(jobId)
-    if (!job) return
+    if (!job || (on && oncePassed(job, new Date(this.d.now())))) return
     job.enabled = on
+    if (on) this.restartWait(jobId)
     this.lastDue.delete(jobId)
     if (!on) this.held.delete(jobId)
     this.d.store.save(this.jobs)
