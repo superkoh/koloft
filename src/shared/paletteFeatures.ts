@@ -2,6 +2,7 @@ export type SettingsPaneId =
   | 'welcome'
   | 'sessions'
   | 'accounts'
+  | 'usage'
   | 'appearance'
   | 'shortcuts'
   | 'assist'
@@ -14,6 +15,7 @@ export const SETTINGS_PANES: { id: SettingsPaneId; label: string; words: string[
   { id: 'welcome', label: 'Welcome', words: ['欢迎', '入门', 'getting started'] },
   { id: 'sessions', label: 'Sessions', words: ['会话设置'] },
   { id: 'accounts', label: 'Accounts', words: ['账号', '账户', 'token'] },
+  { id: 'usage', label: 'Usage', words: ['用量', '花费', '费用', 'cost', 'spend'] },
   {
     id: 'appearance',
     label: 'Appearance',
