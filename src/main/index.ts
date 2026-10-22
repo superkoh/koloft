@@ -77,7 +77,6 @@ import {
   identityOf,
   backendsFrom,
   messagingOf,
-  PEER_TRAITS,
   reachedBySendMessage,
   preferredAssistBackend
 } from '@shared/sessionBackend'
@@ -2943,11 +2942,7 @@ app.whenReady().then(() => {
           trustFolder: true,
           firstPrompt: l.firstPrompt,
           ownerWords: l.ownerWords,
-          name: !PEER_TRAITS[l.backend].namedAtLaunch
-            ? undefined
-            : reachedBySendMessage(l.backend)
-              ? asPeerName(l.title)
-              : l.title
+          name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title
         },
         l.title
       ),

@@ -502,6 +502,19 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         result(id, { status: 'unsubscribed' })
         return
       }
+      // CODEX§17
+      if (method === 'thread/name/set') {
+        const thread = active?.id === p.threadId ? active : load(p.threadId)
+        if (!thread) {
+          error(id, 'Thread not found')
+          return
+        }
+        thread.name = p.name
+        save(thread)
+        result(id, {})
+        event('thread/name/updated', { threadId: thread.id, threadName: thread.name })
+        return
+      }
       if (method === 'turn/start' || method === 'thread/queue/add') {
         const thread = active?.id === p.threadId ? active : load(p.threadId)
         if (!thread) {

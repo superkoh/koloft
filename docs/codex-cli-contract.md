@@ -286,7 +286,7 @@ and 26 passed on 0.162.1. On 0.163.0 (2026-10-16): sections 1 (`thread/list` sha
 see there), 13/14 (`model/list`, the default model), 17 (a message queued mid-turn), 20
 (the waiting question), 21 (the slash popup) and 25 (the TUI's startup bytes, OSC 7501,
 the leader key) were measured again, and the same e2e specs passed; they passed again on
-0.163.0 on 2026-10-17 and on 2026-10-19 (no newer Codex either day). Still only on
+0.163.0 on 2026-10-17, 2026-10-19, 2026-10-20 and 2026-10-21 (no newer Codex on any of those days). Still only on
 0.153.4 or 0.159.3, and so inferred for 0.161+:
 section 1's update-notice key, 2, 3 (the approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` / `commandActions` shapes,
 the `open` shim), 13 (token-usage fields) and 14 (first prompt, `-m`,
@@ -1175,6 +1175,19 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   note, not the task (`agent-tools-real-smoke.spec.ts`). That the title thread never
   reads the developer instructions is inferred, not checked, beyond that spec passing
   (again on 0.162.1, 2026-10-11).
+- **A thread named with `thread/name/set` right after it starts keeps that name: the
+  TUI does not title it.** 2026-10-21, Codex CLI 0.162.0, one real turn each run: a Node
+  client on `codex app-server --listen ws://127.0.0.1:<port>` and a real TUI connected
+  with `--remote` in a pty, given a first prompt, in a scratch `CODEX_HOME` holding a
+  copy of this Mac's login (deleted afterwards). With no name sent, `thread/name/updated`
+  brought the TUI's own title ("Fix README heading typo") about 2.3 s after the thread
+  showed in `thread/list`. With `thread/name/set {threadId, name}` sent the moment the
+  thread showed, the reply was `{}`, `thread/name/updated` carried that name, no other
+  title came in the next 90 s, and `thread/read` still gave the name after the turn.
+  `thread/name/set` on a thread the TUI had already titled replaced its title. One run
+  of each. The method is in the request list of Codex CLI 0.161.0 too
+  (`codex app-server generate-json-schema --experimental`, `ClientRequest.json`), not
+  run there.
 - **A resume never takes new developer instructions; a start's own instructions replace
   the `-c` ones.** 2026-10-16, Codex CLI 0.162.0, `gpt-6.1-sol`, an app-server client as in
   section 27. With `-c developer_instructions=` naming codeword ZEBRA: two turns, and a

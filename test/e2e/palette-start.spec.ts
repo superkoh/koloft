@@ -154,7 +154,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('local Codex: ⇧⏎ starts the other method — Codex in a folder that is not git, with the first prompt and no title', async ({
+  test('local Codex: ⇧⏎ starts the other method — Codex in a folder that is not git, with the first prompt and no --name flag', async ({
     env
   }) => {
     test.setTimeout(180_000)

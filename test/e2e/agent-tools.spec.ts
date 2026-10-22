@@ -243,7 +243,8 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     expect(saidFiles()).toEqual([ownerWords, ownerWords])
   })
 
-  test('a Codex session started by koloft session new in a Codex session is nested under it, and the reply that ends its first turn, which it never sent back itself, is handed to its starter', async ({
+  // CODEX§17
+  test('a Codex session started by koloft session new --name in a Codex session is nested under it, titled by that name, which Koloft gives its thread with thread/name/set, and the reply that ends its first turn, which it never sent back itself, is handed to its starter', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -258,22 +259,22 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await expect(caller).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       const callerTabId = await caller.getAttribute('data-tab-id')
 
-      expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
+      expect(await koloftInSession(page, 'session new --name kid-codex -- hello')).toBe('0')
 
-      await expect(
-        wsGroup(page, 'ws-a').locator(
-          `.ws-tab[data-tab-id="${callerTabId}"] + .ws-subtabs > .ws-tab`
-        )
-      ).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const kid = wsGroup(page, 'ws-a').locator(
+        `.ws-tab[data-tab-id="${callerTabId}"] + .ws-subtabs > .ws-tab`
+      )
+      await expect(kid).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       await expect(wsRows(page, 'ws-a')).toHaveCount(2)
+      await expect(kid.locator('.ws-tab-title', { hasText: /^kid-codex$/ })).toHaveCount(1)
       const wire = path.join(env.home, 'fake-codex-wire.jsonl')
+      const wireText = (): string => (fs.existsSync(wire) ? fs.readFileSync(wire, 'utf8') : '')
       await expect
-        .poll(() => (fs.existsSync(wire) ? fs.readFileSync(wire, 'utf8') : ''), {
-          timeout: 60_000
-        })
+        .poll(wireText, { timeout: 60_000 })
         .toMatch(
           /"thread\/queue\/add".+\(From the session \\".+\\", id \S+:\) Codex fixture answered: /
         )
+      expect(wireText()).toMatch(/"thread\/name\/set".*"name":"kid-codex"/)
     } finally {
       await quitAndClose(app)
     }
