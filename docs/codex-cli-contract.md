@@ -2098,8 +2098,7 @@ turn asked for a shell `echo hi > out.txt`.
 
 2026-10-21, codex-cli 0.162.0, `gpt-6-luna`, the `CODEX_ONE_SHOT` argv with a fresh
 `CODEX_HOME` holding only `auth.json`, the ⌘P routing prompt of `routeJob` and the typed
-lines of `test/unit/sessionRoute.real.test.ts`. Claude Code 2.1.308 (Haiku) with the
-same prompt answered all 24 lines right before and after both changes below.
+lines of `test/unit/sessionRoute.real.test.ts`.
 
 - **It names the right rule but writes another rule's JSON.** For "how's blog doing on
   the Electron article" (blog is not git) it answered
