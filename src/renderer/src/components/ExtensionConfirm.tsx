@@ -1,5 +1,6 @@
 import { useEffect, useRef, type JSX, type ReactNode } from 'react'
 import type { ExtensionPermissionRequest } from '@shared/types'
+import '../extensionConfirm.css'
 
 const CAPTURE_BEFORE_XTERM = true
 

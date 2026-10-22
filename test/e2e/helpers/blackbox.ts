@@ -155,7 +155,7 @@ export async function waitForPendingRow(
   sub: string,
   timeout = 30_000
 ): Promise<Locator> {
-  const row = rowsWithSub(page, wsName, sub).and(page.locator('.ws-tab.st-pending')).first()
+  const row = rowsWithSub(page, wsName, sub).and(page.locator('.ws .ws-tab.st-pending')).first()
   await expect(row).toBeVisible({ timeout })
   return row
 }

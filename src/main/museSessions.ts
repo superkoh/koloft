@@ -23,8 +23,8 @@ import { placeKoloftSkill, readJson } from './museAccounts'
 import { mapAtMost } from './mapAtMost'
 import { agentSkillMarkdown } from './agentPlugin'
 import { pidAlive } from './leftovers'
+import { inputBoxDraft } from './inputBox'
 import { browserControlEnv } from './browserControlEnv'
-import { allowsTheBrowser, conductorGateCommand } from './conductorGate'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -36,6 +36,7 @@ import {
   MUSE_HOOKS_ENV,
   museHook,
   writeMuseHooks,
+  type MuseHold,
   type MuseHook
 } from './museHooks'
 import {
@@ -79,6 +80,7 @@ import { sleep } from './codexTransport'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { pathWithDirFirst } from './toolInstall'
 import { realpathSafe } from './projectInfo'
+import { noticeFile } from './hooks'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
@@ -95,8 +97,7 @@ export interface MuseSessionDeps extends StoredSessionDeps {
   pickHome(resumeSessionId?: string): { account: string; env: Record<string, string> } | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
-  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
-  conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
+  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   skipPermissions(): boolean
   serversAmong(pid: number, commands: Map<string, string>): Promise<Set<string>>
   agent: {
@@ -135,7 +136,6 @@ interface MuseLaunch {
 
 interface MuseRun extends StoredRun {
   account: string
-  bypassing: boolean
   pid?: number
   startedAt: number
   boundAt: number
@@ -179,15 +179,9 @@ function mirrorLine(raw: string): Record<string, unknown> | undefined {
 // MUSE§11
 const KEYS_TAKE_AFTER_A_DIALOG_SHOWS_MS = 2000
 
-const INPUT_BOX_RULE = /^─.*─{8,}$/
-const INPUT_ROW_MARK = '❯'
-
 // MUSE§11
 export function museShowsItsInputBox(lines: string[]): boolean {
-  const rules = lines.flatMap((line, i) => (INPUT_BOX_RULE.test(line.trim()) ? [i] : []))
-  if (rules.length < 2) return false
-  const [above, below] = rules.slice(-2)
-  return below === above + 2 && lines[above + 1].trim().startsWith(INPUT_ROW_MARK)
+  return inputBoxDraft(lines) !== undefined
 }
 
 // MUSE§1
@@ -205,14 +199,10 @@ const MUSE: CliSpec = {
 // MUSE§14
 const MUSE_UPDATE_TIMEOUT_MS = 5 * 60_000
 
-// ADR-0029 ADR-0038 MUSE§15
-function approvalFlags(permission: LaunchPermission | 'conductor'): string[] {
+// ADR-0038 MUSE§15
+function approvalFlags(permission: LaunchPermission): string[] {
   if (permission === 'bypass') return ['--permission-profile', ':unrestricted']
-  return [
-    ...(permission === 'conductor' ? ['--approval-mode', 'never'] : ['--approval-judge', 'off']),
-    '--sandbox-network',
-    'enabled'
-  ]
+  return ['--approval-judge', 'off', '--sandbox-network', 'enabled']
 }
 
 // MUSE§8
@@ -381,7 +371,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const onMachines = new Map<string, Map<string, string>>()
     for (const [key, entry] of this.history) {
       const host = hostOfKey(key)
-      if (!host) continue
+      if (!host || !this.deps.remote?.connected(host)) continue
       if (entry.logPath)
         onMachines.set(host, (onMachines.get(host) ?? new Map()).set(entry.logPath, key))
     }
@@ -434,10 +424,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       const ours = [...this.runs.values()].some((r) => r.pid === pid)
       return pid > 0 && !ours && pidAlive(pid)
     })
-  }
-
-  launchedBypassingChecks(tabId: string): boolean {
-    return !!this.runs.get(tabId)?.bypassing
   }
 
   private serveOptions(): { binary: string; env: NodeJS.ProcessEnv } {
@@ -527,11 +513,6 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     return isRemoteKey(ctx.cwd) ? this.startRemoteRun(ctx, launch) : this.startLocalRun(ctx, launch)
   }
 
-  private permissionOf(opts: CreateTabOptions): LaunchPermission {
-    const asked = opts.permission ?? 'default'
-    return asked === 'default' && this.deps.skipPermissions() ? 'bypass' : asked
-  }
-
   // ADR-0030 MUSE§13 MUSE§17
   private credentialFor(account: string, env: NodeJS.ProcessEnv, host: string): string {
     try {
@@ -599,6 +580,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const permission = this.permissionOf(opts)
     const resumeId = opts.resumeSessionId ? this.nativeId(opts.resumeSessionId) : undefined
     const agentTools = this.deps.agent.enabled(true)
+    const tabId = opts.tabId ?? this.deps.pty.nextId()
     const plan = await remote.machine(host).launchMuse({
       cwd,
       fallbackCwd: workspace !== cwd ? workspace : undefined,
@@ -610,10 +592,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       context: agentTools ? koloftPrompt('muse') : undefined,
       skill: agentTools ? agentSkillMarkdown() : undefined,
       portOffset: resource ? portOffset(resource.worktreeName) : undefined,
-      ownerWords: opts.ownerWords
+      ownerWords: opts.ownerWords,
+      holdWhileBusy: !!this.deps.holdWhileBusy?.(tabId)
     })
     this.assertStarting()
-    const tabId = this.deps.pty.nextId()
     this.parsers.set(tabId, new ProgramStatusParser())
     try {
       const handle = this.deps.pty.create({
@@ -672,11 +654,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
-    const allow = opts.allow ?? assist?.allow ?? []
     if (opts.trustFolder || assist) trustMuseFolder(env, cwd)
     const trust = !!resource && museTrustsFolder(this.env, workspace)
-    const tabId = this.deps.pty.nextId()
-    const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
+    const tabId = opts.tabId ?? this.deps.pty.nextId()
+    const endpoint = this.deps.browserEndpoint(tabId)
     this.assertStarting()
     const permission = this.permissionOf(opts)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
@@ -687,20 +668,17 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       ...(role ? [role] : [])
     ]
     let bound: MuseRun | undefined
+    const hold = this.deps.holdWhileBusy?.(tabId) ? this.deps.holdScript : undefined
     const tools = this.startTools(
       (target) => this.deps.events(tabId, { type: 'open', target }),
       (hook) => bound && this.onHook(bound, hook),
       agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
       instructions.join('\n\n') || undefined,
-      conductor
-        ? conductorGateCommand(
-            this.deps.conductorGate.script,
-            this.deps.conductorGate.writeAllow(tabId, allow)
-          )
-        : undefined,
-      opts.ownerWords
+      opts.ownerWords,
+      hold && { ...hold, tabId },
+      this.deps.hookRegDir && noticeFile(this.deps.hookRegDir, tabId)
     )
-    const argv = this.museArgv(opts, approvalFlags(conductor ? 'conductor' : permission), trust)
+    const argv = this.museArgv(opts, approvalFlags(permission), trust)
     this.parsers.set(tabId, new ProgramStatusParser())
     try {
       const handle = this.deps.pty.create({
@@ -744,8 +722,9 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     hook: (hook: MuseHook) => void,
     agent: ((dir: string, name: string, raw: unknown) => void) | undefined,
     context: string | undefined,
-    gate: string | undefined,
-    ownerWords: string | undefined
+    ownerWords: string | undefined,
+    hold: MuseHold | undefined,
+    notice: string | undefined
   ): { dir: string; env: Record<string, string>; release(): void } {
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -771,7 +750,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
           return [name, full]
         })
       )
-      const hooksFile = writeMuseHooks(shimDir, requestDir, context, gate, ownerWords)
+      const hooksFile = writeMuseHooks(shimDir, requestDir, context, ownerWords, hold, notice)
       return {
         dir: shimDir,
         env: { [MUSE_HOOKS_ENV]: hooksFile, ...playwright },

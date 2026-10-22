@@ -137,7 +137,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - `session/list {limit?, cursor?}` → `{sessions:[…], nextCursor}`, every folder's
   sessions, without a login. A session carries `sessionId`, `path`, `createdAt`,
   `updatedAt`, `workspaceRoot`, `title`, `name`, `firstUserPrompt`, `kind`, … A new
-  session is missing from the list for 3–5 s.
+  session is missing from the list for 3–5 s. `path` is the session's own
+  `session.jsonl` (§2): checked 2026-10-20 on Muse 1.4.9 in Docker, by `session/list`
+  after a `muse exec --provider echo` run.
 - `muse serve --provider echo` (no login needed) can read a session another muse
   process holds: `session/read` returns its items (`userMessage`, `agentMessage`, … with
   `itemId`, `recordedAt`), and `approval/listPending {sessionId}` returns what it waits
@@ -284,6 +286,29 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   approve (fake model).
 - Hook stdout is capped at 16 384 bytes; above it the hook fails and nothing it
   printed is used.
+- **A `PreToolUse` hook may hold a command for 10 minutes; at its timeout the command
+  runs.** 1.4.9 in Docker (`koloft-muse-probe7`), fake model, `muse exec … --approval-mode
+  never --disable-sandbox --trust-workspace`, a hook that slept then exited 0 printing
+  nothing, the model asking `bash` for `echo hi > out.txt`, 2026-10-19: a 75 s sleep with
+  no timeout and a 130 s sleep with `"timeout": 3600` let it run (turn 80 s, 135 s); a
+  15-minute sleep with no timeout was killed at 600 s and the command then ran; a 20 s
+  sleep with `"timeout": 5` was killed at 5 s (`status="timed_out"` in muse's trace) and
+  the command ran, the model seeing a normal result. No model request was made while a
+  hook held. The per-entry field is `timeout`, in seconds: writing `timeout_ms` instead
+  made muse read the whole file as a schema needing `schema_version`
+  (`Hooks: 0 runnable · 1 warning … missing_schema_version` on stderr), and every hook in
+  it silently stopped running.
+- **A `Stop` hook printing `{"decision":"block","reason":"<text>"}` keeps the turn going
+  with `<text>`.** 2026-10-20, muse 1.4.9 and 1.4.11 in Docker, fake model server, hooks
+  through `TBH_MANAGED_HOOKS_PATH`, the hook acting once; `muse exec … --json` and the TUI
+  through a pty driver: one more model request in the same turn, `<text>` bare inside the
+  first `developer` message; Stop fired again with the same `turn_id`,
+  `stop_hook_active: true` (`false` the first time) and the new reply as
+  `last_assistant_message`; no second `UserPromptSubmit`; the TUI sent `working` then one
+  `done`, none in between; the session log records `context_block_updated {reason:
+  "hook:stop", …}`; the next turn's request no longer holds `<text>`. A `Stop` hook printing
+  `hookSpecificOutput.additionalContext` is marked failed (`unsupported
+  \`additionalContext\` in hookSpecificOutput of Stop hook output`) and nothing happens.
 
 ## §10 Workspace trust
 
@@ -476,6 +501,10 @@ server of the opening note and with `--provider echo`; October 2026.
   `/clear` writes the new session's registry file with the same pid, so the wrapper
   follows it. Typed text followed by Enter in one write lands in the input box unsent;
   an Enter sent a second later submits it.
+- The gap Koloft's `typeKeys` leaves between a text and its Enter is enough: muse 1.4.10
+  (`1.4.10-R6427.1`) on `--provider echo` inside tmux 3.3a (Docker, Linux, a pty attached
+  with `tmux attach`, October 2026), text then Enter 0 ms apart stays in the box (2 of 2
+  tries), 300 ms apart it submits (2 of 2), 1000 ms apart it submits (2 of 2).
 - On Linux, muse 1.4.10 (`Muse Code 1.4.10 (1.4.10-R6427.1)`, official installer, Docker,
   `--provider echo`) still writes the live registry of §4 under
   `museHome/runtime/muse/sessions`, with `process_generation_hint: "pid=<pid>"`; nothing

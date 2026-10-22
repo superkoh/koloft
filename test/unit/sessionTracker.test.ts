@@ -256,6 +256,24 @@ describe('SessionTracker — title resolution priority', () => {
     expect(s.title).toBe('Sidecar Name')
   })
 
+  it('a sidecar <id>.title is never polled on its own: it is read at bind and on the 5 s rescan, so one written or renamed later still shows', async () => {
+    const watchFile = vi.spyOn(fs, 'watchFile')
+    onTestFinished(() => watchFile.mockRestore())
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    tracker.track('tabT2s', cwd)
+    const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'first' }, cwd }])
+    const sidecar = file.replace(/\.jsonl$/, '.title')
+    tracker.bindSession('tabT2s', file, SID, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'first')
+
+    fs.writeFileSync(sidecar, 'Sidecar Name\n')
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'Sidecar Name')
+    fs.writeFileSync(sidecar, 'Renamed\n')
+    await waitFor(tracker, (x) => x.tabId === 'tabT2s' && x.title === 'Renamed')
+    expect(watchFile.mock.calls.map(([p]) => p)).toEqual([file])
+  })
+
   it('a session name (custom-title, from --name or /rename) beats the first prompt, the latest one wins, and the sidecar still beats it', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
@@ -766,6 +784,33 @@ describe('SessionTracker — binding', () => {
       await waitFor(tracker, (x) => x.tabId === 'tabAT2' && x.sessionId === SID)
       tracker.setAlive('tabAT2', false)
       expect(tracker.aliveTabFor(SID)).toBeNull()
+    })
+
+    it('a tab whose claude was killed stops reading its transcript but keeps its row, while a live tab beside it keeps reading', async () => {
+      const PAST_ONE_5S_SUBAGENT_SCAN_MS = 5600
+      const tracker = newTracker()
+      const [liveWs, deadWs, drift] = [makeWorkspace({}), makeWorkspace({}), makeWorkspace({})]
+      const live = writeJsonl(liveWs, SID, [
+        { type: 'user', message: { content: 'hi' }, cwd: liveWs }
+      ])
+      const deadSid = '22222222-2222-4222-8222-222222222222'
+      const dead = writeJsonl(deadWs, deadSid, [
+        { type: 'user', message: { content: 'hi' }, cwd: deadWs }
+      ])
+      tracker.track('tabKL1', liveWs)
+      tracker.bindSession('tabKL1', live, SID, liveWs)
+      tracker.track('tabKL2', deadWs)
+      tracker.bindSession('tabKL2', dead, deadSid, deadWs)
+      await waitFor(tracker, (x) => x.tabId === 'tabKL2' && x.title === 'hi')
+      tracker.setAlive('tabKL2', false)
+
+      fs.appendFileSync(dead, JSON.stringify({ type: 'assistant', cwd: drift }) + '\n')
+      fs.appendFileSync(live, JSON.stringify({ type: 'assistant', cwd: drift }) + '\n')
+      await waitFor(tracker, (x) => x.tabId === 'tabKL1' && x.cwd === drift)
+      await new Promise((r) => setTimeout(r, PAST_ONE_5S_SUBAGENT_SCAN_MS))
+
+      const row = tracker.list().find((x) => x.tabId === 'tabKL2')
+      expect(row).toMatchObject({ sessionId: deadSid, alive: false, cwd: deadWs })
     })
 
     it('returns null for a session nothing is bound to', () => {
@@ -1897,6 +1942,47 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       'earlier answer',
       'Looking.\n\nFixed.'
     ])
+  })
+
+  // CC§2
+  it('a skill command is the owner’s line that opens its turn, live and on disk, so the turn ends once with its reply even when its Stop comes before any of it is on disk; a built-in command opens no turn', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    const ended: { turn: { said: { who: string; text: string }[]; reply: string } }[] = []
+    tracker.on('turn-ended', (e) => ended.push(e))
+    tracker.track('tabSkill', cwd)
+    const sid = '55555555-5555-4555-8555-555555555555'
+    const file = writeJsonl(cwd, sid, [human('earlier question', 1), said(text('earlier'), 2)])
+    tracker.bindSession('tabSkill', file, sid, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabSkill' && x.title === 'earlier question')
+
+    const skill = human(
+      '<command-message>koloft:koloft</command-message>\n<command-name>/koloft:koloft</command-name>\n<command-args>session list</command-args>',
+      30
+    )
+    fs.appendFileSync(file, JSON.stringify(skill) + '\n')
+    tracker.receive('tabSkill', { type: 'stop' })
+    setTimeout(() => {
+      fs.appendFileSync(file, JSON.stringify(said(bash, 31)) + '\n')
+      fs.appendFileSync(file, JSON.stringify(said(text('No sessions.'), 33)) + '\n')
+    }, TURN_TEXT_WAIT_SHORTENED_MS / 3)
+    await expect.poll(() => ended.length, { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 }).toBe(1)
+    expect(ended[0].turn.said.map((l) => [l.who, l.text])).toEqual([
+      ['owner', '/koloft:koloft session list']
+    ])
+    expect(ended[0].turn.reply).toBe('No sessions.')
+
+    const builtIn = human(
+      '<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>haiku</command-args>',
+      40
+    )
+    fs.appendFileSync(file, JSON.stringify(builtIn) + '\n')
+    const replies = (turns: { reply: string }[] | undefined): string[] | undefined =>
+      turns?.map((t) => t.reply)
+    await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS))
+    expect(ended).toHaveLength(1)
+    expect(replies(tracker.turnsOf(sid, 5))).toEqual(['earlier', 'No sessions.'])
+    expect(replies(await transcriptTurns(file, 5))).toEqual(['earlier', 'No sessions.'])
   })
 
   // CC§14

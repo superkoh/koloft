@@ -18,7 +18,6 @@ import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
 import { MIN_AGY_VERSION, TESTED_AGY_LINE } from './cliMinimums'
 import { startToolShim } from './toolShim'
 import { browserControlEnv } from './browserControlEnv'
-import { allowsTheBrowser, conductorGateCommand } from './conductorGate'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -27,12 +26,13 @@ import {
 } from './programStatus'
 import {
   AGY_COST_ENV,
-  AGY_GATE_ENV,
   AGY_LOG_ENV,
   AGY_OWNER_TITLE_ENV,
   AGY_START_ENV,
   agyLogLine,
   koloftHookEntry,
+  localAgyHold,
+  machineAgyHold,
   runWithSh,
   sessionStartOutput,
   writeAgyScripts,
@@ -84,6 +84,8 @@ import {
   type AgyMachinePlan,
   type RemoteAgyConfig
 } from './remote/agyTab'
+import { remoteMachineDir } from './remote/paths'
+import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile } from './hooks'
 import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { agySessionKey } from './sessionStore'
@@ -120,8 +122,8 @@ export interface AgySessionDeps extends StoredSessionDeps {
   playwrightBin: string
   browserEndpoint(tabId: string): string
   builtInStatusLine(account: string): string | undefined
-  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
-  conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
+  skipPermissions(): boolean
+  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   agent: {
     enabled(remote: boolean): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -175,6 +177,7 @@ interface AgyRun extends StoredRun {
   shown?: string
   log: LineTail
   title?: AgyTitleState
+  givenTitle?: string
   touched: Map<string, FileAcc>
   liveWrites: number
   background?: BackgroundItem
@@ -476,10 +479,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
     const conductor = opts.conductor || !!assist
     const role = opts.role ?? assist?.role
-    const allow = opts.allow ?? assist?.allow ?? []
-    const permission = opts.permission ?? 'default'
-    const tabId = this.deps.pty.nextId()
-    const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
+    const permission = this.permissionOf(opts)
+    const tabId = opts.tabId ?? this.deps.pty.nextId()
+    const endpoint = this.deps.browserEndpoint(tabId)
     const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
     const instructions = [
       ...(agent && !conductor ? [koloftPrompt('agy')] : []),
@@ -497,7 +499,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       statusLine: this.deps.builtInStatusLine(pick.account),
       apiKey: !!apiKey
     })
-    mergeAgyHooks(pick.home, gemini, koloftHookEntry(runWithSh(scripts.hook)))
+    const hold = this.deps.holdScript
+    mergeAgyHooks(
+      pick.home,
+      gemini,
+      koloftHookEntry(runWithSh(scripts.hook), hold && localAgyHold(hold))
+    )
     let bound: AgyRun | undefined
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
@@ -513,17 +520,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       fs.writeFileSync(log, '')
       if (instructions) fs.writeFileSync(startFile, sessionStartOutput(instructions))
       const token = randomBytes(24).toString('hex')
-      const gate = conductor
-        ? conductorGateCommand(
-            this.deps.conductorGate.script,
-            this.deps.conductorGate.writeAllow(tabId, allow)
-          )
-        : undefined
       const ownerTitle = ownersTitleCommand(gemini)
       const argv = [
         `--gemini_dir=${pick.home}`,
         `--csrf_token=${token}`,
-        ...agyArgs(opts, resumeId, conductor ? 'bypass' : permission)
+        ...agyArgs(opts, resumeId, permission)
       ]
       this.parsers.set(tabId, new ProgramStatusParser())
       const handle = this.deps.pty.create({
@@ -542,11 +543,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
           [AGY_LOG_ENV]: log,
           ...(instructions ? { [AGY_START_ENV]: startFile } : {}),
           [AGY_COST_ENV]: path.join(dir, 'agy-cost'),
+          ...(this.deps.hookRegDir && { [NOTICE_ENV]: noticeFile(this.deps.hookRegDir, tabId) }),
           ANT_ACCOUNT: pick.account,
-          ...(gate ? { [AGY_GATE_ENV]: gate } : {}),
           ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
           ...agyAccountEnv(apiKey),
-          ...browserControlEnv(tabId, endpoint)
+          ...browserControlEnv(tabId, endpoint),
+          ...(this.deps.holdWhileBusy?.(tabId) ? { [HOLD_TAB_ENV]: tabId } : {})
         },
         resumeSessionId: opts.resumeSessionId,
         extraEnv: resource ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) } : {}
@@ -559,7 +561,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         resource,
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
-        permission,
+        launchName: opts.name,
+        givenTitle: opts.name,
+        permission: opts.permission ?? 'default',
+        bypassing: permission === 'bypass',
         account: pick.account,
         pid,
         api: pid ? new AgyApi(pid, token) : undefined,
@@ -597,8 +602,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       machine.readAgyConfig(pick.account)
     ])
     this.assertStarting()
-    const tabId = this.deps.pty.nextId()
-    const permission = opts.permission ?? 'default'
+    const tabId = opts.tabId ?? this.deps.pty.nextId()
+    const permission = this.permissionOf(opts)
     const trusted = freshWorktree || opts.trustFolder
     const trust = [where.path, parseRemoteKey(workspace)?.path ?? where.path].filter(
       (d, i, all) => all.indexOf(d) === i
@@ -614,7 +619,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     })
     const hooks = mergedAgyHooks(
       config.ownersHooks,
-      koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE))
+      koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE), machineAgyHold(remoteMachineDir(m)))
     )
     const instructions = [
       ...(this.deps.agent.enabled(true) ? [koloftPrompt('agy')] : []),
@@ -629,7 +634,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       env: {
         ANT_ACCOUNT: pick.account,
         ...(apiKey ? { [AGY_KEY_FROM_KOLOFT]: apiKey } : {}),
-        ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {})
+        ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {}),
+        ...(this.deps.holdWhileBusy?.(tabId) ? { [HOLD_TAB_ENV]: tabId } : {})
       },
       program: agyTab({
         tabId,
@@ -674,7 +680,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       resource,
       explicitStop: false,
       resumeKey: opts.resumeSessionId,
-      permission,
+      permission: opts.permission ?? 'default',
+      bypassing: permission === 'bypass',
       account: pick.account,
       remote: { host: where.host, tmuxName: plan.tmuxName },
       log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere),
@@ -764,7 +771,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (state.conversationId && run.info?.nativeSessionId !== state.conversationId)
       this.bindTo(run, state.conversationId)
     if (!run.info) return
-    if (state.title && state.title !== before?.title) this.retitle(run.info, state.title)
+    if (state.title && state.title !== before?.title) {
+      run.givenTitle = undefined
+      this.retitle(run.info, state.title)
+    }
     // AGY§19
     if (state.agentState === 'reviewing' && before?.agentState !== 'reviewing')
       void this.readPlan(run)
@@ -775,6 +785,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const key = agySessionKey(conversationId, run.remote?.host)
     const known = this.history.get(key)
     const switched = !!run.info && !!known
+    if (run.info) run.givenTitle = undefined
     run.touched.clear()
     run.liveWrites = 0
     run.background = undefined
@@ -906,12 +917,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   private turnStarted(run: AgyRun): void {
     this.watchCompaction(run)
     const id = run.info?.nativeSessionId
-    if (id && !this.history.get(agySessionKey(id, run.remote?.host))?.name)
+    if (id && !run.givenTitle && !this.history.get(agySessionKey(id, run.remote?.host))?.name)
       this.takeListedTitleSoon(run, id)
   }
 
   // AGY§8 AGY§11
   private async takeListedTitle(run: AgyRun, id: string, again = false): Promise<void> {
+    const given = run.givenTitle
     const listed = run.remote
       ? this.deps.remote
           .machine(run.remote.host)
@@ -920,8 +932,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       : listAgyConversations(this.gemini)
     const name = (await listed.catch(() => [])).find((e) => e.id === id)?.name
     if (!name && again) this.takeListedTitleSoon(run, id)
-    if (name && run.info?.nativeSessionId === id && name !== run.info.title)
-      this.retitle(run.info, name)
+    if (!name || run.info?.nativeSessionId !== id) return
+    if (!given) {
+      if (name !== run.info.title) this.retitle(run.info, name)
+      return
+    }
+    run.givenTitle = undefined
+    // AGY§16
+    if (name !== given) void run.api?.rename(id, given).catch(() => undefined)
   }
 
   // AGY§8

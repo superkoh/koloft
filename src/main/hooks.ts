@@ -2,29 +2,36 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import type { StatusLineSetting } from './statusline'
+import type { KoloftHook } from './codexLaunchConfig'
 import { shq } from '@shared/shellQuote'
-import {
-  AGY_CONDUCTOR_GATE_SCRIPT,
-  CODEX_CONDUCTOR_GATE_SCRIPT,
-  CONDUCTOR_GATE_SCRIPT,
-  MUSE_CONDUCTOR_GATE_SCRIPT,
-  codexGateShell,
-  conductorGateCommand
-} from './conductorGate'
 import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handover'
-import { FROM_A_SESSION, type ModeClass } from './crossSessionMessage'
+import { FROM_A_SESSION, FROM_KOLOFT, type ModeClass } from './crossSessionMessage'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
+import { REMOTE_HOOK_DIR } from './remote/paths'
+import { writeWholeBeforeVisible } from './jsonDrops'
+import {
+  CODEX_HOLDS_LESS_THAN_ITS_EXEC_WALL_S,
+  HOLD_HOOK_TIMEOUT_S,
+  HOLD_SCRIPT
+} from './resourceGuard'
+
+export type HoldEvent = 'hold' | 'hold-self'
 
 export interface HookPaths {
   hookScript: string
-  gateScript: string
-  codexGate: string
   codexReplyLanguage: string
-  museGateScript: string
-  agyGateScript: string
+  hold: string
   settingsDir: string
   regDir: string
 }
+
+export interface HoldScript {
+  file: string
+  regDir: string
+}
+
+export const HOLD_FILE = 'hold.sh'
+export const HOLD_TAB_ENV = 'KOLOFT_HOLD_TAB'
 
 // ADR-0031
 export const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
@@ -76,10 +83,30 @@ last_note() {
     head -c ${QUOTED_NOTE_BYTES} | whole_chars
 }`
 
+export const NOTICE_ENV = 'KOLOFT_NOTICE'
+export const NOTICE_SUFFIX = '.notice'
+export const NOTICE_THIS_TURN = '.turn'
+
+export const TAKE_NOTICE_FN = `take_notice() {
+  [ -f "$notice" ] && mv -f "$notice" "$notice.$$" 2>/dev/null || return 0
+  cat "$notice.$$"
+  rm -f "$notice.$$"
+}`
+
+// CC§21 CODEX§27
+export const KEEP_GOING_FOR_THE_NOTICE_FN = `keep_going_for_the_notice() {
+  case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 1 ;; esac
+  told="$(take_notice)"
+  [ -n "$told" ] || return 1
+  printf '{"decision":"block","reason":"%s"}\\n' "$told"
+}`
+
 // CC§17 CC§19 CODEX§27
-export const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
+export const REMIND_REPLY_LANGUAGE_FN = `${TAKE_NOTICE_FN}
+${KEEP_GOING_FOR_THE_NOTICE_FN}
+remind_reply_language() {
   quote="$(cat "$said" 2>/dev/null)"
-  context="$2"
+  context="$(take_notice)$2"
   if [ -n "$quote" ]; then
     lang="$(language_in "$quote")"
     if [ -z "$lang" ]; then
@@ -96,6 +123,12 @@ export const REMIND_REPLY_LANGUAGE_FN = `remind_reply_language() {
   [ -n "$context" ] || return 0
   printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\\n' "$1" "$context"
 }`
+
+// CC§15 CODEX§27
+const REMIND_AFTER_A_TOOL = `fields="$(grep -o -E '"(transcript_path|agent_id)"[[:space:]]*:[[:space:]]*"[^"]*"')"
+  input="$(printf '%s\\n' "$fields" | grep -F '"transcript_path"' | head -n 1)"
+  case "$fields" in *'"agent_id"'*) notice="" ;; esac
+  remind_reply_language PostToolUse`
 
 // CC§19
 export const QUOTE_PROMPT_FN = `quote_prompt() {
@@ -125,25 +158,41 @@ const codexReplyLanguageHook = (event: string): string =>
   `sh "$${CODEX_REPLY_LANGUAGE_ENV}" ${event}`
 export const CODEX_REPLY_LANGUAGE_HOOKS = [
   { event: 'UserPromptSubmit', command: codexReplyLanguageHook('prompt') },
-  { event: 'PostToolUse', command: codexReplyLanguageHook('tool') }
+  { event: 'PostToolUse', command: codexReplyLanguageHook('tool') },
+  { event: 'Stop', command: codexReplyLanguageHook('stop') }
 ]
+
+export const CODEX_HOLD_SCRIPT_ENV = 'KOLOFT_HOLD_SCRIPT'
+export const CODEX_HOLD_REG_ENV = 'KOLOFT_HOLD_REG'
+// CODEX§30
+const CODEX_HOLD_HOOK_OUTLASTS_ITS_HOLD_S = 60
+// CODEX§27 CODEX§30
+export const codexHoldHook = (event: HoldEvent): KoloftHook => ({
+  event: 'PreToolUse',
+  matcher: 'Bash',
+  timeout: CODEX_HOLD_HOOK_OUTLASTS_ITS_HOLD_S,
+  command: `bash "$${CODEX_HOLD_SCRIPT_ENV}" "$${CODEX_HOLD_REG_ENV}" "$${HOLD_TAB_ENV}" ${event} ${CODEX_HOLDS_LESS_THAN_ITS_EXEC_WALL_S}`
+})
 
 // ADR-0031 CODEX§27
 export const CODEX_REPLY_LANGUAGE_SCRIPT = `#!/usr/bin/env bash
 said="$${CODEX_SAID_ENV}"
 [ -n "$said" ] || exit 0
+notice="$${NOTICE_ENV}"
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$1" = "tool" ]; then
-  input="$(grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1)"
-  cat >/dev/null
-  remind_reply_language PostToolUse
+  ${REMIND_AFTER_A_TOOL}
   exit 0
 fi
 input="$(cat | tr -d '\\n')"
+if [ "$1" = "stop" ]; then
+  keep_going_for_the_notice
+  exit 0
+fi
 ${QUOTE_PROMPT_FN}
 case "$input" in
-  *'"prompt":"${FROM_A_SESSION}'*) ;;
+  *'"prompt":"${FROM_A_SESSION}'*|*'"prompt":"${FROM_KOLOFT}'*) ;;
   *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
 esac
 remind_reply_language UserPromptSubmit
@@ -178,12 +227,11 @@ reg="$1"; tab="$2"; event="$3"
 # CC§14
 [ "$event" = "ask" ] && { [ ! -f "$reg/$tab.answerable" ] || [ -f "$reg/$tab.typed" ]; } && event="asked"
 said="$reg/$tab.said"
+notice="$reg/$tab${NOTICE_SUFFIX}"
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$event" = "tool" ]; then
-  input="$(grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1)"
-  cat >/dev/null
-  remind_reply_language PostToolUse
+  ${REMIND_AFTER_A_TOOL}
   exit 0
 fi
 input="$(cat | tr -d '\\n')"
@@ -231,7 +279,8 @@ case "$event" in
     ;;
   compacting)
     # CC§1
-    printf '{"tabId":"%s","event":"compacting","sessionId":"%s","tmux":"%s"}\\n' "$tab" "$(session_id)" "$tm" >> "$reg/$tab.status.jsonl"
+    trigger="$(printf '%s' "$input" | sed -n 's/.*"trigger"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | tr -d '"\\\\[:cntrl:]')"
+    printf '{"tabId":"%s","event":"compacting","sessionId":"%s","trigger":"%s","tmux":"%s"}\\n' "$tab" "$(session_id)" "$trigger" "$tm" >> "$reg/$tab.status.jsonl"
     ;;
   ask)
     # CC§14
@@ -255,6 +304,7 @@ case "$event" in
     done
     ;;
   prompt|stop|notify)
+    [ "$event" = "stop" ] && keep_going_for_the_notice && exit 0
     msg="$(printf '%s' "$input" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | tr -d '"\\\\[:cntrl:]')"
     sid="$(session_id)"
     # CC§8
@@ -331,7 +381,7 @@ case "$event" in
             flag=${shq(NOT_FROM_THE_RELAY)}
           fi
           ;;
-        *'"prompt":"<cross-session-message '*|*'"prompt":"<task-notification>'*|*'"prompt":"<agent-message '*) ;;
+        *'"prompt":"<cross-session-message '*|*'"prompt":"<task-notification>'*|*'"prompt":"<agent-message '*|*'"prompt":"${FROM_KOLOFT}'*) ;;
         *)
           ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS}
           [ -f "$reg/$tab.conductor" ] && : > "$reg/$tab.typed"
@@ -364,7 +414,8 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor|said|said\.task-first|allow|typed|discord-ids)$/
+const TAB_MARKER =
+  /^(.+)\.(answerable|conductor|said|said\.task-first|typed|discord-ids|allow|notice(\.\w+)*)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -395,29 +446,12 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   const hookScript = path.join(hookDir, 'sessionstart.sh')
   fs.writeFileSync(hookScript, HOOK_SCRIPT, { mode: 0o755 })
   fs.chmodSync(hookScript, 0o755)
-  const gateScript = path.join(hookDir, 'conductor-gate.js')
-  fs.writeFileSync(gateScript, CONDUCTOR_GATE_SCRIPT)
-  const codexGateScript = path.join(hookDir, 'codex-conductor-gate.js')
-  fs.writeFileSync(codexGateScript, CODEX_CONDUCTOR_GATE_SCRIPT)
-  const codexGate = path.join(hookDir, 'codex-conductor-gate.sh')
-  fs.writeFileSync(codexGate, codexGateShell(codexGateScript))
   const codexReplyLanguage = path.join(hookDir, 'codex-reply-language.sh')
   fs.writeFileSync(codexReplyLanguage, CODEX_REPLY_LANGUAGE_SCRIPT)
-  const museGateScript = path.join(hookDir, 'muse-conductor-gate.js')
-  fs.writeFileSync(museGateScript, MUSE_CONDUCTOR_GATE_SCRIPT)
-  const agyGateScript = path.join(hookDir, 'agy-conductor-gate.js')
-  fs.writeFileSync(agyGateScript, AGY_CONDUCTOR_GATE_SCRIPT)
+  const hold = path.join(hookDir, HOLD_FILE)
+  fs.writeFileSync(hold, HOLD_SCRIPT)
 
-  return {
-    hookScript,
-    gateScript,
-    codexGate,
-    codexReplyLanguage,
-    museGateScript,
-    agyGateScript,
-    settingsDir,
-    regDir
-  }
+  return { hookScript, codexReplyLanguage, hold, settingsDir, regDir }
 }
 
 // CC§8
@@ -438,7 +472,8 @@ export function hookSettings(
   tabId: string,
   statusLine?: StatusLineSetting,
   quote: (s: string) => string = shq,
-  dialogs: 'wait-for-answer' | 'record-only' = 'wait-for-answer'
+  dialogs: 'wait-for-answer' | 'record-only' = 'wait-for-answer',
+  hold?: { script: string; event: HoldEvent }
 ): Record<string, unknown> {
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
@@ -446,6 +481,21 @@ export function hookSettings(
     skipDangerousModePermissionPrompt: true,
     env: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' },
     hooks: {
+      // CC§15
+      ...(hold && {
+        PreToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [
+              {
+                type: 'command',
+                command: `bash ${quote(hold.script)} ${quote(regDir)} ${quote(tabId)} ${hold.event}`,
+                timeout: HOLD_HOOK_TIMEOUT_S
+              }
+            ]
+          }
+        ]
+      }),
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
       SessionEnd: [{ hooks: [{ type: 'command', command: cmd('end') }] }],
       UserPromptSubmit: [{ hooks: [{ type: 'command', command: cmd('prompt') }] }],
@@ -494,16 +544,44 @@ export function removeConductorMarker(regDir: string, tabId: string): void {
   fs.rmSync(conductorMarker(regDir, tabId), { force: true })
 }
 
-function allowFile(regDir: string, tabId: string): string {
-  return path.join(regDir, `${tabId}.allow`)
-}
-
 export function discordIdsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.discord-ids`)
 }
 
 export function saidFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.said`)
+}
+
+export function noticeFile(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}${NOTICE_SUFFIX}`)
+}
+
+export function remoteNoticeFile(tabId: string): string {
+  return `${REMOTE_HOOK_DIR}/${tabId}${NOTICE_SUFFIX}`
+}
+
+export function noticeLine(text: string): string {
+  return JSON.stringify(`${text}\n\n`).slice(1, -1)
+}
+
+export type NoticeKept = 'fresh' | 'merged'
+
+export interface NoticeFile {
+  leave(fresh: string, merged?: string): Promise<NoticeKept>
+  drop(): Promise<void>
+}
+
+export function localNotice(file: string): NoticeFile {
+  return {
+    leave: async (fresh, merged) => {
+      const kept: NoticeKept = merged !== undefined && fs.existsSync(file) ? 'merged' : 'fresh'
+      writeWholeBeforeVisible(file, noticeLine(kept === 'merged' ? merged! : fresh))
+      return kept
+    },
+    drop: async () => {
+      for (const f of [file, `${file}${NOTICE_THIS_TURN}`]) fs.rmSync(f, { force: true })
+    }
+  }
 }
 
 // ADR-0031
@@ -521,12 +599,6 @@ export function quotedPrompt(regDir: string, tabId: string): string | undefined 
   }
 }
 
-export function writeAllowFile(regDir: string, tabId: string, allow: readonly string[]): string {
-  const file = allowFile(regDir, tabId)
-  fs.writeFileSync(file, JSON.stringify(allow))
-  return file
-}
-
 export function markAnswerable(regDir: string, tabId: string, on: boolean): void {
   const file = path.join(regDir, `${tabId}.answerable`)
   if (on) fs.writeFileSync(file, '')
@@ -534,11 +606,7 @@ export function markAnswerable(regDir: string, tabId: string, on: boolean): void
 }
 
 export function forgetAssistMarkers(regDir: string, tabId: string): void {
-  for (const file of [
-    allowFile(regDir, tabId),
-    discordIdsFile(regDir, tabId),
-    path.join(regDir, `${tabId}.typed`)
-  ])
+  for (const file of [discordIdsFile(regDir, tabId), path.join(regDir, `${tabId}.typed`)])
     fs.rmSync(file, { force: true })
 }
 
@@ -550,29 +618,24 @@ export function writeTabHookSettings(
   tabId: string,
   statusLine?: StatusLineSetting,
   allowKoloft = false,
-  conductor = false
+  conductor = false,
+  holdWhileBusy = false
 ): string {
   fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
-  const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
+  const settings = hookSettings(
+    paths.hookScript,
+    paths.regDir,
+    tabId,
+    statusLine,
+    shq,
+    'wait-for-answer',
+    holdWhileBusy ? { script: paths.hold, event: 'hold' } : undefined
+  )
   // CC§13
   if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
-  if (conductor) {
-    // ADR-0029 CC§15
-    ;(settings.hooks as Record<string, unknown>).PreToolUse = [
-      {
-        matcher: '*',
-        hooks: [
-          {
-            type: 'command',
-            command: conductorGateCommand(paths.gateScript, allowFile(paths.regDir, tabId))
-          }
-        ]
-      }
-    ]
-    // CC§13 ADR-0028
-    settings.crossSessionInbound = 'accept'
-  }
+  // CC§13 ADR-0028
+  if (conductor) settings.crossSessionInbound = 'accept'
   const out = path.join(paths.settingsDir, `${tabId}.json`)
   fs.writeFileSync(out, JSON.stringify(settings))
   return out

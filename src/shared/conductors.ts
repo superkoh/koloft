@@ -1,19 +1,20 @@
 import type {
-  AssistRecord,
-  ConductorBinding,
+  ButlerSession,
+  ButlerSetting,
   DiscordChannel,
   DiscordGuild,
-  DiscordSettings,
-  SessionThread
+  DiscordSettings
 } from './types'
+import { DEFAULT_BUTLER_NAME } from './types'
 import { basename } from './preview'
-import { isAbsoluteOnHost, parseRemoteKey, remoteCopyText } from './remoteKey'
-import { backendIdOf } from './sessionBackend'
+import { parseRemoteKey } from './remoteKey'
 import { isRecord } from './workbenchState'
 
 export const GLOBAL_SCOPE = 'global'
 
 const DISCORD_ID_RE = /^\d{1,30}$/
+
+const BUTLER_NAME_MAX_CHARS = 40
 
 export function isDiscordId(value: unknown): value is string {
   return typeof value === 'string' && DISCORD_ID_RE.test(value)
@@ -28,49 +29,48 @@ export function scopeName(scope: string): string {
   return basename(parseRemoteKey(scope)?.path ?? scope)
 }
 
-export function conductorName(scope: string): string {
-  return `${scopeName(scope)} Assist`
+export function butlerName(raw: unknown): string {
+  const name = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : ''
+  return name.slice(0, BUTLER_NAME_MAX_CHARS) || DEFAULT_BUTLER_NAME
+}
+
+export function butlerSetting(name: string, formerNames: string[]): ButlerSetting {
+  return { name, formerNames: [...new Set(formerNames)].filter((n) => n !== name) }
+}
+
+export function butlerNames(b: ButlerSetting): string[] {
+  return [b.name, ...b.formerNames]
+}
+
+export function renamedButler(current: ButlerSetting, typed: string): ButlerSetting {
+  return butlerSetting(butlerName(typed), [...current.formerNames, current.name])
+}
+
+export function butlerTitle(name: string): string {
+  return `${name} · Butler`
 }
 
 export function asPeerName(title: string): string {
   return title.replace(/\s+/g, '-')
 }
 
-export function peerNamesOf(scope: string): string[] {
-  return [asPeerName(conductorName(scope)), asPeerName(`${scopeName(scope)} conductor`)]
+const OLD_BUTLER_PEER_NAMES = ['Global-Assist', 'Global-conductor']
+
+export function peerNamesOf(name: string): string[] {
+  return [asPeerName(name), ...OLD_BUTLER_PEER_NAMES]
 }
 
-export function assistTaskName(scope: string, task: string): string {
-  return `${conductorName(scope)}-${task}`
+export function setUpWith(name: string): string {
+  return `Set up with ${name}`
 }
 
-export const SET_UP_WITH_ASSIST = 'Set up with Assist'
-
-export function channelLabel(binding: Pick<ConductorBinding, 'channel'>): string {
-  return `#${binding.channel.name}`
+export function channelLabel(channel: DiscordChannel): string {
+  return `#${channel.name}`
 }
 
-// PLATFORM§39
-function discordChannelName(raw: string): string {
-  return raw.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '')
-}
+export const NEW_CHANNEL_NAME = 'global'
 
-function machineName(host: string): string {
-  return host.replace(/^.*@/, '').replace(/\./g, '-')
-}
-
-export function newChannelName(scope: string): string {
-  if (scope === GLOBAL_SCOPE) return 'global'
-  const remote = parseRemoteKey(scope)
-  const folder = basename(remote?.path ?? scope)
-  return discordChannelName(remote ? `${folder}-${machineName(remote.host)}` : folder)
-}
-
-export function newChannelTopic(scope: string): string {
-  if (scope === GLOBAL_SCOPE) return 'Koloft · global Assist, all workspaces'
-  const remote = parseRemoteKey(scope)
-  return remote ? remoteCopyText(remote.host, remote.path) : scope
-}
+export const NEW_CHANNEL_TOPIC = 'Koloft · your butler, for all workspaces'
 
 const INVITE_PERMISSIONS = 326417615952
 
@@ -83,58 +83,16 @@ export function ownedGuilds(guilds: DiscordGuild[], ownerId: string | undefined)
 }
 
 export function newChannelGuild(
-  bindings: ConductorBinding[],
+  bound: DiscordChannel | undefined,
   guilds: DiscordGuild[],
   ownerId: string | undefined
 ): string | undefined {
   const owned = ownedGuilds(guilds, ownerId).map((g) => g.id)
-  const bound = bindings.map((b) => b.channel.guildId).find((id) => owned.includes(id))
-  return bound ?? owned[0]
-}
-
-export function bindingProblem(
-  bindings: ConductorBinding[],
-  wanted: { id?: string; scope: string; channelId?: string }
-): string | undefined {
-  const others = bindings.filter((b) => b.id !== wanted.id)
-  if (others.some((b) => b.scope === wanted.scope))
-    return `${scopeName(wanted.scope)} already has an Assist.`
-  const taken = wanted.channelId && others.find((b) => b.channel.channelId === wanted.channelId)
-  if (taken) return `That channel is already bound to the ${conductorName(taken.scope)}.`
-  return undefined
-}
-
-export function isAssistScope(scope: string, isPinned: (scope: string) => boolean): boolean {
-  return scope === GLOBAL_SCOPE || isPinned(scope)
-}
-
-export function keepPinnedScopes<T extends { scope: string }>(items: T[], pinned: string[]): T[] {
-  return items.filter((b) => b.scope === GLOBAL_SCOPE || pinned.includes(b.scope))
+  return bound && owned.includes(bound.guildId) ? bound.guildId : owned[0]
 }
 
 function strings(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : []
-}
-
-function cleanThreads(raw: unknown): SessionThread[] {
-  if (!Array.isArray(raw)) return []
-  return raw.flatMap((t: unknown) => {
-    if (!isRecord(t) || !isDiscordId(t.threadId)) return []
-    const keys = strings(t.keys)
-    if (!keys.length) return []
-    return [
-      {
-        threadId: t.threadId,
-        keys,
-        ...(typeof t.name === 'string' ? { name: t.name } : {}),
-        ...(isDiscordId(t.lastMessageId) ? { lastMessageId: t.lastMessageId } : {})
-      }
-    ]
-  })
-}
-
-function isScope(scope: unknown): scope is string {
-  return typeof scope === 'string' && (scope === GLOBAL_SCOPE || isAbsoluteOnHost(scope))
 }
 
 function cleanChannel(raw: unknown): DiscordChannel | null {
@@ -148,73 +106,88 @@ function cleanChannel(raw: unknown): DiscordChannel | null {
   return { guildId: raw.guildId, channelId: raw.channelId, name: raw.name }
 }
 
-function cleanBinding(raw: unknown): ConductorBinding | null {
-  if (!isRecord(raw)) return null
-  const { id, scope, lastMessageId } = raw
-  const backend = backendIdOf(raw.backend)
-  const threads = cleanThreads(raw.threads)
-  const channel = cleanChannel(raw.channel)
-  if (typeof id !== 'string' || !id || !backend) return null
-  if (!isScope(scope)) return null
-  if (!channel) return null
-  return {
-    id,
-    scope,
-    backend,
-    channel,
-    touched: strings(raw.touched),
-    ...(threads.length ? { threads } : {}),
-    ...(isDiscordId(lastMessageId) ? { lastMessageId } : {})
-  }
+interface LegacyBinding {
+  scope: unknown
+  channel: DiscordChannel
+  lastMessageId?: string
+  sessionIds: string[]
+  lastSessionKey?: string
 }
 
-function cleanRecord(raw: unknown): AssistRecord | null {
-  if (!isRecord(raw) || !isScope(raw.scope)) return null
+function legacyBindings(rawDiscord: unknown): LegacyBinding[] {
+  const list = isRecord(rawDiscord) && Array.isArray(rawDiscord.bindings) ? rawDiscord.bindings : []
+  return list.flatMap((raw: unknown) => {
+    const channel = isRecord(raw) && cleanChannel(raw.channel)
+    if (!isRecord(raw) || !channel) return []
+    return [
+      {
+        scope: raw.scope,
+        channel,
+        ...(isDiscordId(raw.lastMessageId) ? { lastMessageId: raw.lastMessageId } : {}),
+        ...cleanSession(raw)
+      }
+    ]
+  })
+}
+
+function cleanSession(raw: Record<string, unknown>): ButlerSession {
   const { lastSessionKey } = raw
   return {
-    scope: raw.scope,
     sessionIds: strings(raw.sessionIds),
     ...(typeof lastSessionKey === 'string' ? { lastSessionKey } : {})
   }
 }
 
-export function sanitizeAssistSessions(raw: unknown, rawDiscord: unknown): AssistRecord[] {
-  const records: AssistRecord[] = []
-  for (const item of Array.isArray(raw) ? raw : []) {
-    const r = cleanRecord(item)
-    if (r && !records.some((x) => x.scope === r.scope)) records.push(r)
+function mergedSessions(sessions: ButlerSession[]): ButlerSession {
+  const lastSessionKey = sessions.find((s) => s.lastSessionKey)?.lastSessionKey
+  return {
+    sessionIds: [...new Set(sessions.flatMap((s) => s.sessionIds))],
+    ...(lastSessionKey ? { lastSessionKey } : {})
   }
-  const bindings =
-    isRecord(rawDiscord) && Array.isArray(rawDiscord.bindings) ? rawDiscord.bindings : []
-  for (const b of bindings) {
-    const lifted = cleanRecord(b)
-    if (!lifted || (!lifted.sessionIds.length && !lifted.lastSessionKey)) continue
-    const at = records.findIndex((x) => x.scope === lifted.scope)
-    if (at < 0) {
-      records.push(lifted)
-      continue
+}
+
+export function sanitizeButlerSession(
+  raw: unknown,
+  legacyAssistSessions: unknown,
+  rawDiscord: unknown
+): ButlerSession {
+  const legacy = Array.isArray(legacyAssistSessions) ? legacyAssistSessions : []
+  return mergedSessions([
+    ...(isRecord(raw) ? [cleanSession(raw)] : []),
+    ...legacy.filter((r) => isRecord(r) && r.scope === GLOBAL_SCOPE).map(cleanSession),
+    ...legacyBindings(rawDiscord).filter((b) => b.scope === GLOBAL_SCOPE)
+  ])
+}
+
+function lastUsed(bindings: LegacyBinding[]): LegacyBinding | undefined {
+  return bindings.reduce<LegacyBinding | undefined>((best, b) => {
+    if (!best) return b
+    if (!b.lastMessageId) return best
+    return !best.lastMessageId || newerSnowflake(b.lastMessageId, best.lastMessageId) ? b : best
+  }, undefined)
+}
+
+function boundChannel(
+  doc: Record<string, unknown>
+): Pick<DiscordSettings, 'channel' | 'lastMessageId'> {
+  const channel = cleanChannel(doc.channel)
+  if (channel)
+    return {
+      channel,
+      ...(isDiscordId(doc.lastMessageId) ? { lastMessageId: doc.lastMessageId } : {})
     }
-    const kept = records[at]
-    records[at] = {
-      ...kept,
-      sessionIds: [...new Set([...kept.sessionIds, ...lifted.sessionIds])],
-      ...(kept.lastSessionKey || !lifted.lastSessionKey
-        ? {}
-        : { lastSessionKey: lifted.lastSessionKey })
-    }
-  }
-  return records
+  const bindings = legacyBindings(doc)
+  const kept = bindings.find((b) => b.scope === GLOBAL_SCOPE) ?? lastUsed(bindings)
+  return kept
+    ? {
+        channel: kept.channel,
+        ...(kept.lastMessageId ? { lastMessageId: kept.lastMessageId } : {})
+      }
+    : {}
 }
 
 export function sanitizeDiscord(raw: unknown): DiscordSettings {
   const doc = isRecord(raw) ? raw : {}
-  const bindings: ConductorBinding[] = []
-  for (const item of Array.isArray(doc.bindings) ? doc.bindings : []) {
-    const b = cleanBinding(item)
-    if (!b || bindings.some((x) => x.id === b.id)) continue
-    if (bindingProblem(bindings, { scope: b.scope, channelId: b.channel.channelId })) continue
-    bindings.push(b)
-  }
   const category = cleanChannel(doc.category)
   return {
     ...(category ? { category } : {}),
@@ -224,6 +197,7 @@ export function sanitizeDiscord(raw: unknown): DiscordSettings {
           ...(typeof doc.userName === 'string' ? { userName: doc.userName } : {})
         }
       : {}),
-    bindings
+    ...boundChannel(doc),
+    ...(doc.oldThreadsArchived === true ? { oldThreadsArchived: true } : {})
   }
 }

@@ -73,7 +73,7 @@ async function touchWorkspace(page: Page, wsName: string): Promise<void> {
   await startSessionIn(page, wsName)
   const rows = wsRows(page, wsName)
   await expect(rows).toHaveCount(1, { timeout: 60_000 })
-  await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+  await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
   await rows.first().click()
   await expect(rows.first()).toHaveClass(/\bactive\b/, { timeout: 15_000 })
 }
@@ -90,7 +90,7 @@ test.describe('C10 workspace picker: the ⌘N / ⇧⌘N list dialog, its presele
     const { app, page } = await launchSettled(env)
     try {
       await touchWorkspace(page, 'ws-bravo')
-      const before = await page.locator('.ws-tab').count()
+      const before = await page.locator('.ws .ws-tab').count()
 
       const dlg = await openPicker(app, page)
 
@@ -102,7 +102,7 @@ test.describe('C10 workspace picker: the ⌘N / ⇧⌘N list dialog, its presele
       await expect(rows.nth(1)).toContainText('ws-bravo')
       await expect(selectedRow(dlg)).toHaveCount(1)
       await expect(selectedRow(dlg)).toContainText('ws-bravo')
-      expect(await page.locator('.ws-tab').count()).toBe(before)
+      expect(await page.locator('.ws .ws-tab').count()).toBe(before)
     } finally {
       await app.close().catch(() => {})
     }
@@ -128,11 +128,13 @@ test.describe('C10 workspace picker: the ⌘N / ⇧⌘N list dialog, its presele
       await page.keyboard.press('Enter')
       await expect(dialogTitled(page, PICKER)).toHaveCount(0)
 
-      const fresh = page.locator('.ws-tab.st-pending')
+      const fresh = page.locator('.ws .ws-tab.st-pending')
       await expect(fresh).toHaveCount(1, { timeout: 30_000 })
       await expect(fresh.locator('.ws-tab-sub')).toHaveText('main')
       await expect(wsRows(page, 'ws-bravo')).toHaveCount(beforeB + 1, { timeout: 30_000 })
-      await expect(wsRows(page, 'ws-bravo').and(page.locator('.ws-tab.st-pending'))).toHaveCount(1)
+      await expect(
+        wsRows(page, 'ws-bravo').and(page.locator('.ws .ws-tab.st-pending'))
+      ).toHaveCount(1)
       await expect(fresh).toHaveClass(/\bactive\b/)
     } finally {
       await app.close().catch(() => {})
@@ -190,7 +192,7 @@ test.describe('C10 workspace picker: the ⌘N / ⇧⌘N list dialog, its presele
       await page.keyboard.press('Escape')
       await expect(dialogTitled(page, PICKER)).toHaveCount(0)
       await page.waitForTimeout(GRACE_FOR_A_WRONG_DIALOG_OR_LAUNCH_MS)
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }
@@ -221,7 +223,7 @@ test.describe('C10 workspace picker: the ⌘N / ⇧⌘N list dialog, its presele
       await page.keyboard.press('3')
       await page.waitForTimeout(GRACE_FOR_A_WRONG_DIALOG_OR_LAUNCH_MS)
       await expect(dlg).toBeVisible()
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }
@@ -236,7 +238,7 @@ test.describe('C10 workspace picker: the ⌘N / ⇧⌘N list dialog, its presele
     const { app, page } = await launchSettled(env)
     try {
       await touchWorkspace(page, 'ws-bravo')
-      const before = await page.locator('.ws-tab').count()
+      const before = await page.locator('.ws .ws-tab').count()
       const beforeB = await wsRows(page, 'ws-bravo').count()
 
       for (let i = 1; i <= 2; i++) {
@@ -246,7 +248,7 @@ test.describe('C10 workspace picker: the ⌘N / ⇧⌘N list dialog, its presele
         await expect(wsRows(page, 'ws-bravo')).toHaveCount(beforeB + i, { timeout: 60_000 })
       }
 
-      await expect(page.locator('.ws-tab')).toHaveCount(before + 2)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(before + 2)
       await expect(rowsWithSub(page, 'ws-bravo', 'main')).toHaveCount(beforeB + 2)
       await expect(wsRows(page, 'ws-alpha')).toHaveCount(0)
     } finally {
@@ -440,7 +442,7 @@ test.describe('C10 workspace picker: the ⌘N / ⇧⌘N list dialog, its presele
         timeout: 15_000
       })
       await expect(anyDialog(page)).toHaveCount(0)
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }

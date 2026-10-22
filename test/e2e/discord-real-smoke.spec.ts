@@ -13,7 +13,7 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
-import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
+import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { lastCodexTurnPermissions } from './helpers/codexRollout'
@@ -50,6 +50,7 @@ test.describe.configure({ retries: NO_RETRY_SINCE_EVERY_RUN_SPENDS_REAL_MONEY })
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const A_REAL_MODEL_TURN_MS = 180_000
+const PAST_THE_SLASH_RESULTS_WAIT_FOR_THE_TURN_END_MS = 15_000
 const TWO_LINE_REPLY = 'PAPAYA-42\nGUAVA-17'
 const ASK_FOR_TWO_LINES = `Reply with exactly these two lines and nothing else, no formatting:\n${TWO_LINE_REPLY}`
 // CC§7
@@ -67,16 +68,7 @@ function seedConductor(env: E2EEnv, backend: 'claude' | 'codex'): void {
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,
-      bindings: [
-        {
-          id: 'b1',
-          scope: env.workspaces.a,
-          backend,
-          channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
-          sessionIds: [],
-          touched: []
-        }
-      ]
+      channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' }
     }
   })
 }
@@ -128,10 +120,7 @@ function addClaudeAccountToKeychain(env: E2EEnv): void {
 }
 
 function said(fake: FakeDiscord): string[] {
-  const threads = fake.threads.filter((t) => t.parentId === CHANNEL).map((t) => t.id)
-  return fake.posted
-    .filter((p) => p.channelId === CHANNEL || threads.includes(p.channelId))
-    .map((p) => p.content)
+  return fake.posted.filter((p) => p.channelId === CHANNEL).map((p) => p.content)
 }
 
 function conductorSaid(fake: FakeDiscord): string[] {
@@ -140,22 +129,6 @@ function conductorSaid(fake: FakeDiscord): string[] {
 
 function ran(fake: FakeDiscord): string[] {
   return said(fake).filter((p) => p.startsWith('⌨️ '))
-}
-
-async function statusOf(page: Page, tabId: string): Promise<string | undefined> {
-  return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
-    ?.status
-}
-
-const BACKGROUND_SUBAGENT_SLEEPS_S = 300
-const BASH_TIMEOUT_MS_OUTLASTING_THE_SLEEP = (BACKGROUND_SUBAGENT_SLEEPS_S + 60) * 1000
-// CC§8
-const BACKGROUND_SUBAGENT_PROMPT = `Use the Agent tool with run_in_background set to true to start one subagent whose task is: run the shell command 'perl -e "sleep ${BACKGROUND_SUBAGENT_SLEEPS_S}"' with the Bash tool in the foreground (never with run_in_background, and with its timeout set to ${BASH_TIMEOUT_MS_OUTLASTING_THE_SLEEP}) and wait for it to finish, then reply DONE. Do not wait for the subagent or check on it. Then reply with only BG-STARTED and end your turn.`
-
-function notices(fake: FakeDiscord): string[] {
-  return said(fake)
-    .map((p) => p.split('\n')[0])
-    .filter((l) => /^(🔔|❓|⏹|▶)/.test(l))
 }
 
 function repliesAfter(fake: FakeDiscord, count: number): string[] {
@@ -267,32 +240,9 @@ function answerableMarker(env: E2EEnv, tabId: string): string {
   return path.join(hookDir(env), `${tabId}.answerable`)
 }
 
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function dialogHookWaiting(env: E2EEnv, tabId: string): Promise<number> {
-  await expect
-    .poll(() => hookQuestionFiles(env, tabId), { timeout: A_REAL_MODEL_TURN_MS })
-    .toEqual([expect.stringMatching(/\.ask\.json$/)])
-  return Number(hookQuestionFiles(env, tabId)[0].split('.')[1])
-}
-
-async function dialogHookLetGo(env: E2EEnv, tabId: string, hookPid: number): Promise<void> {
-  await expect.poll(() => hookQuestionFiles(env, tabId), { timeout: 30_000 }).toEqual([])
-  await expect.poll(() => pidAlive(hookPid)).toBe(false)
-}
-
 async function liveClaudeTab(page: Page): Promise<{ tabId: string; sessionId: string }> {
   await startSessionIn(page, 'ws-a')
-  return (await page.evaluate(() => window.api.sessions.list())).find(
-    (s) => s.alive && !s.conductor
-  )!
+  return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && !s.butler)!
 }
 
 const CLAUDE_INPUT_READY = /^❯/m
@@ -329,26 +279,23 @@ async function closesTheEndedSessionItIsAskedTo(
   await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: 30_000 })
   fake.say(
     OWNER,
-    `The session "${ENDED_TITLE}" in this workspace has ended and I do not need it any more. Take it off the Koloft list for good.`
+    `The session "${ENDED_TITLE}" in the ws-a workspace has ended and I do not need it any more. Take it off the Koloft list for good.`
   )
   await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: A_REAL_MODEL_TURN_MS })
   expect(transcriptRecords(env, endedId)).toHaveLength(seeded)
 }
 
-async function triesToWriteTheWorkspaceItselfAndIsRefused(
-  env: E2EEnv,
-  fake: FakeDiscord
-): Promise<void> {
-  const target = path.join(env.workspaces.a, 'conductor-wrote.txt')
+async function writesInTheWorkspaceItself(env: E2EEnv, fake: FakeDiscord): Promise<void> {
+  const target = path.join(env.workspaces.a, 'butler-wrote.txt')
   fake.say(
     OWNER,
     `This checks your own permissions. Do not start or message any session. Try once, yourself, to create the file ${target} containing the word hi, then reply with exactly WRITE-DONE if the file was written or WRITE-REFUSED if it was refused.`
   )
   await expect
-    .poll(() => said(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
+    .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
     .toMatch(/WRITE-(DONE|REFUSED)/)
-  expect(fs.existsSync(target)).toBe(false)
-  expect(said(fake).join('\n')).toContain('WRITE-REFUSED')
+  expect(conductorSaid(fake).join('\n')).toContain('WRITE-DONE')
+  expect(fs.readFileSync(target, 'utf8').trim()).toBe('hi')
 }
 
 const PR_TITLE_ONLY_GH_KNOWS = 'PLUM-58 tidy the docs'
@@ -364,12 +311,12 @@ function fakeGhSaysMerged(env: E2EEnv): string {
 async function checksGithubItself(fake: FakeDiscord, log: string): Promise<void> {
   fake.say(
     OWNER,
-    'Is pull request 389 merged? Do not start or message any session; check it yourself on GitHub, then reply with its state and its exact title.'
+    'Is pull request 389 of acme/app merged? Do not start or message any session; check it yourself on GitHub, then reply with its state and its exact title.'
   )
   await expect
     .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
     .toContain('PLUM-58')
-  expect(fs.readFileSync(log, 'utf8')).toMatch(/^pr (view|list|checks) .*--repo acme\/app$/m)
+  expect(fs.readFileSync(log, 'utf8')).toMatch(/^pr (view|list|checks) .*(--repo|-R)[= ]acme\/app/m)
 }
 
 function fakeGhOpensIssue(env: E2EEnv): string {
@@ -379,7 +326,7 @@ function fakeGhOpensIssue(env: E2EEnv): string {
 async function opensAnIssueItself(fake: FakeDiscord, log: string): Promise<void> {
   fake.say(
     OWNER,
-    '请在这个仓库开一个 GitHub issue：搜索框输入第一个字以后就失去焦点。不要开会话，也不要叫别的会话做，你自己开，然后把 issue 地址回给我。'
+    '请在 acme/app 仓库开一个 GitHub issue：搜索框输入第一个字以后就失去焦点。不要开会话，也不要叫别的会话做，你自己开，然后把 issue 地址回给我。'
   )
   await expect
     .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
@@ -387,8 +334,8 @@ async function opensAnIssueItself(fake: FakeDiscord, log: string): Promise<void>
   const calls = fs.readFileSync(log, 'utf8')
   const created = /^issue create [\s\S]*?(?=^(?:issue|pr|run) |(?![\s\S]))/m.exec(calls)
   expect(created).not.toBeNull()
-  expect(created![0]).toMatch(/--title=/)
-  expect(created![0]).toMatch(/--repo[= ]acme\/app\b/)
+  expect(created![0]).toMatch(/(--title|-t)[= ]/)
+  expect(created![0]).toMatch(/(--repo|-R)[= ]acme\/app\b/)
   expect(created![0]).not.toMatch(/[　-鿿＀-￯]/)
   expect(calls.slice(0, created!.index)).toMatch(/^issue list /m)
 }
@@ -402,20 +349,21 @@ async function answersWholeInTheChannel(fake: FakeDiscord): Promise<void> {
   expect(fake.typing).toContain(CHANNEL)
 }
 
-async function startedSessionsCardFollowsIt(fake: FakeDiscord, backend: string): Promise<void> {
-  const started = (): FakePost | undefined =>
-    fake.posted.find((p) => p.channelId === CHANNEL && p.content.startsWith('▶ '))
-  await expect.poll(started, { timeout: A_REAL_MODEL_TURN_MS }).toBeTruthy()
-  const opener = started()!
-  const states = (): string[] =>
-    fake.edits
-      .filter((e) => e.channelId === CHANNEL && e.id === opener.id)
-      .map((e) => e.content.split(' · ')[1]?.replace(/ <t:\d+:R>[\s\S]*$/, ''))
+async function startedSession(page: Page): Promise<{ tabId: string; sessionId: string }> {
+  await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: A_REAL_MODEL_TURN_MS })
+  let found: { tabId: string; sessionId: string } | undefined
   await expect
-    .poll(states, { timeout: A_REAL_MODEL_TURN_MS })
-    .toEqual(expect.arrayContaining(['working, started', 'turn done']))
-  expect(openerNow(fake, CHANNEL, opener.id)).toMatch(new RegExp(`\\n-# ws-a · ${backend}$`))
-  expect(fake.typing).toContain(opener.id)
+    .poll(
+      async () => {
+        found = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.alive && !s.butler && s.sessionId
+        )
+        return !!found
+      },
+      { timeout: A_REAL_MODEL_TURN_MS }
+    )
+    .toBe(true)
+  return found!
 }
 
 test.describe('Discord conductors on the REAL claude and codex, with a fake Discord: opt-in cases that spend real money', () => {
@@ -430,25 +378,20 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
-  // ADR-0029 CC§15
-  test('a real Claude conductor, permission checks skipped, that tries to write a file in its workspace itself is stopped by the gate, and the file is never written', async ({
+  // ADR-0029
+  test('a real Claude conductor, permission checks skipped, writes a file in a workspace itself when told to, as any session may', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
     test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
     const fake = await realClaudeConductor(env)
-    await withConductor(env, fake, async (_app, page) => {
-      await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
-      const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && s.conductor
-      )!
-      // CC§15
-      expect(toolResults(env, conductor.sessionId).join('\n')).toMatch(/PreToolUse:\w+ hook error/)
+    await withConductor(env, fake, async () => {
+      await writesInTheWorkspaceItself(env, fake)
     })
   })
 
   // ADR-0029
-  test('a real Claude conductor told not to ask a session checks a pull request itself with koloft gh, and Koloft adds its workspace’s repository', async ({
+  test('a real Claude conductor told not to ask a session checks a pull request itself with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -461,7 +404,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // ADR-0029
-  test('a real Claude conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, and Koloft adds its workspace’s repository', async ({
+  test('a real Claude conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -473,8 +416,8 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
-  // ADR-0029 CC§15
-  test('a real Claude conductor asked to remember something writes it into its own memory folder, past the gate', async ({
+  // ADR-0029
+  test('a real Claude conductor asked to remember something writes it into its own memory folder', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -489,7 +432,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
         .toContain('SAVED')
       const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && s.conductor
+        (s) => s.alive && s.butler
       )!
       const projects = path.join(env.home, '.claude', 'projects')
       const memory = fs
@@ -501,29 +444,26 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         .map((f) => fs.readFileSync(path.join(memory, 'memory', f), 'utf8'))
         .join('\n')
       expect(saved).toContain('LYCHEE-31')
-      expect(toolResults(env, conductor.sessionId).join('\n')).not.toMatch(/hook error/)
     })
   })
 
-  test('a real Claude conductor asked in plain words starts a Claude session in its workspace; the channel hears it started and finished, and the conductor reports its answer', async ({
+  test('a real Claude conductor asked in plain words starts a Claude session in its workspace, which answers, and the conductor reports its answer', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
     test.setTimeout(4 * A_REAL_MODEL_TURN_MS + 120_000)
     const fake = await realClaudeConductor(env)
-    await withConductor(env, fake, async () => {
+    await withConductor(env, fake, async (_app, page) => {
       fake.say(
         OWNER,
-        'Start one new Claude session in this workspace whose task is: "Reply with the word KIWI and nothing else." Then tell me you started it.'
+        'Start one new Claude session in the ws-a workspace whose task is: "Reply with the word KIWI and nothing else." Then tell me you started it.'
       )
+      const started = await startedSession(page)
       await expect
-        .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/^▶ Started \*\*.+\*\*$/))
-      expect(said(fake).join('\n')).toMatch(/\n-# ws-a · Claude(\n|$)/)
-      await expect
-        .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/^🔔 .+ finished\.$/))
-      await startedSessionsCardFollowsIt(fake, 'Claude')
+        .poll(() => saidBy(env, started.sessionId, 'assistant').join('\n'), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toContain('KIWI')
 
       const before = conductorSaid(fake).length
       fake.say(
@@ -537,7 +477,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // CC§14
-  test('a real Claude conductor asked in plain words starts a Claude session whose first turn asks a question: the question reaches the channel with its options while the hook waits, the owner’s "pick green" to the conductor answers it with koloft session answer, and the session takes Green', async ({
+  test('a real Claude conductor asked in plain words starts a Claude session whose first turn asks a question: the question draws in the session’s terminal and never reaches the channel, the owner’s "pick Green" to the conductor answers it with koloft session answer or keys, and the session takes Green', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -546,29 +486,32 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async (_app, page) => {
       fake.say(
         OWNER,
-        'Start one new Claude session in this workspace with this first message, word for word: "Right away, before anything else, use the AskUserQuestion tool once to ask me which colour I prefer, with exactly three options: Red, Green and Blue. Then reply with only the colour I picked." Then tell me you started it.'
+        'Start one new Claude session in the ws-a workspace with this first message, word for word: "Right away, before anything else, use the AskUserQuestion tool once to ask me which colour I prefer, with exactly three options: Red, Green and Blue. Then reply with only the colour I picked." Then tell me you started it.'
       )
+      const target = await startedSession(page)
+      await wsRows(page, 'ws-a').first().click()
       await expect
-        .poll(() => notices(fake), { timeout: 2 * A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/^❓ .+ is waiting for you\.$/))
-      expect(said(fake).join('\n')).toMatch(/\n1\. Red\b.*\n2\. Green\b.*\n3\. Blue\b/)
-      const sessions = await page.evaluate(() => window.api.sessions.list())
-      const target = sessions.find((s) => s.alive && !s.conductor)!
-      const conductor = sessions.find((s) => s.alive && s.conductor)!
+        .poll(() => terminalText(page, target.tabId), { timeout: 2 * A_REAL_MODEL_TURN_MS })
+        .toMatch(/1\. Red[\s\S]*2\. Green[\s\S]*3\. Blue/)
+      const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.alive && s.butler
+      )!
       expect(saidBy(env, target.sessionId, 'user').filter(Boolean)).toHaveLength(1)
-      expect(hookQuestionFiles(env, target.tabId)).toEqual([expect.stringMatching(/\.ask\.json$/)])
+      expect(hookQuestionFiles(env, target.tabId)).toEqual([])
+      expect(fake.posted.filter((p) => p.card)).toEqual([])
 
-      fake.say(OWNER, 'pick green')
+      fake.say(
+        OWNER,
+        'The session you just started is asking me which colour I prefer. Pick Green for me.'
+      )
       await expect
         .poll(() => toolResults(env, target.sessionId).join('\n'), {
           timeout: A_REAL_MODEL_TURN_MS
         })
         .toMatch(/green/i)
-      expect(commandsRun(env, conductor.sessionId).join('\n')).toContain('koloft session answer')
-      const name = notices(fake)
-        .map((l) => /^▶ Started \*\*(.+)\*\*$/.exec(l)?.[1])
-        .find(Boolean)
-      expect(toolResults(env, conductor.sessionId).join('\n')).toContain(`Answered ${name}.`)
+      expect(commandsRun(env, conductor.sessionId).join('\n')).toMatch(
+        /koloft session (answer|keys)/
+      )
       await expect
         .poll(() => saidBy(env, target.sessionId, 'assistant').filter(Boolean).at(-1), {
           timeout: A_REAL_MODEL_TURN_MS
@@ -588,13 +531,13 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async (_app, page) => {
       await closesTheEndedSessionItIsAskedTo(env, fake, page, endedId)
       const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && s.conductor
+        (s) => s.alive && s.butler
       )!
       expect(commandsRun(env, conductor.sessionId).join('\n')).toContain('koloft session close')
     })
   })
 
-  test('a real Claude conductor sends a line to a real Claude session already open in its workspace; the session takes it as the owner’s words and answers, and the channel hears it finished', async ({
+  test('a real Claude conductor sends a line to a real Claude session already open in its workspace; the session takes it as the owner’s words and answers', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -603,7 +546,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async (_app, page) => {
       await startSessionIn(page, 'ws-a')
       const target = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && !s.conductor
+        (s) => s.alive && !s.butler
       )!
 
       fake.say(
@@ -620,9 +563,6 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
           timeout: A_REAL_MODEL_TURN_MS
         })
         .toContain('MANGO')
-      await expect
-        .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/^🔔 .+ finished\.$/))
     })
   })
 
@@ -672,137 +612,31 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     }
   })
 
-  // CC§14
-  test('a real Claude session in a conductor’s care, its command dialog in its very first turn relayed to the channel with the hook waiting, is answered "1" at the Mac: Koloft lets the hook go once the command ran, and the session goes on', async ({
+  test('slash commands on the real Claude: the owner’s "/context" runs in the conductor and its report reaches the channel; /compact from Discord compacts the conductor and posts Compacted; the owner’s "/koloft session list" runs as the koloft skill and the conductor’s own answer reaches the channel, with no ⌨️ card for it', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
-    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
-    const fake = await realClaudeConductor(env)
-    seedSettings(env, { skipPermissions: false })
-    fs.writeFileSync(
-      path.join(env.home, '.claude', 'settings.json'),
-      JSON.stringify({ permissions: { defaultMode: 'default' } })
-    )
-    await withConductor(env, fake, async (_app, page) => {
-      const target = await liveClaudeTab(page)
-      expect(saidBy(env, target.sessionId, 'user')).toEqual([])
-      await expect.poll(() => fs.existsSync(answerableMarker(env, target.tabId))).toBe(true)
-      await typePrompt(
-        page,
-        target.tabId,
-        'Run exactly this shell command with the Bash tool: touch mac-yes.txt — then reply with only the word DONE.'
-      )
-      const hookPid = await dialogHookWaiting(env, target.tabId)
-      await expect
-        .poll(() => notices(fake), { timeout: 30_000 })
-        .toContainEqual(expect.stringMatching(/^❓ .+ is waiting for you\.$/))
-      expect(said(fake).join('\n')).toMatch(/\nBash asks to run:\n.*touch mac-yes\.txt/)
-      await expect
-        .poll(() => terminalText(page, target.tabId), { timeout: 30_000 })
-        .toMatch(/1\. Yes/)
-
-      await page.evaluate((id) => window.api.terminal.write(id, '1'), target.tabId)
-      await expect
-        .poll(() => fs.existsSync(path.join(env.workspaces.a, 'mac-yes.txt')), { timeout: 30_000 })
-        .toBe(true)
-      await dialogHookLetGo(env, target.tabId, hookPid)
-      await expect
-        .poll(() => saidBy(env, target.sessionId, 'assistant').join('\n'), {
-          timeout: A_REAL_MODEL_TURN_MS
-        })
-        .toContain('DONE')
-    })
-  })
-
-  // CC§14
-  test('a real Claude session in a conductor’s care, its question relayed to the channel with the hook waiting, is answered "2" at the Mac: Koloft lets the hook go, and a later /exit takes the row off the list', async ({
-    env
-  }) => {
-    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
-    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
-    const fake = await realClaudeConductor(env)
-    await withConductor(env, fake, async (_app, page) => {
-      const target = await liveClaudeTab(page)
-      await expect.poll(() => fs.existsSync(answerableMarker(env, target.tabId))).toBe(true)
-      await typePrompt(
-        page,
-        target.tabId,
-        'Use the AskUserQuestion tool once to ask me which colour I prefer, with exactly two options, Red and Green. Then reply with only the colour I picked.'
-      )
-      const hookPid = await dialogHookWaiting(env, target.tabId)
-      await expect
-        .poll(() => terminalText(page, target.tabId), { timeout: 30_000 })
-        .toMatch(/2\. Green[\s\S]*Type something/)
-
-      await page.evaluate((id) => window.api.terminal.write(id, '2'), target.tabId)
-      await expect
-        .poll(() => toolResults(env, target.sessionId).join('\n'), { timeout: 30_000 })
-        .toMatch(/Green/)
-      await dialogHookLetGo(env, target.tabId, hookPid)
-      await expect
-        .poll(() => saidBy(env, target.sessionId, 'assistant').filter(Boolean).at(-1), {
-          timeout: A_REAL_MODEL_TURN_MS
-        })
-        .toMatch(/Green/)
-
-      const rowsBefore = await wsRows(page, 'ws-a').count()
-      await expect
-        .poll(() => terminalText(page, target.tabId), { timeout: 30_000 })
-        .toMatch(CLAUDE_INPUT_READY)
-      await typeLine(page, target.tabId, '/exit')
-      await expect(wsRows(page, 'ws-a')).toHaveCount(rowsBefore - 1, { timeout: 30_000 })
-    })
-  })
-
-  test('slash commands on the real Claude: the owner’s "/context" runs in the conductor and its report reaches the channel; /compact picked in Discord compacts a session and posts Compacted', async ({
-    env
-  }) => {
-    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
-    test.setTimeout(3 * A_REAL_MODEL_TURN_MS + 120_000)
+    test.setTimeout(4 * A_REAL_MODEL_TURN_MS + 120_000)
     const fake = await realClaudeConductor(env)
     await withConductor(env, fake, async (_app, page) => {
       await answersWholeInTheChannel(fake)
       fake.say(OWNER, '/context')
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/Assist\*\* ran \/context:\n## Context Usage/))
+        .toContainEqual(expect.stringMatching(/\*\*Alfred\*\* ran \/context:\n## Context Usage/))
 
-      const child = await liveClaudeTab(page)
-      await typePrompt(page, child.tabId, 'Say the word MANGO and nothing else.')
-      await expect
-        .poll(() => saidBy(env, child.sessionId, 'assistant').join('\n'), {
-          timeout: A_REAL_MODEL_TURN_MS
-        })
-        .toContain('MANGO')
-      fake.interact(OWNER, 'compact', { session: child.sessionId })
+      fake.interact(OWNER, 'compact', {})
       await expect
         .poll(() => ran(fake).at(-1), { timeout: A_REAL_MODEL_TURN_MS })
-        .toMatch(/ran \/compact:\nCompacted/)
-    })
-  })
+        .toMatch(/\*\*Alfred\*\* ran \/compact:\nCompacted/)
 
-  // CC§8
-  test('a real Claude session whose turn is over but whose background subagent still runs, so it shows working, takes a /run /context from Discord, and its report reaches the channel while the subagent still runs', async ({
-    env
-  }) => {
-    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
-    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
-    const fake = await realClaudeConductor(env)
-    await withConductor(env, fake, async (_app, page) => {
-      const child = await liveClaudeTab(page)
-      await typePrompt(page, child.tabId, BACKGROUND_SUBAGENT_PROMPT)
+      const heardBefore = conductorSaid(fake).length
+      fake.say(OWNER, '/koloft session list')
       await expect
-        .poll(() => saidBy(env, child.sessionId, 'assistant').join('\n'), {
-          timeout: A_REAL_MODEL_TURN_MS
-        })
-        .toContain('BG-STARTED')
-      await expect.poll(() => statusOf(page, child.tabId)).toBe('working')
-      fake.interact(OWNER, 'run', { command: '/context', session: child.sessionId })
-      await expect
-        .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/ran \/context:\n(## )?Context Usage/))
-      expect(await statusOf(page, child.tabId)).toBe('working')
+        .poll(() => conductorSaid(fake).length, { timeout: A_REAL_MODEL_TURN_MS })
+        .toBeGreaterThan(heardBefore)
+      await page.waitForTimeout(PAST_THE_SLASH_RESULTS_WAIT_FOR_THE_TURN_END_MS)
+      expect(ran(fake).filter((p) => p.includes('ran /koloft'))).toEqual([])
     })
   })
 
@@ -819,7 +653,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       fake.say(OWNER, '/compact')
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toEqual([expect.stringMatching(/Assist\*\* ran \/compact:\nDone\.$/)])
+        .toEqual([expect.stringMatching(/\*\*Alfred\*\* ran \/compact:\nDone\.$/)])
     })
   })
 
@@ -836,66 +670,51 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
-  test('a real Claude conductor asked in plain words starts a real Codex session; the session’s card in the channel goes from working to turn done, and Koloft types in its thread while it works', async ({
-    env
-  }) => {
-    test.skip(!HAVE_REAL_CLAUDE || !HAVE_REAL_CODEX, `${NEEDS_REAL_CLAUDE}; ${NEEDS_REAL_CODEX}`)
-    test.setTimeout(3 * A_REAL_MODEL_TURN_MS + 120_000)
-    const fake = await realClaudeConductor(env)
-    useRealCodex(env)
-    await withConductor(env, fake, async () => {
-      fake.say(
-        OWNER,
-        'Start one new Codex session (koloft session new --backend codex) in this workspace whose task is: "Reply with the word KIWI and nothing else." Then tell me you started it.'
-      )
-      await startedSessionsCardFollowsIt(fake, 'Codex')
-    })
-  })
-
-  // ADR-0029 CODEX§12
-  test('a real Codex conductor that tries to write a file in its workspace itself is stopped by its sandbox, and the file is never written', async ({
+  // ADR-0029
+  test('a real Codex conductor, permission checks skipped, writes a file in a workspace itself when told to, as any session may', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
     test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
     seedConductor(env, 'codex')
     useRealCodex(env)
+    seedSettings(env, { skipPermissions: true })
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async () => {
-      await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
+      await writesInTheWorkspaceItself(env, fake)
     })
   })
 
   // ADR-0029 CODEX§11
-  test('a real Codex conductor whose tab closed is resumed by the owner’s next message, on the same thread, and its sandbox still stops it writing a file in its workspace', async ({
+  test('a real Codex conductor whose tab closed is resumed by the owner’s next message, on the same thread, with the permission it started with, so it still writes in a workspace itself when told to', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
     test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
     seedConductor(env, 'codex')
     useRealCodex(env)
+    seedSettings(env, { skipPermissions: true })
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async (_app, page) => {
       await answersWholeInTheChannel(fake)
       const conductor = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
-        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && s.conductor)
+        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && s.butler)
       const first = (await conductor())!
+      const started = lastCodexTurnPermissions(env, first.sessionId)
+      expect(started).toEqual({ approval: 'never', sandbox: 'danger-full-access' })
       await page.evaluate((id) => window.api.terminal.kill(id), first.tabId)
       await expect.poll(conductor).toBeUndefined()
 
-      await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
+      await writesInTheWorkspaceItself(env, fake)
       const again = (await conductor())!
       expect(again.tabId).not.toBe(first.tabId)
       expect(again.sessionId).toBe(first.sessionId)
-      expect(lastCodexTurnPermissions(env, again.sessionId)).toEqual({
-        approval: 'never',
-        sandbox: 'workspace-write'
-      })
+      expect(lastCodexTurnPermissions(env, again.sessionId)).toEqual(started)
     })
   })
 
-  // ADR-0029 CODEX§12
-  test('a real Codex conductor, its sandbox without network, checks a pull request itself with koloft gh, and Koloft adds its workspace’s repository', async ({
+  // ADR-0029
+  test('a real Codex conductor checks a pull request itself with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
@@ -909,8 +728,8 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
-  // ADR-0029 CODEX§12
-  test('a real Codex conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, and Koloft adds its workspace’s repository', async ({
+  // ADR-0029
+  test('a real Codex conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
@@ -950,7 +769,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async (_app, page) => {
       await answersWholeInTheChannel(fake)
       const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && s.conductor
+        (s) => s.alive && s.butler
       )!
       await typeLine(page, conductor.tabId, '/plan')
       await expect
@@ -998,16 +817,13 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         if (needs.includes('claude')) addClaudeAccountToKeychain(env)
         await withConductor(env, fake, async (_app, page) => {
           const conductorTab = async (): Promise<string | undefined> =>
-            (await page.evaluate(() => window.api.sessions.list())).find(
-              (s) => s.conductor && s.alive
-            )?.tabId
+            (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler && s.alive)
+              ?.tabId
           fake.say(
             OWNER,
-            `Start one new ${BACKEND_LABEL[child]} session (koloft session new --backend ${child}) in this workspace whose task is: "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_CONDUCTOR_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for it, check on it or read it, and do not read secret.txt yourself; it reports back to you on its own. When its report reaches you, tell me exactly what it reported.`
+            `Start one new ${BACKEND_LABEL[child]} session (koloft session new --backend ${child} --workspace ws-a) in the ws-a workspace whose task is: "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_CONDUCTOR_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for it, check on it or read it, and do not read secret.txt yourself; it reports back to you on its own. When its report reaches you, tell me exactly what it reported.`
           )
-          await expect
-            .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
-            .toContainEqual(expect.stringMatching(/^▶ Started /))
+          await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: A_REAL_MODEL_TURN_MS })
           await expect
             .poll(() => conductorSaid(fake).length, { timeout: A_REAL_MODEL_TURN_MS })
             .toBeGreaterThan(0)

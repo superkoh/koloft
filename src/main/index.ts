@@ -77,14 +77,11 @@ import {
   identityOf,
   backendsFrom,
   messagingOf,
-  PEER_TRAITS,
   reachedBySendMessage,
-  preferredAssistBackend,
-  statusUnavailable,
-  SUPPORTED_PAIRS
+  preferredAssistBackend
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
-import { AttentionTracker, type AttentionContext } from './attention'
+import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
@@ -100,6 +97,7 @@ import {
   guestMenuItems,
   isAppNavigation,
   isAttachmentResponse,
+  isUnderAnyRoot,
   jsDialogFor,
   standardUserAgent
 } from './browserSecurity'
@@ -107,16 +105,19 @@ import { directoryListingHtml } from './dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
+  HOLD_FILE,
   HOOK_SCRIPT,
   forgetAssistMarkers,
+  localNotice,
   markAnswerable,
+  noticeFile,
   pruneStale,
   quotedPrompt,
   saidFile,
   seedOwnerWords,
   setupHooks,
-  writeAllowFile,
-  writeTabHookSettings
+  writeTabHookSettings,
+  type NoticeFile
 } from './hooks'
 import {
   formatRemoteKey,
@@ -153,6 +154,7 @@ import {
   mirrorAgyGemini,
   mirrorHookDir,
   mirrorProjectsRoot,
+  REMOTE_HOOK_DIR,
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
@@ -182,7 +184,8 @@ import {
   setKeepAwakeChecked,
   setSaveAvailable,
   setupAppMenu,
-  setWorkbenchAvailable
+  setWorkbenchAvailable,
+  type MenuShortcut
 } from './menu'
 import { applyKeepAwake } from './keepAwake'
 import {
@@ -232,12 +235,6 @@ import { codexBackend, trustCodexFolder } from './backends/codex'
 import { museBackend } from './backends/muse'
 import { codexConfigFile } from './codexTrust'
 import {
-  acceptBypassWarning,
-  bypassWarningAccepted,
-  claudeJsonPath,
-  claudeSettingsPath
-} from './claudeTrust'
-import {
   HomeAccountPicker,
   codexHomeOf,
   codexHomes,
@@ -245,11 +242,22 @@ import {
   prepareCodexHome
 } from './codexAccounts'
 import { shq } from '@shared/shellQuote'
-import { CronRunner, type LaunchRequest, type LeftTab, type RunLeftovers } from './cronRunner'
+import {
+  CronRunner,
+  type LaunchRequest,
+  type LaunchResult,
+  type LeftTab,
+  type RunLeftovers
+} from './cronRunner'
+import { FREE_SUFFIX, HOLD_SCRIPT, ResourceGuard, ownerTyped } from './resourceGuard'
+import { readTheMachine, signalLog } from './machineRoom'
+import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
+import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
+import { SessionSync, type SyncSession } from './sessionSync'
 import {
   GithubLookup,
   ghOpenCounts,
@@ -306,6 +314,7 @@ import {
   relayAttached,
   type RelayDeps
 } from './cdpRelay'
+import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
   permissionAsk,
@@ -324,7 +333,7 @@ import createUsageScanWorker from './usageScanWorker?nodeWorker'
 import { UsageCache, listUsageFiles, statOf, type ScannedFile } from './usageCache'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
-  ATTENTION_REASON,
+  attentionReason,
   BROWSER_PARTITION,
   DISCORD_OFF,
   PLACEHOLDER_SESSION_TITLE,
@@ -334,6 +343,7 @@ import {
   isHttpUrl,
   keychainNamespace,
   SIGN_IN_FOLDER_KINDS,
+  BACKEND_OF_SIGN_IN_FOLDER,
   isSignInFolderKind,
   type SignInFolderKind,
   type GitPlatform,
@@ -382,10 +392,10 @@ import type {
   CreateTabResult,
   CronSaveInput,
   ConductorOpenResult,
-  ConductorSaveInput,
-  NewChannelInput,
+  PaletteHandOff,
+  PaletteRequest,
   ConductorSaveResult,
-  ConductorBinding,
+  DiscordChannel,
   ProbeErrorKind,
   LeftoverProcess,
   ResumePlan,
@@ -397,6 +407,7 @@ import type {
   AttentionSubject,
   SessionResumeRequest,
   SessionRow,
+  WorkspaceRows,
   SearchSnippet,
   SpawnedTab,
   AdoptableTab,
@@ -415,29 +426,24 @@ import type {
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
-import {
-  conductorFolder,
-  Conductors,
-  type AssistBackendChoice,
-  type AssistTask
-} from './discord/conductors'
-import { firstLineName } from './sessionTitle'
+import { butlerHelperRole } from '@shared/agentGuide'
+import { conductorFolder, Butler, type AssistBackendChoice } from './discord/butler'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
-import { DISCORD_SETUP_TASK, DISCORD_SETUP_TASK_NAME, setupStatusText } from './discord/setupTask'
+import { setupStatusText } from './discord/setupSteps'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
-import { Notices, type NoticeSubject } from './discord/notices'
 import { SECRET_ID_PREFIX, SecretAsks } from './discord/secretAsks'
 import { secretVerb } from './agentSecret'
-import { SessionThreads } from './discord/threads'
-import { LiveStatus } from './discord/liveStatus'
+import { ButlerTyping } from './discord/butlerTyping'
+import { shootPage } from './discord/pageShot'
+import { OldThreads } from './discord/oldThreads'
 import { AskButtons } from './discord/buttons'
-import { SlashCommands, type SlashTarget } from './discord/slash'
+import { replyWhere, SlashCommands, type SlashReplyTo, type SlashTarget } from './discord/slash'
 import { TabLifecycle, subscribeTabSubsystems, type TabExit } from './tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { bracketedPaste, typedPieces, typeKeys, withoutMouseAndFocusReports } from './typeKeys'
-import { MYSELF } from '@shared/slashCommands'
+import { CH, type Channel } from '@shared/ipcChannels'
 import {
   codexDialog,
   type CodexApproval,
@@ -450,20 +456,18 @@ import { githubVerb, repoFlagOf } from './agentGithub'
 import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
 import {
   asPeerName,
-  conductorName,
   GLOBAL_SCOPE,
   inviteLink,
-  isAssistScope,
   isDiscordId,
+  NEW_CHANNEL_NAME,
   scopeName
 } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
   resolveWorkspace,
-  sessionChoices,
   sessionVerb,
-  targetIn,
+  WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS,
   workspaceVerb,
   type ClosableSession,
   type SessionScreen,
@@ -473,6 +477,7 @@ import {
 import { crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
+import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -487,7 +492,7 @@ import {
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
-import { installLine, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
+import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -534,27 +539,30 @@ const readerDocs = new ReaderDocs({
   assist: (job) => assist(job),
   session: sessionOfTab,
   remoteFileExists: (host, keyed) => hosts.machine(host).fileExists(keyed),
-  changed: () => sendToRenderer('sessions:update', onSessionsChanged())
+  changed: () => sendToRenderer(CH.sessions.update, onSessionsChanged())
 })
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
     void readerDocs.turnEnded(tabId, turn)
+    newsJudge.turnEnded(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
-    discordNotices?.turnEnded(tabId, turn.reply)
     sessionCommand.turnEnded(tabId, turn)
   },
-  prompted: consumeOutletDedupe,
-  bound: (tabId, key) => {
-    attention.bound(tabId, key, attentionCtx())
+  prompted: (tabId) => {
+    consumeOutletDedupe(tabId)
+    newsJudge.prompted(tabId)
+  },
+  bound: (tabId, key, idleCompaction) => {
+    if (!idleCompaction) attention.bound(tabId, key)
     cronRunner?.onBound(tabId, key)
-    conductors?.onBound(tabId, key)
-    discordThreads?.bound(tabId, key)
+    butler?.onBound(tabId, key)
+    discordTyping?.refresh(tabId)
     startedSessions.bound(tabId, key)
     slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
   },
-  exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
+  exited: (tabId, subject) => attention.onExited(tabId, subject),
   asked: (tabId, ask) => discordRelay?.onAsk(tabId, ask),
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
@@ -562,14 +570,18 @@ const sessionBackends = new SessionBackends({
     openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
   }
 })
-sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
-sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
-sessionBackends.assistTaskOf = (tabId) => conductors?.taskNameOf(tabId)
+sessionBackends.isButlerSession = (id) => !!butler?.isButlerSession(id)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
+
+const newsJudge = new NewsJudge({
+  isNews: (turn) => onlyNews(assist, turn),
+  awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
+  markFyi: (tabId) => attention.markFyi(tabId)
+})
 
 // CC§14
 function asksTheOwner(tabId: string): boolean {
@@ -580,8 +592,7 @@ const panelOpenOn: Record<
   BackendId,
   (tabId: string, sessionId: string, screen?: string[]) => Promise<boolean | undefined>
 > = {
-  claude: async (tabId, sessionId) =>
-    !sessionId || tracker.remoteOf(tabId) ? undefined : claudeShowsAPanel(sessionId),
+  claude: async (_tabId, sessionId) => (sessionId ? claudeShowsAPanel(sessionId) : undefined),
   codex: async () => undefined,
   muse: async (tabId, _sessionId, screen) => {
     const lines = screen ?? (await screenLines(tabId))
@@ -598,7 +609,8 @@ const slash = new SlashCommands({
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId, screen) => {
     const s = sessionOfTab(tabId)
-    return s && panelOpenOn[s.backendId](tabId, s.sessionId, screen)
+    if (!s || capabilitiesFor(s.backendId, s.host).panelSeen !== true) return undefined
+    return panelOpenOn[s.backendId](tabId, s.sessionId, screen)
   },
   screen: screenLines,
   nextMirrorPull: (tabId) => {
@@ -613,9 +625,17 @@ const slash = new SlashCommands({
     backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
       ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
       : undefined,
-  post: (channelId, text) => discordRelay?.say(channelId, text),
-  card: (channelId, card) => discordRelay?.card(channelId, card)
+  post: slashReply,
+  card: (to, card) =>
+    'channelId' in to
+      ? discordRelay?.card(to.channelId, card)
+      : to.tell(`${card.header}\n${card.body}`)
 })
+
+function slashReply(to: SlashReplyTo, text: string): void {
+  if ('channelId' in to) discordRelay?.say(to.channelId, text)
+  else to.tell(text)
+}
 tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
   sessionBackends.observe(tabId, { type: 'turn-ended', turn })
 )
@@ -626,11 +646,10 @@ tracker.heldTabs = () => {
   const held = new Set(dirtyTabIds)
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
   for (const s of allSessions())
-    if (conductors?.heldResident(s.tabId) || workspaceMgr?.isResident(s.sessionId))
-      held.add(s.tabId)
+    if (butler?.channelOfTab(s.tabId) || workspaceMgr?.isResident(s.sessionId)) held.add(s.tabId)
   return held
 }
-tracker.needsUser = (id) => attention.list().some((e) => e.tabId === id)
+tracker.needsUser = (id) => attention.waitsOnApproval(id)
 let leftovers: Record<string, LeftoverProcess[]> = {}
 tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
@@ -638,7 +657,7 @@ async function refreshLeftovers(): Promise<void> {
   const next = await scanLeftovers(await sharedProcessTable.eachRound(LEFTOVER_SCAN_MS))
   const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
   leftovers = next
-  if (changed) sendToRenderer('sessions:leftovers', next)
+  if (changed) sendToRenderer(CH.sessions.leftovers, next)
 }
 if (process.platform !== 'win32') {
   setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
@@ -657,7 +676,9 @@ const closedTabs = new Map<string, LeftTab | null>()
 function watchForWorktreeRemoval(tabId: string, data: string): void {
   let exit = claudeTabExits.get(tabId)
   if (!exit) {
-    if (ptyMgr.get(tabId)?.kind !== 'claude' || tracker.remoteOf(tabId)) return
+    const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
+    if (!backend || capabilitiesFor(backend, hostOfTab(tabId)).worktreeRemovalFollowed !== true)
+      return
     claudeTabExits.set(tabId, (exit = { watch: new WorktreeRemovalWatch() }))
   }
   if (!exit.watch.started(data)) return
@@ -668,17 +689,32 @@ function watchForWorktreeRemoval(tabId: string, data: string): void {
     treeRoot: session?.treeRoot
   }
   if (session?.sessionId) sessionsLeavingTheirWorktree.add(session.sessionId)
-  sendToRenderer('tab:killedByMain', tabId)
+  sendToRenderer(CH.tab.killedByMain, tabId)
   workspaceMgr?.refresh()
 }
 
 const attention = new AttentionTracker((pending, event) => {
   if (!quitCommitted) saveAttention(pending)
   updateDockBadge(pending)
-  sendToRenderer('attention:changed', pending)
+  sendToRenderer(CH.attention.changed, pending)
   retractStaleOsNotifications(pending)
-  if (event && !event.resurrected) routeAttentionEvent(event)
+  if (event) routeAttentionEvent(event)
 }, loadLastRunAttention())
+attention.asleep = (tabId) => sleepers.has(tabId)
+attention.watching = () => (windowFocused() ? uiActiveTabId : null)
+attention.turnDone = (tabId) => newsJudge.marked(tabId)
+attention.waitsOnAnother = (tabId) => {
+  const me = sessionOfTab(tabId)
+  return (
+    !!me?.sessionId &&
+    waitsOnOtherWork(
+      me,
+      allSessions(),
+      (id) => startedSessions.parentOfRow(id),
+      (id) => sessionCommand.waitsOnAnother(id)
+    )
+  )
+}
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
@@ -738,6 +774,7 @@ function onSessionsChanged(): SessionInfo[] {
   rememberOpenTabs(all)
   sessionAccounts?.note(all)
   syncRelayBindings(all)
+  void sessionSync.observe(syncSessionsOf(all))
   return all
 }
 
@@ -769,7 +806,7 @@ function sleepTab(tabId: string): void {
   const s = sessionOfTab(tabId)
   if (!s?.sessionId) return killTabFromMain(tabId)
   addSleeper(tabId, openTabOf(s))
-  sendToRenderer('tab:slept', tabId)
+  sendToRenderer(CH.tab.slept, tabId)
   void stopTabProcess(tabId)
   tabLifecycle.emit('slept')
   rememberOpenTabs()
@@ -783,7 +820,8 @@ function sleepingTabOf(sessionId: string): string | undefined {
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
   typedWhileAsleep.delete(tabId)
-  sendToRenderer('tab:killedByMain', tabId)
+  attention.clearKeepingExit(tabId)
+  sendToRenderer(CH.tab.killedByMain, tabId)
   tabLifecycle.emit('forgotten', tabId)
   rememberOpenTabs()
 }
@@ -797,6 +835,7 @@ function settleWokenSleepers(all: SessionInfo[]): void {
     const newId = tabOfSession.get(t.sessionId)
     if (!newId || newId === oldId) continue
     sleepers.delete(oldId)
+    attention.rehome(oldId, newId)
     wokenAs.set(oldId, newId)
     woke = true
     void handOverTyping(oldId, newId)
@@ -820,21 +859,15 @@ async function handOverTyping(oldId: string, newId: string): Promise<void> {
 
 function writeToTab(id: string, data: string): void {
   const typed = typedWhileAsleep.get(id)
+  const woken = wokenAs.get(id)
   if (typed !== undefined) typedWhileAsleep.set(id, typed + withoutMouseAndFocusReports(data))
-  else ptyMgr.write(wokenAs.get(id) ?? id, data)
+  else if (woken) ptyMgr.write(woken, withoutMouseAndFocusReports(data))
+  else ptyMgr.write(id, data)
 }
 async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
   const title = s && sidebarTitle(s)
   if (title) return title
   return s?.sessionId ? sessionBackends.peerNames()(s) : null
-}
-function retitleDiscordThreads(sessions: SessionInfo[]): void {
-  if (!discordThreads) return
-  for (const s of sessions) {
-    const title = sidebarTitle(s)
-    if (title) discordThreads.retitle(s.tabId, title, sessionBackends.workspaceOfTab(s.tabId))
-    discordLive?.sessionChanged(s.tabId, title, statusUnavailable(s))
-  }
 }
 function markedSessionsOf(wsPath: string): string[] {
   return attention
@@ -847,12 +880,12 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
   return { title: s?.title, sessionId: s?.sessionId }
 }
-function attentionCtx(): AttentionContext {
-  let focused = false
+function windowFocused(): boolean {
   try {
-    focused = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
-  } catch {}
-  return { windowFocused: focused, activeTabId: uiActiveTabId }
+    return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
+  } catch {
+    return false
+  }
 }
 
 function projectFolderName(event: AttentionEvent): string | undefined {
@@ -873,20 +906,16 @@ function updateDockBadge(pending: AttentionEvent[]): void {
   else app.dock?.setBadge(text)
 }
 
-function pointFocusClearingAtTabBeforeFocusingWindow(tabId: string): void {
-  uiActiveTabId = tabId
-}
-
 function activateTabFromNotification(tabId: string): void {
   const win = mainWindow
   if (win && !win.isDestroyed()) {
-    pointFocusClearingAtTabBeforeFocusingWindow(tabId)
+    uiActiveTabId = tabId
     tracker.noteActivity(tabId)
     if (win.isMinimized()) win.restore()
     if (!win.isVisible()) win.show()
     win.focus()
     app.focus({ steal: true })
-    sendToRenderer('attention:activate-tab', { tabId })
+    sendToRenderer(CH.attention.activateTab, { tabId })
     return
   }
   createWindow()
@@ -908,7 +937,7 @@ function retractStaleOsNotifications(pending: AttentionEvent[]): void {
 }
 
 function osNotificationText(event: AttentionEvent): { title: string; body: string } {
-  const reason = ATTENTION_REASON[event.kind]
+  const reason = attentionReason(event)
   const folder = projectFolderName(event)
   return {
     title: event.title || PLACEHOLDER_SESSION_TITLE,
@@ -956,19 +985,20 @@ function consumeOutletDedupe(tabId: string): void {
 }
 
 function routeAttentionEvent(event: AttentionEvent): void {
+  const decision = route(event, windowFocused(), loadSettings(), uiActiveTabId)
+  if (!decision.os && !decision.sound) return
   const outletKey = `${event.tabId}:${event.kind}`
   const lastAt = recentOutlets.get(outletKey)
   const now = Date.now()
   if (lastAt !== undefined && now - lastAt < OUTLET_FLAP_DEDUPE_MS) return
   recentOutlets.set(outletKey, now)
-  const decision = route(event, attentionCtx().windowFocused, loadSettings())
   if (decision.os) showOsNotification(event)
   if (decision.sound && !BACKGROUND_TEST) shell.beep()
 }
 let mainWindow: BrowserWindow | null = null
 
 // PLATFORM§5
-function sendToRenderer(channel: string, ...args: unknown[]): boolean {
+function sendToRenderer(channel: Channel, ...args: unknown[]): boolean {
   try {
     const win = mainWindow
     if (!win || win.isDestroyed()) return false
@@ -981,12 +1011,32 @@ function sendToRenderer(channel: string, ...args: unknown[]): boolean {
   }
 }
 
+const MENU_SHORTCUT_CHANNEL: {
+  [K in Exclude<MenuShortcut, 'toggle-keep-awake'>]: `shortcut:${K}`
+} = {
+  'new-session': CH.shortcut.newSession,
+  'new-worktree-session': CH.shortcut.newWorktreeSession,
+  'close-tab': CH.shortcut.closeTab,
+  find: CH.shortcut.find,
+  'find-files': CH.shortcut.findFiles,
+  'check-update': CH.shortcut.checkUpdate,
+  'restart-session': CH.shortcut.restartSession,
+  'add-workspace': CH.shortcut.addWorkspace,
+  'new-terminal-tab': CH.shortcut.newTerminalTab,
+  save: CH.shortcut.save,
+  'focus-notes': CH.shortcut.focusNotes,
+  'next-waiting-session': CH.shortcut.nextWaitingSession,
+  'toggle-sidebar': CH.shortcut.toggleSidebar,
+  'open-settings': CH.shortcut.openSettings,
+  'command-palette': CH.shortcut.commandPalette
+}
+
 let webglRepairTimer: NodeJS.Timeout | undefined
 const WEBGL_REPAIR_BURST_DEBOUNCE_MS = 500
 function requestWebglRepair(): void {
   clearTimeout(webglRepairTimer)
   webglRepairTimer = setTimeout(
-    () => sendToRenderer('webgl:repair'),
+    () => sendToRenderer(CH.webgl.repair),
     WEBGL_REPAIR_BURST_DEBOUNCE_MS
   )
 }
@@ -1020,6 +1070,7 @@ function machinePackage(): MachinePackage {
     [ENSURE_CODEX_FILE]: ENSURE_CODEX_SH,
     ...replyLanguageFiles(CODEX_REPLY_LANGUAGE_SCRIPT),
     'hook.sh': HOOK_SCRIPT,
+    [HOLD_FILE]: HOLD_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
@@ -1056,16 +1107,15 @@ let playwrightCliBin: string | undefined
 let fallbackBin: string | undefined
 let gitFirstBin: string | undefined
 let cronRunner: CronRunner | null = null
-let conductors: Conductors | null = null
+let butler: Butler | null = null
 let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
-let discordNotices: Notices | null = null
-let discordThreads: SessionThreads | null = null
-let discordLive: LiveStatus | null = null
+let discordTyping: ButlerTyping | null = null
 let askButtons: AskButtons | null = null
 let secretAsks: SecretAsks | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
+let guard: ResourceGuard | undefined
 let writeHookSettings:
   ((tabId: string, allowKoloft: boolean, conductor: boolean) => string) | undefined
 const PLAIN_KOLOFT_SHIM = {
@@ -1090,16 +1140,12 @@ async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestio
   }
 }
 
-function watchedByDiscord(all: Conductors, s: { tabId: string; conductor?: string }): boolean {
-  if (s.conductor) return all.heldResident(s.tabId)
-  return all.covers(sessionBackends.workspaceOfTab(s.tabId))
-}
-
 function syncAnswerable(): void {
-  if (!hookRegDir || !conductors) return
+  const all = butler
+  if (!hookRegDir || !all) return
   for (const s of allSessions()) {
-    if (s.backendId !== 'claude' || !s.alive || s.remote) continue
-    const on = discordConnected && watchedByDiscord(conductors, s)
+    if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
+    const on = discordConnected && !!all.channelOfTab(s.tabId)
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -1131,7 +1177,7 @@ function accountViews(): AccountView[] {
 }
 
 function pushAccounts(): void {
-  sendToRenderer('accounts:update', accountViews())
+  sendToRenderer(CH.accounts.update, accountViews())
 }
 
 function notifyExpired(name: string, label = 'Claude'): void {
@@ -1187,6 +1233,10 @@ function watchPickRequests(pickDir: string): fs.FSWatcher | null {
 
 function machineOfTab(tabId: string): string | undefined {
   return remoteHostOfTab(tabId) ?? codexSessions?.machineOfTab(tabId)
+}
+
+function hostOfTab(tabId: string): HostId {
+  return machineOfTab(tabId) ? 'ssh' : 'local'
 }
 
 function agentToolsFor(backend: BackendId, host: HostId): boolean {
@@ -1263,22 +1313,26 @@ function remoteHostOfTab(tabId: string): string | undefined {
   return ptyMgr.get(tabId)?.remoteHost
 }
 
+function projectRows(): WorkspaceRows[] {
+  return (workspaceMgr?.rows() ?? []).filter((w) => !w.workspace.butler)
+}
+
+function butlerSide(tabId: string): boolean {
+  return (
+    !!butler?.isButlerTab(tabId) ||
+    sessionBackends.workspaceOfTab(tabId) === conductorFolder(app.getPath('userData'))
+  )
+}
+
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
   const workspace = sessionBackends.workspaceOfTab(tabId)
   return workspace && workspaceMgr?.isPinned(workspace) ? workspace : undefined
 }
 
 function notesFileOfScope(scope: string): string | undefined {
-  return isAssistScope(scope, (s) => !!workspaceMgr?.isPinned(s))
+  return scope === GLOBAL_SCOPE || workspaceMgr?.isPinned(scope)
     ? ensureNotesFile(notesBaseDir(), scope)
     : undefined
-}
-
-function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
-  return (args, caller) => {
-    const reason = conductors?.noWorkspaceReason(caller.tabId)
-    return reason ? refused(`koloft: ${reason}`) : verb(args, caller)
-  }
 }
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
@@ -1289,7 +1343,7 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
       : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
   },
   notesFileOf: (tabId) => {
-    const scope = conductors?.scopeOfTab(tabId) ?? sessionBackends.workspaceOfTab(tabId)
+    const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
     return scope ? notesFileOfScope(scope) : undefined
   }
 })
@@ -1353,14 +1407,12 @@ const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> =
   }
 }
 
-async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoice> {
+async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const settings = loadSettings()
   const [preferred, ...others] = backendsFrom(preferredAssistBackend(settings))
   const { enabled } = settings.sessionMethods
   const whyNot = (backend: BackendId): Promise<string | undefined> =>
-    avoid === backend
-      ? Promise.resolve(`${BACKEND_LABEL[backend]} could not start`)
-      : whyAssistCannotRunOn(backend, enabled)
+    whyAssistCannotRunOn(backend, enabled)
   const why = await whyNot(preferred)
   if (!why) return { backend: preferred }
   const whys = [why]
@@ -1369,16 +1421,16 @@ async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoi
     if (!otherWhy)
       return {
         backend: other,
-        because: `Assist runs on ${BACKEND_LABEL[other]} this time: ${why}.`
+        because: `${butlerNameNow()} runs on ${BACKEND_LABEL[other]} this time: ${why}.`
       }
     whys.push(otherWhy)
   }
   return {
-    error: `Assist cannot start: ${whys.join(', and ')}. Check Settings ▸ Accounts.`
+    error: `${butlerNameNow()} cannot start: ${whys.join(', and ')}. Check Settings ▸ Accounts.`
   }
 }
-const COMMAND_NEEDS_DISCORD =
-  'koloft session command posts what the command printed in Discord, so it needs an Assist bound to a Discord channel.'
+const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
+  'Koloft has picked no GitHub account for this workspace on its machine; pick one in Settings ▸ Accounts ▸ Git, or run gh there yourself.'
 
 // CC§13
 async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
@@ -1393,12 +1445,70 @@ async function queueCodexMessage(tabId: string, text: string, clientId: string):
   await codexSessions.queueMessage(tabId, text, clientId)
 }
 
+const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
+  Promise.all(
+    paths.map(async (onMachine) => {
+      const dir = formatRemoteKey(machine, onMachine)
+      const common = (await hosts.of(dir).gitOut(dir, COMMON_GIT_DIR))?.trim()
+      return common ? formatRemoteKey(machine, common) : null
+    })
+  )
+)
+
+function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
+  return all.flatMap((s) =>
+    s.alive && !s.butler && s.sessionId
+      ? [
+          {
+            tabId: s.tabId,
+            sessionId: s.sessionId,
+            title: s.title,
+            treeRoot: s.treeRoot,
+            files: s.files,
+            liveWrites: s.liveWrites
+          }
+        ]
+      : []
+  )
+}
+
+async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
+  return (await storedOwnerOf(tabId)?.deliver?.(tabId, text)) ?? false
+}
+
+function tabIdle(tabId: string): boolean {
+  return (
+    tracker.turnOver(tabId) && !asksTheOwner(tabId) && (codexSessions?.queueDrained(tabId) ?? true)
+  )
+}
+
+function noticeOf(tabId: string): NoticeFile | undefined {
+  const host = machineOfTab(tabId)
+  if (host) return hosts.machine(host).notice(tabId)
+  return hookRegDir ? localNotice(noticeFile(hookRegDir, tabId)) : undefined
+}
+
+const sessionSync = new SessionSync({
+  repoOf: (dir) => syncRepoKeys.resolve(dir),
+  gitOut: (dir, args) => hosts.of(dir).gitOut(dir, args),
+  notice: noticeOf
+})
+
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
-  allSessions: () => allSessions().filter((s) => !s.conductor),
+  allSessions: () => allSessions().filter((s) => !s.butler),
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => sessionBackends.peerNames(),
-  launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
+  launch: async (options) => {
+    const title = options.name ?? BACKEND_LABEL[options.kind]
+    return launchQuietTab(options, title)
+  },
+  waiting: {
+    list: () => guard?.queue.list() ?? [],
+    notStartedYet: () => guard?.queue.notStartedYet() ?? [],
+    hold: (tabId, send) => !!guard?.queue.hold(tabId, send),
+    drop: (tabId) => !!guard?.queue.drop(tabId)
+  },
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
@@ -1406,7 +1516,9 @@ const sessionDeps: SessionVerbDeps = {
   whatIsLeft: whatClosingWouldLose,
   closeSoon: (target) =>
     setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
-  conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
+  isButler: (tabId) => !!butler?.isButlerTab(tabId),
+  butlerFolder: () => conductorFolder(app.getPath('userData')),
+  butlerHelperRole: () => butlerHelperRole(butlerNameNow()),
   sidebar: () => workspaceMgr?.rows() ?? [],
   worktrees: async (wsPath) => (await workspaceMgr?.worktrees(wsPath).catch(() => [])) ?? [],
   readTurns: (key, n) => sessionBackends.turns(key, n),
@@ -1415,8 +1527,7 @@ const sessionDeps: SessionVerbDeps = {
     const dir = host ? mirrorHookDir(app.getPath('userData'), host) : hookRegDir
     return dir ? quotedPrompt(dir, tabId) : undefined
   },
-  touch: (tabId, key) => conductors?.touch(tabId, key),
-  conductorOf: conductorTarget,
+  butlerTarget,
   resume: async (row) => {
     const resumed = await resumeRow(row, { rebuildGoneWorktree: true })
     if (!resumed.ok) throw new Error(resumed.error)
@@ -1426,9 +1537,7 @@ const sessionDeps: SessionVerbDeps = {
   asking: asksTheOwner,
   sendLine: sendPeerLine,
   press: (tabId, keys) => ptyMgr.type(tabId, keys),
-  deliver: async (tabId, text) => {
-    return storedOwnerOf(tabId)?.deliver?.(tabId, text) ?? false
-  },
+  deliver: deliverViaOwner,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
   answer: async (tabId, reply) => {
@@ -1436,28 +1545,17 @@ const sessionDeps: SessionVerbDeps = {
     return discordRelay.answerSession(tabId, reply)
   },
   undelivered: (callerTab, target, why) => {
-    const caller = conductors?.bindingOfTab(callerTab)
-    const b =
-      caller ?? (target.assistScope ? conductors?.bindingOfScope(target.assistScope) : undefined)
+    const callerChannel = butler?.channelOfTab(callerTab)
+    const channelId = callerChannel ?? (target.butler ? butler?.channel()?.channelId : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
-    if (!b) return void sendToRenderer('cron:toast', text)
-    discordRelay?.say(b.channel.channelId, `⚠ ${text}`)
-    if (caller) discordRelay?.tell(conductorDestination(caller), `[Koloft] ${text}`)
+    if (!channelId) return void sendToRenderer(CH.cron.toast, text)
+    discordRelay?.say(channelId, `⚠ ${text}`)
+    if (callerChannel) discordRelay?.tell(butlerDestination(), `[Koloft] ${text}`)
   },
-  started: (conductorTab, tabId, name, workspace, backend) => {
-    const b = conductors?.bindingOfTab(conductorTab)
-    if (!b) return
-    conductors?.touchWhenBound(conductorTab, tabId)
-    void discordThreads?.place(b, { tabId, name, workspace, backend }, true)
-  },
-  command: async (callerTab, target, text) => {
-    if (!conductors) throw new Error(STILL_STARTING)
-    const b = conductors.bindingOfTab(callerTab)
-    if (!b) throw new Error(COMMAND_NEEDS_DISCORD)
-    return target.assistScope === b.scope
-      ? commandIntoConductor(b, text)
-      : commandInto(b, target, text)
-  },
+  command: async (callerTab, target, text, tellCaller) =>
+    target.butler && butler?.channelOfTab(callerTab)
+      ? commandIntoButler(text)
+      : typeCommandInto(target, text, { tell: tellCaller }),
   screen: screenOf
 }
 const sessionCommand = sessionVerb(sessionDeps)
@@ -1465,32 +1563,28 @@ const sessionCommand = sessionVerb(sessionDeps)
 const agentRequests = new AgentRequests({
   verbs: {
     ...BUILTIN_VERBS,
-    cron: unlessWorkspacelessConductor(
-      cronVerb({
-        runner: () => cronRunner,
-        pinnedWorkspaceOf: pinnedWorkspaceOfTab,
-        toast: (text) => sendToRenderer('cron:toast', text),
-        now: () => new Date()
-      })
-    ),
+    cron: cronVerb({
+      runner: () => cronRunner,
+      pinnedWorkspaceOf: pinnedWorkspaceOfTab,
+      resolveWorkspace: (ref) => {
+        const found = resolveWorkspace(ref, workspaceMgr?.pinnedPaths() ?? [])
+        return found.ok ? { ok: true, value: found.value.path } : found
+      },
+      toast: (text) => sendToRenderer(CH.cron.toast, text),
+      now: () => new Date()
+    }),
     ...notesAndWorkbenchVerbs,
     session: sessionCommand.verb,
-    workspace: workspaceVerb({
-      conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
-      sidebar: () => workspaceMgr?.rows() ?? []
-    }),
+    workspace: workspaceVerb({ sidebar: projectRows }),
     discord: discordVerb({
-      channelOf: (tabId) => conductors?.bindingOfTab(tabId)?.channel.channelId,
+      channelOf: (tabId) => butler?.channelOfTab(tabId),
       send: async (channelId, files, text) => {
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
       },
-      isSetupTask: (tabId) => conductors?.taskNameOf(tabId) === DISCORD_SETUP_TASK_NAME,
+      shoot: shootPage,
       status: () =>
-        setupStatusText(
-          discordLink?.status() ?? DISCORD_OFF,
-          conductors?.discordSettings() ?? { bindings: [] }
-        ),
+        setupStatusText(discordLink?.status() ?? DISCORD_OFF, butler?.discordSettings() ?? {}),
       tokenFromPage: (tabId) =>
         saveTokenFromPage(guestPagesOf(tabId), relayAttached(tabId), saveDiscordToken),
       reload: (tabId) => reloadDiscordPage(guestPagesOf(tabId), relayAttached(tabId)),
@@ -1498,13 +1592,7 @@ const agentRequests = new AgentRequests({
         const appId = discordLink?.status().applicationId
         return appId ? inviteLink(appId) : null
       },
-      bindNewChannel: async (ref) => {
-        if (ref === GLOBAL_SCOPE) return bindWithNewChannel({ scope: ref })
-        const found = resolveWorkspace(ref, workspaceMgr?.pinnedPaths() ?? [])
-        return found.ok
-          ? bindWithNewChannel({ scope: found.value.path })
-          : { ok: false, error: found.error }
-      }
+      bindNewChannel: bindWithNewChannel
     }),
     [SECRET_VERB]: secretVerb({
       ask: (a) =>
@@ -1515,21 +1603,24 @@ const agentRequests = new AgentRequests({
       sleep
     }),
     gh: githubVerb({
-      scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
-      folderOf: (scope) => conductorFolder(app.getPath('userData'), scope),
-      repoOf: async (scope) =>
-        scope === GLOBAL_SCOPE ? null : hosts.of(scope).github.ownerSlashName(scope),
-      // PLATFORM§1
-      run: async (args, scope) => {
+      // PLATFORM§1 ADR-0036
+      run: async (args, tabId, cwd) => {
         await loginEnvReady()
-        const env =
-          scope === GLOBAL_SCOPE
-            ? await gitAccounts?.ghEnvForRepo(
-                repoFlagOf(args),
-                (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
-              )
-            : await gitAccounts?.ghEnv(scope)
-        return ghRead(args, env)
+        const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
+        if (!workspace) {
+          const pinned = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
+          return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
+        }
+        const remote = parseRemoteKey(workspace)
+        if (!remote) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
+        const inItsFolder = isUnderAnyRoot(cwd, [remote.path])
+          ? formatRemoteKey(remote.host, cwd)
+          : workspace
+        const onMachine = await gitAccounts?.machineGh(inItsFolder, args)
+        if (!onMachine) return { ok: false, out: NO_GITHUB_ACCOUNT_ON_THE_MACHINE }
+        return onMachine.code === 0
+          ? { ok: true, out: onMachine.stdout }
+          : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
       }
     })
   },
@@ -1537,7 +1628,7 @@ const agentRequests = new AgentRequests({
   session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    return !!backend && agentToolsFor(backend, machineOfTab(tabId) ? 'ssh' : 'local')
+    return !!backend && agentToolsFor(backend, hostOfTab(tabId))
   },
   alive: pidAlive
 })
@@ -1608,7 +1699,7 @@ const AUTH_URL_RE = /https?:\/\/[^\s'"`<>]+/
 const TOKEN_RE = /sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{24,}/
 
 function sendLoginProgress(p: LoginProgress): void {
-  sendToRenderer('accounts:login-progress', p)
+  sendToRenderer(CH.accounts.loginProgress, p)
 }
 
 function feedLoginWatcher(tabId: string, data: string): void {
@@ -1855,10 +1946,9 @@ function probeCodexAccounts(): Promise<void> {
   return codexProbeRound
 }
 
-type HomeKind = SignInFolderKind
-const signInPtys = new Map<string, { kind: HomeKind; name: string }>()
+const signInPtys = new Map<string, { kind: SignInFolderKind; name: string }>()
 
-function noteHomeAccount(name: string, kind: HomeKind): void {
+function noteHomeAccount(name: string, kind: SignInFolderKind): void {
   const acct = findAccount(name, kind)
   upsertAccountMeta({
     name,
@@ -1872,28 +1962,24 @@ function noteHomeAccount(name: string, kind: HomeKind): void {
 }
 
 const homeLogin: Record<
-  HomeKind,
-  (
-    name: string
-  ) => Promise<{ binary: string; env: Record<string, string>; args?: string[] } | undefined>
+  SignInFolderKind,
+  (name: string) => Promise<{ binary?: string; env: Record<string, string>; args?: string[] }>
 > = {
   // CODEX§15
   'codex-home': async (name) => {
-    const binary = (await codexSessions?.availability())?.available && codexSessions?.cliBinary
-    if (!binary) return undefined
+    const available = (await codexSessions?.availability())?.available
     const home = codexHomeOf(app.getPath('userData'), name)
     prepareCodexHome(home, codexSharedConfig())
-    return { binary, env: { CODEX_HOME: home } }
+    return { binary: available ? codexSessions?.cliBinary : undefined, env: { CODEX_HOME: home } }
   },
   // MUSE§13
-  'muse-home': async (name) => {
-    const serve = await museServeFor(name)
-    return serve && { binary: serve.binary, env: museAccountEnv(museHomeFor(name)) }
-  },
+  'muse-home': async (name) => ({
+    binary: (await museServeFor(name))?.binary,
+    env: museAccountEnv(museHomeFor(name))
+  }),
   // AGY§5 AGY§7
   'agy-home': async (name) => {
     const binary = await agyBinary()
-    if (!binary) return undefined
     const home = agyHomeFor(name)
     const apiKey = await agyApiKeyOf(name)
     setAgyApiKeyRoute(home, !!apiKey)
@@ -1901,7 +1987,7 @@ const homeLogin: Record<
   }
 }
 
-const probeHomeAccount: Record<HomeKind, (name: string) => Promise<void>> = {
+const probeHomeAccount: Record<SignInFolderKind, (name: string) => Promise<void>> = {
   'codex-home': async (name) => {
     await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
     await probeCodexAccount(name)
@@ -1910,7 +1996,11 @@ const probeHomeAccount: Record<HomeKind, (name: string) => Promise<void>> = {
   'agy-home': (name) => probeAgyAccount(name)
 }
 
-async function signInToHome(kind: HomeKind, name: string, again: boolean): Promise<SignInResult> {
+async function signInToHome(
+  kind: SignInFolderKind,
+  name: string,
+  again: boolean
+): Promise<SignInResult> {
   const v = again
     ? findAccount(name, kind)
       ? 'ok'
@@ -1918,12 +2008,18 @@ async function signInToHome(kind: HomeKind, name: string, again: boolean): Promi
     : validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
   const login = await homeLogin[kind](name)
-  if (!login) return { ok: false, error: 'unavailable' }
   noteHomeAccount(name, kind)
   const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
   const args = (login.args ?? ['login']).map(shq).join(' ')
-  const tab = homeShellTab(`${assignments.join(' ')} ${shq(login.binary)} ${args} && exit`)
+  const signIn = (quotedBinary: string): string =>
+    `${assignments.join(' ')} ${quotedBinary} ${args} && exit`
+  const tab = homeShellTab(
+    login.binary
+      ? signIn(shq(login.binary))
+      : installThen(BACKEND_OF_SIGN_IN_FOLDER[kind], signIn, process.env.KOLOFT_TEST_TOOL_INSTALLER)
+  )
   signInPtys.set(tab.tabId, { kind, name })
+  if (!login.binary) toolInstallPtys.add(tab.tabId)
   return { ok: true, ...tab }
 }
 
@@ -2122,7 +2218,9 @@ function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
 const toolInstallPtys = new Set<string>()
 
 function installTool(backend: BackendId): { tabId: string; cwd: string } {
-  const tab = homeShellTab(installLine(backend, process.env.KOLOFT_TEST_TOOL_INSTALLER))
+  const tab = homeShellTab(
+    installThen(backend, () => 'exit', process.env.KOLOFT_TEST_TOOL_INSTALLER)
+  )
   toolInstallPtys.add(tab.tabId)
   return tab
 }
@@ -2276,23 +2374,19 @@ function createWindow(): void {
   const WEBGL_REPAIR_BLUR_MS = 30_000
   let blurredAt = 0
   mainWindow.on('restore', requestWebglRepair)
-  mainWindow.on('enter-full-screen', () => sendToRenderer('window:fullscreen', true))
-  mainWindow.on('leave-full-screen', () => sendToRenderer('window:fullscreen', false))
+  mainWindow.on('enter-full-screen', () => sendToRenderer(CH.window.fullscreen, true))
+  mainWindow.on('leave-full-screen', () => sendToRenderer(CH.window.fullscreen, false))
   mainWindow.on('focus', () => {
     // PLATFORM§10
-    sendToRenderer('window:focus', true)
+    sendToRenderer(CH.window.focus, true)
     if (blurredAt && Date.now() - blurredAt > WEBGL_REPAIR_BLUR_MS) requestWebglRepair()
     blurredAt = 0
-    if (uiActiveTabId) {
-      consumeOutletDedupe(uiActiveTabId)
-      attention.clear(uiActiveTabId)
-    }
+    if (uiActiveTabId) attention.seen(uiActiveTabId)
     void freshness?.sweep({ host: null })
   })
   mainWindow.on('blur', () => {
-    sendToRenderer('window:focus', false)
+    sendToRenderer(CH.window.focus, false)
     blurredAt = Date.now()
-    if (uiActiveTabId) attention.reconsider(uiActiveTabId, attentionCtx())
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
@@ -2328,9 +2422,9 @@ app.whenReady().then(() => {
   setupExtensions({
     window: () => mainWindow,
     openTab: openExtensionTab,
-    ask: (request) => sendToRenderer('ext:permission-request', request)
+    ask: (request) => sendToRenderer(CH.ext.permissionRequest, request)
   })
-  onExtensionsChanged(() => sendToRenderer('ext:changed'))
+  onExtensionsChanged(() => sendToRenderer(CH.ext.changed))
   setupBrowserAuth()
   setupCertErrors()
   setupGuestUnload()
@@ -2393,8 +2487,8 @@ app.whenReady().then(() => {
       return owner && name ? { owner, name } : null
     },
     openInBrowser: (url) => void leaveForOS(url, 'url'),
-    progress: (p) => sendToRenderer('gitAccounts:login-progress', p),
-    accountsChanged: (views) => sendToRenderer('gitAccounts:update', views),
+    progress: (p) => sendToRenderer(CH.gitAccounts.loginProgress, p),
+    accountsChanged: (views) => sendToRenderer(CH.gitAccounts.update, views),
     picksChanged: () => {
       void githubCounts?.sweep()
       workspaceMgr?.restampLive()
@@ -2417,9 +2511,24 @@ app.whenReady().then(() => {
       tabId,
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
       allowKoloft,
-      conductor
+      conductor,
+      !!guard?.isBackground(tabId)
     )
   hookRegDir = hookPaths.regDir
+  guard = new ResourceGuard({
+    regDir: hookPaths.regDir,
+    cores: os.cpus().length,
+    read: readTheMachine,
+    now: Date.now,
+    log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
+    heldDirs: () => remoteHookMirrors(),
+    freeOnMachine: freeOnMachine,
+    isRemote: (tabId) => !!machineOfTab(tabId),
+    changed: (state) => sendToRenderer(CH.machine.state, state),
+    readTrees: readTaggedTable,
+    giveWay: process.platform === 'darwin' ? giveWay : async () => {}
+  })
+  guard.start()
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
   const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
@@ -2434,7 +2543,7 @@ app.whenReady().then(() => {
         gate.onBacklog(utf16Units)
         continue
       }
-      if (!sendToRenderer('terminal:data', { id, data })) {
+      if (!sendToRenderer(CH.terminal.data, { id, data })) {
         gate.reset()
         pendingData.delete(id)
         continue
@@ -2460,10 +2569,10 @@ app.whenReady().then(() => {
     if (!flushTimer) flushTimer = setTimeout(flushData, PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
   })
   ptyMgr.on('process-title', (t: { id: string; name: string }) => {
-    sendToRenderer('terminal:processTitle', t)
+    sendToRenderer(CH.terminal.processTitle, t)
   })
   ptyMgr.on('cwd', (c: { id: string; cwd: string }) => {
-    sendToRenderer('terminal:cwd', c)
+    sendToRenderer(CH.terminal.cwd, c)
   })
   subscribeTabSubsystems(tabLifecycle, {
     slash,
@@ -2471,16 +2580,14 @@ app.whenReady().then(() => {
     claude: claudeBackend,
     tracker,
     storedOwnerOf,
-    toast: (message) => sendToRenderer('cron:toast', message),
-    notices: () => discordNotices,
-    live: () => discordLive,
+    toast: (message) => sendToRenderer(CH.cron.toast, message),
+    typing: () => discordTyping,
     relay: () => discordRelay,
-    threads: () => discordThreads,
     buttons: () => askButtons,
     secrets: () => secretAsks,
     workspaces: () => workspaceMgr,
     cron: () => cronRunner,
-    conductors: () => conductors
+    butler: () => butler
   })
   ptyMgr.on('exit', (e) => {
     const left = closedTabs.has(e.id) ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
@@ -2500,10 +2607,12 @@ app.whenReady().then(() => {
     tabLifecycle.emit('exit', exit)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
+    guard?.forget(e.id)
+    forgetFreeOnMachine(e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
-      sendToRenderer('sessions:toolsChanged')
+      sendToRenderer(CH.sessions.toolsChanged)
     }
     const signedIn = signInPtys.get(e.id)
     if (signedIn) {
@@ -2523,7 +2632,7 @@ app.whenReady().then(() => {
       if (sessionId) sessionsLeavingTheirWorktree.delete(sessionId)
       const claudeSaid = claudeExit.watch.failure()
       if (claudeSaid)
-        sendToRenderer('cron:toast', `Claude Code did not remove the worktree: ${claudeSaid}`)
+        sendToRenderer(CH.cron.toast, `Claude Code did not remove the worktree: ${claudeSaid}`)
       workspaceMgr?.refresh()
     }
     flushData()
@@ -2531,22 +2640,21 @@ app.whenReady().then(() => {
     const held = pendingData.get(e.id)
     if (held !== undefined) {
       pendingData.delete(e.id)
-      if (!sleepers.has(e.id)) sendToRenderer('terminal:data', { id: e.id, data: held })
+      if (!sleepers.has(e.id)) sendToRenderer(CH.terminal.data, { id: e.id, data: held })
     }
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
     tabLifecycle.emit('teardown', exit)
-    sendToRenderer('terminal:exit', e)
+    sendToRenderer(CH.terminal.exit, e)
   })
   tracker.on('update', () => {
     const all = onSessionsChanged()
-    sendToRenderer('sessions:update', all)
+    sendToRenderer(CH.sessions.update, all)
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
-    retitleDiscordThreads(all)
   })
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
-    sendToRenderer('session:relocated', e)
+    sendToRenderer(CH.session.relocated, e)
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) =>
@@ -2558,17 +2666,18 @@ app.whenReady().then(() => {
   tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
     ptyMgr.wakeReady(tabId)
     slash.turnOver(tabId, over)
-    void discordLive?.refresh(tabId)
+    if (!over) return
+    const workspace = pinnedWorkspaceOfTab(tabId)
+    if (workspace) freshness?.fetchSoon(workspace)
   })
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
-    const conductor = !!conductors?.heldResident(t.tabId)
-    if (conductor && (t.next === 'approval' || t.next === 'waiting'))
+    const onDiscord = !!butler?.channelOfTab(t.tabId)
+    if (onDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
-    discordNotices?.onStatus(t.tabId, t.prev, t.next)
-    void discordLive?.refresh(t.tabId)
-    if (!(conductor && t.next === 'waiting'))
-      attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
+    discordTyping?.refresh(t.tabId)
+    if (!(onDiscord && t.next === 'waiting'))
+      attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
   })
@@ -2586,14 +2695,15 @@ app.whenReady().then(() => {
     remoteTreeIo: machineTreeIo,
     changed: () => {
       const all = onSessionsChanged()
-      sendToRenderer('sessions:update', all)
+      sendToRenderer(CH.sessions.update, all)
       workspaceMgr?.onAdditionalSessionsChanged()
-      retitleDiscordThreads(all)
     },
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
-    memberRemoved: (key: string) => discordThreads?.left(key),
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
-    error: (message: string) => sendToRenderer('cron:toast', message)
+    error: (message: string) => sendToRenderer(CH.cron.toast, message),
+    holdWhileBusy: (tabId: string) => !!guard?.isBackground(tabId),
+    holdScript: { file: hookPaths.hold, regDir: hookPaths.regDir },
+    hookRegDir: hookPaths.regDir
   }
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
@@ -2617,11 +2727,7 @@ app.whenReady().then(() => {
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
-      assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-      conductorGate: {
-        script: hookPaths.codexGate,
-        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
-      },
+      assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
       replyLanguageScript: hookPaths.codexReplyLanguage,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
@@ -2648,11 +2754,7 @@ app.whenReady().then(() => {
       leftWorktree: (resource) => removeUntouchedWorktree(museSessions, resource),
       openShimRoot: path.join(userData, 'muse-open'),
       pickHome: pickMuseHome,
-      assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-      conductorGate: {
-        script: hookPaths.museGateScript,
-        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
-      },
+      assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
       skipPermissions: () => loadSettings().skipPermissions,
       serversAmong: async (pid, commands) =>
         museServersAmong(await sharedProcessTable.fresh(), pid, commands),
@@ -2697,11 +2799,8 @@ app.whenReady().then(() => {
       pickHome: pickAgyHome,
       apiKeyOf: agyApiKeyOf,
       builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),
-      assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
-      conductorGate: {
-        script: hookPaths.agyGateScript,
-        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
-      },
+      skipPermissions: () => loadSettings().skipPermissions,
+      assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
       browserEndpoint: relayEndpoint,
       playwrightBin,
       fallbackBin,
@@ -2723,14 +2822,14 @@ app.whenReady().then(() => {
     void agySessions
       .availability()
       .then((agy) => (agy.available ? agySessions!.refreshHistory() : undefined))
-      .catch((error) => sendToRenderer('cron:toast', String(error)))
+      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
   if (museSessions) {
     sessionBackends.register(museBackend(museSessions, resumeProbes, machineProbes))
     void museSessions
       .availability()
       .then((muse) => (muse.available ? museSessions!.refreshHistory() : undefined))
-      .catch((error) => sendToRenderer('cron:toast', String(error)))
+      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
   if (codexSessions) {
     sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes))
@@ -2742,7 +2841,7 @@ app.whenReady().then(() => {
         for (const home of codexHomes(userData)) prepareCodexHome(home, codexSharedConfig())
         return codexSessions!.refreshHistory()
       })
-      .catch((error) => sendToRenderer('cron:toast', String(error)))
+      .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
   workspaceMgr = new WorkspaceManager({
     additionalRows: (wsPath) =>
@@ -2777,7 +2876,7 @@ app.whenReady().then(() => {
       return m
     },
     pushRows: (payload) => {
-      sendToRenderer('workspace:rows', payload)
+      sendToRenderer(CH.workspace.rows, payload)
       syncAnswerable()
     },
     freshness: (wsPath) => freshness?.get(wsPath),
@@ -2798,18 +2897,18 @@ app.whenReady().then(() => {
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
-    hiddenRow: (id) => !!conductors?.conductorOf(id) || sessionsLeavingTheirWorktree.has(id),
+    hiddenRow: (id) => !!butler?.isButlerSession(id) || sessionsLeavingTheirWorktree.has(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
+    butlerFolder: conductorFolder(userData),
     sessionsOnDiskOrRunning: (ids) =>
-      conductors?.forgetGone(
+      butler?.forgetGone(
         (key) =>
           ids.has(key) ||
           (identityOf(key).backendId !== 'claude' &&
             !storedSessions().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
       ),
     memberDropped: (sessionId, why) => {
-      discordThreads?.left(sessionId)
       try {
         fs.appendFileSync(
           path.join(app.getPath('userData'), 'dropped-sessions.log'),
@@ -2818,17 +2917,17 @@ app.whenReady().then(() => {
       } catch {}
     }
   })
-  conductors = new Conductors({
+  butler = new Butler({
     userData,
+    butler: () => loadSettings().butler,
     load: () => loadSettings().discord,
-    loadRecords: () => loadSettings().assistSessions,
+    loadSession: () => loadSettings().butlerSession,
     save: (discord) => {
       void commitSettings({ discord })
       syncAnswerable()
     },
     saveQuietly: (discord) => void saveSettings({ discord }),
-    saveRecords: (assistSessions) => void commitSettings({ assistSessions }),
-    isPinned: (scope) => workspaceMgr?.isPinned(scope) ?? false,
+    saveSession: (butlerSession) => void commitSettings({ butlerSession }),
     backend: assistBackendChoice,
     tabAlive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     liveTabFor: (backend, key) => sessionBackends.get(backend).aliveTabFor(key),
@@ -2840,15 +2939,12 @@ app.whenReady().then(() => {
           kind: l.backend,
           cwd: l.cwd,
           role: l.role,
-          allow: l.allow,
           conductor: true,
+          permission: ownersPermission(),
           trustFolder: true,
           firstPrompt: l.firstPrompt,
-          name: !PEER_TRAITS[l.backend].namedAtLaunch
-            ? undefined
-            : reachedBySendMessage(l.backend)
-              ? asPeerName(l.title)
-              : l.title
+          ownerWords: l.ownerWords,
+          name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title
         },
         l.title
       ),
@@ -2859,6 +2955,7 @@ app.whenReady().then(() => {
         mode: 'direct',
         role: l.role,
         conductor: true,
+        permission: ownersPermission(),
         trustFolder: true
       })
       if (!res.ok) throw new Error(res.code === 'backend' ? res.message : couldNotStart(l.title))
@@ -2869,80 +2966,62 @@ app.whenReady().then(() => {
         title: l.title,
         sessionId: l.key
       }
-      sendToRenderer('terminal:spawned', spawned)
+      sendToRenderer(CH.terminal.spawned, spawned)
       return res.id
     },
     kill: killTabFromMain,
-    say: (channelId, text) => discordRelay?.say(channelId, text),
     rowsChanged: () => workspaceMgr?.refresh(),
-    tasksChanged: () => sendToRenderer('conductors:tasks', conductors?.taskRows() ?? []),
-    toast: (text) => sendToRenderer('cron:toast', text),
+    toast: (text) => sendToRenderer(CH.cron.toast, text),
     bindDeadlineMs: cronBindDeadlineMs()
   })
-  conductors.keepPinned(workspaceMgr.pinnedPaths().map((w) => w.path))
-  conductors.followBackend(preferredAssistBackend(loadSettings()))
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
     readToken: discordTokenRead,
     takeLock: () => takeLock(discordLockFile, pidAlive),
     releaseLock: () => releaseLock(discordLockFile),
-    owner: () => conductors?.owner(),
-    foundAppOwner: (owner) => conductors?.setOwner(owner),
+    owner: () => butler?.owner(),
+    foundAppOwner: (owner) => butler?.setOwner(owner),
     push: (status) => {
-      sendToRenderer('discord:status', status)
+      sendToRenderer(CH.discord.status, status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()
     },
-    onMessage: (m) => discordRelay?.onMessage(m),
-    onInteraction: (i) => void interactions.handle(i),
+    onMessage: (m) => {
+      if (butler?.isButlerChannel(m.channelId)) discordRelay?.onMessage(m)
+      else void oldThreads.onMessage(m)
+    },
+    onInteraction: (i) =>
+      void (butler?.isButlerChannel(i.channelId)
+        ? interactions.handle(i)
+        : oldThreads.onInteraction(i)),
     onReady: () => {
-      for (const b of conductors?.bindings() ?? []) void conductors?.open(b.scope)
+      if (butler?.channel()) void butler.open()
       void discordRelay?.catchUp()
+      void oldThreads.archiveOnce()
       registerSlashCommands()
     },
     postFailed: (channelId, error) => {
-      const name = conductors?.bindingOfChannel(channelId)?.channel.name ?? channelId
-      const text = `Koloft could not post to #${name} in Discord: ${error}`
-      sendToRenderer('cron:toast', text)
-      const { failing } = link.status()
-      const other = conductors
-        ?.bindings()
-        .find((b) => b.channel.channelId !== channelId && !failing[b.channel.channelId])
-      if (other) void link.post(other.channel.channelId, text).catch(() => undefined)
-    },
-    channelGone: (channelId) => {
-      if (conductors?.threadOfChannel(channelId)) discordThreads?.threadGone(channelId)
+      const channel = butler?.channel()
+      const name = channel?.channelId === channelId ? channel.name : channelId
+      sendToRenderer(CH.cron.toast, `Koloft could not post to #${name} in Discord: ${error}`)
     }
   })
   discordLink = link
-  const conductorsNow = conductors
-  const threads = new SessionThreads({
+  const butlerNow = butler
+  const oldThreads = new OldThreads({
     link,
-    conductors: conductorsNow,
-    deleteFailed: (threadName, error) =>
-      sendToRenderer(
-        'cron:toast',
-        `Koloft could not delete the Discord thread "${threadName}", so it only archived it: ${errorText(error)}`
-      ),
-    opened: (tabId) => void discordLive?.refresh(tabId)
+    owner: () => butlerNow.owner(),
+    butlerName: butlerNameNow,
+    channel: () => butlerNow.channel(),
+    archived: () => butlerNow.oldThreadsArchived(),
+    markArchived: () => butlerNow.markOldThreadsArchived(),
+    now: Date.now
   })
-  discordThreads = threads
-  const conductorChannelOf = (tabId: string): string | undefined =>
-    conductorsNow.bindingOfTab(tabId)?.channel.channelId
-  discordLive = new LiveStatus({
+  discordTyping = new ButlerTyping({
     link,
-    openerOf: (tabId) => threads.openerOf(tabId),
-    conductorChannelOf,
-    subject: async (tabId) => {
-      const s = sessionOfTab(tabId)
-      if (!s) return undefined
-      const name = (await discordShownName(s)) ?? s.title
-      return { name, backend: s.backendId, workspace: sessionBackends.workspaceOfTab(tabId) }
-    },
+    channelOf: (tabId) => butlerNow.channelOfTab(tabId),
     status: (tabId) => tracker.statusOf(tabId),
-    turnOver: (tabId) => tracker.turnOver(tabId),
-    unknown: (tabId) => statusUnavailable(sessionOfTab(tabId)),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
   const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
@@ -2950,7 +3029,7 @@ app.whenReady().then(() => {
     return ask ? codexDialog(ask) : discordRelay?.dialog(tabId)
   }
   const buttons = new AskButtons({
-    owner: () => conductorsNow.owner(),
+    owner: () => butlerNow.owner(),
     dialogText: async (tabId) => (await dialogOf(tabId))?.text,
     answer: async (tabId, reply) => {
       if (!discordRelay) return STILL_STARTING
@@ -2960,58 +3039,25 @@ app.whenReady().then(() => {
   })
   askButtons = buttons
   const secrets = new SecretAsks({
-    owner: () => conductorsNow.owner(),
-    place: async (tabId, card) => discordNotices?.placeCard(tabId, card),
+    owner: () => butlerNow.owner(),
+    place: async (tabId, card) => {
+      const channelId = butlerNow.channel()?.channelId
+      if (!channelId) return undefined
+      const name = await secretAskerName(tabId)
+      const messageId = (await link.card(channelId, card(name))).at(-1)
+      return messageId ? { channelId, messageId, name } : undefined
+    },
     edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
     respond: (i, body) => link.respond(i, body)
   })
   secretAsks = secrets
   const interactions = new Interactions({
-    owner: () => conductorsNow.owner(),
-    routeOf: (channelId) => conductorsNow.routeOf(channelId),
-    choices: (b) => [
-      { name: `This channel’s Assist (${scopeName(b.scope)})`, value: MYSELF },
-      ...sessionChoices(sessionDeps, b.scope)
-    ],
-    run: async (b, session, text) => {
-      if (session === MYSELF) return commandIntoConductor(b, text)
-      const found = await targetIn(sessionDeps, b.scope, session)
-      if (!found.ok) throw new Error(found.error)
-      return commandInto(b, found.value, text)
-    },
+    owner: () => butlerNow.owner(),
+    run: async (text) => commandIntoButler(text),
     press: (i) => (i.customId?.startsWith(SECRET_ID_PREFIX) ? secrets.press(i) : buttons.press(i)),
     submit: (i) => secrets.submit(i),
     respond: (i, body) => link.respond(i, body)
   })
-  const sessionDestination = (b: ConductorBinding, threadId: string, key: string): Destination => {
-    const backend = identityOf(key).backendId
-    const liveTab = (): string | undefined => sessionBackends.get(backend).aliveTabFor(key)
-    const live = liveTab()
-    const shown = live && sessionOfTab(live)
-    const name =
-      (shown && sidebarTitle(shown)) ||
-      conductorsNow.threadOfChannel(threadId)?.thread.name ||
-      'The session'
-    return {
-      id: `thread:${threadId}`,
-      name,
-      conductor: false,
-      liveTab,
-      open: async () => {
-        const open = liveTab()
-        if (open) return open
-        const found = await targetIn(sessionDeps, b.scope, key)
-        if (!found.ok)
-          throw new Error(
-            `${name} is no longer in the session list (it was closed for good), so it cannot be woken.`
-          )
-        return found.value.tabId ?? found.value.open()
-      },
-      typeCommand: (tab, command) =>
-        slash.typeWhenIdle({ name, tabId: tab, conductor: false }, command, threadId),
-      seen: (id) => conductorsNow.setThreadLastMessage(threadId, id)
-    }
-  }
   const attachmentsDir = path.join(userData, 'discord-attachments')
   discordRelay = new DiscordRelay({
     link,
@@ -3020,39 +3066,29 @@ app.whenReady().then(() => {
       if (!res.ok) throw new Error(`Discord answered ${res.status} to an attachment download.`)
       return Buffer.from(await res.arrayBuffer())
     },
-    owner: () => conductorsNow.owner(),
-    destinationOf: (channelId) => {
-      const route = conductorsNow.routeOf(channelId)
-      if (!route) return undefined
-      return route.sessionKey
-        ? sessionDestination(route.binding, channelId, route.sessionKey)
-        : conductorDestination(route.binding)
+    owner: () => butlerNow.owner(),
+    butlerName: butlerNameNow,
+    destinationOf: (channelId) =>
+      butlerNow.isButlerChannel(channelId) ? butlerDestination() : undefined,
+    channels: () => {
+      const channel = butlerNow.channel()
+      return channel
+        ? [
+            {
+              channelId: channel.channelId,
+              lastMessageId: butlerNow.lastMessageId(),
+              seen: (id: string) => butlerNow.setLastMessage(id)
+            }
+          ]
+        : []
     },
-    channels: () =>
-      conductorsNow.bindings().flatMap((b) => [
-        {
-          channelId: b.channel.channelId,
-          lastMessageId: b.lastMessageId,
-          seen: (id: string) => conductorsNow.setLastMessage(b.id, id)
-        },
-        ...(b.threads ?? []).map((t) => ({
-          channelId: t.threadId,
-          lastMessageId: t.lastMessageId,
-          seen: (id: string) => conductorsNow.setThreadLastMessage(t.threadId, id)
-        }))
-      ]),
-    conductorChannelOf,
+    butlerChannelOf: (tabId) => butlerNow.channelOfTab(tabId),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
-    remote: (tabId) => !!remoteHostOfTab(tabId),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
-    waiting: (tabId) => {
-      discordNotices?.waiting(tabId)
-      void discordLive?.refresh(tabId)
-    },
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
     asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
@@ -3076,21 +3112,6 @@ app.whenReady().then(() => {
   const pruneAttachments = (): void => pruneStale(attachmentsDir, ATTACHMENTS_KEPT_MS, true)
   pruneAttachments()
   setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
-  discordNotices = new Notices({
-    bindings: () => conductorsNow.bindings(),
-    place: (b, subject) => threads.place(b, subject),
-    threadOf: (key) => threads.threadOf(key),
-    card: async (channelId, card) => discordRelay?.card(channelId, card),
-    post: async (channelId, card) => (await link.card(channelId, card)).at(-1),
-    archive: (threadId) => threads.archive(threadId),
-    withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
-    subject: noticeSubjectOf,
-    shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
-    commandRunning: (tabId) => slash.running(tabId),
-    dialog: dialogOf
-  })
-  tracker.dialogsWatched = (tabId) =>
-    watchedByDiscord(conductorsNow, { tabId, conductor: conductorsNow.conductorOf(tabId) })
   void link.connect()
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
@@ -3150,8 +3171,9 @@ app.whenReady().then(() => {
     autoFetch: () => loadSettings().gitAutoFetch,
     autoPull: () => loadSettings().gitAutoPull,
     busy: (wsPath) => busyInCheckout(allSessions(), wsPath) > 0,
-    toast: (text) => sendToRenderer('cron:toast', text),
+    toast: (text) => sendToRenderer(CH.cron.toast, text),
     onChange: () => workspaceMgr?.restampLive(),
+    onDefaultMoved: (move) => void sessionSync.defaultMoved(move, syncSessionsOf(allSessions())),
     runner: (wsPath) => {
       const key = parseRemoteKey(wsPath)
       return key && !remoteSync?.connected(key.host) ? null : hosts.of(wsPath).freshness
@@ -3207,10 +3229,10 @@ app.whenReady().then(() => {
     stillWorking: (tabId) => tracker.stillWorking(tabId),
     whatIsLeft: whatClosingTheRunWouldLose,
     closeForGood: closeTheRunFully,
-    toast: (text) => sendToRenderer('cron:toast', text),
+    toast: (text) => sendToRenderer(CH.cron.toast, text),
     notify: notifyPlain,
-    push: (state) => sendToRenderer('cron:state', state),
-    killed: (tabId) => sendToRenderer('tab:killedByMain', tabId),
+    push: (state) => sendToRenderer(CH.cron.state, state),
+    killed: (tabId) => sendToRenderer(CH.tab.killedByMain, tabId),
     endpointAccountWithModelOf: (tabId) => {
       const name = tracker.infoOf(tabId)?.pickedAccount
       return name && findAccount(name, 'custom')?.model ? name : undefined
@@ -3231,19 +3253,19 @@ app.whenReady().then(() => {
         commitSettings({ keepAwake: !loadSettings().keepAwake })
         return
       }
-      sendToRenderer(`shortcut:${action}`)
+      sendToRenderer(MENU_SHORTCUT_CHANNEL[action])
     },
-    (cmd) => sendToRenderer('shortcut:browser', cmd),
+    (cmd) => sendToRenderer(CH.shortcut.browser, cmd),
     loadSettings().keepAwake
   )
   applyKeepAwake(loadSettings().keepAwake)
 
   const sendGuestCommand = (cmd: ReturnType<typeof guestShortcut>): void => {
     if (!cmd) return
-    if (cmd === 'find') sendToRenderer('shortcut:find')
+    if (cmd === 'find') sendToRenderer(CH.shortcut.find)
     else if (cmd === 'cycle-next' || cmd === 'cycle-prev') {
-      sendToRenderer('shortcut:workbench', cmd)
-    } else sendToRenderer('shortcut:browser', cmd)
+      sendToRenderer(CH.shortcut.workbench, cmd)
+    } else sendToRenderer(CH.shortcut.browser, cmd)
   }
   // PLATFORM§12
   const pdfKeepsItsNativeFind = (
@@ -3290,7 +3312,7 @@ app.whenReady().then(() => {
   screen.on('display-metrics-changed', requestWebglRepair)
 
   createWindow()
-  startUpdateNotifier((offer) => sendToRenderer('update:offer', offer))
+  startUpdateNotifier((offer) => sendToRenderer(CH.update.offer, offer))
 
   const capsuleShownSoLaunchProbeIsNotBilledForNothing = (): boolean =>
     listAccounts().some((a) => a.enabled && a.kind === 'oauth')
@@ -3312,7 +3334,7 @@ function clearQuitFallback(): void {
 }
 
 function askQuit(): boolean {
-  if (!sendToRenderer('app:quit-requested')) return false
+  if (!sendToRenderer(CH.app.quitRequested)) return false
   clearQuitFallback()
   quitFallback = setTimeout(() => {
     quitFallback = null
@@ -3367,11 +3389,12 @@ app.on('before-quit', (e) => {
   cronRunner?.quitSweep()
   cronRunner?.stop()
   discordLink?.stop()
-  conductors?.flush()
+  butler?.flush()
   workspaceMgr?.dispose()
   flushLayout()
   openTabsFile?.flushSync()
   sessionAccounts?.flushSync()
+  for (const stored of storedSessions()) stored.store.flushSync()
   flushAttention()
   freshness?.stop()
   remoteSync?.stop()
@@ -3456,7 +3479,7 @@ function askUserForPermission(
   }
   const id = crypto.randomUUID()
   pendingPermissions.set(id, { guestId, origin, permission, answer: callback })
-  sendToRenderer('browser:permission-ask', { id, origin, permission })
+  sendToRenderer(CH.browser.permissionAsk, { id, origin, permission })
 }
 
 function answerPermission(id: string, granted: boolean): void {
@@ -3474,7 +3497,7 @@ function dropPermissions(match: (p: PendingPermission) => boolean): void {
     if (!match(pending)) continue
     pendingPermissions.delete(id)
     pending.answer(false)
-    sendToRenderer('browser:permission-drop', id)
+    sendToRenderer(CH.browser.permissionDrop, id)
   }
 }
 
@@ -3490,7 +3513,7 @@ function setupBrowserAuth(): void {
     const id = crypto.randomUUID()
     pendingAuth.set(id, callback)
     const payload: BrowserAuthChallenge = { id, kind: 'auth', ...prompt }
-    sendToRenderer('browser:auth-challenge', payload)
+    sendToRenderer(CH.browser.authChallenge, payload)
   })
 }
 
@@ -3580,16 +3603,16 @@ function muteGuestsUnderTest(): void {
 
 // PLATFORM§12
 function setupGuestLinkReports(): void {
-  ipcMain.on('browser:link-blocked', (e, url: unknown) => {
+  ipcMain.on(CH.browser.linkBlocked, (e, url: unknown) => {
     if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (typeof url !== 'string' || !url) return
-    sendToRenderer('browser:blocked-scheme', url.slice(0, 2048))
+    sendToRenderer(CH.browser.blockedScheme, url.slice(0, 2048))
   })
 }
 
 // PLATFORM§11
 function setupGuestPermissionQuery(): void {
-  ipcMain.on('browser:permission-undecided', (e, name: unknown) => {
+  ipcMain.on(CH.browser.permissionUndecided, (e, name: unknown) => {
     const decision = permissionQueryAsk(name, {
       requestingUrl: e.senderFrame?.url,
       isMainFrame: e.senderFrame?.parent === null
@@ -3618,7 +3641,7 @@ function setupPermissionCleanup(): void {
 }
 
 function setupGuestBackgroundOpen(): void {
-  ipcMain.on('browser:open-background', (e, url: unknown) => {
+  ipcMain.on(CH.browser.openBackground, (e, url: unknown) => {
     if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (typeof url !== 'string' || !url) return
     if (isOverlayGuest(e.sender)) {
@@ -3634,7 +3657,7 @@ function setupGuestBackgroundOpen(): void {
     const tabId = tabOwningGuest(e.sender)
     if (!tabId) return
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'agent' }
-    sendToRenderer('browser:open', payload)
+    sendToRenderer(CH.browser.open, payload)
   })
 }
 
@@ -3651,12 +3674,12 @@ function setupGuestFullscreen(): void {
     contents.on('enter-html-full-screen', () => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       pageFullscreen = true
-      sendToRenderer('browser:fullscreen', true)
+      sendToRenderer(CH.browser.fullscreen, true)
     })
     contents.on('leave-html-full-screen', () => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
       pageFullscreen = false
-      sendToRenderer('browser:fullscreen', false)
+      sendToRenderer(CH.browser.fullscreen, false)
     })
   })
 }
@@ -3666,7 +3689,7 @@ function setupGuestAudioState(): void {
     if (contents.getType() !== 'webview') return
     contents.on('audio-state-changed', (event) => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-      sendToRenderer('browser:audio-state', {
+      sendToRenderer(CH.browser.audioState, {
         guestId: contents.id,
         audible: event.audible,
         muted: contents.isAudioMuted()
@@ -3693,7 +3716,7 @@ function sendOverlayOpen(url: string, presentation: 'now' | 'background'): void 
 function flushOverlayOpens(): void {
   if (!overlayListening) return
   while (pendingOverlayOpens.length) {
-    if (!sendToRenderer('browser:overlay-open', pendingOverlayOpens[0])) return
+    if (!sendToRenderer(CH.browser.overlayOpen, pendingOverlayOpens[0])) return
     pendingOverlayOpens.shift()
   }
 }
@@ -3731,7 +3754,7 @@ async function screenOf(tabId: string): Promise<SessionScreen> {
       resolve(a)
     })
     const request: ScreenRequest = { requestId, tabId }
-    sendToRenderer('terminal:screen', request)
+    sendToRenderer(CH.terminal.screen, request)
   })
   if (!answer?.lines) return { error: 'the Koloft window did not show its screen.' }
   const notes: string[] = []
@@ -3774,7 +3797,7 @@ function cdpOp(
       resolve(res)
     })
     const payload: BrowserCdpOp = { opId, kind, sessionId, ...extra }
-    sendToRenderer('browser:cdp-op', payload)
+    sendToRenderer(CH.browser.cdpOp, payload)
   })
 }
 
@@ -3803,7 +3826,7 @@ function relayDeps(): RelayDeps {
     },
     setAttached: (sessionId, targetIds) => {
       const payload: BrowserCdpAttached = { sessionId, targetIds }
-      sendToRenderer('browser:cdp-attached', payload)
+      sendToRenderer(CH.browser.cdpAttached, payload)
     }
   }
 }
@@ -3819,7 +3842,7 @@ function routeGuestPopup(url: string, from: WebContents): void {
     const decision = routeFor(url, 'user')
     if (decision.dest === 'browser') sendOverlayOpen(decision.target, 'now')
     else if (decision.dest === 'system') openUrlExternally(decision.target)
-    else sendToRenderer('browser:blocked-scheme', url)
+    else sendToRenderer(CH.browser.blockedScheme, url)
     return
   }
   const decision = routeFor(url, 'user')
@@ -3828,14 +3851,14 @@ function routeGuestPopup(url: string, from: WebContents): void {
   if (!tabId) return
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'user' }
-    sendToRenderer('browser:open', payload)
+    sendToRenderer(CH.browser.open, payload)
   } else if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
     const payload: OpenRequest = { tabId, path: decision.target, source: 'user' }
-    sendToRenderer('preview:open-file', payload)
+    sendToRenderer(CH.preview.openFile, payload)
   } else if (decision.dest === 'system') {
     openUrlExternally(decision.target)
   } else {
-    sendToRenderer('browser:blocked-scheme', url)
+    sendToRenderer(CH.browser.blockedScheme, url)
   }
 }
 
@@ -3847,7 +3870,7 @@ async function openExtensionTab(url: string): Promise<WebContents | null> {
   if (!extensionPage && decision.dest !== 'browser') return null
   const target = extensionPage ? url : decision.target
   const payload: BrowserOpenRequest = { tabId, url: target, source: 'user' }
-  if (!sendToRenderer('browser:open', payload)) return null
+  if (!sendToRenderer(CH.browser.open, payload)) return null
   return awaitGuestFor(target)
 }
 
@@ -3906,7 +3929,7 @@ function setupBrowserPartition(): void {
     if (decision.kind === 'refuse') {
       callback(false)
       if (decision.tell) {
-        sendToRenderer('browser:permission-refused', {
+        sendToRenderer(CH.browser.permissionRefused, {
           origin: decision.origin,
           permission: decision.permission
         })
@@ -3928,7 +3951,7 @@ function setupBrowserPartition(): void {
     if (permission !== 'openExternal') return
     const target = (details as { externalURL?: string }).externalURL ?? ''
     if (canOpenExternally(target) && takeGuestGesture(_wc)) openUrlExternally(target)
-    else if (target) sendToRenderer('browser:blocked-scheme', target)
+    else if (target) sendToRenderer(CH.browser.blockedScheme, target)
   })
   // PLATFORM§11
   ses.setPermissionCheckHandler((_wc, permission, _origin, details) => {
@@ -4003,7 +4026,7 @@ function setupBrowserPartition(): void {
     const id = retryId ?? crypto.randomUUID()
     if (retryId) downloadSources.delete(retryId)
     liveDownloads.set(id, item)
-    sendToRenderer('browser:download-event', {
+    sendToRenderer(CH.browser.downloadEvent, {
       id,
       kind: 'started',
       name,
@@ -4011,7 +4034,7 @@ function setupBrowserPartition(): void {
     })
     item.on('updated', (_ev, state) => {
       if (state !== 'progressing') return
-      sendToRenderer('browser:download-event', {
+      sendToRenderer(CH.browser.downloadEvent, {
         id,
         kind: 'progress',
         received: item.getReceivedBytes()
@@ -4020,7 +4043,7 @@ function setupBrowserPartition(): void {
     item.once('done', (_ev, state) => {
       liveDownloads.delete(id)
       if (state === 'completed') downloadSources.set(id, url)
-      sendToRenderer('browser:download-event', {
+      sendToRenderer(CH.browser.downloadEvent, {
         id,
         kind: 'done',
         state,
@@ -4031,7 +4054,7 @@ function setupBrowserPartition(): void {
         return
       }
       const payload: BrowserDownload = { name, path: savePath }
-      sendToRenderer('browser:download', payload)
+      sendToRenderer(CH.browser.download, payload)
     })
   })
 }
@@ -4078,12 +4101,12 @@ function openInWorkbench(
 ): boolean {
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source, osFallback }
-    sendToRenderer('browser:open', payload)
+    sendToRenderer(CH.browser.open, payload)
     return true
   }
   if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
     const payload: OpenRequest = { tabId, path: decision.target, source, view }
-    sendToRenderer('preview:open-file', payload)
+    sendToRenderer(CH.preview.openFile, payload)
     return true
   }
   return false
@@ -4098,12 +4121,12 @@ async function openOnMachine(
   const keyed = formatRemoteKey(machine, file)
   if (!(await hosts.machine(machine).fileExists(keyed))) return false
   const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
-  sendToRenderer('preview:open-file', payload)
+  sendToRenderer(CH.preview.openFile, payload)
   return true
 }
 
 function killTabFromMain(tabId: string): void {
-  sendToRenderer('tab:killedByMain', tabId)
+  sendToRenderer(CH.tab.killedByMain, tabId)
   void killTabPty(tabId)
 }
 
@@ -4118,10 +4141,6 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
     return (resource ? removeUntouchedWorktree(owner, resource) : Promise.resolve()).then(
       () => true
     )
-  }
-  if (ptyMgr.get(tabId)?.alive) {
-    discordNotices?.closed(tabId)
-    discordLive?.closed(tabId)
   }
   return stopTabProcess(tabId, restarting)
 }
@@ -4139,7 +4158,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   return stopped.then(
     () => true,
     (error) => {
-      sendToRenderer('cron:toast', String(error))
+      sendToRenderer(CH.cron.toast, String(error))
       return false
     }
   )
@@ -4208,10 +4227,10 @@ async function closeSessionFully(
 ): Promise<void> {
   const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
   if (tabId) {
-    sendToRenderer('tab:killedByMain', tabId)
+    sendToRenderer(CH.tab.killedByMain, tabId)
     await killTabPty(tabId)
   } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
-    sendToRenderer('cron:toast', `${target.title} was opened again, so Koloft did not close it.`)
+    sendToRenderer(CH.cron.toast, `${target.title} was opened again, so Koloft did not close it.`)
     return
   }
   const tree = await closingTree(hostGitOut, info)
@@ -4219,7 +4238,7 @@ async function closeSessionFully(
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
-    sendToRenderer('cron:toast', `${target.title}: ${problem}`)
+    sendToRenderer(CH.cron.toast, `${target.title}: ${problem}`)
     return
   }
   archiveSession(target.sessionId)
@@ -4239,7 +4258,7 @@ async function removeUntouchedWorktree(
     worktreeName: resource.worktreeName,
     branches: [`worktree-${resource.worktreeName}`]
   })
-  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer('cron:toast', problem)
+  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer(CH.cron.toast, problem)
 }
 
 function cronRunTree(root: string, worktree?: string): ProjectInfo {
@@ -4326,8 +4345,38 @@ async function launchQuietTab(
   const r = await sessionBackends.create(options)
   if (!r.ok) return null
   const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, jobId }
-  sendToRenderer('terminal:spawned', spawned)
+  sendToRenderer(CH.terminal.spawned, spawned)
   return r.id
+}
+
+function remoteHookMirrors(): string[] {
+  const hosts = new Set(ptyTabIds().flatMap((id) => machineOfTab(id) ?? []))
+  return [...hosts].map((host) => mirrorHookDir(app.getPath('userData'), host))
+}
+
+const freedOnMachine = new Map<string, string>()
+
+async function freeOnMachine(tabId: string): Promise<void> {
+  const host = machineOfTab(tabId)
+  if (!host) return
+  await loginEnvReady()
+  await runSsh(
+    host,
+    remoteShCommand(`mkdir -p "${REMOTE_HOOK_DIR}" && : > "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [
+      tabId
+    ]),
+    { controlDir: remoteControlDir }
+  )
+  freedOnMachine.set(tabId, host)
+}
+
+function forgetFreeOnMachine(tabId: string): void {
+  const host = freedOnMachine.get(tabId)
+  if (!host) return
+  freedOnMachine.delete(tabId)
+  void runSsh(host, remoteShCommand(`rm -f "${REMOTE_HOOK_DIR}/$1${FREE_SUFFIX}"`, [tabId]), {
+    controlDir: remoteControlDir
+  }).catch(() => undefined)
 }
 
 const RESUMES_AT_ONCE = 4
@@ -4367,10 +4416,10 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
         }))
       : undefined
     if (!resumed?.ok) {
-      if (resumed) sendToRenderer('cron:toast', resumed.error)
+      if (resumed) sendToRenderer(CH.cron.toast, resumed.error)
       return
     }
-    if (id === active) sendToRenderer('attention:activate-tab', { tabId: resumed.tabId })
+    if (id === active) sendToRenderer(CH.attention.activateTab, { tabId: resumed.tabId })
     await tabReady(resumed.tabId, RESUMED_TAB_READY_MS, false)
   }
   await mapAtMost(ids, RESUMES_AT_ONCE, resumeOne)
@@ -4415,7 +4464,7 @@ async function resumeRow(
     title: row.title,
     sessionId: row.id
   }
-  sendToRenderer('terminal:spawned', spawned)
+  sendToRenderer(CH.terminal.spawned, spawned)
   return { ok: true, tabId: res.id }
 }
 
@@ -4431,22 +4480,16 @@ function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolea
 }
 
 function registerSlashCommands(): void {
-  const guilds = new Set((conductors?.bindings() ?? []).map((b) => b.channel.guildId))
-  void discordLink?.registerCommands([...guilds], SLASH_COMMANDS)
+  const guildId = butler?.channel()?.guildId
+  if (guildId) void discordLink?.registerCommands([guildId], SLASH_COMMANDS)
 }
 
-function noticeSubjectOf(tabId: string): NoticeSubject | undefined {
+async function secretAskerName(tabId: string): Promise<string> {
+  if (butler?.isButlerTab(tabId)) return butlerNameNow()
   const s = sessionOfTab(tabId)
-  return s?.sessionId
-    ? {
-        tabId,
-        key: s.sessionId,
-        name: s.title,
-        backend: s.backendId,
-        workspace: sessionBackends.workspaceOfTab(tabId),
-        conductor: s.conductor
-      }
-    : undefined
+  const name = (await discordShownName(s)) ?? s?.title ?? 'A session'
+  const workspace = sessionBackends.workspaceOfTab(tabId)
+  return workspace ? `${name} · ${scopeName(workspace)}` : name
 }
 
 const LOOPBACK_OPEN_TIMEOUT_MS = 15_000
@@ -4476,7 +4519,11 @@ function guestPagesOf(tabId: string): GuestPage[] {
     .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
     .map((wc) => ({
       url: () => wc.getURL(),
-      run: (script: string) => wc.executeJavaScript(script),
+      // PLATFORM§10
+      run: async (script: string) => {
+        await compositionDone()
+        return await wc.executeJavaScript(script)
+      },
       reload: () =>
         new Promise<void>((resolve) => {
           wc.once('did-stop-loading', () => resolve())
@@ -4491,121 +4538,140 @@ async function saveDiscordToken(token: string): Promise<boolean> {
   return saved
 }
 
-function openDiscordSetup(ownerWords?: string): Promise<ConductorOpenResult> {
-  if (!conductors) return Promise.resolve({ ok: false, error: STILL_STARTING })
-  return conductors.openTask(GLOBAL_SCOPE, { ...DISCORD_SETUP_TASK, ownerWords })
+const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
+const SET_UP_DISCORD_HOW =
+  '(Koloft: start a helper for it in your own folder, with koloft session new and no --workspace; it must be Claude Code or Codex, which have the Workbench browser, so add --backend claude if you are neither. Tell it to run koloft discord setup, follow those steps, report back to you, and then close itself with koloft session close.)'
+
+async function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
+  const words = ownerWords ?? SET_UP_DISCORD_WORDS
+  return tellButler(`The owner asked you: ${words} ${SET_UP_DISCORD_HOW}`, words)
 }
 
-async function bindWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult> {
+async function tellButler(text: string, ownerWords: string): Promise<ConductorOpenResult> {
+  const first = { prompt: text, ownerWords }
+  const opened = await butler?.open(first)
+  if (!opened) return { ok: false, error: STILL_STARTING }
+  if (!opened.ok) return opened
+  if (opened.startedWith !== first)
+    void sendToButler(opened.tabId, text, ownerWords).then((sent) => {
+      if (!sent.ok) sendToRenderer(CH.cron.toast, sent.error)
+    })
+  return { ok: true, tabId: opened.tabId }
+}
+
+async function bindWithNewChannel(): Promise<ConductorSaveResult> {
   const link = discordLink
-  const bound = conductors
+  const bound = butler
   if (!bound || !link) return { ok: false, error: STILL_STARTING }
-  const saved = await bound.saveWithNewChannel(
-    input,
-    preferredAssistBackend(loadSettings()),
-    (scope, category) => link.newChannel(scope, bound.bindings(), category)
-  )
+  const saved = await bound.bindNewChannel((category) => link.newChannel(bound.channel(), category))
   if (saved.ok) registerSlashCommands()
   return saved
 }
 
-function conductorDestination(b: ConductorBinding): Destination {
+function butlerNameNow(): string {
+  return loadSettings().butler.name
+}
+
+function ownersPermission(): 'bypass' | 'default' {
+  return loadSettings().skipPermissions ? 'bypass' : 'default'
+}
+
+const NO_CHANNEL_BOUND = 'No Discord channel is bound.'
+
+function butlerDestination(): Destination {
   return {
-    id: b.id,
-    name: 'Assist',
-    conductor: true,
-    liveTab: () => conductors?.liveTab(b.scope),
+    name: butlerNameNow(),
+    liveTab: () => butler?.liveTab(),
     open: async () => {
-      const opened = await conductors?.open(b.scope)
+      const opened = await butler?.open()
       if (!opened) throw new Error(STILL_STARTING)
       if (!opened.ok) throw new Error(opened.error)
       return opened.tabId
     },
-    typeCommand: (tabId, command) =>
-      slash.typeWhenIdle(
-        { name: `the ${conductorName(b.scope)}`, tabId, conductor: true },
-        command,
-        b.channel.channelId
-      ),
-    seen: (id) => conductors?.setLastMessage(b.id, id)
+    typeCommand: async (tabId, command) => {
+      const channelId = butler?.channel()?.channelId
+      if (!channelId) throw new Error(NO_CHANNEL_BOUND)
+      await slash.typeWhenIdle({ name: butlerNameNow(), tabId, butler: true }, command, {
+        channelId
+      })
+    },
+    seen: (id) => butler?.setLastMessage(id)
   }
 }
 
-async function commandInto(b: ConductorBinding, t: Target, text: string): Promise<string> {
-  const channelId = (await discordThreads?.place(b, t)) ?? b.channel.channelId
-  const target = (tabId: string): SlashTarget => {
-    conductors?.touchNowAndNext(b.id, t.key, tabId)
-    return { name: t.name, tabId, conductor: false }
-  }
-  if (t.tabId) return slash.run(target(t.tabId), text, channelId)
+function typeCommandInto(t: Target, text: string, to: SlashReplyTo): string {
+  const target = (tabId: string): SlashTarget => ({ name: t.name, tabId, butler: !!t.butler })
+  if (t.tabId) return slash.run(target(t.tabId), text, to)
   void t
     .open()
-    .then((tabId) => slash.typeWhenIdle(target(tabId), text, channelId))
-    .catch((error: unknown) => discordRelay?.say(channelId, `⚠ ${errorText(error)}`))
-  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and posts what it prints in Discord.`
+    .then((tabId) => slash.typeWhenIdle(target(tabId), text, to))
+    .catch((error: unknown) => slashReply(to, `⚠ ${errorText(error)}`))
+  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and will ${replyWhere(to)}.`
 }
 
-function commandIntoConductor(b: ConductorBinding, text: string): string {
+function commandIntoButler(text: string): string {
+  const channelId = butler?.channel()?.channelId
   if (!discordRelay) throw new Error(STILL_STARTING)
-  discordRelay.command(conductorDestination(b), text, b.channel.channelId)
-  return `Koloft will type ${text} into the ${conductorName(b.scope)} once its turn ends, and post what it prints in Discord.`
+  if (!channelId) throw new Error(NO_CHANNEL_BOUND)
+  discordRelay.command(butlerDestination(), text, channelId)
+  return `Koloft will type ${text} into ${butlerNameNow()} once its turn ends, and post what it prints in Discord.`
 }
 
-const PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS = 10_000
-let paletteMessages = 0
+let butlerMessages = 0
 
-const PALETTE_TASK_ANSWERS_ITSELF =
-  'When this is a question or a piece of writing you can answer from what you know (translate, explain, draft a message), answer it here yourself; start or message a session only for work on files, commands or what a workspace holds.'
-
-function paletteTask(title: string, text: string): AssistTask {
-  return {
-    name: title || firstLineName(text),
-    brief: `${text}\n${PALETTE_TASK_ANSWERS_ITSELF}`,
-    staysOpen: true,
-    ownerWords: text
-  }
+function fromPalette({ words, backend, about, at }: PaletteRequest): string {
+  const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
+  const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
+  const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: start any session for this with --backend ${backend}.)`
+  return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
 }
 
-async function tellAssist(
-  scope: string,
-  title: string,
-  text: string
-): Promise<ConductorOpenResult> {
-  const tabId = conductors?.liveTab(scope)
-  return tabId ? sendPaletteText(scope, tabId, text) : openPaletteTask(scope, title, text)
+function busyButler(): SessionInfo | undefined {
+  const tab = butler?.liveTab()
+  const session = tab ? sessionOfTab(tab) : undefined
+  if (!session?.sessionId || tracker.statusOf(session.tabId) === undefined) return undefined
+  return tabIdle(session.tabId) ? undefined : session
 }
 
-async function openPaletteTask(
-  scope: string,
-  title: string,
-  text: string
-): Promise<ConductorOpenResult> {
-  const all = conductors
-  if (!all) return { ok: false, error: STILL_STARTING }
-  const task = paletteTask(title, text)
-  const running = all.runningTaskTab(scope, task.name)
-  return running ? sendPaletteText(scope, running, text) : all.openTask(scope, task)
+async function handFromPalette(request: PaletteRequest): Promise<PaletteHandOff> {
+  const text = fromPalette(request)
+  const busy = busyButler()
+  if (!busy) return tellButler(text, request.words)
+  const tabId = await sessionCommand.startButlerHelper(busy, {
+    prompt: text,
+    name: request.title,
+    ownerWords: request.words,
+    backend: request.backend
+  })
+  if (!tabId)
+    return { ok: false, error: `${butlerNameNow()} is busy, and Koloft could not start a helper.` }
+  if (!guard?.queue.list().some((q) => q.tabId === tabId)) return { ok: true, tabId, helper: true }
+  sendToRenderer(
+    CH.cron.toast,
+    `${butlerNameNow()} is busy, so a helper takes this; it is queued and starts once this Mac has room.`
+  )
+  return { ok: true, tabId, queued: true }
 }
 
-async function sendPaletteText(
-  scope: string,
+async function sendToButler(
   tabId: string,
-  text: string
+  text: string,
+  ownerWords: string
 ): Promise<ConductorOpenResult> {
-  const id = `koloft-palette-${++paletteMessages}`
+  const id = `koloft-butler-${++butlerMessages}`
+  const until = Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS
   const route = messagingOf(backendIdOf(ptyMgr.get(tabId)?.kind) ?? 'claude', false)
-  if (!(await tabReady(tabId, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS, route === 'typed')))
-    return { ok: false, error: `The ${conductorName(scope)} did not get ready in time.` }
+  if (!(await tabReady(tabId, until - Date.now(), route === 'typed')))
+    return { ok: false, error: `${butlerNameNow()} did not get ready in time.` }
   try {
     if (route === 'queue') await queueCodexMessage(tabId, text, id)
-    else if (route === 'typed')
-      await ptyMgr.type(tabId, [`The owner typed this in ⌘P: ${text}`, '\r'])
+    else if (route === 'typed') await ptyMgr.type(tabId, [text, '\r'])
     else {
-      const line = crossSessionLine('prompting', `The owner typed this in ⌘P: ${text}`, id)
+      const line = crossSessionLine('prompting', text, id)
       if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }
       // ADR-0031
-      if (hookRegDir) seedOwnerWords(saidFile(hookRegDir, tabId), text)
-      await sendPeerLine(tabId, line, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS)
+      if (hookRegDir) seedOwnerWords(saidFile(hookRegDir, tabId), ownerWords)
+      await sendPeerLine(tabId, line, until - Date.now())
     }
   } catch (error) {
     return { ok: false, error: errorText(error) }
@@ -4613,46 +4679,40 @@ async function sendPaletteText(
   return { ok: true, tabId }
 }
 
-function conductorTarget(ref: string): Target | undefined {
-  const all = conductors
-  const scope = all?.scopeOf(ref)
-  if (!all || !scope) return undefined
-  const tabId = all.liveTab(scope)
+function butlerTarget(ref: string): Target | undefined {
+  const all = butler
+  if (!all?.isButler(ref)) return undefined
+  const tabId = all.liveTab()
   return {
-    key: `conductor:${scope}`,
-    name: `the ${conductorName(scope)}`,
+    key: 'butler',
+    name: butlerNameNow(),
     backend:
       (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || preferredAssistBackend(loadSettings()),
     remote: false,
     tabId,
-    assistScope: scope,
+    butler: true,
     open: async () => {
-      const opened = await all.open(scope)
+      const opened = await all.open()
       if (!opened.ok) throw new Error(opened.error)
       return opened.tabId
     }
   }
 }
 
-async function launchCronRun(
-  req: LaunchRequest
-): Promise<{ ok: true; tabId: string } | { ok: false }> {
+async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
   try {
-    const tabId = await launchQuietTab(
-      {
-        kind: req.backend,
-        cwd: req.cwd,
-        worktree: req.worktree,
-        model: req.model,
-        effort: req.effort,
-        permission: req.permission,
-        firstPrompt: req.firstPrompt,
-        name: req.name,
-        scheduled: true
-      },
-      req.name,
-      req.jobId
-    )
+    const options: CreateTabOptions & { kind: BackendId } = {
+      kind: req.backend,
+      cwd: req.cwd,
+      worktree: req.worktree,
+      model: req.model,
+      effort: req.effort,
+      permission: req.permission,
+      firstPrompt: req.firstPrompt,
+      name: req.name,
+      scheduled: true
+    }
+    const tabId = await launchQuietTab(options, req.name, req.jobId)
     return tabId ? { ok: true, tabId } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
@@ -4680,7 +4740,7 @@ const resumeProbes: ResumeProbes = {
 
 function commitSettings(patch: Partial<Settings>): Settings {
   const s = saveSettings(patch)
-  sendToRenderer('settings:update', s)
+  sendToRenderer(CH.settings.update, s)
   updateDockBadge(attention.list())
   setRelayEnabled(s.browserControl, ptyTabIds())
   applyKeepAwake(s.keepAwake)
@@ -4723,7 +4783,7 @@ const hosts = new Hosts(
   localHost(new GithubLookup(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
-    assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey)
+    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey)
   }),
   (machine) =>
     new SshHost(machine, {
@@ -4762,7 +4822,13 @@ const hosts = new Hosts(
           pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
+          machineHookSettings(
+            tabId,
+            dir,
+            loadSettings().statuslineBuiltin,
+            allowKoloft,
+            !!guard?.isBackground(tabId)
+          )
       }
     })
 )
@@ -4780,7 +4846,7 @@ const claudeBackend = new ClaudeBackend({
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
-  error: (message) => sendToRenderer('cron:toast', message),
+  error: (message) => sendToRenderer(CH.cron.toast, message),
   machineOfTab,
   otherTabOnMachine: (machine, tmuxName, launchTab) =>
     storedSessions()
@@ -4800,7 +4866,7 @@ function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tab
 
 function registerIpc(): void {
   ipcMain.handle(
-    'terminal:create',
+    CH.terminal.create,
     async (_e, opts: CreateTabOptions): Promise<CreateTabResult> => {
       if (
         opts.kind !== 'shell' &&
@@ -4830,16 +4896,23 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.on('terminal:write', (_e, id: string, data: string) => writeToTab(id, data))
-  ipcMain.handle('terminal:paste', (_e, id: string, text: string, typedAfter?: string) => {
+  ipcMain.on(CH.terminal.write, (_e, id: string, data: string) => {
+    if (guard?.isBackground(id) && ownerTyped(data)) void guard.free(id)
+    writeToTab(id, data)
+  })
+  ipcMain.handle(CH.machine.free, (_e, tabId: string) => guard?.free(tabId) ?? false)
+  ipcMain.handle(CH.machine.now, () => guard?.state() ?? null)
+  ipcMain.handle(CH.machine.drop, (_e, tabId: string) => !!guard?.queue.drop(tabId))
+  ipcMain.handle(CH.terminal.paste, (_e, id: string, text: string, typedAfter?: string) => {
+    if (guard?.isBackground(id)) void guard.free(id)
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
     return ptyMgr.paste(id, text, typedAfter)
   })
   // PLATFORM§21
-  ipcMain.on('sessions:activity', (_e, id: unknown) => {
+  ipcMain.on(CH.sessions.activity, (_e, id: unknown) => {
     if (typeof id === 'string' && id) tracker.noteActivity(id)
   })
-  ipcMain.on('terminal:ack', (_e, id: string, ackedUtf16Units: number) => {
+  ipcMain.on(CH.terminal.ack, (_e, id: string, ackedUtf16Units: number) => {
     if (
       typeof ackedUtf16Units === 'number' &&
       Number.isFinite(ackedUtf16Units) &&
@@ -4850,23 +4923,23 @@ function registerIpc(): void {
       }
     }
   })
-  ipcMain.on('terminal:attach', (_e, id: string) => {
+  ipcMain.on(CH.terminal.attach, (_e, id: string) => {
     flowGateFor(id).attach()
     flushHeldData()
   })
-  ipcMain.handle('terminal:flowStats', () =>
+  ipcMain.handle(CH.terminal.flowStats, () =>
     [...flowGates.entries()].map(([id, gate]) => gate.stats(id))
   )
-  ipcMain.on('terminal:resize', (_e, id: string, cols: number, rows: number) =>
+  ipcMain.on(CH.terminal.resize, (_e, id: string, cols: number, rows: number) =>
     ptyMgr.resize(id, cols, rows)
   )
   ipcMain.on(
-    'terminal:kill',
+    CH.terminal.kill,
     (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
   )
 
-  ipcMain.handle('sessions:list', () => allSessions())
-  ipcMain.handle('sessions:backends', (_e, recheck: unknown) => {
+  ipcMain.handle(CH.sessions.list, () => allSessions())
+  ipcMain.handle(CH.sessions.backends, (_e, recheck: unknown) => {
     if (recheck === true) sessionBackends.forgetAvailability()
     return sessionBackends.availability((id) => ({
       id,
@@ -4874,12 +4947,12 @@ function registerIpc(): void {
       reason: startupErrors[id] ?? `${BACKEND_LABEL[id]} is not ready.`
     }))
   })
-  ipcMain.handle('sessions:installTool', (_e, backend: unknown) => {
+  ipcMain.handle(CH.sessions.installTool, (_e, backend: unknown) => {
     const id = backendIdOf(backend)
     return id ? installTool(id) : null
   })
-  ipcMain.handle('attention:list', () => attention.list())
-  ipcMain.handle('tabs:list', (): TabInventoryReply => {
+  ipcMain.handle(CH.attention.list, () => attention.list())
+  ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
     cronRunner?.onRendererReady()
     if (probeOnceTheRendererIsUp) {
@@ -4907,60 +4980,45 @@ function registerIpc(): void {
     const asleep = [...sleepers].map(([id, t]): AdoptableTab => ({ id, ...t, asleep: true }))
     return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
   })
-  ipcMain.on('attention:active-tab', (_e, id: string | null) => {
-    const prevActive = uiActiveTabId
+  ipcMain.on(CH.attention.activeTab, (_e, id: string | null) => {
     uiActiveTabId = typeof id === 'string' && id ? id : null
     if (uiActiveTabId) tracker.noteActivity(uiActiveTabId)
-    const ctx = attentionCtx()
-    if (uiActiveTabId && ctx.windowFocused) {
-      consumeOutletDedupe(uiActiveTabId)
-      attention.clear(uiActiveTabId)
-    }
-    if (prevActive && prevActive !== uiActiveTabId) attention.reconsider(prevActive, ctx)
+    if (uiActiveTabId && windowFocused()) attention.seen(uiActiveTabId)
     rememberOpenTabs()
-  })
-  ipcMain.on('attention:visit', (_e, id: string) => {
-    if (typeof id !== 'string' || !id) return
-    const prevActive = uiActiveTabId
-    uiActiveTabId = id
-    tracker.noteActivity(id)
-    consumeOutletDedupe(id)
-    attention.clear(id)
-    if (prevActive && prevActive !== id) attention.reconsider(prevActive, attentionCtx())
   })
 
   ipcMain.handle(
-    'cron:list',
+    CH.cron.list,
     () => cronRunner?.state() ?? { jobs: [], live: [], folders: {}, notes: {} }
   )
   ipcMain.handle(
-    'cron:save',
+    CH.cron.save,
     (_e, input: CronSaveInput) =>
       cronRunner?.save(input) ?? { ok: false, errors: [CRON_SAVE_MESSAGES.workspace] }
   )
-  ipcMain.handle('cron:delete', (_e, jobId: string) => cronRunner?.delete(jobId))
-  ipcMain.handle('cron:setEnabled', (_e, arg: { jobId: string; on: boolean }) =>
+  ipcMain.handle(CH.cron.delete, (_e, jobId: string) => cronRunner?.delete(jobId))
+  ipcMain.handle(CH.cron.setEnabled, (_e, arg: { jobId: string; on: boolean }) =>
     cronRunner?.setEnabled(arg.jobId, arg.on)
   )
   ipcMain.handle(
-    'cron:runNow',
+    CH.cron.runNow,
     (_e, jobId: string) => cronRunner?.runNow(jobId) ?? { ok: false, reason: 'not-ready' }
   )
-  ipcMain.handle('cron:skills', (_e, workspacePath: string) =>
+  ipcMain.handle(CH.cron.skills, (_e, workspacePath: string) =>
     hosts.of(workspacePath).listSkills(workspacePath)
   )
-  ipcMain.handle('cron:trusted', (_e, workspacePath: string, backend: BackendId) =>
+  ipcMain.handle(CH.cron.trusted, (_e, workspacePath: string, backend: BackendId) =>
     sessionBackends.get(backend).trustsFolder(workspacePath)
   )
 
-  ipcMain.handle('update:check', () => checkForUpdates())
-  ipcMain.handle('update:download', () =>
-    downloadAndInstall((p) => sendToRenderer('update:progress', p))
+  ipcMain.handle(CH.update.check, () => checkForUpdates())
+  ipcMain.handle(CH.update.download, () =>
+    downloadAndInstall((p) => sendToRenderer(CH.update.progress, p))
   )
-  ipcMain.on('update:restart', () => restartApp())
-  ipcMain.handle('update:offer', () => currentOffer())
-  ipcMain.on('update:openRelease', () => sendOverlayOpen(releasePageUrl(), 'now'))
-  ipcMain.handle('update:whatsNew', async (): Promise<WhatsNew | null> => {
+  ipcMain.on(CH.update.restart, () => restartApp())
+  ipcMain.handle(CH.update.offer, () => currentOffer())
+  ipcMain.on(CH.update.openRelease, () => sendOverlayOpen(releasePageUrl(), 'now'))
+  ipcMain.handle(CH.update.whatsNew, async (): Promise<WhatsNew | null> => {
     if (!app.isPackaged && !fixturePath()) return null
     const { show, record } = await whatsNewDecision(
       loadSettings().lastSeenVersion,
@@ -4971,9 +5029,9 @@ function registerIpc(): void {
     return show
   })
 
-  ipcMain.handle('accounts:list', () => accountViews())
+  ipcMain.handle(CH.accounts.list, () => accountViews())
   ipcMain.handle(
-    'accounts:add',
+    CH.accounts.add,
     (
       _e,
       name: string,
@@ -4982,7 +5040,7 @@ function registerIpc(): void {
       endpoint?: { baseUrl: string; model?: string }
     ) => addAccount(name, kind, secret, endpoint)
   )
-  ipcMain.handle('accounts:remove', async (_e, name: string, kind: AccountKind) => {
+  ipcMain.handle(CH.accounts.remove, async (_e, name: string, kind: AccountKind) => {
     // CODEX§15 MUSE§13
     if (!SIGN_IN_FOLDER_KINDS.includes(kind)) await keychainDelete(kind, name)
     removeAccountMeta(name, kind)
@@ -4990,16 +5048,12 @@ function registerIpc(): void {
     picker.forget(kind, name)
     pushAccounts()
   })
-  ipcMain.handle('accounts:toggle', (_e, name: string, kind: AccountKind, enabled: boolean) => {
+  ipcMain.handle(CH.accounts.toggle, (_e, name: string, kind: AccountKind, enabled: boolean) => {
     setAccountEnabled(name, kind, enabled === true)
     pushAccounts()
   })
-  ipcMain.handle('accounts:probe', () => probeAllForPanel())
-  ipcMain.handle('accounts:bypass-accepted', () =>
-    bypassWarningAccepted(claudeJsonPath(), claudeSettingsPath())
-  )
-  ipcMain.handle('accounts:accept-bypass', () => acceptBypassWarning(claudeSettingsPath()))
-  ipcMain.handle('accounts:start-login', (_e, name: string, reauth?: boolean) => {
+  ipcMain.handle(CH.accounts.probe, () => probeAllForPanel())
+  ipcMain.handle(CH.accounts.startLogin, (_e, name: string, reauth?: boolean) => {
     const v = reauth
       ? findAccount(name, 'oauth')
         ? 'ok'
@@ -5011,35 +5065,29 @@ function registerIpc(): void {
     return 'ok'
   })
   ipcMain.handle(
-    'accounts:sign-in',
+    CH.accounts.signIn,
     async (_e, kind: unknown, name: string, again?: boolean): Promise<SignInResult> =>
       isSignInFolderKind(kind)
         ? signInToHome(kind, name, again === true)
         : { ok: false, error: 'invalid-name' }
   )
-  ipcMain.handle('accounts:codex-use-reset', (_e, name: string) => codexUseReset(name))
-  ipcMain.on('accounts:cancel-login', () => {
+  ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
+  ipcMain.on(CH.accounts.cancelLogin, () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
   })
 
-  ipcMain.handle('settings:get', () => loadSettings())
-  ipcMain.handle('app:version', () => app.getVersion())
-  ipcMain.handle('settings:set', (_e, patch) => {
-    const saved = commitSettings(sanitizeSettingsPatch(patch))
-    const backend = preferredAssistBackend(saved)
-    if (!conductors || saved.discord.bindings.every((b) => b.backend === backend)) return saved
-    conductors.followBackend(backend)
-    return loadSettings()
-  })
+  ipcMain.handle(CH.settings.get, () => loadSettings())
+  ipcMain.handle(CH.app.version, () => app.getVersion())
+  ipcMain.handle(CH.settings.set, (_e, patch) => commitSettings(sanitizeSettingsPatch(patch)))
 
-  ipcMain.handle('assist:route', async (_e, id: unknown, message: unknown) => {
+  ipcMain.handle(CH.assist.route, async (_e, id: unknown, message: unknown) => {
     if (typeof id !== 'number' || typeof message !== 'string' || !workspaceMgr) return null
     const mgr = workspaceMgr
     const run = new AbortController()
     assistRuns.set(id, run)
     try {
       return await routeSession(
-        { rows: () => mgr.rows(), worktrees: (p) => mgr.worktrees(p), assist },
+        { rows: projectRows, worktrees: (p) => mgr.worktrees(p), assist },
         message,
         run.signal
       )
@@ -5047,7 +5095,7 @@ function registerIpc(): void {
       assistRuns.delete(id)
     }
   })
-  ipcMain.on('assist:cancel', (_e, id: unknown) => {
+  ipcMain.on(CH.assist.cancel, (_e, id: unknown) => {
     if (typeof id === 'number') assistRuns.get(id)?.abort()
   })
   const addWorkspacePath = (p: string): WorkspaceAddResult | undefined => {
@@ -5056,25 +5104,25 @@ function registerIpc(): void {
     if (remote && r?.code === 'added') remoteSync?.pokeNow(remote.host)
     return r
   }
-  ipcMain.handle('workspace:add', (_e, p: string) => {
+  ipcMain.handle(CH.workspace.add, (_e, p: string) => {
     const r = addWorkspacePath(p)
     if (r?.code === 'added') void gitAccounts?.autoPickNewWorkspace(p)
     return r
   })
   const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
   const isGitPlatform = (v: unknown): v is GitPlatform => GIT_PLATFORMS.includes(v as GitPlatform)
-  ipcMain.handle('gitAccounts:list', () => gitAccounts?.views() ?? [])
+  ipcMain.handle(CH.gitAccounts.list, () => gitAccounts?.views() ?? [])
   const machineOf = (v: unknown): string | undefined => (isText(v) ? v : undefined)
   ipcMain.handle(
-    'gitAccounts:login-start',
+    CH.gitAccounts.loginStart,
     (_e, platform: unknown, url: unknown, machine: unknown) =>
       gitAccounts && isGitPlatform(platform) && typeof url === 'string'
         ? gitAccounts.loginStart(platform, url, machineOf(machine))
         : { ok: false, error: 'bad-url' }
   )
-  ipcMain.on('gitAccounts:login-cancel', () => gitAccounts?.loginCancel())
-  ipcMain.on('gitAccounts:login-browser', () => gitAccounts?.loginBrowser())
-  ipcMain.handle('gitAccounts:add-token', (_e, add: Partial<GitTokenAdd> | undefined) =>
+  ipcMain.on(CH.gitAccounts.loginCancel, () => gitAccounts?.loginCancel())
+  ipcMain.on(CH.gitAccounts.loginBrowser, () => gitAccounts?.loginBrowser())
+  ipcMain.handle(CH.gitAccounts.addToken, (_e, add: Partial<GitTokenAdd> | undefined) =>
     gitAccounts && isGitPlatform(add?.platform) && isText(add.token) && typeof add.url === 'string'
       ? gitAccounts.addToken({
           platform: add.platform,
@@ -5085,46 +5133,45 @@ function registerIpc(): void {
         })
       : { ok: false, error: 'rejected' }
   )
-  ipcMain.handle('gitAccounts:remove', (_e, id: unknown, machine: unknown) =>
+  ipcMain.handle(CH.gitAccounts.remove, (_e, id: unknown, machine: unknown) =>
     isText(id) ? gitAccounts?.remove(id, machineOf(machine)) : undefined
   )
-  ipcMain.handle('gitAccounts:make-default', (_e, id: unknown, machine: unknown) =>
+  ipcMain.handle(CH.gitAccounts.makeDefault, (_e, id: unknown, machine: unknown) =>
     isText(id) ? gitAccounts?.makeDefault(id, machineOf(machine)) : undefined
   )
-  ipcMain.handle('gitAccounts:check', () => gitAccounts?.checkAll())
-  ipcMain.handle('gitAccounts:pick', (_e, wsPath: unknown, id: unknown) =>
+  ipcMain.handle(CH.gitAccounts.check, () => gitAccounts?.checkAll())
+  ipcMain.handle(CH.gitAccounts.pick, (_e, wsPath: unknown, id: unknown) =>
     isText(wsPath) && (id === null || isText(id))
       ? gitAccounts?.pick(wsPath, id).then(() => void freshness?.fetchNow(wsPath))
       : undefined
   )
-  ipcMain.handle('gitAccounts:suggest', (_e, wsPath: unknown, network: unknown) =>
+  ipcMain.handle(CH.gitAccounts.suggest, (_e, wsPath: unknown, network: unknown) =>
     isText(wsPath) && gitAccounts ? gitAccounts.suggest(wsPath, network === true) : { kind: 'none' }
   )
-  ipcMain.handle('gitAccounts:dismiss', (_e, wsPath: unknown) =>
+  ipcMain.handle(CH.gitAccounts.dismiss, (_e, wsPath: unknown) =>
     isText(wsPath) ? gitAccounts?.dismiss(wsPath) : undefined
   )
-  ipcMain.handle('gitAccounts:make-ssh-key', (_e, wsPath: unknown) =>
+  ipcMain.handle(CH.gitAccounts.makeSshKey, (_e, wsPath: unknown) =>
     isText(wsPath) ? gitAccounts?.makeSshKey(wsPath) : undefined
   )
-  ipcMain.handle('gitAccounts:check-ssh-key', (_e, wsPath: unknown) =>
+  ipcMain.handle(CH.gitAccounts.checkSshKey, (_e, wsPath: unknown) =>
     isText(wsPath) ? gitAccounts?.checkSshKey(wsPath) : undefined
   )
-  ipcMain.handle('project:create', (_e, parent: unknown, name: unknown) =>
+  ipcMain.handle(CH.project.create, (_e, parent: unknown, name: unknown) =>
     typeof parent === 'string' && parent && typeof name === 'string'
       ? createProject(hosts.of(parent), parent, name, addWorkspacePath)
       : { ok: false, reason: 'Pick a folder.' }
   )
-  ipcMain.handle('workspace:remove', (_e, p: string) => {
+  ipcMain.handle(CH.workspace.remove, (_e, p: string) => {
     const marked = markedSessionsOf(p)
     const r = workspaceMgr?.remove(p)
     if (r?.removed) {
       cronRunner?.removeWorkspace(p)
-      conductors?.removeWorkspace(p)
       for (const id of marked) attention.clearSession(id)
     }
     return r
   })
-  ipcMain.handle('workspace:removeConfirmed', async (_e, p: string) => {
+  ipcMain.handle(CH.workspace.removeConfirmed, async (_e, p: string) => {
     await Promise.all(
       storedSessions().flatMap((stored) => {
         const tabs = new Set(
@@ -5140,70 +5187,56 @@ function registerIpc(): void {
     const marked = markedSessionsOf(p)
     workspaceMgr?.removeConfirmed(p)
     cronRunner?.removeWorkspace(p)
-    conductors?.removeWorkspace(p)
     for (const id of marked) attention.clearSession(id)
   })
-  ipcMain.handle('conductors:save', (_e, input: ConductorSaveInput) => {
-    const channel = input?.channel
+  ipcMain.handle(CH.conductors.bind, (_e, channel: DiscordChannel | undefined) => {
     if (
-      typeof input?.scope !== 'string' ||
       !isDiscordId(channel?.guildId) ||
       !isDiscordId(channel.channelId) ||
       typeof channel.name !== 'string'
     )
       return { ok: false, error: 'Pick a channel.' }
     const { guildId, channelId, name } = channel
-    const saved = conductors?.save(
-      { id: input.id, scope: input.scope, channel: { guildId, channelId, name } },
-      preferredAssistBackend(loadSettings())
-    ) ?? { ok: false, error: STILL_STARTING }
+    const saved = butler?.bind({ guildId, channelId, name }) ?? {
+      ok: false,
+      error: STILL_STARTING
+    }
     if (saved.ok) registerSlashCommands()
     return saved
   })
-  ipcMain.handle('conductors:saveWithNewChannel', (_e, input: NewChannelInput) =>
-    bindWithNewChannel({ id: input.id, scope: input.scope })
-  )
-  ipcMain.handle('conductors:unbind', (_e, id: string) => {
-    conductors?.unbind(id)
+  ipcMain.handle(CH.conductors.bindNewChannel, () => bindWithNewChannel())
+  ipcMain.handle(CH.conductors.unbind, () => {
+    butler?.unbind()
     syncAnswerable()
   })
+  ipcMain.handle(CH.conductors.open, () => butler?.open() ?? { ok: false, error: STILL_STARTING })
   ipcMain.handle(
-    'conductors:open',
-    (_e, scope: string) => conductors?.open(scope) ?? { ok: false, error: STILL_STARTING }
+    CH.conductors.startFresh,
+    () => butler?.startFresh() ?? { ok: false, error: STILL_STARTING }
   )
-  ipcMain.handle(
-    'conductors:startFresh',
-    (_e, scope: string) => conductors?.startFresh(scope) ?? { ok: false, error: STILL_STARTING }
+  ipcMain.handle(CH.conductors.fromPalette, (_e, request: PaletteRequest) =>
+    handFromPalette(request)
   )
-  ipcMain.handle('conductors:openTask', (_e, scope: string, title: string, text: string) =>
-    openPaletteTask(scope, title, text)
-  )
-  ipcMain.handle('conductors:tell', (_e, scope: string, title: string, text: string) =>
-    tellAssist(scope, title, text)
-  )
-  ipcMain.handle('conductors:closeTask', (_e, tabId: string) => conductors?.closeTask(tabId))
-  ipcMain.handle('conductors:tasks', () => conductors?.taskRows() ?? [])
-  ipcMain.handle('discord:status', () => discordLink?.status() ?? DISCORD_OFF)
-  ipcMain.handle('discord:pair', (_e, isMe: unknown) => {
+  ipcMain.handle(CH.discord.status, () => discordLink?.status() ?? DISCORD_OFF)
+  ipcMain.handle(CH.discord.pair, (_e, isMe: unknown) => {
     const owner = discordLink?.pair(isMe === true)
-    if (owner) conductors?.setOwner(owner)
+    if (owner) butler?.setOwner(owner)
   })
-  ipcMain.handle('discord:channels', () => discordLink?.channels() ?? [])
-  ipcMain.handle('discord:setUpWithAssist', (_e, ownerWords?: string) =>
-    openDiscordSetup(ownerWords)
+  ipcMain.handle(CH.discord.channels, () => discordLink?.channels() ?? [])
+  ipcMain.handle(CH.discord.setUpWithButler, (_e, ownerWords?: string) =>
+    setUpDiscordWithButler(typeof ownerWords === 'string' ? ownerWords : undefined)
   )
-  ipcMain.handle('workspace:move', (_e, p: string, before: string | null) =>
+  ipcMain.handle(CH.workspace.move, (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
   )
-  ipcMain.handle('workspace:rows', async () => {
+  ipcMain.handle(CH.workspace.rows, async () => {
     await workspaceMgr?.firstScan
     return workspaceMgr?.rows() ?? []
   })
-  ipcMain.handle('workspace:discover', () => workspaceMgr?.discover() ?? [])
-  ipcMain.handle('workspace:worktrees', async (_e, p: string) => {
+  ipcMain.handle(CH.workspace.discover, () => workspaceMgr?.discover() ?? [])
+  ipcMain.handle(CH.workspace.worktrees, async (_e, p: string) => {
     const trees = (await workspaceMgr?.worktrees(p)) ?? []
     for (const stored of storedSessions()) {
-      if (!SUPPORTED_PAIRS[stored.id][hostOf(p)]) continue
       const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
       const there = await Promise.all(
         mine.map((r) => r.state === 'ready' && hosts.of(r.worktreePath).dirExists(r.worktreePath))
@@ -5226,16 +5259,16 @@ function registerIpc(): void {
     }
     return trees
   })
-  ipcMain.handle('workspace:fetchFreshness', (_e, p: string) => freshness?.fetchNow(p) ?? null)
+  ipcMain.handle(CH.workspace.fetchFreshness, (_e, p: string) => freshness?.fetchNow(p) ?? null)
   ipcMain.handle(
-    'workspace:pull',
+    CH.workspace.pull,
     (_e, p: string, expect: { branch: string; head: string }) =>
       freshness?.pull(p, expect) ?? { ok: false, reason: 'state changed' }
   )
-  ipcMain.handle('workbench:get', (_e, sessionId: string) =>
+  ipcMain.handle(CH.workbench.get, (_e, sessionId: string) =>
     workspaceMgr?.workbenchState(sessionId)
   )
-  ipcMain.on('workbench:setState', (_e, sessionId: string, state: SessionWorkbenchState) => {
+  ipcMain.on(CH.workbench.setState, (_e, sessionId: string, state: SessionWorkbenchState) => {
     if (typeof sessionId !== 'string' || !sessionId) return
     if (!state || typeof state !== 'object' || !Array.isArray(state.tabs)) return
     if (!workspaceMgr) return
@@ -5244,31 +5277,31 @@ function registerIpc(): void {
       sanitizeSessionWorkbench(state, workspaceMgr.defaultOpen())
     )
   })
-  ipcMain.on('workbench:available', (_e, available: unknown, terminal: unknown) => {
+  ipcMain.on(CH.workbench.available, (_e, available: unknown, terminal: unknown) => {
     setWorkbenchAvailable(available === true, terminal === true)
   })
-  ipcMain.on('workbench:findAvailable', (_e, available: unknown) => {
+  ipcMain.on(CH.workbench.findAvailable, (_e, available: unknown) => {
     setFindAvailable(available === true)
   })
-  ipcMain.on('workbench:saveAvailable', (_e, available: unknown) => {
+  ipcMain.on(CH.workbench.saveAvailable, (_e, available: unknown) => {
     setSaveAvailable(available === true)
   })
-  ipcMain.on('workbench:dirtyTabs', (_e, ids: unknown) => {
+  ipcMain.on(CH.workbench.dirtyTabs, (_e, ids: unknown) => {
     if (!Array.isArray(ids) || ids.some((x) => typeof x !== 'string')) return
     dirtyTabIds.clear()
     for (const id of ids as string[]) dirtyTabIds.add(id)
   })
-  ipcMain.handle('sessions:archive', (_e, id: unknown): boolean => {
+  ipcMain.handle(CH.sessions.archive, (_e, id: unknown): boolean => {
     if (typeof id !== 'string' || !id) return false
     return archiveSession(id)
   })
 
-  ipcMain.on('sessions:setResident', (_e, id: unknown, on: unknown) => {
+  ipcMain.on(CH.sessions.setResident, (_e, id: unknown, on: unknown) => {
     if (typeof id !== 'string' || !id || typeof on !== 'boolean') return
     workspaceMgr?.setResident(id, on)
   })
 
-  ipcMain.handle('sessions:forceClose', async (_e, id: unknown): Promise<{ ok: boolean }> => {
+  ipcMain.handle(CH.sessions.forceClose, async (_e, id: unknown): Promise<{ ok: boolean }> => {
     if (typeof id !== 'string' || !id) return { ok: false }
     const tabId = sessionBackends.forSession(id).aliveTabFor(id)
     if (!tabId) return { ok: false }
@@ -5276,15 +5309,15 @@ function registerIpc(): void {
   })
 
   // CC§2
-  ipcMain.handle('sessions:transcriptExists', (_e, id: unknown): boolean | Promise<boolean> => {
+  ipcMain.handle(CH.sessions.transcriptExists, (_e, id: unknown): boolean | Promise<boolean> => {
     if (typeof id !== 'string' || !id) return false
     return sessionBackends.forSession(id).transcriptExists(id)
   })
 
-  ipcMain.handle('workspace:historyRows', (_e, p: string) =>
+  ipcMain.handle(CH.workspace.historyRows, (_e, p: string) =>
     sessionBackends.historyRows(p, (id, error) =>
       sendToRenderer(
-        'cron:toast',
+        CH.cron.toast,
         `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
       )
     )
@@ -5292,17 +5325,15 @@ function registerIpc(): void {
 
   const sessionSearch = new SessionSearch({
     candidates: () => {
-      const localPins = (workspaceMgr?.pinnedPaths() ?? [])
-        .map((w) => w.path)
-        .filter((p) => !parseRemoteKey(p))
+      const pins = (workspaceMgr?.pinnedPaths() ?? []).map((w) => w.path)
       return [
         ...(workspaceMgr?.searchableRows() ?? []),
-        ...storedSessions().flatMap((s) => s.searchable(localPins))
+        ...storedSessions().flatMap((s) => s.searchable(pins))
       ]
     },
     backendSnippets: async (term, signal) =>
       (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
-    hidden: (id) => !!sessionBackends.conductorOf(id),
+    hidden: (id) => sessionBackends.isButlerSession(id),
     scan: (files, term, found) => {
       // PLATFORM§4
       const worker = createTranscriptSearchWorker({ workerData: { files, term } })
@@ -5315,7 +5346,7 @@ function registerIpc(): void {
         stop: () => void worker.terminate()
       }
     },
-    send: (found) => sendToRenderer('sessions:search-hits', found)
+    send: (found) => sendToRenderer(CH.sessions.searchHits, found)
   })
   const usageCache = new UsageCache({
     cacheFile: () => path.join(app.getPath('userData'), 'usage-cache.json'),
@@ -5335,76 +5366,77 @@ function registerIpc(): void {
       worker.once('exit', ended)
     },
     codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
-    changed: () => sendToRenderer('usage:changed')
+    changed: () => sendToRenderer(CH.usage.changed)
   })
-  ipcMain.handle('usage:read', () => usageCache.read())
+  ipcMain.handle(CH.usage.read, () => usageCache.read())
 
-  ipcMain.on('sessions:search', (_e, searchId: unknown, term: unknown) => {
+  ipcMain.on(CH.sessions.search, (_e, searchId: unknown, term: unknown) => {
     if (typeof searchId !== 'number' || typeof term !== 'string') return
     sessionSearch.start(searchId, term)
   })
 
-  ipcMain.handle('sessions:leftovers', () => leftovers)
-  ipcMain.handle('sessions:stopLeftover', async (_e, sessionId: unknown, pid: unknown) => {
+  ipcMain.handle(CH.sessions.leftovers, () => leftovers)
+  ipcMain.handle(CH.sessions.stopLeftover, async (_e, sessionId: unknown, pid: unknown) => {
     if (typeof sessionId !== 'string' || typeof pid !== 'number') return false
     const stopped = await stopLeftover(sessionId, pid)
     await refreshLeftovers()
     return stopped
   })
 
-  ipcMain.handle('sessions:resumePlan', (_e, id: unknown): Promise<ResumePlan> => {
+  ipcMain.handle(CH.sessions.resumePlan, (_e, id: unknown): Promise<ResumePlan> => {
     if (typeof id !== 'string' || !id) {
       return Promise.resolve({ action: 'unavailable', reason: 'not-found' })
     }
     return sessionBackends.forSession(id).resumePlan(id)
   })
 
-  ipcMain.handle('sessions:resume', (_e, req: SessionResumeRequest) => {
+  ipcMain.handle(CH.sessions.resume, (_e, req: SessionResumeRequest) => {
     if (typeof req?.sessionId !== 'string') return { ok: false, code: 'invalid-args' }
     return sessionBackends.forSession(req.sessionId).resume(req)
   })
 
-  ipcMain.on('app:isDev', (e) => {
+  ipcMain.on(CH.app.isDev, (e) => {
     e.returnValue = !app.isPackaged
   })
 
-  ipcMain.on('app:quit-approved', () => {
+  ipcMain.on(CH.app.quitApproved, () => {
     clearQuitFallback()
     approveAndRun(() => app.quit())
   })
-  ipcMain.on('app:quit-held', () => {
+  ipcMain.on(CH.app.quitHeld, () => {
     clearQuitFallback()
     resetQuitGuard()
   })
-  ipcMain.on('app:quit-declined', () => {
+  ipcMain.on(CH.app.quitDeclined, () => {
     clearQuitFallback()
     declineQuit()
   })
 
-  ipcMain.on('shortcut:window', (e, cmd: WindowCommand) => applyWindowCommand(e.sender, cmd))
+  ipcMain.on(CH.shortcut.window, (e, cmd: WindowCommand) => applyWindowCommand(e.sender, cmd))
 
-  ipcMain.on('browser:guest-limit', (e) => {
+  ipcMain.on(CH.browser.guestLimit, (e) => {
     e.returnValue = browserGuestLimit()
   })
-  ipcMain.on('browser:overlay-guest', (_e, guestId: unknown, on: unknown) => {
+  ipcMain.on(CH.browser.overlayGuest, (_e, guestId: unknown, on: unknown) => {
     if (typeof guestId !== 'number') return
     if (on) overlayGuests.add(guestId)
     else overlayGuests.delete(guestId)
   })
-  ipcMain.on('browser:guest-owner', (_e, guestId: unknown, ownerTabId: unknown) => {
+  ipcMain.on(CH.browser.guestOwner, (_e, guestId: unknown, ownerTabId: unknown) => {
     if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return
     const guest = webContents.fromId(guestId)
     if (guest) guestOwners.set(guest, ownerTabId)
   })
-  ipcMain.on('browser:overlay-ready', () => {
+  ipcMain.on(CH.browser.overlayReady, () => {
     overlayListening = true
     flushOverlayOpens()
   })
-  ipcMain.on('browser:strip', (_e, sessionId: unknown, targets: unknown) => {
+  ipcMain.on(CH.browser.strip, (_e, sessionId: unknown, targets: unknown) => {
     if (typeof sessionId !== 'string' || !Array.isArray(targets)) return
     relayStripChanged(sessionId, targets as BrowserStripTarget[])
   })
-  ipcMain.on('terminal:screen-done', (_e, answer: unknown) => {
+  ipcMain.on(CH.browser.hostComposing, (_e, on: unknown) => hostComposing(on === true))
+  ipcMain.on(CH.terminal.screenDone, (_e, answer: unknown) => {
     const a = answer as ScreenAnswer
     if (!a || typeof a.requestId !== 'string') return
     const pending = screenAsks.get(a.requestId)
@@ -5412,7 +5444,7 @@ function registerIpc(): void {
     screenAsks.delete(a.requestId)
     pending(a)
   })
-  ipcMain.on('browser:cdp-op-done', (_e, res: unknown) => {
+  ipcMain.on(CH.browser.cdpOpDone, (_e, res: unknown) => {
     const r = res as BrowserCdpOpResult
     if (!r || typeof r.opId !== 'string') return
     const pending = cdpOps.get(r.opId)
@@ -5420,10 +5452,10 @@ function registerIpc(): void {
     cdpOps.delete(r.opId)
     pending(r)
   })
-  ipcMain.on('browser:open-external', (_e, url: string) => {
+  ipcMain.on(CH.browser.openExternal, (_e, url: string) => {
     if (typeof url === 'string') openUrlExternally(url)
   })
-  ipcMain.on('browser:devtools', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.devtools, (_e, id: unknown) => {
     if (typeof id !== 'number') return
     const guest = webContents.fromId(id)
     if (!guest || guest.getType() !== 'webview') return
@@ -5431,23 +5463,23 @@ function registerIpc(): void {
     if (guest.isDevToolsOpened()) guest.closeDevTools()
     else guest.openDevTools({ mode: 'detach', activate: !BACKGROUND_TEST })
   })
-  ipcMain.handle('ext:list', () =>
+  ipcMain.handle(CH.ext.list, () =>
     listExtensions().map(({ id, name, version, enabled }) => ({ id, name, version, enabled }))
   )
-  ipcMain.handle('ext:set-enabled', (_e, id: unknown, enabled: unknown) => {
+  ipcMain.handle(CH.ext.setEnabled, (_e, id: unknown, enabled: unknown) => {
     if (typeof id !== 'string' || typeof enabled !== 'boolean') return
     return setExtensionEnabled(id, enabled)
   })
-  ipcMain.handle('ext:uninstall', (_e, id: unknown) => {
+  ipcMain.handle(CH.ext.uninstall, (_e, id: unknown) => {
     if (typeof id === 'string') uninstallExtension(id)
   })
-  ipcMain.on('ext:active-guest', (_e, id: unknown, url: unknown) => {
+  ipcMain.on(CH.ext.activeGuest, (_e, id: unknown, url: unknown) => {
     if (typeof id === 'number') reportActiveGuest(id, typeof url === 'string' ? url : '')
   })
-  ipcMain.on('ext:open-dropped', (_e, url: unknown) => {
+  ipcMain.on(CH.ext.openDropped, (_e, url: unknown) => {
     if (typeof url === 'string') reportOpenDropped(url)
   })
-  ipcMain.handle('ext:popup-anchor', (_e, rect: ExtensionPopupAnchor) => {
+  ipcMain.handle(CH.ext.popupAnchor, (_e, rect: ExtensionPopupAnchor) => {
     if (!rect) return
     const finite = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v)
     // PLATFORM§5
@@ -5455,62 +5487,62 @@ function registerIpc(): void {
       beforeActivate(rect)
     }
   })
-  ipcMain.on('ext:dismiss-popup', () => dismissActionPopup())
-  ipcMain.on('ext:permission-answer', (_e, id: unknown, granted: unknown) => {
+  ipcMain.on(CH.ext.dismissPopup, () => dismissActionPopup())
+  ipcMain.on(CH.ext.permissionAnswer, (_e, id: unknown, granted: unknown) => {
     if (typeof id === 'string') answerPermissionRequest(id, granted === true)
   })
 
-  ipcMain.on('browser:permission-answer', (_e, id: unknown, granted: unknown) => {
+  ipcMain.on(CH.browser.permissionAnswer, (_e, id: unknown, granted: unknown) => {
     if (typeof id !== 'string') return
     answerPermission(id, granted === true)
   })
 
-  ipcMain.on('browser:permission-cancel', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.permissionCancel, (_e, id: unknown) => {
     if (typeof id !== 'string') return
     const pending = pendingPermissions.get(id)
     if (pending) dropPermissions((p) => p === pending)
   })
 
-  ipcMain.on('browser:download-cancel', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.downloadCancel, (_e, id: unknown) => {
     if (typeof id !== 'string') return
     liveDownloads.get(id)?.cancel()
   })
 
-  ipcMain.on('browser:download-retry', (_e, id: unknown) => {
+  ipcMain.on(CH.browser.downloadRetry, (_e, id: unknown) => {
     if (typeof id !== 'string') return
     const url = downloadSources.get(id)
     if (!url) return
     retryTargets.set(url, id)
-    sendToRenderer('browser:download-event', { id, kind: 'retrying' })
+    sendToRenderer(CH.browser.downloadEvent, { id, kind: 'retrying' })
     session.fromPartition(BROWSER_PARTITION).downloadURL(url)
   })
 
-  ipcMain.on('browser:copy-text', (_e, text: unknown) => {
+  ipcMain.on(CH.browser.copyText, (_e, text: unknown) => {
     if (typeof text !== 'string' || !text) return
     clipboard.writeText(text.slice(0, 8192))
   })
 
-  ipcMain.on('browser:set-muted', (_e, guestId: unknown, muted: unknown) => {
+  ipcMain.on(CH.browser.setMuted, (_e, guestId: unknown, muted: unknown) => {
     if (typeof guestId !== 'number') return
     const contents = webContents.fromId(guestId)
     if (!contents || contents.session !== session.fromPartition(BROWSER_PARTITION)) return
     contents.setAudioMuted(muted === true)
   })
 
-  ipcMain.handle('browser:cert-proceed', (_e, url: string) => {
+  ipcMain.handle(CH.browser.certProceed, (_e, url: string) => {
     const host = certHostOf(typeof url === 'string' ? url : '')
     if (!host) return
     trustedCertHosts.add(host)
   })
   // PLATFORM§12
-  ipcMain.handle('browser:clear-data', async () => {
+  ipcMain.handle(CH.browser.clearData, async () => {
     const ses = session.fromPartition(BROWSER_PARTITION)
     trustedCertHosts.clear()
     await ses.clearData()
     await ses.clearAuthCache()
     await ses.closeAllConnections()
   })
-  ipcMain.on('browser:auth-answer', (_e, id: string, answer: BrowserDialogAnswer) => {
+  ipcMain.on(CH.browser.authAnswer, (_e, id: string, answer: BrowserDialogAnswer) => {
     const respond = pendingAuth.get(id)
     if (!respond) return
     pendingAuth.delete(id)
@@ -5520,7 +5552,7 @@ function registerIpc(): void {
   })
 
   ipcMain.on(
-    'browser:js-dialog',
+    CH.browser.jsDialog,
     (e, request: { kind?: unknown; message?: unknown; defaultValue?: unknown }) => {
       const cancel = { ok: false } satisfies BrowserDialogAnswer
       if (e.sender.session !== session.fromPartition(BROWSER_PARTITION)) {
@@ -5547,10 +5579,10 @@ function registerIpc(): void {
         guestId: e.sender.id,
         overlay: isOverlayGuest(e.sender)
       }
-      sendToRenderer('browser:js-dialog', payload)
+      sendToRenderer(CH.browser.jsDialog, payload)
     }
   )
-  ipcMain.on('browser:js-dialog-answer', (_e, id: string, answer: BrowserDialogAnswer) => {
+  ipcMain.on(CH.browser.jsDialogAnswer, (_e, id: string, answer: BrowserDialogAnswer) => {
     const respond = pendingJsDialogs.get(id)
     if (!respond) return
     pendingJsDialogs.delete(id)
@@ -5561,68 +5593,68 @@ function registerIpc(): void {
     )
   })
 
-  ipcMain.handle('preview:readText', async (_e, p: string): Promise<string> => {
+  ipcMain.handle(CH.preview.readText, async (_e, p: string): Promise<string> => {
     if (typeof p !== 'string' || !p) throw new Error('KOLOFT_READ_FAILED')
     return hosts.of(p).readText(p)
   })
-  ipcMain.handle('fs:listDir', (_e, p: string, opts?: { showIgnored?: boolean }) =>
+  ipcMain.handle(CH.fs.listDir, (_e, p: string, opts?: { showIgnored?: boolean }) =>
     hosts.of(p).listDir(p, opts)
   )
-  ipcMain.handle('fs:dirExists', (_e, p: string) =>
+  ipcMain.handle(CH.fs.dirExists, (_e, p: string) =>
     typeof p === 'string' && p ? hosts.of(p).dirExistsOrThrow(p) : false
   )
-  ipcMain.handle('fs:search', (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
+  ipcMain.handle(CH.fs.search, (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
     hosts.of(p).search(p, q, opts)
   )
   const baseArg = sanitizeBase
   const untrackedArg = (u: unknown): boolean => u === true
-  ipcMain.handle('fs:gitChanges', (_e, root: string, base?: unknown) =>
+  ipcMain.handle(CH.fs.gitChanges, (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root
       ? hosts.of(root).gitChanges(root, base === 'head' ? 'head' : 'merge-base')
       : { base: null, status: {}, numstat: {}, missing: false }
   )
-  ipcMain.handle('fs:gitDiff', (_e, root: string, base?: unknown) =>
+  ipcMain.handle(CH.fs.gitDiff, (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root
       ? hosts.of(root).gitDiff(root, baseArg(base))
       : { text: '', truncated: false, notRepo: true, toplevel: null }
   )
-  ipcMain.handle('fs:gitFileDiff', (_e, p: string, base?: unknown, untracked?: unknown) =>
+  ipcMain.handle(CH.fs.gitFileDiff, (_e, p: string, base?: unknown, untracked?: unknown) =>
     typeof p === 'string' && p
       ? hosts.of(p).gitFileDiff(p, baseArg(base), untrackedArg(untracked))
       : { text: '', truncated: false }
   )
-  ipcMain.handle('fs:gitFileDiffFull', (_e, p: string, base?: unknown, untracked?: unknown) =>
+  ipcMain.handle(CH.fs.gitFileDiffFull, (_e, p: string, base?: unknown, untracked?: unknown) =>
     typeof p === 'string' && p
       ? hosts.of(p).gitFileDiffFull(p, baseArg(base), untrackedArg(untracked))
       : { text: '', truncated: false }
   )
   ipcMain.handle(
-    'fs:searchContent',
+    CH.fs.searchContent,
     (_e, root: string, q: string, opts?: { showIgnored?: boolean }) =>
       typeof root === 'string' && root
         ? hosts.of(root).searchContent(root, q, opts)
         : { hits: [], truncated: false }
   )
-  ipcMain.handle('fs:watchDir', (_e, root: string) =>
+  ipcMain.handle(CH.fs.watchDir, (_e, root: string) =>
     typeof root === 'string' && root
-      ? hosts.of(root).watchDir(root, (r) => sendToRenderer('fs:dir-changed', r))
+      ? hosts.of(root).watchDir(root, (r) => sendToRenderer(CH.fs.dirChanged, r))
       : false
   )
-  ipcMain.on('fs:unwatchDir', (_e, root: string) => {
+  ipcMain.on(CH.fs.unwatchDir, (_e, root: string) => {
     if (typeof root === 'string' && root) hosts.of(root).unwatchDir(root)
   })
-  ipcMain.on('fs:watchFile', (_e, p: string) => {
+  ipcMain.on(CH.fs.watchFile, (_e, p: string) => {
     if (typeof p === 'string' && isAbsoluteOnHost(p))
-      hosts.of(p).watchFile(p, (fp, st) => sendToRenderer('fs:file-changed', fp, st))
+      hosts.of(p).watchFile(p, (fp, st) => sendToRenderer(CH.fs.fileChanged, fp, st))
   })
-  ipcMain.on('fs:unwatchFile', (_e, p: string) => {
+  ipcMain.on(CH.fs.unwatchFile, (_e, p: string) => {
     if (typeof p === 'string' && p) hosts.of(p).unwatchFile(p)
   })
-  ipcMain.on('fs:reveal', (_e, p: string) => {
+  ipcMain.on(CH.fs.reveal, (_e, p: string) => {
     if (typeof p === 'string' && p) hosts.of(p).reveal(p)
   })
-  ipcMain.handle('edit:open', (_e, p: unknown) => hosts.of(p as string).openForEdit(p as string))
-  ipcMain.handle('edit:write', (_e, p: unknown, text: unknown, expect: unknown, opts: unknown) =>
+  ipcMain.handle(CH.edit.open, (_e, p: unknown) => hosts.of(p as string).openForEdit(p as string))
+  ipcMain.handle(CH.edit.write, (_e, p: unknown, text: unknown, expect: unknown, opts: unknown) =>
     hosts
       .of(p as string)
       .writeText(
@@ -5632,54 +5664,54 @@ function registerIpc(): void {
         (opts ?? undefined) as { force?: unknown; eol?: unknown } | undefined
       )
   )
-  ipcMain.handle('edit:create', (_e, dirPath: unknown, name: unknown) =>
+  ipcMain.handle(CH.edit.create, (_e, dirPath: unknown, name: unknown) =>
     hosts.of(dirPath as string).createFile(dirPath as string, name as string)
   )
-  ipcMain.handle('notes:path', (_e, ws: unknown) => {
+  ipcMain.handle(CH.notes.path, (_e, ws: unknown) => {
     if (typeof ws !== 'string' || !ws) return null
     return notesFileOfScope(ws) ?? null
   })
-  ipcMain.handle('github:info', async (_e, root: unknown, force: unknown) => {
+  ipcMain.handle(CH.github.info, async (_e, root: unknown, force: unknown) => {
     if (typeof root !== 'string' || !root) return null
     const { now, settled } = await hosts.of(root).github.info(root, { force: force === true })
     if (settled)
       void settled.then(
-        (info) => sendToRenderer('github:info', root, info),
+        (info) => sendToRenderer(CH.github.info, root, info),
         () => {}
       )
     return now
   })
-  ipcMain.handle('github:target', (_e, root: unknown, what: unknown) => {
+  ipcMain.handle(CH.github.target, (_e, root: unknown, what: unknown) => {
     if (typeof root !== 'string' || !root) return null
     if (what !== 'repo' && what !== 'pulls' && what !== 'pr' && what !== 'compare') return null
     return hosts.of(root).github.target(root, what)
   })
-  ipcMain.handle('github:checks', (_e, root: unknown, pr: unknown): Promise<PrChecks> => {
+  ipcMain.handle(CH.github.checks, (_e, root: unknown, pr: unknown): Promise<PrChecks> => {
     if (typeof root !== 'string' || !root || !Number.isInteger(pr)) {
       return Promise.resolve({ state: 'failed' })
     }
     return hosts.of(root).github.checks(root, pr as number)
   })
-  ipcMain.handle('github:failing-checks-text', (_e, root: unknown, pr: unknown) => {
+  ipcMain.handle(CH.github.failingChecksText, (_e, root: unknown, pr: unknown) => {
     if (typeof root !== 'string' || !root || !Number.isInteger(pr)) return null
     return hosts.of(root).github.failingChecksText(root, pr as number)
   })
-  ipcMain.handle('github:commit', (_e, root: unknown, message: unknown) => {
+  ipcMain.handle(CH.github.commit, (_e, root: unknown, message: unknown) => {
     if (typeof root !== 'string' || !root || typeof message !== 'string') return BAD_GIT_STEP
     const host = hosts.of(root)
     return commitAll((args, network) => host.gitRun(root, args, network), message)
   })
-  ipcMain.handle('github:push', (_e, root: unknown) => {
+  ipcMain.handle(CH.github.push, (_e, root: unknown) => {
     if (typeof root !== 'string' || !root) return BAD_GIT_STEP
     const host = hosts.of(root)
     return pushBranch((args, network) => host.gitRun(root, args, network))
   })
-  ipcMain.handle('github:open-items', (_e, root: unknown) => {
+  ipcMain.handle(CH.github.openItems, (_e, root: unknown) => {
     if (typeof root !== 'string' || !root) return { state: 'no-repo' }
     return hosts.of(root).github.openItems(root)
   })
   ipcMain.handle(
-    'github:pr-worktree',
+    CH.github.prWorktree,
     async (_e, root: unknown, pr: unknown, branch: unknown): Promise<PrWorktreeResult> => {
       if (
         typeof root !== 'string' ||
@@ -5700,7 +5732,7 @@ function registerIpc(): void {
       return r
     }
   )
-  ipcMain.handle('preview:openFileDialog', async () => {
+  ipcMain.handle(CH.preview.openFileDialog, async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
     if (stub) return takeStubbedDialogPick(stub)
     if (!mainWindow) return null
@@ -5709,9 +5741,9 @@ function registerIpc(): void {
     return res.filePaths[0]
   })
 
-  ipcMain.handle('window:isFullScreen', () => mainWindow?.isFullScreen() ?? false)
+  ipcMain.handle(CH.window.isFullScreen, () => mainWindow?.isFullScreen() ?? false)
 
-  ipcMain.handle('workspace:pickFolder', async () => {
+  ipcMain.handle(CH.workspace.pickFolder, async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
     if (stub) return takeStubbedDialogPick(stub)
     if (!mainWindow) return null
@@ -5720,11 +5752,11 @@ function registerIpc(): void {
     return res.filePaths[0]
   })
 
-  ipcMain.on('preview:os-open', (_e, p: string) => {
+  ipcMain.on(CH.preview.osOpen, (_e, p: string) => {
     if (typeof p === 'string' && p) hosts.of(p).osOpen(p)
   })
 
-  ipcMain.on('app:home', (e) => {
+  ipcMain.on(CH.app.home, (e) => {
     try {
       e.returnValue = fs.realpathSync(os.homedir())
     } catch {

@@ -13,6 +13,7 @@ import { relTime } from '../sessionRows'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 import { useAssistSetup } from '../useAssistSetup'
 import { AssistSetup, InstallHint } from './AssistSetup'
+import '../onboarding.css'
 
 const PIC_ROWS: { color: string; title: string; state: string; cold?: boolean }[] = [
   { color: 'var(--accent)', title: 'Fix login bug', state: 'working' },
@@ -373,6 +374,12 @@ export function Onboarding({
                   <span>— {l.what}</span>
                 </div>
               ))}
+            </div>
+            <div className="quiet">
+              Claude Code runs most steps without asking, so its light seldom turns amber: Koloft
+              starts it with permission prompts skipped (Settings ▸ Accounts), and without that it
+              starts in auto mode. To be asked before each step, turn that switch off and pick
+              manual with ⇧Tab in the session.
             </div>
             <div className="quiet">
               When Koloft is in the background, a light turning amber or green also sends a

@@ -1,0 +1,21 @@
+.modal.remotews {
+  width: 420px;
+}
+.modal.remotews .flabel {
+  margin-top: 10px;
+}
+.rws-err {
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--danger);
+}
+.rws-note {
+  margin-top: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fg-faint);
+}
+.rws-note code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+}

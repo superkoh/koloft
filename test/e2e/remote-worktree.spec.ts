@@ -30,7 +30,7 @@ import {
 test.afterEach(({ env }) => killFakeRemote(env))
 
 async function closeActiveTab(app: ElectronApplication, page: Page): Promise<void> {
-  await page.locator('.ws-tab.active').first().click()
+  await page.locator('.ws .ws-tab.active').first().click()
   await sendShortcut(app, 'shortcut:close-tab')
   const confirm = page.locator('.modal', { hasText: 'Close running session?' })
   if (await confirm.isVisible({ timeout: 4000 }).catch(() => false)) {
@@ -202,6 +202,48 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
         execFileSync('git', ['-C', wtDir, 'branch', '--show-current'], { encoding: 'utf8' })
       ).toBe('worktree-gone\n')
       expect(fs.realpathSync(resume.cwd)).toBe(fs.realpathSync(remoteDir(env)))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-22: restarting a running worktree session whose worktree is gone from the machine rebuilds it there with git and resumes the same session, in place', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installFakeRemote(env)
+    gitInit(remoteDir(env))
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await expect
+        .poll(async () => (await wsMenuTexts(page)).join(' | '), { timeout: 60_000 })
+        .toContain('New worktree session')
+      const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('gone')
+      await page.keyboard.press('Enter')
+      await expect(dlg).toHaveCount(0)
+
+      const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: FAKE_SESSION_TITLE })
+      await expect(row).toHaveCount(1, { timeout: 120_000 })
+      await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+      const [first] = await waitForCalls(env, 1, 60_000)
+      const wtDir = path.join(remoteDir(env), '.claude', 'worktrees', 'gone')
+
+      execFileSync('git', ['-C', remoteDir(env), 'worktree', 'remove', '--force', '--force', wtDir])
+      expect(fs.existsSync(wtDir)).toBe(false)
+      await app.evaluate(({ Menu }) =>
+        Menu.getApplicationMenu()?.getMenuItemById('restart-session')?.click()
+      )
+
+      const calls = await waitForCalls(env, 2, 90_000)
+      expect(resumedId(calls[calls.length - 1])).toBe(first.sessionId)
+      expect(sshCommands(env).some((c) => c.includes("'worktree' 'add'"))).toBe(true)
+      expect(
+        execFileSync('git', ['-C', wtDir, 'branch', '--show-current'], { encoding: 'utf8' })
+      ).toBe('worktree-gone\n')
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(1)
     } finally {
       await quitAndClose(app)
     }

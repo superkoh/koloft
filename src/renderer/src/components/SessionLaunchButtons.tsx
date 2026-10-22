@@ -13,8 +13,7 @@ import {
   backendAvailable,
   byBackend,
   effectiveBackend,
-  listedBackends,
-  unsupportedPairMessage
+  listedBackends
 } from '@shared/sessionBackend'
 import { ACCOUNTS_PANE, noUsableAccountLead } from '@shared/accountUsage'
 import type { BackendId, CreateTabOptions, HostId } from '@shared/types'
@@ -25,6 +24,7 @@ import { useStore } from '../store'
 import { useInstalledBackends } from '../useInstalledBackends'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { dropPosFor } from './WorkspaceSidebar'
+import '../workspacePicker.css'
 
 export type SessionLaunchOptions = Pick<
   CreateTabOptions,
@@ -41,21 +41,14 @@ export function useLaunchChoice(host: HostId) {
   const listed = listedBackends(methods, detected && ((b) => backendAvailable(detected, b)))
   const setupIssue = (backend: BackendId, on = host): string => {
     if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
-    const refusal = unsupportedPairMessage(backend, on)
-    if (refusal || on === 'ssh') return refusal ?? ''
+    if (on === 'ssh') return ''
     const result = found(backend)
     return !detected || result?.available ? '' : result?.reason || 'Not installed'
   }
   const issue = (backend: BackendId, on = host): string =>
     setupIssue(backend, on) || accountIssue(backend)
   const note = (backend: BackendId, on = host): string =>
-    unsupportedPairMessage(backend, on)
-      ? 'Local only'
-      : setupIssue(backend, on)
-        ? 'Unavailable'
-        : accountIssue(backend)
-          ? 'No account'
-          : ''
+    setupIssue(backend, on) ? 'Unavailable' : accountIssue(backend) ? 'No account' : ''
   const choice = ({
     on = host,
     backends = listed,

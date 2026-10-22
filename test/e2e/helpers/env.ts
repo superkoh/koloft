@@ -99,15 +99,11 @@ export function setupE2EEnv(): E2EEnv {
     JSON.stringify({
       onboardingSeen: false,
       accounts: [seededAccount(E2E_CLAUDE_ACCOUNT, 'apikey')],
-      assist: { on: true, backend: 'claude' }
+      assist: { on: true, backend: 'claude' },
+      skipPermissionsAgreed: true
     })
   )
-  // CC§9
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
-  fs.writeFileSync(
-    path.join(home, '.claude', 'settings.json'),
-    JSON.stringify({ skipDangerousModePermissionPrompt: true })
-  )
   const fakeSecuritySrc =
     `#!/usr/bin/env bash\n` +
     `acct=""; svc=""; prev=""\n` +
@@ -356,16 +352,8 @@ export function museCalls(env: E2EEnv): MuseCall[] {
     .map((line) => JSON.parse(line) as MuseCall)
 }
 
-export function museSaid(env: E2EEnv, sessionId: string): string[] {
-  const file = path.join(
-    env.home,
-    '.local',
-    'share',
-    'muse',
-    'sessions',
-    'fake',
-    `${sessionId}.json`
-  )
+export function museSaid(env: E2EEnv, sessionId: string, home = env.home): string[] {
+  const file = path.join(home, '.local', 'share', 'muse', 'sessions', 'fake', `${sessionId}.json`)
   try {
     const s = JSON.parse(fs.readFileSync(file, 'utf8')) as {
       items: { kind: string; text: string }[]

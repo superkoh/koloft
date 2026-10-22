@@ -104,6 +104,7 @@ function makeDeps(): Harness {
 type Relay = typeof import('../../src/main/cdpRelay')
 
 let relay: Relay
+let composition: typeof import('../../src/main/hostComposition')
 let deps: Harness
 const sockets: WebSocket[] = []
 
@@ -175,6 +176,7 @@ beforeEach(async () => {
   fakeGuest(11)
   deps = makeDeps()
   relay = await import('../../src/main/cdpRelay')
+  composition = await import('../../src/main/hostComposition')
   relay.startRelay(deps)
   relay.relayStripChanged(SESSION, deps.strip)
   relay.setRelayEnabled(true, [TAB])
@@ -182,6 +184,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  composition.hostComposing(false)
   for (const ws of sockets.splice(0)) ws.close()
   relay.setRelayEnabled(false, [])
   fs.rmSync(userData, { recursive: true, force: true })
@@ -339,6 +342,74 @@ describe('a socket that closes while its tab is still binding', () => {
 
     const b = connect()
     expect(await b.cmd('Browser.getVersion')).toHaveProperty('result')
+  })
+})
+
+// PLATFORM§10
+describe('a client driving a page while the user is mid-word in an input method', () => {
+  async function attachedGuest(): Promise<{ guest: FakeGuest; a: Conn; sessionId: string }> {
+    const guest = fakeGuest(11)
+    const a = await registered()
+    const listed = (await a.cmd('Target.getTargets')).result as {
+      targetInfos: { targetId: string }[]
+    }
+    const targetId = listed.targetInfos[0]?.targetId ?? ''
+    const { sessionId } = (await a.cmd('Target.attachToTarget', { targetId })).result as {
+      sessionId: string
+    }
+    return { guest, a, sessionId }
+  }
+  const evaluated = (guest: FakeGuest): number =>
+    guest.debugger.sendCommand.mock.calls.filter((c) => c[0] === 'Runtime.evaluate').length
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r))
+  }
+
+  it('holds the command until the user finishes the word, then sends it', async () => {
+    const { guest, a, sessionId } = await attachedGuest()
+    composition.hostComposing(true)
+    const reply = a.cmd('Runtime.evaluate', { expression: '1' }, sessionId)
+    await new Promise((r) => setTimeout(r, 200))
+    expect(evaluated(guest)).toBe(0)
+
+    composition.hostComposing(false)
+    expect(await reply).toHaveProperty('result')
+    expect(evaluated(guest)).toBe(1)
+  })
+
+  it('drops a held command whose client went away before the word was done, so it never lands on a page a later client drives', async () => {
+    const { guest, a, sessionId } = await attachedGuest()
+    composition.hostComposing(true)
+    void a.cmd('Runtime.evaluate', { expression: '1' }, sessionId).catch(() => {})
+    await new Promise((r) => setTimeout(r, 100))
+    a.ws.close()
+    await until(() => !relay.relayAttached(TAB), 'the relay to drop the client')
+
+    composition.hostComposing(false)
+    await settle()
+    expect(evaluated(guest)).toBe(0)
+  })
+
+  it('sends the held command anyway once the word has sat untouched for 8 s, so a composition that never ends cannot stall the agent', async () => {
+    const { guest, a, sessionId } = await attachedGuest()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      composition.hostComposing(true)
+      const reply = a.cmd('Runtime.evaluate', { expression: '1' }, sessionId)
+      await settle()
+      await vi.advanceTimersByTimeAsync(7_000)
+      composition.hostComposing(true)
+      await vi.advanceTimersByTimeAsync(7_000)
+      await settle()
+      expect(evaluated(guest)).toBe(0)
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      await settle()
+      expect(evaluated(guest)).toBe(1)
+      expect(await reply).toHaveProperty('result')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

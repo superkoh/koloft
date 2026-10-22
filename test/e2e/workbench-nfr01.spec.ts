@@ -14,7 +14,7 @@ import {
 
 const LOOSE_STALL_CEILING_FOR_SHARED_RUNNERS_MS = 20_000
 const BASELINE_RESOLUTIONS_ON_COLD_OPEN = 1
-const AGGREGATE_DIFFS_ON_COLD_OPEN_ONE_PER_BASE_AND_STATUS_COMMIT = 2
+const AGGREGATE_DIFFS_ON_COLD_OPEN_BASE_AND_STATUS_ARRIVE_TOGETHER = 1
 
 test.describe('Workbench Changes cost: the first screenful of a large change set, and the cold open', () => {
   test('NFR-01: a large change set puts its first block on screen without a stall', async ({
@@ -84,7 +84,7 @@ test.describe('Workbench Changes cost: the first screenful of a large change set
         BASELINE_RESOLUTIONS_ON_COLD_OPEN
       )
       expect(countGitSpawns(env, { root: ws, argv: isAggregateDiff })).toBe(
-        AGGREGATE_DIFFS_ON_COLD_OPEN_ONE_PER_BASE_AND_STATUS_COMMIT
+        AGGREGATE_DIFFS_ON_COLD_OPEN_BASE_AND_STATUS_ARRIVE_TOGETHER
       )
     } finally {
       await next.close().catch(() => {})

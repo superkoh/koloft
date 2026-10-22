@@ -155,6 +155,16 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     ).toMatchObject({ kind: 'workspace', path: '/Users/me/code/app' })
   })
 
+  it('a reply that names rule 1, the check-in rule, goes to the butler for that workspace even when written in the new-session shape', () => {
+    expect(
+      parseRoute(reply({ rule: 1, workspace: 1, worktree: 'main', title: 'Progress' }), LIST)
+    ).toEqual({ kind: 'assist', path: '/Users/me/code/app', title: 'Progress', why: '' })
+    expect(parseRoute(reply({ rule: 6, workspace: 1, worktree: 'main' }), LIST)).toMatchObject({
+      kind: 'workspace',
+      path: '/Users/me/code/app'
+    })
+  })
+
   it('gives up on no answer, no JSON, or a workspace number that is not listed', () => {
     expect(parseRoute(null, LIST)).toBeNull()
     expect(parseRoute('I think app.', LIST)).toBeNull()

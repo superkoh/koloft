@@ -317,8 +317,8 @@ export function TerminalView({
       if (ackedUtf16Units >= ACK_FLUSH_AT_UTF16_UNITS) flushAck()
       else if (!ackTimer) ackTimer = setTimeout(flushAck, ACK_FLUSH_AFTER_MS)
     }
-    const offData = window.api.terminal.onData((d) => {
-      if (d.id === id) term.write(d.data, () => noteConsumed(d.data.length))
+    const offData = window.api.terminal.onData(id, (data) => {
+      term.write(data, () => noteConsumed(data.length))
     })
     window.api.terminal.attach(id)
     // PLATFORM§22

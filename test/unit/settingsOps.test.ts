@@ -19,7 +19,7 @@ describe('buildResetPatch (FR-12)', () => {
     expect(patch).not.toHaveProperty('fablePriority')
   })
 
-  it('leaves the Discord block alone, so a reset keeps every conductor binding', () => {
+  it('leaves the Discord block alone, so a reset keeps the butler’s channel', () => {
     expect(buildResetPatch()).not.toHaveProperty('discord')
   })
 
@@ -30,7 +30,6 @@ describe('buildResetPatch (FR-12)', () => {
         'agentTools',
         'browserControl',
         'browserPaneWidth',
-        'conductorsFolded',
         'dockBadge',
         'filePaneWidth',
         'fileTreeHeight',
@@ -157,21 +156,18 @@ describe('sanitizeLoadedSettings and the Notes keys: a hand-edited settings.json
     expect(sanitizeLoadedSettings({ notesHeight: 320 }).notesHeight).toBe(320)
   })
 
-  it('forces notesFolded and conductorsFolded to a real boolean, keeping one that already is', () => {
+  it('forces notesFolded to a real boolean, keeping one that already is', () => {
     expect(sanitizeLoadedSettings({ notesFolded: 'yes' }).notesFolded).toBe(
       DEFAULT_SETTINGS.notesFolded
     )
     expect(sanitizeLoadedSettings({ notesFolded: true }).notesFolded).toBe(true)
     expect(sanitizeLoadedSettings({ notesFolded: false }).notesFolded).toBe(false)
-    expect(sanitizeLoadedSettings({ conductorsFolded: 'no' }).conductorsFolded).toBe(true)
-    expect(sanitizeLoadedSettings({ conductorsFolded: false }).conductorsFolded).toBe(false)
   })
 
-  it('leaves the Notes keys at their defaults when the file says nothing, and the Conductors island starts folded', () => {
+  it('leaves the Notes keys at their defaults when the file says nothing', () => {
     const loaded = sanitizeLoadedSettings({})
     expect(loaded.notesHeight).toBe(DEFAULT_SETTINGS.notesHeight)
     expect(loaded.notesFolded).toBe(DEFAULT_SETTINGS.notesFolded)
-    expect(loaded.conductorsFolded).toBe(true)
   })
 })
 
@@ -207,6 +203,25 @@ describe('sanitizeLoadedSettings and the Assist choice', () => {
 
   it('About ▸ Reset leaves the choice alone', () => {
     expect(buildResetPatch()).not.toHaveProperty('assist')
+  })
+})
+
+describe('sanitizeLoadedSettings and the "skip permission prompts" answer Koloft keeps', () => {
+  it('counts an upgrade that finished Assist setup with prompts skipped as agreed, so it is not asked again; one that said "ask me first", or is still in setup, as not yet', () => {
+    const done = { fontSize: 13, assist: { on: true, backend: 'claude' } }
+    expect(sanitizeLoadedSettings(done).skipPermissionsAgreed).toBe(true)
+    expect(sanitizeLoadedSettings({ ...done, skipPermissions: false }).skipPermissionsAgreed).toBe(
+      false
+    )
+    expect(sanitizeLoadedSettings({ fontSize: 13 }).skipPermissionsAgreed).toBe(false)
+    expect(sanitizeLoadedSettings({}).skipPermissionsAgreed).toBe(false)
+  })
+
+  it('keeps a saved answer, and About ▸ Reset leaves it alone', () => {
+    const saved = { assist: { on: true, backend: 'claude' }, skipPermissionsAgreed: false }
+    expect(sanitizeLoadedSettings(saved).skipPermissionsAgreed).toBe(false)
+    expect(sanitizeLoadedSettings({ skipPermissionsAgreed: true }).skipPermissionsAgreed).toBe(true)
+    expect(buildResetPatch()).not.toHaveProperty('skipPermissionsAgreed')
   })
 })
 

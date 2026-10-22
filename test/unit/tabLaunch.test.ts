@@ -37,16 +37,7 @@ vi.mock('../../src/main/codexTransport', () => ({
         ? {
             data: (params.cwds ?? []).map((cwd) => ({
               cwd,
-              hooks: [
-                {
-                  key: '/<session-flags>/config.toml:pre_tool_use:0:0',
-                  eventName: 'preToolUse',
-                  command: CODEX_GATE_HOOK_COMMAND,
-                  source: 'sessionFlags',
-                  currentHash: 'sha256:' + 'f'.repeat(64),
-                  trustStatus: 'trusted'
-                }
-              ],
+              hooks: [],
               warnings: [],
               errors: []
             }))
@@ -60,8 +51,8 @@ import { barePath } from '@shared/remoteKey'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
-import { CODEX_GATE_HOOK_COMMAND } from '../../src/main/conductorGate'
 import { GithubLookup } from '../../src/main/github'
 import type { ClaudeLaunch } from '../../src/main/host/host'
 import { Hosts } from '../../src/main/host/hosts'
@@ -90,8 +81,9 @@ beforeEach(() => {
   codex.transports.length = 0
 })
 
-afterEach(() => {
+afterEach(async () => {
   process.env.HOME = realHome
+  await BackgroundFile.whenAllWritten()
   fs.rmSync(home, { recursive: true, force: true })
 })
 
@@ -178,7 +170,6 @@ const machineTreeIo: TreeIo = {
 
 async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<string> {
   if (spec.worktree) seedRepo(repo)
-  const allowed: string[][] = []
   const argv: string[][] = []
   const tabDirs = path.join(userData, 'tabs')
   const sessions = new CodexSessions(path.join(home, 'sessions.json'), {
@@ -211,13 +202,6 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     trustFolder: () => {},
     pickHome: () => ({ account: 'work', home: path.join(home, 'codex-home') }),
     assistOf: () => undefined,
-    conductorGate: {
-      script: '/koloft/codex-conductor-gate.sh',
-      writeAllow: (tabId, allow) => {
-        allowed.push([...allow])
-        return path.join(regDir, `${tabId}.allow`)
-      }
-    },
     replyLanguageScript: '/koloft/codex-reply-language.sh',
     browserEndpoint: () => '',
     openShimRoot: path.join(home, 'codex-open'),
@@ -234,7 +218,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     const options = codex.transports[codex.transports.length - 1]
     const said = options.sessionEnv?.KOLOFT_CODEX_SAID
     return [
-      JSON.stringify({ argv, allowed, options }),
+      JSON.stringify({ argv, options }),
       said && fs.existsSync(said) ? fs.readFileSync(said, 'utf8') : '',
       filesUnder(tabDirs)
     ].join('\n')
@@ -339,9 +323,7 @@ const FEATURES: Record<
     marker: 'TableName',
     on: {
       'Claude Code on this Mac': { handed: ['"KOLOFT_SESSION_NAME":"TableName"'] },
-      'Claude Code over SSH': {
-        takesNothing: 'over SSH a name goes along only with a first prompt'
-      },
+      'Claude Code over SSH': { handed: ["'--name' 'TableName'"] },
       'Codex on this Mac': CODEX_TAKES_NO_NAME,
       'Codex over SSH': CODEX_TAKES_NO_NAME
     }
@@ -356,27 +338,17 @@ const FEATURES: Record<
       'Codex over SSH': { handed: ['ROLE-TEXT'] }
     }
   },
-  allow: {
-    spec: { conductor: true, allow: ['ALLOW-TOOL'] },
-    marker: 'ALLOW-TOOL',
-    on: {
-      'Claude Code on this Mac': { handed: [`${TAB}.allow: ["ALLOW-TOOL"]`] },
-      'Claude Code over SSH': CONDUCTORS_RUN_ON_THIS_MAC,
-      'Codex on this Mac': { handed: ['"allowed":[["ALLOW-TOOL"]]'] },
-      'Codex over SSH': CONDUCTORS_RUN_ON_THIS_MAC
-    }
-  },
   conductor: {
     spec: { conductor: true },
     marker: '"conductor":true',
     on: {
       'Claude Code on this Mac': {
-        handed: ['"conductor":true', `${TAB}.allow: []`],
+        handed: ['"conductor":true'],
         dropped: ['KOLOFT_AGENT_PROMPT']
       },
       'Claude Code over SSH': { handed: ['"conductor":true'] },
       'Codex on this Mac': {
-        handed: ['"KOLOFT_CODEX_GATE":"/koloft/codex-conductor-gate.sh"'],
+        handed: [],
         dropped: ['HELPERS']
       },
       'Codex over SSH': CONDUCTORS_RUN_ON_THIS_MAC

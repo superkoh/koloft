@@ -19,12 +19,21 @@ export const ACCOUNT_KINDS: readonly AccountKind[] = [
   'agy-home'
 ]
 
-export type SignInFolderKind = Extract<AccountKind, 'codex-home' | 'muse-home' | 'agy-home'>
-export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = [
-  'codex-home',
-  'muse-home',
-  'agy-home'
-] satisfies SignInFolderKind[]
+// CODEX§15 MUSE§13 AGY§5
+export const SIGN_IN_FOLDER_OF = {
+  codex: 'codex-home',
+  muse: 'muse-home',
+  agy: 'agy-home'
+} as const satisfies Partial<Record<BackendId, AccountKind>>
+
+export type SignInBackend = keyof typeof SIGN_IN_FOLDER_OF
+export type SignInFolderKind = (typeof SIGN_IN_FOLDER_OF)[SignInBackend]
+
+export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = Object.values(SIGN_IN_FOLDER_OF)
+
+export const BACKEND_OF_SIGN_IN_FOLDER = Object.fromEntries(
+  Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [kind, backend])
+) as Record<SignInFolderKind, SignInBackend>
 
 export const isSignInFolderKind = (kind: unknown): kind is SignInFolderKind =>
   SIGN_IN_FOLDER_KINDS.some((k) => k === kind)
@@ -282,8 +291,7 @@ export interface AccountView extends AccountMeta {
 }
 
 export type SignInResult =
-  | { ok: true; tabId: string; cwd: string }
-  | { ok: false; error: 'invalid-name' | 'duplicate' | 'unavailable' }
+  { ok: true; tabId: string; cwd: string } | { ok: false; error: 'invalid-name' | 'duplicate' }
 
 export interface LoginProgress {
   phase: 'starting' | 'browser' | 'saved' | 'failed'
@@ -311,6 +319,7 @@ export interface Settings {
   sidebarWidth: number
   sidebarHidden: boolean
   skipPermissions: boolean
+  skipPermissionsAgreed: boolean
   fablePriority: boolean
   accounts: AccountMeta[]
   notifyTurnDone: boolean
@@ -328,17 +337,17 @@ export interface Settings {
   agentTools: boolean
   notesHeight: number
   notesFolded: boolean
-  conductorsFolded: boolean
   keepAwake: boolean
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
+  butler: ButlerSetting
   newProjectFolders: Record<string, string>
   hintsSeen: string[]
   hintsOff: boolean
   lastSeenVersion: string
   discord: DiscordSettings
-  assistSessions: AssistRecord[]
+  butlerSession: ButlerSession
   gitAccounts: GitAccount[]
   gitPicks: GitRepoPick[]
   gitSuggestionsDismissed: string[]
@@ -347,16 +356,16 @@ export interface Settings {
 
 export type AssistSetting = { on: boolean; backend: BackendId } | null
 
-export interface AssistRecord {
-  scope: string
-  sessionIds: string[]
-  lastSessionKey?: string
+export interface ButlerSetting {
+  name: string
+  formerNames: string[]
 }
 
-export interface AssistTaskRow {
-  tabId: string
-  scope: string
-  name: string
+export const DEFAULT_BUTLER_NAME = 'Alfred'
+
+export interface ButlerSession {
+  sessionIds: string[]
+  lastSessionKey?: string
 }
 
 export interface DiscordChannel {
@@ -365,37 +374,13 @@ export interface DiscordChannel {
   name: string
 }
 
-export interface ConductorBinding {
-  id: string
-  scope: string
-  backend: BackendId
-  channel: DiscordChannel
-  lastMessageId?: string
-  touched: string[]
-  threads?: SessionThread[]
-}
-
-export interface SessionThread {
-  threadId: string
-  keys: string[]
-  name?: string
-  lastMessageId?: string
-}
-
 export interface DiscordSettings {
   userId?: string
   userName?: string
-  bindings: ConductorBinding[]
+  channel?: DiscordChannel
+  lastMessageId?: string
   category?: DiscordChannel
-}
-
-export interface NewChannelInput {
-  id?: string
-  scope: string
-}
-
-export interface ConductorSaveInput extends NewChannelInput {
-  channel: DiscordChannel
+  oldThreadsArchived?: true
 }
 
 export type DiscordPhase =
@@ -429,10 +414,23 @@ export type ConductorSaveResult =
 
 export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 
+export interface PaletteRequest {
+  words: string
+  backend: BackendId
+  title?: string
+  about?: string
+  at?: string
+}
+
+export type PaletteHandOff =
+  { ok: true; tabId: string; helper?: true; queued?: true } | { ok: false; error: string }
+
 export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
 export type HintId = (typeof HINT_IDS)[number]
 
 export const WORLD_CLOCK_MAX = 3
+
+export const SIDEBAR_MIN = 240
 
 export const DEFAULT_SETTINGS: Settings = {
   sessionMethods: {
@@ -449,6 +447,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarWidth: 280,
   sidebarHidden: false,
   skipPermissions: true,
+  skipPermissionsAgreed: false,
   fablePriority: true,
   accounts: [],
   notifyTurnDone: true,
@@ -464,17 +463,17 @@ export const DEFAULT_SETTINGS: Settings = {
   agentTools: true,
   notesHeight: 260,
   notesFolded: false,
-  conductorsFolded: true,
   keepAwake: true,
   worldClocks: [],
   onboardingSeen: false,
   assist: null,
+  butler: { name: DEFAULT_BUTLER_NAME, formerNames: [] },
   newProjectFolders: {},
   hintsSeen: [],
   hintsOff: false,
   lastSeenVersion: '',
-  discord: { bindings: [] },
-  assistSessions: [],
+  discord: {},
+  butlerSession: { sessionIds: [] },
   gitAccounts: [],
   gitPicks: [],
   gitSuggestionsDismissed: [],
@@ -513,6 +512,7 @@ export interface BackendAvailability {
 export type LaunchPermission = 'default' | 'acceptEdits' | 'bypass'
 
 export interface CreateTabOptions {
+  tabId?: string
   worktreeResourceId?: string
   kind: TabKind
   cwd?: string
@@ -532,9 +532,34 @@ export interface CreateTabOptions {
   ownerTabId?: string
   role?: string
   ownerWords?: string
-  allow?: string[]
   conductor?: boolean
   trustFolder?: boolean
+}
+
+export interface QueuedLaunch {
+  tabId: string
+  kind: BackendId
+  cwd: string
+  title: string
+  jobId?: string
+  since: number
+}
+
+export interface HeldCommand {
+  since: number
+  command: string
+}
+
+export interface MachineState {
+  busy: boolean
+  pressure: number | null
+  load1: number
+  cores: number
+  queued: QueuedLaunch[]
+  held: Record<string, HeldCommand>
+  background: string[]
+  memory: Record<string, number>
+  sharedVmBytes: number
 }
 
 export type CreateTabResult =
@@ -654,7 +679,7 @@ export interface AttentionEvent extends AttentionSubject {
   tabId: string
   kind: AttentionKind
   at: number
-  resurrected?: boolean
+  fyi?: boolean
 }
 
 export interface OsOutletsSeenByTests {
@@ -666,6 +691,10 @@ export const ATTENTION_REASON: Record<AttentionKind, string> = {
   'turn-done': 'turn done — your move',
   approval: 'waiting for your approval',
   exited: 'session exited unexpectedly'
+}
+
+export function attentionReason(e: Pick<AttentionEvent, 'kind' | 'fyi'>): string {
+  return e.fyi ? 'turn done — just letting you know' : ATTENTION_REASON[e.kind]
 }
 
 export interface FlowStats {
@@ -761,8 +790,7 @@ export interface DocVerdict {
 }
 
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
-  conductor?: string
-  assistTask?: string
+  butler?: boolean
   turnOver?: boolean
   docVerdicts?: Record<string, DocVerdict>
 }
@@ -1051,7 +1079,7 @@ export interface KoloftApi {
     flowStats(): Promise<FlowStats[]>
     resize(id: string, cols: number, rows: number): void
     kill(id: string, restarting?: boolean): void
-    onData(cb: (d: TerminalData) => void): () => void
+    onData(id: string, cb: (data: string) => void): () => void
     onExit(cb: (e: TerminalExit) => void): () => void
     onProcessTitle(cb: (t: TerminalProcessTitle) => void): () => void
     onCwd(cb: (c: TerminalCwd) => void): () => void
@@ -1096,7 +1124,6 @@ export interface KoloftApi {
   attention: {
     list(): Promise<AttentionEvent[]>
     activeTab(id: string | null): void
-    visit(id: string): void
     onActivateTab(cb: (tabId: string) => void): () => void
     onChanged(cb: (pending: AttentionEvent[]) => void): () => void
   }
@@ -1134,6 +1161,7 @@ export interface KoloftApi {
     setOverlayGuest(guestId: number, on: boolean): void
     setGuestOwner(guestId: number, ownerTabId: string): void
     reportStrip(sessionId: string, targets: BrowserStripTarget[]): void
+    reportComposing(on: boolean): void
     onCdpOp(cb: (op: BrowserCdpOp) => void): () => void
     answerCdpOp(res: BrowserCdpOpResult): void
     onCdpAttached(cb: (a: BrowserCdpAttached) => void): () => void
@@ -1256,9 +1284,6 @@ export interface KoloftApi {
     remove(name: string, kind: AccountKind): Promise<void>
     toggle(name: string, kind: AccountKind, enabled: boolean): Promise<void>
     probe(): Promise<AccountView[]>
-    // CC§9
-    bypassAccepted(): Promise<boolean>
-    acceptBypass(): Promise<boolean>
     // CC§7
     startLogin(
       name: string,
@@ -1347,24 +1372,26 @@ export interface KoloftApi {
     onState(cb: (s: CronState) => void): () => void
     onToast(cb: (text: string) => void): () => void
   }
+  machine: {
+    onState(cb: (s: MachineState) => void): () => void
+    now(): Promise<MachineState | null>
+    free(tabId: string): Promise<boolean>
+    drop(tabId: string): Promise<boolean>
+  }
   conductors: {
-    save(input: ConductorSaveInput): Promise<ConductorSaveResult>
-    saveWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult>
-    unbind(bindingId: string): Promise<void>
-    open(scope: string): Promise<ConductorOpenResult>
-    startFresh(scope: string): Promise<ConductorOpenResult>
-    openTask(scope: string, title: string, brief: string): Promise<ConductorOpenResult>
-    tell(scope: string, title: string, text: string): Promise<ConductorOpenResult>
-    closeTask(tabId: string): Promise<void>
-    tasks(): Promise<AssistTaskRow[]>
-    onTasks(cb: (rows: AssistTaskRow[]) => void): () => void
+    bind(channel: DiscordChannel): Promise<ConductorSaveResult>
+    bindNewChannel(): Promise<ConductorSaveResult>
+    unbind(): Promise<void>
+    open(): Promise<ConductorOpenResult>
+    startFresh(): Promise<ConductorOpenResult>
+    fromPalette(request: PaletteRequest): Promise<PaletteHandOff>
   }
   discord: {
     status(): Promise<DiscordStatus>
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
     channels(): Promise<DiscordChannel[]>
-    setUpWithAssist(ownerWords?: string): Promise<ConductorOpenResult>
+    setUpWithButler(ownerWords?: string): Promise<ConductorOpenResult>
   }
 }
 
@@ -1417,7 +1444,7 @@ export interface CronFile {
   jobs: CronJob[]
 }
 
-export type LiveState = 'launching' | 'running' | 'done'
+export type LiveState = 'queued' | 'launching' | 'running' | 'done'
 
 export interface LiveRun {
   jobId: string
@@ -1609,6 +1636,7 @@ export interface WorkspaceRows {
     gitAccount?: WorkspaceGitAccount
     gitPickable?: boolean
     remote?: { host: string; path: string; connected: boolean; problem?: string }
+    butler?: true
   }
   rows: SessionRow[]
 }
@@ -1652,12 +1680,15 @@ export interface SessionResumeRequest {
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
   role?: string
   conductor?: boolean
+  permission?: LaunchPermission
   trustFolder?: boolean
 }
 
+export type ResumeFailure = 'cwd-missing' | 'invalid-args' | 'rebuild-failed'
+
 export type SessionResumeResult =
   | { ok: true; id: string; cwd: string; kind?: TabKind }
-  | { ok: false; code: 'cwd-missing' | 'invalid-args' | 'rebuild-failed' }
+  | { ok: false; code: ResumeFailure }
   | { ok: false; code: 'backend'; message: string }
 
 export type ResumePlan =

@@ -581,6 +581,28 @@ Nothing ran against Google's real servers.
     whole.
   - `PreInvocation` printing `{"injectSteps":[{"ephemeralMessage":"…"}]}` adds it as
     the last user content of that one request; copies do not pile up.
+- **A `PreToolUse` hook gets about 30 s unless its entry sets `timeout` (seconds), and one
+  that runs out DENIES the tool.** 1.4.2 Linux arm64 in Docker, fake model, `-p …
+  --dangerously-skip-permissions --output-format json`, a hook that slept then exited 0
+  printing nothing before a `run_command`, 2026-10-19: a 75 s sleep with no `timeout` and a
+  20 s sleep with `"timeout": 5` were cut at ~30 s and ~5 s, the command did not run, and
+  the model read `Encountered error in tool execution: JSON hook
+  "jsonhook__wait_PreToolUse_0_0" failed: command failed: signal: killed` (`-p` still exit
+  0). The hook's own `node` process lived on after that kill and wrote its "released"
+  line later. A 130 s sleep with `"timeout": 3600` let the command run (130 s). No model
+  request was made while a hook held. Not run on the Mac build (it would sign in through
+  the owner's browser and keychain).
+
+- **A `Stop` hook printing `{"decision":"block","reason":"<text>"}` (or `"decision":
+  "continue"`) keeps the turn going with `<text>`.** 2026-10-20, agy 1.4.3 Linux arm64
+  (manifest build, sha512 checked) in Docker, fake Gemini server, `-p "say hi"
+  --dangerously-skip-permissions --output-format json`, the hook acting once: the server
+  got one more request whose last user content was `<SYSTEM_MESSAGE>\nStop hook blocked
+  termination: <text>\n</SYSTEM_MESSAGE>`; PreInvocation and PostInvocation fired again,
+  then Stop again (`executionNum` 1, `terminationReason` `NO_TOOL_CALL`); `num_turns`
+  stayed 1. The text is kept in the transcript. A hook that always blocks gets 10
+  continuations; the 11th block is ignored. `injectSteps` from a `Stop` hook is dropped
+  (`unknown field "injectSteps"` in agy's log). Not run in the TUI.
 
 ## §13 Tools
 
@@ -913,6 +935,25 @@ Nothing ran against Google's real servers.
   model's write and command still asked and ran once approved. `--mode auto`: no
   banner and both still asked on the API-key route.
   `--dangerously-skip-permissions`: no asks, also with `--sandbox`.
+- (1.4.2, build `1.4.2-4835981233356800`, Linux arm64, Docker, fake Gemini server,
+  tmux, 2026-10-18) `--dangerously-skip-permissions` alone, with no
+  `allowNonWorkspaceAccess` key, asked nothing: a file created and edited under
+  `$HOME` outside the workspace, `/etc/hostname` read, and `run_command` all ran, and
+  no banner showed. Without it, an outside write asks with "Reason: outside workspace"
+  and a second option "Yes, and always allow non-workspace access" (which writes
+  `"allowNonWorkspaceAccess": true`); an outside read asks "Allow access to this
+  file?". `/tmp` counts as inside: writing and reading there asked nothing.
+- (1.4.2, same setup) `/config` rows and what they write to `settings.json`; picking
+  the default removes the key. Agent Mode `default` / `accept-edits` / `plan`
+  (`agentMode`; no `auto` in the list). Tool Permission `request-review` (default) /
+  `proceed-in-sandbox` / `always-proceed` / `strict` (`toolPermission`).
+  Non-Workspace Access off / on (`allowNonWorkspaceAccess: true`). Sandbox Mode
+  (`enableTerminalSandbox: true`). Artifact Review (`artifactReviewPolicy`).
+  `toolPermission: "always-proceed"` alone, without the flag, also asked nothing, for
+  file writes outside the workspace too.
+- (1.4.2, same setup) `"agentMode": "auto"` in `settings.json` or `--mode auto` on the
+  API-key route: no banner, no warning, every ask as in default; the log says `auto
+  mode is unavailable, falling back to default`.
 
 ## §27 Terminal modes
 
@@ -923,6 +964,16 @@ Nothing ran against Google's real servers.
   (1000/1002/1003/1006) and no focus events (1004) in the default inline mode.
 - With XTVERSION unanswered there is a brief `?1049h … ?1049l` alternate-screen flash
   at start and a second kitty push; answered (`xterm.js(5.5.0)`), neither.
+- Rendering Mode in `/config`: "native terminal (inline)" (the default) or "no
+  flickering (altscreen)", which writes `"altScreenMode": "always"`; picking inline
+  removes the key (macOS 1.4.2, the owner's account folder after picking it, and
+  Linux 1.4.2 in Docker, 2026-10-18). The switch takes effect at once.
+- (Linux 1.4.2, Docker, tmux 120×40, 2026-10-18) `"altScreenMode": "always"` written
+  by hand before launch starts agy in the alternate screen (`?1049h`) with mouse modes
+  `?1002h` and `?1006h` (not 1000 or 1003); agy keeps the key when it rewrites the
+  file. On a fresh conversation the prompt box sits right under the banner and
+  reaches the bottom rows once the transcript fills the screen. On exit the screen
+  holds only the "Resume with -c" lines.
 
 ## §28 Telemetry
 

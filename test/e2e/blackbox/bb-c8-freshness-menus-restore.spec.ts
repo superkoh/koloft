@@ -59,7 +59,7 @@ async function seedSessionKilledThenRemovedFromListByHand(
   wsName: string
 ): Promise<void> {
   await startSessionIn(page, wsName)
-  const row = page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+  const row = page.locator('.ws .ws-tab', { hasText: FAKE_SESSION_TITLE })
   await expect(row).toHaveCount(1, { timeout: 40_000 })
 
   const calls = await waitForCalls(env, 1)
@@ -188,25 +188,21 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
     try {
       await openMenu(page, page.locator('.ws-head', { hasText: 'git-menu' }))
       const gitItems = await menuItemTexts(page)
-      expect(gitItems).toHaveLength(7)
+      expect(gitItems).toHaveLength(5)
       expect(gitItems[0]).toMatch(/^New session\s*⌘N$/)
       expect(gitItems[1]).toMatch(/^New worktree session…\s*⇧⌘N$/)
       expect(gitItems[2]).toMatch(/^Restore session…$/)
       expect(gitItems[3]).toMatch(/^Scheduled jobs…$/)
-      expect(gitItems[4]).toMatch(/^Talk to Assist$/)
-      expect(gitItems[5]).toMatch(/^Bind Discord channel…$/)
-      expect(gitItems[6]).toMatch(/^Remove workspace$/)
+      expect(gitItems[4]).toMatch(/^Remove workspace$/)
       await closeMenu(page)
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'plain-menu' }))
       const plainItems = await menuItemTexts(page)
-      expect(plainItems).toHaveLength(6)
+      expect(plainItems).toHaveLength(4)
       expect(plainItems[0]).toMatch(/^New session\s*⌘N$/)
       expect(plainItems[1]).toMatch(/^Restore session…$/)
       expect(plainItems[2]).toMatch(/^Scheduled jobs…$/)
-      expect(plainItems[3]).toMatch(/^Talk to Assist$/)
-      expect(plainItems[4]).toMatch(/^Bind Discord channel…$/)
-      expect(plainItems[5]).toMatch(/^Remove workspace$/)
+      expect(plainItems[3]).toMatch(/^Remove workspace$/)
       await closeMenu(page)
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'gone-menu' }))
@@ -424,9 +420,9 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
       pinned.git['repo-run'].originAhead(3)
       await fetchNowInGitPanel(page, 'repo-run')
       await waitForBehindBadge(page, 'repo-run', 3)
-      await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+      await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
       await runIn(page, centerTerm(page), '/busy')
-      await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('.ws .ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
 
       await openWorktreeDialog(page, 'repo-run')
       await page.keyboard.type('x')

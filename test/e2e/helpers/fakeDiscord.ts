@@ -50,18 +50,10 @@ export interface FakePost {
   channelId: string
   content: string
   replyTo?: string
-  files: { name: string; text: string }[]
+  files: { name: string; text: string; data: Buffer }[]
   card?: boolean
   flags?: number
   buttons?: FakeButton[]
-}
-
-export interface FakeThread {
-  id: string
-  parentId: string
-  name: string
-  members: string[]
-  archived: boolean
 }
 
 interface RawComponent {
@@ -86,6 +78,15 @@ function cardText(components: RawComponent[]): { text: string; buttons: FakeButt
   return { text: texts.join('\n'), buttons }
 }
 
+export interface FakeThread {
+  id: string
+  parent_id: string
+  owner_id: string
+}
+
+export const FAKE_BOT_ID = '900'
+const PUBLIC_THREAD = 11
+
 export interface FakeReaction {
   messageId: string
   emoji: string
@@ -104,23 +105,13 @@ export interface FakeCallback {
   data: {
     content?: string
     flags?: number
-    choices?: { name: string; value: string }[]
     components?: RawComponent[]
     custom_id?: string
   }
 }
 
-export function openerNow(
-  fake: Pick<FakeDiscord, 'edits'>,
-  channelId: string,
-  threadId: string
-): string | undefined {
-  return fake.edits.filter((e) => e.channelId === channelId && e.id === threadId).at(-1)?.content
-}
-
 export const SLASH_COMMAND = 2
 export const BUTTON_PRESS = 3
-export const AUTOCOMPLETE = 4
 export const FORM_SUBMIT = 5
 export const OPEN_A_FORM = 9
 
@@ -141,16 +132,14 @@ export interface FakeDiscord {
   closeCodes: number[]
   posted: FakePost[]
   refusePostsIn: string[]
-  refuseThreads: boolean
-  threads: FakeThread[]
-  deleted: string[]
-  lost: string[]
   reactions: FakeReaction[]
   edits: FakePost[]
   typing: string[]
   history: Record<string, FakeHistoryMessage[]>
   commands: FakeCommand[]
   callbacks: FakeCallback[]
+  threads: FakeThread[]
+  archived: string[]
   press(author: FakeAuthor, button: FakeButton, channelId: string): string
   submit(author: FakeAuthor, formId: string, typed: string, channelId: string): string
   say(
@@ -162,21 +151,19 @@ export interface FakeDiscord {
     author: FakeAuthor,
     command: string,
     options: Record<string, string>,
-    opts?: { type?: number; focused?: string; channelId?: string }
+    opts?: { type?: number; channelId?: string }
   ): string
   close(): Promise<void>
 }
 
 const MESSAGE_ROUTE = /^\/channels\/(\d+)\/messages$/
-const THREAD_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/threads$/
-const MEMBER_ROUTE = /^\/channels\/(\d+)\/thread-members\/(\d+)$/
-const CHANNEL_ROUTE = /^\/channels\/(\d+)$/
 const ONE_MESSAGE_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)$/
 const TYPING_ROUTE = /^\/channels\/(\d+)\/typing$/
 const COMMANDS_ROUTE = /^\/applications\/\d+\/guilds\/\d+\/commands$/
 const CALLBACK_ROUTE = /^\/interactions\/(\d+)\/[^/]+\/callback$/
 const REACTION_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/reactions\/([^/]+)\/@me$/
 const ATTACHMENT_ROUTE = /^\/attachments\/(.+)$/
+const CHANNEL_ROUTE = /^\/channels\/(\d+)$/
 
 function bodyOf(req: http.IncomingMessage): Promise<Buffer> {
   return new Promise((resolve) => {
@@ -215,8 +202,10 @@ async function postOf(id: string, channelId: string, req: http.IncomingMessage):
   const payload = JSON.parse(String(form.get('payload_json'))) as { content?: string }
   const files: FakePost['files'] = []
   for (const [key, value] of form.entries())
-    if (key.startsWith('files[') && typeof value !== 'string')
-      files.push({ name: value.name, text: await value.text() })
+    if (key.startsWith('files[') && typeof value !== 'string') {
+      const data = Buffer.from(await value.arrayBuffer())
+      files.push({ name: value.name, text: data.toString('utf8'), data })
+    }
   return { id, channelId, content: payload.content ?? '', files }
 }
 
@@ -238,16 +227,14 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     closeCodes: [],
     posted: [],
     refusePostsIn: [],
-    refuseThreads: false,
-    threads: [],
-    deleted: [],
-    lost: [],
     reactions: [],
     edits: [],
     typing: [],
     history: {},
     commands: [],
     callbacks: [],
+    threads: [],
+    archived: [],
     press: (author, button, channelId) => {
       const id = String(++nextId)
       for (const ws of sockets)
@@ -315,8 +302,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
                 options: Object.entries(options).map(([name, value]) => ({
                   name,
                   value,
-                  type: 3,
-                  ...(name === opts.focused ? { focused: true } : {})
+                  type: 3
                 }))
               }
             }
@@ -362,7 +348,14 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
   }
 
   const routes: Record<string, () => unknown> = {
-    '/users/@me': () => ({ id: '900', username: FAKE_BOT, bot: true }),
+    '/users/@me': () => ({ id: FAKE_BOT_ID, username: FAKE_BOT, bot: true }),
+    [`/guilds/${FAKE_GUILD.id}/threads/active`]: () => ({
+      threads: fake.threads
+        .filter((t) => !fake.archived.includes(t.id))
+        .map((t) => ({ ...t, type: PUBLIC_THREAD })),
+      members: [],
+      has_more: false
+    }),
     '/oauth2/applications/@me': () => ({
       id: FAKE_APPLICATION_ID,
       bot_public: false,
@@ -400,6 +393,18 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       fake.made.push(made)
       return { status: 201, body: made }
     }
+    const channel = CHANNEL_ROUTE.exec(route)
+    if (channel && req.method === 'GET') {
+      const thread = fake.threads.find((t) => t.id === channel[1])
+      const plain = FAKE_CHANNELS.find((c) => c.id === channel[1])
+      if (thread) return { status: 200, body: { ...thread, type: PUBLIC_THREAD } }
+      return plain ? { status: 200, body: plain } : { status: 404, body: { message: 'no' } }
+    }
+    if (channel && req.method === 'PATCH') {
+      const { archived } = JSON.parse((await bodyOf(req)).toString()) as { archived?: boolean }
+      if (archived) fake.archived.push(channel[1])
+      return { status: 200, body: { id: channel[1] } }
+    }
     const attachment = ATTACHMENT_ROUTE.exec(route)
     if (attachment) return { status: 200, body: attachments.get(attachment[1]) ?? '' }
     if (COMMANDS_ROUTE.test(route) && req.method === 'GET')
@@ -424,24 +429,6 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       })
       return { status: 204 }
     }
-    const thread = THREAD_ROUTE.exec(route)
-    if (thread && req.method === 'POST') {
-      const { name } = JSON.parse((await bodyOf(req)).toString()) as { name: string }
-      if (fake.refuseThreads)
-        return { status: 403, body: { message: 'Missing Permissions', code: 50013 } }
-      fake.threads.push({ id: thread[2], parentId: thread[1], name, members: [], archived: false })
-      return { status: 201, body: { id: thread[2], name } }
-    }
-    const member = MEMBER_ROUTE.exec(route)
-    if (member && req.method === 'PUT') {
-      fake.threads.find((t) => t.id === member[1])?.members.push(member[2])
-      return { status: 204 }
-    }
-    const channel = CHANNEL_ROUTE.exec(route)
-    if ((channel || ONE_MESSAGE_ROUTE.test(route)) && req.method === 'DELETE') {
-      fake.deleted.push(route)
-      return { status: 204 }
-    }
     const edited = ONE_MESSAGE_ROUTE.exec(route)
     if (edited && req.method === 'PATCH') {
       fake.edits.push(await postOf(edited[2], edited[1], req))
@@ -452,21 +439,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       fake.typing.push(typing[1])
       return { status: 204 }
     }
-    if (channel && req.method === 'PATCH') {
-      const { archived, name } = JSON.parse((await bodyOf(req)).toString()) as {
-        archived?: boolean
-        name?: string
-      }
-      const t = fake.threads.find((x) => x.id === channel[1])
-      if (t && archived !== undefined) t.archived = archived
-      if (t && name !== undefined) t.name = name
-      return { status: 200, body: { id: channel[1] } }
-    }
     const message = MESSAGE_ROUTE.exec(route)
-    if (message && req.method === 'POST' && fake.deleted.includes(`/channels/${message[1]}`)) {
-      fake.lost.push((await postOf('lost', message[1], req)).content)
-      return { status: 404, body: { message: 'Unknown Channel', code: 10003 } }
-    }
     if (message && req.method === 'POST' && fake.refusePostsIn.includes(message[1])) {
       await bodyOf(req)
       return { status: 403, body: { message: 'Missing Permissions', code: 50013 } }
@@ -474,8 +447,6 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     if (message && req.method === 'POST') {
       const id = String(++nextId)
       fake.posted.push(await postOf(id, message[1], req))
-      const t = fake.threads.find((x) => x.id === message[1])
-      if (t) t.archived = false
       return { status: 200, body: { id } }
     }
     if (message) {

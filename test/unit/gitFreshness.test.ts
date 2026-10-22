@@ -58,6 +58,7 @@ function publish(n: number): void {
 interface Harness {
   engine: GitFreshnessEngine
   changed: string[]
+  moved: string[]
   setNow(ms: number): void
 }
 
@@ -75,6 +76,7 @@ function harness(
   } = {}
 ): Harness {
   const changed: string[] = []
+  const moved: string[] = []
   let now = 1_700_000_000_000
   const local = new LocalRunner(opts.gitBin)
   const engine = new GitFreshnessEngine(
@@ -89,6 +91,7 @@ function harness(
       busy: opts.busy,
       toast: opts.toast,
       onChange: (p) => changed.push(p),
+      onDefaultMoved: (m) => moved.push(`${m.wsPath} ${m.defRef} ${m.from}..${m.to}`),
       runner: (p) => {
         const key = parseRemoteKey(p)
         return key ? (opts.machine?.(key.host) ?? null) : local
@@ -97,7 +100,7 @@ function harness(
     },
     { fetchTimeoutMs: opts.fetchTimeoutMs }
   )
-  return { engine, changed, setNow: (ms) => (now = ms) }
+  return { engine, changed, moved, setNow: (ms) => (now = ms) }
 }
 
 function loggingGitBin(
@@ -288,6 +291,21 @@ describe('Tier-1 + Tier-2 measurement', () => {
     expect(v.state).toBe('error')
     expect(v.behind).toBe(2)
     expect(v.lastAttemptAt).not.toBeNull()
+  })
+
+  it('a fetch that moves origin’s default branch reports where it moved from and to; the first measure, and a fetch that brings nothing, report no move', async () => {
+    const h = harness()
+    await h.engine.fetchNow(work)
+    const before = git(work, 'rev-parse', 'origin/main').trim()
+    h.setNow(1_700_000_100_000)
+    await h.engine.fetchNow(work)
+    expect(h.moved).toEqual([])
+
+    publish(2)
+    h.setNow(1_700_000_200_000)
+    await h.engine.fetchNow(work)
+    const after = git(work, 'rev-parse', 'origin/main').trim()
+    expect(h.moved).toEqual([`${work} origin/main ${before}..${after}`])
   })
 
   it('reports nothing at all for a directory that is not a repo', async () => {
@@ -767,7 +785,14 @@ describe('remote workspaces', () => {
             defRef: 'origin/main',
             linked: false,
             hasSubmodules: false,
-            tracking: { fetched: true, fetchHeadAt: null, ahead: 0, behind: 2, dirty: false }
+            tracking: {
+              fetched: true,
+              fetchHeadAt: null,
+              ahead: 0,
+              behind: 2,
+              dirty: false,
+              defHead: 'b'.repeat(40)
+            }
           },
           enoent: false
         }

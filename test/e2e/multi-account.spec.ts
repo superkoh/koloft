@@ -660,33 +660,33 @@ test.describe('pool surfaces: the aggregate is the mean of exactly the measured 
   })
 })
 
-test('E6: probe outage degrades to round-robin fast — never a blocked launch', async ({
-  env,
-  app,
-  page
-}) => {
+test('E6: probe outage degrades to round-robin fast — never a blocked launch', async ({ env }) => {
   test.setTimeout(120_000)
   env.launchEnv.KOLOFT_PROBE_BASE_URL = 'http://127.0.0.1:1'
   seedPool(env)
-  await waitBooted(page)
-  const t0 = Date.now()
-  await startSessionIn(page, 'ws-a')
-  const [call] = await waitForCalls(env, 1, 20_000)
-  expect(Date.now() - t0).toBeLessThan(15_000)
-  expect(call.oauthToken).not.toBeNull()
-  await expect(centerTerm(page)).toContainText('round-robin', { timeout: 10_000 })
+  const { app, page } = await launchConfigured(env)
+  try {
+    await waitBooted(page)
+    const t0 = Date.now()
+    await startSessionIn(page, 'ws-a')
+    const [call] = await waitForCalls(env, 1, 20_000)
+    expect(Date.now() - t0).toBeLessThan(15_000)
+    expect(call.oauthToken).not.toBeNull()
+    await expect(centerTerm(page)).toContainText('round-robin', { timeout: 10_000 })
+  } finally {
+    await app.close().catch(() => {})
+  }
 })
 
 test('E6b: HUNG probe server → main answers within its 2s budget (round-robin), not a bare exec', async ({
-  env,
-  app,
-  page
+  env
 }) => {
   test.setTimeout(120_000)
   const mock = await startProbeMock()
   for (const t of Object.values(TOKENS)) mock.script.set(t, { hang: true })
   env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
   seedPool(env)
+  const { app, page } = await launchConfigured(env)
   try {
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
@@ -696,19 +696,20 @@ test('E6b: HUNG probe server → main answers within its 2s budget (round-robin)
       timeout: 10_000
     })
   } finally {
+    await app.close().catch(() => {})
     await mock.close()
   }
 })
 
 test('E7: leak scan — no token bytes in the renderer, the scrollback or userData', async ({
-  env,
-  page
+  env
 }) => {
   test.setTimeout(150_000)
   const mock = await startProbeMock()
   mock.script.set(TOKENS.bravo, { u5: 0.1 })
   env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
   seedPool(env)
+  const { app, page } = await launchConfigured(env)
   try {
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
@@ -723,6 +724,7 @@ test('E7: leak scan — no token bytes in the renderer, the scrollback or userDa
     const picks = path.join(env.userData, 'picks')
     if (fs.existsSync(picks)) expect(fs.readdirSync(picks)).toEqual([])
   } finally {
+    await app.close().catch(() => {})
     await mock.close()
   }
 })
@@ -891,7 +893,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
     await openSettings(page)
     await expect(claudeAccounts(page).locator('.acct-empty')).toBeVisible()
 
-    const tabsBefore = await page.locator('.ws-tab').count()
+    const tabsBefore = await page.locator('.ws .ws-tab').count()
     await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Sign in' }).click()
     await page.locator('.acct-add input[type="text"]').fill('bravo')
     await page.locator('.acct-add-actions button', { hasText: 'Sign in' }).click()
@@ -913,7 +915,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
     expect(acct.fable).toBe('yes')
 
     await expect(page.locator('.acct-login-state.ok')).toContainText('Saved bravo')
-    expect(await page.locator('.ws-tab').count()).toBe(tabsBefore)
+    expect(await page.locator('.ws .ws-tab').count()).toBe(tabsBefore)
 
     await expect
       .poll(() =>

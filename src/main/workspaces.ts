@@ -43,6 +43,7 @@ import {
 } from './workspaceOps'
 import { encodeCwd } from './sessionTracker'
 import { dirExists } from './fileTree'
+import { dirExistsSync } from './resumePlan'
 import { isGitCheckoutAsync } from './projectInfo'
 import { replacesTheConversation } from './hookRouting'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
@@ -107,16 +108,9 @@ export interface WorkspaceManagerDeps {
   hiddenRow?(id: string): boolean
   parentOf?(rowId: string): string | undefined
   conductorsRoot?: string
+  butlerFolder?: string
   sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
   memberDropped?(sessionId: string, why: string): void
-}
-
-function dirExistsSync(p: string): boolean {
-  try {
-    return fs.statSync(p).isDirectory()
-  } catch {
-    return false
-  }
 }
 
 function* linesUntilExhausted(lines: string[], probe: { exhausted: boolean }): Generator<string> {
@@ -729,7 +723,8 @@ export class WorkspaceManager {
     const wantedBucketDirs = new Set<string>()
 
     const owned = new Set([...this.layout.members, ...(this.deps.additionalMembers?.() ?? [])])
-    for (const ws of this.layout.workspaces) {
+    const butler = this.deps.butlerFolder
+    for (const ws of [...this.layout.workspaces, ...(butler ? [{ path: butler }] : [])]) {
       const { key, root, scanPath } = this.scope(ws.path)
       const missing = await this.missing(ws.path)
       workspaceSlugs.push(encodeCwd(scanPath))
@@ -803,6 +798,7 @@ export class WorkspaceManager {
           missing,
           isGit,
           hasHistory: hasHistory(visible, owned, wsRunningIds),
+          ...(ws.path === butler && { butler: true as const }),
           ...(key
             ? {
                 remote: {

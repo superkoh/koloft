@@ -66,12 +66,11 @@ shell.
 - **⌘P** — type what a session should do and ⏎ starts it where Assist picks; the same
   box jumps to any session and searches every chat.
 - **Assist** — Koloft's own AI, run by one of your accounts. It does small jobs for
-  Koloft, such as picking where a ⌘P session starts, and you can talk to it from its
-  block in the sidebar.
-- **Discord** — a bot of your own on your Discord server, so you can talk to your
-  sessions from your phone: Assist answers you in its channel, each session it looks
-  after gets a thread with its questions, approvals and finished turns, and the buttons
-  there answer them. Set up in `Settings ▸ Discord`.
+  Koloft, such as picking where a ⌘P session starts.
+- **Discord** — a bot of your own on your Discord server, so you can talk to Koloft's
+  butler (Koloft's own AI session, the first row of the sessions list) from your phone:
+  it answers you in its channel and reaches your sessions for you. Set up in
+  `Settings ▸ Discord`.
 - **Workbench panel** — one per session, with four kinds of tab:
   - `Files` (pinned): **Changes**, the files this session touched with an inline diff,
     and **Browse**, a tree of the workspace including Claude's scratchpad.
@@ -308,7 +307,6 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
 - Sessions Koloft did not launch are listed and can be resumed, but their live status
   (working / waiting) is only known for sessions started from Koloft, because the status
   comes from the hooks (Claude) or the relay (Codex) Koloft puts in at launch.
-- Codex does not run in remote workspaces yet.
 - When a worktree session exits from an unchanged worktree, Claude Code removes the
   worktree and moves the session's transcript under the root checkout, so the row moves
   there. A session that never got a message has no transcript at all, so its row goes
@@ -334,8 +332,8 @@ and approvals go to your own bot. The only hosts it ever reaches on its own are:
 | `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request; for a **remote** workspace's machine that lacks them, downloads `gh` itself and Git Credential Manager; signs in a GitHub git account and checks its token |
 | `gitlab.com`, `api.bitbucket.org`, `dev.azure.com`, `codeberg.org`, or your own git server | the server of a git account you add, only after you add one there. To check the token and read the username: when it is added, when Koloft starts, every 6 hours, when `Settings ▸ Accounts` opens, and when the server turns the token down during a git call (an account added as "Other server" is never checked). To see whether the account can push to a workspace's repository: when a workspace is added, and when the git panel's Account list opens. Bitbucket also reaches `bitbucket.org` for the browser sign-in |
 | your workspace's git remote (often `github.com`) | every 5 minutes, to see whether the branch is behind — `Settings ▸ Appearance` turns auto-fetch off |
-| `claude.ai`, `chatgpt.com` | the official installers of `claude` and `codex`, only when you click a tool's card on the welcome steps to install it |
-| `claude.ai`, `nodejs.org`, `unofficial-builds.nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude` from the first, Node from the second (or, on an old Linux, the third); `bash`, `tmux` and `rsync` come from the machine's own package manager |
+| `claude.ai`, `chatgpt.com`, `dev.meta.ai`, `antigravity.google` | the official installers of `claude`, `codex`, `muse` and `agy`, only when you click a tool's card on the welcome steps to install it, or sign in to a tool this Mac lacks in Settings ▸ Accounts |
+| `claude.ai`, `dev.meta.ai`, `antigravity.google`, `nodejs.org`, `unofficial-builds.nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude`, `muse` and `agy` from their official installers, Node from `nodejs.org` (or, on an old Linux, the unofficial build); `codex` is installed there with `npm`, which fetches it from npm's own site; `bash`, `tmux`, `rsync` and `python3` come from the machine's own package manager |
 | `chromewebstore.google.com`, `clients2.google.com`, `update.googleapis.com` | only for Chrome extensions in the in-app browser: the store page, the extension download, and a once-per-launch update check |
 | `discord.com`, `gateway.discord.gg` | only once a bot token is set in `Settings ▸ Discord`; files sent from Discord are fetched from Discord's own file host |
 | `duckduckgo.com` | whatever you type in the browser's address bar that is not a URL |

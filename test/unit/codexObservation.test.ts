@@ -20,10 +20,7 @@ function fixture() {
   })
   runtime.on('status', (edge: StatusEdge) => {
     edges.push(edge)
-    attention.onStatusChange(edge.tabId, edge.prev, edge.next, {
-      windowFocused: false,
-      activeTabId: null
-    })
+    attention.onStatusChange(edge.tabId, edge.prev, edge.next)
   })
   const observer = new CodexObservation((event) => {
     events.push(event)
@@ -298,6 +295,27 @@ describe('CodexObservation', () => {
       cacheWriteTok: 0
     })
     expect(last.costUsd).toBeCloseTo(0.6 * 1.25 + 0.4 * 0.125 + 0.1 * 10)
+  })
+
+  // CODEX§13
+  it('prices each request above 272K input at the long-context price, counting a repeated frame once', () => {
+    const f = fixture()
+    const cost = () =>
+      f.events.flatMap((e) => (e.type === 'usage' ? [e.usage] : [])).at(-1)!.costUsd
+    f.observer.receive('client', { id: 1, method: 'thread/start', params: {} })
+    f.observer.receive('server', { id: 1, result: { thread: thread(), model: 'gpt-6.1-sol' } })
+    const short = { inputTokens: 100_000, cachedInputTokens: 0, outputTokens: 1000 }
+    f.server('thread/tokenUsage/updated', { tokenUsage: { total: short, last: short } })
+    expect(cost()).toBeCloseTo(0.1 * 2 + 0.001 * 10)
+    const long = { inputTokens: 300_000, cachedInputTokens: 100_000, outputTokens: 2000 }
+    const total = { inputTokens: 400_000, cachedInputTokens: 100_000, outputTokens: 3000 }
+    const frame = { tokenUsage: { total, last: long } }
+    f.server('thread/tokenUsage/updated', frame)
+    const shortTotal = 0.3 * 2 + 0.1 * 0.1 + 0.003 * 10
+    const surcharge = 0.2 * 4 + 0.1 * 0.2 + 0.002 * 15 - (0.2 * 2 + 0.1 * 0.1 + 0.002 * 10)
+    expect(cost()).toBeCloseTo(shortTotal + surcharge)
+    f.server('thread/tokenUsage/updated', frame)
+    expect(cost()).toBeCloseTo(shortTotal + surcharge)
   })
 
   it('leaves the cost out when the model has no known price', () => {

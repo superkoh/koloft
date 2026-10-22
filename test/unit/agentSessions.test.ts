@@ -3,8 +3,6 @@ import os from 'os'
 import path from 'path'
 import { describe, expect, it, vi } from 'vitest'
 import {
-  NOT_IN_YOUR_WORKSPACE,
-  ONLY_THE_GLOBAL_CONDUCTOR,
   parseNewSessionArgs,
   sessionVerb,
   THAT_IS_YOU,
@@ -21,6 +19,7 @@ import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
 import type {
   BackendId,
   CreateTabOptions,
+  QueuedLaunch,
   SessionInfo,
   SessionRow,
   WorkspaceRows
@@ -28,6 +27,8 @@ import type {
 import type { Turn } from '../../src/shared/turns'
 
 const WS = '/work/app'
+const BUTLER_FOLDER = '/data/conductors/global'
+const BUTLER_HELPER_ROLE = 'You help Alfred.'
 const OTHER_WS = '/work/site'
 const PINNED: PinnedWorkspace[] = [
   { path: WS, missing: false },
@@ -74,14 +75,7 @@ interface Conducting {
   translation?: string | null
   asking?: string[]
   worktrees?: string[]
-}
-
-interface Started {
-  conductorTab: string
-  tabId: string
-  name: string
-  workspace: string
-  backend: BackendId
+  busy?: boolean
 }
 
 function harness(
@@ -93,34 +87,37 @@ function harness(
 ): {
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
   turnEnded: (tabId: string, reply: string, said?: string) => void
+  waitsOnAnother: (sessionId: string) => boolean
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
-  touched: { tabId: string; key: string }[]
   reads: { key: string; n: number }[]
   lines: { tabId: string; line: string }[]
   pressed: { tabId: string; keys: string[] }[]
   resumed: string[]
   stopped: string[]
-  started: Started[]
   answers: { tabId: string; reply: string }[]
   commands: { callerTab: string; key: string; text: string }[]
+  tells: ((said: string) => void)[]
   undelivered: { callerTab: string; name: string; why: string }[]
   startedSessions: StartedSessions
+  waiting: QueuedLaunch[]
+  held: { tabId: string; send: () => Promise<unknown> }[]
 } {
   const answers: { tabId: string; reply: string }[] = []
   const commands: { callerTab: string; key: string; text: string }[] = []
+  const tells: ((said: string) => void)[] = []
   const undelivered: { callerTab: string; name: string; why: string }[] = []
   const launched: Launch[] = []
   const queued: { tabId: string; text: string; clientId?: string }[] = []
   const closed: string[] = []
-  const touched: { tabId: string; key: string }[] = []
   const reads: { key: string; n: number }[] = []
   const lines: { tabId: string; line: string }[] = []
   const pressed: { tabId: string; keys: string[] }[] = []
   const resumed: string[] = []
   const stopped: string[] = []
-  const started: Started[] = []
+  const waiting: QueuedLaunch[] = []
+  const held: { tabId: string; send: () => Promise<unknown> }[] = []
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-started-'))
   const startedSessions = new StartedSessions(() => path.join(dir, 'started-sessions.json'))
   const inner = sessionVerb({
@@ -133,7 +130,29 @@ function harness(
         peerNames[sessionId] ?? null,
     launch: async (spec) => {
       launched.push(spec)
+      if (conducting.busy)
+        waiting.push({
+          tabId: 'new-tab',
+          kind: spec.kind,
+          cwd: spec.cwd ?? '',
+          title: spec.name ?? 'untitled',
+          since: Date.now()
+        })
       return 'new-tab'
+    },
+    waiting: {
+      list: () => waiting,
+      notStartedYet: () => waiting,
+      hold: (tabId, send) => {
+        if (!waiting.some((q) => q.tabId === tabId)) return false
+        held.push({ tabId, send })
+        return true
+      },
+      drop: (tabId) => {
+        const before = waiting.length
+        waiting.splice(0, waiting.length, ...waiting.filter((q) => q.tabId !== tabId))
+        return waiting.length < before
+      }
     },
     assist: async (job) =>
       (job.system === 'You translate.' ? conducting.translation : conducting.titleReply) ?? null,
@@ -146,7 +165,9 @@ function harness(
     closeSoon: (target) => {
       closed.push(target.sessionId)
     },
-    conductorScope: (tabId) => conducting.scopes?.[tabId],
+    isButler: (tabId) => !!conducting.scopes?.[tabId],
+    butlerFolder: () => BUTLER_FOLDER,
+    butlerHelperRole: () => BUTLER_HELPER_ROLE,
     sidebar: () => conducting.sidebar ?? [],
     worktrees: async () => (conducting.worktrees ?? []).map((name) => ({ name, dir: name })),
     readTurns: async (key, n) => {
@@ -154,10 +175,7 @@ function harness(
       return (conducting.turns?.[key] ?? []).slice(-n)
     },
     quotedPrompt: (tabId) => conducting.quotedPrompts?.[tabId],
-    touch: (tabId, key) => {
-      if (conducting.scopes?.[tabId]) touched.push({ tabId, key })
-    },
-    conductorOf: (ref) => conducting.conductors?.[ref],
+    butlerTarget: (ref) => conducting.conductors?.[ref],
     resume: async (r) => {
       resumed.push(r.id)
       return `${r.id}-tab`
@@ -175,9 +193,6 @@ function harness(
     stop: (tabId) => {
       stopped.push(tabId)
     },
-    started: (conductorTab, tabId, name, workspace, backend) => {
-      started.push({ conductorTab, tabId, name, workspace, backend })
-    },
     answer: async (tabId, reply) => {
       answers.push({ tabId, reply })
       return conducting.answer?.(tabId, reply)
@@ -185,8 +200,9 @@ function harness(
     undelivered: (callerTab, target, why) => {
       undelivered.push({ callerTab, name: target.name, why })
     },
-    command: async (callerTab, target, text) => {
+    command: async (callerTab, target, text, tellCaller) => {
       commands.push({ callerTab, key: target.key, text })
+      tells.push(tellCaller)
       return `Typing ${text} into ${target.name}.`
     },
     screen: async (tabId) =>
@@ -202,20 +218,22 @@ function harness(
         reply,
         at: 1
       }),
+    waitsOnAnother: inner.waitsOnAnother,
     launched,
     queued,
     closed,
-    touched,
     reads,
     lines,
     pressed,
     resumed,
     stopped,
-    started,
     answers,
     commands,
+    tells,
     undelivered,
-    startedSessions
+    startedSessions,
+    waiting,
+    held
   }
 }
 
@@ -427,12 +445,12 @@ describe('koloft session new', () => {
     expect(launched[0].firstPrompt).toContain('"me title"')
   })
 
-  it('a Codex caller starts a Codex sibling told, beside its first message, to report back to its thread id, so the task alone is what Codex names the thread by; the caller gets the tab id to reach it by', async () => {
+  it('a Codex caller starts a Codex sibling titled from its task and told, beside its first message, to report back to its thread id, so its first message is the task alone; the caller gets the tab id to reach it by', async () => {
     const { verb, launched } = harness([session('me', 'codex', { nativeSessionId: CODEX_THREAD })])
     const reply = await verb(['new', '--', 'Check the tests.'], from('me'))
     expect(launched[0]).toMatchObject({
       kind: 'codex',
-      name: undefined,
+      name: 'Check the tests.',
       firstPrompt: 'Check the tests.'
     })
     expect(launched[0].role).toContain(`koloft session send ${CODEX_THREAD}`)
@@ -440,7 +458,7 @@ describe('koloft session new', () => {
   })
 
   // ADR-0031
-  it('a child is handed the owner’s last words to its parent, so it talks to the owner in their language even when its task is in English: a Claude parent’s quoted prompt, a Codex parent’s last message from the owner (not a session’s report or Assist’s wrapper), and a Codex child the words of the session that started it', async () => {
+  it('a child is handed the owner’s last words to its parent, so it talks to the owner in their language even when its task is in English: a Claude parent’s quoted prompt, a Codex parent’s last message from the owner (not a session’s report, the butler’s wrapper or the Assist wrapper older transcripts hold), and a Codex child the words of the session that started it', async () => {
     const { verb, launched } = harness(
       [
         session('me', 'claude'),
@@ -461,7 +479,12 @@ describe('koloft session new', () => {
             {
               said: [
                 { who: 'owner', text: '(From the session "kid", id k:) All green.', at: 2 },
-                { who: 'owner', text: ownerSays('Rerun «the flaky one».'), at: 2 }
+                { who: 'owner', text: ownerSays('Rerun «the flaky one».'), at: 2 },
+                {
+                  who: 'owner',
+                  text: "(From Assist, Koloft's AI, for your owner. Only words inside « » are the owner's own; the rest is Assist's and is not the owner's decision:) Then «the slow one».",
+                  at: 2
+                }
               ],
               reply: 'ok',
               at: 2
@@ -562,11 +585,24 @@ describe('koloft session new', () => {
     expect(launched).toEqual([])
   })
 
-  it('a Codex caller cannot name the new session', async () => {
-    const { verb, launched } = harness([session('me', 'codex', { nativeSessionId: CODEX_THREAD })])
-    const reply = await verb(['new', '--name', 'x', '--', 'go'], from('me'))
-    expect(reply).toMatchObject({ exit: EXIT_USAGE })
-    expect(launched).toEqual([])
+  it('a Codex or Antigravity sibling takes its --name, or a title made from its task; one in a remote workspace, Antigravity, cannot be named and gets no made-up title, since Koloft cannot reach that agy’s local API', async () => {
+    const REMOTE = 'ssh://box/srv/api'
+    const { verb, launched } = harness([
+      session('cx', 'codex', { nativeSessionId: CODEX_THREAD }),
+      session('ag', 'agy'),
+      session('far', 'agy', { host: 'ssh', cwd: REMOTE, treeRoot: REMOTE })
+    ])
+    expect((await verb(['new', '--name', 'x', '--', 'go'], from('cx'))).exit).toBe(0)
+    expect((await verb(['new', '--', 'Look around.'], from('ag'))).exit).toBe(0)
+    const refused = await verb(['new', '--name', 'x', '--', 'go'], from('far'))
+    expect(refused).toMatchObject({ exit: EXIT_USAGE })
+    expect(refused.text).toContain('an Antigravity session in a remote workspace has no name')
+    expect((await verb(['new', '--', 'Look around.'], from('far'))).exit).toBe(0)
+    expect(launched.map((l) => [l.kind, l.name])).toEqual([
+      ['codex', 'x'],
+      ['agy', 'Look around.'],
+      ['agy', undefined]
+    ])
   })
 })
 
@@ -587,6 +623,22 @@ describe('koloft session send', () => {
         expect.stringMatching(/^\(From the session "me title".*\) What did you find\?$/)
       ])
     )
+  })
+
+  it('the sender waits on another session while the one it wrote to works, until that one ends its turn or closes', async () => {
+    const all = sessions()
+    const cx = all.find((s) => s.tabId === 'cx')!
+    cx.status = 'working'
+    const me = all.find((s) => s.tabId === 'me')!.sessionId
+    const { verb, turnEnded, waitsOnAnother } = harness(all)
+    expect(waitsOnAnother(me)).toBe(false)
+    expect((await verb(['send', 'cx', 'Run', 'the tests'], from('me'))).exit).toBe(0)
+    expect(waitsOnAnother(me)).toBe(true)
+    cx.alive = false
+    expect(waitsOnAnother(me)).toBe(false)
+    cx.alive = true
+    turnEnded('cx', 'All green.')
+    expect(waitsOnAnother(me)).toBe(false)
   })
 
   it('a Muse session reaches an open Muse or Codex session: typed into a Muse one once it is idle, queued on a Codex one, both marked with who sent it', async () => {
@@ -635,7 +687,7 @@ describe('koloft session send', () => {
     expect(queued.map((q) => q.tabId)).toEqual(['me'])
   })
 
-  it('a Claude or Codex child reports to the session that started it by its id or name, starting it again first if it is closed or asleep, marked with who sent it; any other Claude session stays out of reach', async () => {
+  it('a Claude or Codex child reports to the session that started it by its id or name, starting it again first if it is closed or asleep, marked with who sent it', async () => {
     const PARENT_KEY = `codex:local:${OTHER_THREAD}`
     const { verb, lines, queued, resumed, startedSessions } = harness(
       [
@@ -665,7 +717,6 @@ describe('koloft session send', () => {
     for (const ref of ['planner-id', 'Planner'])
       expect((await verb(['send', ref, 'done'], from('kid'))).text).toMatch(/Will deliver/)
     expect((await verb(['send', OTHER_THREAD, 'checked'], from('cxkid'))).exit).toBe(0)
-    expect((await verb(['send', 'other-id', 'hi'], from('kid'))).exit).not.toBe(0)
 
     await vi.waitFor(() => expect([...new Set(resumed)]).toEqual(['planner-id', PARENT_KEY]))
     const line = (id: string): string | null =>
@@ -806,26 +857,33 @@ describe('koloft session close', () => {
     expect(closed).toEqual(['grand-session', 'grand-session'])
   })
 
-  it('refuses, closing nothing, a session it did not start — open or ended', async () => {
+  it('closes an ended session it did not start, in any workspace, and refuses, closing nothing, an open one it did not start', async () => {
     const someoneElses: ClosableSession = {
       sessionId: 'cold-session',
       backendId: 'claude',
       title: 'Old run',
-      treeRoot: WS
+      treeRoot: OTHER_WS
     }
     const { verb, closed } = harness(
       [session('me', 'claude'), session('other', 'claude')],
       {},
       [],
-      {},
+      {
+        sidebar: sidebar([
+          [WS, [row('other-session', { running: true })]],
+          [OTHER_WS, [row('cold-session', { title: 'Old run', cwd: OTHER_WS })]]
+        ])
+      },
       [someoneElses]
     )
-    for (const ref of ['other', 'other title', 'Old run', 'cold-session', '']) {
+    for (const ref of ['other', 'other title', '']) {
       const reply = await verb(['close', ref], from('me'))
       expect(reply.exit).not.toBe(0)
-      expect(reply.text).toContain('koloft session new')
     }
+    expect((await verb(['close', 'other title'], from('me'))).text).toContain('is open')
     expect(closed).toEqual([])
+    expect((await verb(['close', 'Old run'], from('me'))).exit).toBe(0)
+    expect(closed).toEqual(['cold-session'])
   })
 
   it('closes nothing and lists what is left when something is not committed or not pushed', async () => {
@@ -839,13 +897,10 @@ describe('koloft session close', () => {
   })
 })
 
-describe('a conductor’s view of sessions: its binding sets the scope', () => {
+describe('the butler’s view of sessions: every workspace', () => {
   const CODEX_KEY = `codex:local:${CODEX_THREAD}`
-  const conductor = (tabId: string): SessionInfo =>
-    session(tabId, 'claude', { cwd: '/conductors/global' })
   const live = [
-    conductor('global'),
-    conductor('wsCond'),
+    session('butler', 'claude', { cwd: '/conductors/global' }),
     session('fix', 'claude', { sessionId: 'fix-id', title: 'fix-login', status: 'working' })
   ]
   const rows = sidebar([
@@ -880,37 +935,56 @@ describe('a conductor’s view of sessions: its binding sets the scope', () => {
     [CODEX_KEY]: [{ said: [{ who: 'owner', text: 'check docs', at: 1 }], reply: 'DONE', at: 2 }]
   }
   const conducting = {
-    scopes: { global: 'global', wsCond: WS },
+    scopes: { butler: 'global' },
     sidebar: rows,
     turns
   }
 
-  it('a workspace conductor lists its own workspace’s sessions, open and closed, with backend, host, state, last active and id', async () => {
+  it('the butler lists every workspace’s sessions, open and closed, with backend, host, state, last active, id and a workspace column, a remote one under its machine', async () => {
     const { verb } = harness(live, {}, [], conducting)
-    const reply = await verb(['list'], from('wsCond'))
+    const reply = await verb(['list'], from('butler'))
     expect(reply.exit).toBe(0)
-    expect(reply.text.split('\n')).toEqual([
-      'fix-login · Claude · local · working · last active just now · id: fix-id',
-      `docs-links · Codex · local · closed · last active 2 h ago · id: ${CODEX_THREAD}`
-    ])
-  })
-
-  it('the global conductor lists every workspace’s sessions with a workspace column, a remote one under its machine', async () => {
-    const { verb } = harness(live, {}, [], conducting)
-    const lines = (await verb(['list'], from('global'))).text.split('\n')
+    const lines = reply.text.split('\n')
     expect(lines).toHaveLength(4)
-    expect(lines[0]).toBe(
-      `fix-login · Claude · local · working · last active just now · id: fix-id · workspace: ${WS}`
-    )
+    expect(lines.slice(0, 2)).toEqual([
+      `fix-login · Claude · local · working · last active just now · id: fix-id · workspace: ${WS}`,
+      `docs-links · Codex · local · closed · last active 2 h ago · id: ${CODEX_THREAD} · workspace: ${WS}`
+    ])
     expect(lines[3]).toBe(
       'api-fix · Claude · box · closed · last active just now · id: api-id · workspace: box:/srv/api'
     )
+    expect(await verb(['list', '--workspace', WS], from('butler'))).toMatchObject({
+      exit: EXIT_USAGE
+    })
   })
 
-  it('a conductor sees an open session that shows the owner a question as asking, not as working or done', async () => {
+  it('a helper in the butler’s own folder is listed under that folder, not under its path on disk', async () => {
+    const helper = row('helper-id', {
+      title: 'Set up Discord',
+      cwd: BUTLER_FOLDER,
+      mtime: Date.now() - 2 * 3600_000
+    })
+    const butlerFolder: WorkspaceRows = {
+      workspace: {
+        path: BUTLER_FOLDER,
+        missing: false,
+        isGit: false,
+        hasHistory: false,
+        butler: true
+      },
+      rows: [helper]
+    }
+    const withHelper = [...rows, butlerFolder]
+    const { verb } = harness(live, {}, [], { ...conducting, sidebar: withHelper })
+    expect((await verb(['list'], from('butler'))).text).toContain(
+      "Set up Discord · Claude · local · closed · last active 2 h ago · id: helper-id · workspace: the butler's own folder"
+    )
+  })
+
+  it('the butler sees an open session that shows the owner a question as asking, not as working or done', async () => {
     const { verb } = harness(live, {}, [], { ...conducting, asking: ['fix'] })
-    expect((await verb(['list'], from('wsCond'))).text.split('\n')[0]).toBe(
-      'fix-login · Claude · local · asking the owner a question · last active just now · id: fix-id'
+    expect((await verb(['list'], from('butler'))).text.split('\n')[0]).toBe(
+      `fix-login · Claude · local · asking the owner a question · last active just now · id: fix-id · workspace: ${WS}`
     )
   })
 
@@ -940,46 +1014,30 @@ describe('a conductor’s view of sessions: its binding sets the scope', () => {
     ])
   })
 
-  it('session read prints what the owner, a peer and the session said in the last N turns, found by name or id, and marks the session touched', async () => {
-    const { verb, touched } = harness(live, {}, [], conducting)
-    expect((await verb(['read', 'fix-login'], from('wsCond'))).text).toBe(
+  it('session read prints what the owner, a peer and the session said in the last N turns, found by name or id', async () => {
+    const { verb } = harness(live, {}, [], conducting)
+    expect((await verb(['read', 'fix-login'], from('butler'))).text).toBe(
       'owner: fix the login\npeer: also the tests\nassistant: Looking.\n\nFixed both.'
     )
-    expect((await verb(['read', 'fix-id', '--last', '2'], from('wsCond'))).text).toBe(
+    expect((await verb(['read', 'fix-id', '--last', '2'], from('butler'))).text).toBe(
       'owner: first\nassistant: one\n\nowner: fix the login\npeer: also the tests\nassistant: Looking.\n\nFixed both.'
     )
-    expect((await verb(['read', CODEX_THREAD], from('global'))).text).toBe(
+    expect((await verb(['read', CODEX_THREAD], from('butler'))).text).toBe(
       'owner: check docs\nassistant: DONE'
     )
-    expect(touched).toEqual([
-      { tabId: 'wsCond', key: 'fix-id' },
-      { tabId: 'wsCond', key: 'fix-id' },
-      { tabId: 'global', key: CODEX_KEY }
-    ])
   })
 
-  it('a conductor finds an open Claude session by the name it was started under: the list shows the name, read takes it, and answer’s reply calls it by that name, not its title', async () => {
+  it('the butler finds an open Claude session by the name it was started under: the list shows the name, read takes it, and answer’s reply calls it by that name, not its title', async () => {
     const { verb } = harness(live, { 'fix-id': 'helper-1a2b3c' }, [], conducting)
-    expect((await verb(['list'], from('wsCond'))).text.split('\n')[0]).toBe(
+    expect((await verb(['list'], from('butler'))).text.split('\n')[0]).toContain(
       'fix-login · Claude · local · working · last active just now · id: fix-id · name: helper-1a2b3c'
     )
-    expect((await verb(['read', 'helper-1a2b3c'], from('wsCond'))).text).toBe(
+    expect((await verb(['read', 'helper-1a2b3c'], from('butler'))).text).toBe(
       'owner: fix the login\npeer: also the tests\nassistant: Looking.\n\nFixed both.'
     )
-    expect((await verb(['answer', 'helper-1a2b3c', '2'], from('wsCond'))).text).toBe(
+    expect((await verb(['answer', 'helper-1a2b3c', '2'], from('butler'))).text).toBe(
       'Answered helper-1a2b3c.'
     )
-  })
-
-  it('a workspace conductor is told a session in another workspace is not in its workspace, and nothing is read', async () => {
-    const { verb, reads, touched } = harness(live, {}, [], conducting)
-    for (const ref of ['site-build', 'api-id']) {
-      const reply = await verb(['read', ref], from('wsCond'))
-      expect(reply.exit).not.toBe(0)
-      expect(reply.text).toContain(NOT_IN_YOUR_WORKSPACE)
-    }
-    expect(reads).toEqual([])
-    expect(touched).toEqual([])
   })
 
   it('read refuses a bad --last, an unknown session and a session still starting', async () => {
@@ -991,18 +1049,21 @@ describe('a conductor’s view of sessions: its binding sets the scope', () => {
       ['read', 'fix-id', '--last', '2', 'more'],
       ['read', '--last', '2']
     ])
-      expect(await verb(args, from('global'))).toMatchObject({ exit: EXIT_USAGE })
+      expect(await verb(args, from('butler'))).toMatchObject({ exit: EXIT_USAGE })
     for (const ref of ['nobody', 'starting-tab'])
-      expect((await verb(['read', ref], from('global'))).text).toContain('there is no session')
+      expect((await verb(['read', ref], from('butler'))).text).toContain('there is no session')
     expect(reads).toEqual([])
   })
 })
 
-describe('a conductor acting on the sessions it looks after: send, resume, stop, close and new', () => {
+describe('the butler, and any session, acting on sessions: send, resume, stop, close and new', () => {
   const CODEX_KEY = `codex:local:${CODEX_THREAD}`
   const live = [
-    session('wsCond', 'claude', { sessionId: 'cond-id', title: 'app conductor' }),
-    session('global', 'claude', { sessionId: 'global-id', cwd: '/conductors/global' }),
+    session('butler', 'claude', {
+      sessionId: 'cond-id',
+      title: 'Alfred',
+      cwd: '/conductors/global'
+    }),
     session('fix', 'claude', { sessionId: 'fix-id', title: 'fix-login', status: 'working' }),
     session('cx', 'codex', {
       sessionId: CODEX_KEY,
@@ -1029,48 +1090,34 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     [OTHER_WS, [row('site-id', { title: 'site-build' })]]
   ])
   const conductorTarget = (over: Partial<Target>): Target => ({
-    key: 'conductor:b1',
-    name: 'the app conductor',
+    key: 'butler',
+    name: 'Alfred',
     backend: 'claude',
     remote: false,
-    tabId: 'wsCond',
+    tabId: 'butler',
+    butler: true,
     open: async () => 'reopened-tab',
     ...over
   })
   const conducting = (over: Partial<Conducting> = {}): Conducting => ({
-    scopes: { wsCond: WS, global: 'global' },
+    scopes: { butler: 'global' },
     sidebar: rows,
-    conductors: {
-      'cond-id': conductorTarget({}),
-      'global-id': conductorTarget({ tabId: 'global' })
-    },
+    conductors: { 'cond-id': conductorTarget({}) },
     ...over
   })
 
-  it('send reaches a local Claude session through its message socket with the conductor’s own permission mode, and a Codex one through its queue with a conductor message id; both are touched', async () => {
-    const { verb, lines, queued, touched } = harness(
-      live,
-      {},
-      [],
-      conducting({ bypass: ['wsCond'] })
-    )
-    expect((await verb(['send', 'fix-login', 'also', 'the tests'], from('wsCond'))).exit).toBe(0)
-    expect((await verb(['send', CODEX_THREAD, 'check docs'], from('wsCond'))).exit).toBe(0)
-    expect((await verb(['send', 'fix-id', 'hi'], from('global'))).exit).toBe(0)
+  it('send reaches a local Claude session through its message socket with the butler’s own permission mode, and a Codex one through its queue with a conductor message id', async () => {
+    const { verb, lines, queued } = harness(live, {}, [], conducting({ bypass: ['butler'] }))
+    expect((await verb(['send', 'fix-login', 'also', 'the tests'], from('butler'))).exit).toBe(0)
+    expect((await verb(['send', CODEX_THREAD, 'check docs'], from('butler'))).exit).toBe(0)
     expect(lines).toEqual([
       {
         tabId: 'fix',
         line: crossSessionLine('bypass', ownerSays('also the tests'), 'koloft-session-1')
-      },
-      { tabId: 'fix', line: crossSessionLine('prompting', ownerSays('hi'), 'koloft-session-2') }
+      }
     ])
     expect(queued).toEqual([
       { tabId: 'cx', text: ownerSays('check docs'), clientId: 'koloft-conductor-1' }
-    ])
-    expect(touched).toEqual([
-      { tabId: 'wsCond', key: 'fix-id' },
-      { tabId: 'wsCond', key: CODEX_KEY },
-      { tabId: 'global', key: 'fix-id' }
     ])
   })
 
@@ -1080,7 +1127,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       ['fix-login', 'fix-login'],
       [CODEX_THREAD, 'docs-links']
     ]) {
-      const reply = await verb(['send', ref, 'go on'], from('global'))
+      const reply = await verb(['send', ref, 'go on'], from('butler'))
       expect(reply.exit).toBe(0)
       expect(reply.text).toBe(
         `Sent to ${name}. But ${name} is asking the owner a question, so it reads your message only once that is answered. See the question with koloft session screen ${name} and pass it on to the owner.`
@@ -1088,7 +1135,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     }
     expect(lines).toHaveLength(1)
     expect(queued).toHaveLength(1)
-    expect((await verb(['send', 'api-fix', 'hi'], from('global'))).text).toBe('Typed into api-fix.')
+    expect((await verb(['send', 'api-fix', 'hi'], from('butler'))).text).toBe('Typed into api-fix.')
   })
 
   it('send types into a Claude session on another machine at once when its turn has ended; while it is busy it answers at once, types when the turn ends, and reports to the conductor a turn that never does', async () => {
@@ -1102,7 +1149,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
           !turnEnded || (ms > 0 && new Promise<boolean>((resolve) => turnEnds.push(resolve)))
       })
     )
-    expect(await busy.verb(['send', 'api-fix', 'hi'], from('global'))).toMatchObject({
+    expect(await busy.verb(['send', 'api-fix', 'hi'], from('butler'))).toMatchObject({
       exit: 0,
       text: 'Will deliver when api-fix is ready.'
     })
@@ -1112,26 +1159,26 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     await vi.waitFor(() =>
       expect(busy.pressed).toEqual([{ tabId: 'api', keys: [ownerSays('hi'), '\r'] }])
     )
-    await busy.verb(['send', 'api-fix', 'again'], from('global'))
+    await busy.verb(['send', 'api-fix', 'again'], from('butler'))
     await vi.waitFor(() => expect(turnEnds).toHaveLength(2))
     turnEnds[1](false)
     await vi.waitFor(() =>
       expect(busy.undelivered).toEqual([
-        { callerTab: 'global', name: 'api-fix', why: expect.stringContaining('stayed busy') }
+        { callerTab: 'butler', name: 'api-fix', why: expect.stringContaining('stayed busy') }
       ])
     )
     expect(busy.pressed).toHaveLength(1)
     expect(busy.lines).toEqual([])
 
     const idle = harness(live, {}, [], conducting())
-    expect((await idle.verb(['send', 'api-fix', 'hi'], from('global'))).text).toBe(
+    expect((await idle.verb(['send', 'api-fix', 'hi'], from('butler'))).text).toBe(
       'Typed into api-fix.'
     )
   })
 
   it('send to a closed session answers at once, resumes it and sends once it is ready; one that never gets ready is reported to the conductor', async () => {
     const ready = harness(live, {}, [], conducting())
-    expect((await ready.verb(['send', 'old-work', 'go'], from('wsCond'))).text).toBe(
+    expect((await ready.verb(['send', 'old-work', 'go'], from('butler'))).text).toBe(
       'Will deliver when old-work is ready.'
     )
     expect(ready.resumed).toEqual(['old-id'])
@@ -1144,16 +1191,16 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       ])
     )
     const slow = harness(live, {}, [], conducting({ ready: () => false }))
-    expect((await slow.verb(['send', 'old-work', 'go'], from('wsCond'))).exit).toBe(0)
+    expect((await slow.verb(['send', 'old-work', 'go'], from('butler'))).exit).toBe(0)
     await vi.waitFor(() =>
       expect(slow.undelivered).toEqual([
-        { callerTab: 'wsCond', name: 'old-work', why: expect.stringContaining('not get ready') }
+        { callerTab: 'butler', name: 'old-work', why: expect.stringContaining('not get ready') }
       ])
     )
     expect(slow.lines).toEqual([])
   })
 
-  it('answer hands the reply to the dialog the session shows and touches it; a closed session, the conductor itself, a session with no dialog and a non-conductor are refused, and an open session Koloft cannot answer is refused with how to see its screen and press its keys', async () => {
+  it('answer hands the reply to the dialog the session shows and touches it; a closed session, the caller itself and a session with no dialog are refused, and an open session Koloft cannot answer is refused with how to see its screen and press its keys', async () => {
     const h = harness(
       live,
       {},
@@ -1162,69 +1209,87 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
         answer: (tab) => (tab === 'cx' ? 'Koloft sees no question.' : undefined)
       })
     )
-    expect((await h.verb(['answer', 'fix-login', '2'], from('wsCond'))).text).toBe(
+    expect((await h.verb(['answer', 'fix-login', '2'], from('butler'))).text).toBe(
       'Answered fix-login.'
     )
-    expect((await h.verb(['answer', CODEX_THREAD, 'yes'], from('wsCond'))).text).toBe(
+    expect((await h.verb(['answer', CODEX_THREAD, 'yes'], from('butler'))).text).toBe(
       `koloft session answer: docs-links: Koloft sees no question. To answer it anyway, see what it shows with koloft session screen ${CODEX_THREAD}, then press the keys with koloft session keys ${CODEX_THREAD} <keys>.`
     )
-    expect((await h.verb(['answer', 'old-work', 'yes'], from('wsCond'))).text).toContain(
+    expect((await h.verb(['answer', 'old-work', 'yes'], from('butler'))).text).toContain(
       'it is not open'
     )
-    expect((await h.verb(['answer', 'cond-id', '1'], from('wsCond'))).text).toContain(THAT_IS_YOU)
+    expect((await h.verb(['answer', 'cond-id', '1'], from('butler'))).text).toContain(THAT_IS_YOU)
     expect((await h.verb(['answer', 'fix-login', '1'], from('fix'))).exit).not.toBe(0)
-    expect(await h.verb(['answer', 'fix-login'], from('wsCond'))).toMatchObject({
+    expect(await h.verb(['answer', 'fix-login'], from('butler'))).toMatchObject({
       exit: EXIT_USAGE
     })
     expect(h.answers).toEqual([
       { tabId: 'fix', reply: '2' },
       { tabId: 'cx', reply: 'yes' }
     ])
-    expect(h.touched.map((t) => t.key)).toEqual(['fix-id', CODEX_KEY, 'old-id'])
   })
 
-  it('command hands one slash command to Koloft for a session it looks after, or for itself with "me", and touches the session', async () => {
+  it('command hands one slash command to Koloft for any session, in any workspace, or for the caller itself with "me"', async () => {
     const h = harness(live, {}, [], conducting())
     expect(
-      (await h.verb(['command', 'fix-login', '/compact', 'keep', 'the', 'plan'], from('wsCond')))
+      (await h.verb(['command', 'fix-login', '/compact', 'keep', 'the', 'plan'], from('butler')))
         .text
     ).toBe('Typing /compact keep the plan into fix-login.')
-    expect((await h.verb(['command', 'me', '/clear'], from('wsCond'))).exit).toBe(0)
-    expect((await h.verb(['command', 'app conductor', '/context'], from('wsCond'))).exit).toBe(0)
+    expect((await h.verb(['command', 'me', '/clear'], from('butler'))).exit).toBe(0)
+    expect((await h.verb(['command', 'Alfred', '/context'], from('butler'))).exit).toBe(0)
+    expect((await h.verb(['command', 'site-build', '/clear'], from('fix'))).exit).toBe(0)
+    expect((await h.verb(['command', 'me', '/compact'], from('fix'))).exit).toBe(0)
     expect(h.commands).toEqual([
-      { callerTab: 'wsCond', key: 'fix-id', text: '/compact keep the plan' },
-      { callerTab: 'wsCond', key: 'conductor:b1', text: '/clear' },
-      { callerTab: 'wsCond', key: 'conductor:b1', text: '/context' }
+      { callerTab: 'butler', key: 'fix-id', text: '/compact keep the plan' },
+      { callerTab: 'butler', key: 'butler', text: '/clear' },
+      { callerTab: 'butler', key: 'butler', text: '/context' },
+      { callerTab: 'fix', key: 'site-id', text: '/clear' },
+      { callerTab: 'fix', key: 'fix-id', text: '/compact' }
     ])
-    expect(h.touched.map((t) => t.key)).toEqual(['fix-id'])
   })
 
-  it('command refuses text that is not a slash command, a session out of scope, and a session that is not a conductor', async () => {
+  it('what a command printed is handed back to the session that ran it as a message from Koloft, for a Claude and a Codex caller', async () => {
     const h = harness(live, {}, [], conducting())
-    expect(await h.verb(['command', 'fix-login', 'compact'], from('wsCond'))).toMatchObject({
+    await h.verb(['command', 'site-build', '/context'], from('fix'))
+    await h.verb(['command', 'fix-login', '/compact'], from('cx'))
+    h.tells[0]('Context: 12% used')
+    h.tells[1]('Compacted.')
+    await vi.waitFor(() => {
+      expect(h.lines.find((l) => l.tabId === 'fix')?.line).toContain(
+        '(From Koloft:) Context: 12% used'
+      )
+      expect(h.queued).toContainEqual(
+        expect.objectContaining({ tabId: 'cx', text: '(From Koloft:) Compacted.' })
+      )
+    })
+    expect(h.undelivered).toEqual([])
+  })
+
+  it('command refuses text that is not a slash command', async () => {
+    const h = harness(live, {}, [], conducting())
+    expect(await h.verb(['command', 'fix-login', 'compact'], from('butler'))).toMatchObject({
       exit: EXIT_USAGE
     })
-    expect((await h.verb(['command', 'site-build', '/clear'], from('wsCond'))).text).toContain(
-      NOT_IN_YOUR_WORKSPACE
-    )
-    expect((await h.verb(['command', 'fix-login', '/clear'], from('fix'))).exit).not.toBe(0)
+    expect(await h.verb(['command', 'fix-login', 'compact'], from('cx'))).toMatchObject({
+      exit: EXIT_USAGE
+    })
     expect(h.commands).toEqual([])
   })
 
   it('screen prints an open session’s terminal without its blank edges, and says why it cannot when it cannot', async () => {
     const h = harness(live, {}, [], conducting())
-    expect((await h.verb(['screen', 'fix-login'], from('wsCond'))).text).toBe(
+    expect((await h.verb(['screen', 'fix-login'], from('butler'))).text).toBe(
       'The screen of fix-login right now:\n```\n$ ls\na.txt\n```'
     )
-    expect((await h.verb(['screen', 'old-work'], from('wsCond'))).text).toContain('is not open')
-    expect((await h.verb(['screen', 'me'], from('wsCond'))).text).toBe('you: no window')
+    expect((await h.verb(['screen', 'old-work'], from('butler'))).text).toContain('is not open')
+    expect((await h.verb(['screen', 'me'], from('butler'))).text).toBe('you: no window')
   })
 
-  it('keys presses named keys, in any case, and types every other word as it is, in order, into an open session it looks after, and touches it; a closed session, the conductor itself, a session out of scope, no keys and a non-conductor are refused', async () => {
+  it('keys presses named keys, in any case, and types every other word as it is, in order, into an open session, and touches it; a closed session, the caller itself and no keys are refused', async () => {
     const h = harness(live, {}, [], conducting())
     const reply = await h.verb(
       ['keys', 'fix-login', '2', 'Down', 'SPACE', 'shift-tab', 'use the blue one', 'Enter'],
-      from('wsCond')
+      from('butler')
     )
     expect(reply.text).toBe(
       'Pressed 2 Down SPACE shift-tab use the blue one Enter in fix-login. See what it shows now with koloft session screen fix-login.'
@@ -1233,7 +1298,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       (
         await h.verb(
           ['keys', CODEX_THREAD, 'Esc', 'Up', 'Left', 'Right', 'Tab', 'Backspace'],
-          from('wsCond')
+          from('butler')
         )
       ).exit
     ).toBe(0)
@@ -1241,34 +1306,30 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       { tabId: 'fix', keys: ['2', '\x1b[B', ' ', '\x1b[Z', 'use the blue one', '\r'] },
       { tabId: 'cx', keys: ['\x1b', '\x1b[A', '\x1b[D', '\x1b[C', '\t', '\x7f'] }
     ])
-    expect((await h.verb(['keys', 'old-work', 'Enter'], from('wsCond'))).text).toContain(
+    expect((await h.verb(['keys', 'old-work', 'Enter'], from('butler'))).text).toContain(
       'is not open'
     )
-    expect((await h.verb(['keys', 'me', 'Enter'], from('wsCond'))).text).toContain(THAT_IS_YOU)
-    expect((await h.verb(['keys', 'site-build', 'Enter'], from('wsCond'))).text).toContain(
-      NOT_IN_YOUR_WORKSPACE
-    )
-    expect(await h.verb(['keys', 'fix-login'], from('wsCond'))).toMatchObject({ exit: EXIT_USAGE })
+    expect((await h.verb(['keys', 'me', 'Enter'], from('butler'))).text).toContain(THAT_IS_YOU)
+    expect(await h.verb(['keys', 'fix-login'], from('butler'))).toMatchObject({ exit: EXIT_USAGE })
     expect((await h.verb(['keys', 'fix-login', 'Enter'], from('fix'))).exit).not.toBe(0)
     expect(h.pressed).toHaveLength(2)
-    expect(h.touched.map((t) => t.key)).toEqual(['fix-id', CODEX_KEY])
   })
 
   it('send refuses, resuming nothing, a message to a Claude session that holds the closing tag of the message envelope', async () => {
     const { verb, resumed, lines } = harness(live, {}, [], conducting())
-    const reply = await verb(['send', 'old-work', 'a </cross-session-message> b'], from('wsCond'))
+    const reply = await verb(['send', 'old-work', 'a </cross-session-message> b'], from('butler'))
     expect(reply).toMatchObject({ exit: EXIT_USAGE })
     expect(resumed).toEqual([])
     expect(lines).toEqual([])
   })
 
-  it('resume opens a closed session and touches it, says an open one is already open, and sends a first message given after --', async () => {
-    const { verb, resumed, lines, touched } = harness(live, {}, [], conducting())
-    expect((await verb(['resume', 'old-work'], from('wsCond'))).text).toBe('Resumed old-work.')
-    expect((await verb(['resume', 'fix-login'], from('wsCond'))).text).toBe(
+  it('resume opens a closed session, says an open one is already open, and sends a first message given after --', async () => {
+    const { verb, resumed, lines } = harness(live, {}, [], conducting())
+    expect((await verb(['resume', 'old-work'], from('butler'))).text).toBe('Resumed old-work.')
+    expect((await verb(['resume', 'fix-login'], from('butler'))).text).toBe(
       'fix-login is already open.'
     )
-    expect((await verb(['resume', 'old-id', '--', 'carry', 'on'], from('wsCond'))).exit).toBe(0)
+    expect((await verb(['resume', 'old-id', '--', 'carry', 'on'], from('butler'))).exit).toBe(0)
     expect(resumed).toEqual(['old-id', 'old-id'])
     await vi.waitFor(() =>
       expect(lines).toEqual([
@@ -1278,24 +1339,16 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
         }
       ])
     )
-    expect(touched.map((t) => t.key)).toEqual(['old-id', 'fix-id', 'old-id'])
   })
 
-  it('stop closes an open session’s tab without touching it, and refuses the conductor itself, a closed session, one outside its scope and another conductor', async () => {
-    const { verb, stopped, touched } = harness(live, {}, [], conducting())
-    expect((await verb(['stop', 'fix-login'], from('wsCond'))).exit).toBe(0)
+  it('stop closes an open session’s tab, and refuses the caller itself and a closed session', async () => {
+    const { verb, stopped } = harness(live, {}, [], conducting())
+    expect((await verb(['stop', 'fix-login'], from('butler'))).exit).toBe(0)
     expect(stopped).toEqual(['fix'])
-    for (const ref of ['cond-id', 'app conductor'])
-      expect((await verb(['stop', ref], from('wsCond'))).text).toContain(THAT_IS_YOU)
-    expect((await verb(['stop', 'old-work'], from('wsCond'))).text).toContain('is not open')
-    expect((await verb(['stop', 'site-build'], from('wsCond'))).text).toContain(
-      NOT_IN_YOUR_WORKSPACE
-    )
-    expect((await verb(['stop', 'global-id'], from('wsCond'))).text).toContain(
-      'there is no session'
-    )
+    for (const ref of ['cond-id', 'Alfred'])
+      expect((await verb(['stop', ref], from('butler'))).text).toContain(THAT_IS_YOU)
+    expect((await verb(['stop', 'old-work'], from('butler'))).text).toContain('is not open')
     expect(stopped).toEqual(['fix'])
-    expect(touched).toEqual([])
   })
 
   const ENDED_CODEX = `codex:local:${OTHER_THREAD}`
@@ -1312,7 +1365,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     ended('site-id', 'claude', 'site-build')
   ]
 
-  it('close takes an ended session on this computer, Claude or Codex, off the list, and refuses, closing nothing, an open one, one on another machine and one outside its scope', async () => {
+  it('close takes an ended session on this computer, Claude or Codex, in any workspace, off the list, and refuses, closing nothing, an open one and one on another machine', async () => {
     const withEnded = sidebar([
       [
         WS,
@@ -1326,87 +1379,97 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       [OTHER_WS, [row('site-id', { title: 'site-build' })]]
     ])
     const { verb, closed } = harness(live, {}, [], conducting({ sidebar: withEnded }), ENDED)
-    expect((await verb(['close', 'old-work'], from('wsCond'))).exit).toBe(0)
-    expect((await verb(['close', OTHER_THREAD], from('global'))).exit).toBe(0)
+    expect((await verb(['close', 'old-work'], from('butler'))).exit).toBe(0)
+    expect((await verb(['close', OTHER_THREAD], from('butler'))).exit).toBe(0)
     expect(closed).toEqual(['old-id', ENDED_CODEX])
-    expect((await verb(['close', 'fix-login'], from('wsCond'))).text).toContain('is open')
-    expect((await verb(['close', 'api-old'], from('global'))).text).toContain('another machine')
-    expect((await verb(['close', 'site-build'], from('wsCond'))).text).toContain(
-      NOT_IN_YOUR_WORKSPACE
-    )
+    expect((await verb(['close', 'fix-login'], from('butler'))).text).toContain('is open')
+    expect((await verb(['close', 'api-old'], from('butler'))).text).toContain('another machine')
     expect(closed).toEqual(['old-id', ENDED_CODEX])
-    expect((await verb(['close'], from('wsCond'))).exit).toBe(0)
-    expect(closed).toEqual(['old-id', ENDED_CODEX, 'cond-id'])
+    expect((await verb(['close', 'site-build'], from('butler'))).exit).toBe(0)
+    expect((await verb(['close'], from('butler'))).exit).toBe(0)
+    expect(closed).toEqual(['old-id', ENDED_CODEX, 'site-id', 'cond-id'])
   })
 
-  it('close from a conductor closes nothing and lists what is left when an ended session’s worktree holds work', async () => {
+  it('close from the butler closes nothing and lists what is left when an ended session’s worktree holds work', async () => {
     const left = ['Changes not committed:\n?? notes.md']
     const { verb, closed } = harness(live, {}, left, conducting(), ENDED)
-    const reply = await verb(['close', 'old-work'], from('wsCond'))
+    const reply = await verb(['close', 'old-work'], from('butler'))
     expect(reply.exit).not.toBe(0)
     expect(reply.text).toContain(left[0])
     expect(closed).toEqual([])
   })
 
-  it('a session that is not a conductor cannot resume, stop or pick --backend', async () => {
-    const { verb, stopped, resumed, launched } = harness(live, {}, [], conducting())
-    for (const args of [
-      ['resume', 'old-work'],
-      ['stop', 'api-fix']
-    ])
-      expect((await verb(args, from('fix'))).exit).not.toBe(0)
-    expect(await verb(['new', '--backend', 'codex', '--', 'go'], from('fix'))).toMatchObject({
-      exit: EXIT_USAGE
-    })
-    expect([...stopped, ...resumed, ...launched]).toEqual([])
+  it('a session that is not the butler sees, stops, resumes, picks --backend and messages a closed session in another workspace, its message marked as from that session, never as the owner’s', async () => {
+    const { verb, stopped, resumed, launched, lines } = harness(live, {}, [], conducting())
+    expect((await verb(['screen', 'fix-login'], from('cx'))).text).toBe(
+      'The screen of fix-login right now:\n```\n$ ls\na.txt\n```'
+    )
+    expect((await verb(['stop', 'api-fix'], from('fix'))).exit).toBe(0)
+    expect((await verb(['resume', 'old-work'], from('fix'))).text).toBe('Resumed old-work.')
+    expect((await verb(['send', 'site-build', 'hi'], from('fix'))).text).toBe(
+      'Will deliver when site-build is ready.'
+    )
+    expect((await verb(['new', '--backend', 'codex', '--', 'go'], from('fix'))).exit).toBe(0)
+    expect(stopped).toEqual(['api'])
+    expect(launched.map((l) => [l.kind, l.cwd])).toEqual([['codex', WS]])
+    await vi.waitFor(() =>
+      expect(lines).toEqual([
+        {
+          tabId: 'site-id-tab',
+          line: crossSessionLine(
+            'prompting',
+            '(From the session "fix-login", id fix-id:) hi',
+            'koloft-session-1'
+          )
+        }
+      ])
+    )
+    expect(resumed).toEqual(['old-id', 'site-id'])
   })
 
-  it('new from a conductor: --backend picks the kind, the global conductor must name a workspace, a workspace conductor stays in its own, and each start is announced', async () => {
-    const { verb, launched, started } = harness(
-      live,
-      { 'cond-id': 'app-conductor' },
-      [],
-      conducting()
-    )
-    expect((await verb(['new', '--', 'go'], from('global'))).exit).not.toBe(0)
-    expect(
-      (await verb(['new', '--workspace', OTHER_WS, '--', 'go'], from('wsCond'))).exit
-    ).not.toBe(0)
+  it('new from the butler without --workspace starts a helper in its own folder, told the butler’s goals before the handover, and takes no worktree there', async () => {
+    const { verb, launched } = harness(live, { 'cond-id': 'Alfred' }, [], conducting())
+    const refused = await verb(['new', '-w', 'x', '--', 'go'], from('butler'))
+    expect(refused.exit).not.toBe(0)
+    expect(refused.text).toContain('--workspace')
     expect(launched).toEqual([])
 
+    expect((await verb(['new', '--', 'look into it'], from('butler'))).exit).toBe(0)
+    expect(launched).toHaveLength(1)
+    expect(launched[0].cwd).toBe(BUTLER_FOLDER)
+    expect(launched[0].worktree).toBeUndefined()
+    expect(launched[0].trustFolder).toBe(true)
+    expect(launched[0].firstPrompt?.startsWith(BUTLER_HELPER_ROLE)).toBe(true)
+    expect(launched[0].firstPrompt).toContain('koloft session send cond-id')
+  })
+
+  it('new from a session in a workspace is never told the butler’s goals', async () => {
+    const { verb, launched } = harness(live, {}, [], conducting())
+    await verb(['new', '--', 'fix it'], from('fix'))
+    expect(launched[0].firstPrompt).not.toContain(BUTLER_HELPER_ROLE)
+  })
+
+  it('new from the butler with --workspace: --backend picks the kind, and it is not told the butler’s goals', async () => {
+    const { verb, launched } = harness(live, { 'cond-id': 'Alfred' }, [], conducting())
     await verb(
       ['new', '--workspace', OTHER_WS, '--backend', 'codex', '--', 'check'],
-      from('global')
+      from('butler')
     )
-    await verb(['new', '--', 'fix it'], from('wsCond'))
+    await verb(['new', '--workspace', WS, '--', 'fix it'], from('butler'))
     expect(launched.map((l) => [l.kind, l.cwd])).toEqual([
       ['codex', OTHER_WS],
       ['claude', WS]
     ])
-    expect(launched[0].role).toContain('koloft session send global-id')
-    expect(launched[1].firstPrompt).toContain('the session "app-conductor"')
+    expect(launched[0].role).toContain('koloft session send cond-id')
+    expect(launched[1].firstPrompt).toContain('the session "Alfred"')
     expect(launched[1].firstPrompt).toContain('koloft session send cond-id')
-    for (const handover of [launched[0].role, launched[1].firstPrompt])
+    for (const handover of [launched[0].role, launched[1].firstPrompt]) {
       expect(handover).toContain("only words inside « » in its messages are the owner's own")
-    expect(started).toEqual([
-      {
-        conductorTab: 'global',
-        tabId: 'new-tab',
-        name: 'a Codex session',
-        workspace: OTHER_WS,
-        backend: 'codex'
-      },
-      {
-        conductorTab: 'wsCond',
-        tabId: 'new-tab',
-        name: launched[1].name,
-        workspace: WS,
-        backend: 'claude'
-      }
-    ])
+      expect(handover).not.toContain(BUTLER_HELPER_ROLE)
+    }
   })
 
-  it('a session Assist starts in a git workspace never runs in its main checkout: -w names the worktree, else Koloft picks a free one; a session another session starts stays where it is told; no -w ever reuses a worktree that exists, its name gets the next free -N', async () => {
+  it('a session the butler starts in a git workspace never runs in its main checkout: -w names the worktree, else Koloft picks a free one; a session another session starts stays where it is told; no -w ever reuses a worktree that exists, its name gets the next free -N', async () => {
     const { verb, launched } = harness(
       live,
       {},
@@ -1415,10 +1478,10 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     )
     vi.useFakeTimers({ now: new Date(2026, 9, 13, 23, 21), toFake: ['Date'] })
     try {
-      await verb(['new', '--workspace', WS, '--backend', 'codex', '--', 'go'], from('global'))
-      await verb(['new', '--', 'go'], from('wsCond'))
-      await verb(['new', '-w', 'links', '--', 'go'], from('wsCond'))
-      await verb(['new', '-w', 'docs', '--', 'go'], from('wsCond'))
+      await verb(['new', '--workspace', WS, '--backend', 'codex', '--', 'go'], from('butler'))
+      await verb(['new', '--workspace', WS, '--', 'go'], from('butler'))
+      await verb(['new', '--workspace', WS, '-w', 'links', '--', 'go'], from('butler'))
+      await verb(['new', '--workspace', WS, '-w', 'docs', '--', 'go'], from('butler'))
       await verb(['new', '--', 'go'], from('fix'))
       await verb(['new', '-w', 'docs', '--', 'go'], from('fix'))
     } finally {
@@ -1434,22 +1497,22 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     ])
   })
 
-  it('a session another session starts gets its starter’s own permission, so its report back is not held: bypass under a bypass conductor or session, the default otherwise', async () => {
-    const { verb, launched } = harness(live, {}, [], conducting({ bypass: ['global', 'fix'] }))
-    await verb(['new', '--workspace', WS, '--backend', 'codex', '--', 'go'], from('global'))
-    await verb(['new', '--', 'go'], from('wsCond'))
+  it('a session another session starts gets its starter’s own permission, so its report back is not held: bypass under a bypass butler or session, the default otherwise', async () => {
+    const { verb, launched } = harness(live, {}, [], conducting({ bypass: ['butler', 'fix'] }))
+    await verb(['new', '--workspace', WS, '--backend', 'codex', '--', 'go'], from('butler'))
+    await verb(['new', '--', 'go'], from('cx'))
     await verb(['new', '--', 'go'], from('fix'))
     expect(launched.map((l) => l.permission)).toEqual(['bypass', 'default', 'bypass'])
   })
 
-  it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode, no owner label, and the name and id of the session it is from; a conductor showing a question does not send the child to koloft session screen, a conductor-only command', async () => {
+  it('any session reports back to the butler that started it by the butler’s id, which is hidden from every list, with its own mode, no owner label, and the name and id of the session it is from; a butler showing a question gets the report without the child being told to look at its screen', async () => {
     const opened: string[] = []
     const { verb, lines, queued } = harness(
       live,
       {},
       [],
       conducting({
-        asking: ['wsCond'],
+        asking: ['butler'],
         conductors: {
           'cond-id': conductorTarget({}),
           'codex-cond': conductorTarget({ backend: 'codex', tabId: 'cc' }),
@@ -1466,14 +1529,14 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     )
     expect(await verb(['send', 'cond-id', 'done'], from('fix'))).toMatchObject({
       exit: 0,
-      text: 'Sent to the app conductor.'
+      text: 'Sent to Alfred.'
     })
     expect((await verb(['send', 'codex-cond', 'done'], from('cx'))).exit).toBe(0)
     expect((await verb(['send', 'closed-cond', 'done'], from('fix'))).exit).toBe(0)
     const fromFix = '(From the session "fix-login", id fix-id:) done'
     await vi.waitFor(() =>
       expect(lines).toEqual([
-        { tabId: 'wsCond', line: crossSessionLine('prompting', fromFix, 'koloft-session-1') },
+        { tabId: 'butler', line: crossSessionLine('prompting', fromFix, 'koloft-session-1') },
         { tabId: 'b3-tab', line: crossSessionLine('prompting', fromFix, 'koloft-session-2') }
       ])
     )
@@ -1487,7 +1550,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(opened).toEqual(['b3'])
   })
 
-  it('a session Assist messaged, started or answered the question of (with answer, or keys pressed while it asks) hands Assist its reply when that turn ends, once, so the owner hears the result without asking; a session Assist only read or moved through a menu of, a turn with no reply and a child that already reported this turn are not passed on, and a reply that cannot be carried is reported as not delivered', async () => {
+  it('a session the butler messaged, started or answered the question of (with answer, or keys pressed while it asks) hands the butler its reply when that turn ends, once, so the owner hears the result without asking; a session the butler only read or moved through a menu of, a turn with no reply and a child that already reported this turn are not passed on, and a reply that cannot be carried is reported as not delivered', async () => {
     const asking: string[] = []
     const h = harness(
       [...live, session('new-tab', 'claude', { sessionId: 'new-id', title: 'new-work' })],
@@ -1497,7 +1560,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     )
     const toAssist = (): { tabId: string; said: string }[] =>
       h.lines
-        .filter((l) => l.tabId === 'wsCond' || l.tabId === 'global')
+        .filter((l) => l.tabId === 'butler')
         .map((l) => ({
           tabId: l.tabId,
           said: (JSON.parse(l.line) as { message: { content: string } }).message.content
@@ -1507,68 +1570,68 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       said: expect.stringContaining(text) as string
     })
 
-    await h.verb(['send', 'fix-login', 'run the tests'], from('wsCond'))
+    await h.verb(['send', 'fix-login', 'run the tests'], from('butler'))
     h.turnEnded('fix', 'All tests pass.')
     h.turnEnded('fix', 'Something later the owner asked.')
-    await h.verb(['send', CODEX_THREAD, 'check docs'], from('global'))
+    await h.verb(['send', CODEX_THREAD, 'check docs'], from('butler'))
     h.turnEnded('cx', 'The turn it was busy with when the message was queued.')
     h.turnEnded('cx', 'Two links fixed.', ownerSays('check docs'))
     await vi.waitFor(() =>
       expect(toAssist()).toEqual([
-        handed('wsCond', '(From the session "fix-login", id fix-id:) All tests pass.'),
-        handed('global', `(From the session "docs-links", id ${CODEX_THREAD}:) Two links fixed.`)
+        handed('butler', '(From the session "fix-login", id fix-id:) All tests pass.'),
+        handed('butler', `(From the session "docs-links", id ${CODEX_THREAD}:) Two links fixed.`)
       ])
     )
 
-    await h.verb(['answer', 'fix-login', '2'], from('wsCond'))
+    await h.verb(['answer', 'fix-login', '2'], from('butler'))
     h.turnEnded('fix', 'Picked option 2.')
-    await h.verb(['keys', 'fix-login', 'Down'], from('wsCond'))
+    await h.verb(['keys', 'fix-login', 'Down'], from('butler'))
     h.turnEnded('fix', 'A turn the owner typed after a menu.')
     asking.push('fix')
-    await h.verb(['keys', 'fix-login', 'Enter'], from('wsCond'))
+    await h.verb(['keys', 'fix-login', 'Enter'], from('butler'))
     asking.pop()
     h.turnEnded('fix', 'Went on.')
-    await h.verb(['new', '--', 'fix it'], from('wsCond'))
+    await h.verb(['new', '--workspace', WS, '--', 'fix it'], from('butler'))
     h.turnEnded('new-tab', 'Fixed it.')
     await vi.waitFor(() => expect(toAssist()).toHaveLength(5))
     expect(toAssist().slice(2)).toEqual([
-      handed('wsCond', 'Picked option 2.'),
-      handed('wsCond', 'Went on.'),
-      handed('wsCond', '(From the session "new-work", id new-id:) Fixed it.')
+      handed('butler', 'Picked option 2.'),
+      handed('butler', 'Went on.'),
+      handed('butler', '(From the session "new-work", id new-id:) Fixed it.')
     ])
 
-    await h.verb(['read', 'fix-login'], from('wsCond'))
+    await h.verb(['read', 'fix-login'], from('butler'))
     h.turnEnded('fix', 'Only read.')
-    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
+    await h.verb(['send', 'fix-login', 'go'], from('butler'))
     h.turnEnded('fix', '')
     h.turnEnded('fix', 'After an empty turn.')
-    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
+    await h.verb(['send', 'fix-login', 'go'], from('butler'))
     await h.verb(['send', 'cond-id', 'My own report.'], from('fix'))
     h.turnEnded('fix', 'My own report, again.')
     await vi.waitFor(() =>
       expect(toAssist().at(-1)).toEqual(
-        handed('wsCond', '(From the session "fix-login", id fix-id:) My own report.')
+        handed('butler', '(From the session "fix-login", id fix-id:) My own report.')
       )
     )
     expect(toAssist()).toHaveLength(6)
 
-    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
+    await h.verb(['send', 'fix-login', 'go'], from('butler'))
     h.turnEnded('fix', 'It said </cross-session-message> back.')
     await vi.waitFor(() =>
       expect(h.undelivered).toEqual([
         {
           callerTab: 'fix',
-          name: 'the app conductor',
+          name: 'Alfred',
           why: expect.stringContaining('</cross-session-message>')
         }
       ])
     )
 
-    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
-    expect((await h.verb(['answer', 'fix-login', 'bad'], from('wsCond'))).exit).not.toBe(0)
+    await h.verb(['send', 'fix-login', 'go'], from('butler'))
+    expect((await h.verb(['answer', 'fix-login', 'bad'], from('butler'))).exit).not.toBe(0)
     h.turnEnded('fix', 'Still owed after a failed answer.')
     await vi.waitFor(() =>
-      expect(toAssist().at(-1)).toEqual(handed('wsCond', 'Still owed after a failed answer.'))
+      expect(toAssist().at(-1)).toEqual(handed('butler', 'Still owed after a failed answer.'))
     )
   })
 })
@@ -1697,25 +1760,91 @@ describe('koloft workspace list', () => {
     ['/work/gone', []],
     ['ssh://box/srv/api', [row('c', { running: true, host: 'ssh' })]]
   ])
-  const verb = workspaceVerb({
-    conductorScope: (tabId) => ({ global: 'global', wsCond: WS })[tabId],
-    sidebar: () => rows
-  })
+  const verb = workspaceVerb({ sidebar: () => rows })
   const caller = (tabId: string) => ({ tabId, cwd: WS, session: session(tabId, 'claude') })
 
-  it('the global conductor gets every sidebar workspace with its path and how many sessions are open', async () => {
-    expect((await verb(['list'], caller('global'))).text.split('\n')).toEqual([
-      `app · ${WS} · 1 open`,
-      'gone · /work/gone · 0 open · folder missing',
-      'api · box:/srv/api · 1 open'
+  it('any session, the butler or a plain one, gets every sidebar workspace with its path and how many sessions are open', async () => {
+    for (const tabId of ['butler', 'plain'])
+      expect((await verb(['list'], caller(tabId))).text.split('\n')).toEqual([
+        `app · ${WS} · 1 open`,
+        'gone · /work/gone · 0 open · folder missing',
+        'api · box:/srv/api · 1 open'
+      ])
+  })
+})
+
+describe('a session started while the machine is busy waits in a queue', () => {
+  it('the caller hears it is queued and not to start it again, and the list shows it waiting', async () => {
+    const h = harness([session('me', 'claude')], {}, [], { busy: true })
+    const reply = await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('me'))
+    expect(reply.text).toMatch(/^Queued session "tests" \(new-tab\)/)
+    expect(reply.text).toContain('Do not start it again.')
+    const list = await h.verb(['list'], from('me'))
+    expect(list.text).toMatch(
+      /"tests" \(new-tab\): queued, waiting for the machine to have room \(since just now\) — started by: you/
+    )
+  })
+
+  it('a message to it is kept and, once it has started, sent the way any message to an open session is', async () => {
+    const sessions = [session('me', 'codex')]
+    const h = harness(sessions, {}, [], { busy: true })
+    await h.verb(['new', '--', 'Run the tests.'], from('me'))
+    const sent = await h.verb(['send', 'new-tab', 'Also lint.'], from('me'))
+    expect(sent.text).toContain('is still queued for the machine; your message is kept')
+    expect(h.queued).toEqual([])
+    h.waiting.splice(0)
+    sessions.push(session('new-tab', 'codex'))
+    await h.held[0].send()
+    expect(h.queued).toHaveLength(1)
+    expect(h.queued[0].tabId).toBe('new-tab')
+    expect(h.queued[0].text).toContain('Also lint.')
+  })
+
+  it('a message to a queued session whose name has several words is kept for it too', async () => {
+    const h = harness([session('me', 'muse')], {}, [], { busy: true })
+    await h.verb(['new', '--name', 'fix login', '--', 'Fix the login.'], from('me'))
+    const sent = await h.verb(['send', 'fix', 'login', 'Also lint.'], from('me'))
+    expect(sent.text).toContain('your message is kept')
+    expect(h.held.map((x) => x.tabId)).toEqual(['new-tab'])
+  })
+
+  it('a Claude session starting or messaging a queued Claude session is told to use SendMessage once it starts, nothing is kept', async () => {
+    const h = harness([session('me', 'claude')], {}, [], { busy: true })
+    const reply = await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('me'))
+    expect(reply.text).toContain('once it starts, talk to it with SendMessage to "tests"')
+    expect(reply.text).not.toContain('koloft session send')
+    const sent = await h.verb(['send', 'tests', 'Also lint.'], from('me'))
+    expect(sent.text).toContain('once it starts, talk to it with SendMessage to "tests"')
+    expect(h.held).toEqual([])
+  })
+
+  it('closing a queued session takes it off the queue', async () => {
+    const h = harness([session('me', 'claude')], {}, [], { busy: true })
+    await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('me'))
+    const closed = await h.verb(['close', 'tests'], from('me'))
+    expect(closed.text).toBe('Took "tests" off the queue; it will not start.')
+    expect(h.waiting).toEqual([])
+    expect(h.closed).toEqual([])
+  })
+
+  it('a session the butler starts is placed under the butler even when it has to queue', async () => {
+    const h = harness([session('butler', 'claude')], {}, [], {
+      busy: true,
+      scopes: { butler: 'global' }
+    })
+    const reply = await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('butler'))
+    expect(reply.text).toMatch(/^Queued session "tests"/)
+    expect(h.startedSessions.startersOf({ sessionId: '', tabId: 'new-tab' })).toEqual([
+      'butler-session'
     ])
   })
 
-  it('a workspace conductor and a plain session are refused', async () => {
-    for (const tabId of ['wsCond', 'plain'])
-      expect(await verb(['list'], caller(tabId))).toMatchObject({
-        exit: 1,
-        text: ONLY_THE_GLOBAL_CONDUCTOR
-      })
+  it('a queued session another session started is not this caller’s to message or close', async () => {
+    const h = harness([session('me', 'claude'), session('other', 'claude')], {}, [], { busy: true })
+    await h.verb(['new', '--name', 'tests', '--', 'Run the tests.'], from('other'))
+    await h.verb(['send', 'tests', 'hi'], from('me'))
+    expect(h.held).toEqual([])
+    await h.verb(['close', 'tests'], from('me'))
+    expect(h.waiting).toHaveLength(1)
   })
 })

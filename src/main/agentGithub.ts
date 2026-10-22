@@ -1,112 +1,99 @@
-import fs from 'fs'
-import path from 'path'
-import {
-  GH_ISSUE_CREATE_FLAGS,
-  GH_ISSUE_CREATE_TEXT,
-  GH_READ_FLAGS,
-  GH_READS,
-  GH_READS_TEXT
-} from '@shared/githubCommands'
-import { answered, EXIT_USAGE, ONLY_ASSIST, refused, type AgentVerb } from './agentRequests'
+import { answered, EXIT_USAGE, refused, type AgentVerb } from './agentRequests'
 
-export const GH_USAGE = `koloft: usage: koloft gh ${GH_READS_TEXT} [<number or URL>] [flags], with only the flags ${GH_READ_FLAGS.join(', ')}; or koloft gh ${GH_ISSUE_CREATE_TEXT}, where --body-file <file in your own folder> may stand for --body.`
-export const GH_ONLY_A_CONDUCTOR = `koloft: ${ONLY_ASSIST} can run koloft gh; a session runs gh itself.`
-export const GH_NEEDS_A_REPO =
-  'koloft: this Assist has no workspace to take the repository from; add --repo <owner>/<name>, or give a full GitHub URL.'
-export const GH_BODY_FILE_OUTSIDE_OWN_FOLDER =
-  'koloft: --body-file must name a file in your own folder, the one you run in; or give the text with --body.'
+export const GH_USAGE =
+  "koloft: usage: koloft gh <one of gh's own commands but auth, alias, extension, config or copilot>, like: koloft gh pr view 389"
 
-const READ_FLAGS = new Set(GH_READ_FLAGS)
-const ISSUE_CREATE_FLAGS = new Set(GH_ISSUE_CREATE_FLAGS)
+// PLATFORM§32
+const GH_OWN_COMMANDS = new Set([
+  'agent-task',
+  'api',
+  'attestation',
+  'browse',
+  'cache',
+  'codespace',
+  'completion',
+  'discussion',
+  'gist',
+  'gpg-key',
+  'issue',
+  'label',
+  'licenses',
+  'org',
+  'pr',
+  'preview',
+  'project',
+  'release',
+  'repo',
+  'ruleset',
+  'run',
+  'search',
+  'secret',
+  'skill',
+  'ssh-key',
+  'status',
+  'variable',
+  'workflow'
+])
 
-const REPLY_CHARS_A_CONDUCTOR_TURN_HOLDS = 20_000
+export const GH_REFUSED =
+  "koloft: koloft gh runs gh's own commands, but not auth, alias, extension, config or copilot, nor an alias or an extension: each could print the GitHub sign-in or run another program with it."
+
+const READS_THE_ENVIRONMENT = /\benv\b|\$ENV/
+
+export const GH_JQ_READS_ENV =
+  'koloft: a --jq filter may not read the environment, which holds the GitHub sign-in.'
+
+const HANDS_THE_REST_TO_ANOTHER_PROGRAM = '--'
+
+export const GH_PASSES_THROUGH =
+  'koloft: koloft gh takes no --: gh hands what follows it to git, ssh or scp, which run with the GitHub sign-in.'
+
+const REPLY_CHARS_A_TURN_HOLDS = 20_000
 
 export interface GithubVerbDeps {
-  scopeOf(tabId: string): string | undefined
-  folderOf(scope: string): string
-  repoOf(scope: string): Promise<string | null>
-  run(args: string[], scope: string): Promise<{ ok: boolean; out: string }>
+  run(args: string[], tabId: string, cwd: string): Promise<{ ok: boolean; out: string }>
 }
 
-function flagName(arg: string): string {
-  const eq = arg.indexOf('=')
-  return eq < 0 ? arg : arg.slice(0, eq)
-}
+const LONG_REPO = '--repo'
+const SHORT_REPO = '-R'
 
+// PLATFORM§32
 export function repoFlagOf(args: string[]): string | undefined {
-  const at = args.findIndex((a) => flagName(a) === '--repo')
-  if (at < 0) return undefined
-  return args[at] === '--repo' ? args[at + 1] : args[at].slice('--repo='.length)
-}
-
-function issueCreateFlags(rest: string[]): [string, string][] | null {
-  const flags: [string, string][] = []
-  for (let i = 0; i < rest.length; i++) {
-    const name = flagName(rest[i])
-    if (!ISSUE_CREATE_FLAGS.has(name)) return null
-    if (name !== rest[i]) flags.push([name, rest[i].slice(name.length + 1)])
-    else if (i + 1 < rest.length) flags.push([name, rest[++i]])
-    else return null
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === LONG_REPO || a === SHORT_REPO) return args[i + 1]
+    if (a.startsWith(`${LONG_REPO}=`)) return a.slice(LONG_REPO.length + 1)
+    if (a.startsWith(SHORT_REPO)) return a.slice(SHORT_REPO.length).replace(/^=/, '')
   }
-  return flags
+  return undefined
 }
 
-async function realPathInside(folder: string, file: string): Promise<string | null> {
-  try {
-    const root = await fs.promises.realpath(folder)
-    const real = await fs.promises.realpath(file)
-    return real.startsWith(root + path.sep) ? real : null
-  } catch {
-    return null
-  }
-}
-
-async function issueCreateArgs(
-  flags: [string, string][],
-  folder: string,
-  cwd: string
-): Promise<string[] | null> {
-  const args = ['issue', 'create']
-  for (const [name, value] of flags) {
-    const given =
-      name === '--body-file' ? await realPathInside(folder, path.resolve(cwd, value)) : value
-    if (given === null) return null
-    // PLATFORM§32
-    args.push(`${name}=${given}`)
-  }
-  return args
-}
-
-function readAllowed(noun: string, action: string, rest: string[]): boolean {
-  return (
-    !!noun &&
-    !!action &&
-    !!GH_READS[noun]?.includes(action) &&
-    !rest.some((a) => a.startsWith('-') && !READ_FLAGS.has(flagName(a)))
-  )
+// PLATFORM§32
+function jqFilters(args: string[]): string[] {
+  return args.flatMap((a, i) => {
+    if (a === '--jq' || a === '-q') return args[i + 1] === undefined ? [] : [args[i + 1]]
+    if (a.startsWith('--jq=')) return [a.slice('--jq='.length)]
+    const attached = /^-[A-Za-z]*q=?(.*)$/.exec(a)
+    if (!attached || a.startsWith('--')) return []
+    if (attached[1]) return [attached[1]]
+    return args[i + 1] === undefined ? [] : [args[i + 1]]
+  })
 }
 
 // ADR-0029
 export function githubVerb(d: GithubVerbDeps): AgentVerb {
   return async (args, caller) => {
-    const [noun, action, ...rest] = args
-    const creating = noun === 'issue' && action === 'create'
-    const flags = creating ? issueCreateFlags(rest) : null
-    if (creating ? !flags : !readAllowed(noun, action, rest)) return refused(GH_USAGE, EXIT_USAGE)
-    const scope = d.scopeOf(caller.tabId)
-    if (scope === undefined) return refused(GH_ONLY_A_CONDUCTOR)
-    const gh = flags ? await issueCreateArgs(flags, d.folderOf(scope), caller.cwd) : [...args]
-    if (!gh) return refused(GH_BODY_FILE_OUTSIDE_OWN_FOLDER)
-    if (!gh.slice(2).some((a) => flagName(a) === '--repo' || a.startsWith('https://'))) {
-      const repo = await d.repoOf(scope)
-      if (!repo) return refused(GH_NEEDS_A_REPO)
-      gh.push('--repo', repo)
-    }
-    const { ok, out } = await d.run(gh, scope)
-    if (!ok) return refused(`koloft: gh ${noun} ${action}: ${out}`)
-    if (out.length <= REPLY_CHARS_A_CONDUCTOR_TURN_HOLDS) return answered(out)
+    const [command] = args
+    if (!command || command.startsWith('-')) return refused(GH_USAGE, EXIT_USAGE)
+    if (!GH_OWN_COMMANDS.has(command)) return refused(GH_REFUSED)
+    if (jqFilters(args).some((f) => READS_THE_ENVIRONMENT.test(f))) return refused(GH_JQ_READS_ENV)
+    // PLATFORM§32
+    if (args.includes(HANDS_THE_REST_TO_ANOTHER_PROGRAM)) return refused(GH_PASSES_THROUGH)
+    const { ok, out } = await d.run(args, caller.tabId, caller.cwd)
+    if (!ok) return refused(`koloft: gh ${args.slice(0, 2).join(' ')}: ${out}`)
+    if (out.length <= REPLY_CHARS_A_TURN_HOLDS) return answered(out)
     return answered(
-      `${out.slice(0, REPLY_CHARS_A_CONDUCTOR_TURN_HOLDS)}\n[koloft: cut at ${REPLY_CHARS_A_CONDUCTOR_TURN_HOLDS} characters; ask for less, e.g. --json with fewer fields]`
+      `${out.slice(0, REPLY_CHARS_A_TURN_HOLDS)}\n[koloft: cut at ${REPLY_CHARS_A_TURN_HOLDS} characters; ask for less, e.g. --json with fewer fields]`
     )
   }
 }

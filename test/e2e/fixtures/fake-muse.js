@@ -59,22 +59,24 @@ const sessionLog = (id) => {
   const ms = parseInt(id.replace(/-/g, '').slice(0, 12), 16)
   const d = new Date(ms)
   const p2 = (n) => String(n).padStart(2, '0')
-  const dir = path.join(
+  return path.join(
     museHome,
     'sessions',
     String(d.getFullYear()),
     p2(d.getMonth() + 1),
     p2(d.getDate()),
-    id
+    id,
+    'session.jsonl'
   )
-  fs.mkdirSync(dir, { recursive: true })
-  return path.join(dir, 'session.jsonl')
 }
-const logRecord = (id, payloadType, payload) =>
+const logRecord = (id, payloadType, payload) => {
+  const log = sessionLog(id)
+  fs.mkdirSync(path.dirname(log), { recursive: true })
   fs.appendFileSync(
-    sessionLog(id),
+    log,
     JSON.stringify({ recorded_at: Date.now() * 1000, payload_type: payloadType, payload }) + '\n'
   )
+}
 
 const pendingFile = (id) => path.join(pendingDir, id + '.json')
 const pendingOf = (id) => {
@@ -146,7 +148,7 @@ function serve() {
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .map((s) => ({
           sessionId: s.id,
-          path: path.join(sessionsDir, s.id + '.json'),
+          path: sessionLog(s.id),
           status: 'notLoaded',
           createdAt: s.createdAt,
           updatedAt: s.updatedAt,
@@ -295,7 +297,7 @@ function tui() {
       `${rule}\r\n❯\r\n${rule}\r\n  fake-model · ${path.basename(process.cwd())}\r\n`
     )
   }
-  const say = (turnId, text, prompt) => {
+  const commit = (turnId, text) => {
     session.items.push({
       itemId: crypto.randomUUID(),
       kind: 'agentMessage',
@@ -309,8 +311,34 @@ function tui() {
       event: { kind: 'assistant_message_committed', text }
     })
     process.stdout.write(`${text}\r\n`)
+  }
+  // MUSE§9
+  const stopBlock = (outs) => {
+    for (const out of outs) {
+      try {
+        const parsed = JSON.parse(out)
+        if (parsed.decision === 'block') return out
+      } catch {}
+    }
+    return undefined
+  }
+  const say = (turnId, text, prompt) => {
+    commit(turnId, text)
     inputBox()
-    fire('Stop', { turn_id: turnId, last_assistant_message: text, prompt })
+    const stop = (last, active) =>
+      fire('Stop', {
+        turn_id: turnId,
+        last_assistant_message: last,
+        prompt,
+        stop_hook_active: active
+      })
+    const blocked = stopBlock(stop(text, false))
+    if (blocked) {
+      append('fake-muse-prompt-context.jsonl', { sessionId: session.id, out: blocked })
+      const reason = JSON.parse(blocked).reason
+      commit(turnId, `Stop said: ${reason}`)
+      stop(`Stop said: ${reason}`, true)
+    }
     status('state=done:app=muse')
   }
   const turn = (text) => {
@@ -321,7 +349,8 @@ function tui() {
     }
     const turnId = crypto.randomUUID()
     status('state=working:app=muse')
-    fire('UserPromptSubmit', { prompt: text, turn_id: turnId })
+    for (const out of fire('UserPromptSubmit', { prompt: text, turn_id: turnId }))
+      if (out) append('fake-muse-prompt-context.jsonl', { sessionId: session.id, out })
     session.items.push({
       itemId: crypto.randomUUID(),
       kind: 'userMessage',

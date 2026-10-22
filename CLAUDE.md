@@ -66,13 +66,13 @@ Working principles:
   `sheets.json` (`null` for a cell left unused), run `node scripts/trace-icons.mjs` to rewrite
   `paths.ts`, export the icon from `index.tsx`, and look at it at its real size.
   Only brand marks (Claude, Codex, Discord, GitHub) come from `react-icons/bs`.
-- Every feature covers every kind of session tab: Claude Code and Codex, each in a
-  local workspace and in a remote one reached over SSH (Secure Shell) — four kinds.
-  A plan, design or PR says what each of the four does: the same thing, a named
+- Every feature covers every kind of session tab: each agent in `SESSION_BACKENDS`,
+  in a local workspace and in a remote one reached over SSH (Secure Shell).
+  A plan, design or PR says what each kind does: the same thing, a named
   difference, or left out with the probe or missing data that forces it. A feature
   built and checked for local Claude Code alone is not done, and the e2e flows picked
-  for a change include the Codex and remote specs whenever the change reaches those
-  tabs.
+  for a change include the other agents' and remote specs whenever the change reaches
+  those tabs.
 - Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a
   `#!/` script written as a template string — `npm run check:comments` (CI, plus an
   after-edit hook) rejects every comment except two kinds, each with nothing else in it:
@@ -133,14 +133,15 @@ Working principles:
 - Finish the code, then review, then test. While code is still being written, only
   the fast checks run (`format`, typecheck, `check:comments`, `test:unit:changed`) —
   CI's first gate is `format:check`, and no hook runs Prettier for you. Once the
-  diff is final, commit it, `git fetch origin`, run `/code-review low
-  origin/main...HEAD` and `/simplify` over the whole diff, fix what is real, and only
-  then pick and run the e2e flows, once — in a Workflow too, whose step agents run
-  only the fast checks. A cleanup commit that lands after a test round throws that
-  round away. `/code-review low` skips test files: on a test-only diff the what-ran
-  table says "did not apply", never "no findings". Playwright never builds: after the
-  last `src/` change or merge of `main`, `npm run build` first, or e2e tests the old
-  `out/`.
+  diff is final, commit it, `git fetch origin`, and start `node scripts/code-review.mjs`
+  in the background: three reviews at once, 3–10 minutes (ADR-0040). While it runs,
+  run `/simplify` over the whole diff and pick the e2e flows, but hold `/simplify`'s
+  edits until the reviews are in. Merge the reports, fix what is real (a run that failed
+  is rerun, or the what-ran table says how many of three came back), and only
+  then run the e2e flows, once — in a Workflow too, whose step agents run only the fast
+  checks. A cleanup commit that lands after a test round throws that round away.
+  Playwright never builds: after the last `src/` change or merge of `main`, `npm run
+  build` first, or e2e tests the old `out/`.
 - The PR title becomes `main`'s commit subject on squash, and the release notes and
   the site changelog sort by its type, so it reads `type(scope): what changed`, the
   change in the user's words: `feat`, `fix` or `perf` for what a user meets,
@@ -186,9 +187,11 @@ Working principles:
   stop every Monitor and wake-up you armed, so the report stays the last message.
   Remove an agent's worktree with `git worktree remove -f -f <path>` (locked while
   its agent lives).
-- When work is split across agents or a Workflow: steps that only write code or run
-  tests go to `model: 'opus'`, the rest (design, review, judgment, what the owner
-  reads) to `model: 'fable'`. Fan out by slices of work, never one agent per
+- When work is split across agents or a Workflow: every step goes to
+  `model: 'opus'` — writing code, running tests, reading and searching code,
+  design drafts, review along the way. Only the independent check of what the owner
+  will decide on (the plan, design or audit report above) goes to `model: 'fable'`:
+  a Fable agent costs about 2.5 times an Opus one. Fan out by slices of work, never one agent per
   finding — a handful per phase — and say how many before launching. Every brief and
   every Workflow step prompt starts with the shell-rule block below, word for word:
   an Explore agent never sees this file, and agents whose brief lacked the block
@@ -247,10 +250,10 @@ Working principles:
     still report success.
   - Quote a spaced path: '/a b', never /a\ b.
   - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
-  - Find a file before you grep or read it (grep -rl 'word' src): a name
-    made up from a sibling file fails.
+  - Grep or read only paths you saw; else grep -rl 'word' src.
+  - macOS strings -o is offsets: use > file.
   - Read stops at 25,000 tokens (~50 KB), not lines: wc -c a big file, slice it.
-  - grep is ugrep and fails on a .{0,N} span: use /usr/bin/grep -o -E, N ≤ 255.
+  - grep is ugrep and fails on {0,N} spans: use /usr/bin/grep -o -E, N ≤ 255.
   - Findings go in your final message; the harness refuses report files.
   ```
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude

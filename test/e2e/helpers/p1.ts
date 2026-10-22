@@ -1,14 +1,15 @@
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
-import { execFileSync, spawnSync } from 'child_process'
+import { execFileSync, spawn, spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { expect } from './app'
 import type { E2EEnv } from './env'
 import { assertFixtureDir } from './fixtureGuard'
 import type {
-  AssistRecord,
   BackendAvailability,
+  ButlerSession,
+  DiscordSettings,
   SessionWorkbenchState
 } from '../../../src/shared/types'
 
@@ -38,6 +39,11 @@ export interface ClaudeCall {
 }
 
 export function readCalls(env: E2EEnv): ClaudeCall[] {
+  const conductors = path.join(env.userData, 'conductors')
+  return readAllCalls(env).filter((c) => path.dirname(c.cwd) !== conductors)
+}
+
+export function readAllCalls(env: E2EEnv): ClaudeCall[] {
   if (!fs.existsSync(env.claudeCalls)) return []
   return fs
     .readFileSync(env.claudeCalls, 'utf8')
@@ -63,18 +69,25 @@ export async function waitForCalls(
   return calls()
 }
 
-export function waitForCallsBesideConductors(env: E2EEnv, count: number): Promise<ClaudeCall[]> {
-  const conductors = path.join(env.userData, 'conductors')
-  return waitForCalls(env, count, undefined, (c) => path.dirname(c.cwd) !== conductors)
+export async function waitForAllCalls(
+  env: E2EEnv,
+  count: number,
+  timeout = 40_000
+): Promise<ClaudeCall[]> {
+  await expect.poll(() => readAllCalls(env).length, { timeout }).toBeGreaterThanOrEqual(count)
+  return readAllCalls(env)
 }
 
-export function assistRecordOnDisk(env: E2EEnv, scope?: string): AssistRecord | undefined {
-  const records = (settingsOnDisk(env).assistSessions as AssistRecord[] | undefined) ?? []
-  return scope === undefined ? records[0] : records.find((r) => r.scope === scope)
+export function butlerSessionOnDisk(env: E2EEnv): ButlerSession | undefined {
+  return settingsOnDisk(env).butlerSession as ButlerSession | undefined
+}
+
+export function discordOnDisk(env: E2EEnv): DiscordSettings {
+  return (settingsOnDisk(env).discord as DiscordSettings | undefined) ?? {}
 }
 
 export async function waitConductorStarted(env: E2EEnv, timeout: number): Promise<void> {
-  const bound = (): number => assistRecordOnDisk(env)?.sessionIds.length ?? 0
+  const bound = (): number => butlerSessionOnDisk(env)?.sessionIds.length ?? 0
   await expect.poll(bound, { timeout }).toBeGreaterThan(0)
 }
 
@@ -210,6 +223,25 @@ export function withMember(members: unknown, id: string): string[] {
   return list.includes(id) ? list : [...list, id]
 }
 
+// CC§11
+export function runClaudeElsewhere(env: E2EEnv, sessionId: string): () => void {
+  const other = spawn('sleep', ['600'], { stdio: 'ignore' })
+  const pid = other.pid
+  if (!pid) throw new Error('could not start the stand-in claude process')
+  const procStart = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+    env: { ...process.env, TZ: 'UTC' }
+  })
+    .toString()
+    .trim()
+  const registry = path.join(env.home, '.claude', 'sessions')
+  fs.mkdirSync(registry, { recursive: true })
+  fs.writeFileSync(
+    path.join(registry, `${pid}.json`),
+    JSON.stringify({ pid, sessionId, procStart })
+  )
+  return () => other.kill()
+}
+
 export function seedJsonl(env: E2EEnv, bucketDir: string, opts: SeedOptions = {}): string {
   const dir = path.join(
     opts.root ?? path.join(env.home, '.claude', 'projects'),
@@ -268,6 +300,17 @@ export async function sendShortcut(app: ElectronApplication, channel: string): P
   await app.evaluate(({ BrowserWindow }, ch) => {
     BrowserWindow.getAllWindows()[0]?.webContents.send(ch)
   }, channel)
+}
+
+export async function closeActiveTab(app: ElectronApplication, page: Page): Promise<void> {
+  await page.locator('.ws .ws-tab.active').first().click()
+  await sendShortcut(app, 'shortcut:close-tab')
+  const confirm = page.locator('.modal', { hasText: 'Close running session?' })
+  if (await confirm.isVisible({ timeout: 4000 }).catch(() => false))
+    await confirm
+      .locator('button', { hasText: /^Close$/ })
+      .first()
+      .click()
 }
 
 export async function clickAppMenuItem(
@@ -362,6 +405,14 @@ export function wsGroup(page: Page, wsName: string): Locator {
   return page.locator('.ws').filter({ has: page.locator('.ws-head', { hasText: wsName }) })
 }
 
+export function butlerRow(page: Page): Locator {
+  return page.locator('.isl-butler > .ws-tab')
+}
+
+export async function landsOnTheButler(page: Page): Promise<void> {
+  await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
+}
+
 export function wsRows(page: Page, wsName: string): Locator {
   return wsGroup(page, wsName).locator('.ws-tab')
 }
@@ -448,7 +499,7 @@ export async function startSessionIn(
     .click()
   await expect(rows).toHaveCount(before + 1, { timeout: 30_000 })
   await expect(page.locator('.modal')).toHaveCount(0)
-  await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+  await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
   if (opts.remote) {
     await expect(rows.filter({ hasText: FAKE_SESSION_TITLE })).toHaveCount(titledBefore + 1, {
       timeout: 60_000
@@ -475,6 +526,12 @@ export function focusOwner(page: Page): Promise<string> {
 
 export function centerTerm(page: Page): Locator {
   return page.locator('.term-island .term-wrap:visible .xterm')
+}
+
+export async function switchToRow(page: Page, row: Locator): Promise<void> {
+  await row.click()
+  await expect(row).toHaveClass(/\bactive\b/)
+  await expect(page.locator('.terminals > .empty')).toHaveCount(0)
 }
 
 export async function runIn(page: Page, term: Locator, cmd: string): Promise<void> {
@@ -568,14 +625,15 @@ export function terminalText(page: Page, tabId: string): Promise<string> {
 }
 
 export function termIds(page: Page): Promise<string[]> {
-  return page.evaluate(() =>
-    Object.keys(
+  return page.evaluate(() => {
+    const butler = document.querySelector('.isl-butler > .ws-tab')?.getAttribute('data-tab-id')
+    return Object.keys(
       (window as unknown as { __koloftTerms?: Record<string, unknown> }).__koloftTerms ?? {}
-    )
-  )
+    ).filter((id) => id !== butler)
+  })
 }
 
-const SHELL_READY_ONCE_QUIET_FOR_MS = 700
+const TERMINAL_QUIET_ONCE_UNCHANGED_FOR_MS = 700
 
 export async function openSessionTerminal(app: ElectronApplication, page: Page): Promise<Locator> {
   await page.waitForFunction(
@@ -607,49 +665,27 @@ export async function openSessionTerminal(app: ElectronApplication, page: Page):
   const ptyId = await page.locator('.wb-panel .wb-term:visible').getAttribute('data-pty')
   if (!ptyId) throw new Error('the visible terminal tab carries no data-pty')
 
+  await waitTerminalQuiet(page, ptyId)
+  return term
+}
+
+export async function waitTerminalQuiet(page: Page, tabId: string): Promise<void> {
   let last = ''
   let stableSince = 0
   await expect
     .poll(
       async () => {
-        const now = (
-          await page.evaluate((id) => {
-            const t = (
-              window as unknown as {
-                __koloftTerms?: Record<
-                  string,
-                  {
-                    buffer: {
-                      active: {
-                        length: number
-                        getLine(
-                          i: number
-                        ): { translateToString(trim?: boolean): string } | undefined
-                      }
-                    }
-                  }
-                >
-              }
-            ).__koloftTerms?.[id]
-            if (!t) return ''
-            const b = t.buffer.active
-            const out: string[] = []
-            for (let i = 0; i < b.length; i++) out.push(b.getLine(i)?.translateToString(true) ?? '')
-            return out.join('\n')
-          }, ptyId)
-        ).trim()
+        const now = (await terminalText(page, tabId)).trim()
         if (now !== last || now === '') {
           last = now
           stableSince = Date.now()
           return false
         }
-        if (stableSince === 0) stableSince = Date.now()
-        return Date.now() - stableSince >= SHELL_READY_ONCE_QUIET_FOR_MS
+        return Date.now() - stableSince >= TERMINAL_QUIET_ONCE_UNCHANGED_FOR_MS
       },
       { intervals: [200], timeout: 40_000 }
     )
     .toBe(true)
-  return term
 }
 
 export function panelTerm(page: Page): Locator {

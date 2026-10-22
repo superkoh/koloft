@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import { IconChevronDown, IconChevronUp, IconCopy, IconNotes } from '../icons'
-import { scopeName } from '@shared/conductors'
+import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
 import { NOTES_TAB, notesOwner } from '@shared/cwdKey'
 import { editRefusal, EditPane } from './EditPane'
 import { beginEdit, getEntry } from '../editRegistry'
@@ -26,6 +26,7 @@ export function NotesIsland({
   const [path, setPath] = useState<{ ws: string; file: string } | null>(null)
   const [body, setBody] = useState<{ ws: string; failure: string | null } | null>(null)
   const showToast = useStore((s) => s.showToast)
+  const butler = useStore((s) => s.settings.butler.name)
 
   useEffect(() => {
     setPath(null)
@@ -92,7 +93,9 @@ export function NotesIsland({
             <IconNotes size={14} />
           </span>
           <span className="nm">Notes</span>
-          <span className="dir">&nbsp;· {scopeName(wsPath)}</span>
+          <span className="dir">
+            &nbsp;· {wsPath === GLOBAL_SCOPE ? butler : scopeName(wsPath)}
+          </span>
         </span>
         <button
           className="icobtn"

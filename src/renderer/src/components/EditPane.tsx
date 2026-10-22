@@ -34,6 +34,8 @@ import {
   subscribeDirty
 } from '../editRegistry'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES, sizeLabel } from '@shared/editLimits'
+import '../editPane.css'
+import '../artifactPane.css'
 
 const CARET_READOUT_THROTTLE_MS = 100
 

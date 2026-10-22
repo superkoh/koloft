@@ -1,19 +1,11 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import { IconClose, IconPlus, IconReload, IconWebPage } from '../../icons'
-import type { AccountKind, AccountView, SignInFolderKind } from '@shared/types'
-import { SIGN_IN_FOLDER_KINDS } from '@shared/types'
-import { BACKEND_LABEL } from '@shared/sessionBackend'
+import type { AccountKind, AccountView, SignInBackend } from '@shared/types'
+import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from '@shared/types'
+import { BACKEND_LABEL, backendAvailable } from '@shared/sessionBackend'
 import { useStore } from '../../store'
+import { useInstalledBackends } from '../../useInstalledBackends'
 import { ACCOUNT_KINDS_OF, measuredAt, needsSignInAgain, windowLabel } from '@shared/accountUsage'
-
-type SignInBackend = 'codex' | 'muse' | 'agy'
-
-// CODEX§15 MUSE§13 AGY§5
-const SIGNS_IN_TO: Record<SignInBackend, SignInFolderKind> = {
-  codex: 'codex-home',
-  muse: 'muse-home',
-  agy: 'agy-home'
-}
 
 // AGY§5
 const SIGN_IN_COMMAND: Record<SignInBackend, string> = {
@@ -34,6 +26,7 @@ import { GitAccountsSection } from './GitAccountsSection'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
 import { useSettingsUpdate } from './useSettingsUpdate'
+import '../../accounts.css'
 
 const REFRESH_DONE_LABEL_BEAT_MS = 2500
 const INVALID_ACCOUNT_NAME = 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'
@@ -150,14 +143,20 @@ export function AccountsPane(): JSX.Element {
         <div className="set-lab">
           <b>Skip permission prompts</b>
           <small>
-            Adds <code>--dangerously-skip-permissions</code> when Koloft injects an account, and
-            starts Muse with <code>:unrestricted</code> — never overrides permission flags you pass
-            yourself.
+            Adds <code>--dangerously-skip-permissions</code> to Claude and Antigravity when Koloft
+            injects an account, and starts Muse with <code>:unrestricted</code> — never overrides
+            permission flags you pass yourself.
           </small>
         </div>
         <Switch
           checked={settings.skipPermissions}
-          onChange={(on) => update({ skipPermissions: on })}
+          onChange={(on) =>
+            update(
+              on
+                ? { skipPermissions: true, skipPermissionsAgreed: true }
+                : { skipPermissions: false }
+            )
+          }
         />
       </div>
       <div className="set-row">
@@ -411,8 +410,10 @@ export function SignInDialog({
   const [name, setName] = useState(again ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { installed } = useInstalledBackends()
   const label = BACKEND_LABEL[backend]
   const command = SIGN_IN_COMMAND[backend]
+  const installsFirst = installed !== null && !backendAvailable(installed, backend)
   const shared =
     backend === 'agy'
       ? 'Sign in, then pick a colour scheme and answer Google’s Terms and data-use screen yourself, then type /exit. Your Antigravity conversations, rules, plugins and MCP servers are shared by every account.'
@@ -422,15 +423,13 @@ export function SignInDialog({
     setBusy(true)
     setError(null)
     const nm = name.trim()
-    const r = await window.api.accounts.signIn(SIGNS_IN_TO[backend], nm, !!again)
+    const r = await window.api.accounts.signIn(SIGN_IN_FOLDER_OF[backend], nm, !!again)
     setBusy(false)
     if (!r.ok) {
       setError(
         r.error === 'invalid-name'
           ? INVALID_ACCOUNT_NAME
-          : r.error === 'duplicate'
-            ? `A ${label} account already has that name`
-            : `${label} is not available on this Mac`
+          : `A ${label} account already has that name`
       )
       return
     }
@@ -469,7 +468,8 @@ export function SignInDialog({
         </button>
       </div>
       <span className="field-hint">
-        Koloft opens a terminal tab that runs <code>{command}</code> for this account only. Finish
+        Koloft opens a terminal tab that runs <code>{command}</code> for this account only.
+        {installsFirst && ` ${label} is not on this Mac yet, so the tab installs it first.`} Finish
         the sign-in there; the tab closes itself when it is done and the account joins the pool.{' '}
         {shared}
       </span>

@@ -1,5 +1,6 @@
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect } from '../helpers/app'
+import { SIDEBAR_MIN } from '../../../src/shared/types'
 import { seedSettings } from '../helpers/env'
 import {
   centerTerm,
@@ -144,7 +145,7 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
 
       await expect(pickerTitle(page).first()).toBeVisible({ timeout: 15_000 })
       await expect(pullAndStart(page)).toBeVisible()
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }
@@ -188,7 +189,7 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
       await expect(pickerTitle(page)).toHaveCount(0)
       await expect(pullAndStart(page)).toHaveCount(0)
       await page.waitForTimeout(GRACE_FOR_A_WRONG_DIALOG_OR_LAUNCH_MS)
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
       await expect(behindBadge(page, 'ws-repo')).toHaveText('3')
     } finally {
       await app.close().catch(() => {})
@@ -206,13 +207,13 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
       await pressNewSession(app, page)
       await expect(toast.first()).toBeVisible({ timeout: 15_000 })
       await expectNoDialog(page)
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
 
       await expect(toast).toHaveCount(0, { timeout: 20_000 })
       await pressNewWorktreeSession(app, page)
       await expect(toast.first()).toBeVisible({ timeout: 15_000 })
       await expectNoDialog(page)
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }
@@ -248,7 +249,7 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
       expect(await rowsReady()).toBe(false)
       await expect(page.getByText('No workspace yet — add one first')).toHaveCount(0)
       await expectNoDialog(page)
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }
@@ -339,9 +340,9 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
       pinned.git['ws-repo'].originAhead(3)
       await fetchNowInGitPanel(page, 'ws-repo')
       await waitForBehindBadge(page, 'ws-repo', 3)
-      await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+      await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
       await runIn(page, centerTerm(page), '/busy')
-      await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('.ws .ws-tab.st-working')).toBeVisible({ timeout: 20_000 })
 
       await pressNewSession(app, page)
       await expect(pickerTitle(page).first()).toBeVisible({ timeout: 15_000 })
@@ -392,7 +393,7 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
       await expect(pullAndStart(page)).toHaveCount(0)
 
       await page.waitForTimeout(GRACE_FOR_A_WRONG_DIALOG_OR_LAUNCH_MS)
-      await expect(page.locator('.ws-tab')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
       await expect(behindBadge(page, 'ws-repo')).toHaveText('3')
 
       await welcomeButton(page, 'New session').click()
@@ -468,7 +469,7 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
     env
   }) => {
     test.setTimeout(180_000)
-    seedSettings(env, { sidebarWidth: 200 })
+    seedSettings(env, { sidebarWidth: SIDEBAR_MIN })
     pinWorkspaces(env, [
       { name: 'ws-alpha', kind: 'git' },
       { name: 'ws-plain', kind: 'plain' }

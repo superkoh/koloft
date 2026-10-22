@@ -1,0 +1,480 @@
+.ws-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws {
+  display: flex;
+  flex-direction: column;
+}
+.ws.dragging {
+  opacity: 0.55;
+}
+.ws.dropbefore {
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+.ws.dropafter {
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+.ws-head {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 5px 9px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--fg);
+  position: relative;
+  transition:
+    background 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+.ws-head:hover {
+  background: var(--bg-3);
+}
+.ws-head.active {
+  background: var(--accent-soft);
+}
+.ws-head.missing {
+  opacity: 0.35;
+}
+.fico {
+  flex: 0 0 auto;
+  display: flex;
+  color: var(--folder);
+  cursor: pointer;
+  border-radius: 5px;
+  padding: 2px;
+  margin: -2px;
+}
+.fico:hover {
+  background: var(--bg-4);
+}
+.ws-name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-git {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--fg-faint);
+}
+.ws-behind {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--amber);
+  cursor: pointer;
+}
+.ws-behind:hover {
+  color: var(--accent);
+}
+.ws-behind.info {
+  color: var(--fg-faint);
+}
+.ws-gh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 5px;
+}
+.ws-gh > span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+.hact {
+  -webkit-app-region: no-drag;
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  color: var(--fg-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    color 0.15s var(--ease),
+    opacity 0.15s var(--ease);
+}
+.ws-head:hover .hact {
+  opacity: 1;
+}
+.hact:hover {
+  color: var(--accent);
+}
+.ws-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 1px 0 4px 0;
+  padding-left: 14px;
+}
+.ws-subtabs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-left: 8px;
+  padding-left: 5px;
+  border-left: 1px solid var(--line);
+}
+.icobtn.ws-tab-fold {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+}
+.ws-tab,
+.recent-row {
+  -webkit-app-region: no-drag;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-height: 46px;
+  padding: 6px 10px 6px 18px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--fg-dim);
+  overflow: hidden;
+  transition:
+    background 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+.ws-tab::before,
+.ws-tab.st-approval::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: transparent;
+}
+.ws-tab.st-working::before,
+.ob-bar.st-working {
+  background: var(--accent);
+}
+.ws-tab.st-waiting::before,
+.ob-bar.st-waiting {
+  background: var(--good);
+}
+.ws-tab.st-working::before,
+.ws-tab.st-bg-run::before,
+.ob-bar.st-working,
+.ob-bar.st-bg-run {
+  animation: barBreathe 2.4s var(--ease) infinite;
+}
+.ws-tab.st-approval::before,
+.ob-bar.st-approval {
+  width: 8px;
+  background: var(--amber);
+  transform: scaleX(0.375);
+  transform-origin: left;
+  animation: barPump 1s var(--ease) infinite;
+}
+.ob-bar.st-approval {
+  position: relative;
+  margin-right: -5px;
+}
+.ws-tab.st-approval::after,
+.ob-bar.st-approval::after {
+  content: '';
+  position: absolute;
+  border-radius: 2px;
+  box-shadow: 0 0 10px 1px rgba(240, 168, 48, 0.55);
+  opacity: 0;
+}
+.ws-tab.st-approval::after {
+  width: 8px;
+  transform: scaleX(0.375);
+  transform-origin: left;
+  animation:
+    barPump 1s var(--ease) infinite,
+    barGlow 1s var(--ease) infinite;
+}
+.ob-bar.st-approval::after {
+  inset: 0;
+  animation: barGlow 1s var(--ease) infinite;
+}
+.ws-tab.st-idle::before,
+.ob-bar.st-idle {
+  background: var(--good);
+  opacity: 0.4;
+}
+.ws-tab.cold::before,
+.ob-bar.cold {
+  background: var(--fg-cold);
+  opacity: 0.35;
+}
+.ws-tab.st-pending::before {
+  background: linear-gradient(180deg, var(--accent), transparent 70%);
+  animation: barFlow 1.2s linear infinite;
+}
+.ws-tab.st-queued::before {
+  background: var(--fg-cold);
+  opacity: 0.5;
+}
+.ws-tab:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.ws-tab.active {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.ws-tab.disabled,
+.recent-row.disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.ws-tab-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+.ws-tab-title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-tab.active .ws-tab-title {
+  font-weight: 600;
+}
+.ws-tab-parked {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--fg-faint);
+  background: var(--bg-3);
+  cursor: pointer;
+  cursor: help;
+}
+.ws-tab-parked.bg-run {
+  color: var(--accent);
+  animation: barBreathe 2.4s var(--ease) infinite;
+}
+.ws-tab-unread {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+}
+.ws-tab-parked.ws-unread-count {
+  font-weight: 700;
+  color: var(--bg-0);
+  background: var(--red);
+  cursor: inherit;
+}
+.ws-tab-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-tab-sub > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-backend-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+.ws-tab.cold .ws-tab-title,
+.recent-row .ws-tab-title,
+.palette .cb-row.cold .wsp-name {
+  font-style: italic;
+  color: var(--fg-cold);
+  font-weight: 400;
+}
+.ws-tab.cold .ws-tab-sub,
+.recent-row .ws-tab-sub {
+  opacity: 0.7;
+}
+.ws-tab.st-pending .ws-tab-title,
+.ws-tab.st-queued .ws-tab-title {
+  font-style: italic;
+  color: var(--fg-cold);
+  font-weight: 400;
+}
+@keyframes barBreathe {
+  0%,
+  100% {
+    opacity: 0.95;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+@keyframes barPump {
+  0%,
+  100% {
+    transform: scaleX(0.375);
+  }
+  40%,
+  60% {
+    transform: none;
+  }
+}
+@keyframes barGlow {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  40%,
+  60% {
+    opacity: 1;
+  }
+}
+@keyframes barFlow {
+  0% {
+    transform: translateY(-30%);
+  }
+  100% {
+    transform: translateY(30%);
+  }
+}
+.ws-tab-title i,
+.ws-name i {
+  font-style: inherit;
+}
+.ws-tab-title.mq,
+.ws-name.mq {
+  text-overflow: clip;
+}
+.ws-tab-title.mq i,
+.ws-name.mq i {
+  display: inline-block;
+  font-style: inherit;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-tab::before,
+  .ws-tab::after,
+  .ws-tab-parked.bg-run {
+    animation: none !important;
+  }
+}
+.ws-next,
+.ws-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 10px 3px 18px;
+  border-radius: var(--r-sm);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+.ws-next:hover,
+.ws-empty:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.ws-next-ico {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.ws-next-name,
+.ws-empty span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-next-more,
+.ws-next-dot,
+.ws-next-at {
+  flex: 0 0 auto;
+}
+.ws-next-at.soon {
+  color: var(--accent);
+  font-weight: 600;
+}
+.ws-tab-cron,
+.ws-tab-resident,
+.ws-tab-opened {
+  flex: 0 0 auto;
+  display: flex;
+  color: var(--accent);
+}
+.ws-tab.cold .ws-tab-cron,
+.ws-tab.cold .ws-tab-resident {
+  opacity: 0.6;
+}
+.ws-remote {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  margin-top: 2px;
+  color: var(--fg-faint);
+}
+.ws-conn {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+}
+.ws-conn.on {
+  background: var(--good);
+}

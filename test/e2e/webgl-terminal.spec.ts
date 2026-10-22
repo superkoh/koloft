@@ -200,7 +200,9 @@ function cjkColorStorm(): string {
 }
 
 function rowTitled(page: Page, title: string) {
-  return page.locator('.ws-tab').filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
+  return page
+    .locator('.ws .ws-tab')
+    .filter({ has: page.locator('.ws-tab-title', { hasText: title }) })
 }
 
 test.describe('the WebGL terminal users run (the suite otherwise draws with the DOM renderer): common moves leave it drawn, judged by where its screenshot has ink', () => {

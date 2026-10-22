@@ -52,6 +52,7 @@ import {
   showIgnoredKey
 } from './filesModel'
 import '../browseView.css'
+import '../fileTree.css'
 
 export function ignoredTitle(name: string): string {
   return HIDDEN_BY_DEFAULT_NAMES.has(name)
@@ -590,18 +591,11 @@ export function BrowseView({
     bodyRef.current?.querySelector('.ft-node.active')?.scrollIntoView({ block: 'nearest' })
   }, [current, expanded])
 
-  const scrolledRow = useRef<string | null>(null)
+  const kbdCls = (rowId: string): string => (rowId === kbdRow ? ' kbd-focus' : '')
   useEffect(() => {
-    const rows = Array.from(bodyRef.current?.querySelectorAll<HTMLElement>('.ft-node') ?? [])
-    let focused: HTMLElement | undefined
-    for (const n of rows) {
-      const on = kbdRow !== null && n.dataset.rowId === kbdRow
-      n.classList.toggle('kbd-focus', on)
-      if (on) focused = n
-    }
-    if (focused && scrolledRow.current !== kbdRow) focused.scrollIntoView({ block: 'nearest' })
-    scrolledRow.current = kbdRow
-  })
+    if (kbdRow)
+      bodyRef.current?.querySelector('.ft-node.kbd-focus')?.scrollIntoView({ block: 'nearest' })
+  }, [kbdRow])
 
   const onTreeKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
     const rows = Array.from(bodyRef.current?.querySelectorAll<HTMLElement>('.ft-node') ?? [])
@@ -643,7 +637,8 @@ export function BrowseView({
           (isActive ? ' active' : '') +
           (isLive ? ' live' : '') +
           (opts?.forced ? ' bv-forced' : '') +
-          (opts?.ignored ? ' ignored' : '')
+          (opts?.ignored ? ' ignored' : '') +
+          kbdCls(section + ':' + p)
         }
         data-path={p}
         data-row-id={section + ':' + p}
@@ -704,7 +699,8 @@ export function BrowseView({
             'ft-node ft-dir' +
             (isOpen ? ' open' : '') +
             (changedDirs.has(p) ? ' has-changes' : '') +
-            (ignored ? ' ignored' : '')
+            (ignored ? ' ignored' : '') +
+            kbdCls(section + ':' + p)
           }
           data-dir="1"
           data-kind="dir"
@@ -761,7 +757,9 @@ export function BrowseView({
           <div key={section + ':' + n.path}>
             <div
               className={
-                'ft-node ft-dir open bv-forced' + (changedDirs.has(n.path) ? ' has-changes' : '')
+                'ft-node ft-dir open bv-forced' +
+                (changedDirs.has(n.path) ? ' has-changes' : '') +
+                kbdCls(section + ':' + n.path)
               }
               data-dir="1"
               data-kind="dir"
@@ -796,7 +794,7 @@ export function BrowseView({
     extra?: { title?: string; ctx?: boolean }
   ): JSX.Element => (
     <div
-      className={'ft-node ft-dir ' + cls + (open ? ' open' : '')}
+      className={'ft-node ft-dir ' + cls + (open ? ' open' : '') + kbdCls(section + ':head')}
       data-dir="1"
       data-kind="section"
       data-path={id}
@@ -1028,7 +1026,9 @@ export function BrowseView({
 
           <div className="bv-sec" data-section="tree">
             <div
-              className={'ft-node ft-dir ft-root' + (rootOpen ? ' open' : '')}
+              className={
+                'ft-node ft-dir ft-root' + (rootOpen ? ' open' : '') + kbdCls('tree:' + root)
+              }
               data-dir="1"
               data-kind="dir"
               data-path={root}

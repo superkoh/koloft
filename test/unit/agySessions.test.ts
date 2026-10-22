@@ -2,20 +2,22 @@ import fs from 'fs'
 import http from 'http'
 import os from 'os'
 import path from 'path'
-import { execFileSync } from 'child_process'
+import { execFileSync, spawn, spawnSync } from 'child_process'
 import { pathToFileURL } from 'url'
 import { EventEmitter } from 'events'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgySessions, type AgyHomePick, type AgySessionDeps } from '../../src/main/agySessions'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import { agySessionKey } from '../../src/main/sessionStore'
 import { agyTranscript, type SummaryRow } from '../../src/main/agyStore'
 import type { AgyMachineLaunch, RemoteAgyConfig } from '../../src/main/remote/agyTab'
 import { TAB_TMUX_NAME_SH } from '../../src/main/remote/launch'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
-import { AGY_CONDUCTOR_GATE_SCRIPT } from '../../src/main/conductorGate'
 import type { SessionEvent } from '../../src/shared/sessionEvent'
 import { appendConversation, ownerTyped, writeSummaries } from './helpers/agyStore'
+import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
+import { BUSY_MARKER } from '../../src/main/machineRoom'
 
 const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
 vi.mock('../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
@@ -30,6 +32,7 @@ const state = (s: string, extra = ''): string => osc(`state=${s}${extra}:app=ant
 const SERVICE = '/exa.language_server_pb.LanguageServerService/'
 const REAL_PATH = process.env.PATH
 const REMOTE_WS = 'ssh://devbox/home/me/proj'
+const LISTED_TITLE_READ_SETTLES_MS = 300
 
 let home: string
 let repo: string
@@ -41,7 +44,8 @@ let created: { id: string; argv: string[]; env: NodeJS.ProcessEnv }[]
 let agentTools: boolean
 let picked: AgyHomePick | undefined
 let apiKey: string | undefined
-let assist: { role: string; allow: string[] } | undefined
+let skipPermissions: boolean
+let assist: { role: string } | undefined
 let machine: {
   launches: AgyMachineLaunch[]
   ended: string[]
@@ -155,6 +159,7 @@ beforeEach(() => {
   agentTools = false
   picked = { account: 'work', home: path.join(home, 'agy-homes', 'work') }
   apiKey = undefined
+  skipPermissions = false
   assist = undefined
   apiAnswers = false
   trajectory = undefined
@@ -171,8 +176,6 @@ beforeEach(() => {
   }
   mirror = path.join(home, 'mirror-hooks')
   fs.mkdirSync(mirror)
-  const gateScript = path.join(home, 'agy-conductor-gate.js')
-  fs.writeFileSync(gateScript, AGY_CONDUCTOR_GATE_SCRIPT)
   let tab = 0
   pty = Object.assign(new EventEmitter(), {
     nextId: vi.fn(() => `pty-${++tab}`),
@@ -202,15 +205,8 @@ beforeEach(() => {
     playwrightBin: tools,
     browserEndpoint: () => '',
     builtInStatusLine: () => undefined,
+    skipPermissions: () => skipPermissions,
     assistOf: () => assist,
-    conductorGate: {
-      script: gateScript,
-      writeAllow: (tabId, allow) => {
-        const file = path.join(home, `${tabId}.allow.json`)
-        fs.writeFileSync(file, JSON.stringify(allow))
-        return file
-      }
-    },
     agent: { enabled: () => agentTools, answer: vi.fn() },
     gitAccounts: { configEnv: (env) => env, ghWrapper: path.join(tools, 'gh') },
     remote: {
@@ -253,6 +249,7 @@ beforeEach(() => {
 afterEach(async () => {
   await sessions.stopAll()
   process.env.PATH = REAL_PATH
+  await BackgroundFile.whenAllWritten()
   fs.rmSync(home, { recursive: true, force: true })
 })
 
@@ -314,6 +311,21 @@ describe('AgySessions launch', () => {
     ])
   })
 
+  it('skips every ask when "Skip permission prompts" is on in Accounts, here and on a remote machine, but never over a permission picked for this launch, and a session started that way asks again on resume once the setting is off', async () => {
+    skipPermissions = true
+    const id = await boundTab()
+    await launch({ permission: 'acceptEdits' })
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    expect(created[0].argv.slice(2)).toEqual(['--dangerously-skip-permissions'])
+    expect(created[1].argv.slice(2)).toEqual(['--mode', 'accept-edits'])
+    expect(machine.launches[0].program.run).toContain("'--dangerously-skip-permissions'")
+    expect(sessions.launchedBypassingChecks(id)).toBe(true)
+    await sessions.stop(id)
+    skipPermissions = false
+    await sessions.resume({ sessionId: agySessionKey(A), cwd: repo })
+    expect(created[3].argv.slice(2)).toEqual([`--conversation=${A}`])
+  })
+
   it("keeps the account's sign-in in its own folder instead of the shared macOS Keychain, and routes to its API key when it has one", async () => {
     await launch()
     expect(created[0].env.WSL_INTEROP).toBe('koloft')
@@ -365,36 +377,71 @@ describe('AgySessions launch', () => {
   })
 })
 
-describe('Assist on Antigravity', () => {
-  const verdict = (out: string): string | undefined => (out ? JSON.parse(out).decision : undefined)
+describe('a background Antigravity tab while the Mac is busy (ADR-0043 AGY§12)', () => {
+  it("holds the background tab's next run_command, here and on a remote machine, and never an owner's tab, though both share the account's hooks file", async () => {
+    const reg = path.join(home, 'reg')
+    fs.mkdirSync(reg)
+    const file = path.join(home, 'hold.sh')
+    fs.writeFileSync(file, HOLD_SCRIPT)
+    fs.writeFileSync(path.join(reg, BUSY_MARKER), '')
+    sessions['deps'].holdScript = { file, regDir: reg }
+    sessions['deps'].holdWhileBusy = (tabId) => tabId.endsWith('-bg')
+    const owner = await launch()
+    const background = await launch({ tabId: 'pty-bg' })
+    const hooks = JSON.parse(
+      fs.readFileSync(path.join(picked!.home, 'config', 'hooks.json'), 'utf8')
+    )
+    const [, hold] = hooks.koloft.PreToolUse[0].hooks
+    const input = JSON.stringify({
+      conversationId: A,
+      toolCall: { name: 'run_command', args: { CommandLine: 'npm test' } }
+    })
+    const owners = spawnSync('/bin/sh', ['-c', hold.command], {
+      input,
+      encoding: 'utf8',
+      env: tabEnv(owner.id),
+      timeout: 3000
+    })
+    expect(owners).toMatchObject({ status: 0, stdout: '' })
+    const kid = spawn('/bin/sh', ['-c', hold.command], { env: tabEnv(background.id) })
+    kid.stdin.end(input)
+    await vi.waitFor(
+      () => expect(fs.readdirSync(reg).some((n) => /^pty-bg\.\d+\.held$/.test(n))).toBe(true),
+      { timeout: 3000 }
+    )
+    fs.writeFileSync(path.join(reg, 'pty-bg.free'), '')
+    await new Promise((resolve) => kid.on('exit', resolve))
 
-  it('never stops to ask, trusts its folder, and is told its role instead of the session guide', async () => {
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r-bg' })
+    const [spec] = machine.launches
+    expect(spec.env.KOLOFT_HOLD_TAB).toBe('pty-r-bg')
+    const there = JSON.parse(spec.program.files['pty-r-bg.hooks.json'])
+    expect(there.koloft.PreToolUse[0].hooks[1].command).toMatch(/ hold-self$/)
+  })
+})
+
+describe('The butler on Antigravity', () => {
+  // ADR-0029
+  it('asks as the owner’s permission setting says, like any tab, trusts its folder, and is told its role instead of the session guide', async () => {
     agentTools = true
-    assist = { role: 'You are the Assist of ws.', allow: [] }
+    assist = { role: 'You are the butler.' }
     const { id } = await launch()
-    expect(created[0].argv).toContain('--dangerously-skip-permissions')
+    expect(created[0].argv).not.toContain('--dangerously-skip-permissions')
     expect(sessions.trustsFolder(repo)).toBe(true)
     const told = JSON.parse(hook(id, 'SessionStart'))
-    expect(told.injectSteps[0].systemMessage.systemMessage).toBe('You are the Assist of ws.')
+    expect(told.injectSteps[0].systemMessage.systemMessage).toBe('You are the butler.')
+    skipPermissions = true
+    await launch()
+    expect(created[1].argv).toContain('--dangerously-skip-permissions')
   })
 
-  // ADR-0029 AGY§12 AGY§13
-  it('puts every tool call through the Assist gate with the tools its task allows: writing inside its folder passes, a subagent is stopped before it runs', async () => {
-    assist = { role: 'r', allow: ['search_web'] }
-    const { id } = await launch()
-    const tool = (name: string, args: Record<string, unknown> = {}): string | undefined =>
-      verdict(hook(id, 'PreToolUse', { toolCall: { name, args } }))
-    expect(tool('run_command', { CommandLine: 'koloft session list' })).toBeUndefined()
-    expect(tool('write_to_file', { TargetFile: path.join(repo, 'notes.md') })).toBeUndefined()
-    expect(tool('search_web', { query: 'x' })).toBeUndefined()
-    expect(tool('write_to_file', { TargetFile: '/etc/hosts' })).toBe('deny')
-    expect(tool('invoke_subagent', { Subagents: [] })).toBe('deny')
-  })
-
-  it('a plain session runs no tool gate', async () => {
-    const { id } = await launch()
-    expect(tabEnv(id).KOLOFT_AGY_GATE).toBeUndefined()
-    expect(hook(id, 'PreToolUse', { toolCall: { name: 'invoke_subagent', args: {} } })).toBe('')
+  // ADR-0029
+  it('no session runs a tool gate, the butler included', async () => {
+    const plain = await launch()
+    assist = { role: 'r' }
+    const butler = await launch()
+    for (const { id } of [plain, butler])
+      expect(hook(id, 'PreToolUse', { toolCall: { name: 'invoke_subagent', args: {} } })).toBe('')
   })
 })
 
@@ -501,6 +548,83 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     say(id, state('done'))
     await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'))
     expect(sessions.rows(repo)[0].title).toBe('Tidy the readme')
+  })
+
+  // AGY§16
+  it('a launch given a name keeps it over the title agy makes up, and renames the conversation in agy to it once agy has listed its own', async () => {
+    apiAnswers = true
+    const { id } = await launch({ name: 'Docs pass' })
+    title(id, { conversation_id: A })
+    say(id, state('idle'))
+    say(id, state('working'))
+    say(id, state('done'))
+    const listed = (rowTitle: string): void =>
+      writeSummaries(gemini, [
+        {
+          conversation_id: A,
+          title: rowTitle,
+          workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+        }
+      ])
+    listed('Tidy the readme')
+    await vi.waitFor(
+      () =>
+        expect(sent('UpdateConversationAnnotations')).toContainEqual({
+          cascadeId: A,
+          annotations: { title: 'Docs pass' },
+          mergeAnnotations: true
+        }),
+      { timeout: 3000 }
+    )
+    expect(sessions.list()[0].title).toBe('Docs pass')
+    listed('Docs pass')
+    say(id, state('working'))
+    say(id, state('done'))
+    await sessions.refreshHistory()
+    await vi.waitFor(() => expect(sessions.rows(repo)[0].title).toBe('Docs pass'))
+    expect(sessions.list()[0].title).toBe('Docs pass')
+  })
+
+  it("the owner's own /rename in agy before Koloft has renamed the conversation wins over the name given at launch", async () => {
+    apiAnswers = true
+    const { id } = await launch({ name: 'Docs pass' })
+    title(id, { conversation_id: A })
+    say(id, state('idle'))
+    title(id, { conversation_id: A, conversation_title: 'My own title' })
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'My own title',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    say(id, state('working'))
+    say(id, state('done'))
+    await new Promise((resolve) => setTimeout(resolve, LISTED_TITLE_READ_SETTLES_MS))
+    expect(sessions.list()[0].title).toBe('My own title')
+    await sessions.refreshHistory()
+    expect(sessions.rows(repo)[0].title).toBe('My own title')
+    expect(sent('UpdateConversationAnnotations')).toEqual([])
+  })
+
+  it('a name given at launch is dropped once /clear moves the tab to a new conversation, which takes the title agy makes up', async () => {
+    apiAnswers = true
+    const { id } = await launch({ name: 'Docs pass' })
+    title(id, { conversation_id: A })
+    say(id, state('idle'))
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    writeSummaries(gemini, [
+      {
+        conversation_id: B,
+        title: 'Next thing',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    say(id, state('working'))
+    say(id, state('done'))
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Next thing'), { timeout: 3000 })
+    expect(sent('UpdateConversationAnnotations')).toEqual([])
   })
 
   it("hands on a finished turn's reply with the owner's own words, and its tokens and cost for the model agy reports", async () => {

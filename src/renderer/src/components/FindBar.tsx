@@ -1,6 +1,7 @@
 import type { JSX, RefObject } from 'react'
 import { IconChevronLeft, IconChevronRight, IconClose } from '../icons'
 import type { FindCount } from '../useDomFind'
+import '../findBar.css'
 
 export function FindBar({
   inputRef,

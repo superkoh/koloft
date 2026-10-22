@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import type { SessionInfo } from '@shared/types'
-import { useStore, consumeRestartExit } from '../../src/renderer/src/store'
+import type { ResumeFailure, SessionInfo, WorkspaceRows } from '@shared/types'
+import { useStore, consumeRestartExit, workbenchOwnerLive } from '../../src/renderer/src/store'
 import {
   allEditTabs,
   allDirtyTabs,
@@ -21,7 +21,7 @@ let killed: string[]
 let order: string[]
 let nextPty: { id: string; cwd: string }
 let createFails: boolean
-let createRefuses: boolean
+let createRefuses: ResumeFailure | null
 let mainTrackerSessions: SessionInfo[]
 let transcriptOnDisk: boolean
 let probeFails: boolean
@@ -65,7 +65,7 @@ beforeEach(() => {
   order = []
   nextPty = { id: 'pty-new', cwd: '/w' }
   createFails = false
-  createRefuses = false
+  createRefuses = null
   mainTrackerSessions = []
   transcriptOnDisk = true
   probeFails = false
@@ -87,7 +87,7 @@ beforeEach(() => {
         resume: (req: ResumeReq) => {
           created.push(req)
           order.push('create')
-          if (createRefuses) return Promise.resolve({ ok: false, code: 'invalid-args' })
+          if (createRefuses) return Promise.resolve({ ok: false, code: createRefuses })
           if (createFails) return Promise.reject(new Error('spawn failed'))
           const done = Promise.resolve({ ok: true, ...nextPty })
           return createGate ? createGate.promise.then(() => done) : done
@@ -110,7 +110,9 @@ beforeEach(() => {
     workbench: {},
     workbenchOpen: {},
     workbenchFetched: {},
-    toast: null
+    toast: null,
+    workspaceRows: [],
+    resumeDialog: null
   })
   for (const t of allEditTabs()) endEdit(t.ownerTabId, t.tabId)
 })
@@ -374,6 +376,56 @@ describe("restartActiveSession vs. the claude→shell revert: the kill's own unt
     expect(after.tabs[0].title).toBe('Long conversation')
     expect(after.tabs[0].sessionId).toBe('sid-I')
     expect(after.openFiles['int2']?.src).toBe('/w/notes.md')
+  })
+
+  it('keeps the Workbench live while the old session reads dead mid-restart, so the tab’s shells are not torn down', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'wl1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.setSessions([session('wl1', { sessionId: 'sid-WL' })])
+    nextPty = { id: 'wl2', cwd: '/w' }
+    createGate = gate()
+
+    s.restartActiveSession()
+    await settle()
+    s.setSessions([session('wl1', { sessionId: 'sid-WL', alive: false })])
+
+    const mid = useStore.getState()
+    expect(workbenchOwnerLive(mid, mid.tabs[0])).toBe(true)
+
+    createGate.open()
+    await settle()
+    s.setSessions([session('wl2', { sessionId: 'sid-WL', alive: false })])
+    const after = useStore.getState()
+    expect(workbenchOwnerLive(after, after.tabs[0])).toBe(false)
+  })
+
+  it('lets the Workbench go when the restart fails, so a dead tab keeps no shells', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'wf1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.setSessions([session('wf1', { sessionId: 'sid-WF' })])
+    createFails = true
+
+    s.restartActiveSession()
+    await settle()
+    s.setSessions([session('wf1', { sessionId: 'sid-WF', alive: false })])
+
+    const failed = useStore.getState()
+    expect(workbenchOwnerLive(failed, failed.tabs[0])).toBe(false)
+  })
+
+  it('leaves a cold Workbench cold while a session that had already ended restarts', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'wd1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.setSessions([session('wd1', { sessionId: 'sid-WD', alive: false })])
+    nextPty = { id: 'wd2', cwd: '/w' }
+    createGate = gate()
+
+    s.restartActiveSession()
+    await settle()
+
+    const mid = useStore.getState()
+    expect(created).toHaveLength(1)
+    expect(workbenchOwnerLive(mid, mid.tabs[0])).toBe(false)
   })
 
   it('an untracked-session update DURING the probe leaves the restarting tab standing', async () => {
@@ -682,7 +734,7 @@ describe('restartActiveSession: respawn failure', () => {
       alive: true
     })
     s.setSessions([session('ref1', { sessionId: 'sid-A' })])
-    createRefuses = true
+    createRefuses = 'invalid-args'
 
     s.restartActiveSession()
     await settle()
@@ -691,6 +743,37 @@ describe('restartActiveSession: respawn failure', () => {
     expect(refused.tabs).toHaveLength(1)
     expect(refused.tabs[0].id).toBe('ref1')
     expect(refused.tabs[0].alive).toBe(false)
+  })
+
+  it('a deleted worktree that cannot be rebuilt offers the same resume in the main checkout a cold-row resume offers', async () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'gone1', kind: 'codex', title: 'Codex', cwd: '/w', alive: true })
+    s.setSessions([
+      session('gone1', {
+        backendId: 'codex',
+        sessionId: 'codex:local:thread-g',
+        title: 'Gone tree',
+        cwd: '/w/.claude/worktrees/feat'
+      })
+    ])
+    useStore.setState({
+      workspaceRows: [
+        { workspace: { path: '/w' }, rows: [{ id: 'codex:local:thread-g' }] }
+      ] as unknown as WorkspaceRows[]
+    })
+    createRefuses = 'rebuild-failed'
+
+    s.restartActiveSession()
+    await settle()
+
+    const after = useStore.getState()
+    expect(after.tabs[0].alive).toBe(false)
+    expect(after.resumeDialog).toEqual({
+      kind: 'escape',
+      target: { backendId: 'codex', id: 'codex:local:thread-g', title: 'Gone tree' },
+      worktreeName: 'feat',
+      cwd: '/w'
+    })
   })
 })
 

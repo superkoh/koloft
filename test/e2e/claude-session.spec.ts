@@ -51,7 +51,7 @@ test('starting a session in a workspace surfaces it, its file, and a preview thr
 
   await expect(page.locator('.ws-name', { hasText: 'ws-a' })).toBeVisible()
 
-  await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 15_000 })
 
   await showBrowse(page)
   const notes = page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: 'NOTES.md' })
@@ -68,7 +68,7 @@ test('when Claude Code moves the conversation to a new session id (a phantom sta
 }) => {
   await waitBooted(page)
   await startSessionIn(page, 'ws-a')
-  await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('.ws .ws-tab.st-waiting')).toBeVisible({ timeout: 15_000 })
   const tabId = await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')
   const boundOf = (): Promise<string | undefined> => boundSessionId(page, tabId)
   const before = await boundOf()

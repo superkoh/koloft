@@ -3,15 +3,24 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { record } from './codexObservation'
 import {
+  HOLD_FILE,
+  HOLD_TAB_ENV,
+  KEEP_GOING_FOR_THE_NOTICE_FN,
+  NOTICE_ENV,
+  NOTICE_THIS_TURN,
   QUOTED_PROMPT_BYTES,
   REPLY_LANGUAGE_AFTER_QUOTE,
-  REPLY_LANGUAGE_BEFORE_QUOTE
+  REPLY_LANGUAGE_BEFORE_QUOTE,
+  TAKE_NOTICE_FN,
+  type HoldEvent,
+  type HoldScript
 } from './hooks'
+import { HOLD_HOOK_TIMEOUT_S } from './resourceGuard'
+import { REMOTE_HOOK_DIR } from './remote/paths'
 
 export const AGY_LOG_ENV = 'KOLOFT_AGY_LOG'
 export const AGY_START_ENV = 'KOLOFT_AGY_START'
 export const AGY_LOG_POINTER_SUFFIX = '.agy-log'
-export const AGY_GATE_ENV = 'KOLOFT_AGY_GATE'
 export const AGY_OWNER_TITLE_ENV = 'KOLOFT_AGY_OWNER_TITLE'
 export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
 
@@ -25,15 +34,28 @@ export const AGY_HOOK_SCRIPT = `#!/bin/sh
 event="$1"
 input="$(cat)"
 log="$${AGY_LOG_ENV}"
+notice="$${NOTICE_ENV}"
+turn=""; [ -n "$notice" ] && turn="$notice${NOTICE_THIS_TURN}"
+${TAKE_NOTICE_FN}
+${KEEP_GOING_FOR_THE_NOTICE_FN}
+if [ "$event" = "Stop" ]; then
+  keep_going_for_the_notice && exit 0
+  [ -n "$turn" ] && rm -f "$turn"
+fi
 [ -n "$log" ] && { printf '{"event":"%s","input":' "$event"; printf '%s' "$input" | tr -d '\\n'; printf '}\\n'; } >> "$log" 2>/dev/null
 case "$event" in
   SessionStart) [ -f "$${AGY_START_ENV}" ] && cat "$${AGY_START_ENV}" ;;
   PreInvocation)
     tp="$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"transcriptPath" *: *"\\([^"]*\\)".*/\\1/p')"
     said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\\\n//p' | sed -E 's/\\\\n<\\/USER_REQUEST>.*//; s/^.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//; s/\\\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c ${QUOTED_PROMPT_BYTES} | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\\\u[0-9a-fA-F]{0,3}$//; s/\\\\+$//')"
-    [ -n "$said" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s%s%s"}]}' ${shq(REPLY_LANGUAGE_BEFORE_QUOTE)} "$said" ${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+    [ -n "$said" ] && said=${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$said"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+    if [ -n "$turn" ]; then
+      case "$(printf '%s' "$input" | tr -d ' \\n')" in *'"invocationNum":0'[,}]*) rm -f "$turn" ;; esac
+      [ -f "$notice" ] && take_notice >> "$turn"
+    fi
+    told="$([ -n "$turn" ] && cat "$turn" 2>/dev/null)$said"
+    [ -n "$told" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}' "$told"
     ;;
-  PreToolUse) [ -n "$${AGY_GATE_ENV}" ] && printf '%s' "$input" | sh -c "$${AGY_GATE_ENV}" ;;
 esac
 exit 0
 `
@@ -76,15 +98,32 @@ export function runWithSh(file: string): string {
   return `/bin/sh ${shq(file)}`
 }
 
+const holdCommand = (file: string, regDir: string, event: HoldEvent): string =>
+  `bash ${file} ${regDir} "$${HOLD_TAB_ENV}" ${event}`
+
+// ADR-0043
+export const localAgyHold = ({ file, regDir }: HoldScript): string =>
+  holdCommand(shq(file), shq(regDir), 'hold')
+
+// ADR-0043
+export const machineAgyHold = (machineDir: string): string =>
+  holdCommand(`"${machineDir}/${HOLD_FILE}"`, `"${REMOTE_HOOK_DIR}"`, 'hold-self')
+
 // AGY§12
-export function koloftHookEntry(runScript: string): Record<string, unknown> {
+export function koloftHookEntry(runScript: string, hold?: string): Record<string, unknown> {
   const command = (event: AgyHookName): string => `${runScript} ${event}`
   const flat = (event: AgyHookName): unknown[] => [{ type: 'command', command: command(event) }]
-  const matched = (event: AgyHookName): unknown[] => [{ matcher: '*', hooks: flat(event) }]
+  const matched = (event: AgyHookName, ...more: unknown[]): unknown[] => [
+    { matcher: '*', hooks: [...flat(event), ...more] }
+  ]
   return {
     SessionStart: flat('SessionStart'),
     PreInvocation: flat('PreInvocation'),
-    PreToolUse: matched('PreToolUse'),
+    // AGY§12
+    PreToolUse: matched(
+      'PreToolUse',
+      ...(hold ? [{ type: 'command', command: hold, timeout: HOLD_HOOK_TIMEOUT_S }] : [])
+    ),
     PostToolUse: matched('PostToolUse'),
     Stop: flat('Stop')
   }

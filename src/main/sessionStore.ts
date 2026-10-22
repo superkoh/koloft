@@ -1,9 +1,8 @@
 import fs from 'fs'
-import path from 'path'
-import { randomUUID } from 'crypto'
 import type { LaunchPermission } from '@shared/types'
 import { isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
-import { SUPPORTED_PAIRS, sessionKey } from '@shared/sessionBackend'
+import { sessionKey } from '@shared/sessionBackend'
+import { BackgroundFile } from './backgroundFile'
 
 export interface StoredMember {
   id: string
@@ -41,8 +40,7 @@ const sessionKeyOn =
   (backend: 'codex' | 'muse' | 'agy', label: string) =>
   (id: string, host?: string): string => {
     if (!UUID.test(id)) throw new Error(`Invalid ${label} session ID`)
-    const onMachine = SUPPORTED_PAIRS[backend].ssh ? host : undefined
-    return sessionKey({ backendId: backend, sourceId: onMachine ?? 'local', nativeSessionId: id })
+    return sessionKey({ backendId: backend, sourceId: host ?? 'local', nativeSessionId: id })
   }
 
 export const codexSessionKey = sessionKeyOn('codex', 'Codex')
@@ -117,6 +115,7 @@ function parseData(value: unknown, keyOf: KeyOf): SessionStoreData {
 
 export class SessionStore {
   private data: SessionStoreData
+  private disk: BackgroundFile
 
   constructor(
     readonly filePath: string,
@@ -124,10 +123,18 @@ export class SessionStore {
   ) {
     try {
       this.data = parseData(JSON.parse(fs.readFileSync(filePath, 'utf8')), keyOf)
+      try {
+        fs.copyFileSync(filePath, `${filePath}.bak`, fs.constants.COPYFILE_EXCL)
+      } catch {}
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       this.data = { version: 1, members: {}, resources: {} }
     }
+    this.disk = new BackgroundFile(() => filePath, 0o600)
+  }
+
+  flushSync(): void {
+    this.disk.flushSync()
   }
 
   listMembers(workspacePath?: string): StoredMember[] {
@@ -195,23 +202,7 @@ export class SessionStore {
 
   private commit(next: SessionStoreData): void {
     parseData(next, this.keyOf)
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true })
-    const temporary = `${this.filePath}.${randomUUID()}.tmp`
-    try {
-      const fd = fs.openSync(temporary, 'wx', 0o600)
-      try {
-        fs.writeFileSync(fd, JSON.stringify(next, null, 2) + '\n')
-        fs.fsyncSync(fd)
-      } finally {
-        fs.closeSync(fd)
-      }
-      if (fs.existsSync(this.filePath) && !fs.existsSync(`${this.filePath}.bak`)) {
-        fs.copyFileSync(this.filePath, `${this.filePath}.bak`, fs.constants.COPYFILE_EXCL)
-      }
-      fs.renameSync(temporary, this.filePath)
-      this.data = next
-    } finally {
-      if (fs.existsSync(temporary)) fs.unlinkSync(temporary)
-    }
+    this.data = next
+    this.disk.write(JSON.stringify(next, null, 2) + '\n')
   }
 }

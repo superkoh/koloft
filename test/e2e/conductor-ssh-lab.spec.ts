@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
@@ -16,7 +18,7 @@ import {
   useRealClaudeOnTheMachine,
   type SshLab
 } from './helpers/docker'
-import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
+import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
 
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
@@ -33,19 +35,18 @@ test.beforeAll(() =>
   test.skip(!dockerAvailable(), 'needs a running Docker (for example `colima start`)')
 )
 
-function heard(fake: FakeDiscord): FakePost[] {
-  const threads = fake.threads.filter((t) => t.parentId === CHANNEL).map((t) => t.id)
-  return fake.posted.filter((p) => p.channelId === CHANNEL || threads.includes(p.channelId))
-}
-
 function said(fake: FakeDiscord): string[] {
-  return heard(fake).map((p) => p.content)
+  return fake.posted.filter((p) => p.channelId === CHANNEL).map((p) => p.content)
 }
 
-function notices(fake: FakeDiscord): string[] {
-  return said(fake)
-    .map((p) => p.split('\n')[0])
-    .filter((l) => /^(🔔|❓|⏹)/.test(l))
+function handedToTheButler(env: E2EEnv): string[] {
+  const file = path.join(env.home, 'fake-claude-peer.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => (JSON.parse(l) as { message: { content: string } }).message.content)
 }
 
 function channelRow(dlg: Locator, name: string): Locator {
@@ -54,8 +55,8 @@ function channelRow(dlg: Locator, name: string): Locator {
   })
 }
 
-async function bindChannel(page: Page, wsName: string): Promise<void> {
-  await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+async function bindButlerChannel(page: Page): Promise<void> {
+  await openMenu(page, page.locator('.isl-butler > .ws-tab'))
   await page.locator('.menu .mi', { hasText: 'Bind Discord channel…' }).click()
   const dlg = page.getByRole('dialog', { name: 'Bind a Discord channel' })
   await expect(dlg).toBeVisible()
@@ -65,10 +66,8 @@ async function bindChannel(page: Page, wsName: string): Promise<void> {
 }
 
 async function allTerminals(page: Page): Promise<string> {
-  const unfold = page.locator('.isl-conductors').getByRole('button', { name: 'Unfold' })
-  if (await unfold.count()) await unfold.click()
   await page
-    .locator('.isl-conductors .ws-tab')
+    .locator('.isl-butler > .ws-tab')
     .click({ timeout: 5000 })
     .catch(() => undefined)
   await page.waitForTimeout(CONDUCTOR_SCREEN_DRAWS_AFTER_IT_IS_SHOWN_MS)
@@ -115,7 +114,8 @@ async function withRemoteWorkspaceConductor(
 ): Promise<void> {
   seedSettings(env, {
     hintsOff: true,
-    discord: { userId: OWNER.id, userName: OWNER.username, bindings: [] }
+    assist: { on: true, backend: 'claude' },
+    discord: { userId: OWNER.id, userName: OWNER.username }
   })
   const fake = await startFakeDiscord(env)
   const lab = await startSshLab(env)
@@ -132,7 +132,7 @@ async function withRemoteWorkspaceConductor(
     await expect(wsGroup(page, 'kt-key').locator('.ws-conn')).toHaveClass(/\bon\b/, {
       timeout: BACKGROUND_CONNECT_MS
     })
-    await bindChannel(page, 'kt-key')
+    await bindButlerChannel(page)
     await body({ page, lab, fake })
   } finally {
     await test.info().attach('channel', { body: said(fake).join('\n────\n') || '(nothing)' })
@@ -149,8 +149,8 @@ async function typeIntoRemote(page: Page, tabId: string, text: string): Promise<
   await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
 }
 
-test.describe('A conductor on this Mac looking after a Claude session on an SSH machine (Docker)', () => {
-  test('E-SSH-C1: the conductor types a message into the remote session and hears it finished in the session’s thread; the session’s question reaches the thread whole, and its button presses the key that answers it; the owner’s message in the thread is typed into the remote session and its reply comes back there; the next question is answered by the conductor with koloft session keys, pressed through ssh and tmux, and the reply that ends that turn is handed to the conductor, whose answer reaches the channel', async ({
+test.describe('The butler on this Mac looking after a Claude session on an SSH machine (Docker)', () => {
+  test('E-SSH-C1: the butler types a message into the remote session; the session’s question shows its row waiting for approval and is answered by the butler with koloft session answer, and the next with koloft session keys, pressed through ssh and tmux; the reply that ends that turn is handed to the butler, whose answer reaches the channel; the only card that reaches it is the ⌨️ result card of the fake’s /koloft session send (the fake’s /koloft runs no model turn, unlike the real claude’s koloft skill, whose answer takes that card’s place)', async ({
     env
   }) => {
     await withRemoteWorkspaceConductor(
@@ -159,69 +159,44 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
       async ({ page, lab, fake }) => {
         await startSessionIn(page, 'kt-key', { remote: true })
         const remote = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.conductor
+          (s) => s.alive && !s.butler
         )!
         const transcript = (): string => transcriptOnTarget(lab, remote.sessionId)
+        const remoteStatus = async (): Promise<string | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.sessionId === remote.sessionId
+          )?.status
 
         fake.say(OWNER, `/koloft session send ${remote.sessionId} hello from Discord`)
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toContain(ownerSays('hello from Discord'))
         await expect
-          .poll(() => notices(fake), { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
-          .toEqual([expect.stringMatching(/^🔔 .+ finished\.$/)])
+          .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^(waiting|idle)$/)
 
         await page.evaluate(
           ([id, line]) => window.api.terminal.write(id, line),
           [remote.tabId, '/ask Which colour?|Red|Green\r']
         )
-        const question = (): FakePost | undefined =>
-          heard(fake).find((p) =>
-            /^❓ .+ is waiting for you\.\nWhich colour\?\n1\. Red — The Red one\n2\. Green — The Green one\n/.test(
-              p.content
-            )
-          )
         await expect
-          .poll(question, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
-          .toBeTruthy()
-        const thread = question()!.channelId
-        expect(fake.threads.map((t) => t.id)).toContain(thread)
-        const opener = (): string | undefined => openerNow(fake, CHANNEL, thread)
-        await expect
-          .poll(opener, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
-          .toMatch(/^❓ \*\*.+\*\* · needs you, asked <t:\d+:R>\n-# .+ · Claude$/)
-        fake.press(OWNER, question()!.buttons![1], thread)
+          .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toBe('approval')
+        fake.say(OWNER, `/koloft session answer ${remote.sessionId} 2`)
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toContain('Picked: Green')
         await expect
-          .poll(() => notices(fake), { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
-          .toEqual([
-            expect.stringMatching(/^🔔 /),
-            expect.stringMatching(/^❓ /),
-            expect.stringMatching(/^🔔 .+ finished\.$/)
-          ])
-
-        fake.say(OWNER, '[Discord] typed in the thread', { channelId: thread })
-        await expect
-          .poll(() => said(fake).join('\n'), {
-            timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
-          })
-          .toContain('finished.\nAnswer to: [Discord] typed in the thread')
-        expect(fake.typing).toContain(thread)
-        await expect
-          .poll(opener, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
-          .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R>/)
+          .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^(waiting|idle)$/)
 
         await page.evaluate(
           ([id, line]) => window.api.terminal.write(id, line),
           [remote.tabId, '/ask Which size?|Small|Large\r']
         )
         await expect
-          .poll(() => notices(fake).filter((l) => l.startsWith('❓ ')), {
-            timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
-          })
-          .toHaveLength(2)
+          .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toBe('approval')
         fake.say(OWNER, `/koloft session keys ${remote.sessionId} 1`)
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
@@ -232,11 +207,14 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
             { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS }
           )
           .toBe(true)
+        expect(fake.posted.filter((p) => p.card).map((p) => p.content.split('\n')[0])).toEqual([
+          `⌨️ **Alfred** ran /koloft session send ${remote.sessionId} hello from Discord:`
+        ])
       }
     )
   })
 
-  test('E-SSH-C3: the owner’s /run and /compact are typed into the remote session, and what it printed comes back through the mirror', async ({
+  test('E-SSH-C3: the butler’s koloft session command types /context and /compact into the remote session, and what it printed comes back to the butler through the mirror', async ({
     env
   }) => {
     await withRemoteWorkspaceConductor(
@@ -245,19 +223,24 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
       async ({ page, fake }) => {
         await startSessionIn(page, 'kt-key', { remote: true })
         const remote = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.conductor
+          (s) => s.alive && !s.butler
         )!
-        const ran = (): string[] => said(fake).filter((p) => p.startsWith('⌨️ '))
 
-        fake.interact(OWNER, 'run', { command: '/context', session: remote.sessionId })
+        fake.say(OWNER, `/koloft session command ${remote.sessionId} /context`)
         await expect
-          .poll(ran, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
-          .toEqual([expect.stringMatching(/ran \/context:\n## Context Usage/)])
+          .poll(() => handedToTheButler(env), {
+            timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
+          })
+          .toContainEqual(
+            expect.stringMatching(/\(From Koloft:\) ⌨️ .+ ran \/context:\n## Context Usage/)
+          )
 
-        fake.interact(OWNER, 'compact', { session: remote.sessionId })
+        fake.say(OWNER, `/koloft session command ${remote.sessionId} /compact`)
         await expect
-          .poll(() => ran().at(-1), { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
-          .toMatch(/ran \/compact:\nCompacted/)
+          .poll(() => handedToTheButler(env), {
+            timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
+          })
+          .toContainEqual(expect.stringMatching(/\(From Koloft:\) ⌨️ .+ ran \/compact:\nCompacted/))
       }
     )
   })
@@ -277,15 +260,19 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
           .poll(
             async () =>
               (await page.evaluate(() => window.api.sessions.list())).find(
-                (s) => s.alive && !s.conductor && s.sessionId
+                (s) => s.alive && !s.butler && s.sessionId
               )?.sessionId ?? '',
             { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS }
           )
           .not.toBe('')
         const remote = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.conductor
+          (s) => s.alive && !s.butler
         )!
         const transcript = (): string => transcriptOnTarget(lab, remote.sessionId)
+        const remoteStatus = async (): Promise<string | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.sessionId === remote.sessionId
+          )?.status
 
         fake.say(
           OWNER,
@@ -297,9 +284,6 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
           .toMatch(/"type":"text","text":"MANGO/)
-        await expect
-          .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
-          .toContainEqual(expect.stringMatching(/^🔔 .+ finished\.$/))
 
         await typeIntoRemote(
           page,
@@ -307,36 +291,24 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
           'Call your AskUserQuestion tool once, with the single question "Which colour?" and exactly two options, Red then Green. After I answer, reply with only the colour I picked, in capitals.'
         )
         await expect
-          .poll(() => said(fake).join('\n'), {
-            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
-          })
-          .toMatch(/(^|\n)❓ .+ is waiting for you\.\nWhich colour\?\n1\. Red.*\n2\. Green/)
+          .poll(remoteStatus, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
+          .toBe('approval')
         fake.say(OWNER, `/koloft session answer ${remote.sessionId} 2`)
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
           .toMatch(/"type":"text","text":"GREEN/)
         await expect
-          .poll(() => notices(fake).filter((l) => /^🔔 .+ finished\.$/.test(l)).length, {
+          .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^(waiting|idle)$/)
+
+        fake.say(OWNER, `/koloft session command ${remote.sessionId} /compact`)
+        await expect
+          .poll(() => handedToTheButler(env), {
             timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
           })
-          .toBe(2)
-
-        fake.interact(OWNER, 'compact', { session: remote.sessionId })
-        await expect
-          .poll(
-            () =>
-              said(fake)
-                .filter((p) => p.startsWith('⌨️ '))
-                .at(-1),
-            {
-              timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
-            }
+          .toContainEqual(
+            expect.stringMatching(/ran \/compact:\nCompacted \(ctrl\+o to see full summary\)/)
           )
-          .toMatch(/ran \/compact:\nCompacted \(ctrl\+o to see full summary\)$/)
-        const remoteStatus = async (): Promise<string | undefined> =>
-          (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => s.sessionId === remote.sessionId
-          )?.status
         await expect
           .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toMatch(/^(waiting|idle)$/)

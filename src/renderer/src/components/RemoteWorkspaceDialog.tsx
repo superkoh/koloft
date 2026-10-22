@@ -2,6 +2,7 @@ import { useState, type JSX, type KeyboardEvent } from 'react'
 import { IconClose } from '../icons'
 import { remoteKeyFromForm } from '../remoteWorkspace'
 import { isComposing } from '../keys'
+import '../remoteWorkspaceDialog.css'
 
 export function RemoteWorkspaceDialog({
   onAdd,

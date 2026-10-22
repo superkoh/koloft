@@ -112,8 +112,9 @@ for (const backend of ['claude', 'codex', 'muse'] as const) {
     () => {
       for (const [typed, allowed] of CASES) {
         it(typed, { timeout: 60_000 }, async () => {
-          const route = parseRoute(await assist(routeJob(LIST, typed)), LIST)
-          expect(allowed).toContain(landing(route))
+          const reply = await assist(routeJob(LIST, typed))
+          const route = parseRoute(reply, LIST)
+          expect(allowed, `${backend} replied ${JSON.stringify(reply)}`).toContain(landing(route))
         })
       }
     }

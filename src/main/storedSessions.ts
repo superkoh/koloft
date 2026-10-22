@@ -10,8 +10,8 @@ import type {
   SessionResumeRequest
 } from '@shared/types'
 import { PLACEHOLDER_TITLES } from '@shared/types'
-import { BACKEND_LABEL, SUPPORTED_PAIRS, identityOf, sourceOf } from '@shared/sessionBackend'
-import { hostOf, isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
+import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
+import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
@@ -19,8 +19,14 @@ import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
-import { dirExistsSync as dirExists, occupantName } from './resumePlan'
+import {
+  dirExistsSync as dirExists,
+  occupantName,
+  rebuildsTheWorktree,
+  ResumeRefused
+} from './resumePlan'
 import type { CliRuntime } from './cliRuntime'
+import type { HoldScript } from './hooks'
 import { isNewer } from './releaseNotes'
 import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
@@ -65,6 +71,7 @@ export interface StoredRun {
   explicitStop: boolean
   resumeKey?: string
   permission: LaunchPermission
+  bypassing: boolean
   launchName?: string
   releaseTools(): void
 }
@@ -75,7 +82,6 @@ export interface StoredSessionDeps {
   projectInfo(p: string): ProjectInfo
   changed(): void
   replaced?(oldKey: string, newKey: string): void
-  memberRemoved?(key: string): void
   leftWorktree?(resource: WorktreeResource): Promise<void>
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
@@ -84,6 +90,10 @@ export interface StoredSessionDeps {
   gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }
   remoteDirExists?(dir: string): Promise<boolean>
   remoteTreeIo?(cwd: string): TreeIo
+  skipPermissions?(): boolean
+  holdWhileBusy?(tabId: string): boolean
+  holdScript?: HoldScript
+  hookRegDir?: string
 }
 
 export interface StartContext {
@@ -120,9 +130,11 @@ export interface SessionsWithStore {
   tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
 }
 
+type Place = ProjectInfo & { missing: boolean }
+
 interface RowScope {
   byPath: Map<string, WorktreeResource>
-  roots: Map<string, string>
+  remotePlaces: Map<string, Place>
 }
 
 export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry, P = undefined> {
@@ -130,6 +142,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   protected runs = new Map<string, R>()
   protected history = new Map<string, H>()
   protected archivedIds = new Set<string>()
+  private places = new Map<string, Place>()
   private probed?: { at: number; reply: BackendAvailability }
   private probing?: Promise<BackendAvailability>
   protected binary?: string
@@ -366,7 +379,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   private rowScope(): RowScope {
     return {
       byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
-      roots: new Map()
+      remotePlaces: new Map()
     }
   }
 
@@ -376,7 +389,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   rows(workspace: string): BackendSessionRow[] {
-    if (!SUPPORTED_PAIRS[this.id][hostOf(workspace)]) return []
     const scope = this.rowScope()
     const rows = new Map<string, BackendSessionRow>()
     for (const [key, t] of this.history) {
@@ -433,15 +445,16 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   private row(t: H, scope: RowScope): BackendSessionRow {
     const key = this.keyOf(t.id, hostOfPath(t.cwd))
     const resource = scope.byPath.get(t.cwd)
+    const place = this.placeOf(t.cwd, scope)
     return {
       id: key,
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
       title: t.name || t.preview?.slice(0, 100) || PLACEHOLDER_TITLES[this.id],
       cwd: t.cwd,
-      worktree: resource?.worktreeName ?? this.deps.projectInfo(t.cwd).worktreeName ?? 'main',
+      worktree: resource?.worktreeName ?? place.worktreeName ?? 'main',
       running: this.readsRunning(key),
-      invalidCwd: seenMissing(t.cwd),
+      invalidCwd: place.missing,
       mtime: (t.updatedAt ?? t.createdAt ?? 0) * 1000,
       ...(resource
         ? { worktreeState: { ...resource, worktreeBranch: resource.worktreeBranch ?? '' } }
@@ -454,11 +467,16 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       ? scope.byPath.get(cwd)
       : this.store.listResources().find((r) => r.worktreePath === cwd)
     if (resource) return resource.originalCwd
-    const known = scope?.roots.get(cwd)
-    if (known !== undefined) return known
-    const root = this.deps.projectInfo(cwd).root
-    scope?.roots.set(cwd, root)
-    return root
+    return scope ? this.placeOf(cwd, scope).root : this.deps.projectInfo(cwd).root
+  }
+
+  private placeOf(cwd: string, scope: RowScope): Place {
+    const places = isRemoteKey(cwd) ? scope.remotePlaces : this.places
+    const known = places.get(cwd)
+    if (known) return known
+    const place = { ...this.deps.projectInfo(cwd), missing: seenMissing(cwd) }
+    places.set(cwd, place)
+    return place
   }
 
   async refreshHistory(): Promise<void> {
@@ -494,6 +512,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       if (archived) archivedIds.add(key)
     }
     this.history = seen
+    this.places.clear()
     this.archivedIds = archivedIds
     this.listed = true
     this.historyError = undefined
@@ -521,7 +540,12 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   launchedBypassingChecks(tabId: string): boolean {
-    return this.runs.get(tabId)?.permission === 'bypass'
+    return !!this.runs.get(tabId)?.bypassing
+  }
+
+  protected permissionOf(opts: CreateTabOptions): LaunchPermission {
+    const asked = opts.permission ?? 'default'
+    return asked === 'default' && this.deps.skipPermissions?.() ? 'bypass' : asked
   }
 
   archive(key: string): boolean {
@@ -532,9 +556,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   protected removeMember(key: string): boolean {
-    const removed = this.store.removeMember(key)
-    if (removed) this.deps.memberRemoved?.(key)
-    return removed
+    return this.store.removeMember(key)
   }
 
   launch(
@@ -555,9 +577,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       identity.backendId !== this.id ||
       this.keyOf(identity.nativeSessionId, hostOfKey(key)) !== key
     ) {
-      throw new Error(
-        `A ${SUPPORTED_PAIRS[this.id].ssh ? '' : 'local '}${this.label} session is required.`
-      )
+      throw new Error(`A ${this.label} session is required.`)
     }
     return identity.nativeSessionId
   }
@@ -616,7 +636,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     if (!available.available) throw new Error(available.reason)
     let cwd = opts.cwd
     if (typeof cwd !== 'string' || !isAbsoluteOnHost(cwd) || !(await this.dirThere(cwd)))
-      throw new Error('The session folder is missing.')
+      throw new ResumeRefused('cwd-missing', 'The session folder is missing.')
     const workspace = this.workspaceFor(cwd)
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error(`This ${this.label} session is already open.`)
@@ -767,13 +787,19 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       ? this.store.getResource(m.worktreeResourceId)
       : this.store.listResources().find((r) => r.worktreePath === t?.cwd)
     let cwd = m?.cwd ?? t!.cwd
-    const treeRemoved = !req.mode && !!resource && !(await this.dirThere(resource.worktreePath))
-    if (req.mode === 'rebuild' || treeRemoved) {
-      if (!resource) throw new Error('The worktree has no saved recovery record.')
-      resource = await this.worktrees.rebuild(resource.id)
+    if (
+      await rebuildsTheWorktree(
+        req.mode,
+        async () => !resource || this.dirThere(resource.worktreePath)
+      )
+    ) {
+      if (!resource) throw new ResumeRefused('rebuild-failed')
+      resource = await this.worktrees.rebuild(resource.id).catch(() => {
+        throw new ResumeRefused('rebuild-failed')
+      })
       cwd = resource.worktreePath
     } else if (req.mode === 'renamed') {
-      if (!resource || !req.worktree) throw new Error('The new worktree name is missing.')
+      if (!resource || !req.worktree) throw new ResumeRefused('invalid-args')
       resource = await this.worktrees.prepareRenamed(resource.id, req.worktree)
       cwd = resource.worktreePath
     } else if (req.mode === 'main') {
@@ -790,7 +816,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         rows: req.rows,
         role: req.role,
         conductor: req.conductor,
-        permission: m?.permission,
+        permission: req.permission ?? m?.permission,
         trustFolder: req.trustFolder
       },
       resource

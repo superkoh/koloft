@@ -41,7 +41,7 @@
           <a href="../#palette">⌘P</a>
           <a href="../#sessions">Sessions</a>
           <a href="../#workbench">Workbench</a>
-          <a href="../#assist">Assist</a>
+          <a href="../#assist">Butler</a>
           <a href="../features/" aria-current="page">Features</a>
           <a href="../sessions/">Docs</a>
           <a href="../changelog/">Changelog</a>
@@ -65,7 +65,9 @@
         <h1>Everything Koloft does, <em>and where it works.</em></h1>
         <p>
           32 features, grouped by what you are doing. Where it matters, a card says whether it works
-          with Claude Code and Codex on your Mac, and in a remote folder over SSH.
+          with Claude Code and Codex on your Mac, and in a remote folder over SSH. Koloft also runs
+          Meta's Muse Code and Google's Antigravity CLI; the
+          <a href="../sessions/">docs pages</a> say what each does for them.
         </p>
         <nav class="fchips" aria-label="Feature groups">
           <a href="#palette">⌘P, one box for everything</a>
@@ -73,7 +75,7 @@
           <a href="#worktrees">Worktrees</a>
           <a href="#workbench">The real terminal, and a Workbench</a>
           <a href="#agents">Agents use Koloft too</a>
-          <a href="#assist">Assist hands out the work</a>
+          <a href="#assist">Your butler hands out the work</a>
           <a href="#accounts">Accounts and usage</a>
           <a href="#more">And more</a>
         </nav>
@@ -103,7 +105,8 @@
             <p>
               Press ⌘P, type “add a forgot-password link to the login page” and hit ⏎. Assist picks
               the folder, opens a worktree when the folder is a git repo, names the session, and the
-              real Claude Code or Codex starts on your words. ⇧⏎ uses the other tool.
+              agent you picked starts on your words. The ▾ beside the button, or ⇧⏎, picks another
+              agent.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -112,7 +115,7 @@
             </ul>
             <p class="fnote">
               Needs Assist on (Settings ▸ Assist); with it off, ⏎ opens the folder picker and keeps
-              your words. In a remote folder the session opens on that machine (Claude only).
+              your words. In a remote folder the session opens on that machine.
             </p>
             <a class="more" href="../sessions/#find"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
@@ -162,14 +165,14 @@
               <h3>Ask Koloft itself</h3>
             </div>
             <p>
-              Type “set up Discord” in ⌘P and Assist takes it as a job, so you do not have to dig
-              through Settings.
+              Type “set up Discord” in ⌘P and your words go to your butler, so you do not have to
+              dig through Settings.
             </p>
 
             <p class="fnote">
               Needs Assist on (Settings ▸ Assist); with it off, ⏎ opens the folder picker.
             </p>
-            <a class="more" href="../accounts/#assist"
+            <a class="more" href="../accounts/#butler"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
           </article>
@@ -216,7 +219,7 @@
             </div>
             <p>
               Breathing orange: working. Amber: waiting for your OK. Green: its turn is done. A red
-              dot means it finished and you have not looked yet.
+              dot means it is your move, and stays until the session works again.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -231,11 +234,12 @@
           <article class="fcard">
             <div class="ftop">
               <svg class="icon" aria-hidden="true"><use href="../icons.svg#jump" /></svg>
-              <h3>⌘J: the one that waited longest</h3>
+              <h3>The bell and ⌘J: the one that waited longest</h3>
             </div>
             <p>
-              Nine tabs and no idea which to look at? ⌘J takes you to the session that has waited
-              for you the longest, clears its dot, and the next ⌘J goes to the next one.
+              Nine tabs and no idea which to look at? The bell by the sidebar button counts the
+              sessions waiting for you. Click it, or press ⌘J, to go to the one that has waited
+              longest; the next click goes to the next one.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -281,7 +285,7 @@
               <li class="yes">✓ Codex</li>
               <li class="yes">✓ Remote</li>
             </ul>
-            <p class="fnote">A remote session keeps running in tmux and is simply re-attached.</p>
+
             <a class="more" href="../sessions/"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
@@ -378,8 +382,8 @@
           </div>
           <h2>The agent keeps its screen. <em>Everything else hangs beside it.</em></h2>
           <p>
-            The middle is Claude Code’s or Codex’s own terminal; Koloft draws nothing over it.
-            Beside it hangs a Workbench for that one session.
+            The middle is the agent’s own terminal; Koloft draws nothing over it. Beside it hangs a
+            Workbench for that one session.
           </p>
         </div>
         <div class="fgrid">
@@ -561,12 +565,12 @@
           <div class="kicker">
             <span class="badge"
               ><svg class="icon" aria-hidden="true"><use href="../icons.svg#assist" /></svg></span
-            >Assist hands out the work
+            >Your butler hands out the work
           </div>
           <h2>Hand it the work. <em>It reports back.</em></h2>
           <p>
-            Assist is Koloft’s own helper, an ordinary Claude or Codex session on an account you
-            added. Turn it on in Settings ▸ Assist.
+            Your butler, Alfred until you rename it, is Koloft’s own AI: one Claude, Codex, Muse or
+            Antigravity session on an account you added, first in the sessions list.
           </p>
         </div>
         <div class="fgrid">
@@ -576,9 +580,9 @@
               <h3>Starts sessions, hears them finish</h3>
             </div>
             <p>
-              Say “have tidewatch fix the login bug”: Assist starts the session, answers its
-              questions, and tells you when it is done. It is there to pass work on, not to edit
-              your files.
+              Say “have tidewatch fix the login bug”: your butler starts the session, answers its
+              questions the way you tell it, and tells you when it is done. A side job goes to a
+              helper of its own, which hangs under its row and reports back.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -586,10 +590,10 @@
               <li class="part">◐ Remote</li>
             </ul>
             <p class="fnote">
-              Assist runs on your Mac; it can message, read and resume a session in a remote folder,
-              not start one there.
+              The butler runs on your Mac; it can message, read and resume a session in a remote
+              folder, not start one there.
             </p>
-            <a class="more" href="../accounts/#assist"
+            <a class="more" href="../accounts/#butler"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
           </article>
@@ -599,8 +603,9 @@
               <h3>From your phone</h3>
             </div>
             <p>
-              Bind Assist to your own Discord bot: one thread per session, Yes / No buttons for its
-              questions, slash commands, files both ways. No server of ours in between.
+              Bind your butler to your own Discord bot and talk to it in one channel: it reaches
+              your sessions for you, sends you files and pictures of pages, and a form asks you for
+              an admin password or a sign-in code a session needs. No server of ours in between.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -608,8 +613,8 @@
               <li class="yes">✓ Remote</li>
             </ul>
             <p class="fnote">
-              Questions with several parts, pick-many answers or free text get no buttons: tell
-              Assist what to pick.
+              A session's question shows only at the Mac: tell your butler what to pick, and it
+              answers.
             </p>
             <a class="more" href="../discord/"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
@@ -621,9 +626,9 @@
               <h3>It sets Discord up for you</h3>
             </div>
             <p>
-              One click: Assist makes the bot, and a server and channel if you have none, doing the
-              clicking on Discord’s site. You sign in, pass the human checks, and press the few
-              buttons only a person may.
+              One click: a helper of your butler makes the bot, and a server and channel if you have
+              none, doing the clicking on Discord’s site. You sign in, pass the human checks, and
+              press the few buttons only a person may.
             </p>
 
             <a class="more" href="../discord/"
@@ -636,8 +641,8 @@
               <h3>It presses keys for you</h3>
             </div>
             <p>
-              A session stuck on a menu? Tell Assist “pick the second one”: it reads the screen and
-              presses the keys, so you do not have to walk back to the Mac.
+              A session stuck on a menu? Tell your butler “pick the second one”: it reads the screen
+              and presses the keys, so you do not have to walk back to the Mac.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -645,7 +650,7 @@
               <li class="yes">✓ Remote</li>
             </ul>
 
-            <a class="more" href="../discord/#what-assist-can-do"
+            <a class="more" href="../accounts/#what-it-can-do"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
           </article>
@@ -661,7 +666,8 @@
           </div>
           <h2>No more <em>“limit reached”.</em></h2>
           <p>
-            Several Claude and Codex accounts in one pool, and always a look at how much is left.
+            Several Claude, Codex, Muse and Antigravity accounts in one pool, and always a look at
+            how much is left.
           </p>
         </div>
         <div class="fgrid">
@@ -671,8 +677,9 @@
               <h3>Several accounts, one pool</h3>
             </div>
             <p>
-              Add your Claude and Codex accounts. A new session starts on the one with the most
-              room; a resumed one stays on its own account until it is 95% used.
+              Add your Claude, Codex, Muse and Antigravity accounts. A new session starts on the one
+              with the most room (Antigravity accounts take turns); a resumed one stays on its own
+              account until it is 95% used.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -690,9 +697,9 @@
               <h3>Usage at a glance</h3>
             </div>
             <p>
-              Little bars at the bottom of the sidebar: hover for each Claude and Codex account’s
-              5-hour and 7-day use and when it resets. Codex accounts also show credits and saved
-              resets.
+              Little bars at the bottom of the sidebar: hover for each Claude, Codex, Muse and
+              Antigravity account’s 5-hour and 7-day use and when it resets. Codex accounts also
+              show credits and saved resets.
             </p>
 
             <a class="more" href="../accounts/"
@@ -779,15 +786,15 @@
               <h3>Folders on another machine</h3>
             </div>
             <p>
-              Add user@host and a path. Claude runs there in tmux, so a dropped line does not stop
-              it; the session list looks just like a local one. Alpha.
+              Add user@host and a path. The agent runs there, so a dropped line does not stop it;
+              the session list looks just like a local one. Alpha.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
-              <li class="no">– Codex</li>
+              <li class="yes">✓ Codex</li>
               <li class="yes">✓ Remote</li>
             </ul>
-            <p class="fnote">Claude only for now.</p>
+            <p class="fnote">Muse Code and Antigravity run there too.</p>
             <a class="more" href="../remote/"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
@@ -799,7 +806,8 @@
             </div>
             <p>
               git, gh, playwright-cli and a Nerd Font ship inside, so a fresh Mac needs no Homebrew.
-              One click on the welcome page installs Claude Code or Codex.
+              One click on the welcome page installs Claude Code, Codex, Muse Code or Antigravity
+              CLI.
             </p>
 
             <a class="more" href="../install/"
@@ -813,7 +821,7 @@
             </div>
             <p>
               No Koloft account and no analytics. It reads the tools’ own records; a remote folder’s
-              are mirrored to your Mac so its list works, and nothing goes anywhere else. Every
+              are read from that machine so its list works, and nothing goes anywhere else. Every
               place it talks to is listed.
             </p>
 
@@ -832,7 +840,8 @@
             ><img src="../icon.svg" alt="" width="26" height="26" />Koloft</a
           >
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
           </p>
         </div>
         <nav aria-label="Docs">

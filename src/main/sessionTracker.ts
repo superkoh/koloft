@@ -77,7 +77,8 @@ export function sessionEventFromHook(
   event?: string,
   message?: string,
   bgl?: unknown,
-  ask?: unknown
+  ask?: unknown,
+  trigger?: unknown
 ): SessionEvent | null {
   switch (event) {
     case 'ask':
@@ -85,7 +86,9 @@ export function sessionEventFromHook(
     case 'prompt':
       return { type: 'prompt' }
     case 'compacting':
-      return { type: 'compacting' }
+      return trigger === 'auto' || trigger === 'manual'
+        ? { type: 'compacting', trigger }
+        : { type: 'compacting' }
     case 'compacted':
       return { type: 'compacted' }
     case 'stop':
@@ -121,9 +124,11 @@ function taskNotificationText(obj: TranscriptRecord): string | null {
 }
 
 // CC§8
-function readTeammateFlag(jsonl: string): boolean | undefined {
+async function readTeammateFlag(jsonl: string): Promise<boolean | undefined> {
   try {
-    const meta = JSON.parse(fs.readFileSync(jsonl.replace(/\.jsonl$/, '.meta.json'), 'utf8'))
+    const meta = JSON.parse(
+      await fs.promises.readFile(jsonl.replace(/\.jsonl$/, '.meta.json'), 'utf8')
+    )
     return meta?.taskKind === 'in_process_teammate'
   } catch {
     return undefined
@@ -131,24 +136,24 @@ function readTeammateFlag(jsonl: string): boolean | undefined {
 }
 
 // CC§8
-function listSubagentJsonls(dir: string): string[] {
+async function listSubagentJsonls(dir: string): Promise<string[]> {
   const out: string[] = []
-  const walk = (d: string, depth: number): void => {
+  const walk = async (d: string, depth: number): Promise<void> => {
     if (depth > 6 || out.length >= 500) return
     let ents: fs.Dirent[]
     try {
-      ents = fs.readdirSync(d, { withFileTypes: true })
+      ents = await fs.promises.readdir(d, { withFileTypes: true })
     } catch {
       return
     }
     for (const e of ents) {
       const full = path.join(d, e.name)
-      if (e.isDirectory()) walk(full, depth + 1)
+      if (e.isDirectory()) await walk(full, depth + 1)
       else if (e.isFile() && e.name.endsWith('.jsonl')) out.push(full)
       if (out.length >= 500) return
     }
   }
-  walk(dir, 0)
+  await walk(dir, 0)
   return out
 }
 
@@ -211,6 +216,15 @@ export const INTERRUPT_TEXTS = new Set([
 
 // CC§2
 const IMAGE_PLACEHOLDER = /\[Image(?: #\d+)?\]/g
+
+// CC§2
+const PROMPT_COMMAND =
+  /^<command-message>[\s\S]*?<command-name>([\s\S]*?)<\/command-name>(?:\s*<command-args>([\s\S]*?)<\/command-args>)?/
+
+function promptCommandText(raw: string): string | null {
+  const m = PROMPT_COMMAND.exec(raw)
+  return m ? `${m[1].trim()} ${m[2]?.trim() ?? ''}`.trim() : null
+}
 
 export function classifyUserPrompt(text: string): {
   genuine: boolean
@@ -290,6 +304,8 @@ function claudeTurnPieces(obj: TranscriptRecord | null): TurnPiece[] {
     const who = raw === null ? null : whoTyped(obj, raw)
     if (raw === null || !who) return []
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
+    const command = obj.isMeta ? null : promptCommandText(raw)
+    if (command) return [{ line: { who, text: command, at }, midTurn: false }]
     if (
       obj.isMeta ||
       compactionSummary(obj) ||
@@ -384,6 +400,7 @@ export interface RemoteTab {
 interface Tracked {
   info: SessionInfo
   compactingFrom?: Turn
+  idleCompaction?: boolean
   launchCwd: string
   readOffset: number
   tailBuf: Buffer
@@ -396,7 +413,6 @@ interface Tracked {
   statusSeq: number
   caughtUp: boolean
   jsonlListener?: () => void
-  titleListener?: () => void
   sidecarTitle: string | null
   meter: UsageMeter
   subagentFiles: Map<string, SubagentFile>
@@ -477,7 +493,6 @@ export class SessionTracker extends SessionRuntime {
     )
   leftBehind?: (sessionId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
-  dialogsWatched: (tabId: string) => boolean = () => true
 
   track(tabId: string, cwd: string, remote?: RemoteTab): void {
     const prev = this.tracked.get(tabId)
@@ -544,6 +559,7 @@ export class SessionTracker extends SessionRuntime {
     if (!alive) this.pendingPicked.delete(tabId)
     const t = this.tracked.get(tabId)
     if (t) {
+      if (!alive) this.stopFollowing(t)
       t.info.alive = alive
       t.info.updatedAt = Date.now()
       this.emitUpdate()
@@ -553,10 +569,13 @@ export class SessionTracker extends SessionRuntime {
   receive(tabId: string, event: SessionEvent): void {
     const t = this.tracked.get(tabId)
     if (event.type === 'compacting' || event.type === 'compacted') {
-      if (t) this.compaction(t, event.type)
+      if (t) this.compaction(t, event)
       return
     }
-    if (t && turnOf(event)) t.compactingFrom = undefined
+    if (t && turnOf(event)) {
+      t.compactingFrom = undefined
+      t.idleCompaction = false
+    }
     if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
@@ -566,9 +585,14 @@ export class SessionTracker extends SessionRuntime {
   }
 
   // CC§1
-  private compaction(t: Tracked, phase: 'compacting' | 'compacted'): void {
+  private compaction(
+    t: Tracked,
+    event: Extract<SessionEvent, { type: 'compacting' | 'compacted' }>
+  ): void {
     const tabId = t.info.tabId
-    if (phase === 'compacting') {
+    if (event.type === 'compacting') {
+      t.idleCompaction = event.trigger === 'auto' && this.turnOver(tabId)
+      if (t.idleCompaction) return
       t.compactingFrom = this.turnNow(tabId) ?? 'ended'
       this.recordHookTurn(tabId, 'working')
       return
@@ -576,6 +600,13 @@ export class SessionTracker extends SessionRuntime {
     const from = t.compactingFrom
     t.compactingFrom = undefined
     if (from && this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, from)
+  }
+
+  takeIdleCompaction(tabId: string): boolean {
+    const t = this.tracked.get(tabId)
+    if (!t?.idleCompaction) return false
+    t.idleCompaction = false
+    return true
   }
 
   setStatus(tabId: string, status: SessionStatus): void {
@@ -932,15 +963,15 @@ export class SessionTracker extends SessionRuntime {
     return null
   }
 
-  // PLATFORM§28
   private cleanup(t: Tracked): void {
     this.forget(t.info.tabId)
+    this.stopFollowing(t)
+  }
+
+  private stopFollowing(t: Tracked): void {
     if (t.subagentTimer) clearInterval(t.subagentTimer)
     if (t.landTimer) clearTimeout(t.landTimer)
-    if (t.info.jsonlPath) {
-      if (t.jsonlListener) fs.unwatchFile(t.info.jsonlPath, t.jsonlListener)
-      if (t.titleListener) fs.unwatchFile(this.sidecarOf(t.info.jsonlPath), t.titleListener)
-    }
+    this.unwatchTranscript(t)
   }
 
   // CC§2 PLATFORM§1
@@ -1018,17 +1049,17 @@ export class SessionTracker extends SessionRuntime {
 
   // PLATFORM§28
   private watchTranscript(t: Tracked, file: string): void {
-    if (t.info.jsonlPath) {
-      if (t.jsonlListener) fs.unwatchFile(t.info.jsonlPath, t.jsonlListener)
-      if (t.titleListener) fs.unwatchFile(this.sidecarOf(t.info.jsonlPath), t.titleListener)
-    }
+    this.unwatchTranscript(t)
     t.info.jsonlPath = file
     t.sidecarTitle = null
     t.jsonlListener ??= (): void => void this.parse(t)
-    t.titleListener ??= (): void => void this.readSidecarTitle(t)
     fs.watchFile(file, { interval: 500 }, t.jsonlListener)
-    fs.watchFile(this.sidecarOf(file), { interval: 500 }, t.titleListener)
     void this.readSidecarTitle(t)
+  }
+
+  // PLATFORM§28
+  private unwatchTranscript(t: Tracked): void {
+    if (t.info.jsonlPath && t.jsonlListener) fs.unwatchFile(t.info.jsonlPath, t.jsonlListener)
   }
 
   private async readSidecarTitle(t: Tracked): Promise<void> {
@@ -1063,7 +1094,10 @@ export class SessionTracker extends SessionRuntime {
       t.inode = undefined
     }
     if (t.subagentTimer) clearInterval(t.subagentTimer)
-    t.subagentTimer = setInterval(() => void this.parse(t), SUBAGENT_SCAN_MS)
+    t.subagentTimer = setInterval(() => {
+      void this.readSidecarTitle(t)
+      void this.parse(t)
+    }, SUBAGENT_SCAN_MS)
     this.recompute(t)
     void this.parse(t)
   }
@@ -1287,14 +1321,13 @@ export class SessionTracker extends SessionRuntime {
     const rescan = now - t.subagentScanMs >= SUBAGENT_SCAN_MS
     if (rescan) {
       t.subagentScanMs = now
-      const dir = path.join(path.dirname(p), t.info.sessionId, 'subagents')
-      for (const f of listSubagentJsonls(dir)) {
-        let sst = t.subagentFiles.get(f)
-        if (!sst) {
-          sst = { offset: 0, tail: Buffer.alloc(0), activeMs: now }
-          t.subagentFiles.set(f, sst)
-        }
-        if (sst.teammate === undefined) sst.teammate = readTeammateFlag(f)
+      const files = t.subagentFiles
+      const found = await listSubagentJsonls(
+        path.join(path.dirname(p), t.info.sessionId, 'subagents')
+      )
+      if (this.tracked.get(t.info.tabId) !== t || t.subagentFiles !== files) return false
+      for (const f of found) {
+        if (!files.has(f)) files.set(f, { offset: 0, tail: Buffer.alloc(0), activeMs: now })
       }
     }
     const due = [...t.subagentFiles].filter(
@@ -1305,6 +1338,8 @@ export class SessionTracker extends SessionRuntime {
   }
 
   private async tailSubagentFile(t: Tracked, file: string, sst: SubagentFile): Promise<boolean> {
+    const stale = (): boolean =>
+      this.tracked.get(t.info.tabId) !== t || t.subagentFiles.get(file) !== sst
     let st: fs.Stats
     try {
       st = await fs.promises.stat(file)
@@ -1317,13 +1352,16 @@ export class SessionTracker extends SessionRuntime {
     }
     if (st.size === sst.offset) return false
     sst.activeMs = Date.now()
-    if (sst.teammate === undefined) sst.teammate = readTeammateFlag(file)
+    if (sst.teammate === undefined) {
+      sst.teammate = await readTeammateFlag(file)
+      if (stale()) return false
+    }
     if (sst.teammate) t.teammateActiveMs = sst.activeMs
     let folded = false
     while (sst.offset < st.size) {
       const from = sst.offset
       const lines = await readAppendedLines(file, st.size, sst)
-      if (this.tracked.get(t.info.tabId) !== t || t.subagentFiles.get(file) !== sst) return false
+      if (stale()) return false
       if (lines === null || sst.offset === from) break
       for (const line of lines) {
         const obj = parseRecord(line)
@@ -1486,7 +1524,7 @@ export class SessionTracker extends SessionRuntime {
       const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
       for (const b of content) {
         if (!b || b.type !== 'tool_use') continue
-        if (liveNow && typeof b.id === 'string' && this.dialogsWatched(t.info.tabId)) {
+        if (liveNow && typeof b.id === 'string') {
           if (t.openTools.size >= UNACKED_TOOL_CAP)
             t.openTools.delete(t.openTools.keys().next().value as string)
           t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })

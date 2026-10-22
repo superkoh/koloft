@@ -622,7 +622,7 @@ test.describe('Workbench browser cases between the other browser specs: agent op
   }) => {
     test.setTimeout(120_000)
     await expect(page.locator('.ws-head')).toHaveCount(2, { timeout: 30_000 })
-    await expect(page.locator('.ws-tab')).toHaveCount(0)
+    await expect(page.locator('.ws .ws-tab')).toHaveCount(0)
 
     await expect(page.locator('.aux-icons .aux-ico')).toHaveCount(1, { timeout: 20_000 })
     await expect(auxIcon(page, 'Preview')).toHaveCount(0)

@@ -240,6 +240,14 @@ method. A recheck adds its date, version and command to the bullet.
   `Error invoking remote method '<channel>': Error: <original message>` (the original
   text is everything after the `': Error: ` that ends this prefix; a message may itself
   contain `Error: `).
+- **A module that two preload inputs both import breaks the sandboxed guest
+  preload.** electron-vite puts the shared module in `out/preload/chunks/<name>.js`
+  and has each preload `require("./chunks/<name>.js")`; the guest frame preload runs
+  sandboxed (§14), cannot load that file, and stops working. Measured 2026-10-19,
+  Electron 43.7.3 / electron-vite 5.0.0: with `src/preload/guest.ts` importing the
+  shared channel table, the built `guest.js` required the chunk and browser-routing's
+  "a middle-click on a link in a guest page opens it as a background tab" failed twice;
+  with the plain strings back it passed.
 
 ## §7 Electron: menus and keys
 
@@ -374,6 +382,20 @@ method. A recheck adds its date, version and command to the bullet.
   `buttons` 1**, both from a real mouse and from Playwright.
 - **An HTML drag with no `dataTransfer` payload fires no `dragover`**; at least one
   `setData` call is needed.
+- **A focus change inside any `<webview>` ends the input-method word the user is typing
+  in the host.** Measured 2026-10-21, Electron 43.7.3, macOS 27.0 Pinyin through real
+  keys in a tart VM: with "nihao" mid-composition in a host terminal, a guest page's
+  `element.focus()` or `blur()` — from a CDP client (Playwright `click` on a button or
+  a field, `pressSequentially`, `evaluate`), from main's `executeJavaScript`, with or
+  without `Emulation.setFocusEmulationEnabled`, and after main's
+  `webContents.focus()` on the host — left the host with `compositionstart` and no
+  `compositionend`, and the Space that should pick 你好 typed nothing. The guest was
+  hidden (`visibility:hidden`) in another session's Workbench. A navigation with no
+  autofocus, a screenshot, an `evaluate` that moves no focus and a `fill` into the
+  already-focused field kept the word. Plain typing with no word open is not affected.
+  `webContents.getFocusedWebContents()` named that guest the whole time, while the
+  host's xterm textarea held the caret. A guest page's own script moving focus has the
+  same effect and no host-side hook can stop it.
 
 ## §11 `<webview>` guests: permissions
 
@@ -585,6 +607,40 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `webContents.reload()` / `reloadIgnoringCache()`, an in-page `location.reload()`,
   `Page.navigate`, `Page.stopLoading`, Playwright's back/forward and DevTools' own reload
   of that guest each left the host alone.
+- **A page nobody sees can be captured whole, through CDP.** Measured 2026-10-19,
+  Electron 43.7.3, macOS 27.0 on a Retina screen (device scale 2), by a scratch main
+  script loading a 3200 px tall page (blue top, red bottom) from a `file://` path and
+  from a `127.0.0.1` server, with the Dock icon hidden:
+  - In a `BrowserWindow` built with `show: false`, a `WebContentsView` added to no
+    window (bounds set), and a `WebContentsView` inside a hidden window, `debugger`
+    `Page.captureScreenshot` with `captureBeyondViewport: true` and a clip of
+    `Page.getLayoutMetrics`' `cssContentSize` answered in about 0.2 s with the whole
+    page at device scale (2560×6400, the red bottom present). No window became visible
+    or focused (`getFocusedWindow()` stayed null).
+  - `webContents.capturePage()` gave only the viewport in the hidden window, and threw
+    "Current display surface not available for capture" for a view in no window or in
+    a hidden window. Making the hidden window as tall as the page
+    (`setContentSize`) and then `capturePage()` gave the whole page.
+  - With `paintWhenInitiallyHidden: false`, `capturePage()` threw the same error and the
+    CDP capture never answered. `webPreferences.offscreen: true` captured at scale 1; in
+    a view in no window it ignored the bounds (CDP saw a page 61 px wide) and
+    `capturePage()` came back empty. A view with no bounds set: "Cannot take
+    screenshot with 0 width."
+  - **One capture is at most 16384 device pixels on a side** (the GPU's
+    `max_texture_size`): at device scale 2, an 8000 px tall page captured
+    (2560×16000), an 8400 px one never answered. Past the limit the capture hangs
+    rather than fails, and the GPU process logs "Invalid size … max_texture_size=16384"
+    and restarts. Two ways under it,
+    both measured: `clip.scale` 0.5 (a 16000 px page as 1280×16000), or clips of at
+    most 8000 CSS px down the page (a 40000 px page as five 2560×16000 images in
+    1.3 s, the last ending in red).
+  - **A page that sends itself elsewhere while loading resolves `loadURL` early.**
+    Measured 2026-10-20, same Electron, a `WebContentsView` in no window loading pages
+    from a `127.0.0.1` server: a 302, a `location.replace` in the first script and a
+    `<meta http-equiv="refresh" content="0">` each resolved `loadURL` (none rejected)
+    while `isLoading()` was still true; after `did-stop-loading` the view showed the
+    page it was sent to. A `history.pushState` changed only the address. A redirect
+    from a 300 ms timer had not happened by `did-stop-loading` plus 0.8 s.
 - **A second `about:blank` load is a second navigation**: a CDP client that grabbed the
   page between the two is left holding a detached frame (measured with a real client).
 - **`webContents.debugger` and the DevTools window can hold one guest at the same time**,
@@ -607,6 +663,11 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   where two had just opened). A failed `Target.setAutoAttach` reads as "there is no
   browser" and rejects the whole connection. The handshake has 30 s in all, and the
   default command timeout is also 30 s.
+- **`playwright-cli` gives each action 5 s by default** (`timeouts.action: 5e3`,
+  navigation 60 s), read 2026-10-21 in the default config of the playwright-core that
+  `@playwright/cli` bundles in this repo's `node_modules`. A relay that holds a click
+  longer than that makes the agent's action fail on its side while the command still
+  runs later.
 - **Target id must equal main-frame id.** Playwright stores a page's session by target
   id and looks it up by main-frame id (crPage.ts); in Chrome both are the same 32-hex
   string, so made-up target ids break every page action with "Frame has been detached"
@@ -914,6 +975,16 @@ inferred, not checked.
   `<svg><image href="https://…"/></svg>` works as a network beacon.
 - **CSS `image-set('https://…' 1x)` in a `style` attribute fetches from the network
   without ever spelling `url(`.**
+- **A `title` tooltip on macOS shows only now and then while the mouse rests inside the
+  element** (electron/electron#49843). Measured 2026-10-15 in a tart VM (macOS 27.0,
+  Electron 43.7.3, Chromium 150.0.7871.250, `titleBarStyle: 'hiddenInset'`), the real
+  mouse moved with `CGEventPost` and rested 2 s, a tooltip counted when Electron owned a
+  level-103 window (checked against screenshots), 8 hovers per fresh launch: a plain
+  `<button title>` hovered at its centre showed 1, 5 and 1 of 8 in three runs; at its very
+  left or right edge 24 of 24; with `position: relative` and an `::after` cover
+  (`content: ''; position: absolute; inset: 0`) on the element 16 of 16; the same cover
+  with `pointer-events: none` 6 of 16; a `no-drag` button inside a `drag` bar 16 of 16, so
+  the drag region is not the cause.
 
 ## §25 React and zustand
 
@@ -1070,6 +1141,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   itself**; without a `.gitignore` line the parent shows an untracked `.claude/`.
   `--exclude-standard` honours an uncommitted `.gitignore`.
 - **`git worktree add <path>` refuses a path that already exists.**
+- **`git worktree add <path>` also refuses a path whose folder was deleted with `rm -rf`
+  while git still registers it** ("is a missing but already registered worktree; use
+  'add -f' to override, or 'prune' or 'remove' to clear"; `git worktree list` shows it
+  `prunable`). `git worktree remove <path>` on that missing folder clears the
+  registration and keeps the branch, after which `add` works; it matches the
+  registration through a symlinked spelling of the path (`/var/…` for a tree added as
+  `/private/var/…`), answers "is not a working tree" for a path git never registered,
+  and refuses a locked one. A tree deleted with `git worktree remove` leaves nothing
+  registered. (Measured, git 2.54.0, macOS, 2026-10-18, on a throwaway repo.)
 - **`git worktree remove` (no `--force`) removes a tree whose only extra files are
   ignored** (`node_modules/`, `out/`), and refuses one with uncommitted or untracked
   files. **It refuses a locked tree** ("cannot remove a locked working tree"), and a
@@ -1202,6 +1282,21 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (`gh issue list --search=-label:bug` listed issues without the label). What a
   successful create prints is not probed (no test repository was used). (2026-10-09, gh
   2.89.0, by hand against superkoh/koloft, stdin from `/dev/null`.)
+- **gh's own top-level commands** are agent-task, alias, api, attestation, auth, browse,
+  cache, co, codespace, completion, config, copilot, discussion, extension, gist, gpg-key,
+  issue, label, licenses, org, pr, preview, project, release, repo, ruleset, run, search,
+  secret, skill, ssh-key, status, variable and workflow (`## gh …` headings of
+  `gh help reference`, 2026-10-19, the gh 2.102.0 Koloft ships), where `co` is a default
+  alias for `pr checkout` that the owner can redefine. Any other first word is
+  an alias or an installed extension. From gh's docs, inferred, not checked: an alias,
+  an extension, `gh copilot`, and the browser, pager or editor named by `gh config set`
+  each run another program, which inherits gh's environment (so `GH_TOKEN`); and a short
+  flag takes its value attached (`-qenv`, `-Ro/r`) as cobra/pflag flags do.
+- **Words after `--` go to another program**: `gh repo clone`, `gh repo fork` and
+  `gh gist clone` hand them to git (`-- <gitflags>`, where git's `--upload-pack=<cmd>`
+  runs any program), `gh codespace ssh` to ssh and `gh codespace cp` to scp (their
+  `### gh …` lines in `gh help reference`, 2026-10-19, gh 2.102.0). No other command
+  takes `--`.
 
 ## §33 ssh
 
@@ -1514,6 +1609,34 @@ Gateway (the live connection that pushes events):
   /channels/{parent}/messages/{thread}` answered 200), and `DELETE` on it answered
   `204`. Whether re-inviting the bot with a link that asks for more permissions
   updates an existing bot role was not probed.
+- **Week-long threads, and bringing an archived thread back** — measured 2026-10-19 with
+  the test bot on a server with no boosts (`premium_tier` 0, no `features`), REST only,
+  in a channel made for the probe and deleted afterwards:
+  - `auto_archive_duration: 10080` was accepted and kept (read back from `thread_metadata`)
+    on a thread made on a message and on one made with `POST /channels/{id}/threads`
+    (`type: 11`, no opener message); so were 4320, a later `PATCH` of 60 and back to
+    10080, and a channel's `default_auto_archive_duration: 10080`. A value outside the
+    list (5000) answered 400, 50035 `ENUM_TYPE_COERCE`.
+  - Thread creates in that channel drew from one bucket: `x-ratelimit-limit` 50,
+    `reset-after` 300 s (50 creates per 5 minutes), a message-based create and a
+    standalone one alike. Whether a second channel draws from the same bucket was not
+    measured, nor how many active threads a server may hold.
+  - `POST /channels/{thread}/messages` by the bot into a thread it had just archived
+    answered 200, and the thread read back open (`archived: false`, a new
+    `archive_timestamp`). So did a post into a thread archived and `locked` (the bot's
+    role had Manage Threads).
+  - `PATCH /channels/{thread}` with `{archived: false}` answered 200 and a post after it
+    200; `{archived: false, name}` in one call opened it and renamed it (200).
+  - `GET /guilds/{id}/threads/active` answered 200 with `{threads, members, has_more}`;
+    each thread carries `type` (11 public), `parent_id` (its channel) and `owner_id`
+    (the bot for its own threads), and a thread the bot had archived was not listed
+    (2026-10-20, same bot and server). `GET /channels/{thread}` carries the same three;
+    a text channel has `type` 0 and no `owner_id`. A post whose `content` holds
+    `<#channelId>` with `allowed_mentions: {parse: []}` answered 200 and kept the text as
+    sent; that the app shows it as a link to the channel is from Discord's docs.
+  - Archiving and opening one thread back and forth within a second answered 429
+    (`x-ratelimit-scope: shared`, `retry_after` 0.5–1.4 s) while the bucket (10 per
+    15 s) still had calls left.
 - **Showing a state that keeps changing** — measured 2026-10-08 with the same bot on
   the owner's server, REST only, in a channel no conductor is bound to, with a Components
   V2 card (`flags` `1 << 15 | 1 << 12`) that had a thread on it:
@@ -2144,3 +2267,49 @@ server unless a line says so.
   helper exiting 1); sudo 1.9.13p3 in a Debian bookworm container and over ssh between two
   containers, with a test user's real password; the dialog in a tart 2.40.1 macOS 27.0 VM
   with SIP on and Accessibility granted (§52).
+
+## §59 How busy a Mac is, and making work give way
+
+- **Node's `os.freemem()` counts only free pages, which macOS keeps near zero.** With the
+  machine roomy (memory pressure level 1, 61–65% free by `memory_pressure -Q`),
+  `os.freemem()` read 0.25 GB of 16 GB while `vm_stat` free + inactive + speculative +
+  purgeable came to 5.2 GB. So "free memory" for a busy check is read elsewhere.
+- **`sysctl -n kern.memorystatus_vm_pressure_level` is the kernel's own verdict**: 1
+  normal, 2 warning, 4 critical; one read takes about 2 ms. Holding more incompressible
+  memory (random bytes, 512 MB a step, 1.5 s apart) kept it at 1 up to +4.0 GB
+  (`kern.memorystatus_level` 64% → 58%); at +4.5 GB it went to 2 and the free level to
+  36%, the compressor from 3.3 to 7.6 GB. The process exiting put it back at 1 and 62%.
+- **Load averages on a busy night are far above the core count.** The `uptime` lines in
+  this Mac's (10 cores: 4 performance, 6 efficiency) Claude Code transcripts of
+  2026-10-14 to 10-19 read 1.3–15 on ordinary days and 70–200 on the nights it stalled;
+  on 10-17, at load 154, free + inactive memory was still 2.5 GB.
+- **`taskpolicy -b` keeps the foreground fast; `nice` does not.** With 40 CPU-bound node
+  processes started next to a foreground node process, a fixed 230 ms piece of foreground
+  work took 1785 ms at normal priority, 1828 ms with `nice -n 20`, 361 ms with
+  `taskpolicy -c utility`, and 230–236 ms with `taskpolicy -b` — set at launch, by
+  `taskpolicy -b -p <pid>` on running processes, or on a parent before it starts its
+  children (they inherit it).
+- **The cost falls on the work given way**: alone on an idle machine the same work took
+  230–278 ms normally, 1330–1560 ms under `-b` (and under `-c background`), 231–277 ms
+  under `-c utility`. `taskpolicy -B -p <pid>` lifts it at once (240 → 1323 → 257 ms on
+  one running process).
+- **A pty under `-b` still works, but stalls for seconds under load.** A `node -p` run in a
+  node-pty zsh answered in 37 ms idle (plain, `-c utility`) and 95 ms under `-b -p`; with
+  40 busy processes, 37 ms plain, 940 ms (worst 1182) under `-c utility`, 4453 ms (worst
+  7696) under `-b`. `koloft session list` from a `-b` shell with 40 busy processes took
+  258–531 ms. A hidden Electron 43.7.3 window loaded and ran script under `-b` (491 ms against
+  176 ms).
+- **A process's environment can be read after it leaves its parent, but not every
+  process's.** `ps -axEww -o pid=,command=` over about 600 processes took 18 ms and showed
+  the environment of 39; a node process started with `detached: true` from a parent that
+  then exited (its parent became 1) still showed a variable set at its launch. `/bin/sleep`
+  and the 7 Google Chrome processes Playwright started (`channel: 'chrome'`, which stay
+  under the process that launched them, 931 MB in all) showed none.
+- **A colima container is invisible from the Mac, and its VM keeps what it took.** colima's
+  VM is one `com.apple.Virtualization.VirtualMachine` process under launchd (`docker info`:
+  4 CPUs, 4 GB). A container that grew to its 1 GB limit (`tail /dev/zero`) was not in
+  the Mac's `ps`; the VM process went from 142 MB to 1.45 GB resident and stayed there
+  after the container was killed, while `free -m` inside the VM said 280 MB used.
+- Measured 2026-10-19 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, 16 GB,
+  Node 24.13.0, Google Chrome 155, colima with Docker, by scripts run from a Koloft Claude Code
+  tab.

@@ -29,7 +29,7 @@ import { dirExistsSync, worktreeNameAround } from '../resumePlan'
 import { portOffset } from '@shared/worktreeName'
 import { listSkills, type SkillFs } from '../skillList'
 import { AGENT_PROMPT_FILE } from '../agentPlugin'
-import { saidFile, seedHandedOverOwnerWords, writeAllowFile, writeConductorMarker } from '../hooks'
+import { saidFile, seedHandedOverOwnerWords, writeConductorMarker } from '../hooks'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
 
 const skillFs: SkillFs = {
@@ -90,7 +90,7 @@ export function localGitRun(cwd: string, args: string[], network = false): Promi
 export interface LocalClaudeDeps {
   hookRegDir(): string
   agentPlugin(): string | undefined
-  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
+  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
 }
 
 async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
@@ -124,7 +124,6 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
       const regDir = d.hookRegDir()
       if (role) writeConductorMarker(regDir, tabId, role)
       if (spec.ownerWords) seedHandedOverOwnerWords(saidFile(regDir, tabId), spec.ownerWords)
-      if (conductor) writeAllowFile(regDir, tabId, spec.allow ?? assist?.allow ?? [])
       return launchCommand
     },
     extraEnv: {

@@ -428,8 +428,8 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
 
       await page.waitForTimeout(NO_LEFTOVER_ROW_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0)
-      await expect(page.locator('.ws-tab-cron')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab-cron')).toHaveCount(0)
       expect(readCalls(env)).toHaveLength(1)
 
       fs.rmSync(env.claudeExitFile)
@@ -471,7 +471,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
             'start one session here first'
         )
       await expect.poll(() => termIds(page), { timeout: 15_000 }).toEqual(idsBefore)
-      await expect(page.locator('.ws-tab.st-pending')).toHaveCount(0)
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0)
       await expect.poll(() => processAlive(call.pid), { timeout: 15_000 }).toBe(false)
 
       fs.rmSync(hangFile)

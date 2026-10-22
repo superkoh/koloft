@@ -54,7 +54,7 @@ function closeConfirm(page: Page): Locator {
 }
 
 async function closeTabPastAnyConfirm(app: ElectronApplication, page: Page): Promise<void> {
-  await page.locator('.ws-tab.active').first().click()
+  await page.locator('.ws .ws-tab.active').first().click()
   await sendShortcut(app, 'shortcut:close-tab')
   const confirm = closeConfirm(page)
   if (await confirm.isVisible({ timeout: 4000 }).catch(() => false)) {
@@ -339,9 +339,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await startSessionIn(page, 'ws-a')
       const localRow = wsRows(page, 'ws-a').first()
       await expect(localRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
-      await remoteRow.click()
       await localRow.click()
-      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
       const asleepTab = await remoteRow.getAttribute('data-tab-id')
 
       await expect.poll(() => killLines(env, first.sessionId), { timeout: 60_000 }).toHaveLength(1)

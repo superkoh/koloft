@@ -1,17 +1,25 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { spawnSync } from 'child_process'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { spawn, spawnSync } from 'child_process'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   agyLogLine,
   koloftHookEntry,
+  localAgyHold,
   runWithSh,
   writeAgyScripts,
   type AgyScripts
 } from '../../src/main/agyHooks'
+import { HOLD_HOOK_TIMEOUT_S, HOLD_SCRIPT } from '../../src/main/resourceGuard'
+import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { handoverPreamble, withHandover } from '../../src/main/handover'
 import { LineTail } from '../../src/main/museSessionLog'
+import {
+  REPLY_LANGUAGE_AFTER_QUOTE,
+  REPLY_LANGUAGE_BEFORE_QUOTE,
+  noticeLine
+} from '../../src/main/hooks'
 
 let dir: string
 let log: string
@@ -129,6 +137,48 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     ).toBe('第二句 "quoted" next line')
   })
 
+  it('hands what Koloft left for the tab to every model call of the turn it lands in, ahead of the quote, even with no prompt to quote; its file goes at once and the notice at the turn’s end, or at the next turn’s first call when a turn ended with no Stop', () => {
+    const notice = path.join(dir, 'tab.notice')
+    const env = { KOLOFT_NOTICE: notice }
+    const ephemeral = (transcriptPath: string): string | undefined => {
+      const out = hook('PreInvocation', { conversationId: 'c1', transcriptPath }, env)
+      return out ? (JSON.parse(out).injectSteps[0].ephemeralMessage as string) : undefined
+    }
+    const moved = '(From Koloft:) origin/main moved: "fix: \\"x\\"".'
+    fs.writeFileSync(notice, noticeLine(moved))
+    const told = `${moved}\n\n${REPLY_LANGUAGE_BEFORE_QUOTE}look around${REPLY_LANGUAGE_AFTER_QUOTE}`
+    expect(ephemeral(transcriptWith('look around'))).toBe(told)
+    expect(fs.existsSync(notice)).toBe(false)
+    expect(ephemeral(transcriptWith('look around'))).toBe(told)
+    hook('Stop', { conversationId: 'c1' }, env)
+    expect(ephemeral(transcriptWith('look around'))).toMatch(/^The user's latest/)
+
+    fs.writeFileSync(notice, noticeLine('(From Koloft:) main moved.'))
+    expect(ephemeral(path.join(dir, 'missing.jsonl'))).toBe('(From Koloft:) main moved.\n\n')
+    const nextTurn = hook(
+      'PreInvocation',
+      { conversationId: 'c1', invocationNum: 0, transcriptPath: transcriptWith('next') },
+      env
+    )
+    expect(JSON.parse(nextTurn).injectSteps[0].ephemeralMessage).toMatch(/^The user's latest/)
+  })
+
+  // AGY§12
+  it('a loop about to end with a notice Koloft left still unread keeps going with it instead, logging no Stop for Koloft to end the turn on; the Stop after that is logged as usual', () => {
+    const notice = path.join(dir, 'tab.notice')
+    const env = { KOLOFT_NOTICE: notice }
+    fs.writeFileSync(notice, noticeLine('(From Koloft:) main moved.'))
+    expect(JSON.parse(hook('Stop', { conversationId: 'c1' }, env))).toEqual({
+      decision: 'block',
+      reason: '(From Koloft:) main moved.\n\n'
+    })
+    expect(fs.existsSync(log)).toBe(false)
+    expect(hook('Stop', { conversationId: 'c1' }, env)).toBe('')
+    expect(logged()).toEqual([
+      { hook: { event: 'Stop', conversationId: 'c1', input: { conversationId: 'c1' } } }
+    ])
+  })
+
   // ADR-0031
   it('leaves out the handover Koloft puts before a task it hands to a new session', () => {
     const task = withHandover(
@@ -157,17 +207,41 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     expect(quoteBeforeModelCall(path.join(dir, 'missing.jsonl'))).toBeUndefined()
   })
 
-  it("passes a tool call to the tab's gate on stdin and prints the gate's verdict", () => {
-    const seen = path.join(dir, 'seen.json')
-    const gate = `cat > '${seen}'; printf '{"decision":"deny","reason":"no"}'`
-    const input = { conversationId: 'c1', toolCall: { name: 'search_web', args: {} } }
-    expect(hook('PreToolUse', input, { KOLOFT_AGY_GATE: gate })).toBe(
-      '{"decision":"deny","reason":"no"}'
+  // ADR-0043 AGY§12
+  it('holds a run_command while the Mac is busy only in a tab Koloft marked as background, under an hour-long timeout, since agy denies a tool whose hook it kills', async () => {
+    const reg = path.join(dir, 'reg')
+    fs.mkdirSync(reg)
+    const file = path.join(dir, 'hold.sh')
+    fs.writeFileSync(file, HOLD_SCRIPT)
+    fs.writeFileSync(path.join(reg, BUSY_MARKER), '')
+    const [group] = koloftHookEntry(runWithSh(scripts.hook), localAgyHold({ file, regDir: reg }))
+      .PreToolUse as { matcher: string; hooks: { command: string; timeout?: number }[] }[]
+    const [, hold] = group.hooks
+    expect(hold.timeout).toBe(HOLD_HOOK_TIMEOUT_S)
+    const input = JSON.stringify({
+      conversationId: 'c1',
+      toolCall: { name: 'run_command', args: { CommandLine: 'npm test' } }
+    })
+    const owners = spawnSync('/bin/sh', ['-c', hold.command], {
+      input,
+      encoding: 'utf8',
+      env: BASE_ENV,
+      timeout: 3000
+    })
+    expect(owners).toMatchObject({ status: 0, stdout: '' })
+    const kid = spawn('/bin/sh', ['-c', hold.command], {
+      env: { ...BASE_ENV, KOLOFT_HOLD_TAB: 'pty-bg' }
+    })
+    kid.stdin.end(input)
+    await vi.waitFor(
+      () => expect(fs.readdirSync(reg).some((n) => /^pty-bg\.\d+\.held$/.test(n))).toBe(true),
+      { timeout: 3000 }
     )
-    expect(JSON.parse(fs.readFileSync(seen, 'utf8'))).toEqual(input)
+    fs.writeFileSync(path.join(reg, 'pty-bg.free'), '')
+    await new Promise((resolve) => kid.on('exit', resolve))
   })
 
-  it('prints nothing at all for a tool call when the tab has no gate, since agy reads even {} as a deny', () => {
+  it('prints nothing at all for a tool call, since agy reads even {} as a deny', () => {
     expect(
       hook('PreToolUse', { conversationId: 'c1', toolCall: { name: 'run_command', args: {} } })
     ).toBe('')

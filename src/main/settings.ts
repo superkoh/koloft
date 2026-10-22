@@ -15,7 +15,9 @@ function writeAtomically(file: string, text: string): void {
   fs.renameSync(tmp, file)
 }
 
-export function loadSettings(): Settings {
+let cached: Settings | undefined
+
+function readSettingsFile(): Settings {
   try {
     return sanitizeLoadedSettings(JSON.parse(fs.readFileSync(settingsFile(), 'utf8')))
   } catch {
@@ -23,11 +25,24 @@ export function loadSettings(): Settings {
   }
 }
 
+export function loadSettings(): Settings {
+  cached ??= readSettingsFile()
+  return structuredClone(cached)
+}
+
+export function rereadSettingsOnNextLoad(): void {
+  cached = undefined
+}
+
 export function saveSettings(patch: Partial<Settings>): Settings {
   const merged: Settings = { ...loadSettings(), ...patch }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
+  const text = JSON.stringify(merged, null, 2)
   try {
-    writeAtomically(settingsFile(), JSON.stringify(merged, null, 2))
-  } catch {}
+    writeAtomically(settingsFile(), text)
+    cached = sanitizeLoadedSettings(JSON.parse(text))
+  } catch {
+    rereadSettingsOnNextLoad()
+  }
   return merged
 }

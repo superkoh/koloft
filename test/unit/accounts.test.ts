@@ -11,7 +11,7 @@ vi.mock('electron', async () => {
 })
 
 import { app } from 'electron'
-import { loadSettings, saveSettings } from '../../src/main/settings'
+import { loadSettings, saveSettings, rereadSettingsOnNextLoad } from '../../src/main/settings'
 import {
   keychainRead,
   keychainWrite,
@@ -57,6 +57,7 @@ function meta(p: Partial<AccountMeta>): AccountMeta {
 
 beforeEach(() => {
   fs.rmSync(settingsFile, { force: true })
+  rereadSettingsOnNextLoad()
   fs.rmSync(`${settingsFile}.tmp`, { force: true })
   fs.rmSync(fixtureFile, { force: true })
   resetProbeOutcomeState()
@@ -110,6 +111,7 @@ describe('U3 · registry persistence', () => {
       { ...base, name: 'badmodel', baseUrl: 'https://ok.test', model: 'a"; touch /tmp/pwned; #' }
     ]
     fs.writeFileSync(settingsFile, JSON.stringify(raw))
+    rereadSettingsOnNextLoad()
     const kept = loadSettings().accounts
     expect(kept.map((a) => a.name)).toEqual(['good', 'badmodel'])
     expect(kept[0].model).toBe('glm-5.2[1m]')
@@ -129,6 +131,18 @@ describe('U3 · registry persistence', () => {
     expect(fs.readFileSync(settingsFile, 'utf8')).not.toContain('sk-ant')
   })
 
+  it('settings.json is read once: later loads and saves never read it again, each load hands back its own copy, and a save is seen by the next load', () => {
+    const reads = vi.spyOn(fs, 'readFileSync')
+    loadSettings().accounts.push(meta({ name: 'only-in-a-copy' }))
+    expect(loadSettings().accounts).toEqual([])
+    saveSettings({ keepAwake: false })
+    expect(loadSettings().keepAwake).toBe(false)
+    saveSettings({ keepAwake: true })
+    expect(loadSettings().keepAwake).toBe(true)
+    expect(reads.mock.calls.filter(([p]) => p === settingsFile)).toHaveLength(1)
+    reads.mockRestore()
+  })
+
   it('hostile entries on disk are dropped on load (names reach a shell)', () => {
     saveSettings({})
     const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
@@ -140,6 +154,7 @@ describe('U3 · registry persistence', () => {
       { name: 'other', kind: 'not-a-kind', enabled: true }
     ]
     fs.writeFileSync(settingsFile, JSON.stringify(raw))
+    rereadSettingsOnNextLoad()
     expect(loadSettings().accounts.map((a) => a.name)).toEqual(['ok-name'])
   })
 })
@@ -284,6 +299,7 @@ describe('U3 · fable capability + §08 downgrade clock', () => {
       { ...base, name: 'evil', fableCheckedAt: 'DROP TABLE' }
     ]
     fs.writeFileSync(settingsFile, JSON.stringify(raw))
+    rereadSettingsOnNextLoad()
     const accs = loadSettings().accounts
     expect(accs.find((a) => a.name === 'good')?.fableCheckedAt).toBe(123)
     expect(accs.find((a) => a.name === 'evil')?.fableCheckedAt).toBeUndefined()
@@ -295,7 +311,7 @@ describe('U4 · accounts:add IPC wiring', () => {
     const root = path.resolve(__dirname, '../..')
     const preload = fs.readFileSync(path.join(root, 'src/preload/index.ts'), 'utf8')
     const call = preload.match(
-      /add:\s*\(([^)]*)\)\s*=>\s*ipcRenderer\.invoke\('accounts:add',([^)]*)\)/
+      /add:\s*\(([^)]*)\)\s*=>\s*ipcRenderer\.invoke\(CH\.accounts\.add,([^)]*)\)/
     )
     expect(call, 'accounts.add is not a direct ipcRenderer.invoke').not.toBeNull()
     const params = call![1].split(',').map((s) => s.trim())

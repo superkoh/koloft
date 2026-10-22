@@ -1,16 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { SessionStatus } from '../../src/shared/types'
 import {
+  A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS,
+  AN_ENTER_LANDS_WITHIN_MS,
   MORE_OUTPUT_SETTLES_MS,
   NOTHING_CAME_BACK_MS,
   SCREEN_SHOWS_THE_OUTPUT_MS,
   SlashCommands,
+  commandKeys,
   type SlashDeps
 } from '../../src/main/discord/slash'
 
 const TAB = 'pty-child-1'
 const turnIsOver = (s: SessionStatus): boolean => s === 'waiting' || s === 'idle'
-const CHANNEL = '222'
+const CHANNEL = { channelId: '222' }
+const RULE = '─'.repeat(40)
 
 function setup(over: Partial<SlashDeps> = {}) {
   let status: SessionStatus = 'waiting'
@@ -49,7 +53,7 @@ function setup(over: Partial<SlashDeps> = {}) {
   }
 }
 
-const child = { name: 'fix-login', tabId: TAB, conductor: false }
+const child = { name: 'fix-login', tabId: TAB, butler: false }
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -65,6 +69,37 @@ describe('a slash command typed into a session', () => {
     const { slash, typed } = setup({ backendOf: () => 'codex' })
     await slash.typeWhenIdle(child, '/compact', CHANNEL)
     expect(typed).toEqual(['\x05\x15', '/compact', '\x1b', '\r'])
+  })
+
+  it.each([
+    ['claude', [RULE, '❯ /context', RULE, '  ⏵⏵ bypass permissions on']],
+    ['muse', [RULE, '❯ /context', RULE]],
+    ['codex', ['› /context', '', '  GPT-6.1-Sol default']]
+  ] as const)(
+    'in %s, an Enter read together with the Esc before it is lost and leaves the command in the box, so Koloft presses Enter once more',
+    async (backend, screen) => {
+      const { slash, typed, posts } = setup({
+        backendOf: () => backend,
+        screen: async () => [...screen]
+      })
+      await slash.typeWhenIdle(child, '/context', CHANNEL)
+      const keys = [...commandKeys('/context', backend), '\r']
+      await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS)
+      expect(typed).toEqual(keys)
+      slash.output(TAB, { kind: 'details', text: '## Context Usage' })
+      await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS)
+      expect(typed).toEqual(keys)
+      expect(posts).toEqual(['⌨️ **fix-login** ran /context:\n## Context Usage'])
+    }
+  )
+
+  it('presses no second Enter into a panel the command opened, though the command’s echo still shows above it', async () => {
+    const { slash, typed } = setup({
+      screen: async () => ['❯ /config', RULE, '  Settings', '  Theme  dark']
+    })
+    await slash.typeWhenIdle(child, '/config', CHANNEL)
+    await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS)
+    expect(typed).toEqual(['/config', '\x1b', '\r'])
   })
 
   it('in Antigravity, which keeps no command output on disk, posts what its screen shows and presses Esc to close the panel', async () => {
@@ -135,6 +170,25 @@ describe('a slash command typed into a session', () => {
     setStatus('waiting')
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual(['⌨️ **fix-login** ran /compact:\nDone.'])
+  })
+
+  // CC§2
+  it('in Claude, a turn the command started that has printed nothing settles when that turn ends, whose reply can land after the Stop, and posts the reply, not Done.; with no turn end it says Done. at last', async () => {
+    const { slash, posts, setStatus } = setup()
+    await slash.typeWhenIdle(child, '/koloft session list', CHANNEL)
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([])
+    slash.turnEnded(TAB, { said: [], reply: 'No sessions.', at: Date.now() })
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual(['⌨️ **fix-login** ran /koloft session list:\nNo sessions.'])
+
+    await slash.typeWhenIdle(child, '/review', CHANNEL)
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS)
+    expect(posts.at(-1)).toBe('⌨️ **fix-login** ran /review:\nDone.')
   })
 
   it('in a remote tab, waits after the turn ends for one more mirror pull, so output the transcript brings late, like "Compacted", is in the card', async () => {
@@ -238,9 +292,9 @@ describe('a slash command typed into a session', () => {
     expect(typed).toEqual(['/compact', '\x1b', '\r'])
   })
 
-  it('in the conductor itself, a reply is not posted again (its replies already reach the channel), nor the text of the command it ran', async () => {
+  it('in the butler itself, a reply is not posted again (its replies already reach the channel), nor the text of the command it ran', async () => {
     const { slash, posts, setStatus } = setup()
-    await slash.typeWhenIdle({ ...child, conductor: true }, '/review', CHANNEL)
+    await slash.typeWhenIdle({ ...child, butler: true }, '/review', CHANNEL)
     slash.output(TAB, { kind: 'details', text: 'Review the changes on this branch.' })
     setStatus('working')
     slash.turnEnded(TAB, { said: [], reply: 'All good.', at: Date.now() })

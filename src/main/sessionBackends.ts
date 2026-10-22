@@ -15,12 +15,7 @@ import type {
 } from '@shared/types'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
-import {
-  identityOf,
-  sourceOf,
-  SUPPORTED_PAIRS,
-  unsupportedPairMessage
-} from '@shared/sessionBackend'
+import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { ModeClass } from './crossSessionMessage'
@@ -53,7 +48,7 @@ export interface SessionBackend {
 
 export interface SessionLifecycle {
   prompted(tabId: string): void
-  bound(tabId: string, key: string): void
+  bound(tabId: string, key: string, idleCompaction: boolean): void
   exited(tabId: string, subject: AttentionSubject): void
   clearAttention(tabId: string): void
   open(tabId: string, target: string): void
@@ -66,9 +61,7 @@ const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
 export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
-  conductorOf: (tabOrSessionId: string) => string | undefined = () => undefined
-  conductorWorkspaceOf: (tabId: string) => string | undefined = () => undefined
-  assistTaskOf: (tabId: string) => string | undefined = () => undefined
+  isButlerSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
 
@@ -78,8 +71,8 @@ export class SessionBackends {
     switch (event.type) {
       case 'bound':
         this.cleanExitAt.delete(tabId)
-        this.lifecycle.clearAttention(tabId)
-        return this.lifecycle.bound(tabId, event.key)
+        if (!event.idleCompaction) this.lifecycle.clearAttention(tabId)
+        return this.lifecycle.bound(tabId, event.key, !!event.idleCompaction)
       case 'exited':
         return this.exited(tabId, event.clean, { title: event.title, sessionId: event.sessionId })
       case 'open':
@@ -134,14 +127,14 @@ export class SessionBackends {
   }
 
   workspaceOfTab(tabId: string): string | undefined {
-    return this.conductorWorkspaceOf(tabId) ?? this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
+    return this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
   }
 
   availability(
     unregistered: (id: BackendId) => BackendAvailability
   ): Promise<BackendAvailability[]> {
     return Promise.all(
-      (Object.keys(SUPPORTED_PAIRS) as BackendId[]).map((id) => {
+      SESSION_BACKENDS.map((id) => {
         const backend = this.adapters.get(id)
         return backend ? backend.availability() : unregistered(id)
       })
@@ -159,8 +152,7 @@ export class SessionBackends {
         backendId: backend.id,
         host: s.remote ? 'ssh' : hostOf(s.cwd),
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
-        conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId),
-        assistTask: this.assistTaskOf(s.tabId),
+        butler: this.isButlerSession(s.tabId) || this.isButlerSession(s.sessionId),
         turnOver: this.turnOver(s.tabId),
         docVerdicts: s.sessionId ? this.docVerdictsOf(s.sessionId) : undefined
       }))
@@ -207,20 +199,18 @@ export class SessionBackends {
     })
     if (failures.length && !rows.length) throw failures[0].error
     for (const f of failures) partlyUnread(f.id, f.error)
-    return rows.filter((r) => !this.conductorOf(r.id)).sort((a, b) => b.mtime - a.mtime)
+    return rows.filter((r) => !this.isButlerSession(r.id)).sort((a, b) => b.mtime - a.mtime)
   }
 
   create(options: CreateTabOptions): Promise<CreateTabResult> {
     if (options.kind === 'shell') throw new Error('A utility terminal is not a session.')
     if (
-      !SUPPORTED_PAIRS[options.kind] ||
+      !SESSION_BACKENDS.includes(options.kind) ||
       options.util ||
       (options.worktreeResourceId && !this.adapters.get(options.kind)?.recoversWorktrees)
     ) {
       return Promise.resolve({ ok: false, code: 'invalid-args' })
     }
-    const refusal = unsupportedPairMessage(options.kind, hostOf(options.cwd ?? ''))
-    if (refusal) return Promise.reject(new Error(refusal))
     const backend = this.get(options.kind)
     // ADR-0030
     if (!backend.accountUsable()) return Promise.reject(new Error(NO_USABLE_ACCOUNT[options.kind]))

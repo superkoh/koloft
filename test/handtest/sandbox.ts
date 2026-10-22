@@ -61,7 +61,7 @@ stop quits it and deletes the home.
              sign in to Antigravity from the sandbox's Settings ▸ Accounts
   --discord <file>  connect to the real Discord as the dev build's test bot (its token from
              the Keychain item ${DEV_BOT_KEYCHAIN}, never the installed app's), with
-             workspace a bound to a test channel: a JSON file of userId, userName, guildId,
+             the butler bound to a test channel: a JSON file of userId, userName, guildId,
              channelId and channelName
 Run npm run build first.`
 
@@ -234,15 +234,7 @@ function useRealDiscord(env: E2EEnv, file: string): void {
     discord: {
       userId: bot.userId,
       userName: bot.userName,
-      bindings: [
-        {
-          id: 'handtest',
-          scope: env.workspaces.a,
-          backend: 'claude',
-          channel: { guildId: bot.guildId, channelId: bot.channelId, name: bot.channelName },
-          touched: []
-        }
-      ]
+      channel: { guildId: bot.guildId, channelId: bot.channelId, name: bot.channelName }
     }
   })
 }

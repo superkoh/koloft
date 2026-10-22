@@ -6,7 +6,7 @@
     <title>Koloft — built for you, and for your agents</title>
     <meta
       name="description"
-      content="Free, open-source Mac app for Claude Code and Codex: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes."
+      content="Free, open-source Mac app for Claude Code, Codex, Muse Code and Antigravity CLI: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes."
     />
     <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/" />
@@ -18,7 +18,7 @@
     <meta property="og:title" content="Koloft — built for you, and for your agents" />
     <meta
       property="og:description"
-      content="Free, open-source Mac app for Claude Code and Codex: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes."
+      content="Free, open-source Mac app for Claude Code, Codex, Muse Code and Antigravity CLI: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes."
     />
     <meta property="og:url" content="__SITE_URL__/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -32,7 +32,7 @@
     <meta name="twitter:title" content="Koloft — built for you, and for your agents" />
     <meta
       name="twitter:description"
-      content="Free, open-source Mac app for Claude Code and Codex: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes."
+      content="Free, open-source Mac app for Claude Code, Codex, Muse Code and Antigravity CLI: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
     <link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin />
@@ -42,7 +42,7 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Koloft",
-        "description": "Free, open-source Mac app for Claude Code and Codex: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes.",
+        "description": "Free, open-source Mac app for Claude Code, Codex, Muse Code and Antigravity CLI: ⌘P turns one line into a session, agents start their own in a tree you can open, and each gets a terminal, a browser and its changes.",
         "url": "__SITE_URL__/",
         "operatingSystem": "macOS (Apple Silicon)",
         "applicationCategory": "DeveloperApplication",
@@ -66,7 +66,7 @@
           <a href="#palette">⌘P</a>
           <a href="#sessions">Sessions</a>
           <a href="#workbench">Workbench</a>
-          <a href="#assist">Assist</a>
+          <a href="#assist">Butler</a>
           <a href="features/">Features</a>
           <a href="sessions/">Docs</a>
           <a href="changelog/">Changelog</a>
@@ -91,9 +91,10 @@
         >
         <h1>Built for you. <span class="grad">And for your agents.</span></h1>
         <p class="lede">
-          Koloft is a free Mac app for Claude Code and Codex. You start a session with one plain
-          sentence and follow it in one window, or hear from it on your phone when it needs you.
-          Your agents start sessions of their own, drive a browser of their own, and report back.
+          Koloft is a free Mac app for Claude Code, Codex, Muse Code and Antigravity CLI. You start
+          a session with one plain sentence and follow it in one window, or hear from it on your
+          phone when it needs you. Your agents start sessions of their own, drive a browser of their
+          own, and report back.
         </p>
         <div class="cta">
           <!-- prettier-ignore -->
@@ -132,9 +133,10 @@
       </div>
 
       <p class="objection reveal">
-        <b>Not a replacement.</b> Koloft runs the <code>claude</code> and <code>codex</code> you
-        already have, reads their own records (nothing to import), and never covers their screen. A
-        red dot tells you which session is waiting; <kbd>⌘J</kbd> jumps to it.
+        <b>Not a replacement.</b> Koloft runs the <code>claude</code>, <code>codex</code>,
+        <code>muse</code> and <code>agy</code> you already have, reads their own records (nothing to
+        import), and never covers their screen. A red dot tells you which session is waiting;
+        <kbd>⌘J</kbd> jumps to it.
       </p>
 
       <section class="feat" id="palette">
@@ -148,8 +150,8 @@
             <h2>Say what you want. <em>Skip the where and how.</em></h2>
             <p>
               Press <kbd>⌘P</kbd> and type the job. With Assist on, Koloft picks the folder, opens a
-              worktree in a git repo and names the session; the real Claude Code or Codex starts on
-              your words. The same box jumps to any session and searches everything you said.
+              worktree in a git repo and names the session; the agent you picked starts on your
+              words. The same box jumps to any session and searches everything you said.
             </p>
           </div>
           <img
@@ -232,8 +234,9 @@
         </div>
         <p class="honest">
           <span>note</span>Picking the place needs Koloft Assist on (Settings ▸ Assist); with it
-          off, ⏎ opens the folder picker with your words kept. ⏎ starts your default tool, ⇧⏎ the
-          other; Codex sessions take their title from Codex.
+          off, ⏎ opens the folder picker with your words kept. ⏎ starts your default agent; the ▾
+          beside the button, or ⇧⏎, lists them all. Codex and Antigravity sessions take their title
+          from the agent itself.
         </p>
         <a class="more" href="features/#palette"
           >Everything ⌘P does
@@ -279,13 +282,13 @@
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#phone" /></svg>
             <b>They report back</b>A child reports back with
-            <code>koloft session send</code> (Claude sessions also talk with SendMessage); Assist
-            gets each session's reply back by itself when the turn ends.
+            <code>koloft session send</code> (Claude sessions also talk with SendMessage); your
+            butler gets each session's reply back by itself when the turn ends.
           </div>
         </div>
         <p class="honest">
-          <span>note</span>Works for Claude Code and Codex. In a remote folder (Claude only) the
-          child opens on that machine, beside its parent.
+          <span>note</span>Works for every agent. In a remote folder the child opens on that
+          machine, beside its parent.
         </p>
         <a class="more" href="features/#agents"
           >What agents can do with Koloft
@@ -302,9 +305,9 @@
           </div>
           <h2>The agent keeps its terminal. <em>It gets a browser too.</em></h2>
           <p>
-            The middle is Claude Code's or Codex's own terminal; Koloft draws nothing over it.
-            Beside it hangs that session's Workbench: a real browser the agent can open and click, a
-            terminal tab in the session's folder, and every change as a live diff.
+            The middle is the agent's own terminal; Koloft draws nothing over it. Beside it hangs
+            that session's Workbench: a real browser the agent can open and click, a terminal tab in
+            the session's folder, and every change as a live diff.
           </p>
         </div>
         <div class="glow reveal">
@@ -350,49 +353,38 @@
               ><svg class="icon" aria-hidden="true"><use href="icons.svg#assist" /></svg></span
             >04 · Talk to Koloft
           </div>
-          <h2>Say it in plain words. <em>Assist runs Koloft for you.</em></h2>
+          <h2>Say it in plain words. <em>Your butler runs Koloft for you.</em></h2>
           <p>
-            Assist is Koloft's own helper. Tell it what you want, here or on your phone: it starts,
-            resumes and stops sessions, closes finished ones, reads what they said, answers their
-            questions and presses their keys. From Discord it also runs slash commands in them, and
-            a folder's Assist sets up scheduled jobs for that folder. It runs your sessions; it is
-            not there to edit your files.
+            Your butler, Alfred until you rename it, is Koloft's own AI, first in the sessions list.
+            Tell it what you want, here or on your phone: it starts, resumes and stops sessions,
+            closes finished ones, reads what they said, answers their questions and presses their
+            keys. A side job goes to a helper of its own, which reports back.
           </p>
-        </div>
-        <div class="glow reveal">
-          <div
-            class="win"
-            data-film="assist"
-            data-phone-crop="0,0,830,700"
-            data-title="Koloft, recorded: Assist starts a session and hears its reply"
-            data-cues='[{"at":16,"to":19,"html":"one plain sentence; Assist starts the session","x":"34%","y":"54%"},{"at":20,"html":"the session reports back by itself","x":"34%","y":"54%"}]'
-          ></div>
         </div>
         <div class="proof reveal">
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#keys" /></svg>
-            <b>It answers and presses keys</b>A session stuck on a question or a menu? Tell Assist
-            “pick the second one”: it reads the screen and presses the keys.
+            <b>It answers and presses keys</b>A session stuck on a question or a menu? Tell your
+            butler “pick the second one”: it reads the screen and presses the keys.
           </div>
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#timer" /></svg>
-            <b>It sets up schedules</b>“Run the tests every night at 2 and write a short report”
-            becomes a scheduled job for that folder.
+            <b>It sets up schedules</b>“Run the tests in tidewatch every night at 2 and write a
+            short report” becomes a scheduled job for that folder.
           </div>
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#wand" /></svg>
-            <b>Ask Koloft itself</b>Type “set up Discord” in <kbd>⌘P</kbd> and Assist takes it as a
-            job, clicking through Discord's site and stopping for you to sign in and pass the human
-            checks.
+            <b>Ask Koloft itself</b>Type “set up Discord” in <kbd>⌘P</kbd> and it goes to your
+            butler, whose helper clicks through Discord's site and stops for you to sign in and pass
+            the human checks.
           </div>
         </div>
         <p class="honest">
-          <span>note</span>Turn Assist on in Settings ▸ Assist. It runs on your Mac; it can message
-          a session in a remote folder, not start one there. It can't change your Settings, apart
-          from setting up its own Discord bot when you ask.
+          <span>note</span>Set it up in Settings ▸ Assist. It runs on your Mac; it can message a
+          session in a remote folder, not start one there.
         </p>
         <a class="more" href="features/#assist"
-          >Everything Assist does
+          >Everything your butler does
           <svg class="icon" aria-hidden="true"><use href="icons.svg#arrow" /></svg
         ></a>
       </section>
@@ -406,34 +398,31 @@
           </div>
           <h2>Away from the Mac? <em>Your sessions come with you.</em></h2>
           <p>
-            Bind Assist to your own Discord bot and talk to it from anywhere. Each session Assist
-            looks after gets its own thread, its questions come as buttons, and a card tells you
-            when it has finished. Your bot, your server: no server of ours in between.
+            Bind your butler to your own Discord bot and talk to it from anywhere, in one channel.
+            It reaches your sessions for you and tells you what they did. Your bot, your server: no
+            server of ours in between.
           </p>
         </div>
         <ol class="steps reveal">
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#phone" /></svg>
-            <b>Say it in the channel</b>“add a health check to tidewatch” goes to Assist on your
-            Mac, which starts the session in that folder.
+            <b>Say it in the channel</b>“add a health check to tidewatch” goes to your butler on
+            your Mac, which starts the session in that folder.
           </li>
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#tree" /></svg>
-            <b>Each session, its own thread</b>A card follows its light: working, waiting for you,
-            finished. Type in the thread and it goes straight to that session.
+            <b>It keeps track</b>Ask how a session is doing, or tell it how to answer one that is
+            waiting: it reads the session, answers it, and tells you in the channel.
           </li>
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#check" /></svg>
-            <b>Answer with a tap</b>A tool asking to run gets Yes / No; a question with one pick
-            gets a button per option. A file you attach reaches the session; ask Assist and it sends
-            files back.
+            <b>Files and pictures</b>A file you attach reaches your butler; ask it and it sends
+            files back, or a picture of a web page.
           </li>
         </ol>
         <p class="honest">
-          <span>note</span>Assist sets the bot up for you; you sign in, click the two buttons
-          Discord lets only you click, and pass its human checks. Questions with several parts get
-          no buttons: with Claude on your Mac, reply in the thread, one line per part; otherwise
-          tell Assist what to pick.
+          <span>note</span>Your butler sets the bot up for you; you sign in, click the two buttons
+          Discord lets only you click, and pass its human checks.
         </p>
         <a class="more" href="discord/"
           >A butler on Discord
@@ -452,7 +441,7 @@
           <p>
             Put a job on a schedule and Koloft starts a fresh session for it every hour, day or
             week; in a git repo, in a worktree of its own. Read what it did in the morning, here or
-            by asking Assist from your phone.
+            by asking your butler from your phone.
           </p>
         </div>
         <div class="grid3 inline">
@@ -479,8 +468,8 @@
             <svg class="go" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
             <h3>On another machine <span class="alpha">alpha</span></h3>
             <p>
-              In a folder you reach over SSH, Claude runs in tmux, so it keeps going when the line
-              drops or your Mac sleeps.
+              In a folder you reach over SSH, the agent runs on that machine, so it keeps going when
+              the line drops or your Mac sleeps.
             </p>
           </a>
         </div>
@@ -497,8 +486,8 @@
           <svg class="go" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
           <h3>Several accounts, one pool</h3>
           <p>
-            A new session starts on the Claude or Codex account with the most room; no more “limit
-            reached”.
+            A new session starts on the Claude, Codex or Muse account with the most room; no more
+            “limit reached”.
           </p>
         </a>
         <a class="tile reveal" href="features/#workbench">
@@ -514,7 +503,10 @@
           <svg class="icon" aria-hidden="true"><use href="icons.svg#bundled" /></svg>
           <svg class="go" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
           <h3>Everything comes with it</h3>
-          <p>git, gh and playwright-cli ship inside; one click installs Claude Code or Codex.</p>
+          <p>
+            git, gh and playwright-cli ship inside; one click installs Claude Code, Codex, Muse Code
+            or Antigravity CLI.
+          </p>
         </a>
       </div>
 
@@ -530,7 +522,7 @@
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#no-signup" /></svg
             ><s>ask you to sign up</s>
-            <p>No Koloft account. It runs on your own Claude or Codex login.</p>
+            <p>No Koloft account. It runs on your own Claude, Codex, Muse or Antigravity login.</p>
           </li>
           <li>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#no-tracking" /></svg
@@ -544,7 +536,7 @@
             <svg class="icon" aria-hidden="true"><use href="icons.svg#no-copy" /></svg
             ><s>copy your chats</s>
             <p>
-              It reads the tools' own records; a remote folder's are mirrored to your Mac, and
+              It reads the tools' own records; a remote folder's are read from that machine, and
               nothing goes anywhere else.
             </p>
           </li>
@@ -581,7 +573,8 @@
         <div>
           <a class="logo" href="./"><img src="icon.svg" alt="" width="26" height="26" />Koloft</a>
           <p>
-            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic or OpenAI.
+            Free and open source, GPL-3.0.<br />Not made by or affiliated with Anthropic, OpenAI,
+            Meta or Google.
           </p>
         </div>
         <nav aria-label="Docs">

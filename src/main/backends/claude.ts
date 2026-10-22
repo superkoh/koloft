@@ -35,7 +35,7 @@ import {
   REMOTE_HOOK_DIR,
   tabPackageDir
 } from '../remote/paths'
-import { hookSettings, KOLOFT_ALLOW_RULE, removeConductorMarker } from '../hooks'
+import { HOLD_FILE, hookSettings, KOLOFT_ALLOW_RULE, removeConductorMarker } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
@@ -69,6 +69,7 @@ import {
   gitProbes,
   occupantName,
   planResume,
+  rebuildsTheWorktree,
   worktreeHomeRoot,
   type GitOut,
   type ResumeProbes
@@ -116,6 +117,7 @@ async function rebuildWorktree(
   const branchLives =
     (await git(root, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
   // PLATFORM§30
+  await git(root, ['worktree', 'remove', spec.worktreePath])
   const args = branchLives
     ? ['worktree', 'add', spec.worktreePath, spec.branch]
     : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
@@ -124,12 +126,47 @@ async function rebuildWorktree(
   return true
 }
 
+interface RemoteExitDrop {
+  name: string
+  raw: { event?: string; reason?: string; sessionId?: string }
+}
+
+function remoteExitIn(name: string, obj: unknown, sid: string): RemoteExitDrop | undefined {
+  const raw = obj as RemoteExitDrop['raw'] | null
+  return raw?.event === 'end' && raw.sessionId === sid ? { name, raw } : undefined
+}
+
+async function remoteExitOnDisk(
+  mirrorDir: string,
+  sid: string,
+  since: number
+): Promise<RemoteExitDrop | undefined> {
+  let names: string[] = []
+  try {
+    names = await fs.promises.readdir(mirrorDir)
+  } catch {
+    return undefined
+  }
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue
+    const full = path.join(mirrorDir, name)
+    try {
+      if ((await fs.promises.stat(full)).mtimeMs < since) continue
+      const text = await fs.promises.readFile(full, 'utf8')
+      const hit = text.includes(sid) ? remoteExitIn(name, JSON.parse(text), sid) : undefined
+      if (hit) return hit
+    } catch {}
+  }
+  return undefined
+}
+
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
   private hookRegDir = ''
   private statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
   private statusLogDraining = new Map<string, boolean>()
   private watchedHookMirrors = new Map<string, () => void>()
+  private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
@@ -383,6 +420,12 @@ export class ClaudeBackend implements SessionBackend {
   private watchHookRegistrations(dir: string, machine?: string): () => void {
     const isNews = machine ? makeDropDedupe() : null
     const handle = (obj: unknown, full: string): void => {
+      if (machine) {
+        for (const { sid, settle } of this.remoteExitWaits) {
+          const hit = remoteExitIn(path.basename(full), obj, sid)
+          if (hit) settle(hit)
+        }
+      }
       if (isNews && !isNews(full, JSON.stringify(obj))) return
       this.handleHookRegistration(obj)
     }
@@ -543,6 +586,7 @@ export class ClaudeBackend implements SessionBackend {
       bgl?: string
       wake?: number
       ask?: unknown
+      trigger?: string
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
@@ -552,7 +596,7 @@ export class ClaudeBackend implements SessionBackend {
     }
     // CC§8
     if (typeof obj.wake === 'number') this.d.tracker.setWakeupPending(obj.tabId, obj.wake === 1)
-    const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask)
+    const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask, obj.trigger)
     if (event) this.d.events(obj.tabId, event)
   }
 
@@ -649,35 +693,8 @@ export class ClaudeBackend implements SessionBackend {
     sid?: string,
     title?: string
   ): Promise<void> {
-    // PLATFORM§34
-    const since = Date.now() - REMOTE_EXIT_SLACK_MS
-    const thisExit = (): { name: string; raw: { event?: string; reason?: string } } | undefined => {
-      let names: string[] = []
-      try {
-        names = fs.readdirSync(mirrorDir)
-      } catch {
-        return undefined
-      }
-      for (const name of names) {
-        if (!name.endsWith('.json')) continue
-        const full = path.join(mirrorDir, name)
-        try {
-          if (fs.statSync(full).mtimeMs < since) continue
-          const text = fs.readFileSync(full, 'utf8')
-          if (!sid || !text.includes(`"${sid}"`)) continue
-          const raw = JSON.parse(text) as { event?: string; reason?: string }
-          if (raw.event === 'end') return { name, raw }
-        } catch {}
-      }
-      return undefined
-    }
     this.d.remoteSync()?.pokeNow(host)
-    const deadline = Date.now() + REMOTE_EXIT_WAIT_MS
-    let hit = thisExit()
-    while (!hit && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, REMOTE_EXIT_POLL_MS))
-      hit = thisExit()
-    }
+    const hit = sid ? await this.remoteExitReport(mirrorDir, sid) : undefined
     if (hit && EVICTING_END_REASONS.has(hit.raw.reason ?? '')) {
       const stillBound = !!sid && this.d.tracker.list().some((t) => t.alive && t.sessionId === sid)
       if (sid && !stillBound)
@@ -689,6 +706,28 @@ export class ClaudeBackend implements SessionBackend {
       if (name) fs.rmSync(path.join(mirrorDir, name), { force: true })
     }
     this.dropStatusLog(mirrorDir, tabId)
+  }
+
+  // PLATFORM§28
+  private remoteExitReport(mirrorDir: string, sid: string): Promise<RemoteExitDrop | undefined> {
+    // PLATFORM§34
+    const since = Date.now() - REMOTE_EXIT_SLACK_MS
+    return new Promise((resolve) => {
+      const wait = {
+        sid,
+        settle: (hit: RemoteExitDrop | undefined): void => {
+          if (!this.remoteExitWaits.delete(wait)) return
+          clearTimeout(lastLook)
+          resolve(hit)
+        }
+      }
+      const lastLook = setTimeout(
+        () => void remoteExitOnDisk(mirrorDir, sid, since).then(wait.settle),
+        REMOTE_EXIT_WAIT_MS
+      )
+      this.remoteExitWaits.add(wait)
+      void remoteExitOnDisk(mirrorDir, sid, since).then((hit) => hit && wait.settle(hit))
+    })
   }
 
   private drainExitRegistration(regDir: string, tabId: string): boolean {
@@ -760,7 +799,13 @@ export class ClaudeBackend implements SessionBackend {
       }
     }
     if (nextId) workspaces?.onSessionBound(nextId)
-    if (nextId) this.d.events(obj.tabId, { type: 'bound', key: nextId })
+    if (nextId)
+      this.d.events(obj.tabId, {
+        type: 'bound',
+        key: nextId,
+        ...(obj.source === 'compact' &&
+          tracker.takeIdleCompaction(obj.tabId) && { idleCompaction: true })
+      })
   }
 
   watchRemoteHookMirrors(): void {
@@ -791,6 +836,7 @@ export class ClaudeBackend implements SessionBackend {
     const host = this.d.hosts.of(root)
     if (opts.worktree && !opts.scheduled && !opts.resumeSessionId) await host.trustFolder(root)
     return this.createTab(host, {
+      tabId: opts.tabId,
       root,
       resumeSessionId: opts.resumeSessionId,
       worktree: opts.worktree,
@@ -803,7 +849,6 @@ export class ClaudeBackend implements SessionBackend {
       cols: opts.cols,
       rows: opts.rows,
       role: opts.role,
-      allow: opts.allow,
       conductor: opts.conductor,
       trustFolder: opts.trustFolder
     })
@@ -831,16 +876,22 @@ export class ClaudeBackend implements SessionBackend {
       }
       worktree = req.worktree
     }
-    if (mode === 'rebuild') {
-      const plan = home ? await this.machineResumePlan(host, sid) : await this.localResumePlan(sid)
-      if (plan.action === 'direct') cwd = host.keyed(plan.cwd)
-      else if (
-        plan.action !== 'rebuild' ||
-        !GIT_REF_RE.test(plan.branch) ||
-        !GIT_REF_RE.test(plan.baseRef) ||
-        !(await rebuildWorktree(plan, hostGit(host), !home))
-      ) {
-        return { ok: false, code: 'rebuild-failed' }
+    const rebuildable = !home || !!this.d.workspaces()?.findRow(sid)?.worktreeState
+    if (await rebuildsTheWorktree(req.mode, async () => !rebuildable || host.dirExists(cwd))) {
+      const plan = home
+        ? await this.machineResumePlan(host, sid)
+        : await this.localWorktreePlan(sid)
+      if (plan.action === 'rebuild') {
+        if (
+          !GIT_REF_RE.test(plan.branch) ||
+          !GIT_REF_RE.test(plan.baseRef) ||
+          !(await rebuildWorktree(plan, hostGit(host), !home))
+        ) {
+          return { ok: false, code: 'rebuild-failed' }
+        }
+      } else if (req.mode === 'rebuild') {
+        if (plan.action !== 'direct') return { ok: false, code: 'rebuild-failed' }
+        cwd = host.keyed(plan.cwd)
       }
     }
     if (!home) {
@@ -860,6 +911,7 @@ export class ClaudeBackend implements SessionBackend {
       rows: req.rows,
       role: req.role,
       conductor: req.conductor,
+      permission: req.permission,
       trustFolder: req.trustFolder
     })
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
@@ -872,6 +924,10 @@ export class ClaudeBackend implements SessionBackend {
 
   private async localResumePlan(sessionId: string): Promise<ResumePlan> {
     if (await this.runningElsewhere(sessionId)) return { action: 'unavailable', reason: 'running' }
+    return this.localWorktreePlan(sessionId)
+  }
+
+  private localWorktreePlan(sessionId: string): Promise<ResumePlan> {
     const workspaces = this.d.workspaces()
     return planResume(
       workspaces?.findRow(sessionId),
@@ -920,7 +976,7 @@ export class ClaudeBackend implements SessionBackend {
 
   private async createTab(
     host: Host,
-    spec: ClaudeLaunch & { cols?: number; rows?: number; trustFolder?: boolean }
+    spec: ClaudeLaunch & { tabId?: string; cols?: number; rows?: number; trustFolder?: boolean }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const workspaces = this.d.workspaces()
@@ -933,6 +989,7 @@ export class ClaudeBackend implements SessionBackend {
     if (!plan.ok) return plan
     const machine = plan.machine
     const handle = this.d.pty.create({
+      id: spec.tabId,
       kind: 'claude',
       koloftShim: {
         hookSettings: (tabId) =>
@@ -1020,7 +1077,8 @@ export function machineHookSettings(
   tabId: string,
   machineDir: string,
   statusline: boolean,
-  allowKoloft: boolean
+  allowKoloft: boolean,
+  holdWhileBusy = false
 ): Record<string, unknown> {
   const remoteStatusLine: StatusLineSetting | undefined = statusline
     ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
@@ -1031,7 +1089,8 @@ export function machineHookSettings(
     tabId,
     remoteStatusLine,
     dq,
-    'record-only'
+    'record-only',
+    holdWhileBusy ? { script: `${machineDir}/${HOLD_FILE}`, event: 'hold-self' } : undefined
   )
   // CC§13
   if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE

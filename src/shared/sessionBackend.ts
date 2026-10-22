@@ -95,7 +95,6 @@ export function reachedBySendMessage(backend: BackendId): boolean {
 }
 
 export interface PeerTraits {
-  namedAtLaunch: boolean
   handoverAsRole: boolean
   quotesOwnerWordsInHooks: boolean
 }
@@ -103,26 +102,27 @@ export interface PeerTraits {
 export const PEER_TRAITS: Record<BackendId, PeerTraits> = {
   // CC§13
   claude: {
-    namedAtLaunch: true,
     handoverAsRole: false,
     quotesOwnerWordsInHooks: true
   },
   // CODEX§17
   codex: {
-    namedAtLaunch: false,
     handoverAsRole: true,
     quotesOwnerWordsInHooks: false
   },
   muse: {
-    namedAtLaunch: true,
     handoverAsRole: false,
     quotesOwnerWordsInHooks: false
   },
   agy: {
-    namedAtLaunch: false,
     handoverAsRole: false,
     quotesOwnerWordsInHooks: false
   }
+}
+
+// AGY§16
+export function namedAtLaunch(backend: BackendId, remote: boolean): boolean {
+  return !(backend === 'agy' && remote)
 }
 
 export function sourceOf(backendId: BackendId, workspacePath: string): SessionSource {
@@ -136,6 +136,9 @@ export interface Capabilities {
   scheduledTasks: Capability
   agentTools: Capability
   browserControl: Capability
+  askHookWaitsForDiscord: Capability
+  panelSeen: Capability
+  worktreeRemovalFollowed: Capability
 }
 
 const PENDING = { pending: true } as const
@@ -144,57 +147,47 @@ const EVERYTHING: Capabilities = {
   workbench: true,
   scheduledTasks: true,
   agentTools: true,
-  browserControl: true
+  browserControl: true,
+  askHookWaitsForDiscord: true,
+  panelSeen: true,
+  worktreeRemovalFollowed: true
 }
 
-const NOTHING_YET: Capabilities = {
-  workbench: PENDING,
-  scheduledTasks: PENDING,
-  agentTools: PENDING,
-  browserControl: PENDING
+const OUTSIDE_LOCAL_CLAUDE: Capabilities = {
+  ...EVERYTHING,
+  askHookWaitsForDiscord: PENDING,
+  panelSeen: PENDING,
+  worktreeRemovalFollowed: PENDING
 }
 
 const ON_A_MACHINE: Capabilities = {
-  ...EVERYTHING,
+  ...OUTSIDE_LOCAL_CLAUDE,
   browserControl: PENDING
 }
 
-const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> = {
+const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
+  // CC§4 CC§11 CC§14
   claude: {
     local: EVERYTHING,
     ssh: ON_A_MACHINE
   },
   codex: {
-    local: EVERYTHING,
+    local: OUTSIDE_LOCAL_CLAUDE,
     // CODEX§16
     ssh: ON_A_MACHINE
   },
   muse: {
-    local: EVERYTHING,
-    ssh: ON_A_MACHINE
+    local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: true },
+    ssh: { ...ON_A_MACHINE, panelSeen: true }
   },
   agy: {
-    local: EVERYTHING,
+    local: OUTSIDE_LOCAL_CLAUDE,
     ssh: ON_A_MACHINE
   }
 }
 
 export function capabilitiesFor(backend: BackendId, host: HostId): Capabilities {
-  const caps = CAPABILITIES[backend][host]
-  return caps === 'refused' ? NOTHING_YET : caps
-}
-
-export const SUPPORTED_PAIRS = Object.fromEntries(
-  SESSION_BACKENDS.map((b) => [
-    b,
-    { local: CAPABILITIES[b].local !== 'refused', ssh: CAPABILITIES[b].ssh !== 'refused' }
-  ])
-) as Record<BackendId, Record<HostId, boolean>>
-
-export function unsupportedPairMessage(backend: BackendId, host: HostId): string | undefined {
-  return SUPPORTED_PAIRS[backend][host]
-    ? undefined
-    : `${BACKEND_LABEL[backend]} sessions cannot run on a remote machine yet.`
+  return CAPABILITIES[backend][host]
 }
 
 export interface SessionIdentity {

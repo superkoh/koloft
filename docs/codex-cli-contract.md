@@ -286,7 +286,7 @@ and 26 passed on 0.162.1. On 0.163.0 (2026-10-16): sections 1 (`thread/list` sha
 see there), 13/14 (`model/list`, the default model), 17 (a message queued mid-turn), 20
 (the waiting question), 21 (the slash popup) and 25 (the TUI's startup bytes, OSC 7501,
 the leader key) were measured again, and the same e2e specs passed; they passed again on
-0.163.0 on 2026-10-17 (no newer Codex that day). Still only on
+0.163.0 on 2026-10-17, 2026-10-19, 2026-10-20 and 2026-10-21 (no newer Codex on any of those days). Still only on
 0.153.4 or 0.159.3, and so inferred for 0.161+:
 section 1's update-notice key, 2, 3 (the approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` / `commandActions` shapes,
 the `open` shim), 13 (token-usage fields) and 14 (first prompt, `-m`,
@@ -743,14 +743,15 @@ a higher "long context" price for prompts above 272K tokens; Codex's window on t
 the short-context price is used — **no longer true for `gpt-6.1-sol`**: on 2026-10-16
 the `models_cache.json` a fresh throwaway home got from `model/list` on 0.162.1 and on
 0.163.0 gives it a `context_window` of 500000 (the other six 272000), so a prompt above
-272K tokens on it is billed at the long-context price Koloft's table does not hold
-(`pricing.ts` prices every OpenAI model at the short-context rate; the context meter
+272K tokens on it is billed at the long-context price (the context meter
 reads `modelContextWindow` from the wire, not the table). The same page on 2026-10-16
 ("Long context: >272K input tokens", input / cached / output): `gpt-6.1-sol` 4 / 0.20 /
 15, `gpt-6-astra` 20 / 2 / 75, `gpt-6-sol` 4 / 0.4 / 15, `gpt-6-luna` 0.2 / 0.02 / 0.75,
 `gpt-5.6-sol` 8 / 0.8 / 30, `gpt-5.6-terra` 4 / 0.4 / 18, `gpt-5.6-luna` 0.4 / 0.04 /
-1.8 — twice the short-context price, except that a 272K-window model never reaches it
-(issue #669). The model ids match the
+1.8 — twice the short-context input and cached price and 1.5 times the output price,
+except that a 272K-window model never reaches it (issue #669). Koloft prices a request
+whose own `inputTokens` is above 272K at that second row (see `last` below). The model
+ids match the
 `slug`s in `~/.codex/models_cache.json` on the same day. `model/list` on 2026-10-16
 (0.162.1 and 0.163.0 alike) listed `gpt-6.1-sol` (`isDefault: true`, efforts `low` …
 `ultra`), `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`,
@@ -762,6 +763,24 @@ cyber-access program (`daybreakEnabled` on `thread/start`, thread items and the
 `thread/list` rows; `/daybreak` in the TUI; the `cli_daybreak` flag went from under
 development to stable), not a change of the default model. A ChatGPT plan login is not billed per token:
 this cost is what the same tokens would cost on the API, not what the person pays.
+
+**`last` is one API request, not the turn's sum** (2026-10-18, codex-cli 0.162.0, this
+Mac's login, a real `codex app-server` over stdio in a scratch folder, `gpt-6-luna`, one
+turn that ran two shell commands, the thread archived after): the turn sent two
+`thread/tokenUsage/updated` frames with the same `turnId`; the second had
+`last.inputTokens` 18123 and `total.inputTokens` 35982 (= 17859 + 18123), so `last` is
+the newest request and `total` the running sum. The rollout files agree: across the 60
+newest rollouts under `~/.codex/sessions`, 917 `token_usage_record` lines belong to a turn
+of more than one request (`turn_token_usage` ≠ `usage`); for 908 of them an `event_msg`
+`token_count` has `last_token_usage` equal to the record's own `usage` (the request), for
+none is it the turn's sum, and 9 match neither. A frame can come twice: right after
+`thread/resume`, before any new turn, a fresh app-server sends the old last turn's frame
+again with the same `turnId` and the same `total` (2026-10-16, codex-cli 0.162.0, a
+throwaway `CODEX_HOME`, issue #225), so Koloft adds a request's long-context surcharge
+only when `total` has grown. The same probe found that `total` after a resume still
+holds the turns before it (13147 before; one more turn of 13800 gave 26947), while a
+fresh observer has seen none of their `last` frames: those earlier requests stay at the
+short price in the cost line.
 
 ## 14. A launch that starts with a task, a model and a thinking level
 
@@ -912,6 +931,15 @@ plans' `model/list` included `gpt-6-luna`.
 read-only -m gpt-6-luna -C /tmp -` with the system text and task on stdin exited 0 in
 about 2 s, printed only the title on stdout, reported 2,538 tokens on stderr, and wrote
 no rollout into the shared `sessions/`.
+
+**The one-shot sometimes answers 15–45 s late.** 2026-10-19 and 2026-10-20, codex-cli
+0.162.0, `gpt-6-luna`, the same argv: 15 direct runs with a fresh `CODEX_HOME` holding
+only `auth.json` took 2.6–6.8 s, except one that took 43.7 s and still exited 0 with the
+right answer and nothing unusual on stderr. Through `test/unit/sessionRoute.real.test.ts`
+4 of 24 lines (2026-10-19) and 2 of 24 (2026-10-20) were cut off by the 15 s limit; the
+rest took 2.7–9.3 s. Claude's Haiku one-shot answered 24 of 24 under 5 s both nights. So
+a Codex one-shot still running at the limit gets a second run beside it, and the first
+answer wins (#615).
 
 **The login still lands in `auth.json` by default on 0.162.1; a keyring is opt-in.**
 Checked 2026-10-11 with Codex CLI 0.162.1 (the npm package in a scratch folder),
@@ -1183,6 +1211,19 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   note, not the task (`agent-tools-real-smoke.spec.ts`). That the title thread never
   reads the developer instructions is inferred, not checked, beyond that spec passing
   (again on 0.162.1, 2026-10-11).
+- **A thread named with `thread/name/set` right after it starts keeps that name: the
+  TUI does not title it.** 2026-10-21, Codex CLI 0.162.0, one real turn each run: a Node
+  client on `codex app-server --listen ws://127.0.0.1:<port>` and a real TUI connected
+  with `--remote` in a pty, given a first prompt, in a scratch `CODEX_HOME` holding a
+  copy of this Mac's login (deleted afterwards). With no name sent, `thread/name/updated`
+  brought the TUI's own title ("Fix README heading typo") about 2.3 s after the thread
+  showed in `thread/list`. With `thread/name/set {threadId, name}` sent the moment the
+  thread showed, the reply was `{}`, `thread/name/updated` carried that name, no other
+  title came in the next 90 s, and `thread/read` still gave the name after the turn.
+  `thread/name/set` on a thread the TUI had already titled replaced its title. One run
+  of each. The method is in the request list of Codex CLI 0.161.0 too
+  (`codex app-server generate-json-schema --experimental`, `ClientRequest.json`), not
+  run there.
 - **A resume never takes new developer instructions; a start's own instructions replace
   the `-c` ones.** 2026-10-16, Codex CLI 0.162.0, `gpt-6.1-sol`, an app-server client as in
   section 27. With `-c developer_instructions=` naming codeword ZEBRA: two turns, and a
@@ -1210,8 +1251,9 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   said it could not save across sessions and wrote nothing. With an `AGENTS.md` seeded
   beforehand saying "This file is your memory folder. When the owner asks you to remember
   something, add it here as one short line", the same rule plus Koloft's conductor gate
-  (section 27): a thread started before the seed and resumed after it wrote the fact into
-  `AGENTS.md` with `apply_patch` (`*** Add File: <absolute path>`), and a new thread on a
+  (section 27; the butler has run without that gate since ADR-0029, and this was not
+  measured again without it): a thread started before the seed and resumed after it
+  wrote the fact into `AGENTS.md` with `apply_patch` (`*** Add File: <absolute path>`), and a new thread on a
   new app-server answered it; on resume Codex adds a fresh AGENTS.md message before the
   new turn. `features.memories` (stable, off by default) was tried too: per `CODEX_HOME`,
   run by a background consolidation agent at app-server start, its notes outside the cwd,
@@ -1510,7 +1552,10 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   CR showed "Unrecognized command '/co'" and sent nothing; `/compact`, Esc, CR and
   `/new`, Esc, CR ran those commands. A trailing space closes the popup too (`/co `
   + CR: Unrecognized). Esc and CR must be separate writes: `\x1b\r` in one write is read
-  as Alt+Enter and adds a line; 30 ms apart works.
+  as Alt+Enter and adds a line; 30 ms apart works. Rechecked 2026-10-19 on Codex CLI
+  0.162.0 (`codex --no-daemon` in a python pty, a temporary `CODEX_HOME` holding a fake
+  API key, the screen read through `pyte`): `/status` then `\x1b\r` in one write left
+  `› /status` in the composer, unsent; a lone CR 2 s later ran it.
 - **An unknown command** (`/comapct`, `/stauts`, with or without a trailing space) shows
   "Unrecognized command '…'" and sends nothing, and the text stays in the box with the
   cursor at its start. Esc leaves it there; Ctrl-E then Ctrl-U empties the box; Ctrl-U
@@ -1598,8 +1643,7 @@ message" (3 runs).
   established by `agent-tools-real-smoke.spec.ts` › "a real Codex holds the failing
   checks of PR #3 in its composer unsent …"). Both paste cases passed again on 0.162.1
   (the npm package, 2026-10-11).
-- Codex on a remote machine is not a tab Koloft starts yet (§16), so the paste over ssh
-  and tmux is not probed for Codex.
+- The paste over ssh and tmux is not probed for Codex.
 
 ## 24. Searching the words of every thread
 
@@ -1946,6 +1990,14 @@ stdin/stdout shapes were also read from the binary, which embeds a JSON schema p
   `UserPromptSubmit`, `PreToolUse`, `PostToolUse` and `SubagentStart`: "Always end your
   reply with the word X" made the reply end with X each time. It is saved in the rollout
   as a `developer` message.
+- **A blocked `Stop` keeps the same turn going.** 2026-10-20, codex-cli 0.162.0,
+  `gpt-6.1-sol` low effort, the same Node client and throwaway `CODEX_HOME`, one real turn
+  whose `Stop` hook printed `{"decision":"block","reason":"<text>"}` once: one
+  `turn/started` and one `turn/completed` with one turn id; no `idle` status in between;
+  after the first answer `hook/completed` `status: "blocked"`, then an item
+  `{type: "hookPrompt"}` carrying `<text>`, then a second `final_answer` that obeyed
+  `<text>`, then `Stop` ran again (`"stop_hook_active":true`, compact JSON; the first had
+  `false`) and the turn completed.
 - **`Stop` with `{"decision":"block","reason":"…"}` makes the model go on**, and
   **`PermissionRequest`** answering `{"decision":{"behavior":"allow"}}` runs the command with
   no request reaching the client (`deny` stops it).
@@ -2042,4 +2094,62 @@ the configured sandbox.
   - With `<repo>/.git` (and for a worktree also `<repo>/.git/worktrees/<name>`) added to
     `sandbox_workspace_write.writable_roots`, commit and push ran with no question.
 - Not probed yet: a push to the real github.com from a Codex turn.
+
+## 30. A PreToolUse hook that waits before it lets a command run
+
+**Checked on 2026-10-19 with standalone Codex CLI 0.162.0**, real model turns
+(`gpt-6.1-sol`, effort low) through `codex app-server --stdio` in a throwaway
+`CODEX_HOME` holding a copy of this Mac's login (deleted afterwards), the hook given with
+`-c hooks.PreToolUse=[{hooks=[{type="command",command="…",timeout=N}]}]` and trusted as
+in section 27. The hook was a Node script that slept, then exited 0 printing nothing; the
+turn asked for a shell `echo hi > out.txt`.
+
+- **`timeout` is in seconds; left out it is 600** (`hooks/list` shows `timeoutSec: 600`;
+  read, not waited out). A hook that outlived it (`timeout=5`, 20 s sleep) was killed: the
+  client got `hook/completed` `status: "failed"` with `hook timed out after 5s`, and the
+  **command ran anyway**; the model saw a normal result.
+- **A hook that waited 75 s, 130 s (`timeout=3600`) or 300 s let the command run** once it
+  exited: 80.0, 135.9 and 304.8 s for the whole turn.
+- **A wait longer than about 31 s costs model requests.** The model runs commands through
+  a code-mode `exec` tool that returns after a 31 s wall time ("Script running with cell ID
+  1 / Wall time 31.0 seconds") while the hook still holds the command; the model then calls
+  `wait` about every 12 s, each a new model request of 15–16.5k input tokens (mostly
+  cached) and 31 output tokens. Some of those requests also carry a line such as "The shell
+  call is still pending." (about once a minute, from 83 s on). Totals for the turn: 2
+  requests and 29,942 tokens with no wait, 8 and 121,463 at 75 s, 15 and 231,440 at 130 s,
+  27 and 427,325 at 300 s.
+- **A hook entry may carry `matcher` and `timeout`, and the trust hash covers them.**
+  2026-10-19, codex-cli 0.162.0, a throwaway `CODEX_HOME`, `hooks/list` only (no model
+  turn): `-c hooks.PreToolUse=[{matcher="Bash",hooks=[{type="command",command="…",timeout=60}]}]`
+  listed `matcher: "Bash"`, `timeoutSec: 60`; without them `matcher: null`,
+  `timeoutSec: 600`. The same command string with and without them gave different
+  `currentHash` values (`sha256:101e5f…` against `sha256:26f729…`), so the hash is of the
+  whole hook entry, not the command string alone (section 27 measured only entries that
+  differed in their command). Not probed: that a model turn skips the hook for a tool the
+  `matcher` does not name.
+- Not probed yet: whether a wait under 31 s costs anything at all (the cutoff), and the
+  same in a full-screen TUI tab instead of a bare app-server.
+
+## 31. A one-shot ⌘P routing answer
+
+2026-10-21, codex-cli 0.162.0, `gpt-6-luna`, the `CODEX_ONE_SHOT` argv with a fresh
+`CODEX_HOME` holding only `auth.json`, the ⌘P routing prompt of `routeJob` and the typed
+lines of `test/unit/sessionRoute.real.test.ts`.
+
+- **It names the right rule but writes another rule's JSON.** For "how's blog doing on
+  the Electron article" (blog is not git) it answered
+  `{"workspace":2,"worktree":"main",…,"why":"规则 1：询问 blog …"}` in 8 of 26 answers:
+  the `why` names rule 1 (hand it to the sessions already working there) while the object
+  has rule 6's shape (start a session there).
+- **Asked for a `"rule"` number after `"why"`, it repeats the rule it named.** With
+  `"rule": <the number of the rule you named in "why">` as the last field, 10 of 10
+  answers to that line carried `"rule":1`, 4 of them still in rule 6's shape, so a parser
+  that trusts the number sent all 10 to the check-in (and 8 of 8 more through the test).
+  The other lines kept their landing: a run of all 24 lines had one wrong answer,
+  "让所有正在跑的会话都提交一下代码" as rule 1, while 20 more tries of that line alone
+  with this prompt, and 10 without the field, all gave rule 5 or 8.
+- **Asked for the number before `"title"` and `"why"`, it decides again and decides
+  worse.** With `"rule": <the number of the rule you took>` as the first added field,
+  "koloft里…为什么session list前没有展示agent对应的icon" went to rule 8 or 5 (7 of 10)
+  or rule 3 (1 of 10), where the prompt without it gave rule 6 in 10 of 10.
 

@@ -2,27 +2,27 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, installMuse, seedSettings, trustInMuse, type E2EEnv } from './helpers/env'
+import {
+  installCodex,
+  installMuse,
+  museCalls,
+  seedSettings,
+  trustInMuse,
+  type E2EEnv
+} from './helpers/env'
 import { startCodex } from './helpers/codex'
 import {
   newSessionInWith,
-  settingsOnDisk,
   startSessionIn,
   terminalText,
   waitBooted,
   waitConductorStarted,
-  assistRecordOnDisk,
-  waitForCallsBesideConductors,
+  butlerSessionOnDisk,
+  waitForCalls,
   wsRows,
   oneStillRunning
 } from './helpers/p1'
-import {
-  AUTOCOMPLETE,
-  startFakeDiscord,
-  type FakeDiscord,
-  type FakePost
-} from './helpers/fakeDiscord'
-import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
+import { startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 
 test.setTimeout(120_000)
 
@@ -39,22 +39,9 @@ function seedConductor(env: E2EEnv): void {
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,
-      bindings: [
-        {
-          id: 'b1',
-          scope: env.workspaces.a,
-          backend: 'claude',
-          channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
-          sessionIds: [],
-          touched: []
-        }
-      ]
+      channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' }
     }
   })
-}
-
-function bindingOnDisk(env: E2EEnv): ConductorBinding | undefined {
-  return (settingsOnDisk(env).discord as DiscordSettings | undefined)?.bindings[0]
 }
 
 function said(fake: FakeDiscord): string[] {
@@ -69,12 +56,23 @@ function ran(fake: FakeDiscord): string[] {
   return ranPosts(fake).map((p) => p.content)
 }
 
-function threadUnderChannel(fake: FakeDiscord, channelId: string): boolean {
-  return fake.threads.some((t) => t.id === channelId && t.parentId === CHANNEL)
-}
-
 function replyTo(fake: FakeDiscord, interactionId: string): string | undefined {
   return fake.callbacks.find((c) => c.interactionId === interactionId)?.data.content
+}
+
+function handedToTheButler(env: E2EEnv): string[] {
+  const file = path.join(env.home, 'fake-claude-peer.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => (JSON.parse(l) as { message: { content: string } }).message.content)
+    .filter((m) => m.includes('(From Koloft:) '))
+}
+
+async function butlerTab(page: Page): Promise<string> {
+  return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)?.tabId ?? ''
 }
 
 async function connected(
@@ -89,64 +87,46 @@ async function connected(
   return { app, page }
 }
 
-async function choices(
-  fake: FakeDiscord,
-  typed: string
-): Promise<{ name: string; value: string }[]> {
-  const id = fake.interact(
-    OWNER,
-    'run',
-    { command: '', session: typed },
-    {
-      type: AUTOCOMPLETE,
-      focused: 'session'
-    }
-  )
-  await expect.poll(() => fake.callbacks.some((c) => c.interactionId === id)).toBe(true)
-  return fake.callbacks.find((c) => c.interactionId === id)?.data.choices ?? []
-}
-
-test.describe('Discord slash commands: the owner runs /clear, /compact and any slash command in a session, or in the conductor', () => {
-  test('D-CMD-1: Koloft registers /run, /clear and /compact; /run types a command into a Claude session picked from autocomplete and posts what it printed in that session’s thread; /compact sent in that thread with no session picked runs in it and posts Compacted; someone else is refused privately', async ({
+test.describe('Discord slash commands: the owner runs /clear, /compact and any slash command in the butler, and the butler runs one in any session', () => {
+  test('D-CMD-1: Koloft registers /run, /clear and /compact, none of them naming a session; /run types a command into the butler and posts what it printed in its channel; /compact compacts the butler and posts Compacted; someone else is refused privately', async ({
     env
   }) => {
     seedConductor(env)
     const fake = await startFakeDiscord(env)
-    const { app, page } = await connected(env, fake)
+    const { app } = await connected(env, fake)
     try {
       await expect
         .poll(() => fake.commands.map((c) => c.name).sort())
         .toEqual(['clear', 'compact', 'run'])
-      await startSessionIn(page, 'ws-a')
-      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      expect(
+        Object.fromEntries(fake.commands.map((c) => [c.name, (c.options ?? []).map((o) => o.name)]))
+      ).toEqual({ run: ['command'], clear: [], compact: ['focus'] })
 
-      const listed = await choices(fake, '')
-      expect(listed[0].value).toBe('me')
-      expect(listed.map((c) => c.value)).toContain(child)
-
-      const asked = fake.interact(OWNER, 'run', { command: '/context', session: child })
-      await expect.poll(() => replyTo(fake, asked)).toMatch(/^Typing \/context into /)
+      const asked = fake.interact(OWNER, 'run', { command: '/context' })
+      await expect
+        .poll(() => replyTo(fake, asked))
+        .toBe(
+          'Koloft will type /context into Alfred once its turn ends, and post what it prints in Discord.'
+        )
       await expect
         .poll(() => ran(fake), { timeout: 30_000 })
         .toEqual([
-          expect.stringMatching(/ran \/context:\n## Context Usage\n\n\*\*Tokens:\*\* 28\.5k/)
+          expect.stringMatching(
+            /^⌨️ \*\*Alfred\*\* ran \/context:\n## Context Usage\n\n\*\*Tokens:\*\* 28\.5k/
+          )
         ])
-      const thread = ranPosts(fake)[0].channelId
-      expect(threadUnderChannel(fake, thread)).toBe(true)
+      expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
 
-      fake.interact(OWNER, 'compact', {}, { channelId: thread })
+      fake.interact(OWNER, 'compact', {})
       await expect
         .poll(() => ran(fake).at(-1), { timeout: 30_000 })
-        .toMatch(/ran \/compact:\nCompacted \(ctrl\+o to see full summary\)$/)
-      expect(ranPosts(fake).at(-1)?.channelId).toBe(thread)
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
+        .toMatch(/\*\*Alfred\*\* ran \/compact:\nCompacted \(ctrl\+o to see full summary\)$/)
+      expect(ranPosts(fake).at(-1)?.channelId).toBe(CHANNEL)
 
-      const refused = fake.interact(STRANGER, 'clear', { session: child })
+      const refused = fake.interact(STRANGER, 'clear', {})
       await expect
         .poll(() => fake.callbacks.find((c) => c.interactionId === refused)?.data.flags)
         .toBe(ONLY_THE_SENDER_SEES_IT)
-      expect(bindingOnDisk(env)?.touched).toContain(child)
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -164,15 +144,17 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       await expect
         .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('[Discord] hello')
-      const before = assistRecordOnDisk(env)?.lastSessionKey
+      const before = butlerSessionOnDisk(env)?.lastSessionKey
       expect(before).toBeTruthy()
 
       fake.say(OWNER, '/clear')
       await expect
         .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([expect.stringMatching(/Assist\*\* ran \/clear:\nIt is a new conversation now/)])
+        .toEqual([
+          expect.stringMatching(/\*\*Alfred\*\* ran \/clear:\nIt is a new conversation now/)
+        ])
       expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
-      await expect.poll(() => assistRecordOnDisk(env)?.lastSessionKey).not.toBe(before)
+      await expect.poll(() => butlerSessionOnDisk(env)?.lastSessionKey).not.toBe(before)
       expect(said(fake).join('\n')).not.toContain('[Discord] /clear')
     } finally {
       await quitAndClose(app)
@@ -180,7 +162,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     }
   })
 
-  test('D-CMD-3: in a Codex session, /compact runs the compaction turn and /clear starts a new conversation', async ({
+  test('D-CMD-3: the butler’s koloft session command in a Codex session runs /compact as the compaction turn and /clear as a new conversation, and hands the butler what each printed', async ({
     env
   }) => {
     installCodex(env)
@@ -188,22 +170,19 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     const fake = await startFakeDiscord(env)
     const { app, page } = await connected(env, fake)
     try {
-      await newSessionInWith(page, 'ws-a', 'Codex')
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const codex = (await choices(fake, 'Codex')).find((c) => c.value !== 'me')
-      expect(codex).toBeTruthy()
+      const { sessionId: child } = await startCodex(page, env)
 
-      fake.interact(OWNER, 'compact', { session: codex!.value })
+      fake.say(OWNER, `/koloft session command ${child} /compact`)
       await expect
-        .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([expect.stringMatching(/ran \/compact:\nDone\.$/)])
+        .poll(() => handedToTheButler(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContainEqual(expect.stringMatching(/⌨️ \*\*[^*]+\*\* ran \/compact:\nDone\./))
       const wire = fs.readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
       expect(wire).toContain('"method":"thread/compact/start"')
 
-      fake.interact(OWNER, 'clear', { session: codex!.value })
+      fake.say(OWNER, `/koloft session command ${child} /clear`)
       await expect
-        .poll(() => ran(fake).at(-1), { timeout: 30_000 })
-        .toMatch(/ran \/clear:\nIt is a new conversation now/)
+        .poll(() => handedToTheButler(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContainEqual(expect.stringMatching(/ran \/clear:\nIt is a new conversation now/))
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -211,7 +190,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
   })
 
   // MUSE§11
-  test('D-CMD-6: in a Muse session, /run types the command once its input box is empty and posts its screen, since Muse draws a command’s output only there', async ({
+  test('D-CMD-6: in a Muse session, the butler’s koloft session command types the command once its input box is empty and hands the butler its screen, since Muse draws a command’s output only there', async ({
     env
   }) => {
     installMuse(env)
@@ -222,17 +201,16 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     try {
       await newSessionInWith(page, 'ws-a', 'Muse')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
-      const muse = (await choices(fake, 'Muse')).find((c) => c.value !== 'me')
-      expect(muse).toBeTruthy()
+      const museId = museCalls(env)[0].sessionId
 
-      fake.interact(OWNER, 'run', { command: '/usage', session: muse!.value })
+      fake.say(OWNER, `/koloft session command ${museId} /usage`)
       await expect
-        .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([
+        .poll(() => handedToTheButler(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContainEqual(
           expect.stringMatching(
             /ran \/usage:\nIt printed nothing Koloft can read, so here is its screen:[\s\S]*Session usage/
           )
-        ])
+        )
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -240,7 +218,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
   })
 
   // CC§8
-  test('D-CMD-5: a slash command is typed into a session at once when its turn is over, though background work it left running still shows ↻ on its row', async ({
+  test('D-CMD-5: the butler’s koloft session command is typed into a session at once when its turn is over, though background work it left running still shows ↻ on its row', async ({
     env
   }) => {
     seedConductor(env)
@@ -248,7 +226,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-a')
-      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
+      const child = (await waitForCalls(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
       const tab = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.sessionId === child
@@ -261,10 +239,11 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       await expect.poll(() => terminalText(page, tab)).toContain('bg-reported running')
       await expect(oneStillRunning(wsRows(page, 'ws-a'))).toBeVisible()
 
-      fake.interact(OWNER, 'run', { command: '/context', session: child })
+      fake.say(OWNER, `/koloft session command ${child} /context`)
       await expect
-        .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([expect.stringMatching(/ran \/context:\n## Context Usage/)])
+        .poll(() => handedToTheButler(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContainEqual(expect.stringMatching(/ran \/context:\n## Context Usage/))
+      expect(await terminalText(page, await butlerTab(page))).toContain('Typing /context into')
       expect(await terminalText(page, tab)).not.toContain('bg-reported finished')
       await expect(oneStillRunning(wsRows(page, 'ws-a'))).toBeVisible()
     } finally {
@@ -273,7 +252,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     }
   })
 
-  test('D-CMD-5 in Codex: a slash command is typed into a Codex session at once when its turn is over, though a child agent it left running still shows ↻ on its row', async ({
+  test('D-CMD-5 in Codex: the butler’s koloft session command is typed into a Codex session at once when its turn is over, though a child agent it left running still shows ↻ on its row', async ({
     env
   }) => {
     installCodex(env)
@@ -293,11 +272,15 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       await expect(row).toHaveClass(/\bst-waiting\b/)
       await expect(oneStillRunning(row)).toBeVisible()
 
-      const asked = fake.interact(OWNER, 'run', { command: '/compact', session: child })
-      await expect.poll(() => replyTo(fake, asked)).toMatch(/^Typing \/compact into /)
+      fake.say(OWNER, `/koloft session command ${child} /compact`)
       await expect
-        .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([expect.stringMatching(/ran \/compact:\nDone\.$/)])
+        .poll(async () => terminalText(page, await butlerTab(page)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toContain('Typing /compact into')
+      await expect
+        .poll(() => handedToTheButler(env), { timeout: 30_000 })
+        .toContainEqual(expect.stringMatching(/ran \/compact:\nDone\./))
       await expect(oneStillRunning(wsRows(page, 'ws-a'))).toBeVisible()
     } finally {
       await quitAndClose(app)
@@ -305,7 +288,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     }
   })
 
-  test('D-CMD-4 in Codex: the conductor runs koloft session command in a Codex session it looks after, and koloft session screen shows that session’s terminal', async ({
+  test('D-CMD-4 in Codex: the butler runs koloft session command in a Codex session and is handed what it printed, as a message from Koloft, and koloft session screen shows that session’s terminal', async ({
     env
   }) => {
     installCodex(env)
@@ -317,15 +300,15 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
 
       fake.say(OWNER, `/koloft session command ${child} /compact`)
       await expect
-        .poll(() => ran(fake), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContainEqual(expect.stringMatching(/ran \/compact:\nDone\.$/))
+        .poll(() => handedToTheButler(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContainEqual(
+          expect.stringMatching(/\(From Koloft:\) ⌨️ \*\*[^*]+\*\* ran \/compact:\nDone\./)
+        )
       const wire = fs.readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
       expect(wire).toContain('"method":"thread/compact/start"')
 
       fake.say(OWNER, `/koloft session screen ${child}`)
-      const conductorTab =
-        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.conductor)?.tabId ??
-        ''
+      const conductorTab = await butlerTab(page)
       await expect
         .poll(() => terminalText(page, conductorTab), { timeout: 30_000 })
         .toContain('The screen of')
@@ -336,7 +319,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     }
   })
 
-  test('D-CMD-4: the conductor runs koloft session command in a session it looks after, and koloft session screen shows that session’s terminal', async ({
+  test('D-CMD-4: the butler runs koloft session command in a session and is handed what it printed, as a message from Koloft, and koloft session screen shows that session’s terminal', async ({
     env
   }) => {
     seedConductor(env)
@@ -344,18 +327,20 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-a')
-      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
+      const child = (await waitForCalls(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
 
       fake.say(OWNER, `/koloft session command ${child} /context`)
       await expect
-        .poll(() => ran(fake), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContainEqual(expect.stringMatching(/ran \/context:\n## Context Usage/))
+        .poll(() => handedToTheButler(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContainEqual(
+          expect.stringMatching(
+            /\(From Koloft:\) ⌨️ \*\*[^*]+\*\* ran \/context:\n## Context Usage/
+          )
+        )
 
       fake.say(OWNER, `/koloft session screen ${child}`)
-      const conductorTab =
-        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.conductor)?.tabId ??
-        ''
+      const conductorTab = await butlerTab(page)
       await expect
         .poll(() => terminalText(page, conductorTab), { timeout: 30_000 })
         .toContain('The screen of')

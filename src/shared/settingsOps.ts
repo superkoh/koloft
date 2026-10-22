@@ -4,21 +4,25 @@ import {
   WORLD_CLOCK_MAX,
   sanitizeAccountList,
   type AssistSetting,
+  type ButlerSetting,
   type Settings
 } from './types'
 import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
-import { sanitizeAssistSessions, sanitizeDiscord } from './conductors'
+import { butlerName, butlerSetting, sanitizeButlerSession, sanitizeDiscord } from './conductors'
+import { isRecord } from './workbenchState'
 
 export function buildResetPatch(): Partial<Settings> {
   const {
     accounts,
     skipPermissions,
+    skipPermissionsAgreed,
     fablePriority,
     sessionMethods,
     discord,
     assist,
-    assistSessions,
+    butler,
+    butlerSession,
     newProjectFolders,
     gitAccounts,
     gitPicks,
@@ -26,15 +30,17 @@ export function buildResetPatch(): Partial<Settings> {
     gitMachines,
     ...rest
   } = DEFAULT_SETTINGS
+  void butler
   void gitAccounts
   void gitPicks
   void gitSuggestionsDismissed
   void gitMachines
   void assist
-  void assistSessions
+  void butlerSession
   void newProjectFolders
   void accounts
   void skipPermissions
+  void skipPermissionsAgreed
   void fablePriority
   void sessionMethods
   void discord
@@ -45,7 +51,7 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
   const {
     accounts,
     discord,
-    assistSessions,
+    butlerSession,
     gitAccounts,
     gitPicks,
     gitSuggestionsDismissed,
@@ -58,13 +64,14 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
   void gitMachines
   void accounts
   void discord
-  void assistSessions
+  void butlerSession
   return rest
 }
 
 export function sanitizeLoadedSettings(raw: unknown): Settings {
   const doc: Partial<Settings> = raw && typeof raw === 'object' ? (raw as Partial<Settings>) : {}
-  const merged = { ...DEFAULT_SETTINGS, ...doc }
+  const { assistSessions, ...kept } = doc as Partial<Settings> & { assistSessions?: unknown }
+  const merged: Settings = { ...DEFAULT_SETTINGS, ...kept }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
   merged.gitAccounts = sanitizeGitAccounts(merged.gitAccounts)
@@ -73,9 +80,10 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
     ? merged.gitSuggestionsDismissed.filter((r): r is string => typeof r === 'string')
     : []
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
-  merged.assistSessions = sanitizeAssistSessions(merged.assistSessions, merged.discord)
+  merged.butlerSession = sanitizeButlerSession(doc.butlerSession, assistSessions, merged.discord)
   merged.discord = sanitizeDiscord(merged.discord)
   merged.assist = sanitizeAssist(merged.assist)
+  merged.butler = sanitizeButler(merged.butler)
   merged.newProjectFolders = sanitizeFolderMap(merged.newProjectFolders)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
@@ -85,13 +93,13 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.notesHeight = sanitizeNotesHeight(merged.notesHeight)
   merged.notesFolded =
     typeof merged.notesFolded === 'boolean' ? merged.notesFolded : DEFAULT_SETTINGS.notesFolded
-  merged.conductorsFolded =
-    typeof merged.conductorsFolded === 'boolean'
-      ? merged.conductorsFolded
-      : DEFAULT_SETTINGS.conductorsFolded
   merged.worldClocks = Array.isArray(merged.worldClocks)
     ? [...new Set(merged.worldClocks.filter(isZoneId))].slice(0, WORLD_CLOCK_MAX)
     : []
+  merged.skipPermissionsAgreed =
+    'skipPermissionsAgreed' in doc
+      ? merged.skipPermissionsAgreed === true
+      : merged.assist !== null && merged.skipPermissions === true
   const upgrade = !('onboardingSeen' in doc) && Object.keys(doc).length > 0
   if (upgrade) merged.onboardingSeen = true
   merged.hintsSeen = upgrade
@@ -108,6 +116,15 @@ function sanitizeAssist(raw: unknown): AssistSetting {
   const assistOn = backendIdOf(backend)
   if (typeof on !== 'boolean' || !assistOn) return null
   return { on, backend: assistOn }
+}
+
+function sanitizeButler(raw: unknown): ButlerSetting {
+  const doc = isRecord(raw) ? raw : {}
+  const former = Array.isArray(doc.formerNames) ? doc.formerNames : []
+  return butlerSetting(
+    butlerName(doc.name),
+    former.filter((n): n is string => typeof n === 'string').map(butlerName)
+  )
 }
 
 function sanitizeFolderMap(raw: unknown): Record<string, string> {

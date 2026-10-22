@@ -65,6 +65,13 @@ import {
 } from '../remote/ssh'
 import { MUSE_HOOK_FILE, MUSE_TRUSTED_SH, museRunLines } from '../museRemote'
 import { remoteMuseHooks, sessionStartContext } from '../museHooks'
+import {
+  HOLD_FILE,
+  NOTICE_THIS_TURN,
+  noticeLine,
+  remoteNoticeFile,
+  type NoticeFile
+} from '../hooks'
 import { claudeArgv } from '../claudeArgs'
 import type { SummaryRow } from '../agyStore'
 import {
@@ -111,6 +118,7 @@ export interface MuseMachineLaunch {
   skill?: string
   portOffset?: number
   ownerWords?: string
+  holdWhileBusy?: boolean
 }
 
 export interface MuseMachinePlan {
@@ -150,13 +158,13 @@ export function machineClaudeArgs(
           : undefined
   })
   if (!argv.ok) return argv
-  const unwatched = !spec.resumeSessionId && spec.firstPrompt !== undefined
+  const fresh = !spec.resumeSessionId
   return {
     ok: true,
     args: [
       ...argv.argv.slice(1),
-      ...(unwatched && spec.name ? ['--name', spec.name] : []),
-      ...(unwatched && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
+      ...(fresh && spec.name ? ['--name', spec.name] : []),
+      ...(fresh && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
     ]
   }
 }
@@ -497,8 +505,8 @@ if [ "$2" = 1 ]; then
   if ${NETWORK_ENV} git -C "$r" fetch --quiet --no-auto-maintenance origin "\${def#origin/}" >/dev/null 2>&1
   then f=1; else f=0; fi
 fi
-c=$(g rev-list --left-right --count "HEAD...$def") && d=$(g status --porcelain -uno --ignore-submodules=all) || exit 1
-printf '%s\\n%s\\n%s\\n' "$f" "$c" "\${d:+dirty}"`
+c=$(g rev-list --left-right --count "HEAD...$def") && d=$(g status --porcelain -uno --ignore-submodules=all) && t=$(g rev-parse "$def") || exit 1
+printf '%s\\n%s\\n%s\\n%s\\n' "$f" "$c" "\${d:+dirty}" "$t"`
 
 const PULLED = 'KOLOFT_PULLED'
 
@@ -513,7 +521,8 @@ ${FRESHNESS}
 exit $ok`
 
 export function parseFreshness(stdout: string): GitSnapshot | null {
-  const [branch, head, defRef, flags, fetchHead, fetched, counts, dirty] = stdout.split('\n')
+  const [branch, head, defRef, flags, fetchHead, fetched, counts, dirty, defHead] =
+    stdout.split('\n')
   if (!branch || !head || fetchHead === undefined) return null
   const [linked, subs] = flags.split(' ')
   const snapshot: GitSnapshot = {
@@ -533,7 +542,8 @@ export function parseFreshness(stdout: string): GitSnapshot | null {
       fetched: fetched === '-' ? null : fetched === '1',
       fetchHeadAt: parseFingerprint(fetchHead)?.mtimeMs ?? null,
       ...lr,
-      dirty: dirty === 'dirty'
+      dirty: dirty === 'dirty',
+      defHead: defHead ?? ''
     }
   }
 }
@@ -543,6 +553,11 @@ const PULLED_TAIL = new RegExp(`\\n${PULLED} (\\d+)\\n([\\s\\S]*)$`)
 const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
 cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
+const leaveNoticeOnMachine = (file: string): string => `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
+IFS= read -r fresh; IFS= read -r merged
+t="$fresh"; k=fresh
+[ -n "$merged" ] && [ -f "${file}" ] && { t="$merged"; k=merged; }
+printf '%s' "$t" > "${file}.part" && mv -f "${file}.part" "${file}" && printf '%s' "$k"`
 
 const RESIZE_SETTLE_MS = 200
 
@@ -883,6 +898,21 @@ export class SshHost implements Host {
     await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
   }
 
+  notice(tabId: string): NoticeFile {
+    const file = remoteNoticeFile(tabId)
+    return {
+      leave: async (fresh, merged) => {
+        const both = `${noticeLine(fresh)}\n${merged === undefined ? '' : noticeLine(merged)}\n`
+        const r = await this.sh(leaveNoticeOnMachine(file), [], { input: Buffer.from(both) })
+        if (r.code !== 0) throw new Error(problemOf(r))
+        return r.stdout.toString('utf8') === 'merged' ? 'merged' : 'fresh'
+      },
+      drop: async () => {
+        await this.sh(`rm -f "${file}" "${file}${NOTICE_THIS_TURN}"`, [])
+      }
+    }
+  }
+
   // CC§9 ADR-0026
   async trustFolder(dir: string): Promise<void> {
     await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUST_CWD_JS])
@@ -912,7 +942,12 @@ export class SshHost implements Host {
         const tabDir = tabPackageDir(d.userData, tabId)
         const contextFile = spec.context ? `$HOME/.koloft/tabs/${tabId}.ctx.json` : undefined
         const files: Record<string, string> = {
-          [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
+          [`${tabId}.hooks.json`]: remoteMuseHooks(
+            hookScript,
+            tabId,
+            contextFile,
+            spec.holdWhileBusy ? `${remoteMachineDir(pkg.name)}/${HOLD_FILE}` : undefined
+          )
         }
         if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
         if (spec.skill) files[`${tabId}.skill.md`] = spec.skill

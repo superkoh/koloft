@@ -83,7 +83,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`); `--version` prints a
     version above any minimum, so the shim's version check never updates it.
   - files: `fake-claude-delay` (ms before it binds), `-next-title` (title of the next
-    fresh launch, used once), `-no-status` (binds but never reports a run-state),
+    fresh launch outside the butler's folder, used once), `-no-status` (binds but never reports a run-state),
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
     closes its tab kills it), `-bg-ms` (how long `/bg-reported`'s background work runs,
@@ -106,7 +106,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     (the same for any shell command, as Claude's Bash tool would run it with the
     session's env, ending `sh exit=<code>`), `/clear`,
     `/compact` (PreCompact, a compact SessionStart, then the "Compacted" line Claude
-    writes), `/context` (the two records Claude writes for it), `/resume <id>`, `/exit` (also
+    writes), `/compact-while-idle` (Claude compacting a finished session on its own:
+    the `idle_prompt` Notification, then an `auto` PreCompact and a compact
+    SessionStart, with no prompt and no Stop around them), `/context` (the two records Claude writes for it), `/resume <id>`, `/exit` (also
     `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
     remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
@@ -197,13 +199,14 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   (helpers/blackbox.ts); `clickAppMenuItem` waits for the shortcut listeners, not for
   the first rows push. Find a dialog by its visible title.
 - The test window never has OS focus. Read focus from `focusOwner` /
-  `document.activeElement`, never `document.hasFocus()` (platform ledger §10). For the
-  same reason no tab is ever "watched": every finished turn leaves an attention mark,
-  seen only through `pendingAttention(page)`. No OS notification or Dock badge is ever
-  shown; what one would have said is recorded instead and read with `osOutlets(app)`
-  (helpers/app.ts). A case about what a focused user clears calls
-  `pretendWindowFocused(app)`: main then reads its window as focused, and the click it
-  makes counts as "watching".
+  `document.activeElement`, never `document.hasFocus()` (platform ledger §10). Every
+  finished turn leaves an attention mark, seen through `pendingAttention(page)`, and
+  only the session working again clears it — looking at the tab clears only a mark that
+  is only news (`fyi`). No OS
+  notification or Dock badge is ever shown; what one would have said is recorded
+  instead and read with `osOutlets(app)` (helpers/app.ts). A case about what a user
+  watching the tab is spared (the sound, the notification) calls
+  `pretendWindowFocused(app)`: main then reads its window as focused.
 - Never reach real OS UI or the developer's own state. No native dialog: stub and count
   it (restart-session `countConfirmationsInsteadOfShowingThem`). File pickers answer
   from a queue (`answerFileDialog`; an empty queue means "cancelled"); add workspaces
@@ -228,7 +231,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   columns.
 - After a click on a session row, the Workbench still shows the old session for two
   frames (T-SWITCH-04): poll, don't read once. Its file tabs mount again only then
-  (ADR-0016): wait for the remount before touching one.
+  (ADR-0016): wait for the remount before touching one. The center terminal lags the
+  same way, and `centerTerm` then still finds the old session's terminal, which a click
+  keeps waiting on after it hides: switch with `switchToRow` (helpers/p1.ts) before
+  typing into the new one.
 
 ### Selectors
 
@@ -261,6 +267,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `toBeVisible` ignores scroll clipping: compare bounding rects. A click scrolls its
   target into view first, so read a scroll offset after the click. A chained selector
   resolves under its parent: `tabCloseIn` under a tab, `tabClose` only from the page.
+- While Koloft's own tooltip shows (the mouse rests 600 ms on a titled element,
+  `titleTips.ts`), that element's `title` reads `''` until the mouse leaves: read or
+  select by `title` before hovering, or move the mouse away first. A click hides the
+  tip and puts the title back at once.
 
 ### Test-only seams
 
@@ -280,10 +290,11 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
   `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
   `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, `KOLOFT_TEST_REAL_WINDOW`
-  (real-window layer), the session timing knobs
+  (real-window layer), `KOLOFT_TEST_MACHINE_FILE` (JSON `{pressure, load1,
+  backgroundWork}` read in place of the Mac's own numbers), the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
-  `KOLOFT_FILE_DIALOG_FILE` and `KOLOFT_UPDATE_FIXTURE` are read on every use, so a
-  spec may rewrite them after launch.
+  `KOLOFT_FILE_DIALOG_FILE`, `KOLOFT_UPDATE_FIXTURE` and `KOLOFT_TEST_MACHINE_FILE` are
+  read on every use, so a spec may rewrite them after launch.
 - Not env vars: `window.__koloftTerms` (terminal text), `__koloftShortcutsReady` /
   `__koloftRowsReady` (the renderer is ready for keys), main's
   `globalThis.__koloftOsOutlets` (read through `osOutlets`), and `installGitSpawnLog`
@@ -321,10 +332,11 @@ hand-offs in `<home>/external-opens.txt`. Beyond those, its terminal draws with 
 its symbols.
 
 The owner's step goes through AskUserQuestion, one case at a time: the steps inside
-the question, the outcomes as options. Its card reaches the owner's Discord thread
-when a binding covers the workspace, also from a session another session started
-(discord-flow). The card carries text only — no picture — so name what to look at.
-After the owner answers, check their step in a log or file yourself.
+the question, the outcomes as options. Only the butler's own question reaches the
+owner's Discord, as a card in its channel (discord-flow); a session's question shows
+only at the Mac. The card carries text only, so name what to look at, or have the
+butler send a picture first (`koloft discord send` or `koloft discord shot`). After the
+owner answers, check their step in a log or file yourself.
 
 ## Real-window layer (test/real-window/)
 

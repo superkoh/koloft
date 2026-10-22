@@ -185,6 +185,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       encoding: 'utf8'
     })
     append('fake-codex-hook-output.jsonl', { event, stdout: ran.stdout })
+    return ran.stdout
   }
   const serve = (write) => {
     let initialized = false
@@ -203,6 +204,31 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       save(thread)
       event('thread/status/changed', { threadId: thread.id, status: value })
     }
+    // CODEX§27
+    const keepGoingIfStopped = (thread, turn) => {
+      const stop = (active) =>
+        runHook('Stop', {
+          session_id: thread.id,
+          cwd: thread.cwd,
+          turn_id: turn.id,
+          stop_hook_active: active
+        })
+      let reason
+      try {
+        const parsed = JSON.parse(stop(false) || '')
+        if (parsed.decision === 'block') reason = parsed.reason
+      } catch {
+        return
+      }
+      if (typeof reason !== 'string') return
+      const prompt = { type: 'hookPrompt', id: crypto.randomUUID(), text: reason }
+      const answer = { type: 'agentMessage', id: crypto.randomUUID(), text: `Stop said: ${reason}` }
+      for (const item of [prompt, answer]) {
+        turn.items.push(item)
+        event('item/completed', { threadId: thread.id, turnId: turn.id, item })
+      }
+      stop(true)
+    }
     const complete = (thread, turn) => {
       if (turn.status === 'interrupted') return
       turn.status = 'completed'
@@ -213,6 +239,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         thread.name = desired
       } else thread.name ||= thread.preview.slice(0, 60) || 'Codex fixture session'
       const asked = turn.items.find((item) => item.type === 'userMessage')?.content[0].text
+      keepGoingIfStopped(thread, turn)
       const reply = {
         type: 'agentMessage',
         id: crypto.randomUUID(),
@@ -375,7 +402,9 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
           () => event('thread/status/changed', { threadId: childId, status: { type: 'idle' } }),
           Number(read('fake-codex-child-ms', '4000'))
         )
-      } else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
+      } else if (text === '/busy')
+        setTimeout(() => complete(thread, turn), Number(read('fake-codex-busy-ms', '15000')))
+      else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
     }
     return (line) => {
       let frame
@@ -471,6 +500,19 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
       }
       if (method === 'thread/unsubscribe') {
         result(id, { status: 'unsubscribed' })
+        return
+      }
+      // CODEX§17
+      if (method === 'thread/name/set') {
+        const thread = active?.id === p.threadId ? active : load(p.threadId)
+        if (!thread) {
+          error(id, 'Thread not found')
+          return
+        }
+        thread.name = p.name
+        save(thread)
+        result(id, {})
+        event('thread/name/updated', { threadId: thread.id, threadName: thread.name })
         return
       }
       if (method === 'turn/start' || method === 'thread/queue/add') {

@@ -19,6 +19,7 @@ import {
 import { basename } from '@shared/preview'
 import { useStore } from '../../store'
 import { useEscConsumer } from './escScope'
+import '../../accounts.css'
 
 const DEFAULT_TITLE = 'First choice when a workspace on this host picks an account'
 

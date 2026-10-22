@@ -23,7 +23,7 @@ export function relTime(mtimeMs: number, nowMs: number): string {
   return `${s}s ago`
 }
 
-function shortDur(ms: number): string {
+export function shortDur(ms: number): string {
   const m = Math.floor(ms / 60_000)
   if (m >= 60) return `${Math.floor(m / 60)}h`
   return m >= 1 ? `${m}m` : '<1m'
@@ -165,14 +165,33 @@ export function rowsUnder<R extends { id: string; parentId?: string }>(node: Row
   return node.children.flatMap((child) => [child.row, ...rowsUnder(child)])
 }
 
+function markOn(
+  e: AttentionEvent,
+  tabId: string | undefined,
+  sessionId: string | undefined
+): boolean {
+  return e.tabId === tabId || (!!sessionId && e.sessionId === sessionId)
+}
+
+export function waitingTabs(
+  pending: readonly AttentionEvent[],
+  tabs: readonly { id: string; sessionId?: string }[]
+): string[] {
+  const waiting: string[] = []
+  for (const e of [...pending].sort((a, b) => a.at - b.at)) {
+    const tab = tabs.find((t) => markOn(e, t.id, t.sessionId))
+    if (tab && !waiting.includes(tab.id)) waiting.push(tab.id)
+  }
+  return waiting
+}
+
 export function nextWaitingTab(
   pending: readonly AttentionEvent[],
   activeTabId: string | null,
-  tabs: readonly { id: string }[]
+  tabs: readonly { id: string; sessionId?: string }[]
 ): string | undefined {
-  return pending
-    .filter((e) => e.tabId !== activeTabId && tabs.some((t) => t.id === e.tabId))
-    .sort((a, b) => a.at - b.at)[0]?.tabId
+  const waiting = waitingTabs(pending, tabs)
+  return waiting[(waiting.indexOf(activeTabId ?? '') + 1) % waiting.length]
 }
 
 export function liveTabOf(
@@ -237,8 +256,7 @@ export function rowLookups<S extends { sessionId: string; tabId: string; alive: 
       return liveTabOfSession.get(row.id)?.tabId ?? openTabOfSession.get(row.id)?.id
     },
     sessionOn: (tabId) => sessionOnTab.get(tabId),
-    attentionOn: (rowId, tabId) =>
-      attention.find((e) => e.sessionId === rowId || e.tabId === tabId),
+    attentionOn: (rowId, tabId) => attention.find((e) => markOn(e, tabId, rowId)),
     hasAliveTab: (sessionId) => aliveTabSessions.has(sessionId)
   }
 }
@@ -280,7 +298,7 @@ export function welcomeTarget(
   return live.find((w) => w.workspace.path === lastPath) ?? live[0] ?? null
 }
 
-function workspaceOfRow(rows: WorkspaceRows[], rowId: string): string | null {
+export function workspaceOfRow(rows: WorkspaceRows[], rowId: string): string | null {
   return (
     rows.find((w) => !w.workspace.missing && w.rows.some((r) => r.id === rowId))?.workspace.path ??
     null
