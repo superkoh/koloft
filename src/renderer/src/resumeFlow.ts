@@ -25,8 +25,9 @@ export type ResumeStep =
   | { kind: 'notice'; message: string }
 
 export const UNAVAILABLE_NOTICE = "This session's directory no longer exists — transcript only."
-export const STILL_RUNNING_NOTICE =
-  'This session is still running in another claude process — resuming it would start a second copy.'
+export function stillRunningNotice(backend: SessionBackend): string {
+  return `This session is still running in another ${backend} process — resuming it would start a second copy.`
+}
 export const RESTORE_FAILED_NOTICE = 'Failed to restore session.'
 
 export function planToStep(plan: ResumePlan, target: ResumeTarget): ResumeStep {
@@ -40,7 +41,8 @@ export function planToStep(plan: ResumePlan, target: ResumeTarget): ResumeStep {
     case 'unavailable':
       return {
         kind: 'notice',
-        message: plan.reason === 'running' ? STILL_RUNNING_NOTICE : UNAVAILABLE_NOTICE
+        message:
+          plan.reason === 'running' ? stillRunningNotice(target.backendId) : UNAVAILABLE_NOTICE
       }
   }
 }
