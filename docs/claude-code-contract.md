@@ -171,7 +171,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   2026-10-19: the same array, the same limit constant and type filter) and on 2.1.304
   (`strings`, 2026-10-20: the same again), and on 2.1.306, darwin-arm64 and linux-arm64
   (`strings`, 2026-10-21: the same array, constant and filter, and the skill-hook
-  constants below).
+  constants below), and on 2.1.308, darwin-arm64 and linux-arm64 (`strings`,
+  2026-10-22: the same again).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -419,14 +420,28 @@ Unless a bullet below says more, it is inferred, not checked.
   several times — 3 times in real transcripts, with the same `message.id` and
   `requestId`. Some records carry neither id and each must count; records with model
   `<synthetic>` carry no real spend.
-- **In a sub-agent transcript the repeats are not the same: they grow.** Swept
-  2026-10-16 on this Mac, every `*.jsonl` under `~/.claude/projects` (3825 files, CC
+- **Up to 2.1.306, in a sub-agent transcript the repeats are not the same: they grow.**
+  Swept 2026-10-16 on this Mac, every `*.jsonl` under `~/.claude/projects` (3825 files, CC
   2.1.111–2.1.301, field names and numbers only): in main transcripts all 52,548
   `message.id` + `requestId` keys repeat the same usage object; in the
   `<session>/subagents/**` transcripts 32,181 of 44,412 keys have lines with different
   usage, the later ones holding the larger `output_tokens` (a streamed-so-far count),
   in every CC version present. Summing the largest value per key gives 71.3 M output
-  tokens across both kinds; summing the first line gives 37.8 M.
+  tokens across both kinds; summing the first line gives 37.8 M. On 2.1.306 the first
+  line of a repeated sub-agent key holds a placeholder `output_tokens` (6–7) and
+  `stop_reason: null`; the later line holds the real count and `end_turn`; the other
+  usage fields do not change. **From 2.1.307 on the sub-agent repeats are the same, as
+  in the main transcript**: the first line already holds the final usage and
+  `stop_reason` (the 2.1.307 changelog's "placeholder token usage and an empty stop
+  reason" fix; 2.1.308 holds sub-agent assistant lines back from the file until the
+  stream ends, `flushHeld` in its strings). Measured 2026-10-22, three `claude -p` runs
+  per build on 2.1.306 and 2.1.308 (haiku, scratch `HOME` and `CLAUDE_CONFIG_DIR`, one
+  Agent call whose sub-agent did a Read and wrote ~300 words): 2.1.306 had 3 growing and
+  0 equal repeated sub-agent keys, 2.1.308 0 growing and 3 equal; no key shrank on
+  either; the record, `message` and `usage` key sets are the same on both. Taking the
+  largest value per key gives the last line's sum on both builds, and older transcripts
+  on disk still grow, so that is the rule that counts both. Only short thinking + text
+  replies were measured; a long multi-block reply is not probed.
 - **Some CC versions mix subagent turns (`isSidechain: true`) into the main jsonl**,
   their usage records and Esc interrupts included; their spend is the session's, their
   context window and model are not. Which versions was not recorded.
@@ -605,7 +620,8 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   2.1.302 (2026-10-17), 2.1.303 (2026-10-19) and 2.1.304 (2026-10-20), as did E-SSH-15
   (`koloft help` and `koloft note append` from the Bash tool on the machine) and
   E-SSH-C2 (a conductor's typed message answered, its question answered by `koloft
-  session answer`). E-SSH-11 and E-SSH-15 passed again on 2.1.306 (2026-10-21).
+  session answer`). E-SSH-11 and E-SSH-15 passed again on 2.1.306 (2026-10-21) and on
+  2.1.308 (2026-10-22).
 - **CC's background retention sweep leaves hand-made worktrees under
   `.claude/worktrees/` alone from 2.1.246 on** (changelog, read 2026-09-18, not
   measured). Before that it could remove them.
@@ -958,7 +974,16 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   2.1.306 (`strings -n 6`, 2026-10-21: `ANTHROPIC_*` and `*_MODEL` identical at 76 and
   14; `CLAUDE_CODE_*` gains 7 — among them `RETRY_WATCHDOG_USAGE_LIMIT_RECHECK_MS` (§9)
   and `ENTRYPOINT_ON_REQUESTS` — and loses `SETTLE_TOUCHED_FILES`; `tengu_*` gains 28
-  and loses 4; all 15 `CLAUDE_CODE_*`/`ANTHROPIC_*` names `src/` uses are still there).
+  and loses 4; all 15 `CLAUDE_CODE_*`/`ANTHROPIC_*` names `src/` uses are still there),
+  and between 2.1.306 and 2.1.308 (`strings -n 6`, 2026-10-22, darwin-arm64 and
+  linux-arm64: `ANTHROPIC_*` and `*_MODEL` identical at 76 and 14; `CLAUDE_CODE_*` gains 7
+  and loses `ADOPT_UNDERIVABLE_PARKED_PERMISSION`, a `-p` stream-json switch Koloft never
+  sets; `tengu_*` gains 35 and loses 4; all 15 names `src/` uses are still there). Among
+  the 7, `IGNORE_PERSISTED_TRUST` (set by CC's self-hosted runner) and the
+  `launcher-host-login` path (a process an organization's launcher started borrows the
+  desktop app's login) act only with `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` and
+  `CLAUDE_CODE_HOST_AUTH_ENV_VAR` set, which Koloft does not set, so the shim's
+  `CLAUDE_CODE_OAUTH_TOKEN` takes the same path as before (read, not run).
   2.1.302 is the
   first build that reads `CLAUDE_CODE_AUTO_MODE_MODEL` (2.1.301 only names it in the env
   allow-list), with a server-configured classifier model taking priority over it; Koloft
@@ -983,7 +1008,8 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   rest of the conversation (`[ToolSearch] the endpoint answered the request sent without
   tool search, so this conversation goes on without it`). On Anthropic's own host only an
   error naming `defer_loading` or the tool-search beta header does this; behind a custom
-  base URL any such 400/422 does. Read from the 2.1.306 strings, 2026-10-21, not run:
+  base URL any such 400/422 does. Read from the 2.1.306 strings, 2026-10-21, and the
+  same three log lines in the 2.1.308 strings, 2026-10-22, not run:
   Koloft has no custom endpoint to test against. Koloft sets `ANTHROPIC_BASE_URL` for a
   custom-endpoint account and no `ENABLE_TOOL_SEARCH`, so a gateway that refuses tool
   search sees one refused request per conversation, and the session goes on; whether
@@ -1008,7 +1034,13 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   or more characters from `[A-Za-z0-9_-]`. **The output is hard-wrapped at the terminal
   width**, so at 80 columns the token is split across lines, and a capture stores a
   cut-off token that fails only later, when checked (seen in the guided-login flow).
-  Apart from the 2.1.266 check: inferred, not checked.
+  Apart from the 2.1.266 check: inferred, not checked. The 2.1.307 changelog's "the
+  success page now appears as soon as sign-in completes" moved only the account-profile
+  fetch after the browser's success redirect; the `setup-token` command, the code that
+  prints the token ("Long-lived authentication token created successfully", "Store this
+  token securely") and the browser step (`BROWSER`, else `open`, with the URL) are the
+  same on 2.1.306 and 2.1.308 once minified names are evened out (`strings`, 2026-10-22,
+  not run: no login was made).
 - **Saved limit resets need a full-scope login; the token Koloft holds cannot read or use
   them.** Read 2026-10-13 from the 2.1.296 binary (`strings`): a hidden `/limit-reset`
   command reads resets from `GET /api/oauth/usage?cedar_ember=1&skip_spend=1` (blocks
@@ -1245,7 +1277,8 @@ Probes P1–P7. Flag spellings quoted from `claude --help` of the same build. Th
 line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is pinned by
 `cron-real-smoke.spec.ts` › BB-R01, green on 2.1.296 (2026-10-11), 2.1.299
 (2026-10-14), 2.1.300 (2026-10-15), 2.1.301 (2026-10-16), 2.1.302 (2026-10-17),
-2.1.303 (2026-10-19), 2.1.304 (2026-10-20) and 2.1.306 (2026-10-21).
+2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21) and 2.1.308
+(2026-10-22).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1392,7 +1425,7 @@ other bullets of §9 were not re-measured on this build.
   "package-manager installs update through the package manager"; no flag was added or
   removed, and the code behind `--system-prompt-snapshot` is the same in both builds
   (`strings`). 2.1.306's is byte-identical to 2.1.304's (313 lines, 22,319 bytes,
-  2026-10-21). The permission mode a `-p` run with no permission flag starts in, and how
+  2026-10-21), and 2.1.308's to 2.1.306's (2026-10-22). The permission mode a `-p` run with no permission flag starts in, and how
   2.1.302 changed it for a config dir with no flag cache, is measured in §14. The
   `CLAUDE_CODE_*` names the 2.1.301 binary adds over 2.1.300
   (`strings`, 2026-10-16; pointers): `ATTACHMENTS_IN_USER_DATA`, `DAPPER_CUPCAKE`,
@@ -1702,11 +1735,12 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   `state=clear`. The sequence is not wrapped for tmux (the DCS passthrough wrapper is
   not applied), so whether it crosses tmux to the outer terminal is not probed; in or
   out of fullscreen alike (read, not run). The 2.1.299, 2.1.301, 2.1.302, 2.1.303,
-  2.1.304 and 2.1.306 binaries carry the same builder (`app=claude-code`, `id=`, `kind=`,
-  `progress=`, a base64 `title=` capped at 192, `msg=` capped at 2048), states, kinds and
-  startup probe (`strings`, 2026-10-14, 2026-10-16, 2026-10-17, 2026-10-19, 2026-10-20
-  and 2026-10-21; on 2.1.306 only the builder pieces and the startup probe's strings
-  were counted, equal to 2.1.304's). The name "Program Status" came only from the changelog the binary
+  2.1.304, 2.1.306 and 2.1.308 binaries carry the same builder (`app=claude-code`, `id=`,
+  `kind=`, `progress=`, a base64 `title=` capped at 192, `msg=` capped at 2048), states,
+  kinds and startup probe (`strings`, 2026-10-14, 2026-10-16, 2026-10-17, 2026-10-19,
+  2026-10-20, 2026-10-21 and 2026-10-22; on 2.1.306 only the builder pieces and the
+  startup probe's strings were counted, equal to 2.1.304's; on 2.1.308 the builder code,
+  minified names evened out, equals 2.1.306's). The name "Program Status" came only from the changelog the binary
   carries, which in 2.1.306 covers 2.1.296–2.1.304, so it is no longer in its strings.
   Since Codex CLI 0.163.0 the Codex TUI writes OSC 7501 too, with no query first and
   only `state` and `app=codex` (`docs/codex-cli-contract.md` §25).
@@ -1976,7 +2010,8 @@ below was one run.
   on a fresh linux-arm64 2.1.302 before E-SSH-10/11/12/15/17/C2, all green (2026-10-17),
   and on 2.1.303 (2026-10-19) and 2.1.304 (2026-10-20; on both the `tengu_moss_anchor`
   fallback and the code around it are the same in `strings`), and on linux-arm64 2.1.306
-  before E-SSH-10/11/12/15/17, all green (2026-10-21). A
+  before E-SSH-10/11/12/15/17, all green (2026-10-21), and on linux-arm64 2.1.308 before
+  E-SSH-10/11/12/15/17/C2, all green, the fallback the same in `strings` (2026-10-22). A
   user's own `claude -p` in a Koloft terminal is the measured case.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
@@ -2101,8 +2136,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   (`2.1.299 (Claude Code)`, 2026-10-14), 2.1.300 (`2.1.300 (Claude Code)`,
   2026-10-15), 2.1.301 (`2.1.301 (Claude Code)`, 2026-10-16), 2.1.302 (`2.1.302
   (Claude Code)`, 2026-10-17), 2.1.303 (`2.1.303 (Claude Code)`, 2026-10-19),
-  2.1.304 (`2.1.304 (Claude Code)`, 2026-10-20) and 2.1.306 (`2.1.306 (Claude Code)`,
-  2026-10-21).
+  2.1.304 (`2.1.304 (Claude Code)`, 2026-10-20), 2.1.306 (`2.1.306 (Claude Code)`,
+  2026-10-21) and 2.1.308 (`2.1.308 (Claude Code)`, 2026-10-22).
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
   certificates** checked as the TLS trust store loads (the runtime's roots, the system
   store and `NODE_EXTRA_CA_CERTS`; `strings -n 6` set diffs, 2026-10-19: beside the
@@ -2120,7 +2155,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2026-10-17, not run: `await je(iO(), 2000)` where `iO` is the write queues' `drainAll`,
   the same helper in 2.1.303 with the 2000 behind a constant, 2026-10-19, and in 2.1.304,
   2026-10-20; 2.1.306's strings hold `waitForOAuthRefresh` and `drainAll` as often as
-  2.1.304's, 2026-10-21, the 2 s wait itself not read again;
+  2.1.304's, 2026-10-21, and 2.1.308's as 2.1.306's, with the same helper once minified
+  names are evened out, 2026-10-22;
   the changelog's fix for subcommands "exiting before a queued settings or config write
   finished"); which subcommands reach that helper was not read.
 - **A downloaded binary updates itself into its `HOME`, not in place.** A 2.1.296
@@ -2154,7 +2190,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `NoSuchKey` — `next` is npm's tag only); on 2026-10-20 every channel offered 2.1.304
   (npm `latest`, `next` and `stable`, and the download host's `latest` and `stable`);
   on 2026-10-21 npm `latest` and `next` and the download host's `latest` offered
-  2.1.306, and npm's and the download host's `stable` 2.1.304.
+  2.1.306, and npm's and the download host's `stable` 2.1.304; on 2026-10-22 every
+  channel offered 2.1.308 (npm `latest`, `next` and `stable`, and the download host's
+  `latest` and `stable`).
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
@@ -2168,7 +2206,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   a byte count alone cannot tell two builds apart), and on 2026-10-20
   `2.1.304/linux-arm64/claude` with 288,612,536 bytes, and on 2026-10-21
   `2.1.306/linux-arm64/claude` with 290,447,544 bytes (its ETag is the file's MD5, and
-  its strings stamp `2.1.306` only) — each ran as the
+  its strings stamp `2.1.306` only), and on 2026-10-22 `2.1.308/linux-arm64/claude` with
+  292,085,944 bytes (ETag the file's MD5 again, strings stamp `2.1.308` only) — each ran
+  as the
   lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
