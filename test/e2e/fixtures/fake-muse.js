@@ -59,22 +59,24 @@ const sessionLog = (id) => {
   const ms = parseInt(id.replace(/-/g, '').slice(0, 12), 16)
   const d = new Date(ms)
   const p2 = (n) => String(n).padStart(2, '0')
-  const dir = path.join(
+  return path.join(
     museHome,
     'sessions',
     String(d.getFullYear()),
     p2(d.getMonth() + 1),
     p2(d.getDate()),
-    id
+    id,
+    'session.jsonl'
   )
-  fs.mkdirSync(dir, { recursive: true })
-  return path.join(dir, 'session.jsonl')
 }
-const logRecord = (id, payloadType, payload) =>
+const logRecord = (id, payloadType, payload) => {
+  const log = sessionLog(id)
+  fs.mkdirSync(path.dirname(log), { recursive: true })
   fs.appendFileSync(
-    sessionLog(id),
+    log,
     JSON.stringify({ recorded_at: Date.now() * 1000, payload_type: payloadType, payload }) + '\n'
   )
+}
 
 const pendingFile = (id) => path.join(pendingDir, id + '.json')
 const pendingOf = (id) => {
@@ -146,7 +148,7 @@ function serve() {
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .map((s) => ({
           sessionId: s.id,
-          path: path.join(sessionsDir, s.id + '.json'),
+          path: sessionLog(s.id),
           status: 'notLoaded',
           createdAt: s.createdAt,
           updatedAt: s.updatedAt,

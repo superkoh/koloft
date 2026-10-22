@@ -352,16 +352,8 @@ export function museCalls(env: E2EEnv): MuseCall[] {
     .map((line) => JSON.parse(line) as MuseCall)
 }
 
-export function museSaid(env: E2EEnv, sessionId: string): string[] {
-  const file = path.join(
-    env.home,
-    '.local',
-    'share',
-    'muse',
-    'sessions',
-    'fake',
-    `${sessionId}.json`
-  )
+export function museSaid(env: E2EEnv, sessionId: string, home = env.home): string[] {
+  const file = path.join(home, '.local', 'share', 'muse', 'sessions', 'fake', `${sessionId}.json`)
   try {
     const s = JSON.parse(fs.readFileSync(file, 'utf8')) as {
       items: { kind: string; text: string }[]
