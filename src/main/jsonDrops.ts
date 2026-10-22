@@ -3,19 +3,28 @@ import path from 'path'
 
 const MID_WRITE_PARSE_RETRIES = 3
 const MID_WRITE_RETRY_MS = 60
-export function readJsonDrop(full: string, attempt: number, handle: (obj: unknown) => void): void {
+export function readJsonDrop(
+  full: string,
+  attempt: number,
+  handle: (obj: unknown) => void,
+  settled: () => void = () => {}
+): void {
   fs.readFile(full, 'utf8', (err, data) => {
-    if (err) return
+    if (err) return settled()
     let obj: unknown
     try {
       obj = JSON.parse(data)
     } catch {
       if (attempt < MID_WRITE_PARSE_RETRIES) {
-        setTimeout(() => readJsonDrop(full, attempt + 1, handle), MID_WRITE_RETRY_MS)
-      }
+        setTimeout(() => readJsonDrop(full, attempt + 1, handle, settled), MID_WRITE_RETRY_MS)
+      } else settled()
       return
     }
-    handle(obj)
+    try {
+      handle(obj)
+    } finally {
+      settled()
+    }
   })
 }
 
@@ -27,12 +36,17 @@ export function writeWholeBeforeVisible(dest: string, text: string): void {
 
 export type DropHandlerFor = (name: string) => ((obj: unknown, full: string) => void) | null
 
-function readNamedDrop(dir: string, name: string, handlerFor: DropHandlerFor): void {
-  if (!name.endsWith('.json')) return
+function readNamedDrop(
+  dir: string,
+  name: string,
+  handlerFor: DropHandlerFor,
+  settled?: () => void
+): void {
+  if (!name.endsWith('.json')) return settled?.()
   const handle = handlerFor(name)
-  if (!handle) return
+  if (!handle) return settled?.()
   const full = path.join(dir, name)
-  readJsonDrop(full, 0, (obj) => handle(obj, full))
+  readJsonDrop(full, 0, (obj) => handle(obj, full), settled)
 }
 
 function sweepJsonDrops(dir: string, handlerFor: DropHandlerFor): void {
@@ -43,9 +57,14 @@ function sweepJsonDrops(dir: string, handlerFor: DropHandlerFor): void {
 }
 
 export function watchJsonDrops(dir: string, handlerFor: DropHandlerFor): fs.FSWatcher | null {
+  let earlierDropsHandled = Promise.resolve()
   try {
     return fs.watch(dir, (_event, filename) => {
-      if (filename) readNamedDrop(dir, filename.toString(), handlerFor)
+      if (!filename) return
+      const name = filename.toString()
+      earlierDropsHandled = earlierDropsHandled.then(
+        () => new Promise<void>((settled) => readNamedDrop(dir, name, handlerFor, settled))
+      )
     })
   } catch {
     return null
