@@ -933,7 +933,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
   })
 
   for (const backend of ['claude', 'codex'] as const) {
-    test(`a ${backend} butler runs any gh command through koloft gh as it is, a merge too, and is refused gh auth without gh running`, async ({
+    test(`a ${backend} butler runs any gh command through koloft gh as it is, a merge too, and is refused gh auth without gh running, a plain gh in its own folder too`, async ({
       env
     }) => {
       if (backend === 'codex') installCodex(env)
@@ -943,6 +943,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       const { app, page } = await connected(env, fake)
       try {
         fake.say(OWNER, '/koloft gh auth token')
+        fake.say(OWNER, '/sh gh auth token')
         fake.say(OWNER, '/koloft gh pr merge 389 --squash --repo acme/app')
         await expect
           .poll(() => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8') : ''), {

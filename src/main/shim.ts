@@ -6,7 +6,6 @@ import { NEWID_FN, OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
 import { CLAUDE_AGENT_SHIM } from './agentShim'
 import { writeSudoShims } from './sudoShim'
 import { ghWrapperScript, gitCredentialHelperScript } from './gitCredentialScripts'
-import { conductorFolder } from './discord/butler'
 import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'
 import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'
 import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'
@@ -535,7 +534,7 @@ export function registeredByTabRoot(regPid: unknown, rootPid: number | undefined
   return typeof regPid !== 'number' || rootPid === undefined || regPid === rootPid
 }
 
-export function setupShim(gitAuthDir: string): ShimPaths {
+export function setupShim(gitAuthDir: string, butlerFolder: string): ShimPaths {
   const base = app.getPath('userData')
   const shimDir = path.join(base, 'shim')
   const regDir = path.join(base, 'sessions')
@@ -580,7 +579,7 @@ export function setupShim(gitAuthDir: string): ShimPaths {
   fs.chmodSync(gitHelper, 0o755)
 
   const ghWrapper = path.join(shimDir, 'gh')
-  fs.writeFileSync(ghWrapper, ghWrapperScript(gitAuthDir, conductorFolder(base)), { mode: 0o755 })
+  fs.writeFileSync(ghWrapper, ghWrapperScript(gitAuthDir, butlerFolder), { mode: 0o755 })
   fs.chmodSync(ghWrapper, 0o755)
 
   return { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper }

@@ -2439,8 +2439,10 @@ app.whenReady().then(() => {
 
   sweepStaleGitRequestDirs(pidAlive)
   const gitRequestDir = newGitRequestDir()
-  const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } =
-    setupShim(gitRequestDir)
+  const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } = setupShim(
+    gitRequestDir,
+    conductorFolder(app.getPath('userData'))
+  )
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
   if (agentRequests.watch(agentDir)) {

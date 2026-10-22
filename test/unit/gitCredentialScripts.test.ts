@@ -252,13 +252,16 @@ describe('gh wrapper', () => {
     expect(fs.existsSync(ghLog)).toBe(false)
   })
 
-  it("in the butler's folder, and below it, gh is koloft gh with the same words, so Koloft's process signs it in", async () => {
+  it("in the butler's folder, and below it, gh is koloft gh with the same words, so Koloft's process signs it in; a folder whose name only starts the same is not the butler's", async () => {
     const below = path.join(butlerFolder, 'notes')
-    fs.mkdirSync(below, { recursive: true })
+    const lookalike = `${butlerFolder}-old`
+    for (const d of [below, lookalike]) fs.mkdirSync(d, { recursive: true })
     await run(gh(), ['pr', 'view', '389', '--repo', 'acme/app'], {}, '', butlerFolder)
     await run(gh(), ['issue', 'list', '-R', 'acme/app'], {}, '', below)
+    await run(gh(), ['pr', 'list'], {}, '', lookalike)
     expect(fs.readFileSync(ghLog, 'utf8')).toBe(
-      'koloft gh pr view 389 --repo acme/app\nkoloft gh issue list -R acme/app\n'
+      'koloft gh pr view 389 --repo acme/app\nkoloft gh issue list -R acme/app\n' +
+        'argv=pr list token= host= github_token= enterprise=\n'
     )
   })
 
