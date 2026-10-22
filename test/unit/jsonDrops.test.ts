@@ -10,18 +10,30 @@ import {
 } from '../../src/main/jsonDrops'
 
 const DROP_LONG_SETTLED_BEFORE_THE_WATCH_MS = 1500
-const WATCH_LIVE_BEFORE_THE_FIRST_DROP_MS = 300
 const DROPS_WRITTEN_BACK_TO_BACK = 12
 
-describe('watchJsonDrops: drops reach their handler in the order they were written', () => {
+describe("watchJsonDrops 'as-written': drops reach their handler in the order they were written", () => {
   it('hands drops written back to back over in write order, as an agent opening two pages in one command expects its tabs', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-drops-'))
     const seen: number[] = []
-    const watcher = watchJsonDrops(dir, () => (obj): void => {
-      seen.push((obj as { n: number }).n)
-    })
+    let watchLive = false
+    const watcher = watchJsonDrops(
+      dir,
+      (name) =>
+        name.startsWith('until-seen-')
+          ? (): void => void (watchLive = true)
+          : (obj): void => void seen.push((obj as { n: number }).n),
+      'as-written'
+    )
     try {
-      await new Promise((r) => setTimeout(r, WATCH_LIVE_BEFORE_THE_FIRST_DROP_MS))
+      // PLATFORM§28
+      await vi.waitFor(
+        () => {
+          writeWholeBeforeVisible(path.join(dir, `until-seen-${Date.now()}.json`), '{}')
+          expect(watchLive).toBe(true)
+        },
+        { timeout: 5000, interval: 100 }
+      )
       const written = [...Array(DROPS_WRITTEN_BACK_TO_BACK).keys()]
       for (const n of written) {
         writeWholeBeforeVisible(path.join(dir, `drop-${n}.json`), JSON.stringify({ n }))

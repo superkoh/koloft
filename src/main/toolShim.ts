@@ -50,7 +50,8 @@ export function startToolShim(
         if (name.startsWith('res-')) return null
         return dropped?.(name) ?? opens(name)
       },
-      (name) => dropped?.(name) ?? null
+      (name) => dropped?.(name) ?? null,
+      'as-written'
     )
     return {
       shim,

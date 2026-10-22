@@ -3410,7 +3410,11 @@ function setupLine(playwrightBin?: string): string | undefined {
 const processedOpenIds = new Set<string>()
 
 function watchOpenRequests(openDir: string): fs.FSWatcher | null {
-  return watchJsonDrops(openDir, () => (obj, full) => handleOpenRequest(obj as OpenDrop, full))
+  return watchJsonDrops(
+    openDir,
+    () => (obj, full) => handleOpenRequest(obj as OpenDrop, full),
+    'as-written'
+  )
 }
 
 const OPEN_REQUEST_STILL_WANTED_MS = 60_000
@@ -3423,7 +3427,7 @@ function sweepOpenRequests(openDir: string): void {
       fs.stat(full, (e, st) => {
         if (e) return
         if (Date.now() - st.mtimeMs <= OPEN_REQUEST_STILL_WANTED_MS) {
-          readJsonDrop(full, 0, (obj) => handleOpenRequest(obj as OpenDrop, full))
+          void readJsonDrop(full, 0, (obj) => handleOpenRequest(obj as OpenDrop, full))
         } else {
           fs.rm(full, { force: true }, () => {})
         }
