@@ -21,12 +21,12 @@ import {
 import {
   agentRow,
   centerTerm,
+  closeActiveTab,
   gitCommitAll,
   gitInit,
   newSessionInWith,
   openMenu,
   runIn,
-  sendShortcut,
   switchToRow,
   waitBooted,
   wsRows
@@ -70,17 +70,6 @@ async function startRemoteMuse(page: Page, env: E2EEnv): Promise<MachineMuseCall
     .poll(() => liveTmuxSessions(env), { timeout: ON_THE_MACHINE_WITHIN_MS })
     .toContain(`k-${call.sessionId}`)
   return call
-}
-
-async function closeActiveTab(app: ElectronApplication, page: Page): Promise<void> {
-  await page.locator('.ws .ws-tab.active').first().click()
-  await sendShortcut(app, 'shortcut:close-tab')
-  const confirm = page.locator('.modal', { hasText: 'Close running session?' })
-  if (await confirm.isVisible({ timeout: 4000 }).catch(() => false))
-    await confirm
-      .locator('button', { hasText: /^Close$/ })
-      .first()
-      .click()
 }
 
 test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux with the real wrapper and hooks on the machine', () => {
