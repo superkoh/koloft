@@ -856,16 +856,6 @@ export class SessionTracker extends SessionRuntime {
       t.info.updatedAt = Date.now()
       this.emitUpdate()
     }
-    if (cwd) {
-      if (source !== 'compact') this.setTreeRoot(t, cwd)
-      if (cwd !== t.info.cwd) {
-        t.info.cwd = cwd
-        t.info.updatedAt = Date.now()
-        this.emitUpdate()
-      }
-    } else if (source !== 'compact') {
-      t.rootPinAwaitingCatchup = true
-    }
     let file = transcriptPath
     if (t.remote) {
       const slug = transcriptPath
@@ -873,9 +863,22 @@ export class SessionTracker extends SessionRuntime {
         : encodeCwd(cwd || t.info.cwd)
       file = sessionId ? path.join(t.remote.projectsRoot, slug, sessionId + '.jsonl') : ''
     } else if (!file && sessionId) {
-      file = path.join(PROJECTS_ROOT, encodeCwd(t.info.cwd), sessionId + '.jsonl')
+      file = path.join(PROJECTS_ROOT, encodeCwd(cwd || t.info.cwd), sessionId + '.jsonl')
     }
-    if (file && file !== t.info.jsonlPath) this.bind(t, file)
+    const transcriptAlreadyFollowed = !!file && file === t.info.jsonlPath
+    const rootAlreadyReadFromThatTranscript = transcriptAlreadyFollowed && !t.remote
+    const rootFromHook = source !== 'compact' && !rootAlreadyReadFromThatTranscript
+    if (cwd) {
+      if (rootFromHook) this.setTreeRoot(t, cwd)
+      if (cwd !== t.info.cwd) {
+        t.info.cwd = cwd
+        t.info.updatedAt = Date.now()
+        this.emitUpdate()
+      }
+    } else if (rootFromHook) {
+      t.rootPinAwaitingCatchup = true
+    }
+    if (file && !transcriptAlreadyFollowed) this.bind(t, file)
     if (source !== 'compact') {
       t.reported = null
       this.setBackgroundItems(t, [])

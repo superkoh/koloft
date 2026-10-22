@@ -1023,6 +1023,23 @@ describe('SessionTracker — a session that moved: EnterWorktree / ExitWorktree 
     expect(s.worktree).toBe('resumed')
   })
 
+  it('stays in that worktree when the same SessionStart is read again, since the transcript it already follows is not read again', async () => {
+    const { repo, wt } = repoWithWorktree('reread')
+    const tracker = newTracker()
+    tracker.track('tabM7', repo)
+    const file = writeJsonl(repo, SID, [
+      wtState(wt),
+      { type: 'user', message: { content: 'hi' }, cwd: wt }
+    ])
+    tracker.bindSession('tabM7', file, SID, repo, '', '', 'resume')
+    await waitFor(tracker, (x) => x.tabId === 'tabM7' && x.treeRoot === wt)
+
+    tracker.bindSession('tabM7', file, SID, repo, '', '', 'resume')
+    const s = tracker.list().find((x) => x.tabId === 'tabM7')!
+    expect(s.treeRoot).toBe(wt)
+    expect(s.worktree).toBe('reread')
+  })
+
   it('coalesces a burst of moves: one landing, one notice (R8)', async () => {
     const { repo, wt } = repoWithWorktree('burst')
     const other = repoWithWorktree('burst2')
