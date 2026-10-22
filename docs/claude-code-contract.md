@@ -434,7 +434,7 @@ Unless a bullet below says more, it is inferred, not checked.
   in the main transcript**: the first line already holds the final usage and
   `stop_reason` (the 2.1.307 changelog's "placeholder token usage and an empty stop
   reason" fix; 2.1.308 holds sub-agent assistant lines back from the file until the
-  stream ends, `flushHeld` in its strings). Measured 2026-10-22, three `claude -p` runs
+  stream ends, `flushHeld` in its strings, read, not run). Measured 2026-10-22, three `claude -p` runs
   per build on 2.1.306 and 2.1.308 (haiku, scratch `HOME` and `CLAUDE_CONFIG_DIR`, one
   Agent call whose sub-agent did a Read and wrote ~300 words): 2.1.306 had 3 growing and
   0 equal repeated sub-agent keys, 2.1.308 0 growing and 3 equal; no key shrank on
@@ -979,11 +979,13 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   linux-arm64: `ANTHROPIC_*` and `*_MODEL` identical at 76 and 14; `CLAUDE_CODE_*` gains 7
   and loses `ADOPT_UNDERIVABLE_PARKED_PERMISSION`, a `-p` stream-json switch Koloft never
   sets; `tengu_*` gains 35 and loses 4; all 15 names `src/` uses are still there). Among
-  the 7, `IGNORE_PERSISTED_TRUST` (set by CC's self-hosted runner) and the
-  `launcher-host-login` path (a process an organization's launcher started borrows the
-  desktop app's login) act only with `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` and
-  `CLAUDE_CODE_HOST_AUTH_ENV_VAR` set, which Koloft does not set, so the shim's
-  `CLAUDE_CODE_OAUTH_TOKEN` takes the same path as before (read, not run).
+  the 7, `IGNORE_PERSISTED_TRUST` is set by CC's self-hosted runner at `--trust-workspace
+  false`; Koloft does not set it, so the folder trust Koloft writes before each launch
+  still counts. The new `launcher-host-login` path (a process an organization's launcher
+  started borrows the desktop app's login) acts only with
+  `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` and `CLAUDE_CODE_HOST_AUTH_ENV_VAR` set, which
+  Koloft does not set, so the shim's `CLAUDE_CODE_OAUTH_TOKEN` takes the same path as
+  before. Both read, not run.
   2.1.302 is the
   first build that reads `CLAUDE_CODE_AUTO_MODE_MODEL` (2.1.301 only names it in the env
   allow-list), with a server-configured classifier model taking priority over it; Koloft
