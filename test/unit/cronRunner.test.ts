@@ -1616,6 +1616,22 @@ describe('CronRunner — a job that runs once', () => {
     })
     expect(h.runner.save(input('2026-09-02', '10:01')).ok).toBe(true)
   })
+
+  it('a once job whose time has passed can still be renamed, as long as its time is left alone', () => {
+    const h = makeHarness([makeJob({ ...once('09:00'), enabled: false })])
+    const { id, workspacePath, task, schedule, permission } = h.jobs[0]
+    const r = h.runner.save({
+      id,
+      workspacePath,
+      name: 'Renamed',
+      task,
+      schedule,
+      permission,
+      enabled: false
+    })
+    expect(r.ok).toBe(true)
+    expect(h.jobs[0]).toMatchObject({ name: 'Renamed', enabled: false })
+  })
 })
 
 describe('CronRunner — a job that runs again a while after each run ends', () => {
@@ -1696,7 +1712,7 @@ describe('CronRunner — a job that runs again a while after each run ends', () 
     expect(h.jobs[0].waitFrom).toBe(at(10, 15))
   })
 
-  it('the loader keeps when its wait started, and counts a job that never wrote one from its birthday', () => {
+  it('the loader keeps when its wait started, and a job that never wrote one waits from its birthday', async () => {
     const base = { workspacePath: '/ws/a', name: 'Gap', task: 'go', permission: 'same' }
     const { jobs } = sanitizeCron(
       {
@@ -1707,14 +1723,23 @@ describe('CronRunner — a job that runs again a while after each run ends', () 
             id: 'a',
             schedule: after(30).schedule,
             enabled: true,
-            createdAt: 5,
-            waitFrom: 9
+            createdAt: T0 - 60 * MIN,
+            waitFrom: T0
           },
-          { ...base, id: 'b', schedule: after(30).schedule, enabled: true, createdAt: 5 }
+          {
+            ...base,
+            id: 'b',
+            schedule: after(30).schedule,
+            enabled: true,
+            createdAt: T0 - 60 * MIN
+          }
         ]
       },
       []
     )
-    expect(jobs.map((j) => j.waitFrom)).toEqual([9, 5])
+    const h = makeHarness(jobs)
+    h.runner.start()
+    await h.tick(at(10, 0, 20))
+    expect(h.launches.map((l) => l.jobId)).toEqual(['b'])
   })
 })

@@ -310,6 +310,8 @@ describe('koloft cron: changing tasks', () => {
     const reply = await c.run('on', '1')
     expect(reply).toMatchObject({ exit: 1, text: expect.stringMatching(/edit 1 --once/) })
     expect(c.runner.state().jobs[0].enabled).toBe(false)
+    expect((await c.run('edit', '1', '--name', 'Renamed')).exit).toBe(0)
+    expect(c.runner.state().jobs[0]).toMatchObject({ name: 'Renamed', enabled: false })
     expect((await c.run('edit', '1', '--once', '2026-09-03@09:00')).exit).toBe(0)
     expect(c.runner.state().jobs[0].enabled).toBe(true)
   })

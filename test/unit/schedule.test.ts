@@ -212,7 +212,7 @@ describe('describeSchedule', () => {
 
   it('says once on a day, and how long after each run ends', () => {
     expect(describeSchedule({ kind: 'once', date: '2026-10-25', at: '14:00' })).toBe(
-      'Once on 25 Oct at 14:00'
+      'Once on 25 Oct 2026 at 14:00'
     )
     expect(describeSchedule({ kind: 'after', n: 1, unit: 'hours' })).toBe(
       '1 hour after each run ends'

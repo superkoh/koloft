@@ -11,11 +11,13 @@ import type {
 import { CRON_SAVE_MESSAGES as M } from '@shared/cronMessages'
 import { hasWordChar, isValidModelName, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { nextDue } from '@shared/cronHistory'
+import { localDayKey } from '@shared/usageFormat'
 import {
-  dateOf,
   describeWhen,
+  isStepKind,
   isValidSchedule,
-  onceAt,
+  isValidStep,
+  onceNewlyInPast,
   parseDate,
   parseHHMM
 } from '@shared/schedule'
@@ -46,7 +48,7 @@ export function emptyFields(backend: BackendId = 'claude', now = new Date()): Jo
     task: '',
     whenKind: 'daily',
     at: '09:00',
-    date: dateOf(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 12)),
+    date: localDayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 12).getTime()),
     days: [],
     n: 1,
     unit: 'hours',
@@ -64,7 +66,7 @@ export function permissionAfterSwitch(f: JobFields, backend: BackendId): CronPer
 
 export function fieldsToSchedule(f: JobFields): Schedule | null {
   let s: Schedule
-  if (f.whenKind === 'every' || f.whenKind === 'after') {
+  if (isStepKind(f.whenKind)) {
     s = { kind: f.whenKind, n: f.n, unit: f.unit }
   } else if (f.whenKind === 'once') {
     s = { kind: 'once', date: f.date, at: f.at }
@@ -98,7 +100,7 @@ export type ValidateResult =
   | { ok: true; input: Omit<CronSaveInput, 'workspacePath' | 'id'> }
   | { ok: false; errors: Partial<Record<keyof JobFields, string>> }
 
-export function validate(f: JobFields, now = new Date()): ValidateResult {
+export function validate(f: JobFields, now = new Date(), saved?: Schedule): ValidateResult {
   const errors: Partial<Record<keyof JobFields, string>> = {}
 
   const name = f.name.trim()
@@ -115,19 +117,16 @@ export function validate(f: JobFields, now = new Date()): ValidateResult {
   if (f.whenKind === 'weekly' && [...new Set(f.days)].length === 0) {
     errors.days = M.days
   }
-  const step = f.whenKind === 'every' || f.whenKind === 'after'
+  const step = isStepKind(f.whenKind)
   if (!step && parseHHMM(f.at) === null) {
     errors.at = M.time
   }
   if (f.whenKind === 'once') {
     if (parseDate(f.date) === null) errors.date = M.date
-    else if (!errors.at && onceAt(f).getTime() <= now.getTime()) errors.at = M.past
+    else if (!errors.at && onceNewlyInPast(f, now.getTime(), saved)) errors.at = M.past
   }
-  if (step) {
-    const cap = f.unit === 'minutes' ? 720 : 24
-    if (!Number.isInteger(f.n) || f.n < 1 || f.n > cap) {
-      errors.n = M.every
-    }
+  if (step && !isValidStep(f)) {
+    errors.n = M.every
   }
 
   const model = modelValue(f)

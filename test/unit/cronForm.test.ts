@@ -195,6 +195,12 @@ describe('validate messages (§7.5)', () => {
     })
   }
 
+  it('lets a once job whose time has passed be edited when its time is left as it was', () => {
+    const fields = good({ whenKind: 'once', date: '2026-10-22', at: '11:59' })
+    const saved: Schedule = { kind: 'once', date: '2026-10-22', at: '11:59' }
+    expect(validate(fields, NOW, saved).ok).toBe(true)
+  })
+
   it('accepts a filled-in form and hands back what save wants', () => {
     const r = validate(good({ whenKind: 'weekly', days: [1, 2, 3, 4, 5], at: '09:00' }))
     expect(r.ok).toBe(true)

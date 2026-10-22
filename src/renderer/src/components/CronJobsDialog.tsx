@@ -18,7 +18,7 @@ import {
   effectiveBackend,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
-import { describeSchedule, describeWhen, nextRun, stepMs } from '@shared/schedule'
+import { describeSchedule, describeWhen, isStepKind, nextRun, stepMs } from '@shared/schedule'
 import {
   histEnd,
   histFolder,
@@ -169,6 +169,7 @@ export function CronJobsDialog({
   const [form, setForm] = useState<{ mode: 'new' } | { mode: 'edit'; id: string } | null>(null)
   const [fields, setFields] = useState<JobFields>(emptyFields())
   const [touched, setTouched] = useState(false)
+  const [autoCloseBeforeAfter, setAutoCloseBeforeAfter] = useState<boolean | null>(null)
   const [serverErrors, setServerErrors] = useState<string[]>([])
   const [skills, setSkills] = useState<SkillSuggestion[]>([])
   const [trusted, setTrusted] = useState<boolean | null>(null)
@@ -254,6 +255,7 @@ export function CronJobsDialog({
     })
     setTouched(false)
     setServerErrors([])
+    setAutoCloseBeforeAfter(null)
     setForm({ mode: 'edit', id: job.id })
   }
 
@@ -261,6 +263,7 @@ export function CronJobsDialog({
     setFields(emptyFields(defaultBackend))
     setTouched(false)
     setServerErrors([])
+    setAutoCloseBeforeAfter(null)
     setForm({ mode: 'new' })
   }
 
@@ -270,17 +273,17 @@ export function CronJobsDialog({
     setFields((f) => ({ ...f, ...p }))
   }
 
-  const result = validate(fields)
+  const editing = form?.mode === 'edit' ? jobs.find((j) => j.id === form.id) : undefined
+  const result = validate(fields, new Date(), editing?.schedule)
   const errors = result.ok ? {} : result.errors
   const err = (k: keyof JobFields): string | undefined => (touched ? errors[k] : undefined)
 
   const save = async (): Promise<void> => {
     if (!result.ok || !form) return
-    const editing = form.mode === 'edit' ? jobs.find((j) => j.id === form.id) : undefined
     const input: CronSaveInput = {
       ...result.input,
       workspacePath: wsPath,
-      enabled: editing && result.input.schedule.kind !== 'once' ? editing.enabled : true
+      enabled: editing ? editing.enabled : true
     }
     if (form.mode === 'edit') input.id = form.id
     const r = await window.api.cron.save(input)
@@ -414,7 +417,7 @@ export function CronJobsDialog({
   const preview = schedule
     ? describeSchedule(schedule) + (firstRun ? ` · next ${describeWhen(firstRun, now)}` : '')
     : ''
-  const stepKind = fields.whenKind === 'every' || fields.whenKind === 'after'
+  const stepKind = isStepKind(fields.whenKind)
 
   const label = BACKEND_LABEL[fields.backend]
   const modelChips = MODEL_CHIPS_OF[fields.backend]
@@ -534,12 +537,19 @@ export function CronJobsDialog({
             <button
               key={c.kind}
               className={'chip' + (fields.whenKind === c.kind ? ' on' : '')}
-              onClick={() =>
+              onClick={() => {
+                const entering = c.kind === 'after' && fields.whenKind !== 'after'
+                const leaving = c.kind !== 'after' && fields.whenKind === 'after'
+                if (entering) setAutoCloseBeforeAfter(fields.autoClose)
+                if (leaving) setAutoCloseBeforeAfter(null)
                 patch({
                   whenKind: c.kind,
-                  ...(c.kind === 'after' && fields.whenKind !== 'after' ? { autoClose: true } : {})
+                  ...(entering ? { autoClose: true } : {}),
+                  ...(leaving && autoCloseBeforeAfter !== null
+                    ? { autoClose: autoCloseBeforeAfter }
+                    : {})
                 })
-              }
+              }}
             >
               {c.label}
             </button>
@@ -571,7 +581,7 @@ export function CronJobsDialog({
               <input
                 className="cb-field"
                 type="number"
-                aria-label="Repeat every"
+                aria-label={fields.whenKind === 'after' ? 'Wait' : 'Repeat every'}
                 min={1}
                 value={Number.isNaN(fields.n) ? '' : String(fields.n)}
                 onChange={(e) =>
@@ -697,7 +707,10 @@ export function CronJobsDialog({
             <button
               key={c.label}
               className={'chip' + (fields.autoClose === c.value ? ' on' : '')}
-              onClick={() => patch({ autoClose: c.value })}
+              onClick={() => {
+                setAutoCloseBeforeAfter(null)
+                patch({ autoClose: c.value })
+              }}
             >
               {c.label}
             </button>

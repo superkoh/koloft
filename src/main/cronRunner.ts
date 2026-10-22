@@ -12,7 +12,14 @@ import {
   worktreeHomeOf
 } from '@shared/cronNames'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
-import { isValidSchedule, onceAt, parseDate, parseHHMM } from '@shared/schedule'
+import {
+  isStepKind,
+  isValidSchedule,
+  onceNewlyInPast,
+  parseDate,
+  parseHHMM,
+  sameOnce
+} from '@shared/schedule'
 import { oncePassed } from '@shared/cronHistory'
 import {
   isCronEffort,
@@ -155,14 +162,14 @@ function stripControl(s: string): string {
   return s.replace(/\p{Cc}/gu, '')
 }
 
-function scheduleErrors(s: unknown, now: number): string[] {
+function scheduleErrors(s: unknown, now: number, saved?: Schedule): string[] {
   const errs: string[] = []
   const o = (s ?? {}) as Record<string, unknown>
   if (o.kind === 'once') {
     if (typeof o.date !== 'string' || parseDate(o.date) === null) errs.push(CRON_SAVE_MESSAGES.date)
     if (typeof o.at !== 'string' || parseHHMM(o.at) === null) errs.push(CRON_SAVE_MESSAGES.time)
-    if (errs.length === 0 && onceAt(s as { date: string; at: string }).getTime() <= now)
-      errs.push(CRON_SAVE_MESSAGES.past)
+    const once = s as { date: string; at: string }
+    if (errs.length === 0 && onceNewlyInPast(once, now, saved)) errs.push(CRON_SAVE_MESSAGES.past)
     return errs
   }
   if (o.kind === 'daily') {
@@ -176,7 +183,7 @@ function scheduleErrors(s: unknown, now: number): string[] {
     if (errs.length === 0 && !isValidSchedule(s)) errs.push(CRON_SAVE_MESSAGES.days)
     return errs
   }
-  if (o.kind === 'every' || o.kind === 'after') {
+  if (isStepKind(o.kind)) {
     if (!isValidSchedule(s)) errs.push(CRON_SAVE_MESSAGES.every)
     return errs
   }
@@ -217,7 +224,8 @@ function saveErrors(
   schedule: unknown,
   workspacePath: unknown,
   isPinned: (p: string) => boolean,
-  now: number
+  now: number,
+  saved?: Schedule
 ): string[] {
   const errs: string[] = []
   if (
@@ -234,7 +242,7 @@ function saveErrors(
   if (!c.task) errs.push(CRON_SAVE_MESSAGES.taskEmpty)
   else if (c.task.startsWith('-')) errs.push(CRON_SAVE_MESSAGES.taskDash)
   else if (c.task.length > 4096) errs.push(CRON_SAVE_MESSAGES.taskLong)
-  errs.push(...scheduleErrors(schedule, now))
+  errs.push(...scheduleErrors(schedule, now, saved))
   if (c.model !== undefined && !isValidModelName(c.model)) errs.push(CRON_SAVE_MESSAGES.model)
   return errs
 }
@@ -330,18 +338,21 @@ export class CronRunner {
       now,
       this.lastDue,
       this.d.bootTime,
-      (id) => this.launching.has(id) || this.liveRunOf(id) !== undefined
+      (id) => !this.d.ready() || this.launching.has(id) || this.liveRunOf(id) !== undefined
     )
     this.lastDue = r.lastDue
-    this.turnOffOnceJobs([...r.fire, ...r.missed])
-    this.writeMissed(r.missed)
+    const turnedOff = this.turnOffOnceJobs([...r.fire, ...r.missed])
+    if (!this.writeMissed(r.missed) && turnedOff) {
+      this.d.store.save(this.jobs)
+      this.push()
+    }
     for (const f of r.fire) {
       const job = this.byId(f.jobId)
       if (job) void this.runDue(job, f.dueAt, false)
     }
   }
 
-  private turnOffOnceJobs(dues: Due[]): void {
+  private turnOffOnceJobs(dues: Due[]): boolean {
     let changed = false
     for (const { jobId } of dues) {
       const job = this.byId(jobId)
@@ -349,9 +360,12 @@ export class CronRunner {
       job.enabled = false
       changed = true
     }
-    if (!changed) return
-    this.d.store.save(this.jobs)
-    this.push()
+    return changed
+  }
+
+  private dropRun(run: LiveRun): void {
+    this.live.delete(run.tabId)
+    this.restartWait(run.jobId)
   }
 
   private restartWait(jobId: string): void {
@@ -359,8 +373,8 @@ export class CronRunner {
     if (job?.schedule.kind === 'after') job.waitFrom = this.d.now()
   }
 
-  private writeMissed(missed: Due[]): void {
-    if (missed.length === 0) return
+  private writeMissed(missed: Due[]): boolean {
+    if (missed.length === 0) return false
     const byJob = new Map<string, Due[]>()
     for (const m of missed) {
       const list = byJob.get(m.jobId)
@@ -381,9 +395,10 @@ export class CronRunner {
       this.pushLine(job, line)
       wrote = true
     }
-    if (!wrote) return
+    if (!wrote) return false
     this.d.store.save(this.jobs)
     this.push()
+    return true
   }
 
   onRendererTeardown(): void {}
@@ -540,8 +555,7 @@ export class CronRunner {
       this.push()
       return
     }
-    this.live.delete(run.tabId)
-    this.restartWait(run.jobId)
+    this.dropRun(run)
     this.refreshFolders()
     if (!job) return this.push()
     if (outcome === 'failed')
@@ -620,8 +634,7 @@ export class CronRunner {
     if (run) this.killedRuns.set(tabId, run.jobId)
     this.d.killTab(tabId)
     this.d.killed(tabId)
-    this.live.delete(tabId)
-    if (run) this.restartWait(run.jobId)
+    if (run) this.dropRun(run)
     this.refreshFolders()
   }
 
@@ -633,8 +646,7 @@ export class CronRunner {
     const left = busy ? [] : await this.d.whatIsLeft(tabId, job.workspacePath, run.worktree)
     if (!this.isStillDone(run)) return
     if (!busy && left.length === 0) {
-      this.live.delete(tabId)
-      this.restartWait(job.id)
+      this.dropRun(run)
       const folder = run.worktree && runFolder(job.workspacePath, run.worktree)
       if (folder) this.inFlight.add(folder)
       void this.d
@@ -675,8 +687,7 @@ export class CronRunner {
 
   private closeOut(run: LiveRun): void {
     this.clearTimer(run.tabId)
-    this.live.delete(run.tabId)
-    this.restartWait(run.jobId)
+    this.dropRun(run)
     this.refreshFolders()
     const job = this.byId(run.jobId)
     if (!job) {
@@ -770,13 +781,11 @@ export class CronRunner {
   quitSweep(): void {
     this.clearTimers()
     if (this.live.size === 0) return
-    for (const run of this.live.values()) {
+    for (const run of [...this.live.values()]) {
+      this.dropRun(run)
       const job = this.byId(run.jobId)
-      if (!job) continue
-      this.restartWait(job.id)
-      this.pushLine(job, { ...lineOf(run), state: 'ended' })
+      if (job) this.pushLine(job, { ...lineOf(run), state: 'ended' })
     }
-    this.live.clear()
     this.d.store.save(this.jobs)
     this.push()
   }
@@ -792,17 +801,19 @@ export class CronRunner {
 
   save(input: CronSaveInput): CronSaveResult {
     const c = clean(input)
+    const existing = input.id ? this.byId(input.id) : undefined
     const errors = saveErrors(
       c,
       input.schedule,
       input.workspacePath,
       (p) => this.d.isPinned(p),
-      this.d.now()
+      this.d.now(),
+      existing?.schedule
     )
     if (errors.length > 0) return { ok: false, errors }
     const schedule = input.schedule as Schedule
+    const newOnceTime = schedule.kind === 'once' && !sameOnce(schedule, existing?.schedule)
 
-    const existing = input.id ? this.byId(input.id) : undefined
     let job: CronJob
     if (existing) {
       delete existing.model
@@ -812,7 +823,7 @@ export class CronRunner {
       Object.assign(existing, c, {
         workspacePath: input.workspacePath,
         schedule,
-        enabled: input.enabled === true
+        enabled: input.enabled === true || newOnceTime
       })
       job = existing
       delete this.notes[job.id]

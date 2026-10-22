@@ -1,5 +1,6 @@
 import type { CronJob } from '@shared/types'
-import { nextRun, onceAt, stepMs } from '@shared/schedule'
+import { nextRun, onceAt } from '@shared/schedule'
+import { afterDueAt } from '@shared/cronHistory'
 
 export interface Due {
   jobId: string
@@ -42,7 +43,7 @@ export function tick(
       continue
     }
     if (s.kind === 'after') {
-      if (!busy(job.id) && (job.waitFrom ?? job.createdAt) + stepMs(s) <= now) {
+      if (!busy(job.id) && afterDueAt(job, s) <= now) {
         fire.push({ jobId: job.id, dueAt: now })
       }
       continue

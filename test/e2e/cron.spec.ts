@@ -99,9 +99,10 @@ async function fillForm(dlg: Locator, spec: JobSpec): Promise<void> {
     await dlg.locator('input[aria-label="on"]').fill(when.date)
     await dlg.locator('input[aria-label="at"]').fill(when.at)
   } else {
-    const chip = when.kind === 'every' ? 'Repeat every' : 'After each run'
+    const [chip, label] =
+      when.kind === 'every' ? ['Repeat every', 'Repeat every'] : ['After each run', 'Wait']
     await dlg.locator('.chip', { hasText: chip }).click()
-    await dlg.locator('input[aria-label="Repeat every"]').fill(String(when.n))
+    await dlg.locator(`input[aria-label="${label}"]`).fill(String(when.n))
     await dlg.locator('select[aria-label="unit"]').selectOption(when.unit)
   }
   if (spec.model) await dlg.locator('.chip', { hasText: spec.model }).click()
@@ -360,10 +361,14 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         when: { kind: 'once', date, at: '09:00' }
       })
       await expect(card(page, 'Release check').locator('.job-when')).toHaveText(
-        /^Once on \d+ \w{3} at 9:00 · next tomorrow 09:00$/
+        /^Once on \d+ \w{3} \d{4} at 9:00 · next tomorrow 09:00$/
       )
 
       await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await expect(dlg.locator('.chip.on', { hasText: 'Leave it open' })).toHaveCount(1)
+      await dlg.locator('.chip', { hasText: 'After each run' }).click()
+      await expect(dlg.locator('.chip.on', { hasText: 'Close it' })).toHaveCount(1)
+      await dlg.locator('.chip', { hasText: 'Every day' }).click()
       await expect(dlg.locator('.chip.on', { hasText: 'Leave it open' })).toHaveCount(1)
       await fillForm(dlg, {
         name: 'Push issues',

@@ -22,15 +22,15 @@ export function parseDate(date: string): { y: number; mo: number; d: number } | 
   return { y, mo, d }
 }
 
-export function dateOf(t: Date): string {
-  return `${t.getFullYear()}-${p2(t.getMonth() + 1)}-${p2(t.getDate())}`
-}
-
 function isInt(n: unknown): n is number {
   return typeof n === 'number' && Number.isInteger(n)
 }
 
-function isValidStep(s: Record<string, unknown>): boolean {
+export function isStepKind(kind: unknown): kind is 'every' | 'after' {
+  return kind === 'every' || kind === 'after'
+}
+
+export function isValidStep(s: { n?: unknown; unit?: unknown }): boolean {
   if (!isInt(s.n)) return false
   if (s.unit === 'minutes') return s.n >= 1 && s.n <= 720
   if (s.unit === 'hours') return s.n >= 1 && s.n <= 24
@@ -58,7 +58,7 @@ export function isValidSchedule(x: unknown): x is Schedule {
     }
     return true
   }
-  if (s.kind === 'every' || s.kind === 'after') return isValidStep(s)
+  if (isStepKind(s.kind)) return isValidStep(s)
   if (s.kind === 'once') {
     return (
       typeof s.date === 'string' &&
@@ -87,6 +87,18 @@ function candidate(y: number, mo: number, date: number, h: number, mi: number): 
   return t
 }
 
+export function sameOnce(a: { date: string; at: string }, b: Schedule | undefined): boolean {
+  return b?.kind === 'once' && a.date === b.date && a.at === b.at
+}
+
+export function onceNewlyInPast(
+  s: { date: string; at: string },
+  now: number,
+  saved: Schedule | undefined
+): boolean {
+  return !sameOnce(s, saved) && onceAt(s).getTime() <= now
+}
+
 export function onceAt(s: { date: string; at: string }): Date {
   const day = parseDate(s.date) ?? { y: 1970, mo: 0, d: 1 }
   const hm = parseHHMM(s.at) ?? { h: 0, m: 0 }
@@ -100,7 +112,7 @@ export function nextRun(s: Schedule, from: Date): Date | null {
     return t.getTime() > from.getTime() ? t : null
   }
   if (s.kind === 'every') {
-    const step = s.unit === 'minutes' ? s.n : s.n * 60
+    const step = stepMs(s) / MIN
     let t = new Date(from.getTime())
     t.setSeconds(0, 0)
     const twoDaysPlusDstDaySlack = 2 * DAY_MIN + DAY_MIN
@@ -150,7 +162,7 @@ export function describeSchedule(s: Schedule): string {
   }
   if (s.kind === 'once') {
     const day = parseDate(s.date)
-    const on = day ? `${day.d} ${MON[day.mo]}` : s.date
+    const on = day ? `${day.d} ${MON[day.mo]} ${day.y}` : s.date
     return `Once on ${on} at ${speechTime(s.at)}`
   }
   const amount = s.n === 1 ? `1 ${s.unit.slice(0, -1)}` : `${s.n} ${s.unit}`

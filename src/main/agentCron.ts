@@ -224,7 +224,7 @@ export function mergeEdit(job: CronJob, patch: CronPatch): CronSaveInput {
     effort: patch.effort ?? job.effort,
     permission: patch.permission ?? job.permission,
     ...((patch.autoClose ?? job.autoClose) ? { autoClose: true } : {}),
-    enabled: patch.schedule?.kind === 'once' || job.enabled
+    enabled: job.enabled
   }
 }
 
@@ -336,9 +336,8 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
     const saved = (result: CronSaveResult, did: string, reply: string): AgentReply => {
       if (!result.ok) return refused(`koloft cron: ${result.errors.join(' ')}`)
       tell(did, result.job.name)
-      const number =
-        jobsHere(runner.jobsAndLive().jobs).findIndex((j) => j.id === result.job.id) + 1
-      const { live: liveNow } = runner.jobsAndLive()
+      const { jobs: jobsNow, live: liveNow } = runner.jobsAndLive()
+      const number = jobsHere(jobsNow).findIndex((j) => j.id === result.job.id) + 1
       return answered(
         `${reply} task ${number}. ${result.job.name} · ${whenLine(result.job, now, liveNow)}`
       )
@@ -363,7 +362,7 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
     }
     if (sub === 'on' && oncePassed(job, now))
       return refused(
-        `koloft cron: ${job.name} runs once and its time has passed. Give it a new time: koloft cron edit ${ref} --once <date>@<time>`
+        `koloft cron: ${job.name} runs once and its time has passed. Give it a new time: koloft cron edit ${jobs.indexOf(job) + 1} --once <date>@<time>`
       )
     if (sub === 'on' || sub === 'off') {
       runner.setEnabled(job.id, sub === 'on')
