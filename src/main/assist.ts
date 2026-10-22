@@ -3,6 +3,7 @@ import os from 'node:os'
 import type { AssistSetting, BackendId } from '@shared/types'
 import { backendsFrom } from '@shared/sessionBackend'
 import { lastCompletedText } from './museSessionLog'
+import { envMs } from './sessionRuntime'
 
 export interface AssistJob {
   system: string
@@ -12,7 +13,7 @@ export interface AssistJob {
 
 export type Assist = (job: AssistJob) => Promise<string | null>
 
-const ASSIST_TIMEOUT_MS = 15_000
+const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 
 // CC§9
 const CLAUDE_ONE_SHOT = (system: string): string[] => [
@@ -79,6 +80,7 @@ const ONE_SHOT: Record<
     argv(job: AssistJob): string[]
     stdin(job: AssistJob): string
     answer(out: string): string | null
+    secondTryWhenLate?: true
   }
 > = {
   claude: {
@@ -86,7 +88,13 @@ const ONE_SHOT: Record<
     stdin: (job) => job.prompt,
     answer: (out) => out
   },
-  codex: { argv: () => CODEX_ONE_SHOT, stdin: withSystemFirst, answer: (out) => out },
+  // CODEX§15
+  codex: {
+    argv: () => CODEX_ONE_SHOT,
+    stdin: withSystemFirst,
+    answer: (out) => out,
+    secondTryWhenLate: true
+  },
   muse: {
     argv: (job) => MUSE_ONE_SHOT(withSystemFirst(job)),
     stdin: () => '',
@@ -112,17 +120,20 @@ export interface AssistDeps {
   target(backend: BackendId): Promise<AssistTarget | null>
 }
 
+type OneRun = (signal: AbortSignal | undefined, timeoutMs: number) => Promise<string | null>
+
 function runOnce(
   target: AssistTarget,
   argv: string[],
   input: string,
-  signal?: AbortSignal
+  signal: AbortSignal | undefined,
+  timeoutMs: number
 ): Promise<string | null> {
   return new Promise((resolve) => {
     const child = execFile(
       target.binary,
       argv,
-      { env: target.env, cwd: os.tmpdir(), timeout: ASSIST_TIMEOUT_MS, signal },
+      { env: target.env, cwd: os.tmpdir(), timeout: timeoutMs, signal },
       (err, stdout, stderr) => {
         if (err && !signal?.aborted) {
           console.error(
@@ -140,6 +151,36 @@ function runOnce(
   })
 }
 
+const STILL_RUNNING = Symbol('still running')
+
+async function withASecondTryWhenLate(
+  run: OneRun,
+  signal: AbortSignal | undefined
+): Promise<string | null> {
+  const both = new AbortController()
+  const stopBoth = (): void => both.abort()
+  signal?.addEventListener('abort', stopBoth, { once: true })
+  let timer: NodeJS.Timeout | undefined
+  try {
+    const first = run(both.signal, 2 * ASSIST_TIMEOUT_MS)
+    const late = new Promise<typeof STILL_RUNNING>((resolve) => {
+      timer = setTimeout(() => resolve(STILL_RUNNING), ASSIST_TIMEOUT_MS)
+    })
+    const early = await Promise.race([first, late])
+    if (early !== STILL_RUNNING) return early
+    const answered = (out: Promise<string | null>): Promise<string> =>
+      out.then((text) => text ?? Promise.reject(new Error('no answer')))
+    return await Promise.any([
+      answered(first),
+      answered(run(both.signal, ASSIST_TIMEOUT_MS))
+    ]).catch(() => null)
+  } finally {
+    clearTimeout(timer)
+    both.abort()
+    signal?.removeEventListener('abort', stopBoth)
+  }
+}
+
 export function koloftAssist(deps: AssistDeps): Assist {
   return async (job) => {
     const setting = deps.setting()
@@ -151,9 +192,13 @@ export function koloftAssist(deps: AssistDeps): Assist {
       if (!target) continue
       const shot = ONE_SHOT[backend]
       const argv = [...(target.args ?? []), ...shot.argv(job)]
-      const out = await runOnce(target, argv, shot.stdin(job), job.signal).finally(() =>
-        target.done?.()
-      )
+      const run: OneRun = (signal, timeoutMs) =>
+        runOnce(target, argv, shot.stdin(job), signal, timeoutMs)
+      const out = await (
+        shot.secondTryWhenLate
+          ? withASecondTryWhenLate(run, job.signal)
+          : run(job.signal, ASSIST_TIMEOUT_MS)
+      ).finally(() => target.done?.())
       return out === null ? null : shot.answer(out)
     }
     return null

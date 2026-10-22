@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { koloftAssist } from '../../src/main/assist'
 import type { AssistSetting, BackendId } from '../../src/shared/types'
 
@@ -107,6 +107,63 @@ describe('Koloft Assist', () => {
     expect(argv[argv.length - 1]).toBe('-')
     expect(read(codex.log + '.stdin')).toBe(`${JOB.system}\n\n${JOB.prompt}`)
     expect(read(codex.log + '.home')?.trim()).toBe('/homes/work')
+  })
+
+  describe('a Codex one-shot that is late', () => {
+    const LIMIT_MS = 400
+
+    function codexThatAnswersOnTry(answers: string[]): { bin: string; tries: () => number } {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-late-'))
+      const bin = path.join(dir, 'codex')
+      const count = path.join(dir, 'tries')
+      const cases = answers.map((step, i) => `  ${i + 1}) ${step} ;;`).join('\n')
+      fs.writeFileSync(
+        bin,
+        `#!/bin/sh\ncat > /dev/null\necho x >> ${JSON.stringify(count)}\n` +
+          `n=$(wc -l < ${JSON.stringify(count)} | tr -d ' ')\ncase "$n" in\n${cases}\nesac\n`,
+        { mode: 0o755 }
+      )
+      return { bin, tries: () => read(count)?.trim().split('\n').length ?? 0 }
+    }
+
+    async function lateAssist(codex: string) {
+      vi.resetModules()
+      process.env.KOLOFT_ASSIST_TIMEOUT_MS = String(LIMIT_MS)
+      try {
+        const { koloftAssist: fresh } = await import('../../src/main/assist')
+        return fresh({
+          setting: () => ({ on: true, backend: 'codex' }),
+          enabled: () => true,
+          target: async () => ({ binary: codex, env: {} })
+        })
+      } finally {
+        delete process.env.KOLOFT_ASSIST_TIMEOUT_MS
+      }
+    }
+
+    // CODEX§15
+    it('starts a second try at the time limit and answers with whichever comes back first', async () => {
+      const codex = codexThatAnswersOnTry(['exec sleep 30', 'echo From the second try'])
+      const reply = await (await lateAssist(codex.bin))(JOB)
+      expect(reply?.trim()).toBe('From the second try')
+      expect(codex.tries()).toBe(2)
+    })
+
+    it('still takes the first try’s answer when it comes in after the second try started', async () => {
+      const codex = codexThatAnswersOnTry([
+        `sleep ${(1.5 * LIMIT_MS) / 1000}; echo From the first try`,
+        'exec sleep 30'
+      ])
+      const reply = await (await lateAssist(codex.bin))(JOB)
+      expect(reply?.trim()).toBe('From the first try')
+      expect(codex.tries()).toBe(2)
+    })
+
+    it('does not try again when the first try fails before the time limit', async () => {
+      const codex = codexThatAnswersOnTry(['exit 1', 'echo From the second try'])
+      expect(await (await lateAssist(codex.bin))(JOB)).toBeNull()
+      expect(codex.tries()).toBe(1)
+    })
   })
 
   it('runs on the third tool when neither of the others can', async () => {

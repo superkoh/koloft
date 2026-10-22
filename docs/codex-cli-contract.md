@@ -896,6 +896,15 @@ read-only -m gpt-6-luna -C /tmp -` with the system text and task on stdin exited
 about 2 s, printed only the title on stdout, reported 2,538 tokens on stderr, and wrote
 no rollout into the shared `sessions/`.
 
+**The one-shot sometimes answers 15–45 s late.** 2026-10-19 and 2026-10-20, codex-cli
+0.162.0, `gpt-6-luna`, the same argv: 15 direct runs with a fresh `CODEX_HOME` holding
+only `auth.json` took 2.6–6.8 s, except one that took 43.7 s and still exited 0 with the
+right answer and nothing unusual on stderr. Through `test/unit/sessionRoute.real.test.ts`
+4 of 24 lines (2026-10-19) and 2 of 24 (2026-10-20) were cut off by the 15 s limit; the
+rest took 2.7–9.3 s. Claude's Haiku one-shot answered 24 of 24 under 5 s both nights. So
+a Codex one-shot still running at the limit gets a second run beside it, and the first
+answer wins (#615).
+
 **The login still lands in `auth.json` by default on 0.162.1; a keyring is opt-in.**
 Checked 2026-10-11 with Codex CLI 0.162.1 (the npm package in a scratch folder),
 throwaway `CODEX_HOME`s, a dummy key on stdin: `codex login --with-api-key` printed
