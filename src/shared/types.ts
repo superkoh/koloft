@@ -1247,7 +1247,7 @@ export interface KoloftApi {
     createProject(parent: string, name: string): Promise<ProjectCreateResult>
   }
   assist: {
-    route(id: number, message: string): Promise<SessionRoute | null>
+    route(id: number, message: string, pinned?: string): Promise<SessionRoute | null>
     cancel(id: number): void
   }
   settings: {

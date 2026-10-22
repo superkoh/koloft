@@ -163,6 +163,21 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     screenshot(testInfo.outputPath('palette-open.png'))
   })
 
+  test('⌘⏎ typed on the keyboard in ⌘P, with a session open, reaches the palette and starts the words, instead of the Focus Mode that holds ⌘⏎ outside the palette', async ({
+    shown: { app, page }
+  }) => {
+    await page.evaluate(() => window.api.settings.set({ assist: { on: false, backend: 'claude' } }))
+    await sessionIn(page, 'ws-a')
+    await clickIntoTerminal(app, page)
+    realKey(KEY_P, COMMAND_FLAG)
+    const field = palette(page).getByRole('textbox', { name: 'Ask or jump' })
+    await expect(field).toBeFocused()
+    await field.fill('read the readme')
+    realKey(KEY_RETURN, COMMAND_FLAG)
+    await expect(page.getByRole('dialog', { name: 'New Session in…' })).toBeVisible()
+    await expect(palette(page)).toHaveCount(0)
+  })
+
   test('dragging the title bar with the mouse moves the window along with it', async ({
     shown: { app, page }
   }, testInfo) => {

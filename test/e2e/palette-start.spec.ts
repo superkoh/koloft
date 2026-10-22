@@ -119,7 +119,7 @@ function codexCalls(env: E2EEnv): { argv: string[]; cwd: string }[] {
     .map((line) => JSON.parse(line))
 }
 
-test.describe('starting work from ⌘P: Koloft Assist picks the workspace, worktree and title, and ⏎ or ⇧⏎ starts the session straight away', () => {
+test.describe('starting work from ⌘P: Koloft Assist picks the workspace, worktree and title, and ⏎ or ⌘⏎ starts the session straight away', () => {
   test('local Claude: ⏎ on a request sends folder names only and starts Claude at once in the new worktree, with the title and first prompt, no dialog in between', async ({
     env
   }) => {
@@ -154,7 +154,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('local Codex: ⇧⏎ starts the other method — Codex in a folder that is not git, with the first prompt and no --name flag', async ({
+  test('local Codex: ⌘⏎ starts the other method — Codex in a folder that is not git, with the first prompt and no --name flag', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -166,7 +166,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await waitBooted(page)
       await ask(app, page, PROMPT)
       await expect(palette(page).getByRole('button', { name: 'Pick an agent' })).toBeVisible()
-      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.press('Meta+Enter')
 
       await expect.poll(() => codexCalls(env).length, { timeout: 40_000 }).toBe(1)
       await expect(page.locator('.modal')).toHaveCount(0)
@@ -175,6 +175,56 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       expect(call.argv).not.toContain('--name')
       expect(call.argv[call.argv.length - 1]).toBe(PROMPT)
       expect(readAllCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('@ names the workspace: typing @ offers the workspaces with the first one picked, ↓ and ⏎ fill a name in, ⇧⏎ breaks the line, and ⏎ starts there at once without the @ word — past the picker with Assist off, and with Assist on, Assist sees only that workspace and cannot send the work elsewhere', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() =>
+        window.api.settings.set({ assist: { on: false, backend: 'claude' } })
+      )
+      await ask(app, page, 'fix the footer ')
+      await page.keyboard.type('@ws')
+      const suggested = palette(page).getByRole('group', { name: 'Workspaces' })
+      await expect(suggested.locator('.cb-row.hot')).toContainText('ws-a')
+      await expect(palette(page).getByRole('group', { name: 'Sessions' })).toHaveCount(0)
+      await page.keyboard.press('ArrowDown')
+      await expect(suggested.locator('.cb-row.hot')).toContainText('ws-b')
+      await page.keyboard.press('Enter')
+      await expect(askBox(page)).toHaveValue('fix the footer @ws-b ')
+      await expect(suggested).toHaveCount(0)
+      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.type('and the header')
+      await expect(askBox(page)).toHaveValue('fix the footer @ws-b \nand the header')
+      await page.keyboard.press('Enter')
+
+      const [call] = await waitForAllCalls(env, 1, 30_000)
+      expect(fs.realpathSync(call.cwd)).toBe(fs.realpathSync(env.workspaces.b))
+      expect(textAfterDashes(call)).toBe('fix the footer\nand the header')
+      await expect(page.locator('.modal')).toHaveCount(0)
+      expect(assistWasAsked(env)).toBe('')
+
+      await page.evaluate(() =>
+        window.api.settings.set({ assist: { on: true, backend: 'claude' } })
+      )
+      assistAnswers(env, { hand: 'koloft', title: 'Readme', why: 'rule 8' })
+      await ask(app, page, '@ws-a tidy the readme')
+      await page.keyboard.press('Enter')
+      const calls = await waitForAllCalls(env, 2, 30_000)
+      expect(fs.realpathSync(calls[1].cwd)).toBe(fs.realpathSync(env.workspaces.a))
+      expect(textAfterDashes(calls[1])).toBe('tidy the readme')
+      expect(nameOf(calls[1])).toBe('Readme')
+      const asked = assistWasAsked(env)
+      expect(asked).toContain('| ws-a |')
+      expect(asked).not.toContain('| ws-b |')
     } finally {
       await quitAndClose(app)
     }
@@ -288,7 +338,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       const picker = page.getByRole('dialog', { name: 'New Session in…' })
       assistAnswers(env, 'not an answer')
       await ask(app, page, 'fix the build')
-      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.press('Meta+Enter')
       const [butler] = await waitForAllCalls(env, 1, 30_000)
       expect(butler.cwd).toBe(butlerFolder(env))
       expect(textAfterDashes(butler)).toBe(
@@ -445,7 +495,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     })
   }
 
-  test('while a Claude butler is busy, the helper for ⌘P work runs on the agent the owner picked with ⇧⏎, not on the butler’s own', async ({
+  test('while a Claude butler is busy, the helper for ⌘P work runs on the agent the owner picked with ⌘⏎, not on the butler’s own', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -462,7 +512,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect(butlerRow(page)).toHaveClass(BUSY_ROW, { timeout: 30_000 })
 
       await ask(app, page, 'and dim the sidebar too')
-      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.press('Meta+Enter')
       await expect(page.locator('.isl-butler .ws-subtabs > .ws-tab')).toHaveCount(1, {
         timeout: 60_000
       })
@@ -695,6 +745,33 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
   })
 
   test.describe('remote', () => {
+    test('remote Claude: @ offers the ssh workspace by host:name, and the work starts on that machine even when Assist would hand it to the butler', async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      seedRemoteWorkspace(env)
+      assistAnswers(env, { hand: 'koloft', title: 'Logs', why: 'rule 8' })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await ask(app, page, `@${REMOTE_HOST}`)
+        const suggested = palette(page).getByRole('group', { name: 'Workspaces' })
+        await expect(suggested.locator('.cb-row')).toHaveCount(1)
+        await page.keyboard.press('Tab')
+        await expect(askBox(page)).toHaveValue(new RegExp(`^@${REMOTE_HOST}:\\S+ $`))
+        await page.keyboard.type('read the logs')
+        await page.keyboard.press('Enter')
+        const [onRemote] = await waitForAllCalls(env, 1, 90_000)
+        expect(onRemote.cwd).toBe(remoteDir(env))
+        expect(textAfterDashes(onRemote)).toBe('read the logs')
+        expect(nameOf(onRemote)).toBe('Logs')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
     test('remote Claude: a request starts at once in the ssh workspace with its title and first prompt, and a new project is made on the machine, added, and started there', async ({
       env
     }) => {

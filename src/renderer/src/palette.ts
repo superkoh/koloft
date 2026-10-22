@@ -26,6 +26,7 @@ export interface PaletteWorkspace {
   wsPath: string
   name: string
   note: string
+  tag: string
 }
 
 export interface PaletteAction {
@@ -118,15 +119,77 @@ export function paletteSessions(
 }
 
 export function paletteWorkspaces(rows: WorkspaceRows[], home: string): PaletteWorkspace[] {
-  return rows
+  const items = rows
     .filter((w) => !w.workspace.missing)
-    .map(({ workspace: ws }) => {
+    .map(({ workspace: ws }): PaletteWorkspace => {
       const name = workspaceName(ws)
       const note = ws.remote
         ? remoteCopyText(ws.remote.host, ws.remote.path)
         : shortenHome(ws.path, home)
-      return { kind: 'workspace', key: `w:${ws.path}`, wsPath: ws.path, name, note }
+      const tag = ws.remote ? `${ws.remote.host}:${name}` : name
+      return { kind: 'workspace', key: `w:${ws.path}`, wsPath: ws.path, name, note, tag }
     })
+  const shared = (tag: string): boolean => items.filter((w) => w.tag === tag).length > 1
+  return items.map((w) => (shared(w.tag) ? { ...w, tag: w.note } : w))
+}
+
+export interface MentionTyping {
+  start: number
+  end: number
+  typed: string
+}
+
+const startsWord = (text: string, at: number): boolean => at === 0 || /\s/.test(text[at - 1])
+
+export function mentionTyping(text: string, caret: number): MentionTyping | null {
+  const start = text.lastIndexOf('@', caret - 1)
+  if (start < 0 || start >= caret || !startsWord(text, start)) return null
+  const typed = text.slice(start + 1, caret)
+  if (/\s/.test(typed)) return null
+  const rest = text.slice(caret).search(/\s/)
+  return { start, end: rest < 0 ? text.length : caret + rest, typed }
+}
+
+export function mentionCandidates(
+  workspaces: PaletteWorkspace[],
+  typed: string
+): PaletteWorkspace[] {
+  const t = typed.toLowerCase()
+  return workspaces.filter((w) => w.tag.toLowerCase().includes(t))
+}
+
+export function completeMention(
+  text: string,
+  at: MentionTyping,
+  tag: string
+): { text: string; caret: number } {
+  const head = `${text.slice(0, at.start)}@${tag} `
+  return { text: head + text.slice(at.end).replace(/^[ \t]/, ''), caret: head.length }
+}
+
+export function pinnedWorkspace(
+  text: string,
+  workspaces: PaletteWorkspace[]
+): { wsPath: string; prompt: string } | null {
+  const longestFirst = [...workspaces].sort((a, b) => b.tag.length - a.tag.length)
+  const lower = text.toLowerCase()
+  for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
+    if (!startsWord(text, i)) continue
+    const ws = longestFirst.find((w) => {
+      const end = i + 1 + w.tag.length
+      return (
+        lower.startsWith(w.tag.toLowerCase(), i + 1) &&
+        (end === text.length || /\s/.test(text[end]))
+      )
+    })
+    if (ws) {
+      const before = text.slice(0, i).replace(/[ \t]+$/, '')
+      const after = text.slice(i + 1 + ws.tag.length).replace(/^[ \t]+/, '')
+      const joined = /(^|\n)$/.test(before) || /^(\n|$)/.test(after)
+      return { wsPath: ws.wsPath, prompt: (before + (joined ? '' : ' ') + after).trim() }
+    }
+  }
+  return null
 }
 
 export function paletteGroups(

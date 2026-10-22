@@ -1287,8 +1287,8 @@ export default function App(): JSX.Element {
   const terminalReady = panelReady && !!(landed.alive && landed.sessionId)
 
   useEffect(() => {
-    window.api.workbench.setAvailable(panelReady, terminalReady)
-  }, [panelReady, terminalReady])
+    window.api.workbench.setAvailable(panelReady && !paletteOpen, terminalReady)
+  }, [panelReady, terminalReady, paletteOpen])
 
   useEffect(() => {
     return subscribeMenuFlags(({ editing, anyDirty }) => {
