@@ -858,8 +858,10 @@ async function handOverTyping(oldId: string, newId: string): Promise<void> {
 
 function writeToTab(id: string, data: string): void {
   const typed = typedWhileAsleep.get(id)
+  const woken = wokenAs.get(id)
   if (typed !== undefined) typedWhileAsleep.set(id, typed + withoutMouseAndFocusReports(data))
-  else ptyMgr.write(wokenAs.get(id) ?? id, data)
+  else if (woken) ptyMgr.write(woken, withoutMouseAndFocusReports(data))
+  else ptyMgr.write(id, data)
 }
 async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
   const title = s && sidebarTitle(s)
