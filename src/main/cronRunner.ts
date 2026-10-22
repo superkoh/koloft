@@ -544,7 +544,7 @@ export class CronRunner {
   }
 
   onBound(tabId: string, sessionId: string): void {
-    const run = this.live.get(tabId)
+    const run = this.live.get(tabId) ?? this.runEndedByQuit(tabId, sessionId)
     if (!run) return
     run.sessionId = sessionId
     const endpoint = this.byId(run.jobId)?.model && this.d.endpointAccountWithModelOf(tabId)
@@ -555,6 +555,28 @@ export class CronRunner {
       this.clearTimer(tabId)
     }
     this.push()
+  }
+
+  private runEndedByQuit(tabId: string, sessionId: string): LiveRun | undefined {
+    for (const job of this.jobs) {
+      const i = job.history.findIndex((h) => h.state === 'ended' && h.sessionId === sessionId)
+      if (i < 0) continue
+      const [line] = job.history.splice(i, 1)
+      const run: LiveRun = {
+        jobId: job.id,
+        tabId,
+        state: 'done',
+        startedAt: this.d.now(),
+        dueAt: line.dueAt,
+        ...(line.worktree ? { worktree: line.worktree } : {}),
+        ...(line.manual ? MANUAL : {}),
+        ...(line.note ? { note: line.note } : {})
+      }
+      this.live.set(tabId, run)
+      this.d.store.save(this.jobs)
+      return run
+    }
+    return undefined
   }
 
   onStatus(tabId: string, prev: SessionStatus | undefined, next: SessionStatus): void {

@@ -753,7 +753,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
-  test('BB-M08: jobs survive a relaunch; live runs are closed out, never stored; the run’s tab comes back with its folder, which goes once you close that tab', async ({
+  test('BB-M08: jobs survive a relaunch; live runs are closed out, never stored; the run’s tab comes back with its folder as the open run, so Run now skips it, and once you close that tab its folder goes and the next run starts', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -799,18 +799,29 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(card(page, 'Nightly report').locator('.job-when')).toHaveText(
         WHEN_NEXT_TODAY_OR_TOMORROW
       )
-      await expect
-        .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
-        .toBe('Ended — Koloft quit')
-
       await waitColdRowMarkedBeforeRunNowSoTheCountsAfterMeanSomething(page)
 
       const row = cronRows(page, 'ws-a')
       await waitRunStateBound(row)
+      await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
+        'done — waiting for you',
+        { timeout: 20_000 }
+      )
+      await expect.poll(() => histLines(page), { timeout: 20_000 }).toEqual([])
+
+      const callsWhileOpen = readCalls(env).length
+      await clickRunNow(page, 'Nightly report')
+      await expect(toastMsg(page)).toHaveText(
+        '⏰ Nightly report skipped: the last run is still open'
+      )
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
+        .toBe('Skipped — the last run was still open')
+      expect(readCalls(env)).toHaveLength(callsWhileOpen)
+
       await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
       const tree = runTree(env.workspaces.a, wt)
       expect(fs.existsSync(tree)).toBe(true)
-      expect((await histLines(page))[0]).toMatchObject({ state: 'Ended — Koloft quit', folder: '' })
 
       await closeCron(page)
       await row.click()
@@ -821,7 +832,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await openCron(page, 'ws-a')
       await expect
         .poll(async () => (await histLines(page))[0], { timeout: 20_000 })
-        .toMatchObject({ state: 'Ended — Koloft quit', folder: ' · folder removed' })
+        .toMatchObject({ state: 'Closed by you', folder: ' · folder removed' })
 
       const before = readCalls(env).length
       await clickRunNow(page, 'Nightly report')
@@ -830,6 +841,50 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(dlg).toBeVisible()
       await expect(wsRows(page, 'ws-a')).toHaveCount(2, { timeout: 60_000 })
       await expect(cronRows(page, 'ws-a')).toHaveCount(2, { timeout: 60_000 })
+    } finally {
+      await app2.close().catch(() => {})
+    }
+  })
+
+  test('BB-M08 in Codex: a Codex run left open at quit comes back as the open run, so Run now skips it', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    const app1 = await launchApp(env)
+    try {
+      const page = await app1.firstWindow()
+      await waitBooted(page)
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
+      await fillForm(dlg, { name: 'Nightly report', task: 'look around' })
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Nightly report')
+      await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Nightly report')
+    } finally {
+      await app1.close().catch(() => {})
+    }
+    expect(readStore(env)?.jobs[0].history[0].state).toBe('ended')
+
+    const app2 = await launchApp(env)
+    try {
+      const page = await app2.firstWindow()
+      await waitBooted(page)
+      await waitRunStateBound(cronRows(page, 'ws-a'))
+      await openCron(page, 'ws-a')
+      await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
+        'done — waiting for you',
+        { timeout: 20_000 }
+      )
+
+      const callsWhileOpen = codexCalls(env).length
+      await clickRunNow(page, 'Nightly report')
+      await expect(toastMsg(page)).toHaveText(
+        '⏰ Nightly report skipped: the last run is still open'
+      )
+      expect(codexCalls(env)).toHaveLength(callsWhileOpen)
     } finally {
       await app2.close().catch(() => {})
     }

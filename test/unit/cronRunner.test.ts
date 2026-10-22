@@ -1060,6 +1060,48 @@ describe('CronRunner — quitting', () => {
     expect(h.jobs[0].history[0].state).toBe('ended')
   })
 
+  it('takes a run it ended back as open once its session binds again after a relaunch, so the next due is skipped and closing it writes one closed line', async () => {
+    const before = makeHarness([makeJob()])
+    await before.runner.runNow('j1')
+    before.runner.onBound('tab-1', 's1')
+    before.runner.quitSweep()
+
+    const h = makeHarness(before.jobs)
+    h.runner.onBound('tab-other', 's-not-a-run')
+    expect(h.runner.state().live).toEqual([])
+
+    h.runner.onBound('tab-back', 's1')
+    expect(h.runner.state().live).toEqual([
+      {
+        jobId: 'j1',
+        tabId: 'tab-back',
+        state: 'done',
+        startedAt: T0,
+        dueAt: T0,
+        worktree: 'nightly-report-260902-1000',
+        manual: true,
+        sessionId: 's1'
+      }
+    ])
+    expect(h.jobs[0].history).toEqual([])
+
+    h.setClock(T0 + 1 * MIN)
+    expect(await h.runner.runNow('j1')).toEqual({ ok: false, reason: 'skipped' })
+    expect(h.launch).not.toHaveBeenCalled()
+
+    h.runner.onPtyExit('tab-back')
+    expect(h.jobs[0].history).toEqual([
+      {
+        dueAt: T0,
+        state: 'closed',
+        worktree: 'nightly-report-260902-1000',
+        manual: true,
+        sessionId: 's1'
+      },
+      { dueAt: T0 + 1 * MIN, state: 'skipped', count: 1, manual: true }
+    ])
+  })
+
   it('stops the tick and the deadline timers', async () => {
     const h = makeHarness([makeJob()], { bindDeadlineMs: 5 * SEC })
     h.runner.start()
