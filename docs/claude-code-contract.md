@@ -114,7 +114,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   versions). Measured 2026-10-14 on 2.1.296 and 2.1.299, python pty 120, 60 and 50
   columns, scratch `HOME`, no login (one `hello` typed first), named and unnamed, plain
   folder and a `-w` keep exit; the lines come dim right after the screen reset, since the
-  default (not fullscreen) mode uses no alternate screen. Koloft does not read this hint.
+  default (not fullscreen) mode uses no alternate screen. Koloft reads this hint only to
+  see past it to a worktree removal's first line (§4).
 - **A resumed session's SessionStart hook reports the LAUNCH directory as cwd, not the
   worktree** — the re-enter happens after the hook (E8). Seen again 2026-10-09 on CC
   2.1.295, real sessions on the dev Mac that Koloft resumed from the repo root after a
@@ -647,9 +648,15 @@ the same files into a worktree Koloft makes or rebuilds itself.
 
 - **Removing happens before the exit, in the open, and can take seconds.** After a Remove
   (or a silent clean removal) CC leaves its screen, writes `ESC ] 0 ; BEL` (an empty
-  window title) followed at once by the line `Removing worktree…` (U+2026), deletes the
-  folder, deletes the branch `worktree-<name>`, prints one result line, runs the
-  SessionEnd hooks and only then exits. Success lines start with `Worktree removed`
+  window title), then the line `Removing worktree…` (U+2026), deletes the folder, deletes
+  the branch `worktree-<name>`, prints one result line, runs the SessionEnd hooks and
+  only then exits. The line follows the title at once only while the session has no
+  message; once it has one, the two dim lines `Resume this session with:` and `claude
+  --resume <id>` (§1) come between them, and nothing else does: 119 bytes with a session
+  id and their colour codes, on both builds. The TUI's own
+  `⏳ Removing worktree…` is drawn before the empty title. (Measured 2026-10-20 on CC
+  2.1.303 and 2.1.304: a `-w` session with one turn, in fullscreen and with
+  `CLAUDE_CODE_NO_FLICKER=0`, a python pty, the raw bytes saved.) Success lines start with `Worktree removed`
   (`Worktree removed (no changes)`, `Worktree removed.`, `Worktree removed. Uncommitted
   changes were discarded.`); the others name the trouble (`Could not finish removing the
   worktree at …`, `Removing the worktree at … did not finish within …`, `Stopped waiting
