@@ -1154,7 +1154,13 @@ export default function App(): JSX.Element {
     }
     const toButler = (title: string, about: string | null): void => {
       const at = activeTabWs ?? undefined
-      const request = { words: prompt, title: title || undefined, about: about ?? undefined, at }
+      const request = {
+        words: prompt,
+        backend,
+        title: title || undefined,
+        about: about ?? undefined,
+        at
+      }
       void window.api.conductors.fromPalette(request).then((r) => {
         if (r.ok) {
           if (r.queued) return

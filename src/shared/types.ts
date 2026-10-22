@@ -415,6 +415,7 @@ export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; err
 
 export interface PaletteRequest {
   words: string
+  backend: BackendId
   title?: string
   about?: string
   at?: string

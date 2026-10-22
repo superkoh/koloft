@@ -4620,10 +4620,11 @@ function commandIntoButler(text: string): string {
 
 let butlerMessages = 0
 
-function fromPalette({ words, about, at }: PaletteRequest): string {
+function fromPalette({ words, backend, about, at }: PaletteRequest): string {
   const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
   const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
-  return `The owner typed this in ⌘P: ${words}${where}${routed}`
+  const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: start any session for this with --backend ${backend}.)`
+  return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
 }
 
 function busyButler(): SessionInfo | undefined {
@@ -4640,7 +4641,8 @@ async function handFromPalette(request: PaletteRequest): Promise<PaletteHandOff>
   const tabId = await sessionCommand.startButlerHelper(busy, {
     prompt: text,
     name: request.title,
-    ownerWords: request.words
+    ownerWords: request.words,
+    backend: request.backend
   })
   if (!tabId)
     return { ok: false, error: `${butlerNameNow()} is busy, and Koloft could not start a helper.` }
