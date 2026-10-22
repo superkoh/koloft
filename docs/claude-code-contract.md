@@ -437,6 +437,23 @@ Unless a bullet below says more, it is inferred, not checked.
   (`claude-opus-4-20250514`, `claude-sonnet-4-20250514`).
 - **The Stop hook can fire a moment before the turn's assistant record is flushed** to
   the jsonl (seen live on 2.1.263), so a reader that trusts Stop has to poll for it.
+- **A typed `/koloft <args>` runs Koloft's plugin skill `koloft:koloft` as a model turn,
+  whose only typed record is a `<command-message>` one** (2026-10-20, CC 2.1.304, the butler's claude
+  in Koloft, e2e temp HOME, `/koloft session list` sent from the fake Discord, so typed,
+  Esc, Enter; 3 runs). The screen showed `❯ /koloft:koloft session list`. The turn's
+  records: a `user` record (`origin.kind` `human`) whose string content is
+  `<command-message>koloft:koloft</command-message>\n<command-name>/koloft:koloft</command-name>\n<command-args>session list</command-args>`,
+  the skill body as an `isMeta` user record whose content is an array, the hooks'
+  attachments, a Bash `tool_use`, its result, the reply text, `stop_hook_summary`. No
+  `<local-command-stdout>` is written. UserPromptSubmit fired for it, as for a custom
+  command (§17): Koloft saw the session go to working, and the hook's
+  `hook_additional_context` attachment is in the turn.
+- **A command that runs the model writes its record starting `<command-message>`; a
+  built-in one starts `<command-name>`.** Every such record in this Mac's own
+  transcripts for the koloft repo (2026-10-20, CC 2.1.29x–2.1.304): the skills
+  `claude-api`, `deep-research` and `koloft:koloft` began `<command-message>…`, each
+  followed by its body as an `isMeta` record and a model turn; `/goal`, `/model`,
+  `/effort`, `/advisor` and `/compact` began `<command-name>…`.
 - **What a slash command leaves in the jsonl** (2026-10-04/05, CC 2.1.289 and 2.1.290,
   every record of the runs read):
   - Its output is the text inside `<local-command-stdout>…</local-command-stdout>`, in

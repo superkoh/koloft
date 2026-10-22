@@ -217,6 +217,15 @@ export const INTERRUPT_TEXTS = new Set([
 // CC§2
 const IMAGE_PLACEHOLDER = /\[Image(?: #\d+)?\]/g
 
+// CC§2
+const PROMPT_COMMAND =
+  /^<command-message>[\s\S]*?<command-name>([\s\S]*?)<\/command-name>(?:\s*<command-args>([\s\S]*?)<\/command-args>)?/
+
+function promptCommandText(raw: string): string | null {
+  const m = PROMPT_COMMAND.exec(raw)
+  return m ? `${m[1].trim()} ${m[2]?.trim() ?? ''}`.trim() : null
+}
+
 export function classifyUserPrompt(text: string): {
   genuine: boolean
   title: string | null
@@ -295,6 +304,8 @@ function claudeTurnPieces(obj: TranscriptRecord | null): TurnPiece[] {
     const who = raw === null ? null : whoTyped(obj, raw)
     if (raw === null || !who) return []
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
+    const command = obj.isMeta ? null : promptCommandText(raw)
+    if (command) return [{ line: { who, text: command, at }, midTurn: false }]
     if (
       obj.isMeta ||
       compactionSummary(obj) ||
