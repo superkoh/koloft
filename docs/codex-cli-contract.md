@@ -2098,11 +2098,23 @@ turn asked for a shell `echo hi > out.txt`.
 
 2026-10-21, codex-cli 0.162.0, `gpt-6-luna`, the `CODEX_ONE_SHOT` argv with a fresh
 `CODEX_HOME` holding only `auth.json`, the ⌘P routing prompt of `routeJob` and the typed
-lines of `test/unit/sessionRoute.real.test.ts`.
+lines of `test/unit/sessionRoute.real.test.ts`. Claude Code 2.1.308 (Haiku) with the
+same prompt answered all 24 lines right before and after both changes below.
 
 - **It names the right rule but writes another rule's JSON.** For "how's blog doing on
   the Electron article" (blog is not git) it answered
   `{"workspace":2,"worktree":"main",…,"why":"规则 1：询问 blog …"}` in 8 of 26 answers:
   the `why` names rule 1 (hand it to the sessions already working there) while the object
-  has rule 6's shape (start a session there). TODO-AFTER
+  has rule 6's shape (start a session there).
+- **Asked for a `"rule"` number after `"why"`, it repeats the rule it named.** With
+  `"rule": <the number of the rule you named in "why">` as the last field, 10 of 10
+  answers to that line carried `"rule":1`, 4 of them still in rule 6's shape, so a parser
+  that trusts the number sent all 10 to the check-in (and 8 of 8 more through the test).
+  The other lines kept their landing: a run of all 24 lines had one wrong answer,
+  "让所有正在跑的会话都提交一下代码" as rule 1, while 20 more tries of that line alone
+  with this prompt, and 10 without the field, all gave rule 5 or 8.
+- **Asked for the number before `"title"` and `"why"`, it decides again and decides
+  worse.** With `"rule": <the number of the rule you took>` as the first added field,
+  "koloft里…为什么session list前没有展示agent对应的icon" went to rule 8 or 5 (7 of 10)
+  or rule 3 (1 of 10), where the prompt without it gave rule 6 in 10 of 10.
 
