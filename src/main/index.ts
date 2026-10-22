@@ -3221,7 +3221,7 @@ app.whenReady().then(() => {
     quitting: () => quitCommitted,
     accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
-    ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
+    ready: () => rendererReady && openTabsRestored && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,
     killTab: (tabId) => void killTabPty(tabId),
     stillWorking: (tabId) => tracker.stillWorking(tabId),
@@ -4389,12 +4389,12 @@ function restoreOpenTabs(): string | undefined {
     addSleeper(id, t)
     if (t.sessionId === savedOpenTabs.active) activeAsleep = id
   }
-  void resumeAwake(
-    [...plan.awake.map((t) => t.sessionId), ...plan.keepRunningOnly],
-    savedOpenTabs.active
-  ).finally(() => {
+  const awake = [...plan.awake.map((t) => t.sessionId), ...plan.keepRunningOnly]
+  cronRunner?.expectReopened(awake)
+  void resumeAwake(awake, savedOpenTabs.active).finally(() => {
     openTabsRestored = true
     rememberOpenTabs()
+    cronRunner?.onRendererReady()
     cronRunner?.sweepLeftFolders()
   })
   tabLifecycle.emit('slept')

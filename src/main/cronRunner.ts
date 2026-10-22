@@ -232,9 +232,9 @@ function saveErrors(
 
 const MANUAL = { manual: true } as const
 
-function lineOf(
-  run: LiveRun
-): Pick<HistoryLine, 'dueAt' | 'worktree' | 'manual' | 'sessionId' | 'note'> {
+type RunFields = 'dueAt' | 'worktree' | 'manual' | 'sessionId' | 'note'
+
+function lineOf(run: Pick<LiveRun, RunFields>): Pick<HistoryLine, RunFields> {
   return {
     dueAt: run.dueAt,
     ...(run.worktree ? { worktree: run.worktree } : {}),
@@ -277,6 +277,7 @@ export class CronRunner {
   private killedRuns = new Map<string, string>()
   private inFlight = new Set<string>()
   private launching = new Set<string>()
+  private reopening = new Set<string>()
   private held = new Map<string, Due[]>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private lastDue = new Map<string, number>()
@@ -544,7 +545,7 @@ export class CronRunner {
   }
 
   onBound(tabId: string, sessionId: string): void {
-    const run = this.live.get(tabId) ?? this.runEndedByQuit(tabId, sessionId)
+    const run = this.live.get(tabId) ?? this.reopenedRun(tabId, sessionId)
     if (!run) return
     run.sessionId = sessionId
     const endpoint = this.byId(run.jobId)?.model && this.d.endpointAccountWithModelOf(tabId)
@@ -557,23 +558,26 @@ export class CronRunner {
     this.push()
   }
 
-  private runEndedByQuit(tabId: string, sessionId: string): LiveRun | undefined {
+  expectReopened(sessionIds: string[]): void {
+    for (const id of sessionIds) this.reopening.add(id)
+  }
+
+  private reopenedRun(tabId: string, sessionId: string): LiveRun | undefined {
+    if (!this.reopening.delete(sessionId)) return undefined
     for (const job of this.jobs) {
       const i = job.history.findIndex((h) => h.state === 'ended' && h.sessionId === sessionId)
       if (i < 0) continue
       const [line] = job.history.splice(i, 1)
       const run: LiveRun = {
+        ...lineOf(line),
         jobId: job.id,
         tabId,
         state: 'done',
-        startedAt: this.d.now(),
-        dueAt: line.dueAt,
-        ...(line.worktree ? { worktree: line.worktree } : {}),
-        ...(line.manual ? MANUAL : {}),
-        ...(line.note ? { note: line.note } : {})
+        startedAt: this.d.now()
       }
       this.live.set(tabId, run)
       this.d.store.save(this.jobs)
+      void this.closeIfFinished(run)
       return run
     }
     return undefined

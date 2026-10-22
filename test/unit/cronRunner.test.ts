@@ -1060,13 +1060,19 @@ describe('CronRunner — quitting', () => {
     expect(h.jobs[0].history[0].state).toBe('ended')
   })
 
-  it('takes a run it ended back as open once its session binds again after a relaunch, so the next due is skipped and closing it writes one closed line', async () => {
-    const before = makeHarness([makeJob()])
+  async function relaunchedAfterQuittingOnARun(
+    job: CronJob
+  ): Promise<ReturnType<typeof makeHarness>> {
+    const before = makeHarness([job])
     await before.runner.runNow('j1')
     before.runner.onBound('tab-1', 's1')
     before.runner.quitSweep()
+    return makeHarness(before.jobs)
+  }
 
-    const h = makeHarness(before.jobs)
+  it('takes a run it ended back as open when the relaunch reopens its tab, so the next due is skipped and closing it writes one closed line', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob())
+    h.runner.expectReopened(['s1', 's-not-a-run'])
     h.runner.onBound('tab-other', 's-not-a-run')
     expect(h.runner.state().live).toEqual([])
 
@@ -1100,6 +1106,23 @@ describe('CronRunner — quitting', () => {
       },
       { dueAt: T0 + 1 * MIN, state: 'skipped', count: 1, manual: true }
     ])
+  })
+
+  it('leaves a run it ended in History when its session is opened again some other way than the relaunch reopening its tab', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob())
+    h.runner.onBound('tab-by-hand', 's1')
+    expect(h.runner.state().live).toEqual([])
+    expect(h.jobs[0].history[0].state).toBe('ended')
+  })
+
+  it('with "Close it" on, a run the relaunch reopens closes for good once it would lose nothing', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    h.runner.expectReopened(['s1'])
+    h.runner.onBound('tab-back', 's1')
+    await flush()
+    expect(h.closeForGood).toHaveBeenCalledWith('tab-back', '/ws/a', 'nightly-report-260902-1000')
+    expect(h.jobs[0].history[0].state).toBe('finished')
+    expect(h.runner.state().live).toEqual([])
   })
 
   it('stops the tick and the deadline timers', async () => {

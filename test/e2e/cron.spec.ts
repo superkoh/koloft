@@ -73,6 +73,7 @@ type WhenSpec =
   | { kind: 'every'; n: number; unit: 'minutes' | 'hours' }
 
 interface JobSpec {
+  agent?: 'Codex'
   name: string
   task: string
   when?: WhenSpec
@@ -82,6 +83,7 @@ interface JobSpec {
 }
 
 async function fillForm(dlg: Locator, spec: JobSpec): Promise<void> {
+  if (spec.agent) await dlg.locator('.chip', { hasText: new RegExp(`^${spec.agent}$`) }).click()
   await dlg.locator('input[aria-label="Name"]').fill(spec.name)
   await dlg.locator('[aria-label="What to run"]').fill(spec.task)
   const when: WhenSpec = spec.when ?? { kind: 'daily', at: '21:00' }
@@ -857,10 +859,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       const page = await app1.firstWindow()
       await waitBooted(page)
       const dlg = await openCron(page, 'ws-a')
-      await dlg.locator('button.mini', { hasText: 'New job' }).click()
-      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
-      await fillForm(dlg, { name: 'Nightly report', task: 'look around' })
-      await dlg.locator('.modal-foot .btn-primary').click()
+      await createJob(page, dlg, { agent: 'Codex', name: 'Nightly report', task: 'look around' })
       await clickRunNow(page, 'Nightly report')
       await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Nightly report')
     } finally {
@@ -1137,6 +1136,53 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         .toMatchObject({ state: 'Closed by you', folder: ' · folder removed' })
     } finally {
       await quitAndClose(app)
+      killFakeRemote(env)
+    }
+  })
+
+  test('BB-M08 on a remote workspace: a run left open at quit comes back as the open run, so Run now skips it', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installFakeRemote(env)
+    gitInit(remoteDir(env))
+    // CC§9 ADR-0026
+    fs.writeFileSync(
+      path.join(machineHome(env), '.claude.json'),
+      JSON.stringify({ projects: { [remoteDir(env)]: { hasTrustDialogAccepted: true } } })
+    )
+    try {
+      const first = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(first.page, env)
+        const dlg = await openCron(first.page, REMOTE_WS_NAME)
+        await createJob(first.page, dlg, { name: 'Remote report', task: '/daily-report' })
+        await clickRunNow(first.page, 'Remote report')
+        await waitTurnStopSoTheTranscriptExistsBeforeClose(first.page, 'Remote report')
+      } finally {
+        await quitAndClose(first.app)
+      }
+      expect(readStore(env)?.jobs[0].history[0].state).toBe('ended')
+
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await waitRunStateBound(cronRows(page, REMOTE_WS_NAME))
+        await openCron(page, REMOTE_WS_NAME)
+        await expect(card(page, 'Remote report').locator('.job-last')).toContainText(
+          'done — waiting for you',
+          { timeout: 30_000 }
+        )
+
+        const callsWhileOpen = readCalls(env).length
+        await clickRunNow(page, 'Remote report')
+        await expect(toastMsg(page)).toHaveText(
+          '⏰ Remote report skipped: the last run is still open'
+        )
+        expect(readCalls(env)).toHaveLength(callsWhileOpen)
+      } finally {
+        await quitAndClose(app)
+      }
+    } finally {
       killFakeRemote(env)
     }
   })
