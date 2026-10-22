@@ -94,17 +94,18 @@ async function withFailingGitOnPath(
   }
 }
 
-async function holdNextRescan(): Promise<() => void> {
+async function holdNextRescan(
+  at: 'worktreeDirs' | 'listJsonlIds' = 'worktreeDirs'
+): Promise<() => void> {
   let release!: () => void
   const held = new Promise<void>((r) => (release = r))
-  const internals = mgr as unknown as {
-    worktreeDirs(p: string): Promise<unknown>
+  const internals = mgr as unknown as Record<typeof at, (...a: unknown[]) => Promise<unknown>> & {
     rescan(): Promise<void>
   }
-  const real = internals.worktreeDirs.bind(mgr)
-  const spy = vi.spyOn(internals, 'worktreeDirs').mockImplementationOnce(async (p) => {
+  const real = internals[at].bind(mgr)
+  const spy = vi.spyOn(internals, at).mockImplementationOnce(async (...a) => {
     await held
-    return real(p)
+    return real(...a)
   })
   void internals.rescan()
   await vi.waitFor(() => expect(spy).toHaveBeenCalled())
@@ -885,6 +886,22 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
 
     expect(dropped).toEqual([])
     expect(mgr.isMember('fresh-2')).toBe(true)
+  })
+
+  it('GC spares a session that binds while the rescan is listing transcripts on disk, before its jsonl is born', async () => {
+    writeJsonl(repo, 'anchor-1')
+    mgr.start()
+    await mgr.firstScan
+    const release = await holdNextRescan('listJsonlIds')
+
+    bindings.set('fresh-3', 'tab-3')
+    mgr.onSessionBound('fresh-3')
+    const beforeRelease = pushed.length
+    release()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(beforeRelease))
+
+    expect(dropped).toEqual([])
+    expect(mgr.isMember('fresh-3')).toBe(true)
   })
 
   it('every session that leaves the list says why', async () => {

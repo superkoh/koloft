@@ -819,12 +819,13 @@ export class WorkspaceManager {
     this.statByFile.clear()
 
     // CC§2
-    const liveIds = new Set<string>(this.deps.runningBindings().keys())
+    const liveIds = new Set<string>()
     for (const root of this.roots()) {
       const slugs = await slugsOf(root)
       for (const ids of await Promise.all(slugs.map((slug) => this.listJsonlIds(root, slug))))
         for (const id of ids) liveIds.add(id)
     }
+    for (const id of this.deps.runningBindings().keys()) liveIds.add(id)
     for (const t of this.remoteTargets()) {
       for (const id of this.deps.remoteRunning?.(t.host) ?? []) liveIds.add(id)
     }
