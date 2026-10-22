@@ -50,6 +50,7 @@ import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
 import type { RemoteGitInfo } from './remote/install'
 import type { SearchCandidate } from './sessionSearch'
+import type { SessionPlace } from './usageCache'
 import { mapAtMost } from './mapAtMost'
 
 const RESCAN_DEBOUNCE_MS = 250
@@ -265,6 +266,14 @@ export class WorkspaceManager {
       const workspace = this.wsBySession.get(id)
       return workspace ? [{ file, workspace }] : []
     })
+  }
+
+  sessionPlaces(): Map<string, SessionPlace> {
+    return new Map(
+      [...this.allRowsCache].flatMap(([workspace, rows]) =>
+        rows.map((r) => [r.id, { workspace, title: r.title }] as const)
+      )
+    )
   }
 
   findRow(sessionId: string): SessionRow | undefined {

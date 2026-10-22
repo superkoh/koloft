@@ -276,17 +276,18 @@ function agyLine(type: string, tokens: { in: number; out: number; cache: number 
 describe('scanAgyLines', () => {
   const call = { in: 100, out: 20, cache: 300 }
 
-  it("prices the n-th call with the n-th gen_metadata model, and a call with no row at the conversation's configured model", () => {
+  it("prices the n-th response with the n-th gen_metadata model, a response with no tokens still taking its row, and one with no row at the conversation's configured model", () => {
     const records = scanAgyLines(
       lines(
         agyLine('USER_INPUT', { in: 0, out: 0, cache: 0 }),
         agyLine('PLANNER_RESPONSE', call),
         agyLine('GENERIC', call),
+        agyLine('PLANNER_RESPONSE', { in: 0, out: 0, cache: 0 }),
         agyLine('PLANNER_RESPONSE', call),
         agyLine('PLANNER_RESPONSE', call)
       ),
       'c1',
-      ['gemini-3.1-pro', 'gemini-3.6-flash'],
+      ['gemini-3.1-pro', 'gemini-3.1-flash-lite', 'gemini-3.6-flash'],
       'gemini-3.1-pro'
     )
     expect(records.map((r) => [r.model, r.inTok, r.outTok, r.cacheReadTok])).toEqual([

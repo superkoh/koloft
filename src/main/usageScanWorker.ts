@@ -71,11 +71,13 @@ async function scan(f: UsageFile): Promise<ScannedFile> {
 
 async function scanAll(files: UsageFile[]): Promise<void> {
   for (const f of files) {
+    let scanned: ScannedFile
     try {
-      parentPort?.postMessage(await scan(f))
+      scanned = await scan(f)
     } catch {
-      continue
+      scanned = { file: f.file, records: [] }
     }
+    parentPort?.postMessage(scanned)
   }
 }
 

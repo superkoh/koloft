@@ -253,9 +253,8 @@ export function UsagePane(): JSX.Element {
 
   useEffect(() => {
     let live = true
-    const load = (): void => void window.api.usage.read().then((r) => live && setRead(r))
-    load()
-    const off = window.api.usage.onChanged(load)
+    const off = window.api.usage.onChanged(setRead)
+    void window.api.usage.read().then((r) => live && setRead(r))
     return () => {
       live = false
       off()

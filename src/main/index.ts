@@ -5365,12 +5365,9 @@ function registerIpc(): void {
         {
           codexHome: path.dirname(codexSharedConfig()),
           museHome: museHome(museSessions?.defaultEnv ?? process.env),
-          agyAppDir: path.join(ownersGemini(), AGY_APP_DIR)
+          geminiDir: ownersGemini()
         },
-        ...(workspaceMgr?.remoteTargets() ?? []).map(({ host }) => ({
-          host,
-          ...machineUsageDirs(userData, host)
-        }))
+        ...(workspaceMgr?.remoteTargets() ?? []).map(({ host }) => machineUsageDirs(userData, host))
       ])
     },
     stat: statOf,
@@ -5382,16 +5379,13 @@ function registerIpc(): void {
       worker.once('exit', ended)
     },
     codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
-    sessionPlace: (backend, id, host) => {
-      if (backend !== 'claude')
-        return storedSessions()
-          .find((s) => s.id === backend)
-          ?.sessionPlace(id, host)
-      const row = workspaceMgr?.findRow(id)
-      const workspace = workspaceMgr?.workspaceOf(id)
-      return row && workspace ? { workspace, title: row.title } : undefined
+    sessionPlaces: () => {
+      const claude = workspaceMgr?.sessionPlaces()
+      const stored = new Map(storedSessions().map((s) => [s.id, s.sessionPlaces()]))
+      return (backend, id, host) =>
+        backend === 'claude' ? claude?.get(id) : stored.get(backend)?.(id, host)
     },
-    changed: () => sendToRenderer(CH.usage.changed)
+    changed: (read) => sendToRenderer(CH.usage.changed, read)
   })
   ipcMain.handle(CH.usage.read, () => usageCache.read())
 

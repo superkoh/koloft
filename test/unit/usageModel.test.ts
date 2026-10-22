@@ -29,6 +29,12 @@ describe('usageModel', () => {
     expect(inRange(rows, 'all', TODAY)).toHaveLength(2)
   })
 
+  it('counts calendar days across a daylight-saving change, just after midnight', () => {
+    const afterSpringForward = new Date('2026-03-09T00:30:00-07:00')
+    const rows = [row({ day: '2026-03-02' }), row({ day: '2026-03-03' })]
+    expect(inRange(rows, '7d', afterSpringForward).map((r) => r.day)).toEqual(['2026-03-03'])
+  })
+
   it('draws one bar per day of the range, empty days included, with each agent part of a day', () => {
     const days = chartDays(
       [row({}), row({ backend: 'codex', model: 'gpt-6.1-sol', sessionId: 'c1' })],

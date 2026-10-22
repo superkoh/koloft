@@ -4,6 +4,7 @@ import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { UsageCache, type ScannedFile, type UsageFile } from '../../src/main/usageCache'
 import type { UsageRecord } from '../../src/main/usageScan'
+import type { UsageRead } from '../../src/shared/types'
 
 function record(sessionId: string, outTok: number): UsageRecord {
   return {
@@ -38,7 +39,7 @@ function cache(): UsageCache {
     stat: async (file) => stats.get(file),
     scan: (files, scanned, ended) => void runs.push({ files, scanned, ended }),
     codexWorkspaces: (cwds) => cwds,
-    sessionPlace: (_backend, id) => places.get(id),
+    sessionPlaces: () => (_backend, id) => places.get(id),
     changed: () => void changes++
   })
 }
@@ -119,6 +120,43 @@ describe('UsageCache', () => {
     expect(during).toMatchObject({ reading: true, rows: [{ sessionId: 'a' }] })
     finish(runs[0], { [B]: [] })
     expect(changes).toBe(1)
+    expect((await usage.read()).reading).toBe(false)
+  })
+
+  it('tells the page a read ended, with what it found, even when no file needed reading', async () => {
+    const pushed: UsageRead[] = []
+    const usage = new UsageCache({
+      cacheFile: () => path.join(dir, 'usage-cache.json'),
+      listFiles: async () => [],
+      stat: async () => undefined,
+      scan: () => {},
+      codexWorkspaces: (cwds) => cwds,
+      sessionPlaces: () => () => undefined,
+      changed: (read) => void pushed.push(read)
+    })
+
+    await usage.read()
+
+    expect(pushed).toEqual([{ rows: [], titles: {}, reading: false }])
+  })
+
+  it('reads again after a listing that failed, instead of staying "reading" for good', async () => {
+    let fail = true
+    const usage = new UsageCache({
+      cacheFile: () => path.join(dir, 'usage-cache.json'),
+      listFiles: async () => {
+        if (fail) throw new Error('no home')
+        return []
+      },
+      stat: async () => undefined,
+      scan: () => {},
+      codexWorkspaces: (cwds) => cwds,
+      sessionPlaces: () => () => undefined,
+      changed: () => {}
+    })
+    await expect(usage.read()).rejects.toThrow('no home')
+    fail = false
+
     expect((await usage.read()).reading).toBe(false)
   })
 

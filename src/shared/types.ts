@@ -1273,7 +1273,7 @@ export interface KoloftApi {
   }
   usage: {
     read(): Promise<UsageRead>
-    onChanged(cb: () => void): () => void
+    onChanged(cb: (read: UsageRead) => void): () => void
   }
   accounts: {
     list(): Promise<AccountView[]>

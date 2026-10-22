@@ -1,5 +1,7 @@
 import path from 'path'
 import { AGY_APP_DIR } from '../agyStore'
+import { CODEX_ROLLOUT_FOLDERS, type UsageHome } from '../usageCache'
+import { REMOTE_CODEX_HOME } from './codexMachine'
 import { mirrorAgyGemini, remoteBase } from './paths'
 
 export interface ExtraPull {
@@ -8,13 +10,7 @@ export interface ExtraPull {
   flags: string[]
 }
 
-export interface MachineUsageDirs {
-  codexHome: string
-  museHome: string
-  agyAppDir: string
-}
-
-const CODEX_ROLLOUT_FOLDERS = ['sessions', 'archived_sessions']
+const IN_HOME = /^\$HOME\//
 
 // CODEX§13 CODEX§16
 const ROLLOUT_FLAGS = [
@@ -37,12 +33,13 @@ const MUSE_FLAGS = [
 // AGY§8
 const CONVERSATION_DB_FLAGS = ['--delete', '--include=*.db', '--exclude=*']
 
-export function machineUsageDirs(userData: string, host: string): MachineUsageDirs {
+export function machineUsageDirs(userData: string, host: string): UsageHome {
   const base = remoteBase(userData, host)
   return {
+    host,
     codexHome: path.join(base, 'codex-home'),
     museHome: path.join(base, 'muse'),
-    agyAppDir: path.join(mirrorAgyGemini(userData, host), AGY_APP_DIR)
+    geminiDir: mirrorAgyGemini(userData, host)
   }
 }
 
@@ -52,10 +49,11 @@ export function usagePulls(
   uses: { codex: boolean; muse: boolean; agy: boolean }
 ): ExtraPull[] {
   const dirs = machineUsageDirs(userData, host)
+  const codexHome = REMOTE_CODEX_HOME.replace(IN_HOME, '')
   return [
     ...(uses.codex
       ? CODEX_ROLLOUT_FOLDERS.map((folder) => ({
-          from: `.koloft/codex-home/${folder}`,
+          from: `${codexHome}/${folder}`,
           to: path.join(dirs.codexHome, folder),
           flags: ROLLOUT_FLAGS
         }))
@@ -73,7 +71,7 @@ export function usagePulls(
       ? [
           {
             from: `.gemini/${AGY_APP_DIR}/conversations`,
-            to: path.join(dirs.agyAppDir, 'conversations'),
+            to: path.join(dirs.geminiDir, AGY_APP_DIR, 'conversations'),
             flags: CONVERSATION_DB_FLAGS
           }
         ]

@@ -32,7 +32,7 @@ export function agyTranscript(geminiDir: string, conversationId: string): string
   )
 }
 
-const conversationDb = (geminiDir: string, id: string): string =>
+export const conversationDb = (geminiDir: string, id: string): string =>
   path.join(geminiDir, AGY_APP_DIR, 'conversations', `${id}.db`)
 
 export interface SummaryRow {

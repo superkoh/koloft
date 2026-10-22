@@ -15,6 +15,7 @@ import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
+import type { SessionPlace } from './usageCache'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
@@ -110,7 +111,7 @@ export interface SessionsWithStore {
   readonly worktrees: SessionWorktrees
   rows(workspace: string): BackendSessionRow[]
   workspacesFor(cwds: string[]): string[]
-  sessionPlace(id: string, host?: string): { workspace: string; title: string } | undefined
+  sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
   members(): Set<string>
   runningBindings(): Map<string, string>
   threadGone(key: string): boolean
@@ -366,21 +367,32 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     )
   }
   findRow(key: string): BackendSessionRow | undefined {
-    return this.placeOfKey(key)?.row
+    const member = this.store.getMember(key)
+    const entry = this.history.get(key)
+    const workspace = member?.workspacePath ?? (entry ? this.workspaceFor(entry.cwd) : undefined)
+    return workspace ? this.rows(workspace).find((row) => row.id === key) : undefined
   }
   hasHistoryOn(host: string): boolean {
     return [...this.history.keys()].some((key) => hostOfKey(key) === host)
   }
-  sessionPlace(id: string, host?: string): { workspace: string; title: string } | undefined {
-    const place = this.placeOfKey(this.keyOf(id, host))
-    return place && { workspace: place.workspace, title: place.row.title }
-  }
-  private placeOfKey(key: string): { workspace: string; row: BackendSessionRow } | undefined {
-    const member = this.store.getMember(key)
-    const entry = this.history.get(key)
-    const workspace = member?.workspacePath ?? (entry ? this.workspaceFor(entry.cwd) : undefined)
-    const row = workspace ? this.rows(workspace).find((r) => r.id === key) : undefined
-    return workspace && row ? { workspace, row } : undefined
+  sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined {
+    const scope = this.rowScope()
+    const titlesIn = new Map<string, Map<string, string>>()
+    return (id, host) => {
+      const key = this.keyOf(id, host)
+      const entry = this.history.get(key)
+      const workspace =
+        this.store.getMember(key)?.workspacePath ??
+        (entry ? this.workspaceFor(entry.cwd, scope) : undefined)
+      if (!workspace) return undefined
+      let titles = titlesIn.get(workspace)
+      if (!titles) {
+        titles = new Map(this.rows(workspace).map((r) => [r.id, r.title]))
+        titlesIn.set(workspace, titles)
+      }
+      const title = titles.get(key)
+      return title === undefined ? undefined : { workspace, title }
+    }
   }
   members(): Set<string> {
     return new Set([

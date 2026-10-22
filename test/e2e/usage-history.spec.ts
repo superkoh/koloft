@@ -5,7 +5,17 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, launchApp, test, quitAndClose } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import { openSettings } from './helpers/extensions'
-import { seedJsonl, waitBooted } from './helpers/p1'
+import { newSessionInWith, seedJsonl, waitBooted, wsRows } from './helpers/p1'
+import {
+  addRemoteWorkspace,
+  installCodexOnFakeRemote,
+  killFakeRemote,
+  launchWithRemote,
+  machineHome,
+  remoteDir,
+  remoteKey,
+  REMOTE_WS_NAME
+} from './helpers/remote'
 
 const CLAUDE_TITLE = 'Seeded usage session'
 
@@ -43,18 +53,17 @@ function seedClaude(env: E2EEnv, now: Date): void {
   ])
 }
 
-function seedCodex(env: E2EEnv, now: Date): void {
+function seedCodex(codexHome: string, cwd: string, now: Date): void {
   const thread = crypto.randomUUID()
   const file = path.join(
-    env.home,
-    '.codex',
+    codexHome,
     'sessions',
     ...dateDir(now),
     `rollout-2026-10-22T00-00-00-${thread}.jsonl`
   )
   const ts = now.toISOString()
   appendLines(file, [
-    { timestamp: ts, type: 'session_meta', payload: { id: thread, cwd: env.workspaces.a } },
+    { timestamp: ts, type: 'session_meta', payload: { id: thread, cwd } },
     { timestamp: ts, type: 'turn_context', payload: { turn_id: 't1', model: 'gpt-5.5' } },
     {
       timestamp: ts,
@@ -139,7 +148,7 @@ test('Settings ▸ Usage counts Claude Code, Codex, Muse and Antigravity session
   test.setTimeout(120_000)
   const now = new Date()
   seedClaude(env, now)
-  seedCodex(env, now)
+  seedCodex(path.join(env.home, '.codex'), env.workspaces.a, now)
   seedMuse(env, now)
   seedAntigravity(env, now)
 
@@ -177,4 +186,46 @@ test('Settings ▸ Usage counts Claude Code, Codex, Muse and Antigravity session
   } finally {
     await quitAndClose(app)
   }
+})
+
+test.describe('remote usage', () => {
+  test.afterEach(({ env }) => killFakeRemote(env))
+
+  test("Settings ▸ Usage counts a remote Codex session from the machine's own rollout, under the ssh workspace with an SSH badge", async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      seedCodex(
+        path.join(machineHome(env), '.koloft', 'codex-home'),
+        fs.realpathSync(remoteDir(env)),
+        new Date()
+      )
+      await addRemoteWorkspace(page, env)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
+      await expect(
+        wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'Codex fixture session' })
+      ).toHaveClass(/st-waiting/, { timeout: 60_000 })
+
+      await openSettings(page)
+      await page.locator('.set-ni', { hasText: 'Usage' }).click()
+      await page.locator('.costs-head button', { hasText: 'Workspace' }).click()
+      await expect
+        .poll(
+          async () => {
+            await page.evaluate(() => window.api.usage.read())
+            return page.locator('.costs-row', { hasText: remoteKey(env) }).count()
+          },
+          { timeout: 60_000 }
+        )
+        .toBe(1)
+      const row = page.locator('.costs-row', { hasText: remoteKey(env) })
+      await expect(row.locator('.acct-badge')).toHaveText('SSH')
+      await expect(row.locator('.c')).toHaveText('$2.00')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 })

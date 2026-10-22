@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { BackendId, UsageRead, UsageRow } from '@shared/types'
 import { formatRemoteKey } from '@shared/remoteKey'
+import { AGY_APP_DIR, agyTranscript, conversationDb } from './agyStore'
 import type { UsageRecord } from './usageScan'
 import { PrivateRecordFile } from './privateFile'
 import { mapAtMost } from './mapAtMost'
@@ -42,12 +43,16 @@ export interface UsageCacheDeps {
   stat: (file: string) => Promise<FileStat | undefined>
   scan: (files: UsageFile[], scanned: (file: ScannedFile) => void, ended: () => void) => void
   codexWorkspaces: (cwds: string[]) => string[]
-  sessionPlace: (backend: BackendId, sessionId: string, host?: string) => SessionPlace | undefined
-  changed: () => void
+  sessionPlaces: () => (
+    backend: BackendId,
+    sessionId: string,
+    host?: string
+  ) => SessionPlace | undefined
+  changed: (read: UsageRead) => void
 }
 
 const FILES_AT_ONCE = 16
-const CODEX_ROLLOUT_FOLDERS = ['sessions', 'archived_sessions']
+export const CODEX_ROLLOUT_FOLDERS = ['sessions', 'archived_sessions']
 const MUSE_SESSION_FILE_PREFIX = 'session.'
 const MUSE_DATE_DEPTH = 3
 
@@ -61,43 +66,55 @@ export class UsageCache {
 
   async read(): Promise<UsageRead> {
     if (!this.reading) await this.refresh()
+    return this.snapshot()
+  }
+
+  private snapshot(): UsageRead {
     return { ...this.rows(), reading: this.reading }
   }
 
   private async refresh(): Promise<void> {
     this.reading = true
-    const listed = await this.deps.listFiles()
-    const stats = await mapAtMost(listed, FILES_AT_ONCE, (f) => this.deps.stat(f.file))
-    const cached = this.cached.get()
-    const present = new Set<string>()
-    const stale = new Map<string, UsageFile & FileStat>()
-    listed.forEach((f, i) => {
-      const stat = stats[i]
-      if (!stat) return
-      present.add(f.file)
-      const entry = cached[f.file]
-      if (entry?.mtimeMs === stat.mtimeMs && entry.size === stat.size) entry.workspace = f.workspace
-      else stale.set(f.file, { ...f, ...stat })
-    })
-    const gone = Object.keys(cached).filter((file) => !present.has(file))
-    for (const file of gone) delete cached[file]
-    if (!stale.size) {
-      if (gone.length) this.cached.save()
+    const ended = (): void => {
       this.reading = false
-      return
+      this.deps.changed(this.snapshot())
     }
-    this.deps.scan(
-      [...stale.values()],
-      ({ file, records, cwd }) => {
-        const f = stale.get(file)
-        if (f) cached[file] = { ...f, cwd, records }
-      },
-      () => {
-        this.cached.save()
-        this.reading = false
-        this.deps.changed()
+    try {
+      const listed = await this.deps.listFiles()
+      const stats = await mapAtMost(listed, FILES_AT_ONCE, (f) => this.deps.stat(f.file))
+      const cached = this.cached.get()
+      const present = new Set<string>()
+      const stale = new Map<string, UsageFile & FileStat>()
+      listed.forEach((f, i) => {
+        const stat = stats[i]
+        if (!stat) return
+        present.add(f.file)
+        const entry = cached[f.file]
+        if (entry?.mtimeMs === stat.mtimeMs && entry.size === stat.size)
+          entry.workspace = f.workspace
+        else stale.set(f.file, { ...f, ...stat })
+      })
+      const gone = Object.keys(cached).filter((file) => !present.has(file))
+      for (const file of gone) delete cached[file]
+      if (!stale.size) {
+        if (gone.length) this.cached.save()
+        return ended()
       }
-    )
+      this.deps.scan(
+        [...stale.values()],
+        ({ file, records, cwd }) => {
+          const f = stale.get(file)
+          if (f) cached[file] = { ...f, cwd, records }
+        },
+        () => {
+          this.cached.save()
+          ended()
+        }
+      )
+    } catch (error) {
+      this.reading = false
+      throw error
+    }
   }
 
   private rows(): Pick<UsageRead, 'rows' | 'titles'> {
@@ -107,16 +124,16 @@ export class UsageCache {
       codex.map((e) => (e.host && e.cwd ? formatRemoteKey(e.host, e.cwd) : (e.cwd ?? '')))
     )
     const codexWorkspace = new Map(codex.map((e, i) => [e, workspaces[i]]))
-    const placeOf = (e: CachedFile, sessionId: string): SessionPlace | undefined =>
-      this.deps.sessionPlace(e.backend, sessionId, e.host)
+    const placeOf = this.deps.sessionPlaces()
     const titles: Record<string, string> = {}
     const rows = entries.flatMap((e) => {
+      const own = e.backend === 'claude' ? undefined : (e.sessionId ?? e.records[0].sessionId)
       const workspace =
+        (own ? placeOf(e.backend, own, e.host)?.workspace : undefined) ??
         codexWorkspace.get(e) ??
-        (e.sessionId ? placeOf(e, e.sessionId)?.workspace : undefined) ??
         e.workspace
       return e.records.map((r): UsageRow => {
-        titles[r.sessionId] ??= placeOf(e, r.sessionId)?.title ?? ''
+        titles[r.sessionId] ??= placeOf(e.backend, r.sessionId, e.host)?.title ?? ''
         return { ...r, backend: e.backend, workspace }
       })
     })
@@ -128,7 +145,7 @@ export interface UsageHome {
   host?: string
   codexHome: string
   museHome: string
-  agyAppDir: string
+  geminiDir: string
 }
 
 // CODEX§13
@@ -152,19 +169,19 @@ async function museFiles({ host, museHome }: UsageHome): Promise<UsageFile[]> {
 }
 
 // AGY§8
-async function agyFiles({ host, agyAppDir }: UsageHome): Promise<UsageFile[]> {
+async function agyFiles({ host, geminiDir }: UsageHome): Promise<UsageFile[]> {
   let ids: string[]
   try {
-    ids = await fs.promises.readdir(path.join(agyAppDir, 'brain'))
+    ids = await fs.promises.readdir(path.join(geminiDir, AGY_APP_DIR, 'brain'))
   } catch {
     return []
   }
   return ids.map((id) => ({
-    file: path.join(agyAppDir, 'brain', id, '.system_generated', 'logs', 'transcript.jsonl'),
+    file: agyTranscript(geminiDir, id),
     backend: 'agy' as const,
     workspace: '',
     sessionId: id,
-    db: path.join(agyAppDir, 'conversations', `${id}.db`),
+    db: conversationDb(geminiDir, id),
     host
   }))
 }

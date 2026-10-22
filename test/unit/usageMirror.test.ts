@@ -19,7 +19,7 @@ describe('usagePulls', () => {
     const [codex, , muse, agy] = usagePulls('/ud', 'box', { codex: true, muse: true, agy: true })
     expect(codex.to).toBe(`${dirs.codexHome}/sessions`)
     expect(muse.to).toBe(`${dirs.museHome}/sessions`)
-    expect(agy.to).toBe(`${dirs.agyAppDir}/conversations`)
+    expect(agy.to).toBe(`${dirs.geminiDir}/antigravity-cli/conversations`)
     expect(agy.flags).toEqual(['--delete', '--include=*.db', '--exclude=*'])
   })
 })

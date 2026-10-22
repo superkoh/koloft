@@ -12,6 +12,7 @@ export const RANGE_DAYS: Record<Exclude<UsageRange, 'all'>, number> = {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const NOON_HOUR = 12
 
 export interface UsageLine {
   key: string
@@ -40,7 +41,8 @@ export function costOf(r: UsageRow): number | null {
 }
 
 export function dayBefore(today: Date, n: number): string {
-  return localDayKey(today.getTime() - n * DAY_MS)
+  const noon = new Date(today.getFullYear(), today.getMonth(), today.getDate() - n, NOON_HOUR)
+  return localDayKey(noon.getTime())
 }
 
 export function inRange(rows: UsageRow[], range: UsageRange, today: Date): UsageRow[] {

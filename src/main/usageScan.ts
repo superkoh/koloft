@@ -150,7 +150,7 @@ export function scanMuseLines(text: string, sessionId: string): UsageRecord[] {
     if (!day) continue
     const u = event.usage
     out.add(sessionId, day, typeof event.model === 'string' ? event.model : '', {
-      inTok: Math.max(0, num(u.input_tokens) - num(u.cached_tokens)),
+      inTok: Math.max(0, num(u.input_tokens) - num(u.cache_read_tokens)),
       outTok: num(u.output_tokens),
       cacheReadTok: num(u.cache_read_tokens),
       cacheWriteTok: num(u.cache_write_tokens)
@@ -170,6 +170,7 @@ export function scanAgyLines(
   let call = 0
   for (const obj of parsedLines(text, AGY_USAGE_WORDS)) {
     if (obj?.type !== 'PLANNER_RESPONSE') continue
+    const model = modelOfCall[call++] || configuredModel
     const tokens: TokenCounts = {
       inTok: num(obj.input_tokens),
       outTok: num(obj.output_tokens),
@@ -177,7 +178,6 @@ export function scanAgyLines(
       cacheWriteTok: 0
     }
     if (!tokens.inTok && !tokens.outTok && !tokens.cacheReadTok) continue
-    const model = modelOfCall[call++] || configuredModel
     const day = localDayKey(obj.created_at)
     if (day) out.add(sessionId, day, model, tokens)
   }
