@@ -27,6 +27,7 @@ import {
   openMenu,
   runIn,
   sendShortcut,
+  switchToRow,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -193,7 +194,7 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       })
       expect(machineMuseCalls(env)).toHaveLength(1)
       machineFile(env, 'fake-muse-delay', '1500')
-      await remoteRows(page).click()
+      await switchToRow(page, remoteRows(page))
       await runIn(page, centerTerm(page), 'after restart')
       await expect(remoteRows(page)).toHaveClass(/\bst-working\b/)
       await expect(remoteRows(page)).toHaveClass(/\bst-waiting\b/)

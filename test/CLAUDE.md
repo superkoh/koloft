@@ -231,7 +231,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   columns.
 - After a click on a session row, the Workbench still shows the old session for two
   frames (T-SWITCH-04): poll, don't read once. Its file tabs mount again only then
-  (ADR-0016): wait for the remount before touching one.
+  (ADR-0016): wait for the remount before touching one. The center terminal lags the
+  same way, and `centerTerm` then still finds the old session's terminal, which a click
+  keeps waiting on after it hides: switch with `switchToRow` (helpers/p1.ts) before
+  typing into the new one.
 
 ### Selectors
 

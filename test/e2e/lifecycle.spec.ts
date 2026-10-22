@@ -26,6 +26,7 @@ import {
   setNextSessionTitle,
   snap,
   startSessionIn,
+  switchToRow,
   waitBooted,
   waitForCalls,
   wsRows
@@ -86,8 +87,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await expect(hardRow).toHaveClass(/\bcold\b/, { timeout: 30_000 })
     await landsOnTheButler(page)
 
-    await gracefulRow.click()
-    await expect(centerTerm(page)).toBeVisible()
+    await switchToRow(page, gracefulRow)
     await runIn(page, centerTerm(page), '/open http://127.0.0.1:1/graceful')
     await expect
       .poll(() => persistedTabsOnDisk(env, graceful.sessionId).length, { timeout: 30_000 })
