@@ -3413,7 +3413,7 @@ function watchOpenRequests(openDir: string): fs.FSWatcher | null {
   return watchJsonDrops(
     openDir,
     () => (obj, full) => handleOpenRequest(obj as OpenDrop, full),
-    'as-written'
+    () => true
   )
 }
 

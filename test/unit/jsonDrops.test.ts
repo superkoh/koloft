@@ -12,7 +12,7 @@ import {
 const DROP_LONG_SETTLED_BEFORE_THE_WATCH_MS = 1500
 const DROPS_WRITTEN_BACK_TO_BACK = 12
 
-describe("watchJsonDrops 'as-written': drops reach their handler in the order they were written", () => {
+describe('watchJsonDrops: drops marked in write order reach their handler in the order they were written', () => {
   it('hands drops written back to back over in write order, as an agent opening two pages in one command expects its tabs', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-drops-'))
     const seen: number[] = []
@@ -23,7 +23,7 @@ describe("watchJsonDrops 'as-written': drops reach their handler in the order th
         name.startsWith('until-seen-')
           ? (): void => void (watchLive = true)
           : (obj): void => void seen.push((obj as { n: number }).n),
-      'as-written'
+      () => true
     )
     try {
       // PLATFORM§28

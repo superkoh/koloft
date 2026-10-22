@@ -42,6 +42,8 @@ export function startToolShim(
     if (agent) writeAgentShim(shim.shimDir, shim.requestDir)
     const opens = oncePerName(() => openDropHandler(opts.open))
     const dropped = opts.drop && oncePerName(opts.drop)
+    const isOpenDrop = (name: string): boolean =>
+      !name.startsWith('req-') && !name.startsWith('res-') && !opts.drop?.(name)
     const drops = watchAndSweepJsonDrops(
       shim.requestDir,
       (name) => {
@@ -51,7 +53,7 @@ export function startToolShim(
         return dropped?.(name) ?? opens(name)
       },
       (name) => dropped?.(name) ?? null,
-      'as-written'
+      isOpenDrop
     )
     return {
       shim,

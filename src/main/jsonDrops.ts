@@ -40,7 +40,9 @@ export function writeWholeBeforeVisible(dest: string, text: string): void {
 
 export type DropHandlerFor = (name: string) => ((obj: unknown, full: string) => void) | null
 
-export type DropOrder = 'any' | 'as-written'
+export type InWriteOrder = (name: string) => boolean
+
+const noDropInWriteOrder: InWriteOrder = () => false
 
 function readNamedDrop(
   dir: string,
@@ -52,7 +54,8 @@ function readNamedDrop(
   const handle = handlerFor(name)
   if (!handle) return after
   const full = path.join(dir, name)
-  return after.then(() => readJsonDrop(full, 0, (obj) => handle(obj, full)))
+  const read = (): Promise<void> => readJsonDrop(full, 0, (obj) => handle(obj, full))
+  return after.then(read, read)
 }
 
 function sweepJsonDrops(dir: string, handlerFor: DropHandlerFor): void {
@@ -65,14 +68,14 @@ function sweepJsonDrops(dir: string, handlerFor: DropHandlerFor): void {
 export function watchJsonDrops(
   dir: string,
   handlerFor: DropHandlerFor,
-  order: DropOrder = 'any'
+  inWriteOrder: InWriteOrder = noDropInWriteOrder
 ): fs.FSWatcher | null {
   let earlierDrops = Promise.resolve()
   try {
     return fs.watch(dir, (_event, filename) => {
       if (!filename) return
       const name = filename.toString()
-      if (order === 'as-written') earlierDrops = readNamedDrop(dir, name, handlerFor, earlierDrops)
+      if (inWriteOrder(name)) earlierDrops = readNamedDrop(dir, name, handlerFor, earlierDrops)
       else void readNamedDrop(dir, name, handlerFor)
     })
   } catch {
@@ -87,9 +90,9 @@ export function watchAndSweepJsonDrops(
   dir: string,
   handlerFor: DropHandlerFor,
   sweepFor: DropHandlerFor = handlerFor,
-  order: DropOrder = 'any'
+  inWriteOrder: InWriteOrder = noDropInWriteOrder
 ): fs.FSWatcher | null {
-  const watcher = watchJsonDrops(dir, handlerFor, order)
+  const watcher = watchJsonDrops(dir, handlerFor, inWriteOrder)
   if (watcher) {
     const sweep = setInterval(() => sweepJsonDrops(dir, sweepFor), SWEEP_FOR_A_LOST_DROP_MS).unref()
     watcher.on('close', () => clearInterval(sweep))
