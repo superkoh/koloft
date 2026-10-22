@@ -1,5 +1,6 @@
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect } from '../helpers/app'
+import { SIDEBAR_MIN } from '../../../src/shared/types'
 import { seedSettings } from '../helpers/env'
 import {
   centerTerm,
@@ -468,7 +469,7 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
     env
   }) => {
     test.setTimeout(180_000)
-    seedSettings(env, { sidebarWidth: 200 })
+    seedSettings(env, { sidebarWidth: SIDEBAR_MIN })
     pinWorkspaces(env, [
       { name: 'ws-alpha', kind: 'git' },
       { name: 'ws-plain', kind: 'plain' }
