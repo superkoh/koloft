@@ -14,6 +14,7 @@ export interface StoredMember {
   updatedAt: number
   worktreeResourceId?: string
   permission?: LaunchPermission
+  named?: true
 }
 
 export interface WorktreeResource {
