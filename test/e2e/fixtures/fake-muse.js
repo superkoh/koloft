@@ -144,6 +144,7 @@ function serve() {
     if (msg.method === 'account/read') return reply(msg.id, { state: signedIn() })
     if (msg.method === 'approval/listPending') return reply(msg.id, pendingOf(msg.params.sessionId))
     if (msg.method === 'session/list') {
+      append('fake-muse-listings.jsonl', { at: now() })
       const sessions = all()
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .map((s) => ({
@@ -527,7 +528,7 @@ function tui() {
     }
     if (text.startsWith('/rename ')) {
       logRecord(session.id, 'session.name.changed', {
-        new_name: text.slice('/rename '.length).trim(),
+        new_name: text.slice('/rename '.length).trim().toLowerCase(),
         source: 'user'
       })
       return
