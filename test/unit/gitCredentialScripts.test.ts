@@ -16,6 +16,7 @@ let scripts: string
 let realGhDir: string
 let ghLog: string
 let helper: string
+let butlerFolder: string
 let watcher: fs.FSWatcher | null
 let rejected: string[]
 let asked: GitAuthRequest[]
@@ -32,11 +33,17 @@ interface Run {
   ms: number
 }
 
-function run(file: string, args: string[], env: NodeJS.ProcessEnv = {}, input = ''): Promise<Run> {
+function run(
+  file: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = {},
+  input = '',
+  cwd = root
+): Promise<Run> {
   const started = Date.now()
   return new Promise((resolve) => {
     const child = spawn(file, args, {
-      cwd: root,
+      cwd,
       env: {
         PATH: `${scripts}:${realGhDir}:/usr/bin:/bin`,
         HOME: root,
@@ -76,7 +83,14 @@ beforeAll(() => {
   for (const d of [requestDir, scripts, realGhDir]) fs.mkdirSync(d)
   helper = path.join(scripts, 'git-credential-koloft')
   fs.writeFileSync(helper, gitCredentialHelperScript(requestDir), { mode: 0o755 })
-  fs.writeFileSync(path.join(scripts, 'gh'), ghWrapperScript(requestDir), { mode: 0o755 })
+  butlerFolder = path.join(root, 'conductors', 'global')
+  fs.mkdirSync(butlerFolder, { recursive: true })
+  fs.writeFileSync(path.join(scripts, 'gh'), ghWrapperScript(requestDir, butlerFolder), {
+    mode: 0o755
+  })
+  fs.writeFileSync(path.join(scripts, 'koloft'), `#!/bin/sh\necho "koloft $*" >> '${ghLog}'\n`, {
+    mode: 0o755
+  })
   fs.writeFileSync(
     path.join(realGhDir, 'gh'),
     `#!/bin/sh\necho "argv=$* token=$GH_TOKEN host=$GH_HOST github_token=$GITHUB_TOKEN enterprise=$GH_ENTERPRISE_TOKEN" >> '${ghLog}'\n`,
@@ -236,6 +250,29 @@ describe('gh wrapper', () => {
     expect(r.status).toBe(1)
     expect(r.stderr).toContain('did not hand over the token for github.com/eve')
     expect(fs.existsSync(ghLog)).toBe(false)
+  })
+
+  it("in the butler's folder, and below it, gh is koloft gh with the same words, so Koloft's process signs it in", async () => {
+    const below = path.join(butlerFolder, 'notes')
+    fs.mkdirSync(below, { recursive: true })
+    await run(gh(), ['pr', 'view', '389', '--repo', 'acme/app'], {}, '', butlerFolder)
+    await run(gh(), ['issue', 'list', '-R', 'acme/app'], {}, '', below)
+    expect(fs.readFileSync(ghLog, 'utf8')).toBe(
+      'koloft gh pr view 389 --repo acme/app\nkoloft gh issue list -R acme/app\n'
+    )
+  })
+
+  it("in the butler's folder a Codex tab's linked copy runs the koloft of that tab's own shim folder", async () => {
+    const tabShim = path.join(root, 'butler tab shim')
+    fs.mkdirSync(tabShim)
+    fs.symlinkSync(gh(), path.join(tabShim, 'gh'))
+    fs.writeFileSync(
+      path.join(tabShim, 'koloft'),
+      `#!/bin/sh\necho "tab koloft $*" >> '${ghLog}'\n`,
+      { mode: 0o755 }
+    )
+    await run(path.join(tabShim, 'gh'), ['pr', 'list'], {}, '', butlerFolder)
+    expect(fs.readFileSync(ghLog, 'utf8')).toBe('tab koloft gh pr list\n')
   })
 
   it('skips another copy of itself on PATH, as a Codex tab links it into its own shim folder', async () => {
