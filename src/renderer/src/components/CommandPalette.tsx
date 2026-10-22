@@ -87,7 +87,7 @@ function tipsFor(
   if (naming) return '↓↑ move · ⏎ pick · Esc'
   if (picked) return '↓↑ move · ⏎ open · Esc'
   if (listed) return '↓ pick a match · Esc'
-  return '@ workspace · ⇧⏎ new line · Esc'
+  return '⇧⏎ new line · Esc'
 }
 
 export type PaletteRouted = (prompt: string, backend: BackendId, route: SessionRoute | null) => void
