@@ -163,9 +163,13 @@
   padding: 7px 10px;
 }
 /* PLATFORM§24 */
-.inline .cb-input.time {
+.inline .cb-input.time,
+.inline .cb-input.date {
   width: 120px;
   color-scheme: dark;
+}
+.inline .cb-input.date {
+  width: 150px;
 }
 .fnote {
   font-size: 12.5px;

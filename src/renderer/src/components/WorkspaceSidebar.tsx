@@ -1389,7 +1389,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             const behind = behindBadge(ws.freshness, now.getTime())
             const door = doorFor(ws.isGit)
             const callingInside = open ? 0 : callingAmong(sessionRows)
-            const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, now)
+            const soon =
+              ws.missing || !open ? null : forecastFor(cron.jobs, cron.live, ws.path, now)
             const sessionRow = rowRenderer(ws.path, sessionRows)
             const queuedHere = queuedIn(ws.path)
             const waitingHere =
