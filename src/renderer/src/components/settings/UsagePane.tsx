@@ -38,6 +38,7 @@ const BADGE: Record<Exclude<BackendId, 'claude'>, string> = {
 }
 
 const GRID_STEPS = [0, 0.25, 0.5, 0.75]
+const TIP_FLIPS_PAST = 0.6
 const NO_PRICE_TITLE = 'No price for this model yet'
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -166,8 +167,13 @@ function DayTip({ day, at }: { day: UsageDay; at: DOMRect }): JSX.Element {
   const parts = (Object.entries(day.byBackend) as [BackendId, number][]).filter(
     ([, usd]) => usd > 0
   )
+  const center = at.left + at.width / 2
+  const side =
+    center > window.innerWidth * TIP_FLIPS_PAST
+      ? { className: 'costs-tip to-left', left: at.right }
+      : { className: 'costs-tip', left: center }
   return createPortal(
-    <div className="costs-tip" style={{ left: at.left + at.width / 2, top: at.top }} role="tooltip">
+    <div className={side.className} style={{ left: side.left, top: at.top }} role="tooltip">
       <b>
         {day.day} · {formatCost(day.costUsd)}
       </b>

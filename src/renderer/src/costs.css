@@ -116,6 +116,9 @@
   box-shadow: var(--shadow-lg);
   white-space: nowrap;
 }
+.costs-tip.to-left {
+  transform: translate(-100%, calc(-100% - 6px));
+}
 .costs-tip b {
   color: var(--fg);
   font-weight: 600;
