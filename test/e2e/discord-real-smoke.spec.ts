@@ -284,20 +284,17 @@ async function closesTheEndedSessionItIsAskedTo(
   expect(transcriptRecords(env, endedId)).toHaveLength(seeded)
 }
 
-async function triesToWriteTheWorkspaceItselfAndIsRefused(
-  env: E2EEnv,
-  fake: FakeDiscord
-): Promise<void> {
-  const target = path.join(env.workspaces.a, 'conductor-wrote.txt')
+async function writesInTheWorkspaceItself(env: E2EEnv, fake: FakeDiscord): Promise<void> {
+  const target = path.join(env.workspaces.a, 'butler-wrote.txt')
   fake.say(
     OWNER,
     `This checks your own permissions. Do not start or message any session. Try once, yourself, to create the file ${target} containing the word hi, then reply with exactly WRITE-DONE if the file was written or WRITE-REFUSED if it was refused.`
   )
   await expect
-    .poll(() => said(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
+    .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
     .toMatch(/WRITE-(DONE|REFUSED)/)
-  expect(fs.existsSync(target)).toBe(false)
-  expect(said(fake).join('\n')).toContain('WRITE-REFUSED')
+  expect(conductorSaid(fake).join('\n')).toContain('WRITE-DONE')
+  expect(fs.readFileSync(target, 'utf8').trim()).toBe('hi')
 }
 
 const PR_TITLE_ONLY_GH_KNOWS = 'PLUM-58 tidy the docs'
@@ -380,20 +377,15 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
-  // ADR-0029 CC§15
-  test('a real Claude conductor, permission checks skipped, that tries to write a file in its workspace itself is stopped by the gate, and the file is never written', async ({
+  // ADR-0029
+  test('a real Claude conductor, permission checks skipped, writes a file in a workspace itself when told to, as any session may', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
     test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
     const fake = await realClaudeConductor(env)
-    await withConductor(env, fake, async (_app, page) => {
-      await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
-      const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && s.butler
-      )!
-      // CC§15
-      expect(toolResults(env, conductor.sessionId).join('\n')).toMatch(/PreToolUse:\w+ hook error/)
+    await withConductor(env, fake, async () => {
+      await writesInTheWorkspaceItself(env, fake)
     })
   })
 
@@ -423,8 +415,8 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
-  // ADR-0029 CC§15
-  test('a real Claude conductor asked to remember something writes it into its own memory folder, past the gate', async ({
+  // ADR-0029
+  test('a real Claude conductor asked to remember something writes it into its own memory folder', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -451,7 +443,6 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         .map((f) => fs.readFileSync(path.join(memory, 'memory', f), 'utf8'))
         .join('\n')
       expect(saved).toContain('LYCHEE-31')
-      expect(toolResults(env, conductor.sessionId).join('\n')).not.toMatch(/hook error/)
     })
   })
 
@@ -670,50 +661,51 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
-  // ADR-0029 CODEX§12
-  test('a real Codex conductor that tries to write a file in its workspace itself is stopped by its sandbox, and the file is never written', async ({
+  // ADR-0029
+  test('a real Codex conductor, permission checks skipped, writes a file in a workspace itself when told to, as any session may', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
     test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
     seedConductor(env, 'codex')
     useRealCodex(env)
+    seedSettings(env, { skipPermissions: true })
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async () => {
-      await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
+      await writesInTheWorkspaceItself(env, fake)
     })
   })
 
   // ADR-0029 CODEX§11
-  test('a real Codex conductor whose tab closed is resumed by the owner’s next message, on the same thread, and its sandbox still stops it writing a file in its workspace', async ({
+  test('a real Codex conductor whose tab closed is resumed by the owner’s next message, on the same thread, with the permission it started with, so it still writes in a workspace itself when told to', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
     test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
     seedConductor(env, 'codex')
     useRealCodex(env)
+    seedSettings(env, { skipPermissions: true })
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async (_app, page) => {
       await answersWholeInTheChannel(fake)
       const conductor = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
         (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && s.butler)
       const first = (await conductor())!
+      const started = lastCodexTurnPermissions(env, first.sessionId)
+      expect(started).toEqual({ approval: 'never', sandbox: 'danger-full-access' })
       await page.evaluate((id) => window.api.terminal.kill(id), first.tabId)
       await expect.poll(conductor).toBeUndefined()
 
-      await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
+      await writesInTheWorkspaceItself(env, fake)
       const again = (await conductor())!
       expect(again.tabId).not.toBe(first.tabId)
       expect(again.sessionId).toBe(first.sessionId)
-      expect(lastCodexTurnPermissions(env, again.sessionId)).toEqual({
-        approval: 'never',
-        sandbox: 'workspace-write'
-      })
+      expect(lastCodexTurnPermissions(env, again.sessionId)).toEqual(started)
     })
   })
 
-  // ADR-0029 CODEX§12
-  test('a real Codex conductor, its sandbox without network, checks a pull request itself with koloft gh, naming the repository the owner named', async ({
+  // ADR-0029
+  test('a real Codex conductor checks a pull request itself with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
@@ -727,7 +719,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
-  // ADR-0029 CODEX§12
+  // ADR-0029
   test('a real Codex conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, naming the repository the owner named', async ({
     env
   }) => {
