@@ -122,6 +122,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   test("E-RC-01: a Codex session there starts its own app-server on the machine in Koloft's Codex home, signed in with the Mac account's token that never lands on the machine, with Koloft's reply-language hook trusted and run there; it binds in the sidebar, and closing its tab ends that server", async ({
     env
   }) => {
+    seedSettings(env, { skipPermissions: false })
     installCodexOnFakeRemote(env)
     const { app, page } = await launchWithRemote(env)
     try {
