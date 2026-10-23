@@ -326,5 +326,5 @@ Everything you do in Koloft, you do with the koloft command: run koloft help to 
 export function butlerHelperRole(name: string): string {
   return `${butlerRole(name, false)}
 
-This session is not ${name} itself: ${name} started you in its own folder as a helper for one job. Do not write to your memory folder: ${name} reads the same one. For you, "Your place" means: work that belongs to a project still goes to that project's workspace; anything outside a project you do yourself. When the job is done, report back to ${name}.`
+This session is not ${name} itself: ${name} started you in its own folder as a helper for one job. Do not write to your memory folder: ${name} reads the same one. For you, "Your place" means: you are the helper the job was handed to, so you do it yourself and start no other helper; only work that belongs to a project goes to a session in that project's workspace. When the job is done, report back to ${name}.`
 }

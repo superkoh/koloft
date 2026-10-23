@@ -1162,10 +1162,7 @@ export default function App(): JSX.Element {
         at
       }
       void window.api.conductors.fromPalette(request).then((r) => {
-        if (r.ok) {
-          if (!r.queued) visitTab(r.tabId)
-          return
-        }
+        if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
         requestNew('main', undefined, { prompt, title, path: about, worktree: null }, backend)
       })
