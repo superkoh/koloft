@@ -422,7 +422,7 @@ export interface PaletteRequest {
 }
 
 export type PaletteHandOff =
-  { ok: true; tabId: string; helper?: true; queued?: true } | { ok: false; error: string }
+  { ok: true; tabId: string; queued?: true } | { ok: false; error: string }
 
 export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
 export type HintId = (typeof HINT_IDS)[number]

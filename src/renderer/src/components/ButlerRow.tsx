@@ -27,7 +27,7 @@ export async function setUpDiscordWithButler(ownerWords?: string): Promise<strin
   return null
 }
 
-export function showButler(tabId: string): void {
+function showButler(tabId: string): void {
   useStore.getState().setButlerTab(tabId)
   visitTab(tabId)
 }

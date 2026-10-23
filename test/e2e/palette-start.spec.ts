@@ -319,7 +319,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('⏎ asks AI even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words; an answer it cannot use hands the words to the butler with the agent the owner picked, and with Assist off the workspace picker opens and the session starts on the pick', async ({
+  test('⏎ asks AI even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words; an answer it cannot use hands the words to a helper of the butler’s on the agent the owner picked, not on the butler’s own, and with Assist off the workspace picker opens and the session starts on the pick', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -347,10 +347,20 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await page.keyboard.press('Meta+Enter')
       const [butler] = await waitForAllCalls(env, 1, 30_000)
       expect(butler.cwd).toBe(butlerFolder(env))
-      expect(textAfterDashes(butler)).toBe(
-        'The owner typed this in ⌘P: fix the build (The owner picked Antigravity for it: start any session for this with --backend agy.)'
-      )
-      await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
+      expect(textAfterDashes(butler)).not.toContain('fix the build')
+      const helper = page.locator('.isl-butler .ws-subtabs > .ws-tab')
+      await expect(helper).toHaveCount(1, { timeout: 60_000 })
+      await expect(helper).toHaveClass(/\bactive\b/)
+      await expect
+        .poll(
+          () =>
+            JSON.stringify(agyCalls(env).filter((c) => c.cwd === butlerFolder(env))).replace(
+              /\s+/g,
+              ''
+            ),
+          { timeout: 60_000 }
+        )
+        .toContain('Theownertypedthisin⌘P:fixthebuild')
       await expect(page.locator('.modal')).toHaveCount(0)
 
       await page.evaluate(() =>
@@ -370,7 +380,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
   })
 
   // ADR-0031
-  test('what ⌘P cannot do itself reaches the butler as a message, opening it first when it is not open: the owner’s words, the workspace they were in unless they were on the butler, and the workspace Koloft took it to be about — words about Koloft, "ask <workspace> …" and "set up Discord" alike, with the owner’s words saved as the butler’s, and no session of its own', async ({
+  test('what ⌘P cannot do itself always starts a helper of the butler’s, opening the butler first when it is not open, and never reaches the butler as a message: the helper gets the owner’s words, the workspace they were in unless they were on a helper, and the workspace Koloft took it to be about — words about Koloft and "ask <workspace> …" alike, with the owner’s words saved as the helper’s; only "set up Discord" reaches the butler as a message', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -383,33 +393,49 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       fs.writeFileSync(env.claudeDelayFile, String(REGISTRATION_SWEPT_BEFORE_THE_FIRST_HOOK_MS))
       assistAnswers(env, { hand: 'koloft', title: 'Dark mode', why: 'A Koloft setting.' })
       await ask(app, page, 'turn on dark mode')
-      const darkModeSent = await pressEnterAt(page)
-      const butler = (await waitForAllCalls(env, 2, 30_000))[1]
+      await page.keyboard.press('Enter')
+      const [, butler, darkMode] = await waitForAllCalls(env, 3, 60_000)
       expect(butler.cwd).toBe(butlerFolder(env))
+      expect(darkMode.cwd).toBe(butlerFolder(env))
       await expect(page.locator('.modal')).toHaveCount(0)
-      expect(textAfterDashes(butler)).toMatch(
-        /^The owner typed this in ⌘P: turn on dark mode \(The owner was in the workspace \S*ws-a at the time\.\) \(The owner picked Claude for it: start any session for this with --backend claude\.\)$/
+      expect(textAfterDashes(butler)).not.toContain('turn on dark mode')
+      expect(textAfterDashes(darkMode)).toMatch(
+        /The owner typed this in ⌘P: turn on dark mode \(The owner was in the workspace \S*ws-a at the time\.\) \(The owner picked Claude for it: start any session for this with --backend claude\.\)$/
       )
-      await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
-      const butlerTab = await butlerRow(page).getAttribute('data-tab-id')
-      const ownerWords = (): string => {
-        const f = path.join(env.userData, 'hook-sessions', `${butlerTab}.said`)
-        return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim() : ''
-      }
-      await expect.poll(ownerWords, { timeout: 30_000 }).toBe('turn on dark mode')
-      await butlerTurnEnded(page, butlerTab, darkModeSent)
+      const helpers = page.locator('.isl-butler .ws-subtabs > .ws-tab')
+      await expect(helpers).toHaveCount(1, { timeout: 60_000 })
+      await expect(helpers).toHaveClass(/\bactive\b/)
+      const helperTab = await helpers.getAttribute('data-tab-id')
+      const said = path.join(env.userData, 'hook-sessions', `${helperTab}.said`)
+      await expect
+        .poll(() => (fs.existsSync(said) ? fs.readFileSync(said, 'utf8').trim() : ''), {
+          timeout: 30_000
+        })
+        .toBe('turn on dark mode')
       fs.rmSync(env.claudeDelayFile, { force: true })
 
       await ask(app, page, 'and dim the sidebar too')
-      const dimSent = await pressEnterAt(page)
-      await expect
-        .poll(() => peerLines(env), { timeout: 30_000 })
-        .toContain('The owner typed this in ⌘P: and dim the sidebar too')
-      expect(peerLines(env).trim().split('\n').at(-1)).not.toContain('The owner was in')
-      expect(peerLines(env)).not.toContain('turn on dark mode')
-      expect(ownerWords()).toBe('and dim the sidebar too')
-      await butlerTurnEnded(page, butlerTab, dimSent)
+      await page.keyboard.press('Enter')
+      const dim = (await waitForAllCalls(env, 4, 60_000))[3]
+      expect(dim.cwd).toBe(butlerFolder(env))
+      expect(textAfterDashes(dim)).toContain('The owner typed this in ⌘P: and dim the sidebar too')
+      expect(textAfterDashes(dim)).not.toContain('The owner was in')
+      expect(textAfterDashes(dim)).not.toContain('turn on dark mode')
+      await expect(helpers).toHaveCount(2, { timeout: 60_000 })
 
+      assistAnswers(env, { hand: 'assist', workspace: 2, title: 'Ask ws-b' })
+      await ask(app, page, 'ask ws-b about the release')
+      await page.keyboard.press('Enter')
+      const release = (await waitForAllCalls(env, 5, 60_000))[4]
+      expect(release.cwd).toBe(butlerFolder(env))
+      expect(textAfterDashes(release)).toContain(
+        'The owner typed this in ⌘P: ask ws-b about the release'
+      )
+      expect(textAfterDashes(release)).toMatch(
+        /Koloft took this to be about the workspace [^"]*ws-b\./
+      )
+
+      const butlerTab = await butlerRow(page).getAttribute('data-tab-id')
       assistAnswers(env, { hand: 'discord', title: 'Discord' })
       await ask(app, page, 'set up Discord')
       const discordSent = await pressEnterAt(page)
@@ -417,18 +443,8 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         .poll(() => peerLines(env), { timeout: 30_000 })
         .toContain('The owner asked you: set up Discord')
       await butlerTurnEnded(page, butlerTab, discordSent)
-
-      assistAnswers(env, { hand: 'assist', workspace: 2, title: 'Ask ws-b' })
-      await ask(app, page, 'ask ws-b about the release')
-      await page.keyboard.press('Enter')
-      await expect
-        .poll(() => peerLines(env), { timeout: 30_000 })
-        .toContain('The owner typed this in ⌘P: ask ws-b about the release')
-      expect(peerLines(env).trim().split('\n').at(-1)).toMatch(
-        /Koloft took this to be about the workspace [^"]*ws-b\./
-      )
-      expect(readAllCalls(env)).toHaveLength(2)
-      await expect(page.locator('.isl-butler .ws-subtabs')).toHaveCount(0)
+      expect(peerLines(env)).not.toContain('The owner typed this in ⌘P')
+      expect(readAllCalls(env)).toHaveLength(5)
     } finally {
       await quitAndClose(app)
     }
@@ -446,7 +462,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
 
   for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
     const { install, busy } = keepsBusy[backend]
-    test(`while a ${backend} butler is busy, what ⌘P cannot do starts at once in a helper of the butler's, under its row, which the screen moves to`, async ({
+    test(`a ${backend} butler: what ⌘P cannot do opens the butler when it is closed, on Koloft's note that a helper has it, and starts in a helper of the butler's, under its row, which the screen moves to; while the butler is busy the next one starts in a second helper`, async ({
       env
     }) => {
       test.setTimeout(180_000)
@@ -466,8 +482,21 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
             }),
           backend
         )
+        const helpers = page.locator('.isl-butler .ws-subtabs > .ws-tab')
+        const sent = async (tab: string): Promise<string> =>
+          (
+            JSON.stringify([readAllCalls(env), codexCalls(env)]) +
+            codexWireText(env) +
+            (await terminalText(page, tab))
+          ).replace(/\s+/g, '')
         await ask(app, page, 'turn on dark mode')
         await page.keyboard.press('Enter')
+        await expect(helpers).toHaveCount(1, { timeout: 60_000 })
+        await expect(helpers).toHaveClass(/\bactive\b/)
+        const first = (await helpers.getAttribute('data-tab-id')) ?? ''
+        await expect
+          .poll(() => sent(first), { timeout: 60_000 })
+          .toContain('Theownertypedthisin⌘P:turnondarkmode')
         await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
         const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
         await page.evaluate(
@@ -478,60 +507,25 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
 
         await ask(app, page, 'and dim the sidebar too')
         await page.keyboard.press('Enter')
-        const helper = page.locator('.isl-butler .ws-subtabs > .ws-tab')
-        await expect(helper).toHaveCount(1, { timeout: 60_000 })
-        await expect(helper).toHaveClass(/\bactive\b/)
-        const helperTab = (await helper.getAttribute('data-tab-id')) ?? ''
-        expect(helperTab).not.toBe(butlerTab)
+        await expect(helpers).toHaveCount(2, { timeout: 60_000 })
+        const second = helpers.and(page.locator('.active'))
+        await expect(second).toHaveCount(1)
+        const secondTab = (await second.getAttribute('data-tab-id')) ?? ''
+        expect([first, butlerTab]).not.toContain(secondTab)
         await expect
-          .poll(
-            async () =>
-              (
-                JSON.stringify([readAllCalls(env), codexCalls(env)]) +
-                codexWireText(env) +
-                (await terminalText(page, helperTab))
-              ).replace(/\s+/g, ''),
-            { timeout: 60_000 }
-          )
+          .poll(() => sent(secondTab), { timeout: 60_000 })
           .toContain('Theownertypedthisin⌘P:anddimthesidebartoo')
         await expect(butlerRow(page)).toHaveClass(BUSY_ROW)
+        expect(await sent(butlerTab)).toContain(
+          '(FromKoloft:theowneraskedforsomethingin⌘P,andKolofthandsittoahelperofyours'
+        )
       } finally {
         await quitAndClose(app)
       }
     })
   }
 
-  test('while a Claude butler is busy, the helper for ⌘P work runs on the agent the owner picked with ⌘⏎, not on the butler’s own', async ({
-    env
-  }) => {
-    test.setTimeout(180_000)
-    installAgy(env)
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      await ask(app, page, 'turn on dark mode')
-      await page.keyboard.press('Enter')
-      await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
-      await page.evaluate((id) => window.api.terminal.write(id, '/busy\r'), butlerTab)
-      await expect(butlerRow(page)).toHaveClass(BUSY_ROW, { timeout: 30_000 })
-
-      await ask(app, page, 'and dim the sidebar too')
-      await page.keyboard.press('Meta+Enter')
-      await expect(page.locator('.isl-butler .ws-subtabs > .ws-tab')).toHaveCount(1, {
-        timeout: 60_000
-      })
-      await expect
-        .poll(() => agyCalls(env).some((c) => c.cwd === butlerFolder(env)), { timeout: 60_000 })
-        .toBe(true)
-      expect(readAllCalls(env)).toHaveLength(1)
-    } finally {
-      await quitAndClose(app)
-    }
-  })
-
-  test('while the butler is busy and the Mac has no room, the helper for ⌘P work still starts at once under the butler, is never queued, and the screen moves to it', async ({
+  test('when the Mac has no room, the helper for ⌘P work still starts at once under the butler, is never queued, and the screen moves to it', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -542,12 +536,6 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await ask(app, page, 'turn on dark mode')
-      await page.keyboard.press('Enter')
-      await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
-      await page.evaluate((id) => window.api.terminal.write(id, '/busy\r'), butlerTab)
-      await expect(butlerRow(page)).toHaveClass(BUSY_ROW, { timeout: 30_000 })
       await expect
         .poll(() => page.evaluate(() => window.api.machine.now().then((s) => s?.busy)), {
           timeout: 20_000
@@ -555,87 +543,12 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         .toBe(true)
 
       assistAnswers(env, { hand: 'koloft', title: 'Dim sidebar' })
-      await ask(app, page, 'and dim the sidebar too')
+      await ask(app, page, 'dim the sidebar')
       await page.keyboard.press('Enter')
       const helper = page.locator('.isl-butler .ws-subtabs > .ws-tab', { hasText: 'Dim sidebar' })
       await expect(helper).toHaveCount(1, { timeout: 60_000 })
       await expect(page.locator('.ws-tab.st-queued')).toHaveCount(0)
       await expect(helper).toHaveClass(/\bactive\b/)
-    } finally {
-      await quitAndClose(app)
-    }
-  })
-
-  for (const [backend, install] of [
-    ['muse', installMuse],
-    ['agy', installAgy]
-  ] as const) {
-    test(`a ${backend} butler starts on what ⌘P cannot do, and once open gets the next one typed in on one line when its turn has ended`, async ({
-      env
-    }) => {
-      test.setTimeout(180_000)
-      install(env)
-      const app = await launchApp(env)
-      try {
-        const page = await app.firstWindow()
-        await waitBooted(page)
-        await page.evaluate(
-          (b) => window.api.settings.set({ assist: { on: true, backend: b } }),
-          backend
-        )
-        await startSessionIn(page, 'ws-a', { method: 'Claude' })
-        await ask(app, page, 'turn on dark mode')
-        await page.keyboard.press('Enter')
-        await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
-        const tab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
-        const screen = (): Promise<string> =>
-          terminalText(page, tab).then((t) => t.replace(/\s+/g, ''))
-        await expect
-          .poll(screen, { timeout: 60_000 })
-          .toMatch(
-            /Theownertypedthisin⌘P:turnondarkmode\(Theownerwasintheworkspace\S*ws-aatthetime\.\)/
-          )
-        await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-        await ask(app, page, 'and dim the sidebar too')
-        await page.keyboard.press('Enter')
-        await expect
-          .poll(screen, { timeout: 60_000 })
-          .toContain('Theownertypedthisin⌘P:anddimthesidebartoo')
-      } finally {
-        await quitAndClose(app)
-      }
-    })
-  }
-
-  test('a Codex butler starts on what ⌘P cannot do, and once open gets the next one queued as a message', async ({
-    env
-  }) => {
-    test.setTimeout(180_000)
-    installCodex(env)
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      await page.evaluate(() => window.api.settings.set({ assist: { on: true, backend: 'codex' } }))
-      await ask(app, page, 'turn on dark mode')
-      await page.keyboard.press('Enter')
-      await expect
-        .poll(() => codexCalls(env).some((c) => c.cwd === butlerFolder(env)), { timeout: 30_000 })
-        .toBe(true)
-      await expect
-        .poll(() => JSON.stringify(codexCalls(env)) + codexWireText(env), { timeout: 60_000 })
-        .toContain('The owner typed this in ⌘P: turn on dark mode')
-      await expect(butlerRow(page)).toHaveClass(/\bactive\b/)
-      await expect
-        .poll(() => codexWireText(env), { timeout: 60_000 })
-        .toContain('"method":"turn/completed"')
-      await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      await ask(app, page, 'and dim the sidebar too')
-      await page.keyboard.press('Enter')
-      await expect
-        .poll(() => codexWireText(env), { timeout: 60_000 })
-        .toContain('The owner typed this in ⌘P: and dim the sidebar too')
-      expect(readAllCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
     }

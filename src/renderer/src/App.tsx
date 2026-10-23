@@ -116,7 +116,7 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
-import { RenameButlerDialog, setUpDiscordWithButler, showButler } from './components/ButlerRow'
+import { RenameButlerDialog, setUpDiscordWithButler } from './components/ButlerRow'
 import { BindConductorDialog } from './components/BindConductorDialog'
 import { everyWorkspaceRows, isButlerTab } from './butlerRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
@@ -1163,8 +1163,8 @@ export default function App(): JSX.Element {
       }
       void window.api.conductors.fromPalette(request).then((r) => {
         if (r.ok) {
-          if (r.queued) return
-          return r.helper ? visitTab(r.tabId) : showButler(r.tabId)
+          if (!r.queued) visitTab(r.tabId)
+          return
         }
         showToast(r.error)
         requestNew('main', undefined, { prompt, title, path: about, worktree: null }, backend)
