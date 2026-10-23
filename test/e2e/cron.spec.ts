@@ -82,6 +82,8 @@ type WhenSpec =
   | { kind: 'daily'; at: string }
   | { kind: 'weekly'; days: string[]; at: string }
   | { kind: 'every'; n: number; unit: 'minutes' | 'hours' }
+  | { kind: 'once'; date: string; at: string }
+  | { kind: 'after'; n: number; unit: 'minutes' | 'hours' }
 
 interface JobSpec {
   agent?: 'Codex' | 'Muse' | 'Antigravity'
@@ -105,9 +107,15 @@ async function fillForm(dlg: Locator, spec: JobSpec): Promise<void> {
     await dlg.locator('.chip', { hasText: 'Pick days' }).click()
     for (const d of when.days) await dlg.locator('.chip.day', { hasText: d }).click()
     await dlg.locator('input[aria-label="at"]').fill(when.at)
+  } else if (when.kind === 'once') {
+    await dlg.locator('.chip', { hasText: /^Once$/ }).click()
+    await dlg.locator('input[aria-label="on"]').fill(when.date)
+    await dlg.locator('input[aria-label="at"]').fill(when.at)
   } else {
-    await dlg.locator('.chip', { hasText: 'Repeat every' }).click()
-    await dlg.locator('input[aria-label="Repeat every"]').fill(String(when.n))
+    const [chip, label] =
+      when.kind === 'every' ? ['Repeat every', 'Repeat every'] : ['After each run', 'Wait']
+    await dlg.locator('.chip', { hasText: chip }).click()
+    await dlg.locator(`input[aria-label="${label}"]`).fill(String(when.n))
     await dlg.locator('select[aria-label="unit"]').selectOption(when.unit)
   }
   if (spec.model) await dlg.locator('.chip', { hasText: spec.model }).click()
@@ -207,6 +215,7 @@ const DUE_PLUS_WINDOW_FIRST_TICKS_MS = 150_000
 const A_LATER_END_OF_THE_FINISHED_RUN_WOULD_HAVE_SHOWN_BY_MS = 5_000
 const ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS = 5_000
 const CLOSE_RECHECK_MS = 2_000
+const ONE_MINUTE_LESS_THE_POLL_LAG_MS = 55_000
 
 async function waitTurnStopSoTheTranscriptExistsBeforeClose(
   page: Page,
@@ -340,6 +349,58 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(dlg.locator('.chip', { hasText: 'Same as my other sessions' })).toHaveClass(
         /\bon\b/
       )
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-M31: a once job and an after-each-run job are created through the form and read back in words; picking After each run turns on "Close it"', async ({
+    env
+  }) => {
+    gitInit(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      const now = new Date()
+      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 12)
+      const date = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`
+      await createJob(page, dlg, {
+        name: 'Release check',
+        task: '/release-check',
+        when: { kind: 'once', date, at: '09:00' }
+      })
+      await expect(card(page, 'Release check').locator('.job-when')).toHaveText(
+        /^Once on \d+ \w{3} \d{4} at 9:00 · next tomorrow 09:00$/
+      )
+
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await expect(dlg.locator('.chip.on', { hasText: 'Leave it open' })).toHaveCount(1)
+      await dlg.locator('.chip', { hasText: 'After each run' }).click()
+      await expect(dlg.locator('.chip.on', { hasText: 'Close it' })).toHaveCount(1)
+      await dlg.locator('.chip', { hasText: 'Every day' }).click()
+      await expect(dlg.locator('.chip.on', { hasText: 'Leave it open' })).toHaveCount(1)
+      await fillForm(dlg, {
+        name: 'Push issues',
+        task: '/issue-advance',
+        when: { kind: 'after', n: 2, unit: 'hours' }
+      })
+      await expect(dlg.locator('.chip.on', { hasText: 'Close it' })).toHaveCount(1)
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await expect(card(page, 'Push issues').locator('.job-when')).toHaveText(
+        /^2 hours after each run ends · next (today|tomorrow) \d\d:\d\d$/
+      )
+
+      const jobs = await storedJobs(env, 2)
+      expect(jobs[0]).toMatchObject({ schedule: { kind: 'once', date, at: '09:00' } })
+      expect(jobs[1]).toMatchObject({
+        schedule: { kind: 'after', n: 2, unit: 'hours' },
+        autoClose: true,
+        waitFrom: expect.any(Number)
+      })
     } finally {
       await app.close().catch(() => {})
     }
@@ -761,6 +822,40 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(plainRows(page, 'ws-a')).toHaveClass(/\bactive\b/)
       expect(await focusOwner(page)).toBe('tui')
       await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toEqual(['block', 'none'])
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-M32: an after-each-run job starts its next run only once the wait has passed since the last run closed itself, and skips nothing meanwhile', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    gitInit(env.workspaces.a)
+    env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await createJob(page, dlg, {
+        name: 'Push issues',
+        task: 'Look at the issues',
+        when: { kind: 'after', n: 1, unit: 'minutes' }
+      })
+      await clickRunNow(page, 'Push issues')
+      await waitNewCall(env, 0)
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
+        .toBe('Done — closed itself')
+      const closedAt = Date.now()
+
+      await waitNewCall(env, 1, EVERY_MINUTE_DUE_PLUS_TICK_MS)
+      expect(Date.now() - closedAt).toBeGreaterThanOrEqual(ONE_MINUTE_LESS_THE_POLL_LAG_MS)
+      const states = (await histLines(page)).map((l) => l.state)
+      expect(new Set(states)).toEqual(new Set(['Done — closed itself']))
     } finally {
       await app.close().catch(() => {})
     }

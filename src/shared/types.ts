@@ -1381,6 +1381,8 @@ export type Schedule =
   | { kind: 'daily'; at: string }
   | { kind: 'weekly'; days: number[]; at: string }
   | { kind: 'every'; n: number; unit: 'minutes' | 'hours' }
+  | { kind: 'once'; date: string; at: string }
+  | { kind: 'after'; n: number; unit: 'minutes' | 'hours' }
 
 export type CronPermission = 'same' | 'acceptEdits' | 'skipAll'
 // CC§9
@@ -1403,6 +1405,7 @@ export interface CronJob {
   autoClose?: true
   enabled: boolean
   createdAt: number
+  waitFrom?: number
   history: HistoryLine[]
 }
 
@@ -1464,7 +1467,9 @@ export interface SpawnedTab {
   sessionId?: string
 }
 
-export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id'> & { id?: string }
+export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id' | 'waitFrom'> & {
+  id?: string
+}
 export type CronSaveResult = { ok: true; job: CronJob } | { ok: false; errors: string[] }
 export type CronRunNowResult =
   | { ok: true }

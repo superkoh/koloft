@@ -1,10 +1,31 @@
 import type { CronJob, HistoryLine, LiveRun } from '@shared/types'
-import { describeSchedule, describeWhen, nextRun } from '@shared/schedule'
+import { describeSchedule, describeWhen, nextRun, onceAt, stepMs } from '@shared/schedule'
 
-export function whenLine(job: CronJob, now: Date): string {
-  const words = describeSchedule(job.schedule)
-  if (!job.enabled) return `${words} · off`
-  return `${words} · next ${describeWhen(nextRun(job.schedule, now), now)}`
+export function oncePassed(job: CronJob, now: Date): boolean {
+  return job.schedule.kind === 'once' && onceAt(job.schedule).getTime() <= now.getTime()
+}
+
+export function afterDueAt(job: CronJob, s: Parameters<typeof stepMs>[0]): number {
+  return (job.waitFrom ?? job.createdAt) + stepMs(s)
+}
+
+export function nextDue(job: CronJob, now: Date, live: LiveRun[]): Date | null {
+  if (!job.enabled) return null
+  const s = job.schedule
+  if (s.kind !== 'after') return nextRun(s, now)
+  if (liveOf(live, job.id)) return null
+  return new Date(Math.max(afterDueAt(job, s), now.getTime()))
+}
+
+export function nextWords(job: CronJob, now: Date, live: LiveRun[]): string {
+  if (oncePassed(job, now)) return 'time passed'
+  if (!job.enabled) return 'off'
+  const next = nextDue(job, now, live)
+  return next ? `next ${describeWhen(next, now)}` : 'waits for the open run to end'
+}
+
+export function whenLine(job: CronJob, now: Date, live: LiveRun[]): string {
+  return `${describeSchedule(job.schedule)} · ${nextWords(job, now, live)}`
 }
 
 export function histText(h: HistoryLine): string {
