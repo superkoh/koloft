@@ -590,6 +590,24 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
     expect(downloadedFiles(env)).toEqual([])
   })
 
+  test('a `file://` URL to a file that is not there says the file was not found and names its path', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(180_000)
+    await addressBarSession(page)
+    const missing = `${env.workspaces.a}/docs/no-such-page.html`
+
+    await typeInAddressBar(page, `file://${missing}`)
+
+    const guest = await guestByUrl(app, missing)
+    await expect(guest.locator('body')).toContainText(`File not found: ${missing}`, {
+      timeout: 30_000
+    })
+    expect(await page.locator(BROWSER.errorPage).count()).toBe(0)
+  })
+
   test('BB-C29: `about:blank` is a legal new-tab initial state', async ({ app, page, env }) => {
     test.setTimeout(180_000)
     await browserSession(page)
