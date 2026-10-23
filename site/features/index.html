@@ -105,8 +105,8 @@
             <p>
               Press ⌘P, type “add a forgot-password link to the login page” and hit ⏎. Assist picks
               the folder, opens a worktree when the folder is a git repo, names the session, and the
-              agent you picked starts on your words. The ▾ beside the button, or ⇧⏎, picks another
-              agent.
+              agent you picked starts on your words. Type @ and a folder's name to pick the folder
+              yourself. The ▾ beside the button, or ⌘⏎, picks another agent; ⇧⏎ starts a new line.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -115,7 +115,8 @@
             </ul>
             <p class="fnote">
               Needs Assist on (Settings ▸ Assist); with it off, ⏎ opens the folder picker and keeps
-              your words. In a remote folder the session opens on that machine.
+              your words, unless you named a folder with @. In a remote folder the session opens on
+              that machine.
             </p>
             <a class="more" href="../sessions/#find"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
@@ -165,8 +166,8 @@
               <h3>Ask Koloft itself</h3>
             </div>
             <p>
-              Type “set up Discord” in ⌘P and your words go to your butler, so you do not have to
-              dig through Settings.
+              Type “set up Discord” in ⌘P and a helper of your butler starts on it, so you do not
+              have to dig through Settings.
             </p>
 
             <p class="fnote">
@@ -581,8 +582,9 @@
             </div>
             <p>
               Say “have tidewatch fix the login bug”: your butler starts the session, answers its
-              questions the way you tell it, and tells you when it is done. A side job goes to a
-              helper of its own, which hangs under its row and reports back.
+              questions the way you tell it, and tells you when it is done. A job outside your
+              projects goes to a helper of its own, which hangs under its row, does the job and
+              reports back; so does what you ask in ⌘P that Koloft cannot do by itself.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -766,9 +768,9 @@
               <h3>Sessions on a timer</h3>
             </div>
             <p>
-              Every hour, day or week, a new session runs what you wrote; in a git repo, in a
-              worktree of its own. Tell it to close when done and it tidies up, unless work is left
-              uncommitted or unmerged.
+              Every hour, day or week, just once, or a set time after the last run ended, a new
+              session runs what you wrote; in a git repo, in a worktree of its own. Tell it to close
+              when done and it tidies up, unless work is left uncommitted or unmerged.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
