@@ -210,7 +210,7 @@ describe('koloft command in a Codex session', () => {
   beforeEach(() => {
     requestDir = path.join(base, 'codex-requests')
     fs.mkdirSync(requestDir)
-    writeAgentShim(shimDir, requestDir)
+    writeAgentShim(shimDir, requestDir, 'codex')
   })
 
   afterEach(() => {
@@ -252,4 +252,38 @@ describe('koloft command in a Codex session', () => {
     expect(r.status).toBe(1)
     expect(r.stderr).toMatch(/read-only/)
   })
+})
+
+describe('koloft command in a Codex, Muse or Antigravity session once Koloft lets go of it', () => {
+  it.each([
+    ['codex', 'Codex'],
+    ['muse', 'Muse'],
+    ['agy', 'Antigravity']
+  ] as const)(
+    'a %s session says it is a %s session no longer linked to Koloft, and exits 1',
+    async (backend, label) => {
+      const requestDir = path.join(base, `${backend}-requests`)
+      writeAgentShim(shimDir, requestDir, backend)
+      const r = await run(path.join(shimDir, 'koloft'), ['note'], {})
+      expect(r.status).toBe(1)
+      expect(r.stderr).toBe(`koloft: this ${label} session is no longer linked to Koloft.\n`)
+    }
+  )
+
+  it.each(['muse', 'agy'] as const)(
+    'a %s session that cannot write its request says it could not reach Koloft, not that a sandbox is read-only',
+    async (backend) => {
+      const requestDir = path.join(base, `${backend}-requests`)
+      fs.mkdirSync(requestDir, { mode: 0o555 })
+      writeAgentShim(shimDir, requestDir, backend)
+      try {
+        const r = await run(path.join(shimDir, 'koloft'), ['note'], {})
+        expect(r.status).toBe(1)
+        expect(r.stderr).toMatch(/\nkoloft: could not reach Koloft\.\n$/)
+        expect(r.stderr).not.toMatch(/read-only/)
+      } finally {
+        fs.chmodSync(requestDir, 0o700)
+      }
+    }
+  )
 })

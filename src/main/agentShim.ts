@@ -2,6 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { AGENT_GUIDE } from '@shared/agentGuide'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
+import type { BackendId } from '@shared/types'
 import { NEWID_FN } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SECRET_VERB, writeSudoShims } from './sudoShim'
@@ -90,23 +92,26 @@ unwritable="koloft: could not reach Koloft."
 ${body(REMOTE_AGENT_SHIM_WAITS_MS, REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS)}`
 
 // CODEX§12 CODEX§17
-function codexAgentShim(requestDir: string, guide: string): string {
+const codexUnwritable = 'koloft: this sandbox is read-only, so koloft cannot run here.'
+
+// MUSE§8 AGY§25
+function folderAgentShim(backend: BackendId, requestDir: string, guide: string): string {
   return `${HEAD}
 case "\${1:-help}" in help|--help) cat ${shq(guide)}; exit 0 ;; esac
 dir=${shq(requestDir)}
 if [ ! -d "$dir" ]; then
-  echo "koloft: this Codex session is no longer linked to Koloft." >&2
+  echo "koloft: this ${BACKEND_LABEL[backend]} session is no longer linked to Koloft." >&2
   exit 1
 fi
 tabfield=""
-unwritable="koloft: this sandbox is read-only, so koloft cannot run here."
+unwritable="${backend === 'codex' ? codexUnwritable : 'koloft: could not reach Koloft.'}"
 ${body(AGENT_SHIM_WAITS_MS)}`
 }
 
-export function writeAgentShim(shimDir: string, requestDir: string): void {
+export function writeAgentShim(shimDir: string, requestDir: string, backend: BackendId): void {
   const guide = path.join(shimDir, 'koloft-guide.txt')
   fs.writeFileSync(guide, AGENT_GUIDE + '\n')
-  fs.writeFileSync(path.join(shimDir, 'koloft'), codexAgentShim(requestDir, guide), {
+  fs.writeFileSync(path.join(shimDir, 'koloft'), folderAgentShim(backend, requestDir, guide), {
     mode: 0o755
   })
   writeSudoShims(shimDir)

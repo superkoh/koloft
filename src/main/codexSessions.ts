@@ -939,7 +939,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   ): { shimDir: string; zdotDir: string; release(): void } {
     const { shim, release } = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
-      { userZdotdir, open, agent }
+      { backend: 'codex', userZdotdir, open, agent }
     )
     return { shimDir: shim.shimDir, zdotDir: shim.zdotDir, release }
   }

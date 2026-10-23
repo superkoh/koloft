@@ -729,6 +729,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       {
+        backend: 'muse',
         open,
         agent,
         drop: (name) =>
