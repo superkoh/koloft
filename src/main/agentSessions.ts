@@ -235,8 +235,29 @@ function formatTurns(turns: Turn[]): string {
     .join('\n\n')
 }
 
-const NO_REMOTE_START =
-  'the koloft command cannot start a session in a remote (SSH) workspace. Pick a workspace on this computer.'
+interface OnAMachine {
+  backendId: BackendId
+  machine: string | undefined
+}
+
+const machineOfSession = (s: SessionInfo): OnAMachine => ({
+  backendId: s.backendId,
+  machine: s.remote?.host
+})
+
+const machineOfWorkspace = (backendId: BackendId, workspace: string): OnAMachine => ({
+  backendId,
+  machine: parseRemoteKey(workspace)?.host
+})
+
+// CC§13
+function sendMessageReaches(from: OnAMachine, to: OnAMachine): boolean {
+  return (
+    reachedBySendMessage(from.backendId) &&
+    reachedBySendMessage(to.backendId) &&
+    from.machine === to.machine
+  )
+}
 
 export function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<PinnedWorkspace> {
   const hits = pinned.filter(
@@ -258,7 +279,6 @@ export function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed
 function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<string> {
   const found = resolveWorkspace(ref, pinned)
   if (!found.ok) return fail(found.error)
-  if (isRemoteKey(found.value.path)) return fail(NO_REMOTE_START)
   if (found.value.missing) return fail(`the folder of workspace "${found.value.path}" is missing.`)
   return { ok: true, value: found.value.path }
 }
@@ -293,11 +313,11 @@ function matchOpen(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> | 
 export function findSiblingTarget(
   sessions: SessionInfo[],
   ref: string,
-  from: BackendId
+  from: SessionInfo
 ): Parsed<SessionInfo> {
   const hit = matchOpen(sessions, ref)
   if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
-  return hit.ok && reachedBySendMessage(hit.value.backendId) && reachedBySendMessage(from)
+  return hit.ok && sendMessageReaches(machineOfSession(from), machineOfSession(hit.value))
     ? fail(CLAUDE_USES_SEND_MESSAGE)
     : hit
 }
@@ -522,10 +542,14 @@ async function startSibling(
   if (!launched) return refused('koloft session new: Koloft could not start the session.')
   const { tabId, name } = launched
   const unnamed = aSessionOf(backend)
+  const bySendMessage = sendMessageReaches(
+    machineOfSession(me),
+    machineOfWorkspace(backend, workspace)
+  )
   if (d.waiting.list().some((q) => q.tabId === tabId))
     return answered(
       `Queued ${name ? `session "${name}"` : unnamed} (${tabId}): Koloft starts it in turn, once this machine has room. Do not start it again. "koloft session list" shows it as queued; ${
-        name && reachedBySendMessage(backend) && reachedBySendMessage(me.backendId)
+        name && bySendMessage
           ? `once it starts, talk to it with SendMessage to "${name}"`
           : `"koloft session send ${tabId} <message>" is kept and handed to it once it starts`
       }; "koloft session close ${tabId}" takes it off the queue.`
@@ -539,7 +563,7 @@ async function startSibling(
       ? 'koloft session list'
       : `koloft session list --workspace ${JSON.stringify(workspace)}`
   return answered(
-    reachedBySendMessage(backend)
+    bySendMessage
       ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
       : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : unnamed} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
   )
@@ -1180,8 +1204,10 @@ export function sessionVerb(d: SessionVerbDeps): {
       const queued = queuedStartedBy(d, caller.session, ref)
       if (
         queued &&
-        reachedBySendMessage(queued.kind) &&
-        reachedBySendMessage(caller.session.backendId)
+        sendMessageReaches(
+          machineOfSession(caller.session),
+          machineOfWorkspace(queued.kind, queued.cwd)
+        )
       )
         return refused(
           `koloft session send: "${queued.title}" is still queued for the machine; once it starts, talk to it with SendMessage to "${queued.title}".`
@@ -1196,7 +1222,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       if (to) replyOwed.delete(caller.tabId)
       if (to) return deliver('send', to, said, caller, false)
       if (matchOpen(open, ref) === null) return sessionAct(sub, rest, caller, false)
-      const target = findSiblingTarget(open, ref, caller.session.backendId)
+      const target = findSiblingTarget(open, ref, caller.session)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
       return deliver('send', openTarget(target.value), said, caller, false)
     }

@@ -571,7 +571,21 @@ describe('koloft session new', () => {
     expect(reply.text).toContain(`koloft session list --workspace "${OTHER_WS}"`)
   })
 
-  it('--workspace refuses, starting nothing, a name not in the sidebar (listing what is), a name two workspaces share, a missing folder and a remote workspace', async () => {
+  it('--workspace starts a Claude sibling in a remote workspace, found by its folder name, its machine:path or its ssh key, and the caller is told its tab id and koloft session send, since SendMessage reaches no session on another machine', async () => {
+    const { verb, launched } = harness([session('me', 'claude')])
+    for (const ref of ['api', 'box:/srv/api', 'ssh://box/srv/api']) {
+      const reply = await verb(['new', '--workspace', ref, '--', 'go'], from('me'))
+      expect(reply.exit).toBe(0)
+      expect(reply.text).toContain('koloft session send new-tab')
+      expect(reply.text).not.toContain('SendMessage')
+    }
+    expect(launched.map((l) => [l.kind, l.cwd])).toEqual(
+      Array(3).fill(['claude', 'ssh://box/srv/api'])
+    )
+    expect(launched[0].firstPrompt).toContain('koloft session send me-session')
+  })
+
+  it('--workspace refuses, starting nothing, a name not in the sidebar (listing what is), a name two workspaces share and a missing folder', async () => {
     const { verb, launched } = harness([session('me', 'claude')])
     const unknown = await verb(['new', '--workspace', 'nope', '--', 'go'], from('me'))
     expect(unknown.exit).not.toBe(0)
@@ -580,8 +594,9 @@ describe('koloft session new', () => {
     const shared = await verb(['new', '--workspace', 'site', '--', 'go'], from('me'))
     expect(shared.exit).not.toBe(0)
     expect(shared.text).toContain('/old/site')
-    for (const ref of ['gone', 'api', 'box:/srv/api', 'ssh://box/srv/api'])
-      expect((await verb(['new', '--workspace', ref, '--', 'go'], from('me'))).exit).not.toBe(0)
+    const missing = await verb(['new', '--workspace', 'gone', '--', 'go'], from('me'))
+    expect(missing.exit).not.toBe(0)
+    expect(missing.text).toContain('missing')
     expect(launched).toEqual([])
   })
 
@@ -669,6 +684,24 @@ describe('koloft session send', () => {
     expect(reply.exit).not.toBe(0)
     expect(reply.text).toContain('SendMessage')
     expect(lines).toEqual([])
+  })
+
+  it('a Claude session reaches a Claude session on another machine with koloft session send, typed into it there, and that one reaches it back on its message line, since SendMessage reaches no session on another machine', async () => {
+    const REMOTE = 'ssh://box/srv/api'
+    const { verb, lines, pressed } = harness([
+      ...sessions(),
+      session('far', 'claude', {
+        title: 'Far planner',
+        host: 'ssh',
+        remote: { host: 'box' },
+        cwd: REMOTE,
+        treeRoot: REMOTE
+      })
+    ])
+    expect((await verb(['send', 'Far planner', 'hi'], from('cc'))).exit).toBe(0)
+    expect((await verb(['send', 'Planner', 'Done'], from('far'))).exit).toBe(0)
+    expect(pressed.map((p) => p.tabId)).toEqual(['far'])
+    expect(lines.map((l) => l.tabId)).toEqual(['cc'])
   })
 
   it('a Codex or Muse session reaches an open Claude session on its message line, marked with who sent it, and the Claude session answers it with koloft session send', async () => {

@@ -1830,6 +1830,16 @@ sessions.
   reply arrived in the sender. The `SendMessage` tool text says a session in a
   different permission mode holds such messages for its user's approval — read, not
   measured.
+- **SendMessage does not reach a session on another machine.** 2026-10-23, CC 2.1.309
+  (linux-arm64), two Docker containers on one network, each with its own `HOME`, an OAuth
+  token and model haiku. An interactive receiver started with `-n home-session`
+  registered with a messaging socket under `/tmp/cc-socks/`. A `claude -p` in the same
+  container listed it in `ListAgents` and its `SendMessage` was delivered (the text
+  reached the receiver's transcript). A `claude -p` in the other container got
+  `ListAgents`: "No reachable agents — no other Claude session is running on this
+  machine right now", and `SendMessage` to `home-session`: `{"success":false,"message":
+  "No agent named 'home-session' is reachable."}`; nothing reached the receiver. Claude's
+  own way across machines, Remote Control, refuses the token Koloft injects (§7).
 - **How a message from another session lands in the receiver's transcript** (2026-10-02,
   CC 2.1.288, interactive sessions in a scratch `HOME`, the message sent as one
   `{"type":"user",…}` line to the receiver's `messagingSocketPath`, §11). When the
