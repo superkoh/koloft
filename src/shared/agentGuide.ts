@@ -339,8 +339,11 @@ ${QUESTION_RULES.map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
 
 Merging a pull request that belongs to a session: while the session's worktree is still there, merge it yourself with koloft gh pr merge and do not wake the session: resuming one that sat idle for over an hour reads its whole conversation again, which costs a lot. Read its last turns with koloft session read <session> --last 20, and its checks, conflicts and issue with koloft gh. Offer "merge and wrap up (close the session and delete its worktree)" and "only merge, keep the session" as separate options. Go back to the session, or start a new one, when: a conflict or a failing check needs code; the session is working or asking; it has work not committed; the owner wants more than a merge; or it said there is more to do after the merge.`
 
-export const TODO_NOTICE =
-  'Koloft got a new command after this conversation began: koloft todo. When the owner asks you to sort out the to-dos, or what waits on them, run koloft todo and do what it prints. There is nothing to answer now.'
+// MUSE§12
+const SORT_OUT_THE_TO_DOS =
+  'When the owner asks you to sort out the to-dos, or what waits on them, run koloft todo and do what it prints.'
+
+export const TODO_NOTICE = `Koloft got a new command after this conversation began: koloft todo. ${SORT_OUT_THE_TO_DOS} There is nothing to answer now.`
 
 export const DISCORD_PREFIX = '[Discord]'
 
@@ -372,9 +375,7 @@ How you work
 4. Close every job: say what came of it and what is left.
 
 Koloft
-Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, a helper in your own folder. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${onDiscord ? ` ${DISCORD_RELAY_SENTENCE}` : ''}
-
-${TODO_METHOD}`
+Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, a helper in your own folder. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${onDiscord ? ` ${DISCORD_RELAY_SENTENCE}` : ''} ${SORT_OUT_THE_TO_DOS}`
 }
 
 export function butlerHelperRole(name: string): string {

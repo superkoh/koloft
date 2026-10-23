@@ -658,7 +658,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect
         .poll(() => said(fake))
         .toContain(
-          '❓ **Alfred** is waiting for you.\nWhich colour do you prefer?\n1. Red — Choose red.\n2. Green — Choose green.\n-# Reply with the number or the name of one option.'
+          '❓ **Alfred** is waiting for you.\nWhich colour do you prefer?\n1. Red — Choose red.\n2. Green — Choose green.\n-# Reply with the number or the name of one option, or with your own answer.'
         )
       fake.say(OWNER, 'Green')
       await expect

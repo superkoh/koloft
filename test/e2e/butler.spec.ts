@@ -23,6 +23,7 @@ import {
   sendShortcut,
   settingsOnDisk,
   startSessionIn,
+  switchToRow,
   waitBooted,
   resumedId,
   waitForAllCalls,
@@ -517,7 +518,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
       ])
       expect(await koloftSays(page, 'todo note ws-a')).toContain('Issues assigned to me.')
 
-      await wsRows(page, 'ws-a').click()
+      await switchToRow(page, wsRows(page, 'ws-a'))
       expect(await koloftRun(page, 'todo')).toEqual({
         text: expect.stringContaining('only the butler and the helpers'),
         exit: 1
