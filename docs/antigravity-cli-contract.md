@@ -1032,3 +1032,19 @@ Nothing ran against Google's real servers.
   `refresh_token` used from two machines: not probed (no real account).
 - The slim lab image has no `jq`, `python`, `xz` or `gawk`: scripts that run there are
   `sh` with `sed` and `printf`.
+
+## §30 MCP servers, everywhere and in one project
+
+2026-10-23, agy 1.3.6, Docker, `agy --gemini_dir=<dir> mcp add …`, then `agy -p` against a
+fake Gemini server with MCP servers that logged their start.
+
+- **`agy mcp add`** (no scope flag) writes only `<geminiDir>/config/mcp_config.json`:
+  `{"mcpServers":{"<name>":{"command","args":[…],"env":{…},"disabled":false}}}` (an HTTP
+  one has `serverUrl` and `headers`); `agy mcp disable` sets `"disabled": true`. `agy mcp
+  list` shows only that file.
+- **One project:** `<workspace>/.agents/mcp_config.json` (same shape) and
+  `<workspace>/.agents/plugins/<p>/mcp_config.json` (named `<p>_<server>`) were loaded in
+  folder A and not in folder B; `<A>/.gemini/mcp_config.json`, `<A>/.gemini/settings.json`
+  and `<A>/.mcp.json` were not. In `-p` this held with A out of `trustedWorkspaces`.
+
+Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`).

@@ -50,14 +50,6 @@ export interface ButlerDeps {
   bindDeadlineMs: number
 }
 
-// CODEX§17 MUSE§9 AGY§8
-const ROLE_RENEWED_ON_RESUME: Record<BackendId, boolean> = {
-  claude: true,
-  codex: false,
-  muse: false,
-  agy: false
-}
-
 const LAST_MESSAGE_SAVE_DELAY_MS = 1000
 
 // ADR-0029 CC§3 CODEX§2
@@ -291,16 +283,16 @@ export class Butler {
       return refusal(errorText(error))
     }
     if (!tabId) return refusal(`${launch.title} could not start.`)
-    if (resumed && key !== undefined && !this.session.knowsTodo?.includes(key))
-      this.tellOfTodo(launch.backend, key)
+    if (resumed && key !== undefined && !this.session.knowsTodo?.includes(key)) this.tellOfTodo(key)
     this.resident = tabId
     this.armDeadline(tabId, launch.title)
     return { ok: true, tabId }
   }
 
-  private tellOfTodo(backend: BackendId, key: string): void {
+  // CC§23 CODEX§17 MUSE§9 AGY§8
+  private tellOfTodo(key: string): void {
     this.changeSession((s) => ({ ...s, knowsTodo: [...(s.knowsTodo ?? []), key] }))
-    if (!ROLE_RENEWED_ON_RESUME[backend]) this.d.notice(`${FROM_KOLOFT}${TODO_NOTICE}`)
+    this.d.notice(`${FROM_KOLOFT}${TODO_NOTICE}`)
   }
 
   private armDeadline(tabId: string, title: string): void {

@@ -551,7 +551,7 @@ describe('the open pull requests koloft todo lists', () => {
     )
   })
 
-  // PLATFORM§32
+  // PLATFORM§60
   it('with a gh too old to know which issues a pull request closes, lists them again without that and says so', async () => {
     const gh: Gh = async (args) => {
       if (args[0] === 'api') return ok('alice')

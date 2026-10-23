@@ -363,6 +363,41 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
+  test('a helper the butler starts in its own folder asks its question in the butler’s channel, on a card that names it as the butler’s helper, and what the owner types while that card waits answers the helper', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      fake.say(OWNER, '/koloft session new --name Tidy -- Sort out the to-dos.')
+      const helperTab = async (): Promise<string | undefined> => {
+        const all = await page.evaluate(() => window.api.sessions.list())
+        return all.find((s) => s.alive && s.title === 'Tidy' && s.sessionId)?.tabId
+      }
+      await expect.poll(helperTab, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
+      const tab = (await helperTab())!
+      await page.evaluate(
+        (id) => window.api.terminal.write(id, '/ask Merge #41?|Merge|Leave it\r'),
+        tab
+      )
+      const card = "❓ **Tidy (Alfred's helper)** is waiting for you.\nMerge #41?\n1. Merge"
+      await expect
+        .poll(() => said(fake).some((p) => p.startsWith(card)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
+      fake.say(OWNER, '1')
+      await expect
+        .poll(() => terminalText(page, tab), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Picked: Merge')
+      expect(said(fake).join('\n')).not.toContain('Picked: Merge')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
   test('the session threads an older Koloft opened under the butler’s channel are archived on the first connect, once; the owner writing or running a command in one is pointed to the butler’s channel, and nothing reaches any session', async ({
     env
   }) => {

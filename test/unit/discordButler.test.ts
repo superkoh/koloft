@@ -216,8 +216,8 @@ describe('the butler', () => {
     expect(resumed).toEqual(['s2'])
   })
 
-  // CODEX§17
-  it('a conversation from before koloft todo, resumed on Codex, Muse or Antigravity, is told of it once; one started since, or resumed on Claude, whose role comes back with every launch, is told nothing', async () => {
+  // CC§23 CODEX§17 MUSE§9 AGY§8
+  it('a conversation from before koloft todo, which keeps the role it started with, is told of it once when resumed, on Claude too; one started since is told nothing', async () => {
     const OLD_CODEX = 'codex:local:old-thread'
     const NEW_CODEX = 'codex:local:new-thread'
     session = { sessionIds: [OLD_CODEX], lastSessionKey: OLD_CODEX }
@@ -235,7 +235,7 @@ describe('the butler', () => {
     transcripts.add(CLAUDE_KEY)
     choice = { backend: 'claude' }
     await make().open()
-    expect(notices).toHaveLength(1)
+    expect(notices).toHaveLength(2)
     expect(session.knowsTodo).toContain(CLAUDE_KEY)
 
     session = { sessionIds: [] }
@@ -246,7 +246,7 @@ describe('the butler', () => {
     fresh.onPtyExit(tab)
     transcripts.add(NEW_CODEX)
     await fresh.open()
-    expect(notices).toHaveLength(1)
+    expect(notices).toHaveLength(2)
   })
 
   // AGY§8

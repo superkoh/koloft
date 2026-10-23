@@ -200,7 +200,7 @@ export function parseTodoPulls(stdout: string): TodoPull[] | null {
     }))
 }
 
-// PLATFORM§32
+// PLATFORM§60
 export async function listTodoPulls(gh: Gh, repo: GithubRepo): Promise<TodoPulls> {
   const list = (fields: string): Promise<GhResult> =>
     gh([

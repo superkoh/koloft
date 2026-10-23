@@ -452,7 +452,15 @@ import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'
 import { todoVerb } from './agentTodo'
 import { claudeJsonPath } from './claudeTrust'
-import { CLAUDE_PROJECT_MCP_FILE, claudeServers, codexServers, type McpServer } from './mcpServers'
+import {
+  AGY_PROJECT_MCP_FILE,
+  PROJECT_MCP_FILE,
+  claudeServers,
+  codexServers,
+  jsonServers,
+  type ConfigText,
+  type McpServer
+} from './mcpServers'
 import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
 import {
   asPeerName,
@@ -1332,17 +1340,29 @@ async function mcpServersNow(): Promise<McpServer[]> {
   const local = (workspaceMgr?.pinnedPaths() ?? []).flatMap((w) =>
     isRemoteKey(w.path) ? [] : [w.path]
   )
-  const [claudeJson, projectFiles, codexToml] = await Promise.all([
-    textOrNull(claudeJsonPath()),
+  const inProjects = (file: string): Promise<ConfigText[]> =>
     Promise.all(
-      local.map(async (folder) => ({
-        folder,
-        text: await textOrNull(path.join(folder, CLAUDE_PROJECT_MCP_FILE))
-      }))
-    ),
-    textOrNull(codexSharedConfig())
+      local.map(async (onlyIn) => ({ onlyIn, text: await textOrNull(path.join(onlyIn, file)) }))
+    )
+  const museSettings = path.join(
+    museConfigHome(museSessions?.defaultEnv ?? process.env),
+    'muse',
+    'settings.json'
+  )
+  const [claudeJson, projectFiles, agyProjectFiles, codexToml, muse, agy] = await Promise.all([
+    textOrNull(claudeJsonPath()),
+    inProjects(PROJECT_MCP_FILE),
+    inProjects(AGY_PROJECT_MCP_FILE),
+    textOrNull(codexSharedConfig()),
+    textOrNull(museSettings),
+    textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
   ])
-  return [...claudeServers(claudeJson, projectFiles), ...codexServers(codexToml)]
+  return [
+    ...claudeServers(claudeJson, projectFiles),
+    ...codexServers(codexToml),
+    ...jsonServers('muse', [{ text: muse }, ...projectFiles]),
+    ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
+  ]
 }
 
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {

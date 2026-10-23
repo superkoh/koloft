@@ -2433,3 +2433,40 @@ folder with a `--settings` file whose `Stop` hook printed
 
 Koloft dependents: the Stop branch of `HOOK_SCRIPT` and the Codex reply-language script
 in `src/main/hooks.ts`.
+
+## §22 Where MCP servers are set up, and which folders reach them
+
+2026-10-23, CC 2.1.309, `claude mcp list` and `claude mcp get` (no login needed) under a
+throwaway `HOME`, all `ANTHROPIC_*`, `CLAUDE*`, `KOLOFT_*` and `MCP_*` variables removed;
+servers `globalprobe` (top-level `mcpServers` of `~/.claude.json`), `localprobe`
+(`projects["<A>"].mcpServers`) and `projectprobe` (`<A>/.mcp.json`).
+
+- **Folder A saw all three, folder B only `globalprobe`.** A plain sub-folder of A saw
+  `globalprobe` and `projectprobe` (`.mcp.json` is found by walking up), not
+  `localprobe`. `mcp get` labels them `User config (available in all your projects)`,
+  `Local config (private to you in this project)` and `Project config (shared via
+  .mcp.json)`.
+- **`claude mcp add --scope user`** writes the top-level `mcpServers`; without `--scope`
+  it writes `projects["<cwd>"].mcpServers` ("local").
+- **A `.mcp.json` server connects only after approval:** `mcp list` showed it `⏸ Pending
+  approval` until the folder's trust was accepted and its name was in
+  `enabledMcpjsonServers` (which claude moves into `<A>/.claude/settings.local.json`).
+
+Koloft dependents: `claudeServers` in `src/main/mcpServers.ts`, which `koloft todo` lists.
+
+## §23 A resumed conversation keeps its first system prompt
+
+2026-10-23, CC 2.1.309, `claude -p` against a fake Anthropic API (`ANTHROPIC_BASE_URL`,
+`ANTHROPIC_API_KEY=fake`) that logged each request, throwaway `HOME`.
+
+- **A resume sends the first launch's system prompt, byte for byte.** `-p hello
+  --session-id X --append-system-prompt-file a.txt` sent `a.txt`'s word; `-p again
+  --resume X --append-system-prompt-file b.txt` sent `a.txt`'s word and not `b.txt`'s.
+  The same with `--append-system-prompt`, with no flag, and with `--fork-session`; a fresh
+  `--session-id` with `b.txt` sent `b.txt`'s word.
+- The transcript holds an `attachment` `{type: "prompt_snapshot", systemPrompt: […]}`,
+  which a resume reuses.
+- Not probed: a resume in the full-screen `claude`.
+
+Koloft dependents: the butler's one-line notice about `koloft todo` on a resumed old
+conversation (`src/main/discord/butler.ts`).
