@@ -409,6 +409,10 @@ export function butlerRow(page: Page): Locator {
   return page.locator('.isl-butler > .ws-tab')
 }
 
+export function butlerHelperRows(page: Page): Locator {
+  return page.locator('.isl-butler .ws-subtabs > .ws-tab')
+}
+
 export async function landsOnTheButler(page: Page): Promise<void> {
   await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
 }

@@ -390,7 +390,6 @@ import type {
   CreateTabResult,
   CronSaveInput,
   ConductorOpenResult,
-  PaletteHandOff,
   PaletteRequest,
   ConductorSaveResult,
   DiscordChannel,
@@ -473,8 +472,8 @@ import { workbenchVerbs } from './agentWorkbench'
 import {
   resolveWorkspace,
   sessionVerb,
-  WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS,
   workspaceVerb,
+  type ButlerHelperTask,
   type ClosableSession,
   type SessionScreen,
   type SessionVerbDeps,
@@ -1501,12 +1500,6 @@ function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
 
 async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
   return (await storedOwnerOf(tabId)?.deliver?.(tabId, text)) ?? false
-}
-
-function tabIdle(tabId: string): boolean {
-  return (
-    tracker.turnOver(tabId) && !asksTheOwner(tabId) && (codexSessions?.queueDrained(tabId) ?? true)
-  )
 }
 
 function noticeOf(tabId: string): NoticeFile | undefined {
@@ -3005,7 +2998,6 @@ app.whenReady().then(() => {
           permission: ownersPermission(),
           trustFolder: true,
           firstPrompt: l.firstPrompt,
-          ownerWords: l.ownerWords,
           name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title
         },
         l.title
@@ -4604,23 +4596,16 @@ async function saveDiscordToken(token: string): Promise<boolean> {
 
 const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
 const SET_UP_DISCORD_HOW =
-  '(Koloft: start a helper for it in your own folder, with koloft session new and no --workspace; it must be Claude Code or Codex, which have the Workbench browser, so add --backend claude if you are neither. Tell it to run koloft discord setup, follow those steps, report back to you, and then close itself with koloft session close.)'
+  '(Koloft: run koloft discord setup and follow those steps, then close yourself with koloft session close.)'
+const HAS_WORKBENCH_BROWSER: readonly BackendId[] = ['claude', 'codex']
 
-async function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
+function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
   const words = ownerWords ?? SET_UP_DISCORD_WORDS
-  return tellButler(`The owner asked you: ${words} ${SET_UP_DISCORD_HOW}`, words)
-}
-
-async function tellButler(text: string, ownerWords: string): Promise<ConductorOpenResult> {
-  const first = { prompt: text, ownerWords }
-  const opened = await butler?.open(first)
-  if (!opened) return { ok: false, error: STILL_STARTING }
-  if (!opened.ok) return opened
-  if (opened.startedWith !== first)
-    void sendToButler(opened.tabId, text, ownerWords).then((sent) => {
-      if (!sent.ok) sendToRenderer(CH.cron.toast, sent.error)
-    })
-  return { ok: true, tabId: opened.tabId }
+  return startHelper((butler) => ({
+    prompt: `The owner asked: ${words} ${SET_UP_DISCORD_HOW}`,
+    ownerWords: words,
+    backend: HAS_WORKBENCH_BROWSER.includes(butler.backendId) ? butler.backendId : 'claude'
+  }))
 }
 
 async function bindWithNewChannel(): Promise<ConductorSaveResult> {
@@ -4681,66 +4666,38 @@ function commandIntoButler(text: string): string {
   return `Koloft will type ${text} into ${butlerNameNow()} once its turn ends, and post what it prints in Discord.`
 }
 
-let butlerMessages = 0
-
 function fromPalette({ words, backend, about, at }: PaletteRequest): string {
   const where = at ? ` (The owner was in the workspace ${at} at the time.)` : ''
   const routed = about ? ` (Koloft took this to be about the workspace ${about}.)` : ''
-  const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: start any session for this with --backend ${backend}.)`
+  const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: a session you start for it runs with --backend ${backend}.)`
   return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
 }
 
-function busyButler(): SessionInfo | undefined {
-  const tab = butler?.liveTab()
-  const session = tab ? sessionOfTab(tab) : undefined
-  if (!session?.sessionId || tracker.statusOf(session.tabId) === undefined) return undefined
-  return tabIdle(session.tabId) ? undefined : session
+// AGY§8
+const A_HELPER_HAS_IT =
+  '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
+
+async function startHelper(
+  task: (butler: SessionInfo) => ButlerHelperTask
+): Promise<ConductorOpenResult> {
+  const opened = await butler?.open(A_HELPER_HAS_IT)
+  if (!opened) return { ok: false, error: STILL_STARTING }
+  if (!opened.ok) return opened
+  const parent = (await tabReady(opened.tabId, cronBindDeadlineMs(), false))
+    ? sessionOfTab(opened.tabId)
+    : undefined
+  if (!parent) return { ok: false, error: `${butlerNameNow()} did not get ready in time.` }
+  const tabId = await sessionCommand.startButlerHelper(parent, task(parent))
+  return tabId ? { ok: true, tabId } : { ok: false, error: 'Koloft could not start a helper.' }
 }
 
-async function handFromPalette(request: PaletteRequest): Promise<PaletteHandOff> {
-  const text = fromPalette(request)
-  const busy = busyButler()
-  if (!busy) return tellButler(text, request.words)
-  const tabId = await sessionCommand.startButlerHelper(busy, {
-    prompt: text,
+function handFromPalette(request: PaletteRequest): Promise<ConductorOpenResult> {
+  return startHelper(() => ({
+    prompt: fromPalette(request),
     name: request.title,
     ownerWords: request.words,
     backend: request.backend
-  })
-  if (!tabId)
-    return { ok: false, error: `${butlerNameNow()} is busy, and Koloft could not start a helper.` }
-  if (!guard?.queue.list().some((q) => q.tabId === tabId)) return { ok: true, tabId, helper: true }
-  sendToRenderer(
-    CH.cron.toast,
-    `${butlerNameNow()} is busy, so a helper takes this; it is queued and starts once this Mac has room.`
-  )
-  return { ok: true, tabId, queued: true }
-}
-
-async function sendToButler(
-  tabId: string,
-  text: string,
-  ownerWords: string
-): Promise<ConductorOpenResult> {
-  const id = `koloft-butler-${++butlerMessages}`
-  const until = Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS
-  const route = messagingOf(backendIdOf(ptyMgr.get(tabId)?.kind) ?? 'claude', false)
-  if (!(await tabReady(tabId, until - Date.now(), route === 'typed')))
-    return { ok: false, error: `${butlerNameNow()} did not get ready in time.` }
-  try {
-    if (route === 'queue') await queueCodexMessage(tabId, text, id)
-    else if (route === 'typed') await ptyMgr.type(tabId, [text, '\r'])
-    else {
-      const line = crossSessionLine('prompting', text, id)
-      if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }
-      // ADR-0031
-      if (hookRegDir) seedOwnerWords(saidFile(hookRegDir, tabId), ownerWords)
-      await sendPeerLine(tabId, line, until - Date.now())
-    }
-  } catch (error) {
-    return { ok: false, error: errorText(error) }
-  }
-  return { ok: true, tabId }
+  }))
 }
 
 function butlerTarget(ref: string): Target | undefined {
