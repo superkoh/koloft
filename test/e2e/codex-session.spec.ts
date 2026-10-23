@@ -54,7 +54,6 @@ import {
   dialogPrimary,
   gitCommitAll,
   gitInit,
-  landsOnTheButler,
   newSessionInWith,
   oneStillRunning,
   openMenu,
@@ -1041,7 +1040,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex that fails before any session binds leaves no mark behind once its tab has closed itself, so the Dock badge counts nothing no row can show', async ({
+  test('a Codex that fails before any session binds leaves no mark behind once its tab has closed itself, so the Dock badge counts nothing no row can show, and you stay on the folder page instead of the butler', async ({
     env
   }) => {
     installCodex(env)
@@ -1053,10 +1052,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       await newSessionInWith(page, 'ws-a', 'Codex')
       await expect(page.locator('.toast-msg')).toContainText('exit code 3', { timeout: 20_000 })
       await expect.poll(() => termIds(page)).toHaveLength(0)
-      await landsOnTheButler(page)
-      const butlerTab = await butlerRow(page).getAttribute('data-tab-id')
       await page.waitForTimeout(CODEX_TRANSPORT_STOP_WORST_CASE_MS)
-      expect((await pendingAttention(page)).filter((e) => e.tabId !== butlerTab)).toEqual([])
+      await expect(page.locator('.w-empty .big')).toHaveText('ws-a')
+      await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
+      expect(await pendingAttention(page)).toEqual([])
     } finally {
       await quitAndClose(app)
     }

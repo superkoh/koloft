@@ -1,20 +1,25 @@
 import fs from 'fs'
+import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import {
+  butlerRow,
   gitInit,
+  killSession,
   menuItemTexts,
   openMenu,
   openPicker,
   pickerDialog,
   processAlive,
+  readCalls,
   sendShortcut,
   snap,
   waitForCalls
 } from './helpers/p1'
 
 const BIND_DELAY_LONG_ENOUGH_TO_DRIVE_THE_MENU_MS = '20000'
+const BUTLER_WOULD_HAVE_OPENED_BY_MS = 3000
 
 async function launch(env: E2EEnv): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await launchApp(env)
@@ -112,6 +117,31 @@ test.describe('pending row: what a launch owns before Claude reports a session i
       await expect(page.locator('.toast-msg')).toContainText('exit code 1', { timeout: 20_000 })
       await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
       await expect(page.locator('.ws .ws-tab')).toHaveCount(0, { timeout: 30_000 })
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('a session you watch that leaves while still starting puts you back on its folder page, and never opens the butler', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    fs.writeFileSync(path.join(env.home, 'fake-claude-hang'), '')
+
+    const { app, page } = await launch(env)
+    try {
+      await startMainSession(app, page)
+      const pending = page.locator('.ws .ws-tab.st-pending')
+      await expect(pending).toHaveClass(/\bactive\b/, { timeout: 20_000 })
+      const [call] = await waitForCalls(env, 1)
+
+      killSession(call.pid, env)
+      await expect(page.locator('.ws .ws-tab')).toHaveCount(0, { timeout: 30_000 })
+      await page.waitForTimeout(BUTLER_WOULD_HAVE_OPENED_BY_MS)
+      await expect(page.locator('.w-empty .big')).toHaveText('ws-a')
+      await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
+      expect(readCalls(env)).toHaveLength(1)
     } finally {
       await app.close().catch(() => {})
     }

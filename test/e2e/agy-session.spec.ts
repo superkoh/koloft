@@ -16,6 +16,7 @@ import {
 } from './helpers/env'
 import {
   agentRow,
+  butlerRow,
   centerTerm,
   gitCommitAll,
   gitInit,
@@ -41,6 +42,7 @@ const COMPACTION_LONGER_THAN_THE_HALF_SECOND_BEFORE_IT_SHOWS_MS = '3000'
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
+const BUTLER_WOULD_HAVE_OPENED_BY_MS = 3000
 
 const accountHome = (env: E2EEnv): string => path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)
 const ownersApp = (env: E2EEnv): string => path.join(ownersGemini(env), 'antigravity-cli')
@@ -213,6 +215,32 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(page.locator('.aux-ico.waiting-bell .ws-unread-count')).toHaveText('1')
       const { id } = await boundAgy(page)
       expect(transcriptOf(env, id)).toContain(`Answer to: ${PROMPT}`)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test("answering No, exit to agy's trust question before it ever started a conversation puts you back on the folder page, and never opens the butler", async ({
+    env
+  }) => {
+    installAgy(env)
+    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await expect(centerTerm(page)).toContainText('Do you trust the contents of this project?', {
+        timeout: 30_000
+      })
+      await centerTerm(page).click()
+      await page.keyboard.press('2')
+
+      await expect(agyRows(page)).toHaveCount(0, { timeout: 30_000 })
+      await page.waitForTimeout(BUTLER_WOULD_HAVE_OPENED_BY_MS)
+      await expect(page.locator('.w-empty .big')).toHaveText('ws-a')
+      await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
+      expect(readAllCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
     }
