@@ -1231,22 +1231,31 @@ describe('CodexSessions', () => {
     let skip = false
     deps.skipPermissions = () => skip
     const asking = await sessions.launch({ kind: 'codex', cwd: repo })
-    bind(0)
+    bind(0, A)
     await sessions.stop(asking.id)
 
     skip = true
-    const fresh = await sessions.launch({ kind: 'codex', cwd: repo })
+    const skipping = await sessions.launch({ kind: 'codex', cwd: repo })
     expect(vi.mocked(deps.pty.create).mock.calls[1][0].argv!.slice(-4)).toEqual([
       '-a',
       'never',
       '-s',
       'danger-full-access'
     ])
-    expect(sessions.launchedBypassingChecks(fresh.id)).toBe(true)
+    expect(sessions.launchedBypassingChecks(skipping.id)).toBe(true)
+    bind(1, B)
+    await sessions.stop(skipping.id)
 
-    const again = await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
-    expect(sessions.launchedBypassingChecks(again.id)).toBe(false)
+    const stillAsking = await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
+    expect(sessions.launchedBypassingChecks(stillAsking.id)).toBe(false)
     expect(transports[2].options.configOverrides).not.toContain('approval_policy="never"')
+
+    skip = false
+    const stillSkipping = await sessions.resume({ sessionId: codexSessionKey(B), cwd: repo })
+    expect(sessions.launchedBypassingChecks(stillSkipping.id)).toBe(true)
+    expect(transports[3].options.configOverrides).toEqual(
+      expect.arrayContaining(['approval_policy="never"', 'sandbox_mode="danger-full-access"'])
+    )
   })
 
   // CODEX§14

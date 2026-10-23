@@ -129,8 +129,8 @@ export function AssistSetup({
       {setup.askBypass && (
         <>
           <div className="quiet">
-            Koloft starts Claude and Codex sessions without asking you before each file change or
-            command. Is that OK?
+            Koloft starts sessions without asking you before each file change or command. Is that
+            OK?
           </div>
           <div className="ob-choices">
             <button className="choice" onClick={() => update({ skipPermissionsAgreed: true })}>

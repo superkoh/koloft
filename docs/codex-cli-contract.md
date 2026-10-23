@@ -522,8 +522,9 @@ thread, and to that run's own app-server as `-c approval_policy=…` /
 `-c sandbox_mode=…` on a resume. Established again through Koloft by
 `discord-real-smoke.spec.ts` › "a real Codex conductor whose tab closed is resumed by the
 owner’s next message, …" (before the change: "The conductor closed before it was ready")
-and `agent-tools-real-smoke.spec.ts` › "a real Codex session launched with approvals and
-the sandbox bypassed, resumed after its tab closed, …" (before the change: `turn_context`
+and `agent-tools-real-smoke.spec.ts` › "a real Codex session started with skip permission
+prompts on runs with approvals and the sandbox off, and resumed after its tab closed …"
+(before the change: `turn_context`
 `never` / `workspace-write`, the write refused). A new thread with the choice on the
 app-server alone, and no `-a`/`-s` on the TUI, is not probed yet. The resume case
 passed again on 0.162.1 (2026-10-11; its `turn_context` read still finds
