@@ -1963,10 +1963,14 @@ below was one run.
   prompt, got SIGTERM at +7.0 s and exited 20 ms later; 10 s on, the dialog was unchanged on
   screen. `3` ("Type something."), then `Purple with green stripes` in a second write,
   then CR 1 s later answered it: `PostToolUse` held `answers: {"Which colour do you
-  prefer?": "Purple with green stripes"}` and the model repeated it. So when Koloft's
-  `ask` hook runs out its hour, the hook script records the question in the status log
-  (its SIGTERM comes that late only from the timeout; "No" or Esc at the Mac sends it at
-  once, below), and the relay answers it by keys, as for a tab on another machine.
+  prefer?": "Purple with green stripes"}` and the model repeated it.
+- **A hook that gives up by itself, with no output, while its dialog is on screen
+  leaves the dialog to the person too.** 2026-10-22, CC 2.1.309, the same setup with
+  `"timeout": 30` and a hook that waited 5 s by bash's `SECONDS`, then exited 0 printing
+  nothing; 1 run. It got no SIGTERM; 10 s after it exited the dialog was unchanged, and
+  `3`, the text, then CR 1 s later answered it the same way (`PostToolUse` held the
+  typed answer). Unlike ending at the `timeout`, this never looks like the SIGTERM that
+  "No" or Esc at the Mac sends (below).
 - **When the person answers in the terminal first:** "No" or Esc ends the hook with
   SIGTERM at once (its `EXIT` trap ran); "Yes" does not signal it, and it lived on until
   claude exited. What it prints after that is ignored. Re-run 2026-10-04, CC 2.1.289

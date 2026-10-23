@@ -226,9 +226,6 @@ export function statusLogOf(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}${STATUS_LOG_SUFFIX}`)
 }
 
-const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
-const SIGTERM_THIS_LATE_IS_THE_ASK_TIMEOUT_S = ASK_WAITS_UP_TO_AN_HOUR_S - 5
-
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
 reg="$1"; tab="$2"; event="$3"
@@ -305,10 +302,14 @@ case "$event" in
     # CC§14
     ask="$reg/$tab.$$.ask.json"; answer="$reg/$tab.$$.answer.json"; tick="$reg/$tab.$$.tick"
     trap 'rm -f "$ask" "$answer" "$tick"' EXIT
-    trap '[ "$SECONDS" -ge ${SIGTERM_THIS_LATE_IS_THE_ASK_TIMEOUT_S} ] && log_ask; exit 143' TERM
+    trap 'exit 143' TERM
     mkfifo "$tick" 2>/dev/null || exit 0
     printf '%s' "$input" > "$ask.tmp" && mv "$ask.tmp" "$ask"
-    while [ ! -f "$answer" ]; do read -t 1 <> "$tick"; done
+    SECONDS=0
+    while [ ! -f "$answer" ]; do
+      [ "$SECONDS" -ge "$4" ] && { rm -f "$ask"; log_ask; exit 0; }
+      read -t 1 <> "$tick"
+    done
     cat "$answer"
     ;;
   asked)
@@ -482,6 +483,9 @@ const NOTIFICATIONS_WAITING_ON_THE_PERSON = [
   'elicitation_url_dialog'
 ].join('|')
 
+const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
+const ASK_GIVES_UP_BEFORE_CLAUDE_ENDS_IT_S = ASK_WAITS_UP_TO_AN_HOUR_S - 10
+
 // CC§6 CC§9 CC§14
 export function hookSettings(
   hookScript: string,
@@ -529,7 +533,11 @@ export function hookSettings(
           matcher: '*',
           hooks: [
             dialogs === 'wait-for-answer'
-              ? { type: 'command', command: cmd('ask'), timeout: ASK_WAITS_UP_TO_AN_HOUR_S }
+              ? {
+                  type: 'command',
+                  command: `${cmd('ask')} ${ASK_GIVES_UP_BEFORE_CLAUDE_ENDS_IT_S}`,
+                  timeout: ASK_WAITS_UP_TO_AN_HOUR_S
+                }
               : { type: 'command', command: cmd('asked') }
           ]
         }
