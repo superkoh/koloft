@@ -33,6 +33,7 @@ let resumed: string[]
 let killed: string[]
 let toasts: string[]
 let notices: string[]
+let noticeArrives: boolean
 let transcripts: Set<string>
 let choice: AssistBackendChoice
 let release: () => void
@@ -76,7 +77,10 @@ function make(): Butler {
     kill: onlyWhileItsTestRuns((tabId: string) => void killed.push(tabId)),
     rowsChanged: () => void rescans++,
     toast: onlyWhileItsTestRuns((t: string) => void toasts.push(t)),
-    notice: onlyWhileItsTestRuns((t: string) => void notices.push(t)),
+    notice: async (t) => {
+      if (run === testRun) notices.push(t)
+      return noticeArrives
+    },
     bindDeadlineMs: DEADLINE_MS
   }
   return new Butler(deps)
@@ -106,6 +110,7 @@ beforeEach(() => {
   killed = []
   toasts = []
   notices = []
+  noticeArrives = true
   transcripts = new Set()
   choice = { backend: 'claude' }
   release = () => {}
@@ -217,36 +222,43 @@ describe('the butler', () => {
   })
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
-  it('a conversation from before koloft todo, which keeps the role it started with, is told of it once when resumed, on Claude too; one started since is told nothing', async () => {
+  it('a conversation from before koloft todo, which keeps the role it started with, is told of it when resumed until the notice gets through, then never again, on Claude too; one started since is told nothing', async () => {
     const OLD_CODEX = 'codex:local:old-thread'
     const NEW_CODEX = 'codex:local:new-thread'
+    const tab = `tab-resumed-${OLD_CODEX}`
     session = { sessionIds: [OLD_CODEX], lastSessionKey: OLD_CODEX }
     transcripts.add(OLD_CODEX)
     choice = { backend: 'codex' }
+    noticeArrives = false
     const c = make()
-    expect(await c.open()).toEqual({ ok: true, tabId: `tab-resumed-${OLD_CODEX}` })
+    expect(await c.open()).toEqual({ ok: true, tabId: tab })
     expect(notices).toEqual([expect.stringContaining('koloft todo')])
-    c.onBound(`tab-resumed-${OLD_CODEX}`, OLD_CODEX)
-    c.onPtyExit(`tab-resumed-${OLD_CODEX}`)
+    c.onPtyExit(tab)
+    noticeArrives = true
     await c.open()
-    expect(notices).toHaveLength(1)
+    expect(notices).toHaveLength(2)
+    await vi.waitFor(() => expect(session.knowsTodo).toEqual([OLD_CODEX]))
+    c.onBound(tab, OLD_CODEX)
+    c.onPtyExit(tab)
+    await c.open()
+    expect(notices).toHaveLength(2)
 
     session = { sessionIds: [CLAUDE_KEY], lastSessionKey: CLAUDE_KEY }
     transcripts.add(CLAUDE_KEY)
     choice = { backend: 'claude' }
     await make().open()
-    expect(notices).toHaveLength(2)
-    expect(session.knowsTodo).toContain(CLAUDE_KEY)
+    expect(notices).toHaveLength(3)
+    await vi.waitFor(() => expect(session.knowsTodo).toContain(CLAUDE_KEY))
 
     session = { sessionIds: [] }
     choice = { backend: 'codex' }
     const fresh = make()
-    const tab = await opened(fresh)
-    fresh.onBound(tab, NEW_CODEX)
-    fresh.onPtyExit(tab)
+    const freshTab = await opened(fresh)
+    fresh.onBound(freshTab, NEW_CODEX)
+    fresh.onPtyExit(freshTab)
     transcripts.add(NEW_CODEX)
     await fresh.open()
-    expect(notices).toHaveLength(2)
+    expect(notices).toHaveLength(3)
   })
 
   // AGY§8

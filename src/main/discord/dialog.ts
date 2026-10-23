@@ -240,7 +240,7 @@ export function codexQuestionOf(method: string, p: Record<string, unknown>): Que
 export const PICK_ONE_OPTION = 'Reply with the number or the name of one option.'
 export const PICK_OR_OWN_WORDS = 'Reply with the number of one option, or with your own answer.'
 export const NO_OWN_WORDS =
-  'Tap a button, or reply with the number of one option. To answer in your own words, answer it at the Mac.'
+  'Tap a button, or reply with the number or the name of one option. To answer in your own words, answer it at the Mac.'
 
 // CODEX§20
 export function ownWordsKeys(q: Question, reply: string): string[] | undefined {

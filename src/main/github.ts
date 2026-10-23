@@ -72,6 +72,14 @@ export async function ghOpenCounts(
 
 const OPEN_ITEMS_LIMIT = 50
 
+function checkedOutBranch(pr: {
+  number: number
+  isCrossRepository?: unknown
+  headRefName?: unknown
+}): string {
+  return pr.isCrossRepository === true ? `pr-${pr.number}` : String(pr.headRefName ?? '')
+}
+
 function itemsOf(stdout: string, kind: GithubItem['kind']): GithubItem[] | null {
   const v = ghJsonArray(stdout)
   if (!v) return null
@@ -91,9 +99,7 @@ function itemsOf(stdout: string, kind: GithubItem['kind']): GithubItem[] | null 
       title: x.title,
       url: x.url,
       updatedAt: x.updatedAt,
-      ...(kind === 'pr'
-        ? { branch: x.isCrossRepository === true ? `pr-${x.number}` : x.headRefName }
-        : {})
+      ...(kind === 'pr' ? { branch: checkedOutBranch(x) } : {})
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
@@ -177,7 +183,7 @@ function loginOf(x: unknown): string {
   return [r.login, r.slug, r.name].find((v): v is string => typeof v === 'string' && !!v) ?? ''
 }
 
-export function parseTodoPulls(stdout: string): TodoPull[] | null {
+function parseTodoPulls(stdout: string): TodoPull[] | null {
   const v = ghJsonArray(stdout)
   if (!v) return null
   return v
@@ -189,7 +195,7 @@ export function parseTodoPulls(stdout: string): TodoPull[] | null {
       reviewers: (Array.isArray(x.reviewRequests) ? x.reviewRequests : [])
         .map(loginOf)
         .filter(Boolean),
-      branch: x.isCrossRepository === true ? `pr-${x.number}` : String(x.headRefName ?? ''),
+      branch: checkedOutBranch(x),
       draft: x.isDraft === true,
       checks: checkSummary(x.statusCheckRollup),
       files: Number.isInteger(x.changedFiles) ? x.changedFiles : 0,

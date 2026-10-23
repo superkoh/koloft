@@ -3,23 +3,31 @@ import { claudeServers, codexServers, jsonServers } from '../../src/main/mcpServ
 
 describe('the MCP servers koloft todo reads from each agent’s own config', () => {
   // CC§22
-  it('Claude: a server in ~/.claude.json’s own list reaches every folder; one under a project there, or in a project’s .mcp.json, only that project', () => {
+  it('Claude: a server in ~/.claude.json’s own list reaches every folder; one under a project there, or in a project’s .mcp.json, only that project, and only a folder Koloft asks about counts', () => {
     const claudeJson = JSON.stringify({
       mcpServers: { linear: { command: 'linear-mcp' } },
-      projects: { '/work/shop': { mcpServers: { jira: { type: 'http' } } }, '/work/blog': {} }
+      projects: {
+        '/work/shop': { mcpServers: { jira: { type: 'http' } } },
+        '/tmp/old-worktree': { mcpServers: { stale: {} } },
+        '/work/blog': {}
+      }
     })
     expect(
-      claudeServers(claudeJson, [
-        { onlyIn: '/work/shop', text: JSON.stringify({ mcpServers: { notion: {} } }) },
-        { onlyIn: '/work/blog', text: null }
-      ])
+      claudeServers(
+        claudeJson,
+        [
+          { onlyIn: '/work/shop', text: JSON.stringify({ mcpServers: { notion: {} } }) },
+          { onlyIn: '/work/blog', text: null }
+        ],
+        ['/work/shop', '/work/blog']
+      )
     ).toEqual([
       { name: 'linear', backend: 'claude' },
       { name: 'jira', backend: 'claude', onlyIn: '/work/shop' },
       { name: 'notion', backend: 'claude', onlyIn: '/work/shop' }
     ])
-    expect(claudeServers(null, [])).toEqual([])
-    expect(claudeServers('not json', [])).toEqual([])
+    expect(claudeServers(null, [], [])).toEqual([])
+    expect(claudeServers('not json', [], [])).toEqual([])
   })
 
   // MUSE§18 AGY§30
@@ -40,7 +48,7 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
     ])
   })
 
-  it('Codex: each [mcp_servers.<name>] table in config.toml, its sub-tables and quoted names included, once', () => {
+  it('Codex: each [mcp_servers.<name>] table in config.toml, quoted names included, once, and not one turned off with enabled = false', () => {
     const toml = [
       'model = "gpt"',
       '[mcp_servers.linear]',
@@ -49,6 +57,9 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
       'TOKEN_VAR = "X"',
       '[mcp_servers."my tasks"]',
       'url = "https://example.com"',
+      '[mcp_servers.old]',
+      'command = "old-mcp"',
+      'enabled = false',
       '[projects."/work/shop"]',
       'trust_level = "trusted"'
     ].join('\n')

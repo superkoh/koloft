@@ -46,7 +46,7 @@ export interface ButlerDeps {
   kill(tabId: string): void
   rowsChanged(): void
   toast(text: string): void
-  notice(text: string): void
+  notice(text: string): Promise<boolean>
   bindDeadlineMs: number
 }
 
@@ -262,7 +262,7 @@ export class Butler {
       )
     else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
-    let resumed = false
+    let resumedOld = false
     try {
       if (resumable) {
         const live = this.d.liveTabFor(launch.backend, key)
@@ -275,15 +275,15 @@ export class Butler {
       }
       const hasTranscript =
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
+      resumedOld = hasTranscript && !this.session.knowsTodo?.includes(key)
       // AGY§8
-      resumed = hasTranscript
       if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
       else tabId = await this.d.start({ ...launch, firstPrompt })
     } catch (error) {
       return refusal(errorText(error))
     }
     if (!tabId) return refusal(`${launch.title} could not start.`)
-    if (resumed && key !== undefined && !this.session.knowsTodo?.includes(key)) this.tellOfTodo(key)
+    if (resumedOld && key !== undefined) this.tellOfTodo(key)
     this.resident = tabId
     this.armDeadline(tabId, launch.title)
     return { ok: true, tabId }
@@ -291,8 +291,10 @@ export class Butler {
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
   private tellOfTodo(key: string): void {
-    this.changeSession((s) => ({ ...s, knowsTodo: [...(s.knowsTodo ?? []), key] }))
-    this.d.notice(`${FROM_KOLOFT}${TODO_NOTICE}`)
+    void this.d.notice(`${FROM_KOLOFT}${TODO_NOTICE}`).then((told) => {
+      if (told && !this.session.knowsTodo?.includes(key))
+        this.changeSession((s) => ({ ...s, knowsTodo: [...(s.knowsTodo ?? []), key] }))
+    })
   }
 
   private armDeadline(tabId: string, title: string): void {

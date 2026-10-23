@@ -610,9 +610,17 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     await vi.waitFor(() => expect(commands).toEqual(['/compact']))
   })
 
-  it('a reply to Koloft’s own notice is not posted to Discord; the butler’s other replies are', () => {
+  it('a reply to a turn that held only Koloft’s own notice is not posted to Discord; a turn that also held the owner’s words is', () => {
     const { relay, posts, conductor } = setup()
-    relay.tellQuietly(conductor, 'NOTICE about koloft todo')
+    void relay.tellQuietly(conductor, 'NOTICE about koloft todo')
+    relay.turnEnded(TAB, {
+      said: [
+        { who: 'owner', text: '[Discord] what is new?', at: 1 },
+        { who: 'owner', text: 'NOTICE about koloft todo', at: 1 }
+      ],
+      reply: 'Two things.',
+      at: 1
+    })
     relay.turnEnded(TAB, {
       said: [{ who: 'owner', text: 'NOTICE about koloft todo', at: 1 }],
       reply: 'Noted.',
@@ -623,7 +631,7 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       reply: 'Hello.',
       at: 2
     })
-    expect(posts.map((p) => p.text)).toEqual(['Hello.'])
+    expect(posts.map((p) => p.text)).toEqual(['Two things.', 'Hello.'])
   })
 })
 

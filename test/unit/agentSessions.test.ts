@@ -1125,16 +1125,43 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     ])
   })
 
-  it('a helper in the butler’s own folder passes the owner’s word on the way the butler does, to any session, a Claude one too; what it reports to the butler stays its own', async () => {
+  it('a helper in the butler’s own folder passes the owner’s word on the way the butler does, to any workspace session, a Claude one too; what it says to the butler or to another helper stays its own', async () => {
     const helper = session('helper', 'claude', {
       sessionId: 'helper-id',
       title: 'Sort out to-dos',
       cwd: BUTLER_FOLDER
     })
-    const h = harness([...live, helper], {}, [], conducting())
+    const other = session('other', 'codex', {
+      sessionId: 'other-id',
+      title: 'Look into logs',
+      cwd: BUTLER_FOLDER
+    })
+    const h = harness(
+      [...live, helper, other],
+      {},
+      [],
+      conducting({
+        sidebar: [
+          ...rows,
+          {
+            workspace: { path: BUTLER_FOLDER, missing: false, isGit: false, hasHistory: true },
+            rows: [
+              row('other-id', {
+                title: 'Look into logs',
+                cwd: BUTLER_FOLDER,
+                backendId: 'codex',
+                running: true
+              })
+            ]
+          }
+        ]
+      })
+    )
     h.startedSessions.started('helper', 'cond-id')
     expect((await h.verb(['send', 'fix-login', 'merge it'], from('helper'))).exit).toBe(0)
     expect((await h.verb(['send', 'cond-id', 'Done: 3 merged.'], from('helper'))).exit).toBe(0)
+    expect((await h.verb(['send', 'other-id', 'what did you find?'], from('helper'))).exit).toBe(0)
+    expect(h.queued.map((q) => q.text)).toEqual([sessionSays(helper, 'what did you find?')])
     expect(h.lines).toEqual([
       {
         tabId: 'fix',

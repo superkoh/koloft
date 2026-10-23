@@ -1358,7 +1358,10 @@ async function mcpServersNow(): Promise<McpServer[]> {
     textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
   ])
   return [
-    ...claudeServers(claudeJson, projectFiles),
+    ...claudeServers(claudeJson, projectFiles, [
+      ...local,
+      conductorFolder(app.getPath('userData'))
+    ]),
     ...codexServers(codexToml),
     ...jsonServers('muse', [{ text: muse }, ...projectFiles]),
     ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
@@ -1662,35 +1665,27 @@ const agentRequests = new AgentRequests({
     todo: todoVerb({
       allowed: butlerSide,
       sidebar: () => workspaceMgr?.rows() ?? [],
+      pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
       sessions: () => allSessions().filter((s) => !s.butler),
       asking: asksTheOwner,
-      workLeft: (row, _workspace, tabId) =>
-        whatClosingWouldLose({
-          sessionId: row.id,
-          nativeSessionId: row.nativeSessionId,
-          backendId: row.backendId,
-          title: row.title,
-          treeRoot: row.cwd,
-          tabId
-        }),
-      branches: async (wsPath) => (await workspaceMgr?.worktrees(wsPath)) ?? [],
+      workLeft: async (row) => {
+        const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
+        return tree ? whatIsLeft(hostGitOut, tree) : []
+      },
+      worktrees: sessionDeps.worktrees,
       repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
       pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
       notes: () => loadSettings().todoNotes,
       saveNote: (key, text) => {
-        const todoNotes = loadSettings().todoNotes
-        delete todoNotes[key]
-        commitSettings({ todoNotes: text ? { ...todoNotes, [key]: text } : todoNotes })
+        const todoNotes = { ...loadSettings().todoNotes, [key]: text }
+        if (!text) delete todoNotes[key]
+        commitSettings({ todoNotes })
       },
-      listFiles: async (wsPath) =>
-        (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir).map((e) => e.name),
-      readFile: async (wsPath, name) => {
-        const entry = (await hosts.of(wsPath).listDir(wsPath)).find((e) => e.name === name)
-        if (!entry) throw new Error(`${name} is gone.`)
-        return hosts.of(wsPath).readText(entry.path)
-      },
-      servers: () => mcpServersNow(),
-      butlerFolder: () => conductorFolder(app.getPath('userData')),
+      projectFiles: async (wsPath) =>
+        (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
+      readText: (file) => hosts.of(file).readText(file),
+      servers: mcpServersNow,
+      butlerFolder: sessionDeps.butlerFolder,
       now: Date.now
     })
   },
@@ -2743,7 +2738,8 @@ app.whenReady().then(() => {
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
-    if (onDiscord && (t.next === 'approval' || t.next === 'waiting'))
+    const asksOnDiscord = butlerSide(t.tabId) && !!butler?.channel()
+    if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     discordTyping?.refresh(t.tabId)
     if (!(onDiscord && t.next === 'waiting'))
@@ -3041,7 +3037,7 @@ app.whenReady().then(() => {
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
-    notice: (text) => discordRelay?.tellQuietly(butlerDestination(), text),
+    notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
     bindDeadlineMs: cronBindDeadlineMs()
   })
   const discordLockFile = path.join(userData, 'discord.lock')

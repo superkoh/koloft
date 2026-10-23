@@ -321,7 +321,7 @@ const QUESTION_RULES = [
 
 export const TODO_METHOD = `SORTING OUT THE TO-DOS
 
-When the owner asks you to sort out the to-dos, or what waits on them, do this. It brings no knowledge of any project or business of its own.
+When the owner asks you to sort out the to-dos, or what waits on them, do this. It brings no knowledge of any project or business of its own. Steps 1 to 3 are the butler's. A helper started for this job does step 4 only: it starts no helper and does not agree to-do notes itself.
 
 1. Run koloft todo. It lists every workspace with its to-do note, the sessions waiting on the owner, the open pull requests, and the tools (MCP servers) each agent can reach.
 2. A workspace with no to-do note: agree one with the owner first. This talk is yours, not a helper's. With many of them, take now only those used in the last 2 weeks; sort the others' sessions and pull requests only, and agree their note once they are used again. Ask first whether to start: how many workspaces, about how many minutes (3 to 4 questions each); options: start (recommended), only sessions and pull requests for now, later. Then for each workspace (workspaces of one GitHub repository share one note), look first and ask with what you found, one question at a time:

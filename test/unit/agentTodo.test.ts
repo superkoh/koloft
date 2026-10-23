@@ -73,13 +73,21 @@ interface World {
 
 function harness(world: World) {
   const notes = { ...(world.notes ?? {}) }
+  const checked: string[] = []
   const deps: TodoVerbDeps = {
     allowed: (tabId) => tabId === BUTLER_TAB,
     sidebar: () => world.sidebar,
+    pinnedWorkspaces: () =>
+      world.sidebar
+        .filter((w) => !w.workspace.butler)
+        .map((w) => ({ path: w.workspace.path, missing: w.workspace.missing })),
     sessions: () => world.sessions,
     asking: (tabId) => world.asking?.includes(tabId) ?? false,
-    workLeft: async (r) => world.left?.[r.id] ?? [],
-    branches: async (ws) => world.worktrees?.[ws] ?? [],
+    workLeft: async (r) => {
+      checked.push(r.id)
+      return world.left?.[r.id] ?? []
+    },
+    worktrees: async (ws) => world.worktrees?.[ws] ?? [],
     repoOf: async (ws) => world.repos?.[ws] ?? null,
     pulls: async () => world.pulls ?? null,
     notes: () => ({ ...notes }),
@@ -87,8 +95,12 @@ function harness(world: World) {
       if (text) notes[key] = text
       else delete notes[key]
     },
-    listFiles: async (ws) => Object.keys(world.files?.[ws] ?? {}),
-    readFile: async (ws, name) => world.files?.[ws]?.[name] ?? '',
+    projectFiles: async (ws) =>
+      Object.keys(world.files?.[ws] ?? {}).map((name) => ({ name, path: `${ws}/${name}` })),
+    readText: async (file) => {
+      const [ws, name] = [file.slice(0, file.lastIndexOf('/')), file.split('/').at(-1)!]
+      return world.files?.[ws]?.[name] ?? ''
+    },
     servers: async () => world.servers ?? [],
     butlerFolder: () => BUTLER_FOLDER,
     now: () => NOW
@@ -102,7 +114,7 @@ function harness(world: World) {
         session: { ...live(row('butler'), 'waiting'), tabId, backendId }
       })
     )
-  return { run, notes }
+  return { run, notes, checked }
 }
 
 function sidebarOf(
@@ -143,17 +155,23 @@ describe('koloft todo', () => {
     })
   })
 
-  it('prints the way to sort out to-dos, then the sessions waiting on the owner by kind, leaving out working ones and the butler’s own folder', async () => {
+  it('prints the way to sort out to-dos, then the sessions waiting on the owner by kind, leaving out working ones and the butler’s own folder; only an idle worktree session is checked for work left', async () => {
     const asking = row('asking', { running: true, mtime: NOW - DAY })
     const done = row('done', { running: true, backendId: 'codex' })
-    const working = row('working', { running: true })
+    const working = row('working', { running: true, cwd: `${SHOP}/.claude/worktrees/busy` })
     const dirty = row('dirty', { cwd: `${SHOP}/.claude/worktrees/fix`, mtime: NOW - 3 * DAY })
     const old = row('old', { mtime: NOW - 40 * DAY })
     const helper = row('helper', { cwd: BUTLER_FOLDER })
-    const { run } = harness({
+    const { run, checked } = harness({
       sidebar: sidebarOf([[SHOP, [asking, done, working, dirty, old]]], [helper]),
       sessions: [live(asking, 'waiting'), live(done, 'idle'), live(working, 'working')],
       asking: ['tab-asking'],
+      worktrees: {
+        [SHOP]: [
+          { dir: `${SHOP}/.claude/worktrees/busy`, branch: 'busy' },
+          { dir: `${SHOP}/.claude/worktrees/fix`, branch: 'fix' }
+        ]
+      },
       left: {
         dirty: [
           'Changes not committed:\n M a.ts\n?? b.ts',
@@ -174,17 +192,24 @@ describe('koloft todo', () => {
     )
     expect(sessions).not.toContain('working title')
     expect(sessions).not.toContain('helper title')
+    expect(checked).toEqual(['dirty'])
   })
 
-  it('lists the owner’s open pull requests with what decides them; one on an open worktree session’s branch goes with that session, the others are only counted, and the issues pull requests close are named', async () => {
+  it('lists the owner’s open pull requests with what decides them; one on a listed worktree session’s branch goes with that session, one on a working session’s stays here and says so, the others are only counted, and the issues pull requests close are named', async () => {
     const fixing = row('fixing', { running: true, cwd: `${SHOP}/.claude/worktrees/fix-login` })
+    const busy = row('busy', { running: true, cwd: `${SHOP}/.claude/worktrees/busy` })
     const { run } = harness({
       sidebar: sidebarOf([
-        [SHOP, [fixing]],
+        [SHOP, [fixing, busy]],
         [SHOP_COPY, []]
       ]),
-      sessions: [live(fixing, 'waiting')],
-      worktrees: { [SHOP]: [{ dir: `${SHOP}/.claude/worktrees/fix-login`, branch: 'fix-login' }] },
+      sessions: [live(fixing, 'waiting'), live(busy, 'working')],
+      worktrees: {
+        [SHOP]: [
+          { dir: `${SHOP}/.claude/worktrees/fix-login`, branch: 'fix-login' },
+          { dir: `${SHOP}/.claude/worktrees/busy`, branch: 'busy' }
+        ]
+      },
       repos: { [SHOP]: 'octo/shop', [SHOP_COPY]: 'octo/shop' },
       pulls: {
         state: 'ok',
@@ -194,7 +219,8 @@ describe('koloft todo', () => {
           pull(41, { title: 'Bump vite', closes: [12] }),
           pull(42, { author: 'bob', reviewers: ['alice'], checks: 'failing', files: 3 }),
           pull(43, { author: 'bob' }),
-          pull(44, { branch: 'fix-login' })
+          pull(44, { branch: 'fix-login' }),
+          pull(45, { branch: 'busy' })
         ]
       }
     })
@@ -212,6 +238,7 @@ describe('koloft todo', () => {
     )
     expect(pulls).toContain('other open pull requests, not tied to a session: #43 ')
     expect(pulls).not.toMatch(/- #44/)
+    expect(pulls).toMatch(/- #45 .* · its session "busy title" is working/)
     expect(pulls).toContain('issues an open pull request says it closes: #12 (#41)')
   })
 

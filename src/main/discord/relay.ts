@@ -55,7 +55,7 @@ export const ASKS_WHAT_KOLOFT_CANNOT_SEE =
 export const inputNotProbed = (label: string): string =>
   `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. The butler can still answer this one by pressing its keys.`
 export const butlerAsks = (name: string): string => `❓ **${name}** is waiting for you.`
-export const helperOf = (helper: string, butler: string): string => `${helper} (${butler}'s helper)`
+const helperOf = (helper: string, butler: string): string => `${helper} (${butler}'s helper)`
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
 const takesAnOption = (label: string): string =>
   `this ${label} question takes the number or the name of one option.`
@@ -153,8 +153,7 @@ export class DiscordRelay {
   private asks = new Map<string, { payload: AskPayload; hook?: string; raw: string }>()
   private askHooks = new Map<string, Set<string>>()
   private codexAsks = new Map<string, string | number>()
-  private cardOrder = new Map<string, number>()
-  private cards = 0
+  private cardOrder = new Set<string>()
   private quietReplies = new Set<string>()
 
   constructor(private d: RelayDeps) {}
@@ -191,7 +190,8 @@ export class DiscordRelay {
     const butlerTab = dest.liveTab()
     const command = m.attachments.length ? undefined : slashTextOf(m.content)
     const tab = command === undefined ? (this.newestCardWaiting() ?? butlerTab) : butlerTab
-    const refusal = command === undefined ? undefined : this.commandRefusal(tab, command, dest.name)
+    const refusal =
+      command === undefined ? undefined : this.commandRefusal(butlerTab, command, dest.name)
     if (
       !refusal &&
       command === undefined &&
@@ -235,12 +235,7 @@ export class DiscordRelay {
   }
 
   private newestCardWaiting(): string | undefined {
-    let newest: string | undefined
-    for (const [tab, order] of this.cardOrder) {
-      if (!this.dialogOpen(tab)) continue
-      if (newest === undefined || order > (this.cardOrder.get(newest) ?? 0)) newest = tab
-    }
-    return newest
+    return [...this.cardOrder].reverse().find((tab) => this.dialogOpen(tab))
   }
 
   private commandRefusal(
@@ -262,11 +257,11 @@ export class DiscordRelay {
     })
   }
 
-  tell(dest: Destination, text: string): void {
+  tell(dest: Destination, text: string, delivered: (ok: boolean) => void = () => undefined): void {
     this.enqueue(dest, {
       clientId: `koloft-notice-${++this.told}`,
       text: async () => text,
-      settle: () => undefined
+      settle: (failed) => delivered(!failed)
     })
   }
 
@@ -370,13 +365,15 @@ export class DiscordRelay {
     return `(attached file: ${JSON.stringify(file)})`
   }
 
-  tellQuietly(dest: Destination, text: string): void {
+  tellQuietly(dest: Destination, text: string): Promise<boolean> {
     this.quietReplies.add(text)
-    this.tell(dest, text)
+    return new Promise((resolve) => this.tell(dest, text, resolve))
   }
 
   turnEnded(tabId: string, turn: Turn): void {
-    const quiet = [...this.quietReplies].find((q) => turn.said.some((l) => l.text.includes(q)))
+    const quiet = [...this.quietReplies].find(
+      (q) => turn.said.length > 0 && turn.said.every((l) => l.text.includes(q))
+    )
     if (quiet !== undefined) {
       this.quietReplies.delete(quiet)
       return
@@ -408,11 +405,12 @@ export class DiscordRelay {
     })
   }
 
-  private postAsk(tab: string, card: () => Card): void {
+  private postAsk(tab: string, card: Card): void {
     const channelId = this.d.askChannelOf(tab)
     if (!channelId) return
-    this.cardOrder.set(tab, ++this.cards)
-    void this.card(channelId, card())
+    this.cardOrder.delete(tab)
+    this.cardOrder.add(tab)
+    void this.card(channelId, card)
   }
 
   private askCard(tab: string, view: DialogView, how: string, shown = view.text): Card {
@@ -435,7 +433,7 @@ export class DiscordRelay {
     this.asks.set(tab, { payload, hook, raw })
     if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
     this.d.asksChanged(tab)
-    this.postAsk(tab, () => this.askCard(tab, claudeDialog(payload), askHow(payload)))
+    this.postAsk(tab, this.askCard(tab, claudeDialog(payload), askHow(payload)))
   }
 
   dialog(tab: string): DialogView | undefined {
@@ -516,7 +514,7 @@ export class DiscordRelay {
     const how = !question ? CODEX_NEEDS_YES_OR_NO : a.ownWords ? PICK_OR_OWN_WORDS : PICK_ONE_OPTION
     const label = BACKEND_LABEL[this.d.backendOf(tab) ?? 'codex']
     const shown = question ? view.text : `${label} asks to run: ${view.text || 'a command'}`
-    this.postAsk(tab, () => this.askCard(tab, view, how, shown))
+    this.postAsk(tab, this.askCard(tab, view, how, shown))
   }
 
   // CC§14

@@ -12,7 +12,14 @@ import {
   type AgentReply,
   type AgentVerb
 } from './agentRequests'
-import { placedRows, resolveWorkspace, workspaceLabel, type PlacedRow } from './agentSessions'
+import { cutForATurn } from './agentGithub'
+import {
+  placedRows,
+  resolveWorkspace,
+  workspaceLabel,
+  type PinnedWorkspace,
+  type PlacedRow
+} from './agentSessions'
 import type { TodoPull, TodoPulls } from './github'
 import { mapAtMost } from './mapAtMost'
 import { mcpLines, type McpServer } from './mcpServers'
@@ -29,9 +36,32 @@ const FILE_USAGE =
 const INSTRUCTION_FILES = ['CLAUDE.md', 'AGENTS.md', 'GEMINI.md']
 const TODO_FILE = /^todo\b/i
 const GIT_LOOKUPS_AT_ONCE = 4
-const READ_FILE_CHARS = 20_000
 
-export interface WorkspaceFacts {
+export interface ProjectFile {
+  name: string
+  path: string
+}
+
+export interface TodoVerbDeps {
+  allowed(tabId: string): boolean
+  sidebar(): WorkspaceRows[]
+  pinnedWorkspaces(): PinnedWorkspace[]
+  sessions(): SessionInfo[]
+  asking(tabId: string): boolean
+  workLeft(row: SessionRow): Promise<string[]>
+  worktrees(workspace: string): Promise<{ dir: string; branch?: string }[]>
+  repoOf(workspace: string): Promise<string | null>
+  pulls(workspace: string): Promise<TodoPulls | null>
+  notes(): Record<string, string>
+  saveNote(key: string, text: string): void
+  projectFiles(workspace: string): Promise<ProjectFile[]>
+  readText(path: string): Promise<string>
+  servers(): Promise<McpServer[]>
+  butlerFolder(): string
+  now(): number
+}
+
+interface WorkspaceFacts {
   path: string
   label: string
   repo: string | null
@@ -39,28 +69,15 @@ export interface WorkspaceFacts {
   remote: boolean
 }
 
-export interface TodoVerbDeps {
-  allowed(tabId: string): boolean
-  sidebar(): WorkspaceRows[]
-  sessions(): SessionInfo[]
-  asking(tabId: string): boolean
-  workLeft(row: SessionRow, workspace: string, tabId?: string): Promise<string[]>
-  branches(workspace: string): Promise<{ dir: string; branch?: string }[]>
-  repoOf(workspace: string): Promise<string | null>
-  pulls(workspace: string): Promise<TodoPulls | null>
-  notes(): Record<string, string>
-  saveNote(key: string, text: string): void
-  listFiles(workspace: string): Promise<string[]>
-  readFile(workspace: string, name: string): Promise<string>
-  servers(): Promise<McpServer[]>
-  butlerFolder(): string
-  now(): number
-}
-
 interface Candidate {
   placed: PlacedRow
   branch?: string
   left: string[]
+}
+
+interface PullsOfRepo {
+  repo: string
+  pulls: TodoPulls
 }
 
 type SessionGroup = 'asking' | 'turnDone' | 'workLeft' | 'closed'
@@ -72,17 +89,18 @@ const GROUP_TITLES: Record<SessionGroup, string> = {
   closed: 'Closed, nothing left in a worktree (ask about these as one batch)'
 }
 
-function groupOf(c: Candidate, asking: (tabId: string) => boolean): SessionGroup | null {
+function isBusy({ live, row }: PlacedRow, asking: (tabId: string) => boolean): boolean {
+  if (!live) return row.running
+  return live.status === 'working' && !asking(live.tabId)
+}
+
+function groupOf(c: Candidate, asking: (tabId: string) => boolean): SessionGroup {
   const live = c.placed.live
-  if (live) {
-    if (asking(live.tabId) || live.status === 'approval') return 'asking'
-    return live.status === 'working' ? null : 'turnDone'
-  }
-  if (c.placed.row.running) return null
+  if (live) return asking(live.tabId) || live.status === 'approval' ? 'asking' : 'turnDone'
   return c.left.length ? 'workLeft' : 'closed'
 }
 
-export function leftSummary(left: string[]): string {
+function leftSummary(left: string[]): string {
   return left
     .map((block) => {
       const [head, ...items] = block.split('\n')
@@ -92,13 +110,10 @@ export function leftSummary(left: string[]): string {
 }
 
 function pullFacts(p: TodoPull, me: string | null, now: number): string {
-  const whose = [
-    me && p.author === me ? 'opened by the owner' : `opened by ${p.author || 'someone'}`,
-    ...(me && p.reviewers.includes(me) ? ['asks the owner to review'] : [])
-  ]
   return [
     `#${p.number} "${p.title}"`,
-    ...whose,
+    me && p.author === me ? 'opened by the owner' : `opened by ${p.author || 'someone'}`,
+    ...(me && p.reviewers.includes(me) ? ['asks the owner to review'] : []),
     ...(p.draft ? ['draft'] : []),
     `checks: ${p.checks}`,
     `${p.files} file${p.files === 1 ? '' : 's'} changed`,
@@ -111,7 +126,7 @@ function isOwners(p: TodoPull, me: string | null): boolean {
   return !!me && (p.author === me || p.reviewers.includes(me))
 }
 
-export function sessionLine(c: Candidate, pulls: string[], now: number): string {
+function sessionLine(c: Candidate, pulls: string[], now: number): string {
   const { placed } = c
   const { row } = placed
   return [
@@ -127,32 +142,41 @@ export function sessionLine(c: Candidate, pulls: string[], now: number): string 
   ].join(' · ')
 }
 
-export interface PullsOfRepo {
-  repo: string
-  pulls: TodoPulls
+function pullKey(repo: string, p: TodoPull): string {
+  return `${repo}#${p.number}`
 }
 
-export function pullSection(
+function pullSection(
   repos: PullsOfRepo[],
-  bySession: Map<string, string>,
+  withSession: Set<string>,
+  workingSession: Map<string, string>,
   now: number
 ): string[] {
   return repos.flatMap(({ repo, pulls }) => {
     if (pulls.state === 'failed')
       return [`${repo}: Koloft could not list its pull requests: ${pulls.why}`]
     const { me, closesUnknown } = pulls
-    const free = pulls.pulls.filter((p) => !bySession.has(`${repo}#${p.number}`))
-    const owners = free.filter((p) => isOwners(p, me))
-    const others = free.filter((p) => !isOwners(p, me))
+    const owners: string[] = []
+    const others: string[] = []
+    for (const p of pulls.pulls) {
+      const key = pullKey(repo, p)
+      if (withSession.has(key)) continue
+      const working = workingSession.get(key)
+      if (isOwners(p, me))
+        owners.push(
+          `- ${pullFacts(p, me, now)}${working ? ` · its session "${working}" is working` : ''}`
+        )
+      else others.push(`#${p.number}`)
+    }
     const closing = pulls.pulls.filter((p) => p.closes.length)
     return [
       `${repo} (the owner is ${me ?? 'unknown'} on GitHub here; ${pulls.pulls.length} open):`,
       ...(owners.length
-        ? owners.map((p) => `- ${pullFacts(p, me, now)}`)
+        ? owners
         : ['- none opened by the owner or asking the owner to review, outside a session']),
       ...(others.length
         ? [
-            `- other open pull requests, not tied to a session: ${others.map((p) => `#${p.number}`).join(', ')} (list them with koloft gh pr list --repo ${repo} if the to-do note counts them)`
+            `- other open pull requests, not tied to a session: ${others.join(', ')} (list them with koloft gh pr list --repo ${repo} if the to-do note counts them)`
           ]
         : []),
       closesUnknown
@@ -170,8 +194,7 @@ function workspaceLine(
   files: string[],
   now: number
 ): string {
-  const key = w.repo ?? w.path
-  const note = notes[key]
+  const note = notes[w.repo ?? w.path]
   return [
     basename(w.path),
     w.label,
@@ -184,46 +207,15 @@ function workspaceLine(
   ].join(' · ')
 }
 
-export function pickProjectFiles(names: string[]): string[] {
-  return names.filter((n) => INSTRUCTION_FILES.includes(n) || TODO_FILE.test(n))
+function isProjectFile(name: string): boolean {
+  return INSTRUCTION_FILES.includes(name) || TODO_FILE.test(name)
 }
 
-async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
-  const now = d.now()
-  const sidebar = d.sidebar().filter((w) => !w.workspace.butler)
-  const all = placedRows(sidebar, d.sessions())
-  const workspaces = await Promise.all(
-    sidebar.map(async ({ workspace, rows }) => ({
-      path: workspace.path,
-      label: workspaceLabel(workspace.path),
-      repo: workspace.missing ? null : await d.repoOf(workspace.path).catch(() => null),
-      lastUsed: Math.max(0, ...rows.map((r) => r.mtime)),
-      remote: isRemoteKey(workspace.path)
-    }))
-  )
-  const notes = d.notes()
-  const [files, branches, servers] = await Promise.all([
-    Promise.all(
-      workspaces.map((w) =>
-        notes[w.repo ?? w.path] === undefined
-          ? d.listFiles(w.path).then(pickProjectFiles, () => [])
-          : Promise.resolve([])
-      )
-    ),
-    Promise.all(workspaces.map((w) => d.branches(w.path).catch(() => []))),
-    d.servers().catch(() => [])
-  ])
-  const branchOf = (p: PlacedRow): string | undefined => {
-    const trees = branches[workspaces.findIndex((w) => w.path === p.workspace)] ?? []
-    return trees.find((t) => t.dir === p.row.cwd)?.branch
-  }
-  const candidates: Candidate[] = await mapAtMost(all, GIT_LOOKUPS_AT_ONCE, async (placed) => ({
-    placed,
-    branch: branchOf(placed),
-    left: isRemoteKey(placed.workspace)
-      ? []
-      : await d.workLeft(placed.row, placed.workspace, placed.live?.tabId).catch(() => [])
-  }))
+async function listedFiles(d: TodoVerbDeps, workspace: string): Promise<ProjectFile[]> {
+  return (await d.projectFiles(workspace)).filter((f) => isProjectFile(f.name))
+}
+
+async function pullsOfRepos(d: TodoVerbDeps, workspaces: WorkspaceFacts[]): Promise<PullsOfRepo[]> {
   const repos = [...new Set(workspaces.flatMap((w) => (w.repo ? [w.repo] : [])))]
   const pulled = await Promise.all(
     repos.map(async (repo) => {
@@ -234,24 +226,77 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
       return pulls && { repo, pulls }
     })
   )
-  const pullsOf = pulled.filter((p): p is PullsOfRepo => !!p)
-  const bySession = new Map<string, string>()
-  const sessionPulls = (c: Candidate): string[] => {
-    const repo = workspaces.find((w) => w.path === c.placed.workspace)?.repo
-    const found = pullsOf.find((p) => p.repo === repo)?.pulls
-    if (!c.branch || found?.state !== 'ok') return []
-    return found.pulls
-      .filter((p) => p.branch === c.branch)
-      .map((p) => {
-        bySession.set(`${repo}#${p.number}`, c.placed.title)
-        return `its pull request: ${pullFacts(p, found.me, now)}`
-      })
-  }
+  return pulled.filter((p): p is PullsOfRepo => !!p)
+}
+
+async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
+  const now = d.now()
+  const sidebar = d.sidebar().filter((w) => !w.workspace.butler)
+  const all = placedRows(sidebar, d.sessions())
+  const notes = d.notes()
+  const [workspaces, trees, servers] = await Promise.all([
+    Promise.all(
+      sidebar.map(async ({ workspace, rows }): Promise<WorkspaceFacts> => ({
+        path: workspace.path,
+        label: workspaceLabel(workspace.path),
+        repo: workspace.missing ? null : await d.repoOf(workspace.path).catch(() => null),
+        lastUsed: Math.max(0, ...rows.map((r) => r.mtime)),
+        remote: isRemoteKey(workspace.path)
+      }))
+    ),
+    Promise.all(sidebar.map((w) => d.worktrees(w.workspace.path).catch(() => []))),
+    d.servers().catch(() => [])
+  ])
+  const treeOf = (p: PlacedRow): { dir: string; branch?: string } | undefined =>
+    trees[sidebar.findIndex((w) => w.workspace.path === p.workspace)]?.find(
+      (t) => t.dir === p.row.cwd
+    )
+  const [files, pullsOf, candidates] = await Promise.all([
+    Promise.all(
+      workspaces.map((w) =>
+        notes[w.repo ?? w.path] === undefined
+          ? listedFiles(d, w.path).then(
+              (found) => found.map((f) => f.name),
+              () => []
+            )
+          : []
+      )
+    ),
+    pullsOfRepos(d, workspaces),
+    mapAtMost(all, GIT_LOOKUPS_AT_ONCE, async (placed): Promise<Candidate> => {
+      const tree = treeOf(placed)
+      const checkable = !!tree && !isRemoteKey(placed.workspace) && !isBusy(placed, d.asking)
+      return {
+        placed,
+        branch: tree?.branch,
+        left: checkable ? await d.workLeft(placed.row).catch(() => []) : []
+      }
+    })
+  ])
+  const repoOf = new Map(workspaces.map((w) => [w.path, w.repo]))
+  const withSession = new Set<string>()
+  const workingSession = new Map<string, string>()
   const groups = new Map<SessionGroup, string[]>()
   for (const c of candidates) {
-    const pulls = sessionPulls(c)
+    const repo = repoOf.get(c.placed.workspace)
+    const found = pullsOf.find((p) => p.repo === repo)?.pulls
+    const own =
+      repo && c.branch && found?.state === 'ok'
+        ? found.pulls.filter((p) => p.branch === c.branch)
+        : []
+    if (isBusy(c.placed, d.asking)) {
+      for (const p of own) workingSession.set(pullKey(repo!, p), c.placed.title)
+      continue
+    }
+    for (const p of own) withSession.add(pullKey(repo!, p))
+    const me = found?.state === 'ok' ? found.me : null
+    const line = sessionLine(
+      c,
+      own.map((p) => `its pull request: ${pullFacts(p, me, now)}`),
+      now
+    )
     const group = groupOf(c, d.asking)
-    if (group) groups.set(group, [...(groups.get(group) ?? []), `- ${sessionLine(c, pulls, now)}`])
+    groups.set(group, [...(groups.get(group) ?? []), `- ${line}`])
   }
   const sessionPart = (Object.keys(GROUP_TITLES) as SessionGroup[]).flatMap((g) =>
     groups.has(g) ? [`${GROUP_TITLES[g]}:`, ...(groups.get(g) ?? [])] : []
@@ -267,9 +312,11 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
     '',
     ...(sessionPart.length ? sessionPart : ['None.']),
     '',
-    "PULL REQUESTS (a pull request whose branch is an open worktree session's is listed with that session above)",
+    "PULL REQUESTS (a pull request whose branch is a listed worktree session's is listed with that session above)",
     '',
-    ...(pullsOf.length ? pullSection(pullsOf, bySession, now) : ['No workspace is on GitHub.']),
+    ...(pullsOf.length
+      ? pullSection(pullsOf, withSession, workingSession, now)
+      : ['No workspace is on GitHub.']),
     '',
     'TOOLS SET UP FOR THE AGENTS (MCP servers; to-do tools such as Linear or Jira are among them)',
     '',
@@ -280,7 +327,7 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
 async function noteVerb(d: TodoVerbDeps, rest: string[]): Promise<AgentReply> {
   const { before, after } = splitAtDashes(rest)
   if (before.length !== 1) return refused(NOTE_USAGE, EXIT_USAGE)
-  const found = resolveWorkspace(before[0], pinnedOf(d))
+  const found = resolveWorkspace(before[0], d.pinnedWorkspaces())
   if (!found.ok) return refused(`koloft todo note: ${found.error}`)
   const repo = await d.repoOf(found.value.path).catch(() => null)
   const key = repo ?? found.value.path
@@ -295,28 +342,17 @@ async function noteVerb(d: TodoVerbDeps, rest: string[]): Promise<AgentReply> {
   )
 }
 
-function pinnedOf(d: TodoVerbDeps): { path: string; missing: boolean }[] {
-  return d
-    .sidebar()
-    .filter((w) => !w.workspace.butler)
-    .map((w) => ({ path: w.workspace.path, missing: w.workspace.missing }))
-}
-
 async function fileVerb(d: TodoVerbDeps, rest: string[]): Promise<AgentReply> {
   if (rest.length !== 2) return refused(FILE_USAGE, EXIT_USAGE)
-  const found = resolveWorkspace(rest[0], pinnedOf(d))
+  const found = resolveWorkspace(rest[0], d.pinnedWorkspaces())
   if (!found.ok) return refused(`koloft todo file: ${found.error}`)
-  const files = pickProjectFiles(await d.listFiles(found.value.path))
-  if (!files.includes(rest[1]))
+  const files = await listedFiles(d, found.value.path)
+  const file = files.find((f) => f.name === rest[1])
+  if (!file)
     return refused(
-      `koloft todo file: ${rest[1]} is not one of the files koloft todo reads there${files.length ? ` (${files.join(', ')})` : ''}.`
+      `koloft todo file: ${rest[1]} is not one of the files koloft todo reads there${files.length ? ` (${files.map((f) => f.name).join(', ')})` : ''}.`
     )
-  const text = await d.readFile(found.value.path, rest[1])
-  return answered(
-    text.length <= READ_FILE_CHARS
-      ? text
-      : `${text.slice(0, READ_FILE_CHARS)}\n[koloft: cut at ${READ_FILE_CHARS} characters]`
-  )
+  return answered(cutForATurn(await d.readText(file.path)))
 }
 
 export function todoVerb(d: TodoVerbDeps): AgentVerb {

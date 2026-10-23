@@ -1091,7 +1091,8 @@ export function sessionVerb(d: SessionVerbDeps): {
       await (opening.get(t.key) ?? t.open())
       return answered(`Resumed ${t.name}.`)
     }
-    return asButler && !t.butler
+    const toAnotherHelper = !d.isButler(caller.tabId) && t.workspace === d.butlerFolder()
+    return asButler && !t.butler && !toAnotherHelper
       ? deliver(sub, t, ownerSays(text), caller, true)
       : deliver(sub, t, sessionSays(caller.session, text), caller, false)
   }
