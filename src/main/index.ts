@@ -3888,14 +3888,7 @@ async function isDirectory(target: string): Promise<boolean> {
   }
 }
 
-async function isMissing(target: string): Promise<boolean> {
-  try {
-    await fs.promises.lstat(target)
-    return false
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'ENOENT'
-  }
-}
+const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8' }
 
 const liveDownloads = new Map<string, Electron.DownloadItem>()
 
@@ -3970,18 +3963,13 @@ function setupBrowserPartition(): void {
         name: e.name,
         isDir: e.isDirectory()
       }))
-      return new Response(directoryListingHtml(target, entries), {
-        headers: { 'content-type': 'text/html; charset=utf-8' }
-      })
+      return new Response(directoryListingHtml(target, entries), { headers: HTML_HEADERS })
     }
     try {
       return await ses.fetch(request, { bypassCustomProtocolHandlers: true })
     } catch (err) {
-      if (!target || !(await isMissing(target))) throw err
-      return new Response(fileNotFoundHtml(target), {
-        status: 404,
-        headers: { 'content-type': 'text/html; charset=utf-8' }
-      })
+      if (!target || !String(err).includes('ERR_FILE_NOT_FOUND')) throw err
+      return new Response(fileNotFoundHtml(target), { status: 404, headers: HTML_HEADERS })
     }
   })
   const guestUA = standardUserAgent(app.userAgentFallback, app.getName())

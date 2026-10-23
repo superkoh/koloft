@@ -475,8 +475,9 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `ses.fetch(request, { bypassCustomProtocolHandlers: true })` reaches that built-in
   loader without calling a custom `file` handler again.
 - **A `protocol.handle` callback that throws shows up as `ERR_UNEXPECTED` (-9)**, not
-  the error it threw. For a `file://` path that does not exist, that `ses.fetch`
-  rejects with `net::ERR_FILE_NOT_FOUND`; left uncaught, the guest fails with
+  the error it threw. For a `file://` path that does not exist (a missing name, a path
+  through a file, a broken link), that `ses.fetch` rejects with an error whose text
+  holds `net::ERR_FILE_NOT_FOUND`; left uncaught, the guest fails with
   `-9 ERR_UNEXPECTED`, while without the custom handler it fails with
   `-6 ERR_FILE_NOT_FOUND`. A `Response` with status 404 and an HTML body is drawn as a
   page, with no `did-fail-load`.
