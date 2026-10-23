@@ -1081,6 +1081,16 @@ test.describe('remote workspaces against real sshd machines behind a company jum
             timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
           })
           .toBe('0')
+        await expect
+          .poll(
+            async () =>
+              (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
+                ?.status
+          )
+          .toBe('waiting')
+        await expect(
+          wsGroup(page, 'kt-key').locator(`.ws-tab[data-tab-id="${tabId}"]`)
+        ).toHaveClass(/\bst-waiting\b/)
         const listening = (): string =>
           runOnTarget(lab, 'kuser', 'ps -eo args | grep -c "[-]-listen" || true').trim()
         const pidFiles = (): string =>
