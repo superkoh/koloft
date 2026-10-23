@@ -2720,6 +2720,7 @@ app.whenReady().then(() => {
       pickHome: pickCodexHome,
       assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
       replyLanguageScript: hookPaths.codexReplyLanguage,
+      builtInStatusLine: () => loadSettings().statuslineBuiltin,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,

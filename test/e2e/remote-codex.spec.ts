@@ -31,7 +31,7 @@ import {
   remoteDir,
   REMOTE_WS_NAME
 } from './helpers/remote'
-import type { E2EEnv } from './helpers/env'
+import { seedSettings, type E2EEnv } from './helpers/env'
 
 test.setTimeout(180_000)
 
@@ -349,6 +349,27 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await addRemoteWorkspace(page, env)
       await startRemoteCodex(page, env)
       expect(tuiCalls(env)[0].argv.join(' ')).toContain('-a on-request -s workspace-write')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§8
+  test('E-RC-07: with the built-in status line off, a Codex session there gets no status line from Koloft on its app-server on the machine or its screen on this Mac, so the screen shows the one in the owner’s own config.toml here', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    seedSettings(env, { statuslineBuiltin: false })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const server = await startRemoteCodex(page, env)
+      const statusLine = (argv: string[]): string[] =>
+        argv.filter((a) => a.startsWith('tui.status_line='))
+      expect(tuiCalls(env)).toHaveLength(1)
+      expect(statusLine(tuiCalls(env)[0].argv)).toEqual([])
+      expect(server.argv).toContain('allow_login_shell=false')
+      expect(statusLine(server.argv)).toEqual([])
     } finally {
       await quitAndClose(app)
     }

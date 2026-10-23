@@ -27,7 +27,14 @@ const mocks = vi.hoisted(() => ({
   runtime: vi.fn(),
   update: vi.fn(),
   rpcHomes: [] as (string | undefined)[],
-  rpcOptions: [] as CodexProcessOptions[]
+  rpcOptions: [] as CodexProcessOptions[],
+  crashLeftoverMarkers: [] as string[]
+}))
+vi.mock('../../src/main/leftovers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/main/leftovers')>()),
+  endCodexAppServersLeftByACrash: async (marker: string) => {
+    mocks.crashLeftoverMarkers.push(marker)
+  }
 }))
 vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
   resolveCodexRuntime: mocks.runtime,
@@ -139,6 +146,7 @@ beforeEach(() => {
   transports = []
   mocks.rpcHomes.length = 0
   mocks.rpcOptions.length = 0
+  mocks.crashLeftoverMarkers.length = 0
   mocks.create.mockImplementation(async (options: CodexTransportOptions) => {
     const stop = vi.fn(async () => {})
     const request = vi.fn(async () => ({}))
@@ -170,6 +178,7 @@ beforeEach(() => {
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
     assistOf: () => undefined,
     replyLanguageScript: '/koloft/codex-reply-language.sh',
+    builtInStatusLine: vi.fn(() => true),
     browserEndpoint: vi.fn(() => ''),
     openShimRoot: path.join(directory, 'codex-open'),
     playwrightBin: path.join(directory, 'commands', 'bin'),
@@ -1101,6 +1110,27 @@ describe('CodexSessions', () => {
     expect(checker.cwd).toBe(repo)
     expect(mocks.request).toHaveBeenCalledWith('hooks/list', { cwds: [repo] }, '/homes/work')
     expect(mocks.close).toHaveBeenCalled()
+  })
+
+  // CODEX§8 CODEX§5
+  it("with the built-in status line off, neither a Codex tab's app-server nor its TUI is handed Koloft's status line, so Codex shows the owner's own; the mark Koloft looks for to end an app-server left by a crash is on that tab's app-server with the switch on or off", async () => {
+    const statusLine = (values: readonly string[]): string[] =>
+      values.filter((v) => v.startsWith('tui.status_line='))
+    vi.mocked(deps.builtInStatusLine).mockReturnValue(false)
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    vi.mocked(deps.builtInStatusLine).mockReturnValue(true)
+    await sessions.launch({ kind: 'codex', cwd: repo })
+
+    const [off, on] = transports.map((t) => t.options.configOverrides!)
+    const [offArgv, onArgv] = vi.mocked(deps.pty.create).mock.calls.map(([c]) => c.argv!)
+    expect(statusLine(off)).toEqual([])
+    expect(statusLine(offArgv)).toEqual([])
+    expect(statusLine(on)).toHaveLength(1)
+    expect(statusLine(onArgv)).toEqual(statusLine(on))
+    expect(onArgv[onArgv.indexOf(statusLine(on)[0]) - 1]).toBe('-c')
+    expect(mocks.crashLeftoverMarkers).toHaveLength(1)
+    expect(off).toContain(mocks.crashLeftoverMarkers[0])
+    expect(on).toContain(mocks.crashLeftoverMarkers[0])
   })
 
   // ADR-0043 CODEX§27 CODEX§30

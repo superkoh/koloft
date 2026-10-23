@@ -116,11 +116,11 @@ export function AppearancePane(): JSX.Element {
       </div>
       <div className="set-row">
         <div className="set-lab">
-          <b>Built-in Claude statusline</b>
+          <b>Built-in status line</b>
           <small>
-            Renders Koloft&rsquo;s bundled <code>ccstatusline</code> under the prompt of every
-            Claude session started in a tab, overriding your own <code>statusLine</code> setting for
-            that session. Applies to newly started sessions; off leaves your own settings in charge.
+            Shows Koloft&rsquo;s own status line under the prompt of every Claude Code, Codex and
+            Antigravity session, in place of the one you set yourself (Muse Code cannot take one).
+            Applies to sessions started after a change; off brings back your own setting.
           </small>
         </div>
         <Switch
