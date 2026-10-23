@@ -289,33 +289,32 @@
             <a href="../accounts/#assist">Assist</a> picks the folder, the worktree and a title, and
             the session starts there with your words as its first message. In a folder git tracks it
             gets a worktree of its own (see <a href="#worktrees">worktree sessions</a>). If the
-            folder's branch is behind, Koloft first asks whether to pull. <kbd>⌘⏎</kbd> does what
-            <kbd>⇧⏎</kbd> does for <kbd>⌘N</kbd> above. <kbd>⇧⏎</kbd> starts a new line, so the
-            words can take more than one line.
+            folder's branch is behind, Koloft first asks whether to pull. <kbd>⌘⏎</kbd> picks
+            another agent, as <kbd>⇧⏎</kbd> does for <kbd>⌘N</kbd> above. <kbd>⇧⏎</kbd> starts a new
+            line.
           </li>
           <li>
             To pick the folder yourself, type <kbd>@</kbd>: a <code>Workspaces</code> list of your
             folders shows up and narrows as you type. <kbd>⏎</kbd> or <kbd>⇥</kbd> fills the name
             in; <kbd>Esc</kbd> puts the list away and keeps your words. A folder on another machine
             is named like <code>host:name</code>. With a folder named, <kbd>⏎</kbd> starts the
-            session there at once, with the rest of your words as its first message; Assist is not
-            asked, even when it is on, and the button reads Start, as it does with Assist off. Name
-            two different folders and Start is off; the tip reads
-            <code>Name one workspace · Esc</code>.
+            session there, with the rest of your words as its first message (if the folder's branch
+            is behind, Koloft first asks whether to pull). Assist is skipped, so the button reads as
+            it does with Assist off (see below). Name two different folders and the button is off;
+            the tip reads <code>Name one workspace · Esc</code>.
           </li>
           <li>
             Not everything you type starts a session. "open settings" or "check for updates" just
             does it. Ask for a session by what it was doing ("go to the session that was fixing
             login"), and <kbd>⌘P</kbd> jumps to it, starting nothing. With Koloft Assist on, what
-            <kbd>⌘P</kbd> cannot do by itself goes to a helper of your
+            <kbd>⌘P</kbd> cannot do by itself (words about Koloft itself like "set up Discord", "ask
+            tidewatch …" with the folder named in plain words, a question, or work that fits more
+            than one folder like "fix the tests") goes to a helper of your
             <a href="../accounts/#butler">butler</a>: a new session in the butler's own folder,
-            under the butler's row, and the screen moves there. That is words about Koloft itself,
-            "ask &lt;folder&gt; …" (with that folder named), a question, or work that fits more than
-            one folder ("fix the tests"). If the butler is closed, it opens first. The helper runs
-            on the agent you picked (the one on the button, or one from the ▾ list or
-            <kbd>⌘⏎</kbd>), does the job and reports back to your butler. "Set up Discord" is the
-            one exception: its helper runs on Claude Code or Codex, the agents with a Workbench
-            browser.
+            under its row. The screen moves there. If the butler is closed, it opens first. The
+            helper runs on the agent you picked (the one on the button, or one from the ▾ list or
+            <kbd>⌘⏎</kbd>), does the job and reports back to your butler. "Set up Discord" works its
+            own way (see <a href="../discord/#set-up">discord</a>).
           </li>
           <li>
             With Assist off, the button reads <code>Start a session</code> (with more than one

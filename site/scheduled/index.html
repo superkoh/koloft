@@ -6,7 +6,7 @@
     <title>Sessions on a timer — Koloft</title>
     <meta
       name="description"
-      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, once, or a set time after the last run ended, with the first message you wrote."
+      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, once, or a set wait after each run, with the first message you wrote."
     />
     <meta name="theme-color" content="#0c0b0a" />
     <link rel="canonical" href="__SITE_URL__/scheduled/" />
@@ -18,7 +18,7 @@
     <meta property="og:title" content="Sessions on a timer — Koloft" />
     <meta
       property="og:description"
-      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, once, or a set time after the last run ended, with the first message you wrote."
+      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, once, or a set wait after each run, with the first message you wrote."
     />
     <meta property="og:url" content="__SITE_URL__/scheduled/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -32,7 +32,7 @@
     <meta name="twitter:title" content="Sessions on a timer — Koloft" />
     <meta
       name="twitter:description"
-      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, once, or a set time after the last run ended, with the first message you wrote."
+      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, once, or a set wait after each run, with the first message you wrote."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
     <link rel="stylesheet" href="../style.css" />
@@ -180,20 +180,20 @@
               <tr>
                 <td>Once</td>
                 <td>
-                  Pick a day and a time. When it comes, a run starts, and the job turns itself off.
-                  It stays in the list; edit it with a new time and it is on again. If the time came
-                  while Koloft was closed, or while the Mac slept more than five minutes past it, it
-                  is missed, and the job turns itself off.
+                  Pick a day and a time. At that time one run starts and the job turns itself off.
+                  It stays in the list; give it a new time and it is on again. If that time is
+                  missed or skipped (see History below), no run happens, and the job still turns
+                  itself off.
                 </td>
               </tr>
               <tr>
                 <td>After each run…</td>
                 <td>
-                  Pick a wait, in minutes or hours. The wait starts when the last run's tab is gone:
-                  it closed itself, you closed it, or it could not start. Then the next run starts.
-                  While a run is open, nothing new starts. Saving the job or turning it on starts
-                  the wait again. Run now starts a run; the wait starts again when that run's tab is
-                  gone.
+                  Pick a wait, in minutes or hours. The wait starts when the last run's tab is gone
+                  (it closed itself, you closed it, or it could not start); then the next run
+                  starts. While a run is open, nothing new starts, Run now included. Saving the job
+                  or turning it on starts the wait again. It is never missed: if the wait ran out
+                  while Koloft was closed or asleep, the run starts as soon as Koloft is back.
                 </td>
               </tr>
             </tbody>
@@ -201,10 +201,10 @@
         </div>
         <p>
           Picking After each run… sets When done to Close it, so each run makes room for the next by
-          itself. With Leave it open, the wait starts when you close the run. The list says
-          <code>waits for the open run to end</code> while a run is open. In a
-          <a href="../remote/">remote folder</a> it works the same way: if the link to the machine
-          drops, the run's tab stays and keeps trying to reconnect, so the wait does not start.
+          itself. The list says <code>waits for the open run to end</code> while a run is open. In a
+          <a href="../remote/">remote folder</a>, a run's tab can stay after the agent there stops:
+          while the link is down it keeps trying to reconnect, and after an error it waits for you
+          to press Enter. The wait starts only once that tab is gone.
         </p>
 
         <h2>Where it runs</h2>
@@ -335,8 +335,8 @@
               <tr>
                 <td>Ended — Koloft quit</td>
                 <td>
-                  Koloft quit while the run was open, and the run did not come back when Koloft
-                  opened again.
+                  Koloft quit while the run was open, and the run did not come back as the job's
+                  open run.
                 </td>
               </tr>
               <tr>
@@ -362,10 +362,10 @@
           such as "Missed 3 times — Koloft was closed or asleep".
         </p>
         <p>
-          Quit Koloft while a run that had started working is open, and its tab comes back when
-          Koloft opens again. It is still the job's open run, so the next time is skipped while it
-          stays open. A Close it run that had finished closes itself about a minute later. One the
-          quit cut off in the middle of its work stays open for you.
+          If you quit Koloft while a run that had started working is open and awake (not asleep),
+          its tab comes back when Koloft opens. It still counts as the job's open run, so the next
+          time is skipped until it closes. A Close it run that had finished closes itself about a
+          minute later; one cut off mid-work stays open for you.
         </p>
         <p>
           Close it works the same for a Claude, Codex or Muse job, and for a Claude job in a
@@ -389,15 +389,14 @@
             <span class="why"
               >(Jobs run only while Koloft is open. A time that came while Koloft was closed is
               missed, even by a minute. If the Mac was asleep, a run up to five minutes late still
-              happens; later than that, it is missed. An After each run… job is never missed: if its
-              wait ran out while Koloft was closed or asleep, it runs as soon as Koloft is
-              back.)</span
+              happens; later than that, it is missed. After each run… jobs do not follow the clock:
+              see <a href="#once-after">above</a>.)</span
             >
           </li>
           <li>
             <s class="struck">pile up runs</s>
             <span class="why"
-              >(if the last run is still open, the next one is skipped, or for After each run…
+              >(if the last run is still open, the next one is skipped, and an After each run… job
               waits; a run that closed itself is not in the way)</span
             >
           </li>
