@@ -793,7 +793,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await openChanges(page, 'ws-a', agent)
+        await openChanges(page, 'ws-a', agent === 'Muse' ? agent : undefined)
         await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTs)}`)
         await pickChip(page, 'Ownership', 'session')
         await expect
