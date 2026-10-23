@@ -1024,6 +1024,30 @@ describe('a Muse session on a remote machine', () => {
     expect(events('files-changed')[0]).toMatchObject({ lastWritten: `${KEY}/src/a.ts` })
   })
 
+  it('after /clear the files the old session wrote leave the tab, so the new session’s first write reports only its own file', async () => {
+    onMachine()
+    const id = await boundRemote()
+    const wrote = (file: string): Record<string, unknown> => ({
+      t: 'hook',
+      event: 'PostToolUse',
+      input: {
+        session_id: sessions.list()[0].nativeSessionId,
+        tool_name: 'write_file',
+        tool_response: { filePath: file, structuredPatch: [{ lines: ['+x'] }] }
+      }
+    })
+    mirror(id, wrote('src/a.ts'))
+    await vi.waitFor(() => expect(events('files-changed')).toHaveLength(1))
+    mirror(id, { t: 'hook', event: 'SessionStart', input: { session_id: B, source: 'clear' } })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(B))
+    mirror(id, wrote('src/b.ts'))
+    await vi.waitFor(() => expect(events('files-changed')).toHaveLength(2))
+    expect(events('files-changed')[1]).toMatchObject({
+      files: [expect.objectContaining({ src: `${KEY}/src/b.ts` })],
+      liveWrites: 1
+    })
+  })
+
   it('never lets a state that came late through the mirror roll back a newer one the terminal already showed', async () => {
     onMachine()
     const id = await boundRemote()

@@ -3,7 +3,7 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, type E2EEnv } from './helpers/env'
+import { installCodex, installMuse, trustInMuse, type E2EEnv } from './helpers/env'
 import { startCodex } from './helpers/codex'
 import {
   boundSessionId,
@@ -779,20 +779,38 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     }
   })
 
-  test("after /clear the Ownership filter's session choice no longer lists the files the old session wrote", async ({
-    page,
-    env
-  }) => {
-    const fx = setupChangeFixture(env.workspaces.a)
-    await openChanges(page)
-    await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTs)}`)
-    await pickChip(page, 'Ownership', 'session')
-    await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['src/agent-notes.ts'])
+  for (const agent of ['Claude', 'Muse'] as const)
+    test(`after /clear in a ${agent} tab the Ownership filter's session choice drops the files the old session wrote, and lists only what the new session writes`, async ({
+      env
+    }) => {
+      const fx = setupChangeFixture(env.workspaces.a)
+      if (agent === 'Muse') {
+        installMuse(env)
+        trustInMuse(env, env.workspaces.a)
+      }
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startSessionIn(page, 'ws-a', { method: agent })
+        await showChanges(page)
+        await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTs)}`)
+        await pickChip(page, 'Ownership', 'session')
+        await expect
+          .poll(() => shownPaths(page), { timeout: 30_000 })
+          .toEqual(['src/agent-notes.ts'])
 
-    await runIn(page, centerTerm(page), '/clear')
+        await runIn(page, centerTerm(page), '/clear')
+        await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual([])
 
-    await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual([])
-  })
+        await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTsB)}`)
+        await expect
+          .poll(() => shownPaths(page), { timeout: 30_000 })
+          .toEqual(['src/agent-notes-b.ts'])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
   test('WB-C16: only the blocks that have been scrolled to are syntax-highlighted — an unscrolled block has ZERO tokens, never merely fewer — and nothing is truncated or dropped to afford it', async ({
     page,
