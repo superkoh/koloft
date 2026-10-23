@@ -1029,7 +1029,7 @@ describe('CronRunner — a Codex job', () => {
 })
 
 describe('CronRunner — quitting', () => {
-  it('ends every open run, empties the live list, and lets the pty exits fall silent', async () => {
+  it('ends every open run, notes whether it was mid-turn, empties the live list, and lets the pty exits fall silent', async () => {
     const h = makeHarness([makeJob()])
     await h.runner.runNow('j1')
     h.runner.onBound('tab-1', 's1')
@@ -1041,13 +1041,26 @@ describe('CronRunner — quitting', () => {
         state: 'ended',
         worktree: 'nightly-report-260902-1000',
         manual: true,
-        sessionId: 's1'
+        sessionId: 's1',
+        liveState: 'running'
       }
     ])
     expect(h.runner.state().live).toEqual([])
 
     h.runner.onPtyExit('tab-1')
     expect(h.jobs[0].history).toHaveLength(1)
+  })
+
+  it('ends a run whose process Koloft stops while it quits, instead of reading it as closed by you', async () => {
+    const h = makeHarness([makeJob()])
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 's1')
+    h.flags.quitting = true
+    h.runner.onPtyExit('tab-1')
+    h.runner.quitSweep()
+    expect(h.jobs[0].history).toEqual([
+      expect.objectContaining({ state: 'ended', sessionId: 's1', liveState: 'running' })
+    ])
   })
 
   it('disarms the deadline of a run it just ended, so shutdown kills no tab and writes no second line', async () => {
@@ -1058,6 +1071,160 @@ describe('CronRunner — quitting', () => {
     expect(h.killTab).not.toHaveBeenCalled()
     expect(h.jobs[0].history).toHaveLength(1)
     expect(h.jobs[0].history[0].state).toBe('ended')
+  })
+
+  async function relaunchedAfterQuittingOnARun(
+    job: CronJob,
+    { turnOverBeforeQuit = false } = {}
+  ): Promise<ReturnType<typeof makeHarness>> {
+    const before = makeHarness([job])
+    before.flags.left = ['Changes not committed']
+    await before.runner.runNow('j1')
+    before.runner.onBound('tab-1', 's1')
+    if (turnOverBeforeQuit) before.runner.onStatus('tab-1', 'working', 'waiting')
+    await flush()
+    before.runner.quitSweep()
+    const onDisk = JSON.parse(JSON.stringify({ version: 1, jobs: before.jobs }))
+    return makeHarness(sanitizeCron(onDisk, ['/ws/a']).jobs)
+  }
+
+  it('counts a run it ended as open while the relaunch reopens its tab, takes it back the moment its tab is reopened, and closing it writes one closed line', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob())
+    h.runner.expectReopened(['s1', 's-not-a-run'])
+    h.setClock(T0 + 1 * MIN)
+    expect(await h.runner.runNow('j1')).toEqual({ ok: false, reason: 'skipped' })
+    expect(h.launch).not.toHaveBeenCalled()
+
+    h.runner.reopenedIn('s-not-a-run', 'tab-other')
+    expect(h.runner.state().live).toEqual([])
+
+    h.setClock(T0 + 2 * MIN)
+    h.runner.reopenedIn('s1', 'tab-back')
+    expect(h.runner.state().live).toEqual([
+      {
+        jobId: 'j1',
+        tabId: 'tab-back',
+        state: 'running',
+        startedAt: T0 + 2 * MIN,
+        dueAt: T0,
+        worktree: 'nightly-report-260902-1000',
+        manual: true,
+        sessionId: 's1'
+      }
+    ])
+    expect(h.jobs[0].history).toEqual([
+      { dueAt: T0 + 1 * MIN, state: 'skipped', count: 1, manual: true }
+    ])
+
+    h.setClock(T0 + 3 * MIN)
+    expect(await h.runner.runNow('j1')).toEqual({ ok: false, reason: 'skipped' })
+    expect(h.launch).not.toHaveBeenCalled()
+
+    h.runner.onPtyExit('tab-back')
+    expect(h.jobs[0].history[0]).toEqual({
+      dueAt: T0,
+      state: 'closed',
+      worktree: 'nightly-report-260902-1000',
+      manual: true,
+      sessionId: 's1'
+    })
+  })
+
+  it('takes nothing back when its session is opened again some other way than the relaunch reopening its tab', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob())
+    h.runner.reopenedIn('s1', 'tab-by-hand')
+    h.runner.onBound('tab-by-hand', 's1')
+    expect(h.runner.state().live).toEqual([])
+    expect(h.jobs[0].history[0].state).toBe('ended')
+  })
+
+  it('stops waiting for a run the relaunch could not reopen, so the next due starts', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob())
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', undefined)
+    h.setClock(T0 + 1 * MIN)
+    expect(await h.runner.runNow('j1')).toEqual({ ok: true })
+  })
+
+  it('once the reopening is over, a run it did not take back loses its mark, so no later relaunch takes it back', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob())
+    h.runner.expectReopened(['s1'])
+    h.runner.reopeningOver()
+    expect(h.jobs[0].history[0]).not.toHaveProperty('liveState')
+    h.setClock(T0 + 1 * MIN)
+    expect(await h.runner.runNow('j1')).toEqual({ ok: true })
+
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-later')
+    expect(h.runner.state().live.map((r) => r.tabId)).toEqual(['tab-1'])
+  })
+
+  it('with "Close it" on, a reopened run whose turn had ended closes for good at the next check once it would lose nothing', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }), {
+      turnOverBeforeQuit: true
+    })
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-back')
+    h.runner.onBound('tab-back', 's1')
+    await flush()
+    expect(h.closeForGood).not.toHaveBeenCalled()
+
+    await h.fireTimers(T0 + 1 * MIN)
+    expect(h.closeForGood).toHaveBeenCalledWith('tab-back', '/ws/a', 'nightly-report-260902-1000')
+    expect(h.jobs[0].history[0].state).toBe('finished')
+    expect(h.runner.state().live).toEqual([])
+  })
+
+  it('with "Close it" on, a reopened run the quit cut off mid-turn stays open, and stays marked mid-turn through another quit', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob({ autoClose: true }))
+    h.runner.expectReopened(['s1'])
+    h.runner.reopenedIn('s1', 'tab-back')
+    h.runner.onBound('tab-back', 's1')
+    await flush()
+    expect(h.closeForGood).not.toHaveBeenCalled()
+
+    h.runner.quitSweep()
+    expect(h.jobs[0].history[0]).toMatchObject({ state: 'ended', liveState: 'running' })
+  })
+
+  it('a quit drops the mark of a run an earlier relaunch never took back, and keeps the mark of one still being reopened', async () => {
+    const h = await relaunchedAfterQuittingOnARun(makeJob())
+    h.jobs[0].history.push({ ...h.jobs[0].history[0], dueAt: T0 - MIN, sessionId: 's-older' })
+    h.runner.expectReopened(['s1', 's-older'])
+    h.runner.reopenedIn('s-older', undefined)
+    h.runner.quitSweep()
+    expect(h.jobs[0].history.map((l) => [l.sessionId, l.liveState])).toEqual([
+      ['s1', 'running'],
+      ['s-older', undefined]
+    ])
+  })
+
+  it('skips a due that was already on its way when the relaunch began reopening the run', async () => {
+    let folderChecked: (yes: boolean) => void = () => {}
+    const before = await relaunchedAfterQuittingOnARun(makeJob())
+    const h = makeHarness(before.jobs, {
+      dirExists: () => new Promise<boolean>((resolve) => (folderChecked = resolve))
+    })
+    const due = h.runner.runNow('j1')
+    h.runner.expectReopened(['s1'])
+    folderChecked(true)
+    expect(await due).toEqual({ ok: false, reason: 'skipped' })
+    expect(h.launch).not.toHaveBeenCalled()
+  })
+
+  it('an after-each-run job whose wait ran out starts nothing and writes no skip while the relaunch reopens its run, and starts once that run could not come back', async () => {
+    const h = await relaunchedAfterQuittingOnARun(
+      makeJob({ schedule: { kind: 'after', n: 30, unit: 'minutes' } })
+    )
+    h.runner.expectReopened(['s1'])
+    h.runner.start()
+    await h.tick(at(10, 31))
+    expect(h.launches).toHaveLength(0)
+    expect(h.jobs[0].history.map((l) => l.state)).toEqual(['ended'])
+
+    h.runner.reopenedIn('s1', undefined)
+    await h.tick(at(10, 32))
+    expect(h.launches).toHaveLength(1)
   })
 
   it('stops the tick and the deadline timers', async () => {
@@ -1136,7 +1303,8 @@ describe('CronRunner — #22: Koloft tidies a run’s folder once nothing uses i
     h.runner.onPtyExit('tab-1', { treeRoot: folderOf(RUN), sessionId: 'sess-1' })
     await flush()
     expect(h.tidyRun).not.toHaveBeenCalled()
-    expect(h.jobs[0].history[0].state).toBe('closed')
+    h.runner.quitSweep()
+    expect(h.jobs[0].history[0].state).toBe('ended')
   })
 
   it('the start sweep leaves a folder in use alone without a word, never touches an open run’s folder, and removes a folder no History line names without a word', async () => {
