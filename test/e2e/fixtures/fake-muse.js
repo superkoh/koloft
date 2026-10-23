@@ -555,6 +555,7 @@ function tui() {
   let asking = !trusted()
   const line = (text) => {
     if (asking) {
+      if (text === '2') process.exit(0)
       asking = false
       const t = fs.existsSync(trustFile) ? JSON.parse(fs.readFileSync(trustFile, 'utf8')) : {}
       t.schema_version = 1
