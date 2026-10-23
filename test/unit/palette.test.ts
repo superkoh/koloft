@@ -15,6 +15,7 @@ import {
   paletteGroups,
   paletteSessions,
   paletteWorkspaces,
+  namedWorkspaces,
   pinnedWorkspace,
   type PaletteAction
 } from '../../src/renderer/src/palette'
@@ -265,5 +266,13 @@ describe('command palette: @ names a workspace', () => {
     expect(pinnedWorkspace('@koloft，修一下', items)?.wsPath).toBe(`${HOME}/koloft`)
     expect(pinnedWorkspace('@kol fix', items)).toBeNull()
     expect(pinnedWorkspace('me@koloft fix', items)).toBeNull()
+  })
+
+  it('every @ that names a whole workspace is found, so a second name can be told apart from a half-typed one', () => {
+    expect(namedWorkspaces('@koloft fix it, and @Koloft-Site too', items)).toEqual([
+      { start: 0, end: 7, wsPath: `${HOME}/koloft` },
+      { start: 20, end: 32, wsPath: `${HOME}/koloft-site` }
+    ])
+    expect(namedWorkspaces('@koloft fix @kol', items)).toHaveLength(1)
   })
 })

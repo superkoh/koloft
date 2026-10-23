@@ -5080,7 +5080,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.app.version, () => app.getVersion())
   ipcMain.handle(CH.settings.set, (_e, patch) => commitSettings(sanitizeSettingsPatch(patch)))
 
-  ipcMain.handle(CH.assist.route, async (_e, id: unknown, message: unknown, pinned: unknown) => {
+  ipcMain.handle(CH.assist.route, async (_e, id: unknown, message: unknown) => {
     if (typeof id !== 'number' || typeof message !== 'string' || !workspaceMgr) return null
     const mgr = workspaceMgr
     const run = new AbortController()
@@ -5089,8 +5089,7 @@ function registerIpc(): void {
       return await routeSession(
         { rows: projectRows, worktrees: (p) => mgr.worktrees(p), assist },
         message,
-        run.signal,
-        typeof pinned === 'string' ? pinned : undefined
+        run.signal
       )
     } finally {
       assistRuns.delete(id)

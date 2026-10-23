@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   distinctName,
   parseRoute,
-  routeInto,
   routeJob,
-  type RouteWorkspace,
-  type SessionRoute
+  type RouteWorkspace
 } from '../../src/shared/sessionRoute'
 
 const LIST: RouteWorkspace[] = [
@@ -60,42 +58,6 @@ describe('routeJob: what Koloft Assist is told', () => {
     expect(prompt).toContain('settings-accounts | Settings ▸ Accounts | 账号, 账户, token')
     expect(prompt).not.toContain('restart-session')
     expect(prompt).not.toContain('scheduled-jobs')
-  })
-})
-
-describe('routeInto: a workspace the owner named with @ always wins', () => {
-  const said = { title: 'Fix login', why: 'rule 6' }
-  const app = '/Users/me/code/app'
-
-  it('keeps an answer that already stays in that workspace: new work, a word to its sessions, or one of its sessions', () => {
-    const kept: SessionRoute[] = [
-      { ...said, kind: 'workspace', path: app, worktree: { kind: 'new', name: 'fix-login' } },
-      { ...said, kind: 'assist', path: app },
-      { ...said, kind: 'session', path: app, id: 'sess-safari' }
-    ]
-    for (const route of kept) expect(routeInto(route, app)).toBe(route)
-  })
-
-  it('turns any other answer, or none, into new work in that workspace, keeping the title', () => {
-    const elsewhere: (SessionRoute | null)[] = [
-      { ...said, kind: 'koloft' },
-      { ...said, kind: 'project', machine: 'local', folder: 'x' },
-      { ...said, kind: 'assist', path: '/Users/me/notes' }
-    ]
-    for (const route of elsewhere)
-      expect(routeInto(route, app)).toEqual({
-        ...said,
-        kind: 'workspace',
-        path: app,
-        worktree: null
-      })
-    expect(routeInto(null, app)).toEqual({
-      title: '',
-      why: '',
-      kind: 'workspace',
-      path: app,
-      worktree: null
-    })
   })
 })
 
