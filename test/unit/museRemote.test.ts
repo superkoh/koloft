@@ -139,16 +139,19 @@ describe.skipIf(!PYTHON_WITH_PTY)(
           { t: 'bound', sessionId: SID },
           {
             t: 'log',
+            seq: expect.any(Number),
             payloadType: 'session.name.changed',
             payload: { new_name: 'renamed', source: 'user' }
           },
           {
             t: 'log',
+            seq: expect.any(Number),
             payloadType: 'runtime.command.accepted',
             payload: { command_kind: 'context.compact.manual' }
           },
           {
             t: 'log',
+            seq: expect.any(Number),
             payloadType: 'context.compact.manual.outcome',
             payload: { terminal_outcome: 'compacted' }
           },

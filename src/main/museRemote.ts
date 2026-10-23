@@ -15,14 +15,7 @@ export const RUN_POINTER_SUFFIX = '.muse.run'
 const pyBytes = (s: string): string =>
   "b'" + [...s].map((c) => (c === '\x1b' ? '\\x1b' : c === '\\' ? '\\\\' : c)).join('') + "'"
 
-// MUSE§2 MUSE§9
-const LOG_MARKS_KOLOFT_READS = [
-  'session.name.changed',
-  'inbox_item_queued',
-  'context.compact.manual'
-]
-
-// MUSE§3 MUSE§4 MUSE§17 PLATFORM§35
+// MUSE§2 MUSE§3 MUSE§4 MUSE§9 MUSE§17 PLATFORM§35
 export const MUSE_WRAP_PY = `#!/usr/bin/env python3
 import fcntl, json, os, pty, re, select, signal, subprocess, sys, termios, time, tty
 
@@ -32,7 +25,7 @@ FRAME = re.compile(b'\\x1b\\\\]7501;([^\\x07\\x1b]*)(?:\\x07|\\x1b\\\\\\\\)')
 LONGEST_PARTIAL_FRAME = 4096
 POLL_SECONDS = 0.5
 DAY_MS = 86400000
-LOG_MARKS = (${LOG_MARKS_KOLOFT_READS.map(pyBytes).join(', ')})
+LOG_MARKS = (b'session.name.changed', b'inbox_item_queued', b'context.compact.manual')
 
 hook_dir, run_id = sys.argv[1], sys.argv[2]
 args = sys.argv[3:]
@@ -190,7 +183,7 @@ def forward(line):
     except ValueError:
         return
     if isinstance(record, dict) and isinstance(record.get('payload_type'), str):
-        put({'t': 'log', 'payloadType': record['payload_type'], 'payload': record.get('payload')})
+        put({'t': 'log', 'seq': seq, 'payloadType': record['payload_type'], 'payload': record.get('payload')})
 
 
 def follow_log():
