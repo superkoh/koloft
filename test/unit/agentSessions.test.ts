@@ -585,6 +585,29 @@ describe('koloft session new', () => {
     expect(launched[0].firstPrompt).toContain('koloft session send me-session')
   })
 
+  it('--workspace starts a Codex, Muse or Antigravity sibling in a remote workspace too, reached by its tab id; an Antigravity one there takes no --name', async () => {
+    const REMOTE = 'ssh://box/srv/api'
+    const { verb, launched } = harness([session('me', 'claude')])
+    for (const backend of ['codex', 'muse', 'agy']) {
+      const reply = await verb(
+        ['new', '--backend', backend, '--workspace', REMOTE, '--', 'go'],
+        from('me')
+      )
+      expect(reply.exit).toBe(0)
+      expect(reply.text).toContain('koloft session send new-tab')
+    }
+    const named = await verb(
+      ['new', '--backend', 'agy', '--name', 'x', '--workspace', REMOTE, '--', 'go'],
+      from('me')
+    )
+    expect(named.exit).toBe(EXIT_USAGE)
+    expect(launched.map((l) => [l.kind, l.cwd])).toEqual([
+      ['codex', REMOTE],
+      ['muse', REMOTE],
+      ['agy', REMOTE]
+    ])
+  })
+
   it('--workspace refuses, starting nothing, a name not in the sidebar (listing what is), a name two workspaces share and a missing folder', async () => {
     const { verb, launched } = harness([session('me', 'claude')])
     const unknown = await verb(['new', '--workspace', 'nope', '--', 'go'], from('me'))
@@ -698,6 +721,8 @@ describe('koloft session send', () => {
         treeRoot: REMOTE
       })
     ])
+    const listed = await verb(['list', '--workspace', REMOTE], from('cc'))
+    expect(listed.text).toContain('Far planner · Claude · idle · id: far-session')
     expect((await verb(['send', 'Far planner', 'hi'], from('cc'))).exit).toBe(0)
     expect((await verb(['send', 'Planner', 'Done'], from('far'))).exit).toBe(0)
     expect(pressed.map((p) => p.tabId)).toEqual(['far'])

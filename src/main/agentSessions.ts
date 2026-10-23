@@ -138,18 +138,32 @@ function starterPart(starter: string | undefined): string[] {
   return starter ? [`started by: ${starter}`] : []
 }
 
+// CC§13
+function sendMessageReaches(
+  from: SessionInfo,
+  to: BackendId,
+  toMachine: string | undefined
+): boolean {
+  return (
+    reachedBySendMessage(from.backendId) &&
+    reachedBySendMessage(to) &&
+    from.remote?.host === toMachine
+  )
+}
+
 function openSessionLines(
   sessions: ListedSession[],
-  callerTabId: string,
+  me: SessionInfo,
   asking: (tabId: string) => boolean
 ): string[] {
   return sessions.map(({ info, peerName, starter }) => {
     const parts = [
-      `${info.title}${info.tabId === callerTabId ? ' (you)' : ''}`,
+      `${info.title}${info.tabId === me.tabId ? ' (you)' : ''}`,
       BACKEND_LABEL[info.backendId],
       stateWords(info, asking)
     ]
-    if (!reachedBySendMessage(info.backendId)) parts.push(`id: ${idToReach(info)}`)
+    if (!reachedBySendMessage(info.backendId) || info.remote?.host !== me.remote?.host)
+      parts.push(`id: ${idToReach(info)}`)
     if (peerName) parts.push(`name: ${peerName}`)
     parts.push(...starterPart(starter))
     const transcript = info.details?.claude?.jsonlPath
@@ -235,30 +249,6 @@ function formatTurns(turns: Turn[]): string {
     .join('\n\n')
 }
 
-interface OnAMachine {
-  backendId: BackendId
-  machine: string | undefined
-}
-
-const machineOfSession = (s: SessionInfo): OnAMachine => ({
-  backendId: s.backendId,
-  machine: s.remote?.host
-})
-
-const machineOfWorkspace = (backendId: BackendId, workspace: string): OnAMachine => ({
-  backendId,
-  machine: parseRemoteKey(workspace)?.host
-})
-
-// CC§13
-function sendMessageReaches(from: OnAMachine, to: OnAMachine): boolean {
-  return (
-    reachedBySendMessage(from.backendId) &&
-    reachedBySendMessage(to.backendId) &&
-    from.machine === to.machine
-  )
-}
-
 export function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<PinnedWorkspace> {
   const hits = pinned.filter(
     (w) => w.path === ref || workspaceLabel(w.path) === ref || basename(w.path) === ref
@@ -284,7 +274,7 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'a Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names. This command reaches Codex, Muse and Antigravity sessions, and the session or Assist that started you.'
+  'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex, Muse and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.'
 
 function matchRef<T>(
   items: T[],
@@ -317,7 +307,7 @@ export function findSiblingTarget(
 ): Parsed<SessionInfo> {
   const hit = matchOpen(sessions, ref)
   if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
-  return hit.ok && sendMessageReaches(machineOfSession(from), machineOfSession(hit.value))
+  return hit.ok && sendMessageReaches(from, hit.value.backendId, hit.value.remote?.host)
     ? fail(CLAUDE_USES_SEND_MESSAGE)
     : hit
 }
@@ -509,7 +499,7 @@ async function listSessions(
   const open = new Set(sessions.map((s) => s.sessionId))
   const notOpen = everyRow.filter((p) => p.workspace === workspace && !open.has(p.row.id))
   const lines = [
-    ...openSessionLines(listed, me.tabId, d.asking),
+    ...openSessionLines(listed, me, d.asking),
     ...queuedLines(d, me, workspace),
     ...rowLines(notOpen, [], placedStarters(d, everyRow, notOpen, me), false, Date.now(), d.asking)
   ]
@@ -542,10 +532,7 @@ async function startSibling(
   if (!launched) return refused('koloft session new: Koloft could not start the session.')
   const { tabId, name } = launched
   const unnamed = aSessionOf(backend)
-  const bySendMessage = sendMessageReaches(
-    machineOfSession(me),
-    machineOfWorkspace(backend, workspace)
-  )
+  const bySendMessage = sendMessageReaches(me, backend, parseRemoteKey(workspace)?.host)
   if (d.waiting.list().some((q) => q.tabId === tabId))
     return answered(
       `Queued ${name ? `session "${name}"` : unnamed} (${tabId}): Koloft starts it in turn, once this machine has room. Do not start it again. "koloft session list" shows it as queued; ${
@@ -1204,10 +1191,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       const queued = queuedStartedBy(d, caller.session, ref)
       if (
         queued &&
-        sendMessageReaches(
-          machineOfSession(caller.session),
-          machineOfWorkspace(queued.kind, queued.cwd)
-        )
+        sendMessageReaches(caller.session, queued.kind, parseRemoteKey(queued.cwd)?.host)
       )
         return refused(
           `koloft session send: "${queued.title}" is still queued for the machine; once it starts, talk to it with SendMessage to "${queued.title}".`

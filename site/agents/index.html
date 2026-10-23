@@ -219,8 +219,10 @@
           <code class="nowrap">--workspace &lt;folder&gt;</code> to reach another folder in the
           sidebar, by its name or its full path. A session started into another folder this way sits
           at the top of that folder's list (see
-          <a href="../sessions/#session-tree">sessions an agent starts</a>). A new session cannot be
-          started in a remote folder this way.
+          <a href="../sessions/#session-tree">sessions an agent starts</a>). The folder may be a
+          <a href="../remote/">remote folder</a>: the session then runs on that machine, and a
+          Claude Code session there is reached with <code class="nowrap">session send</code>, since
+          Claude's own messages between sessions stay on one machine.
         </p>
         <p>
           With "Let agents use Koloft" on, every session is also told which helper fits which job.
