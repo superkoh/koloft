@@ -315,6 +315,27 @@ export class GithubLookup {
     return failingChecksText(gh, repo, pr)
   }
 
+  // PLATFORM§32
+  async mergedHeads(root: string, branch: string): Promise<string[] | null> {
+    const repo = await this.repoFor(root)
+    const gh = this.ghFor(root)
+    if (!repo || !gh) return null
+    const r = await gh([
+      'pr',
+      'list',
+      '--repo',
+      slug(repo),
+      '--state',
+      'merged',
+      '--head',
+      branch,
+      '--json',
+      'headRefOid'
+    ])
+    const prs = r.code === 0 ? ghJsonArray(r.stdout) : null
+    return prs && prs.flatMap((p) => (typeof p?.headRefOid === 'string' ? [p.headRefOid] : []))
+  }
+
   private async repoFor(root: string): Promise<GithubRepo | null> {
     if (!this.fixture) return this.repoOf(root, false)
     const f = this.fixture[root]

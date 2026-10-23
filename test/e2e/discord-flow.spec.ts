@@ -329,7 +329,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('the conductor’s own question is asked in the channel as a card with its options and a button each; a button press answers it and the card then says what was picked, and a number sent back answers the next', async ({
+  test('the conductor’s own question is asked in the channel as a card with its options and a button each; a button press answers it and the card then says what was picked, and a number sent back answers the next, whose card then says that answer and loses its buttons', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -352,11 +352,20 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
 
       fake.say(OWNER, '/ask Which size?|Small|Large')
       await expect.poll(() => said(fake).join('\n')).toContain('Which size?')
+      const sizeCard = fake.posted.find((p) => p.content.includes('Which size?'))!
+      expect(sizeCard.buttons?.length).toBe(2)
       const answer = fake.say(OWNER, '2')
       await expect.poll(() => said(fake)).toContain('Picked: Large')
       await expect
         .poll(() => fake.reactions)
         .toContainEqual({ messageId: answer, emoji: '✅', on: true })
+      await expect
+        .poll(() =>
+          fake.edits
+            .filter((e) => e.id === sizeCard.id)
+            .map((e) => ({ answered: e.content.endsWith('-# ✅ Answered: 2'), buttons: e.buttons }))
+        )
+        .toEqual([{ answered: true, buttons: [] }])
     } finally {
       await quitAndClose(app)
       await fake.close()

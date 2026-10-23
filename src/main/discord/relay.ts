@@ -18,6 +18,7 @@ import {
 import { splitForDiscord } from './split'
 import { toDiscordMarkdown } from './markdown'
 import { CONDUCTOR_ACCENT, type Card } from './cards'
+import type { PlacedAsk } from './buttons'
 import { didNotRun, slashCommandProblem, waitingForAnswer } from '@shared/slashCommands'
 import type { AskPayload } from '@shared/sessionEvent'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
@@ -106,6 +107,8 @@ export interface RelayDeps {
   channels(): CaughtUpChannel[]
   butlerChannelOf(tabId: string): string | undefined
   withButtons(tabId: string, view: DialogView, card: Card): Card
+  askPlaced(card: Card, at: PlacedAsk): void
+  answered(tabId: string, reply: string): void
   backendOf(tabId: string): BackendId | undefined
   boundKey(tabId: string): string | undefined
   status(tabId: string): SessionStatus | undefined
@@ -388,6 +391,16 @@ export class DiscordRelay {
     return view.choices.length ? this.d.withButtons(tab, view, card) : card
   }
 
+  private postAsk(channelId: string, card: Card): void {
+    void this.d.link.card(channelId, card).then(
+      (ids) => {
+        const messageId = ids.at(-1)
+        if (messageId && card.buttons?.length) this.d.askPlaced(card, { channelId, messageId })
+      },
+      () => undefined
+    )
+  }
+
   onAsk(tab: string, payload: AskPayload, hook?: string): void {
     const raw = JSON.stringify(payload)
     const before = this.asks.get(tab)
@@ -397,7 +410,8 @@ export class DiscordRelay {
     if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
     this.d.asksChanged(tab)
     const channelId = this.d.butlerChannelOf(tab)
-    if (channelId) this.card(channelId, this.askCard(tab, claudeDialog(payload), askHow(payload)))
+    if (channelId)
+      this.postAsk(channelId, this.askCard(tab, claudeDialog(payload), askHow(payload)))
   }
 
   dialog(tab: string): DialogView | undefined {
@@ -431,6 +445,12 @@ export class DiscordRelay {
   }
 
   async answerSession(tab: string, reply: string): Promise<string | undefined> {
+    const error = await this.answerNow(tab, reply)
+    if (error === undefined) this.d.answered(tab, reply)
+    return error
+  }
+
+  private async answerNow(tab: string, reply: string): Promise<string | undefined> {
     const backend = this.d.backendOf(tab)
     const optionKeys = optionKeysOf(backend)
     if (backend && optionKeys) {
@@ -479,7 +499,7 @@ export class DiscordRelay {
     const how = question ? PICK_ONE_OPTION : CODEX_NEEDS_YES_OR_NO
     const label = BACKEND_LABEL[this.d.backendOf(tab) ?? 'codex']
     const shown = question ? view.text : `${label} asks to run: ${view.text || 'a command'}`
-    this.card(channelId, this.askCard(tab, view, how, shown))
+    this.postAsk(channelId, this.askCard(tab, view, how, shown))
   }
 
   // CC§14
@@ -492,6 +512,7 @@ export class DiscordRelay {
     const ask = this.openAsk(tab)
     if (ask?.hook) {
       this.answer(tab, hookAnswer(ask.payload, m.content))
+      this.d.answered(tab, m.content)
       return true
     }
     this.asks.delete(tab)
@@ -507,6 +528,7 @@ export class DiscordRelay {
       if (inPlace === false) return this.answerOpenByKeys(tab, m, open, optionKeys)
       this.codexAsks.delete(tab)
       if (inPlace) this.say(m.channelId, inPlace, m.id)
+      else this.d.answered(tab, m.content)
     })
     return true
   }
@@ -523,7 +545,9 @@ export class DiscordRelay {
       this.say(m.channelId, question ? PICK_ONE_OPTION : CODEX_NEEDS_YES_OR_NO, m.id)
       return
     }
-    void this.press(tab, question ? optionKeys(key) : [key])
+    void this.press(tab, question ? optionKeys(key) : [key]).then(() =>
+      this.d.answered(tab, m.content)
+    )
   }
 
   forget(tab: string): void {
