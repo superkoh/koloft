@@ -398,6 +398,38 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
+  test('a Codex helper the butler starts in its own folder asks its question in the butler’s channel too, and the owner’s number answers it', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app } = await connected(env, fake)
+    try {
+      fake.say(OWNER, '/koloft session new --backend codex --name Tidy -- please ask me')
+      const card = "❓ **Tidy (Alfred's helper)** is waiting for you.\nWhich colour do you prefer?"
+      await expect
+        .poll(() => said(fake).some((p) => p.startsWith(card)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
+      fake.say(OWNER, '2')
+      await expect
+        .poll(
+          () =>
+            codexWire(env)
+              .filter((w) => w.direction === 'client')
+              .map((w) => w.frame.result as { answers?: unknown } | undefined)
+              .filter((r) => r?.answers),
+          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+        )
+        .toEqual([{ answers: { colour: { answers: ['Green'] } } }])
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
   test('the session threads an older Koloft opened under the butler’s channel are archived on the first connect, once; the owner writing or running a command in one is pointed to the butler’s channel, and nothing reaches any session', async ({
     env
   }) => {

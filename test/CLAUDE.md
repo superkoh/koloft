@@ -332,9 +332,9 @@ hand-offs in `<home>/external-opens.txt`. Beyond those, its terminal draws with 
 its symbols.
 
 The owner's step goes through AskUserQuestion, one case at a time: the steps inside
-the question, the outcomes as options. Only the butler's own question reaches the
-owner's Discord, as a card in its channel (discord-flow); a session's question shows
-only at the Mac. The card carries text only, so name what to look at, or have the
+the question, the outcomes as options. Only the questions of the butler and of the
+helpers in its folder reach the owner's Discord, as cards in its channel
+(discord-flow); any other session's question shows only at the Mac. The card carries text only, so name what to look at, or have the
 butler send a picture first (`koloft discord send` or `koloft discord shot`). After the
 owner answers, check their step in a log or file yourself.
 
