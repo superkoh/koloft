@@ -121,6 +121,8 @@ const sourceKinds = ['cli', 'vscode', 'appServer']
 
 // CODEX§15
 const rolloutFiles = (listedPath: string): string[] => [listedPath, listedPath + '.zst']
+const rolloutOnThisMac = (listedPath: string): boolean =>
+  rolloutFiles(listedPath).some((f) => fs.existsSync(f))
 
 async function* everyPage(
   rpc: CodexRpc,
@@ -609,17 +611,19 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     if (this.archivedIds.has(key)) return false
     const machine = hostOfKey(key)
     const listed = machine ? undefined : this.history.get(key)?.path
-    if (listed && rolloutFiles(listed).some((f) => fs.existsSync(f))) return true
+    if (listed && rolloutOnThisMac(listed)) return true
     const id = this.nativeId(key)
     const file = await this.withRpcFor(key, async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       return userThread(reply.thread)?.path
     })
     if (!file) return false
-    if (!machine) return rolloutFiles(file).some((f) => fs.existsSync(f))
-    for (const f of rolloutFiles(file))
-      if (await this.machineDeps().fileExists(keyedOn(machine, f)!)) return true
-    return false
+    if (!machine) return rolloutOnThisMac(file)
+    const m = this.machineDeps()
+    const found = await Promise.all(
+      rolloutFiles(file).map((f) => m.fileExists(keyedOn(machine, f)!))
+    )
+    return found.includes(true)
   }
 
   openApproval(tabId: string): CodexApproval | undefined {
