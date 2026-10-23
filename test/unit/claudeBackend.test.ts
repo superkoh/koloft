@@ -14,6 +14,7 @@ vi.mock('electron', async () => {
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
 import { answered, replyJson } from '../../src/main/agentRequests'
 import { mirrorHookDir } from '../../src/main/remote/paths'
+import { START_IN_STATUS_LOG } from '../../src/main/hooks'
 
 function fakeTracker(): ClaudeBackendDeps['tracker'] {
   const tracked = new Map<string, { sessionId: string }>()
@@ -37,6 +38,8 @@ function backendWithDirs(): {
   backend: ClaudeBackend
   events: unknown[]
   writeHookStart(): void
+  writeTurn(): void
+  writePrompt(): void
   writeShimRegistration(): void
   watch(): void
 } {
@@ -52,14 +55,25 @@ function backendWithDirs(): {
     workspaces: () => null,
     events: (id: string, event: unknown) => events.push([id, event])
   } as unknown as ClaudeBackendDeps)
+  const statusLog = path.join(hookRegDir, `${tabId}.status.jsonl`)
+  const logLine = (report: object): void =>
+    fs.appendFileSync(statusLog, `${JSON.stringify({ tabId, sessionId, ...report })}\n`)
   return {
     backend,
     events,
-    writeHookStart: () =>
+    writeHookStart: () => {
+      const note = { event: 'start', source: 'startup', cwd: root, [START_IN_STATUS_LOG]: true }
       fs.writeFileSync(
         path.join(hookRegDir, `${tabId}.json`),
-        JSON.stringify({ tabId, event: 'start', source: 'startup', sessionId, cwd: root })
-      ),
+        JSON.stringify({ tabId, sessionId, ...note })
+      )
+      logLine(note)
+    },
+    writeTurn: () => {
+      logLine({ event: 'prompt' })
+      logLine({ event: 'stop' })
+    },
+    writePrompt: () => logLine({ event: 'prompt' }),
     writeShimRegistration: () =>
       fs.writeFileSync(
         path.join(shimRegDir, `${sessionId}.json`),
@@ -82,12 +96,15 @@ const CODEX_TABS = { 'pty-cx': 'devbox', 'pty-cy': 'otherbox' } as Record<string
 
 function machineBackend(): {
   boundTo: Map<string, string>
+  binds: [string, string][]
   answeredFor: string[]
   sent: [string, string, string][]
   drop(name: string, body: unknown): void
+  appendLog(name: string, lines: unknown[]): void
 } {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-backend-machine-'))
   const boundTo = new Map(Object.keys(MACHINE_TABS).map((id) => [id, `sid-of-${id}`]))
+  const binds: [string, string][] = []
   const answeredFor: string[] = []
   const sent: [string, string, string][] = []
   const backend = new ClaudeBackend({
@@ -103,7 +120,10 @@ function machineBackend(): {
     },
     tracker: {
       infoOf: (id: string) => (boundTo.has(id) ? { sessionId: boundTo.get(id) } : undefined),
-      bindSession: (id: string, _transcript: string, sid: string) => void boundTo.set(id, sid),
+      bindSession: (id: string, _transcript: string, sid: string) => {
+        boundTo.set(id, sid)
+        binds.push([id, sid])
+      },
       remoteOf: (id: string) => MACHINE_TABS[id],
       setRemoteTmuxName: () => {},
       list: () => Object.keys(MACHINE_TABS).map((tabId) => ({ tabId, alive: true }))
@@ -127,9 +147,15 @@ function machineBackend(): {
   const mirrorDir = mirrorHookDir(userData, 'devbox')
   return {
     boundTo,
+    binds,
     answeredFor,
     sent,
-    drop: (name, body) => fs.writeFileSync(path.join(mirrorDir, name), JSON.stringify(body))
+    drop: (name, body) => fs.writeFileSync(path.join(mirrorDir, name), JSON.stringify(body)),
+    appendLog: (name, lines) =>
+      fs.appendFileSync(
+        path.join(mirrorDir, name),
+        lines.map((l) => `${JSON.stringify(l)}\n`).join('')
+      )
   }
 }
 
@@ -157,6 +183,23 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
 
     expect(m.sent).toEqual([['devbox', 'r1', replyJson(answered('for pty-a'))]])
     expect(m.boundTo.get('pty-a')).toBe('sid-of-pty-a')
+  })
+
+  // CC§1
+  it("does not bind a tab again to the session it already runs when a mirrored status log is read from its start again, as after a restart, yet still follows that session's /clear", async () => {
+    const m = machineBackend()
+    m.appendLog('pty-gone.status.jsonl', [
+      {
+        tabId: 'pty-gone',
+        event: 'start',
+        source: 'startup',
+        sessionId: 'sid-of-pty-a',
+        tmux: 'k-sa'
+      },
+      { tabId: 'pty-gone', event: 'start', source: 'clear', sessionId: 'sid-new', tmux: 'k-sa' }
+    ])
+    await vi.waitFor(() => expect(m.boundTo.get('pty-a')).toBe('sid-new'), { timeout: 5000 })
+    expect(m.binds).toEqual([['pty-a', 'sid-new']])
   })
 
   it('finds the calling tab by its tmux session before its tab id, which a Koloft restart can hand to another tab, and leaves a request from no tab of its own on that machine unanswered, for the Koloft that owns it', async () => {
@@ -235,6 +278,8 @@ describe('ClaudeBackend: waiting for a remote session to end before its folder i
   })
 })
 
+const PAST_A_STATUS_LOG_POLL_MS = 1500
+
 describe('ClaudeBackend: a local tab binds once both of its start notes are on disk', () => {
   it("binds the session when claude's SessionStart is read before the shim's registration of the tab", async () => {
     const t = backendWithDirs()
@@ -244,6 +289,25 @@ describe('ClaudeBackend: a local tab binds once both of its start notes are on d
     expect(t.events).toEqual([])
     t.writeShimRegistration()
     await vi.waitFor(() => expect(t.events).toEqual([[tabId, { type: 'bound', key: sessionId }]]))
+  })
+
+  // CC§1
+  it('applies a start written to both files once, and a first turn read before the tab is registered only after it, in the order claude wrote them', async () => {
+    const t = backendWithDirs()
+    t.watch()
+    t.writeHookStart()
+    t.writeTurn()
+    await new Promise((r) => setTimeout(r, PAST_A_STATUS_LOG_POLL_MS))
+    expect(t.events).toEqual([])
+    t.writeShimRegistration()
+    const inOrder = [
+      [tabId, { type: 'bound', key: sessionId }],
+      [tabId, { type: 'prompt' }],
+      [tabId, { type: 'stop', reported: undefined }]
+    ]
+    await vi.waitFor(() => expect(t.events).toEqual(inOrder))
+    t.writePrompt()
+    await vi.waitFor(() => expect(t.events).toEqual([...inOrder, [tabId, { type: 'prompt' }]]))
   })
 
   // PLATFORM§28

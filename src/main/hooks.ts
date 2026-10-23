@@ -219,6 +219,13 @@ export function seedHandedOverOwnerWords(said: string, ownerWords: string): void
     fs.writeFileSync(said + suffix, text)
 }
 
+export const START_IN_STATUS_LOG = 'inStatusLog'
+export const STATUS_LOG_SUFFIX = '.status.jsonl'
+
+export function statusLogOf(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}${STATUS_LOG_SUFFIX}`)
+}
+
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
 reg="$1"; tab="$2"; event="$3"
@@ -228,6 +235,7 @@ reg="$1"; tab="$2"; event="$3"
 [ "$event" = "ask" ] && { [ ! -f "$reg/$tab.answerable" ] || [ -f "$reg/$tab.typed" ]; } && event="asked"
 said="$reg/$tab.said"
 notice="$reg/$tab${NOTICE_SUFFIX}"
+log="$reg/$tab${STATUS_LOG_SUFFIX}"
 ${LANGUAGE_FNS}
 ${REMIND_REPLY_LANGUAGE_FN}
 if [ "$event" = "tool" ]; then
@@ -269,10 +277,15 @@ case "$event" in
     if [ "$event" = "start" ] && [ "$KOLOFT_TMUX_FOLLOW" = "1" ] && [ -n "$TMUX" ] && [ -n "$sid" ]; then
       tmux rename-session -t "$TMUX_PANE" "k-$sid" 2>/dev/null
     fi
-    printf '{"tabId":"%s","event":"%s","sessionId":"%s","transcriptPath":"%s","cwd":"%s","reason":"%s","source":"%s","account":"%s","ccVersion":"%s","tmux":"%s"}\\n' "$tab" "$event" "$sid" "$tp" "$cwd" "$reason" "$src" "$acct" "$ver" "$tm" > "$reg/$tab.json"
+    logged=""
+    [ "$event" = "start" ] && logged=',"${START_IN_STATUS_LOG}":true'
+    note="$(printf '{"tabId":"%s","event":"%s","sessionId":"%s","transcriptPath":"%s","cwd":"%s","reason":"%s","source":"%s","account":"%s","ccVersion":"%s","tmux":"%s"%s}' "$tab" "$event" "$sid" "$tp" "$cwd" "$reason" "$src" "$acct" "$ver" "$tm" "$logged")"
+    printf '%s\\n' "$note" > "$reg/$tab.json"
+    # CC§1
+    [ "$event" = "start" ] && printf '%s\\n' "$note" >> "$log"
     # CC§1
     if [ "$event" = "start" ] && [ "$src" = "compact" ]; then
-      printf '{"tabId":"%s","event":"compacted","sessionId":"%s","tmux":"%s"}\\n' "$tab" "$sid" "$tm" >> "$reg/$tab.status.jsonl"
+      printf '{"tabId":"%s","event":"compacted","sessionId":"%s","tmux":"%s"}\\n' "$tab" "$sid" "$tm" >> "$log"
     fi
     # CC§13
     if [ "$event" = "start" ] && [ -f "$reg/$tab.conductor" ]; then cat "$reg/$tab.conductor"; fi
@@ -280,7 +293,7 @@ case "$event" in
   compacting)
     # CC§1
     trigger="$(printf '%s' "$input" | sed -n 's/.*"trigger"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | tr -d '"\\\\[:cntrl:]')"
-    printf '{"tabId":"%s","event":"compacting","sessionId":"%s","trigger":"%s","tmux":"%s"}\\n' "$tab" "$(session_id)" "$trigger" "$tm" >> "$reg/$tab.status.jsonl"
+    printf '{"tabId":"%s","event":"compacting","sessionId":"%s","trigger":"%s","tmux":"%s"}\\n' "$tab" "$(session_id)" "$trigger" "$tm" >> "$log"
     ;;
   ask)
     # CC§14
@@ -294,7 +307,7 @@ case "$event" in
     ;;
   asked)
     # CC§14
-    printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$reg/$tab.status.jsonl"
+    printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$log"
     ;;
   posttool)
     # PLATFORM§36
@@ -368,7 +381,7 @@ case "$event" in
       *'"session_crons":[]'*) wake=',"wake":0' ;;
       *'"session_crons":['*) wake=',"wake":1' ;;
     esac
-    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
+    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$log"
     if [ "$event" = "prompt" ]; then
       # CC§13 CC§19 ADR-0028
       flag=""
@@ -621,7 +634,7 @@ export function writeTabHookSettings(
   conductor = false,
   holdWhileBusy = false
 ): string {
-  fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
+  fs.rmSync(statusLogOf(paths.regDir, tabId), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
   const settings = hookSettings(
     paths.hookScript,

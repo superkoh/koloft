@@ -121,18 +121,26 @@ describe('injected hook script', () => {
   })
 
   // CC§1
-  it('a compaction starts and ends in the status log, in order, since the start drop is deduped on a mirror', () => {
+  it("every start and compaction lands in the status log beside the turns, in the order they happened, so a start is never applied after its session's first turn", () => {
     fire('tabK', 'compacting', { session_id: 's1', trigger: 'manual' })
     fire('tabK', 'start', { session_id: 's1', source: 'compact' })
     fire('tabK', 'start', { session_id: 's2', source: 'clear' })
+    fire('tabK', 'prompt', { session_id: 's2' })
     fire('tabK', 'compacting', { session_id: 's2', trigger: 'auto' })
     fire('tabK', 'start', { session_id: 's2', source: 'compact' })
-    expect(readStatusLog('tabK').map((r) => [r.event, r.sessionId, r.trigger])).toEqual([
-      ['compacting', 's1', 'manual'],
-      ['compacted', 's1', undefined],
-      ['compacting', 's2', 'auto'],
-      ['compacted', 's2', undefined]
-    ])
+    expect(readStatusLog('tabK').map((r) => [r.event, r.sessionId, r.source ?? r.trigger])).toEqual(
+      [
+        ['compacting', 's1', 'manual'],
+        ['start', 's1', 'compact'],
+        ['compacted', 's1', undefined],
+        ['start', 's2', 'clear'],
+        ['prompt', 's2', undefined],
+        ['compacting', 's2', 'auto'],
+        ['start', 's2', 'compact'],
+        ['compacted', 's2', undefined]
+      ]
+    )
+    expect(readReg('tabK.json')).toEqual(readStatusLog('tabK')[6])
   })
 
   it('every session gets the PreCompact hook', () => {
@@ -186,7 +194,7 @@ describe('injected hook script', () => {
         TMUX_PANE: '%3'
       }
     )
-    expect(readStatusLog('tabT2')[0]).toMatchObject({ event: 'stop', tmux: 'k-sess-old' })
+    expect(readStatusLog('tabT2')[1]).toMatchObject({ event: 'stop', tmux: 'k-sess-old' })
     fs.rmSync(path.join(stubBin, 'tmux'), { force: true })
   })
 
