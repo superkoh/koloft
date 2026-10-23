@@ -2719,6 +2719,7 @@ app.whenReady().then(() => {
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+      skipPermissions: () => loadSettings().skipPermissions,
       replyLanguageScript: hookPaths.codexReplyLanguage,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),

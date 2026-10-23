@@ -713,7 +713,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       ...(agent && !conductor ? [koloftPrompt('codex')] : []),
       ...(role ? [role] : [])
     ]
-    const permission = opts.permission ?? 'default'
+    // CODEX§11
+    const permission = opts.resumeSessionId
+      ? (opts.permission ?? 'default')
+      : this.permissionOf(opts)
     const permissions = PERMISSIONS[permission]
     const processOptions: CodexProcessOptions = {
       binary,

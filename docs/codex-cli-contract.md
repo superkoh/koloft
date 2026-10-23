@@ -460,9 +460,30 @@ takes `on-request` or `never`; `-s/--sandbox` takes `read-only`, `workspace-writ
 --full-auto` stopped with `error: unexpected argument '--full-auto' found`, while the
 same line with `-a never -s danger-full-access` or `-a on-request -s workspace-write` got
 past argument parsing (it then stopped at "stdin is not a terminal"). In section 3's
-run, `-a on-request -s read-only` led to an approval request. That `never` /
-`danger-full-access` and `workspace-write` take effect the same way was **not
-exercised against a model — inferred, not checked**.
+run, `-a on-request -s read-only` led to an approval request.
+
+**What `never` does with and without the sandbox, measured 2026-10-23 with `codex-cli
+0.162.0`.** A Node client on `codex app-server` (stdio) with a throwaway `CODEX_HOME`
+holding a copy of this Mac's login started one thread per setting (`thread/start` with
+`approvalPolicy` and `sandbox`) and asked a real model to run `touch` on a file outside
+the folder, then `curl https://example.com`; other threads asked for `git add` and
+`git commit` in a plain checkout and in a linked worktree under
+`<repo>/.claude/worktrees/`.
+
+- `never` / `workspace-write`: no `…/requestApproval` request at all. The `touch` failed
+  ("Operation not permitted", exit 1), the `curl` failed ("Could not resolve host", exit
+  6), and `git add` failed in both checkouts ("Unable to create '…/.git/index.lock' /
+  '…/.git/worktrees/<name>/index.lock': Operation not permitted", exit 128). The model
+  reported the failures and stopped; nothing offered a way past them. Adding the
+  repository's `.git` to `sandbox_workspace_write.writable_roots` on the app-server did
+  not lift the `git add` refusal in the linked worktree.
+- `never` / `danger-full-access`: no request; the `touch` and the `curl` (200) worked.
+- `on-request` / `workspace-write` (what a trusted folder gets with no flags): the `curl`
+  failure was followed by an `item/commandExecution/requestApproval` for an escalated
+  retry.
+
+So "skip permission prompts" can only mean `never` / `danger-full-access` for Codex:
+with the sandbox kept, a session that never asks cannot even commit.
 
 **Codex CLI 0.162.0 refuses the approval flags on a resume under `--remote`, and the
 app-server's own config sets them instead.** Measured 2026-10-09 with `codex-cli
