@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'util'
 import type { AskPayload } from '@shared/sessionEvent'
 import { fail, type Parsed } from '../agentRequests'
 import type { ToolCall } from '../sessionTracker'
+import { keysFor, typedPieces } from '../typeKeys'
 import type { CardButton } from './cards'
 
 interface Option {
@@ -12,6 +13,7 @@ interface Option {
 export interface Question {
   question: string
   options: Option[]
+  ownWords?: true
 }
 
 export interface CodexApproval {
@@ -220,10 +222,10 @@ function labelsOf(raw: unknown): Option[] {
 export function codexQuestionOf(method: string, p: Record<string, unknown>): Question | undefined {
   if (method === 'item/tool/requestUserInput') {
     const qs = Array.isArray(p.questions) ? p.questions : []
-    const q = (qs[0] ?? {}) as { question?: unknown; options?: unknown }
+    const q = (qs[0] ?? {}) as { question?: unknown; options?: unknown; isOther?: unknown }
     const options = labelsOf(q.options)
     return qs.length === 1 && typeof q.question === 'string' && options.length
-      ? { question: q.question, options }
+      ? { question: q.question, options, ...(q.isOther === true && { ownWords: true as const }) }
       : undefined
   }
   if (method !== 'mcpServer/elicitation/request' || p.mode !== 'form') return undefined
@@ -236,6 +238,16 @@ export function codexQuestionOf(method: string, p: Record<string, unknown>): Que
 }
 
 export const PICK_ONE_OPTION = 'Reply with the number or the name of one option.'
+export const PICK_OR_OWN_WORDS = 'Reply with the number of one option, or with your own answer.'
+export const NO_OWN_WORDS =
+  'Tap a button, or reply with the number of one option. To answer in your own words, answer it at the Mac.'
+
+// CODEX§20
+export function ownWordsKeys(q: Question, reply: string): string[] | undefined {
+  const text = reply.trim()
+  if (!q.ownWords || !text) return undefined
+  return [...keysFor([...q.options.map(() => 'Down'), 'Tab']), ...typedPieces(text), '\r']
+}
 
 // CODEX§20
 export function codexOptionKey(q: Question, reply: string): string | undefined {

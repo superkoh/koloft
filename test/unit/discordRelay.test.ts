@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import type { SessionStatus } from '../../src/shared/types'
 import type { DiscordMessage } from '../../src/main/discord/link'
-import type { CodexQuestion } from '../../src/main/discord/dialog'
+import { NO_OWN_WORDS, PICK_OR_OWN_WORDS, type CodexQuestion } from '../../src/main/discord/dialog'
 import {
   inputNotProbed,
   butlerAsks,
@@ -75,6 +75,8 @@ function setup(
       { channelId: CHANNEL, lastMessageId: bound.lastMessageId, seen: (id) => last.push(id) }
     ],
     butlerChannelOf: (t) => (t === TAB ? CHANNEL : undefined),
+    askChannelOf: (t) => (t === TAB ? CHANNEL : undefined),
+    helperTitle: () => undefined,
     withButtons: (_t, view, card) => ({
       ...card,
       buttons: view.choices.map((c, n) => ({ label: c.label, style: c.style, id: `b${n}` }))
@@ -508,7 +510,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
 
 describe('DiscordRelay: a Codex conductor’s own question', () => {
   // CODEX§20
-  it('is posted once with its options; the owner’s number or option name presses that digit while it is open, any other reply is asked again, and once it closes a message goes to the conductor as usual', async () => {
+  it('is posted once with its options; the owner’s number or option name presses that digit while it is open, any other reply is told to tap a button or answer at the Mac, and once it closes a message goes to the conductor as usual', async () => {
     let question: CodexQuestion | undefined = {
       id: 'q1',
       question: 'Which colour do you prefer?',
@@ -529,12 +531,7 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
     )
 
     relay.onMessage(message('501', OWNER, '3'))
-    await vi.waitFor(() =>
-      expect(posts.at(-1)).toEqual({
-        text: 'Reply with the number or the name of one option.',
-        replyTo: '501'
-      })
-    )
+    await vi.waitFor(() => expect(posts.at(-1)).toEqual({ text: NO_OWN_WORDS, replyTo: '501' }))
     relay.onMessage(message('502', OWNER, 'green'))
     await vi.waitFor(() => expect(writes.map((w) => w.data)).toEqual(['2']))
 
@@ -543,6 +540,90 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
     relay.onMessage(message('503', OWNER, '1'))
     await vi.waitFor(() => expect(queued).toEqual(['[Discord] 1']))
     expect(writes.map((w) => w.data)).toEqual(['2'])
+  })
+
+  // CODEX§20
+  it('one that offers "None of the above" takes the owner’s own words: Koloft moves to that option, opens its notes, types the words and sends them', async () => {
+    const question: CodexQuestion = {
+      id: 'q2',
+      question: 'Which colour do you prefer?',
+      options: [{ label: 'Red' }, { label: 'Green' }],
+      ownWords: true
+    }
+    const { relay, posts, writes } = setup({}, [], {
+      backendOf: () => 'codex',
+      pendingQuestion: () => question
+    })
+    relay.codexAsked(TAB, question)
+    await vi.waitFor(() =>
+      expect(posts.map((p) => p.text)).toEqual([expect.stringContaining(`-# ${PICK_OR_OWN_WORDS}`)])
+    )
+    relay.onMessage(message('601', OWNER, 'Purple with green stripes'))
+    await vi.waitFor(
+      () =>
+        expect(writes.map((w) => w.data)).toEqual([
+          '\x1b[B',
+          '\x1b[B',
+          '\t',
+          'Purple with green stripes',
+          '\r'
+        ]),
+      { timeout: 5000 }
+    )
+  })
+})
+
+describe('DiscordRelay: a helper the butler started in its own folder', () => {
+  const HELPER = 'pty-helper-1'
+
+  it('posts its question to the butler’s channel under its own name as the butler’s helper; what the owner types then answers the newest card still waiting, and a slash command still goes to the butler', async () => {
+    let helperQuestion: CodexQuestion | undefined = {
+      id: 'h1',
+      question: 'Merge #41?',
+      options: [{ label: 'Merge' }, { label: 'Leave it' }],
+      ownWords: true
+    }
+    const writesTo: { tab: string; data: string }[] = []
+    const { relay, posts, commands } = setup({}, [], {
+      askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined),
+      helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined),
+      backendOf: (t) => (t === HELPER ? 'codex' : 'claude'),
+      pendingQuestion: (t) => (t === HELPER ? helperQuestion : undefined),
+      type: async (t, keys) => void writesTo.push(...keys.map((data) => ({ tab: t, data })))
+    })
+    drop(hookFile(TAB, 'ask'), QUESTION)
+    relay.onAsk(TAB, QUESTION, HOOK)
+    relay.codexAsked(HELPER, helperQuestion)
+    await vi.waitFor(() => expect(posts).toHaveLength(2))
+    expect(posts[1].text).toContain(butlerAsks("Sort out to-dos (Assist's helper)"))
+
+    relay.onMessage(message('701', OWNER, '1'))
+    await vi.waitFor(() => expect(writesTo).toEqual([{ tab: HELPER, data: '1' }]))
+    expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(false)
+
+    helperQuestion = undefined
+    relay.onMessage(message('702', OWNER, 'B'))
+    await vi.waitFor(() => expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(true))
+    fs.rmSync(hookFile(TAB, 'ask'))
+
+    relay.onMessage(message('703', OWNER, '/compact'))
+    await vi.waitFor(() => expect(commands).toEqual(['/compact']))
+  })
+
+  it('a reply to Koloft’s own notice is not posted to Discord; the butler’s other replies are', () => {
+    const { relay, posts, conductor } = setup()
+    relay.tellQuietly(conductor, 'NOTICE about koloft todo')
+    relay.turnEnded(TAB, {
+      said: [{ who: 'owner', text: 'NOTICE about koloft todo', at: 1 }],
+      reply: 'Noted.',
+      at: 1
+    })
+    relay.turnEnded(TAB, {
+      said: [{ who: 'owner', text: '[Discord] hi', at: 2 }],
+      reply: 'Hello.',
+      at: 2
+    })
+    expect(posts.map((p) => p.text)).toEqual(['Hello.'])
   })
 })
 

@@ -4,6 +4,7 @@ import path from 'path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   parseNewSessionArgs,
+  sessionSays,
   sessionVerb,
   THAT_IS_YOU,
   workspaceVerb,
@@ -166,6 +167,9 @@ function harness(
       closed.push(target.sessionId)
     },
     isButler: (tabId) => !!conducting.scopes?.[tabId],
+    speaksForTheOwner: (tabId) =>
+      !!conducting.scopes?.[tabId] ||
+      sessions.find((s) => s.tabId === tabId)?.cwd === BUTLER_FOLDER,
     butlerFolder: () => BUTLER_FOLDER,
     butlerHelperRole: () => BUTLER_HELPER_ROLE,
     sidebar: () => conducting.sidebar ?? [],
@@ -1118,6 +1122,32 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     ])
     expect(queued).toEqual([
       { tabId: 'cx', text: ownerSays('check docs'), clientId: 'koloft-conductor-1' }
+    ])
+  })
+
+  it('a helper in the butler’s own folder passes the owner’s word on the way the butler does, to any session, a Claude one too; what it reports to the butler stays its own', async () => {
+    const helper = session('helper', 'claude', {
+      sessionId: 'helper-id',
+      title: 'Sort out to-dos',
+      cwd: BUTLER_FOLDER
+    })
+    const h = harness([...live, helper], {}, [], conducting())
+    h.startedSessions.started('helper', 'cond-id')
+    expect((await h.verb(['send', 'fix-login', 'merge it'], from('helper'))).exit).toBe(0)
+    expect((await h.verb(['send', 'cond-id', 'Done: 3 merged.'], from('helper'))).exit).toBe(0)
+    expect(h.lines).toEqual([
+      {
+        tabId: 'fix',
+        line: crossSessionLine('prompting', ownerSays('merge it'), 'koloft-session-1')
+      },
+      {
+        tabId: 'butler',
+        line: crossSessionLine(
+          'prompting',
+          sessionSays(helper, 'Done: 3 merged.'),
+          'koloft-session-2'
+        )
+      }
     ])
   })
 

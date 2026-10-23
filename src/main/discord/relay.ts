@@ -37,7 +37,10 @@ import {
   codexOptionKey,
   hookAnswer,
   isAskedCall,
+  NO_OWN_WORDS,
+  ownWordsKeys,
   PICK_ONE_OPTION,
+  PICK_OR_OWN_WORDS,
   type CodexApproval,
   type CodexQuestion,
   type DialogView
@@ -52,6 +55,7 @@ export const ASKS_WHAT_KOLOFT_CANNOT_SEE =
 export const inputNotProbed = (label: string): string =>
   `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. The butler can still answer this one by pressing its keys.`
 export const butlerAsks = (name: string): string => `❓ **${name}** is waiting for you.`
+export const helperOf = (helper: string, butler: string): string => `${helper} (${butler}'s helper)`
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
 const takesAnOption = (label: string): string =>
   `this ${label} question takes the number or the name of one option.`
@@ -105,6 +109,8 @@ export interface RelayDeps {
   destinationOf(channelId: string): Destination | undefined
   channels(): CaughtUpChannel[]
   butlerChannelOf(tabId: string): string | undefined
+  askChannelOf(tabId: string): string | undefined
+  helperTitle(tabId: string): string | undefined
   withButtons(tabId: string, view: DialogView, card: Card): Card
   backendOf(tabId: string): BackendId | undefined
   boundKey(tabId: string): string | undefined
@@ -147,6 +153,9 @@ export class DiscordRelay {
   private asks = new Map<string, { payload: AskPayload; hook?: string; raw: string }>()
   private askHooks = new Map<string, Set<string>>()
   private codexAsks = new Map<string, string | number>()
+  private cardOrder = new Map<string, number>()
+  private cards = 0
+  private quietReplies = new Set<string>()
 
   constructor(private d: RelayDeps) {}
 
@@ -179,8 +188,9 @@ export class DiscordRelay {
     const dest = this.d.destinationOf(m.channelId)
     if (!dest) return
     this.seenLive.add(m.id)
-    const tab = dest.liveTab()
+    const butlerTab = dest.liveTab()
     const command = m.attachments.length ? undefined : slashTextOf(m.content)
+    const tab = command === undefined ? (this.newestCardWaiting() ?? butlerTab) : butlerTab
     const refusal = command === undefined ? undefined : this.commandRefusal(tab, command, dest.name)
     if (
       !refusal &&
@@ -202,8 +212,9 @@ export class DiscordRelay {
       dest.seen(m.id)
       return
     }
-    const takes = command === undefined ? this.typable(tab ?? '') : this.takesCommand(tab ?? '')
-    const waits = !tab || this.pumping || !takes
+    const takes =
+      command === undefined ? this.typable(butlerTab ?? '') : this.takesCommand(butlerTab ?? '')
+    const waits = !butlerTab || this.pumping || !takes
     if (waits) this.react(m, QUEUED, true)
     this.enqueue(dest, {
       clientId: `koloft-discord-${m.id}`,
@@ -221,6 +232,15 @@ export class DiscordRelay {
         dest.seen(m.id)
       }
     })
+  }
+
+  private newestCardWaiting(): string | undefined {
+    let newest: string | undefined
+    for (const [tab, order] of this.cardOrder) {
+      if (!this.dialogOpen(tab)) continue
+      if (newest === undefined || order > (this.cardOrder.get(newest) ?? 0)) newest = tab
+    }
+    return newest
   }
 
   private commandRefusal(
@@ -350,7 +370,17 @@ export class DiscordRelay {
     return `(attached file: ${JSON.stringify(file)})`
   }
 
+  tellQuietly(dest: Destination, text: string): void {
+    this.quietReplies.add(text)
+    this.tell(dest, text)
+  }
+
   turnEnded(tabId: string, turn: Turn): void {
+    const quiet = [...this.quietReplies].find((q) => turn.said.some((l) => l.text.includes(q)))
+    if (quiet !== undefined) {
+      this.quietReplies.delete(quiet)
+      return
+    }
     const channelId = this.d.butlerChannelOf(tabId)
     if (channelId && turn.reply.trim()) this.say(channelId, turn.reply)
   }
@@ -378,10 +408,19 @@ export class DiscordRelay {
     })
   }
 
+  private postAsk(tab: string, card: () => Card): void {
+    const channelId = this.d.askChannelOf(tab)
+    if (!channelId) return
+    this.cardOrder.set(tab, ++this.cards)
+    void this.card(channelId, card())
+  }
+
   private askCard(tab: string, view: DialogView, how: string, shown = view.text): Card {
+    const helper = this.d.helperTitle(tab)
+    const butler = this.d.butlerName()
     const card: Card = {
       accent: CONDUCTOR_ACCENT,
-      header: butlerAsks(this.d.butlerName()),
+      header: butlerAsks(helper === undefined ? butler : helperOf(helper, butler)),
       body: shown,
       footer: `-# ${how}`
     }
@@ -396,8 +435,7 @@ export class DiscordRelay {
     this.asks.set(tab, { payload, hook, raw })
     if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
     this.d.asksChanged(tab)
-    const channelId = this.d.butlerChannelOf(tab)
-    if (channelId) this.card(channelId, this.askCard(tab, claudeDialog(payload), askHow(payload)))
+    this.postAsk(tab, () => this.askCard(tab, claudeDialog(payload), askHow(payload)))
   }
 
   dialog(tab: string): DialogView | undefined {
@@ -448,9 +486,9 @@ export class DiscordRelay {
       }
       const question = this.d.pendingQuestion(tab)
       if (!question) return this.d.awaitsInput(tab) ? inputNotProbed(label) : SHOWS_NO_DIALOG
-      const key = codexOptionKey(question, reply)
-      if (!key) return takesAnOption(label)
-      await this.press(tab, optionKeys(key))
+      const keys = this.questionKeys(question, reply, optionKeys)
+      if (!keys) return takesAnOption(label)
+      await this.press(tab, keys)
       return undefined
     }
     const ask = this.openAsk(tab)
@@ -471,15 +509,14 @@ export class DiscordRelay {
   }
 
   codexAsked(tab: string, a: CodexApproval | CodexQuestion): void {
-    const channelId = this.d.butlerChannelOf(tab)
-    if (!channelId || this.codexAsks.get(tab) === a.id) return
+    if (!this.d.askChannelOf(tab) || this.codexAsks.get(tab) === a.id) return
     this.codexAsks.set(tab, a.id)
     const view = codexDialog(a)
     const question = 'options' in a
-    const how = question ? PICK_ONE_OPTION : CODEX_NEEDS_YES_OR_NO
+    const how = !question ? CODEX_NEEDS_YES_OR_NO : a.ownWords ? PICK_OR_OWN_WORDS : PICK_ONE_OPTION
     const label = BACKEND_LABEL[this.d.backendOf(tab) ?? 'codex']
     const shown = question ? view.text : `${label} asks to run: ${view.text || 'a command'}`
-    this.card(channelId, this.askCard(tab, view, how, shown))
+    this.postAsk(tab, () => this.askCard(tab, view, how, shown))
   }
 
   // CC§14
@@ -506,7 +543,7 @@ export class DiscordRelay {
     void this.d.answerInPlace(tab, m.content).then((inPlace) => {
       if (inPlace === false) return this.answerOpenByKeys(tab, m, open, optionKeys)
       this.codexAsks.delete(tab)
-      if (inPlace) this.say(m.channelId, inPlace, m.id)
+      if (inPlace) this.say(m.channelId, 'options' in open ? NO_OWN_WORDS : inPlace, m.id)
     })
     return true
   }
@@ -517,19 +554,31 @@ export class DiscordRelay {
     open: CodexApproval | CodexQuestion,
     optionKeys: (key: string) => string[]
   ): void {
-    const question = 'options' in open
-    const key = question ? codexOptionKey(open, m.content) : codexKeyFor(m.content)
-    if (!key) {
-      this.say(m.channelId, question ? PICK_ONE_OPTION : CODEX_NEEDS_YES_OR_NO, m.id)
+    if ('options' in open) {
+      const keys = this.questionKeys(open, m.content, optionKeys)
+      if (keys) void this.press(tab, keys)
+      else this.say(m.channelId, open.ownWords ? PICK_OR_OWN_WORDS : NO_OWN_WORDS, m.id)
       return
     }
-    void this.press(tab, question ? optionKeys(key) : [key])
+    const key = codexKeyFor(m.content)
+    if (key) void this.press(tab, [key])
+    else this.say(m.channelId, CODEX_NEEDS_YES_OR_NO, m.id)
+  }
+
+  private questionKeys(
+    q: CodexQuestion,
+    reply: string,
+    optionKeys: (key: string) => string[]
+  ): string[] | undefined {
+    const key = codexOptionKey(q, reply)
+    return key ? optionKeys(key) : ownWordsKeys(q, reply)
   }
 
   forget(tab: string): void {
     this.answer(tab, {})
     this.codexAsks.delete(tab)
     this.askHooks.delete(tab)
+    this.cardOrder.delete(tab)
   }
 
   async catchUp(): Promise<void> {

@@ -306,11 +306,11 @@ export const AGENT_SKILL_DESCRIPTION =
   'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, gather what waits on the owner (butler only), or get a password, code or sign-in from the owner through Discord (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
 
 const QUESTION_RULES = [
-  'Check before you ask. Read the item\'s own record and make sure the premise is true: is it really waiting on the owner? Did the owner already decide it there (in what the session said, an issue comment, a task note)? Then act on that and do not ask again.',
+  "Check before you ask. Read the item's own record and make sure the premise is true: is it really waiting on the owner? Did the owner already decide it there (in what the session said, an issue comment, a task note)? Then act on that and do not ask again.",
   'One question, one decision. Pick one of 3 options: the way you recommend, the main other way, and leave it for now. When the owner would often say "the recommended way, but with a condition", make that its own option.',
   'Put everything needed to decide in the question itself, short enough for one phone screen: three or four short sentences (about 160 Chinese characters). Never point at what the owner cannot see there ("see above", "this table", "opened in the browser").',
   'The question has three parts: (1) item number of all · kind · its number and name (and where); (2) one or two sentences of fact, one of them ending in "?" that says what to decide; (3) "I suggest …, because …".',
-  'Speak of what the owner will see happen, not of how it works inside. Explain a new word in one sentence the first time. Write in the owner\'s language.',
+  "Speak of what the owner will see happen, not of how it works inside. Explain a new word in one sentence the first time. Write in the owner's language.",
   'Put the recommended option first, with "(recommended)" in the owner\'s language after its name. Each option\'s description says in one sentence what happens and whether it can be undone. Antigravity shows no option descriptions: there, give each option half a sentence of what happens in the question itself.',
   'When you ask whether to merge a pull request, give your confidence (high, medium or low) and the one fact that sets it (checks passed or not, how big the change is, reviewed or not). Below high, recommend "start a session to look at it" over merging.',
   'Once the owner decides, leave the decision in the item\'s own record, so the next reading sees it: pass it to the session, or write it as a comment on the issue or task. "Leave it for now" leaves nothing. Write a comment in the project\'s language with the owner\'s account; in a project others use too, the owner was told that others see these comments and may have picked "only pass it to the session". Where the tool can only read, only pass it to the session.',
@@ -338,6 +338,9 @@ Rules for every question (the helper's, and yours in step 2):
 ${QUESTION_RULES.map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
 
 Merging a pull request that belongs to a session: while the session's worktree is still there, merge it yourself with koloft gh pr merge and do not wake the session: resuming one that sat idle for over an hour reads its whole conversation again, which costs a lot. Read its last turns with koloft session read <session> --last 20, and its checks, conflicts and issue with koloft gh. Offer "merge and wrap up (close the session and delete its worktree)" and "only merge, keep the session" as separate options. Go back to the session, or start a new one, when: a conflict or a failing check needs code; the session is working or asking; it has work not committed; the owner wants more than a merge; or it said there is more to do after the merge.`
+
+export const TODO_NOTICE =
+  'Koloft got a new command after this conversation began: koloft todo. When the owner asks you to sort out the to-dos, or what waits on them, run koloft todo and do what it prints. There is nothing to answer now.'
 
 export const DISCORD_PREFIX = '[Discord]'
 

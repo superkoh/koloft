@@ -32,6 +32,7 @@ let started: {
 let resumed: string[]
 let killed: string[]
 let toasts: string[]
+let notices: string[]
 let transcripts: Set<string>
 let choice: AssistBackendChoice
 let release: () => void
@@ -75,6 +76,7 @@ function make(): Butler {
     kill: onlyWhileItsTestRuns((tabId: string) => void killed.push(tabId)),
     rowsChanged: () => void rescans++,
     toast: onlyWhileItsTestRuns((t: string) => void toasts.push(t)),
+    notice: onlyWhileItsTestRuns((t: string) => void notices.push(t)),
     bindDeadlineMs: DEADLINE_MS
   }
   return new Butler(deps)
@@ -103,6 +105,7 @@ beforeEach(() => {
   resumed = []
   killed = []
   toasts = []
+  notices = []
   transcripts = new Set()
   choice = { backend: 'claude' }
   release = () => {}
@@ -195,7 +198,11 @@ describe('the butler', () => {
     c.onBound(tab, 's1')
     c.onBound(tab, 's2')
     c.onBound(tab, 's2')
-    expect(session).toEqual({ sessionIds: ['s1', 's2'], lastSessionKey: 's2' })
+    expect(session).toEqual({
+      sessionIds: ['s1', 's2'],
+      lastSessionKey: 's2',
+      knowsTodo: ['s1', 's2']
+    })
     expect([c.isButlerSession('s1'), c.isButlerSession('s2'), c.isButlerSession(tab)]).toEqual([
       true,
       true,
@@ -207,6 +214,39 @@ describe('the butler', () => {
     transcripts.add('s2')
     expect(await c.open()).toEqual({ ok: true, tabId: 'tab-resumed-s2' })
     expect(resumed).toEqual(['s2'])
+  })
+
+  // CODEX§17
+  it('a conversation from before koloft todo, resumed on Codex, Muse or Antigravity, is told of it once; one started since, or resumed on Claude, whose role comes back with every launch, is told nothing', async () => {
+    const OLD_CODEX = 'codex:local:old-thread'
+    const NEW_CODEX = 'codex:local:new-thread'
+    session = { sessionIds: [OLD_CODEX], lastSessionKey: OLD_CODEX }
+    transcripts.add(OLD_CODEX)
+    choice = { backend: 'codex' }
+    const c = make()
+    expect(await c.open()).toEqual({ ok: true, tabId: `tab-resumed-${OLD_CODEX}` })
+    expect(notices).toEqual([expect.stringContaining('koloft todo')])
+    c.onBound(`tab-resumed-${OLD_CODEX}`, OLD_CODEX)
+    c.onPtyExit(`tab-resumed-${OLD_CODEX}`)
+    await c.open()
+    expect(notices).toHaveLength(1)
+
+    session = { sessionIds: [CLAUDE_KEY], lastSessionKey: CLAUDE_KEY }
+    transcripts.add(CLAUDE_KEY)
+    choice = { backend: 'claude' }
+    await make().open()
+    expect(notices).toHaveLength(1)
+    expect(session.knowsTodo).toContain(CLAUDE_KEY)
+
+    session = { sessionIds: [] }
+    choice = { backend: 'codex' }
+    const fresh = make()
+    const tab = await opened(fresh)
+    fresh.onBound(tab, NEW_CODEX)
+    fresh.onPtyExit(tab)
+    transcripts.add(NEW_CODEX)
+    await fresh.open()
+    expect(notices).toHaveLength(1)
   })
 
   // AGY§8

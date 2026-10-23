@@ -12,8 +12,9 @@ import type {
 import { CannotMakeChannels, type NewChannel } from './link'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
 import { butlerNames, newerSnowflake, peerNamesOf } from '@shared/conductors'
-import { butlerRole } from '@shared/agentGuide'
+import { butlerRole, TODO_NOTICE } from '@shared/agentGuide'
 import { errorText } from '../agentRequests'
+import { FROM_KOLOFT } from '../crossSessionMessage'
 import { realpathSafe } from '../projectInfo'
 
 export interface ButlerLaunch {
@@ -45,7 +46,16 @@ export interface ButlerDeps {
   kill(tabId: string): void
   rowsChanged(): void
   toast(text: string): void
+  notice(text: string): void
   bindDeadlineMs: number
+}
+
+// CODEX§17 MUSE§9 AGY§8
+const ROLE_RENEWED_ON_RESUME: Record<BackendId, boolean> = {
+  claude: true,
+  codex: false,
+  muse: false,
+  agy: false
 }
 
 const LAST_MESSAGE_SAVE_DELAY_MS = 1000
@@ -174,7 +184,8 @@ export class Butler {
     if (sessionIds.length === s.sessionIds.length && keepLast) return
     this.changeSession(() => ({
       sessionIds,
-      ...(keepLast && s.lastSessionKey ? { lastSessionKey: s.lastSessionKey } : {})
+      ...(keepLast && s.lastSessionKey ? { lastSessionKey: s.lastSessionKey } : {}),
+      ...(s.knowsTodo ? { knowsTodo: s.knowsTodo.filter(stillOnDisk) } : {})
     }))
   }
 
@@ -207,7 +218,10 @@ export class Butler {
 
   startFresh(): Promise<ConductorOpenResult> {
     this.stopResident()
-    this.changeSession((s) => ({ sessionIds: s.sessionIds }))
+    this.changeSession(({ lastSessionKey, ...kept }) => {
+      void lastSessionKey
+      return kept
+    })
     return this.open()
   }
 
@@ -256,6 +270,7 @@ export class Butler {
       )
     else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
+    let resumed = false
     try {
       if (resumable) {
         const live = this.d.liveTabFor(launch.backend, key)
@@ -269,15 +284,23 @@ export class Butler {
       const hasTranscript =
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
       // AGY§8
+      resumed = hasTranscript
       if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
       else tabId = await this.d.start({ ...launch, firstPrompt })
     } catch (error) {
       return refusal(errorText(error))
     }
     if (!tabId) return refusal(`${launch.title} could not start.`)
+    if (resumed && key !== undefined && !this.session.knowsTodo?.includes(key))
+      this.tellOfTodo(launch.backend, key)
     this.resident = tabId
     this.armDeadline(tabId, launch.title)
     return { ok: true, tabId }
+  }
+
+  private tellOfTodo(backend: BackendId, key: string): void {
+    this.changeSession((s) => ({ ...s, knowsTodo: [...(s.knowsTodo ?? []), key] }))
+    if (!ROLE_RENEWED_ON_RESUME[backend]) this.d.notice(`${FROM_KOLOFT}${TODO_NOTICE}`)
   }
 
   private armDeadline(tabId: string, title: string): void {
@@ -310,10 +333,16 @@ export class Butler {
       this.resident = tabId
     }
     this.forgetTab(tabId)
-    this.changeSession((s) => ({
-      sessionIds: s.sessionIds.includes(key) ? s.sessionIds : [...s.sessionIds, key],
-      lastSessionKey: key
-    }))
+    this.changeSession((s) =>
+      s.sessionIds.includes(key)
+        ? { ...s, lastSessionKey: key }
+        : {
+            ...s,
+            sessionIds: [...s.sessionIds, key],
+            lastSessionKey: key,
+            knowsTodo: [...(s.knowsTodo ?? []), key]
+          }
+    )
   }
 
   onPtyExit(tabId: string): void {

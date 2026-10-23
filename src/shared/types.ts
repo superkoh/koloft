@@ -366,6 +366,7 @@ export const DEFAULT_BUTLER_NAME = 'Alfred'
 export interface ButlerSession {
   sessionIds: string[]
   lastSessionKey?: string
+  knowsTodo?: string[]
 }
 
 export interface DiscordChannel {

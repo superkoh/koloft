@@ -138,7 +138,8 @@ export function pullSection(
   now: number
 ): string[] {
   return repos.flatMap(({ repo, pulls }) => {
-    if (pulls.state === 'failed') return [`${repo}: Koloft could not list its pull requests: ${pulls.why}`]
+    if (pulls.state === 'failed')
+      return [`${repo}: Koloft could not list its pull requests: ${pulls.why}`]
     const { me, closesUnknown } = pulls
     const free = pulls.pulls.filter((p) => !bySession.has(`${repo}#${p.number}`))
     const owners = free.filter((p) => isOwners(p, me))
@@ -163,7 +164,12 @@ export function pullSection(
   })
 }
 
-function workspaceLine(w: WorkspaceFacts, notes: Record<string, string>, files: string[], now: number): string {
+function workspaceLine(
+  w: WorkspaceFacts,
+  notes: Record<string, string>,
+  files: string[],
+  now: number
+): string {
   const key = w.repo ?? w.path
   const note = notes[key]
   return [
@@ -221,7 +227,8 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
   const repos = [...new Set(workspaces.flatMap((w) => (w.repo ? [w.repo] : [])))]
   const pulled = await Promise.all(
     repos.map(async (repo) => {
-      const ws = workspaces.find((w) => w.repo === repo && !w.remote) ??
+      const ws =
+        workspaces.find((w) => w.repo === repo && !w.remote) ??
         workspaces.find((w) => w.repo === repo)
       const pulls = ws ? await d.pulls(ws.path).catch(() => null) : null
       return pulls && { repo, pulls }
@@ -260,7 +267,7 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
     '',
     ...(sessionPart.length ? sessionPart : ['None.']),
     '',
-    'PULL REQUESTS (a pull request whose branch is an open worktree session\'s is listed with that session above)',
+    "PULL REQUESTS (a pull request whose branch is an open worktree session's is listed with that session above)",
     '',
     ...(pullsOf.length ? pullSection(pullsOf, bySession, now) : ['No workspace is on GitHub.']),
     '',
@@ -283,7 +290,9 @@ async function noteVerb(d: TodoVerbDeps, rest: string[]): Promise<AgentReply> {
     return answered(note === undefined ? `The ${what} has no to-do note yet.` : note)
   }
   d.saveNote(key, after)
-  return answered(after ? `Saved the to-do note of the ${what}.` : `Removed the to-do note of the ${what}.`)
+  return answered(
+    after ? `Saved the to-do note of the ${what}.` : `Removed the to-do note of the ${what}.`
+  )
 }
 
 function pinnedOf(d: TodoVerbDeps): { path: string; missing: boolean }[] {

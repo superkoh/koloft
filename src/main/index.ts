@@ -452,12 +452,7 @@ import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'
 import { todoVerb } from './agentTodo'
 import { claudeJsonPath } from './claudeTrust'
-import {
-  CLAUDE_PROJECT_MCP_FILE,
-  claudeServers,
-  codexServers,
-  type McpServer
-} from './mcpServers'
+import { CLAUDE_PROJECT_MCP_FILE, claudeServers, codexServers, type McpServer } from './mcpServers'
 import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
 import {
   asPeerName,
@@ -3026,6 +3021,7 @@ app.whenReady().then(() => {
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
+    notice: (text) => discordRelay?.tellQuietly(butlerDestination(), text),
     bindDeadlineMs: cronBindDeadlineMs()
   })
   const discordLockFile = path.join(userData, 'discord.lock')
@@ -3137,6 +3133,9 @@ app.whenReady().then(() => {
         : []
     },
     butlerChannelOf: (tabId) => butlerNow.channelOfTab(tabId),
+    askChannelOf: (tabId) => (butlerSide(tabId) ? butlerNow.channel()?.channelId : undefined),
+    helperTitle: (tabId) =>
+      butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,

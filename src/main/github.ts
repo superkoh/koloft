@@ -166,7 +166,9 @@ export function checkSummary(rollup: unknown): CheckSummary {
   const outcome = (r: Record<string, unknown>): unknown => r.conclusion || r.state
   if (runs.some((r) => FAILED_CONCLUSIONS.has(String(outcome(r))))) return 'failing'
   const done = (r: Record<string, unknown>): boolean =>
-    r.__typename === 'StatusContext' ? r.state !== 'PENDING' && r.state !== 'EXPECTED' : r.status === 'COMPLETED'
+    r.__typename === 'StatusContext'
+      ? r.state !== 'PENDING' && r.state !== 'EXPECTED'
+      : r.status === 'COMPLETED'
   return runs.every(done) ? 'passing' : 'running'
 }
 
