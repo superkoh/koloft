@@ -1036,17 +1036,18 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     expect(created).toEqual([{ sessionId: 'sid-AGY', cwd: '/w' }])
   })
 
-  it('words the no-id refusal dead once that session tab has exited', async () => {
+  it('words the no-id refusal dead when that session tab exits while the tracker is asked', async () => {
     const s = useStore.getState()
     s.addTab({
       id: 'gate13',
       kind: 'agy',
       title: 'Antigravity',
       cwd: '/w',
-      alive: false
+      alive: true
     })
 
     s.restartActiveSession()
+    useStore.getState().setTabAlive('gate13', false)
     await settle()
 
     expect(killed).toEqual([])
@@ -1067,6 +1068,28 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     useStore.getState().removeTab('gate14')
     await settle()
 
+    expect(useStore.getState().toast).toBe(null)
+  })
+
+  it('says nothing either when a tab with an id but no conversation is closed while the probe is out', async () => {
+    const s = useStore.getState()
+    s.addTab({
+      id: 'gate15',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    })
+    s.setSessions([session('gate15', { sessionId: 'sid-SHUT' })])
+    transcriptOnDisk = false
+    probeGate = gate()
+
+    s.restartActiveSession()
+    useStore.getState().removeTab('gate15')
+    probeGate.open()
+    await settle()
+
+    expect(probed).toEqual(['sid-SHUT'])
     expect(useStore.getState().toast).toBe(null)
   })
 })

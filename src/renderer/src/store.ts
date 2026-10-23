@@ -731,6 +731,10 @@ export const useStore = create<AppState>((set, get) => ({
     if (restarting.has(tab.id)) return
     const oldId = tab.id
     const liveClaude = !!sess?.alive && !!sess.sessionId
+    const sayNoConversation = (live: boolean): void => {
+      if (!get().tabs.some((x) => x.id === oldId)) return
+      get().showToast(live ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE)
+    }
     const begin = async (resumeId: string, cwd: string, live: boolean): Promise<void> => {
       const backend = identityOf(resumeId).backendId
       restarting.add(oldId)
@@ -744,7 +748,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (!hasTranscript) {
         restarting.delete(oldId)
-        get().showToast(live ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE)
+        sayNoConversation(live)
         return
       }
       if (!get().tabs.some((x) => x.id === oldId)) {
@@ -815,13 +819,10 @@ export const useStore = create<AppState>((set, get) => ({
       .list()
       .then((live) => {
         restarting.delete(oldId)
-        const entry = live.find((s) => s.tabId === oldId)
-        if (entry?.sessionId)
-          return void begin(entry.sessionId, entry.treeRoot || tab.cwd, entry.alive)
-        if (!isSessionKind(tab.kind) || !get().tabs.some((x) => x.id === oldId)) return
-        get().showToast(
-          (entry?.alive ?? tab.alive) ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE
-        )
+        const bound = live.find((s) => s.tabId === oldId && s.sessionId)
+        if (bound) return void begin(bound.sessionId, bound.treeRoot || tab.cwd, bound.alive)
+        const now = get().tabs.find((x) => x.id === oldId)
+        if (now && isSessionKind(now.kind)) sayNoConversation(now.alive)
       })
       .catch(() => restarting.delete(oldId))
   },

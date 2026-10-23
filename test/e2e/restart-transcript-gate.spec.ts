@@ -4,12 +4,11 @@ import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
-  agyCalls,
+  agySessionCalls,
   installAgy,
   installCodex,
   seedSettings,
   trustInAgy,
-  type AgyCall,
   type E2EEnv
 } from './helpers/env'
 import { codexCalls, codexRows } from './helpers/codex'
@@ -35,9 +34,6 @@ import {
 const WS_A = 'ws-a'
 
 const LIVE_TOAST = 'Nothing to restart yet — this session has no conversation.'
-
-const agySessionCalls = (env: E2EEnv): AgyCall[] =>
-  agyCalls(env).filter((c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p'))
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -387,11 +383,10 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
       await restart(app, page)
       await expect(page.locator('.toast-msg')).toHaveText(LIVE_TOAST, { timeout: 20_000 })
       expect(processAlive(first.pid)).toBe(true)
-      expect(agySessionCalls(env)).toHaveLength(1)
-      await expect(page.locator('.toast')).toHaveCount(0, { timeout: 20_000 })
 
       await runIn(page, centerTerm(page), 'now we have talked')
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      expect(agySessionCalls(env)).toHaveLength(1)
       const conversationOfTab = async (): Promise<string | undefined> =>
         (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
           ?.nativeSessionId
