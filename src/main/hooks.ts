@@ -226,6 +226,9 @@ export function statusLogOf(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}${STATUS_LOG_SUFFIX}`)
 }
 
+const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
+const SIGTERM_THIS_LATE_IS_THE_ASK_TIMEOUT_S = ASK_WAITS_UP_TO_AN_HOUR_S - 5
+
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
 reg="$1"; tab="$2"; event="$3"
@@ -256,6 +259,9 @@ session_id() {
     tr -d '"\\\\[:cntrl:]'
 }
 ${QUOTE_PROMPT_FN}
+log_ask() {
+  printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$log"
+}
 case "$event" in
   start|end)
     sid="$(session_id)"
@@ -299,7 +305,7 @@ case "$event" in
     # CC§14
     ask="$reg/$tab.$$.ask.json"; answer="$reg/$tab.$$.answer.json"; tick="$reg/$tab.$$.tick"
     trap 'rm -f "$ask" "$answer" "$tick"' EXIT
-    trap 'exit 143' TERM
+    trap '[ "$SECONDS" -ge ${SIGTERM_THIS_LATE_IS_THE_ASK_TIMEOUT_S} ] && log_ask; exit 143' TERM
     mkfifo "$tick" 2>/dev/null || exit 0
     printf '%s' "$input" > "$ask.tmp" && mv "$ask.tmp" "$ask"
     while [ ! -f "$answer" ]; do read -t 1 <> "$tick"; done
@@ -307,7 +313,7 @@ case "$event" in
     ;;
   asked)
     # CC§14
-    printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$log"
+    log_ask
     ;;
   posttool)
     # PLATFORM§36
@@ -475,8 +481,6 @@ const NOTIFICATIONS_WAITING_ON_THE_PERSON = [
   'elicitation_dialog',
   'elicitation_url_dialog'
 ].join('|')
-
-const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
 
 // CC§6 CC§9 CC§14
 export function hookSettings(

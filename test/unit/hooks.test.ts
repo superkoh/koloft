@@ -1009,8 +1009,11 @@ describe('injected hook script', () => {
       tool_name: 'Bash',
       tool_input: { command: 'rm -rf "build"', description: 'Clean' }
     }
-    const runAsk = (tab: string): ReturnType<typeof spawn> =>
-      spawn(hookScript, [regDir, tab, 'ask'], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const runAsk = (tab: string, waitedS = 0): ReturnType<typeof spawn> =>
+      spawn(hookScript, [regDir, tab, 'ask'], {
+        stdio: ['pipe', 'pipe', 'ignore'],
+        env: { ...process.env, SECONDS: String(waitedS) }
+      })
     const feed = (child: ReturnType<typeof spawn>, payload: unknown): Promise<string> => {
       let out = ''
       child.stdout!.on('data', (c) => (out += c))
@@ -1054,7 +1057,7 @@ describe('injected hook script', () => {
     })
 
     // CC§14
-    it('ended by claude (the person answered "No" at the Mac), it removes its question file', async () => {
+    it('ended by claude (the person answered "No" at the Mac), it removes its question file and records nothing', async () => {
       markAnswerable(regDir, 'tabA2', true)
       const child = runAsk('tabA2')
       const closed = feed(child, ask)
@@ -1062,6 +1065,21 @@ describe('injected hook script', () => {
       child.kill('SIGTERM')
       await closed
       expect(hookFiles('tabA2')).toEqual([])
+      expect(fs.existsSync(path.join(regDir, 'tabA2.status.jsonl'))).toBe(false)
+    })
+
+    // CC§14
+    it('ended by claude at its hour’s timeout, with the dialog still on screen, it removes its question file and records the question in the status log, as a tab that does not wait would', async () => {
+      markAnswerable(regDir, 'tabA3', true)
+      const child = runAsk('tabA3', 3600)
+      const closed = feed(child, ask)
+      await vi.waitFor(() => expect(fs.existsSync(askOf(child, 'tabA3'))).toBe(true))
+      child.kill('SIGTERM')
+      await closed
+      expect(hookFiles('tabA3')).toEqual([])
+      expect(readStatusLog('tabA3')).toEqual([
+        { tabId: 'tabA3', event: 'ask', sessionId: 's1', tmux: '', ask }
+      ])
     })
 
     // CC§14

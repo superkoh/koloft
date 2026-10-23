@@ -1956,6 +1956,17 @@ below was one run.
 - **A hook may wait for the answer.** One that answered after 120 s with
   `"timeout": 900` took effect. At its `timeout` (20 s in one run) claude ends the hook
   with SIGTERM and the dialog stays on screen; nothing is denied.
+- **After a hook's timeout the dialog still takes its keys.** 2026-10-22, CC 2.1.309, a
+  python pty, scratch `CLAUDE_CONFIG_DIR`, haiku, `--dangerously-skip-permissions`, a
+  `PermissionRequest` hook with `"timeout": 5` that logged its start, SIGTERM and exit
+  and then waited; 1 run. An `AskUserQuestion` (Red / Green): the hook started 2.0 s after the
+  prompt, got SIGTERM at +7.0 s and exited 20 ms later; 10 s on, the dialog was unchanged on
+  screen. `3` ("Type something."), then `Purple with green stripes` in a second write,
+  then CR 1 s later answered it: `PostToolUse` held `answers: {"Which colour do you
+  prefer?": "Purple with green stripes"}` and the model repeated it. So when Koloft's
+  `ask` hook runs out its hour, the hook script records the question in the status log
+  (its SIGTERM comes that late only from the timeout; "No" or Esc at the Mac sends it at
+  once, below), and the relay answers it by keys, as for a tab on another machine.
 - **When the person answers in the terminal first:** "No" or Esc ends the hook with
   SIGTERM at once (its `EXIT` trap ran); "Yes" does not signal it, and it lived on until
   claude exited. What it prints after that is ignored. Re-run 2026-10-04, CC 2.1.289
