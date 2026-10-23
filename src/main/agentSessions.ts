@@ -163,12 +163,12 @@ export interface PinnedWorkspace {
   missing: boolean
 }
 
-function workspaceLabel(wsPath: string): string {
+export function workspaceLabel(wsPath: string): string {
   const key = parseRemoteKey(wsPath)
   return key ? remoteCopyText(key.host, key.path) : wsPath
 }
 
-interface PlacedRow {
+export interface PlacedRow {
   workspace: string
   shownAs: string
   row: SessionRow
@@ -178,7 +178,7 @@ interface PlacedRow {
 
 const THE_BUTLERS_FOLDER = "the butler's own folder"
 
-function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): PlacedRow[] {
+export function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): PlacedRow[] {
   return sidebar.flatMap((w) =>
     w.rows
       .filter((row) => !row.pending)
@@ -392,6 +392,7 @@ export interface SessionVerbDeps {
   whatIsLeft(target: ClosableSession): Promise<string[]>
   closeSoon(target: ClosableSession): void
   isButler(tabId: string): boolean
+  speaksForTheOwner(tabId: string): boolean
   butlerFolder(): string
   butlerHelperRole(): string
   sidebar(): WorkspaceRows[]
@@ -1090,7 +1091,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       await (opening.get(t.key) ?? t.open())
       return answered(`Resumed ${t.name}.`)
     }
-    return asButler
+    return asButler && !t.butler
       ? deliver(sub, t, ownerSays(text), caller, true)
       : deliver(sub, t, sessionSays(caller.session, text), caller, false)
   }
@@ -1101,6 +1102,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     const sessionsIn = (workspace: string): SessionInfo[] =>
       d.allSessions().filter((s) => d.workspaceOf(s.tabId) === workspace)
     const butler = d.isButler(caller.tabId)
+    const forTheOwner = d.speaksForTheOwner(caller.tabId)
     if (sub === 'list' && butler) {
       if (rest.length > 0) return refused(BUTLER_LIST_USAGE, EXIT_USAGE)
       const placed = placedRows(d.sidebar(), d.allSessions())
@@ -1195,12 +1197,13 @@ export function sessionVerb(d: SessionVerbDeps): {
       const to = starter(ref)
       if (to) replyOwed.delete(caller.tabId)
       if (to) return deliver('send', to, said, caller, false)
-      if (matchOpen(open, ref) === null) return sessionAct(sub, rest, caller, false)
+      if (forTheOwner || matchOpen(open, ref) === null)
+        return sessionAct(sub, rest, caller, forTheOwner)
       const target = findSiblingTarget(open, ref, caller.session.backendId)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
       return deliver('send', openTarget(target.value), said, caller, false)
     }
-    if (Object.hasOwn(SESSION_ACT_USAGE, sub)) return sessionAct(sub, rest, caller, false)
+    if (Object.hasOwn(SESSION_ACT_USAGE, sub)) return sessionAct(sub, rest, caller, forTheOwner)
     if (sub === 'close') {
       const ref = rest.length > 0 ? rest.join(' ') : undefined
       let target: ClosableSession = caller.session
