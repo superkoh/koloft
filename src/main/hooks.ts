@@ -226,8 +226,12 @@ export function statusLogOf(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}${STATUS_LOG_SUFFIX}`)
 }
 
+const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
+const ASK_GIVES_UP_BEFORE_CLAUDE_ENDS_IT_S = ASK_WAITS_UP_TO_AN_HOUR_S - 10
+
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
+SECONDS=0
 reg="$1"; tab="$2"; event="$3"
 [ -z "$reg" ] && exit 0
 [ -z "$tab" ] && exit 0
@@ -305,9 +309,14 @@ case "$event" in
     trap 'exit 143' TERM
     mkfifo "$tick" 2>/dev/null || exit 0
     printf '%s' "$input" > "$ask.tmp" && mv "$ask.tmp" "$ask"
-    SECONDS=0
     while [ ! -f "$answer" ]; do
-      [ "$SECONDS" -ge "$4" ] && { rm -f "$ask"; log_ask; exit 0; }
+      if [ "$SECONDS" -ge "\${4:-${ASK_GIVES_UP_BEFORE_CLAUDE_ENDS_IT_S}}" ]; then
+        rm -f "$ask"
+        read -t 1 <> "$tick"
+        [ -f "$answer" ] && break
+        log_ask
+        exit 0
+      fi
       read -t 1 <> "$tick"
     done
     cat "$answer"
@@ -482,9 +491,6 @@ const NOTIFICATIONS_WAITING_ON_THE_PERSON = [
   'elicitation_dialog',
   'elicitation_url_dialog'
 ].join('|')
-
-const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
-const ASK_GIVES_UP_BEFORE_CLAUDE_ENDS_IT_S = ASK_WAITS_UP_TO_AN_HOUR_S - 10
 
 // CC§6 CC§9 CC§14
 export function hookSettings(

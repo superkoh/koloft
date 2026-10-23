@@ -1969,8 +1969,10 @@ below was one run.
   `"timeout": 30` and a hook that waited 5 s by bash's `SECONDS`, then exited 0 printing
   nothing; 1 run. It got no SIGTERM; 10 s after it exited the dialog was unchanged, and
   `3`, the text, then CR 1 s later answered it the same way (`PostToolUse` held the
-  typed answer). Unlike ending at the `timeout`, this never looks like the SIGTERM that
-  "No" or Esc at the Mac sends (below).
+  typed answer). A `Bash` dialog did the same (`--permission-mode default`, 1 run): after
+  the hook gave up, the dialog (`1. Yes` … `4. No`) stayed, the command did not run, and
+  `1` 10 s later ran it. Unlike ending at the `timeout`, this never looks like the
+  SIGTERM that "No" or Esc at the Mac sends (below).
 - **When the person answers in the terminal first:** "No" or Esc ends the hook with
   SIGTERM at once (its `EXIT` trap ran); "Yes" does not signal it, and it lived on until
   claude exited. What it prints after that is ignored. Re-run 2026-10-04, CC 2.1.289

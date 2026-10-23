@@ -1083,6 +1083,22 @@ describe('injected hook script', () => {
     })
 
     // CC§14
+    it('an answer Koloft writes just as the hook gives up is still printed, and the question is not recorded', async () => {
+      markAnswerable(regDir, 'tabA4', true)
+      const child = runAsk('tabA4', 1)
+      const printed = feed(child, ask)
+      const askFile = askOf(child, 'tabA4')
+      await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(true))
+      await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(false), {
+        interval: 20,
+        timeout: 3000
+      })
+      fs.writeFileSync(path.join(regDir, `tabA4.${child.pid}.answer.json`), '{"late":true}')
+      expect(await printed).toBe('{"late":true}')
+      expect(fs.existsSync(path.join(regDir, 'tabA4.status.jsonl'))).toBe(false)
+    })
+
+    // CC§14
     it('for a tab not marked answerable (Discord off, in no conductor’s care, or a marker lost while Discord reconnected) it does not wait: it exits at once with no output and records the question in the status log, as on another machine', () => {
       const res = spawnSync(hookScript, [regDir, 'tabNotLookedAfter', 'ask'], {
         input: JSON.stringify(ask),

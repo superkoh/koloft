@@ -328,7 +328,7 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
   })
 
   // CC§14
-  it('once its waiting hook ran out of time and the question came back through the status log, the question stays open on the card already posted and the next reply answers it by its keys', async () => {
+  it('once its waiting hook gave up and the question came back through the status log, it is posted again and the next reply answers it by its keys', async () => {
     const { relay, posts, writes, reactions, asksChanged } = setup({}, [], {
       status: () => 'approval'
     })
@@ -344,7 +344,8 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
     await vi.waitFor(() => expect(reactions).toContain('801 +✅'))
     expect(writes.map((w) => w.data)).toEqual(['3', 'neither, use C', '\r'])
     expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(false)
-    expect(posts).toHaveLength(1)
+    expect(posts).toHaveLength(2)
+    expect(posts[1].text).toBe(posts[0].text)
     watcher?.close()
   })
 

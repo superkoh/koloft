@@ -396,10 +396,8 @@ export class DiscordRelay {
     this.asks.set(tab, { payload, hook, raw })
     if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
     this.d.asksChanged(tab)
-    const hookTimedOut = !!before?.hook && !hook && before.raw === raw
     const channelId = this.d.butlerChannelOf(tab)
-    if (channelId && !hookTimedOut)
-      this.card(channelId, this.askCard(tab, claudeDialog(payload), askHow(payload)))
+    if (channelId) this.card(channelId, this.askCard(tab, claudeDialog(payload), askHow(payload)))
   }
 
   dialog(tab: string): DialogView | undefined {
