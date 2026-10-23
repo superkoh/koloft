@@ -8,10 +8,14 @@ import type {
 } from '../../src/shared/types'
 import { PLACEHOLDER_SESSION_TITLE } from '../../src/shared/types'
 import {
+  completeMention,
   matchesQuery,
+  mentionCandidates,
+  mentionTyping,
   paletteGroups,
   paletteSessions,
   paletteWorkspaces,
+  pinnedWorkspace,
   type PaletteAction
 } from '../../src/renderer/src/palette'
 
@@ -183,5 +187,83 @@ describe('command palette: workspace rows and groups', () => {
     expect(groups.map((g) => g.title)).toEqual(['Sessions', 'In conversations'])
     expect(groups[1].items.map((i) => i.key)).toEqual(['h:c1', 'h:c2', 'h:c3', 'more-hits'])
     expect(groups[1].items[3]).toMatchObject({ kind: 'more', count: hits.length })
+  })
+})
+
+describe('command palette: @ names a workspace', () => {
+  const rows = [
+    ws(`${HOME}/koloft`, []),
+    ws(`${HOME}/koloft-site`, []),
+    ws(`${HOME}/my notes`, []),
+    remote('build-box', '/srv/api', [])
+  ]
+  const items = paletteWorkspaces(rows, HOME)
+
+  it('tags a local workspace by its folder name and a remote one as host:name; two that share a tag, in any case, go by their paths', () => {
+    expect(items.map((i) => i.tag)).toEqual(['koloft', 'koloft-site', 'my notes', 'build-box:api'])
+    const twins = paletteWorkspaces([ws(`${HOME}/a/App`, []), ws(`${HOME}/b/app`, [])], HOME)
+    expect(twins.map((i) => i.tag)).toEqual(['~/a/App', '~/b/app'])
+  })
+
+  it('offers workspaces while the caret sits in a word that starts with @ — also right after Chinese text or inside a user@host — and never inside an email address or once a space is typed', () => {
+    const at = (text: string, caret = text.length) => mentionTyping(text, caret)
+    expect(at('fix @kol')).toMatchObject({ start: 4, end: 8, typed: 'kol' })
+    expect(at('@')).toMatchObject({ start: 0, end: 1, typed: '' })
+    expect(at('@kolxx bug', 4)).toMatchObject({ start: 0, end: 6, typed: 'kol', word: 'kolxx' })
+    expect(at('帮@kol')).toMatchObject({ start: 1, typed: 'kol' })
+    expect(at('@me@bo')).toMatchObject({ start: 0, typed: 'me@bo' })
+    expect(at('mail me@kol')).toBeNull()
+    expect(at('@koloft fix')).toBeNull()
+    const offered = (text: string, caret = text.length) =>
+      mentionCandidates(items, mentionTyping(text, caret)!).map((i) => i.tag)
+    expect(offered('@KOL')).toEqual(['koloft', 'koloft-site'])
+    expect(offered('@box')).toEqual(['build-box:api'])
+  })
+
+  it('offers nothing once the @ word already names a workspace in full, so ⏎ starts the work instead of filling in a longer name', () => {
+    const offered = (text: string, caret = text.length) =>
+      mentionCandidates(items, mentionTyping(text, caret)!).map((i) => i.tag)
+    expect(offered('fix @koloft')).toEqual([])
+    expect(offered('@koloft-site', 4)).toEqual([])
+    expect(offered('@kolo')).toEqual(['koloft', 'koloft-site'])
+  })
+
+  it('a picked workspace replaces the whole @ word and leaves the caret after one space', () => {
+    const text = 'fix @kolxx the bug'
+    const at = mentionTyping(text, 8)!
+    expect(completeMention(text, at, 'koloft')).toEqual({
+      text: 'fix @koloft the bug',
+      caret: 12
+    })
+    expect(completeMention('@k', mentionTyping('@k', 2)!, 'my notes')).toEqual({
+      text: '@my notes ',
+      caret: 10
+    })
+  })
+
+  it('the first @ that names a whole workspace pins it, in any case, and is left out of the words sent on', () => {
+    expect(pinnedWorkspace('@koloft fix the bug', items)).toEqual({
+      wsPath: `${HOME}/koloft`,
+      prompt: 'fix the bug'
+    })
+    expect(pinnedWorkspace('fix @Koloft-Site the\nfooter', items)).toEqual({
+      wsPath: `${HOME}/koloft-site`,
+      prompt: 'fix the\nfooter'
+    })
+    expect(pinnedWorkspace('fix the footer @koloft \nand the header', items)?.prompt).toBe(
+      'fix the footer\nand the header'
+    )
+    expect(pinnedWorkspace('in @my notes tidy up', items)?.wsPath).toBe(`${HOME}/my notes`)
+    expect(pinnedWorkspace('deploy @build-box:api', items)).toEqual({
+      wsPath: 'ssh://build-box/srv/api',
+      prompt: 'deploy'
+    })
+    expect(pinnedWorkspace('帮@koloft修一下', items)).toEqual({
+      wsPath: `${HOME}/koloft`,
+      prompt: '帮修一下'
+    })
+    expect(pinnedWorkspace('@koloft，修一下', items)?.wsPath).toBe(`${HOME}/koloft`)
+    expect(pinnedWorkspace('@kol fix', items)).toBeNull()
+    expect(pinnedWorkspace('me@koloft fix', items)).toBeNull()
   })
 })

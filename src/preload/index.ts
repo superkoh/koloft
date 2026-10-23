@@ -422,7 +422,7 @@ const api: KoloftApi = {
     createProject: (parent, name) => ipcRenderer.invoke(CH.project.create, parent, name)
   },
   assist: {
-    route: (id, message) => ipcRenderer.invoke(CH.assist.route, id, message),
+    route: (id, message, pinned) => ipcRenderer.invoke(CH.assist.route, id, message, pinned),
     cancel: (id) => ipcRenderer.send(CH.assist.cancel, id)
   },
   settings: {
