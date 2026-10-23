@@ -1024,6 +1024,26 @@ describe('a Muse session on a remote machine', () => {
     expect(events('files-changed')[0]).toMatchObject({ lastWritten: `${KEY}/src/a.ts` })
   })
 
+  // MUSE§9
+  it("shows /compact as working from the log lines the wrapper mirrors, as a local tab does from muse's own log, until its outcome arrives", async () => {
+    onMachine()
+    const id = await boundRemote()
+    mirror(id, { t: 'state', seq: 1, state: 'done', kind: null })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+    mirror(id, {
+      t: 'log',
+      payloadType: 'runtime.command.accepted',
+      payload: { kind: 'command_accepted', command_kind: 'context.compact.manual' }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('working'))
+    mirror(id, {
+      t: 'log',
+      payloadType: 'context.compact.manual.outcome',
+      payload: { kind: 'manual_compaction_outcome', terminal_outcome: 'compacted' }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+  })
+
   it('never lets a state that came late through the mirror roll back a newer one the terminal already showed', async () => {
     onMachine()
     const id = await boundRemote()
