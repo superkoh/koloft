@@ -92,7 +92,7 @@ function codexWireText(env: E2EEnv): string {
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
 }
 
-function savedOwnerWords(env: E2EEnv, backend: 'claude' | 'codex' | 'muse' | 'agy'): string {
+function savedOwnerWords(env: E2EEnv, backend: 'claude' | 'codex' | 'muse'): string {
   const claude = backend === 'claude'
   const root = path.join(env.userData, claude ? 'hook-sessions' : `${backend}-open`)
   if (!fs.existsSync(root)) return ''
@@ -531,7 +531,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         expect(await sent(butlerTab)).toContain(
           '(FromKoloft:)Theowneraskedforsomething,andKolofthandsittoahelperofyours'
         )
-        expect(savedOwnerWords(env, backend)).not.toContain('From Koloft')
+        if (backend !== 'agy') expect(savedOwnerWords(env, backend)).not.toContain('From Koloft')
       } finally {
         await quitAndClose(app)
       }

@@ -6,7 +6,6 @@ export type ModeClass = 'bypass' | 'prompting'
 const CLOSING_TAG = '</cross-session-message>'
 export const FROM_A_SESSION = '(From the session '
 export const FROM_KOLOFT = '(From Koloft:) '
-// AGY§8
 export const A_HELPER_HAS_IT = `${FROM_KOLOFT}The owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.`
 const SOCKET_WRITE_TIMEOUT_MS = 3000
 export const MESSAGE_SOCKET_SHOWS_WITHIN_MS = 10_000

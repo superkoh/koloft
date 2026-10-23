@@ -15,6 +15,7 @@ import { HOLD_HOOK_TIMEOUT_S, HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { handoverPreamble, withHandover } from '../../src/main/handover'
 import { LineTail } from '../../src/main/museSessionLog'
+import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from '../../src/main/crossSessionMessage'
 import {
   REPLY_LANGUAGE_AFTER_QUOTE,
   REPLY_LANGUAGE_BEFORE_QUOTE,
@@ -135,6 +136,20 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     expect(
       quoteBeforeModelCall(transcriptWith('first words', '第二句 "quoted"\n\nnext line'))
     ).toBe('第二句 "quoted" next line')
+  })
+
+  // ADR-0031
+  it("quotes the owner's own newest words past a message from another session, a notice from Koloft and the note Koloft opens a butler with for a ⌘P request", () => {
+    expect(
+      quoteBeforeModelCall(
+        transcriptWith(
+          '先看看侧栏',
+          `${FROM_A_SESSION}"Fix docs", id abc:) Done: PR #12 is open.`,
+          `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb.`,
+          A_HELPER_HAS_IT
+        )
+      )
+    ).toBe('先看看侧栏')
   })
 
   it('hands what Koloft left for the tab to every model call of the turn it lands in, ahead of the quote, even with no prompt to quote; its file goes at once and the notice at the turn’s end, or at the next turn’s first call when a turn ended with no Stop', () => {

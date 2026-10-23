@@ -4612,6 +4612,7 @@ function fromPalette({ words, backend, about, at }: PaletteRequest): string {
 async function startHelper(
   task: (butler: SessionInfo) => ButlerHelperTask
 ): Promise<ConductorOpenResult> {
+  // AGY§8
   const opened = await butler?.open(A_HELPER_HAS_IT)
   if (!opened) return { ok: false, error: STILL_STARTING }
   if (!opened.ok) return opened
