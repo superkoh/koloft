@@ -606,14 +606,16 @@ function tui() {
         blocked(ch === '\n' ? '\r' : ch)
         continue
       }
-      if (ch === '\r' || ch === '\n') {
+      // MUSE§7
+      if (ch === '\r') {
         const done = typed
         typed = ''
         line(done.trim())
       } else if (ch === '\x7f') typed = typed.slice(0, -1)
-      else if (ch >= ' ') typed += ch
+      else if (ch >= ' ' || ch === '\n') typed += ch
     }
   })
   process.on('SIGHUP', () => process.exit(0))
+  process.stdout.on('error', () => process.exit(0))
   if (!asking) start()
 }
