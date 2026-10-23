@@ -453,6 +453,52 @@ describe('GithubLookup.openItems', () => {
   })
 })
 
+describe('GithubLookup.mergedHeads', () => {
+  const ghAnswering =
+    (r: Partial<GhResult>, asked: string[][] = []): Gh =>
+    async (args) => {
+      asked.push(args)
+      return { code: 0, stdout: '[]', stderr: '', missing: false, ...r }
+    }
+
+  it('names the head commit of each merged pull request from the branch', async () => {
+    const asked: string[][] = []
+    const gh = ghAnswering(
+      { stdout: JSON.stringify([{ headRefOid: SHA }, { headRefOid: 7 }]) },
+      asked
+    )
+    expect(await make({ gh }).mergedHeads(root, 'fix/login')).toEqual([SHA])
+    expect(asked).toEqual([
+      [
+        'pr',
+        'list',
+        '--repo',
+        'acme/widgets',
+        '--state',
+        'merged',
+        '--head',
+        'fix/login',
+        '--json',
+        'headRefOid'
+      ]
+    ])
+  })
+
+  it('a repository not on GitHub has no merged pull request, and gh is never asked', async () => {
+    stage({ remote: 'remote.origin.url git@gitlab.com:acme/widgets.git\n' })
+    const asked: string[][] = []
+    expect(await make({ gh: ghAnswering({}, asked) }).mergedHeads(root, 'x')).toEqual([])
+    expect(asked).toHaveLength(0)
+  })
+
+  it('a gh that fails or is missing cannot say', async () => {
+    const heads = (r: Partial<GhResult>): Promise<string[] | null> =>
+      make({ gh: ghAnswering(r) }).mergedHeads(root, 'x')
+    expect(await heads({ code: GH_SIGNED_OUT, stdout: '' })).toBeNull()
+    expect(await heads({ code: null, missing: true, stdout: '' })).toBeNull()
+  })
+})
+
 describe('parseOpenCounts', () => {
   it('reads the totals gh prints for a repo it can see', () => {
     expect(

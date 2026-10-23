@@ -887,23 +887,29 @@ describe('koloft session close', () => {
     expect(closed).toEqual(['cold-session'])
   })
 
-  it('closes with it, first, the ended sessions it started and theirs, and names the ones it leaves: still open, or holding work closing would lose', async () => {
-    const ended = (id: string, title: string): ClosableSession => ({
+  it('closes, after it, the ended sessions it started and theirs (one in its own worktree goes with it), and names the ones it leaves: still open, or holding work closing would lose', async () => {
+    const ended = (id: string, title: string, treeRoot = `${WS}/.claude/worktrees/${id}`) => ({
       sessionId: id,
-      backendId: 'codex',
+      backendId: 'codex' as const,
       title,
-      treeRoot: WS
+      treeRoot
     })
     const { verb, closed, startedSessions } = harness(
       [session('me', 'claude'), session('busy-tab', 'muse', { title: 'Still working' })],
       {},
       [],
-      { leftOf: { 'dirty-session': ['Changes not committed:\n?? draft.md'] } },
+      {
+        leftOf: {
+          'dirty-session': ['Changes not committed:\n?? draft.md'],
+          'same-tree-session': ['The session "me title" is still open.']
+        }
+      },
       [
         ended('done-session', 'Done helper'),
         ended('grand-session', 'Its helper'),
         ended('dirty-session', 'Dirty helper'),
-        ended('under-dirty-session', 'Under dirty')
+        ended('under-dirty-session', 'Under dirty'),
+        ended('same-tree-session', 'In my tree', WS)
       ]
     )
     const child = (tab: string, sessionId: string, parent: string): void => {
@@ -915,12 +921,13 @@ describe('koloft session close', () => {
     child('dirty-tab', 'dirty-session', 'me-session')
     child('under-dirty-tab', 'under-dirty-session', 'dirty-session')
     child('busy-tab', 'busy-tab-session', 'me-session')
+    child('same-tree-tab', 'same-tree-session', 'me-session')
 
     const reply = await verb(['close'], from('me'))
     expect(reply.exit).toBe(0)
-    expect(closed).toEqual(['done-session', 'grand-session', 'me-session'])
+    expect(closed).toEqual(['me-session', 'done-session', 'same-tree-session', 'grand-session'])
     expect(reply.text).toContain(
-      'Also closing the ended sessions it started: "Done helper", "Its helper".'
+      'Also closing the ended sessions it started: "Done helper", "In my tree", "Its helper".'
     )
     expect(reply.text).toContain('"Dirty helper":\nChanges not committed:\n?? draft.md')
     expect(reply.text).toContain('Left these sessions it started open: "Still working".')

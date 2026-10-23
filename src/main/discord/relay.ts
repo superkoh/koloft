@@ -107,7 +107,7 @@ export interface RelayDeps {
   channels(): CaughtUpChannel[]
   butlerChannelOf(tabId: string): string | undefined
   withButtons(tabId: string, view: DialogView, card: Card): Card
-  askPlaced(card: Card, at: PlacedAsk): void
+  askPlaced(card: Card, at: PlacedAsk | undefined): void
   answered(tabId: string, reply: string): void
   backendOf(tabId: string): BackendId | undefined
   boundKey(tabId: string): string | undefined
@@ -392,13 +392,16 @@ export class DiscordRelay {
   }
 
   private postAsk(channelId: string, card: Card): void {
-    void this.d.link.card(channelId, card).then(
-      (ids) => {
-        const messageId = ids.at(-1)
-        if (messageId && card.buttons?.length) this.d.askPlaced(card, { channelId, messageId })
-      },
-      () => undefined
-    )
+    void this.d.link
+      .card(channelId, card)
+      .then(
+        (ids) => ids.at(-1),
+        () => undefined
+      )
+      .then((messageId) => {
+        if (card.buttons?.length)
+          this.d.askPlaced(card, messageId ? { channelId, messageId } : undefined)
+      })
   }
 
   onAsk(tab: string, payload: AskPayload, hook?: string): void {

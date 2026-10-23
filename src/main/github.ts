@@ -318,8 +318,9 @@ export class GithubLookup {
   // PLATFORM§32
   async mergedHeads(root: string, branch: string): Promise<string[] | null> {
     const repo = await this.repoFor(root)
+    if (!repo) return []
     const gh = this.ghFor(root)
-    if (!repo || !gh) return null
+    if (!gh) return null
     const r = await gh([
       'pr',
       'list',

@@ -157,11 +157,25 @@ describe('a question answered some other way loses its buttons too', () => {
       expect(footers(s)).toEqual([`-# ${ANSWERED_ON_THE_COMPUTER}`])
   })
 
-  it('the session closed: the card says so', async () => {
+  it('the session closed: the card says so, or says the answer already sent from Discord', async () => {
+    const closed = setup()
+    closed.buttons.placed(closed.card, PLACED)
+    closed.buttons.forget('tab-1')
+    expect(footers(closed)).toEqual([`-# ${SESSION_CLOSED}`])
+    const answeredFirst = setup()
+    answeredFirst.buttons.placed(answeredFirst.card, PLACED)
+    answeredFirst.buttons.answered('tab-1', 'yes')
+    answeredFirst.buttons.attach('tab-1', { text: 'next?', choices: YES_OR_NO }, answeredFirst.card)
+    expect(footers(answeredFirst)).toEqual([`-# ${answeredWith('yes')}`])
+  })
+
+  it('a card Discord never took is forgotten, so nothing is kept for it', async () => {
     const s = setup()
+    s.buttons.placed(s.card, undefined)
+    s.close()
+    await s.buttons.check('tab-1')
     s.buttons.placed(s.card, PLACED)
-    s.buttons.forget('tab-1')
-    expect(footers(s)).toEqual([`-# ${SESSION_CLOSED}`])
+    expect(s.edits).toEqual([])
   })
 
   it('answered before Discord said where the card landed: the card is changed once it is placed', async () => {

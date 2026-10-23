@@ -30,7 +30,7 @@ import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museS
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
-import { sharedProcessTable } from './processTable'
+import { sharedProcessTable, type ProcessTable } from './processTable'
 import { AgySessions } from './agySessions'
 import {
   agyAccountEnv,
@@ -666,14 +666,20 @@ async function stopLeftoversOfClosedSessions(
     }
   }
 }
-async function refreshLeftovers(
-  table = sharedProcessTable.eachRound(LEFTOVER_SCAN_MS)
+let leftoverScans: Promise<void> = Promise.resolve()
+function refreshLeftovers(
+  table: () => Promise<ProcessTable | null> = () => sharedProcessTable.eachRound(LEFTOVER_SCAN_MS)
 ): Promise<void> {
-  const next = await scanLeftovers(await table)
-  await stopLeftoversOfClosedSessions(next)
-  const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
-  leftovers = next
-  if (changed) sendToRenderer(CH.sessions.leftovers, next)
+  leftoverScans = leftoverScans
+    .then(async () => {
+      const next = await scanLeftovers(await table())
+      await stopLeftoversOfClosedSessions(next)
+      const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
+      leftovers = next
+      if (changed) sendToRenderer(CH.sessions.leftovers, next)
+    })
+    .catch(() => undefined)
+  return leftoverScans
 }
 if (process.platform !== 'win32') {
   setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
@@ -1526,7 +1532,10 @@ const sessionDeps: SessionVerbDeps = {
   whatIsLeft: whatClosingWouldLose,
   closeSoon: (inOrder) =>
     setTimeout(async () => {
-      for (const target of inOrder) await closeSessionFully(target)
+      for (const target of inOrder)
+        await closeSessionFully(target).catch((error) =>
+          sendToRenderer(CH.cron.toast, `${target.title}: ${String(error)}`)
+        )
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
   butlerFolder: () => conductorFolder(app.getPath('userData')),
@@ -4253,12 +4262,6 @@ async function closeSessionFully(
     sendToRenderer(CH.cron.toast, `${target.title} was opened again, so Koloft did not close it.`)
     return
   }
-  // CC§9 MUSE§8
-  closedSessionsStoppedUntil.set(
-    target.sessionId,
-    Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
-  )
-  void refreshLeftovers(sharedProcessTable.fresh())
   const tree = await closingTree(hostGitOut, info)
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
@@ -4269,6 +4272,12 @@ async function closeSessionFully(
   }
   archiveSession(target.sessionId)
   for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  // CC§9 MUSE§8
+  closedSessionsStoppedUntil.set(
+    target.sessionId,
+    Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
+  )
+  void refreshLeftovers(() => sharedProcessTable.fresh())
 }
 
 async function removeUntouchedWorktree(

@@ -82,7 +82,7 @@ function setup(
       buttons: view.choices.map((c, n) => ({ label: c.label, style: c.style, id: `b${n}` }))
     }),
     askPlaced: (card, at) =>
-      void placed.push({ buttons: card.buttons!.map((b) => b.id), messageId: at.messageId }),
+      void placed.push({ buttons: card.buttons!.map((b) => b.id), messageId: at!.messageId }),
     answered: (tab, reply) => void answered.push({ tab, reply }),
     backendOf: () => 'claude',
     boundKey: () => 'session-1',
