@@ -711,6 +711,7 @@ describe('codex guard (Koloft terminal hard block — the same funnel as claude,
     [['review', '--uncommitted']],
     [['login']],
     [['mcp', 'list']],
+    [['migrate-nfs-db', '--staging-dir', '/tmp/codex-db']],
     [['resume', '--help']],
     [['--version']],
     [['-h']]

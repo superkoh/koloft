@@ -1312,7 +1312,11 @@ Codex's own full-screen screen from one that prints and exits.
   `mcp-server`, `app-server`, `remote-control`, `app` (opens the Desktop app),
   `completion`, `update`, `doctor`, `sandbox`, `debug`, `apply` (alias `a`), `queue`,
   `archive`, `delete`, `migrate-rollouts`, `unarchive`, `exec-server`, `features`,
-  `help`; also `-h`/`--help` and `-V`/`--version` anywhere.
+  `help`; also `-h`/`--help` and `-V`/`--version` anywhere. 0.164.0 adds
+  `migrate-nfs-db` ("[experimental] Migrate configured SQLite databases to DELETE mode
+  in place"; it runs and exits, its help says to stop every SQLite client first), and no
+  longer lists `mcp-server` (2026-10-23, `codex --help` and `codex migrate-nfs-db
+  --help`).
 - **Top-level options that take a value** (so the word after them is not a
   subcommand): `-c/--config`, `--enable`, `--disable`, `--remote`,
   `--remote-auth-token-env`, `-i/--image`, `-m/--model`, `--local-provider`,
