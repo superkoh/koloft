@@ -31,7 +31,7 @@ import {
   remoteDir,
   REMOTE_WS_NAME
 } from './helpers/remote'
-import type { E2EEnv } from './helpers/env'
+import { seedSettings, type E2EEnv } from './helpers/env'
 
 test.setTimeout(180_000)
 
@@ -214,7 +214,8 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
   })
 
-  test('E-RC-03: a Codex worktree session there gets its worktree made on the machine, and its server the port offset of that name', async ({
+  // CODEX§11
+  test('E-RC-03: a Codex worktree session there gets its worktree made on the machine, its server the port offset of that name, and, with skip permission prompts on, approvals and the sandbox off', async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
@@ -248,7 +249,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
         portOffset: String(portOffset('rc-tree'))
       })
       await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(1)
-      expect(tuiCalls(env)[0].argv.join(' ')).toContain('-a on-request -s workspace-write')
+      expect(tuiCalls(env)[0].argv.join(' ')).toContain('-a never -s danger-full-access')
     } finally {
       await quitAndClose(app)
     }
@@ -333,9 +334,10 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   })
 
   // CODEX§11 CODEX§16
-  test('E-RC-04: a new Codex session in a folder the machine already trusts starts its screen on this Mac with the machine’s own choice for a trusted folder (ask first, write inside the folder), since that screen cannot see the machine’s trust', async ({
+  test('E-RC-04: with skip permission prompts off, a new Codex session in a folder the machine already trusts starts its screen on this Mac with the machine’s own choice for a trusted folder (ask first, write inside the folder), since that screen cannot see the machine’s trust', async ({
     env
   }) => {
+    seedSettings(env, { skipPermissions: false })
     installCodexOnFakeRemote(env)
     fs.mkdirSync(remoteDir(env), { recursive: true })
     const codexHome = path.join(machineHome(env), '.koloft', 'codex-home')
