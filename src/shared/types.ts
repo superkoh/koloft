@@ -421,9 +421,6 @@ export interface PaletteRequest {
   at?: string
 }
 
-export type PaletteHandOff =
-  { ok: true; tabId: string; helper?: true; queued?: true } | { ok: false; error: string }
-
 export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
 export type HintId = (typeof HINT_IDS)[number]
 
@@ -1366,7 +1363,7 @@ export interface KoloftApi {
     unbind(): Promise<void>
     open(): Promise<ConductorOpenResult>
     startFresh(): Promise<ConductorOpenResult>
-    fromPalette(request: PaletteRequest): Promise<PaletteHandOff>
+    fromPalette(request: PaletteRequest): Promise<ConductorOpenResult>
   }
   discord: {
     status(): Promise<DiscordStatus>

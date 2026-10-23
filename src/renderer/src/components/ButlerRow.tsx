@@ -23,13 +23,8 @@ export async function setUpDiscordWithButler(ownerWords?: string): Promise<strin
   const r = await window.api.discord.setUpWithButler(ownerWords)
   if (!r.ok) return r.error
   useStore.getState().setSettingsOpen(false)
-  showButler(r.tabId)
+  visitTab(r.tabId)
   return null
-}
-
-export function showButler(tabId: string): void {
-  useStore.getState().setButlerTab(tabId)
-  visitTab(tabId)
 }
 
 export function ButlerRow({ children }: { children: JSX.Element[] | null }): JSX.Element {
