@@ -747,6 +747,40 @@ describe('MuseSessions turns from hooks', () => {
     })
     expect(sessions.peerName(museSessionKey(A))).toBe('Docs cleanup')
   })
+
+  it('keeps a name Koloft gave at launch or the owner gave with /rename on the row after muse lists the session again under its first prompt, while an unnamed session shows the title muse lists', async () => {
+    const C = '01a13797-1111-7222-8333-444455556666'
+    const bindTab = async (sessionId: string, name?: string): Promise<string> => {
+      const { id } = await launch(name ? { name } : {})
+      hook(id, 'SessionStart', { session_id: sessionId, source: 'startup' })
+      await vi.waitFor(() =>
+        expect(sessions.list().map((s) => s.nativeSessionId)).toContain(sessionId)
+      )
+      return id
+    }
+    await bindTab(A, 'Fix docs links')
+    await bindTab(B)
+    const unnamed = await bindTab(C)
+    hook(unnamed, 'UserPromptSubmit', { session_id: C, prompt: 'look at the tests', turn_id: 't1' })
+    logRecord(B, {
+      payload_type: 'session.name.changed',
+      payload: { new_name: 'docs cleanup', source: 'user' }
+    })
+    await vi.waitFor(
+      () =>
+        expect(sessions.list().find((s) => s.nativeSessionId === B)?.title).toBe('docs cleanup'),
+      { timeout: 3000 }
+    )
+    mocks.list.mockResolvedValue([
+      { id: A, cwd: repo, name: 'please fix the docs links' },
+      { id: B, cwd: repo, name: 'clean up the docs' },
+      { id: C, cwd: repo, name: 'Test review' }
+    ])
+    await sessions.refreshHistory()
+    expect(
+      Object.fromEntries(sessions.rows(repo).map((r) => [r.nativeSessionId, r.title]))
+    ).toEqual({ [A]: 'Fix docs links', [B]: 'docs cleanup', [C]: 'Test review' })
+  })
 })
 
 describe('MuseSessions search', () => {

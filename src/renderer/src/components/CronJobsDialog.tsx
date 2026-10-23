@@ -18,7 +18,7 @@ import {
   effectiveBackend,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
-import { describeSchedule, describeWhen, nextRun } from '@shared/schedule'
+import { describeSchedule, describeWhen, isStepKind, nextRun, stepMs } from '@shared/schedule'
 import {
   histEnd,
   histFolder,
@@ -26,6 +26,7 @@ import {
   histWhen,
   lastRunOf,
   liveOf,
+  oncePassed,
   whenLine
 } from '@shared/cronHistory'
 import {
@@ -57,8 +58,13 @@ const DAY_CHIPS: { d: number; label: string }[] = [
 const WHEN_CHIPS: { kind: WhenKind; label: string }[] = [
   { kind: 'daily', label: 'Every day' },
   { kind: 'weekly', label: 'Pick days' },
-  { kind: 'every', label: 'Repeat every…' }
+  { kind: 'every', label: 'Repeat every…' },
+  { kind: 'once', label: 'Once' },
+  { kind: 'after', label: 'After each run…' }
 ]
+
+const AFTER_HINT =
+  'The wait starts when a run\'s tab is gone. With "Leave it open", that is when you close it.'
 
 const MODEL_CHIPS: { value: JobFields['model']; label: string }[] = [
   { value: '', label: 'Default' },
@@ -163,6 +169,7 @@ export function CronJobsDialog({
   const [form, setForm] = useState<{ mode: 'new' } | { mode: 'edit'; id: string } | null>(null)
   const [fields, setFields] = useState<JobFields>(emptyFields())
   const [touched, setTouched] = useState(false)
+  const [autoCloseBeforeAfter, setAutoCloseBeforeAfter] = useState<boolean | null>(null)
   const [serverErrors, setServerErrors] = useState<string[]>([])
   const [skills, setSkills] = useState<SkillSuggestion[]>([])
   const [trusted, setTrusted] = useState<boolean | null>(null)
@@ -248,6 +255,7 @@ export function CronJobsDialog({
     })
     setTouched(false)
     setServerErrors([])
+    setAutoCloseBeforeAfter(null)
     setForm({ mode: 'edit', id: job.id })
   }
 
@@ -255,6 +263,7 @@ export function CronJobsDialog({
     setFields(emptyFields(defaultBackend))
     setTouched(false)
     setServerErrors([])
+    setAutoCloseBeforeAfter(null)
     setForm({ mode: 'new' })
   }
 
@@ -264,13 +273,13 @@ export function CronJobsDialog({
     setFields((f) => ({ ...f, ...p }))
   }
 
-  const result = validate(fields)
+  const editing = form?.mode === 'edit' ? jobs.find((j) => j.id === form.id) : undefined
+  const result = validate(fields, new Date(), editing?.schedule)
   const errors = result.ok ? {} : result.errors
   const err = (k: keyof JobFields): string | undefined => (touched ? errors[k] : undefined)
 
   const save = async (): Promise<void> => {
     if (!result.ok || !form) return
-    const editing = form.mode === 'edit' ? jobs.find((j) => j.id === form.id) : undefined
     const input: CronSaveInput = {
       ...result.input,
       workspacePath: wsPath,
@@ -336,6 +345,7 @@ export function CronJobsDialog({
     >
       <Switch
         checked={job.enabled}
+        disabled={oncePassed(job, new Date())}
         small
         ariaLabel={`${job.name} on`}
         onChange={(on) => void window.api.cron.setEnabled(job.id, on)}
@@ -357,7 +367,7 @@ export function CronJobsDialog({
             .join(' · ')}
         </div>
         {cron.notes[job.id] && <p className="field-hint bad">{cron.notes[job.id]}</p>}
-        <div className="job-when">{whenLine(job, new Date())}</div>
+        <div className="job-when">{whenLine(job, new Date(), cron.live)}</div>
         <div className="job-last">{lastLine(job)}</div>
       </div>
       {confirmId === job.id ? (
@@ -399,9 +409,15 @@ export function CronJobsDialog({
 
   const slug = slugOf(fields.name)
   const schedule = fieldsToSchedule(fields)
+  const now = new Date()
+  const firstRun =
+    schedule?.kind === 'after'
+      ? new Date(now.getTime() + stepMs(schedule))
+      : schedule && nextRun(schedule, now)
   const preview = schedule
-    ? `${describeSchedule(schedule)} · next ${describeWhen(nextRun(schedule, new Date()), new Date())}`
+    ? describeSchedule(schedule) + (firstRun ? ` · next ${describeWhen(firstRun, now)}` : '')
     : ''
+  const stepKind = isStepKind(fields.whenKind)
 
   const label = BACKEND_LABEL[fields.backend]
   const modelChips = MODEL_CHIPS_OF[fields.backend]
@@ -521,7 +537,19 @@ export function CronJobsDialog({
             <button
               key={c.kind}
               className={'chip' + (fields.whenKind === c.kind ? ' on' : '')}
-              onClick={() => patch({ whenKind: c.kind })}
+              onClick={() => {
+                const entering = c.kind === 'after' && fields.whenKind !== 'after'
+                const leaving = c.kind !== 'after' && fields.whenKind === 'after'
+                if (entering) setAutoCloseBeforeAfter(fields.autoClose)
+                if (leaving) setAutoCloseBeforeAfter(null)
+                patch({
+                  whenKind: c.kind,
+                  ...(entering ? { autoClose: true } : {}),
+                  ...(leaving && autoCloseBeforeAfter !== null
+                    ? { autoClose: autoCloseBeforeAfter }
+                    : {})
+                })
+              }}
             >
               {c.label}
             </button>
@@ -546,13 +574,14 @@ export function CronJobsDialog({
             ))}
           </div>
         )}
-        {fields.whenKind === 'every' ? (
+        {stepKind ? (
           <div className="inline">
+            {fields.whenKind === 'after' && <span className="field-hint">wait</span>}
             <div className={inputCls('n')}>
               <input
                 className="cb-field"
                 type="number"
-                aria-label="Repeat every"
+                aria-label={fields.whenKind === 'after' ? 'Wait' : 'Repeat every'}
                 min={1}
                 value={Number.isNaN(fields.n) ? '' : String(fields.n)}
                 onChange={(e) =>
@@ -573,6 +602,21 @@ export function CronJobsDialog({
           </div>
         ) : (
           <div className="inline">
+            {fields.whenKind === 'once' && (
+              <>
+                <span className="field-hint">on</span>
+                <div className={inputCls('date') + ' date'}>
+                  <input
+                    className="cb-field"
+                    type="date"
+                    aria-label="on"
+                    value={fields.date}
+                    onChange={(e) => patch({ date: e.target.value })}
+                    {...focusProps('date')}
+                  />
+                </div>
+              </>
+            )}
             <span className="field-hint">at</span>
             <div className={inputCls('at') + ' time'}>
               <input
@@ -587,7 +631,9 @@ export function CronJobsDialog({
             {preview && <span className="field-hint">{preview}</span>}
           </div>
         )}
+        {fields.whenKind === 'after' && <p className="field-hint">{AFTER_HINT}</p>}
         {err('days') && <p className="field-hint bad">{err('days')}</p>}
+        {err('date') && <p className="field-hint bad">{err('date')}</p>}
         {err('at') && <p className="field-hint bad">{err('at')}</p>}
         {err('n') && <p className="field-hint bad">{err('n')}</p>}
       </div>
@@ -661,7 +707,10 @@ export function CronJobsDialog({
             <button
               key={c.label}
               className={'chip' + (fields.autoClose === c.value ? ' on' : '')}
-              onClick={() => patch({ autoClose: c.value })}
+              onClick={() => {
+                setAutoCloseBeforeAfter(null)
+                patch({ autoClose: c.value })
+              }}
             >
               {c.label}
             </button>

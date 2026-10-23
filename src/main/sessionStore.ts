@@ -14,6 +14,7 @@ export interface StoredMember {
   updatedAt: number
   worktreeResourceId?: string
   permission?: LaunchPermission
+  named?: true
 }
 
 export interface WorktreeResource {
@@ -74,7 +75,8 @@ function validMember(value: unknown, key: string, keyOf: KeyOf): value is Stored
     (value.worktreeResourceId === undefined || typeof value.worktreeResourceId === 'string') &&
     (value.permission === undefined ||
       value.permission === 'acceptEdits' ||
-      value.permission === 'bypass')
+      value.permission === 'bypass') &&
+    (value.named === undefined || value.named === true)
   )
 }
 
