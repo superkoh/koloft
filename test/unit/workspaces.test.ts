@@ -176,7 +176,7 @@ afterEach(() => {
 describe('WorkspaceManager: isGit', () => {
   it('flags each pinned workspace by its own .git marker', async () => {
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     expect(latest(repo).workspace).toEqual({
       path: repo,
       missing: false,
