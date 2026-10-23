@@ -227,7 +227,7 @@ export function statusLogOf(regDir: string, tabId: string): string {
 }
 
 const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
-const ASK_GIVES_UP_BEFORE_CLAUDE_ENDS_IT_S = ASK_WAITS_UP_TO_AN_HOUR_S - 10
+const ASK_GIVES_UP_A_MINUTE_BEFORE_CLAUDE_ENDS_IT_S = ASK_WAITS_UP_TO_AN_HOUR_S - 60
 
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
@@ -310,7 +310,7 @@ case "$event" in
     mkfifo "$tick" 2>/dev/null || exit 0
     printf '%s' "$input" > "$ask.tmp" && mv "$ask.tmp" "$ask"
     while [ ! -f "$answer" ]; do
-      if [ "$SECONDS" -ge "\${4:-${ASK_GIVES_UP_BEFORE_CLAUDE_ENDS_IT_S}}" ]; then
+      if [ "$SECONDS" -ge "\${KOLOFT_ASK_GIVES_UP_AFTER_S:-${ASK_GIVES_UP_A_MINUTE_BEFORE_CLAUDE_ENDS_IT_S}}" ]; then
         rm -f "$ask"
         read -t 1 <> "$tick"
         [ -f "$answer" ] && break
@@ -539,11 +539,7 @@ export function hookSettings(
           matcher: '*',
           hooks: [
             dialogs === 'wait-for-answer'
-              ? {
-                  type: 'command',
-                  command: `${cmd('ask')} ${ASK_GIVES_UP_BEFORE_CLAUDE_ENDS_IT_S}`,
-                  timeout: ASK_WAITS_UP_TO_AN_HOUR_S
-                }
+              ? { type: 'command', command: cmd('ask'), timeout: ASK_WAITS_UP_TO_AN_HOUR_S }
               : { type: 'command', command: cmd('asked') }
           ]
         }

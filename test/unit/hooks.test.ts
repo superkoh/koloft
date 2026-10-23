@@ -1009,10 +1009,14 @@ describe('injected hook script', () => {
       tool_name: 'Bash',
       tool_input: { command: 'rm -rf "build"', description: 'Clean' }
     }
-    const runAsk = (tab: string, givesUpAfterS = 3590): ReturnType<typeof spawn> =>
-      spawn(hookScript, [regDir, tab, 'ask', String(givesUpAfterS)], {
+    const runAsk = (tab: string, givesUpAfterS?: number): ReturnType<typeof spawn> =>
+      spawn(hookScript, [regDir, tab, 'ask'], {
         stdio: ['pipe', 'pipe', 'ignore'],
-        env: { ...process.env, SECONDS: '7200' }
+        env: {
+          ...process.env,
+          SECONDS: '7200',
+          ...(givesUpAfterS && { KOLOFT_ASK_GIVES_UP_AFTER_S: String(givesUpAfterS) })
+        }
       })
     const feed = (child: ReturnType<typeof spawn>, payload: unknown): Promise<string> => {
       let out = ''
@@ -1026,7 +1030,7 @@ describe('injected hook script', () => {
       path.join(regDir, `${tab}.${child.pid}.ask.json`)
 
     // CC§14
-    it('every local tab waits up to an hour for an answer to any dialog, and gives up on its own shortly before claude would end it; a tab on another machine only records it', () => {
+    it('every local tab waits up to an hour for an answer to any dialog; a tab on another machine only records it', () => {
       const read = (file: string): Record<string, Record<string, unknown>> =>
         JSON.parse(fs.readFileSync(file, 'utf8'))
       const local = read(writeTabHookSettings(setupHooks(noPeerInstance), 'tabC1')).hooks
@@ -1035,7 +1039,7 @@ describe('injected hook script', () => {
         hooks: { command: string; timeout: number }[]
       }[]
       expect(local[0].matcher).toBe('*')
-      expect(local[0].hooks[0].command).toMatch(/ ask 3590$/)
+      expect(local[0].hooks[0].command).toMatch(/ ask$/)
       expect(local[0].hooks[0].timeout).toBe(3600)
       const remote = hookSettings('/m/hook.sh', '/m/reg', 'tabC2', undefined, dq, 'record-only')
         .hooks as Record<string, { hooks: { command: string; timeout?: number }[] }[]>
@@ -1071,7 +1075,7 @@ describe('injected hook script', () => {
     // CC§14
     it('given up on its own with no answer, it leaves the dialog on screen with no output, removes its question file and records the question in the status log, as a tab that does not wait would', async () => {
       markAnswerable(regDir, 'tabA3', true)
-      const child = runAsk('tabA3', 1)
+      const child = runAsk('tabA3', 2)
       const printed = feed(child, ask)
       await vi.waitFor(() => expect(fs.existsSync(askOf(child, 'tabA3'))).toBe(true))
       expect(await printed).toBe('')
@@ -1085,13 +1089,13 @@ describe('injected hook script', () => {
     // CC§14
     it('an answer Koloft writes just as the hook gives up is still printed, and the question is not recorded', async () => {
       markAnswerable(regDir, 'tabA4', true)
-      const child = runAsk('tabA4', 1)
+      const child = runAsk('tabA4', 2)
       const printed = feed(child, ask)
       const askFile = askOf(child, 'tabA4')
       await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(true))
       await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(false), {
         interval: 20,
-        timeout: 3000
+        timeout: 5000
       })
       fs.writeFileSync(path.join(regDir, `tabA4.${child.pid}.answer.json`), '{"late":true}')
       expect(await printed).toBe('{"late":true}')
