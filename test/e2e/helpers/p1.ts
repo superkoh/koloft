@@ -417,6 +417,19 @@ export async function landsOnTheButler(page: Page): Promise<void> {
   await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
 }
 
+const BUTLER_WOULD_HAVE_OPENED_BY_MS = 3000
+
+export async function staysOnTheFolderPageNotTheButler(
+  page: Page,
+  env: E2EEnv,
+  wsName: string
+): Promise<void> {
+  await page.waitForTimeout(BUTLER_WOULD_HAVE_OPENED_BY_MS)
+  await expect(page.locator('.w-empty .big')).toHaveText(wsName)
+  await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
+  expect(readAllCalls(env).length - readCalls(env).length).toBe(0)
+}
+
 export function wsRows(page: Page, wsName: string): Locator {
   return wsGroup(page, wsName).locator('.ws-tab')
 }

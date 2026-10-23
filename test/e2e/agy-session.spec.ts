@@ -16,7 +16,6 @@ import {
 } from './helpers/env'
 import {
   agentRow,
-  butlerRow,
   centerTerm,
   gitCommitAll,
   gitInit,
@@ -26,6 +25,7 @@ import {
   readAllCalls,
   runIn,
   sendShortcut,
+  staysOnTheFolderPageNotTheButler,
   waitBooted,
   waitConductorStarted,
   wsGroup,
@@ -42,7 +42,6 @@ const COMPACTION_LONGER_THAN_THE_HALF_SECOND_BEFORE_IT_SHOWS_MS = '3000'
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
-const BUTLER_WOULD_HAVE_OPENED_BY_MS = 3000
 
 const accountHome = (env: E2EEnv): string => path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)
 const ownersApp = (env: E2EEnv): string => path.join(ownersGemini(env), 'antigravity-cli')
@@ -237,10 +236,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await page.keyboard.press('2')
 
       await expect(agyRows(page)).toHaveCount(0, { timeout: 30_000 })
-      await page.waitForTimeout(BUTLER_WOULD_HAVE_OPENED_BY_MS)
-      await expect(page.locator('.w-empty .big')).toHaveText('ws-a')
-      await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
-      expect(readAllCalls(env)).toHaveLength(0)
+      await staysOnTheFolderPageNotTheButler(page, env, 'ws-a')
     } finally {
       await quitAndClose(app)
     }

@@ -4,7 +4,6 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import {
-  butlerRow,
   gitInit,
   killSession,
   menuItemTexts,
@@ -12,14 +11,13 @@ import {
   openPicker,
   pickerDialog,
   processAlive,
-  readCalls,
   sendShortcut,
   snap,
+  staysOnTheFolderPageNotTheButler,
   waitForCalls
 } from './helpers/p1'
 
 const BIND_DELAY_LONG_ENOUGH_TO_DRIVE_THE_MENU_MS = '20000'
-const BUTLER_WOULD_HAVE_OPENED_BY_MS = 3000
 
 async function launch(env: E2EEnv): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await launchApp(env)
@@ -138,10 +136,7 @@ test.describe('pending row: what a launch owns before Claude reports a session i
 
       killSession(call.pid, env)
       await expect(page.locator('.ws .ws-tab')).toHaveCount(0, { timeout: 30_000 })
-      await page.waitForTimeout(BUTLER_WOULD_HAVE_OPENED_BY_MS)
-      await expect(page.locator('.w-empty .big')).toHaveText('ws-a')
-      await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
-      expect(readCalls(env)).toHaveLength(1)
+      await staysOnTheFolderPageNotTheButler(page, env, 'ws-a')
     } finally {
       await app.close().catch(() => {})
     }
