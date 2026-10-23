@@ -510,6 +510,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
           .poll(() => sent(first), { timeout: 60_000 })
           .toContain('Theownertypedthisin⌘P:turnondarkmode')
         await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        if (backend !== 'agy') expect(savedOwnerWords(env, backend)).not.toContain('From Koloft')
         const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
         await page.evaluate(
           ([id, line]) => window.api.terminal.write(id, line + '\r'),
@@ -531,7 +532,6 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         expect(await sent(butlerTab)).toContain(
           '(FromKoloft:)Theowneraskedforsomething,andKolofthandsittoahelperofyours'
         )
-        if (backend !== 'agy') expect(savedOwnerWords(env, backend)).not.toContain('From Koloft')
       } finally {
         await quitAndClose(app)
       }

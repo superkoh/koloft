@@ -2,7 +2,11 @@ import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { record } from './codexObservation'
-import { FROM_A_SESSION, FROM_KOLOFT } from './crossSessionMessage'
+import {
+  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
+  FROM_A_SESSION,
+  FROM_KOLOFT
+} from './crossSessionMessage'
 import {
   HOLD_FILE,
   HOLD_TAB_ENV,
@@ -29,7 +33,7 @@ export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
 const EVENTS = ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'] as const
 type AgyHookName = (typeof EVENTS)[number]
 
-const NOT_THE_OWNERS_WORDS = [FROM_A_SESSION, FROM_KOLOFT]
+const NOT_THE_OWNERS_WORDS = [FROM_A_SESSION, FROM_KOLOFT, A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS]
   .map((opening) => `-e ${shq(`"content":"<USER_REQUEST>\\n${opening}`)}`)
   .join(' ')
 

@@ -41,6 +41,7 @@ import {
 } from './agentRequests'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import {
+  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
   FROM_KOLOFT,
   crossSessionLine,
@@ -785,7 +786,8 @@ const KOLOFT_ENVELOPES = [
   SESSION_SAYS_OPENING,
   BUTLER_SAYS_OPENING,
   ASSIST_SAYS_OPENING_IN_OLDER_TRANSCRIPTS,
-  FROM_KOLOFT
+  FROM_KOLOFT,
+  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS
 ]
 
 type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?: string }

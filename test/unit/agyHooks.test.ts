@@ -139,14 +139,15 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   })
 
   // ADR-0031
-  it("quotes the owner's own newest words past a message from another session, a notice from Koloft and the note Koloft opens a butler with for a ⌘P request", () => {
+  it("quotes the owner's own newest words past a message from another session, a notice from Koloft and the note Koloft opens a butler with for a ⌘P request, in its older wording too", () => {
     expect(
       quoteBeforeModelCall(
         transcriptWith(
           '先看看侧栏',
           `${FROM_A_SESSION}"Fix docs", id abc:) Done: PR #12 is open.`,
           `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb.`,
-          A_HELPER_HAS_IT
+          A_HELPER_HAS_IT,
+          '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
         )
       )
     ).toBe('先看看侧栏')
