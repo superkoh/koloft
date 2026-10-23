@@ -931,7 +931,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const entry = run.info && named && this.history.get(run.info.sessionId)
     if (entry) entry.museName = named
     const name = renamedTo(r)
-    if (name && run.info) return this.retitle(run.info, name)
+    if (name && run.info) return this.retitle(run.info, name, true)
     const work = finishedWork(r)
     if (work) run.commands.delete(work)
     if (work && run.background.delete(work)) this.publishBackground(run)

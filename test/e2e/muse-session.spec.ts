@@ -49,6 +49,23 @@ async function startMuse(page: Page, env: E2EEnv): Promise<MuseCall> {
   return museCalls(env)[before]
 }
 
+const ROWS_FOLLOW_A_LISTING_MS = 2_000
+const SAMPLE_EVERY_MS = 100
+
+async function textsAcrossAWindow(locator: Locator, ms: number): Promise<string[]> {
+  const seen: string[] = []
+  for (const end = Date.now() + ms; Date.now() < end;) {
+    seen.push(await locator.innerText())
+    await new Promise((resolve) => setTimeout(resolve, SAMPLE_EVERY_MS))
+  }
+  return seen
+}
+
+function museListings(env: E2EEnv): number {
+  const file = path.join(env.home, 'fake-muse-listings.jsonl')
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length : 0
+}
+
 test.describe('Muse Code sessions through the real method chooser, status signal, live registry and muse serve, with only the CLI faked', () => {
   test("a Muse session starts from the workspace menu, waits on Muse's trust question in its terminal, and its light follows its status from working to waiting, the finished turn leaving a red dot and the bell's count though its tab is on screen", async ({
     env
@@ -279,7 +296,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(row).toHaveClass(/st-waiting/)
       await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 15_000 })
       await runIn(page, centerTerm(page), '/rename Docs cleanup')
-      await expect(row).toContainText('Docs cleanup')
+      await expect(row).toContainText('docs cleanup')
     } finally {
       await quitAndClose(app)
     }
@@ -300,7 +317,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await runIn(page, centerTerm(page), 'first topic')
       await expect(museRows(page).filter({ hasText: 'first topic' })).toHaveClass(/st-waiting/)
       await runIn(page, centerTerm(page), '/rename Docs cleanup')
-      await expect(museRows(page)).toContainText('Docs cleanup')
+      await expect(museRows(page)).toContainText('docs cleanup')
       await runIn(page, centerTerm(page), '/fork')
       await expect(page.locator('.term-wrap:visible')).toContainText('Fork created')
       await quitAndClose(app)
@@ -309,7 +326,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       page = await app.firstWindow()
       await waitBooted(page)
       await expect.poll(() => museCalls(env).length, { timeout: 30_000 }).toBe(2)
-      await expect(museRows(page).filter({ hasText: 'Docs cleanup' })).toHaveClass(
+      await expect(museRows(page).filter({ hasText: 'docs cleanup' })).toHaveClass(
         /st-(waiting|idle)/,
         { timeout: 30_000 }
       )
@@ -322,7 +339,8 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
-  test('closing the tab ends muse; its row stays in the list, cold, and clicking it brings the same session back', async ({
+  // MUSE§2
+  test('closing the tab ends muse; its row stays in the list, cold, under the name given with /rename rather than the first message, and clicking it brings the same session back', async ({
     env
   }) => {
     installMuse(env)
@@ -336,9 +354,15 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await runIn(page, centerTerm(page), 'keep me')
       await expect(museRows(page)).toContainText('keep me')
       await expect(museRows(page)).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), '/rename Docs cleanup')
+      await expect(museRows(page)).toContainText('docs cleanup')
+      const listedBefore = museListings(env)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect.poll(() => processAlive(first.pid)).toBe(false)
       await expect(museRows(page)).toHaveClass(/cold/)
+      await expect.poll(() => museListings(env)).toBeGreaterThan(listedBefore)
+      const titles = await textsAcrossAWindow(museRows(page), ROWS_FOLLOW_A_LISTING_MS)
+      expect(titles.filter((t) => !t.includes('docs cleanup'))).toEqual([])
       await museRows(page).click()
       await expect.poll(() => museCalls(env).length).toBe(2)
       expect(museCalls(env)[1].sessionId).toBe(first.sessionId)

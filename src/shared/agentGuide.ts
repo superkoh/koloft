@@ -134,7 +134,10 @@ A task's name may have spaces: put it in quotes, like "Nightly tests". If you fo
 
 Every cron command works on this session's workspace, or on the one --workspace <workspace> names (its folder name or full path). The butler has no workspace of its own, so it always gives --workspace.
 
-When it runs: --every 30m, --every 2h, --daily 09:00, or --weekly mon,wed,fri@09:00
+When it runs: --every 30m, --every 2h, --daily 09:00, --weekly mon,wed,fri@09:00, --once 2026-10-25@14:00, or --after 2h
+    --every runs on the clock: every 2h is 0:00, 2:00, 4:00 and so on.
+    --once runs one time on that day at that time, then the task turns itself off.
+    --after waits that long after each run's tab is gone, then starts the next run. The wait also starts again when the task is saved or turned on.
 Options: --backend ${BACKEND_CHOICE}, --model <model>, --effort low|medium|high|xhigh|max, --permission same|acceptEdits|skipAll, --when-done open|close
     same: the same permission as a session started from the sidebar's + button.
     acceptEdits: may change files without asking.
