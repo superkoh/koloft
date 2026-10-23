@@ -241,46 +241,45 @@ describe('koloft command in a Codex session', () => {
     expect(raws[0]).not.toHaveProperty('tabId')
   })
 
-  it('in a read-only sandbox it still prints its guide, and says any other command cannot run here and exits 1', async () => {
+  it('in a read-only sandbox it still prints its guide', async () => {
     fs.chmodSync(requestDir, 0o555)
     for (const args of [['help'], [], ['--help']]) {
       const guide = await run(path.join(shimDir, 'koloft'), args, {})
       expect(guide.status).toBe(0)
       expect(guide.stdout).toBe(AGENT_GUIDE + '\n')
     }
-    const r = await run(path.join(shimDir, 'koloft'), ['note'], {})
-    expect(r.status).toBe(1)
-    expect(r.stderr).toMatch(/read-only/)
   })
 })
 
-describe('koloft command in a Codex, Muse or Antigravity session once Koloft lets go of it', () => {
+describe('koloft command in a Codex, Muse or Antigravity session says which agent it runs in, and what stops it', () => {
   it.each([
     ['codex', 'Codex'],
     ['muse', 'Muse'],
     ['agy', 'Antigravity']
   ] as const)(
-    'a %s session says it is a %s session no longer linked to Koloft, and exits 1',
+    'once Koloft lets go of it, a %s session says it is a %s session no longer linked to Koloft, and exits 1',
     async (backend, label) => {
-      const requestDir = path.join(base, `${backend}-requests`)
-      writeAgentShim(shimDir, requestDir, backend)
+      writeAgentShim(shimDir, path.join(base, `${backend}-requests`), backend)
       const r = await run(path.join(shimDir, 'koloft'), ['note'], {})
       expect(r.status).toBe(1)
       expect(r.stderr).toBe(`koloft: this ${label} session is no longer linked to Koloft.\n`)
     }
   )
 
-  it.each(['muse', 'agy'] as const)(
-    'a %s session that cannot write its request says it could not reach Koloft, not that a sandbox is read-only',
-    async (backend) => {
+  it.each([
+    ['codex', 'koloft: this sandbox is read-only, so koloft cannot run here.'],
+    ['muse', 'koloft: could not reach Koloft.'],
+    ['agy', 'koloft: could not reach Koloft.']
+  ] as const)(
+    'a %s session that cannot write its request prints only "%s", and exits 1',
+    async (backend, said) => {
       const requestDir = path.join(base, `${backend}-requests`)
       fs.mkdirSync(requestDir, { mode: 0o555 })
       writeAgentShim(shimDir, requestDir, backend)
       try {
         const r = await run(path.join(shimDir, 'koloft'), ['note'], {})
         expect(r.status).toBe(1)
-        expect(r.stderr).toMatch(/\nkoloft: could not reach Koloft\.\n$/)
-        expect(r.stderr).not.toMatch(/read-only/)
+        expect(r.stderr).toBe(`${said}\n`)
       } finally {
         fs.chmodSync(requestDir, 0o700)
       }

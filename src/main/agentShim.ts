@@ -10,6 +10,7 @@ import { SECRET_VERB, writeSudoShims } from './sudoShim'
 
 export const AGENT_SHIM_WAITS_MS = 10_000
 const SHIM_POLL_MS = 50
+const COULD_NOT_REACH_KOLOFT = 'koloft: could not reach Koloft.'
 
 const HEAD = `#!/usr/bin/env bash
 : koloft agent shim
@@ -42,7 +43,7 @@ req="$dir/req-$id.json"
 res="$dir/res-$id.json"
 trap 'rm -f "$req" "$part" 2>/dev/null' EXIT
 trap 'exit 143' TERM HUP INT
-if ! printf '{%s"argv":[%s],"cwd":"%s","pid":%s}\\n' "$tabfield" "$args" "$(jstr "$PWD")" "$$" > "$part" 2>/dev/null || ! mv "$part" "$req" 2>/dev/null; then
+if ! printf '{%s"argv":[%s],"cwd":"%s","pid":%s}\\n' "$tabfield" "$args" "$(jstr "$PWD")" "$$" 2>/dev/null > "$part" || ! mv "$part" "$req" 2>/dev/null; then
   rm -f "$part" 2>/dev/null
   echo "$unwritable" >&2
   exit 1
@@ -75,7 +76,7 @@ if [ -z "$KOLOFT_AGENT_DIR" ] || [ -z "$KOLOFT_TAB_ID" ] || [ -z "$KOLOFT_PID" ]
 fi
 dir="$KOLOFT_AGENT_DIR"
 tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\","
-unwritable="koloft: could not reach Koloft."
+unwritable="${COULD_NOT_REACH_KOLOFT}"
 ${body(AGENT_SHIM_WAITS_MS)}`
 
 export const REMOTE_AGENT_SHIM = `${HEAD}
@@ -88,13 +89,12 @@ mkdir -p "$dir" 2>/dev/null
 tm=""
 [ -n "$TMUX" ] && tm="$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null)"
 tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\",\\"tmux\\":\\"$(jstr "$tm")\\","
-unwritable="koloft: could not reach Koloft."
+unwritable="${COULD_NOT_REACH_KOLOFT}"
 ${body(REMOTE_AGENT_SHIM_WAITS_MS, REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS)}`
 
-// CODEX§12 CODEX§17
-const codexUnwritable = 'koloft: this sandbox is read-only, so koloft cannot run here.'
+const CODEX_SANDBOX_IS_READ_ONLY = 'koloft: this sandbox is read-only, so koloft cannot run here.'
 
-// MUSE§8 AGY§25
+// CODEX§12 CODEX§17 MUSE§8 AGY§25
 function folderAgentShim(backend: BackendId, requestDir: string, guide: string): string {
   return `${HEAD}
 case "\${1:-help}" in help|--help) cat ${shq(guide)}; exit 0 ;; esac
@@ -104,7 +104,7 @@ if [ ! -d "$dir" ]; then
   exit 1
 fi
 tabfield=""
-unwritable="${backend === 'codex' ? codexUnwritable : 'koloft: could not reach Koloft.'}"
+unwritable="${backend === 'codex' ? CODEX_SANDBOX_IS_READ_ONLY : COULD_NOT_REACH_KOLOFT}"
 ${body(AGENT_SHIM_WAITS_MS)}`
 }
 
