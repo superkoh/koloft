@@ -180,7 +180,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('@ names the workspace: typing @ offers the workspaces with the first one picked, Esc puts the offer away and leaves the words, ↓ and ⏎ fill a name in, ⇧⏎ breaks the line, and ⏎ starts there at once without the @ word — past the picker with Assist off, and with Assist on without asking it; once one workspace is named a second @ offers none, and two names keep Start off', async ({
+  test('@ names the workspace: typing @ offers the workspaces with the first one picked, Esc puts the offer away and leaves the words, ↓ and ⏎ fill a name in, ⇧⏎ breaks the line, and ⏎ starts there at once without the @ word — past the picker with Assist off, and with Assist on without asking it; once one workspace is named a second @ offers none, two workspaces keep Start off, and one named twice does not', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -232,12 +232,13 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await page.keyboard.press('Enter')
       await expect(askBox(page)).toHaveValue('@ws-a tidy the readme, and @ws-b too')
 
-      await askBox(page).fill('@ws-a tidy the readme')
+      await askBox(page).fill('@ws-a tidy the readme, as @ws-a does')
       await page.keyboard.press('Enter')
       const calls = await waitForAllCalls(env, 2, 30_000)
       expect(fs.realpathSync(calls[1].cwd)).toBe(fs.realpathSync(env.workspaces.a))
-      expect(textAfterDashes(calls[1])).toBe('tidy the readme')
+      expect(textAfterDashes(calls[1])).toBe('tidy the readme, as @ws-a does')
       expect(assistWasAsked(env)).toBe('')
+      expect(readAllCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }

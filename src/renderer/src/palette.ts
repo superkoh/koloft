@@ -169,10 +169,18 @@ export function mentionTyping(text: string, caret: number): MentionTyping | null
   return null
 }
 
+export interface NamedWorkspace {
+  start: number
+  end: number
+  wsPath: string
+}
+
 export function mentionCandidates(
   workspaces: PaletteWorkspace[],
-  at: MentionTyping
+  at: MentionTyping,
+  named: NamedWorkspace[]
 ): PaletteWorkspace[] {
+  if (named.some((n) => n.start !== at.start)) return []
   const word = at.word.toLowerCase()
   if (workspaces.some((w) => w.tag.toLowerCase() === word)) return []
   return workspaces.filter((w) => matchesQuery(w.tag, at.typed))
@@ -185,12 +193,6 @@ export function completeMention(
 ): { text: string; caret: number } {
   const head = `${text.slice(0, at.start)}@${tag} `
   return { text: head + text.slice(at.end).replace(/^[ \t]/, ''), caret: head.length }
-}
-
-export interface NamedWorkspace {
-  start: number
-  end: number
-  wsPath: string
 }
 
 export function namedWorkspaces(text: string, workspaces: PaletteWorkspace[]): NamedWorkspace[] {
@@ -211,9 +213,8 @@ export function namedWorkspaces(text: string, workspaces: PaletteWorkspace[]): N
 
 export function pinnedWorkspace(
   text: string,
-  workspaces: PaletteWorkspace[]
+  [first]: NamedWorkspace[]
 ): { wsPath: string; prompt: string } | null {
-  const [first] = namedWorkspaces(text, workspaces)
   if (!first) return null
   const head = text.slice(0, first.start)
   const tail = text.slice(first.end)

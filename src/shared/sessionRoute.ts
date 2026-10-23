@@ -160,14 +160,6 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
   return null
 }
 
-export const routeInto = (path: string): SessionRoute => ({
-  title: '',
-  why: '',
-  kind: 'workspace',
-  path,
-  worktree: null
-})
-
 export function parseRoute(reply: string | null, list: RouteWorkspace[]): SessionRoute | null {
   const o = reply ? jsonIn(reply) : null
   if (!o) return null
