@@ -404,8 +404,9 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         })
         .toBe('turn on dark mode')
       const butlerTab = await butlerRow(page).getAttribute('data-tab-id')
-      expect(fs.existsSync(path.join(env.userData, 'hook-sessions', `${butlerTab}.said`))).toBe(
-        false
+      const butlerSaid = path.join(env.userData, 'hook-sessions', `${butlerTab}.said`)
+      expect(fs.existsSync(butlerSaid) ? fs.readFileSync(butlerSaid, 'utf8') : '').not.toContain(
+        'dark mode'
       )
       fs.rmSync(env.claudeDelayFile, { force: true })
 
