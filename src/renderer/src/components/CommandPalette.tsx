@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } fr
 import { flushSync } from 'react-dom'
 import { IconAiStart, IconFolder, IconSearch } from '../icons'
 import type { BackendId, SearchSnippet, SessionSearchHit } from '@shared/types'
-import { routeInto, type SessionRoute } from '@shared/sessionRoute'
+import type { SessionRoute } from '@shared/sessionRoute'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { basename } from '@shared/preview'
 import { parseRemoteKey } from '@shared/remoteKey'
@@ -12,6 +12,7 @@ import {
   completeMention,
   mentionCandidates,
   mentionTyping,
+  namedWorkspaces,
   paletteGroups,
   paletteSessions,
   paletteWorkspaces,
@@ -79,6 +80,7 @@ function SnippetText({ snippet, short }: { snippet: SearchSnippet; short?: boole
 function tipsFor(
   mode: 'ask' | 'thinking' | 'search',
   naming: boolean,
+  twoNamed: boolean,
   picked: boolean,
   listed: boolean
 ): string {
@@ -86,6 +88,7 @@ function tipsFor(
   if (mode === 'search') return '↓↑ move · ⏎ open · Esc back'
   if (naming) return '↓↑ move · ⏎ pick · Esc'
   if (picked) return '↓↑ move · ⏎ open · Esc'
+  if (twoNamed) return 'Name one workspace · Esc'
   if (listed) return '↓ pick a match · Esc'
   return '⇧⏎ new line · Esc'
 }
@@ -129,11 +132,15 @@ export function CommandPalette({
   )
   const workspaceItems = useMemo(() => paletteWorkspaces(rows, window.api.home), [rows])
   const showBackend = mixesBackends(sessionItems.map((s) => s.row))
-  const pin = pinnedWorkspace(query, workspaceItems)
+  const named = namedWorkspaces(query, workspaceItems)
+  const pin = pinnedWorkspace(query, named)
+  const twoNamed = new Set(named.map((n) => n.wsPath)).size > 1
+  const asksAssist = assistOn && !pin
   const typed = (pin ? pin.prompt : query).trim()
+  const startable = !!typed && !twoNamed
   const tagging = mode === 'ask' ? mentionTyping(query, caret) : null
   const offered = tagging && tagging.start !== dismissedAt ? tagging : null
-  const suggestions = offered ? mentionCandidates(workspaceItems, offered) : []
+  const suggestions = offered ? mentionCandidates(workspaceItems, offered, named) : []
   const mention = suggestions.length > 0 ? offered : null
   const scan = mode === 'search' || (!composing && !mention && worthScanningWhileTyping(typed))
   const groups: PaletteGroup[] = mention
@@ -144,7 +151,7 @@ export function CommandPalette({
   const count = keys.length
   const keyAt = keys.indexOf(hotKey ?? '')
   const at = keyAt >= 0 ? keyAt : (mode === 'search' || mention) && count > 0 ? 0 : null
-  const startIsDefault = mode === 'ask' && at === null && !!typed
+  const startIsDefault = mode === 'ask' && at === null && startable
   const pick = (i: number | null): void => setHotKey(i === null ? null : keys[i])
 
   const complete = (word: MentionTyping, ws: PaletteWorkspace): void => {
@@ -169,20 +176,22 @@ export function CommandPalette({
   }
 
   const start = (backend: BackendId = choice.lead): void => {
-    if (mode !== 'ask' || !typed) return
-    const place = (route: SessionRoute | null): SessionRoute | null =>
-      pin ? routeInto(route, pin.wsPath) : route
-    if (!assistOn) {
-      onRouted(typed, backend, place(null))
+    if (mode !== 'ask' || !startable) return
+    if (!asksAssist) {
+      onRouted(
+        typed,
+        backend,
+        pin && { title: '', why: '', kind: 'workspace', path: pin.wsPath, worktree: null }
+      )
       return
     }
     setMode('thinking')
-    const ask = askRoute(typed, pin?.wsPath)
+    const ask = askRoute(typed)
     asking.current = ask
     void ask.result.then((route) => {
       if (asking.current !== ask) return
       asking.current = null
-      onRouted(typed, backend, place(route))
+      onRouted(typed, backend, route)
     })
   }
 
@@ -275,7 +284,7 @@ export function CommandPalette({
     else if (mode === 'search') {
       if (at !== null && hits[at]) onOpenHit(hits[at])
     } else if (at !== null && !e.metaKey) open(visible[at])
-    else startOrList(e.metaKey, choice, start, () => typed && setListOpen(true))
+    else startOrList(e.metaKey, choice, start, () => startable && setListOpen(true))
   }
 
   const rowOf = (item: PaletteItem): JSX.Element => {
@@ -392,7 +401,7 @@ export function CommandPalette({
     )
   }
 
-  const tips = tipsFor(mode, !!mention, at !== null, visible.length > 0)
+  const tips = tipsFor(mode, !!mention, twoNamed, at !== null, visible.length > 0)
 
   return (
     <div className="modal-backdrop palette-top" onClick={onClose}>
@@ -454,12 +463,12 @@ export function CommandPalette({
                 icon={false}
                 keyHint={startIsDefault}
                 busy={false}
-                disabled={!typed}
+                disabled={!startable}
                 label={(backend) => (
                   <>
                     <IconAiStart size={12} className="pal-pill-glyph" />{' '}
                     {startLabel(
-                      assistOn,
+                      asksAssist,
                       choice.listed.length > 1 ? BACKEND_LABEL[backend] : undefined
                     )}
                   </>

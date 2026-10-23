@@ -163,7 +163,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('@ names the workspace: typing @ offers the workspaces with the first one picked, Esc puts the offer away and leaves the words, ↓ and ⏎ fill a name in, ⇧⏎ breaks the line, and ⏎ starts there at once without the @ word — past the picker with Assist off, and with Assist on, Assist sees only that workspace and cannot send the work elsewhere', async ({
+  test('@ names the workspace: typing @ offers the workspaces with the first one picked, Esc puts the offer away and leaves the words, ↓ and ⏎ fill a name in, ⇧⏎ breaks the line, and ⏎ starts there at once without the @ word — past the picker with Assist off, and with Assist on without asking it; once one workspace is named a second @ offers none, two workspaces keep Start off, and one named twice does not', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -205,15 +205,23 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         window.api.settings.set({ assist: { on: true, backend: 'claude' } })
       )
       assistAnswers(env, { hand: 'koloft', title: 'Readme', why: 'rule 8' })
-      await ask(app, page, '@ws-a tidy the readme')
+      await ask(app, page, '@ws-a tidy the readme, and ')
+      await page.keyboard.type('@ws')
+      await expect(askBox(page)).toHaveValue('@ws-a tidy the readme, and @ws')
+      await expect(palette(page).getByRole('group', { name: 'Workspaces' })).toHaveCount(0)
+      await page.keyboard.type('-b too')
+      await expect(palette(page).locator('.pal-tips')).toHaveText('Name one workspace · Esc')
+      await expect(palette(page).locator('.pal-pill', { hasText: 'Start' })).toBeDisabled()
+      await page.keyboard.press('Enter')
+      await expect(askBox(page)).toHaveValue('@ws-a tidy the readme, and @ws-b too')
+
+      await askBox(page).fill('@ws-a tidy the readme, as @ws-a does')
       await page.keyboard.press('Enter')
       const calls = await waitForAllCalls(env, 2, 30_000)
       expect(fs.realpathSync(calls[1].cwd)).toBe(fs.realpathSync(env.workspaces.a))
-      expect(textAfterDashes(calls[1])).toBe('tidy the readme')
-      expect(nameOf(calls[1])).toBe('Readme')
-      const asked = assistWasAsked(env)
-      expect(asked).toContain('| ws-a |')
-      expect(asked).not.toContain('| ws-b |')
+      expect(textAfterDashes(calls[1])).toBe('tidy the readme, as @ws-a does')
+      expect(assistWasAsked(env)).toBe('')
+      expect(readAllCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }
@@ -623,7 +631,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
   })
 
   test.describe('remote', () => {
-    test('remote Claude: @ offers the ssh workspace by host:name, and the work starts on that machine even when Assist would hand it to the butler', async ({
+    test('remote Claude: @ offers the ssh workspace by host:name, and the work starts on that machine with Assist on, without asking it', async ({
       env
     }) => {
       test.setTimeout(300_000)
@@ -644,7 +652,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         const [onRemote] = await waitForAllCalls(env, 1, 90_000)
         expect(onRemote.cwd).toBe(remoteDir(env))
         expect(textAfterDashes(onRemote)).toBe('read the logs')
-        expect(nameOf(onRemote)).toBe('Logs')
+        expect(assistWasAsked(env)).toBe('')
       } finally {
         await quitAndClose(app)
       }

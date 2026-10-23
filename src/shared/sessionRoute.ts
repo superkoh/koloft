@@ -72,13 +72,9 @@ function workspaceLines(list: RouteWorkspace[]): string {
 const featureLines = (): string =>
   ROUTABLE_FEATURES.map((f) => `${f.key} | ${f.label} | ${f.words.join(', ')}`).join('\n')
 
-const PINNED_RULE =
-  '\nThe person named workspace 1 for this, so take rule 1, 4 or 6 for it, never another rule.\n'
-
 export function routeJob(
   list: RouteWorkspace[],
-  message: string,
-  pinned = false
+  message: string
 ): { system: string; prompt: string } {
   const machines = [...new Set([LOCAL_MACHINE, ...list.map((w) => w.machine)])]
   const prompt = `Machines: ${machines.map((m) => `"${m}"`).join(', ')} ("${LOCAL_MACHINE}" is this computer)
@@ -103,7 +99,7 @@ ${CHECK_IN_RULE}. It is meant for the sessions already working in one workspace:
 6. It is work to change, build, look into or explain something inside a project (also a question or bug report about how that project behaves, like "why does X in <folder> not show"), and exactly one workspace fits (by its folder name, what it is about, or one of its recent session titles): {"workspace": <id>, "worktree": <see below>}
 7. It wants something new built (a new program, tool or project) that belongs to no workspace: {"workspace": null, "machine": <"${LOCAL_MACHINE}", or the machine the person named>, "newFolder": <a short kebab-case English folder name, a name only, never a path>}
 8. Anything else: a question not about one project, a translation, something to write that no workspace is for, a fact to look up (like whether a pull request is merged), a scheduled job, work across several workspaces, work that could fit more than one workspace ("fix the tests", "tidy the README"), or a Koloft setting not in the features above: {"hand": "koloft"}
-${pinned ? PINNED_RULE : ''}
+
 "worktree" (rule 6 only): "main" for a folder that is not git; a git folder never works in its main checkout, even to read, ask or release, and never in a worktree that already exists, so for one:
   {"issue": <number>} when the message names an issue number,
   or {"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}
@@ -162,17 +158,6 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
     return { kind: 'new', name: distinctName(name, ws.worktrees) }
   }
   return null
-}
-
-export function routeInto(route: SessionRoute | null, path: string): SessionRoute {
-  if (route && 'path' in route && route.path === path) return route
-  return {
-    title: route?.title ?? '',
-    why: route?.why ?? '',
-    kind: 'workspace',
-    path,
-    worktree: null
-  }
 }
 
 export function parseRoute(reply: string | null, list: RouteWorkspace[]): SessionRoute | null {

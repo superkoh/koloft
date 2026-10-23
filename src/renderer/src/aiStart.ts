@@ -12,16 +12,13 @@ import { remoteKeyFromForm } from './remoteWorkspace'
 
 let lastAsk = 0
 
-export function askRoute(
-  message: string,
-  pinned?: string
-): {
+export function askRoute(message: string): {
   result: Promise<SessionRoute | null>
   cancel: () => void
 } {
   const id = ++lastAsk
   return {
-    result: window.api.assist.route(id, message, pinned).catch(() => null),
+    result: window.api.assist.route(id, message).catch(() => null),
     cancel: () => window.api.assist.cancel(id)
   }
 }

@@ -28,28 +28,4 @@ describe('routeSession', () => {
     expect(asked[0].prompt).toContain('existing worktrees: live\n')
     expect(asked[0].prompt).not.toContain('gone')
   })
-
-  it('shows Assist only the workspace the owner named with @, and tells it to keep to that one', async () => {
-    const asked: AssistJob[] = []
-    const rows = [
-      { workspace: { path: '/code/app', isGit: false, missing: false }, rows: [] },
-      { workspace: { path: '/code/site', isGit: false, missing: false }, rows: [] }
-    ] as unknown as WorkspaceRows[]
-    await routeSession(
-      {
-        rows: () => rows,
-        worktrees: async () => [],
-        assist: async (job) => {
-          asked.push(job)
-          return null
-        }
-      },
-      'fix login',
-      new AbortController().signal,
-      '/code/site'
-    )
-    expect(asked[0].prompt).toContain('1 | local | site |')
-    expect(asked[0].prompt).not.toContain('| app |')
-    expect(asked[0].prompt).toContain('The person named workspace 1 for this')
-  })
 })
