@@ -263,9 +263,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     const { app, page } = await connected(env, fake)
     try {
       const assistId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
-      await expect
-        .poll(() => fs.existsSync(path.join(env.home, '.claude', 'sessions')))
-        .toBe(true)
+      await expect.poll(() => fs.existsSync(path.join(env.home, '.claude', 'sessions'))).toBe(true)
       const socket = messagingSocketOf(env, assistId)
       const turnDoneAt = async (): Promise<number> =>
         (await pendingAttention(page)).find((e) => e.kind === 'turn-done')?.at ?? 0
