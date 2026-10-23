@@ -263,19 +263,23 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     const { app, page } = await connected(env, fake)
     try {
       const assistId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
+      await expect
+        .poll(() => fs.existsSync(path.join(env.home, '.claude', 'sessions')))
+        .toBe(true)
       const socket = messagingSocketOf(env, assistId)
+      const turnDoneAt = async (): Promise<number> =>
+        (await pendingAttention(page)).find((e) => e.kind === 'turn-done')?.at ?? 0
+      await expect.poll(turnDoneAt, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeGreaterThan(0)
+      const openingDoneAt = await turnDoneAt()
       await writeLine(socket, crossSessionLine('bypass', 'helper note one', 'koloft-helper-1')!)
       await expect
-        .poll(() => transcriptText(env, assistId), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain('helper note one')
+        .poll(turnDoneAt, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toBeGreaterThan(openingDoneAt)
       fake.say(OWNER, 'hello there')
       await expect
         .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('[Discord] hello there')
       expect(said(fake).join('\n')).not.toContain('helper note one')
-      await expect
-        .poll(async () => (await pendingAttention(page)).some((e) => e.kind === 'turn-done'))
-        .toBe(true)
 
       fs.writeFileSync(presence, 'idle')
       await writeLine(socket, crossSessionLine('bypass', 'helper note two', 'koloft-helper-2')!)
