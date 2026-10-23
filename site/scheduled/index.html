@@ -182,7 +182,8 @@
                 <td>
                   Pick a day and a time. When it comes, a run starts, and the job turns itself off.
                   It stays in the list; edit it with a new time and it is on again. If the time came
-                  while Koloft was closed or asleep, it is missed, and the job turns itself off.
+                  while Koloft was closed, or while the Mac slept more than five minutes past it, it
+                  is missed, and the job turns itself off.
                 </td>
               </tr>
               <tr>
@@ -190,8 +191,9 @@
                 <td>
                   Pick a wait, in minutes or hours. The wait starts when the last run's tab is gone:
                   it closed itself, you closed it, or it could not start. Then the next run starts.
-                  While a run is open, nothing new starts. Run now, saving the job or turning it on
-                  starts the wait again.
+                  While a run is open, nothing new starts. Saving the job or turning it on starts
+                  the wait again. Run now starts a run; the wait starts again when that run's tab is
+                  gone.
                 </td>
               </tr>
             </tbody>
@@ -201,8 +203,8 @@
           Picking After each run… sets When done to Close it, so each run makes room for the next by
           itself. With Leave it open, the wait starts when you close the run. The list says
           <code>waits for the open run to end</code> while a run is open. In a
-          <a href="../remote/">remote folder</a>, a run whose machine drops the connection counts as
-          ended too, so the wait can start while the agent there is still working.
+          <a href="../remote/">remote folder</a> it works the same way: if the link to the machine
+          drops, the run's tab stays and keeps trying to reconnect, so the wait does not start.
         </p>
 
         <h2>Where it runs</h2>
@@ -360,10 +362,10 @@
           such as "Missed 3 times — Koloft was closed or asleep".
         </p>
         <p>
-          Quit Koloft while a run is open, and the run's tab comes back when Koloft opens again. It
-          is still the job's open run, so the next time is skipped while it stays open. A Close it
-          run that had finished closes itself about a minute later. One the quit cut off in the
-          middle of its work stays open for you.
+          Quit Koloft while a run that had started working is open, and its tab comes back when
+          Koloft opens again. It is still the job's open run, so the next time is skipped while it
+          stays open. A Close it run that had finished closes itself about a minute later. One the
+          quit cut off in the middle of its work stays open for you.
         </p>
         <p>
           Close it works the same for a Claude, Codex or Muse job, and for a Claude job in a
