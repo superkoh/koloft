@@ -5,6 +5,7 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, installMuse, museCalls, seedSettings, type E2EEnv } from './helpers/env'
 import {
+  butlerHelperRows,
   butlerRow,
   butlerSessionOnDisk,
   centerTerm,
@@ -285,7 +286,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
       expect(helper.cwd).toBe(butlerFolder(env))
       expect(helper.firstPrompt).toContain("You are Alfred, the owner's butler in Koloft")
       expect(helper.firstPrompt).toContain('This session is not Alfred itself')
-      const helperRow = page.locator('.isl-butler .ws-subtabs > .ws-tab')
+      const helperRow = butlerHelperRows(page)
       await expect(helperRow).toHaveCount(1, { timeout: 60_000 })
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
       await expect(wsRows(page, 'ws-b')).toHaveCount(0)
