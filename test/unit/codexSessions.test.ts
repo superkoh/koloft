@@ -17,6 +17,7 @@ import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { spawn } from 'child_process'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 import { portOffset } from '@shared/worktreeName'
+import { keyedOn } from '@shared/remoteKey'
 
 const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
@@ -409,6 +410,40 @@ describe('CodexSessions', () => {
     expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(true)
     expect(mocks.request.mock.calls.slice(asked).map(([method]) => method)).toEqual(['thread/read'])
     expect(mocks.rpcHomes).toEqual([undefined])
+  })
+
+  // CODEX§15
+  it('a thread whose rollout Codex compressed to .jsonl.zst still has a transcript, on this Mac and on a remote machine, though its listing still names the .jsonl', async () => {
+    const listed = path.join(directory, 'rollout-a.jsonl')
+    const read = path.join(directory, 'rollout-b.jsonl')
+    fs.writeFileSync(listed + '.zst', '')
+    fs.writeFileSync(read + '.zst', '')
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'thread/read') return { thread: { id: B, cwd: repo, path: read } }
+      return params.archived ? { data: [] } : { data: [{ id: A, cwd: repo, path: listed }] }
+    })
+    await sessions.refreshHistory()
+    expect(await sessions.transcriptExists(codexSessionKey(A))).toBe(true)
+    expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(true)
+
+    const onMachine = new Set<string>()
+    deps.machine = {
+      instance: 'test',
+      ready: async () => {},
+      run: async () => ({ code: 0, stdout: '', stderr: '' }),
+      sshArgs: () => [],
+      machinePackage: () => ({}) as never,
+      tabDir: () => directory,
+      fileExists: async (file) => onMachine.has(file),
+      keyed: (machine, onMachineFile) => `${machine}:${onMachineFile}`
+    }
+    mocks.request.mockImplementation(async () => ({
+      thread: { id: B, cwd: '/srv/repo', path: '/srv/rollout-b.jsonl' }
+    }))
+    const remote = codexSessionKey(B, 'box')
+    expect(await sessions.transcriptExists(remote)).toBe(false)
+    onMachine.add(keyedOn('box', '/srv/rollout-b.jsonl.zst')!)
+    expect(await sessions.transcriptExists(remote)).toBe(true)
   })
 
   // CODEX§24
