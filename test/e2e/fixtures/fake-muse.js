@@ -594,7 +594,7 @@ function tui() {
   process.stdout.write(STATUS_ASK)
   if (asking) process.stdout.write('Do you trust this workspace? 1 Trust and continue 2 Quit\r\n')
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
-  const enterArrivesAsLineFeed = !process.stdin.isTTY
+  const enterArrivesAsLineFeed = !!process.env.KOLOFT_FAKE_TMUX_IO
   process.stdin.on('data', (chunk) => {
     let text = chunk.toString('utf8')
     if (text.includes(STATUS_ON)) {
