@@ -422,9 +422,6 @@ export interface PaletteRequest {
   at?: string
 }
 
-export type PaletteHandOff =
-  { ok: true; tabId: string; helper?: true; queued?: true } | { ok: false; error: string }
-
 export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
 export type HintId = (typeof HINT_IDS)[number]
 
@@ -1389,7 +1386,7 @@ export interface KoloftApi {
     unbind(): Promise<void>
     open(): Promise<ConductorOpenResult>
     startFresh(): Promise<ConductorOpenResult>
-    fromPalette(request: PaletteRequest): Promise<PaletteHandOff>
+    fromPalette(request: PaletteRequest): Promise<ConductorOpenResult>
   }
   discord: {
     status(): Promise<DiscordStatus>
@@ -1404,6 +1401,8 @@ export type Schedule =
   | { kind: 'daily'; at: string }
   | { kind: 'weekly'; days: number[]; at: string }
   | { kind: 'every'; n: number; unit: 'minutes' | 'hours' }
+  | { kind: 'once'; date: string; at: string }
+  | { kind: 'after'; n: number; unit: 'minutes' | 'hours' }
 
 export type CronPermission = 'same' | 'acceptEdits' | 'skipAll'
 // CC§9
@@ -1426,6 +1425,7 @@ export interface CronJob {
   autoClose?: true
   enabled: boolean
   createdAt: number
+  waitFrom?: number
   history: HistoryLine[]
 }
 
@@ -1442,6 +1442,7 @@ export interface HistoryLine {
   sessionId?: string
   removed?: true
   kept?: string
+  liveState?: 'running' | 'done'
 }
 
 export interface CronFile {
@@ -1486,7 +1487,9 @@ export interface SpawnedTab {
   sessionId?: string
 }
 
-export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id'> & { id?: string }
+export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id' | 'waitFrom'> & {
+  id?: string
+}
 export type CronSaveResult = { ok: true; job: CronJob } | { ok: false; errors: string[] }
 export type CronRunNowResult =
   | { ok: true }

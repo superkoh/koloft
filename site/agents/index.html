@@ -162,12 +162,14 @@
             a folder git tracks and leaves out <code class="nowrap">-w</code>, Koloft still makes a
             worktree (see <a href="../sessions/#worktrees">worktree sessions</a>). Its row hangs
             under the session that started it (see
-            <a href="../sessions/#session-tree">sessions an agent starts</a>). A Claude or Muse
-            session it starts gets a short title that <a href="../accounts/#assist">Assist</a> makes
-            from its task (with Assist off, the first line of the task), or the name the agent gave
-            it with <code class="nowrap">--name</code>; the same title shows in the sidebar, in
-            <code class="nowrap">session list</code> and in Discord. Codex and Antigravity name
-            their sessions themselves; <code class="nowrap">--name</code> is turned down.
+            <a href="../sessions/#session-tree">sessions an agent starts</a>). A session it starts
+            gets a short title that <a href="../accounts/#assist">Assist</a> makes from its task
+            (with Assist off, the first line of the task), or the name the agent gave it with
+            <code class="nowrap">--name</code>; the same title shows in the sidebar, in
+            <code class="nowrap">session list</code> and in Discord. Every kind of session gets
+            this, except an Antigravity session in a <a href="../remote/">remote folder</a>:
+            Antigravity names that one itself, and <code class="nowrap">--name</code> is turned
+            down.
           </li>
           <li>
             <code>koloft session read</code> — print what a session said in its last turns, open or

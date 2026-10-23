@@ -83,6 +83,17 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   same numbers are written again as `payload.event.kind == "goal_usage_attribution"`
   (`record.usage_family: "provider"`), so reading both doubles the total. A subagent's
   calls are only in its own `subagent/<child>/session.jsonl`.
+- Muse's own list cannot carry a name Koloft gives (checked 2026-10-22 on 1.4.9 in
+  Docker, echo provider, a pty-driven TUI and `muse serve`): `session/list` gives
+  `title` = the first prompt and `name` = the made-up name; `/rename Docs cleanup`
+  changes only `name`, stored lowercased (`docs cleanup`), never `title`, and
+  `nameOrigin` stays `null` after it, so the list cannot tell an owner's name from
+  `cyan-pollux`. Muse has no `--name` flag. `session/rename` over `muse serve` (it
+  needs a `commandId`) answers `sessionInUse` for a session a TUI holds and
+  `sessionNotLoaded` for one nobody holds, with or without the `sessionRename`
+  capability and `experimentalApi`. The binary also has a model-written title
+  (`session.description.generated` with `short_title`, `TBH_AUTO_SESSION_TITLE`), not
+  reached with the echo provider, so `title` is not always the first prompt.
 
 ## §3 Status: OSC 7501
 

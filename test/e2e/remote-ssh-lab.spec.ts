@@ -659,7 +659,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await expect(dlg).toHaveCount(0)
 
       const row = wsRows(page, 'kt-key').filter({ has: page.locator('.ws-tab-cron') })
-      await expect(row).toHaveClass(/\bst-(working|waiting)\b/, { timeout: 60_000 })
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       await row.click()
       await expect(row).toHaveClass(/\bactive\b/)
       await sendShortcut(app, 'shortcut:close-tab')

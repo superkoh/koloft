@@ -7,7 +7,14 @@ import type {
 } from '@shared/types'
 import { remoteCopyText } from '@shared/remoteKey'
 import { shortenHome } from './browseModel'
-import { rowLookups, rowsUnder, sessionTree, shownTitle, workspaceName } from './sessionRows'
+import {
+  rowLookups,
+  rowsUnder,
+  sessionTree,
+  shownTitle,
+  workspaceName,
+  workspacePlace
+} from './sessionRows'
 
 export interface PaletteSession {
   kind: 'session'
@@ -26,6 +33,7 @@ export interface PaletteWorkspace {
   wsPath: string
   name: string
   note: string
+  tag: string
 }
 
 export interface PaletteAction {
@@ -96,7 +104,7 @@ export function paletteSessions(
   const look = rowLookups(sessions, tabs, attention)
   return rows.flatMap(({ workspace: ws, rows: sessionRows }) => {
     const name = workspaceName(ws)
-    const place = ws.remote ? `${ws.remote.host}:${name}` : name
+    const place = workspacePlace(ws)
     return sessionTree(sessionRows)
       .flatMap((node) => [node.row, ...rowsUnder(node)])
       .map((row): PaletteSession => {
@@ -118,15 +126,103 @@ export function paletteSessions(
 }
 
 export function paletteWorkspaces(rows: WorkspaceRows[], home: string): PaletteWorkspace[] {
-  return rows
+  const items = rows
     .filter((w) => !w.workspace.missing)
-    .map(({ workspace: ws }) => {
+    .map(({ workspace: ws }): PaletteWorkspace => {
       const name = workspaceName(ws)
       const note = ws.remote
         ? remoteCopyText(ws.remote.host, ws.remote.path)
         : shortenHome(ws.path, home)
-      return { kind: 'workspace', key: `w:${ws.path}`, wsPath: ws.path, name, note }
+      const tag = workspacePlace(ws)
+      return { kind: 'workspace', key: `w:${ws.path}`, wsPath: ws.path, name, note, tag }
     })
+  const uses = new Map<string, number>()
+  for (const w of items) uses.set(w.tag.toLowerCase(), (uses.get(w.tag.toLowerCase()) ?? 0) + 1)
+  return items.map((w) => (uses.get(w.tag.toLowerCase())! > 1 ? { ...w, tag: w.note } : w))
+}
+
+export interface MentionTyping {
+  start: number
+  end: number
+  typed: string
+  word: string
+}
+
+const NAME_CHAR = /[A-Za-z0-9_-]/
+
+const opensMention = (text: string, at: number): boolean =>
+  at === 0 || !NAME_CHAR.test(text[at - 1])
+
+const closesMention = (text: string, at: number): boolean =>
+  at === text.length || !NAME_CHAR.test(text[at])
+
+export function mentionTyping(text: string, caret: number): MentionTyping | null {
+  for (let at = text.lastIndexOf('@', caret - 1); at >= 0 && at < caret;) {
+    if (/\s/.test(text.slice(at, caret))) return null
+    if (opensMention(text, at)) {
+      const rest = text.slice(caret).search(/\s/)
+      const end = rest < 0 ? text.length : caret + rest
+      return { start: at, end, typed: text.slice(at + 1, caret), word: text.slice(at + 1, end) }
+    }
+    at = at === 0 ? -1 : text.lastIndexOf('@', at - 1)
+  }
+  return null
+}
+
+export interface NamedWorkspace {
+  start: number
+  end: number
+  wsPath: string
+}
+
+export function mentionCandidates(
+  workspaces: PaletteWorkspace[],
+  at: MentionTyping,
+  named: NamedWorkspace[]
+): PaletteWorkspace[] {
+  if (named.some((n) => n.start !== at.start)) return []
+  const word = at.word.toLowerCase()
+  if (workspaces.some((w) => w.tag.toLowerCase() === word)) return []
+  return workspaces.filter((w) => matchesQuery(w.tag, at.typed))
+}
+
+export function completeMention(
+  text: string,
+  at: MentionTyping,
+  tag: string
+): { text: string; caret: number } {
+  const head = `${text.slice(0, at.start)}@${tag} `
+  return { text: head + text.slice(at.end).replace(/^[ \t]/, ''), caret: head.length }
+}
+
+export function namedWorkspaces(text: string, workspaces: PaletteWorkspace[]): NamedWorkspace[] {
+  const longestFirst = [...workspaces].sort((a, b) => b.tag.length - a.tag.length)
+  const named: NamedWorkspace[] = []
+  for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
+    if (!opensMention(text, i)) continue
+    const ws = longestFirst.find((w) => {
+      const end = i + 1 + w.tag.length
+      return (
+        text.slice(i + 1, end).toLowerCase() === w.tag.toLowerCase() && closesMention(text, end)
+      )
+    })
+    if (ws) named.push({ start: i, end: i + 1 + ws.tag.length, wsPath: ws.wsPath })
+  }
+  return named
+}
+
+export function pinnedWorkspace(
+  text: string,
+  [first]: NamedWorkspace[]
+): { wsPath: string; prompt: string } | null {
+  if (!first) return null
+  const head = text.slice(0, first.start)
+  const tail = text.slice(first.end)
+  const before = head.replace(/[ \t]+$/, '')
+  const after = tail.replace(/^[ \t]+/, '')
+  const spaced =
+    before !== head && after !== tail && !/(^|\n)$/.test(before) && !/^(\n|$)/.test(after)
+  return { wsPath: first.wsPath, prompt: (before + (spaced ? ' ' : '') + after).trim() }
 }
 
 export function paletteGroups(

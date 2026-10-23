@@ -28,7 +28,6 @@ let started: {
   title: string
   backend: BackendId
   firstPrompt?: string
-  ownerWords?: string
 }[]
 let resumed: string[]
 let killed: string[]
@@ -64,8 +63,7 @@ function make(): Butler {
         role: l.role,
         title: l.title,
         backend: l.backend,
-        firstPrompt: l.firstPrompt,
-        ownerWords: l.ownerWords
+        firstPrompt: l.firstPrompt
       })
       await new Promise<void>((r) => (release = r))
       return `tab-${started.length}`
@@ -211,34 +209,30 @@ describe('the butler', () => {
     expect(resumed).toEqual(['s2'])
   })
 
-  // ADR-0031 AGY§8
-  it('opened to be told something, starts a new conversation on those words with the owner’s words saved, and says so; resumed or already open, it is started on nothing', async () => {
+  // AGY§8
+  it('opened with a first prompt, starts a new conversation on it; resumed or already open, it is started on nothing', async () => {
     const c = make()
-    const words = { prompt: 'The owner typed this in ⌘P: hi', ownerWords: 'hi' }
-    const opening = c.open(words)
+    const opening = c.open('A helper has it.')
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()
-    expect((await opening).startedWith).toBe(words)
-    expect(started[0]).toMatchObject({ firstPrompt: words.prompt, ownerWords: 'hi' })
-    expect(await c.open(words)).toEqual({ ok: true, tabId: 'tab-1' })
+    expect(await opening).toEqual({ ok: true, tabId: 'tab-1' })
+    expect(started[0]).toMatchObject({ firstPrompt: 'A helper has it.' })
+    expect(await c.open('again')).toEqual({ ok: true, tabId: 'tab-1' })
 
     c.onBound('tab-1', 's1')
     c.onPtyExit('tab-1')
     transcripts.add('s1')
-    expect(await c.open(words)).toEqual({ ok: true, tabId: 'tab-resumed-s1' })
+    expect(await c.open('again')).toEqual({ ok: true, tabId: 'tab-resumed-s1' })
   })
 
-  it('asked twice while it starts, even with the same words, starts once on the first asker’s words, and tells both whose they were', async () => {
+  it('asked twice while it starts starts once, on the first asker’s prompt', async () => {
     const c = make()
-    const first = { prompt: 'same', ownerWords: 'same' }
-    const second = { prompt: 'same', ownerWords: 'same' }
-    const a = c.open(first)
-    const b = c.open(second)
+    const a = c.open('first')
+    const b = c.open('second')
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()
-    expect((await a).startedWith).toBe(first)
-    expect((await b).startedWith).toBe(first)
-    expect(started).toHaveLength(1)
+    expect(await a).toEqual(await b)
+    expect(started).toEqual([expect.objectContaining({ firstPrompt: 'first' })])
   })
 
   it('a tab resumed some other way and bound to the last session is taken as the butler again', () => {
