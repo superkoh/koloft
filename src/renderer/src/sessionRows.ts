@@ -210,6 +210,11 @@ export function workspaceName(ws: WorkspaceRows['workspace']): string {
   return basename(ws.remote?.path ?? ws.path)
 }
 
+export function workspacePlace(ws: WorkspaceRows['workspace']): string {
+  const name = workspaceName(ws)
+  return ws.remote ? `${ws.remote.host}:${name}` : name
+}
+
 export function isOrphanRow(
   row: { id: string; running: boolean },
   sessions: { sessionId: string; tabId: string; alive: boolean }[],
