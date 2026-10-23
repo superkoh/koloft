@@ -15,6 +15,7 @@ import {
   paletteGroups,
   paletteSessions,
   paletteWorkspaces,
+  namedWorkspaces,
   pinnedWorkspace,
   type PaletteAction
 } from '../../src/renderer/src/palette'
@@ -198,6 +199,11 @@ describe('command palette: @ names a workspace', () => {
     remote('build-box', '/srv/api', [])
   ]
   const items = paletteWorkspaces(rows, HOME)
+  const offeredAt = (text: string, caret = text.length) =>
+    mentionCandidates(items, mentionTyping(text, caret)!, namedWorkspaces(text, items)).map(
+      (i) => i.tag
+    )
+  const pinned = (text: string) => pinnedWorkspace(text, namedWorkspaces(text, items))
 
   it('tags a local workspace by its folder name and a remote one as host:name; two that share a tag, in any case, go by their paths', () => {
     expect(items.map((i) => i.tag)).toEqual(['koloft', 'koloft-site', 'my notes', 'build-box:api'])
@@ -214,18 +220,19 @@ describe('command palette: @ names a workspace', () => {
     expect(at('@me@bo')).toMatchObject({ start: 0, typed: 'me@bo' })
     expect(at('mail me@kol')).toBeNull()
     expect(at('@koloft fix')).toBeNull()
-    const offered = (text: string, caret = text.length) =>
-      mentionCandidates(items, mentionTyping(text, caret)!).map((i) => i.tag)
-    expect(offered('@KOL')).toEqual(['koloft', 'koloft-site'])
-    expect(offered('@box')).toEqual(['build-box:api'])
+    expect(offeredAt('@KOL')).toEqual(['koloft', 'koloft-site'])
+    expect(offeredAt('@box')).toEqual(['build-box:api'])
   })
 
   it('offers nothing once the @ word already names a workspace in full, so ⏎ starts the work instead of filling in a longer name', () => {
-    const offered = (text: string, caret = text.length) =>
-      mentionCandidates(items, mentionTyping(text, caret)!).map((i) => i.tag)
-    expect(offered('fix @koloft')).toEqual([])
-    expect(offered('@koloft-site', 4)).toEqual([])
-    expect(offered('@kolo')).toEqual(['koloft', 'koloft-site'])
+    expect(offeredAt('fix @koloft')).toEqual([])
+    expect(offeredAt('@koloft-site', 4)).toEqual([])
+    expect(offeredAt('@kolo')).toEqual(['koloft', 'koloft-site'])
+  })
+
+  it('offers nothing for a second @ word once another @ names a workspace, since only one workspace can be named', () => {
+    expect(offeredAt('@koloft fix it, and @kol')).toEqual([])
+    expect(offeredAt('@kolo fix it', 5)).toEqual(['koloft', 'koloft-site'])
   })
 
   it('a picked workspace replaces the whole @ word and leaves the caret after one space', () => {
@@ -242,28 +249,36 @@ describe('command palette: @ names a workspace', () => {
   })
 
   it('the first @ that names a whole workspace pins it, in any case, and is left out of the words sent on', () => {
-    expect(pinnedWorkspace('@koloft fix the bug', items)).toEqual({
+    expect(pinned('@koloft fix the bug')).toEqual({
       wsPath: `${HOME}/koloft`,
       prompt: 'fix the bug'
     })
-    expect(pinnedWorkspace('fix @Koloft-Site the\nfooter', items)).toEqual({
+    expect(pinned('fix @Koloft-Site the\nfooter')).toEqual({
       wsPath: `${HOME}/koloft-site`,
       prompt: 'fix the\nfooter'
     })
-    expect(pinnedWorkspace('fix the footer @koloft \nand the header', items)?.prompt).toBe(
+    expect(pinned('fix the footer @koloft \nand the header')?.prompt).toBe(
       'fix the footer\nand the header'
     )
-    expect(pinnedWorkspace('in @my notes tidy up', items)?.wsPath).toBe(`${HOME}/my notes`)
-    expect(pinnedWorkspace('deploy @build-box:api', items)).toEqual({
+    expect(pinned('in @my notes tidy up')?.wsPath).toBe(`${HOME}/my notes`)
+    expect(pinned('deploy @build-box:api')).toEqual({
       wsPath: 'ssh://build-box/srv/api',
       prompt: 'deploy'
     })
-    expect(pinnedWorkspace('帮@koloft修一下', items)).toEqual({
+    expect(pinned('帮@koloft修一下')).toEqual({
       wsPath: `${HOME}/koloft`,
       prompt: '帮修一下'
     })
-    expect(pinnedWorkspace('@koloft，修一下', items)?.wsPath).toBe(`${HOME}/koloft`)
-    expect(pinnedWorkspace('@kol fix', items)).toBeNull()
-    expect(pinnedWorkspace('me@koloft fix', items)).toBeNull()
+    expect(pinned('@koloft，修一下')?.wsPath).toBe(`${HOME}/koloft`)
+    expect(pinned('@kol fix')).toBeNull()
+    expect(pinned('me@koloft fix')).toBeNull()
+  })
+
+  it('every @ that names a whole workspace is found, so a second name can be told apart from a half-typed one', () => {
+    expect(namedWorkspaces('@koloft fix it, and @Koloft-Site too', items)).toEqual([
+      { start: 0, end: 7, wsPath: `${HOME}/koloft` },
+      { start: 20, end: 32, wsPath: `${HOME}/koloft-site` }
+    ])
+    expect(namedWorkspaces('@koloft fix @kol', items)).toHaveLength(1)
   })
 })

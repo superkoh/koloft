@@ -169,10 +169,18 @@ export function mentionTyping(text: string, caret: number): MentionTyping | null
   return null
 }
 
+export interface NamedWorkspace {
+  start: number
+  end: number
+  wsPath: string
+}
+
 export function mentionCandidates(
   workspaces: PaletteWorkspace[],
-  at: MentionTyping
+  at: MentionTyping,
+  named: NamedWorkspace[]
 ): PaletteWorkspace[] {
+  if (named.some((n) => n.start !== at.start)) return []
   const word = at.word.toLowerCase()
   if (workspaces.some((w) => w.tag.toLowerCase() === word)) return []
   return workspaces.filter((w) => matchesQuery(w.tag, at.typed))
@@ -187,11 +195,9 @@ export function completeMention(
   return { text: head + text.slice(at.end).replace(/^[ \t]/, ''), caret: head.length }
 }
 
-export function pinnedWorkspace(
-  text: string,
-  workspaces: PaletteWorkspace[]
-): { wsPath: string; prompt: string } | null {
+export function namedWorkspaces(text: string, workspaces: PaletteWorkspace[]): NamedWorkspace[] {
   const longestFirst = [...workspaces].sort((a, b) => b.tag.length - a.tag.length)
+  const named: NamedWorkspace[] = []
   for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
     if (!opensMention(text, i)) continue
     const ws = longestFirst.find((w) => {
@@ -200,17 +206,23 @@ export function pinnedWorkspace(
         text.slice(i + 1, end).toLowerCase() === w.tag.toLowerCase() && closesMention(text, end)
       )
     })
-    if (ws) {
-      const head = text.slice(0, i)
-      const tail = text.slice(i + 1 + ws.tag.length)
-      const before = head.replace(/[ \t]+$/, '')
-      const after = tail.replace(/^[ \t]+/, '')
-      const spaced =
-        before !== head && after !== tail && !/(^|\n)$/.test(before) && !/^(\n|$)/.test(after)
-      return { wsPath: ws.wsPath, prompt: (before + (spaced ? ' ' : '') + after).trim() }
-    }
+    if (ws) named.push({ start: i, end: i + 1 + ws.tag.length, wsPath: ws.wsPath })
   }
-  return null
+  return named
+}
+
+export function pinnedWorkspace(
+  text: string,
+  [first]: NamedWorkspace[]
+): { wsPath: string; prompt: string } | null {
+  if (!first) return null
+  const head = text.slice(0, first.start)
+  const tail = text.slice(first.end)
+  const before = head.replace(/[ \t]+$/, '')
+  const after = tail.replace(/^[ \t]+/, '')
+  const spaced =
+    before !== head && after !== tail && !/(^|\n)$/.test(before) && !/^(\n|$)/.test(after)
+  return { wsPath: first.wsPath, prompt: (before + (spaced ? ' ' : '') + after).trim() }
 }
 
 export function paletteGroups(

@@ -18,13 +18,12 @@ export interface SessionRouterDeps {
 export async function routeSession(
   deps: SessionRouterDeps,
   message: string,
-  signal: AbortSignal,
-  pinned?: string
+  signal: AbortSignal
 ): Promise<SessionRoute | null> {
   const list: RouteWorkspace[] = await Promise.all(
     deps
       .rows()
-      .filter((w) => !w.workspace.missing && (!pinned || w.workspace.path === pinned))
+      .filter((w) => !w.workspace.missing)
       .map(async ({ workspace: ws, rows }) => ({
         path: ws.path,
         machine: ws.remote?.host ?? LOCAL_MACHINE,
@@ -41,7 +40,7 @@ export async function routeSession(
       }))
   )
   if (signal.aborted) return null
-  const reply = await deps.assist({ ...routeJob(list, message, !!pinned), signal })
+  const reply = await deps.assist({ ...routeJob(list, message), signal })
   const route = parseRoute(reply, list)
   if (!route && reply !== null) {
     console.error('[koloft] ⌘P router reply named no usable route:', reply.slice(0, 2000))
