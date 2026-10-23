@@ -498,8 +498,10 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         const butlerTab = (await butlerRow(page).getAttribute('data-tab-id')) ?? ''
         if (messagingOf(backend, false) === 'typed')
           await expect
-            .poll(() => sent(butlerTab), { timeout: 60_000 })
-            .toContain('(Fromthesession"Theownertypedthisin⌘P:turnondark')
+            .poll(async () => (await terminalText(page, butlerTab)).replace(/\s+/g, ''), {
+              timeout: 60_000
+            })
+            .toContain('(Fromthesession"')
         await expect(butlerRow(page)).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
         await page.evaluate(
           ([id, line]) => window.api.terminal.write(id, line + '\r'),

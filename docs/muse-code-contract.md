@@ -169,7 +169,8 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   `first line\nsecond line\nthird line` written in one go, with or without
   bracketed-paste marks, then `\r` 300 ms later, is one `turn_submit` whose prompt keeps
   all three lines (muse 1.4.11, `1.4.11-R6667.1`, `--provider echo`, Docker, Linux, a
-  python pty driver, October 2026; 2 of 2 tries plain, 1 of 1 pasted).
+  python pty driver, October 2026; 2 of 2 tries plain, 1 of 1 pasted). Not probed on
+  macOS.
 
 ## §8 Shell commands inside Muse (macOS)
 
