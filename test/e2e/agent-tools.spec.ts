@@ -573,8 +573,8 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await expect(rows).toHaveCount(2, { timeout: 60_000 })
       const child = rows.and(page.locator(`.ws-tab:not([data-tab-id="${callerTabId}"])`))
       await expect(child).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      const childTabId = await child.getAttribute('data-tab-id')
-      expect(await koloftInSession(page, `session stop ${childTabId}`)).toBe('0')
+      const kid = readCalls(env).find((c) => c.argv.includes('kid'))!
+      expect(await koloftInSession(page, `session stop ${kid.sessionId}`)).toBe('0')
       await expect(child).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       const kidTree = path.join(fx.clone, '.claude', 'worktrees', 'kid')
       expect(fs.existsSync(kidTree)).toBe(true)
