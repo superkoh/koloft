@@ -716,7 +716,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     ]
     const permission = opts.permission ?? 'default'
     const permissions = PERMISSIONS[permission]
-    const statusLine = this.deps.builtInStatusLine() ? [STATUS_LINE_CONFIG] : []
+    const builtInStatusLine = this.deps.builtInStatusLine()
     const processOptions: CodexProcessOptions = {
       binary,
       env,
@@ -736,7 +736,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       },
       cwd,
       configOverrides: [
-        ...statusLine,
+        ...(builtInStatusLine ? [STATUS_LINE_CONFIG] : []),
         ...browser,
         ...gitNetwork,
         ...(instructions.length ? [developerInstructions(instructions)] : []),
@@ -799,7 +799,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         transport.url,
         '-C',
         barePath(cwd),
-        ...statusLine.flatMap((config) => ['-c', config]),
+        ...(builtInStatusLine ? ['-c', STATUS_LINE_CONFIG] : []),
         '-c',
         NO_UPDATE_NOTICE_AT_START,
         ...(opts.resumeSessionId ? [] : launchFlags),

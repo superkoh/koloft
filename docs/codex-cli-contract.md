@@ -235,7 +235,7 @@ says Codex reclaims a descendant that has left its process group.
 **An app-server whose host was killed outlives it and keeps its thread locked.** Measured
 2026-10-09, codex 0.162.0, a hidden Koloft build in a scratch `HOME` and `CODEX_HOME`:
 one Codex tab ran one turn, then Koloft's main process got SIGKILL. The TUI died at once;
-the detached `codex app-server --stdio -c tui.status_line=…` was re-parented to pid 1 and
+the detached `codex app-server --stdio -c …` was re-parented to pid 1 and
 exited on its own 13.7–13.9 s later. A relaunched Koloft that resumed the same thread
 while it lived (1.1 s after the kill, two runs) got, within 0.4 s, "This conversation is
 open in another app — Close it there and press R to continue here"; pressing `r` after

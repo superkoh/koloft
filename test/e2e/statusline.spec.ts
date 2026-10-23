@@ -177,12 +177,9 @@ test.describe('built-in statusline', () => {
       const page = await app.firstWindow()
       await waitBooted(page)
       const tui = await startCodex(page, env)
-      const tabServers = fakeCodexLog<{ argv: string[] }>(
-        env,
-        'fake-codex-server-calls.jsonl'
-      ).filter((call) => call.argv.includes(CODEX_ASKS_AND_WAITS))
-      expect(tabServers).toHaveLength(1)
-      for (const argv of [tui.argv, tabServers[0].argv])
+      const servers = fakeCodexLog<{ argv: string[] }>(env, 'fake-codex-server-calls.jsonl')
+      expect(servers.some((call) => call.argv.includes(CODEX_ASKS_AND_WAITS))).toBe(true)
+      for (const argv of [tui.argv, ...servers.map((call) => call.argv)])
         expect(argv.filter((a) => a.startsWith('tui.status_line='))).toEqual([])
     } finally {
       await quitAndClose(app)

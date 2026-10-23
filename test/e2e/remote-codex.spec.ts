@@ -4,6 +4,7 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
+import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
 import {
   chooseBackend,
   gitCommitAll,
@@ -368,7 +369,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
         argv.filter((a) => a.startsWith('tui.status_line='))
       expect(tuiCalls(env)).toHaveLength(1)
       expect(statusLine(tuiCalls(env)[0].argv)).toEqual([])
-      expect(server.argv).toContain('allow_login_shell=false')
+      expect(server.argv).toContain(CODEX_ASKS_AND_WAITS)
       expect(statusLine(server.argv)).toEqual([])
     } finally {
       await quitAndClose(app)
