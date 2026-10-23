@@ -1,0 +1,44 @@
+ssh client: OpenSSH_10.3p1, LibreSSL 3.3.6
+machine sshd: OpenSSH_9.2, OpenSSL 3.0.22 25 Aug 2026
+relay stand-in on the Mac: ws://127.0.0.1:51005/cdp/<secret>
+1 open Koloft-style master (ProxyJump through the bastion): {"code":0,"stdout":"","stderr":""}
+1 master check: {"code":0,"stdout":"","stderr":"Master running (pid=26292)"}
+2 -O forward -R 0:127.0.0.1:<relay port> on the live master: {"code":0,"stdout":"36665","stderr":""}
+2 allocated port on the machine: 36665
+2 listening sockets on that port (from /proc/net/tcp*): listen 127.0.0.1 36665
+listen ::1 36665
+3 kuser on the machine connects to the forwarded relay url (8 MiB reply): {"ok":true,"opened":5,"version":{"product":"relay-stand-in","from":"127.0.0.1"},"big":{"bytes":8388608,"ms":37}}
+3b wrong path: {"ok":false,"opened":4,"closed":{"code":1008,"reason":"unknown endpoint"}}
+3d same url with the machine Node 22 built-in WebSocket instead of the ws package: {"ok":true,"opened":6,"version":{"product":"relay-stand-in","from":"127.0.0.1"},"big":null}
+3c another account on the same machine (tuser) with the right path: {"ok":true,"opened":4,"version":{"product":"relay-stand-in","from":"127.0.0.1"},"big":null}
+4 a normal command over the same master after the forward: {"code":0,"stdout":"still-runs-commands","stderr":""}
+5 second forward on the same master, to headless Chrome: {"code":0,"port":46485,"stderr":""}
+5 playwright-core connectOverCDP from the machine across the tunnel: {"ok":true,"title":"across-the-tunnel","screenshotBytes":2732,"ms":139}
+5b the playwright-cli Koloft ships, on the machine (node 22): attach --cdp across the tunnel: {"code":0,"out":"### Session `probe` created, attached to `ws://127.0.0.1:46485/devtools/browser/eba2f7b2-c3dc-4507-a255-c2b784e1accd`.\nRun commands with: playwright-cli -s=probe <command>\n\n### Page\n- Page URL: about:blank\n### Snapshot\n- [Snapshot](.playwright-cli/page-2026-10-23T12-41-13-915Z.yml)"}
+5b goto: {"code":0,"out":"### Ran Playwright code\n```js\nawait page.goto('data:text/html,<title>cli-across-the-tunnel</title><button>Press</button>');\n```\n### Page\n- Page URL: data:text/html,<title>cli-across-the-tunnel</title><button>Press</button>\n- Page Title: cli-across-the-tunnel\n### Snapshot\n- [Snapshot](.playwright-cli/page-2026-10-23T12-41-14-139Z.yml)"}
+5b snapshot: {"code":0,"out":"### Page\n- Page URL: data:text/html,<title>cli-across-the-tunnel</title><button>Press</button>\n- Page Title: cli-across-the-tunnel\n### Snapshot\n```yaml\n- button \"Press\" [ref=e2]\n```"}
+5b detach: {"code":0,"out":"Browser 'probe' detached"}
+6 ask for the same machine port again while it is held: {"code":255,"stdout":"","stderr":"mux_client_forward: forwarding request failed: remote port forwarding failed for listen port 36665\r\nmuxclient: master forward request failed"}
+7 -O cancel the relay forward: {"code":0,"stdout":"","stderr":"mux_client_forward: forwarding request failed: port not forwarded\r\nmuxclient: master cancel forward request failed"}
+7 client after that cancel: {"ok":true,"opened":4,"version":{"product":"relay-stand-in","from":"127.0.0.1"},"big":null}
+7a -O cancel with the spec exactly as it was asked (port 0): {"code":0,"stdout":"","stderr":""}
+7a client after that cancel: {"ok":false,"error":"websocket error before open"}
+7a listeners left on the port: (none)
+7 re-add the same machine port by number: {"code":0,"stdout":"","stderr":""}
+7 client after re-add: {"ok":true,"opened":6,"version":{"product":"relay-stand-in","from":"127.0.0.1"},"big":null}
+8 -O exit the master (link drops): {"code":0,"stdout":"","stderr":"Exit request sent."}
+8 client after the master is gone: {"ok":false,"error":"websocket error before open"}
+8 tmux session on the machine still there: keepalive: 1 windows (created Fri Oct 23 12:41:14 2026)
+8 new master: {"code":0,"stdout":"","stderr":""}
+8 re-ask the same machine port on the new master: {"code":0,"stdout":"","stderr":""}
+8 the old url works again: {"ok":true,"opened":5,"version":{"product":"relay-stand-in","from":"127.0.0.1"},"big":null}
+9 forward to a machine port another program already holds (47123): {"code":0,"stdout":"","stderr":""}
+9 listeners on 47123 after that: listen 127.0.0.1 47123
+listen ::1 47123
+9 a client to ws://localhost:47123 reaches: {"ok":false,"hungFor":15000}
+9 a client to ws://127.0.0.1:47123 reaches: {"ok":false,"hungFor":15000}
+9 master still alive: {"code":0,"stdout":"","stderr":"Master running (pid=26680)"}
+10 sshd config test: ok
+10 nuser master (AllowTcpForwarding no for nuser): {"code":0,"stdout":"Welcome to the box","stderr":""}
+10 -O forward where the server forbids forwarding: {"code":255,"stdout":"","stderr":"mux_client_forward: forwarding request failed: remote port forwarding failed for listen port 0\r\nmuxclient: master forward request failed"}
+10 nuser master still alive: {"code":0,"stdout":"","stderr":"Master running (pid=31872)"}
