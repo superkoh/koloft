@@ -881,7 +881,8 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
 const AWAY_AFTER_IDLE_SECONDS = 5 * 60
 function ownerAway(): boolean {
   const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
-  if (pretend) return fs.readFileSync(pretend, 'utf8').trim() !== 'active'
+  if (pretend)
+    return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
   if (BACKGROUND_TEST) return true
   return powerMonitor.getSystemIdleState(AWAY_AFTER_IDLE_SECONDS) !== 'active'
 }
@@ -1548,7 +1549,9 @@ const sessionDeps: SessionVerbDeps = {
     const callerChannel = butler?.channelOfTab(callerTab)
     const channelId = callerChannel ?? (target.butler ? butler?.channel()?.channelId : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
-    if (channelId && discordRelay?.reaches(callerTab)) discordRelay.say(channelId, `⚠ ${text}`)
+    const butlerTab = callerChannel ? callerTab : butler?.liveTab()
+    if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
+      discordRelay.say(channelId, `⚠ ${text}`)
     else sendToRenderer(CH.cron.toast, text)
     if (callerChannel) discordRelay?.tell(butlerDestination(), `[Koloft] ${text}`)
   },

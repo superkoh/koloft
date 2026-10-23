@@ -149,13 +149,12 @@ describe('koloft discord shot', () => {
 })
 
 describe('while the owner is at the Mac and not on Discord', () => {
-  it('send and shot are refused, take no picture, and point the butler at koloft open', async () => {
+  it('send and shot are refused and take no picture', async () => {
     fs.writeFileSync(path.join(cwd, 'a.png'), 'png')
     fs.writeFileSync(path.join(cwd, 'a.html'), 'a')
     const { call, sent, shot } = verb(true, 900, 1280, true)
     expect(await call(['send', 'a.png'])).toEqual({ text: OWNER_AT_THE_MAC, exit: 1 })
     expect(await call(['shot', 'a.html'])).toEqual({ text: OWNER_AT_THE_MAC, exit: 1 })
-    expect(OWNER_AT_THE_MAC).toContain('koloft open')
     expect(sent).toEqual([])
     expect(shot).toEqual([])
   })

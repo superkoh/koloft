@@ -52,6 +52,8 @@ export const ASKS_WHAT_KOLOFT_CANNOT_SEE =
 export const inputNotProbed = (label: string): string =>
   `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. The butler can still answer this one by pressing its keys.`
 export const butlerAsks = (name: string): string => `❓ **${name}** is waiting for you.`
+export const answerItFirst = (name: string): string =>
+  `${name} asked you the question above while you were at the Mac. Answer it first; this message was not delivered.`
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
 const takesAnOption = (label: string): string =>
   `this ${label} question takes the number or the name of one option.`
@@ -137,7 +139,7 @@ interface Inbound {
   settle(failed?: string): void
 }
 
-type DiscordAnswer = 'message' | 'dialog'
+type DiscordAnswer = 'message' | 'turn'
 
 function slashTextOf(content: string): string | undefined {
   const text = content.trim()
@@ -169,7 +171,7 @@ export class DiscordRelay {
   private holds(tab: string): boolean {
     if (this.reaches(tab)) return false
     this.held.add(tab)
-    this.heldCheck ??= setInterval(() => this.checkHeld(), HELD_ASKS_CHECKED_EVERY_MS)
+    this.heldCheck ??= setInterval(() => this.checkHeld(), HELD_ASKS_CHECKED_EVERY_MS).unref()
     return true
   }
 
@@ -222,6 +224,13 @@ export class DiscordRelay {
     if (!dest) return
     this.seenLive.add(m.id)
     const tab = dest.liveTab()
+    if (tab && this.held.delete(tab) && this.dialogOpen(tab)) {
+      this.answersDiscord(tab, 'turn')
+      this.postOpenAsk(tab)
+      this.say(m.channelId, answerItFirst(dest.name), m.id)
+      dest.seen(m.id)
+      return
+    }
     const command = m.attachments.length ? undefined : slashTextOf(m.content)
     const refusal = command === undefined ? undefined : this.commandRefusal(tab, command, dest.name)
     if (
@@ -231,10 +240,11 @@ export class DiscordRelay {
       this.heldInTerminal(tab) &&
       this.dialogOpen(tab)
     ) {
-      this.answersDiscord(tab, 'dialog')
-      void this.answerSession(tab, m.content).then((error) =>
-        error ? this.say(m.channelId, error, m.id) : this.react(m, DELIVERED, true)
-      )
+      void this.answerSession(tab, m.content).then((error) => {
+        if (error) return this.say(m.channelId, error, m.id)
+        this.answersDiscord(tab, 'turn')
+        this.react(m, DELIVERED, true)
+      })
       dest.seen(m.id)
       return
     }
@@ -242,7 +252,7 @@ export class DiscordRelay {
     if (refusal || answered) {
       if (refusal) this.say(m.channelId, refusal, m.id)
       else {
-        if (tab) this.answersDiscord(tab, 'dialog')
+        if (tab) this.answersDiscord(tab, 'turn')
         this.react(m, DELIVERED, true)
       }
       dest.seen(m.id)
@@ -322,8 +332,18 @@ export class DiscordRelay {
   private async deliver(dest: Destination, item: Inbound): Promise<void> {
     const tab = await this.readyTab(dest)
     const text = await item.text()
+    const answer = item.fromDiscord ? (item.command ? 'turn' : 'message') : undefined
+    if (answer) this.answersDiscord(tab, answer)
+    try {
+      await this.hand(dest, tab, item, text)
+    } catch (error) {
+      if (answer) this.answering.delete(tab)
+      throw error
+    }
+  }
+
+  private async hand(dest: Destination, tab: string, item: Inbound, text: string): Promise<void> {
     if (item.command) return dest.typeCommand(tab, text)
-    if (item.fromDiscord) this.answersDiscord(tab, 'message')
     const backend = this.d.backendOf(tab)
     const route = backend && messagingOf(backend, false)
     if (route === 'queue') return this.d.queue(tab, text, item.clientId)
@@ -403,7 +423,7 @@ export class DiscordRelay {
     if (!channelId) return
     const answers = turn.said.some((line) => line.text.startsWith(DISCORD_PREFIX))
     const reaches = answers || this.reaches(tabId)
-    if (answers || this.answering.get(tabId) === 'dialog') this.answering.delete(tabId)
+    if (answers || this.answering.get(tabId) === 'turn') this.answering.delete(tabId)
     if (reaches && turn.reply.trim()) this.say(channelId, turn.reply)
   }
 

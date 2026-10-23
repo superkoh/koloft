@@ -7,6 +7,7 @@ import type { Turn } from '../../src/shared/turns'
 import type { DiscordMessage } from '../../src/main/discord/link'
 import type { CodexQuestion } from '../../src/main/discord/dialog'
 import {
+  answerItFirst,
   inputNotProbed,
   butlerAsks,
   DiscordRelay,
@@ -610,6 +611,29 @@ describe('DiscordRelay: the owner at the Mac', () => {
     away = true
     relay.checkHeld()
     expect(posts).toHaveLength(1)
+  })
+
+  it('a Discord message while a question is held is not taken as its answer: the question is posted and the owner is asked to answer it first', async () => {
+    const { relay, posts, sent, writes } = setup({}, [], { ownerAway: () => false })
+    relay.onAsk(TAB, QUESTION)
+    relay.onMessage(message('602', OWNER, 'how is it going?'))
+    await vi.waitFor(() => expect(posts).toHaveLength(2))
+    expect(posts[0].text).toContain('Which?')
+    expect(posts[1]).toEqual({ text: answerItFirst('Assist'), replyTo: '602' })
+    expect(relay.dialogOpen(TAB)).toBe(true)
+    expect([...sent, ...writes]).toEqual([])
+  })
+
+  it('a Discord message that could not be delivered leaves Discord quiet again', async () => {
+    const { relay, posts } = setup({}, [], {
+      ownerAway: () => false,
+      sendLine: async () => {
+        throw new Error('The socket closed.')
+      }
+    })
+    relay.onMessage(message('603', OWNER, 'hello'))
+    await vi.waitFor(() => expect(posts.at(-1)?.replyTo).toBe('603'))
+    expect(relay.reaches(TAB)).toBe(false)
   })
 
   it('a Claude question held at the Mac is posted from what is still open when the owner leaves', () => {
