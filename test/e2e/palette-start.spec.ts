@@ -92,6 +92,21 @@ function codexWireText(env: E2EEnv): string {
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
 }
 
+function savedOwnerWords(env: E2EEnv, backend: 'claude' | 'codex' | 'muse' | 'agy'): string {
+  const claude = backend === 'claude'
+  const root = path.join(env.userData, claude ? 'hook-sessions' : `${backend}-open`)
+  if (!fs.existsSync(root)) return ''
+  return fs
+    .readdirSync(root)
+    .flatMap((name) =>
+      claude ? (name.endsWith('.said') ? [name] : []) : [path.join(name, 'said')]
+    )
+    .map((name) => path.join(root, name))
+    .filter((file) => fs.existsSync(file))
+    .map((file) => fs.readFileSync(file, 'utf8'))
+    .join('\n')
+}
+
 function codexCalls(env: E2EEnv): { argv: string[]; cwd: string }[] {
   const file = path.join(env.home, 'fake-codex-calls.jsonl')
   if (!fs.existsSync(file)) return []
@@ -459,7 +474,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
 
   for (const backend of ['claude', 'codex', 'muse', 'agy'] as const) {
     const { install, busy } = keepsBusy[backend]
-    test(`a ${backend} butler: what ⌘P cannot do opens the butler when it is closed, on Koloft's note that a helper has it, and starts in a helper of the butler's, under its row, which the screen moves to; while the butler is busy the next one starts in a second helper`, async ({
+    test(`a ${backend} butler: what ⌘P cannot do opens the butler when it is closed, on Koloft's note that a helper has it, which is never saved as the owner's words, and starts in a helper of the butler's, under its row, which the screen moves to; while the butler is busy the next one starts in a second helper`, async ({
       env
     }) => {
       test.setTimeout(180_000)
@@ -514,8 +529,9 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
           .toContain('Theownertypedthisin⌘P:anddimthesidebartoo')
         await expect(butlerRow(page)).toHaveClass(BUSY_ROW)
         expect(await sent(butlerTab)).toContain(
-          '(FromKoloft:theowneraskedforsomething,andKolofthandsittoahelperofyours'
+          '(FromKoloft:)Theowneraskedforsomething,andKolofthandsittoahelperofyours'
         )
+        expect(savedOwnerWords(env, backend)).not.toContain('From Koloft')
       } finally {
         await quitAndClose(app)
       }

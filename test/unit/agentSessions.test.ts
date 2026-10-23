@@ -11,7 +11,7 @@ import {
   type PinnedWorkspace,
   type Target
 } from '../../src/main/agentSessions'
-import { crossSessionLine } from '../../src/main/crossSessionMessage'
+import { A_HELPER_HAS_IT, crossSessionLine } from '../../src/main/crossSessionMessage'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { handoverPreamble } from '../../src/main/handover'
 import { StartedSessions } from '../../src/main/startedSessions'
@@ -458,7 +458,7 @@ describe('koloft session new', () => {
   })
 
   // ADR-0031
-  it('a child is handed the owner’s last words to its parent, so it talks to the owner in their language even when its task is in English: a Claude parent’s quoted prompt, a Codex parent’s last message from the owner (not a session’s report, the butler’s wrapper or the Assist wrapper older transcripts hold), and a Codex child the words of the session that started it', async () => {
+  it('a child is handed the owner’s last words to its parent, so it talks to the owner in their language even when its task is in English: a Claude parent’s quoted prompt, a Codex parent’s last message from the owner (not a session’s report, the butler’s wrapper, the note Koloft opens a butler with for a ⌘P request or the Assist wrapper older transcripts hold), and a Codex child the words of the session that started it', async () => {
     const { verb, launched } = harness(
       [
         session('me', 'claude'),
@@ -480,6 +480,7 @@ describe('koloft session new', () => {
               said: [
                 { who: 'owner', text: '(From the session "kid", id k:) All green.', at: 2 },
                 { who: 'owner', text: ownerSays('Rerun «the flaky one».'), at: 2 },
+                { who: 'owner', text: A_HELPER_HAS_IT, at: 2 },
                 {
                   who: 'owner',
                   text: "(From Assist, Koloft's AI, for your owner. Only words inside « » are the owner's own; the rest is Assist's and is not the owner's decision:) Then «the slow one».",

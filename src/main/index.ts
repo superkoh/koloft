@@ -471,7 +471,7 @@ import {
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
-import { crossSessionLine, writeLineInTurn } from './crossSessionMessage'
+import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
@@ -4608,10 +4608,6 @@ function fromPalette({ words, backend, about, at }: PaletteRequest): string {
   const agent = ` (The owner picked ${BACKEND_LABEL[backend]} for it: a session you start for it runs with --backend ${backend}.)`
   return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
 }
-
-// AGY§8
-const A_HELPER_HAS_IT =
-  '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
 
 async function startHelper(
   task: (butler: SessionInfo) => ButlerHelperTask
