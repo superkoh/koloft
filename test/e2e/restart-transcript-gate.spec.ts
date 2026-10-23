@@ -3,7 +3,15 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  agyCalls,
+  installAgy,
+  installCodex,
+  seedSettings,
+  trustInAgy,
+  type AgyCall,
+  type E2EEnv
+} from './helpers/env'
 import { codexCalls, codexRows } from './helpers/codex'
 import {
   centerTerm,
@@ -27,6 +35,9 @@ import {
 const WS_A = 'ws-a'
 
 const LIVE_TOAST = 'Nothing to restart yet — this session has no conversation.'
+
+const agySessionCalls = (env: E2EEnv): AgyCall[] =>
+  agyCalls(env).filter((c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p'))
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -346,6 +357,50 @@ test.describe('the ⇧⌘R transcript gate: never kill a session that has no con
         method: 'thread/resume',
         sessionId: first.sessionId
       })
+      await expect.poll(() => processAlive(first.pid), { timeout: 30_000 }).toBe(false)
+      await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
+      await expect(row).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§8
+  test('an Antigravity tab before its first prompt, with no conversation id yet, is gated the same way: ⇧⌘R is a no-op with the toast, and its first prompt unlocks a restart that resumes that conversation', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launch(env)
+    try {
+      await newSessionInWith(page, WS_A, 'Antigravity')
+      await expect.poll(() => agySessionCalls(env).length).toBe(1)
+      const [first] = agySessionCalls(env)
+      const row = wsRows(page, WS_A)
+      await expect(row).toHaveCount(1)
+      await expect.poll(() => termIds(page)).toHaveLength(1)
+      const [tabId] = await termIds(page)
+      await waitTerminalQuiet(page, tabId)
+
+      await restart(app, page)
+      await expect(page.locator('.toast-msg')).toHaveText(LIVE_TOAST, { timeout: 20_000 })
+      expect(processAlive(first.pid)).toBe(true)
+      expect(agySessionCalls(env)).toHaveLength(1)
+      await expect(page.locator('.toast')).toHaveCount(0, { timeout: 20_000 })
+
+      await runIn(page, centerTerm(page), 'now we have talked')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      const conversationOfTab = async (): Promise<string | undefined> =>
+        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
+          ?.nativeSessionId
+      await expect.poll(conversationOfTab, { timeout: 30_000 }).toBeTruthy()
+      const conversation = await conversationOfTab()
+
+      await restart(app, page)
+      await expect.poll(() => agySessionCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(agySessionCalls(env)[1].argv).toContain(`--conversation=${conversation}`)
       await expect.poll(() => processAlive(first.pid), { timeout: 30_000 }).toBe(false)
       await expect(page.locator('.term-island .term-wrap')).toHaveCount(1)
       await expect(row).toHaveCount(1)

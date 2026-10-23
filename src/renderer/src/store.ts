@@ -815,9 +815,13 @@ export const useStore = create<AppState>((set, get) => ({
       .list()
       .then((live) => {
         restarting.delete(oldId)
-        const bound = live.find((s) => s.tabId === oldId && s.sessionId)
-        if (!bound) return
-        void begin(bound.sessionId, bound.treeRoot || tab.cwd, bound.alive)
+        const entry = live.find((s) => s.tabId === oldId)
+        if (entry?.sessionId)
+          return void begin(entry.sessionId, entry.treeRoot || tab.cwd, entry.alive)
+        if (!isSessionKind(tab.kind) || !get().tabs.some((x) => x.id === oldId)) return
+        get().showToast(
+          (entry?.alive ?? tab.alive) ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE
+        )
       })
       .catch(() => restarting.delete(oldId))
   },
