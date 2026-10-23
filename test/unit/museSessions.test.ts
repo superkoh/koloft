@@ -939,6 +939,16 @@ describe('a Muse session on a remote machine', () => {
     pulled()
   }
 
+  const wrote = (sessionId: string, file: string): Record<string, unknown> => ({
+    t: 'hook',
+    event: 'PostToolUse',
+    input: {
+      session_id: sessionId,
+      tool_name: 'write_file',
+      tool_response: { filePath: file, structuredPatch: [{ lines: ['+x'] }] }
+    }
+  })
+
   async function boundRemote(): Promise<string> {
     const { id } = await sessions.launch({ kind: 'muse', cwd: KEY })
     mirror(id, { t: 'bound', sessionId: A })
@@ -1005,15 +1015,7 @@ describe('a Muse session on a remote machine', () => {
         event: 'UserPromptSubmit',
         input: { session_id: A, prompt: 'go', turn_id: 't1' }
       },
-      {
-        t: 'hook',
-        event: 'PostToolUse',
-        input: {
-          session_id: A,
-          tool_name: 'write_file',
-          tool_response: { filePath: 'src/a.ts', structuredPatch: [{ lines: ['+x'] }] }
-        }
-      },
+      wrote(A, 'src/a.ts'),
       {
         t: 'hook',
         event: 'Stop',
@@ -1027,20 +1029,11 @@ describe('a Muse session on a remote machine', () => {
   it('after /clear the files the old session wrote leave the tab, so the new session’s first write reports only its own file', async () => {
     onMachine()
     const id = await boundRemote()
-    const wrote = (file: string): Record<string, unknown> => ({
-      t: 'hook',
-      event: 'PostToolUse',
-      input: {
-        session_id: sessions.list()[0].nativeSessionId,
-        tool_name: 'write_file',
-        tool_response: { filePath: file, structuredPatch: [{ lines: ['+x'] }] }
-      }
-    })
-    mirror(id, wrote('src/a.ts'))
+    mirror(id, wrote(A, 'src/a.ts'))
     await vi.waitFor(() => expect(events('files-changed')).toHaveLength(1))
     mirror(id, { t: 'hook', event: 'SessionStart', input: { session_id: B, source: 'clear' } })
     await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(B))
-    mirror(id, wrote('src/b.ts'))
+    mirror(id, wrote(B, 'src/b.ts'))
     await vi.waitFor(() => expect(events('files-changed')).toHaveLength(2))
     expect(events('files-changed')[1]).toMatchObject({
       files: [expect.objectContaining({ src: `${KEY}/src/b.ts` })],

@@ -6,6 +6,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, installMuse, trustInMuse, type E2EEnv } from './helpers/env'
 import { startCodex } from './helpers/codex'
 import {
+  type AgentName,
   boundSessionId,
   centerTerm,
   clickAppMenuItem,
@@ -133,8 +134,8 @@ async function pickChip(
   await expect(filesMenu(page)).toHaveCount(0)
 }
 
-async function openChanges(page: Page, ws = 'ws-a'): Promise<void> {
-  await startSessionIn(page, ws)
+async function openChanges(page: Page, ws = 'ws-a', method?: AgentName): Promise<void> {
+  await startSessionIn(page, ws, { method })
   await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
   await showChanges(page)
 }
@@ -792,8 +793,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await startSessionIn(page, 'ws-a', { method: agent })
-        await showChanges(page)
+        await openChanges(page, 'ws-a', agent)
         await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTs)}`)
         await pickChip(page, 'Ownership', 'session')
         await expect
