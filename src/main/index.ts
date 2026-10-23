@@ -4389,12 +4389,12 @@ function restoreOpenTabs(): string | undefined {
     addSleeper(id, t)
     if (t.sessionId === savedOpenTabs.active) activeAsleep = id
   }
-  void resumeAwake(
-    [...plan.awake.map((t) => t.sessionId), ...plan.keepRunningOnly],
-    savedOpenTabs.active
-  ).finally(() => {
+  const awake = [...plan.awake.map((t) => t.sessionId), ...plan.keepRunningOnly]
+  cronRunner?.expectReopened(awake)
+  void resumeAwake(awake, savedOpenTabs.active).finally(() => {
     openTabsRestored = true
     rememberOpenTabs()
+    cronRunner?.reopeningOver()
     cronRunner?.sweepLeftFolders()
   })
   tabLifecycle.emit('slept')
@@ -4413,6 +4413,8 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
           error: couldNotStart(row.title)
         }))
       : undefined
+    const reopenedTab = resumed?.ok && ptyMgr.get(resumed.tabId)?.alive ? resumed.tabId : undefined
+    cronRunner?.reopenedIn(id, reopenedTab)
     if (!resumed?.ok) {
       if (resumed) sendToRenderer(CH.cron.toast, resumed.error)
       return
@@ -4952,12 +4954,12 @@ function registerIpc(): void {
   ipcMain.handle(CH.attention.list, () => attention.list())
   ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
-    cronRunner?.onRendererReady()
     if (probeOnceTheRendererIsUp) {
       probeOnceTheRendererIsUp = false
       void probeAllForPanel().catch(() => {})
     }
     const activeAsleep = restoreOpenTabs()
+    cronRunner?.onRendererReady()
     const active = activeAsleep ?? activeTabBeforeReload
     activeTabBeforeReload = null
     if (process.env.KOLOFT_TEST_NO_ADOPT === '1') return { tabs: [], activeTabBeforeReload: null }

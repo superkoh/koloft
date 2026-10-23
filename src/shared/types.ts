@@ -1422,6 +1422,7 @@ export interface HistoryLine {
   sessionId?: string
   removed?: true
   kept?: string
+  liveState?: 'running' | 'done'
 }
 
 export interface CronFile {
