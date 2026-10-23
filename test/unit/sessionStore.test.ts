@@ -68,7 +68,7 @@ describe('SessionStore', () => {
     expect(new SessionStore(filename).getMember(session.key)).toEqual(session)
   })
 
-  it('keeps the name of a named member after it is removed, across a reopen, and forgets an unnamed one', () => {
+  it('keeps the name of a named member after it is removed, across a reopen, until it is a member again, and keeps nothing for an unnamed one', () => {
     const store = new SessionStore(filename)
     const named = { ...member(), title: 'docs cleanup', named: true as const }
     const unnamed = member()
@@ -80,6 +80,8 @@ describe('SessionStore', () => {
     const reopened = new SessionStore(filename)
     expect(reopened.nameOfLeftMember(named.key)).toBe('docs cleanup')
     expect(reopened.nameOfLeftMember(unnamed.key)).toBeUndefined()
+    reopened.upsertMember(named)
+    expect(reopened.nameOfLeftMember(named.key)).toBeUndefined()
   })
 
   it('writes off the main thread: a change is in memory at once and lands on disk, owner-only, a moment later', async () => {

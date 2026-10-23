@@ -104,12 +104,6 @@ function parseData(value: unknown, keyOf: KeyOf): SessionStoreData {
   // ADR-0025
   if (!record(value) || value.version !== 1) throw new Error('Unsupported session store version')
   if (!record(value.members) || !record(value.resources)) throw new Error('Invalid session store')
-  const names = value.namesOfLeftMembers
-  if (
-    names !== undefined &&
-    (!record(names) || Object.values(names).some((n) => typeof n !== 'string'))
-  )
-    throw new Error('Invalid session store')
   for (const [id, resource] of Object.entries(value.resources)) {
     if (!validResource(resource, id)) throw new Error(`Invalid worktree resource: ${id}`)
   }
@@ -163,6 +157,7 @@ export class SessionStore {
   upsertMember(member: StoredMember): void {
     const next = structuredClone(this.data)
     next.members[member.key] = structuredClone(member)
+    delete next.namesOfLeftMembers?.[member.key]
     this.commit(next)
   }
 
@@ -178,7 +173,7 @@ export class SessionStore {
     if (!Object.hasOwn(this.data.members, key)) return false
     const next = structuredClone(this.data)
     const { named, title } = next.members[key]
-    if (named) next.namesOfLeftMembers = { ...next.namesOfLeftMembers, [key]: title }
+    if (named) (next.namesOfLeftMembers ??= {})[key] = title
     delete next.members[key]
     this.commit(next)
     return true
