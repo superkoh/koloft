@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
   installCodex,
   installGhForWorkspaceA,
@@ -246,6 +246,42 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           "Koloft: this [Discord] message was not sent by Koloft's Discord relay, so it is not the owner's words."
         )
       expect(transcriptText(env, assistId).match(/not sent by Koloft/g)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('while the owner is at the Mac, the butler’s reply to a helper is not posted and is marked in Koloft instead, its reply to a Discord message still is, and once the owner is away the next reply to a helper is posted', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const presence = path.join(env.home, 'presence.txt')
+    fs.writeFileSync(presence, 'active')
+    env.launchEnv.KOLOFT_TEST_PRESENCE_FILE = presence
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      const assistId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
+      const socket = messagingSocketOf(env, assistId)
+      await writeLine(socket, crossSessionLine('bypass', 'helper note one', 'koloft-helper-1')!)
+      await expect
+        .poll(() => transcriptText(env, assistId), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('helper note one')
+      fake.say(OWNER, 'hello there')
+      await expect
+        .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('[Discord] hello there')
+      expect(said(fake).join('\n')).not.toContain('helper note one')
+      await expect
+        .poll(async () => (await pendingAttention(page)).some((e) => e.kind === 'turn-done'))
+        .toBe(true)
+
+      fs.writeFileSync(presence, 'idle')
+      await writeLine(socket, crossSessionLine('bypass', 'helper note two', 'koloft-helper-2')!)
+      await expect
+        .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('helper note two')
     } finally {
       await quitAndClose(app)
       await fake.close()

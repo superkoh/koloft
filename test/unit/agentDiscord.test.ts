@@ -3,7 +3,12 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import type { SessionInfo } from '../../src/shared/types'
-import { discordVerb, NOT_A_PAGE, NOT_THE_BUTLER } from '../../src/main/agentDiscord'
+import {
+  discordVerb,
+  NOT_A_PAGE,
+  NOT_THE_BUTLER,
+  OWNER_AT_THE_MAC
+} from '../../src/main/agentDiscord'
 import { EXIT_USAGE } from '../../src/main/agentRequests'
 import { DISCORD_SETUP_STEPS } from '../../src/main/discord/setupSteps'
 import type { DiscordFile } from '../../src/main/discord/link'
@@ -14,12 +19,13 @@ beforeEach(() => {
 })
 afterEach(() => fs.rmSync(cwd, { recursive: true, force: true }))
 
-function verb(butler: boolean, pageHeight = 900, pageWidth = 1280) {
+function verb(butler: boolean, pageHeight = 900, pageWidth = 1280, quiet = false) {
   const sent: { channelId: string; files: DiscordFile[]; text: string }[] = []
   const shot: string[] = []
   let bound = 0
   const run = discordVerb({
     channelOf: () => (butler ? '222' : undefined),
+    quiet: () => quiet,
     send: async (channelId, files, text) => {
       sent.push({ channelId, files, text })
     },
@@ -139,5 +145,18 @@ describe('koloft discord shot', () => {
     const other = verb(false)
     expect(await other.call(['shot', 'a.html'])).toEqual({ text: NOT_THE_BUTLER, exit: 1 })
     expect([...butler.shot, ...other.shot]).toEqual([])
+  })
+})
+
+describe('while the owner is at the Mac and not on Discord', () => {
+  it('send and shot are refused, take no picture, and point the butler at koloft open', async () => {
+    fs.writeFileSync(path.join(cwd, 'a.png'), 'png')
+    fs.writeFileSync(path.join(cwd, 'a.html'), 'a')
+    const { call, sent, shot } = verb(true, 900, 1280, true)
+    expect(await call(['send', 'a.png'])).toEqual({ text: OWNER_AT_THE_MAC, exit: 1 })
+    expect(await call(['shot', 'a.html'])).toEqual({ text: OWNER_AT_THE_MAC, exit: 1 })
+    expect(OWNER_AT_THE_MAC).toContain('koloft open')
+    expect(sent).toEqual([])
+    expect(shot).toEqual([])
   })
 })

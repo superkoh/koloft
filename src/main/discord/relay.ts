@@ -82,6 +82,7 @@ const DELIVERED = '✅'
 const PAGE = 100
 const PROMPT_SETTLES_AFTER_BIND_MS = 1000
 const BUTLER_GETS_READY_WITHIN_MS = 10 * 60_000
+export const HELD_ASKS_CHECKED_EVERY_MS = 30_000
 
 export interface Destination {
   name: string
@@ -101,6 +102,7 @@ export interface RelayDeps {
   link: Pick<DiscordLink, 'post' | 'upload' | 'react' | 'messages' | 'card'>
   download(url: string): Promise<Buffer>
   owner(): string | undefined
+  ownerAway(): boolean
   butlerName(): string
   destinationOf(channelId: string): Destination | undefined
   channels(): CaughtUpChannel[]
@@ -131,8 +133,11 @@ interface Inbound {
   clientId: string
   text(): Promise<string>
   command?: boolean
+  fromDiscord?: boolean
   settle(failed?: string): void
 }
+
+type DiscordAnswer = 'message' | 'dialog'
 
 function slashTextOf(content: string): string | undefined {
   const text = content.trim()
@@ -147,8 +152,45 @@ export class DiscordRelay {
   private asks = new Map<string, { payload: AskPayload; hook?: string; raw: string }>()
   private askHooks = new Map<string, Set<string>>()
   private codexAsks = new Map<string, string | number>()
+  private answering = new Map<string, DiscordAnswer>()
+  private held = new Set<string>()
+  private heldCheck: ReturnType<typeof setInterval> | undefined
 
   constructor(private d: RelayDeps) {}
+
+  reaches(tab: string): boolean {
+    return this.answering.has(tab) || this.d.ownerAway()
+  }
+
+  private answersDiscord(tab: string, answer: DiscordAnswer): void {
+    if (this.answering.get(tab) !== 'message') this.answering.set(tab, answer)
+  }
+
+  private holds(tab: string): boolean {
+    if (this.reaches(tab)) return false
+    this.held.add(tab)
+    this.heldCheck ??= setInterval(() => this.checkHeld(), HELD_ASKS_CHECKED_EVERY_MS)
+    return true
+  }
+
+  checkHeld(): void {
+    const away = this.d.ownerAway()
+    for (const tab of [...this.held]) {
+      if (!away && this.dialogOpen(tab)) continue
+      this.held.delete(tab)
+      if (away) this.postOpenAsk(tab)
+    }
+    if (this.held.size) return
+    clearInterval(this.heldCheck)
+    this.heldCheck = undefined
+  }
+
+  private postOpenAsk(tab: string): void {
+    const ask = this.openAsk(tab)
+    if (ask) return this.postClaudeAsk(tab, ask.payload)
+    const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
+    if (open) this.codexAsked(tab, open)
+  }
 
   say(channelId: string, text: string, replyTo?: string): void {
     for (const part of splitForDiscord(toDiscordMarkdown(text)))
@@ -189,6 +231,7 @@ export class DiscordRelay {
       this.heldInTerminal(tab) &&
       this.dialogOpen(tab)
     ) {
+      this.answersDiscord(tab, 'dialog')
       void this.answerSession(tab, m.content).then((error) =>
         error ? this.say(m.channelId, error, m.id) : this.react(m, DELIVERED, true)
       )
@@ -198,7 +241,10 @@ export class DiscordRelay {
     const answered = command === undefined && !!tab && this.answerDialog(tab, m)
     if (refusal || answered) {
       if (refusal) this.say(m.channelId, refusal, m.id)
-      else this.react(m, DELIVERED, true)
+      else {
+        if (tab) this.answersDiscord(tab, 'dialog')
+        this.react(m, DELIVERED, true)
+      }
       dest.seen(m.id)
       return
     }
@@ -209,6 +255,7 @@ export class DiscordRelay {
       clientId: `koloft-discord-${m.id}`,
       text: command === undefined ? () => this.textOf(m) : async () => command,
       command: command !== undefined,
+      fromDiscord: true,
       settle: (failed) => {
         if (waits) this.react(m, QUEUED, false)
         if (failed)
@@ -276,6 +323,7 @@ export class DiscordRelay {
     const tab = await this.readyTab(dest)
     const text = await item.text()
     if (item.command) return dest.typeCommand(tab, text)
+    if (item.fromDiscord) this.answersDiscord(tab, 'message')
     const backend = this.d.backendOf(tab)
     const route = backend && messagingOf(backend, false)
     if (route === 'queue') return this.d.queue(tab, text, item.clientId)
@@ -352,7 +400,11 @@ export class DiscordRelay {
 
   turnEnded(tabId: string, turn: Turn): void {
     const channelId = this.d.butlerChannelOf(tabId)
-    if (channelId && turn.reply.trim()) this.say(channelId, turn.reply)
+    if (!channelId) return
+    const answers = turn.said.some((line) => line.text.startsWith(DISCORD_PREFIX))
+    const reaches = answers || this.reaches(tabId)
+    if (answers || this.answering.get(tabId) === 'dialog') this.answering.delete(tabId)
+    if (reaches && turn.reply.trim()) this.say(channelId, turn.reply)
   }
 
   private hookFile(tab: string, hook: string, suffix: string): string {
@@ -396,8 +448,13 @@ export class DiscordRelay {
     this.asks.set(tab, { payload, hook, raw })
     if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
     this.d.asksChanged(tab)
+    this.postClaudeAsk(tab, payload)
+  }
+
+  private postClaudeAsk(tab: string, payload: AskPayload): void {
     const channelId = this.d.butlerChannelOf(tab)
-    if (channelId) this.card(channelId, this.askCard(tab, claudeDialog(payload), askHow(payload)))
+    if (channelId && !this.holds(tab))
+      this.card(channelId, this.askCard(tab, claudeDialog(payload), askHow(payload)))
   }
 
   dialog(tab: string): DialogView | undefined {
@@ -472,7 +529,7 @@ export class DiscordRelay {
 
   codexAsked(tab: string, a: CodexApproval | CodexQuestion): void {
     const channelId = this.d.butlerChannelOf(tab)
-    if (!channelId || this.codexAsks.get(tab) === a.id) return
+    if (!channelId || this.codexAsks.get(tab) === a.id || this.holds(tab)) return
     this.codexAsks.set(tab, a.id)
     const view = codexDialog(a)
     const question = 'options' in a
@@ -530,6 +587,8 @@ export class DiscordRelay {
     this.answer(tab, {})
     this.codexAsks.delete(tab)
     this.askHooks.delete(tab)
+    this.answering.delete(tab)
+    this.held.delete(tab)
   }
 
   async catchUp(): Promise<void> {

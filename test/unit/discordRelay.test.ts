@@ -3,6 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import type { SessionStatus } from '../../src/shared/types'
+import type { Turn } from '../../src/shared/turns'
 import type { DiscordMessage } from '../../src/main/discord/link'
 import type { CodexQuestion } from '../../src/main/discord/dialog'
 import {
@@ -69,6 +70,7 @@ function setup(
     },
     download: async () => Buffer.from(''),
     owner: () => OWNER,
+    ownerAway: () => true,
     butlerName: () => 'Assist',
     destinationOf: (c) => (c === CHANNEL ? conductor : undefined),
     channels: () => [
@@ -543,6 +545,82 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
     relay.onMessage(message('503', OWNER, '1'))
     await vi.waitFor(() => expect(queued).toEqual(['[Discord] 1']))
     expect(writes.map((w) => w.data)).toEqual(['2'])
+  })
+})
+
+const turn = (reply: string, ...said: string[]): Turn => ({
+  said: said.map((text, at) => ({ who: 'peer', text, at })),
+  reply,
+  at: said.length
+})
+
+describe('DiscordRelay: the owner at the Mac', () => {
+  it('a reply the owner did not ask for from Discord is not posted while they are at the Mac, and is once they are away', () => {
+    let away = false
+    const { relay, posts } = setup({}, [], { ownerAway: () => away })
+    relay.turnEnded(TAB, turn('A helper finished.', '[Koloft] fix-login reports back'))
+    expect(posts).toEqual([])
+    away = true
+    relay.turnEnded(TAB, turn('Another helper finished.', '[Koloft] docs reports back'))
+    expect(posts.map((p) => p.text)).toEqual(['Another helper finished.'])
+  })
+
+  it('a Discord message reaches the conductor and keeps Discord on for it until the turn that carries it ends, even at the Mac', async () => {
+    const { relay, posts, bodies } = setup({}, [], { ownerAway: () => false })
+    expect(relay.reaches(TAB)).toBe(false)
+    relay.onMessage(message('601', OWNER, 'how is it going?'))
+    await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] how is it going?']))
+    expect(relay.reaches(TAB)).toBe(true)
+    relay.turnEnded(TAB, turn('Still on it.', '[Koloft] an earlier note'))
+    expect(relay.reaches(TAB)).toBe(true)
+    relay.turnEnded(TAB, turn('All good.', '[Discord] how is it going?'))
+    expect(relay.reaches(TAB)).toBe(false)
+    expect(posts.map((p) => p.text)).toEqual(['Still on it.', 'All good.'])
+    relay.turnEnded(TAB, turn('A helper finished.', '[Koloft] fix-login reports back'))
+    expect(posts).toHaveLength(2)
+  })
+
+  it('a question asked while the owner is at the Mac is held; answered there it is dropped, still open when they leave it is posted then', () => {
+    let away = false
+    let question: CodexQuestion | undefined = {
+      id: 'q1',
+      question: 'Ship it?',
+      options: [{ label: 'Yes' }, { label: 'No' }]
+    }
+    const { relay, posts } = setup({}, [], {
+      backendOf: () => 'codex',
+      ownerAway: () => away,
+      pendingQuestion: () => question
+    })
+    relay.codexAsked(TAB, question)
+    expect(posts).toEqual([])
+    relay.checkHeld()
+    expect(posts).toEqual([])
+    away = true
+    relay.checkHeld()
+    expect(posts.map((p) => p.text)).toEqual([
+      `${butlerAsks('Assist')}\nShip it?\n1. Yes\n2. No\n-# Reply with the number or the name of one option.`
+    ])
+
+    away = false
+    question = { id: 'q2', question: 'Again?', options: [{ label: 'Yes' }] }
+    relay.codexAsked(TAB, question)
+    question = undefined
+    relay.checkHeld()
+    away = true
+    relay.checkHeld()
+    expect(posts).toHaveLength(1)
+  })
+
+  it('a Claude question held at the Mac is posted from what is still open when the owner leaves', () => {
+    let away = false
+    const { relay, posts } = setup({}, [], { ownerAway: () => away })
+    relay.onAsk(TAB, QUESTION)
+    expect(posts).toEqual([])
+    away = true
+    relay.checkHeld()
+    expect(posts).toHaveLength(1)
+    expect(posts[0].text).toContain('Which?')
   })
 })
 
