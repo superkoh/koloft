@@ -151,7 +151,8 @@ function asksTheOwner(method: string): boolean {
 }
 
 function noAnswers(result: unknown): boolean {
-  return Object.keys(record(record(result).answers)).length === 0
+  const answers = record(result).answers
+  return !!answers && typeof answers === 'object' && Object.keys(answers).length === 0
 }
 
 interface WireTokens {
@@ -210,7 +211,7 @@ export class CodexObservation {
   private mainTurn: Turn = 'ended'
   private publishedTurn?: Turn
   private waitingForInput = false
-  questionWentUnanswered = false
+  private unanswered = false
   private roots = new Set<string>()
   private childRoots = new Map<string, string>()
   private childTurns = new Map<string, string>()
@@ -243,6 +244,11 @@ export class CodexObservation {
     for (const [id, method] of this.approvals)
       if (method.endsWith('/requestApproval')) return { id, ...this.approvalAsks.get(id) }
     return undefined
+  }
+
+  // CODEX§20
+  questionWentUnanswered(): boolean {
+    return this.unanswered
   }
 
   // CODEX§20
@@ -286,12 +292,11 @@ export class CodexObservation {
         this.requests.set(id, { method, generation: this.generation, threadId: this.threadId })
       }
       if (method === 'turn/start' && p.threadId === this.threadId) this.unsubscribed = false
-      const answered = id !== undefined && !method ? this.approvals.get(id) : undefined
-      if (id !== undefined && answered) {
-        this.approvals.delete(id)
+      if (id !== undefined && !method) {
         // CODEX§20
-        if (answered === 'item/tool/requestUserInput' && noAnswers(f.result))
-          this.questionWentUnanswered = true
+        if (this.approvals.get(id) === 'item/tool/requestUserInput')
+          this.unanswered = noAnswers(f.result)
+        this.approvals.delete(id)
         this.approvalThreads.delete(id)
         this.approvalAsks.delete(id)
         if (!this.approvals.size) {
@@ -322,6 +327,7 @@ export class CodexObservation {
         this.degraded('Codex returned an unsupported session response.')
         return
       }
+      if (thread.id !== this.threadId) this.unanswered = false
       this.threadId = thread.id
       this.roots.add(thread.id)
       this.unsubscribed = false
@@ -331,7 +337,6 @@ export class CodexObservation {
       this.approvalThreads.clear()
       this.approvalAsks.clear()
       this.waitingForInput = false
-      this.questionWentUnanswered = false
       this.mainTurn = 'ended'
       this.publishedTurn = undefined
       this.touched.clear()
@@ -392,7 +397,7 @@ export class CodexObservation {
       const turn = record(p.turn)
       if (typeof turn.id === 'string') this.liveTurns.add(turn.id)
       this.waitingForInput = false
-      this.questionWentUnanswered = false
+      this.unanswered = false
       this.mainTurn = 'working'
       this.publishActivity()
     } else if (method === 'turn/completed') {

@@ -4422,10 +4422,13 @@ async function whatClosingTheRunWouldLose(
   worktree?: string
 ): Promise<string[]> {
   if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
-  if (codexSessions?.questionWentUnanswered(tabId)) return [RUN_ASKED_A_QUESTION_NOBODY_ANSWERED]
+  // CODEX§20
+  const asked = codexSessions?.questionWentUnanswered(tabId)
+    ? [RUN_ASKED_A_QUESTION_NOBODY_ANSWERED]
+    : []
   const session = sessionOfTab(tabId)
-  if (!session) return [NO_SESSION_FOR_THE_RUN]
-  return whatClosingWouldLose(session, cronRunTree(root, worktree))
+  if (!session) return [...asked, NO_SESSION_FOR_THE_RUN]
+  return [...asked, ...(await whatClosingWouldLose(session, cronRunTree(root, worktree)))]
 }
 
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {

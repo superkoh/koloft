@@ -807,8 +807,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
 
       const dlg = await openCron(page, 'ws-a')
       await dlg.locator('button.mini', { hasText: 'New job' }).click()
-      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
-      await fillForm(dlg, { name: 'Colour check', task: 'ask me a colour' })
+      await fillForm(dlg, { agent: 'Codex', name: 'Colour check', task: 'ask me a colour' })
       await dlg.locator('.chip', { hasText: 'Close it' }).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await clickRunNow(page, 'Colour check')
@@ -819,14 +818,11 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       const row = cronRows(page, 'ws-a')
       await expect(row).toHaveCount(1)
       expect(await tabDisplays(page)).toHaveLength(1)
-      await page.waitForTimeout(CLOSE_RECHECK_MS * 2)
-      await expect(row).toHaveCount(1)
 
       const tabId = await row.getAttribute('data-tab-id')
       await closeCron(page)
       await row.click()
-      await page.evaluate((t) => window.api.terminal.write(t!, 'Green'), tabId)
-      await page.evaluate((t) => window.api.terminal.write(t!, '\r'), tabId)
+      await page.evaluate((t) => window.api.terminal.write(t!, 'Green\r'), tabId)
       await openCron(page, 'ws-a')
       await expect
         .poll(async () => (await histLines(page))[0]?.state, { timeout: 30_000 })

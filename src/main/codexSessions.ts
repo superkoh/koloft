@@ -637,7 +637,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   questionWentUnanswered(tabId: string): boolean {
-    return !!this.runs.get(tabId)?.observer.questionWentUnanswered
+    return !!this.runs.get(tabId)?.observer.questionWentUnanswered()
   }
 
   turnsOf(key: string, n: number): Turn[] | undefined {
