@@ -189,11 +189,19 @@
             <code>koloft session close</code> — close itself, or any session started under it with
             <code class="nowrap">session new</code> (by it, by one it started, and so on down the
             chain), for good: its tab, its row in the sidebar, and its worktree and branches if it
-            had one. When you ask, it may also close any other session on this Mac that has ended
-            (an open one is refused: stop it first). Koloft says no, and lists what is left, while:
+            had one. The ended sessions it started are closed with it, and so are the ones those
+            started; Koloft names any it left (still open, or holding work). When you ask, it may
+            also close any other session on this Mac that has ended (an open one is refused: stop it
+            first). Koloft says no, and lists what is left, while:
             <ul class="dash">
               <li>a file is not committed</li>
-              <li>a commit is not on the remote yet</li>
+              <li>
+                a commit is not on the remote yet
+                <span class="why"
+                  >(unless GitHub shows they are the last commits of a pull request that was merged,
+                  as after a squash merge that deleted the branch)</span
+                >
+              </li>
               <li>another open session uses that worktree</li>
             </ul>
           </li>
@@ -326,7 +334,9 @@
           Codex settings have an <code>@playwright/mcp</code> entry, its browser tools open tabs in
           Koloft and not a browser of their own. Those tools and <code>playwright-cli</code> reach
           the web tabs. To let them, the session's sandbox (the box Codex runs commands in) gets the
-          network and Playwright's cache folder, for that session only.
+          network and Playwright's cache folder, for that session only. A session started with
+          <a href="../accounts/">Skip permission prompts</a> on has no sandbox, so it needs none of
+          this.
         </p>
 
         <h3>What to expect</h3>
