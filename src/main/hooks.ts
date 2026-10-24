@@ -73,15 +73,6 @@ has_words() {
 shows_language() {
   [ -n "$(language_in "$1")" ] || has_words "$1"
 }
-last_note() {
-  tp="$(printf '%s' "$input" | grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1 | sed 's/.*"\\([^"]*\\)"$/\\1/')"
-  [ -f "$tp" ] || return 0
-  tail -n ${TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE} "$tp" |
-    LC_ALL=C grep -E '${ASSISTANT_TEXT_RECORD}' |
-    tail -n 1 |
-    LC_ALL=C sed -n -E 's/.*${ASSISTANT_TEXT_RECORD}${JSON_STRING_BODY}".*/\\2/p' |
-    head -c ${QUOTED_NOTE_BYTES} | whole_chars
-}
 reply_language_words() {
   lang="$(language_in "$1")"
   if [ -z "$lang" ]; then
@@ -117,6 +108,15 @@ export const KEEP_GOING_FOR_THE_NOTICE_FN = `keep_going_for_the_notice() {
 // CC§17 CC§19 CODEX§27
 export const REMIND_REPLY_LANGUAGE_FN = `${TAKE_NOTICE_FN}
 ${KEEP_GOING_FOR_THE_NOTICE_FN}
+last_note() {
+  tp="$(printf '%s' "$input" | grep -o ${TRANSCRIPT_PATH_FIELD} | head -n 1 | sed 's/.*"\\([^"]*\\)"$/\\1/')"
+  [ -f "$tp" ] || return 0
+  tail -n ${TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE} "$tp" |
+    LC_ALL=C grep -E '${ASSISTANT_TEXT_RECORD}' |
+    tail -n 1 |
+    LC_ALL=C sed -n -E 's/.*${ASSISTANT_TEXT_RECORD}${JSON_STRING_BODY}".*/\\2/p' |
+    head -c ${QUOTED_NOTE_BYTES} | whole_chars
+}
 remind_reply_language() {
   quote="$(cat "$said" 2>/dev/null)"
   context="$(take_notice)$2"

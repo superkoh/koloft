@@ -42,6 +42,7 @@ const NOT_THE_OWNERS_WORDS = [FROM_A_SESSION, FROM_KOLOFT, A_HELPER_HAS_IT_IN_OL
 // AGY§12
 const LAST_REPLY_FN = `last_reply() {
   tail -n ${TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE} "$tp" 2>/dev/null |
+    LC_ALL=C grep -F '"type":"PLANNER_RESPONSE"' |
     LC_ALL=C sed -n -E 's/.*"type":"PLANNER_RESPONSE"[^{]*"content":"${JSON_STRING_BODY}".*/\\1/p' |
     LC_ALL=C grep . | tail -n 1 |
     head -c ${QUOTED_NOTE_BYTES} | whole_chars
@@ -50,7 +51,7 @@ const LAST_REPLY_FN = `last_reply() {
 // AGY§12 ADR-0031
 export const AGY_HOOK_SCRIPT = `#!/bin/sh
 : koloft agy hook
-[ -n "$BASH_VERSION" ] || exec bash "$0" "$@"
+[ "$1" != PreInvocation ] || [ -n "$BASH_VERSION" ] || exec bash "$0" "$@"
 event="$1"
 input="$(cat)"
 log="$${AGY_LOG_ENV}"

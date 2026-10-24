@@ -206,7 +206,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   })
 
   // ADR-0031
-  it("names the owner's language the same way on a machine whose sh is not bash, as dash is on Debian", () => {
+  it("names the owner's language the same way on a machine whose sh is not bash, as dash is on Debian, and answers every other event there as before", () => {
     const transcript = transcriptOf(
       ownerSays('先别改代码'),
       modelSays('Let me run the tests first.')
@@ -214,6 +214,20 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     expect(toldBeforeModelCall(transcript, `/bin/dash ${scripts.hook} PreInvocation`)).toMatch(
       /^Your last note to the user, «Let me run the tests first\.», is not in Chinese\./
     )
+    const start = path.join(dir, 'start.json')
+    fs.writeFileSync(start, 'START')
+    const underDash = (event: string): string =>
+      run(`/bin/dash ${scripts.hook} ${event}`, JSON.stringify({ conversationId: 'c1' }), {
+        KOLOFT_AGY_LOG: log,
+        KOLOFT_AGY_START: start
+      })
+    expect(underDash('SessionStart')).toBe('START')
+    expect(underDash('Stop')).toBe('')
+    expect(logged().map((l) => l && 'hook' in l && l.hook.event)).toEqual([
+      'PreInvocation',
+      'SessionStart',
+      'Stop'
+    ])
   })
 
   // ADR-0031
