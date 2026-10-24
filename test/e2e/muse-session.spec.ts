@@ -393,6 +393,41 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
+  // MUSE§2
+  test('/exit typed inside Muse leaves the list for Restore session under the name given with /rename, and the session brought back from there keeps that name', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startMuse(page, env)
+      await runIn(page, centerTerm(page), 'keep me')
+      await expect(museRows(page)).toContainText('keep me')
+      await expect(museRows(page)).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), '/rename Docs cleanup')
+      await expect(museRows(page)).toContainText('docs cleanup')
+      await runIn(page, centerTerm(page), '/exit')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await expect(museRows(page)).toHaveCount(0)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
+      const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
+      const row = history.getByRole('button').filter({ hasText: 'docs cleanup' })
+      await expect(row).toHaveCount(1)
+      await row.click()
+      await expect.poll(() => museCalls(env).length).toBe(2)
+      expect(museCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(museRows(page)).toContainText('docs cleanup')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // MUSE§4
   test('a cold row whose session another live muse process still holds is not resumed: the notice names the muse process and no muse starts', async ({
     env
