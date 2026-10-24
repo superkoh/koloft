@@ -1,0 +1,1131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Outside writes mockup</title>
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      html,
+      body {
+        height: auto;
+        overflow: auto;
+      }
+      body {
+        background: var(--bg-0, #0b0b0c);
+        color: var(--fg, #ddd);
+        padding: 24px;
+        font-family: -apple-system, system-ui, sans-serif;
+      }
+      .doc {
+        max-width: 1180px;
+        margin: 0 auto 28px;
+        font-size: 13.5px;
+        line-height: 1.55;
+      }
+      .doc h1 {
+        font-size: 20px;
+        margin: 0 0 6px;
+      }
+      .doc h2 {
+        font-size: 15px;
+        margin: 22px 0 6px;
+      }
+      .doc table {
+        border-collapse: collapse;
+        margin-top: 6px;
+      }
+      .doc td,
+      .doc th {
+        border: 1px solid #333;
+        padding: 4px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+      .row {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        max-width: 1180px;
+        margin: 0 auto 28px;
+      }
+      .mk {
+        margin: 0;
+        flex: 1 1 560px;
+      }
+      .mk figcaption {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+      .mk figcaption span {
+        color: #999;
+      }
+      .mk-box {
+        position: relative;
+        height: 520px;
+        display: flex;
+        border: 1px dashed #444;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .mk-box > .wb-panel {
+        flex: 1;
+        position: relative;
+      }
+      .cv-empty-outside {
+        flex-direction: column;
+        gap: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="doc">
+      <h1>#302 — "No changes" while the session wrote files outside the folder</h1>
+      <p>
+        Built from the real app: the Workbench panel's DOM and the compiled CSS were captured from a
+        test build (a session in a worktree <code>fix-readme</code> wrote <code>README.md</code> and
+        <code>src/main/index.ts</code> into the main checkout <code>~/koloft</code>). Only the text
+        marked "after" was changed by hand. Paths are placeholders.
+      </p>
+    </div>
+
+    <div class="row">
+      <figure class="mk">
+        <figcaption>
+          <b>Changes — today</b
+          ><span>The button and the empty state only ask git about this folder.</span>
+        </figcaption>
+        <div class="mk-box">
+          <div class="wb-panel" data-surface="workbench" data-kind="files" tabindex="-1">
+            <div class="wb-tabs">
+              <div class="wb-pin">
+                <span
+                  class="wb-tab pinned on"
+                  data-wb-tab-id="files"
+                  draggable="false"
+                  data-drop-index="0"
+                  ><span class="ic"
+                    ><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                      <path
+                        d="M13.8 1.2C13.7 1.3,13.3 1.6,13.1 1.9L12.7 2.3 12.7 6C12.7 10.1,12.8 10.4,13.5 10.8C14 11.1,14.3 11.1,17.1 11.1L20.2 11.1 20.8 10.5L21.4 9.9 21.4 7.2L21.4 4.4 19.7 2.8L18 1.1 16.1 1.1C15 1.1,14 1.2,13.8 1.2M14.6 6.2L14.6 9.3 17 9.3L19.5 9.3 19.5 7.5L19.5 5.7 18.7 5.7C17.5 5.7,17 5.2,17 3.9L17 3.1 15.8 3.1L14.6 3.1 14.6 6.2M3 3.8L2.6 4.2 2.6 10.9C2.6 18.1,2.7 18.3,3.4 18.7C3.6 18.8,5.2 18.9,7.4 18.9C11.5 18.9,11.8 18.8,11.8 17.9C11.8 17,11.5 16.9,8 16.9L4.8 16.9 4.8 12.2L4.8 7.4 8 7.4C11.6 7.4,11.8 7.4,11.8 6.5C11.8 5.5,11.5 5.4,8 5.4L4.8 5.4 4.8 4.9C4.8 3.6,3.8 3,3 3.8M13.7 13.3C12.8 13.7,12.7 14,12.7 18C12.7 22,12.8 22.3,13.5 22.8C14 23,14.3 23.1,17.1 23.1L20.2 23.1 20.8 22.5L21.4 21.9 21.4 19.1L21.4 16.4 19.7 14.7L18.1 13 16.1 13C14.6 13,14 13.1,13.7 13.3M14.6 18L14.6 21.1 17 21.1L19.5 21.1 19.5 19.4L19.5 17.7 18.7 17.7C17.5 17.7,17 17.1,17 15.8L17 14.9 15.8 14.9L14.6 14.9 14.6 18"
+                        fill-rule="evenodd"
+                      ></path></svg></span
+                  ><span class="lb">No changes</span></span
+                >
+              </div>
+              <div class="wb-drag"></div>
+              <div class="wb-spill">
+                <button class="wb-new" aria-label="New tab" title="New tab ⌘T">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <path
+                      d="M11.3 1.8C11.1 2,11 3.3,11 6.2C11 9.6,11 10.4,10.7 10.7C10.4 11,9.6 11,6 11C1.3 11,1.1 11.1,1.1 12.1C1.1 13,1.3 13,6.1 13C9.6 13,10.4 13,10.7 13.3C11 13.6,11 14.4,11 17.9C11 22.5,11.1 22.7,12.1 22.7C13.1 22.7,13.2 22.2,13.2 17.8C13.2 14.3,13.3 13.6,13.6 13.3C13.8 13,14.6 13,18.3 13L22.7 13 22.9 12.5C23.1 12.1,23.1 11.8,22.9 11.5C22.7 11,22.5 11,18.3 11C14.6 11,13.8 11,13.6 10.7C13.3 10.4,13.2 9.6,13.2 6.2C13.2 1.8,13.2 1.5,12.1 1.5C11.8 1.5,11.4 1.7,11.3 1.8"
+                      fill-rule="evenodd"
+                    ></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="wb-bar">
+              <div class="seg" role="group" aria-label="Files view">
+                <button aria-pressed="true" class="on">Changes</button
+                ><button aria-pressed="false">Browse</button>
+              </div>
+              <span class="wb-title"></span>
+              <div class="seg">
+                <button aria-haspopup="menu" aria-expanded="false">base ▾</button>
+              </div>
+              <div class="seg">
+                <button aria-haspopup="menu" aria-expanded="false">Filter ▾</button>
+              </div>
+              <button class="icobtn" title="Reload" aria-label="Reload">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path
+                    d="M16.2 1.4C15.7 2,15.7 2.1,16.4 3.2C16.7 3.7,16.9 4.1,16.9 4.1C16.9 4.2,16.4 4,15.8 3.8C14.1 3.3,10.6 3.3,9 3.8C5.9 4.9,3.2 7.6,2.3 10.6C1.8 12.4,1.9 15.1,2.7 16.8C5 22.3,11 24.5,16.4 21.9C18.8 20.7,21 18,21.7 15.3C22.1 13.9,22.1 12.2,21.7 11.9C21 11.2,20.1 11.8,20.1 12.9C20.1 15.5,18.6 18.2,16.3 19.8C11 23.3,4 19.6,4 13.3C4 11,4.7 9.5,6.4 7.8C8.4 5.8,10.4 5.1,13 5.3C14.3 5.3,16.6 6,16.6 6.2C16.6 6.3,16.1 6.6,15.4 6.8C13.9 7.5,13.5 7.9,14 8.6C14.4 9.3,14.9 9.2,17.6 8.1C20.3 6.9,20.3 6.9,20.3 6.3C20.3 6,18.1 1.9,17.6 1.4C17.1 1,16.6 1,16.2 1.4"
+                    fill-rule="evenodd"
+                  ></path>
+                </svg></button
+              ><button
+                class="icobtn"
+                aria-label="Full width ⌘⏎"
+                aria-pressed="false"
+                title="Full width ⌘⏎"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path
+                    d="M14.9 1.5C14.5 1.8,14.4 2.5,14.6 2.8C14.8 3.1,15.1 3.1,17.1 3.1C18.3 3.1,19.4 3.2,19.5 3.3C19.5 3.4,18.2 4.8,16.6 6.4C13.6 9.4,13.1 10,14 10.5C14.6 10.8,15.1 10.4,17.9 7.6C19.6 6,20.9 4.8,21 4.9C21.2 5,21.2 5.8,21.2 7.3C21.2 9.7,21.3 10,22.1 10C23 10,23.1 9.7,23.1 5.7C23.1 0.9,23.5 1.3,18.8 1.3C16.2 1.3,15.1 1.4,14.9 1.5M6.3 16.5C4.6 18.2,3.3 19.4,3.2 19.3C3 19.2,3 18.4,3 17C3 14.7,2.8 14.2,2 14.2C1.2 14.2,1.1 14.6,1.1 18.4C1.1 23.3,0.7 22.9,5.5 22.9C9.2 22.9,9.4 22.9,9.6 22.5C9.9 22,9.8 21.8,9.4 21.4C9.1 21.1,8.8 21,7 21C5.8 21,4.8 21,4.7 20.9C4.7 20.9,6 19.5,7.6 17.9C10.6 15,10.9 14.5,10.3 13.9C9.7 13.3,9.2 13.6,6.3 16.5"
+                    fill-rule="evenodd"
+                  ></path>
+                </svg>
+              </button>
+            </div>
+            <div class="wb-body">
+              <div class="wb-host">
+                <div class="fv" data-view="changes">
+                  <div class="fv-changes">
+                    <div class="cv-side" style="flex-basis: 230px"><div class="cv-list"></div></div>
+                    <div class="cv-stream">
+                      <div class="fv-empty cv-empty"><p>No changes against the base.</p></div>
+                    </div>
+                  </div>
+                  <div
+                    class="fv-gutter"
+                    title="Drag to resize the file list"
+                    style="left: 230px"
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </figure>
+
+      <figure class="mk">
+        <figcaption>
+          <b>Changes — after</b
+          ><span
+            >Button: "No changes · 2 outside". Empty state: one more line and a button that opens
+            Browse ▸ Outside.</span
+          >
+        </figcaption>
+        <div class="mk-box">
+          <div class="wb-panel" data-surface="workbench" data-kind="files" tabindex="-1">
+            <div class="wb-tabs">
+              <div class="wb-pin">
+                <span
+                  class="wb-tab pinned on"
+                  data-wb-tab-id="files"
+                  draggable="false"
+                  data-drop-index="0"
+                  ><span class="ic"
+                    ><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                      <path
+                        d="M13.8 1.2C13.7 1.3,13.3 1.6,13.1 1.9L12.7 2.3 12.7 6C12.7 10.1,12.8 10.4,13.5 10.8C14 11.1,14.3 11.1,17.1 11.1L20.2 11.1 20.8 10.5L21.4 9.9 21.4 7.2L21.4 4.4 19.7 2.8L18 1.1 16.1 1.1C15 1.1,14 1.2,13.8 1.2M14.6 6.2L14.6 9.3 17 9.3L19.5 9.3 19.5 7.5L19.5 5.7 18.7 5.7C17.5 5.7,17 5.2,17 3.9L17 3.1 15.8 3.1L14.6 3.1 14.6 6.2M3 3.8L2.6 4.2 2.6 10.9C2.6 18.1,2.7 18.3,3.4 18.7C3.6 18.8,5.2 18.9,7.4 18.9C11.5 18.9,11.8 18.8,11.8 17.9C11.8 17,11.5 16.9,8 16.9L4.8 16.9 4.8 12.2L4.8 7.4 8 7.4C11.6 7.4,11.8 7.4,11.8 6.5C11.8 5.5,11.5 5.4,8 5.4L4.8 5.4 4.8 4.9C4.8 3.6,3.8 3,3 3.8M13.7 13.3C12.8 13.7,12.7 14,12.7 18C12.7 22,12.8 22.3,13.5 22.8C14 23,14.3 23.1,17.1 23.1L20.2 23.1 20.8 22.5L21.4 21.9 21.4 19.1L21.4 16.4 19.7 14.7L18.1 13 16.1 13C14.6 13,14 13.1,13.7 13.3M14.6 18L14.6 21.1 17 21.1L19.5 21.1 19.5 19.4L19.5 17.7 18.7 17.7C17.5 17.7,17 17.1,17 15.8L17 14.9 15.8 14.9L14.6 14.9 14.6 18"
+                        fill-rule="evenodd"
+                      ></path></svg></span
+                  ><span class="lb">No changes · 2 outside</span></span
+                >
+              </div>
+              <div class="wb-drag"></div>
+              <div class="wb-spill">
+                <button class="wb-new" aria-label="New tab" title="New tab ⌘T">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <path
+                      d="M11.3 1.8C11.1 2,11 3.3,11 6.2C11 9.6,11 10.4,10.7 10.7C10.4 11,9.6 11,6 11C1.3 11,1.1 11.1,1.1 12.1C1.1 13,1.3 13,6.1 13C9.6 13,10.4 13,10.7 13.3C11 13.6,11 14.4,11 17.9C11 22.5,11.1 22.7,12.1 22.7C13.1 22.7,13.2 22.2,13.2 17.8C13.2 14.3,13.3 13.6,13.6 13.3C13.8 13,14.6 13,18.3 13L22.7 13 22.9 12.5C23.1 12.1,23.1 11.8,22.9 11.5C22.7 11,22.5 11,18.3 11C14.6 11,13.8 11,13.6 10.7C13.3 10.4,13.2 9.6,13.2 6.2C13.2 1.8,13.2 1.5,12.1 1.5C11.8 1.5,11.4 1.7,11.3 1.8"
+                      fill-rule="evenodd"
+                    ></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="wb-bar">
+              <div class="seg" role="group" aria-label="Files view">
+                <button aria-pressed="true" class="on">Changes</button
+                ><button aria-pressed="false">Browse</button>
+              </div>
+              <span class="wb-title"></span>
+              <div class="seg">
+                <button aria-haspopup="menu" aria-expanded="false">base ▾</button>
+              </div>
+              <div class="seg">
+                <button aria-haspopup="menu" aria-expanded="false">Filter ▾</button>
+              </div>
+              <button class="icobtn" title="Reload" aria-label="Reload">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path
+                    d="M16.2 1.4C15.7 2,15.7 2.1,16.4 3.2C16.7 3.7,16.9 4.1,16.9 4.1C16.9 4.2,16.4 4,15.8 3.8C14.1 3.3,10.6 3.3,9 3.8C5.9 4.9,3.2 7.6,2.3 10.6C1.8 12.4,1.9 15.1,2.7 16.8C5 22.3,11 24.5,16.4 21.9C18.8 20.7,21 18,21.7 15.3C22.1 13.9,22.1 12.2,21.7 11.9C21 11.2,20.1 11.8,20.1 12.9C20.1 15.5,18.6 18.2,16.3 19.8C11 23.3,4 19.6,4 13.3C4 11,4.7 9.5,6.4 7.8C8.4 5.8,10.4 5.1,13 5.3C14.3 5.3,16.6 6,16.6 6.2C16.6 6.3,16.1 6.6,15.4 6.8C13.9 7.5,13.5 7.9,14 8.6C14.4 9.3,14.9 9.2,17.6 8.1C20.3 6.9,20.3 6.9,20.3 6.3C20.3 6,18.1 1.9,17.6 1.4C17.1 1,16.6 1,16.2 1.4"
+                    fill-rule="evenodd"
+                  ></path>
+                </svg></button
+              ><button
+                class="icobtn"
+                aria-label="Full width ⌘⏎"
+                aria-pressed="false"
+                title="Full width ⌘⏎"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path
+                    d="M14.9 1.5C14.5 1.8,14.4 2.5,14.6 2.8C14.8 3.1,15.1 3.1,17.1 3.1C18.3 3.1,19.4 3.2,19.5 3.3C19.5 3.4,18.2 4.8,16.6 6.4C13.6 9.4,13.1 10,14 10.5C14.6 10.8,15.1 10.4,17.9 7.6C19.6 6,20.9 4.8,21 4.9C21.2 5,21.2 5.8,21.2 7.3C21.2 9.7,21.3 10,22.1 10C23 10,23.1 9.7,23.1 5.7C23.1 0.9,23.5 1.3,18.8 1.3C16.2 1.3,15.1 1.4,14.9 1.5M6.3 16.5C4.6 18.2,3.3 19.4,3.2 19.3C3 19.2,3 18.4,3 17C3 14.7,2.8 14.2,2 14.2C1.2 14.2,1.1 14.6,1.1 18.4C1.1 23.3,0.7 22.9,5.5 22.9C9.2 22.9,9.4 22.9,9.6 22.5C9.9 22,9.8 21.8,9.4 21.4C9.1 21.1,8.8 21,7 21C5.8 21,4.8 21,4.7 20.9C4.7 20.9,6 19.5,7.6 17.9C10.6 15,10.9 14.5,10.3 13.9C9.7 13.3,9.2 13.6,6.3 16.5"
+                    fill-rule="evenodd"
+                  ></path>
+                </svg>
+              </button>
+            </div>
+            <div class="wb-body">
+              <div class="wb-host">
+                <div class="fv" data-view="changes">
+                  <div class="fv-changes">
+                    <div class="cv-side" style="flex-basis: 230px"><div class="cv-list"></div></div>
+                    <div class="cv-stream">
+                      <div class="fv-empty cv-empty cv-empty-outside">
+                        <p>No changes against the base.</p>
+                        <p>2 files were written outside this folder.</p>
+                        <button class="cv-retry">Show them in Browse ▸ Outside</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    class="fv-gutter"
+                    title="Drag to resize the file list"
+                    style="left: 230px"
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </figure>
+    </div>
+    <div class="row">
+      <figure class="mk">
+        <figcaption>
+          <b>Browse — today</b
+          ><span
+            >Outside lists only Markdown, image and web files: index.ts is written but hidden.</span
+          >
+        </figcaption>
+        <div class="mk-box">
+          <div class="wb-panel" data-surface="workbench" data-kind="files" tabindex="-1">
+            <div class="wb-tabs">
+              <div class="wb-pin">
+                <span
+                  class="wb-tab pinned on"
+                  data-wb-tab-id="files"
+                  draggable="false"
+                  data-drop-index="0"
+                  ><span class="ic"
+                    ><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                      <path
+                        d="M13.8 1.2C13.7 1.3,13.3 1.6,13.1 1.9L12.7 2.3 12.7 6C12.7 10.1,12.8 10.4,13.5 10.8C14 11.1,14.3 11.1,17.1 11.1L20.2 11.1 20.8 10.5L21.4 9.9 21.4 7.2L21.4 4.4 19.7 2.8L18 1.1 16.1 1.1C15 1.1,14 1.2,13.8 1.2M14.6 6.2L14.6 9.3 17 9.3L19.5 9.3 19.5 7.5L19.5 5.7 18.7 5.7C17.5 5.7,17 5.2,17 3.9L17 3.1 15.8 3.1L14.6 3.1 14.6 6.2M3 3.8L2.6 4.2 2.6 10.9C2.6 18.1,2.7 18.3,3.4 18.7C3.6 18.8,5.2 18.9,7.4 18.9C11.5 18.9,11.8 18.8,11.8 17.9C11.8 17,11.5 16.9,8 16.9L4.8 16.9 4.8 12.2L4.8 7.4 8 7.4C11.6 7.4,11.8 7.4,11.8 6.5C11.8 5.5,11.5 5.4,8 5.4L4.8 5.4 4.8 4.9C4.8 3.6,3.8 3,3 3.8M13.7 13.3C12.8 13.7,12.7 14,12.7 18C12.7 22,12.8 22.3,13.5 22.8C14 23,14.3 23.1,17.1 23.1L20.2 23.1 20.8 22.5L21.4 21.9 21.4 19.1L21.4 16.4 19.7 14.7L18.1 13 16.1 13C14.6 13,14 13.1,13.7 13.3M14.6 18L14.6 21.1 17 21.1L19.5 21.1 19.5 19.4L19.5 17.7 18.7 17.7C17.5 17.7,17 17.1,17 15.8L17 14.9 15.8 14.9L14.6 14.9 14.6 18"
+                        fill-rule="evenodd"
+                      ></path></svg></span
+                  ><span class="lb">No changes</span></span
+                >
+              </div>
+              <div class="wb-drag"></div>
+              <div class="wb-spill">
+                <button class="wb-new" aria-label="New tab" title="New tab ⌘T">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <path
+                      d="M11.3 1.8C11.1 2,11 3.3,11 6.2C11 9.6,11 10.4,10.7 10.7C10.4 11,9.6 11,6 11C1.3 11,1.1 11.1,1.1 12.1C1.1 13,1.3 13,6.1 13C9.6 13,10.4 13,10.7 13.3C11 13.6,11 14.4,11 17.9C11 22.5,11.1 22.7,12.1 22.7C13.1 22.7,13.2 22.2,13.2 17.8C13.2 14.3,13.3 13.6,13.6 13.3C13.8 13,14.6 13,18.3 13L22.7 13 22.9 12.5C23.1 12.1,23.1 11.8,22.9 11.5C22.7 11,22.5 11,18.3 11C14.6 11,13.8 11,13.6 10.7C13.3 10.4,13.2 9.6,13.2 6.2C13.2 1.8,13.2 1.5,12.1 1.5C11.8 1.5,11.4 1.7,11.3 1.8"
+                      fill-rule="evenodd"
+                    ></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="wb-bar">
+              <div class="seg" role="group" aria-label="Files view">
+                <button aria-pressed="false">Changes</button
+                ><button aria-pressed="true" class="on">Browse</button>
+              </div>
+              <span class="wb-title"></span
+              ><button class="icobtn" title="Search files (⌘⇧F)" aria-label="Search files">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path
+                    d="M7.8 1.3C5.4 2,3.2 3.8,2.1 6C-1.8 13.8,6.7 21.8,14.4 17.6L15.5 17 18.4 19.9C21.6 23.1,21.7 23.2,22.3 22.9C23.4 22.3,23.2 21.9,19.9 18.6L16.9 15.6 17.5 14.6C22 8,15.6 -0.8,7.8 1.3M8.4 3.2C6.5 3.7,4.6 5.2,3.8 7C3 8.6,3 11.3,3.8 12.9C5.9 17.1,11.5 18,14.9 14.7C19.8 9.9,15.1 1.5,8.4 3.2"
+                    fill-rule="evenodd"
+                  ></path>
+                </svg></button
+              ><button class="icobtn" title="Reload" aria-label="Reload">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path
+                    d="M16.2 1.4C15.7 2,15.7 2.1,16.4 3.2C16.7 3.7,16.9 4.1,16.9 4.1C16.9 4.2,16.4 4,15.8 3.8C14.1 3.3,10.6 3.3,9 3.8C5.9 4.9,3.2 7.6,2.3 10.6C1.8 12.4,1.9 15.1,2.7 16.8C5 22.3,11 24.5,16.4 21.9C18.8 20.7,21 18,21.7 15.3C22.1 13.9,22.1 12.2,21.7 11.9C21 11.2,20.1 11.8,20.1 12.9C20.1 15.5,18.6 18.2,16.3 19.8C11 23.3,4 19.6,4 13.3C4 11,4.7 9.5,6.4 7.8C8.4 5.8,10.4 5.1,13 5.3C14.3 5.3,16.6 6,16.6 6.2C16.6 6.3,16.1 6.6,15.4 6.8C13.9 7.5,13.5 7.9,14 8.6C14.4 9.3,14.9 9.2,17.6 8.1C20.3 6.9,20.3 6.9,20.3 6.3C20.3 6,18.1 1.9,17.6 1.4C17.1 1,16.6 1,16.2 1.4"
+                    fill-rule="evenodd"
+                  ></path>
+                </svg></button
+              ><button
+                class="icobtn"
+                aria-label="Full width ⌘⏎"
+                aria-pressed="false"
+                title="Full width ⌘⏎"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path
+                    d="M14.9 1.5C14.5 1.8,14.4 2.5,14.6 2.8C14.8 3.1,15.1 3.1,17.1 3.1C18.3 3.1,19.4 3.2,19.5 3.3C19.5 3.4,18.2 4.8,16.6 6.4C13.6 9.4,13.1 10,14 10.5C14.6 10.8,15.1 10.4,17.9 7.6C19.6 6,20.9 4.8,21 4.9C21.2 5,21.2 5.8,21.2 7.3C21.2 9.7,21.3 10,22.1 10C23 10,23.1 9.7,23.1 5.7C23.1 0.9,23.5 1.3,18.8 1.3C16.2 1.3,15.1 1.4,14.9 1.5M6.3 16.5C4.6 18.2,3.3 19.4,3.2 19.3C3 19.2,3 18.4,3 17C3 14.7,2.8 14.2,2 14.2C1.2 14.2,1.1 14.6,1.1 18.4C1.1 23.3,0.7 22.9,5.5 22.9C9.2 22.9,9.4 22.9,9.6 22.5C9.9 22,9.8 21.8,9.4 21.4C9.1 21.1,8.8 21,7 21C5.8 21,4.8 21,4.7 20.9C4.7 20.9,6 19.5,7.6 17.9C10.6 15,10.9 14.5,10.3 13.9C9.7 13.3,9.2 13.6,6.3 16.5"
+                    fill-rule="evenodd"
+                  ></path>
+                </svg>
+              </button>
+            </div>
+            <div class="wb-body">
+              <div class="wb-host">
+                <div class="fv" data-view="browse">
+                  <div class="fv-browse">
+                    <div class="fv-tree bv" style="width: 230px">
+                      <div class="ft-chips">
+                        <button
+                          class="ft-chip"
+                          data-chip="show-ignored"
+                          aria-pressed="false"
+                          title="Show ignored files — everything git ignores, node_modules and .git included"
+                        >
+                          Show ignored files
+                        </button>
+                      </div>
+                      <div class="file-tree bv-body" tabindex="0">
+                        <div class="bv-sec" data-section="tree">
+                          <div
+                            class="ft-node ft-dir ft-root open"
+                            data-dir="1"
+                            data-kind="dir"
+                            data-path="/Users/you/wt/fix-readme"
+                            data-row-id="tree:/Users/you/wt/fix-readme"
+                            title="/Users/you/wt/fix-readme"
+                          >
+                            <span class="ft-icon" aria-hidden="true"
+                              ><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                                <path
+                                  d="M2.8 2.6C1 3.6,1 3.5,1 12.3C1 20.8,1 20.6,2.3 21.4L3 21.8 10.3 21.8C18.4 21.8,18.4 21.8,19.1 20.8C19.6 20.1,22.9 11.3,22.9 10.6C22.9 9.5,21.9 8.6,20.8 8.6C20.2 8.6,20.2 8.6,20.1 7.8C20 7.2,19.8 6.7,19.5 6.3C18.8 5.3,18.4 5.2,15.3 5.2C13.7 5.2,12.3 5.2,12.2 5.1C12.1 5,11.7 4.5,11.3 4C10.2 2.5,9.9 2.4,6.3 2.4C3.9 2.4,3.2 2.4,2.8 2.6M3.6 4.6L3.2 4.7 3.2 9.9C3.2 12.8,3.2 15.1,3.3 15C3.3 15,3.8 13.9,4.4 12.5C5.1 11.2,5.8 9.9,6 9.6C6.9 8.6,7.1 8.6,12.8 8.6C18 8.6,18.1 8.6,18.1 8.3C18.1 7.3,18 7.3,15.1 7.3C11.4 7.3,11 7.1,9.5 5L9.2 4.5 6.6 4.4C5.1 4.4,3.8 4.5,3.6 4.6M7.6 10.9C7.4 11,6.4 13,5.3 15.4L3.4 19.7 10.4 19.7C15.8 19.8,17.4 19.7,17.5 19.6C17.7 19.3,20.8 11.3,20.8 10.9C20.8 10.6,8 10.5,7.6 10.9"
+                                  fill-rule="evenodd"
+                                ></path></svg></span
+                            ><span class="ft-name">fix-readme</span
+                            ><span class="ft-dir-agg" title="1 files written here">●1</span>
+                          </div>
+                          <div class="ft-children">
+                            <div>
+                              <div
+                                class="ft-node ft-dir"
+                                data-dir="1"
+                                data-kind="dir"
+                                data-path="/Users/you/wt/fix-readme/assets"
+                                data-row-id="tree:/Users/you/wt/fix-readme/assets"
+                                title="/Users/you/wt/fix-readme/assets"
+                              >
+                                <span class="ft-icon" aria-hidden="true"
+                                  ><svg
+                                    viewBox="0 0 24 24"
+                                    width="13"
+                                    height="13"
+                                    fill="currentColor"
+                                  >
+                                    <path
+                                      d="M3 2.2C2.3 2.5,1.5 3.3,1.3 4C1.1 4.3,1.1 7.2,1.1 12.1C1.1 20.7,1.1 20.6,2.5 21.6L3.3 22.1 11.9 22.2C21.7 22.2,21.5 22.2,22.5 20.7L23 20 23.1 13.6C23.1 4.6,23.4 5,17.3 4.9C12.5 4.8,12.7 4.9,11.8 3.7C10.6 2,10.4 2,6.7 2C4.4 2,3.3 2.1,3 2.2M3.6 4.5C3.2 4.8,3.2 5.1,3.2 12.1C3.2 18,3.3 19.3,3.5 19.6C3.7 20,4 20,12.1 20C18.7 20,20.4 19.9,20.6 19.7C21 19.4,21 7.4,20.6 7.2C20.4 7.1,18.6 7,16.6 7C14.5 7,12.5 6.9,12.2 6.8C11.6 6.6,10.7 5.9,9.6 4.5C9.2 3.9,4.2 3.9,3.6 4.5"
+                                      fill-rule="evenodd"
+                                    ></path></svg></span
+                                ><span class="ft-name">assets</span>
+                              </div>
+                            </div>
+                            <div>
+                              <div
+                                class="ft-node ft-dir"
+                                data-dir="1"
+                                data-kind="dir"
+                                data-path="/Users/you/wt/fix-readme/bulk"
+                                data-row-id="tree:/Users/you/wt/fix-readme/bulk"
+                                title="/Users/you/wt/fix-readme/bulk"
+                              >
+                                <span class="ft-icon" aria-hidden="true"
+                                  ><svg
+                                    viewBox="0 0 24 24"
+                                    width="13"
+                                    height="13"
+                                    fill="currentColor"
+                                  >
+                                    <path
+                                      d="M3 2.2C2.3 2.5,1.5 3.3,1.3 4C1.1 4.3,1.1 7.2,1.1 12.1C1.1 20.7,1.1 20.6,2.5 21.6L3.3 22.1 11.9 22.2C21.7 22.2,21.5 22.2,22.5 20.7L23 20 23.1 13.6C23.1 4.6,23.4 5,17.3 4.9C12.5 4.8,12.7 4.9,11.8 3.7C10.6 2,10.4 2,6.7 2C4.4 2,3.3 2.1,3 2.2M3.6 4.5C3.2 4.8,3.2 5.1,3.2 12.1C3.2 18,3.3 19.3,3.5 19.6C3.7 20,4 20,12.1 20C18.7 20,20.4 19.9,20.6 19.7C21 19.4,21 7.4,20.6 7.2C20.4 7.1,18.6 7,16.6 7C14.5 7,12.5 6.9,12.2 6.8C11.6 6.6,10.7 5.9,9.6 4.5C9.2 3.9,4.2 3.9,3.6 4.5"
+                                      fill-rule="evenodd"
+                                    ></path></svg></span
+                                ><span class="ft-name">bulk</span>
+                              </div>
+                            </div>
+                            <div>
+                              <div
+                                class="ft-node ft-dir"
+                                data-dir="1"
+                                data-kind="dir"
+                                data-path="/Users/you/wt/fix-readme/docs"
+                                data-row-id="tree:/Users/you/wt/fix-readme/docs"
+                                title="/Users/you/wt/fix-readme/docs"
+                              >
+                                <span class="ft-icon" aria-hidden="true"
+                                  ><svg
+                                    viewBox="0 0 24 24"
+                                    width="13"
+                                    height="13"
+                                    fill="currentColor"
+                                  >
+                                    <path
+                                      d="M3 2.2C2.3 2.5,1.5 3.3,1.3 4C1.1 4.3,1.1 7.2,1.1 12.1C1.1 20.7,1.1 20.6,2.5 21.6L3.3 22.1 11.9 22.2C21.7 22.2,21.5 22.2,22.5 20.7L23 20 23.1 13.6C23.1 4.6,23.4 5,17.3 4.9C12.5 4.8,12.7 4.9,11.8 3.7C10.6 2,10.4 2,6.7 2C4.4 2,3.3 2.1,3 2.2M3.6 4.5C3.2 4.8,3.2 5.1,3.2 12.1C3.2 18,3.3 19.3,3.5 19.6C3.7 20,4 20,12.1 20C18.7 20,20.4 19.9,20.6 19.7C21 19.4,21 7.4,20.6 7.2C20.4 7.1,18.6 7,16.6 7C14.5 7,12.5 6.9,12.2 6.8C11.6 6.6,10.7 5.9,9.6 4.5C9.2 3.9,4.2 3.9,3.6 4.5"
+                                      fill-rule="evenodd"
+                                    ></path></svg></span
+                                ><span class="ft-name">docs</span>
+                              </div>
+                            </div>
+                            <div>
+                              <div
+                                class="ft-node ft-dir"
+                                data-dir="1"
+                                data-kind="dir"
+                                data-path="/Users/you/wt/fix-readme/lib"
+                                data-row-id="tree:/Users/you/wt/fix-readme/lib"
+                                title="/Users/you/wt/fix-readme/lib"
+                              >
+                                <span class="ft-icon" aria-hidden="true"
+                                  ><svg
+                                    viewBox="0 0 24 24"
+                                    width="13"
+                                    height="13"
+                                    fill="currentColor"
+                                  >
+                                    <path
+                                      d="M3 2.2C2.3 2.5,1.5 3.3,1.3 4C1.1 4.3,1.1 7.2,1.1 12.1C1.1 20.7,1.1 20.6,2.5 21.6L3.3 22.1 11.9 22.2C21.7 22.2,21.5 22.2,22.5 20.7L23 20 23.1 13.6C23.1 4.6,23.4 5,17.3 4.9C12.5 4.8,12.7 4.9,11.8 3.7C10.6 2,10.4 2,6.7 2C4.4 2,3.3 2.1,3 2.2M3.6 4.5C3.2 4.8,3.2 5.1,3.2 12.1C3.2 18,3.3 19.3,3.5 19.6C3.7 20,4 20,12.1 20C18.7 20,20.4 19.9,20.6 19.7C21 19.4,21 7.4,20.6 7.2C20.4 7.1,18.6 7,16.6 7C14.5 7,12.5 6.9,12.2 6.8C11.6 6.6,10.7 5.9,9.6 4.5C9.2 3.9,4.2 3.9,3.6 4.5"
+                                      fill-rule="evenodd"
+                                    ></path></svg></span
+                                ><span class="ft-name">lib</span>
+                              </div>
+                            </div>
+                            <div>
+                              <div
+                                class="ft-node ft-dir"
+                                data-dir="1"
+                                data-kind="dir"
+                                data-path="/Users/you/wt/fix-readme/src"
+                                data-row-id="tree:/Users/you/wt/fix-readme/src"
+                                title="/Users/you/wt/fix-readme/src"
+                              >
+                                <span class="ft-icon" aria-hidden="true"
+                                  ><svg
+                                    viewBox="0 0 24 24"
+                                    width="13"
+                                    height="13"
+                                    fill="currentColor"
+                                  >
+                                    <path
+                                      d="M3 2.2C2.3 2.5,1.5 3.3,1.3 4C1.1 4.3,1.1 7.2,1.1 12.1C1.1 20.7,1.1 20.6,2.5 21.6L3.3 22.1 11.9 22.2C21.7 22.2,21.5 22.2,22.5 20.7L23 20 23.1 13.6C23.1 4.6,23.4 5,17.3 4.9C12.5 4.8,12.7 4.9,11.8 3.7C10.6 2,10.4 2,6.7 2C4.4 2,3.3 2.1,3 2.2M3.6 4.5C3.2 4.8,3.2 5.1,3.2 12.1C3.2 18,3.3 19.3,3.5 19.6C3.7 20,4 20,12.1 20C18.7 20,20.4 19.9,20.6 19.7C21 19.4,21 7.4,20.6 7.2C20.4 7.1,18.6 7,16.6 7C14.5 7,12.5 6.9,12.2 6.8C11.6 6.6,10.7 5.9,9.6 4.5C9.2 3.9,4.2 3.9,3.6 4.5"
+                                      fill-rule="evenodd"
+                                    ></path></svg></span
+                                ><span class="ft-name">src</span>
+                              </div>
+                            </div>
+                            <div
+                              class="ft-node ft-file"
+                              data-path="/Users/you/wt/fix-readme/.gitignore"
+                              data-row-id="tree:/Users/you/wt/fix-readme/.gitignore"
+                              data-kind="file"
+                              title="/Users/you/wt/fix-readme/.gitignore"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">.gitignore</span>
+                            </div>
+                            <div
+                              class="ft-node ft-file"
+                              data-path="/Users/you/wt/fix-readme/notes.xyz"
+                              data-row-id="tree:/Users/you/wt/fix-readme/notes.xyz"
+                              data-kind="file"
+                              title="/Users/you/wt/fix-readme/notes.xyz"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">notes.xyz</span>
+                            </div>
+                            <div
+                              class="ft-node ft-file"
+                              data-path="/Users/you/wt/fix-readme/README.koloft.md"
+                              data-row-id="tree:/Users/you/wt/fix-readme/README.koloft.md"
+                              data-kind="file"
+                              title="/Users/you/wt/fix-readme/README.koloft.md"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">README.koloft.md</span>
+                            </div>
+                            <div
+                              class="ft-node ft-file"
+                              data-path="/Users/you/wt/fix-readme/README.md"
+                              data-row-id="tree:/Users/you/wt/fix-readme/README.md"
+                              data-kind="file"
+                              title="/Users/you/wt/fix-readme/README.md"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">README.md</span>
+                            </div>
+                            <div
+                              class="ft-node ft-file bv-forced"
+                              data-path="/Users/you/wt/fix-readme/NOTES.md"
+                              data-row-id="tree:/Users/you/wt/fix-readme/NOTES.md"
+                              data-kind="file"
+                              data-forced="1"
+                              title="/Users/you/wt/fix-readme/NOTES.md"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">NOTES.md</span
+                              ><span class="ft-delta"><span class="add">+3</span></span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="bv-sec" data-section="outside">
+                          <div
+                            class="ft-node ft-dir ft-external open"
+                            data-dir="1"
+                            data-kind="section"
+                            data-path="__external__"
+                            data-row-id="outside:head"
+                            title="Files written outside the project this session"
+                          >
+                            <span class="ft-ext-icon">↗</span><span class="ft-name">Outside</span
+                            ><span class="ft-dir-agg">1</span>
+                          </div>
+                          <div class="ft-children">
+                            <div
+                              class="ft-node ft-file"
+                              data-path="/Users/you/koloft/README.md"
+                              data-row-id="outside:/Users/you/koloft/README.md"
+                              data-kind="file"
+                              title="/Users/you/koloft/README.md"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">README.md</span
+                              ><span class="ft-loc">~/koloft</span
+                              ><span class="ft-delta"><span class="add">+3</span></span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="fv-read">
+                      <div class="fv-empty"><p>Select a file to read it here.</p></div>
+                    </div>
+                  </div>
+                  <div
+                    class="fv-gutter"
+                    title="Drag to resize the file list"
+                    style="left: 230px"
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </figure>
+
+      <figure class="mk">
+        <figcaption>
+          <b>Browse — after</b
+          ><span
+            >Outside lists every file the session wrote outside the folder, code too; its count is
+            the number on the button.</span
+          >
+        </figcaption>
+        <div class="mk-box">
+          <div class="wb-panel" data-surface="workbench" data-kind="files" tabindex="-1">
+            <div class="wb-tabs">
+              <div class="wb-pin">
+                <span
+                  class="wb-tab pinned on"
+                  data-wb-tab-id="files"
+                  draggable="false"
+                  data-drop-index="0"
+                  ><span class="ic"
+                    ><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                      <path
+                        d="M13.8 1.2C13.7 1.3,13.3 1.6,13.1 1.9L12.7 2.3 12.7 6C12.7 10.1,12.8 10.4,13.5 10.8C14 11.1,14.3 11.1,17.1 11.1L20.2 11.1 20.8 10.5L21.4 9.9 21.4 7.2L21.4 4.4 19.7 2.8L18 1.1 16.1 1.1C15 1.1,14 1.2,13.8 1.2M14.6 6.2L14.6 9.3 17 9.3L19.5 9.3 19.5 7.5L19.5 5.7 18.7 5.7C17.5 5.7,17 5.2,17 3.9L17 3.1 15.8 3.1L14.6 3.1 14.6 6.2M3 3.8L2.6 4.2 2.6 10.9C2.6 18.1,2.7 18.3,3.4 18.7C3.6 18.8,5.2 18.9,7.4 18.9C11.5 18.9,11.8 18.8,11.8 17.9C11.8 17,11.5 16.9,8 16.9L4.8 16.9 4.8 12.2L4.8 7.4 8 7.4C11.6 7.4,11.8 7.4,11.8 6.5C11.8 5.5,11.5 5.4,8 5.4L4.8 5.4 4.8 4.9C4.8 3.6,3.8 3,3 3.8M13.7 13.3C12.8 13.7,12.7 14,12.7 18C12.7 22,12.8 22.3,13.5 22.8C14 23,14.3 23.1,17.1 23.1L20.2 23.1 20.8 22.5L21.4 21.9 21.4 19.1L21.4 16.4 19.7 14.7L18.1 13 16.1 13C14.6 13,14 13.1,13.7 13.3M14.6 18L14.6 21.1 17 21.1L19.5 21.1 19.5 19.4L19.5 17.7 18.7 17.7C17.5 17.7,17 17.1,17 15.8L17 14.9 15.8 14.9L14.6 14.9 14.6 18"
+                        fill-rule="evenodd"
+                      ></path></svg></span
+                  ><span class="lb">No changes · 2 outside</span></span
+                >
+              </div>
+              <div class="wb-drag"></div>
+              <div class="wb-spill">
+                <button class="wb-new" aria-label="New tab" title="New tab ⌘T">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <path
+                      d="M11.3 1.8C11.1 2,11 3.3,11 6.2C11 9.6,11 10.4,10.7 10.7C10.4 11,9.6 11,6 11C1.3 11,1.1 11.1,1.1 12.1C1.1 13,1.3 13,6.1 13C9.6 13,10.4 13,10.7 13.3C11 13.6,11 14.4,11 17.9C11 22.5,11.1 22.7,12.1 22.7C13.1 22.7,13.2 22.2,13.2 17.8C13.2 14.3,13.3 13.6,13.6 13.3C13.8 13,14.6 13,18.3 13L22.7 13 22.9 12.5C23.1 12.1,23.1 11.8,22.9 11.5C22.7 11,22.5 11,18.3 11C14.6 11,13.8 11,13.6 10.7C13.3 10.4,13.2 9.6,13.2 6.2C13.2 1.8,13.2 1.5,12.1 1.5C11.8 1.5,11.4 1.7,11.3 1.8"
+                      fill-rule="evenodd"
+                    ></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="wb-bar">
+              <div class="seg" role="group" aria-label="Files view">
+                <button aria-pressed="false">Changes</button
+                ><button aria-pressed="true" class="on">Browse</button>
+              </div>
+              <span class="wb-title"></span
+              ><button class="icobtn" title="Search files (⌘⇧F)" aria-label="Search files">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path
+                    d="M7.8 1.3C5.4 2,3.2 3.8,2.1 6C-1.8 13.8,6.7 21.8,14.4 17.6L15.5 17 18.4 19.9C21.6 23.1,21.7 23.2,22.3 22.9C23.4 22.3,23.2 21.9,19.9 18.6L16.9 15.6 17.5 14.6C22 8,15.6 -0.8,7.8 1.3M8.4 3.2C6.5 3.7,4.6 5.2,3.8 7C3 8.6,3 11.3,3.8 12.9C5.9 17.1,11.5 18,14.9 14.7C19.8 9.9,15.1 1.5,8.4 3.2"
+                    fill-rule="evenodd"
+                  ></path>
+                </svg></button
+              ><button class="icobtn" title="Reload" aria-label="Reload">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path
+                    d="M16.2 1.4C15.7 2,15.7 2.1,16.4 3.2C16.7 3.7,16.9 4.1,16.9 4.1C16.9 4.2,16.4 4,15.8 3.8C14.1 3.3,10.6 3.3,9 3.8C5.9 4.9,3.2 7.6,2.3 10.6C1.8 12.4,1.9 15.1,2.7 16.8C5 22.3,11 24.5,16.4 21.9C18.8 20.7,21 18,21.7 15.3C22.1 13.9,22.1 12.2,21.7 11.9C21 11.2,20.1 11.8,20.1 12.9C20.1 15.5,18.6 18.2,16.3 19.8C11 23.3,4 19.6,4 13.3C4 11,4.7 9.5,6.4 7.8C8.4 5.8,10.4 5.1,13 5.3C14.3 5.3,16.6 6,16.6 6.2C16.6 6.3,16.1 6.6,15.4 6.8C13.9 7.5,13.5 7.9,14 8.6C14.4 9.3,14.9 9.2,17.6 8.1C20.3 6.9,20.3 6.9,20.3 6.3C20.3 6,18.1 1.9,17.6 1.4C17.1 1,16.6 1,16.2 1.4"
+                    fill-rule="evenodd"
+                  ></path>
+                </svg></button
+              ><button
+                class="icobtn"
+                aria-label="Full width ⌘⏎"
+                aria-pressed="false"
+                title="Full width ⌘⏎"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path
+                    d="M14.9 1.5C14.5 1.8,14.4 2.5,14.6 2.8C14.8 3.1,15.1 3.1,17.1 3.1C18.3 3.1,19.4 3.2,19.5 3.3C19.5 3.4,18.2 4.8,16.6 6.4C13.6 9.4,13.1 10,14 10.5C14.6 10.8,15.1 10.4,17.9 7.6C19.6 6,20.9 4.8,21 4.9C21.2 5,21.2 5.8,21.2 7.3C21.2 9.7,21.3 10,22.1 10C23 10,23.1 9.7,23.1 5.7C23.1 0.9,23.5 1.3,18.8 1.3C16.2 1.3,15.1 1.4,14.9 1.5M6.3 16.5C4.6 18.2,3.3 19.4,3.2 19.3C3 19.2,3 18.4,3 17C3 14.7,2.8 14.2,2 14.2C1.2 14.2,1.1 14.6,1.1 18.4C1.1 23.3,0.7 22.9,5.5 22.9C9.2 22.9,9.4 22.9,9.6 22.5C9.9 22,9.8 21.8,9.4 21.4C9.1 21.1,8.8 21,7 21C5.8 21,4.8 21,4.7 20.9C4.7 20.9,6 19.5,7.6 17.9C10.6 15,10.9 14.5,10.3 13.9C9.7 13.3,9.2 13.6,6.3 16.5"
+                    fill-rule="evenodd"
+                  ></path>
+                </svg>
+              </button>
+            </div>
+            <div class="wb-body">
+              <div class="wb-host">
+                <div class="fv" data-view="browse">
+                  <div class="fv-browse">
+                    <div class="fv-tree bv" style="width: 230px">
+                      <div class="ft-chips">
+                        <button
+                          class="ft-chip"
+                          data-chip="show-ignored"
+                          aria-pressed="false"
+                          title="Show ignored files — everything git ignores, node_modules and .git included"
+                        >
+                          Show ignored files
+                        </button>
+                      </div>
+                      <div class="file-tree bv-body" tabindex="0">
+                        <div class="bv-sec" data-section="tree">
+                          <div
+                            class="ft-node ft-dir ft-root open"
+                            data-dir="1"
+                            data-kind="dir"
+                            data-path="/Users/you/wt/fix-readme"
+                            data-row-id="tree:/Users/you/wt/fix-readme"
+                            title="/Users/you/wt/fix-readme"
+                          >
+                            <span class="ft-icon" aria-hidden="true"
+                              ><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                                <path
+                                  d="M2.8 2.6C1 3.6,1 3.5,1 12.3C1 20.8,1 20.6,2.3 21.4L3 21.8 10.3 21.8C18.4 21.8,18.4 21.8,19.1 20.8C19.6 20.1,22.9 11.3,22.9 10.6C22.9 9.5,21.9 8.6,20.8 8.6C20.2 8.6,20.2 8.6,20.1 7.8C20 7.2,19.8 6.7,19.5 6.3C18.8 5.3,18.4 5.2,15.3 5.2C13.7 5.2,12.3 5.2,12.2 5.1C12.1 5,11.7 4.5,11.3 4C10.2 2.5,9.9 2.4,6.3 2.4C3.9 2.4,3.2 2.4,2.8 2.6M3.6 4.6L3.2 4.7 3.2 9.9C3.2 12.8,3.2 15.1,3.3 15C3.3 15,3.8 13.9,4.4 12.5C5.1 11.2,5.8 9.9,6 9.6C6.9 8.6,7.1 8.6,12.8 8.6C18 8.6,18.1 8.6,18.1 8.3C18.1 7.3,18 7.3,15.1 7.3C11.4 7.3,11 7.1,9.5 5L9.2 4.5 6.6 4.4C5.1 4.4,3.8 4.5,3.6 4.6M7.6 10.9C7.4 11,6.4 13,5.3 15.4L3.4 19.7 10.4 19.7C15.8 19.8,17.4 19.7,17.5 19.6C17.7 19.3,20.8 11.3,20.8 10.9C20.8 10.6,8 10.5,7.6 10.9"
+                                  fill-rule="evenodd"
+                                ></path></svg></span
+                            ><span class="ft-name">fix-readme</span
+                            ><span class="ft-dir-agg" title="1 files written here">●1</span>
+                          </div>
+                          <div class="ft-children">
+                            <div>
+                              <div
+                                class="ft-node ft-dir"
+                                data-dir="1"
+                                data-kind="dir"
+                                data-path="/Users/you/wt/fix-readme/assets"
+                                data-row-id="tree:/Users/you/wt/fix-readme/assets"
+                                title="/Users/you/wt/fix-readme/assets"
+                              >
+                                <span class="ft-icon" aria-hidden="true"
+                                  ><svg
+                                    viewBox="0 0 24 24"
+                                    width="13"
+                                    height="13"
+                                    fill="currentColor"
+                                  >
+                                    <path
+                                      d="M3 2.2C2.3 2.5,1.5 3.3,1.3 4C1.1 4.3,1.1 7.2,1.1 12.1C1.1 20.7,1.1 20.6,2.5 21.6L3.3 22.1 11.9 22.2C21.7 22.2,21.5 22.2,22.5 20.7L23 20 23.1 13.6C23.1 4.6,23.4 5,17.3 4.9C12.5 4.8,12.7 4.9,11.8 3.7C10.6 2,10.4 2,6.7 2C4.4 2,3.3 2.1,3 2.2M3.6 4.5C3.2 4.8,3.2 5.1,3.2 12.1C3.2 18,3.3 19.3,3.5 19.6C3.7 20,4 20,12.1 20C18.7 20,20.4 19.9,20.6 19.7C21 19.4,21 7.4,20.6 7.2C20.4 7.1,18.6 7,16.6 7C14.5 7,12.5 6.9,12.2 6.8C11.6 6.6,10.7 5.9,9.6 4.5C9.2 3.9,4.2 3.9,3.6 4.5"
+                                      fill-rule="evenodd"
+                                    ></path></svg></span
+                                ><span class="ft-name">assets</span>
+                              </div>
+                            </div>
+                            <div>
+                              <div
+                                class="ft-node ft-dir"
+                                data-dir="1"
+                                data-kind="dir"
+                                data-path="/Users/you/wt/fix-readme/bulk"
+                                data-row-id="tree:/Users/you/wt/fix-readme/bulk"
+                                title="/Users/you/wt/fix-readme/bulk"
+                              >
+                                <span class="ft-icon" aria-hidden="true"
+                                  ><svg
+                                    viewBox="0 0 24 24"
+                                    width="13"
+                                    height="13"
+                                    fill="currentColor"
+                                  >
+                                    <path
+                                      d="M3 2.2C2.3 2.5,1.5 3.3,1.3 4C1.1 4.3,1.1 7.2,1.1 12.1C1.1 20.7,1.1 20.6,2.5 21.6L3.3 22.1 11.9 22.2C21.7 22.2,21.5 22.2,22.5 20.7L23 20 23.1 13.6C23.1 4.6,23.4 5,17.3 4.9C12.5 4.8,12.7 4.9,11.8 3.7C10.6 2,10.4 2,6.7 2C4.4 2,3.3 2.1,3 2.2M3.6 4.5C3.2 4.8,3.2 5.1,3.2 12.1C3.2 18,3.3 19.3,3.5 19.6C3.7 20,4 20,12.1 20C18.7 20,20.4 19.9,20.6 19.7C21 19.4,21 7.4,20.6 7.2C20.4 7.1,18.6 7,16.6 7C14.5 7,12.5 6.9,12.2 6.8C11.6 6.6,10.7 5.9,9.6 4.5C9.2 3.9,4.2 3.9,3.6 4.5"
+                                      fill-rule="evenodd"
+                                    ></path></svg></span
+                                ><span class="ft-name">bulk</span>
+                              </div>
+                            </div>
+                            <div>
+                              <div
+                                class="ft-node ft-dir"
+                                data-dir="1"
+                                data-kind="dir"
+                                data-path="/Users/you/wt/fix-readme/docs"
+                                data-row-id="tree:/Users/you/wt/fix-readme/docs"
+                                title="/Users/you/wt/fix-readme/docs"
+                              >
+                                <span class="ft-icon" aria-hidden="true"
+                                  ><svg
+                                    viewBox="0 0 24 24"
+                                    width="13"
+                                    height="13"
+                                    fill="currentColor"
+                                  >
+                                    <path
+                                      d="M3 2.2C2.3 2.5,1.5 3.3,1.3 4C1.1 4.3,1.1 7.2,1.1 12.1C1.1 20.7,1.1 20.6,2.5 21.6L3.3 22.1 11.9 22.2C21.7 22.2,21.5 22.2,22.5 20.7L23 20 23.1 13.6C23.1 4.6,23.4 5,17.3 4.9C12.5 4.8,12.7 4.9,11.8 3.7C10.6 2,10.4 2,6.7 2C4.4 2,3.3 2.1,3 2.2M3.6 4.5C3.2 4.8,3.2 5.1,3.2 12.1C3.2 18,3.3 19.3,3.5 19.6C3.7 20,4 20,12.1 20C18.7 20,20.4 19.9,20.6 19.7C21 19.4,21 7.4,20.6 7.2C20.4 7.1,18.6 7,16.6 7C14.5 7,12.5 6.9,12.2 6.8C11.6 6.6,10.7 5.9,9.6 4.5C9.2 3.9,4.2 3.9,3.6 4.5"
+                                      fill-rule="evenodd"
+                                    ></path></svg></span
+                                ><span class="ft-name">docs</span>
+                              </div>
+                            </div>
+                            <div>
+                              <div
+                                class="ft-node ft-dir"
+                                data-dir="1"
+                                data-kind="dir"
+                                data-path="/Users/you/wt/fix-readme/lib"
+                                data-row-id="tree:/Users/you/wt/fix-readme/lib"
+                                title="/Users/you/wt/fix-readme/lib"
+                              >
+                                <span class="ft-icon" aria-hidden="true"
+                                  ><svg
+                                    viewBox="0 0 24 24"
+                                    width="13"
+                                    height="13"
+                                    fill="currentColor"
+                                  >
+                                    <path
+                                      d="M3 2.2C2.3 2.5,1.5 3.3,1.3 4C1.1 4.3,1.1 7.2,1.1 12.1C1.1 20.7,1.1 20.6,2.5 21.6L3.3 22.1 11.9 22.2C21.7 22.2,21.5 22.2,22.5 20.7L23 20 23.1 13.6C23.1 4.6,23.4 5,17.3 4.9C12.5 4.8,12.7 4.9,11.8 3.7C10.6 2,10.4 2,6.7 2C4.4 2,3.3 2.1,3 2.2M3.6 4.5C3.2 4.8,3.2 5.1,3.2 12.1C3.2 18,3.3 19.3,3.5 19.6C3.7 20,4 20,12.1 20C18.7 20,20.4 19.9,20.6 19.7C21 19.4,21 7.4,20.6 7.2C20.4 7.1,18.6 7,16.6 7C14.5 7,12.5 6.9,12.2 6.8C11.6 6.6,10.7 5.9,9.6 4.5C9.2 3.9,4.2 3.9,3.6 4.5"
+                                      fill-rule="evenodd"
+                                    ></path></svg></span
+                                ><span class="ft-name">lib</span>
+                              </div>
+                            </div>
+                            <div>
+                              <div
+                                class="ft-node ft-dir"
+                                data-dir="1"
+                                data-kind="dir"
+                                data-path="/Users/you/wt/fix-readme/src"
+                                data-row-id="tree:/Users/you/wt/fix-readme/src"
+                                title="/Users/you/wt/fix-readme/src"
+                              >
+                                <span class="ft-icon" aria-hidden="true"
+                                  ><svg
+                                    viewBox="0 0 24 24"
+                                    width="13"
+                                    height="13"
+                                    fill="currentColor"
+                                  >
+                                    <path
+                                      d="M3 2.2C2.3 2.5,1.5 3.3,1.3 4C1.1 4.3,1.1 7.2,1.1 12.1C1.1 20.7,1.1 20.6,2.5 21.6L3.3 22.1 11.9 22.2C21.7 22.2,21.5 22.2,22.5 20.7L23 20 23.1 13.6C23.1 4.6,23.4 5,17.3 4.9C12.5 4.8,12.7 4.9,11.8 3.7C10.6 2,10.4 2,6.7 2C4.4 2,3.3 2.1,3 2.2M3.6 4.5C3.2 4.8,3.2 5.1,3.2 12.1C3.2 18,3.3 19.3,3.5 19.6C3.7 20,4 20,12.1 20C18.7 20,20.4 19.9,20.6 19.7C21 19.4,21 7.4,20.6 7.2C20.4 7.1,18.6 7,16.6 7C14.5 7,12.5 6.9,12.2 6.8C11.6 6.6,10.7 5.9,9.6 4.5C9.2 3.9,4.2 3.9,3.6 4.5"
+                                      fill-rule="evenodd"
+                                    ></path></svg></span
+                                ><span class="ft-name">src</span>
+                              </div>
+                            </div>
+                            <div
+                              class="ft-node ft-file"
+                              data-path="/Users/you/wt/fix-readme/.gitignore"
+                              data-row-id="tree:/Users/you/wt/fix-readme/.gitignore"
+                              data-kind="file"
+                              title="/Users/you/wt/fix-readme/.gitignore"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">.gitignore</span>
+                            </div>
+                            <div
+                              class="ft-node ft-file"
+                              data-path="/Users/you/wt/fix-readme/notes.xyz"
+                              data-row-id="tree:/Users/you/wt/fix-readme/notes.xyz"
+                              data-kind="file"
+                              title="/Users/you/wt/fix-readme/notes.xyz"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">notes.xyz</span>
+                            </div>
+                            <div
+                              class="ft-node ft-file"
+                              data-path="/Users/you/wt/fix-readme/README.koloft.md"
+                              data-row-id="tree:/Users/you/wt/fix-readme/README.koloft.md"
+                              data-kind="file"
+                              title="/Users/you/wt/fix-readme/README.koloft.md"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">README.koloft.md</span>
+                            </div>
+                            <div
+                              class="ft-node ft-file"
+                              data-path="/Users/you/wt/fix-readme/README.md"
+                              data-row-id="tree:/Users/you/wt/fix-readme/README.md"
+                              data-kind="file"
+                              title="/Users/you/wt/fix-readme/README.md"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">README.md</span>
+                            </div>
+                            <div
+                              class="ft-node ft-file bv-forced"
+                              data-path="/Users/you/wt/fix-readme/NOTES.md"
+                              data-row-id="tree:/Users/you/wt/fix-readme/NOTES.md"
+                              data-kind="file"
+                              data-forced="1"
+                              title="/Users/you/wt/fix-readme/NOTES.md"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">NOTES.md</span
+                              ><span class="ft-delta"><span class="add">+3</span></span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="bv-sec" data-section="outside">
+                          <div
+                            class="ft-node ft-dir ft-external open"
+                            data-dir="1"
+                            data-kind="section"
+                            data-path="__external__"
+                            data-row-id="outside:head"
+                            title="Files written outside the project this session"
+                          >
+                            <span class="ft-ext-icon">↗</span><span class="ft-name">Outside</span
+                            ><span class="ft-dir-agg">2</span>
+                          </div>
+                          <div class="ft-children">
+                            <div
+                              class="ft-node ft-file"
+                              data-path="/Users/you/koloft/README.md"
+                              data-row-id="outside:/Users/you/koloft/README.md"
+                              data-kind="file"
+                              title="/Users/you/koloft/README.md"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">README.md</span
+                              ><span class="ft-loc">~/koloft</span
+                              ><span class="ft-delta"><span class="add">+3</span></span>
+                            </div>
+                            <div
+                              class="ft-node ft-file"
+                              data-path="/Users/you/koloft/src/main/index.ts"
+                              data-row-id="outside:/Users/you/koloft/src/main/index.ts"
+                              data-kind="file"
+                              title="/Users/you/koloft/src/main/index.ts"
+                            >
+                              <span class="ft-icon" aria-hidden="true"
+                                ><svg
+                                  viewBox="0 0 24 24"
+                                  width="13"
+                                  height="13"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    d="M5.1 1.2C3.9 1.5,3.1 2.3,2.8 3.4C2.6 4.4,2.6 20,2.8 20.9C3 21.7,3.8 22.6,4.5 22.9C4.9 23.1,6.6 23.1,12.1 23.1C22.3 23.1,21.5 23.8,21.5 14.8C21.5 10,21.5 8.6,21.3 8.2C21.2 7.9,19.6 6.2,17.8 4.4L14.6 1.2 11.3 1.2C9.5 1.2,7.5 1.2,6.8 1.1C6.2 1.1,5.4 1.1,5.1 1.2M5.3 3.1C5 3.2,4.7 3.4,4.7 3.6C4.6 3.7,4.6 7.7,4.6 12.3C4.6 20.4,4.6 20.7,4.9 21C5.2 21.4,5.5 21.4,12 21.4C17.9 21.4,18.9 21.3,19.2 21.1C19.6 20.8,19.6 20.8,19.6 15.4L19.6 10 16.9 10C14.2 9.9,14.2 9.9,13.7 9.4L13.2 8.9 13.2 6L13.1 3 11.7 2.9C9.2 2.7,5.9 2.8,5.3 3.1M15.1 6.1L15.1 8.1 17 8.1L19 8.1 17.1 6.1C16 5.1,15.1 4.2,15.1 4.2C15.1 4.2,15.1 5.1,15.1 6.1"
+                                    fill-rule="evenodd"
+                                  ></path></svg></span
+                              ><span class="ft-name">index.ts</span
+                              ><span class="ft-loc">~/koloft/src/main</span
+                              ><span class="ft-delta"><span class="add">+12</span></span
+                              ><span class="ft-delta"><span class="del">−4</span></span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="fv-read">
+                      <div class="fv-empty"><p>Select a file to read it here.</p></div>
+                    </div>
+                  </div>
+                  <div
+                    class="fv-gutter"
+                    title="Drag to resize the file list"
+                    style="left: 230px"
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </figure>
+    </div>
+
+    <div class="doc">
+      <h2>Rules</h2>
+      <ul>
+        <li>
+          "Outside" = files the session wrote with its file tools, outside the folder the Workbench
+          shows, minus the session's scratchpad, Claude's tasks folder, agent-only files (memory,
+          CLAUDE.md, skills) and files whose folder is gone.
+        </li>
+        <li>
+          The button adds " · N outside" only when N &gt; 0. With git changes too: "3 files · 2
+          outside" (+/− counts stay git's).
+        </li>
+        <li>
+          The empty state reuses <code>.fv-empty</code> and the <code>.cv-retry</code> button of the
+          Changes banner; the only new CSS is one rule stacking its lines (<code
+            >flex-direction: column; gap: 8px</code
+          >).
+        </li>
+        <li>
+          One function computes the list; Browse ▸ Outside, the button and the empty state all read
+          it, so the numbers always match.
+        </li>
+      </ul>
+      <h2>Per tab kind</h2>
+      <table>
+        <tr>
+          <th>Tab</th>
+          <th>What it sees</th>
+        </tr>
+        <tr>
+          <td>Claude Code · local</td>
+          <td>Same. Write / Edit / MultiEdit / NotebookEdit, sub-agents too.</td>
+        </tr>
+        <tr>
+          <td>Claude Code · SSH</td>
+          <td>
+            Same; a path written as <code>~/…</code> is not counted (Koloft cannot resolve the
+            remote home).
+          </td>
+        </tr>
+        <tr>
+          <td>Codex · local / SSH</td>
+          <td>Same. Patch writes, also the ones before a resume.</td>
+        </tr>
+        <tr>
+          <td>Muse · local / SSH</td>
+          <td>Same for write_file / edit_file; writes made before a resume are not remembered.</td>
+        </tr>
+        <tr>
+          <td>Antigravity · local / SSH</td>
+          <td>
+            Same for write_to_file / replace_file_content; writes made before a resume are not
+            remembered.
+          </td>
+        </tr>
+        <tr>
+          <td>All eight</td>
+          <td>
+            A file written by a shell command (<code>echo &gt; f</code>, <code>sed -i</code>,
+            <code>cp</code>) is not counted: no agent reports its path.
+          </td>
+        </tr>
+      </table>
+    </div>
+  </body>
+</html>
