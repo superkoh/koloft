@@ -710,7 +710,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     }
     if (attachTo)
       setImmediate(() => {
-        if (this.runs.get(run.tabId) !== run || run.explicitStop) return
+        if (this.runs.get(run.tabId) !== run || run.explicitStop || run.stopping) return
         this.bindTo(run, attachTo)
         this.showLastState(run, alreadyThere.text)
       })
