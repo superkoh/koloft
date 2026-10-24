@@ -1111,13 +1111,9 @@ export default function App(): JSX.Element {
     .sort((a, b) => b.mtime - a.mtime)
     .slice(0, RECENT_MAX)
 
-  const welcomePath = welcomeWs?.workspace.path
-  const resumeRecent = useCallback(
-    (row: SessionRow): void => {
-      if (welcomePath) openSessionRow(row, welcomePath)
-    },
-    [welcomePath]
-  )
+  const resumeRecent = useCallback((row: SessionRow): void => {
+    void resumeSession({ id: row.id, backendId: row.backendId, title: row.title })
+  }, [])
 
   const paletteRouted: PaletteRouted = (prompt, backend, route) => {
     setPaletteOpen(false)

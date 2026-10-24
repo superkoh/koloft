@@ -55,13 +55,6 @@ export function openSessionRow(row: SessionRow, wsPath: string): void {
     if (tabId) visitTab(tabId)
     return
   }
-  const boundAheadOfTheRow = st.sessions.find(
-    (s) => s.alive && s.sessionId === row.id && st.tabs.some((t) => t.id === s.tabId && t.alive)
-  )
-  if (boundAheadOfTheRow) {
-    visitTab(boundAheadOfTheRow.tabId)
-    return
-  }
   if (resumeInFlight(row.id)) {
     const t = st.tabs.find((x) => x.sessionId === row.id && x.alive)
     if (t) st.activateTab(t.id)
