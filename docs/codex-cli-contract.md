@@ -1509,6 +1509,15 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   the above` (with `isOther`), "tab to add notes", "enter to submit answer". **A digit
   picks that option and sends it at once**: `2` sent exactly the answer above, and the
   history then read "Questions 1/1 answered … answer: Green".
+- **The owner's own words go in as "None of the above" plus a note, by keys.** 2026-10-23,
+  codex-cli 0.162.0, `gpt-6.1-sol`, the TUI in a pty with `--remote` to a relay shaped like
+  Koloft's (WebSocket over TCP here, not Koloft's unix socket) in front of `codex
+  app-server --stdio -c features.default_mode_request_user_input=true`, a throwaway
+  `CODEX_HOME`. With an `isOther: true` question of 2 options on screen, Down, Down, Tab,
+  the words, Enter (each written alone, 300 ms apart) moved to "3. None of the above",
+  opened its notes line, filled it and sent `{answers: {<id>: {answers: ["None of the
+  above", "user_note: <words>"]}}}`; the history read "answer: None of the above / note:
+  <words>", and the model read both.
 - **An answer sent upstream by the relay, not by the TUI, is a trap.** In two runs the
   relay wrote the answer above to the app-server 8 s after the request, and dropped
   nothing (the TUI never sent one of its own). The server took it, sent

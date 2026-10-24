@@ -522,3 +522,26 @@ server of the opening note and with `--provider echo`; October 2026.
   machine, signs muse 1.4.9 in there with the real Meta model: it answered a prompt,
   with `SubagentStart` and `SubagentStop` hooks around its work (Docker, real `ssh`,
   tmux 3.3a, through Koloft, October 2026).
+
+## §18 MCP servers and a project's instruction files
+
+2026-10-23, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker, `muse exec` against a fake model
+server (`--base-url`, `META_API_KEY=FAKE`, `MUSE_MODEL=fake-model`); each MCP server a
+tiny stdio server that logged its start; marker words in instruction files, looked for
+in the model request.
+
+- **No `mcp list`:** `muse mcp` has only `login` and `logout`.
+- **Everywhere:** `mcpServers` in `<config>/muse/settings.json` (`{"schema_version":1,
+  "mcpServers":{"<name>":{"type":"stdio","command","args"}}}`) started in every folder.
+- **One project:** `mcpServers` in `<workspace>/.mcp.json`, and only in a trusted
+  workspace (`--trust-workspace` or `trust.json`): folder A trusted started both, A
+  untrusted and B trusted started only the settings one. `<A>/.muse/settings.json` and
+  `<A>/.agents/settings.json` were not read.
+- **Instruction file:** `AGENTS.md` in a trusted workspace (as `<rules-file
+  scope="project" path="AGENTS.md">`; untrusted, muse says it skips it). `CLAUDE.md` is read
+  only where there is no `AGENTS.md` ("CLAUDE.md is ignored this session because
+  AGENTS.md takes precedence"). `MUSE.md` is never read. `<config>/muse/AGENTS.md` is
+  read everywhere, as `scope="user"`.
+
+Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`) and the
+butler's to-do method, which names the files each agent reads.

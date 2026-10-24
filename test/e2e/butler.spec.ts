@@ -23,6 +23,7 @@ import {
   sendShortcut,
   settingsOnDisk,
   startSessionIn,
+  switchToRow,
   waitBooted,
   resumedId,
   waitForAllCalls,
@@ -489,6 +490,60 @@ test.describe('The butler: one global session at the top of the sessions list, k
         'runs on another machine'
       )
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(1)
+    } finally {
+      await close()
+      killFakeRemote(env)
+    }
+  })
+
+  test('the butler’s koloft todo prints how to sort out the to-dos, each workspace and the sessions waiting on the owner; koloft todo note keeps a workspace’s to-do note in Koloft’s settings; a session in a workspace is refused koloft todo', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env)
+    try {
+      await startSessionIn(page, 'ws-a')
+      await openButler(page)
+      const todo = await koloftSays(page, 'todo')
+      expect(todo).toContain('SORTING OUT THE TO-DOS')
+      expect(todo).toContain(`ws-a · ${env.workspaces.a} · `)
+      expect(todo).toContain('no to-do note yet')
+      expect(todo).toContain(`Open, finished its turn:\n- "`)
+      expect(todo).toContain(`" · Claude · ${env.workspaces.a} · local · last active`)
+
+      expect(await koloftSays(page, 'todo note ws-a -- "Issues assigned to me."')).toContain(
+        'Saved the to-do note'
+      )
+      expect(Object.values(settingsOnDisk(env).todoNotes as Record<string, string>)).toEqual([
+        'Issues assigned to me.'
+      ])
+      expect(await koloftSays(page, 'todo note ws-a')).toContain('Issues assigned to me.')
+
+      await switchToRow(page, wsRows(page, 'ws-a'))
+      expect(await koloftRun(page, 'todo')).toEqual({
+        text: expect.stringContaining('only the butler and the helpers'),
+        exit: 1
+      })
+    } finally {
+      await close()
+    }
+  })
+
+  test('for a workspace on another machine, koloft todo lists its instruction files and koloft todo file reads one over the connection Koloft already has', async ({
+    env
+  }) => {
+    installFakeRemote(env)
+    seedRemoteWorkspace(env)
+    fs.mkdirSync(remoteDir(env), { recursive: true })
+    fs.writeFileSync(path.join(remoteDir(env), 'AGENTS.md'), 'Needs decision (@octo): marks it.')
+    const { page, close } = await launched(env)
+    try {
+      await openButler(page)
+      await expect
+        .poll(async () => koloftSays(page, 'todo'), { timeout: 60_000 })
+        .toMatch(/proj · .* · no to-do note yet · files: AGENTS\.md/)
+      expect(await koloftSays(page, `todo file ${REMOTE_WS_NAME} AGENTS.md`)).toContain(
+        'Needs decision (@octo): marks it.'
+      )
     } finally {
       await close()
       killFakeRemote(env)

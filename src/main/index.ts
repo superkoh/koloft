@@ -450,6 +450,17 @@ import {
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'
+import { todoVerb } from './agentTodo'
+import { claudeJsonPath } from './claudeTrust'
+import {
+  AGY_PROJECT_MCP_FILE,
+  PROJECT_MCP_FILE,
+  claudeServers,
+  codexServers,
+  jsonServers,
+  type ConfigText,
+  type McpServer
+} from './mcpServers'
 import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
 import {
   asPeerName,
@@ -1356,6 +1367,42 @@ function butlerSide(tabId: string): boolean {
   )
 }
 
+function textOrNull(file: string): Promise<string | null> {
+  return fs.promises.readFile(file, 'utf8').catch(() => null)
+}
+
+async function mcpServersNow(): Promise<McpServer[]> {
+  const local = (workspaceMgr?.pinnedPaths() ?? []).flatMap((w) =>
+    isRemoteKey(w.path) ? [] : [w.path]
+  )
+  const inProjects = (file: string): Promise<ConfigText[]> =>
+    Promise.all(
+      local.map(async (onlyIn) => ({ onlyIn, text: await textOrNull(path.join(onlyIn, file)) }))
+    )
+  const museSettings = path.join(
+    museConfigHome(museSessions?.defaultEnv ?? process.env),
+    'muse',
+    'settings.json'
+  )
+  const [claudeJson, projectFiles, agyProjectFiles, codexToml, muse, agy] = await Promise.all([
+    textOrNull(claudeJsonPath()),
+    inProjects(PROJECT_MCP_FILE),
+    inProjects(AGY_PROJECT_MCP_FILE),
+    textOrNull(codexSharedConfig()),
+    textOrNull(museSettings),
+    textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
+  ])
+  return [
+    ...claudeServers(claudeJson, projectFiles, [
+      ...local,
+      conductorFolder(app.getPath('userData'))
+    ]),
+    ...codexServers(codexToml),
+    ...jsonServers('muse', [{ text: muse }, ...projectFiles]),
+    ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
+  ]
+}
+
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
   const workspace = sessionBackends.workspaceOfTab(tabId)
   return workspace && workspaceMgr?.isPinned(workspace) ? workspace : undefined
@@ -1548,6 +1595,7 @@ const sessionDeps: SessionVerbDeps = {
         )
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
+  speaksForTheOwner: butlerSide,
   butlerFolder: () => conductorFolder(app.getPath('userData')),
   butlerHelperRole: () => butlerHelperRole(butlerNameNow()),
   sidebar: () => workspaceMgr?.rows() ?? [],
@@ -1656,6 +1704,32 @@ const agentRequests = new AgentRequests({
           ? { ok: true, out: onMachine.stdout }
           : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
       }
+    }),
+    todo: todoVerb({
+      allowed: butlerSide,
+      sidebar: () => workspaceMgr?.rows() ?? [],
+      pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
+      sessions: () => allSessions().filter((s) => !s.butler),
+      asking: asksTheOwner,
+      workLeft: async (row) => {
+        const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
+        return tree ? whatIsLeft(hostGitOut, tree) : []
+      },
+      worktrees: sessionDeps.worktrees,
+      repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
+      pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
+      notes: () => loadSettings().todoNotes,
+      saveNote: (key, text) => {
+        const todoNotes = { ...loadSettings().todoNotes, [key]: text }
+        if (!text) delete todoNotes[key]
+        commitSettings({ todoNotes })
+      },
+      projectFiles: async (wsPath) =>
+        (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
+      readText: (file) => hosts.of(file).readText(file),
+      servers: mcpServersNow,
+      butlerFolder: sessionDeps.butlerFolder,
+      now: Date.now
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -2710,9 +2784,10 @@ app.whenReady().then(() => {
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
-    if (onDiscord && (t.next === 'approval' || t.next === 'waiting'))
+    const asksOnDiscord = butlerSide(t.tabId) && !!butler?.channel()
+    if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
-    if (onDiscord) void askButtons?.check(t.tabId)
+    if (asksOnDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
     if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
@@ -3011,6 +3086,7 @@ app.whenReady().then(() => {
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
+    notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
     bindDeadlineMs: cronBindDeadlineMs()
   })
   const discordLockFile = path.join(userData, 'discord.lock')
@@ -3125,6 +3201,9 @@ app.whenReady().then(() => {
         : []
     },
     butlerChannelOf: (tabId) => butlerNow.channelOfTab(tabId),
+    askChannelOf: (tabId) => (butlerSide(tabId) ? butlerNow.channel()?.channelId : undefined),
+    helperTitle: (tabId) =>
+      butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     askPlaced: (card, at) => buttons.placed(card, at),
     answered: (tabId, reply) => buttons.answered(tabId, reply),

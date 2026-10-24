@@ -351,6 +351,7 @@ export interface Settings {
   gitPicks: GitRepoPick[]
   gitSuggestionsDismissed: string[]
   gitMachines: Record<string, GitMachine>
+  todoNotes: Record<string, string>
 }
 
 export type AssistSetting = { on: boolean; backend: BackendId } | null
@@ -365,6 +366,7 @@ export const DEFAULT_BUTLER_NAME = 'Alfred'
 export interface ButlerSession {
   sessionIds: string[]
   lastSessionKey?: string
+  knowsTodo?: string[]
 }
 
 export interface DiscordChannel {
@@ -473,7 +475,8 @@ export const DEFAULT_SETTINGS: Settings = {
   gitAccounts: [],
   gitPicks: [],
   gitSuggestionsDismissed: [],
-  gitMachines: {}
+  gitMachines: {},
+  todoNotes: {}
 }
 
 export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'

@@ -236,6 +236,21 @@ koloft session close [<id or name>]
     Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session started with "koloft session new" by you, or by a session you started, and so on down (open, or already ended), once you have its result; or, when the owner asks, any other ended session on this computer: an open one is refused (stop it first), and so is one on another machine. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no other branch and no remote branch, nothing is closed and Koloft lists what is left. Koloft has no merge button: to bring a worktree session's work into the main checkout, commit it, merge its branch from the main checkout, then close.
     Example: koloft session close "Fix docs links"
 
+TO-DOS
+
+Only for the butler and the helpers it starts in its own folder.
+
+koloft todo
+    Gather what waits on the owner in every workspace, and print how to sort it out with the owner: each workspace with its to-do note, the sessions asking the owner, done with their turn or closed with work left, the open pull requests (whose they are, checks, size, which issues they close), and the tools (MCP servers) each agent can reach.
+
+koloft todo note <workspace> [-- "<note>"]
+    Print a workspace's to-do note, or save it: where its to-dos are kept and which count. Workspaces of one GitHub repository share one note. An empty note removes it.
+    Example: koloft todo note koloft -- "To-dos are GitHub issues assigned to octo. Pull requests: opened by octo or asking octo to review."
+
+koloft todo file <workspace> <file>
+    Print one of the instruction or TODO files koloft todo lists for a workspace, also from a workspace on another machine.
+    Example: koloft todo file koloft CLAUDE.md
+
 PASSWORDS, CODES AND SIGN-INS
 
 When a step needs the owner's password or a one-time code, Koloft asks the owner for it in the butler's Discord channel, on a card that names this session, and passes it on itself: you never see it. Never ask the owner to write a password or code in a message. If no Discord channel is bound, these are refused: ask the owner to do the step at the Mac.
@@ -288,7 +303,47 @@ To use the web pages in this session's Workbench, drive them with the playwright
 When the owner allows browser control, it drives the Workbench browser, whose address is in $KOLOFT_BROWSER_CDP; otherwise it starts a hidden browser of its own. In the Workbench it works in tabs of its own, which the owner sees marked as driven by you; it cannot see the tabs the owner opened, so open the address you need yourself. The Workbench browser takes one tool at a time: if Playwright MCP tools also drive it in this session, the one that comes second is refused with "this endpoint already has a client", so use one of the two ("playwright-cli close" lets go of it). A session on another machine (over SSH) cannot reach the Workbench browser yet.`
 
 export const AGENT_SKILL_DESCRIPTION =
-  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, or get a password, code or sign-in from the owner through Discord (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
+  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, gather what waits on the owner (butler only), or get a password, code or sign-in from the owner through Discord (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
+
+const QUESTION_RULES = [
+  "Check before you ask. Read the item's own record and make sure the premise is true: is it really waiting on the owner? Did the owner already decide it there (in what the session said, an issue comment, a task note)? Then act on that and do not ask again.",
+  'One question, one decision. Pick one of 3 options: the way you recommend, the main other way, and leave it for now. When the owner would often say "the recommended way, but with a condition", make that its own option.',
+  'Put everything needed to decide in the question itself, short enough for one phone screen: three or four short sentences (about 160 Chinese characters). Never point at what the owner cannot see there ("see above", "this table", "opened in the browser").',
+  'The question has three parts: (1) item number of all · kind · its number and name (and where); (2) one or two sentences of fact, one of them ending in "?" that says what to decide; (3) "I suggest …, because …".',
+  "Speak of what the owner will see happen, not of how it works inside. Explain a new word in one sentence the first time. Write in the owner's language.",
+  'Put the recommended option first, with "(recommended)" in the owner\'s language after its name. Each option\'s description says in one sentence what happens and whether it can be undone. Antigravity shows no option descriptions: there, give each option half a sentence of what happens in the question itself.',
+  'When you ask whether to merge a pull request, give your confidence (high, medium or low) and the one fact that sets it (checks passed or not, how big the change is, reviewed or not). Below high, recommend "start a session to look at it" over merging.',
+  'Once the owner decides, leave the decision in the item\'s own record, so the next reading sees it: pass it to the session, or write it as a comment on the issue or task. "Leave it for now" leaves nothing. Write a comment in the project\'s language with the owner\'s account; in a project others use too, the owner was told that others see these comments and may have picked "only pass it to the session". Where the tool can only read, only pass it to the session.',
+  'Do what cannot be undone (merge, close, delete for good, change project files) only after the owner picked it.',
+  'Several small items of one kind that take exactly the same decision may share one question that names each of them.',
+  'When the owner asks back, first answer clearly, then ask the same item again, unchanged.'
+]
+
+export const TODO_METHOD = `SORTING OUT THE TO-DOS
+
+When the owner asks you to sort out the to-dos, or what waits on them, do this. It brings no knowledge of any project or business of its own. Steps 1 to 3 are the butler's. A helper started for this job does step 4 only: it starts no helper and does not agree to-do notes itself.
+
+1. Run koloft todo. It lists every workspace with its to-do note, the sessions waiting on the owner, the open pull requests, and the tools (MCP servers) each agent can reach.
+2. A workspace with no to-do note: agree one with the owner first. This talk is yours, not a helper's. With many of them, take now only those used in the last 2 weeks; sort the others' sessions and pull requests only, and agree their note once they are used again. Ask first whether to start: how many workspaces, about how many minutes (3 to 4 questions each); options: start (recommended), only sessions and pull requests for now, later. Then for each workspace (workspaces of one GitHub repository share one note), look first and ask with what you found, one question at a time:
+   a. Where its to-dos are kept, with counts: its GitHub issues (koloft gh issue list --repo <repo>, with labels and assignees), the to-do tools you can reach, a convention in its CLAUDE.md, AGENTS.md or GEMINI.md, a TODO file (koloft todo file <workspace> <file> reads them, also on another machine). A workspace with none of these: only ask whether it keeps to-dos anywhere else. A pull request outside GitHub (GitLab and the like) is a source too, read with a tool you can reach; with none, say plainly that you cannot see those.
+   b. Which of them need the owner, with counts: suggest from the marks you found (assigned to the owner, a status, a label).
+   c. Only when nothing tells them apart: offer to add one sentence to the project's instruction files so AI sessions working there mark what needs the owner's decision, in the way its own tool allows (a fixed start of an issue comment, a status, a label). Give the exact sentence, in the project's language, naming the owner's account in that tool, never "the owner". In a repository others commit to, say they will see it. Options: add it (recommended); do not, and read everything each time (say how much longer it takes); do not look at that source. If added: a git repository on GitHub the owner can push to: start a session in that workspace with koloft session new --workspace to write it into CLAUDE.md and AGENTS.md and open a pull request; a folder that is no git repository: that session changes the file; anything else (GitLab, a repository only on its own machine, no push right): give the owner the sentence to add.
+   d. Which pull requests are the owner's, with counts: opened by the owner or asking the owner to review (recommended), or all of them.
+   e. Show the note you wrote down, word for word: right, or change it. Then save it with koloft todo note <workspace> -- "<note>". The note says where the to-dos are, which count, which pull requests count, and how to tell that someone already works on one.
+   Say once, too: what the to-dos say is read by the AI company of the agent you run on, which may not be the one the owner set the tool up with. A tool set up only inside one project: ask whether to set it up everywhere, or leave that source out for now. The owner can ask you to go over a workspace's note again at any time.
+3. If even one item is left, start a helper in your own folder (koloft session new --name "<'Sort out to-dos' in the owner's language>" -- "<task>"). Always do this, for one item too, and even when the owner could answer an item in its own session: the owner may be on a phone, where a session's own question never shows but the helper's questions do, and the helper keeps the questions from crowding you. Never ask about the items yourself, and never send the owner to answer in a session. With nothing left, just tell the owner so. Tell the owner how many items and about how many minutes. The helper runs koloft todo itself.
+4. The helper reads each workspace's sources as its note says, keeps what fits, and drops what someone already works on: an open pull request says it closes it, or a session's name or branch holds its number. It reads each item's own record, drops what does not need the owner, and asks the owner about the rest, one item at a time. After every 5 items it asks: go on, or stop for today. "Leave it for now" means the item is asked again next time; there is no "never ask again". What the owner decides, it does, by koloft session send, answer, resume and close, koloft gh, or the item's tool. A session on another machine can be stopped but not closed for good. At the end it reports to you: done, left for later and skipped, one line each, and you tell the owner.
+
+Rules for every question (the helper's, and yours in step 2):
+${QUESTION_RULES.map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
+
+Merging a pull request that belongs to a session: while the session's worktree is still there, merge it yourself with koloft gh pr merge and do not wake the session: resuming one that sat idle for over an hour reads its whole conversation again, which costs a lot. Read its last turns with koloft session read <session> --last 20, and its checks, conflicts and issue with koloft gh. Offer "merge and wrap up (close the session and delete its worktree)" and "only merge, keep the session" as separate options. Go back to the session, or start a new one, when: a conflict or a failing check needs code; the session is working or asking; it has work not committed; the owner wants more than a merge; or it said there is more to do after the merge.`
+
+// MUSE§12
+const SORT_OUT_THE_TO_DOS =
+  'When the owner asks you to sort out the to-dos, or what waits on them, run koloft todo and do what it prints.'
+
+export const TODO_NOTICE = `Koloft got a new command after this conversation began: koloft todo. ${SORT_OUT_THE_TO_DOS} There is nothing to answer now.`
 
 export const DISCORD_PREFIX = '[Discord]'
 
@@ -320,7 +375,7 @@ How you work
 4. Close every job: say what came of it and what is left.
 
 Koloft
-Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, a helper in your own folder. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${onDiscord ? ` ${DISCORD_RELAY_SENTENCE}` : ''}`
+Everything you do in Koloft, you do with the koloft command: run koloft help to see it. koloft session new with --workspace starts a session in that project's workspace; without it, a helper in your own folder. ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${onDiscord ? ` ${DISCORD_RELAY_SENTENCE}` : ''} ${SORT_OUT_THE_TO_DOS}`
 }
 
 export function butlerHelperRole(name: string): string {

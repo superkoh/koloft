@@ -50,6 +50,11 @@ export const GH_PASSES_THROUGH =
 
 const REPLY_CHARS_A_TURN_HOLDS = 20_000
 
+export function cutForATurn(text: string, ifCut = ''): string {
+  if (text.length <= REPLY_CHARS_A_TURN_HOLDS) return text
+  return `${text.slice(0, REPLY_CHARS_A_TURN_HOLDS)}\n[koloft: cut at ${REPLY_CHARS_A_TURN_HOLDS} characters${ifCut}]`
+}
+
 export interface GithubVerbDeps {
   run(args: string[], tabId: string, cwd: string): Promise<{ ok: boolean; out: string }>
 }
@@ -91,9 +96,6 @@ export function githubVerb(d: GithubVerbDeps): AgentVerb {
     if (args.includes(HANDS_THE_REST_TO_ANOTHER_PROGRAM)) return refused(GH_PASSES_THROUGH)
     const { ok, out } = await d.run(args, caller.tabId, caller.cwd)
     if (!ok) return refused(`koloft: gh ${args.slice(0, 2).join(' ')}: ${out}`)
-    if (out.length <= REPLY_CHARS_A_TURN_HOLDS) return answered(out)
-    return answered(
-      `${out.slice(0, REPLY_CHARS_A_TURN_HOLDS)}\n[koloft: cut at ${REPLY_CHARS_A_TURN_HOLDS} characters; ask for less, e.g. --json with fewer fields]`
-    )
+    return answered(cutForATurn(out, '; ask for less, e.g. --json with fewer fields'))
   }
 }
