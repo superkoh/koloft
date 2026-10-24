@@ -10,7 +10,9 @@ import {
   installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
+  machineAgyCalls,
   machineHome,
+  machineMuseCalls,
   REMOTE_WS_NAME,
   remoteDir
 } from './helpers/remote'
@@ -1382,7 +1384,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
   const REMOTE_CLOSE_IT_AGENTS: {
     agent: NonNullable<JobSpec['agent']>
     setUp: (env: E2EEnv) => void
-    runsInAWorktree: boolean
+    ranIn: (env: E2EEnv) => string[]
   }[] = [
     {
       agent: 'Codex',
@@ -1390,7 +1392,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         installCodexOnFakeRemote(env)
         gitInit(remoteDir(env))
       },
-      runsInAWorktree: true
+      ranIn: (env) =>
+        codexCalls(env)
+          .filter((c) => c.method === 'thread/start')
+          .map((c) => c.effectiveCwd)
     },
     {
       agent: 'Muse',
@@ -1399,7 +1404,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         installMuseOnMachine(env)
         gitInit(remoteDir(env))
       },
-      runsInAWorktree: true
+      ranIn: (env) =>
+        machineMuseCalls(env)
+          .filter((c) => !c.argv.includes('resume'))
+          .map((c) => c.cwd)
     },
     {
       agent: 'Antigravity',
@@ -1407,21 +1415,28 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         installAgy(env)
         installRemoteAgy(env)
       },
-      runsInAWorktree: false
+      ranIn: (env) =>
+        machineAgyCalls(env)
+          .filter((c) => !c.argv.includes('--version'))
+          .map((c) => c.cwd)
     }
   ]
-  for (const { agent, setUp, runsInAWorktree } of REMOTE_CLOSE_IT_AGENTS) {
-    test(`BB-M19 in ${agent}: a remote job set to "Close it" closes for good once its turn ends: tab, row, and its worktree on the machine if it made one`, async ({
+  for (const { agent, setUp, ranIn } of REMOTE_CLOSE_IT_AGENTS) {
+    test(`BB-M19 in ${agent}: a remote job set to "Close it" closes for good once its turn ends: tab, row, and on a git folder its worktree and branch on the machine`, async ({
       env
     }) => {
       test.setTimeout(300_000)
       installFakeRemote(env)
       setUp(env)
-      const worktrees = path.join(remoteDir(env), '.claude', 'worktrees')
-      const made = (): string[] => (fs.existsSync(worktrees) ? fs.readdirSync(worktrees) : [])
+      const repo = fs.existsSync(path.join(remoteDir(env), '.git'))
+      const branches = (): string => (repo ? runGit(remoteDir(env), 'branch', '--list') : '')
+      const branchesBefore = branches()
       const { app, page } = await launchWithRemote(env)
       try {
         await addRemoteWorkspace(page, env)
+        await expect(page.locator('.ws-head', { hasText: REMOTE_WS_NAME })).toBeVisible({
+          timeout: 20_000
+        })
         const dlg = await openCron(page, REMOTE_WS_NAME)
         await dlg.locator('button.mini', { hasText: 'New job' }).click()
         await fillForm(dlg, { agent, name: 'Remote report', task: 'look around' })
@@ -1429,19 +1444,22 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         await dlg.locator('.modal-foot .btn-primary').click()
         await clickRunNow(page, 'Remote report')
 
-        await expect(cronRows(page, REMOTE_WS_NAME)).toHaveCount(1, { timeout: 60_000 })
-        let wt = ''
-        if (runsInAWorktree) {
-          await expect.poll(made, { timeout: 60_000 }).toHaveLength(1)
-          wt = made()[0]
-        }
+        await expect.poll(() => ranIn(env).length, { timeout: 120_000 }).toBe(1)
+        const [cwd] = ranIn(env)
+        expect(readCalls(env)).toEqual([])
+        const wt = repo ? path.basename(cwd) : ''
+        if (repo) expect(cwd).toBe(runTree(remoteDir(env), wt))
+        else expect(fs.realpathSync(cwd)).toBe(fs.realpathSync(remoteDir(env)))
+
         await expect
           .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
           .toBe('Done — closed itself')
         await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
         await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(0, { timeout: 30_000 })
-        await expect.poll(made, { timeout: 30_000 }).toEqual([])
+        if (repo) await expect.poll(() => fs.existsSync(cwd), { timeout: 30_000 }).toBe(false)
         await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+        expect(fs.existsSync(remoteDir(env))).toBe(true)
+        expect(branches()).toBe(branchesBefore)
         expect((await histLines(page))[0]).toMatchObject({
           state: 'Done — closed itself',
           wt: wt ? ` · ${wt}` : '',
