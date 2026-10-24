@@ -42,10 +42,10 @@ export const REPLY_LANGUAGE_AFTER_QUOTE = `». ${WRITE_EVERYTHING_IN}the languag
 const WRITE_IN_THE_NAMED_LANGUAGE = `${shq('The user writes ')}"$lang"${shq(`. ${WRITE_EVERYTHING_IN}`)}"$lang"${shq(WHATEVER_ELSE)}`
 const LAST_NOTE_IS_NOT_IN_IT = `${shq('Your last note to the user, «')}"$note"${shq('», is not in ')}"$lang"${shq('. The user writes ')}"$lang"${shq(': write the next note and everything else the user reads in ')}"$lang"${shq(WHATEVER_ELSE)}`
 export const QUOTED_PROMPT_BYTES = 300
-const QUOTED_NOTE_BYTES = 150
-const TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE = 100
+export const QUOTED_NOTE_BYTES = 150
+export const TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE = 100
 const WORDS_THAT_SHOW_A_LANGUAGE = 3
-const JSON_STRING_BODY = '(([^"\\\\]|\\\\.)*)'
+export const JSON_STRING_BODY = '(([^"\\\\]|\\\\.)*)'
 const ASSISTANT_TEXT_RECORD = '"role":"assistant","content":\\[\\{"type":"(output_)?text","text":"'
 const TRANSCRIPT_PATH_FIELD = `'"transcript_path"[[:space:]]*:[[:space:]]*"[^"]*"'`
 // ADR-0028
@@ -81,6 +81,19 @@ last_note() {
     tail -n 1 |
     LC_ALL=C sed -n -E 's/.*${ASSISTANT_TEXT_RECORD}${JSON_STRING_BODY}".*/\\2/p' |
     head -c ${QUOTED_NOTE_BYTES} | whole_chars
+}
+reply_language_words() {
+  lang="$(language_in "$1")"
+  if [ -z "$lang" ]; then
+    printf '%s' ${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$1"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+    return 0
+  fi
+  note="$($2)"
+  if [ -z "$(language_in "$note")" ] && has_words "$note"; then
+    printf '%s' ${LAST_NOTE_IS_NOT_IN_IT}
+  else
+    printf '%s' ${WRITE_IN_THE_NAMED_LANGUAGE}
+  fi
 }`
 
 export const NOTICE_ENV = 'KOLOFT_NOTICE'
@@ -107,19 +120,7 @@ ${KEEP_GOING_FOR_THE_NOTICE_FN}
 remind_reply_language() {
   quote="$(cat "$said" 2>/dev/null)"
   context="$(take_notice)$2"
-  if [ -n "$quote" ]; then
-    lang="$(language_in "$quote")"
-    if [ -z "$lang" ]; then
-      context="$context"${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$quote"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
-    else
-      note="$(last_note)"
-      if [ -z "$(language_in "$note")" ] && has_words "$note"; then
-        context="$context"${LAST_NOTE_IS_NOT_IN_IT}
-      else
-        context="$context"${WRITE_IN_THE_NAMED_LANGUAGE}
-      fi
-    fi
-  fi
+  [ -n "$quote" ] && context="$context$(reply_language_words "$quote" last_note)"
   [ -n "$context" ] || return 0
   printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\\n' "$1" "$context"
 }`

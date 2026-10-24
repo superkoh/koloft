@@ -659,13 +659,13 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
   })
 
   // ADR-0031 AGY§12
-  it("quotes the owner's latest words to the model before each model call, so agy replies in their language", async () => {
+  it("tells the model the language of the owner's latest words before each model call, so agy replies in it", async () => {
     const id = await boundTab()
     appendConversation(gemini, A, [
       { type: 'USER_INPUT', content: ownerTyped('先别改代码，帮我查一下') }
     ])
     const out = hook(id, 'PreInvocation', { transcriptPath: agyTranscript(gemini, A) })
-    expect(JSON.parse(out).injectSteps[0].ephemeralMessage).toContain('«先别改代码，帮我查一下»')
+    expect(JSON.parse(out).injectSteps[0].ephemeralMessage).toMatch(/^The user writes Chinese\. /)
   })
 
   it('lists each file agy wrote or edited, with its added and removed lines, and not a file it only read', async () => {
