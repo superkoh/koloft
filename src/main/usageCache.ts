@@ -54,12 +54,10 @@ const FILES_AT_ONCE = 16
 export const CODEX_ROLLOUT_FOLDERS = ['sessions', 'archived_sessions']
 const MUSE_SESSION_FILE_PREFIX = 'session.'
 const MUSE_DATE_DEPTH = 3
-const UNKNOWN_START_SORTS_LAST = '￿'
-
 export class UsageCache {
   private reading = false
   private readonly cached: PrivateRecordFile<CachedFile>
-  private generation = 0
+  private claudeGeneration = 0
   private claudeOnce?: { generation: number; recordsByFile: Map<string, UsageRecord[]> }
   private readonly unpackedClaude = new WeakMap<
     ClaudeCalls,
@@ -101,8 +99,8 @@ export class UsageCache {
         else stale.set(f.file, { ...f, ...stat })
       })
       const gone = Object.keys(cached).filter((file) => !present.has(file))
+      if (gone.some((file) => cached[file].claudeCalls)) this.claudeGeneration++
       for (const file of gone) delete cached[file]
-      if (gone.length) this.generation++
       if (!stale.size) {
         if (gone.length) this.cached.save()
         return ended()
@@ -112,8 +110,8 @@ export class UsageCache {
         ({ file, ...scanned }) => {
           const f = stale.get(file)
           if (!f) return
+          if (scanned.claudeCalls || cached[file]?.claudeCalls) this.claudeGeneration++
           cached[file] = { ...f, ...scanned }
-          this.generation++
         },
         () => {
           this.cached.save()
@@ -137,17 +135,11 @@ export class UsageCache {
 
   // CC§5
   private claudeRecordsCountingEachCallOnce(files: CachedFile[]): Map<string, UsageRecord[]> {
-    if (this.claudeOnce?.generation === this.generation) return this.claudeOnce.recordsByFile
+    if (this.claudeOnce?.generation === this.claudeGeneration) return this.claudeOnce.recordsByFile
+    const startOf = (e: CachedFile): number => Date.parse(e.bornAt ?? '') || Infinity
     const oldestFirst = files
       .filter((e) => e.claudeCalls)
-      .sort(
-        (a, b) =>
-          (a.bornAt ?? UNKNOWN_START_SORTS_LAST).localeCompare(
-            b.bornAt ?? UNKNOWN_START_SORTS_LAST
-          ) ||
-          a.mtimeMs - b.mtimeMs ||
-          a.file.localeCompare(b.file)
-      )
+      .sort((a, b) => startOf(a) - startOf(b) || (a.file < b.file ? -1 : 1))
     const counted = new Set<string>()
     const recordsByFile = new Map<string, UsageRecord[]>()
     for (const e of oldestFirst) {
@@ -159,7 +151,7 @@ export class UsageCache {
         copies.size ? recordsOfClaudeCalls(e.claudeCalls!, copies) : records
       )
     }
-    this.claudeOnce = { generation: this.generation, recordsByFile }
+    this.claudeOnce = { generation: this.claudeGeneration, recordsByFile }
     return recordsByFile
   }
 

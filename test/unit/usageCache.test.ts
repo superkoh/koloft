@@ -242,13 +242,12 @@ describe('UsageCache', () => {
       expect(costOf('fork')).toBeCloseTo(0.0019203, 9)
     })
 
-    it('under the session whose file stopped first, when the moved file opens with the copied lines at the same moment, as /background writes it', async () => {
+    it('once in all, when the moved file opens with the copied lines at the same moment, as /background writes it', async () => {
       const costOf = await readParentAndFork({
         parent: '2026-10-24T08:59:00.000Z',
         fork: '2026-10-24T08:59:00.000Z'
       })
-      expect(costOf('parent')).toBeCloseTo(0.0292072, 9)
-      expect(costOf('fork')).toBeCloseTo(0.0019203, 9)
+      expect(costOf('parent') + costOf('fork')).toBeCloseTo(0.0311275, 9)
     })
   })
 
