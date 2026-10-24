@@ -998,7 +998,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     }
   })
 
-  it('resuming a conversation tmux still runs there attaches to it: the tab binds at once and follows the log its agy writes, found through the pointer the title script left', async () => {
+  it('resuming a conversation tmux still runs there attaches to it: the tab binds at once, reads waiting from the turn that already ended without reporting that turn again, and follows the log its agy writes, found through the pointer the title script left', async () => {
     machine.attach = true
     machine.alive.add(A)
     machine.held = true
@@ -1006,18 +1006,26 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
     const old = path.join(mirror, 'pty-old.agy.jsonl')
     fs.writeFileSync(old, JSON.stringify({ event: 'Stop', input: { conversationId: A } }) + '\n')
+    appendConversation(path.join(home, 'mirror-gemini'), A, [
+      { type: 'USER_INPUT', content: ownerTyped('before the restart') },
+      { type: 'PLANNER_RESPONSE', content: 'Already told.' }
+    ])
     const { id } = await sessions.resume({
       sessionId: agySessionKey(A, 'devbox'),
       cwd: REMOTE_WS
     })
     await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
+    expect(shown()).toEqual([{ type: 'stop' }])
     fs.appendFileSync(
       old,
       JSON.stringify({ event: 'PreInvocation', input: { conversationId: A } }) + '\n'
     )
     sessions.followMirrors('devbox')
     expect(runtime.statusOf(id)).toBe('working')
-    expect(shown()).toEqual([{ type: 'prompt' }])
+    expect(shown()).toEqual([{ type: 'stop' }, { type: 'prompt' }])
+    expect(
+      vi.mocked(sessions['deps'].events).mock.calls.filter(([, e]) => e.type === 'turn-ended')
+    ).toEqual([])
   })
 
   it('refuses to resume a conversation another agy on that machine holds', async () => {

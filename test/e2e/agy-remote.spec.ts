@@ -130,7 +130,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
   })
 
   // AGY§11
-  test('an Antigravity tab on a remote machine keeps running there while Koloft is closed, and the restarted Koloft attaches to it and follows its turns', async ({
+  test('an Antigravity tab on a remote machine keeps running there while Koloft is closed, and the restarted Koloft attaches to it, reads waiting from the turn that already ended, and follows its turns', async ({
     env
   }) => {
     setUp(env)
@@ -158,6 +158,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'survive a restart' })
       await expect(row).not.toHaveClass(/cold/, { timeout: 90_000 })
       await expect.poll(async () => (await boundRemoteAgy(page)).id).toBe(id)
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 30_000 })
       expect(machineAgyCalls(env)).toHaveLength(1)
       await runIn(page, centerTerm(page), 'after the restart')
       await expect(row).toHaveClass(/st-working/, { timeout: 60_000 })

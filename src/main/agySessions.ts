@@ -266,6 +266,14 @@ function readText(file: string): string | undefined {
   }
 }
 
+function readBytes(file: string): Buffer {
+  try {
+    return fs.readFileSync(file)
+  } catch {
+    return Buffer.alloc(0)
+  }
+}
+
 function attachedLog(mirror: string, conversationId: string): string | undefined {
   return readText(path.join(mirror, agyLogPointer(conversationId)))?.trim() || undefined
 }
@@ -673,7 +681,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       mirror,
       (attachTo && attachedLog(mirror, attachTo)) || agyLogName(tabId)
     )
-    const alreadyThere = attachTo ? (fs.statSync(logFile, { throwIfNoEntry: false })?.size ?? 0) : 0
+    const alreadyThere = attachTo ? readBytes(logFile) : Buffer.alloc(0)
     const run: AgyRun = {
       tabId: handle.id,
       cwd,
@@ -685,12 +693,17 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       bypassing: permission === 'bypass',
       account: pick.account,
       remote: { host: where.host, tmuxName: plan.tmuxName },
-      log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere),
+      log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere.length),
       touched: new Map(),
       liveWrites: 0,
       releaseTools: () => undefined
     }
-    if (attachTo) setImmediate(() => this.runs.get(run.tabId) === run && this.bindTo(run, attachTo))
+    if (attachTo)
+      setImmediate(() => {
+        if (this.runs.get(run.tabId) !== run) return
+        this.bindTo(run, attachTo)
+        this.showLastTurnState(run, alreadyThere.toString('utf8'))
+      })
     void remote.nextPull(where.host)
     return run
   }
@@ -748,6 +761,24 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         return run.tabId
     }
     return undefined
+  }
+
+  // AGY§11 AGY§12
+  private showLastTurnState(run: AgyRun, earlierLog: string): void {
+    const last = earlierLog
+      .split('\n')
+      .map((line) => agyLogLine(line))
+      .findLast(
+        (read) =>
+          !!read &&
+          'hook' in read &&
+          read.hook.conversationId === run.info?.nativeSessionId &&
+          (read.hook.event === 'Stop' || read.hook.event === 'PreInvocation')
+      )
+    if (!last || !('hook' in last)) return
+    const status = { state: last.hook.event === 'Stop' ? 'idle' : 'working' }
+    run.shown = status.state
+    this.emitState(run, status)
   }
 
   // AGY§11 AGY§12
