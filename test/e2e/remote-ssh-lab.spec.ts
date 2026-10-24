@@ -1076,11 +1076,15 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           ([id, line]) => window.api.terminal.write(id, line),
           [tabId, '/koloft help\r']
         )
+        const koloftTurnOver = /koloft exit=(\d+)[\s\S]*Codex done/
         await expect
-          .poll(async () => /koloft exit=(\d+)/.exec(await terminalText(page, tabId))?.[1], {
+          .poll(async () => koloftTurnOver.exec(await terminalText(page, tabId))?.[1], {
             timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
           })
           .toBe('0')
+        await expect(
+          wsRows(page, 'kt-key').and(page.locator(`[data-tab-id="${tabId}"]`))
+        ).toHaveClass(/\bst-waiting\b/)
         const listening = (): string =>
           runOnTarget(lab, 'kuser', 'ps -eo args | grep -c "[-]-listen" || true').trim()
         const pidFiles = (): string =>

@@ -902,6 +902,16 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
   return { title: s?.title, sessionId: s?.sessionId }
 }
+// PLATFORM§60
+const AWAY_AFTER_IDLE_SECONDS = 5 * 60
+function ownerAway(): boolean {
+  const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
+  if (pretend)
+    return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
+  if (BACKGROUND_TEST) return true
+  return powerMonitor.getSystemIdleState(AWAY_AFTER_IDLE_SECONDS) !== 'active'
+}
+
 function windowFocused(): boolean {
   try {
     return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
@@ -1569,12 +1579,14 @@ const sessionDeps: SessionVerbDeps = {
     const callerChannel = butler?.channelOfTab(callerTab)
     const channelId = callerChannel ?? (target.butler ? butler?.channel()?.channelId : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
-    if (!channelId) return void sendToRenderer(CH.cron.toast, text)
-    discordRelay?.say(channelId, `⚠ ${text}`)
+    const butlerTab = callerChannel ? callerTab : butler?.liveTab()
+    if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
+      discordRelay.say(channelId, `⚠ ${text}`)
+    else sendToRenderer(CH.cron.toast, text)
     if (callerChannel) discordRelay?.tell(butlerDestination(), `[Koloft] ${text}`)
   },
   command: async (callerTab, target, text, tellCaller) =>
-    target.butler && butler?.channelOfTab(callerTab)
+    target.butler && butler?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
       ? commandIntoButler(text)
       : typeCommandInto(target, text, { tell: tellCaller }),
   screen: screenOf
@@ -1599,6 +1611,7 @@ const agentRequests = new AgentRequests({
     workspace: workspaceVerb({ sidebar: projectRows }),
     discord: discordVerb({
       channelOf: (tabId) => butler?.channelOfTab(tabId),
+      quiet: (tabId) => !!discordRelay && !discordRelay.reaches(tabId),
       send: async (channelId, files, text) => {
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
@@ -2699,7 +2712,7 @@ app.whenReady().then(() => {
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     if (onDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
-    if (!(onDiscord && t.next === 'waiting'))
+    if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
@@ -2751,7 +2764,9 @@ app.whenReady().then(() => {
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+      skipPermissions: () => loadSettings().skipPermissions,
       replyLanguageScript: hookPaths.codexReplyLanguage,
+      builtInStatusLine: () => loadSettings().statuslineBuiltin,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
@@ -3042,7 +3057,8 @@ app.whenReady().then(() => {
   })
   discordTyping = new ButlerTyping({
     link,
-    channelOf: (tabId) => butlerNow.channelOfTab(tabId),
+    channelOf: (tabId) =>
+      discordRelay?.reaches(tabId) ? butlerNow.channelOfTab(tabId) : undefined,
     status: (tabId) => tracker.statusOf(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
@@ -3090,6 +3106,7 @@ app.whenReady().then(() => {
       return Buffer.from(await res.arrayBuffer())
     },
     owner: () => butlerNow.owner(),
+    ownerAway,
     butlerName: butlerNameNow,
     destinationOf: (channelId) =>
       butlerNow.isButlerChannel(channelId) ? butlerDestination() : undefined,
@@ -3332,6 +3349,7 @@ app.whenReady().then(() => {
   // PLATFORM§20
   powerMonitor.on('resume', requestWebglRepair)
   powerMonitor.on('unlock-screen', requestWebglRepair)
+  powerMonitor.on('lock-screen', () => discordRelay?.checkHeld())
   powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3
   powerMonitor.on('resume', () => cronRunner?.onResume())

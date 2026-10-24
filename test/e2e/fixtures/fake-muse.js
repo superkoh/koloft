@@ -594,6 +594,7 @@ function tui() {
   process.stdout.write(STATUS_ASK)
   if (asking) process.stdout.write('Do you trust this workspace? 1 Trust and continue 2 Quit\r\n')
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
+  const enterArrivesAsLineFeed = !!process.env.KOLOFT_FAKE_TMUX_IO
   process.stdin.on('data', (chunk) => {
     let text = chunk.toString('utf8')
     if (text.includes(STATUS_ON)) {
@@ -606,14 +607,16 @@ function tui() {
         blocked(ch === '\n' ? '\r' : ch)
         continue
       }
-      if (ch === '\r' || ch === '\n') {
+      // MUSE§7
+      if (ch === '\r' || (ch === '\n' && enterArrivesAsLineFeed)) {
         const done = typed
         typed = ''
         line(done.trim())
       } else if (ch === '\x7f') typed = typed.slice(0, -1)
-      else if (ch >= ' ') typed += ch
+      else if (ch >= ' ' || ch === '\n') typed += ch
     }
   })
   process.on('SIGHUP', () => process.exit(0))
+  process.stdout.on('error', () => process.exit(0))
   if (!asking) start()
 }

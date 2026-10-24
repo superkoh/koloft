@@ -255,7 +255,7 @@ koloft secret url "<sign-in address>"
 DISCORD
 
 koloft discord send <file>... [-- "<text>"]
-    Only for the butler: send files, pictures or screenshots to the Discord channel the owner talks to you in, with an optional line of text. You run in a folder of your own, so give a workspace file its full path. At most 20 MB per file. Use it when the owner wants to see a file or a screenshot; a path you only mention in your reply is not sent.
+    Only for the butler: send files, pictures or screenshots to the Discord channel the owner talks to you in, with an optional line of text. You run in a folder of your own, so give a workspace file its full path. At most 20 MB per file. Use it when the owner wants to see a file or a screenshot; a path you only mention in your reply is not sent. While the owner is at the Mac, Discord stays quiet: this and koloft discord shot are refused unless you are answering a Discord message, and your replies are not posted there either; show the file with koloft open instead.
     Example: koloft discord send shot.png -- "The login page now."
 
 koloft discord shot <file or web address> [-- "<text>"]

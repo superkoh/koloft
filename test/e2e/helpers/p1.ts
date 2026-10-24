@@ -492,7 +492,7 @@ export async function openWorktreeSession(page: Page, wsName: string): Promise<L
 export async function startSessionIn(
   page: Page,
   wsName: string,
-  opts: { remote?: boolean; method?: 'Claude' | 'Codex' } = {}
+  opts: { remote?: boolean; method?: AgentName } = {}
 ): Promise<void> {
   const rows = wsRows(page, wsName)
   const before = await rows.count()
