@@ -101,7 +101,7 @@ import {
   jsDialogFor,
   standardUserAgent
 } from './browserSecurity'
-import { directoryListingHtml } from './dirListing'
+import { directoryListingHtml, fileNotFoundHtml } from './dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
@@ -3888,21 +3888,25 @@ function browserGuestLimit(): number {
   return Number.isInteger(injected) && injected > 0 ? injected : DEFAULT_BROWSER_GUEST_LIMIT
 }
 
-async function directoryTarget(url: string): Promise<string | null> {
-  let target: string
+function localFilePath(url: string): string | null {
   try {
     const u = new URL(url)
     if (u.host && u.host !== 'localhost') return null
-    target = decodeURIComponent(u.pathname)
-  } catch {
-    return null
-  }
-  try {
-    return (await fs.promises.stat(target)).isDirectory() ? target : null
+    return decodeURIComponent(u.pathname)
   } catch {
     return null
   }
 }
+
+async function isDirectory(target: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(target)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8' }
 
 const liveDownloads = new Map<string, Electron.DownloadItem>()
 
@@ -3971,17 +3975,20 @@ function setupBrowserPartition(): void {
   ses.protocol.handle('koloft-file', async () => new Response('Forbidden', { status: 403 }))
   // PLATFORM§12
   ses.protocol.handle('file', async (request) => {
-    const dir = await directoryTarget(request.url)
-    if (dir) {
-      const entries = (await fs.promises.readdir(dir, { withFileTypes: true })).map((e) => ({
+    const target = localFilePath(request.url)
+    if (target && (await isDirectory(target))) {
+      const entries = (await fs.promises.readdir(target, { withFileTypes: true })).map((e) => ({
         name: e.name,
         isDir: e.isDirectory()
       }))
-      return new Response(directoryListingHtml(dir, entries), {
-        headers: { 'content-type': 'text/html; charset=utf-8' }
-      })
+      return new Response(directoryListingHtml(target, entries), { headers: HTML_HEADERS })
     }
-    return ses.fetch(request, { bypassCustomProtocolHandlers: true })
+    try {
+      return await ses.fetch(request, { bypassCustomProtocolHandlers: true })
+    } catch (err) {
+      if (!target || !String(err).includes('ERR_FILE_NOT_FOUND')) throw err
+      return new Response(fileNotFoundHtml(target), { status: 404, headers: HTML_HEADERS })
+    }
   })
   const guestUA = standardUserAgent(app.userAgentFallback, app.getName())
   // PLATFORM§14
