@@ -181,6 +181,24 @@ describe('CodexObservation', () => {
   })
 
   // CODEX§20
+  it('a tool question the TUI lets go with no answer stays marked as unanswered, through the end of that turn, until the next turn starts; an answered one never is', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'asked' } })
+    f.server('item/tool/requestUserInput', { questions: [{ id: 'colour' }] }, 0)
+    f.observer.receive('client', { id: 0, result: { answers: { colour: { answers: ['Green'] } } } })
+    expect(f.observer.questionWentUnanswered).toBe(false)
+
+    f.server('item/tool/requestUserInput', { questions: [{ id: 'colour' }] }, 1)
+    f.observer.receive('client', { id: 1, result: { answers: {} } })
+    f.server('turn/completed', { turn: { id: 'asked' } })
+    expect(f.observer.questionWentUnanswered).toBe(true)
+
+    f.server('turn/started', { turn: { id: 'owner wrote' } })
+    expect(f.observer.questionWentUnanswered).toBe(false)
+  })
+
+  // CODEX§20
   it('holds an open question only in the two shapes that were probed, one question or one enum field with options, until the TUI answers it', () => {
     const f = fixture()
     f.bind()

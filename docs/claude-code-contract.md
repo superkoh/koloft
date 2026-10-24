@@ -1228,9 +1228,27 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   the 60 s nudge fired `{"message":"Claude is waiting for your
   input","notification_type":"idle_prompt"}`; both reached a hook with
   `"matcher":"permission_prompt|idle_prompt"`, and neither reached one with
-  `"matcher":"auth_success"`. That `worker_permission_prompt`, `elicitation_dialog` and
-  `elicitation_url_dialog` also mean the run waits on the person is read from their
-  names only; their payloads are not measured.
+  `"matcher":"auth_success"`. That `worker_permission_prompt` and `elicitation_url_dialog`
+  also mean the run waits on the person is read from their names only; their payloads
+  are not measured.
+- **An MCP server's form (`elicitation/create`) sends an `Elicitation` hook, then one
+  `elicitation_dialog` Notification, and no Stop while it stays open.** Measured
+  2026-10-24 on CC 2.1.310: interactive claude in a python pty, haiku,
+  `--dangerously-skip-permissions`, scratch `CLAUDE_CONFIG_DIR`, `--strict-mcp-config`
+  with one stdio MCP server whose tool, when called, sent `elicitation/create`
+  (`message: "Which colour do you prefer?"`, an enum field `colour` of Red / Green), and
+  logging hooks on `Notification` (the matcher Koloft uses), `Stop`, `UserPromptSubmit`,
+  `PermissionRequest`, `Elicitation`, `ElicitationResult` and `PostToolUse`; 1 run. The
+  `Elicitation` hook fired 2.6 s after the prompt with `{mcp_server_name: "probe",
+  message, mode: "form", requested_schema}`; 6 s later came
+  `{"message":"Claude Code needs your input","notification_type":"elicitation_dialog"}`
+  (no `PermissionRequest`); the form ("MCP server “probe” requests your input", Accept /
+  Decline, "Esc to cancel") stayed open about 530 s, until the run was killed, and no
+  other hook fired. `2`, then CR, did not answer it: CR moved the cursor to Accept with
+  the field still "not set"; which keys fill and send it is not probed yet. The 2.1.310
+  binary writes the same text for `elicitation_url_dialog` (`strings`). So with no
+  "permission" in its message Koloft reads it as the `input` turn, which shows as
+  `approval`.
 
 **How a background task shows up in the transcript.** Checked "against real
 transcripts and the CLI's own result schemas" on claude 2.1.222; the forked-skill
@@ -2127,6 +2145,14 @@ below was one run.
   +6 s; the dialog was then left open 330 s and no other Notification came (no
   `idle_prompt`). So a session showing a question stays `approval` for Koloft until it is
   answered.
+- **The same holds on 2.1.310, through Koloft, in a scheduled job set to "Close it".**
+  2026-10-24, the hand-test sandbox (`npm run handtest`, a real local Claude tab, Sonnet,
+  effort low), a job whose task asked one `AskUserQuestion` (Red / Green), started with
+  Run now: Koloft's status log got `prompt`, then `ask` (the `PermissionRequest`), then
+  `notify` "Claude needs your permission" and nothing else; the row showed `st-approval`
+  and the tab, row and worktree stayed for the 300 s the question was left open. `2` typed
+  into the tab picked Green; 1.4 s later the toast said the job "finished and closed" and
+  the row and the worktree were gone. 1 run.
 - **A peer message sent while an `AskUserQuestion` is open waits for the answer.** Same
   run: a `bypass` envelope (§13) written to the session's socket 90 s into the dialog
   drew no reply for the next 240 s; the moment `1` answered the dialog, a

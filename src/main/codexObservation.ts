@@ -150,6 +150,10 @@ function asksTheOwner(method: string): boolean {
   )
 }
 
+function noAnswers(result: unknown): boolean {
+  return Object.keys(record(record(result).answers)).length === 0
+}
+
 interface WireTokens {
   inputTokens: number
   outputTokens: number
@@ -206,6 +210,7 @@ export class CodexObservation {
   private mainTurn: Turn = 'ended'
   private publishedTurn?: Turn
   private waitingForInput = false
+  questionWentUnanswered = false
   private roots = new Set<string>()
   private childRoots = new Map<string, string>()
   private childTurns = new Map<string, string>()
@@ -281,7 +286,12 @@ export class CodexObservation {
         this.requests.set(id, { method, generation: this.generation, threadId: this.threadId })
       }
       if (method === 'turn/start' && p.threadId === this.threadId) this.unsubscribed = false
-      if (id !== undefined && !method && this.approvals.delete(id)) {
+      const answered = id !== undefined && !method ? this.approvals.get(id) : undefined
+      if (id !== undefined && answered) {
+        this.approvals.delete(id)
+        // CODEX§20
+        if (answered === 'item/tool/requestUserInput' && noAnswers(f.result))
+          this.questionWentUnanswered = true
         this.approvalThreads.delete(id)
         this.approvalAsks.delete(id)
         if (!this.approvals.size) {
@@ -321,6 +331,7 @@ export class CodexObservation {
       this.approvalThreads.clear()
       this.approvalAsks.clear()
       this.waitingForInput = false
+      this.questionWentUnanswered = false
       this.mainTurn = 'ended'
       this.publishedTurn = undefined
       this.touched.clear()
@@ -381,6 +392,7 @@ export class CodexObservation {
       const turn = record(p.turn)
       if (typeof turn.id === 'string') this.liveTurns.add(turn.id)
       this.waitingForInput = false
+      this.questionWentUnanswered = false
       this.mainTurn = 'working'
       this.publishActivity()
     } else if (method === 'turn/completed') {

@@ -4414,6 +4414,7 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
 const RUN_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
+const RUN_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody answered'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
@@ -4421,6 +4422,7 @@ async function whatClosingTheRunWouldLose(
   worktree?: string
 ): Promise<string[]> {
   if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
+  if (codexSessions?.questionWentUnanswered(tabId)) return [RUN_ASKED_A_QUESTION_NOBODY_ANSWERED]
   const session = sessionOfTab(tabId)
   if (!session) return [NO_SESSION_FOR_THE_RUN]
   return whatClosingWouldLose(session, cronRunTree(root, worktree))

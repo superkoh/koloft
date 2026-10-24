@@ -673,6 +673,7 @@ export class CronRunner {
     const run = this.live.get(tabId)
     if (!run) return
     let changed = false
+    // CC§8 CC§14 CODEX§20 MUSE§3 AGY§10
     if (
       next === 'waiting' &&
       (prev === 'working' || prev === 'approval') &&
