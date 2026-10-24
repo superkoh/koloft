@@ -177,6 +177,24 @@ describe('tidying a scheduled run’s folder (#22)', () => {
     expect(fs.existsSync(tree)).toBe(true)
   })
 
+  function removalCutOffHalfWay(): void {
+    fs.rmSync(path.join(tree, 'node_modules'), { recursive: true })
+    fs.rmSync(path.join(tree, '.gitignore'))
+  }
+
+  it('removes a folder whose removal was cut off half way, as its only changes are deleted files and HEAD still holds them (#696)', async () => {
+    removalCutOffHalfWay()
+    expect(await tidyTree(localGitOut, run(), onDisk)).toEqual({ removed: true, kept: [] })
+    expect(fs.existsSync(tree)).toBe(false)
+    expect(branches()).toEqual(['main'])
+  })
+
+  it('still names a deleted file when a session is closed, outside the tidy', async () => {
+    removalCutOffHalfWay()
+    const left = await whatIsLeft(localGitOut, await treeOf(tree))
+    expect(left).toEqual(['Changes not committed:\n D .gitignore'])
+  })
+
   it('deletes the branch a folder removed by hand left behind', async () => {
     removeFolderKeepingBranch()
     expect(await tidyTree(localGitOut, run(), onDisk)).toEqual({ removed: true, kept: [] })
