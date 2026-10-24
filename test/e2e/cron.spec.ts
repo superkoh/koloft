@@ -4,7 +4,10 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
+  installCodexOnFakeRemote,
   installFakeRemote,
+  installMuseOnMachine,
+  installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
   machineHome,
@@ -1375,6 +1378,81 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       killFakeRemote(env)
     }
   })
+
+  const REMOTE_CLOSE_IT_AGENTS: {
+    agent: NonNullable<JobSpec['agent']>
+    setUp: (env: E2EEnv) => void
+    runsInAWorktree: boolean
+  }[] = [
+    {
+      agent: 'Codex',
+      setUp: (env) => {
+        installCodexOnFakeRemote(env)
+        gitInit(remoteDir(env))
+      },
+      runsInAWorktree: true
+    },
+    {
+      agent: 'Muse',
+      setUp: (env) => {
+        installMuse(env)
+        installMuseOnMachine(env)
+        gitInit(remoteDir(env))
+      },
+      runsInAWorktree: true
+    },
+    {
+      agent: 'Antigravity',
+      setUp: (env) => {
+        installAgy(env)
+        installRemoteAgy(env)
+      },
+      runsInAWorktree: false
+    }
+  ]
+  for (const { agent, setUp, runsInAWorktree } of REMOTE_CLOSE_IT_AGENTS) {
+    test(`BB-M19 in ${agent}: a remote job set to "Close it" closes for good once its turn ends: tab, row, and its worktree on the machine if it made one`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      setUp(env)
+      const worktrees = path.join(remoteDir(env), '.claude', 'worktrees')
+      const made = (): string[] => (fs.existsSync(worktrees) ? fs.readdirSync(worktrees) : [])
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        const dlg = await openCron(page, REMOTE_WS_NAME)
+        await dlg.locator('button.mini', { hasText: 'New job' }).click()
+        await fillForm(dlg, { agent, name: 'Remote report', task: 'look around' })
+        await dlg.locator('.chip', { hasText: 'Close it' }).click()
+        await dlg.locator('.modal-foot .btn-primary').click()
+        await clickRunNow(page, 'Remote report')
+
+        await expect(cronRows(page, REMOTE_WS_NAME)).toHaveCount(1, { timeout: 60_000 })
+        let wt = ''
+        if (runsInAWorktree) {
+          await expect.poll(made, { timeout: 60_000 }).toHaveLength(1)
+          wt = made()[0]
+        }
+        await expect
+          .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
+          .toBe('Done — closed itself')
+        await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
+        await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(0, { timeout: 30_000 })
+        await expect.poll(made, { timeout: 30_000 }).toEqual([])
+        await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+        expect((await histLines(page))[0]).toMatchObject({
+          state: 'Done — closed itself',
+          wt: wt ? ` · ${wt}` : '',
+          folder: ''
+        })
+      } finally {
+        await quitAndClose(app)
+        killFakeRemote(env)
+      }
+    })
+  }
 
   test('BB-M13: the workspace forecast row shows the nearest next run', async ({ env }) => {
     const now = new Date()
