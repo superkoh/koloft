@@ -1266,6 +1266,38 @@ describe('CodexSessions', () => {
     )
   })
 
+  // CODEX§11
+  it('with skip permission prompts on, a new thread starts with approvals and the sandbox off, while a resume keeps the permission its thread started with, which Codex restores itself', async () => {
+    let skip = false
+    deps.skipPermissions = () => skip
+    const asking = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind(0, A)
+    await sessions.stop(asking.id)
+
+    skip = true
+    const skipping = await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(vi.mocked(deps.pty.create).mock.calls[1][0].argv!.slice(-4)).toEqual([
+      '-a',
+      'never',
+      '-s',
+      'danger-full-access'
+    ])
+    expect(sessions.launchedBypassingChecks(skipping.id)).toBe(true)
+    bind(1, B)
+    await sessions.stop(skipping.id)
+
+    const stillAsking = await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
+    expect(sessions.launchedBypassingChecks(stillAsking.id)).toBe(false)
+    expect(transports[2].options.configOverrides).not.toContain('approval_policy="never"')
+
+    skip = false
+    const stillSkipping = await sessions.resume({ sessionId: codexSessionKey(B), cwd: repo })
+    expect(sessions.launchedBypassingChecks(stillSkipping.id)).toBe(true)
+    expect(transports[3].options.configOverrides).toEqual(
+      expect.arrayContaining(['approval_policy="never"', 'sandbox_mode="danger-full-access"'])
+    )
+  })
+
   // CODEX§14
   it('a scheduled launch hands Codex its task as the first prompt with its model and thinking level, and reports the bind so the run stops counting as starting', async () => {
     const { id } = await sessions.launch({

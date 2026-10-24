@@ -8,7 +8,8 @@ import type {
   BackendSessionRow,
   CreateTabOptions,
   HostId,
-  CodexResetOutcome
+  CodexResetOutcome,
+  LaunchPermission
 } from '@shared/types'
 import { CODEX_RESET_OUTCOMES } from '@shared/types'
 import { barePath, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
@@ -638,6 +639,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     })
   }
 
+  // CODEX§11
+  protected permissionOf(opts: CreateTabOptions): LaunchPermission {
+    return opts.resumeSessionId ? (opts.permission ?? 'default') : super.permissionOf(opts)
+  }
+
   protected prepare(opts: CreateTabOptions): CodexLaunch {
     // CODEX§15 ADR-0030
     const picked = this.deps.pickHome(opts.resumeSessionId)
@@ -714,7 +720,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       ...(agent && !conductor ? [koloftPrompt('codex')] : []),
       ...(role ? [role] : [])
     ]
-    const permission = opts.permission ?? 'default'
+    const permission = this.permissionOf(opts)
     const permissions = PERMISSIONS[permission]
     const builtInStatusLine = this.deps.builtInStatusLine()
     const processOptions: CodexProcessOptions = {
