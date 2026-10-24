@@ -542,6 +542,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   private async readMachineHistory(machine: string): Promise<void> {
+    const startedAt = Date.now()
     const home = await this.machineDeps().run(machine, HAS_CODEX_HOME_CMD)
     if (sshLinkBroke(home)) throw new Error(problemOf(home))
     const threads =
@@ -554,6 +555,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       this.history.set(key, entry)
       if (archived) this.archivedIds.add(key)
     }
+    this.listedAt.set(machine, startedAt)
     this.changed()
   }
 

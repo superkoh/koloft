@@ -12,7 +12,11 @@ export interface SummaryFixture {
   step_count?: number
   parent_conversation_id?: string
   app_data_dir?: string
+  dbRemoved?: true
 }
+
+const conversationDbOf = (geminiDir: string, id: string): string =>
+  path.join(path.dirname(summariesDb(geminiDir)), 'conversations', `${id}.db`)
 
 const SUMMARY_COLUMNS = [
   'conversation_id',
@@ -43,7 +47,12 @@ export function writeSummaries(geminiDir: string, rows: SummaryFixture[]): void 
     const insert = db.prepare(
       `insert or replace into conversation_summaries (${SUMMARY_COLUMNS.join(', ')}) values (${SUMMARY_COLUMNS.map(() => '?').join(', ')})`
     )
-    for (const row of rows)
+    for (const row of rows) {
+      if (!row.dbRemoved) {
+        const conversation = conversationDbOf(geminiDir, row.conversation_id)
+        fs.mkdirSync(path.dirname(conversation), { recursive: true })
+        fs.closeSync(fs.openSync(conversation, 'a'))
+      }
       insert.run(
         row.conversation_id,
         row.title ?? '',
@@ -54,6 +63,7 @@ export function writeSummaries(geminiDir: string, rows: SummaryFixture[]): void 
         row.parent_conversation_id ?? '',
         row.app_data_dir ?? ''
       )
+    }
   } finally {
     db.close()
   }

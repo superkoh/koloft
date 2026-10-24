@@ -385,11 +385,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   protected async listHistory(): Promise<
     { key: string; entry: HistoryEntry; archived: boolean }[]
   > {
+    const startedAt = Date.now()
     const local = await listAgyConversations(this.gemini)
     const { remote } = this.deps
     const hosts = remote.hosts()
     for (const host of this.remoteHistory.keys())
-      if (!hosts.includes(host)) this.remoteHistory.delete(host)
+      if (!hosts.includes(host)) {
+        this.remoteHistory.delete(host)
+        this.listedAt.delete(host)
+      }
     // AGY§8
     await Promise.all(
       hosts
@@ -404,6 +408,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             host,
             historyEntries(rows).map((e) => ({ ...e, cwd: remote.keyed(host, e.cwd) }))
           )
+          this.listedAt.set(host, startedAt)
         })
     )
     return [

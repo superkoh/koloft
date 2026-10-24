@@ -33,6 +33,8 @@ import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 
 const AVAILABILITY_FAILURE_MS = 60_000
 const EMIT_THROTTLE_MS = 500
+// MUSE§5
+const NEW_SESSION_LIST_LAG_MS = 30_000
 
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
@@ -142,6 +144,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   protected runs = new Map<string, R>()
   protected history = new Map<string, H>()
   protected archivedIds = new Set<string>()
+  protected listedAt = new Map<string | undefined, number>()
   private places = new Map<string, Place>()
   private probed?: { at: number; reply: BackendAvailability }
   private probing?: Promise<BackendAvailability>
@@ -150,7 +153,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
-  private listed = false
   private launchingKeys = new Set<string>()
   private relaunchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
@@ -388,6 +390,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       rows.set(key, this.row(t, scope))
     }
     for (const m of this.store.listMembers(workspace)) {
+      if (this.gone(m.key, m.updatedAt)) {
+        rows.delete(m.key)
+        continue
+      }
       const r: BackendSessionRow = rows.get(m.key) ?? {
         id: m.key,
         title: m.title,
@@ -495,6 +501,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     }
     if (this.shuttingDown) return
     let entries: { key: string; entry: H; archived: boolean }[]
+    const startedAt = Date.now()
     try {
       entries = await this.listHistory()
     } catch (error) {
@@ -511,7 +518,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.history = seen
     this.places.clear()
     this.archivedIds = archivedIds
-    this.listed = true
+    this.listedAt.set(undefined, startedAt)
     this.historyError = undefined
     this.changed()
   }
@@ -533,7 +540,18 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   threadGone(key: string): boolean {
-    return this.listed && !this.refreshing && !this.history.has(key) && !this.aliveTabFor(key)
+    return !this.refreshing && this.gone(key, this.store.getMember(key)?.updatedAt ?? 0)
+  }
+
+  // CODEX§2
+  private gone(key: string, boundAt: number): boolean {
+    const listedAt = this.listedAt.get(hostOfKey(key))
+    return (
+      listedAt !== undefined &&
+      boundAt < listedAt - NEW_SESSION_LIST_LAG_MS &&
+      (!this.history.has(key) || this.archivedIds.has(key)) &&
+      !this.readsRunning(key)
+    )
   }
 
   launchedBypassingChecks(tabId: string): boolean {

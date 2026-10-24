@@ -314,6 +314,76 @@ describe('CodexSessions', () => {
     expect(sessions.threadGone(unlisted)).toBe(true)
   })
 
+  // CODEX§15 MUSE§5 AGY§8
+  it('a remembered session leaves the sessions list once a finished listing left its thread out, deleted or archived, and comes back once listed again; one bound under half a minute ago or still running stays (the shared stored-sessions rows, so Muse and Antigravity too)', async () => {
+    const C = '33333333-3333-4333-8333-333333333333'
+    const D = '44444444-4444-4444-8444-444444444444'
+    addMember(A)
+    addMember(B)
+    sessions.store.upsertMember({
+      id: C,
+      key: codexSessionKey(C),
+      workspacePath: repo,
+      cwd: repo,
+      title: 'Just bound',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    })
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    bind(0, D)
+    sessions.store.updateMember(codexSessionKey(D), { updatedAt: 1 })
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived ? [{ id: B, cwd: repo }] : []
+    }))
+    await sessions.refreshHistory()
+    const shown = () =>
+      sessions
+        .rows(repo)
+        .map((row) => row.id)
+        .sort()
+    expect(shown()).toEqual([codexSessionKey(C), codexSessionKey(D)])
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived
+        ? []
+        : [
+            { id: A, cwd: repo },
+            { id: B, cwd: repo }
+          ]
+    }))
+    await sessions.refreshHistory()
+    expect(shown()).toEqual([A, B, C, D].map((id) => codexSessionKey(id)))
+  })
+
+  // CODEX§16
+  it("a remembered session on a remote machine stays through a listing of this Mac alone, and leaves once that machine's own listing left it out", async () => {
+    deps.machine = {
+      instance: 'test',
+      ready: async () => {},
+      run: async () => ({ code: 0, stdout: '', stderr: '' }),
+      sshArgs: () => [],
+      machinePackage: () => ({}) as never,
+      tabDir: () => directory,
+      fileExists: async () => false,
+      keyed: (machine, onMachineFile) => keyedOn(machine, onMachineFile)!
+    }
+    const remoteRepo = keyedOn('box', '/srv/repo')!
+    const key = codexSessionKey(A, 'box')
+    sessions.store.upsertMember({
+      id: A,
+      key,
+      workspacePath: remoteRepo,
+      cwd: remoteRepo,
+      title: 'Saved',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    mocks.request.mockImplementation(async () => ({ data: [] }))
+    await sessions.refreshHistory()
+    expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
+    await sessions.refreshMachineHistory('box', true)
+    expect(sessions.rows(remoteRepo)).toEqual([])
+  })
+
   it('reports unavailable history instead of returning an empty successful listing', async () => {
     vi.mocked(sessions.availability).mockResolvedValue({
       id: 'codex',

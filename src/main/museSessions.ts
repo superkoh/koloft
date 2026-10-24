@@ -448,21 +448,26 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   > {
     const remote = this.deps.remote
     const hosts = remote?.hosts() ?? []
+    const startedAt = Date.now()
     const [sessions] = await Promise.all([
       listMuseSessions(this.serveOptions()),
       ...hosts
         .filter((host) => remote!.connected(host))
         .map(async (host) => {
           const listed = await listMuseSessions(this.serveOn(host)).catch(() => undefined)
-          if (listed)
-            this.remoteHistory.set(
-              host,
-              listed.map((entry) => ({ ...entry, cwd: remote!.keyed(host, entry.cwd) }))
-            )
+          if (!listed) return
+          this.remoteHistory.set(
+            host,
+            listed.map((entry) => ({ ...entry, cwd: remote!.keyed(host, entry.cwd) }))
+          )
+          this.listedAt.set(host, startedAt)
         })
     ])
     for (const host of this.remoteHistory.keys())
-      if (!hosts.includes(host)) this.remoteHistory.delete(host)
+      if (!hosts.includes(host)) {
+        this.remoteHistory.delete(host)
+        this.listedAt.delete(host)
+      }
     return [
       ...sessions.map((entry) => ({ key: museSessionKey(entry.id), entry, archived: false })),
       ...[...this.remoteHistory].flatMap(([host, entries]) =>
