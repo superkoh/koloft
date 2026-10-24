@@ -235,6 +235,19 @@ Nothing ran against Google's real servers.
   replaces `modelProvider` (§6).
 - Trust is keyed by the folder path as given in `PWD`, not its real path: a symlinked
   folder is saved as the link path.
+- **Resuming behind a first-run screen** (1.4.7, Linux arm64, Docker, tmux, fake
+  Gemini server, 2026-10-24): `--conversation=<id>` with the folder missing from
+  `trustedWorkspaces` shows the same trust screen, but the title script already runs
+  with `conversation_id` = that id (and `conversation_title`), `agent_state`
+  `initializing`, about 0.3 s after launch, while the question is still up; the
+  first run, at once, carries `""` and `authenticating`. So which conversation the
+  process holds is known before the answer. "No, exit" then exits and records no
+  trust; "Yes" opens the history. The id arrives at the same 0.3 s on the colour
+  screen (no `onboarding.json`; `initializing`), on the sign-in screen (no
+  `modelProvider`, no token; still `authenticating`), with `-c` on the trust screen,
+  and with the folder trusted. An id with no stored conversation keeps
+  `conversation_id` `""` (§1: a new conversation, no id before the first prompt).
+  macOS: not probed.
 - `-p` needs neither onboarding nor trust, and records no trust.
 - `/add-dir <dir>` prints "Added <dir> to workspace" with no trust question and does
   not add it to `trustedWorkspaces`.
@@ -497,8 +510,9 @@ Nothing ran against Google's real servers.
   cache_read_input_tokens}}`, `exceeds_200k_tokens`, `product:"antigravity"`,
   `agent_state`, `sandbox{enabled}`, `terminal_width`, `subagents` (once one ran),
   `conversation_title`, and `tool_confirmation_pending` (seen on macOS).
-  - `agent_state`: `authenticating` (start), `idle`, `working`, `tool_use` (an ask is
-    open), `reviewing` (an artifact is waiting for review, §19).
+  - `agent_state`: `authenticating` (start), `initializing` (1.4.7, a resumed
+    conversation still on the colour or trust screen, §5), `idle`, `working`, `tool_use` (an ask
+    is open), `reviewing` (an artifact is waiting for review, §19).
   - `conversation_title` is `null` until `/rename` or a resume pick, even after the
     summaries row has its made-up title.
   - `transcript_path` points to `<geminiDir>/antigravity/brain/…`, beside

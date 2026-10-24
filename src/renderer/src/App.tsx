@@ -1705,8 +1705,10 @@ export default function App(): JSX.Element {
                         if (t.id === activeTabId) setPaintedGen(switchGen)
                       }}
                     />
-                    {/* CODEX§9 MUSE§10 */}
-                    {t.resuming && t.kind === 'claude' && <ResumingMask title={t.title} />}
+                    {/* CODEX§9 MUSE§10 AGY§5 */}
+                    {t.resuming && (t.kind === 'claude' || t.kind === 'agy') && (
+                      <ResumingMask title={t.title} />
+                    )}
                   </div>
                 ])}
                 {switching && activeTab && (
