@@ -12,6 +12,7 @@ import {
   centerTerm,
   chooseBackend,
   gitInit,
+  killSession,
   newSessionInWith,
   notesOnDisk,
   notesPath,
@@ -541,6 +542,66 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
       expect(runGit(fx.clone, 'branch', '--list', 'worktree-kid').trim()).toBe('')
     } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('koloft session close also stops the background program the session left running and closes the ended session it started, worktree and branch too', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const fx = setupGitFixture(env)
+    const pidFile = path.join(env.home, 'left-running.pid')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'repo')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('parent')
+      await page.keyboard.press('Enter')
+      const rows = wsRows(page, 'repo')
+      await expect(rows).toHaveCount(1, { timeout: 60_000 })
+      await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const callerTabId = await rows.getAttribute('data-tab-id')
+      const parentTree = path.join(fx.clone, '.claude', 'worktrees', 'parent')
+      await expect.poll(() => fs.existsSync(path.join(parentTree, 'NOTES.md'))).toBe(true)
+      fs.rmSync(path.join(parentTree, 'NOTES.md'))
+
+      expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
+      await expect(rows).toHaveCount(2, { timeout: 60_000 })
+      const child = rows.and(page.locator(`.ws-tab:not([data-tab-id="${callerTabId}"])`))
+      await expect(child).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const kid = readCalls(env).find((c) => c.argv.includes('kid'))!
+      expect(await koloftInSession(page, `session stop ${kid.sessionId}`)).toBe('0')
+      await expect(child).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      const kidTree = path.join(fx.clone, '.claude', 'worktrees', 'kid')
+      expect(fs.existsSync(kidTree)).toBe(true)
+
+      const parentSession = readCalls(env)[0].sessionId
+      await runIn(
+        page,
+        centerTerm(page),
+        `/sh CLAUDE_CODE_SESSION_ID=${parentSession} nohup '${process.execPath}' -e 'setTimeout(()=>{},6e5)' '${env.home}' >/dev/null 2>&1 & echo $! > '${pidFile}'`
+      )
+      await expect
+        .poll(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8'))
+        .toBeTruthy()
+      const leftRunning = Number(fs.readFileSync(pidFile, 'utf8'))
+      expect(processAlive(leftRunning)).toBe(true)
+
+      expect(await koloftInSession(page, 'session close')).toBe('0')
+      expect(await shownTermText(page, CENTER)).toContain(
+        'Also closing the ended sessions it started:'
+      )
+      await expect(rows).toHaveCount(0, { timeout: 60_000 })
+      await expect.poll(() => fs.existsSync(kidTree), { timeout: 30_000 }).toBe(false)
+      await expect.poll(() => fs.existsSync(parentTree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(fx.clone, 'branch', '--list', 'worktree-*').trim()).toBe('')
+      await expect.poll(() => processAlive(leftRunning), { timeout: 30_000 }).toBe(false)
+    } finally {
+      if (fs.existsSync(pidFile)) killSession(Number(fs.readFileSync(pidFile, 'utf8')), env)
       await quitAndClose(app)
     }
   })

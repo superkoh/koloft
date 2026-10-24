@@ -28,7 +28,10 @@ let ghWrapper: string
 
 beforeAll(() => {
   gitAuthDir = path.join(os.tmpdir(), `koloft-shim-git-${process.pid}`)
-  ;({ shimDir, regDir, pickDir, gitHelper, ghWrapper } = setupShim(gitAuthDir))
+  ;({ shimDir, regDir, pickDir, gitHelper, ghWrapper } = setupShim(
+    gitAuthDir,
+    '/nonexistent-butler-folder'
+  ))
   base = path.dirname(shimDir)
   realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realbin-'))
   for (const bin of ['claude', 'codex', 'muse', 'agy']) {
@@ -711,6 +714,7 @@ describe('codex guard (Koloft terminal hard block — the same funnel as claude,
     [['review', '--uncommitted']],
     [['login']],
     [['mcp', 'list']],
+    [['migrate-nfs-db', '--staging-dir', '/tmp/codex-db']],
     [['resume', '--help']],
     [['--version']],
     [['-h']]

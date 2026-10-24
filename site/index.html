@@ -151,7 +151,8 @@
             <p>
               Press <kbd>⌘P</kbd> and type the job. With Assist on, Koloft picks the folder, opens a
               worktree in a git repo and names the session; the agent you picked starts on your
-              words. The same box jumps to any session and searches everything you said.
+              words. Type <kbd>@</kbd> and a folder's name to pick the folder yourself. The same box
+              jumps to any session and searches everything you said.
             </p>
           </div>
           <img
@@ -215,8 +216,8 @@
             data-film="pal-jump"
             data-phone-crop="300,40,840,502"
             data-title="Koloft, recorded: ⌘P jumps to a session"
-            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":8,"crop":"0,0,1440,860"}]'
-            data-cues='[{"at":6,"to":7,"html":"↓ then ⏎","x":"8%","y":"70%"}]'
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":9,"crop":"0,0,1440,860"}]'
+            data-cues='[{"at":7,"to":8,"html":"↓ then ⏎","x":"8%","y":"70%"}]'
             hidden
           ></div>
           <div
@@ -227,15 +228,15 @@
             data-film="pal-search"
             data-phone-crop="300,40,840,502"
             data-title="Koloft, recorded: ⌘P searches every conversation"
-            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":9,"crop":"0,0,1440,860"}]'
-            data-cues='[{"at":6,"to":7,"html":"<kbd>⌥⏎</kbd> search every conversation","x":"8%","y":"70%"},{"at":8,"to":8,"html":"the chat that said “timer”","x":"8%","y":"70%"}]'
+            data-cam='[{"at":0,"crop":"300,40,840,502"},{"at":8,"crop":"0,0,1440,860"}]'
+            data-cues='[{"at":6,"to":6,"html":"<kbd>⌥⏎</kbd> search every conversation","x":"8%","y":"70%"},{"at":7,"to":7,"html":"the chat that said “timer”","x":"8%","y":"70%"}]'
             hidden
           ></div>
         </div>
         <p class="honest">
           <span>note</span>Picking the place needs Koloft Assist on (Settings ▸ Assist); with it
-          off, ⏎ opens the folder picker with your words kept. ⏎ starts your default agent. The ▾
-          beside the button lists them all; ⇧⏎ picks another agent.
+          off, ⏎ opens the folder picker with your words kept (not when you named a folder with @).
+          ⏎ starts your default agent; the ▾ beside the button, or ⌘⏎, picks another.
         </p>
         <a class="more" href="features/#palette"
           >Everything ⌘P does
@@ -357,7 +358,8 @@
             Your butler, Alfred until you rename it, is Koloft's own AI, first in the sessions list.
             Tell it what you want, here or on your phone: it starts, resumes and stops sessions,
             closes finished ones, reads what they said, answers their questions and presses their
-            keys. A side job goes to a helper of its own, which reports back.
+            keys. A job outside your projects goes to a helper of its own, which does it and reports
+            back.
           </p>
         </div>
         <div class="proof reveal">
@@ -373,14 +375,14 @@
           </div>
           <div>
             <svg class="icon" aria-hidden="true"><use href="icons.svg#wand" /></svg>
-            <b>Ask Koloft itself</b>Type “set up Discord” in <kbd>⌘P</kbd> and it goes to your
-            butler, whose helper clicks through Discord's site and stops for you to sign in and pass
-            the human checks.
+            <b>Ask Koloft itself</b>Type “set up Discord” in <kbd>⌘P</kbd> and a helper of your
+            butler clicks through Discord's site and stops for you to sign in and pass the human
+            checks.
           </div>
         </div>
         <p class="honest">
-          <span>note</span>Set it up in Settings ▸ Assist. It runs on your Mac; it can message a
-          session in a remote folder, not start one there.
+          <span>note</span>Set it up in Settings ▸ Assist. It runs on your Mac, and it can start and
+          message sessions in a remote folder too.
         </p>
         <a class="more" href="features/#assist"
           >Everything your butler does
@@ -438,9 +440,9 @@
           </div>
           <h2>Work keeps going <em>while you're away.</em></h2>
           <p>
-            Put a job on a schedule and Koloft starts a fresh session for it every hour, day or
-            week; in a git repo, in a worktree of its own. Read what it did in the morning, here or
-            by asking your butler from your phone.
+            Put a job on a schedule and Koloft starts a fresh session for it, every hour, day or
+            week or as often as you pick; in a git repo, in a worktree of its own. Read what it did
+            in the morning, here or by asking your butler from your phone.
           </p>
         </div>
         <div class="grid3 inline">
@@ -449,8 +451,9 @@
             <svg class="go" aria-hidden="true"><use href="icons.svg#arrow" /></svg>
             <h3>On a schedule</h3>
             <p>
-              Hourly, daily or on the days you pick, as a sentence or a /skill. Tell it to close
-              when done and it tidies up, unless work is left uncommitted or unmerged.
+              Hourly, daily, on the days you pick, once, or a set wait after each run, as a sentence
+              or a /skill. Tell it to close when done and it tidies up, unless work is left
+              uncommitted or unmerged.
             </p>
           </a>
           <a class="tile reveal" href="sessions/#keep-running">

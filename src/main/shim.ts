@@ -132,6 +132,7 @@ const CODEX_SUBCOMMANDS_WITHOUT_A_TUI = [
   'archive',
   'delete',
   'migrate-rollouts',
+  'migrate-nfs-db',
   'unarchive',
   'exec-server',
   'features',
@@ -534,7 +535,7 @@ export function registeredByTabRoot(regPid: unknown, rootPid: number | undefined
   return typeof regPid !== 'number' || rootPid === undefined || regPid === rootPid
 }
 
-export function setupShim(gitAuthDir: string): ShimPaths {
+export function setupShim(gitAuthDir: string, butlerFolder: string): ShimPaths {
   const base = app.getPath('userData')
   const shimDir = path.join(base, 'shim')
   const regDir = path.join(base, 'sessions')
@@ -579,7 +580,7 @@ export function setupShim(gitAuthDir: string): ShimPaths {
   fs.chmodSync(gitHelper, 0o755)
 
   const ghWrapper = path.join(shimDir, 'gh')
-  fs.writeFileSync(ghWrapper, ghWrapperScript(gitAuthDir), { mode: 0o755 })
+  fs.writeFileSync(ghWrapper, ghWrapperScript(gitAuthDir, butlerFolder), { mode: 0o755 })
   fs.chmodSync(ghWrapper, 0o755)
 
   return { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper }

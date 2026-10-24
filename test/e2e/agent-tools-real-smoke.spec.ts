@@ -916,7 +916,7 @@ async function sendToCodexTab(page: Page, tabId: string, text: string): Promise<
 
 // CODEX§11
 test.describe('a REAL Codex session resumed after its tab closed: an opt-in case; it spends real money', () => {
-  test('a real Codex session launched with approvals and the sandbox bypassed, resumed after its tab closed, still writes a file outside its workspace with no question', async ({
+  test('a real Codex session started with skip permission prompts on runs with approvals and the sandbox off, and resumed after its tab closed still writes a file outside its workspace with no question', async ({
     env
   }) => {
     test.skip(
@@ -944,7 +944,6 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
           window.api.terminal.create({
             kind: 'codex',
             cwd,
-            permission: 'bypass',
             firstPrompt: 'Reply with the single word ok.'
           }),
         env.workspaces.a

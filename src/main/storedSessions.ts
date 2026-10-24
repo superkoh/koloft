@@ -384,12 +384,17 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       const member = this.store.getMember(key)
       const workspace =
         member?.workspacePath ?? (entry ? this.workspaceFor(entry.cwd, scope) : undefined)
-      const title = entry ? this.titleOf(entry) : member?.title
+      const title = entry ? this.titleOf(key, entry) : member?.title
       return workspace && title !== undefined ? { workspace, title } : undefined
     }
   }
-  private titleOf(t: H): string {
-    return t.name || t.preview?.slice(0, 100) || PLACEHOLDER_TITLES[this.id]
+  private titleOf(key: string, t: H): string {
+    return (
+      this.store.nameOfLeftMember(key) ||
+      t.name ||
+      t.preview?.slice(0, 100) ||
+      PLACEHOLDER_TITLES[this.id]
+    )
   }
   members(): Set<string> {
     return new Set([
@@ -474,7 +479,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       id: key,
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
-      title: this.titleOf(t),
+      title: this.titleOf(key, t),
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? place.worktreeName ?? 'main',
       running: this.readsRunning(key),
@@ -735,6 +740,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       run.resource = this.store.listResources().find((r) => r.worktreePath === treeRoot)
     }
     const m = this.store.getMember(key),
+      leftName = m ? undefined : this.store.nameOfLeftMember(key),
       now = Date.now()
     try {
       this.store.upsertMember({
@@ -745,6 +751,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         title:
           run.launchName ||
           (this.keepsItsOwnTitle && m?.title !== PLACEHOLDER_TITLES[this.id] ? m?.title : '') ||
+          leftName ||
           entry.name ||
           entry.preview?.slice(0, 100) ||
           m?.title ||
@@ -753,7 +760,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
         ...(run.permission !== 'default' ? { permission: run.permission } : {}),
-        ...(this.keepsItsOwnTitle && (run.launchName || m?.named) ? { named: true as const } : {})
+        ...(this.keepsItsOwnTitle && (run.launchName || m?.named || leftName)
+          ? { named: true as const }
+          : {})
       })
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)
