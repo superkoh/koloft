@@ -183,7 +183,7 @@ export function pruneDeadInstalls(
 
 function pruneDeadWrappers(dir: string, keep: string): void {
   pruneDeadInstalls(dir, keep, (entry) =>
-    /^run-[0-9a-f]+\.sh$/.test(path.basename(entry)) ? entry : undefined
+    /^(agy-)?run-[0-9a-f]+\.sh$/.test(path.basename(entry)) ? entry : undefined
   )
 }
 
