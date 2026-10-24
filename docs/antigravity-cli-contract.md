@@ -582,7 +582,11 @@ Nothing ran against Google's real servers.
     prompt as typed, unwrapped. After a tool call the ephemeral message reaches the
     model appended to that call's `functionResponse.output` after a blank line, not as a
     content of its own. A hook entry `/bin/sh <file>` runs under dash there (Debian
-    12). Not run on the Mac build.
+    12). The same run of the macOS build (1.4.7 darwin_arm64, macOS 26.6.2, a throwaway
+    tart VM) gave the same line shape, order and timing and the same texts at the
+    fake server; its transcript also saves each injected message as a step
+    `{"source":"SYSTEM_SDK","type":"EPHEMERAL_MESSAGE"}` (the Linux transcript was not
+    looked at for this).
 - **A `PreToolUse` hook gets about 30 s unless its entry sets `timeout` (seconds), and one
   that runs out DENIES the tool.** 1.4.2 Linux arm64 in Docker, fake model, `-p …
   --dangerously-skip-permissions --output-format json`, a hook that slept then exited 0
