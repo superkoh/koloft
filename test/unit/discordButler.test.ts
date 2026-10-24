@@ -28,11 +28,12 @@ let started: {
   title: string
   backend: BackendId
   firstPrompt?: string
-  ownerWords?: string
 }[]
 let resumed: string[]
 let killed: string[]
 let toasts: string[]
+let notices: string[]
+let noticeArrives: boolean
 let transcripts: Set<string>
 let choice: AssistBackendChoice
 let release: () => void
@@ -64,8 +65,7 @@ function make(): Butler {
         role: l.role,
         title: l.title,
         backend: l.backend,
-        firstPrompt: l.firstPrompt,
-        ownerWords: l.ownerWords
+        firstPrompt: l.firstPrompt
       })
       await new Promise<void>((r) => (release = r))
       return `tab-${started.length}`
@@ -77,6 +77,10 @@ function make(): Butler {
     kill: onlyWhileItsTestRuns((tabId: string) => void killed.push(tabId)),
     rowsChanged: () => void rescans++,
     toast: onlyWhileItsTestRuns((t: string) => void toasts.push(t)),
+    notice: async (t) => {
+      if (run === testRun) notices.push(t)
+      return noticeArrives
+    },
     bindDeadlineMs: DEADLINE_MS
   }
   return new Butler(deps)
@@ -105,6 +109,8 @@ beforeEach(() => {
   resumed = []
   killed = []
   toasts = []
+  notices = []
+  noticeArrives = true
   transcripts = new Set()
   choice = { backend: 'claude' }
   release = () => {}
@@ -197,7 +203,11 @@ describe('the butler', () => {
     c.onBound(tab, 's1')
     c.onBound(tab, 's2')
     c.onBound(tab, 's2')
-    expect(session).toEqual({ sessionIds: ['s1', 's2'], lastSessionKey: 's2' })
+    expect(session).toEqual({
+      sessionIds: ['s1', 's2'],
+      lastSessionKey: 's2',
+      knowsTodo: ['s1', 's2']
+    })
     expect([c.isButlerSession('s1'), c.isButlerSession('s2'), c.isButlerSession(tab)]).toEqual([
       true,
       true,
@@ -211,34 +221,70 @@ describe('the butler', () => {
     expect(resumed).toEqual(['s2'])
   })
 
-  // ADR-0031 AGY§8
-  it('opened to be told something, starts a new conversation on those words with the owner’s words saved, and says so; resumed or already open, it is started on nothing', async () => {
+  // CC§23 CODEX§17 MUSE§9 AGY§8
+  it('a conversation from before koloft todo, which keeps the role it started with, is told of it when resumed until the notice gets through, then never again, on Claude too; one started since is told nothing', async () => {
+    const OLD_CODEX = 'codex:local:old-thread'
+    const NEW_CODEX = 'codex:local:new-thread'
+    const tab = `tab-resumed-${OLD_CODEX}`
+    session = { sessionIds: [OLD_CODEX], lastSessionKey: OLD_CODEX }
+    transcripts.add(OLD_CODEX)
+    choice = { backend: 'codex' }
+    noticeArrives = false
     const c = make()
-    const words = { prompt: 'The owner typed this in ⌘P: hi', ownerWords: 'hi' }
-    const opening = c.open(words)
+    expect(await c.open()).toEqual({ ok: true, tabId: tab })
+    expect(notices).toEqual([expect.stringContaining('koloft todo')])
+    c.onPtyExit(tab)
+    noticeArrives = true
+    await c.open()
+    expect(notices).toHaveLength(2)
+    await vi.waitFor(() => expect(session.knowsTodo).toEqual([OLD_CODEX]))
+    c.onBound(tab, OLD_CODEX)
+    c.onPtyExit(tab)
+    await c.open()
+    expect(notices).toHaveLength(2)
+
+    session = { sessionIds: [CLAUDE_KEY], lastSessionKey: CLAUDE_KEY }
+    transcripts.add(CLAUDE_KEY)
+    choice = { backend: 'claude' }
+    await make().open()
+    expect(notices).toHaveLength(3)
+    await vi.waitFor(() => expect(session.knowsTodo).toContain(CLAUDE_KEY))
+
+    session = { sessionIds: [] }
+    choice = { backend: 'codex' }
+    const fresh = make()
+    const freshTab = await opened(fresh)
+    fresh.onBound(freshTab, NEW_CODEX)
+    fresh.onPtyExit(freshTab)
+    transcripts.add(NEW_CODEX)
+    await fresh.open()
+    expect(notices).toHaveLength(3)
+  })
+
+  // AGY§8
+  it('opened with a first prompt, starts a new conversation on it; resumed or already open, it is started on nothing', async () => {
+    const c = make()
+    const opening = c.open('A helper has it.')
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()
-    expect((await opening).startedWith).toBe(words)
-    expect(started[0]).toMatchObject({ firstPrompt: words.prompt, ownerWords: 'hi' })
-    expect(await c.open(words)).toEqual({ ok: true, tabId: 'tab-1' })
+    expect(await opening).toEqual({ ok: true, tabId: 'tab-1' })
+    expect(started[0]).toMatchObject({ firstPrompt: 'A helper has it.' })
+    expect(await c.open('again')).toEqual({ ok: true, tabId: 'tab-1' })
 
     c.onBound('tab-1', 's1')
     c.onPtyExit('tab-1')
     transcripts.add('s1')
-    expect(await c.open(words)).toEqual({ ok: true, tabId: 'tab-resumed-s1' })
+    expect(await c.open('again')).toEqual({ ok: true, tabId: 'tab-resumed-s1' })
   })
 
-  it('asked twice while it starts, even with the same words, starts once on the first asker’s words, and tells both whose they were', async () => {
+  it('asked twice while it starts starts once, on the first asker’s prompt', async () => {
     const c = make()
-    const first = { prompt: 'same', ownerWords: 'same' }
-    const second = { prompt: 'same', ownerWords: 'same' }
-    const a = c.open(first)
-    const b = c.open(second)
+    const a = c.open('first')
+    const b = c.open('second')
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()
-    expect((await a).startedWith).toBe(first)
-    expect((await b).startedWith).toBe(first)
-    expect(started).toHaveLength(1)
+    expect(await a).toEqual(await b)
+    expect(started).toEqual([expect.objectContaining({ firstPrompt: 'first' })])
   })
 
   it('a tab resumed some other way and bound to the last session is taken as the butler again', () => {

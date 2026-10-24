@@ -397,6 +397,8 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         invalidCwd: seenMissing(m.cwd),
         mtime: m.updatedAt
       }
+      // MUSE§2
+      if (this.keepsItsOwnTitle && m.named) r.title = m.title
       r.cwd = m.cwd
       r.invalidCwd = seenMissing(m.cwd)
       r.nativeSessionId = m.id
@@ -441,7 +443,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       id: key,
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
-      title: t.name || t.preview?.slice(0, 100) || PLACEHOLDER_TITLES[this.id],
+      title:
+        this.store.nameOfLeftMember(key) ||
+        t.name ||
+        t.preview?.slice(0, 100) ||
+        PLACEHOLDER_TITLES[this.id],
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? place.worktreeName ?? 'main',
       running: this.readsRunning(key),
@@ -702,6 +708,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       run.resource = this.store.listResources().find((r) => r.worktreePath === treeRoot)
     }
     const m = this.store.getMember(key),
+      leftName = m ? undefined : this.store.nameOfLeftMember(key),
       now = Date.now()
     try {
       this.store.upsertMember({
@@ -712,6 +719,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         title:
           run.launchName ||
           (this.keepsItsOwnTitle && m?.title !== PLACEHOLDER_TITLES[this.id] ? m?.title : '') ||
+          leftName ||
           entry.name ||
           entry.preview?.slice(0, 100) ||
           m?.title ||
@@ -719,7 +727,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         createdAt: m?.createdAt ?? (entry.createdAt ? entry.createdAt * 1000 : now),
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
-        ...(run.permission !== 'default' ? { permission: run.permission } : {})
+        ...(run.permission !== 'default' ? { permission: run.permission } : {}),
+        ...(this.keepsItsOwnTitle && (run.launchName || m?.named || leftName)
+          ? { named: true as const }
+          : {})
       })
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)
@@ -751,10 +762,14 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.deps.events(run.tabId, { type: 'bound', key })
   }
 
-  protected retitle(info: BackendSessionInfo, title: string): void {
+  protected retitle(info: BackendSessionInfo, title: string, named?: true): void {
     info.title = title
     try {
-      this.store.updateMember(info.sessionId, { title, updatedAt: Date.now() })
+      this.store.updateMember(info.sessionId, {
+        title,
+        updatedAt: Date.now(),
+        ...(named ? { named } : {})
+      })
     } catch (e) {
       this.deps.error(String(e))
     }

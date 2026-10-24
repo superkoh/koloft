@@ -67,6 +67,7 @@ function cleanHistory(raw: unknown): HistoryLine[] {
     if (typeof item.sessionId === 'string' && item.sessionId) line.sessionId = item.sessionId
     if (item.removed === true) line.removed = true
     if (typeof item.kept === 'string' && item.kept) line.kept = item.kept
+    if (item.liveState === 'running' || item.liveState === 'done') line.liveState = item.liveState
     lines.push(line)
   }
   return lines
@@ -123,6 +124,12 @@ export function sanitizeCron(
     }
     if (isCronEffort(item.effort)) job.effort = item.effort
     if (item.autoClose === true) job.autoClose = true
+    if (
+      schedule.kind === 'after' &&
+      typeof item.waitFrom === 'number' &&
+      Number.isFinite(item.waitFrom)
+    )
+      job.waitFrom = item.waitFrom
     const backend = backendIdOf(item.backend)
     if (backend) job.backend = backend
     seen.add(id)

@@ -747,6 +747,40 @@ describe('MuseSessions turns from hooks', () => {
     })
     expect(sessions.peerName(museSessionKey(A))).toBe('Docs cleanup')
   })
+
+  it('keeps a name Koloft gave at launch or the owner gave with /rename on the row after muse lists the session again under its first prompt, while an unnamed session shows the title muse lists', async () => {
+    const C = '01a13797-1111-7222-8333-444455556666'
+    const bindTab = async (sessionId: string, name?: string): Promise<string> => {
+      const { id } = await launch(name ? { name } : {})
+      hook(id, 'SessionStart', { session_id: sessionId, source: 'startup' })
+      await vi.waitFor(() =>
+        expect(sessions.list().map((s) => s.nativeSessionId)).toContain(sessionId)
+      )
+      return id
+    }
+    await bindTab(A, 'Fix docs links')
+    await bindTab(B)
+    const unnamed = await bindTab(C)
+    hook(unnamed, 'UserPromptSubmit', { session_id: C, prompt: 'look at the tests', turn_id: 't1' })
+    logRecord(B, {
+      payload_type: 'session.name.changed',
+      payload: { new_name: 'docs cleanup', source: 'user' }
+    })
+    await vi.waitFor(
+      () =>
+        expect(sessions.list().find((s) => s.nativeSessionId === B)?.title).toBe('docs cleanup'),
+      { timeout: 3000 }
+    )
+    mocks.list.mockResolvedValue([
+      { id: A, cwd: repo, name: 'please fix the docs links' },
+      { id: B, cwd: repo, name: 'clean up the docs' },
+      { id: C, cwd: repo, name: 'Test review' }
+    ])
+    await sessions.refreshHistory()
+    expect(
+      Object.fromEntries(sessions.rows(repo).map((r) => [r.nativeSessionId, r.title]))
+    ).toEqual({ [A]: 'Fix docs links', [B]: 'docs cleanup', [C]: 'Test review' })
+  })
 })
 
 describe('MuseSessions search', () => {
@@ -905,6 +939,30 @@ describe('a Muse session on a remote machine', () => {
     pulled()
   }
 
+  const wrote = (sessionId: string, file: string): Record<string, unknown> => ({
+    t: 'hook',
+    event: 'PostToolUse',
+    input: {
+      session_id: sessionId,
+      tool_name: 'write_file',
+      tool_response: { filePath: file, structuredPatch: [{ lines: ['+x'] }] }
+    }
+  })
+
+  const compactStarts = (seq: number): Record<string, unknown> => ({
+    t: 'log',
+    seq,
+    payloadType: 'runtime.command.accepted',
+    payload: { kind: 'command_accepted', command_kind: 'context.compact.manual' }
+  })
+
+  const compactEnds = (seq: number): Record<string, unknown> => ({
+    t: 'log',
+    seq,
+    payloadType: 'context.compact.manual.outcome',
+    payload: { kind: 'manual_compaction_outcome', terminal_outcome: 'compacted' }
+  })
+
   async function boundRemote(): Promise<string> {
     const { id } = await sessions.launch({ kind: 'muse', cwd: KEY })
     mirror(id, { t: 'bound', sessionId: A })
@@ -971,15 +1029,7 @@ describe('a Muse session on a remote machine', () => {
         event: 'UserPromptSubmit',
         input: { session_id: A, prompt: 'go', turn_id: 't1' }
       },
-      {
-        t: 'hook',
-        event: 'PostToolUse',
-        input: {
-          session_id: A,
-          tool_name: 'write_file',
-          tool_response: { filePath: 'src/a.ts', structuredPatch: [{ lines: ['+x'] }] }
-        }
-      },
+      wrote(A, 'src/a.ts'),
       {
         t: 'hook',
         event: 'Stop',
@@ -988,6 +1038,50 @@ describe('a Muse session on a remote machine', () => {
     )
     await vi.waitFor(() => expect(events('turn-ended')).toHaveLength(1))
     expect(events('files-changed')[0]).toMatchObject({ lastWritten: `${KEY}/src/a.ts` })
+  })
+
+  it('after /clear the files the old session wrote leave the tab, so the new session’s first write reports only its own file', async () => {
+    onMachine()
+    const id = await boundRemote()
+    mirror(id, wrote(A, 'src/a.ts'))
+    await vi.waitFor(() => expect(events('files-changed')).toHaveLength(1))
+    mirror(id, { t: 'hook', event: 'SessionStart', input: { session_id: B, source: 'clear' } })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(B))
+    mirror(id, wrote(B, 'src/b.ts'))
+    await vi.waitFor(() => expect(events('files-changed')).toHaveLength(2))
+    expect(events('files-changed')[1]).toMatchObject({
+      files: [expect.objectContaining({ src: `${KEY}/src/b.ts` })],
+      liveWrites: 1
+    })
+  })
+
+  // MUSE§9
+  it("shows /compact as working from the log lines the wrapper mirrors, as a local tab does from muse's own log, until its outcome arrives", async () => {
+    onMachine()
+    const id = await boundRemote()
+    mirror(id, { t: 'state', seq: 1, state: 'done', kind: null })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+    mirror(id, compactStarts(1))
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('working'))
+    mirror(id, compactEnds(1))
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+  })
+
+  // MUSE§9 MUSE§17
+  it("never lets a /compact's end that the mirror brought late roll back the next turn the terminal already showed working", async () => {
+    onMachine()
+    const id = await boundRemote()
+    mirror(id, { t: 'state', seq: 1, state: 'done', kind: null }, compactStarts(1))
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('working'))
+    say(id, osc('state=working:app=muse:seq=2'))
+    mirror(id, compactEnds(1), {
+      t: 'log',
+      seq: 1,
+      payloadType: 'session.name.changed',
+      payload: { new_name: 'After compact', source: 'user' }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('After compact'))
+    expect(runtime.statusOf(id)).toBe('working')
   })
 
   it('never lets a state that came late through the mirror roll back a newer one the terminal already showed', async () => {

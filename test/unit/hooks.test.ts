@@ -121,18 +121,26 @@ describe('injected hook script', () => {
   })
 
   // CC§1
-  it('a compaction starts and ends in the status log, in order, since the start drop is deduped on a mirror', () => {
+  it("every start and compaction lands in the status log beside the turns, in the order they happened, so a start is never applied after its session's first turn", () => {
     fire('tabK', 'compacting', { session_id: 's1', trigger: 'manual' })
     fire('tabK', 'start', { session_id: 's1', source: 'compact' })
     fire('tabK', 'start', { session_id: 's2', source: 'clear' })
+    fire('tabK', 'prompt', { session_id: 's2' })
     fire('tabK', 'compacting', { session_id: 's2', trigger: 'auto' })
     fire('tabK', 'start', { session_id: 's2', source: 'compact' })
-    expect(readStatusLog('tabK').map((r) => [r.event, r.sessionId, r.trigger])).toEqual([
-      ['compacting', 's1', 'manual'],
-      ['compacted', 's1', undefined],
-      ['compacting', 's2', 'auto'],
-      ['compacted', 's2', undefined]
-    ])
+    expect(readStatusLog('tabK').map((r) => [r.event, r.sessionId, r.source ?? r.trigger])).toEqual(
+      [
+        ['compacting', 's1', 'manual'],
+        ['start', 's1', 'compact'],
+        ['compacted', 's1', undefined],
+        ['start', 's2', 'clear'],
+        ['prompt', 's2', undefined],
+        ['compacting', 's2', 'auto'],
+        ['start', 's2', 'compact'],
+        ['compacted', 's2', undefined]
+      ]
+    )
+    expect(readReg('tabK.json')).toEqual(readStatusLog('tabK')[6])
   })
 
   it('every session gets the PreCompact hook', () => {
@@ -186,7 +194,7 @@ describe('injected hook script', () => {
         TMUX_PANE: '%3'
       }
     )
-    expect(readStatusLog('tabT2')[0]).toMatchObject({ event: 'stop', tmux: 'k-sess-old' })
+    expect(readStatusLog('tabT2')[1]).toMatchObject({ event: 'stop', tmux: 'k-sess-old' })
     fs.rmSync(path.join(stubBin, 'tmux'), { force: true })
   })
 
@@ -1001,8 +1009,15 @@ describe('injected hook script', () => {
       tool_name: 'Bash',
       tool_input: { command: 'rm -rf "build"', description: 'Clean' }
     }
-    const runAsk = (tab: string): ReturnType<typeof spawn> =>
-      spawn(hookScript, [regDir, tab, 'ask'], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const runAsk = (tab: string, givesUpAfterS?: number): ReturnType<typeof spawn> =>
+      spawn(hookScript, [regDir, tab, 'ask'], {
+        stdio: ['pipe', 'pipe', 'ignore'],
+        env: {
+          ...process.env,
+          SECONDS: '7200',
+          ...(givesUpAfterS && { KOLOFT_ASK_GIVES_UP_AFTER_S: String(givesUpAfterS) })
+        }
+      })
     const feed = (child: ReturnType<typeof spawn>, payload: unknown): Promise<string> => {
       let out = ''
       child.stdout!.on('data', (c) => (out += c))
@@ -1046,7 +1061,7 @@ describe('injected hook script', () => {
     })
 
     // CC§14
-    it('ended by claude (the person answered "No" at the Mac), it removes its question file', async () => {
+    it('ended by claude (the person answered "No" at the Mac), it removes its question file and records nothing, even with a large SECONDS in the environment claude hands it', async () => {
       markAnswerable(regDir, 'tabA2', true)
       const child = runAsk('tabA2')
       const closed = feed(child, ask)
@@ -1054,6 +1069,37 @@ describe('injected hook script', () => {
       child.kill('SIGTERM')
       await closed
       expect(hookFiles('tabA2')).toEqual([])
+      expect(fs.existsSync(path.join(regDir, 'tabA2.status.jsonl'))).toBe(false)
+    })
+
+    // CC§14
+    it('given up on its own with no answer, it leaves the dialog on screen with no output, removes its question file and records the question in the status log, as a tab that does not wait would', async () => {
+      markAnswerable(regDir, 'tabA3', true)
+      const child = runAsk('tabA3', 2)
+      const printed = feed(child, ask)
+      await vi.waitFor(() => expect(fs.existsSync(askOf(child, 'tabA3'))).toBe(true))
+      expect(await printed).toBe('')
+      expect(child.exitCode).toBe(0)
+      expect(hookFiles('tabA3')).toEqual([])
+      expect(readStatusLog('tabA3')).toEqual([
+        { tabId: 'tabA3', event: 'ask', sessionId: 's1', tmux: '', ask }
+      ])
+    })
+
+    // CC§14
+    it('an answer Koloft writes just as the hook gives up is still printed, and the question is not recorded', async () => {
+      markAnswerable(regDir, 'tabA4', true)
+      const child = runAsk('tabA4', 2)
+      const printed = feed(child, ask)
+      const askFile = askOf(child, 'tabA4')
+      await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(true))
+      await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(false), {
+        interval: 20,
+        timeout: 5000
+      })
+      fs.writeFileSync(path.join(regDir, `tabA4.${child.pid}.answer.json`), '{"late":true}')
+      expect(await printed).toBe('{"late":true}')
+      expect(fs.existsSync(path.join(regDir, 'tabA4.status.jsonl'))).toBe(false)
     })
 
     // CC§14

@@ -291,10 +291,12 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
   `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, `KOLOFT_TEST_REAL_WINDOW`
   (real-window layer), `KOLOFT_TEST_MACHINE_FILE` (JSON `{pressure, load1,
-  backgroundWork}` read in place of the Mac's own numbers), the session timing knobs
+  backgroundWork}` read in place of the Mac's own numbers), `KOLOFT_TEST_PRESENCE_FILE`
+  (`active`, `idle` or `locked` in place of the Mac's idle state; without it a test run
+  counts the owner as away, so Discord posts as before), the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
-  `KOLOFT_FILE_DIALOG_FILE`, `KOLOFT_UPDATE_FIXTURE` and `KOLOFT_TEST_MACHINE_FILE` are
-  read on every use, so a spec may rewrite them after launch.
+  `KOLOFT_FILE_DIALOG_FILE`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_TEST_MACHINE_FILE` and
+  `KOLOFT_TEST_PRESENCE_FILE` are read on every use, so a spec may rewrite them after launch.
 - Not env vars: `window.__koloftTerms` (terminal text), `__koloftShortcutsReady` /
   `__koloftRowsReady` (the renderer is ready for keys), main's
   `globalThis.__koloftOsOutlets` (read through `osOutlets`), and `installGitSpawnLog`
@@ -332,9 +334,9 @@ hand-offs in `<home>/external-opens.txt`. Beyond those, its terminal draws with 
 its symbols.
 
 The owner's step goes through AskUserQuestion, one case at a time: the steps inside
-the question, the outcomes as options. Only the butler's own question reaches the
-owner's Discord, as a card in its channel (discord-flow); a session's question shows
-only at the Mac. The card carries text only, so name what to look at, or have the
+the question, the outcomes as options. Only the questions of the butler and of the
+helpers in its folder reach the owner's Discord, as cards in its channel
+(discord-flow); any other session's question shows only at the Mac. The card carries text only, so name what to look at, or have the
 butler send a picture first (`koloft discord send` or `koloft discord shot`). After the
 owner answers, check their step in a log or file yourself.
 

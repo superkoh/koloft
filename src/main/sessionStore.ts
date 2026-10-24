@@ -14,6 +14,7 @@ export interface StoredMember {
   updatedAt: number
   worktreeResourceId?: string
   permission?: LaunchPermission
+  named?: true
 }
 
 export interface WorktreeResource {
@@ -32,6 +33,7 @@ interface SessionStoreData {
   version: 1
   members: Record<string, StoredMember>
   resources: Record<string, WorktreeResource>
+  namesOfLeftMembers?: Record<string, string>
 }
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -74,7 +76,8 @@ function validMember(value: unknown, key: string, keyOf: KeyOf): value is Stored
     (value.worktreeResourceId === undefined || typeof value.worktreeResourceId === 'string') &&
     (value.permission === undefined ||
       value.permission === 'acceptEdits' ||
-      value.permission === 'bypass')
+      value.permission === 'bypass') &&
+    (value.named === undefined || value.named === true)
   )
 }
 
@@ -154,6 +157,7 @@ export class SessionStore {
   upsertMember(member: StoredMember): void {
     const next = structuredClone(this.data)
     next.members[member.key] = structuredClone(member)
+    delete next.namesOfLeftMembers?.[member.key]
     this.commit(next)
   }
 
@@ -168,9 +172,15 @@ export class SessionStore {
   removeMember(key: string): boolean {
     if (!Object.hasOwn(this.data.members, key)) return false
     const next = structuredClone(this.data)
+    const { named, title } = next.members[key]
+    if (named) (next.namesOfLeftMembers ??= {})[key] = title
     delete next.members[key]
     this.commit(next)
     return true
+  }
+
+  nameOfLeftMember(key: string): string | undefined {
+    return this.data.namesOfLeftMembers?.[key]
   }
 
   listResources(): WorktreeResource[] {

@@ -94,17 +94,18 @@ async function withFailingGitOnPath(
   }
 }
 
-async function holdNextRescan(): Promise<() => void> {
+async function holdNextRescan(
+  at: 'worktreeDirs' | 'listJsonlIds' = 'worktreeDirs'
+): Promise<() => void> {
   let release!: () => void
   const held = new Promise<void>((r) => (release = r))
-  const internals = mgr as unknown as {
-    worktreeDirs(p: string): Promise<unknown>
+  const internals = mgr as unknown as Record<typeof at, (...a: unknown[]) => Promise<unknown>> & {
     rescan(): Promise<void>
   }
-  const real = internals.worktreeDirs.bind(mgr)
-  const spy = vi.spyOn(internals, 'worktreeDirs').mockImplementationOnce(async (p) => {
+  const real = internals[at].bind(mgr)
+  const spy = vi.spyOn(internals, at).mockImplementationOnce(async (...a) => {
     await held
-    return real(p)
+    return real(...a)
   })
   void internals.rescan()
   await vi.waitFor(() => expect(spy).toHaveBeenCalled())
@@ -175,7 +176,7 @@ afterEach(() => {
 describe('WorkspaceManager: isGit', () => {
   it('flags each pinned workspace by its own .git marker', async () => {
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     expect(latest(repo).workspace).toEqual({
       path: repo,
       missing: false,
@@ -268,7 +269,7 @@ describe('WorkspaceManager: freshness stamping', () => {
       freshness: () => ({ ...base, behind })
     })
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     expect(latest(repo).workspace.freshness?.behind).toBe(7)
     expect(latest(plain).workspace.freshness?.behind).toBe(7)
   })
@@ -278,7 +279,7 @@ describe('WorkspaceManager: owned-only sidebar (decided 2026-08-09)', () => {
   it('an external jsonl stays invisible until its session is bound once', async () => {
     writeJsonl(repo, 'ext-1')
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     expect(latest(repo).rows).toEqual([])
     expect(layout.panels['ext-1']).toBeUndefined()
 
@@ -293,7 +294,7 @@ describe('WorkspaceManager: owned-only sidebar (decided 2026-08-09)', () => {
     own('first-1')
     bindings.set('first-1', 'tab-1')
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     expect(latest(repo).rows).toEqual([])
 
     writeJsonl(repo, 'first-1')
@@ -369,7 +370,7 @@ describe('WorkspaceManager: what a rescan asks git', () => {
     await withFailingGitOnPath(async (gitCalls) => {
       const listed = (): string[] => gitCalls().filter((l) => l.includes('worktree list'))
       mgr.start()
-      await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+      await mgr.firstScan
       await rescanned()
       expect(listed()).toEqual([`-C ${repo} worktree list --porcelain`])
 
@@ -801,7 +802,7 @@ describe('WorkspaceManager: per-session Workbench state (T-AGG-09②, T-AUX-02/0
       additionalMembers: () => members
     })
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     const state: SessionWorkbenchState = {
       open: true,
       tabs: [{ kind: 'web', title: 'app', url: 'http://localhost:5173/' }]
@@ -861,7 +862,7 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     own('fresh-1')
     bindings.set('fresh-1', 'tab-1')
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
     expect(layout.panels['fresh-1']).toEqual(SEEDED)
     expect(dropped).toEqual([])
 
@@ -885,6 +886,22 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
 
     expect(dropped).toEqual([])
     expect(mgr.isMember('fresh-2')).toBe(true)
+  })
+
+  it('GC spares a session that binds while the rescan is listing transcripts on disk, before its jsonl is born', async () => {
+    writeJsonl(repo, 'anchor-1')
+    mgr.start()
+    await mgr.firstScan
+    const release = await holdNextRescan('listJsonlIds')
+
+    bindings.set('fresh-3', 'tab-3')
+    mgr.onSessionBound('fresh-3')
+    const beforeRelease = pushed.length
+    release()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(beforeRelease))
+
+    expect(dropped).toEqual([])
+    expect(mgr.isMember('fresh-3')).toBe(true)
   })
 
   it('every session that leaves the list says why', async () => {
@@ -927,7 +944,7 @@ describe('WorkspaceManager: conductor sessions stay out of the workspace lists',
     bindings.set('cond-now', 'cond-tab')
     mgr.start()
     mgr.launchStarted('cond-tab', repo)
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
 
     expect(latest(repo).rows.map((r) => r.id)).toEqual(['plain-1'])
     expect(latest(repo).workspace.hasHistory).toBe(false)
@@ -953,7 +970,7 @@ describe('WorkspaceManager: restore from history (D5)', () => {
     own('owned-1')
     bindings.set('bound-1', 'tab-1')
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
 
     expect(mgr.historyRows(repo).map((r) => r.id)).toEqual(['hist-new', 'hist-old'])
     expect(mgr.historyRows(path.join(root, 'never-pinned'))).toEqual([])
@@ -964,7 +981,7 @@ describe('WorkspaceManager: restore from history (D5)', () => {
   it('finds an unowned row for the resume planner (the sidebar never showed it)', async () => {
     writeJsonl(repo, 'ext-9')
     mgr.start()
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    await mgr.firstScan
 
     expect(latest(repo).rows).toEqual([])
     expect(mgr.findRow('ext-9')).toMatchObject({ id: 'ext-9', cwd: repo })
@@ -1332,7 +1349,7 @@ describe('remote workspace: pinning', () => {
       layout.workspaces = [{ path: RKEY }]
       mgr = remoteMgr()
       mgr.start()
-      await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+      await mgr.firstScan
       const ws = latest(RKEY).workspace
       expect(ws.missing).toBe(false)
       expect(ws.isGit).toBe(false)

@@ -132,17 +132,21 @@ function legacyBindings(rawDiscord: unknown): LegacyBinding[] {
 
 function cleanSession(raw: Record<string, unknown>): ButlerSession {
   const { lastSessionKey } = raw
+  const knowsTodo = strings(raw.knowsTodo)
   return {
     sessionIds: strings(raw.sessionIds),
-    ...(typeof lastSessionKey === 'string' ? { lastSessionKey } : {})
+    ...(typeof lastSessionKey === 'string' ? { lastSessionKey } : {}),
+    ...(knowsTodo.length ? { knowsTodo } : {})
   }
 }
 
 function mergedSessions(sessions: ButlerSession[]): ButlerSession {
   const lastSessionKey = sessions.find((s) => s.lastSessionKey)?.lastSessionKey
+  const knowsTodo = [...new Set(sessions.flatMap((s) => s.knowsTodo ?? []))]
   return {
     sessionIds: [...new Set(sessions.flatMap((s) => s.sessionIds))],
-    ...(lastSessionKey ? { lastSessionKey } : {})
+    ...(lastSessionKey ? { lastSessionKey } : {}),
+    ...(knowsTodo.length ? { knowsTodo } : {})
   }
 }
 

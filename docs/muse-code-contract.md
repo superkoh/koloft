@@ -74,6 +74,17 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the user's words.
 - Muse has no full-text search: `session/list`'s `filter.text` matches name or title
   prefixes only, and `session-index.db` holds only the first prompt.
+- Muse's own list cannot carry a name Koloft gives (checked 2026-10-22 on 1.4.9 in
+  Docker, echo provider, a pty-driven TUI and `muse serve`): `session/list` gives
+  `title` = the first prompt and `name` = the made-up name; `/rename Docs cleanup`
+  changes only `name`, stored lowercased (`docs cleanup`), never `title`, and
+  `nameOrigin` stays `null` after it, so the list cannot tell an owner's name from
+  `cyan-pollux`. Muse has no `--name` flag. `session/rename` over `muse serve` (it
+  needs a `commandId`) answers `sessionInUse` for a session a TUI holds and
+  `sessionNotLoaded` for one nobody holds, with or without the `sessionRename`
+  capability and `experimentalApi`. The binary also has a model-written title
+  (`session.description.generated` with `short_title`, `TBH_AUTO_SESSION_TITLE`), not
+  reached with the echo provider, so `title` is not always the first prompt.
 
 ## §3 Status: OSC 7501
 
@@ -154,6 +165,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the terminal.
 - While a turn runs the TUI drops an Enter (macOS); a bracketed paste lands in the
   input box unsent until the next Enter.
+- A line feed (`\n`) inside typed text is a new line in the input box, not an Enter:
+  `first line\nsecond line\nthird line` written in one go, with or without
+  bracketed-paste marks, then `\r` 300 ms later, is one `turn_submit` whose prompt keeps
+  all three lines (muse 1.4.11, `1.4.11-R6667.1`, `--provider echo`, Docker, Linux, a
+  python pty driver, October 2026; 2 of 2 tries plain, 1 of 1 pasted). Not probed on
+  macOS.
 
 ## §8 Shell commands inside Muse (macOS)
 
@@ -505,3 +522,26 @@ server of the opening note and with `--provider echo`; October 2026.
   machine, signs muse 1.4.9 in there with the real Meta model: it answered a prompt,
   with `SubagentStart` and `SubagentStop` hooks around its work (Docker, real `ssh`,
   tmux 3.3a, through Koloft, October 2026).
+
+## §18 MCP servers and a project's instruction files
+
+2026-10-23, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker, `muse exec` against a fake model
+server (`--base-url`, `META_API_KEY=FAKE`, `MUSE_MODEL=fake-model`); each MCP server a
+tiny stdio server that logged its start; marker words in instruction files, looked for
+in the model request.
+
+- **No `mcp list`:** `muse mcp` has only `login` and `logout`.
+- **Everywhere:** `mcpServers` in `<config>/muse/settings.json` (`{"schema_version":1,
+  "mcpServers":{"<name>":{"type":"stdio","command","args"}}}`) started in every folder.
+- **One project:** `mcpServers` in `<workspace>/.mcp.json`, and only in a trusted
+  workspace (`--trust-workspace` or `trust.json`): folder A trusted started both, A
+  untrusted and B trusted started only the settings one. `<A>/.muse/settings.json` and
+  `<A>/.agents/settings.json` were not read.
+- **Instruction file:** `AGENTS.md` in a trusted workspace (as `<rules-file
+  scope="project" path="AGENTS.md">`; untrusted, muse says it skips it). `CLAUDE.md` is read
+  only where there is no `AGENTS.md` ("CLAUDE.md is ignored this session because
+  AGENTS.md takes precedence"). `MUSE.md` is never read. `<config>/muse/AGENTS.md` is
+  read everywhere, as `scope="user"`.
+
+Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`) and the
+butler's to-do method, which names the files each agent reads.

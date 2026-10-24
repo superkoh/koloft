@@ -155,7 +155,7 @@ export function WorkspacePicker({
         if (mode !== 'main') submit(target)
         else
           startOrList(
-            e,
+            e.shiftKey,
             choice,
             (backend) => submit(target, backend),
             () => target && setListOpen(true)

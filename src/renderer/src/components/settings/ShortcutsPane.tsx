@@ -15,7 +15,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         name: 'Ask or jump',
         uses: [
           {
-            what: 'Opens one input. Type what a new session should do and ⏎ starts it in your primary method (⇧⏎ the next one, ⌃⏎ the third), in the workspace, worktree and title Koloft Assist picks; ↓ picks a matching session, workspace or action and ⏎ opens it; ⌥⏎ searches every conversation for the words.'
+            what: 'Opens one input. Type what a new session should do and ⏎ starts it in your primary method (⌘⏎ another one), in the workspace, worktree and title Koloft Assist picks, or in the one you name with @; ⇧⏎ starts a new line; ↓ picks a matching session, workspace or action and ⏎ opens it; ⌥⏎ searches every conversation for the words.'
           },
           { where: 'Dialog', what: 'Nothing.' }
         ]
@@ -27,7 +27,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
           { what: 'Starts a session in your workspace with the default method.' },
           {
             where: 'Several workspaces',
-            what: 'Asks which one. Enter uses the default method, ⇧⏎ the next one, ⌃⏎ the third.'
+            what: 'Asks which one. Enter uses the default method, ⇧⏎ another one (a list when there are several).'
           },
           { where: 'No workspace yet', what: 'Shows a notice instead.' }
         ]

@@ -21,6 +21,15 @@ method. A recheck adds its date, version and command to the bullet.
   `xcode-select -p` exits non-zero, and `xcode-select --install` opens Apple's own
   install dialog and returns at once (both inferred, not checked: every Mac this was
   developed on has the tools).
+- Since Claude Code 2.1.309, claude itself refuses to run a `git` that resolves to
+  exactly `/usr/bin/git` when `DEVELOPER_DIR` is unset, `/Library/Developer/CommandLineTools`
+  and `/var/db/xcode_select_link` are missing and no `/Applications/Xcode*.app` exists,
+  and prints `git is not installed on this Mac. To install it, run xcode-select
+  --install, then try again.` (exit 127) instead (`strings` of the 2.1.309 binary,
+  2026-10-23, not run; the changelog's fix for the "Install Command Line Developer
+  Tools" dialog opening at every start). In a Koloft tab the bundled git is first on PATH
+  whenever Koloft found git missing, so claude finds that one and this check does not
+  fire (inferred, not checked on a Mac without the tools).
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).
@@ -262,6 +271,12 @@ method. A recheck adds its date, version and command to the bullet.
   xterm has focus (a plain renderer keydown listener is swallowed by xterm), and it
   takes its key before a focused guest page or xterm can see it. ``"Control+`"`` parses
   on every platform.
+- **⌘⏎ in ⌘P's textarea reaches the page, not the enabled ⌘⏎ menu item.** With Focus
+  Mode's `CmdOrCtrl+Return` item enabled, a real ⌘⏎ typed into ⌘P's textarea did the
+  palette's work and left Focus Mode off. Measured 2026-10-23, Electron 43.7.3, macOS 27.0
+  in a tart VM, keys posted through CGEvent (real-window case "⌘⏎ typed on the keyboard in
+  ⌘P"). Why: the palette's keydown handler calls `preventDefault` — inferred, not
+  checked; a ⌘ key the page sees but does not `preventDefault` was not probed.
 - **Keys typed in a focused `<webview>` never reach the host document's listeners**,
   capture phase included, and a focused guest swallows the app's menu accelerators;
   keys with no accelerator (⌘T) never reach the host at all. Main has to catch them on
@@ -468,6 +483,13 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   Chromium's folder-listing page is not wired in.
   `ses.fetch(request, { bypassCustomProtocolHandlers: true })` reaches that built-in
   loader without calling a custom `file` handler again.
+- **A `protocol.handle` callback that throws shows up as `ERR_UNEXPECTED` (-9)**, not
+  the error it threw. For a `file://` path that does not exist (a missing name, a path
+  through a file, a broken link), that `ses.fetch` rejects with an error whose text
+  holds `net::ERR_FILE_NOT_FOUND`; left uncaught, the guest fails with
+  `-9 ERR_UNEXPECTED`, while without the custom handler it fails with
+  `-6 ERR_FILE_NOT_FOUND`. A `Response` with status 404 and an HTML body is drawn as a
+  page, with no `did-fail-load`.
 - **Chromium fetches `/favicon.ico` after every navigation**, so a server's request
   count sees one extra hit per page load.
 - **The built-in PDF viewer (PDFium) keeps its page position to itself**: `scrollX` /
@@ -1070,14 +1092,24 @@ inferred, not checked.
   written 500 ms later it was seen in 40 of 40. The same test failed on the GitHub macOS
   runner in 4 of 5 CI runs that day. A test that drops a file right after starting a
   watcher writes it again until it is seen.
+- **A folder watch reports files renamed into place back to back in the order they were
+  written, but one `fs.readFile` per event finishes in any order.** Three drops written
+  with `writeWholeBeforeVisible` one after another: the watch events came in write
+  order in every one of 600 rounds that saw events, while the handlers, each called
+  when its own read finished, ran out of order in 247 of 300 rounds (under 1 ms apart),
+  133 of 300 (same, 8 CPU burners), 40 of 300 (30 ms apart) and 3 of 300 (100 ms apart).
+  Measured 2026-10-22 (Node 24.13.0 under vitest, macOS 27.0) with a throwaway probe on
+  `watchJsonDrops`. So a reader that must keep write order reads one drop at a time, in
+  event order; the drop's own `ts` is whole seconds and cannot sort them.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
 - **A session's two start notes can go unreported.** With the launch line typed about
   0.2 s after the pty opens, the shim's registration or claude's SessionStart drop was
   never reported by its folder watch in 4 to 7 of about 195 e2e tests (4 workers),
   while the files were on disk; the tab then never bound. A worktree-exit case that
-  lost one in 3 of 16 runs passed 9 of 9 with the old 1.6 s wait. A 1 s sweep of both
-  folders finds them.
+  lost one in 3 of 16 runs passed 9 of 9 with the old 1.6 s wait. A 1 s sweep of the
+  shim's folder finds the registration; claude's start is also a line in the tab's
+  status log (CC§1), which a 1 s poll of every status log finds.
   (2026-10-09, Node 24.13.0 in Electron 43, macOS 27.0.1; files listed from the e2e
   when a row stayed pending.)
 
@@ -1182,6 +1214,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   on macOS 27, 2026-10-11.)
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
   own config is enough), and git splits its command on spaces.
+- **After a squash merge, a pruned fetch makes the branch's commits look unpushed**: the
+  squash commit on `main` is a new commit, so the branch's own commits are reachable only
+  from the branch and its `origin/<branch>` copy. Once the server deletes the branch and
+  anything runs `git fetch --prune`, `origin/<branch>` goes, and
+  `git log <branch> --not --exclude=<branch> --branches --remotes` lists every one of
+  them, even after local `main` fast-forwards to the squash commit. A plain
+  `git fetch origin main` leaves `origin/<branch>` in place. `git log --ignore-missing`
+  skips a `^<sha>` whose object the repo does not have instead of exiting 128.
+  (2026-10-22, git 2.54.0, macOS, on a throwaway bare remote with a second clone doing
+  the squash, push and branch delete.)
 
 ## §31 ripgrep and git grep
 
@@ -1276,6 +1318,12 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (`git ls-remote https://github.com/cli/cli refs/pull/14629/head refs/pull/14580/head`
   listed both). (2026-10-09, gh 2.89.0, by hand against superkoh/koloft and cli/cli, and
   an empty `GH_CONFIG_DIR` with a scratch `HOME`.)
+- **`gh pr list --repo o/r --state merged --head <branch> --json headRefOid`** still
+  finds a pull request after GitHub deleted its branch on merge, and prints
+  `[{"headRefOid":"<sha>"}]`, the branch tip it was merged from — the same sha
+  `refs/pull/<n>/head` holds. A squash merge keeps that sha only as the pull request's
+  head, never in `main`. (2026-10-22, gh 2.89.0, by hand against superkoh/koloft #934,
+  branch `worktree-cmd-p-at-target-workspace`, deleted on merge.)
 - **`gh issue create` with no terminal never prompts**: missing `--title` it exits 1 at
   once with "must provide `--title` and `--body` when not running interactively" and
   creates nothing. A flag given as `--flag=value` keeps a value that starts with `-`
@@ -2313,3 +2361,28 @@ server unless a line says so.
 - Measured 2026-10-19 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, 16 GB,
   Node 24.13.0, Google Chrome 155, colima with Docker, by scripts run from a Koloft Claude Code
   tab.
+
+## §60 Electron: is someone at the Mac
+
+- **`powerMonitor.getSystemIdleState(seconds)` answers at once and asks for no
+  permission.** It returns `active` when the keyboard or mouse was used within `seconds`
+  (any app), `idle` after that, `locked` while the screen is locked, and `unknown` when it
+  cannot tell. `powerMonitor.getSystemIdleTime()` gives the seconds since the last input
+  (it read 71 while the person waited on a reply).
+- **There is no "went idle" event.** `powerMonitor` emits `lock-screen` and
+  `unlock-screen`, but nothing when input stops, so going idle is only seen by asking
+  again later.
+- Measured 2026-10-23 with Electron 43.7.3 on macOS 27.0 (Darwin 27.0.0), Apple silicon, by
+  a script run under the repo's Electron from a Koloft Claude Code tab.
+
+## §61 Which gh knows the issues a pull request closes
+
+2026-10-23, the official Linux release builds in Docker, `GH_TOKEN=fake gh pr list --repo
+cli/cli --limit 1 --json number,closingIssuesReferences`:
+
+- **gh 2.71.2** refuses before any network call: `Unknown JSON field:
+  "closingIssuesReferences"`, then the list of fields it knows.
+- **gh 2.72.0** takes the field and goes to GitHub (here `HTTP 401: Bad credentials`).
+
+Koloft dependents: `listTodoPulls` in `src/main/github.ts`, which lists again without the
+field and says so; a remote workspace's pull requests are listed by that machine's gh.

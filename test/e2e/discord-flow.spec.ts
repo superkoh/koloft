@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
   installCodex,
   installGhForWorkspaceA,
@@ -252,6 +252,44 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
+  test('while the owner is at the Mac, the butler’s reply to a helper is not posted and is marked in Koloft instead, its reply to a Discord message still is, and once the owner is away the next reply to a helper is posted', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const presence = path.join(env.home, 'presence.txt')
+    fs.writeFileSync(presence, 'active')
+    env.launchEnv.KOLOFT_TEST_PRESENCE_FILE = presence
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      const assistId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
+      await expect.poll(() => fs.existsSync(path.join(env.home, '.claude', 'sessions'))).toBe(true)
+      const socket = messagingSocketOf(env, assistId)
+      const turnDoneAt = async (): Promise<number> =>
+        (await pendingAttention(page)).find((e) => e.kind === 'turn-done')?.at ?? 0
+      await expect.poll(turnDoneAt, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeGreaterThan(0)
+      const openingDoneAt = await turnDoneAt()
+      await writeLine(socket, crossSessionLine('bypass', 'helper note one', 'koloft-helper-1')!)
+      await expect
+        .poll(turnDoneAt, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toBeGreaterThan(openingDoneAt)
+      fake.say(OWNER, 'hello there')
+      await expect
+        .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('[Discord] hello there')
+      expect(said(fake).join('\n')).not.toContain('helper note one')
+
+      fs.writeFileSync(presence, 'idle')
+      await writeLine(socket, crossSessionLine('bypass', 'helper note two', 'koloft-helper-2')!)
+      await expect
+        .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('helper note two')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
   test('the butler’s koloft discord send uploads a file with a line of text to its channel', async ({
     env
   }) => {
@@ -329,7 +367,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('the conductor’s own question is asked in the channel as a card with its options and a button each; a button press answers it and the card then says what was picked, and a number sent back answers the next', async ({
+  test('the conductor’s own question is asked in the channel as a card with its options and a button each; a button press answers it and the card then says what was picked, and a number sent back answers the next, whose card then says that answer and loses its buttons', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -345,18 +383,94 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect.poll(card, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
       expect(card()!.buttons?.map((b) => b.label)).toEqual(['1. Red', '2. Green'])
       fake.press(OWNER, card()!.buttons![1], CHANNEL)
-      await expect.poll(() => said(fake)).toContain('Picked: Green')
+      await expect.poll(() => said(fake).join('\n')).toContain('Picked: Green')
       expect(fake.callbacks.map((c) => [c.type, callbackText(c)])).toEqual([
         [7, `${question}\n-# ✅ 2. Green`]
       ])
 
       fake.say(OWNER, '/ask Which size?|Small|Large')
       await expect.poll(() => said(fake).join('\n')).toContain('Which size?')
+      const sizeCard = fake.posted.find((p) => p.content.includes('Which size?'))!
+      expect(sizeCard.buttons?.length).toBe(2)
       const answer = fake.say(OWNER, '2')
-      await expect.poll(() => said(fake)).toContain('Picked: Large')
+      await expect.poll(() => said(fake).join('\n')).toContain('Picked: Large')
       await expect
         .poll(() => fake.reactions)
         .toContainEqual({ messageId: answer, emoji: '✅', on: true })
+      await expect
+        .poll(() =>
+          fake.edits
+            .filter((e) => e.id === sizeCard.id)
+            .map((e) => ({ answered: e.content.endsWith('-# ✅ Answered: 2'), buttons: e.buttons }))
+        )
+        .toEqual([{ answered: true, buttons: [] }])
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('a helper the butler starts in its own folder asks its question in the butler’s channel, on a card that names it as the butler’s helper, and what the owner types while that card waits answers the helper', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      fake.say(OWNER, '/koloft session new --name Tidy -- Sort out the to-dos.')
+      const helperTab = async (): Promise<string | undefined> => {
+        const all = await page.evaluate(() => window.api.sessions.list())
+        return all.find((s) => s.alive && s.title === 'Tidy' && s.sessionId)?.tabId
+      }
+      await expect.poll(helperTab, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
+      const tab = (await helperTab())!
+      await page.evaluate(
+        (id) => window.api.terminal.write(id, '/ask Merge #41?|Merge|Leave it\r'),
+        tab
+      )
+      const card = "❓ **Tidy (Alfred's helper)** is waiting for you.\nMerge #41?\n1. Merge"
+      await expect
+        .poll(() => said(fake).some((p) => p.startsWith(card)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
+      fake.say(OWNER, '1')
+      await expect
+        .poll(() => terminalText(page, tab), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Picked: Merge')
+      expect(said(fake).join('\n')).not.toContain('Picked: Merge')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('a Codex helper the butler starts in its own folder asks its question in the butler’s channel too, and the owner’s number answers it', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app } = await connected(env, fake)
+    try {
+      fake.say(OWNER, '/koloft session new --backend codex --name Tidy -- please ask me')
+      const card = "❓ **Tidy (Alfred's helper)** is waiting for you.\nWhich colour do you prefer?"
+      await expect
+        .poll(() => said(fake).some((p) => p.startsWith(card)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
+      fake.say(OWNER, '2')
+      await expect
+        .poll(
+          () =>
+            codexWire(env)
+              .filter((w) => w.direction === 'client')
+              .map((w) => w.frame.result as { answers?: unknown } | undefined)
+              .filter((r) => r?.answers),
+          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+        )
+        .toEqual([{ answers: { colour: { answers: ['Green'] } } }])
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -623,7 +737,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect
         .poll(() => said(fake))
         .toContain(
-          '❓ **Alfred** is waiting for you.\nWhich colour do you prefer?\n1. Red — Choose red.\n2. Green — Choose green.\n-# Reply with the number or the name of one option.'
+          '❓ **Alfred** is waiting for you.\nWhich colour do you prefer?\n1. Red — Choose red.\n2. Green — Choose green.\n-# Reply with the number or the name of one option, or with your own answer.'
         )
       fake.say(OWNER, 'Green')
       await expect
@@ -933,7 +1047,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
   })
 
   for (const backend of ['claude', 'codex'] as const) {
-    test(`a ${backend} butler runs any gh command through koloft gh as it is, a merge too, and is refused gh auth without gh running`, async ({
+    test(`a ${backend} butler runs any gh command through koloft gh as it is, a merge too, and is refused gh auth without gh running, a plain gh in its own folder too`, async ({
       env
     }) => {
       if (backend === 'codex') installCodex(env)
@@ -943,6 +1057,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       const { app, page } = await connected(env, fake)
       try {
         fake.say(OWNER, '/koloft gh auth token')
+        fake.say(OWNER, '/sh gh auth token')
         fake.say(OWNER, '/koloft gh pr merge 389 --squash --repo acme/app')
         await expect
           .poll(() => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8') : ''), {
@@ -953,7 +1068,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           const conductorTab = await tabOf(page, butlerSessionOnDisk(env)!.sessionIds[0])
           await expect
             .poll(() => terminalText(page, conductorTab))
-            .toMatch(/runs gh's own[\s\S]*\{"state":"MERGED"\}/)
+            .toMatch(/runs gh's own[\s\S]*sh exit=[1-9][\s\S]*\{"state":"MERGED"\}/)
         }
       } finally {
         await quitAndClose(app)

@@ -7,6 +7,7 @@ import {
   E2E_AGY_ACCOUNT,
   UNPACKAGED_BUILD_AGY_SVC,
   agyCalls,
+  agySessionCalls as sessionCalls,
   installAgy,
   ownersGemini,
   seedSettings,
@@ -25,6 +26,7 @@ import {
   readAllCalls,
   runIn,
   sendShortcut,
+  staysOnTheFolderPageNotTheButler,
   waitBooted,
   waitConductorStarted,
   wsGroup,
@@ -59,9 +61,6 @@ function fileLines(file: string): Record<string, unknown>[] {
     .filter(Boolean)
     .map((l) => JSON.parse(l) as Record<string, unknown>)
 }
-
-const sessionCalls = (env: E2EEnv): AgyCall[] =>
-  agyCalls(env).filter((c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p'))
 
 const apiCalls = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-api.jsonl'))
@@ -213,6 +212,29 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(page.locator('.aux-ico.waiting-bell .ws-unread-count')).toHaveText('1')
       const { id } = await boundAgy(page)
       expect(transcriptOf(env, id)).toContain(`Answer to: ${PROMPT}`)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test("answering No, exit to agy's trust question before it ever started a conversation puts you back on the folder page, and never opens the butler", async ({
+    env
+  }) => {
+    installAgy(env)
+    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await expect(centerTerm(page)).toContainText('Do you trust the contents of this project?', {
+        timeout: 30_000
+      })
+      await centerTerm(page).click()
+      await page.keyboard.press('2')
+
+      await expect(agyRows(page)).toHaveCount(0, { timeout: 30_000 })
+      await staysOnTheFolderPageNotTheButler(page, env, 'ws-a')
     } finally {
       await quitAndClose(app)
     }
