@@ -189,6 +189,15 @@ describe('tidying a scheduled run’s folder (#22)', () => {
     expect(branches()).toEqual(['main'])
   })
 
+  it('keeps a half-deleted folder that also holds a new file, and names both', async () => {
+    removalCutOffHalfWay()
+    fs.writeFileSync(path.join(tree, 'report.md'), 'draft')
+    const r = await tidyTree(localGitOut, run(), onDisk)
+    expect(r.removed).toBe(false)
+    expect(r.kept).toEqual(['Changes not committed:\n D .gitignore\n?? report.md'])
+    expect(fs.existsSync(tree)).toBe(true)
+  })
+
   it('still names a deleted file when a session is closed, outside the tidy', async () => {
     removalCutOffHalfWay()
     const left = await whatIsLeft(localGitOut, await treeOf(tree))

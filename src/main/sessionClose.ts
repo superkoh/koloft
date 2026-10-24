@@ -72,23 +72,34 @@ async function commitsNotHeld(
 
 const DELETED_FROM_THE_FOLDER_ONLY = ' D '
 
-export async function whatIsLeft(
+async function whatIsLeftIn(
   git: GitOut,
   tree: ClosingTree,
-  merged?: MergedHeads,
-  deletedFilesLoseNothing = false
-): Promise<string[]> {
+  merged: MergedHeads | undefined,
+  deletedFilesLoseNothing: boolean
+): Promise<{ left: string[]; onlyDeletedFiles: boolean }> {
   const [status, commits] = await Promise.all([
     git(tree.treeRoot, ['status', '--porcelain=v1', '--untracked-files=all']),
     commitsNotHeld(git, tree.treeRoot, ['HEAD', ...tree.branches], tree.branches, merged)
   ])
-  if (status === null) return [`git could not read ${tree.treeRoot}.`]
+  if (status === null)
+    return { left: [`git could not read ${tree.treeRoot}.`], onlyDeletedFiles: false }
   const changes = status.split('\n').filter(Boolean)
-  const onlyDeleted =
-    deletedFilesLoseNothing && changes.every((l) => l.startsWith(DELETED_FROM_THE_FOLDER_ONLY))
-  const left: string[] = []
-  if (changes.length && !onlyDeleted) left.push(`Changes not committed:\n${status.trimEnd()}`)
-  return [...left, ...commits]
+  const onlyDeletedFiles =
+    changes.length > 0 && changes.every((l) => l.startsWith(DELETED_FROM_THE_FOLDER_ONLY))
+  const lost = changes.length > 0 && !(deletedFilesLoseNothing && onlyDeletedFiles)
+  return {
+    left: [...(lost ? [`Changes not committed:\n${status.trimEnd()}`] : []), ...commits],
+    onlyDeletedFiles
+  }
+}
+
+export async function whatIsLeft(
+  git: GitOut,
+  tree: ClosingTree,
+  merged?: MergedHeads
+): Promise<string[]> {
+  return (await whatIsLeftIn(git, tree, merged, false)).left
 }
 
 // PLATFORM§30
@@ -154,8 +165,8 @@ export async function tidyTree(
       ? REMOVED
       : { removed: false, kept: [`git could not delete ${tree.branches.join(', ')}.`] }
   }
-  const left = await whatIsLeft(git, tree, merged, true)
-  const problem = left.length ? null : await removeTree(git, tree, true)
+  const { left, onlyDeletedFiles } = await whatIsLeftIn(git, tree, merged, true)
+  const problem = left.length ? null : await removeTree(git, tree, onlyDeletedFiles)
   const kept = problem ? [problem] : left
   if (!kept.length) return REMOVED
   const anotherRemoverWon =
