@@ -266,11 +266,21 @@ function readText(file: string): string | undefined {
   }
 }
 
-function readBytes(file: string): Buffer {
+const LOG_TAIL_READ_ON_ATTACH_BYTES = 256 * 1024
+
+function logTail(file: string): { size: number; text: string } {
   try {
-    return fs.readFileSync(file)
+    const fd = fs.openSync(file, 'r')
+    try {
+      const size = fs.fstatSync(fd).size
+      const buf = Buffer.alloc(Math.min(size, LOG_TAIL_READ_ON_ATTACH_BYTES))
+      fs.readSync(fd, buf, 0, buf.length, size - buf.length)
+      return { size, text: buf.toString('utf8') }
+    } finally {
+      fs.closeSync(fd)
+    }
   } catch {
-    return Buffer.alloc(0)
+    return { size: 0, text: '' }
   }
 }
 
@@ -681,7 +691,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       mirror,
       (attachTo && attachedLog(mirror, attachTo)) || agyLogName(tabId)
     )
-    const alreadyThere = attachTo ? readBytes(logFile) : Buffer.alloc(0)
+    const alreadyThere = attachTo ? logTail(logFile) : { size: 0, text: '' }
     const run: AgyRun = {
       tabId: handle.id,
       cwd,
@@ -693,16 +703,16 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       bypassing: permission === 'bypass',
       account: pick.account,
       remote: { host: where.host, tmuxName: plan.tmuxName },
-      log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere.length),
+      log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere.size),
       touched: new Map(),
       liveWrites: 0,
       releaseTools: () => undefined
     }
     if (attachTo)
       setImmediate(() => {
-        if (this.runs.get(run.tabId) !== run) return
+        if (this.runs.get(run.tabId) !== run || run.explicitStop) return
         this.bindTo(run, attachTo)
-        this.showLastTurnState(run, alreadyThere.toString('utf8'))
+        this.showLastState(run, alreadyThere.text)
       })
     void remote.nextPull(where.host)
     return run
@@ -764,21 +774,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§11 AGY§12
-  private showLastTurnState(run: AgyRun, earlierLog: string): void {
-    const last = earlierLog
-      .split('\n')
-      .map((line) => agyLogLine(line))
-      .findLast(
-        (read) =>
-          !!read &&
-          'hook' in read &&
-          read.hook.conversationId === run.info?.nativeSessionId &&
-          (read.hook.event === 'Stop' || read.hook.event === 'PreInvocation')
-      )
-    if (!last || !('hook' in last)) return
-    const status = { state: last.hook.event === 'Stop' ? 'idle' : 'working' }
-    run.shown = status.state
-    this.emitState(run, status)
+  private showLastState(run: AgyRun, earlierLog: string): void {
+    let last: ProgramStatus | undefined
+    for (const read of earlierLog.split('\n').map((line) => agyLogLine(line))) {
+      if (!read) continue
+      if ('hook' in read && read.hook.event === 'PreToolUse') this.onHook(run, read.hook)
+      last = remoteStatus(run, read) ?? last
+      if (last) run.shown = last.state
+    }
+    if (last) this.emitState(run, last.state === 'done' ? { state: 'idle' } : last)
   }
 
   // AGY§11 AGY§12

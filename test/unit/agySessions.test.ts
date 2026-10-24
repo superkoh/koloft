@@ -998,14 +998,16 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     }
   })
 
-  it('resuming a conversation tmux still runs there attaches to it: the tab binds at once, reads waiting from the turn that already ended without reporting that turn again, and follows the log its agy writes, found through the pointer the title script left', async () => {
+  it('resuming a conversation tmux still runs there attaches to it: the tab binds at once, reads waiting from the turn that already ended without reporting that turn again (nor when its background work ends), and follows the log its agy writes, found through the pointer the title script left', async () => {
     machine.attach = true
     machine.alive.add(A)
     machine.held = true
     remoteMember(A)
     fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
     const old = path.join(mirror, 'pty-old.agy.jsonl')
-    fs.writeFileSync(old, JSON.stringify({ event: 'Stop', input: { conversationId: A } }) + '\n')
+    const stop = (fullyIdle: boolean): string =>
+      JSON.stringify({ event: 'Stop', input: { conversationId: A, fullyIdle } }) + '\n'
+    fs.writeFileSync(old, stop(false))
     appendConversation(path.join(home, 'mirror-gemini'), A, [
       { type: 'USER_INPUT', content: ownerTyped('before the restart') },
       { type: 'PLANNER_RESPONSE', content: 'Already told.' }
@@ -1018,7 +1020,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     expect(shown()).toEqual([{ type: 'stop' }])
     fs.appendFileSync(
       old,
-      JSON.stringify({ event: 'PreInvocation', input: { conversationId: A } }) + '\n'
+      stop(true) + JSON.stringify({ event: 'PreInvocation', input: { conversationId: A } }) + '\n'
     )
     sessions.followMirrors('devbox')
     expect(runtime.statusOf(id)).toBe('working')
@@ -1026,6 +1028,33 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     expect(
       vi.mocked(sessions['deps'].events).mock.calls.filter(([, e]) => e.type === 'turn-ended')
     ).toEqual([])
+  })
+
+  it('attaching to a conversation tmux still runs there while it waits for an approval shows it waiting for that approval again', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    fs.writeFileSync(
+      path.join(mirror, 'pty-old.agy.jsonl'),
+      [
+        { event: 'PreInvocation', input: { conversationId: A } },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: A,
+            toolCall: { name: 'run_command', args: { CommandLine: 'ls' } }
+          }
+        },
+        { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(sessions.openApproval(id)).toMatchObject({ command: 'ls' }))
+    expect(shown()).toEqual([{ type: 'notify', need: 'approval' }])
   })
 
   it('refuses to resume a conversation another agy on that machine holds', async () => {
