@@ -1,4 +1,9 @@
-import { longContextSurchargeUsd, resolvePricing, type TokenCounts } from '@shared/pricing'
+import {
+  longContextSurchargeUsd,
+  oneHourCacheWriteSurchargeUsd,
+  resolvePricing,
+  type TokenCounts
+} from '@shared/pricing'
 import type { UsageRecord } from '@shared/types'
 import { localDayKey } from '@shared/usageFormat'
 import { stepOf } from './agyStore'
@@ -36,9 +41,18 @@ function parsedLines(text: string): any[] {
 class RecordsByDayAndModel {
   private byKey = new Map<string, UsageRecord>()
 
-  add(sessionId: string, day: string, model: string, call: TokenCounts): void {
+  add(
+    sessionId: string,
+    day: string,
+    model: string,
+    call: TokenCounts,
+    oneHourCacheWriteTok = 0
+  ): void {
     const pricing = resolvePricing(model)
-    const surchargeUsd = pricing ? longContextSurchargeUsd(pricing, call) : 0
+    const surchargeUsd = pricing
+      ? longContextSurchargeUsd(pricing, call) +
+        oneHourCacheWriteSurchargeUsd(pricing, oneHourCacheWriteTok)
+      : 0
     const key = sessionId + '\n' + day + '\n' + model
     const rec = this.byKey.get(key)
     if (!rec) {
@@ -59,6 +73,7 @@ interface ClaudeCall {
   day: string
   model: string
   tokens: TokenCounts
+  oneHourCacheWriteTok: number
 }
 
 // CC§2
@@ -79,19 +94,21 @@ export function scanClaudeLines(text: string): UsageRecord[] {
       cacheWriteTok: num(u.cache_creation_input_tokens),
       cacheReadTok: num(u.cache_read_input_tokens)
     }
+    const oneHourCacheWriteTok = num(u.cache_creation?.ephemeral_1h_input_tokens)
     const id = typeof msg.id === 'string' ? msg.id : ''
     const reqId = typeof obj.requestId === 'string' ? obj.requestId : ''
     const seen = id || reqId ? callByIds.get(id + ' ' + reqId) : undefined
     if (seen) {
       for (const f of TOKEN_FIELDS) seen.tokens[f] = Math.max(seen.tokens[f], tokens[f])
+      seen.oneHourCacheWriteTok = Math.max(seen.oneHourCacheWriteTok, oneHourCacheWriteTok)
       continue
     }
-    const call = { sessionId: obj.sessionId, day, model, tokens }
+    const call = { sessionId: obj.sessionId, day, model, tokens, oneHourCacheWriteTok }
     calls.push(call)
     if (id || reqId) callByIds.set(id + ' ' + reqId, call)
   }
   const out = new RecordsByDayAndModel()
-  for (const c of calls) out.add(c.sessionId, c.day, c.model, c.tokens)
+  for (const c of calls) out.add(c.sessionId, c.day, c.model, c.tokens, c.oneHourCacheWriteTok)
   return out.list()
 }
 

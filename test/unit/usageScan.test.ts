@@ -8,6 +8,7 @@ import {
   scanCodexLines,
   scanMuseLines
 } from '../../src/main/usageScan'
+import { costUsdOf, resolvePricing } from '../../src/shared/pricing'
 
 const S = 'sess-1'
 const NOON = '2026-10-15T19:00:00.000Z'
@@ -102,6 +103,29 @@ describe('scanClaudeLines', () => {
   it('keeps the other calls of a file whose last line is cut off mid-write', () => {
     const text = lines(claudeLine({ id: 'a', out: 5 })) + claudeLine({ id: 'b' }).slice(0, 40)
     expect(scanClaudeLines(text).map((r) => r.outTok)).toEqual([5])
+  })
+
+  it("prices a one-hour cache write at twice the input price, matching Claude Code's own total_cost_usd, once per call however many lines repeat it", () => {
+    const sonnetCall = JSON.stringify({
+      type: 'assistant',
+      sessionId: S,
+      timestamp: NOON,
+      requestId: 'req_1',
+      message: {
+        id: 'msg_1',
+        model: 'claude-sonnet-5-5',
+        usage: {
+          input_tokens: 2,
+          output_tokens: 4,
+          cache_creation_input_tokens: 5600,
+          cache_read_input_tokens: 11333,
+          cache_creation: { ephemeral_1h_input_tokens: 5600, ephemeral_5m_input_tokens: 0 }
+        }
+      }
+    })
+    const [rec] = scanClaudeLines(lines(sonnetCall, sonnetCall))
+    const cost = costUsdOf(resolvePricing(rec.model)!, rec) + rec.surchargeUsd
+    expect(cost).toBeCloseTo(0.0235773, 9)
   })
 })
 

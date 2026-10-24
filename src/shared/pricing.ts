@@ -146,6 +146,16 @@ export function costUsdOf(pricing: ModelPricing, t: TokenCounts): number {
   )
 }
 
+const ONE_HOUR_CACHE_WRITE_INPUT_MULTIPLE = 2
+
+// CC§7
+export function oneHourCacheWriteSurchargeUsd(pricing: ModelPricing, oneHourTok: number): number {
+  return (
+    (oneHourTok * (pricing.inPerM * ONE_HOUR_CACHE_WRITE_INPUT_MULTIPLE - pricing.cacheWritePerM)) /
+    1_000_000
+  )
+}
+
 export function longContextSurchargeUsd(pricing: ModelPricing, request: TokenCounts): number {
   const long = pricing.longContext
   if (!long || request.inTok + request.cacheReadTok <= long.aboveInputTokens) return 0
