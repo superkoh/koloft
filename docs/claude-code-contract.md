@@ -841,17 +841,18 @@ the moment its CC starts removing and finishes the removal if Koloft quits first
   Its `total_cost_usd` (0.022033) is the parent's (0.0201139) plus its own one request,
   so the copied history counts toward CC's own figure too; a plain `--resume` of the
   parent reports its history in `total_cost_usd` the same way (`cost-state` line). Even
-  `promptId` is rewritten. What tells a copy apart inside the one file: the fork's
-  first line with a top-level `timestamp` is its own (`queue-operation` at fork time),
-  and every copied line keeps its older time, so a call older than its file's first
-  timestamp is a copy. Same on the TUI `/fork` (2026-10-24, CC 2.1.310, typed in a
-  pty in a throwaway home): it starts `claude daemon run` and writes a new transcript
-  whose first timestamped line is a `queue-operation` at the moment of `/fork`,
-  followed by the copied lines at their original times; the window keeps writing the
-  original file. Rechecked with a parent, its fork and the parent resumed after: the
-  three runs' own requests cost $0.031692, and Koloft's Usage rows add up to that.
-  Not probed: `/background`, which the daemon runs as `--fork-session --resume`
-  (above), the same path as the fork measured here.
+  `promptId` is rewritten, so only the copy's `message.id` + `requestId` tie it to the
+  original in the other file. Which file is the parent: on `-p --fork-session` and the
+  TUI `/fork` (2026-10-24, CC 2.1.310, typed in a pty in a throwaway home; it starts
+  `claude daemon run`, writes the copy to a new transcript and the window keeps the
+  original), the fork's first line with a top-level `timestamp` is a `queue-operation`
+  at fork time, later than the parent's first. A `/background` move does not do that:
+  a `sessionKind: "bg"` transcript on the dev Mac (CC 2.1.283) opens with the copied
+  lines at their original times, so both files start at the same moment. On this
+  Mac's 4,914 transcripts (2026-10-24, ids hashed, no content read), 230 of 147,698
+  calls sit in two files: that bg move and sub-agent files sharing calls. Rechecked
+  with a parent, its fork and the parent resumed after: the three runs' own requests
+  cost $0.031692, and Koloft's Usage rows add up to that.
 - **Interactive sessions have NO re-entry guard**: resuming an already-running normal
   session is not blocked — the same session can be written by two processes at once
   (measured loss, 2026-08-20). The "already running … split-brain" refusal belongs to

@@ -3,6 +3,8 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { UsageCache, type ScannedFile, type UsageFile } from '../../src/main/usageCache'
+import { recordsOfClaudeCalls, scanClaudeCalls } from '../../src/main/usageScan'
+import { costUsdOf, resolvePricing } from '../../src/shared/pricing'
 import type { UsageRead, UsageRecord } from '../../src/shared/types'
 
 function record(sessionId: string, outTok: number): UsageRecord {
@@ -173,6 +175,82 @@ describe('UsageCache', () => {
 
     expect(read.rows).toMatchObject([{ sessionId: 'm1', backend: 'muse', workspace: '/ws-muse' }])
     expect(read.titles).toEqual({ m1: 'Sort the fixtures' })
+  })
+
+  describe("a forked Claude Code session's copied history, counted once", () => {
+    const call = (session: string, id: string, usage: number[]): string =>
+      JSON.stringify({
+        type: 'assistant',
+        sessionId: session,
+        requestId: `req_${id}`,
+        timestamp: '2026-10-24T09:00:00.000Z',
+        message: {
+          id: `msg_${id}`,
+          model: 'claude-sonnet-5-5',
+          usage: {
+            input_tokens: 2,
+            output_tokens: usage[0],
+            cache_creation_input_tokens: usage[1],
+            cache_read_input_tokens: usage[2],
+            cache_creation: { ephemeral_1h_input_tokens: usage[1] }
+          }
+        }
+      })
+    const asked = (session: string): string[] => [
+      call(session, 'read', [124, 5623, 11333]),
+      call(session, 'answer', [5, 167, 16956])
+    ]
+    const P = '/p/ws/parent.jsonl'
+    const F = '/p/ws/fork.jsonl'
+
+    async function readParentAndFork(bornAt: { parent: string; fork: string }) {
+      listed = [
+        { file: F, backend: 'claude', workspace: '/ws' },
+        { file: P, backend: 'claude', workspace: '/ws' }
+      ]
+      stats = new Map([
+        [P, { mtimeMs: 1, size: 10 }],
+        [F, { mtimeMs: 1, size: 20 }]
+      ])
+      const usage = cache()
+      await usage.read()
+      const texts: Record<string, string> = {
+        [P]: [...asked('parent'), call('parent', 'yes', [4, 41, 17123])].join('\n'),
+        [F]: [...asked('fork'), call('fork', 'ok', [4, 41, 17123])].join('\n')
+      }
+      for (const file of [F, P]) {
+        const claudeCalls = scanClaudeCalls(texts[file])
+        runs[0].scanned({
+          file,
+          records: recordsOfClaudeCalls(claudeCalls),
+          claudeCalls,
+          bornAt: file === P ? bornAt.parent : bornAt.fork
+        })
+      }
+      runs[0].ended()
+      const { rows } = await usage.read()
+      return (session: string): number =>
+        rows
+          .filter((r) => r.sessionId === session)
+          .reduce((sum, r) => sum + costUsdOf(resolvePricing(r.model)!, r), 0)
+    }
+
+    it('under the parent when the fork file starts later, as `claude -p --fork-session` and the TUI /fork write it, so the two add up to what Claude Code spent', async () => {
+      const costOf = await readParentAndFork({
+        parent: '2026-10-24T08:59:00.000Z',
+        fork: '2026-10-24T09:05:00.000Z'
+      })
+      expect(costOf('parent')).toBeCloseTo(0.0292072, 9)
+      expect(costOf('fork')).toBeCloseTo(0.0019203, 9)
+    })
+
+    it('once in all, when the fork file opens with the copied lines, as a /background move writes it', async () => {
+      const costOf = await readParentAndFork({
+        parent: '2026-10-24T08:59:00.000Z',
+        fork: '2026-10-24T08:59:00.000Z'
+      })
+      expect(costOf('parent') + costOf('fork')).toBeCloseTo(0.0311275, 9)
+    })
   })
 
   it("names a remote Codex rollout's machine path as an ssh workspace before mapping it", async () => {

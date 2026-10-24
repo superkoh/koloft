@@ -2,13 +2,18 @@ process.env.TZ = 'America/Los_Angeles'
 
 import { describe, expect, it } from 'vitest'
 import {
+  claudeCallKeys,
   protobufString,
+  recordsOfClaudeCalls,
   scanAgyLines,
-  scanClaudeLines,
+  scanClaudeCalls,
   scanCodexLines,
-  scanMuseLines
+  scanMuseLines,
+  topLevelTimestampOf
 } from '../../src/main/usageScan'
 import { costUsdOf, resolvePricing } from '../../src/shared/pricing'
+
+const scanClaudeLines = (text: string) => recordsOfClaudeCalls(scanClaudeCalls(text))
 
 const S = 'sess-1'
 const NOON = '2026-10-15T19:00:00.000Z'
@@ -129,42 +134,28 @@ describe('scanClaudeLines', () => {
     expect(costUsdOf(resolvePricing(rec.model)!, rec) + rec.surchargeUsd).toBeCloseTo(0.0235773, 9)
   })
 
-  it("skips the parent's calls a fork copied in, older than the fork file's first line, so parent and fork add up to what Claude Code spent", () => {
-    const call = (session: string, id: string, at: string, usage: number[]): string =>
-      JSON.stringify({
-        type: 'assistant',
-        sessionId: session,
-        requestId: `req_${id}`,
-        timestamp: at,
-        message: {
-          id: `msg_${id}`,
-          model: 'claude-sonnet-5-5',
-          usage: {
-            input_tokens: 2,
-            output_tokens: usage[0],
-            cache_creation_input_tokens: usage[1],
-            cache_read_input_tokens: usage[2],
-            cache_creation: { ephemeral_1h_input_tokens: usage[1] }
-          }
-        }
-      })
-    const history = (session: string): string[] => [
-      call(session, 'read', '2026-10-24T09:00:01.000Z', [124, 5623, 11333]),
-      call(session, 'answer', '2026-10-24T09:00:03.000Z', [5, 167, 16956])
-    ]
-    const parent = scanClaudeLines(
-      lines(...history('p'), call('p', 'yes', '2026-10-24T09:06:00.000Z', [4, 41, 17123])),
+  it('names each call by its message and request id, and a call with neither by nothing, so only real copies can match across files', () => {
+    const keys = claudeCallKeys(
+      scanClaudeCalls(
+        lines(claudeLine({ id: 'a', req: 'r' }), claudeLine({ id: 'b', req: 'r' }), claudeLine({}))
+      )
+    )
+    expect(keys[0]).not.toBe('')
+    expect(keys[0]).not.toBe(keys[1])
+    expect(keys[2]).toBe('')
+  })
+})
+
+describe('topLevelTimestampOf', () => {
+  it("reads a line's own time, never one nested inside it", () => {
+    expect(topLevelTimestampOf('{"type":"user","timestamp":"2026-10-24T09:00:00.000Z"}')).toBe(
       '2026-10-24T09:00:00.000Z'
     )
-    const fork = scanClaudeLines(
-      lines(...history('f'), call('f', 'ok', '2026-10-24T09:05:01.000Z', [4, 41, 17123])),
-      '2026-10-24T09:05:00.000Z'
-    )
-    const cost = (recs: typeof parent): number =>
-      recs.reduce((sum, r) => sum + costUsdOf(resolvePricing(r.model)!, r), 0)
-
-    expect(cost(parent)).toBeCloseTo(0.0292072, 9)
-    expect(cost(fork)).toBeCloseTo(0.0019203, 9)
+    expect(
+      topLevelTimestampOf(
+        '{"type":"file-history-snapshot","snapshot":{"timestamp":"2026-09-01T00:00:00.000Z"}}'
+      )
+    ).toBeUndefined()
   })
 })
 

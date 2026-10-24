@@ -5,6 +5,7 @@ import { formatRemoteKey } from '@shared/remoteKey'
 import { AGY_APP_DIR, agyTranscript, conversationDb } from './agyStore'
 import { PrivateRecordFile } from './privateFile'
 import { mapAtMost } from './mapAtMost'
+import { claudeCallKeys, recordsOfClaudeCalls, type ClaudeCalls } from './usageScan'
 
 export interface UsageFile {
   file: string
@@ -23,6 +24,8 @@ export interface SessionPlace {
 export interface ScannedFile {
   file: string
   records: UsageRecord[]
+  claudeCalls?: ClaudeCalls
+  bornAt?: string
   cwd?: string
 }
 
@@ -31,10 +34,7 @@ interface FileStat {
   size: number
 }
 
-interface CachedFile extends FileStat, UsageFile {
-  cwd?: string
-  records: UsageRecord[]
-}
+interface CachedFile extends FileStat, UsageFile, Omit<ScannedFile, 'file'> {}
 
 export interface UsageCacheDeps {
   cacheFile: () => string
@@ -58,6 +58,8 @@ const MUSE_DATE_DEPTH = 3
 export class UsageCache {
   private reading = false
   private readonly cached: PrivateRecordFile<CachedFile>
+  private generation = 0
+  private claudeOnce?: { generation: number; recordsByFile: Map<string, UsageRecord[]> }
 
   constructor(private readonly deps: UsageCacheDeps) {
     this.cached = new PrivateRecordFile(deps.cacheFile)
@@ -95,15 +97,18 @@ export class UsageCache {
       })
       const gone = Object.keys(cached).filter((file) => !present.has(file))
       for (const file of gone) delete cached[file]
+      if (gone.length) this.generation++
       if (!stale.size) {
         if (gone.length) this.cached.save()
         return ended()
       }
       this.deps.scan(
         [...stale.values()],
-        ({ file, records, cwd }) => {
+        ({ file, ...scanned }) => {
           const f = stale.get(file)
-          if (f) cached[file] = { ...f, cwd, records }
+          if (!f) return
+          cached[file] = { ...f, ...scanned }
+          this.generation++
         },
         () => {
           this.cached.save()
@@ -116,8 +121,35 @@ export class UsageCache {
     }
   }
 
+  // CC§5
+  private claudeRecordsCountingEachCallOnce(files: CachedFile[]): Map<string, UsageRecord[]> {
+    if (this.claudeOnce?.generation === this.generation) return this.claudeOnce.recordsByFile
+    const oldestFirst = files
+      .filter((e) => e.claudeCalls)
+      .sort(
+        (a, b) => (a.bornAt ?? '').localeCompare(b.bornAt ?? '') || a.file.localeCompare(b.file)
+      )
+    const counted = new Set<string>()
+    const recordsByFile = new Map<string, UsageRecord[]>()
+    for (const e of oldestFirst) {
+      const keys = claudeCallKeys(e.claudeCalls!).filter(Boolean)
+      const copies = new Set(keys.filter((k) => counted.has(k)))
+      for (const k of keys) counted.add(k)
+      recordsByFile.set(
+        e.file,
+        copies.size ? recordsOfClaudeCalls(e.claudeCalls!, copies) : e.records
+      )
+    }
+    this.claudeOnce = { generation: this.generation, recordsByFile }
+    return recordsByFile
+  }
+
   private rows(): Pick<UsageRead, 'rows' | 'titles'> {
-    const entries = Object.values(this.cached.get()).filter((e) => e.records.length)
+    const files = Object.values(this.cached.get())
+    const claude = this.claudeRecordsCountingEachCallOnce(files)
+    const entries = files
+      .map((e) => (claude.has(e.file) ? { ...e, records: claude.get(e.file)! } : e))
+      .filter((e) => e.records.length)
     const placeOf = this.deps.sessionPlaces()
     const placed = new Map<CachedFile, string>()
     for (const e of entries) {

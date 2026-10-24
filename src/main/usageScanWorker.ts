@@ -7,41 +7,30 @@ import {
   CODEX_USAGE_WORDS,
   MUSE_USAGE_WORDS,
   protobufString,
+  recordsOfClaudeCalls,
   scanAgyLines,
-  scanClaudeLines,
+  scanClaudeCalls,
   scanCodexLines,
-  scanMuseLines
+  scanMuseLines,
+  topLevelTimestampOf
 } from './usageScan'
 import type { ScannedFile, UsageFile } from './usageCache'
 
 const AGY_CALL_MODEL = [1, 19]
 const AGY_CONFIGURED_MODEL = [10, 1, 28]
 
-async function linesWithAny(file: string, words: string[]): Promise<string> {
-  const kept: string[] = []
-  const lines = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity })
-  for await (const line of lines) if (words.some((w) => line.includes(w))) kept.push(line)
-  return kept.join('\n')
-}
-
-async function claudeLines(file: string): Promise<{ text: string; bornAt?: string }> {
+async function linesWithAny(
+  file: string,
+  words: string[]
+): Promise<{ text: string; bornAt?: string }> {
   const kept: string[] = []
   let bornAt: string | undefined
   const lines = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity })
   for await (const line of lines) {
-    if (bornAt === undefined && line.includes('"timestamp"')) bornAt = timestampOf(line)
-    if (CLAUDE_USAGE_WORDS.some((w) => line.includes(w))) kept.push(line)
+    if (bornAt === undefined && line.includes('"timestamp"')) bornAt = topLevelTimestampOf(line)
+    if (words.some((w) => line.includes(w))) kept.push(line)
   }
   return { text: kept.join('\n'), bornAt }
-}
-
-function timestampOf(line: string): string | undefined {
-  try {
-    const at = JSON.parse(line).timestamp
-    return typeof at === 'string' ? at : undefined
-  } catch {
-    return undefined
-  }
 }
 
 // AGY§8
@@ -70,18 +59,21 @@ async function scan(f: UsageFile): Promise<Omit<ScannedFile, 'file'>> {
   const sessionId = f.sessionId ?? ''
   switch (f.backend) {
     case 'claude': {
-      const { text, bornAt } = await claudeLines(f.file)
-      return { records: scanClaudeLines(text, bornAt) }
+      const { text, bornAt } = await linesWithAny(f.file, CLAUDE_USAGE_WORDS)
+      const claudeCalls = scanClaudeCalls(text)
+      return { records: recordsOfClaudeCalls(claudeCalls), claudeCalls, bornAt }
     }
-    case 'muse':
-      return { records: scanMuseLines(await linesWithAny(f.file, MUSE_USAGE_WORDS), sessionId) }
+    case 'muse': {
+      const { text } = await linesWithAny(f.file, MUSE_USAGE_WORDS)
+      return { records: scanMuseLines(text, sessionId) }
+    }
     case 'agy': {
       const { calls, configured } = await agyModels(f.db)
-      const text = await linesWithAny(f.file, AGY_USAGE_WORDS)
+      const { text } = await linesWithAny(f.file, AGY_USAGE_WORDS)
       return { records: scanAgyLines(text, sessionId, calls, configured) }
     }
     case 'codex': {
-      const codex = scanCodexLines(await linesWithAny(f.file, CODEX_USAGE_WORDS))
+      const codex = scanCodexLines((await linesWithAny(f.file, CODEX_USAGE_WORDS)).text)
       return { records: codex?.records ?? [], cwd: codex?.cwd }
     }
   }
