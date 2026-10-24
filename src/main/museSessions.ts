@@ -1124,6 +1124,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     run.jobs.clear()
     this.holdForJobs(run)
     run.endedTurns.clear()
+    run.touched.clear()
+    run.liveWrites = 0
     run.log = undefined
     this.bind(
       run,
