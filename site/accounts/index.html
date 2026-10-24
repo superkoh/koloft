@@ -121,7 +121,8 @@
           At the top sits <code>Skip permission prompts</code>, on at first. With it on, a Claude
           Code, Muse or Antigravity session Koloft starts runs without asking for permission, here
           or on a machine. So does a new Codex session. It starts with
-          <code class="nowrap">-a never -s danger-full-access</code>: it never asks, and it runs
+          <code class="nowrap">-a never -s danger-full-access</code>: it never asks for permission
+          (Codex's own trust question for a folder it has not seen still comes first), and it runs
           outside Codex's sandbox (the box Codex runs commands in), so it may write anywhere and use
           the network. With the switch off, a Codex session follows Codex's own approval settings. A
           Codex session you resume keeps what it started with. A permission setting given to one
