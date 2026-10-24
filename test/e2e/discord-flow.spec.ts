@@ -418,7 +418,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     const { app, page } = await connected(env, fake)
     try {
       fake.say(OWNER, '/koloft session new --name Tidy -- Sort out the to-dos.')
-      const helper = async (): Promise<{ tabId: string; sessionId?: string } | undefined> => {
+      const helper = async () => {
         const all = await page.evaluate(() => window.api.sessions.list())
         return all.find((s) => s.alive && s.title === 'Tidy' && s.sessionId)
       }
@@ -438,7 +438,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect
         .poll(() => terminalText(page, tab), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Picked: Merge')
-      const passedOn = (p: string): boolean => p.includes(`id ${helperId}:) Picked: Merge`)
+      const passedOn = (p: string): boolean =>
+        p.startsWith('Peer said: ') && p.includes(`, id ${helperId}:) Picked: Merge`)
       await expect
         .poll(() => said(fake).some(passedOn), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toBe(true)
