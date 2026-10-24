@@ -138,18 +138,32 @@ function starterPart(starter: string | undefined): string[] {
   return starter ? [`started by: ${starter}`] : []
 }
 
+// CC§13
+function sendMessageReaches(
+  from: SessionInfo,
+  to: BackendId,
+  toMachine: string | undefined
+): boolean {
+  return (
+    reachedBySendMessage(from.backendId) &&
+    reachedBySendMessage(to) &&
+    from.remote?.host === toMachine
+  )
+}
+
 function openSessionLines(
   sessions: ListedSession[],
-  callerTabId: string,
+  me: SessionInfo,
   asking: (tabId: string) => boolean
 ): string[] {
   return sessions.map(({ info, peerName, starter }) => {
     const parts = [
-      `${info.title}${info.tabId === callerTabId ? ' (you)' : ''}`,
+      `${info.title}${info.tabId === me.tabId ? ' (you)' : ''}`,
       BACKEND_LABEL[info.backendId],
       stateWords(info, asking)
     ]
-    if (!reachedBySendMessage(info.backendId)) parts.push(`id: ${idToReach(info)}`)
+    if (!reachedBySendMessage(info.backendId) || info.remote?.host !== me.remote?.host)
+      parts.push(`id: ${idToReach(info)}`)
     if (peerName) parts.push(`name: ${peerName}`)
     parts.push(...starterPart(starter))
     const transcript = info.details?.claude?.jsonlPath
@@ -235,9 +249,6 @@ function formatTurns(turns: Turn[]): string {
     .join('\n\n')
 }
 
-const NO_REMOTE_START =
-  'the koloft command cannot start a session in a remote (SSH) workspace. Pick a workspace on this computer.'
-
 export function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<PinnedWorkspace> {
   const hits = pinned.filter(
     (w) => w.path === ref || workspaceLabel(w.path) === ref || basename(w.path) === ref
@@ -258,13 +269,12 @@ export function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed
 function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<string> {
   const found = resolveWorkspace(ref, pinned)
   if (!found.ok) return fail(found.error)
-  if (isRemoteKey(found.value.path)) return fail(NO_REMOTE_START)
   if (found.value.missing) return fail(`the folder of workspace "${found.value.path}" is missing.`)
   return { ok: true, value: found.value.path }
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'a Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names. This command reaches Codex, Muse and Antigravity sessions, and the session or Assist that started you.'
+  'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex, Muse and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.'
 
 function matchRef<T>(
   items: T[],
@@ -293,11 +303,11 @@ function matchOpen(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> | 
 export function findSiblingTarget(
   sessions: SessionInfo[],
   ref: string,
-  from: BackendId
+  from: SessionInfo
 ): Parsed<SessionInfo> {
   const hit = matchOpen(sessions, ref)
   if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
-  return hit.ok && reachedBySendMessage(hit.value.backendId) && reachedBySendMessage(from)
+  return hit.ok && sendMessageReaches(from, hit.value.backendId, hit.value.remote?.host)
     ? fail(CLAUDE_USES_SEND_MESSAGE)
     : hit
 }
@@ -490,7 +500,7 @@ async function listSessions(
   const open = new Set(sessions.map((s) => s.sessionId))
   const notOpen = everyRow.filter((p) => p.workspace === workspace && !open.has(p.row.id))
   const lines = [
-    ...openSessionLines(listed, me.tabId, d.asking),
+    ...openSessionLines(listed, me, d.asking),
     ...queuedLines(d, me, workspace),
     ...rowLines(notOpen, [], placedStarters(d, everyRow, notOpen, me), false, Date.now(), d.asking)
   ]
@@ -523,10 +533,11 @@ async function startSibling(
   if (!launched) return refused('koloft session new: Koloft could not start the session.')
   const { tabId, name } = launched
   const unnamed = aSessionOf(backend)
+  const bySendMessage = sendMessageReaches(me, backend, parseRemoteKey(workspace)?.host)
   if (d.waiting.list().some((q) => q.tabId === tabId))
     return answered(
       `Queued ${name ? `session "${name}"` : unnamed} (${tabId}): Koloft starts it in turn, once this machine has room. Do not start it again. "koloft session list" shows it as queued; ${
-        name && reachedBySendMessage(backend) && reachedBySendMessage(me.backendId)
+        name && bySendMessage
           ? `once it starts, talk to it with SendMessage to "${name}"`
           : `"koloft session send ${tabId} <message>" is kept and handed to it once it starts`
       }; "koloft session close ${tabId}" takes it off the queue.`
@@ -540,7 +551,7 @@ async function startSibling(
       ? 'koloft session list'
       : `koloft session list --workspace ${JSON.stringify(workspace)}`
   return answered(
-    reachedBySendMessage(backend)
+    bySendMessage
       ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
       : `Started ${name ? `${BACKEND_LABEL[backend]} session "${name}"` : unnamed} in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
   )
@@ -1234,8 +1245,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       const queued = queuedStartedBy(d, caller.session, ref)
       if (
         queued &&
-        reachedBySendMessage(queued.kind) &&
-        reachedBySendMessage(caller.session.backendId)
+        sendMessageReaches(caller.session, queued.kind, parseRemoteKey(queued.cwd)?.host)
       )
         return refused(
           `koloft session send: "${queued.title}" is still queued for the machine; once it starts, talk to it with SendMessage to "${queued.title}".`
@@ -1251,7 +1261,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       if (to) return deliver('send', to, said, caller, false)
       if (forTheOwner || matchOpen(open, ref) === null)
         return sessionAct(sub, rest, caller, forTheOwner)
-      const target = findSiblingTarget(open, ref, caller.session.backendId)
+      const target = findSiblingTarget(open, ref, caller.session)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
       return deliver('send', openTarget(target.value), said, caller, false)
     }

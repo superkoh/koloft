@@ -75,13 +75,25 @@ exit 0
 // ADR-0032
 const GH_AUTH_SUBCOMMANDS = ['login', 'logout', 'switch', 'refresh', 'setup-git', 'token', 'status']
 
+// ADR-0029
+function inButlerFolderRunKoloftGh(butlerFolder: string): string {
+  return `butler="$(cd ${shq(butlerFolder)} 2>/dev/null && pwd -P)"
+if [ -n "$butler" ] && [ -x "$self/koloft" ]; then
+  case "$(pwd -P)/" in "$butler"/*) exec "$self/koloft" gh "$@" ;; esac
+fi
+`
+}
+
 // PLATFORM§49
-export function ghWrapperScript(requestDir: string): string {
-  return ghWrapper(`proto=""
+export function ghWrapperScript(requestDir: string, butlerFolder: string): string {
+  return ghWrapper(
+    `proto=""
 host=""
 ${requestFns(requestDir)}
 ask gh-token "$acct"
-tok=${replyField('token')}`)
+tok=${replyField('token')}`,
+    inButlerFolderRunKoloftGh(butlerFolder)
+  )
 }
 
 export const MACHINE_TOKEN_FROM_HELPER =
@@ -99,11 +111,11 @@ export function machineGhWrapperScript(): string {
   return ghWrapper(MACHINE_TOKEN_FROM_HELPER)
 }
 
-function ghWrapper(fetchToken: string): string {
+function ghWrapper(fetchToken: string, beforeAll = ''): string {
   return `#!/bin/sh
 : koloft gh wrapper
 self="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
-real=""
+${beforeAll}real=""
 IFS=:
 set -f
 for d in $PATH; do
