@@ -949,6 +949,20 @@ describe('a Muse session on a remote machine', () => {
     }
   })
 
+  const compactStarts = (seq: number): Record<string, unknown> => ({
+    t: 'log',
+    seq,
+    payloadType: 'runtime.command.accepted',
+    payload: { kind: 'command_accepted', command_kind: 'context.compact.manual' }
+  })
+
+  const compactEnds = (seq: number): Record<string, unknown> => ({
+    t: 'log',
+    seq,
+    payloadType: 'context.compact.manual.outcome',
+    payload: { kind: 'manual_compaction_outcome', terminal_outcome: 'compacted' }
+  })
+
   async function boundRemote(): Promise<string> {
     const { id } = await sessions.launch({ kind: 'muse', cwd: KEY })
     mirror(id, { t: 'bound', sessionId: A })
@@ -1039,6 +1053,35 @@ describe('a Muse session on a remote machine', () => {
       files: [expect.objectContaining({ src: `${KEY}/src/b.ts` })],
       liveWrites: 1
     })
+  })
+
+  // MUSE§9
+  it("shows /compact as working from the log lines the wrapper mirrors, as a local tab does from muse's own log, until its outcome arrives", async () => {
+    onMachine()
+    const id = await boundRemote()
+    mirror(id, { t: 'state', seq: 1, state: 'done', kind: null })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+    mirror(id, compactStarts(1))
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('working'))
+    mirror(id, compactEnds(1))
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+  })
+
+  // MUSE§9 MUSE§17
+  it("never lets a /compact's end that the mirror brought late roll back the next turn the terminal already showed working", async () => {
+    onMachine()
+    const id = await boundRemote()
+    mirror(id, { t: 'state', seq: 1, state: 'done', kind: null }, compactStarts(1))
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('working'))
+    say(id, osc('state=working:app=muse:seq=2'))
+    mirror(id, compactEnds(1), {
+      t: 'log',
+      seq: 1,
+      payloadType: 'session.name.changed',
+      payload: { new_name: 'After compact', source: 'user' }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('After compact'))
+    expect(runtime.statusOf(id)).toBe('working')
   })
 
   it('never lets a state that came late through the mirror roll back a newer one the terminal already showed', async () => {

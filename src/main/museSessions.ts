@@ -1035,10 +1035,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       const hook = museHook(line)
       if (hook) this.onHook(run, hook)
     } else if (line.t === 'log' && typeof line.payloadType === 'string') {
+      const aNewerStateCameFirst = Number(line.seq) < run.lastSeq
       this.onLogRecord(run, {
         payloadType: line.payloadType,
         payload: record(line.payload),
-        atMs: Date.now()
+        atMs: aNewerStateCameFirst ? 0 : Date.now()
       })
     }
   }

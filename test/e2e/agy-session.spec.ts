@@ -7,6 +7,7 @@ import {
   E2E_AGY_ACCOUNT,
   UNPACKAGED_BUILD_AGY_SVC,
   agyCalls,
+  agySessionCalls as sessionCalls,
   installAgy,
   ownersGemini,
   seedSettings,
@@ -59,9 +60,6 @@ function fileLines(file: string): Record<string, unknown>[] {
     .filter(Boolean)
     .map((l) => JSON.parse(l) as Record<string, unknown>)
 }
-
-const sessionCalls = (env: E2EEnv): AgyCall[] =>
-  agyCalls(env).filter((c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p'))
 
 const apiCalls = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-api.jsonl'))
