@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { UsageCache, type ScannedFile, type UsageFile } from '../../src/main/usageCache'
-import { recordsOfClaudeCalls, scanClaudeCalls } from '../../src/main/usageScan'
+import { scanClaudeCalls } from '../../src/main/usageScan'
 import { costUsdOf, resolvePricing } from '../../src/shared/pricing'
 import type { UsageRead, UsageRecord } from '../../src/shared/types'
 
@@ -210,7 +210,7 @@ describe('UsageCache', () => {
       ]
       stats = new Map([
         [P, { mtimeMs: 1, size: 10 }],
-        [F, { mtimeMs: 1, size: 20 }]
+        [F, { mtimeMs: 2, size: 20 }]
       ])
       const usage = cache()
       await usage.read()
@@ -218,15 +218,13 @@ describe('UsageCache', () => {
         [P]: [...asked('parent'), call('parent', 'yes', [4, 41, 17123])].join('\n'),
         [F]: [...asked('fork'), call('fork', 'ok', [4, 41, 17123])].join('\n')
       }
-      for (const file of [F, P]) {
-        const claudeCalls = scanClaudeCalls(texts[file])
+      for (const file of [F, P])
         runs[0].scanned({
           file,
-          records: recordsOfClaudeCalls(claudeCalls),
-          claudeCalls,
+          records: [],
+          claudeCalls: scanClaudeCalls(texts[file]),
           bornAt: file === P ? bornAt.parent : bornAt.fork
         })
-      }
       runs[0].ended()
       const { rows } = await usage.read()
       return (session: string): number =>
@@ -244,12 +242,13 @@ describe('UsageCache', () => {
       expect(costOf('fork')).toBeCloseTo(0.0019203, 9)
     })
 
-    it('once in all, when the fork file opens with the copied lines, as a /background move writes it', async () => {
+    it('under the session whose file stopped first, when the moved file opens with the copied lines at the same moment, as /background writes it', async () => {
       const costOf = await readParentAndFork({
         parent: '2026-10-24T08:59:00.000Z',
         fork: '2026-10-24T08:59:00.000Z'
       })
-      expect(costOf('parent') + costOf('fork')).toBeCloseTo(0.0311275, 9)
+      expect(costOf('parent')).toBeCloseTo(0.0292072, 9)
+      expect(costOf('fork')).toBeCloseTo(0.0019203, 9)
     })
   })
 

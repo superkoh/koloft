@@ -54,12 +54,17 @@ const FILES_AT_ONCE = 16
 export const CODEX_ROLLOUT_FOLDERS = ['sessions', 'archived_sessions']
 const MUSE_SESSION_FILE_PREFIX = 'session.'
 const MUSE_DATE_DEPTH = 3
+const UNKNOWN_START_SORTS_LAST = '￿'
 
 export class UsageCache {
   private reading = false
   private readonly cached: PrivateRecordFile<CachedFile>
   private generation = 0
   private claudeOnce?: { generation: number; recordsByFile: Map<string, UsageRecord[]> }
+  private readonly unpackedClaude = new WeakMap<
+    ClaudeCalls,
+    { keys: string[]; records: UsageRecord[] }
+  >()
 
   constructor(private readonly deps: UsageCacheDeps) {
     this.cached = new PrivateRecordFile(deps.cacheFile)
@@ -121,23 +126,37 @@ export class UsageCache {
     }
   }
 
+  private unpacked(calls: ClaudeCalls): { keys: string[]; records: UsageRecord[] } {
+    let found = this.unpackedClaude.get(calls)
+    if (!found) {
+      found = { keys: claudeCallKeys(calls).filter(Boolean), records: recordsOfClaudeCalls(calls) }
+      this.unpackedClaude.set(calls, found)
+    }
+    return found
+  }
+
   // CC§5
   private claudeRecordsCountingEachCallOnce(files: CachedFile[]): Map<string, UsageRecord[]> {
     if (this.claudeOnce?.generation === this.generation) return this.claudeOnce.recordsByFile
     const oldestFirst = files
       .filter((e) => e.claudeCalls)
       .sort(
-        (a, b) => (a.bornAt ?? '').localeCompare(b.bornAt ?? '') || a.file.localeCompare(b.file)
+        (a, b) =>
+          (a.bornAt ?? UNKNOWN_START_SORTS_LAST).localeCompare(
+            b.bornAt ?? UNKNOWN_START_SORTS_LAST
+          ) ||
+          a.mtimeMs - b.mtimeMs ||
+          a.file.localeCompare(b.file)
       )
     const counted = new Set<string>()
     const recordsByFile = new Map<string, UsageRecord[]>()
     for (const e of oldestFirst) {
-      const keys = claudeCallKeys(e.claudeCalls!).filter(Boolean)
+      const { keys, records } = this.unpacked(e.claudeCalls!)
       const copies = new Set(keys.filter((k) => counted.has(k)))
       for (const k of keys) counted.add(k)
       recordsByFile.set(
         e.file,
-        copies.size ? recordsOfClaudeCalls(e.claudeCalls!, copies) : e.records
+        copies.size ? recordsOfClaudeCalls(e.claudeCalls!, copies) : records
       )
     }
     this.claudeOnce = { generation: this.generation, recordsByFile }
