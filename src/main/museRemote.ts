@@ -15,7 +15,7 @@ export const RUN_POINTER_SUFFIX = '.muse.run'
 const pyBytes = (s: string): string =>
   "b'" + [...s].map((c) => (c === '\x1b' ? '\\x1b' : c === '\\' ? '\\\\' : c)).join('') + "'"
 
-// MUSE§3 MUSE§4 MUSE§17 PLATFORM§35
+// MUSE§2 MUSE§3 MUSE§4 MUSE§9 MUSE§17 PLATFORM§35
 export const MUSE_WRAP_PY = `#!/usr/bin/env python3
 import fcntl, json, os, pty, re, select, signal, subprocess, sys, termios, time, tty
 
@@ -25,6 +25,7 @@ FRAME = re.compile(b'\\x1b\\\\]7501;([^\\x07\\x1b]*)(?:\\x07|\\x1b\\\\\\\\)')
 LONGEST_PARTIAL_FRAME = 4096
 POLL_SECONDS = 0.5
 DAY_MS = 86400000
+LOG_MARKS = (b'session.name.changed', b'inbox_item_queued', b'context.compact.manual')
 
 hook_dir, run_id = sys.argv[1], sys.argv[2]
 args = sys.argv[3:]
@@ -175,14 +176,14 @@ def log_path(sid):
 
 
 def forward(line):
-    if b'session.name.changed' not in line and b'inbox_item_queued' not in line:
+    if not any(mark in line for mark in LOG_MARKS):
         return
     try:
         record = json.loads(line.decode('utf-8', 'replace'))
     except ValueError:
         return
     if isinstance(record, dict) and isinstance(record.get('payload_type'), str):
-        put({'t': 'log', 'payloadType': record['payload_type'], 'payload': record.get('payload')})
+        put({'t': 'log', 'seq': seq, 'payloadType': record['payload_type'], 'payload': record.get('payload')})
 
 
 def follow_log():

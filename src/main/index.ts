@@ -2721,6 +2721,7 @@ app.whenReady().then(() => {
       assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
       skipPermissions: () => loadSettings().skipPermissions,
       replyLanguageScript: hookPaths.codexReplyLanguage,
+      builtInStatusLine: () => loadSettings().statuslineBuiltin,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
