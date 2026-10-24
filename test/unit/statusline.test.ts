@@ -20,6 +20,7 @@ vi.mock('electron', async () => {
 import os from 'os'
 import {
   setupStatusline,
+  setupAgyStatusline,
   statusLineSetting,
   remoteWrapperScript,
   DEFAULT_THEME
@@ -109,6 +110,21 @@ describe('built-in statusline', () => {
     expect(fs.readFileSync(live, 'utf8')).toBe(liveContent)
     expect(fs.existsSync(bare)).toBe(true)
     expect(fs.existsSync(legacy)).toBe(true)
+  })
+
+  it('prunes a dead install’s Antigravity wrapper the same way; keeps this install’s', () => {
+    const dir = path.dirname(wrapper)
+    const own = setupAgyStatusline({ wrapper, config })
+    const ownWrapper = path.join(dir, `agy-${path.basename(wrapper)}`)
+    expect(own).toContain(ownWrapper)
+    const dead = path.join(dir, 'agy-run-deadbeef01.sh')
+    fs.writeFileSync(
+      dead,
+      `#!/usr/bin/env bash\n# koloft-exec: ${path.join(dir, 'gone-build', 'Koloft')}\n`
+    )
+    setupStatusline()
+    expect(fs.existsSync(dead)).toBe(false)
+    expect(fs.existsSync(ownWrapper)).toBe(true)
   })
 
   it('statusLineSetting is the documented claude-code shape, wrapper path shell-quoted', () => {
