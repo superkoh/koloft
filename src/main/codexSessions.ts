@@ -104,6 +104,7 @@ import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import {
   StoredSessions,
   hostOfKey,
+  type HistoryListing,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
@@ -496,12 +497,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§15
-  protected async listHistory(): Promise<{ key: string; entry: CodexThread; archived: boolean }[]> {
+  protected async listHistory(): Promise<HistoryListing<CodexThread>> {
     const local = await this.withRpc(undefined, (rpc) => listThreads(rpc))
     const onMachines = [...this.history].flatMap(([key, entry]) =>
       hostOfKey(key) ? [{ key, entry, archived: this.archivedIds.has(key) }] : []
     )
-    return [...this.listedOn(undefined, local), ...onMachines]
+    return { entries: [...this.listedOn(undefined, local), ...onMachines], listedHosts: [] }
   }
 
   private listedOn(
@@ -555,7 +556,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       this.history.set(key, entry)
       if (archived) this.archivedIds.add(key)
     }
-    this.listedAt.set(machine, startedAt)
+    if (home.code === 0) this.listedAt.set(machine, startedAt)
     this.changed()
   }
 

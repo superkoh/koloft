@@ -26,9 +26,9 @@ afterEach(() => {
 })
 
 describe('the command Koloft runs on a remote machine to list its Antigravity conversations (AGY§8)', () => {
-  it("lists the machine's conversations with its own Node once Koloft's files are there, and an empty list before, leaving out one whose own db was deleted", () => {
+  it("lists the machine's conversations with its own Node once Koloft's files are there, leaving out one whose own db was deleted, and fails before, so a machine not ready yet never reads as one with no conversations", () => {
     const cmd = listAgyCmd('m-test')
-    expect(onMachine(cmd).stdout).toBe('[]')
+    expect(onMachine(cmd).code).not.toBe(0)
     const bin = path.join(home, '.koloft', 'node', 'bin')
     fs.mkdirSync(bin, { recursive: true })
     fs.symlinkSync(process.execPath, path.join(bin, 'node'))

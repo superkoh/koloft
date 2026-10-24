@@ -63,6 +63,11 @@ export interface HistoryEntry {
   cliVersion?: string
 }
 
+export interface HistoryListing<H extends HistoryEntry> {
+  entries: { key: string; entry: H; archived: boolean }[]
+  listedHosts: string[]
+}
+
 export interface StoredRun {
   tabId: string
   cwd: string
@@ -145,6 +150,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   protected history = new Map<string, H>()
   protected archivedIds = new Set<string>()
   protected listedAt = new Map<string | undefined, number>()
+  private lastRunAt = new Map<string, number>()
   private places = new Map<string, Place>()
   private probed?: { at: number; reply: BackendAvailability }
   private probing?: Promise<BackendAvailability>
@@ -207,7 +213,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     throw new Error(stillOld)
   }
 
-  protected abstract listHistory(): Promise<{ key: string; entry: H; archived: boolean }[]>
+  protected abstract listHistory(): Promise<HistoryListing<H>>
   protected abstract startRun(ctx: StartContext, prepared: P): Promise<R>
   protected abstract untestedNotice(version: string): string
 
@@ -390,10 +396,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       rows.set(key, this.row(t, scope))
     }
     for (const m of this.store.listMembers(workspace)) {
-      if (this.gone(m.key, m.updatedAt)) {
-        rows.delete(m.key)
-        continue
-      }
+      if (this.gone(m.key, m.updatedAt)) continue
       const r: BackendSessionRow = rows.get(m.key) ?? {
         id: m.key,
         title: m.title,
@@ -500,10 +503,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       }
     }
     if (this.shuttingDown) return
-    let entries: { key: string; entry: H; archived: boolean }[]
+    let listing: HistoryListing<H>
     const startedAt = Date.now()
     try {
-      entries = await this.listHistory()
+      listing = await this.listHistory()
     } catch (error) {
       this.noteBinaryGone(error)
       this.historyError = error instanceof Error ? error : new Error(String(error))
@@ -511,14 +514,14 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     }
     const seen = new Map<string, H>()
     const archivedIds = new Set<string>()
-    for (const { key, entry, archived } of entries) {
+    for (const { key, entry, archived } of listing.entries) {
       seen.set(key, entry)
       if (archived) archivedIds.add(key)
     }
     this.history = seen
     this.places.clear()
     this.archivedIds = archivedIds
-    this.listedAt.set(undefined, startedAt)
+    for (const host of [undefined, ...listing.listedHosts]) this.listedAt.set(host, startedAt)
     this.historyError = undefined
     this.changed()
   }
@@ -543,13 +546,14 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     return !this.refreshing && this.gone(key, this.store.getMember(key)?.updatedAt ?? 0)
   }
 
-  // CODEX§2
+  // CODEX§15 MUSE§5 AGY§8
   private gone(key: string, boundAt: number): boolean {
+    if (this.history.has(key)) return false
     const listedAt = this.listedAt.get(hostOfKey(key))
+    const lastLive = Math.max(boundAt, this.lastRunAt.get(key) ?? 0)
     return (
       listedAt !== undefined &&
-      boundAt < listedAt - NEW_SESSION_LIST_LAG_MS &&
-      (!this.history.has(key) || this.archivedIds.has(key)) &&
+      lastLive < listedAt - NEW_SESSION_LIST_LAG_MS &&
       !this.readsRunning(key)
     )
   }
@@ -728,6 +732,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     const m = this.store.getMember(key),
       leftName = m ? undefined : this.store.nameOfLeftMember(key),
       now = Date.now()
+    if (old && old !== key) this.lastRunAt.set(old, now)
     try {
       this.store.upsertMember({
         id: entry.id,
@@ -869,6 +874,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
             sessionId: run.info?.sessionId
           })
         this.runs.delete(tabId)
+        if (run.info) this.lastRunAt.set(run.info.sessionId, Date.now())
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {
           try {
             this.removeMember(run.info.sessionId)

@@ -915,6 +915,18 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
       .mock.calls.map(([, e]) => e)
       .filter((e) => ['prompt', 'notify', 'stop'].includes(e.type))
 
+  // AGY§8
+  it('a remembered conversation on that machine stays while its list cannot be read, and leaves once the machine lists without it', async () => {
+    remoteMember(A)
+    machine.rows = undefined as never
+    await sessions.availability()
+    await sessions.refreshHistory()
+    expect(sessions.rows(REMOTE_WS).map((row) => row.id)).toEqual([agySessionKey(A, 'devbox')])
+    machine.rows = []
+    await sessions.refreshHistory()
+    expect(sessions.rows(REMOTE_WS)).toEqual([])
+  })
+
   it("starts agy on that machine over ssh, on the account's own folder there with Koloft's title and hook scripts from its machine package, the owner's own settings and hooks kept, the API key in the tab's env, and the folder trusted when asked", async () => {
     apiKey = 'key-1'
     machine.config = {

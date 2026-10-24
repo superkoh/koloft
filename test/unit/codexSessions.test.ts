@@ -122,6 +122,22 @@ function hookListing(trustStatus: string, listed = REPLY_LANGUAGE_LISTED) {
 const historyOrTrustedHooks = async (method: string) =>
   method === 'hooks/list' ? hookListing('trusted') : { data: [], nextCursor: null }
 
+type MachineDeps = NonNullable<CodexSessionDeps['machine']>
+
+function fakeMachine(overrides: Partial<MachineDeps> = {}): MachineDeps {
+  return {
+    instance: 'test',
+    ready: async () => {},
+    run: async () => ({ code: 0, stdout: '', stderr: '' }),
+    sshArgs: () => [],
+    machinePackage: () => ({}) as never,
+    tabDir: () => directory,
+    fileExists: async () => false,
+    keyed: (machine, onMachineFile) => keyedOn(machine, onMachineFile)!,
+    ...overrides
+  }
+}
+
 function addMember(id = A, cwd = repo, worktreeResourceId?: string) {
   sessions.store.upsertMember({
     id,
@@ -315,7 +331,7 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§15 MUSE§5 AGY§8
-  it('a remembered session leaves the sessions list once a finished listing left its thread out, deleted or archived, and comes back once listed again; one bound under half a minute ago or still running stays (the shared stored-sessions rows, so Muse and Antigravity too)', async () => {
+  it('a remembered session leaves the sessions list once a finished listing left its thread out, and comes back once listed again; an archived one stays for its unarchive hint, and so do one bound under half a minute ago and one that ran after that listing (the shared stored-sessions rows, so Muse and Antigravity too)', async () => {
     const C = '33333333-3333-4333-8333-333333333333'
     const D = '44444444-4444-4444-8444-444444444444'
     addMember(A)
@@ -329,7 +345,7 @@ describe('CodexSessions', () => {
       createdAt: Date.now(),
       updatedAt: Date.now()
     })
-    await sessions.launch({ kind: 'codex', cwd: repo })
+    const { id: tab } = await sessions.launch({ kind: 'codex', cwd: repo })
     bind(0, D)
     sessions.store.updateMember(codexSessionKey(D), { updatedAt: 1 })
     mocks.request.mockImplementation(async (_method, params) => ({
@@ -341,31 +357,24 @@ describe('CodexSessions', () => {
         .rows(repo)
         .map((row) => row.id)
         .sort()
-    expect(shown()).toEqual([codexSessionKey(C), codexSessionKey(D)])
+    const stays = [B, C, D].map((id) => codexSessionKey(id))
+    expect(shown()).toEqual(stays)
+    await sessions.stop(tab)
+    await sessions.refreshHistory()
+    expect(shown()).toEqual(stays)
     mocks.request.mockImplementation(async (_method, params) => ({
-      data: params.archived
-        ? []
-        : [
-            { id: A, cwd: repo },
-            { id: B, cwd: repo }
-          ]
+      data: [{ id: params.archived ? B : A, cwd: repo }]
     }))
     await sessions.refreshHistory()
     expect(shown()).toEqual([A, B, C, D].map((id) => codexSessionKey(id)))
   })
 
   // CODEX§16
-  it("a remembered session on a remote machine stays through a listing of this Mac alone, and leaves once that machine's own listing left it out", async () => {
-    deps.machine = {
-      instance: 'test',
-      ready: async () => {},
-      run: async () => ({ code: 0, stdout: '', stderr: '' }),
-      sshArgs: () => [],
-      machinePackage: () => ({}) as never,
-      tabDir: () => directory,
-      fileExists: async () => false,
-      keyed: (machine, onMachineFile) => keyedOn(machine, onMachineFile)!
-    }
+  it("a remembered session on a remote machine stays through a listing of this Mac alone and while the machine shows no Codex home, and leaves once that machine's own listing left it out", async () => {
+    let homeThere = false
+    deps.machine = fakeMachine({
+      run: async () => ({ code: homeThere ? 0 : 1, stdout: '', stderr: '' })
+    })
     const remoteRepo = keyedOn('box', '/srv/repo')!
     const key = codexSessionKey(A, 'box')
     sessions.store.upsertMember({
@@ -380,6 +389,9 @@ describe('CodexSessions', () => {
     mocks.request.mockImplementation(async () => ({ data: [] }))
     await sessions.refreshHistory()
     expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
+    await sessions.refreshMachineHistory('box', true)
+    expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
+    homeThere = true
     await sessions.refreshMachineHistory('box', true)
     expect(sessions.rows(remoteRepo)).toEqual([])
   })
@@ -506,16 +518,10 @@ describe('CodexSessions', () => {
     expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(true)
 
     const onMachine = new Set<string>()
-    deps.machine = {
-      instance: 'test',
-      ready: async () => {},
-      run: async () => ({ code: 0, stdout: '', stderr: '' }),
-      sshArgs: () => [],
-      machinePackage: () => ({}) as never,
-      tabDir: () => directory,
+    deps.machine = fakeMachine({
       fileExists: async (file) => onMachine.has(file),
       keyed: (machine, onMachineFile) => `${machine}:${onMachineFile}`
-    }
+    })
     mocks.request.mockImplementation(async () => ({
       thread: { id: B, cwd: '/srv/repo', path: '/srv/rollout-b.jsonl' }
     }))

@@ -101,6 +101,7 @@ import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
   type HistoryEntry,
+  type HistoryListing,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
@@ -382,10 +383,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       )
   }
 
-  protected async listHistory(): Promise<
-    { key: string; entry: HistoryEntry; archived: boolean }[]
-  > {
-    const startedAt = Date.now()
+  protected async listHistory(): Promise<HistoryListing<HistoryEntry>> {
     const local = await listAgyConversations(this.gemini)
     const { remote } = this.deps
     const hosts = remote.hosts()
@@ -394,6 +392,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         this.remoteHistory.delete(host)
         this.listedAt.delete(host)
       }
+    const listedHosts: string[] = []
     // AGY§8
     await Promise.all(
       hosts
@@ -408,15 +407,18 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             host,
             historyEntries(rows).map((e) => ({ ...e, cwd: remote.keyed(host, e.cwd) }))
           )
-          this.listedAt.set(host, startedAt)
+          listedHosts.push(host)
         })
     )
-    return [
-      ...local.map((entry) => ({ key: agySessionKey(entry.id), entry, archived: false })),
-      ...[...this.remoteHistory].flatMap(([host, entries]) =>
-        entries.map((entry) => ({ key: agySessionKey(entry.id, host), entry, archived: false }))
-      )
-    ]
+    return {
+      entries: [
+        ...local.map((entry) => ({ key: agySessionKey(entry.id), entry, archived: false })),
+        ...[...this.remoteHistory].flatMap(([host, entries]) =>
+          entries.map((entry) => ({ key: agySessionKey(entry.id, host), entry, archived: false }))
+        )
+      ],
+      listedHosts
+    }
   }
 
   async transcriptExists(key: string): Promise<boolean> {
