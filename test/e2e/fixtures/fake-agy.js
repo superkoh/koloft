@@ -1876,7 +1876,9 @@ function openLaunchConversation() {
     const last = readJson(paths.lastConversations, {})[workspace]
     if (last) openStored(last)
   }
-  if (conversation) setAgentState('initializing')
+  if (!conversation) return
+  if (phase !== 'prompt') term.agentState = signedIn() ? 'initializing' : 'authenticating'
+  runScripts()
 }
 
 function nextPhase() {
