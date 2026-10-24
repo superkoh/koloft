@@ -205,7 +205,7 @@ describe('CodexObservation', () => {
       },
       0
     )
-    expect(f.observer.openQuestion()).toEqual({ id: 0, ...asked })
+    expect(f.observer.openQuestion()).toEqual({ id: 0, ...asked, ownWords: true })
     f.observer.receive('client', { id: 0, result: { answers: { colour: { answers: ['Green'] } } } })
     expect(f.observer.openQuestion()).toBeUndefined()
 
