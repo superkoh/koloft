@@ -234,9 +234,6 @@ export class WorkspaceManager {
   }
 
   start(): void {
-    try {
-      fs.mkdirSync(this.deps.projectsRoot, { recursive: true })
-    } catch {}
     this.watchRoots()
     this.scheduleRescan()
   }
@@ -985,6 +982,7 @@ export class WorkspaceManager {
 
   private watchRoot(root: string): void {
     try {
+      fs.mkdirSync(root, { recursive: true })
       const watcher = fs.watch(root, (_event, filename) => {
         if (!filename) return
         if (

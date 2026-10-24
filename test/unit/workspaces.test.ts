@@ -1406,6 +1406,20 @@ describe('remote workspace: reading the mirror', () => {
     expect(row.cwd).toBe(RPATH)
   })
 
+  it('finds a mirrored transcript whose folder a pull brings after start, on a machine with no mirror yet, with no other rescan', async () => {
+    own('first-1')
+    bindings.set('first-1', 'tab-1')
+    mgr = remoteMgr()
+    mgr.start()
+    await mgr.firstScan
+    expect(latest(RKEY).rows).toEqual([])
+
+    writeMirrorJsonl('first-1')
+    await vi.waitFor(() => expect(latest(RKEY).rows.map((r) => r.id)).toEqual(['first-1']), {
+      timeout: 5000
+    })
+  })
+
   it('offers a search every Claude row of every pinned workspace, listed or removed, local or mirrored, with the transcript it came from', async () => {
     writeMirrorJsonl('abc')
     writeJsonl(repo, 'listed')
