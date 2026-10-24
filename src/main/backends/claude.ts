@@ -26,7 +26,13 @@ import { publicClaudeSession } from '../host/hosts'
 import type { MachineAccount, SshHost } from '../host/sshHost'
 import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
-import { AGENT_DROP_NAME, REQUEST_NAME, replyJson, type AgentReply } from '../agentRequests'
+import {
+  AGENT_DROP_NAME,
+  REQUEST_NAME,
+  replyJson,
+  tabSpokenFor,
+  type AgentReply
+} from '../agentRequests'
 import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../remote/launch'
 import {
   dq,
@@ -185,7 +191,7 @@ export class ClaudeBackend implements SessionBackend {
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
-  agentReply?: (tabId: string, raw: unknown) => Promise<AgentReply>
+  agentReply?: (tabId: string | undefined, raw: unknown) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
 
@@ -583,7 +589,9 @@ export class ClaudeBackend implements SessionBackend {
     const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown }
     const byTmux = typeof r.tmux === 'string' && r.tmux && this.tabRunningTmux(r.tmux, machine)
     if (byTmux) return byTmux
-    const tabId = typeof r.tabId === 'string' ? r.tabId : ''
+    const asked = typeof r.tabId === 'string' ? r.tabId : ''
+    const facts = this.d.pty.get(asked)
+    const tabId = facts ? tabSpokenFor(asked, facts) : asked
     if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
     const other = this.d.otherTabOnMachine?.(
       machine,
@@ -593,9 +601,14 @@ export class ClaudeBackend implements SessionBackend {
     return other && this.d.pty.get(other) ? other : undefined
   }
 
+  private fromOwnWorkbenchShell(raw: unknown): boolean {
+    const { tabId } = (raw ?? {}) as { tabId?: unknown }
+    return typeof tabId === 'string' && !!this.d.pty.get(tabId)?.util
+  }
+
   private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
     const tabId = this.callerOnMachine(machine, raw)
-    if (!tabId || !this.agentReply) return
+    if (!this.agentReply || (!tabId && !this.fromOwnWorkbenchShell(raw))) return
     void this.agentReply(tabId, raw).then((reply) =>
       this.d.hosts.machine(machine).answerAgent(requestId, replyJson(reply))
     )
