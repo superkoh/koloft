@@ -13,6 +13,7 @@ function record(sessionId: string, outTok: number): UsageRecord {
     inTok: 1,
     outTok,
     cacheWriteTok: 0,
+    cacheWrite1hTok: 0,
     cacheReadTok: 0,
     surchargeUsd: 0
   }

@@ -176,7 +176,8 @@ function tokenCountsOf(t: WireTokens): TokenCounts {
     inTok: Math.max(0, t.inputTokens - t.cachedInputTokens),
     outTok: t.outputTokens,
     cacheReadTok: t.cachedInputTokens,
-    cacheWriteTok: t.cacheWriteInputTokens ?? 0
+    cacheWriteTok: t.cacheWriteInputTokens ?? 0,
+    cacheWrite1hTok: 0
   }
 }
 

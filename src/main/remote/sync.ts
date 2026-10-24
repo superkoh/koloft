@@ -42,6 +42,7 @@ export interface ExtraPull {
   from: string
   to: string
   flags: string[]
+  failsQuietly?: boolean
 }
 
 export interface RemoteTarget {
@@ -337,10 +338,16 @@ export class RemoteSync {
           HOOK_FLAGS
         )
         const pulls = [transcripts, hooks]
-        for (const [i, extra] of extras.entries())
-          pulls.push(
-            await pull(`extra ${extra.from}`, mirrors.extras[i], extra.from, extra.to, extra.flags)
+        for (const [i, extra] of extras.entries()) {
+          const r = await pull(
+            `extra ${extra.from}`,
+            mirrors.extras[i],
+            extra.from,
+            extra.to,
+            extra.flags
           )
+          if (!extra.failsQuietly) pulls.push(r)
+        }
         const failed = pulls.find((r) => r && r.code !== 0)
         st.problem = failed && problemOf(failed)
         if (!hooks || hooks.code === 0) this.deps.onHooksPulled?.(host)

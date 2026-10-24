@@ -834,6 +834,13 @@ the moment its CC starts removing and finishes the removal if Koloft quits first
   direct `--resume` of a running background session is refused with a message naming
   `claude attach <id>` (not re-measured). `claude --resume <id> --fork-session` still
   makes ANOTHER copy, it is not a takeover.
+- **A fork's transcript repeats the parent's usage lines word for word** (2026-10-24,
+  CC 2.1.310, `claude -p --resume <id> --fork-session` on a two-request session): the
+  new file starts with every parent line, same `uuid`, `timestamp`, `message.id`,
+  `requestId` and `usage`, only `sessionId` rewritten to the new id; then its own lines.
+  Its `total_cost_usd` (0.022033) is the parent's (0.0201139) plus its own one request,
+  so the copied history counts toward CC's own figure too. Telling a copied call from
+  the original needs the other file.
 - **Interactive sessions have NO re-entry guard**: resuming an already-running normal
   session is not blocked — the same session can be written by two processes at once
   (measured loss, 2026-08-20). The "already running … split-brain" refusal belongs to

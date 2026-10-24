@@ -35,7 +35,7 @@ export function usagePulls(
 ): ExtraPull[] {
   const dirs = machineUsageDirs(userData, host)
   const codexHome = REMOTE_CODEX_HOME.replace(IN_HOME, '')
-  return [
+  const pulls: ExtraPull[] = [
     ...(uses.codex
       ? CODEX_ROLLOUT_FOLDERS.map((folder) => ({
           from: `${codexHome}/${folder}`,
@@ -64,4 +64,5 @@ export function usagePulls(
         ]
       : [])
   ]
+  return pulls.map((p) => ({ ...p, failsQuietly: true }))
 }

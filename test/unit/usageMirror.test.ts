@@ -12,6 +12,7 @@ describe('usagePulls', () => {
       '.local/share/muse/sessions',
       '.gemini/antigravity-cli/conversations'
     ])
+    expect(all.every((p) => p.failsQuietly)).toBe(true)
   })
 
   it('lands each pull where the lister reads that machine, and copies conversation dbs whole', () => {

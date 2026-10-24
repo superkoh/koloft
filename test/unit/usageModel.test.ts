@@ -16,6 +16,7 @@ function row(o: Partial<UsageRow>): UsageRow {
     inTok: 1_000_000,
     outTok: 0,
     cacheWriteTok: 0,
+    cacheWrite1hTok: 0,
     cacheReadTok: 0,
     surchargeUsd: 0,
     ...o

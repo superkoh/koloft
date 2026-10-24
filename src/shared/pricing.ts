@@ -2,6 +2,7 @@ export interface ModelPricing {
   inPerM: number
   outPerM: number
   cacheWritePerM: number
+  cacheWrite1hPerM: number
   cacheReadPerM: number
   windowTokens: number
   longContext?: LongContextTier
@@ -17,13 +18,21 @@ export interface LongContextTier {
 const M = 1_000_000
 const K200 = 200_000
 
+// CC§7
 function tier(
   inPerM: number,
   outPerM: number,
   windowTokens: number,
   cacheReadPerM = inPerM * 0.1
 ): ModelPricing {
-  return { inPerM, outPerM, cacheWritePerM: inPerM * 1.25, cacheReadPerM, windowTokens }
+  return {
+    inPerM,
+    outPerM,
+    cacheWritePerM: inPerM * 1.25,
+    cacheWrite1hPerM: inPerM * 2,
+    cacheReadPerM,
+    windowTokens
+  }
 }
 
 const CODEX_WINDOW_TOKENS = 272_000
@@ -38,6 +47,7 @@ function openAi(
     inPerM,
     outPerM,
     cacheWritePerM: 0,
+    cacheWrite1hPerM: 0,
     cacheReadPerM,
     windowTokens: CODEX_WINDOW_TOKENS,
     longContext
@@ -70,7 +80,14 @@ export const OPENAI_PRICING: Record<string, ModelPricing> = {
 const GEMINI_WINDOW_TOKENS = 1_048_576
 
 function gemini(inPerM: number, cacheReadPerM: number, outPerM: number): ModelPricing {
-  return { inPerM, outPerM, cacheWritePerM: 0, cacheReadPerM, windowTokens: GEMINI_WINDOW_TOKENS }
+  return {
+    inPerM,
+    outPerM,
+    cacheWritePerM: 0,
+    cacheWrite1hPerM: 0,
+    cacheReadPerM,
+    windowTokens: GEMINI_WINDOW_TOKENS
+  }
 }
 
 // AGY§21
@@ -133,6 +150,7 @@ export interface TokenCounts {
   inTok: number
   outTok: number
   cacheWriteTok: number
+  cacheWrite1hTok: number
   cacheReadTok: number
 }
 
@@ -140,18 +158,9 @@ export function costUsdOf(pricing: ModelPricing, t: TokenCounts): number {
   return (
     (t.inTok * pricing.inPerM +
       t.outTok * pricing.outPerM +
-      t.cacheWriteTok * pricing.cacheWritePerM +
+      (t.cacheWriteTok - t.cacheWrite1hTok) * pricing.cacheWritePerM +
+      t.cacheWrite1hTok * pricing.cacheWrite1hPerM +
       t.cacheReadTok * pricing.cacheReadPerM) /
-    1_000_000
-  )
-}
-
-const ONE_HOUR_CACHE_WRITE_INPUT_MULTIPLE = 2
-
-// CC§7
-export function oneHourCacheWriteSurchargeUsd(pricing: ModelPricing, oneHourTok: number): number {
-  return (
-    (oneHourTok * (pricing.inPerM * ONE_HOUR_CACHE_WRITE_INPUT_MULTIPLE - pricing.cacheWritePerM)) /
     1_000_000
   )
 }

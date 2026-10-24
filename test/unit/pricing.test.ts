@@ -59,6 +59,7 @@ describe('resolvePricing — exact then longest-prefix match', () => {
       expect(resolvePricing(id)).toEqual({
         ...expected,
         cacheWritePerM: 0,
+        cacheWrite1hPerM: 0,
         windowTokens: 1_048_576
       })
     }

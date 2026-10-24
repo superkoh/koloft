@@ -71,7 +71,7 @@ async function scanAll(files: UsageFile[]): Promise<void> {
     try {
       scanned = await scan(f)
     } catch {
-      scanned = { records: [] }
+      continue
     }
     parentPort?.postMessage({ file: f.file, ...scanned })
   }

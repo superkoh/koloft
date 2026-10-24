@@ -61,6 +61,7 @@ describe('scanClaudeLines', () => {
         inTok: 12,
         outTok: 1231,
         cacheWriteTok: 100,
+        cacheWrite1hTok: 0,
         cacheReadTok: 1000,
         surchargeUsd: 0
       }
@@ -124,8 +125,8 @@ describe('scanClaudeLines', () => {
       }
     })
     const [rec] = scanClaudeLines(lines(sonnetCall, sonnetCall))
-    const cost = costUsdOf(resolvePricing(rec.model)!, rec) + rec.surchargeUsd
-    expect(cost).toBeCloseTo(0.0235773, 9)
+    expect(rec.cacheWrite1hTok).toBe(5600)
+    expect(costUsdOf(resolvePricing(rec.model)!, rec) + rec.surchargeUsd).toBeCloseTo(0.0235773, 9)
   })
 })
 
@@ -188,6 +189,7 @@ describe('scanCodexLines', () => {
           inTok: 200,
           cacheReadTok: 800,
           cacheWriteTok: 50,
+          cacheWrite1hTok: 0,
           outTok: 30,
           surchargeUsd: 0
         }
@@ -280,6 +282,7 @@ describe('scanMuseLines', () => {
         inTok: 1000,
         cacheReadTok: 100,
         cacheWriteTok: 7,
+        cacheWrite1hTok: 0,
         outTok: 11,
         surchargeUsd: 0
       }
