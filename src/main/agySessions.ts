@@ -509,6 +509,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       {
+        backend: 'agy',
         open: (target) => this.deps.events(tabId, { type: 'open', target }),
         agent: agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw))
       }

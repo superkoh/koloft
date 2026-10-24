@@ -68,6 +68,8 @@ process.stdin.on('data', (chunk) => {
   setTimeout(() => {
     fs.appendFileSync(log, JSON.stringify({ payload_type: 'session.name.changed', payload: { new_name: 'renamed', source: 'user' } }) + '\\n')
     fs.appendFileSync(log, JSON.stringify({ payload_type: 'runtime.session', payload: { kind: 'run', event: { kind: 'assistant_message_committed', text: 'not forwarded' } } }) + '\\n')
+    fs.appendFileSync(log, JSON.stringify({ payload_type: 'runtime.command.accepted', payload: { command_kind: 'context.compact.manual' } }) + '\\n')
+    fs.appendFileSync(log, JSON.stringify({ payload_type: 'context.compact.manual.outcome', payload: { terminal_outcome: 'compacted' } }) + '\\n')
     process.stdout.write(ESC + ']7501;state=blocked:app=muse:kind=permission' + ESC + '\\\\')
   }, 1500)
   setTimeout(() => process.exit(7), 3000)
@@ -117,7 +119,7 @@ const lines = (file: string): Record<string, unknown>[] =>
 describe.skipIf(!PYTHON_WITH_PTY)(
   'muse-wrap.py, the python3 pty wrapper a remote Muse tab runs in tmux',
   () => {
-    it("answers Muse's status query itself, sends each state on as a numbered tmux passthrough and as a mirror line, names the tmux session after the bound session, forwards renames from the log, and exits with Muse's code", async () => {
+    it("answers Muse's status query itself, sends each state on as a numbered tmux passthrough and as a mirror line, names the tmux session after the bound session, forwards renames and a manual /compact's start and end from the log, and exits with Muse's code", async () => {
       const m = machine()
       installFakeMuse(m)
       const { code, out } = await runWrapper(m, [])
@@ -131,15 +133,28 @@ describe.skipIf(!PYTHON_WITH_PTY)(
       )
       const hookDir = path.join(m.home, '.koloft', 'hook-sessions')
       const mirror = lines(path.join(hookDir, 'pty-1.muse.jsonl'))
-      expect(mirror).toHaveLength(4)
+      expect(mirror).toHaveLength(6)
       expect(mirror).toEqual(
         expect.arrayContaining([
           { t: 'state', seq: 1, state: 'idle', kind: null },
           { t: 'bound', sessionId: SID },
           {
             t: 'log',
+            seq: expect.any(Number),
             payloadType: 'session.name.changed',
             payload: { new_name: 'renamed', source: 'user' }
+          },
+          {
+            t: 'log',
+            seq: expect.any(Number),
+            payloadType: 'runtime.command.accepted',
+            payload: { command_kind: 'context.compact.manual' }
+          },
+          {
+            t: 'log',
+            seq: expect.any(Number),
+            payloadType: 'context.compact.manual.outcome',
+            payload: { terminal_outcome: 'compacted' }
           },
           { t: 'state', seq: 2, state: 'blocked', kind: 'permission' }
         ])

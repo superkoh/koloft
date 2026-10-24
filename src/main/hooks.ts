@@ -226,8 +226,12 @@ export function statusLogOf(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}${STATUS_LOG_SUFFIX}`)
 }
 
+const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
+const ASK_GIVES_UP_A_MINUTE_BEFORE_CLAUDE_ENDS_IT_S = ASK_WAITS_UP_TO_AN_HOUR_S - 60
+
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
+SECONDS=0
 reg="$1"; tab="$2"; event="$3"
 [ -z "$reg" ] && exit 0
 [ -z "$tab" ] && exit 0
@@ -256,6 +260,9 @@ session_id() {
     tr -d '"\\\\[:cntrl:]'
 }
 ${QUOTE_PROMPT_FN}
+log_ask() {
+  printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$log"
+}
 case "$event" in
   start|end)
     sid="$(session_id)"
@@ -302,12 +309,21 @@ case "$event" in
     trap 'exit 143' TERM
     mkfifo "$tick" 2>/dev/null || exit 0
     printf '%s' "$input" > "$ask.tmp" && mv "$ask.tmp" "$ask"
-    while [ ! -f "$answer" ]; do read -t 1 <> "$tick"; done
+    while [ ! -f "$answer" ]; do
+      if [ "$SECONDS" -ge "\${KOLOFT_ASK_GIVES_UP_AFTER_S:-${ASK_GIVES_UP_A_MINUTE_BEFORE_CLAUDE_ENDS_IT_S}}" ]; then
+        rm -f "$ask"
+        read -t 1 <> "$tick"
+        [ -f "$answer" ] && break
+        log_ask
+        exit 0
+      fi
+      read -t 1 <> "$tick"
+    done
     cat "$answer"
     ;;
   asked)
     # CC§14
-    printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$log"
+    log_ask
     ;;
   posttool)
     # PLATFORM§36
@@ -475,8 +491,6 @@ const NOTIFICATIONS_WAITING_ON_THE_PERSON = [
   'elicitation_dialog',
   'elicitation_url_dialog'
 ].join('|')
-
-const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
 
 // CC§6 CC§9 CC§14
 export function hookSettings(

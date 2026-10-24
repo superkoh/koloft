@@ -8,7 +8,8 @@ import type {
   BackendSessionRow,
   CreateTabOptions,
   HostId,
-  CodexResetOutcome
+  CodexResetOutcome,
+  LaunchPermission
 } from '@shared/types'
 import { CODEX_RESET_OUTCOMES } from '@shared/types'
 import { barePath, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
@@ -119,6 +120,11 @@ export const CODEX_TAB_ENV = {
 
 const sourceKinds = ['cli', 'vscode', 'appServer']
 
+// CODEX§15
+const rolloutFiles = (listedPath: string): string[] => [listedPath, listedPath + '.zst']
+const rolloutOnThisMac = (listedPath: string): boolean =>
+  rolloutFiles(listedPath).some((f) => fs.existsSync(f))
+
 async function* everyPage(
   rpc: CodexRpc,
   method: string,
@@ -184,6 +190,7 @@ export interface CodexSessionDeps extends StoredSessionDeps {
   pickHome(resumeSessionId?: string): { account: string; home: string; notice?: string } | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   replyLanguageScript: string
+  builtInStatusLine(): boolean
   browserEndpoint(tabId: string): string
   openShimRoot: string
   playwrightBin: string
@@ -257,7 +264,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     options: Parameters<typeof createCodexTransport>[0]
   ): Promise<CodexTransport> {
     // CODEX§5
-    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG)
+    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(CODEX_ASKS_AND_WAITS)
       .catch(() => {})
       .then(() => {
         removeFoldersLeftByEndedRuns(CODEX_TMP_DIR, CODEX_TMP_FOLDER)
@@ -606,14 +613,19 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     if (this.archivedIds.has(key)) return false
     const machine = hostOfKey(key)
     const listed = machine ? undefined : this.history.get(key)?.path
-    if (listed && fs.existsSync(listed)) return true
+    if (listed && rolloutOnThisMac(listed)) return true
     const id = this.nativeId(key)
     const file = await this.withRpcFor(key, async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       return userThread(reply.thread)?.path
     })
     if (!file) return false
-    return machine ? this.machineDeps().fileExists(keyedOn(machine, file)!) : fs.existsSync(file)
+    if (!machine) return rolloutOnThisMac(file)
+    const m = this.machineDeps()
+    const found = await Promise.all(
+      rolloutFiles(file).map((f) => m.fileExists(keyedOn(machine, f)!))
+    )
+    return found.includes(true)
   }
 
   openApproval(tabId: string): CodexApproval | undefined {
@@ -635,6 +647,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
       return codexTurns(record(reply.thread).turns).last(n)
     })
+  }
+
+  // CODEX§11
+  protected permissionOf(opts: CreateTabOptions): LaunchPermission {
+    return opts.resumeSessionId ? (opts.permission ?? 'default') : super.permissionOf(opts)
   }
 
   protected prepare(opts: CreateTabOptions): CodexLaunch {
@@ -713,8 +730,9 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       ...(agent && !conductor ? [koloftPrompt('codex')] : []),
       ...(role ? [role] : [])
     ]
-    const permission = opts.permission ?? 'default'
+    const permission = this.permissionOf(opts)
     const permissions = PERMISSIONS[permission]
+    const builtInStatusLine = this.deps.builtInStatusLine()
     const processOptions: CodexProcessOptions = {
       binary,
       env,
@@ -734,7 +752,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       },
       cwd,
       configOverrides: [
-        STATUS_LINE_CONFIG,
+        ...(builtInStatusLine ? [STATUS_LINE_CONFIG] : []),
         ...browser,
         ...gitNetwork,
         ...(instructions.length ? [developerInstructions(instructions)] : []),
@@ -797,8 +815,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         transport.url,
         '-C',
         barePath(cwd),
-        '-c',
-        STATUS_LINE_CONFIG,
+        ...(builtInStatusLine ? ['-c', STATUS_LINE_CONFIG] : []),
         '-c',
         NO_UPDATE_NOTICE_AT_START,
         ...(opts.resumeSessionId ? [] : launchFlags),
@@ -939,7 +956,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   ): { shimDir: string; zdotDir: string; release(): void } {
     const { shim, release } = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
-      { userZdotdir, open, agent }
+      { backend: 'codex', userZdotdir, open, agent }
     )
     return { shimDir: shim.shimDir, zdotDir: shim.zdotDir, release }
   }

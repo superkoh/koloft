@@ -391,7 +391,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // ADR-0029
-  test('a real Claude conductor told not to ask a session checks a pull request itself with koloft gh, naming the repository the owner named', async ({
+  test('a real Claude conductor told not to ask a session checks a pull request itself: its answer has the title only GitHub knows, and its gh call names the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -714,7 +714,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // ADR-0029
-  test('a real Codex conductor checks a pull request itself with koloft gh, naming the repository the owner named', async ({
+  test('a real Codex conductor checks a pull request itself: its answer has the title only GitHub knows, and its gh call names the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)

@@ -343,8 +343,9 @@
           </li>
           <li>
             You can also talk to it from your phone, once it has a Discord channel (see
-            <a href="../discord/">discord</a>), and from <kbd>⌘P</kbd> (see
-            <a href="../sessions/#find">find any session</a>).
+            <a href="../discord/">discord</a>). With Assist on, what you type in <kbd>⌘P</kbd> that
+            Koloft cannot do by itself goes to a helper of your butler, which reports back to it
+            (see <a href="../sessions/#find">find any session</a>).
           </li>
         </ul>
 
@@ -357,8 +358,8 @@
           <li>list every session in every folder, open or closed, and list your folders</li>
           <li>
             start a session in a folder on this Mac, in a worktree of its own when the folder is a
-            git repo; or start a helper in its own folder for a side job, which hangs under its row
-            and reports back
+            git repo; or start a helper in its own folder for a job outside your projects, which
+            hangs under its row and reports back
           </li>
           <li>
             hear a session's reply: when it hands work to a session, or answers its question, Koloft
@@ -386,7 +387,6 @@
         </ul>
         <p>It cannot:</p>
         <ul class="dash">
-          <li>start a session in a <a href="../remote/">remote folder</a></li>
           <li>close an open session it did not start <span class="why">(stop it first)</span></li>
           <li>
             close a session on another machine
@@ -395,8 +395,9 @@
         </ul>
         <p>
           It has no tool limits of its own: it follows your <code>Skip permission prompts</code>
-          setting like any session. It is told that work belonging to a project goes to that
-          project's sessions, and to ask you before deleting or undoing anything.
+          setting like any session. It is told to only talk with you and pass messages, never to do
+          a task itself: project work goes to a session in that project's folder, anything else to a
+          helper. It is also told to ask you before deleting or undoing anything.
         </p>
         <p>
           It reaches every kind of session the same way, with <code>koloft session send</code>,
