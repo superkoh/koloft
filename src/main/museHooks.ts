@@ -10,7 +10,7 @@ import {
   seedHandedOverOwnerWords,
   type HoldScript
 } from './hooks'
-import { FROM_A_SESSION } from './crossSessionMessage'
+import { FROM_A_SESSION, FROM_KOLOFT } from './crossSessionMessage'
 import { record } from './codexObservation'
 import { HOLD_HOOK_TIMEOUT_S } from './resourceGuard'
 import { REMOTE_HOOK_DIR } from './remote/paths'
@@ -47,7 +47,7 @@ case "$event" in
   SessionStart) [ -f "$3" ] && cat "$3" ;;
   UserPromptSubmit)
     case "$input" in
-      *'"prompt":"${FROM_A_SESSION}'*) ;;
+      *'"prompt":"${FROM_A_SESSION}'*|*'"prompt":"${FROM_KOLOFT}'*) ;;
       *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
     esac
     remind_reply_language UserPromptSubmit ;;
