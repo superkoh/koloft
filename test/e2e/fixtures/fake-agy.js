@@ -1868,6 +1868,17 @@ function crash(error) {
   process.exit(70)
 }
 
+function openLaunchConversation() {
+  const wanted = flag('--conversation')
+  if (typeof wanted === 'string' && wanted) {
+    if (!openStored(wanted)) say(`warning: conversation "${wanted}" not found`)
+  } else if (flag('-c', '--continue') === true) {
+    const last = readJson(paths.lastConversations, {})[workspace]
+    if (last) openStored(last)
+  }
+  if (conversation) setAgentState('initializing')
+}
+
 function nextPhase() {
   if (!signedIn()) return showSignIn()
   if (!onboardingDone()) return showColorScheme()
@@ -1999,13 +2010,6 @@ function enterPrompt() {
   )
   if (acceptEdits) say('Accept-edits mode: file edits auto-approved')
   if (planMode) say('Plan mode: research & plan only')
-  const wanted = flag('--conversation')
-  if (typeof wanted === 'string' && wanted) {
-    if (!openStored(wanted)) say(`warning: conversation "${wanted}" not found`)
-  } else if (flag('-c', '--continue') === true) {
-    const last = readJson(paths.lastConversations, {})[workspace]
-    if (last) openStored(last)
-  }
   sendFrame('idle')
   term.agentState = 'idle'
   runScripts()
@@ -2274,6 +2278,9 @@ async function startTui() {
         onboardingComplete: false
       })
     )
+  const openMs = Number(readSentinel('fake-agy-open-ms', '0'))
+  if (openMs > 0) setTimeout(openLaunchConversation, openMs)
+  else openLaunchConversation()
   nextPhase()
 }
 

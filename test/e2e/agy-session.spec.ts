@@ -564,6 +564,57 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
+  // AGY§5
+  test('a cold row resumed in a folder agy no longer trusts is masked as resuming until agy names the conversation, which it does before the trust question is answered, so the mask lifts with the question on screen; yes carries on in the same conversation', async ({
+    env
+  }) => {
+    installAgy(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startAgy(page, env)
+      await expect(centerTerm(page)).toContainText('Do you trust the contents of this project?', {
+        timeout: 30_000
+      })
+      await centerTerm(page).click()
+      await page.keyboard.press('1')
+      await runIn(page, centerTerm(page), 'trust me again later')
+      await expect(agyRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      const { id } = await boundAgy(page)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await expect(agyRows(page)).toHaveClass(/cold/)
+
+      const settingsFile = path.join(accountHome(env), 'antigravity-cli', 'settings.json')
+      const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8')) as Record<string, unknown>
+      fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, trustedWorkspaces: [] }))
+      fs.writeFileSync(path.join(env.home, 'fake-agy-open-ms'), '3000')
+
+      await agyRows(page).click()
+      const mask = page.locator('.term-wrap:visible .empty', { hasText: 'Resuming' })
+      await expect(mask).toBeVisible({ timeout: 20_000 })
+      await expect.poll(() => sessionCalls(env).length).toBe(2)
+      expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
+        '--dangerously-skip-permissions',
+        `--conversation=${id}`
+      ])
+
+      await expect(mask).toHaveCount(0, { timeout: 30_000 })
+      expect((await boundAgy(page)).id).toBe(id)
+      await expect(centerTerm(page)).toContainText('Do you trust the contents of this project?')
+      await centerTerm(page).click()
+      await page.keyboard.press('1')
+      await runIn(page, centerTerm(page), 'trusted once more')
+      await expect
+        .poll(() => transcriptOf(env, id), { timeout: 30_000 })
+        .toContain('Answer to: trusted once more')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('an Antigravity tab still open when Koloft quits comes back running the same conversation after a restart', async ({
     env
   }) => {
