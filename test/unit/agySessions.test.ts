@@ -360,6 +360,27 @@ describe('AgySessions launch', () => {
     expect(hook(off.id, 'SessionStart')).toBe('')
   })
 
+  // AGY§26
+  it('lets agy run koloft commands without an ask only when agent tools are on, here and on a remote machine', async () => {
+    const allowHere = (): unknown =>
+      JSON.parse(
+        fs.readFileSync(path.join(picked!.home, 'antigravity-cli', 'settings.json'), 'utf8')
+      ).permissions
+    agentTools = true
+    await launch()
+    expect(allowHere()).toEqual({ allow: ['command(koloft)'] })
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r' })
+    const there = JSON.parse(machine.launches[0].program.files['pty-r.settings.json'])
+    expect(there.permissions).toEqual({ allow: ['command(koloft)'] })
+    agentTools = false
+    await launch()
+    expect(allowHere()).toBeUndefined()
+    machine.config = { ...machine.config, ownSettings: there }
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r2' })
+    const after = JSON.parse(machine.launches[1].program.files['pty-r2.settings.json'])
+    expect(after.permissions).toBeUndefined()
+  })
+
   // AGY§9 AGY§24
   it('refuses to resume a conversation another agy process holds open, and resumes one whose lock nobody holds', async () => {
     storedMember(A)
