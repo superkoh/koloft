@@ -231,22 +231,43 @@ your Mac
           <span class="nowrap">"[Discord]"</span> in front. It gets a ⏳ while it waits its turn,
           and a ✅ once it is in. If the butler is not open, your first message starts it; the ⏳
           stays until it is ready. Files you attach are saved on your Mac for 7 days, and the butler
-          is told where they are. Everything your butler writes back comes to the channel, and while
-          it works the channel shows the bot typing.
+          is told where they are. Its answer to what you wrote comes back to the channel, and while
+          it works on it the channel shows the bot typing.
         </p>
         <p>
           When your butler asks you something, its card reads
           <code>❓ Alfred is waiting for you.</code>, with a button per option when the question has
-          options.
+          options. Once the question is answered, by a button, a typed reply or at the Mac, the card
+          loses its buttons and says how it ended, like <code>✅ Answered: 2</code>,
+          <code>✅ Answered on the computer.</code> or <code>⏹ The session closed.</code>
+        </p>
+
+        <h3 id="at-the-mac">While you use the Mac</h3>
+        <p>
+          While you use the Mac (a key or the mouse in the last 5 minutes, and the screen not
+          locked), Discord stays quiet: you see your butler in Koloft. What it writes that you did
+          not send from Discord is not posted, and the bot does not type. A question it asks waits,
+          and comes to the channel when you leave (the screen locks, or 5 minutes go by with no
+          input) if it is still open. Write from Discord and the answer still comes back there; if a
+          question was waiting, its card comes first and you are asked to answer it before anything
+          else. Password and code cards (below) always come to Discord.
         </p>
 
         <h3>Your sessions</h3>
         <p>
           Your sessions do not post to Discord. When your butler hands a session work, Koloft hands
           the session's reply back to the butler once its turn ends, and the butler tells you. A
-          session's question shows only at the Mac: ask your butler what it is waiting on, and tell
-          it what to pick. It reads the session's screen and answers, or presses the keys, as you
-          would at the Mac. See <a href="../accounts/#what-it-can-do">what your butler can do</a>.
+          question from a session in one of your folders shows only at the Mac: ask your butler what
+          it is waiting on, and tell it what to pick. It reads the session's screen and answers, or
+          presses the keys, as you would at the Mac. See
+          <a href="../accounts/#what-it-can-do">what your butler can do</a>.
+        </p>
+        <p>
+          A helper your butler started in its own folder is different: its questions come to the
+          channel, titled with its name and <code>(Alfred's helper)</code>, and wait while you use
+          the Mac like the butler's own. Press a button or type a reply to answer it. When cards
+          from both wait, a typed reply answers the one posted last; a slash command still goes to
+          your butler.
         </p>
 
         <h3 id="secrets">Passwords and codes</h3>
@@ -312,6 +333,10 @@ your Mac
           out of sight and takes a picture of the whole page; a page taller than one picture comes
           as several, top to bottom, at most 10.
         </p>
+        <p>
+          While you use the Mac, both are refused unless your butler is answering what you sent from
+          Discord; it is told to show the file or page in the Workbench instead.
+        </p>
 
         <p>
           A message you send while Koloft is closed gets one answer: "Koloft was offline, this
@@ -335,7 +360,14 @@ your Mac
             <tbody>
               <tr>
                 <td>butler replies</td>
-                <td>Every reply your butler writes, whole, and its own question cards.</td>
+                <td>
+                  Every reply your butler writes, whole, and its own question cards; while you use
+                  the Mac, only its answers to what you sent from Discord.
+                </td>
+              </tr>
+              <tr>
+                <td>helper questions</td>
+                <td>The question cards of the helpers your butler started in its own folder.</td>
               </tr>
               <tr>
                 <td>files and pictures</td>
@@ -357,7 +389,10 @@ your Mac
               </tr>
               <tr>
                 <td>typing</td>
-                <td>While your butler works, a typing signal every 8 seconds.</td>
+                <td>
+                  While your butler works on what you sent, or while you are away, a typing signal
+                  every 8 seconds.
+                </td>
               </tr>
               <tr>
                 <td>errors</td>
