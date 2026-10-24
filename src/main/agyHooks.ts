@@ -3,6 +3,11 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { record } from './codexObservation'
 import {
+  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
+  FROM_A_SESSION,
+  FROM_KOLOFT
+} from './crossSessionMessage'
+import {
   HOLD_FILE,
   HOLD_TAB_ENV,
   KEEP_GOING_FOR_THE_NOTICE_FN,
@@ -28,6 +33,10 @@ export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
 const EVENTS = ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'] as const
 type AgyHookName = (typeof EVENTS)[number]
 
+const NOT_THE_OWNERS_WORDS = [FROM_A_SESSION, FROM_KOLOFT, A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS]
+  .map((opening) => `-e ${shq(`"content":"<USER_REQUEST>\\n${opening}`)}`)
+  .join(' ')
+
 // AGY§12 ADR-0031
 export const AGY_HOOK_SCRIPT = `#!/bin/sh
 : koloft agy hook
@@ -47,7 +56,7 @@ case "$event" in
   SessionStart) [ -f "$${AGY_START_ENV}" ] && cat "$${AGY_START_ENV}" ;;
   PreInvocation)
     tp="$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"transcriptPath" *: *"\\([^"]*\\)".*/\\1/p')"
-    said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\\\n//p' | sed -E 's/\\\\n<\\/USER_REQUEST>.*//; s/^.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//; s/\\\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c ${QUOTED_PROMPT_BYTES} | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\\\u[0-9a-fA-F]{0,3}$//; s/\\\\+$//')"
+    said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | grep -v -F ${NOT_THE_OWNERS_WORDS} | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\\\n//p' | sed -E 's/\\\\n<\\/USER_REQUEST>.*//; s/^.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//; s/\\\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c ${QUOTED_PROMPT_BYTES} | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\\\u[0-9a-fA-F]{0,3}$//; s/\\\\+$//')"
     [ -n "$said" ] && said=${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$said"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
     if [ -n "$turn" ]; then
       case "$(printf '%s' "$input" | tr -d ' \\n')" in *'"invocationNum":0'[,}]*) rm -f "$turn" ;; esac
