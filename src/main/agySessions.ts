@@ -896,7 +896,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (turn?.reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
     const t = await tokenTotals(file).catch(() => undefined)
     if (!t) return
-    const tokens = { inTok: t.input, outTok: t.output, cacheReadTok: t.cacheRead, cacheWriteTok: 0 }
+    const tokens = {
+      inTok: t.input,
+      outTok: t.output,
+      cacheReadTok: t.cacheRead,
+      cacheWriteTok: 0,
+      cacheWrite1hTok: 0
+    }
     const model = run.title?.model
     const pricing = model ? resolvePricing(model) : undefined
     const used = run.title?.contextUsed

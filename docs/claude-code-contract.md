@@ -460,6 +460,10 @@ Unless a bullet below says more, it is inferred, not checked.
   largest value per key gives the last line's sum on both builds, and older transcripts
   on disk still grow, so that is the rule that counts both. Only short thinking + text
   replies were measured; a long multi-block reply is not probed.
+- **A sub-agent transcript names its parent.** Every usage line of
+  `<slug>/<sessionId>/subagents/**/*.jsonl` carries the parent's `sessionId` (5042 of
+  5042 lines, 2026-10-16), and every main transcript's lines carry its file name's id
+  (10867 of 10867).
 - **Some CC versions mix subagent turns (`isSidechain: true`) into the main jsonl**,
   their usage records and Esc interrupts included; their spend is the session's, their
   context window and model are not. Which versions was not recorded.
@@ -830,6 +834,25 @@ the moment its CC starts removing and finishes the removal if Koloft quits first
   direct `--resume` of a running background session is refused with a message naming
   `claude attach <id>` (not re-measured). `claude --resume <id> --fork-session` still
   makes ANOTHER copy, it is not a takeover.
+- **A fork's transcript repeats the parent's usage lines word for word** (2026-10-24,
+  CC 2.1.310, `claude -p --resume <id> --fork-session` on a two-request session): the
+  new file starts with every parent line, same `uuid`, `timestamp`, `message.id`,
+  `requestId` and `usage`, only `sessionId` rewritten to the new id; then its own lines.
+  Its `total_cost_usd` (0.022033) is the parent's (0.0201139) plus its own one request,
+  so the copied history counts toward CC's own figure too; a plain `--resume` of the
+  parent reports its history in `total_cost_usd` the same way (`cost-state` line). Even
+  `promptId` is rewritten, so only the copy's `message.id` + `requestId` tie it to the
+  original in the other file. Which file is the parent: on `-p --fork-session` and the
+  TUI `/fork` (2026-10-24, CC 2.1.310, typed in a pty in a throwaway home; it starts
+  `claude daemon run`, writes the copy to a new transcript and the window keeps the
+  original), the fork's first line with a top-level `timestamp` is a `queue-operation`
+  at fork time, later than the parent's first. A `/background` move does not do that:
+  a `sessionKind: "bg"` transcript on the dev Mac (CC 2.1.283) opens with the copied
+  lines at their original times, so both files start at the same moment. On this
+  Mac's 4,914 transcripts (2026-10-24, ids hashed, no content read), 230 of 147,698
+  calls sit in two files: that bg move and sub-agent files sharing calls. Rechecked
+  with a parent, its fork and the parent resumed after: the three runs' own requests
+  cost $0.031692, and Koloft's Usage rows add up to that.
 - **Interactive sessions have NO re-entry guard**: resuming an already-running normal
   session is not blocked — the same session can be written by two processes at once
   (measured loss, 2026-08-20). The "already running … split-brain" refusal belongs to
@@ -1102,8 +1125,12 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   (cache read $0.20); Opus 5 $5/$25, 1M; Opus 4.6–4.8 $5/$25, 1M;
   Opus 4.5 $5/$25, 200k; Opus 4/4.1 $15/$75, 200k; Sonnet 5 $2/$10, 1M (standard rates
   since CC 2.1.243); Sonnet 4.6 $3/$15, 1M; Sonnet 4/4.5 $3/$15, 200k; Haiku 4.5 $1/$5,
-  200k. A 5-minute cache write costs 1.25× input and a cache read 0.10× input, as
-  ccusage applies them — except the 5.5-generation rows, whose cache read is their own
+  200k. A 5-minute cache write costs 1.25× input and a one-hour cache write 2× input
+  (2026-10-24, CC 2.1.310, two `claude -p --output-format json` runs on a Koloft
+  account, three requests: every cache write was `ephemeral_1h_input_tokens`, none 5m;
+  CC's own `total_cost_usd` matched 2× input on them to the cent, and the transcript's
+  `message.usage.cache_creation` carries the same split). A cache read costs 0.10×
+  input, as ccusage applies it — except the 5.5-generation rows, whose cache read is their own
   figure: Fable 5.1 $0.25, Opus 5.5 $0.20, Sonnet 5.5 $0.10 (Anthropic's pricing page,
   fetched 2026-10-11, which also gives Haiku 5.5 $0.01, the plain 0.10×). Sources (2026-07): the Anthropic model catalog (through the
   local claude-api skill reference) for current families, Anthropic's public pricing

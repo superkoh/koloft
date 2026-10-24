@@ -28,6 +28,7 @@ import type {
   SessionInfo,
   SessionSearchHits,
   SpawnedTab,
+  UsageRead,
   CronState,
   MachineState,
   DiscordStatus,
@@ -432,6 +433,14 @@ const api: KoloftApi = {
       const handler = (_e: unknown, s: Settings): void => cb(s)
       ipcRenderer.on(CH.settings.update, handler)
       return () => ipcRenderer.removeListener(CH.settings.update, handler)
+    }
+  },
+  usage: {
+    read: () => ipcRenderer.invoke(CH.usage.read),
+    onChanged: (cb) => {
+      const handler = (_e: unknown, read: UsageRead): void => cb(read)
+      ipcRenderer.on(CH.usage.changed, handler)
+      return () => ipcRenderer.removeListener(CH.usage.changed, handler)
     }
   },
   accounts: {

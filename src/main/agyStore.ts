@@ -32,7 +32,7 @@ export function agyTranscript(geminiDir: string, conversationId: string): string
   )
 }
 
-const conversationDb = (geminiDir: string, id: string): string =>
+export const conversationDb = (geminiDir: string, id: string): string =>
   path.join(geminiDir, AGY_APP_DIR, 'conversations', `${id}.db`)
 
 export interface SummaryRow {
@@ -160,7 +160,7 @@ export interface TranscriptStep {
   cacheReadTokens: number
 }
 
-function stepOf(line: string): TranscriptStep | undefined {
+export function stepOf(line: string): TranscriptStep | undefined {
   let r: Record<string, unknown>
   try {
     r = record(JSON.parse(line))

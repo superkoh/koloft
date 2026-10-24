@@ -379,6 +379,16 @@ Nothing ran against Google's real servers.
   - The user's words are `USER_INPUT.content`, still wrapped as in §2; the reply is
     `PLANNER_RESPONSE.content`; tool results are `GENERIC.content`. Tokens are on
     `PLANNER_RESPONSE` lines.
+  - What the token fields hold (2026-10-19, agy 1.3.6, `agy -p` against a fake model
+    server, two calls checked against what it sent): `input_tokens =
+    promptTokenCount − cachedContentTokenCount` (cached already taken out, unlike
+    CODEX§13), `output_tokens = candidatesTokenCount + thoughtsTokenCount`,
+    `cache_read_tokens = cachedContentTokenCount`. No line names the model: the
+    model each call used is only in `conversations/<id>.db`, table `gen_metadata`,
+    one protobuf row per call in `PLANNER_RESPONSE` order (not keyed by
+    `step_index`), `modelVersion` at field path `[1, 19]`; `executor_metadata` holds
+    the configured model at `[10, 1, 28]`. The title call leaves no `PLANNER_RESPONSE`
+    line and no `gen_metadata` row.
   - `replace_file_content` results hold a unified diff:
     `[diff_block_start]\n@@ -1,5 +1,6 @@\n-l1\n+X1\n l3\n…[diff_block_end]`, with up to
     3 unchanged lines around the change, so added and removed lines can be counted.

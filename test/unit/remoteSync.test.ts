@@ -374,6 +374,30 @@ it('copies no folder the machine says holds no files, so a machine that never ra
   expect(sync.problem('devbox')).toBeUndefined()
 })
 
+it('a quiet extra folder (usage history) that fails to copy, as a big first copy runs out of time, shows no sync problem; a plain one does', async () => {
+  sync.stop()
+  const failing = new Set(['.koloft/codex-home/sessions'])
+  sync = new RemoteSync({
+    run: () => Promise.resolve(ok('transcripts 1 10\nhooks 7 70\nextra 5 50\nk-aaa\n')),
+    rsync: (_host, remoteDir) =>
+      Promise.resolve(
+        failing.has(remoteDir) ? { code: null, stdout: '', stderr: 'timed out' } : ok('')
+      ),
+    targets: () => [target],
+    onChange: (host) => changes.push(host)
+  })
+  target.extraPulls = [
+    { from: '.koloft/codex-home/sessions', to: '/ud/x', flags: [], failsQuietly: true }
+  ]
+  sync.start()
+  await tick(1)
+  expect(sync.problem('devbox')).toBeUndefined()
+
+  target.extraPulls = [{ from: '.koloft/codex-home/sessions', to: '/ud/x', flags: [] }]
+  await tick(2000)
+  expect(sync.problem('devbox')).toBeDefined()
+})
+
 it('pulls an extra folder (agy’s brain) only when its own stamp changed, with the flags it was given', async () => {
   target.extraPulls = [{ from: '.gemini/brain', to: '/ud/remote/devbox/brain', flags: ['-m'] }]
   let brain = '5 50'

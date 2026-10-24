@@ -54,7 +54,7 @@ import {
 } from './remote/agyTab'
 import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
-import { museConfigHome } from './museSessionLog'
+import { museConfigHome, museHome } from './museSessionLog'
 import { museSignIn, storeMuseKey } from './museServe'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
@@ -158,6 +158,7 @@ import {
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
+import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
@@ -329,6 +330,8 @@ import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
+import createUsageScanWorker from './usageScanWorker?nodeWorker'
+import { UsageCache, listUsageFiles, statOf, type ScannedFile } from './usageCache'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
   attentionReason,
@@ -3245,9 +3248,10 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
+      const codexMachines = new Set(codexSessions?.machinesWithTabs())
       const live = new Set([
         ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
-        ...(codexSessions?.machinesWithTabs() ?? [])
+        ...codexMachines
       ])
       const busy = new Set(
         allSessions().flatMap((s) => {
@@ -3259,17 +3263,22 @@ app.whenReady().then(() => {
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
-        ...(agySessions?.usesHost(t.host)
-          ? {
-              extraPulls: [
+        extraPulls: [
+          ...(agySessions?.usesHost(t.host)
+            ? [
                 {
                   from: AGY_REMOTE_BRAIN,
                   to: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain'),
                   flags: AGY_BRAIN_FLAGS
                 }
               ]
-            }
-          : {}),
+            : []),
+          ...usagePulls(userData, t.host, {
+            codex: codexMachines.has(t.host) || !!codexSessions?.hasHistoryOn(t.host),
+            muse: !!museSessions?.hasHistoryOn(t.host),
+            agy: !!agySessions?.usesHost(t.host)
+          })
+        ],
         paths: t.paths,
         hasTabs: live.has(t.host),
         busy: busy.has(t.host)
@@ -5462,6 +5471,39 @@ function registerIpc(): void {
     },
     send: (found) => sendToRenderer(CH.sessions.searchHits, found)
   })
+  const usageCache = new UsageCache({
+    cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-4.json'),
+    listFiles: async () => {
+      await workspaceMgr?.firstScan
+      const userData = app.getPath('userData')
+      return listUsageFiles(workspaceMgr?.transcriptFiles() ?? [], [
+        {
+          codexHome: path.dirname(codexSharedConfig()),
+          museHome: museHome(museSessions?.defaultEnv ?? process.env),
+          geminiDir: ownersGemini()
+        },
+        ...(workspaceMgr?.remoteTargets() ?? []).map(({ host }) => machineUsageDirs(userData, host))
+      ])
+    },
+    stat: statOf,
+    scan: (files, scanned, ended) => {
+      // PLATFORM§4
+      const worker = createUsageScanWorker({ workerData: { files } })
+      worker.on('message', (file: ScannedFile) => scanned(file))
+      worker.on('error', (error) => console.error('[koloft] usage read failed', error))
+      worker.once('exit', ended)
+    },
+    codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
+    sessionPlaces: () => {
+      const claude = workspaceMgr?.sessionPlaces()
+      const stored = new Map(storedSessions().map((s) => [s.id, s.sessionPlaces()]))
+      return (backend, id, host) =>
+        backend === 'claude' ? claude?.get(id) : stored.get(backend)?.(id, host)
+    },
+    changed: (read) => sendToRenderer(CH.usage.changed, read)
+  })
+  ipcMain.handle(CH.usage.read, () => usageCache.read())
+
   ipcMain.on(CH.sessions.search, (_e, searchId: unknown, term: unknown) => {
     if (typeof searchId !== 'number' || typeof term !== 'string') return
     sessionSearch.start(searchId, term)

@@ -750,10 +750,54 @@ the sandbox after an approval reaches sudo: **inferred, not checked**.
 - `reasoningOutputTokens` is a part of `outputTokens`, the way OpenAI's API counts it
   (2026-10-23, codex-cli 0.163.0 and 0.164.0, one `gpt-6-luna` turn at effort `high`
   through the app-server: 50 of 57 and 44 of 51 output tokens, `totalTokens` =
-  `inputTokens` + `outputTokens` in each frame). Koloft does not add it on top. The
-  frame's fields (`totalTokens`, `inputTokens`, `cachedInputTokens`,
-  `cacheWriteInputTokens`, `outputTokens`, `reasoningOutputTokens` under `total` and
-  `last`, and `modelContextWindow`) are the same on 0.164.0.
+  `inputTokens` + `outputTokens` in each frame; the rollout files agree, below). Koloft
+  does not add it on top. The frame's fields (`totalTokens`, `inputTokens`,
+  `cachedInputTokens`, `cacheWriteInputTokens`, `outputTokens`, `reasoningOutputTokens`
+  under `total` and `last`, and `modelContextWindow`) are the same on 0.164.0.
+
+**Token counts in the rollout files, checked on 2026-10-16 with `codex-cli 0.162.0`.** A
+live probe in a throwaway `CODEX_HOME` (real tiny turns, deleted after), and a read of
+the 46 rollout files on this Mac, written by 0.149.0-alpha through 0.162.0, printing
+field names and numbers only.
+
+- **Live frames.** `thread/tokenUsage/updated` is `{method, params, emittedAtMs}`, with
+  `params` = `threadId, turnId, tokenUsage{total, last, modelContextWindow}`. `total`
+  carries the turns from before a resume (13147 before; after a fresh app-server's
+  `thread/resume` and one turn of 13800, `total` = 26947). Right after `thread/resume`,
+  before any new turn, the new app-server sends the old last turn's frame again — same
+  `turnId`, same `total`. `emittedAtMs` is the send time, not the turn's. No frame and no
+  `Turn` carries a model; a thread can change model mid-way (`turn/start` with `model`;
+  `thread/settings/updated` says so; `thread/read` shows only the current one).
+- **Where.** `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`, archived
+  ones under `archived_sessions/`.
+- **`token_usage_record`**, one line per request to the model: `timestamp` (ISO),
+  `ordinal`, `payload{thread_id, turn_id, session_id, root_turn_id, response_id, usage,
+  turn_token_usage, thread_token_usage}`. Each usage block has `input_tokens,
+  cached_input_tokens, cache_write_input_tokens, output_tokens, reasoning_output_tokens,
+  total_tokens`. `turn_token_usage` and `thread_token_usage` are running sums that repeat;
+  only `usage` is one request's own.
+- **`turn_context`**, one line per turn: `payload{turn_id, root_turn_id, model, effort,
+  approval_policy, sandbox_policy, …}` — the only place a turn's model is written.
+- **`session_meta`**: `payload{id, cwd, timestamp, source, thread_source, cli_version,
+  creator_account_id, …}`; `source` is `"vscode"`, `"exec"`, or `{subagent: {thread_spawn:
+  {parent_thread_id, depth, …}}}`. A child agent's rollout holds two: its own first, then
+  a copy of its parent's (all 11 files with two here; the second's `id` is the first's
+  `forked_from_id` and `parent_thread_id`). Every `token_usage_record` in a file carries
+  the first one's `id` as `thread_id`.
+- **Rules that held on every file** (46 files, 273 turns, 4467 records): a `turn_id`'s
+  `turn_context` is written before that turn's first record; `response_id` never
+  repeats, within a file or across files, and is never null; the sum of a turn's
+  `usage.total_tokens` equals its last `turn_token_usage.total_tokens`.
+- **`reasoning_output_tokens` is inside `output_tokens`**: in all 3753 records where it
+  was above 0, `total_tokens = input_tokens + output_tokens` and reasoning ≤ output.
+- **Size.** 46 files, 89 MB, read in 0.6 s.
+- **A fork's rollout holds only its own requests** (2026-10-24, codex-cli 0.162.0, a
+  real `codex exec` turn, then `codex fork <id> "<prompt>"` in a pty, throwaway
+  `CODEX_HOME`): the new file's `session_meta` carries `forked_from_id` = the parent,
+  and its one `token_usage_record` is its own request (new `response_id`, input 16074);
+  none of the parent's records is copied. The TUI's exit line ("Token usage:
+  total=… input=6,034 (+ 24,320 cached)") sums parent and fork, so it is not the
+  fork's own spend.
 
 **Price table.** Read on 2026-09-24 from OpenAI's pricing page
 (`developers.openai.com/api/docs/pricing`, reached from `platform.openai.com/docs/pricing`,
