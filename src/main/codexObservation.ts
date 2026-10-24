@@ -150,6 +150,11 @@ function asksTheOwner(method: string): boolean {
   )
 }
 
+function noAnswers(result: unknown): boolean {
+  const answers = record(result).answers
+  return !!answers && typeof answers === 'object' && Object.keys(answers).length === 0
+}
+
 interface WireTokens {
   inputTokens: number
   outputTokens: number
@@ -206,6 +211,7 @@ export class CodexObservation {
   private mainTurn: Turn = 'ended'
   private publishedTurn?: Turn
   private waitingForInput = false
+  private unanswered = false
   private roots = new Set<string>()
   private childRoots = new Map<string, string>()
   private childTurns = new Map<string, string>()
@@ -238,6 +244,11 @@ export class CodexObservation {
     for (const [id, method] of this.approvals)
       if (method.endsWith('/requestApproval')) return { id, ...this.approvalAsks.get(id) }
     return undefined
+  }
+
+  // CODEX§20
+  questionWentUnanswered(): boolean {
+    return this.unanswered
   }
 
   // CODEX§20
@@ -281,7 +292,11 @@ export class CodexObservation {
         this.requests.set(id, { method, generation: this.generation, threadId: this.threadId })
       }
       if (method === 'turn/start' && p.threadId === this.threadId) this.unsubscribed = false
-      if (id !== undefined && !method && this.approvals.delete(id)) {
+      if (id !== undefined && !method) {
+        // CODEX§20
+        if (this.approvals.get(id) === 'item/tool/requestUserInput')
+          this.unanswered = noAnswers(f.result)
+        this.approvals.delete(id)
         this.approvalThreads.delete(id)
         this.approvalAsks.delete(id)
         if (!this.approvals.size) {
@@ -312,6 +327,7 @@ export class CodexObservation {
         this.degraded('Codex returned an unsupported session response.')
         return
       }
+      if (thread.id !== this.threadId) this.unanswered = false
       this.threadId = thread.id
       this.roots.add(thread.id)
       this.unsubscribed = false
@@ -381,6 +397,7 @@ export class CodexObservation {
       const turn = record(p.turn)
       if (typeof turn.id === 'string') this.liveTurns.add(turn.id)
       this.waitingForInput = false
+      this.unanswered = false
       this.mainTurn = 'working'
       this.publishActivity()
     } else if (method === 'turn/completed') {
