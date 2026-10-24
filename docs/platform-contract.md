@@ -267,10 +267,10 @@ method. A recheck adds its date, version and command to the bullet.
   a focused `<webview>`, so a role-based ⌘R inside a web page would reload Koloft and
   kill every terminal. The built-in zoom roles step by 0.5 and clamp to Chromium's
   range of -8 to 9.
-- **A menu accelerator is handled natively, before the page.** It fires even while
-  xterm has focus (a plain renderer keydown listener is swallowed by xterm), and it
-  takes its key before a focused guest page or xterm can see it. ``"Control+`"`` parses
-  on every platform.
+- **A menu accelerator is handled natively.** It fires even while xterm has focus (a
+  plain renderer keydown listener is swallowed by xterm), and it takes its key before
+  xterm can see it. ``"Control+`"`` parses on every platform. A focused `<webview>` is
+  the other way round (below).
 - **⌘⏎ in ⌘P's textarea reaches the page, not the enabled ⌘⏎ menu item.** With Focus
   Mode's `CmdOrCtrl+Return` item enabled, a real ⌘⏎ typed into ⌘P's textarea did the
   palette's work and left Focus Mode off. Measured 2026-10-23, Electron 43.7.3, macOS 27.0
@@ -278,9 +278,21 @@ method. A recheck adds its date, version and command to the bullet.
   ⌘P"). Why: the palette's keydown handler calls `preventDefault` — inferred, not
   checked; a ⌘ key the page sees but does not `preventDefault` was not probed.
 - **Keys typed in a focused `<webview>` never reach the host document's listeners**,
-  capture phase included, and a focused guest swallows the app's menu accelerators;
-  keys with no accelerator (⌘T) never reach the host at all. Main has to catch them on
-  the guest's own `before-input-event`.
+  capture phase included; keys with no accelerator (⌘T) never reach the host at all.
+  Main has to catch them on the guest's own `before-input-event`.
+- **A focused `<webview>` page gets a menu key first; the app menu fires only when the
+  page does not `preventDefault` it.** With a Workbench web page focused, real ⌘J, ⌘B,
+  ⌥⌘N and ⌘P each reached the guest's `before-input-event`, then the page's `keydown`
+  listener, and then fired their menu item (Next Waiting Session, Toggle Sidebar, Notes,
+  Command Palette). With the page calling `preventDefault` on every `keydown`, the page
+  still saw each key and no menu item fired. Koloft's guest `before-input-event` handler
+  leaves these four keys alone, so whether a menu key works inside a web page is the
+  page's choice: a plain page (example.com in the 2026-10-10 hand test) lets ⌘J through,
+  a page that handles the key keeps it. Measured 2026-10-24, Electron 43.8.1, macOS 27.0
+  in a tart VM: keys posted through CGEvent (§52), menu item clicks recorded by wrapping
+  each item's `click` in main, a local test page; two runs, the page leaving keys alone
+  and the page calling `preventDefault`; control: ⌘B with the session terminal focused
+  fired Toggle Sidebar in both.
 - **`before-input-event` is fed by native input only.** A key event sent straight into a
   guest's render process, or typed inside an extension's action popup, never passes it;
   only `input-event` sees an injected one. A key that `before-input-event` does not

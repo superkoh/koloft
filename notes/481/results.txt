@@ -1,0 +1,137 @@
+{
+  "electron": "43.8.1",
+  "pagePreventsDefault": false,
+  "results": [
+    {
+      "key": "Cmd+J",
+      "focusedBefore": "webview",
+      "menuItemFired": [
+        "next-waiting-session"
+      ],
+      "pageSawKeydown": [
+        "Cmd+KeyJ"
+      ],
+      "guestBeforeInputEvent": [
+        "Cmd+KeyJ"
+      ],
+      "focusedAfter": "webview",
+      "focusOwnerAfter": "panel"
+    },
+    {
+      "key": "Cmd+B",
+      "focusedBefore": "webview",
+      "menuItemFired": [
+        "toggle-sidebar"
+      ],
+      "pageSawKeydown": [
+        "Cmd+KeyB"
+      ],
+      "guestBeforeInputEvent": [
+        "Cmd+KeyB"
+      ],
+      "focusedAfter": "webview",
+      "focusOwnerAfter": "panel"
+    },
+    {
+      "key": "Alt+Cmd+N",
+      "focusedBefore": "webview",
+      "menuItemFired": [
+        "focus-notes"
+      ],
+      "pageSawKeydown": [
+        "Cmd+Alt+KeyN"
+      ],
+      "guestBeforeInputEvent": [
+        "Cmd+Alt+KeyN"
+      ],
+      "focusedAfter": "webview",
+      "focusOwnerAfter": "textarea"
+    },
+    {
+      "key": "Cmd+P",
+      "focusedBefore": "webview",
+      "menuItemFired": [
+        "command-palette"
+      ],
+      "pageSawKeydown": [
+        "Cmd+KeyP"
+      ],
+      "guestBeforeInputEvent": [
+        "Cmd+KeyP"
+      ],
+      "focusOwnerAfter": "textarea"
+    }
+  ],
+  "control": {
+    "key": "Cmd+B with the terminal focused (control)",
+    "focusedBefore": "terminal",
+    "menuItemFired": [
+      "toggle-sidebar"
+    ]
+  }
+}
+{
+  "electron": "43.8.1",
+  "pagePreventsDefault": true,
+  "results": [
+    {
+      "key": "Cmd+J",
+      "focusedBefore": "webview",
+      "menuItemFired": [],
+      "pageSawKeydown": [
+        "Cmd+KeyJ"
+      ],
+      "guestBeforeInputEvent": [
+        "Cmd+KeyJ"
+      ],
+      "focusedAfter": "webview",
+      "focusOwnerAfter": "panel"
+    },
+    {
+      "key": "Cmd+B",
+      "focusedBefore": "webview",
+      "menuItemFired": [],
+      "pageSawKeydown": [
+        "Cmd+KeyB"
+      ],
+      "guestBeforeInputEvent": [
+        "Cmd+KeyB"
+      ],
+      "focusedAfter": "webview",
+      "focusOwnerAfter": "panel"
+    },
+    {
+      "key": "Alt+Cmd+N",
+      "focusedBefore": "webview",
+      "menuItemFired": [],
+      "pageSawKeydown": [
+        "Cmd+Alt+KeyN"
+      ],
+      "guestBeforeInputEvent": [
+        "Cmd+Alt+KeyN"
+      ],
+      "focusedAfter": "webview",
+      "focusOwnerAfter": "panel"
+    },
+    {
+      "key": "Cmd+P",
+      "focusedBefore": "webview",
+      "menuItemFired": [],
+      "pageSawKeydown": [
+        "Cmd+KeyP"
+      ],
+      "guestBeforeInputEvent": [
+        "Cmd+KeyP"
+      ],
+      "focusedAfter": "webview",
+      "focusOwnerAfter": "panel"
+    }
+  ],
+  "control": {
+    "key": "Cmd+B with the terminal focused (control)",
+    "focusedBefore": "terminal",
+    "menuItemFired": [
+      "toggle-sidebar"
+    ]
+  }
+}

@@ -133,7 +133,7 @@ describe('whole-window fallback execution', () => {
   })
 })
 
-describe('the keys a focused guest has to hand back — ⌘T has no menu accelerator, and a focused page swallows the rest', () => {
+describe('the keys a focused guest hands to the panel instead of the page — ⌘T has no menu accelerator at all', () => {
   const key = (k: string, mods: Partial<GuestKeyInput> = {}): GuestKeyInput => ({
     key: k,
     meta: true,
