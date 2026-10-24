@@ -331,6 +331,28 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
   })
 
   // CC§14
+  it('once its waiting hook gave up and the question came back through the status log, it is posted again and the next reply answers it by its keys', async () => {
+    const { relay, posts, writes, reactions, asksChanged } = setup({}, [], {
+      status: () => 'approval'
+    })
+    const askFile = hookFile(TAB, 'ask')
+    const watcher = await watchAsksOnceArmed(relay, asksChanged)
+    drop(askFile, QUESTION)
+    await vi.waitFor(() => expect(posts).toHaveLength(1))
+    fs.rmSync(askFile)
+    await vi.waitFor(() => expect(asksChanged).toEqual([TAB, TAB]))
+    relay.onAsk(TAB, QUESTION)
+    expect(relay.dialog(TAB)?.text).toBe('Which?\n1. A\n2. B')
+    relay.onMessage(message('801', OWNER, 'neither, use C'))
+    await vi.waitFor(() => expect(reactions).toContain('801 +✅'))
+    expect(writes.map((w) => w.data)).toEqual(['3', 'neither, use C', '\r'])
+    expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(false)
+    expect(posts).toHaveLength(2)
+    expect(posts[1].text).toBe(posts[0].text)
+    watcher?.close()
+  })
+
+  // CC§14
   it('its question held in the terminal, during a turn the owner typed at the Mac, is still posted and is answered from the channel by its keys; once that turn is over, the next message goes to it as usual', async () => {
     let status: SessionStatus = 'approval'
     const { relay, posts, writes, reactions, bodies } = setup({}, [], { status: () => status })

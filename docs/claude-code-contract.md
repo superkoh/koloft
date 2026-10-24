@@ -2004,6 +2004,23 @@ below was one run.
 - **A hook may wait for the answer.** One that answered after 120 s with
   `"timeout": 900` took effect. At its `timeout` (20 s in one run) claude ends the hook
   with SIGTERM and the dialog stays on screen; nothing is denied.
+- **After a hook's timeout the dialog still takes its keys.** 2026-10-22, CC 2.1.309, a
+  python pty, scratch `CLAUDE_CONFIG_DIR`, haiku, `--dangerously-skip-permissions`, a
+  `PermissionRequest` hook with `"timeout": 5` that logged its start, SIGTERM and exit
+  and then waited; 1 run. An `AskUserQuestion` (Red / Green): the hook started 2.0 s after the
+  prompt, got SIGTERM at +7.0 s and exited 20 ms later; 10 s on, the dialog was unchanged on
+  screen. `3` ("Type something."), then `Purple with green stripes` in a second write,
+  then CR 1 s later answered it: `PostToolUse` held `answers: {"Which colour do you
+  prefer?": "Purple with green stripes"}` and the model repeated it.
+- **A hook that gives up by itself, with no output, while its dialog is on screen
+  leaves the dialog to the person too.** 2026-10-22, CC 2.1.309, the same setup with
+  `"timeout": 30` and a hook that waited 5 s by bash's `SECONDS`, then exited 0 printing
+  nothing; 1 run. It got no SIGTERM; 10 s after it exited the dialog was unchanged, and
+  `3`, the text, then CR 1 s later answered it the same way (`PostToolUse` held the
+  typed answer). A `Bash` dialog did the same (`--permission-mode default`, 1 run): after
+  the hook gave up, the dialog (`1. Yes` … `4. No`) stayed, the command did not run, and
+  `1` 10 s later ran it. Unlike ending at the `timeout`, this never looks like the
+  SIGTERM that "No" or Esc at the Mac sends (below).
 - **When the person answers in the terminal first:** "No" or Esc ends the hook with
   SIGTERM at once (its `EXIT` trap ran); "Yes" does not signal it, and it lived on until
   claude exited. What it prints after that is ignored. Re-run 2026-10-04, CC 2.1.289
