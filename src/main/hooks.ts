@@ -282,7 +282,7 @@ case "$event" in
       ver="$(printf '%s' "$AI_AGENT" | sed -n 's/^claude-code_\\([0-9-]*\\)_agent$/\\1/p' | tr '-' '.')"
     fi
     if [ "$event" = "start" ] && [ "$KOLOFT_TMUX_FOLLOW" = "1" ] && [ -n "$TMUX" ] && [ -n "$sid" ]; then
-      tmux rename-session -t "$TMUX_PANE" "k-$sid" 2>/dev/null && printf 'k-%s' "$sid" > "$HOME/.koloft/tabs/$KOLOFT_TAB_ID.tmux"
+      tmux rename-session -t "$TMUX_PANE" "k-$sid" 2>/dev/null && printf 'k-%s' "$sid" > "$HOME/.koloft/tabs/$tab.tmux"
     fi
     logged=""
     [ "$event" = "start" ] && logged=',"${START_IN_STATUS_LOG}":true'

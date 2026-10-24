@@ -160,7 +160,7 @@ ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 ${program ? `trap 'rm -f "$T.auth.json"' EXIT\n` : ''}sh "$M/ensure.sh"${program ? ` ${program.name}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
-rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.tmux"
+rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}"
 ${program ? 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n' : claudeFirstRun(spec)}tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 c=$?
 rm -f "${T}.env"
@@ -170,7 +170,10 @@ exit $c
 
 export function writeTabPackage(dir: string, spec: TabSpec): void {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const files = spec.program?.files ?? { [`${spec.tabId}.json`]: JSON.stringify(spec.settings) }
+  const files = spec.program?.files ?? {
+    [`${spec.tabId}.json`]: JSON.stringify(spec.settings),
+    [`${spec.tabId}.tmux`]: spec.tmuxName
+  }
   for (const [name, text] of Object.entries(files))
     fs.writeFileSync(path.join(dir, name), text, { mode: 0o600 })
   fs.writeFileSync(path.join(dir, `${spec.tabId}.sh`), tabScript(spec), { mode: 0o700 })

@@ -10,7 +10,8 @@ parent tab's hook settings and a new id, the same shape as a moved conversation'
 **Decision**: when `followMovedConversation` follows a move on a remote tab, Koloft runs
 `tmux rename-session` over ssh to `k-<new id>` and writes the new name to
 `~/.koloft/tabs/<tab>.tmux`, which the tab's reconnect reads; the tab's tmux name in the
-tracker changes only once that rename came back clean.
+tracker changes only once that rename came back clean, and only if no other rename (a
+`/clear`'s, from the hook) changed it meanwhile.
 **Rejected**: renaming in the hook script on any report whose session id differs from the
 tmux name (as the Antigravity hook does). A fork's Stop would then rename the parent tab's
 tmux session to the fork's id whenever the fork's hook runs with the tab's `TMUX` (not

@@ -667,11 +667,14 @@ export class ClaudeBackend implements SessionBackend {
   private renameMachineTmuxAfterMove(tabId: string, sessionId: string): void {
     const remote = this.d.tracker.remoteOf(tabId)
     if (!remote) return
+    const from = remote.tmuxName
     const to = tmuxSessionName(sessionId)
     void this.d.hosts
       .machine(remote.host)
-      .renameTmuxSession(tabId, remote.tmuxName, to)
-      .then((renamed) => renamed && this.d.tracker.setRemoteTmuxName(tabId, to))
+      .renameTmuxSession(tabId, from, to)
+      .then((renamed) => {
+        if (renamed && remote.tmuxName === from) this.d.tracker.setRemoteTmuxName(tabId, to)
+      })
   }
 
   // CC§1
