@@ -9,6 +9,7 @@ export interface CodexCall {
   pid: number
   argv: string[]
   cwd: string
+  effectiveCwd: string
   sessionId: string
   method: string
   codexHome: string | null
