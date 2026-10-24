@@ -15,17 +15,10 @@ export interface NotesIslandProps {
   onReturnFocus: () => void
 }
 
-function emptyNoteLine(butler: string | null, agentsRead: boolean): string {
-  const whose = butler ? `Notes for ${butler}.` : 'Notes for this folder.'
-  const readers = !agentsRead
-    ? ''
-    : butler
-      ? ` ${butler} can read them.`
-      : ' Every session here can read them.'
-  const where = butler
-    ? ' Kept by Koloft on this Mac.'
-    : ' Kept by Koloft on this Mac, not in the repository.'
-  return whose + readers + where
+function emptyNoteLine(butlersNote: boolean, butler: string, agentTools: boolean): string {
+  if (butlersNote)
+    return `Notes for ${butler}.${agentTools ? ` ${butler} and its helpers can read and add to them.` : ''} Kept by Koloft on this Mac.`
+  return `Notes for this folder.${agentTools ? ' Every session here can read and add to them.' : ''} Kept by Koloft on this Mac, not in the folder.`
 }
 
 export function NotesIsland({
@@ -40,7 +33,7 @@ export function NotesIsland({
   const [body, setBody] = useState<{ ws: string; failure: string | null } | null>(null)
   const showToast = useStore((s) => s.showToast)
   const butler = useStore((s) => s.settings.butler.name)
-  const agentsRead = useStore((s) => s.settings.agentTools)
+  const agentTools = useStore((s) => s.settings.agentTools)
 
   useEffect(() => {
     setPath(null)
@@ -155,7 +148,7 @@ export function NotesIsland({
               tabId={NOTES_TAB}
               prose
               autosave
-              placeholder={emptyNoteLine(wsPath === GLOBAL_SCOPE ? butler : null, agentsRead)}
+              placeholder={emptyNoteLine(wsPath === GLOBAL_SCOPE, butler, agentTools)}
               focusNonce={focusNonce}
               onSaved={() => {}}
             />
