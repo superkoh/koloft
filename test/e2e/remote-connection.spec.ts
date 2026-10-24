@@ -8,17 +8,22 @@ import {
   killFakeRemote,
   launchWithRemote,
   liveTmuxSessions,
+  machineHome,
   REMOTE_WS_NAME,
+  remoteDir,
   sshCommands
 } from './helpers/remote'
 import {
   type ClaudeCall,
+  boundSessionId,
   centerTerm,
+  continuedInOf,
   processAlive,
   readCalls,
   runIn,
   startSessionIn,
   switchToRow,
+  transcriptFile,
   waitBooted,
   waitForCalls,
   wsRows
@@ -112,6 +117,65 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       await runIn(page2, centerTerm(page2), TURN_LONGER_THAN_ONE_MIRROR_PULL)
       await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+    } finally {
+      await quitAndClose(app2)
+    }
+  })
+
+  test('E-RW-38: a remote conversation Claude Code moved to a new session id is attached again after a Koloft restart — the same claude and tmux session, never a second --resume beside it', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    let first!: ClaudeCall
+    let moved: string | undefined
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      ;[first] = await waitForCalls(env, 1)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      const tabId = await row.getAttribute('data-tab-id')
+      const boundOf = (): Promise<string | undefined> => boundSessionId(page, tabId)
+      await expect.poll(boundOf, { timeout: 60_000 }).toBe(first.sessionId)
+      const beforeTranscript = transcriptFile(machineHome(env), remoteDir(env), first.sessionId)
+
+      await runIn(page, centerTerm(page), '/move-to-background')
+      await expect.poll(() => continuedInOf(beforeTranscript), { timeout: 30_000 }).toBeTruthy()
+      moved = continuedInOf(beforeTranscript)
+      await expect.poll(boundOf, { timeout: 60_000 }).toBe(moved)
+      await expect.poll(() => layoutMembers(env), { timeout: 30_000 }).toEqual([moved])
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([`k-${moved}`])
+      await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+    } finally {
+      await quitAndClose(app)
+    }
+
+    expect(processAlive(first.pid)).toBe(true)
+
+    const app2 = await launchApp(env)
+    try {
+      const page2 = await app2.firstWindow()
+      await page2.waitForLoadState('domcontentloaded')
+      await waitBooted(page2)
+
+      const row = wsRows(page2, REMOTE_WS_NAME).first()
+      await expect(row).toBeVisible({ timeout: 30_000 })
+      await expect(row).not.toHaveClass(/\bcold\b/, {
+        timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
+      })
+      await expect
+        .poll(
+          () => sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+(attach|start)/.test(c)).length,
+          { timeout: 60_000 }
+        )
+        .toBeGreaterThanOrEqual(2)
+      await page2.waitForTimeout(TMUX_ATTACH_SETTLE_MS)
+
+      expect(sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+start/.test(c))).toHaveLength(1)
+      expect(readCalls(env).map((c) => c.sessionId)).toEqual([first.sessionId])
+      expect(liveTmuxSessions(env)).toEqual([`k-${moved}`])
+      expect(processAlive(first.pid)).toBe(true)
     } finally {
       await quitAndClose(app2)
     }

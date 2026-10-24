@@ -280,3 +280,8 @@ export function killSessionCmd(tmuxName: string): string {
   assertSafeNames(tmuxName)
   return remoteShCommand(`tmux -L koloft kill-session -t ${tmuxName}`)
 }
+
+export function renameSessionCmd(from: string, to: string): string {
+  assertSafeNames(from, to)
+  return remoteShCommand(`tmux -L koloft rename-session -t ${from} ${to}`)
+}
