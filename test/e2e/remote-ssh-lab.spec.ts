@@ -47,7 +47,9 @@ import {
   newSessionInWith,
   notesOnDisk,
   openMenu,
+  openSessionTerminal,
   openWorktreeSession,
+  panelTerm,
   runIn,
   sendShortcut,
   startSessionIn,
@@ -145,6 +147,11 @@ const STAND_IN_MODEL_CONFIG = [
 const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
   ['kt-key', 'kuser'],
   ['kt-few', 'muser'],
+  ['kt-tcsh', 'tuser'],
+  ['kt-fish', 'fuser']
+]
+const MACHINES_WHOSE_LOGIN_FILES_DIFFER: [LabAlias, string][] = [
+  ['kt-key', 'kuser'],
   ['kt-tcsh', 'tuser'],
   ['kt-fish', 'fuser']
 ]
@@ -573,6 +580,22 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await expect(centerTerm(page)).toContainText('koloft exit=1', {
         timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
       })
+    })
+  })
+
+  test('E-SSH-27: koloft open, typed in the Workbench shell of a session on the machine, shows a file there in that session’s Workbench, on machines whose login shell is bash (whose /etc/profile resets PATH), tcsh and fish', async ({
+    env
+  }) => {
+    await withLab(env, async ({ app, page }) => {
+      for (const [alias, user] of MACHINES_WHOSE_LOGIN_FILES_DIFFER) {
+        await addMachine(page, alias, user)
+        await startSessionIn(page, alias, { remote: true })
+        await openSessionTerminal(app, page)
+        await runIn(page, panelTerm(page), 'koloft open README.md')
+        await expect(artifactBody(page)).toContainText(`koloft-ssh-lab marker for ${user}`, {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+      }
     })
   })
 

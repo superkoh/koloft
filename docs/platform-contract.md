@@ -1493,8 +1493,15 @@ command by hand:
   `inotifywait`; `git grep` is there with git. So content search needs the `git grep`
   fallback, and there is no file watcher to lean on.
 - **A PATH prefix set before `bash -l -i` survives the login files** on that Ubuntu box
-  (`/etc/profile` there does not set PATH). Debian's `/etc/profile` does set PATH, so
-  there it may be lost — inferred, not checked. On a macOS machine, `path_helper` in
+  (`/etc/profile` there does not set PATH). **On Debian 12 it is lost**: `/etc/profile`
+  sets PATH outright for a non-root user, so `bash -l` and `bash -l -i` start with
+  `/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games` and a Workbench shell there
+  said `bash: koloft: command not found`. `bash --init-file <file> -i` that sources
+  `/etc/profile` and the first of `~/.bash_profile`, `~/.bash_login`, `~/.profile`, then
+  puts the prefix back, keeps it; fish 3.6 (`fish -l`) and tcsh (`tcsh -l`) keep the
+  prefix with no help (`tcsh -l` takes no `-c`). An exported `KOLOFT_TAB_ID` survives all
+  three. (2026-10-24: the e2e sshd image, `node:22-bookworm-slim`, as users whose login
+  shells are bash, fish and tcsh.) On a macOS machine, `path_helper` in
   the login files may put a real `claude` in `/usr/local/bin` ahead of that prefix —
   inferred, not checked.
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.

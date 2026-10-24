@@ -583,7 +583,9 @@ export class ClaudeBackend implements SessionBackend {
     const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown }
     const byTmux = typeof r.tmux === 'string' && r.tmux && this.tabRunningTmux(r.tmux, machine)
     if (byTmux) return byTmux
-    const tabId = typeof r.tabId === 'string' ? r.tabId : ''
+    const asked = typeof r.tabId === 'string' ? r.tabId : ''
+    const shell = this.d.pty.get(asked)
+    const tabId = shell?.util && shell.ownerTabId ? shell.ownerTabId : asked
     if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
     const other = this.d.otherTabOnMachine?.(
       machine,
