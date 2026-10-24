@@ -27,7 +27,14 @@ const mocks = vi.hoisted(() => ({
   runtime: vi.fn(),
   update: vi.fn(),
   rpcHomes: [] as (string | undefined)[],
-  rpcOptions: [] as CodexProcessOptions[]
+  rpcOptions: [] as CodexProcessOptions[],
+  crashLeftoverMarkers: [] as string[]
+}))
+vi.mock('../../src/main/leftovers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/main/leftovers')>()),
+  endCodexAppServersLeftByACrash: async (marker: string) => {
+    mocks.crashLeftoverMarkers.push(marker)
+  }
 }))
 vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
   resolveCodexRuntime: mocks.runtime,
@@ -139,6 +146,7 @@ beforeEach(() => {
   transports = []
   mocks.rpcHomes.length = 0
   mocks.rpcOptions.length = 0
+  mocks.crashLeftoverMarkers.length = 0
   mocks.create.mockImplementation(async (options: CodexTransportOptions) => {
     const stop = vi.fn(async () => {})
     const request = vi.fn(async () => ({}))
@@ -170,6 +178,7 @@ beforeEach(() => {
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
     assistOf: () => undefined,
     replyLanguageScript: '/koloft/codex-reply-language.sh',
+    builtInStatusLine: vi.fn(() => true),
     browserEndpoint: vi.fn(() => ''),
     openShimRoot: path.join(directory, 'codex-open'),
     playwrightBin: path.join(directory, 'commands', 'bin'),
@@ -1101,6 +1110,37 @@ describe('CodexSessions', () => {
     expect(checker.cwd).toBe(repo)
     expect(mocks.request).toHaveBeenCalledWith('hooks/list', { cwds: [repo] }, '/homes/work')
     expect(mocks.close).toHaveBeenCalled()
+  })
+
+  async function launchWithBuiltInStatusLine(...switches: boolean[]): Promise<void> {
+    for (const on of switches) {
+      vi.mocked(deps.builtInStatusLine).mockReturnValue(on)
+      await sessions.launch({ kind: 'codex', cwd: repo })
+    }
+  }
+
+  // CODEX§8
+  it("with the built-in status line off, neither a Codex tab's app-server nor its TUI is handed Koloft's status line, so Codex shows the owner's own", async () => {
+    const statusLine = (values: readonly string[]): string[] =>
+      values.filter((v) => v.startsWith('tui.status_line='))
+    await launchWithBuiltInStatusLine(false, true)
+
+    const [off, on] = transports.map((t) => t.options.configOverrides!)
+    const [offArgv, onArgv] = vi.mocked(deps.pty.create).mock.calls.map(([c]) => c.argv!)
+    expect(statusLine(off)).toEqual([])
+    expect(statusLine(offArgv)).toEqual([])
+    expect(statusLine(on)).toHaveLength(1)
+    expect(statusLine(onArgv)).toEqual(statusLine(on))
+    expect(onArgv[onArgv.indexOf(statusLine(on)[0]) - 1]).toBe('-c')
+  })
+
+  // CODEX§5
+  it("the mark Koloft looks for to end a Codex app-server left by a crash is on every tab's app-server, with the built-in status line on or off", async () => {
+    await launchWithBuiltInStatusLine(false, true)
+
+    expect(mocks.crashLeftoverMarkers).toHaveLength(1)
+    for (const { options } of transports)
+      expect(options.configOverrides).toContain(mocks.crashLeftoverMarkers[0])
   })
 
   // ADR-0043 CODEX§27 CODEX§30

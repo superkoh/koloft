@@ -235,7 +235,7 @@ says Codex reclaims a descendant that has left its process group.
 **An app-server whose host was killed outlives it and keeps its thread locked.** Measured
 2026-10-09, codex 0.162.0, a hidden Koloft build in a scratch `HOME` and `CODEX_HOME`:
 one Codex tab ran one turn, then Koloft's main process got SIGKILL. The TUI died at once;
-the detached `codex app-server --stdio -c tui.status_line=…` was re-parented to pid 1 and
+the detached `codex app-server --stdio -c …` was re-parented to pid 1 and
 exited on its own 13.7–13.9 s later. A relaunched Koloft that resumed the same thread
 while it lived (1.1 s after the kill, two runs) got, within 0.4 s, "This conversation is
 open in another app — Close it there and press R to continue here"; pressing `r` after
@@ -316,6 +316,18 @@ unless marked.
   `invalid type: sequence, expected a string in tui.status_line`. That server startup
   overrides supersede the file's list without rewriting it was checked by `config/read`
   on 0.153.4 only.
+- **Without the override the TUI shows the owner's own list.** Measured 2026-10-23 on
+  0.162.0, no model call: a TUI started as `--remote ws://…` against
+  `app-server --listen ws://…`, isolated `CODEX_HOME` whose `config.toml` sets
+  `[tui] status_line = ["project-name", "hostname"]`. With no `tui.status_line` `-c` on
+  either process, the footer showed only the hostname (`project-name` showed nothing in
+  that folder, which was not a repository). With Koloft's list given by `-c` to both,
+  the footer showed Koloft's items and not the file's. With neither the file's list nor
+  `-c`, it showed the default `model-with-reasoning` and `current-dir`, and no thread
+  name on a fresh thread. The list is read on the TUI's side: with the TUI's
+  `CODEX_HOME` listing `hostname` and the app-server's (another `CODEX_HOME`) listing
+  `codex-version`, the footer showed the hostname; with no list in the TUI's home it
+  showed the default, whatever the app-server's home said.
 - The footer is one line. Long content ends in an ellipsis at every width tried;
   shrinking the terminal does not wrap it. `"\n"`, `newline`, `line-break`, `separator`
   and `spacer` each produce an "Ignored invalid status line items" warning (F2). The
