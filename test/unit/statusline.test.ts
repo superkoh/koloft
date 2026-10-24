@@ -91,40 +91,32 @@ describe('built-in statusline', () => {
     expect(fs.readFileSync(wrapper, 'utf8')).toContain(`# koloft-exec: ${process.execPath}`)
   })
 
-  it('prunes a dead install’s wrapper; keeps a live peer’s, unprovables, and legacy run.sh', () => {
+  it('prunes a dead install’s Claude and Antigravity wrappers; keeps this install’s, a live peer’s, unprovables, and legacy run.sh', () => {
     const dir = path.dirname(wrapper)
+    setupAgyStatusline({ wrapper, config })
+    const ownAgy = path.join(dir, `agy-${path.basename(wrapper)}`)
     const dead = path.join(dir, 'run-deadbeef00.sh')
+    const deadAgy = path.join(dir, 'agy-run-deadbeef00.sh')
     const live = path.join(dir, 'run-aaaaaaaaaa.sh')
+    const liveAgy = path.join(dir, 'agy-run-aaaaaaaaaa.sh')
     const bare = path.join(dir, 'run-bbbbbbbbbb.sh')
     const legacy = path.join(dir, 'run.sh')
-    fs.writeFileSync(
-      dead,
-      `#!/usr/bin/env bash\n# koloft-exec: ${path.join(dir, 'gone-build', 'Koloft')}\n`
-    )
+    const deadContent = `#!/usr/bin/env bash\n# koloft-exec: ${path.join(dir, 'gone-build', 'Koloft')}\n`
+    fs.writeFileSync(dead, deadContent)
+    fs.writeFileSync(deadAgy, deadContent)
     const liveContent = `#!/usr/bin/env bash\n# koloft-exec: ${process.execPath}\necho peer\n`
     fs.writeFileSync(live, liveContent)
+    fs.writeFileSync(liveAgy, liveContent)
     fs.writeFileSync(bare, '#!/usr/bin/env bash\n')
     fs.writeFileSync(legacy, '#!/usr/bin/env bash\n')
     setupStatusline()
     expect(fs.existsSync(dead)).toBe(false)
+    expect(fs.existsSync(deadAgy)).toBe(false)
+    expect(fs.existsSync(ownAgy)).toBe(true)
     expect(fs.readFileSync(live, 'utf8')).toBe(liveContent)
+    expect(fs.readFileSync(liveAgy, 'utf8')).toBe(liveContent)
     expect(fs.existsSync(bare)).toBe(true)
     expect(fs.existsSync(legacy)).toBe(true)
-  })
-
-  it('prunes a dead install’s Antigravity wrapper the same way; keeps this install’s', () => {
-    const dir = path.dirname(wrapper)
-    const own = setupAgyStatusline({ wrapper, config })
-    const ownWrapper = path.join(dir, `agy-${path.basename(wrapper)}`)
-    expect(own).toContain(ownWrapper)
-    const dead = path.join(dir, 'agy-run-deadbeef01.sh')
-    fs.writeFileSync(
-      dead,
-      `#!/usr/bin/env bash\n# koloft-exec: ${path.join(dir, 'gone-build', 'Koloft')}\n`
-    )
-    setupStatusline()
-    expect(fs.existsSync(dead)).toBe(false)
-    expect(fs.existsSync(ownWrapper)).toBe(true)
   })
 
   it('statusLineSetting is the documented claude-code shape, wrapper path shell-quoted', () => {
