@@ -394,6 +394,9 @@ describe('CodexSessions', () => {
     homeThere = true
     await sessions.refreshMachineHistory('box', true)
     expect(sessions.rows(remoteRepo)).toEqual([])
+    homeThere = false
+    await sessions.refreshMachineHistory('box', true)
+    expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
   })
 
   it('reports unavailable history instead of returning an empty successful listing', async () => {

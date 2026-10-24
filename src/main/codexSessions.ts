@@ -557,6 +557,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       if (archived) this.archivedIds.add(key)
     }
     if (home.code === 0) this.listedAt.set(machine, startedAt)
+    else this.listedAt.delete(machine)
     this.changed()
   }
 

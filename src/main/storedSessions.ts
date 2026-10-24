@@ -33,7 +33,7 @@ import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 
 const AVAILABILITY_FAILURE_MS = 60_000
 const EMIT_THROTTLE_MS = 500
-// MUSE§5
+// MUSE§5 CODEX§2 AGY§8
 const NEW_SESSION_LIST_LAG_MS = 30_000
 
 const binaryGone = (error: unknown): boolean =>
