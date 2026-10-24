@@ -132,6 +132,7 @@ const CODEX_SUBCOMMANDS_WITHOUT_A_TUI = [
   'archive',
   'delete',
   'migrate-rollouts',
+  'migrate-nfs-db',
   'unarchive',
   'exec-server',
   'features',

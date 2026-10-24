@@ -77,6 +77,7 @@ interface Conducting {
   asking?: string[]
   worktrees?: string[]
   busy?: boolean
+  leftOf?: Record<string, string[]>
 }
 
 function harness(
@@ -162,9 +163,9 @@ function harness(
     },
     startedSessions,
     closable: () => [...sessions, ...cold],
-    whatIsLeft: async () => left,
-    closeSoon: (target) => {
-      closed.push(target.sessionId)
+    whatIsLeft: async (target) => conducting.leftOf?.[target.sessionId] ?? left,
+    closeSoon: (inOrder) => {
+      closed.push(...inOrder.map((target) => target.sessionId))
     },
     isButler: (tabId) => !!conducting.scopes?.[tabId],
     speaksForTheOwner: (tabId) =>
@@ -888,6 +889,53 @@ describe('koloft session close', () => {
     expect(closed).toEqual([])
     expect((await verb(['close', 'Old run'], from('me'))).exit).toBe(0)
     expect(closed).toEqual(['cold-session'])
+  })
+
+  it('closes, after it, the ended sessions it started and theirs (one in its own worktree goes with it), and names the ones it leaves: still open, or holding work closing would lose', async () => {
+    const ended = (id: string, title: string, treeRoot = `${WS}/.claude/worktrees/${id}`) => ({
+      sessionId: id,
+      backendId: 'codex' as const,
+      title,
+      treeRoot
+    })
+    const { verb, closed, startedSessions } = harness(
+      [session('me', 'claude'), session('busy-tab', 'muse', { title: 'Still working' })],
+      {},
+      [],
+      {
+        leftOf: {
+          'dirty-session': ['Changes not committed:\n?? draft.md'],
+          'same-tree-session': ['The session "me title" is still open.']
+        }
+      },
+      [
+        ended('done-session', 'Done helper'),
+        ended('grand-session', 'Its helper'),
+        ended('dirty-session', 'Dirty helper'),
+        ended('under-dirty-session', 'Under dirty'),
+        ended('same-tree-session', 'In my tree', WS)
+      ]
+    )
+    const child = (tab: string, sessionId: string, parent: string): void => {
+      startedSessions.started(tab, parent)
+      startedSessions.bound(tab, sessionId)
+    }
+    child('done-tab', 'done-session', 'me-session')
+    child('grand-tab', 'grand-session', 'done-session')
+    child('dirty-tab', 'dirty-session', 'me-session')
+    child('under-dirty-tab', 'under-dirty-session', 'dirty-session')
+    child('busy-tab', 'busy-tab-session', 'me-session')
+    child('same-tree-tab', 'same-tree-session', 'me-session')
+
+    const reply = await verb(['close'], from('me'))
+    expect(reply.exit).toBe(0)
+    expect(closed).toEqual(['me-session', 'done-session', 'same-tree-session', 'grand-session'])
+    expect(reply.text).toContain(
+      'Also closing the ended sessions it started: "Done helper", "In my tree", "Its helper".'
+    )
+    expect(reply.text).toContain('"Dirty helper":\nChanges not committed:\n?? draft.md')
+    expect(reply.text).toContain('Left these sessions it started open: "Still working".')
+    expect(reply.text).not.toContain('Under dirty')
   })
 
   it('closes nothing and lists what is left when something is not committed or not pushed', async () => {

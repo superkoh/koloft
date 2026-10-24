@@ -249,7 +249,7 @@ Working principles:
     zsh prints "no matches found", the command never runs; the tool may
     still report success.
   - Quote a spaced path: '/a b', never /a\ b.
-  - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
+  - Never git -C another checkout: diff origin/<branch>; gh pr diff <n> takes no path.
   - Grep or read only paths you saw; else grep -rl 'word' src.
   - macOS strings -o is offsets: use > file.
   - Read stops at 25,000 tokens (~50 KB), not lines: wc -c a big file, slice it.
@@ -279,7 +279,7 @@ Working principles:
   → GitHub issues. Everything else is git history — deletion loses nothing, while a
   stale doc actively misleads whoever greps it. `docs/` therefore holds only
   documents organized around a subject that outlives any one feature (today: the
-  Claude Code, Codex and platform contract ledgers, the ADRs, and the roadmap),
+  contract ledgers, the ADRs, and the roadmap),
   never a shipped feature's design doc.
 - The roadmap is `docs/roadmap.md`: the tiered checklist, the explicit not-doing list,
   and how much to trust the order. Start any "what's next" discussion from it rather

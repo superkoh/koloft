@@ -30,7 +30,7 @@ import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museS
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
-import { sharedProcessTable } from './processTable'
+import { sharedProcessTable, type ProcessTable } from './processTable'
 import { AgySessions } from './agySessions'
 import {
   agyAccountEnv,
@@ -101,7 +101,7 @@ import {
   jsDialogFor,
   standardUserAgent
 } from './browserSecurity'
-import { directoryListingHtml } from './dirListing'
+import { directoryListingHtml, fileNotFoundHtml } from './dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
@@ -495,6 +495,7 @@ import {
   removeTree,
   tidyTree,
   whatIsLeft,
+  type MergedHeads,
   type TidyResult
 } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
@@ -661,11 +662,35 @@ tracker.needsUser = (id) => attention.waitsOnApproval(id)
 let leftovers: Record<string, LeftoverProcess[]> = {}
 tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
-async function refreshLeftovers(): Promise<void> {
-  const next = await scanLeftovers(await sharedProcessTable.eachRound(LEFTOVER_SCAN_MS))
-  const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
-  leftovers = next
-  if (changed) sendToRenderer(CH.sessions.leftovers, next)
+const LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS = 2 * LEFTOVER_SCAN_MS
+const closedSessionsStoppedUntil = new Map<string, number>()
+async function stopLeftoversOfClosedSessions(
+  found: Record<string, LeftoverProcess[]>
+): Promise<void> {
+  const now = Date.now()
+  for (const [sessionId, until] of closedSessionsStoppedUntil) {
+    if (until < now) closedSessionsStoppedUntil.delete(sessionId)
+    else if (found[sessionId]) {
+      const stopped = await Promise.all(found[sessionId].map((p) => stopLeftover(sessionId, p.pid)))
+      found[sessionId] = found[sessionId].filter((_, i) => !stopped[i])
+      if (!found[sessionId].length) delete found[sessionId]
+    }
+  }
+}
+let leftoverScans: Promise<void> = Promise.resolve()
+function refreshLeftovers(
+  table: () => Promise<ProcessTable | null> = () => sharedProcessTable.eachRound(LEFTOVER_SCAN_MS)
+): Promise<void> {
+  leftoverScans = leftoverScans
+    .then(async () => {
+      const next = await scanLeftovers(await table())
+      await stopLeftoversOfClosedSessions(next)
+      const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
+      leftovers = next
+      if (changed) sendToRenderer(CH.sessions.leftovers, next)
+    })
+    .catch(() => undefined)
+  return leftoverScans
 }
 if (process.platform !== 'win32') {
   setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
@@ -888,6 +913,16 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
   return { title: s?.title, sessionId: s?.sessionId }
 }
+// PLATFORM§60
+const AWAY_AFTER_IDLE_SECONDS = 5 * 60
+function ownerAway(): boolean {
+  const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
+  if (pretend)
+    return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
+  if (BACKGROUND_TEST) return true
+  return powerMonitor.getSystemIdleState(AWAY_AFTER_IDLE_SECONDS) !== 'active'
+}
+
 function windowFocused(): boolean {
   try {
     return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
@@ -1552,8 +1587,13 @@ const sessionDeps: SessionVerbDeps = {
   startedSessions,
   closable: closableSessions,
   whatIsLeft: whatClosingWouldLose,
-  closeSoon: (target) =>
-    setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
+  closeSoon: (inOrder) =>
+    setTimeout(async () => {
+      for (const target of inOrder)
+        await closeSessionFully(target).catch((error) =>
+          sendToRenderer(CH.cron.toast, `${target.title}: ${String(error)}`)
+        )
+    }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
   speaksForTheOwner: butlerSide,
   butlerFolder: () => conductorFolder(app.getPath('userData')),
@@ -1587,12 +1627,14 @@ const sessionDeps: SessionVerbDeps = {
     const callerChannel = butler?.channelOfTab(callerTab)
     const channelId = callerChannel ?? (target.butler ? butler?.channel()?.channelId : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
-    if (!channelId) return void sendToRenderer(CH.cron.toast, text)
-    discordRelay?.say(channelId, `⚠ ${text}`)
+    const butlerTab = callerChannel ? callerTab : butler?.liveTab()
+    if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
+      discordRelay.say(channelId, `⚠ ${text}`)
+    else sendToRenderer(CH.cron.toast, text)
     if (callerChannel) discordRelay?.tell(butlerDestination(), `[Koloft] ${text}`)
   },
   command: async (callerTab, target, text, tellCaller) =>
-    target.butler && butler?.channelOfTab(callerTab)
+    target.butler && butler?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
       ? commandIntoButler(text)
       : typeCommandInto(target, text, { tell: tellCaller }),
   screen: screenOf
@@ -1617,6 +1659,7 @@ const agentRequests = new AgentRequests({
     workspace: workspaceVerb({ sidebar: projectRows }),
     discord: discordVerb({
       channelOf: (tabId) => butler?.channelOfTab(tabId),
+      quiet: (tabId) => !!discordRelay && !discordRelay.reaches(tabId),
       send: async (channelId, files, text) => {
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
@@ -2722,9 +2765,10 @@ app.whenReady().then(() => {
     sendToRenderer(CH.session.relocated, e)
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
-  tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) =>
+  tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
     discordRelay?.toolDone(tabId, call)
-  )
+    void askButtons?.check(tabId)
+  })
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
@@ -2741,8 +2785,9 @@ app.whenReady().then(() => {
     const asksOnDiscord = butlerSide(t.tabId) && !!butler?.channel()
     if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
+    if (asksOnDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
-    if (!(onDiscord && t.next === 'waiting'))
+    if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
@@ -2794,7 +2839,9 @@ app.whenReady().then(() => {
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+      skipPermissions: () => loadSettings().skipPermissions,
       replyLanguageScript: hookPaths.codexReplyLanguage,
+      builtInStatusLine: () => loadSettings().statuslineBuiltin,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
@@ -3086,7 +3133,8 @@ app.whenReady().then(() => {
   })
   discordTyping = new ButlerTyping({
     link,
-    channelOf: (tabId) => butlerNow.channelOfTab(tabId),
+    channelOf: (tabId) =>
+      discordRelay?.reaches(tabId) ? butlerNow.channelOfTab(tabId) : undefined,
     status: (tabId) => tracker.statusOf(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
@@ -3101,7 +3149,8 @@ app.whenReady().then(() => {
       if (!discordRelay) return STILL_STARTING
       return discordRelay.answerSession(tabId, reply)
     },
-    respond: (i, body) => link.respond(i, body)
+    respond: (i, body) => link.respond(i, body),
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card)
   })
   askButtons = buttons
   const secrets = new SecretAsks({
@@ -3133,6 +3182,7 @@ app.whenReady().then(() => {
       return Buffer.from(await res.arrayBuffer())
     },
     owner: () => butlerNow.owner(),
+    ownerAway,
     butlerName: butlerNameNow,
     destinationOf: (channelId) =>
       butlerNow.isButlerChannel(channelId) ? butlerDestination() : undefined,
@@ -3153,6 +3203,8 @@ app.whenReady().then(() => {
     helperTitle: (tabId) =>
       butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
+    askPlaced: (card, at) => buttons.placed(card, at),
+    answered: (tabId, reply) => buttons.answered(tabId, reply),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId) => tracker.statusOf(tabId),
@@ -3160,7 +3212,10 @@ app.whenReady().then(() => {
     turnOver: (tabId) => tracker.turnOver(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
+    asksChanged: (tabId) => {
+      ptyMgr.wakeReady(tabId)
+      void buttons.check(tabId)
+    },
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
@@ -3373,6 +3428,7 @@ app.whenReady().then(() => {
   // PLATFORM§20
   powerMonitor.on('resume', requestWebglRepair)
   powerMonitor.on('unlock-screen', requestWebglRepair)
+  powerMonitor.on('lock-screen', () => discordRelay?.checkHeld())
   powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3
   powerMonitor.on('resume', () => cronRunner?.onResume())
@@ -3481,7 +3537,11 @@ function setupLine(playwrightBin?: string): string | undefined {
 const processedOpenIds = new Set<string>()
 
 function watchOpenRequests(openDir: string): fs.FSWatcher | null {
-  return watchJsonDrops(openDir, () => (obj, full) => handleOpenRequest(obj as OpenDrop, full))
+  return watchJsonDrops(
+    openDir,
+    () => (obj, full) => handleOpenRequest(obj as OpenDrop, full),
+    () => true
+  )
 }
 
 const OPEN_REQUEST_STILL_WANTED_MS = 60_000
@@ -3494,7 +3554,7 @@ function sweepOpenRequests(openDir: string): void {
       fs.stat(full, (e, st) => {
         if (e) return
         if (Date.now() - st.mtimeMs <= OPEN_REQUEST_STILL_WANTED_MS) {
-          readJsonDrop(full, 0, (obj) => handleOpenRequest(obj as OpenDrop, full))
+          void readJsonDrop(full, 0, (obj) => handleOpenRequest(obj as OpenDrop, full))
         } else {
           fs.rm(full, { force: true }, () => {})
         }
@@ -3949,21 +4009,25 @@ function browserGuestLimit(): number {
   return Number.isInteger(injected) && injected > 0 ? injected : DEFAULT_BROWSER_GUEST_LIMIT
 }
 
-async function directoryTarget(url: string): Promise<string | null> {
-  let target: string
+function localFilePath(url: string): string | null {
   try {
     const u = new URL(url)
     if (u.host && u.host !== 'localhost') return null
-    target = decodeURIComponent(u.pathname)
-  } catch {
-    return null
-  }
-  try {
-    return (await fs.promises.stat(target)).isDirectory() ? target : null
+    return decodeURIComponent(u.pathname)
   } catch {
     return null
   }
 }
+
+async function isDirectory(target: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(target)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8' }
 
 const liveDownloads = new Map<string, Electron.DownloadItem>()
 
@@ -4032,17 +4096,20 @@ function setupBrowserPartition(): void {
   ses.protocol.handle('koloft-file', async () => new Response('Forbidden', { status: 403 }))
   // PLATFORM§12
   ses.protocol.handle('file', async (request) => {
-    const dir = await directoryTarget(request.url)
-    if (dir) {
-      const entries = (await fs.promises.readdir(dir, { withFileTypes: true })).map((e) => ({
+    const target = localFilePath(request.url)
+    if (target && (await isDirectory(target))) {
+      const entries = (await fs.promises.readdir(target, { withFileTypes: true })).map((e) => ({
         name: e.name,
         isDir: e.isDirectory()
       }))
-      return new Response(directoryListingHtml(dir, entries), {
-        headers: { 'content-type': 'text/html; charset=utf-8' }
-      })
+      return new Response(directoryListingHtml(target, entries), { headers: HTML_HEADERS })
     }
-    return ses.fetch(request, { bypassCustomProtocolHandlers: true })
+    try {
+      return await ses.fetch(request, { bypassCustomProtocolHandlers: true })
+    } catch (err) {
+      if (!target || !String(err).includes('ERR_FILE_NOT_FOUND')) throw err
+      return new Response(fileNotFoundHtml(target), { status: 404, headers: HTML_HEADERS })
+    }
   })
   const guestUA = standardUserAgent(app.userAgentFallback, app.getName())
   // PLATFORM§14
@@ -4262,6 +4329,7 @@ function closableSessions(): ClosableSession[] {
 }
 
 const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
+const mergedHeads: MergedHeads = (dir, branch) => hosts.of(dir).github.mergedHeads(dir, branch)
 
 function treeRootOf(s: SessionInfo): string {
   return projectInfoFor(s.remote ? formatRemoteKey(s.remote.host, s.treeRoot) : s.treeRoot).treeRoot
@@ -4286,7 +4354,7 @@ async function whatClosingWouldLose(
   const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
-    ...(await whatIsLeft(hostGitOut, tree))
+    ...(await whatIsLeft(hostGitOut, tree, mergedHeads))
   ]
 }
 
@@ -4312,6 +4380,12 @@ async function closeSessionFully(
   }
   archiveSession(target.sessionId)
   for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  // CC§9 MUSE§8
+  closedSessionsStoppedUntil.set(
+    target.sessionId,
+    Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
+  )
+  void refreshLeftovers(() => sharedProcessTable.fresh())
 }
 
 async function removeUntouchedWorktree(
@@ -4391,7 +4465,12 @@ async function tidyRun(root: string, worktree: string, sessionId?: string): Prom
     if (after === 'unreachable') return machineUnreachable()
   }
   const info = cronRunTree(root, worktree)
-  const result = await tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d))
+  const result = await tidyTree(
+    hostGitOut,
+    info,
+    (d) => hosts.of(d).dirExistsOrThrow(d),
+    mergedHeads
+  )
   if (result.removed)
     for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
   return result

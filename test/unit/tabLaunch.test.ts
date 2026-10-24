@@ -203,6 +203,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     pickHome: () => ({ account: 'work', home: path.join(home, 'codex-home') }),
     assistOf: () => undefined,
     replyLanguageScript: '/koloft/codex-reply-language.sh',
+    builtInStatusLine: () => true,
     browserEndpoint: () => '',
     openShimRoot: path.join(home, 'codex-open'),
     playwrightBin: path.join(home, 'commands', 'bin'),

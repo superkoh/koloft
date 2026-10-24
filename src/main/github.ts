@@ -206,7 +206,7 @@ function parseTodoPulls(stdout: string): TodoPull[] | null {
     }))
 }
 
-// PLATFORM§60
+// PLATFORM§61
 export async function listTodoPulls(gh: Gh, repo: GithubRepo): Promise<TodoPulls> {
   const list = (fields: string): Promise<GhResult> =>
     gh([
@@ -425,6 +425,28 @@ export class GithubLookup {
     const gh = this.ghFor(root)
     if (!repo || !gh) return null
     return failingChecksText(gh, repo, pr)
+  }
+
+  // PLATFORM§32
+  async mergedHeads(root: string, branch: string): Promise<string[] | null> {
+    const repo = await this.repoFor(root)
+    if (!repo) return []
+    const gh = this.ghFor(root)
+    if (!gh) return null
+    const r = await gh([
+      'pr',
+      'list',
+      '--repo',
+      slug(repo),
+      '--state',
+      'merged',
+      '--head',
+      branch,
+      '--json',
+      'headRefOid'
+    ])
+    const prs = r.code === 0 ? ghJsonArray(r.stdout) : null
+    return prs && prs.flatMap((p) => (typeof p?.headRefOid === 'string' ? [p.headRefOid] : []))
   }
 
   private async repoFor(root: string): Promise<GithubRepo | null> {

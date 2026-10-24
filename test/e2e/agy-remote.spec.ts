@@ -101,6 +101,34 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
+  // AGY§8
+  test('⇧⌘R on a remote Antigravity tab before its first prompt restarts nothing and says there is nothing to restart yet; agy there keeps taking prompts', async ({
+    env
+  }) => {
+    setUp(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+
+      await sendShortcut(app, 'shortcut:restart-session')
+      await expect(page.locator('.toast-msg')).toHaveText(
+        'Nothing to restart yet — this session has no conversation.',
+        { timeout: 20_000 }
+      )
+      expect(machineAgyCalls(env)).toHaveLength(1)
+
+      await runIn(page, centerTerm(page), 'still here')
+      const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'still here' })
+      await expect(row).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      expect(machineAgyCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§11
   test('an Antigravity tab on a remote machine keeps running there while Koloft is closed, and the restarted Koloft attaches to it and follows its turns', async ({
     env

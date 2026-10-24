@@ -729,6 +729,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       {
+        backend: 'muse',
         open,
         agent,
         drop: (name) =>
@@ -1035,10 +1036,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       const hook = museHook(line)
       if (hook) this.onHook(run, hook)
     } else if (line.t === 'log' && typeof line.payloadType === 'string') {
+      const aNewerStateCameFirst = Number(line.seq) < run.lastSeq
       this.onLogRecord(run, {
         payloadType: line.payloadType,
         payload: record(line.payload),
-        atMs: Date.now()
+        atMs: aNewerStateCameFirst ? 0 : Date.now()
       })
     }
   }
@@ -1122,6 +1124,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     run.jobs.clear()
     this.holdForJobs(run)
     run.endedTurns.clear()
+    run.touched.clear()
+    run.liveWrites = 0
     run.log = undefined
     this.bind(
       run,

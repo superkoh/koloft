@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
   installCodex,
   installGhForWorkspaceA,
@@ -252,6 +252,44 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
+  test('while the owner is at the Mac, the butler’s reply to a helper is not posted and is marked in Koloft instead, its reply to a Discord message still is, and once the owner is away the next reply to a helper is posted', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const presence = path.join(env.home, 'presence.txt')
+    fs.writeFileSync(presence, 'active')
+    env.launchEnv.KOLOFT_TEST_PRESENCE_FILE = presence
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      const assistId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
+      await expect.poll(() => fs.existsSync(path.join(env.home, '.claude', 'sessions'))).toBe(true)
+      const socket = messagingSocketOf(env, assistId)
+      const turnDoneAt = async (): Promise<number> =>
+        (await pendingAttention(page)).find((e) => e.kind === 'turn-done')?.at ?? 0
+      await expect.poll(turnDoneAt, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeGreaterThan(0)
+      const openingDoneAt = await turnDoneAt()
+      await writeLine(socket, crossSessionLine('bypass', 'helper note one', 'koloft-helper-1')!)
+      await expect
+        .poll(turnDoneAt, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toBeGreaterThan(openingDoneAt)
+      fake.say(OWNER, 'hello there')
+      await expect
+        .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('[Discord] hello there')
+      expect(said(fake).join('\n')).not.toContain('helper note one')
+
+      fs.writeFileSync(presence, 'idle')
+      await writeLine(socket, crossSessionLine('bypass', 'helper note two', 'koloft-helper-2')!)
+      await expect
+        .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('helper note two')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
   test('the butler’s koloft discord send uploads a file with a line of text to its channel', async ({
     env
   }) => {
@@ -329,7 +367,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('the conductor’s own question is asked in the channel as a card with its options and a button each; a button press answers it and the card then says what was picked, and a number sent back answers the next', async ({
+  test('the conductor’s own question is asked in the channel as a card with its options and a button each; a button press answers it and the card then says what was picked, and a number sent back answers the next, whose card then says that answer and loses its buttons', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -345,18 +383,27 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect.poll(card, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
       expect(card()!.buttons?.map((b) => b.label)).toEqual(['1. Red', '2. Green'])
       fake.press(OWNER, card()!.buttons![1], CHANNEL)
-      await expect.poll(() => said(fake)).toContain('Picked: Green')
+      await expect.poll(() => said(fake).join('\n')).toContain('Picked: Green')
       expect(fake.callbacks.map((c) => [c.type, callbackText(c)])).toEqual([
         [7, `${question}\n-# ✅ 2. Green`]
       ])
 
       fake.say(OWNER, '/ask Which size?|Small|Large')
       await expect.poll(() => said(fake).join('\n')).toContain('Which size?')
+      const sizeCard = fake.posted.find((p) => p.content.includes('Which size?'))!
+      expect(sizeCard.buttons?.length).toBe(2)
       const answer = fake.say(OWNER, '2')
-      await expect.poll(() => said(fake)).toContain('Picked: Large')
+      await expect.poll(() => said(fake).join('\n')).toContain('Picked: Large')
       await expect
         .poll(() => fake.reactions)
         .toContainEqual({ messageId: answer, emoji: '✅', on: true })
+      await expect
+        .poll(() =>
+          fake.edits
+            .filter((e) => e.id === sizeCard.id)
+            .map((e) => ({ answered: e.content.endsWith('-# ✅ Answered: 2'), buttons: e.buttons }))
+        )
+        .toEqual([{ answered: true, buttons: [] }])
     } finally {
       await quitAndClose(app)
       await fake.close()

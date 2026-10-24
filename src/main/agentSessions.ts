@@ -390,7 +390,7 @@ export interface SessionVerbDeps {
   startedSessions: StartedSessions
   closable(): ClosableSession[]
   whatIsLeft(target: ClosableSession): Promise<string[]>
-  closeSoon(target: ClosableSession): void
+  closeSoon(inOrder: ClosableSession[]): void
   isButler(tabId: string): boolean
   speaksForTheOwner(tabId: string): boolean
   butlerFolder(): string
@@ -727,6 +727,57 @@ async function endedSession(d: SessionVerbDeps, ref: string): Promise<Parsed<Clo
     )
   const ended = d.closable().find((s) => s.sessionId === row.id)
   return ended ? { ok: true, value: ended } : fail(`koloft session close: ${title} is gone.`)
+}
+
+interface StartedSessionsToClose {
+  close: ClosableSession[]
+  kept: string[]
+  open: string[]
+}
+
+async function startedSessionsToClose(
+  d: SessionVerbDeps,
+  target: ClosableSession,
+  callerTab: string
+): Promise<StartedSessionsToClose> {
+  const found: StartedSessionsToClose = { close: [], kept: [], open: [] }
+  const all = d.closable()
+  const alive = new Set(d.allSessions().flatMap((s) => (s.alive ? [s.sessionId] : [])))
+  const seen = new Set([target.sessionId])
+  const visit = async (parent: string): Promise<void> => {
+    const kids = all.filter(
+      (s) => !seen.has(s.sessionId) && d.startedSessions.startersOf(s).includes(parent)
+    )
+    for (const kid of kids) seen.add(kid.sessionId)
+    const ended = kids.filter((kid) => {
+      if (!alive.has(kid.sessionId)) return true
+      if (kid.tabId !== callerTab) found.open.push(`"${kid.title}"`)
+      return false
+    })
+    const lefts = await Promise.all(
+      ended.map((kid) => (kid.treeRoot === target.treeRoot ? [] : d.whatIsLeft(kid)))
+    )
+    const closing = ended.filter((kid, i) => {
+      if (!lefts[i].length) return true
+      found.kept.push(`"${kid.title}":\n${lefts[i].join('\n')}`)
+      return false
+    })
+    found.close.push(...closing)
+    for (const kid of closing) await visit(kid.sessionId)
+  }
+  await visit(target.sessionId)
+  return found
+}
+
+function startedSessionsLines({ close, kept, open }: StartedSessionsToClose): string[] {
+  const lines = [
+    close.length &&
+      `Also closing the ended sessions it started: ${close.map((s) => `"${s.title}"`).join(', ')}.`,
+    kept.length &&
+      `Left these ended sessions it started, since closing them would lose this:\n\n${kept.join('\n\n')}`,
+    open.length && `Left these sessions it started open: ${open.join(', ')}.`
+  ]
+  return lines.filter((line): line is string => !!line)
 }
 
 export const THAT_IS_YOU = 'That is you.'
@@ -1223,11 +1274,15 @@ export function sessionVerb(d: SessionVerbDeps): {
         return refused(
           `koloft session close: nothing was closed.\n\n${left.join('\n\n')}\n\nCommit and push every change, end any other session in that worktree, then run koloft session close again.`
         )
-      d.closeSoon(target)
+      const started = await startedSessionsToClose(d, target, caller.tabId)
+      d.closeSoon([target, ...started.close])
       return answered(
-        target.tabId === caller.tabId
-          ? 'Closing this session now: its tab, its row in the sidebar, and its git worktree and branch if it has one.'
-          : `Closing "${target.title}" now: its tab if it is open, its row in the sidebar, and its git worktree and branch if it has one.`
+        [
+          target.tabId === caller.tabId
+            ? 'Closing this session now: its tab, its row in the sidebar, and its git worktree and branch if it has one.'
+            : `Closing "${target.title}" now: its tab if it is open, its row in the sidebar, and its git worktree and branch if it has one.`,
+          ...startedSessionsLines(started)
+        ].join('\n\n')
       )
     }
     return refused(SESSION_USAGE, EXIT_USAGE)
