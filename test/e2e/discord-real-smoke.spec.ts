@@ -783,7 +783,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => said(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
         .toMatch(
-          /❓ .+\n(.*\n)*1\. Red\b.*\n2\. Green\b.*\n-# Reply with the number or the name of one option\./
+          /❓ .+\n(.*\n)*1\. Red\b.*\n2\. Green\b.*\n-# Reply with the number or the name of one option, or with your own answer\./
         )
       const before = conductorSaid(fake).length
       const green = fake.say(OWNER, 'Green')
