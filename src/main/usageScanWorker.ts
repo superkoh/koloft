@@ -70,7 +70,8 @@ async function scanAll(files: UsageFile[]): Promise<void> {
     let scanned: Omit<ScannedFile, 'file'>
     try {
       scanned = await scan(f)
-    } catch {
+    } catch (error) {
+      console.error('[koloft] usage read failed, retried next read:', f.file, error)
       continue
     }
     parentPort?.postMessage({ file: f.file, ...scanned })

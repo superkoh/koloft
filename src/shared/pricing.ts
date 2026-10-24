@@ -154,11 +154,19 @@ export interface TokenCounts {
   cacheReadTok: number
 }
 
+export const TOKEN_FIELDS = [
+  'inTok',
+  'outTok',
+  'cacheWriteTok',
+  'cacheWrite1hTok',
+  'cacheReadTok'
+] as const
+
 export function costUsdOf(pricing: ModelPricing, t: TokenCounts): number {
   return (
     (t.inTok * pricing.inPerM +
       t.outTok * pricing.outPerM +
-      (t.cacheWriteTok - t.cacheWrite1hTok) * pricing.cacheWritePerM +
+      Math.max(0, t.cacheWriteTok - t.cacheWrite1hTok) * pricing.cacheWritePerM +
       t.cacheWrite1hTok * pricing.cacheWrite1hPerM +
       t.cacheReadTok * pricing.cacheReadPerM) /
     1_000_000

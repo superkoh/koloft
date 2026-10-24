@@ -732,6 +732,7 @@ export interface SessionUsage {
   inTok: number
   outTok: number
   cacheWriteTok: number
+  cacheWrite1hTok?: number
   cacheReadTok: number
   costUsd?: number
   todayCostUsd?: number

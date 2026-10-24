@@ -1,19 +1,11 @@
 import type { SessionUsage } from '@shared/types'
-import { costUsdOf, resolvePricing, type TokenCounts } from '@shared/pricing'
+import { costUsdOf, resolvePricing, TOKEN_FIELDS, type TokenCounts } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import type { TranscriptRecord } from './transcriptRecord'
 
 function num(x: unknown): number {
   return typeof x === 'number' && isFinite(x) && x > 0 ? x : 0
 }
-
-const TOKEN_FIELDS = [
-  'inTok',
-  'outTok',
-  'cacheWriteTok',
-  'cacheWrite1hTok',
-  'cacheReadTok'
-] as const
 
 function growthOver(booked: TokenCounts, line: TokenCounts): TokenCounts {
   const grown = { ...line }

@@ -1,4 +1,9 @@
-import { longContextSurchargeUsd, resolvePricing, type TokenCounts } from '@shared/pricing'
+import {
+  longContextSurchargeUsd,
+  resolvePricing,
+  TOKEN_FIELDS,
+  type TokenCounts
+} from '@shared/pricing'
 import type { UsageRecord } from '@shared/types'
 import { localDayKey } from '@shared/usageFormat'
 import { stepOf } from './agyStore'
@@ -9,14 +14,6 @@ interface CodexScan {
   cwd: string
   records: UsageRecord[]
 }
-
-const TOKEN_FIELDS = [
-  'inTok',
-  'outTok',
-  'cacheWriteTok',
-  'cacheWrite1hTok',
-  'cacheReadTok'
-] as const
 
 export const CLAUDE_USAGE_WORDS = ['"usage"']
 export const CODEX_USAGE_WORDS = ['session_meta', 'turn_context', 'token_usage_record']

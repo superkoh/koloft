@@ -5475,7 +5475,7 @@ function registerIpc(): void {
     send: (found) => sendToRenderer(CH.sessions.searchHits, found)
   })
   const usageCache = new UsageCache({
-    cacheFile: () => path.join(app.getPath('userData'), 'usage-cache.json'),
+    cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-2.json'),
     listFiles: async () => {
       await workspaceMgr?.firstScan
       const userData = app.getPath('userData')
