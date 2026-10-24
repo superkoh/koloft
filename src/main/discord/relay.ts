@@ -52,6 +52,8 @@ export const ASKS_WHAT_KOLOFT_CANNOT_SEE =
 export const inputNotProbed = (label: string): string =>
   `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. The butler can still answer this one by pressing its keys.`
 export const butlerAsks = (name: string): string => `❓ **${name}** is waiting for you.`
+export const answerItFirst = (name: string): string =>
+  `${name} asked you the question above while you were at the Mac. Answer it first; this message was not delivered.`
 const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
 const takesAnOption = (label: string): string =>
   `this ${label} question takes the number or the name of one option.`
@@ -82,6 +84,7 @@ const DELIVERED = '✅'
 const PAGE = 100
 const PROMPT_SETTLES_AFTER_BIND_MS = 1000
 const BUTLER_GETS_READY_WITHIN_MS = 10 * 60_000
+export const HELD_ASKS_CHECKED_EVERY_MS = 30_000
 
 export interface Destination {
   name: string
@@ -101,6 +104,7 @@ export interface RelayDeps {
   link: Pick<DiscordLink, 'post' | 'upload' | 'react' | 'messages' | 'card'>
   download(url: string): Promise<Buffer>
   owner(): string | undefined
+  ownerAway(): boolean
   butlerName(): string
   destinationOf(channelId: string): Destination | undefined
   channels(): CaughtUpChannel[]
@@ -131,8 +135,11 @@ interface Inbound {
   clientId: string
   text(): Promise<string>
   command?: boolean
+  fromDiscord?: boolean
   settle(failed?: string): void
 }
+
+type DiscordAnswer = 'message' | 'turn'
 
 function slashTextOf(content: string): string | undefined {
   const text = content.trim()
@@ -147,8 +154,45 @@ export class DiscordRelay {
   private asks = new Map<string, { payload: AskPayload; hook?: string; raw: string }>()
   private askHooks = new Map<string, Set<string>>()
   private codexAsks = new Map<string, string | number>()
+  private answering = new Map<string, DiscordAnswer>()
+  private held = new Set<string>()
+  private heldCheck: ReturnType<typeof setInterval> | undefined
 
   constructor(private d: RelayDeps) {}
+
+  reaches(tab: string): boolean {
+    return this.answering.has(tab) || this.d.ownerAway()
+  }
+
+  private answersDiscord(tab: string, answer: DiscordAnswer): void {
+    if (this.answering.get(tab) !== 'message') this.answering.set(tab, answer)
+  }
+
+  private holds(tab: string): boolean {
+    if (this.reaches(tab)) return false
+    this.held.add(tab)
+    this.heldCheck ??= setInterval(() => this.checkHeld(), HELD_ASKS_CHECKED_EVERY_MS).unref()
+    return true
+  }
+
+  checkHeld(): void {
+    const away = this.d.ownerAway()
+    for (const tab of [...this.held]) {
+      if (!away && this.dialogOpen(tab)) continue
+      this.held.delete(tab)
+      if (away) this.postOpenAsk(tab)
+    }
+    if (this.held.size) return
+    clearInterval(this.heldCheck)
+    this.heldCheck = undefined
+  }
+
+  private postOpenAsk(tab: string): void {
+    const ask = this.openAsk(tab)
+    if (ask) return this.postClaudeAsk(tab, ask.payload)
+    const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
+    if (open) this.codexAsked(tab, open)
+  }
 
   say(channelId: string, text: string, replyTo?: string): void {
     for (const part of splitForDiscord(toDiscordMarkdown(text)))
@@ -180,6 +224,13 @@ export class DiscordRelay {
     if (!dest) return
     this.seenLive.add(m.id)
     const tab = dest.liveTab()
+    if (tab && this.held.delete(tab) && this.dialogOpen(tab)) {
+      this.answersDiscord(tab, 'turn')
+      this.postOpenAsk(tab)
+      this.say(m.channelId, answerItFirst(dest.name), m.id)
+      dest.seen(m.id)
+      return
+    }
     const command = m.attachments.length ? undefined : slashTextOf(m.content)
     const refusal = command === undefined ? undefined : this.commandRefusal(tab, command, dest.name)
     if (
@@ -189,16 +240,21 @@ export class DiscordRelay {
       this.heldInTerminal(tab) &&
       this.dialogOpen(tab)
     ) {
-      void this.answerSession(tab, m.content).then((error) =>
-        error ? this.say(m.channelId, error, m.id) : this.react(m, DELIVERED, true)
-      )
+      void this.answerSession(tab, m.content).then((error) => {
+        if (error) return this.say(m.channelId, error, m.id)
+        this.answersDiscord(tab, 'turn')
+        this.react(m, DELIVERED, true)
+      })
       dest.seen(m.id)
       return
     }
     const answered = command === undefined && !!tab && this.answerDialog(tab, m)
     if (refusal || answered) {
       if (refusal) this.say(m.channelId, refusal, m.id)
-      else this.react(m, DELIVERED, true)
+      else {
+        if (tab) this.answersDiscord(tab, 'turn')
+        this.react(m, DELIVERED, true)
+      }
       dest.seen(m.id)
       return
     }
@@ -209,6 +265,7 @@ export class DiscordRelay {
       clientId: `koloft-discord-${m.id}`,
       text: command === undefined ? () => this.textOf(m) : async () => command,
       command: command !== undefined,
+      fromDiscord: true,
       settle: (failed) => {
         if (waits) this.react(m, QUEUED, false)
         if (failed)
@@ -275,6 +332,17 @@ export class DiscordRelay {
   private async deliver(dest: Destination, item: Inbound): Promise<void> {
     const tab = await this.readyTab(dest)
     const text = await item.text()
+    const answer = item.fromDiscord ? (item.command ? 'turn' : 'message') : undefined
+    if (answer) this.answersDiscord(tab, answer)
+    try {
+      await this.hand(dest, tab, item, text)
+    } catch (error) {
+      if (answer) this.answering.delete(tab)
+      throw error
+    }
+  }
+
+  private async hand(dest: Destination, tab: string, item: Inbound, text: string): Promise<void> {
     if (item.command) return dest.typeCommand(tab, text)
     const backend = this.d.backendOf(tab)
     const route = backend && messagingOf(backend, false)
@@ -352,7 +420,11 @@ export class DiscordRelay {
 
   turnEnded(tabId: string, turn: Turn): void {
     const channelId = this.d.butlerChannelOf(tabId)
-    if (channelId && turn.reply.trim()) this.say(channelId, turn.reply)
+    if (!channelId) return
+    const answers = turn.said.some((line) => line.text.startsWith(DISCORD_PREFIX))
+    const reaches = answers || this.reaches(tabId)
+    if (answers || this.answering.get(tabId) === 'turn') this.answering.delete(tabId)
+    if (reaches && turn.reply.trim()) this.say(channelId, turn.reply)
   }
 
   private hookFile(tab: string, hook: string, suffix: string): string {
@@ -396,8 +468,13 @@ export class DiscordRelay {
     this.asks.set(tab, { payload, hook, raw })
     if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
     this.d.asksChanged(tab)
+    this.postClaudeAsk(tab, payload)
+  }
+
+  private postClaudeAsk(tab: string, payload: AskPayload): void {
     const channelId = this.d.butlerChannelOf(tab)
-    if (channelId) this.card(channelId, this.askCard(tab, claudeDialog(payload), askHow(payload)))
+    if (channelId && !this.holds(tab))
+      this.card(channelId, this.askCard(tab, claudeDialog(payload), askHow(payload)))
   }
 
   dialog(tab: string): DialogView | undefined {
@@ -472,7 +549,7 @@ export class DiscordRelay {
 
   codexAsked(tab: string, a: CodexApproval | CodexQuestion): void {
     const channelId = this.d.butlerChannelOf(tab)
-    if (!channelId || this.codexAsks.get(tab) === a.id) return
+    if (!channelId || this.codexAsks.get(tab) === a.id || this.holds(tab)) return
     this.codexAsks.set(tab, a.id)
     const view = codexDialog(a)
     const question = 'options' in a
@@ -530,6 +607,8 @@ export class DiscordRelay {
     this.answer(tab, {})
     this.codexAsks.delete(tab)
     this.askHooks.delete(tab)
+    this.answering.delete(tab)
+    this.held.delete(tab)
   }
 
   async catchUp(): Promise<void> {

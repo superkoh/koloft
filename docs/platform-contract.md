@@ -2329,3 +2329,16 @@ server unless a line says so.
 - Measured 2026-10-19 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, 16 GB,
   Node 24.13.0, Google Chrome 155, colima with Docker, by scripts run from a Koloft Claude Code
   tab.
+
+## §60 Electron: is someone at the Mac
+
+- **`powerMonitor.getSystemIdleState(seconds)` answers at once and asks for no
+  permission.** It returns `active` when the keyboard or mouse was used within `seconds`
+  (any app), `idle` after that, `locked` while the screen is locked, and `unknown` when it
+  cannot tell. `powerMonitor.getSystemIdleTime()` gives the seconds since the last input
+  (it read 71 while the person waited on a reply).
+- **There is no "went idle" event.** `powerMonitor` emits `lock-screen` and
+  `unlock-screen`, but nothing when input stops, so going idle is only seen by asking
+  again later.
+- Measured 2026-10-23 with Electron 43.7.3 on macOS 27.0 (Darwin 27.0.0), Apple silicon, by
+  a script run under the repo's Electron from a Koloft Claude Code tab.
