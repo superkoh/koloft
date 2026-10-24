@@ -410,7 +410,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('a helper the butler starts in its own folder asks its question in the butler’s channel, on a card that names it as the butler’s helper, and what the owner types while that card waits answers the helper', async ({
+  test('a helper the butler starts in its own folder asks its question in the butler’s channel, on a card that names it as the butler’s helper, and what the owner types while that card waits answers the helper, whose reply reaches the channel only as the butler passes it on', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -418,12 +418,12 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     const { app, page } = await connected(env, fake)
     try {
       fake.say(OWNER, '/koloft session new --name Tidy -- Sort out the to-dos.')
-      const helperTab = async (): Promise<string | undefined> => {
+      const helper = async (): Promise<{ tabId: string; sessionId?: string } | undefined> => {
         const all = await page.evaluate(() => window.api.sessions.list())
-        return all.find((s) => s.alive && s.title === 'Tidy' && s.sessionId)?.tabId
+        return all.find((s) => s.alive && s.title === 'Tidy' && s.sessionId)
       }
-      await expect.poll(helperTab, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
-      const tab = (await helperTab())!
+      await expect.poll(helper, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
+      const { tabId: tab, sessionId: helperId } = (await helper())!
       await page.evaluate(
         (id) => window.api.terminal.write(id, '/ask Merge #41?|Merge|Leave it\r'),
         tab
@@ -438,7 +438,11 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect
         .poll(() => terminalText(page, tab), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Picked: Merge')
-      expect(said(fake).join('\n')).not.toContain('Picked: Merge')
+      const passedOn = (p: string): boolean => p.includes(`id ${helperId}:) Picked: Merge`)
+      await expect
+        .poll(() => said(fake).some(passedOn), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toBe(true)
+      expect(said(fake).filter((p) => p.includes('Picked: Merge') && !passedOn(p))).toEqual([])
     } finally {
       await quitAndClose(app)
       await fake.close()
