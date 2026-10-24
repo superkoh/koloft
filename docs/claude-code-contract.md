@@ -172,7 +172,9 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   (`strings`, 2026-10-20: the same again), and on 2.1.306, darwin-arm64 and linux-arm64
   (`strings`, 2026-10-21: the same array, constant and filter, and the skill-hook
   constants below), and on 2.1.308, darwin-arm64 and linux-arm64 (`strings`,
-  2026-10-22: the same again).
+  2026-10-22: the same again), and on 2.1.309, darwin-arm64 and linux-arm64 (`strings`,
+  2026-10-23: the same array, the limit `12` beside the `prompt`/`agent` type filter,
+  and the skill-hook constants `1024` and `16384`).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -780,6 +782,14 @@ the same files into a worktree Koloft makes or rebuilds itself.
   the title and `Removing worktree…`, with one the two dim resume-hint lines of §1 do
   (119 bytes) — and the same in default and fullscreen mode; the worktree and its branch
   were gone afterwards. The key `2` alone picks Remove, with no Enter.
+- Rechecked 2026-10-23 on CC 2.1.309 beside 2.1.308 (`strings`, darwin-arm64 and
+  linux-arm64, not run): the code that removes a worktree at exit is the same once
+  minified names are evened out, and every exit line above is unchanged. 2.1.309
+  changes the creating side: CC's git children get `LC_ALL=C` and `LANGUAGE=C` unless a
+  call asks for the user's locale, so a git error inside one of the failure lines is
+  now English; and `-w` creation and reuse run with `GIT_NO_LAZY_FETCH=1` after a
+  partial clone's missing objects are fetched ahead (inferred from the code). Koloft
+  matches only the start and `Worktree removed` lines, so neither change reaches it.
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
@@ -895,7 +905,8 @@ never wrote a transcript.
   {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": ""}}'` it read `status: "async_launched"`,
   `isAsync: true` — an ordinary background subagent. The binary's teams gate is a
   plain truthiness test (`if(!a.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS&&!t())return!1`, read
-  with `strings`), so `"0"` would leave teams on; only `""` was run.
+  with `strings`; the same test in 2.1.309, minified names aside, 2026-10-23), so `"0"`
+  would leave teams on; only `""` was run.
 - **The status JSON carries `effort: { level }`** (the session's thinking effort:
   low / medium / high / xhigh / max; Ultracode reports as xhigh). Read from the
   status-object builder in the installed 2.1.263 binary via `strings`, 2026-09-06.
@@ -1295,8 +1306,8 @@ Probes P1–P7. Flag spellings quoted from `claude --help` of the same build. Th
 line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is pinned by
 `cron-real-smoke.spec.ts` › BB-R01, green on 2.1.296 (2026-10-11), 2.1.299
 (2026-10-14), 2.1.300 (2026-10-15), 2.1.301 (2026-10-16), 2.1.302 (2026-10-17),
-2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21) and 2.1.308
-(2026-10-22).
+2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21), 2.1.308
+(2026-10-22) and 2.1.309 (2026-10-23).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1366,6 +1377,12 @@ other bullets of §9 were not re-measured on this build.
   appended a new `custom-title` *and* a new `agent-name` with the new text, and still no
   `ai-title`. So the latest `custom-title` is the session's name, and a peer that kept
   the old name no longer reaches it by that name.
+- **`claude -p --resume <id>` of a `/rename`d session appends to the same jsonl** (its
+  init `session_id` is `<id>`). On 2.1.308 it also re-wrote `custom-title`, `ai-title`
+  and `agent-name` (same text) plus `mode`, `permission-mode` and `atis-latch` after
+  its first API request; 2.1.309 appended none of these (2026-10-23, a pty-driven
+  session in a scratch `HOME`, `/rename` then `/exit`, then `-p --resume`, 2 runs per
+  build). The latest `custom-title` is unchanged either way.
 - **A name may hold spaces and CJK text and still be a message address.** Same build:
   `--name "带 空格 的 名字"` was listed by ListAgents under that name, and a
   SendMessage to that bare name was delivered (its transcript holds the reply
@@ -1537,6 +1554,16 @@ other bullets of §9 were not re-measured on this build.
   environment. Examples: an Android emulator's `qemu`, still running three days after
   its session; an `adb` server; the OrbStack app. So "programs this session left
   running" = processes with ppid 1 whose environment names that session id.
+- **Since 2.1.309 the dangerous-`rm` check in bypass mode denies at once only where an
+  SDK host draws its own permission card; a TUI still gets the dialog.** Read from the
+  2.1.309 binary with `strings`, 2026-10-23, not run: the `tengu_splendid_horizon`
+  settings gained `denyOnHostCard` (default `true`) beside `enabled`, `showDialog`,
+  `timeoutMs: 120000` and `maxDialogTimeouts: 3`, and the deny-at-once path needs a flag
+  the SDK's dialog handler sets inside the process — not `CLAUDE_CODE_ENTRYPOINT` or any
+  env name. With no such host the 2.1.308 path runs unchanged
+  (`CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT` still turns it off). Koloft runs the TUI
+  in a pty and sets no `CLAUDE_CODE_ENTRYPOINT`, so its tabs are never taken for the
+  Desktop app or VS Code.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
 branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`,
@@ -1613,9 +1640,16 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   cwd, startedAt, procStart, version, peerProtocol, peerFeatures, kind, entrypoint,
   pidDomain, messagingSocketPath, name, nameSource, nameSince, status, updatedAt,
   statusUpdatedAt`. Values seen: `kind: 'interactive'`, `entrypoint: 'cli' | 'sdk-cli'`,
-  `nameSource: 'derived' | 'user'`, `status: 'busy' | 'idle'`. A sibling
+  `nameSource: 'derived' | 'user' | 'auto'`, `status: 'busy' | 'idle'`. A sibling
   `<pid>.<sha256>.key` sits next to each one. Re-read 2026-09-24 on CC 2.1.281: 7
   entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them.
+- **A `claude -p` run writes an entry too** (`kind: "interactive"`, `entrypoint:
+  "sdk-cli"`, busy then idle, removed on exit). For `claude -p --resume <id>` of a
+  `/rename`d session, on 2.1.309 the entry takes the session's title with `nameSource:
+  "auto"` about 50 ms after it appears; on 2.1.308 it kept the derived name
+  (`nameSource: "derived"`) for the whole run. A later interactive `--resume` showed
+  `nameSource: "user"` on both (2026-10-23, CC 2.1.308 and 2.1.309, the registry read
+  every 50 ms, 2 runs each).
 - **Lifecycle, measured 2026-09-23 on CC 2.1.281** (7 live sessions plus a tmux probe):
   - Every live interactive session had an entry, and its `sessionId` was the id it was
     running, a resumed id included.
@@ -1813,8 +1847,15 @@ sessions.
   sent is read from the attachments still in the conversation, so a compaction sends
   the list again (the changelog line; `strings`, 2026-10-20, not run). Koloft's e2e
   helper reads only `type` and `content`.
-- **`--add-dir <dir>` also loads `<dir>/.claude/skills`** (listed without a prefix). It
-  also opens that folder to the model's file tools.
+- **`--add-dir <dir>` also loads `<dir>/.claude/skills`**, listed without a prefix
+  unless another skill (a user skill, say) already holds the name: since 2.1.309 it is
+  then offered as `<folder>:<name>`, and CC adds ` (scoped to <folder>/ — use this
+  instead of the unscoped "<name>" skill when the files being changed are under
+  <folder>/)` to its `skill_listing` description; 2.1.308 left it out. A `--plugin-dir`
+  skill is `<plugin>:<name>` on both builds, beside a same-named user skill (2026-10-23,
+  `claude -p` init `skills` and `skill_listing` in a scratch `HOME`). It also opens that
+  folder to the model's file tools. Koloft passes no `--add-dir` to claude, only
+  `--plugin-dir`.
 - **A SessionStart hook's `hookSpecificOutput.additionalContext`** (given through a
   `--settings` file) reached the model.
 - **`--append-system-prompt-file <file>`** reached the model.
@@ -1853,7 +1894,13 @@ sessions.
   - The same `bypass` line sent while that receiver was running a 15 s Bash command was
     taken into the running turn and answered there: a `queued_command` attachment whose
     `prompt` holds the whole envelope and whose `origin` adds `fromMode: "bypass"` and
-    `body` (the bare body).
+    `body` (the bare body). Re-run 2026-10-23 on CC 2.1.308 and 2.1.309 (one
+    interactive bypass receiver each, the line written while a `ping -c 25` Bash call
+    ran): both wrote the same record kinds — that `queued_command` attachment (now also
+    with `delivery_id` and `reminderId`) and a `queue-operation` `enqueue`/`remove` pair
+    whose `content` is the whole envelope. The 2.1.309 change is on screen only: ctrl+o
+    shows the message under the transcript as "Waiting to be delivered"; 2.1.308's ctrl+o
+    view did not show it.
   - the same with `from-mode="prompting"`, or a bare body, or `"from_mode":"bypass"` as a
     field beside `message`: held — "Held peer message … The sending session's permission
     mode class doesn't match this session's", and a "Held message from another session"
@@ -1872,7 +1919,8 @@ sessions.
     `prompting`) and `from-plugin`, then `\n`, the body, `\n</cross-session-message>`;
     the receiver's limits read `bucketCapacity:30, refillPerSecond:0.5,
     dedupWindowMs:30000, maxSelfHops:10, maxChainLength:28, maxTrackedSenders:256`, the
-    same as 2.1.296 (`strings`, 2026-10-14).
+    same as 2.1.296 (`strings`, 2026-10-14). Still on in 2.1.309, with the same
+    pattern, wrap text and limits (`strings`, 2026-10-23).
   - A busy receiver with a mismatched mode, and a receiver not in bypass mode, were not
     tried.
 - **A message reaches a receiver whose turn ended with background work still running.**
@@ -2029,8 +2077,9 @@ below was one run.
   and on 2.1.303 (2026-10-19) and 2.1.304 (2026-10-20; on both the `tengu_moss_anchor`
   fallback and the code around it are the same in `strings`), and on linux-arm64 2.1.306
   before E-SSH-10/11/12/15/17, all green (2026-10-21), and on linux-arm64 2.1.308 before
-  E-SSH-10/11/12/15/17/C2, all green, the fallback the same in `strings` (2026-10-22). A
-  user's own `claude -p` in a Koloft terminal is the measured case.
+  E-SSH-10/11/12/15/17/C2, all green, the fallback the same in `strings` (2026-10-22),
+  and on linux-arm64 2.1.309 the same again (2026-10-23; the new `tengu_mossy_anchor`
+  is a different gate). A user's own `claude -p` in a Koloft terminal is the measured case.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
   runs), also for a plan in `bypassPermissions`.
@@ -2155,7 +2204,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2026-10-15), 2.1.301 (`2.1.301 (Claude Code)`, 2026-10-16), 2.1.302 (`2.1.302
   (Claude Code)`, 2026-10-17), 2.1.303 (`2.1.303 (Claude Code)`, 2026-10-19),
   2.1.304 (`2.1.304 (Claude Code)`, 2026-10-20), 2.1.306 (`2.1.306 (Claude Code)`,
-  2026-10-21) and 2.1.308 (`2.1.308 (Claude Code)`, 2026-10-22).
+  2026-10-21), 2.1.308 (`2.1.308 (Claude Code)`, 2026-10-22) and 2.1.309 (`2.1.309
+  (Claude Code)`, 2026-10-23).
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
   certificates** checked as the TLS trust store loads (the runtime's roots, the system
   store and `NODE_EXTRA_CA_CERTS`; `strings -n 6` set diffs, 2026-10-19: beside the
@@ -2174,7 +2224,7 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   the same helper in 2.1.303 with the 2000 behind a constant, 2026-10-19, and in 2.1.304,
   2026-10-20; 2.1.306's strings hold `waitForOAuthRefresh` and `drainAll` as often as
   2.1.304's, 2026-10-21, and 2.1.308's as 2.1.306's, with the same helper once minified
-  names are evened out, 2026-10-22;
+  names are evened out, 2026-10-22, and 2.1.309's as 2.1.308's, 2026-10-23;
   the changelog's fix for subcommands "exiting before a queued settings or config write
   finished"); which subcommands reach that helper was not read.
 - **A downloaded binary updates itself into its `HOME`, not in place.** A 2.1.296
@@ -2210,7 +2260,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   on 2026-10-21 npm `latest` and `next` and the download host's `latest` offered
   2.1.306, and npm's and the download host's `stable` 2.1.304; on 2026-10-22 every
   channel offered 2.1.308 (npm `latest`, `next` and `stable`, and the download host's
-  `latest` and `stable`).
+  `latest` and `stable`); on 2026-10-23 npm `latest` and `next` and the download host's
+  `latest` offered 2.1.309, and npm's and the download host's `stable` 2.1.308.
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
@@ -2225,9 +2276,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `2.1.304/linux-arm64/claude` with 288,612,536 bytes, and on 2026-10-21
   `2.1.306/linux-arm64/claude` with 290,447,544 bytes (its ETag is the file's MD5, and
   its strings stamp `2.1.306` only), and on 2026-10-22 `2.1.308/linux-arm64/claude` with
-  292,085,944 bytes (ETag the file's MD5 again, strings stamp `2.1.308` only) — each ran
-  as the
-  lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
+  292,085,944 bytes (ETag the file's MD5 again, strings stamp `2.1.308` only), and on
+  2026-10-23 `2.1.309/linux-arm64/claude` with 293,331,128 bytes (ETag the file's MD5,
+  strings stamp `2.1.309` only) — each ran as the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
 

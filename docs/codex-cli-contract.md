@@ -254,7 +254,9 @@ branch and HEAD were still present and unchanged.
 
 **Codex 0.162.0 makes worktrees of its own ("managed worktrees"), on by default.**
 Read 2026-10-11 from Codex CLI 0.162.1: `codex features list` prints `worktrees stable
-true`; `codex`, `exec`, `resume` and `fork` take `--worktree` ("Run the session in a new
+true` (on 0.164.0, 2026-10-23, `worktrees removed true` — the flag is gone and the
+feature always on, while `--worktree` is still in `codex --help` and `resume --help`);
+`codex`, `exec`, `resume` and `fork` take `--worktree` ("Run the session in a new
 managed Git worktree"); the model gets the MCP tools `codex_worktrees/create_worktree`
 ("Defaults to the repository's remote default branch, not the current branch"),
 `get_worktree_creation_status` and `list_worktrees`; and the TUI's strings hold a
@@ -270,7 +272,8 @@ run: **inferred, not checked**.
 
 ## 7. Rechecking a CLI upgrade
 
-Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0 or 0.162.x. Koloft
+Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0
+or 0.164.0. Koloft
 treats the minor line of its minimum (`MIN_CODEX_VERSION` in `src/main/cliMinimums.ts`)
 as verified (`verified` in `src/main/codexRuntime.ts`, pinned by
 `test/unit/codexRuntime.test.ts`) and warns on anything newer. The owner raised the
@@ -286,13 +289,23 @@ and 26 passed on 0.162.1. On 0.163.0 (2026-10-16): sections 1 (`thread/list` sha
 see there), 13/14 (`model/list`, the default model), 17 (a message queued mid-turn), 20
 (the waiting question), 21 (the slash popup) and 25 (the TUI's startup bytes, OSC 7501,
 the leader key) were measured again, and the same e2e specs passed; they passed again on
-0.163.0 on 2026-10-17, 2026-10-19, 2026-10-20, 2026-10-21 and 2026-10-22 (no newer Codex on any of those days). Still only on
-0.153.4 or 0.159.3, and so inferred for 0.161+:
-section 1's update-notice key, 2, 3 (the approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` / `commandActions` shapes,
-the `open` shim), 13 (token-usage fields) and 14 (first prompt, `-m`,
-`model_reasoning_effort`). `codex --help`, `app-server --help`,
-`exec --help` and `resume --help` are byte-identical on 0.161.0, 0.162.1 and 0.163.0
-(2026-10-16).
+0.163.0 on 2026-10-17, 2026-10-19, 2026-10-20, 2026-10-21 and 2026-10-22 (no newer
+Codex on any of those days). On 0.164.0 (2026-10-23): sections 1 (`thread/list` shape),
+6 (the `worktrees` flag), 11 (a model and thinking level on a resume, `-c` at two
+levels), 13 (the token-usage fields, and reasoning tokens as a part of output), 15
+(`auth.json` keys, `login status`, compressed rollouts), 20 (the waiting-question flag),
+27 (two new hook events) and 28 (the start race, not fixed) were measured again, and
+the same e2e specs passed, the remote ones (E-SSH-23/24/25) too with 0.164.0 as the
+Mac's codex (that the Linux lab machine then ran 0.164.0 as well is inferred from the
+install script taking a version, not checked). Still only on 0.153.4 or 0.159.3, and so inferred for 0.161+: section
+1's update-notice key (0.164.0 accepts the key, its effect was not watched), 2, 3 (the
+approval keys), 4, 9 (the trust question before connecting), 12 (`fileChange` /
+`commandActions` shapes, the `open` shim) and 14's first prompt. `codex --help`,
+`app-server --help`, `exec --help` and `resume --help` are byte-identical on 0.161.0,
+0.162.1 and 0.163.0 (2026-10-16). On 0.164.0 (2026-10-23) `--help` adds
+`migrate-nfs-db` and `app-server --help` adds `--startup-sign-out`,
+`--print-startup-config`, `--startup-client-info` and `--cloud-skills-snapshot`; `exec
+--help` and `resume --help` are unchanged.
 
 Keep worktree tests inside a temporary repository. Record version, executable source,
 matching request IDs, thread IDs and event order; redact login/account contents. Fixture
@@ -564,6 +577,18 @@ turns, each turn's settings read from the rollout's `turn_context` (its keys as 
   `on-request` / `workspace-write`, and the next bare resume restored *that* — a value
   set by params becomes what the thread remembers. The `thread/resume` result carries
   `approvalPolicy`, `sandbox` and `activePermissionProfile` matching the `turn_context`.
+- **A model and thinking level on a resume behave unlike the permissions** (2026-10-23,
+  codex-cli 0.163.0 and 0.164.0 alike; a real TUI `codex --remote ws://… -C <repo> -c
+  tui.status_line=… -c check_for_update_on_startup=false resume <id>` in a Python pty
+  against an `app-server --listen`, one `gpt-6-luna` turn per case, `turn_context` read
+  after). A thread started `gpt-6-luna` / effort `high` came back `gpt-6-luna` / `high`
+  on a bare resume. `-m gpt-6-sol -c model_reasoning_effort="low"` on that TUI line was
+  taken with no error, ran `gpt-6-sol` / `low`, and the thread remembered it. `-c
+  model=… -c model_reasoning_effort=…` on the app-server was ignored on a resume. Koloft
+  passes `-m` and an effort only on a scheduled job's start, never on a resume.
+- **On 0.164.0 a `-c` given at two levels of one command line keeps both** (2026-10-23:
+  `codex -c model=… exec -c model_reasoning_effort="low" …` ran with both on 0.164.0;
+  0.163.0 dropped the top-level `model`). Koloft writes every `-c` at one level.
 
 Koloft is not caught by this: it resumes a thread with the permission it saved for that
 session (`permission` in its own metadata, the one the thread was started with), so what
@@ -722,9 +747,13 @@ the sandbox after an approval reaches sudo: **inferred, not checked**.
   55), with `cachedInputTokens` (11136) left out of the sum. So the cached tokens are a
   **part of** `inputTokens`, not extra to it. Koloft prices `inputTokens −
   cachedInputTokens` at the input price and the cached part at the cached price.
-- `reasoningOutputTokens` was 0 in every frame, so whether it is a part of
-  `outputTokens` (the way OpenAI's API counts it) is **inferred, not checked**. Koloft
-  does not add it on top.
+- `reasoningOutputTokens` is a part of `outputTokens`, the way OpenAI's API counts it
+  (2026-10-23, codex-cli 0.163.0 and 0.164.0, one `gpt-6-luna` turn at effort `high`
+  through the app-server: 50 of 57 and 44 of 51 output tokens, `totalTokens` =
+  `inputTokens` + `outputTokens` in each frame). Koloft does not add it on top. The
+  frame's fields (`totalTokens`, `inputTokens`, `cachedInputTokens`,
+  `cacheWriteInputTokens`, `outputTokens`, `reasoningOutputTokens` under `total` and
+  `last`, and `modelContextWindow`) are the same on 0.164.0.
 
 **Price table.** Read on 2026-09-24 from OpenAI's pricing page
 (`developers.openai.com/api/docs/pricing`, reached from `platform.openai.com/docs/pricing`,
@@ -954,6 +983,32 @@ service "Codex Auth" and an account `cli|<16 hex>` (removed by `codex logout`); 
 throwaway `HOME` it failed, exit 1, "A default keychain could not be found" — so a
 home that copies `auth.json` between accounts keeps working only while that key stays
 `file`.
+On 0.164.0 (2026-10-23, throwaway homes): the keys of a copied ChatGPT `auth.json` were
+the same before and after a model turn (`auth_mode`, `OPENAI_API_KEY`, `tokens` with
+`id_token`, `access_token`, `refresh_token`, `account_id`, and `last_refresh`); the
+0.164.0 source adds optional `tokens.oauth_provenance` and `tokens.login_owner_id`,
+written on a browser or device-code login (read from upstream `login/src/token_data.rs`,
+not seen on disk). `codex login --with-api-key` now prints "API key saved.
+Authentication is checked when you send a request." and `login status` "API key
+configured - …" (0.163.0: "Successfully logged in" / "Logged in using an API key -
+…"); the exit codes, and the ChatGPT ("Logged in using ChatGPT", 0) and empty-home ("Not
+logged in", 1) wording, are unchanged.
+
+**Compressing old rollouts is opt-in on 0.163.0 and 0.164.0.** 2026-10-23, a Node
+client on `codex app-server --stdio` in throwaway `CODEX_HOME`s (copied login), one
+`gpt-6-luna` turn, the rollout's mtime set 8 days back: `codex features list` shows
+`local_thread_store_compression under development false` on both. With `-c
+features.local_thread_store_compression=true`, an app-server start replaced the cold
+`.jsonl` with `<same name>.jsonl.zst` within 8 s (upstream: rollouts untouched for 7
+days; also the `rollout/compress` method, present on both). `thread/list` and
+`thread/read` still give a `path` ending `.jsonl`, a file that no longer exists;
+`thread/search` and `thread/read` work; `thread/resume` turns it back into a plain
+`.jsonl` (the `.zst` removed) before the next turn, and hooks then get that path as
+`transcript_path`. The same held in a fresh home whose sqlite had never seen the thread
+(listed, 0 turns on read, every turn on resume). 0.163.0 and 0.164.0 behaved the same on
+every one of these app-server paths; the TUI's own `codex resume <id>` lookup was not
+run. A 0.164.0 rollout is larger: one short turn wrote 100 KB against 41 KB on 0.163.0,
+most of it one `additional_tools` record now that `incremental_tools` is on by default.
 
 **The rate-limit reply also carries the credit balance and saved limit resets; one can be
 spent through the app-server.** Checked 2026-10-13 with Codex CLI 0.162.0 and a real
@@ -1487,7 +1542,8 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
 - **`features.default_mode_request_user_input=true` makes the waiting question work in
   the default mode.** 2026-10-12, codex-cli 0.162.0, a Node client on `codex app-server
   --stdio` (`experimentalApi: true`), a throwaway `CODEX_HOME`, real turns on two
-  models. `codex features list` shows the flag `under development`, off. With it, 3 of 3
+  models. `codex features list` shows the flag `under development`, off (still so on
+  0.164.0, 2026-10-23, and `config/read` reads it back `true` when set). With it, 3 of 3
   turns asked through `request_user_input` (2 of them not told which tool): the server
   sent `thread/status/changed` with `activeFlags: ["waitingOnUserInput"]` and
   `item/tool/requestUserInput` shaped as above but with `isBlocking: false`; the turn
@@ -1979,7 +2035,13 @@ stdin/stdout shapes were also read from the binary, which embeds a JSON schema p
   `PreCompact`, `PostCompact`, `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
   `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt` (no `Notification`). Each lists in
   `hooks/list` as `/<session-flags>/config.toml:<snake_case event>:0:0` and needs its own
-  trust table.
+  trust table. **0.164.0 adds `PreModelRequest` and `PostModelRequest`** (2026-10-23,
+  one `gpt-6-luna` turn, each trusted with its own table): one pair per model request;
+  stdin `session_id`, `turn_id`, `cwd`, `transcript_path`, `model`, `hook_event_name`,
+  and on Post also `status`, `error` and `token_usage` (`input_tokens`,
+  `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`,
+  `reasoning_output_tokens`, `total_tokens`). Upstream says their output cannot stop or
+  change the request. Koloft hooks neither.
 - **Every stdin carries** `session_id`, `transcript_path`, `cwd`, `hook_event_name`,
   `model`; all but `SessionStart`/`SessionEnd` add `turn_id`. `UserPromptSubmit` adds
   `prompt`; `PostToolUse` adds `tool_name`, `tool_input`, `tool_use_id`, `tool_response`
@@ -2046,6 +2108,10 @@ home where one app-server had already started and stopped first.
   `agent-tools-real-smoke.spec.ts`), and the tab ran with no network, so
   `playwright-cli` could not reach the browser. A second app-server started right after
   answered as usual.
+- **Not fixed on 0.164.0** (2026-10-23, the same method, fresh homes holding only a
+  copied `auth.json`): 5 of 6 rounds lost one app-server with the same error (0.163.0
+  the same day: 1 of 6). One 0.164.0 round where both answered logged
+  `failed to install system skills: … Directory not empty (os error 66)`.
 
 ## 29. Git credentials from inside the sandbox
 
