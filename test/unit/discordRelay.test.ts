@@ -46,6 +46,8 @@ function setup(
   const asksChanged: string[] = []
   const commands: string[] = []
   const sent: { tab: string; content: string }[] = []
+  const placed: { buttons: string[]; messageId: string }[] = []
+  const answered: { tab: string; reply: string }[] = []
   const conductor: Destination = {
     name: 'Assist',
     liveTab: () => TAB,
@@ -59,7 +61,7 @@ function setup(
       post: async (_c, text, replyTo) => posts.push({ text, replyTo }),
       card: async (_c, card) => {
         posts.push({ text: [card.header, card.body, card.footer].filter(Boolean).join('\n') })
-        return []
+        return [`card-${posts.length}`]
       },
       upload: async () => undefined,
       react: async (_c, id, emoji, on) => void reactions.push(`${id} ${on ? '+' : '-'}${emoji}`),
@@ -82,6 +84,9 @@ function setup(
       ...card,
       buttons: view.choices.map((c, n) => ({ label: c.label, style: c.style, id: `b${n}` }))
     }),
+    askPlaced: (card, at) =>
+      void placed.push({ buttons: card.buttons!.map((b) => b.id), messageId: at!.messageId }),
+    answered: (tab, reply) => void answered.push({ tab, reply }),
     backendOf: () => 'claude',
     boundKey: () => 'session-1',
     status: (): SessionStatus => 'waiting',
@@ -117,7 +122,9 @@ function setup(
     last,
     reactions,
     asksChanged,
-    commands
+    commands,
+    placed,
+    answered
   }
 }
 
@@ -293,10 +300,10 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
   })
 
   // CC§14
-  it('answers the conductor’s own open question with the next message, and holds a later message until the question’s file is gone, which alone wakes the wait', async () => {
+  it('answers the conductor’s own open question with the next message, names that message as the answer of the card it placed, and holds a later message until the question’s file is gone, which alone wakes the wait', async () => {
     const wakes: (() => void)[] = []
     const asksChanged: string[] = []
-    const { relay, sent, bodies, posts } = setup({}, [], {
+    const { relay, sent, bodies, posts, placed, answered } = setup({}, [], {
       ready: async (_t, ready) => {
         while (!ready()) await new Promise<void>((wake) => wakes.push(wake))
         return true
@@ -315,11 +322,13 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
         `${butlerAsks('Assist')}\nWhich?\n1. A\n2. B\n-# Reply with a number or your own answer.`
       ])
     )
+    await vi.waitFor(() => expect(placed).toEqual([{ buttons: ['b0', 'b1'], messageId: 'card-1' }]))
     relay.onMessage(message('301', OWNER, '2'))
     await vi.waitFor(() => expect(fs.existsSync(answerFile)).toBe(true))
     expect(JSON.parse(fs.readFileSync(answerFile, 'utf8'))).toMatchObject({
       hookSpecificOutput: { decision: { updatedInput: { answers: { 'Which?': 'B' } } } }
     })
+    expect(answered).toEqual([{ tab: TAB, reply: '2' }])
     relay.onMessage(message('302', OWNER, 'after the question'))
     await new Promise((r) => setTimeout(r, 600))
     expect(sent).toEqual([])
@@ -355,12 +364,15 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
   // CC§14
   it('its question held in the terminal, during a turn the owner typed at the Mac, is still posted and is answered from the channel by its keys; once that turn is over, the next message goes to it as usual', async () => {
     let status: SessionStatus = 'approval'
-    const { relay, posts, writes, reactions, bodies } = setup({}, [], { status: () => status })
+    const { relay, posts, writes, reactions, bodies, answered } = setup({}, [], {
+      status: () => status
+    })
     relay.onAsk(TAB, QUESTION)
     await vi.waitFor(() => expect(posts.map((p) => p.text)[0]).toContain('Which?'))
     relay.onMessage(message('701', OWNER, '2'))
     await vi.waitFor(() => expect(reactions).toContain('701 +✅'))
     expect(writes.map((w) => w.data)).toEqual(['2'])
+    expect(answered).toEqual([{ tab: TAB, reply: '2' }])
     relay.onAsk(TAB, { tool_name: 'Bash', tool_input: { command: 'make' } })
     status = 'waiting'
     relay.onMessage(message('702', OWNER, 'next'))
@@ -533,14 +545,14 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
 
 describe('DiscordRelay: a Codex conductor’s own question', () => {
   // CODEX§20
-  it('is posted once with its options; the owner’s number or option name presses that digit while it is open, any other reply is asked again, and once it closes a message goes to the conductor as usual', async () => {
+  it('is posted once with its options; the owner’s number or option name presses that digit while it is open and is named as its answer, any other reply is asked again, and once it closes a message goes to the conductor as usual', async () => {
     let question: CodexQuestion | undefined = {
       id: 'q1',
       question: 'Which colour do you prefer?',
       options: [{ label: 'Red', description: 'Choose red.' }, { label: 'Green' }]
     }
     const queued: string[] = []
-    const { relay, posts, writes } = setup({}, [], {
+    const { relay, posts, writes, answered } = setup({}, [], {
       backendOf: () => 'codex',
       pendingQuestion: () => question,
       queue: async (_t, text) => void queued.push(text)
@@ -562,6 +574,7 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
     )
     relay.onMessage(message('502', OWNER, 'green'))
     await vi.waitFor(() => expect(writes.map((w) => w.data)).toEqual(['2']))
+    await vi.waitFor(() => expect(answered).toEqual([{ tab: TAB, reply: 'green' }]))
 
     relay.codexAsked(TAB, question!)
     question = undefined

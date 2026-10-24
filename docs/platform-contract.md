@@ -1214,6 +1214,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   on macOS 27, 2026-10-11.)
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
   own config is enough), and git splits its command on spaces.
+- **After a squash merge, a pruned fetch makes the branch's commits look unpushed**: the
+  squash commit on `main` is a new commit, so the branch's own commits are reachable only
+  from the branch and its `origin/<branch>` copy. Once the server deletes the branch and
+  anything runs `git fetch --prune`, `origin/<branch>` goes, and
+  `git log <branch> --not --exclude=<branch> --branches --remotes` lists every one of
+  them, even after local `main` fast-forwards to the squash commit. A plain
+  `git fetch origin main` leaves `origin/<branch>` in place. `git log --ignore-missing`
+  skips a `^<sha>` whose object the repo does not have instead of exiting 128.
+  (2026-10-22, git 2.54.0, macOS, on a throwaway bare remote with a second clone doing
+  the squash, push and branch delete.)
 
 ## §31 ripgrep and git grep
 
@@ -1308,6 +1318,12 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (`git ls-remote https://github.com/cli/cli refs/pull/14629/head refs/pull/14580/head`
   listed both). (2026-10-09, gh 2.89.0, by hand against superkoh/koloft and cli/cli, and
   an empty `GH_CONFIG_DIR` with a scratch `HOME`.)
+- **`gh pr list --repo o/r --state merged --head <branch> --json headRefOid`** still
+  finds a pull request after GitHub deleted its branch on merge, and prints
+  `[{"headRefOid":"<sha>"}]`, the branch tip it was merged from — the same sha
+  `refs/pull/<n>/head` holds. A squash merge keeps that sha only as the pull request's
+  head, never in `main`. (2026-10-22, gh 2.89.0, by hand against superkoh/koloft #934,
+  branch `worktree-cmd-p-at-target-workspace`, deleted on merge.)
 - **`gh issue create` with no terminal never prompts**: missing `--title` it exits 1 at
   once with "must provide `--title` and `--body` when not running interactively" and
   creates nothing. A flag given as `--flag=value` keeps a value that starts with `-`

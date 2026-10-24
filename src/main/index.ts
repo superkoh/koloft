@@ -30,7 +30,7 @@ import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museS
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
-import { sharedProcessTable } from './processTable'
+import { sharedProcessTable, type ProcessTable } from './processTable'
 import { AgySessions } from './agySessions'
 import {
   agyAccountEnv,
@@ -484,6 +484,7 @@ import {
   removeTree,
   tidyTree,
   whatIsLeft,
+  type MergedHeads,
   type TidyResult
 } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
@@ -650,11 +651,35 @@ tracker.needsUser = (id) => attention.waitsOnApproval(id)
 let leftovers: Record<string, LeftoverProcess[]> = {}
 tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
-async function refreshLeftovers(): Promise<void> {
-  const next = await scanLeftovers(await sharedProcessTable.eachRound(LEFTOVER_SCAN_MS))
-  const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
-  leftovers = next
-  if (changed) sendToRenderer(CH.sessions.leftovers, next)
+const LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS = 2 * LEFTOVER_SCAN_MS
+const closedSessionsStoppedUntil = new Map<string, number>()
+async function stopLeftoversOfClosedSessions(
+  found: Record<string, LeftoverProcess[]>
+): Promise<void> {
+  const now = Date.now()
+  for (const [sessionId, until] of closedSessionsStoppedUntil) {
+    if (until < now) closedSessionsStoppedUntil.delete(sessionId)
+    else if (found[sessionId]) {
+      const stopped = await Promise.all(found[sessionId].map((p) => stopLeftover(sessionId, p.pid)))
+      found[sessionId] = found[sessionId].filter((_, i) => !stopped[i])
+      if (!found[sessionId].length) delete found[sessionId]
+    }
+  }
+}
+let leftoverScans: Promise<void> = Promise.resolve()
+function refreshLeftovers(
+  table: () => Promise<ProcessTable | null> = () => sharedProcessTable.eachRound(LEFTOVER_SCAN_MS)
+): Promise<void> {
+  leftoverScans = leftoverScans
+    .then(async () => {
+      const next = await scanLeftovers(await table())
+      await stopLeftoversOfClosedSessions(next)
+      const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
+      leftovers = next
+      if (changed) sendToRenderer(CH.sessions.leftovers, next)
+    })
+    .catch(() => undefined)
+  return leftoverScans
 }
 if (process.platform !== 'win32') {
   setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
@@ -1515,8 +1540,13 @@ const sessionDeps: SessionVerbDeps = {
   startedSessions,
   closable: closableSessions,
   whatIsLeft: whatClosingWouldLose,
-  closeSoon: (target) =>
-    setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
+  closeSoon: (inOrder) =>
+    setTimeout(async () => {
+      for (const target of inOrder)
+        await closeSessionFully(target).catch((error) =>
+          sendToRenderer(CH.cron.toast, `${target.title}: ${String(error)}`)
+        )
+    }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
   butlerFolder: () => conductorFolder(app.getPath('userData')),
   butlerHelperRole: () => butlerHelperRole(butlerNameNow()),
@@ -2661,9 +2691,10 @@ app.whenReady().then(() => {
     sendToRenderer(CH.session.relocated, e)
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
-  tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) =>
+  tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
     discordRelay?.toolDone(tabId, call)
-  )
+    void askButtons?.check(tabId)
+  })
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
@@ -2679,6 +2710,7 @@ app.whenReady().then(() => {
     const onDiscord = !!butler?.channelOfTab(t.tabId)
     if (onDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
+    if (onDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
     if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
@@ -3041,7 +3073,8 @@ app.whenReady().then(() => {
       if (!discordRelay) return STILL_STARTING
       return discordRelay.answerSession(tabId, reply)
     },
-    respond: (i, body) => link.respond(i, body)
+    respond: (i, body) => link.respond(i, body),
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card)
   })
   askButtons = buttons
   const secrets = new SecretAsks({
@@ -3091,6 +3124,8 @@ app.whenReady().then(() => {
     },
     butlerChannelOf: (tabId) => butlerNow.channelOfTab(tabId),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
+    askPlaced: (card, at) => buttons.placed(card, at),
+    answered: (tabId, reply) => buttons.answered(tabId, reply),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId) => tracker.statusOf(tabId),
@@ -3098,7 +3133,10 @@ app.whenReady().then(() => {
     turnOver: (tabId) => tracker.turnOver(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
+    asksChanged: (tabId) => {
+      ptyMgr.wakeReady(tabId)
+      void buttons.check(tabId)
+    },
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
@@ -4212,6 +4250,7 @@ function closableSessions(): ClosableSession[] {
 }
 
 const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
+const mergedHeads: MergedHeads = (dir, branch) => hosts.of(dir).github.mergedHeads(dir, branch)
 
 function treeRootOf(s: SessionInfo): string {
   return projectInfoFor(s.remote ? formatRemoteKey(s.remote.host, s.treeRoot) : s.treeRoot).treeRoot
@@ -4236,7 +4275,7 @@ async function whatClosingWouldLose(
   const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
-    ...(await whatIsLeft(hostGitOut, tree))
+    ...(await whatIsLeft(hostGitOut, tree, mergedHeads))
   ]
 }
 
@@ -4262,6 +4301,12 @@ async function closeSessionFully(
   }
   archiveSession(target.sessionId)
   for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  // CC§9 MUSE§8
+  closedSessionsStoppedUntil.set(
+    target.sessionId,
+    Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
+  )
+  void refreshLeftovers(() => sharedProcessTable.fresh())
 }
 
 async function removeUntouchedWorktree(
@@ -4341,7 +4386,12 @@ async function tidyRun(root: string, worktree: string, sessionId?: string): Prom
     if (after === 'unreachable') return machineUnreachable()
   }
   const info = cronRunTree(root, worktree)
-  const result = await tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d))
+  const result = await tidyTree(
+    hostGitOut,
+    info,
+    (d) => hosts.of(d).dirExistsOrThrow(d),
+    mergedHeads
+  )
   if (result.removed)
     for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
   return result
