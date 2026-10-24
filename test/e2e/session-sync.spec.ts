@@ -197,14 +197,24 @@ async function marksOnceAllWait(
   return (await pendingAttention(page)).sort((a, b) => a.tabId.localeCompare(b.tabId))
 }
 
-async function writeSharedThenTurnDone(page: Page, shared: string): Promise<void> {
+async function writeSharedThenTurnDone(
+  page: Page,
+  shared: string,
+  writer: BackendId,
+  timeout: number
+): Promise<void> {
+  const tab = await tabOf(page, writer)
   const before = Date.now()
   await runIn(page, centerTerm(page), '/write shared.txt')
   await expect.poll(() => fs.existsSync(shared), { timeout: 30_000 }).toBe(true)
   await expect
-    .poll(async () => (await pendingAttention(page)).some((m) => m.at > before), {
-      timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS
-    })
+    .poll(
+      async () =>
+        (await pendingAttention(page)).some(
+          (m) => m.tabId === tab && m.kind === 'turn-done' && m.at > before
+        ),
+      { timeout }
+    )
     .toBe(true)
 }
 
@@ -482,16 +492,9 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await claudeThenCodex(page, env, async () => {
-        const before = Date.now()
-        await runIn(page, centerTerm(page), '/write shared.txt')
-        await expect.poll(() => fs.existsSync(shared), { timeout: 30_000 }).toBe(true)
-        await expect
-          .poll(async () => (await pendingAttention(page)).some((m) => m.at > before), {
-            timeout: NOTICE_ARRIVES_WITHIN_MS
-          })
-          .toBe(true)
-      })
+      await claudeThenCodex(page, env, () =>
+        writeSharedThenTurnDone(page, shared, 'claude', NOTICE_ARRIVES_WITHIN_MS)
+      )
 
       await runIn(page, centerTerm(page), '/write shared.txt')
       const marks = await marksOnceAllWait(page, 'ws-a', NOTICE_ARRIVES_WITHIN_MS)
@@ -687,13 +690,13 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-waiting\b/, {
         timeout: 60_000
       })
-      await writeSharedThenTurnDone(page, shared)
+      await writeSharedThenTurnDone(page, shared, 'claude', REMOTE_NOTICE_ARRIVES_WITHIN_MS)
       await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
       await expect(
         wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'Codex fixture session' })
       ).toHaveClass(/st-waiting/, { timeout: 60_000 })
 
-      await runIn(page, centerTerm(page), '/write shared.txt')
+      await writeSharedThenTurnDone(page, shared, 'codex', REMOTE_NOTICE_ARRIVES_WITHIN_MS)
       const marks = await marksOnceAllWait(page, REMOTE_WS_NAME, REMOTE_NOTICE_ARRIVES_WITHIN_MS)
 
       await heldThenHandedIn(
@@ -731,10 +734,10 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     try {
       await addRemoteWorkspace(page, env)
       await museThenAgy(page, REMOTE_WS_NAME, REMOTE_SESSION_BINDS_WITHIN_MS, () =>
-        writeSharedThenTurnDone(page, shared)
+        writeSharedThenTurnDone(page, shared, 'muse', REMOTE_NOTICE_ARRIVES_WITHIN_MS)
       )
 
-      await runIn(page, centerTerm(page), '/write shared.txt')
+      await writeSharedThenTurnDone(page, shared, 'agy', REMOTE_NOTICE_ARRIVES_WITHIN_MS)
       const marks = await marksOnceAllWait(page, REMOTE_WS_NAME, REMOTE_NOTICE_ARRIVES_WITHIN_MS)
 
       await heldThenHandedIn(
