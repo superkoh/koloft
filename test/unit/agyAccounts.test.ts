@@ -82,7 +82,8 @@ describe("mergeAgySettings (agy's settings.json in an account's folder, AGY§4 A
   const koloft = {
     trust: ['/w/new'],
     titleCommand: '/bin/sh "/k/koloft-agy-title"',
-    apiKey: false
+    apiKey: false,
+    allowKoloft: false
   }
 
   it("starts from the owner's own settings and puts Koloft's title script, status line and trusted folders on top", () => {
@@ -111,6 +112,28 @@ describe("mergeAgySettings (agy's settings.json in an account's folder, AGY§4 A
       statusLine: { type: 'command', command: '/owner/status' },
       modelProvider: 'gemini'
     })
+  })
+
+  // AGY§26
+  it("lets koloft commands run without an ask when the koloft tools are on, keeping every allow rule the owner and the account's folder already had", () => {
+    writeJson(settingsOf(owners), {
+      permissions: { allow: ['command(gh pr list)'], deny: ['command(rm)'] }
+    })
+    writeJson(settingsOf(home), { permissions: { allow: ['command(ls)', 'command(gh pr list)'] } })
+    mergeAgySettings(home, owners, { ...koloft, allowKoloft: true })
+    expect(readJson(settingsOf(home)).permissions).toEqual({
+      allow: ['command(ls)', 'command(gh pr list)', 'command(koloft)'],
+      deny: ['command(rm)']
+    })
+    mergeAgySettings(home, owners, { ...koloft, allowKoloft: true })
+    expect(readJson(settingsOf(home)).permissions).toMatchObject({
+      allow: ['command(ls)', 'command(gh pr list)', 'command(koloft)']
+    })
+  })
+
+  it('adds no allow rule while the koloft tools are off', () => {
+    mergeAgySettings(home, owners, koloft)
+    expect(readJson(settingsOf(home)).permissions).toBeUndefined()
   })
 
   it('starts agy in its no-flickering mode, the prompt kept at the bottom, unless a settings file holds another rendering mode', () => {

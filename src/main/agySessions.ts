@@ -497,7 +497,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       trust: freshWorktree || opts.trustFolder || assist ? trust : [],
       titleCommand: runWithSh(scripts.title),
       statusLine: this.deps.builtInStatusLine(pick.account),
-      apiKey: !!apiKey
+      apiKey: !!apiKey,
+      allowKoloft: !!agent
     })
     const hold = this.deps.holdScript
     mergeAgyHooks(
@@ -616,7 +617,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       statusLine: this.deps.builtInStatusLine(pick.account)
         ? runMachineScript(m, AGY_STATUSLINE_FILE)
         : undefined,
-      apiKey: !!apiKey
+      apiKey: !!apiKey,
+      allowKoloft: this.deps.agent.enabled(true)
     })
     const hooks = mergedAgyHooks(
       config.ownersHooks,

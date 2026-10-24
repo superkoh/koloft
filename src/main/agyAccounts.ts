@@ -109,9 +109,18 @@ export interface KoloftSettings {
   titleCommand: string
   statusLine?: string
   apiKey: boolean
+  allowKoloft: boolean
 }
 
 const KOLOFT_KEYS = ['title', 'statusLine', 'modelProvider'] as const
+
+// AGY§26
+const AGY_KOLOFT_ALLOW_RULE = 'command(koloft)'
+
+const allowRulesIn = (settings: Record<string, unknown>): string[] => {
+  const allow = record(settings.permissions).allow
+  return Array.isArray(allow) ? allow.filter((r): r is string => typeof r === 'string') : []
+}
 
 // AGY§27
 const NO_FLICKERING_RENDERING = { altScreenMode: 'always' }
@@ -124,7 +133,7 @@ export function mergeAgySettings(home: string, ownersGemini: string, k: KoloftSe
   )
 }
 
-// AGY§4 AGY§5 AGY§11 AGY§27
+// AGY§4 AGY§5 AGY§11 AGY§26 AGY§27
 export function mergedAgySettings(
   own: Record<string, unknown>,
   owners: Record<string, unknown>,
@@ -141,6 +150,15 @@ export function mergedAgySettings(
     merged.statusLine = { type: 'command', command: k.statusLine, stack_with_default: true }
   else if (owners.statusLine) merged.statusLine = owners.statusLine
   if (k.apiKey) merged.modelProvider = 'gemini'
+  const allow = [
+    ...new Set([
+      ...allowRulesIn(own),
+      ...allowRulesIn(owners),
+      ...(k.allowKoloft ? [AGY_KOLOFT_ALLOW_RULE] : [])
+    ])
+  ]
+  if (allow.length)
+    merged.permissions = { ...record(own.permissions), ...record(owners.permissions), allow }
   return merged
 }
 
