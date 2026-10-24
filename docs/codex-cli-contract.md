@@ -1332,7 +1332,8 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
 ## 18. Which command lines open the full-screen TUI
 
 **Read on 2026-09-27 from `codex --help` and each subcommand's `--help`, standalone Codex
-CLI 0.153.4.** Koloft's Workbench terminal uses this to tell a command that opens
+CLI 0.153.4; the subcommand and option lists compared again on 0.163.0 and 0.164.0
+(2026-10-23, below).** Koloft's Workbench terminal uses this to tell a command that opens
 Codex's own full-screen screen from one that prints and exits.
 
 - **Bare `codex`, or `codex <prompt>`, opens the TUI** ("If no subcommand is specified,
@@ -1346,7 +1347,14 @@ Codex's own full-screen screen from one that prints and exits.
   `mcp-server`, `app-server`, `remote-control`, `app` (opens the Desktop app),
   `completion`, `update`, `doctor`, `sandbox`, `debug`, `apply` (alias `a`), `queue`,
   `archive`, `delete`, `migrate-rollouts`, `unarchive`, `exec-server`, `features`,
-  `help`; also `-h`/`--help` and `-V`/`--version` anywhere.
+  `help`; also `-h`/`--help` and `-V`/`--version` anywhere. 0.164.0 adds
+  `migrate-nfs-db` ("[experimental] Migrate configured SQLite databases to DELETE mode
+  in place"; it runs and exits, its help says to stop every SQLite client first) and is
+  the only change to `codex --help` from 0.163.0: no new top-level option takes a value.
+  `mcp-server` is in neither 0.163.0's nor 0.164.0's list, and `codex mcp-server
+  --help` prints the top-level help on both, so that word now reads as a prompt there
+  (inferred, not run; it stays on Koloft's list for older builds) (2026-10-23, `--help`
+  of both builds).
 - **Top-level options that take a value** (so the word after them is not a
   subcommand): `-c/--config`, `--enable`, `--disable`, `--remote`,
   `--remote-auth-token-env`, `-i/--image`, `-m/--model`, `--local-provider`,
