@@ -196,15 +196,16 @@ your Mac                     the other machine
             the running turn keeps going there, and the tab reconnects by itself. Closing the tab
             ends the server; a click on the row resumes the same conversation on a new one. With
             <a href="../accounts/">Skip permission prompts</a> on, a new Codex session there runs
-            with no sandbox and never asks, as on your Mac. With it off, in a folder the machine
-            trusts, a shell command runs in Codex's sandbox: it may write inside the folder, not
-            outside it. A sandbox or approval setting in the account's own Codex settings still wins
-            there; with Skip permission prompts on, Koloft's flags win. Some machines block that
-            sandbox with AppArmor (a Linux guard on what programs may do); a plain Ubuntu 24.04
-            does. There, the tab says so before Codex starts and names the fix: load an AppArmor
-            profile on that machine that allows userns (user namespaces) for
-            <code>/usr/bin/bwrap</code> (needs root). The session still starts, but until then each
-            command Codex runs in that sandbox fails.
+            with no sandbox and never asks, as on your Mac, whatever the account's own Codex
+            settings say. With it off, in a folder the machine trusts, a shell command runs in
+            Codex's sandbox: it may write inside the folder, not outside it, and a sandbox or
+            approval setting in the account's own Codex settings still wins. Some machines block
+            that sandbox with AppArmor (a Linux guard on what programs may do); a plain Ubuntu 24.04
+            does. There, the tab says so before Codex starts (with the switch on too) and names the
+            fix: load an AppArmor profile on that machine that allows userns (user namespaces) for
+            <code>/usr/bin/bwrap</code> (needs root). The session still starts. With the switch off,
+            each command Codex runs in that sandbox fails until then; with it on, there is no
+            sandbox to block.
           </li>
           <li>
             The agent gets the <code>koloft</code> command there too, a moment slower, since each

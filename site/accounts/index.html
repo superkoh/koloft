@@ -109,7 +109,7 @@
                 src="../img/h-settings-accounts-pane5.webp"
                 width="1322"
                 height="729"
-                alt="Koloft's Settings, Accounts page: the Skip permission prompts and Prefer accounts with fable allowance switches, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
+                alt="Koloft's Settings, Accounts page: the Skip permission prompts switch, whose note names the flags it adds for Claude, Antigravity, Muse and new Codex sessions, the Prefer accounts with fable allowance switch, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
               />
             </picture>
           </div>
@@ -120,11 +120,12 @@
         <p>
           At the top sits <code>Skip permission prompts</code>, on at first. With it on, a Claude
           Code, Muse or Antigravity session Koloft starts runs without asking for permission, here
-          or on a machine. So does a new Codex session: it starts with
-          <code class="nowrap">-a never -s danger-full-access</code>, so it never asks and runs
-          outside Codex's sandbox (the box Codex runs commands in): it may write anywhere and use
-          the network. A Codex session you resume keeps what it started with. A permission setting
-          given to one launch (a scheduled job's, say) still wins.
+          or on a machine. So does a new Codex session. It starts with
+          <code class="nowrap">-a never -s danger-full-access</code>: it never asks, and it runs
+          outside Codex's sandbox (the box Codex runs commands in), so it may write anywhere and use
+          the network. With the switch off, a Codex session follows Codex's own approval settings. A
+          Codex session you resume keeps what it started with. A permission setting given to one
+          launch (a scheduled job's, say) still wins.
         </p>
 
         <h2>Claude</h2>
@@ -368,9 +369,9 @@
           </li>
           <li>
             sort out your to-dos: say "sort out my to-dos" and it gathers the sessions waiting on
-            you, your open pull requests and each project's to-dos. The first time, it agrees with
-            you once per project where that project's to-dos are kept. Then a helper named "Sort out
-            to-dos" asks you about them one at a time, in Koloft or on
+            you, your open pull requests and each project's to-dos. The first time, it asks you once
+            per project where that project's to-dos are kept. Then a helper named "Sort out to-dos"
+            (in your language) asks you about them one at a time, in Koloft or on
             <a href="../discord/">Discord</a>
           </li>
           <li>
@@ -396,7 +397,11 @@
             <a href="../agents/#gh">what <code>koloft gh</code> refuses</a>); a plain
             <code>gh</code> in its own folder works as <code>koloft gh</code>
           </li>
-          <li>send you files and pictures of pages on <a href="../discord/">Discord</a></li>
+          <li>
+            send you files and pictures of pages on <a href="../discord/">Discord</a> (not
+            <a href="../discord/#at-the-mac">while you use the Mac</a>, unless it is answering what
+            you sent from Discord)
+          </li>
         </ul>
         <p>It cannot:</p>
         <ul class="dash">
@@ -408,10 +413,10 @@
         </ul>
         <p>
           It has no tool limits of its own: it follows your <code>Skip permission prompts</code>
-          setting like any session. It is told to only talk with you and pass messages, never to do
-          a task itself: project work goes to a session in that project's folder, anything else to a
-          helper. When you tell it to do a job itself ("do not start a session, do it yourself"), it
-          does that one job itself. It is also told to ask you before deleting or undoing anything.
+          setting like any session. It is told to only talk with you and pass messages, and not to
+          do a task itself unless you tell it to ("do not start a session, do it yourself"): project
+          work goes to a session in that project's folder, anything else to a helper. It is also
+          told to ask you before deleting or undoing anything.
         </p>
         <p>
           It reaches every kind of session the same way, with <code>koloft session send</code>,
@@ -496,11 +501,11 @@
             account in Koloft instead
           </li>
           <li>
-            a Codex session's sandbox (the box Codex works in) may reach the network in a picked
-            folder, so it can push there. With <code>Skip permission prompts</code> off, a session
-            you start in another folder stays offline unless Settings ▸ Extensions ▸ "Let agents
-            drive this Browser" is on (see <a href="../agents/">agents</a>). With it on, a new Codex
-            session has no sandbox and may use the network anywhere
+            with <code>Skip permission prompts</code> off, a Codex session's sandbox may reach the
+            network in a picked folder, so it can push there; in another folder a session you start
+            stays offline unless Settings ▸ Extensions ▸ "Let agents drive this Browser" is on (see
+            <a href="../agents/">agents</a>). With it on, a new Codex session has no sandbox at all
+            (see above)
           </li>
           <li>
             a pick works when the folder's remote is an SSH address too (<code class="nowrap"

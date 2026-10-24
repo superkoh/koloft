@@ -462,8 +462,9 @@
           <li>Claude and Codex both do this.</li>
           <li>
             If the session that started them ends but its row stays in the list, they stay under
-            that row, now shown as closed. Nothing under a session closes with it, however it is
-            closed.
+            that row, now shown as closed. Closing a session in the app closes nothing under it;
+            <code class="nowrap">koloft session close</code> also closes the ended sessions it
+            started (see <a href="../agents/">agents</a>).
           </li>
           <li>
             A row hangs under its starter only while the starter is in the same folder's list. When
@@ -485,8 +486,7 @@
         <p>
           The first row of the list is your <a href="../accounts/#butler">butler</a>,
           <code>Alfred · Butler</code>, above every folder. When the session tab you are looking at
-          goes away, Koloft shows the butler, unless that session never got going (see
-          <a href="../accounts/#butler">your butler</a>).
+          goes away, Koloft shows the butler, unless that session ended before it ever started.
         </p>
         <p>
           When the Mac is busy (macOS says memory is tight, or the processors have been very busy
