@@ -895,8 +895,8 @@ export class SshHost implements Host {
     return kill
   }
 
-  async renameTmuxSession(from: string, to: string): Promise<boolean> {
-    return (await this.deps.run(renameSessionCmd(from, to))).code === 0
+  async renameTmuxSession(tabId: string, from: string, to: string): Promise<boolean> {
+    return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
   }
 
   async answerAgent(requestId: string, reply: string): Promise<void> {

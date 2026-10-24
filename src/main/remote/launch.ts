@@ -143,9 +143,7 @@ export function tabScript(spec: TabSpec): string {
   const H = `$HOME/.koloft/hook-sessions/${spec.tabId}`
   const program = spec.program
   // PLATFORM§35
-  const attachTo = program
-    ? `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
-    : `'${spec.tmuxName}'`
+  const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
   // PLATFORM§35
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
@@ -162,7 +160,7 @@ ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 ${program ? `trap 'rm -f "$T.auth.json"' EXIT\n` : ''}sh "$M/ensure.sh"${program ? ` ${program.name}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
-rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}"
+rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.tmux"
 ${program ? 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n' : claudeFirstRun(spec)}tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 c=$?
 rm -f "${T}.env"
@@ -281,7 +279,9 @@ export function killSessionCmd(tmuxName: string): string {
   return remoteShCommand(`tmux -L koloft kill-session -t ${tmuxName}`)
 }
 
-export function renameSessionCmd(from: string, to: string): string {
-  assertSafeNames(from, to)
-  return remoteShCommand(`tmux -L koloft rename-session -t ${from} ${to}`)
+export function renameSessionCmd(tabId: string, from: string, to: string): string {
+  assertSafeNames(tabId, from, to)
+  return remoteShCommand(
+    `tmux -L koloft rename-session -t ${from} ${to} && printf %s ${to} > "${tabPath(tabId)}.tmux"`
+  )
 }

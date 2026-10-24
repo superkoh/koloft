@@ -4,6 +4,7 @@ import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './h
 import {
   addRemoteWorkspace,
   breakConnection,
+  dropTabLinkWhileItsSessionLives,
   healConnection,
   killFakeRemote,
   launchWithRemote,
@@ -11,7 +12,8 @@ import {
   machineHome,
   REMOTE_WS_NAME,
   remoteDir,
-  sshCommands
+  sshCommands,
+  tmuxClientsOf
 } from './helpers/remote'
 import {
   type ClaudeCall,
@@ -178,6 +180,39 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       expect(processAlive(first.pid)).toBe(true)
     } finally {
       await quitAndClose(app2)
+    }
+  })
+
+  test('E-RW-39: when the link of a remote tab whose conversation Claude Code moved to a new session id drops, the tab reconnects to that tmux session and the same claude', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      const tabId = await row.getAttribute('data-tab-id')
+      await expect
+        .poll(() => boundSessionId(page, tabId), { timeout: 60_000 })
+        .toBe(first.sessionId)
+      const beforeTranscript = transcriptFile(machineHome(env), remoteDir(env), first.sessionId)
+
+      await runIn(page, centerTerm(page), '/move-to-background')
+      await expect.poll(() => continuedInOf(beforeTranscript), { timeout: 30_000 }).toBeTruthy()
+      const moved = `k-${continuedInOf(beforeTranscript)}`
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([moved])
+
+      dropTabLinkWhileItsSessionLives(env, `k-${first.sessionId}`)
+      await expect.poll(() => tmuxClientsOf(moved), { timeout: 30_000 }).toHaveLength(1)
+      await page.waitForTimeout(TMUX_ATTACH_SETTLE_MS)
+      expect(tmuxClientsOf(moved)).toHaveLength(1)
+      await expect(row).not.toHaveClass(/\bcold\b/)
+      expect(processAlive(first.pid)).toBe(true)
+      expect(readCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
     }
   })
 
