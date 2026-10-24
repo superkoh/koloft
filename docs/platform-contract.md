@@ -1494,7 +1494,7 @@ command by hand:
   fallback, and there is no file watcher to lean on.
 - **A PATH prefix set before `bash -l -i` survives the login files** on that Ubuntu box
   (`/etc/profile` there does not set PATH). **On Debian 12 it is lost**: `/etc/profile`
-  sets PATH outright for a non-root user, so `bash -l` and `bash -l -i` start with
+  sets PATH outright (measured as a non-root user), so `bash -l` and `bash -l -i` start with
   `/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games` and a Workbench shell there
   said `bash: koloft: command not found`. `bash --init-file <file> -i` that sources
   `/etc/profile` and the first of `~/.bash_profile`, `~/.bash_login`, `~/.profile`, then

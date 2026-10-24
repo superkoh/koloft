@@ -300,7 +300,6 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       seedSettings(env, { hintsOff: true })
       const { app, page } = await launchWithRemote(env)
       try {
-        fs.mkdirSync(remoteDir(env), { recursive: true })
         fs.writeFileSync(path.join(remoteDir(env), 'shown.md'), `# shown for ${agent.label}\n`)
         await addRemoteWorkspace(page, env)
         await newSessionInWith(page, REMOTE_WS_NAME, agent.label)

@@ -150,11 +150,9 @@ const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
   ['kt-tcsh', 'tuser'],
   ['kt-fish', 'fuser']
 ]
-const MACHINES_WHOSE_LOGIN_FILES_DIFFER: [LabAlias, string][] = [
-  ['kt-key', 'kuser'],
-  ['kt-tcsh', 'tuser'],
-  ['kt-fish', 'fuser']
-]
+const ONE_MACHINE_PER_LOGIN_SHELL = MACHINES_FOR_THE_KOLOFT_COMMAND.filter(
+  ([alias]) => alias !== 'kt-few'
+)
 
 test.describe.configure({ timeout: 420_000 })
 test.beforeAll(() =>
@@ -587,7 +585,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     env
   }) => {
     await withLab(env, async ({ app, page }) => {
-      for (const [alias, user] of MACHINES_WHOSE_LOGIN_FILES_DIFFER) {
+      for (const [alias, user] of ONE_MACHINE_PER_LOGIN_SHELL) {
         await addMachine(page, alias, user)
         await startSessionIn(page, alias, { remote: true })
         await openSessionTerminal(app, page)

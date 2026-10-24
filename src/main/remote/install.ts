@@ -398,13 +398,17 @@ export function parseHeartbeat(stdout: string): {
 
 export const UTIL_BASH_LOGIN_FILE = 'util-login.bash'
 
+const utilShellPath = (machineDir: string): string =>
+  `PATH="${machineDir}/util-bin:${machineDir}/bin:$PATH"`
+
 // PLATFORM§37
 export const UTIL_BASH_LOGIN = `[ -r /etc/profile ] && . /etc/profile
 for koloft_f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
   [ -r "$koloft_f" ] && { . "$koloft_f"; break; }
 done
 unset koloft_f
-PATH="\${BASH_SOURCE%/*}/util-bin:\${BASH_SOURCE%/*}/bin:$PATH"
+${REMOTE_ENV_LINES}
+${utilShellPath('${BASH_SOURCE%/*}')}
 `
 
 // PLATFORM§37
@@ -413,7 +417,7 @@ M=$(cd "$(dirname "$0")" && pwd)
 ${REMOTE_ENV_LINES}
 KOLOFT_UTIL=1
 KOLOFT_TAB_ID=$2
-PATH="$M/util-bin:$M/bin:$PATH"
+${utilShellPath('$M')}
 export KOLOFT_UTIL KOLOFT_TAB_ID PATH
 cd "$1" 2>/dev/null || cd
 ${onATerminalEvenWhenSshGaveNone('$3', '$4', '$2', `sh '$M/util.sh' . $2`)}
