@@ -126,10 +126,13 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       const row = wsRows(page, REMOTE_WS_NAME).first()
+      const unread = row.locator('.ws-tab-unread')
+      await expect(unread, 'the startup turn is over').toHaveCount(1, { timeout: 90_000 })
       await runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
+      await expect(unread, 'the /busy turn is working').toHaveCount(0, { timeout: 60_000 })
       await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
-      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+      await expect(unread).toHaveCount(1)
     } finally {
       await quitAndClose(app)
     }
