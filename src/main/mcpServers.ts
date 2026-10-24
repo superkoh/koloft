@@ -54,7 +54,7 @@ export function claudeServers(
   ]
 }
 
-const CODEX_TABLE = /^\s*\[\s*(?:"[^"]*"|[^\]\s])+\s*\]/gm
+const CODEX_TABLE = /^[ \t]*\[[ \t]*(?:"[^"\n]*"|[^\]\s"])+[ \t]*\]/gm
 const CODEX_SERVER_TABLE = /^\s*\[\s*mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))\s*\]/
 const TURNED_OFF = /^\s*enabled\s*=\s*false\b/m
 
