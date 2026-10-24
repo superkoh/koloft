@@ -956,8 +956,12 @@ Nothing ran against Google's real servers.
   both rules when it rewrote the file. Still asked: `ls /`, `koloft open x && ls /`
   (the ask names `ls`), `koloft open x; touch …` (names `touch`), `koloft open $(touch
   …)`, `koloftx open x`, `koloft open x | sh`, and `/work/bin/koloft open x` (the rule
-  matches the command's first word as typed, not the binary it finds). macOS: not
-  probed.
+  matches the command's first word as typed, not the binary it finds). The macOS
+  build (1.4.7 darwin arm64, sha512 checked, a throwaway tart VM with no screen, run
+  under `expect` answering the terminal queries, same fake server and
+  `WSL_INTEROP`) did the same: asked with no rule; with the rule, `koloft open x` and
+  `koloft session send abc "hello there"` ran with no ask, while `pwd` and `koloft
+  open x; touch …` asked.
 
 ## §27 Terminal modes
 

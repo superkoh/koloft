@@ -117,10 +117,8 @@ const KOLOFT_KEYS = ['title', 'statusLine', 'modelProvider'] as const
 // AGY§26
 const AGY_KOLOFT_ALLOW_RULE = 'command(koloft)'
 
-const allowRulesIn = (settings: Record<string, unknown>): string[] => {
-  const allow = record(settings.permissions).allow
-  return Array.isArray(allow) ? allow.filter((r): r is string => typeof r === 'string') : []
-}
+const strings = (list: unknown): string[] =>
+  Array.isArray(list) ? list.filter((s): s is string => typeof s === 'string') : []
 
 // AGY§27
 const NO_FLICKERING_RENDERING = { altScreenMode: 'always' }
@@ -141,24 +139,28 @@ export function mergedAgySettings(
 ): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...NO_FLICKERING_RENDERING, ...own, ...owners }
   for (const key of KOLOFT_KEYS) delete merged[key]
-  const trusted = [own.trustedWorkspaces, owners.trustedWorkspaces].flatMap((list) =>
-    Array.isArray(list) ? list.filter((p): p is string => typeof p === 'string') : []
-  )
-  merged.trustedWorkspaces = [...new Set([...trusted, ...k.trust])]
+  merged.trustedWorkspaces = [
+    ...new Set([
+      ...strings(own.trustedWorkspaces),
+      ...strings(owners.trustedWorkspaces),
+      ...k.trust
+    ])
+  ]
   merged.title = { type: 'command', command: k.titleCommand }
   if (k.statusLine)
     merged.statusLine = { type: 'command', command: k.statusLine, stack_with_default: true }
   else if (owners.statusLine) merged.statusLine = owners.statusLine
   if (k.apiKey) merged.modelProvider = 'gemini'
-  const allow = [
-    ...new Set([
-      ...allowRulesIn(own),
-      ...allowRulesIn(owners),
-      ...(k.allowKoloft ? [AGY_KOLOFT_ALLOW_RULE] : [])
-    ])
-  ]
-  if (allow.length)
-    merged.permissions = { ...record(own.permissions), ...record(owners.permissions), allow }
+  const permissions = { ...record(merged.permissions) }
+  const ownerSetsPermissions = 'permissions' in owners
+  const allow = strings(permissions.allow).filter(
+    (r) => ownerSetsPermissions || r !== AGY_KOLOFT_ALLOW_RULE
+  )
+  if (k.allowKoloft && !allow.includes(AGY_KOLOFT_ALLOW_RULE)) allow.push(AGY_KOLOFT_ALLOW_RULE)
+  if (allow.length) permissions.allow = allow
+  else delete permissions.allow
+  if (Object.keys(permissions).length) merged.permissions = permissions
+  else delete merged.permissions
   return merged
 }
 

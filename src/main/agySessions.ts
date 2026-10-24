@@ -611,6 +611,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       (d, i, all) => all.indexOf(d) === i
     )
     const m = remote.machineName()
+    const agentTools = this.deps.agent.enabled(true)
     const settings = mergedAgySettings(config.ownSettings, config.ownersSettings, {
       trust: trusted ? trust : [],
       titleCommand: runMachineScript(m, AGY_TITLE_FILE),
@@ -618,14 +619,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         ? runMachineScript(m, AGY_STATUSLINE_FILE)
         : undefined,
       apiKey: !!apiKey,
-      allowKoloft: this.deps.agent.enabled(true)
+      allowKoloft: agentTools
     })
     const hooks = mergedAgyHooks(
       config.ownersHooks,
       koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE), machineAgyHold(remoteMachineDir(m)))
     )
     const instructions = [
-      ...(this.deps.agent.enabled(true) ? [koloftPrompt('agy')] : []),
+      ...(agentTools ? [koloftPrompt('agy')] : []),
       ...(opts.role ? [opts.role] : [])
     ].join('\n\n')
     const ownerTitle = titleCommandIn(config.ownersSettings)

@@ -115,25 +115,39 @@ describe("mergeAgySettings (agy's settings.json in an account's folder, AGY§4 A
   })
 
   // AGY§26
-  it("lets koloft commands run without an ask when the koloft tools are on, keeping every allow rule the owner and the account's folder already had", () => {
-    writeJson(settingsOf(owners), {
-      permissions: { allow: ['command(gh pr list)'], deny: ['command(rm)'] }
-    })
-    writeJson(settingsOf(home), { permissions: { allow: ['command(ls)', 'command(gh pr list)'] } })
+  it("lets koloft commands run without an ask while the koloft tools are on, takes that back once they are off, and keeps the account folder's own rules", () => {
+    writeJson(settingsOf(home), { permissions: { allow: ['command(ls)'], deny: ['command(rm)'] } })
     mergeAgySettings(home, owners, { ...koloft, allowKoloft: true })
     expect(readJson(settingsOf(home)).permissions).toEqual({
-      allow: ['command(ls)', 'command(gh pr list)', 'command(koloft)'],
+      allow: ['command(ls)', 'command(koloft)'],
       deny: ['command(rm)']
     })
-    mergeAgySettings(home, owners, { ...koloft, allowKoloft: true })
-    expect(readJson(settingsOf(home)).permissions).toMatchObject({
-      allow: ['command(ls)', 'command(gh pr list)', 'command(koloft)']
+    mergeAgySettings(home, owners, koloft)
+    expect(readJson(settingsOf(home)).permissions).toEqual({
+      allow: ['command(ls)'],
+      deny: ['command(rm)']
     })
-  })
-
-  it('adds no allow rule while the koloft tools are off', () => {
+    writeJson(settingsOf(home), {})
+    mergeAgySettings(home, owners, { ...koloft, allowKoloft: true })
     mergeAgySettings(home, owners, koloft)
     expect(readJson(settingsOf(home)).permissions).toBeUndefined()
+  })
+
+  it("keeps the owner's own permissions whole on top, a koloft rule the owner wrote included", () => {
+    writeJson(settingsOf(owners), {
+      permissions: { allow: ['command(gh pr list)', 'command(koloft)'], deny: ['command(curl)'] }
+    })
+    writeJson(settingsOf(home), { permissions: { allow: ['command(ls)'] } })
+    mergeAgySettings(home, owners, koloft)
+    expect(readJson(settingsOf(home)).permissions).toEqual({
+      allow: ['command(gh pr list)', 'command(koloft)'],
+      deny: ['command(curl)']
+    })
+    mergeAgySettings(home, owners, { ...koloft, allowKoloft: true })
+    expect(readJson(settingsOf(home)).permissions).toEqual({
+      allow: ['command(gh pr list)', 'command(koloft)'],
+      deny: ['command(curl)']
+    })
   })
 
   it('starts agy in its no-flickering mode, the prompt kept at the bottom, unless a settings file holds another rendering mode', () => {
