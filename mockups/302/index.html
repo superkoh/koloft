@@ -1068,8 +1068,12 @@
       <ul>
         <li>
           "Outside" = files the session wrote with its file tools, outside the folder the Workbench
-          shows, minus the session's scratchpad, Claude's tasks folder, agent-only files (memory,
-          CLAUDE.md, skills) and files whose folder is gone.
+          shows, minus anything under the session's scratchpad (it has its own section), Claude's
+          tasks folder, agent-only files (memory, CLAUDE.md, skills — the same rule the Docs list
+          uses) and files whose folder is gone. Capped at the 300 files a session keeps.
+        </li>
+        <li>
+          The tooltip on the button and the "N files · +a −r" line in Changes stay git's numbers.
         </li>
         <li>
           The button adds " · N outside" only when N &gt; 0. With git changes too: "3 files · 2
@@ -1094,13 +1098,17 @@
         </tr>
         <tr>
           <td>Claude Code · local</td>
-          <td>Same. Write / Edit / MultiEdit / NotebookEdit, sub-agents too.</td>
+          <td>
+            Same for Write / Edit / MultiEdit / NotebookEdit in the main conversation. A sub-agent's
+            writes are not counted (Koloft reads sub-agent transcripts for usage only). A file that
+            no longer exists drops out.
+          </td>
         </tr>
         <tr>
           <td>Claude Code · SSH</td>
           <td>
-            Same; a path written as <code>~/…</code> is not counted (Koloft cannot resolve the
-            remote home).
+            As local; also a path written as <code>~/…</code> is not counted (Koloft cannot resolve
+            the remote home).
           </td>
         </tr>
         <tr>
@@ -1123,6 +1131,17 @@
           <td>
             A file written by a shell command (<code>echo &gt; f</code>, <code>sed -i</code>,
             <code>cp</code>) is not counted: no agent reports its path.
+          </td>
+        </tr>
+        <tr>
+          <td>All but local Claude</td>
+          <td>A written file that was deleted later still counts while its folder exists.</td>
+        </tr>
+        <tr>
+          <td>The four SSH kinds</td>
+          <td>
+            Paths carry the machine name, so inside/outside works the same; read from code, no test
+            covers Outside on SSH yet.
           </td>
         </tr>
       </table>
