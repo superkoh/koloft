@@ -39,6 +39,7 @@ import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFr
 import { FINGERPRINT, remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
+  renameSessionCmd,
   resizeStandInCmd,
   launchLine,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
@@ -892,6 +893,10 @@ export class SshHost implements Host {
     this.kills.set(tmuxName, kill)
     if (killedId) this.killedSessions.add(killedId)
     return kill
+  }
+
+  async renameTmuxSession(tabId: string, from: string, to: string): Promise<boolean> {
+    return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
   }
 
   async answerAgent(requestId: string, reply: string): Promise<void> {

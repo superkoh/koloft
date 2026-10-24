@@ -652,6 +652,7 @@ export class ClaudeBackend implements SessionBackend {
       transcriptPath: movedFile,
       cwd: info.cwd
     })
+    this.renameMachineTmuxAfterMove(report.tabId, report.sessionId)
     if (
       heldBeforeStartup &&
       transcriptEnding(path.join(dir, `${heldBeforeStartup}.jsonl`)).continuedIn ===
@@ -660,6 +661,20 @@ export class ClaudeBackend implements SessionBackend {
       this.d.workspaces()?.dropOwnership(heldBeforeStartup, `continued in ${report.sessionId}`)
     }
     return true
+  }
+
+  // ADR-0044
+  private renameMachineTmuxAfterMove(tabId: string, sessionId: string): void {
+    const remote = this.d.tracker.remoteOf(tabId)
+    if (!remote) return
+    const from = remote.tmuxName
+    const to = tmuxSessionName(sessionId)
+    void this.d.hosts
+      .machine(remote.host)
+      .renameTmuxSession(tabId, from, to)
+      .then((renamed) => {
+        if (renamed && remote.tmuxName === from) this.d.tracker.setRemoteTmuxName(tabId, to)
+      })
   }
 
   // CC§1
