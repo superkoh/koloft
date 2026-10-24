@@ -383,7 +383,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect.poll(card, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
       expect(card()!.buttons?.map((b) => b.label)).toEqual(['1. Red', '2. Green'])
       fake.press(OWNER, card()!.buttons![1], CHANNEL)
-      await expect.poll(() => said(fake)).toContain('Picked: Green')
+      await expect.poll(() => said(fake).join('\n')).toContain('Picked: Green')
       expect(fake.callbacks.map((c) => [c.type, callbackText(c)])).toEqual([
         [7, `${question}\n-# ✅ 2. Green`]
       ])
@@ -393,7 +393,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       const sizeCard = fake.posted.find((p) => p.content.includes('Which size?'))!
       expect(sizeCard.buttons?.length).toBe(2)
       const answer = fake.say(OWNER, '2')
-      await expect.poll(() => said(fake)).toContain('Picked: Large')
+      await expect.poll(() => said(fake).join('\n')).toContain('Picked: Large')
       await expect
         .poll(() => fake.reactions)
         .toContainEqual({ messageId: answer, emoji: '✅', on: true })
