@@ -133,7 +133,7 @@ describe('whole-window fallback execution', () => {
   })
 })
 
-describe('the keys a focused guest hands to the panel instead of the page — ⌘T has no menu accelerator at all', () => {
+describe('the keys a focused guest must hand to Koloft before the page or a menu item gets them — ⌘T has no menu accelerator, ⌘W must close the web tab and not the session', () => {
   const key = (k: string, mods: Partial<GuestKeyInput> = {}): GuestKeyInput => ({
     key: k,
     meta: true,
@@ -176,5 +176,10 @@ describe('the keys a focused guest hands to the panel instead of the page — �
 
   it('carries nothing else — ⌘R must not double-reload, and the rest are the page’s', () => {
     for (const k of ['r', 'a', '[', ']', '0']) expect(guestShortcut(key(k))).toBeNull()
+  })
+
+  it('leaves ⌘J, ⌘B, ⌥⌘N and ⌘P to the page, which lets them on to their menu item unless it handles them', () => {
+    for (const k of ['j', 'b', 'p']) expect(guestShortcut(key(k))).toBeNull()
+    expect(guestShortcut(key('n', { alt: true }))).toBeNull()
   })
 })
