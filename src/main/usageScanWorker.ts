@@ -24,6 +24,26 @@ async function linesWithAny(file: string, words: string[]): Promise<string> {
   return kept.join('\n')
 }
 
+async function claudeLines(file: string): Promise<{ text: string; bornAt?: string }> {
+  const kept: string[] = []
+  let bornAt: string | undefined
+  const lines = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity })
+  for await (const line of lines) {
+    if (bornAt === undefined && line.includes('"timestamp"')) bornAt = timestampOf(line)
+    if (CLAUDE_USAGE_WORDS.some((w) => line.includes(w))) kept.push(line)
+  }
+  return { text: kept.join('\n'), bornAt }
+}
+
+function timestampOf(line: string): string | undefined {
+  try {
+    const at = JSON.parse(line).timestamp
+    return typeof at === 'string' ? at : undefined
+  } catch {
+    return undefined
+  }
+}
+
 // AGY§8
 async function agyModels(db = ''): Promise<{ calls: string[]; configured: string }> {
   if (!fs.existsSync(db)) return { calls: [], configured: '' }
@@ -49,8 +69,10 @@ async function agyModels(db = ''): Promise<{ calls: string[]; configured: string
 async function scan(f: UsageFile): Promise<Omit<ScannedFile, 'file'>> {
   const sessionId = f.sessionId ?? ''
   switch (f.backend) {
-    case 'claude':
-      return { records: scanClaudeLines(await linesWithAny(f.file, CLAUDE_USAGE_WORDS)) }
+    case 'claude': {
+      const { text, bornAt } = await claudeLines(f.file)
+      return { records: scanClaudeLines(text, bornAt) }
+    }
     case 'muse':
       return { records: scanMuseLines(await linesWithAny(f.file, MUSE_USAGE_WORDS), sessionId) }
     case 'agy': {

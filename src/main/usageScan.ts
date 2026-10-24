@@ -64,8 +64,9 @@ interface ClaudeCall {
   tokens: TokenCounts
 }
 
-// CC§2
-export function scanClaudeLines(text: string): UsageRecord[] {
+// CC§2 CC§5
+export function scanClaudeLines(text: string, fileBornAt?: string): UsageRecord[] {
+  const copiedBefore = fileBornAt ? Date.parse(fileBornAt) : NaN
   const calls: ClaudeCall[] = []
   const callByIds = new Map<string, ClaudeCall>()
   for (const obj of parsedLines(text)) {
@@ -75,6 +76,7 @@ export function scanClaudeLines(text: string): UsageRecord[] {
     if (model === '<synthetic>') continue
     const day = localDayKey(obj.timestamp)
     if (!day || typeof obj.sessionId !== 'string') continue
+    if (Date.parse(obj.timestamp) < copiedBefore) continue
     const u = msg.usage
     const tokens: TokenCounts = {
       inTok: num(u.input_tokens),

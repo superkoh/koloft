@@ -791,6 +791,13 @@ field names and numbers only.
 - **`reasoning_output_tokens` is inside `output_tokens`**: in all 3753 records where it
   was above 0, `total_tokens = input_tokens + output_tokens` and reasoning ≤ output.
 - **Size.** 46 files, 89 MB, read in 0.6 s.
+- **A fork's rollout holds only its own requests** (2026-10-24, codex-cli 0.162.0, a
+  real `codex exec` turn, then `codex fork <id> "<prompt>"` in a pty, throwaway
+  `CODEX_HOME`): the new file's `session_meta` carries `forked_from_id` = the parent,
+  and its one `token_usage_record` is its own request (new `response_id`, input 16074);
+  none of the parent's records is copied. The TUI's exit line ("Token usage:
+  total=… input=6,034 (+ 24,320 cached)") sums parent and fork, so it is not the
+  fork's own spend.
 
 **Price table.** Read on 2026-09-24 from OpenAI's pricing page
 (`developers.openai.com/api/docs/pricing`, reached from `platform.openai.com/docs/pricing`,

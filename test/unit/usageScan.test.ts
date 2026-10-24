@@ -128,6 +128,44 @@ describe('scanClaudeLines', () => {
     expect(rec.cacheWrite1hTok).toBe(5600)
     expect(costUsdOf(resolvePricing(rec.model)!, rec) + rec.surchargeUsd).toBeCloseTo(0.0235773, 9)
   })
+
+  it("skips the parent's calls a fork copied in, older than the fork file's first line, so parent and fork add up to what Claude Code spent", () => {
+    const call = (session: string, id: string, at: string, usage: number[]): string =>
+      JSON.stringify({
+        type: 'assistant',
+        sessionId: session,
+        requestId: `req_${id}`,
+        timestamp: at,
+        message: {
+          id: `msg_${id}`,
+          model: 'claude-sonnet-5-5',
+          usage: {
+            input_tokens: 2,
+            output_tokens: usage[0],
+            cache_creation_input_tokens: usage[1],
+            cache_read_input_tokens: usage[2],
+            cache_creation: { ephemeral_1h_input_tokens: usage[1] }
+          }
+        }
+      })
+    const history = (session: string): string[] => [
+      call(session, 'read', '2026-10-24T09:00:01.000Z', [124, 5623, 11333]),
+      call(session, 'answer', '2026-10-24T09:00:03.000Z', [5, 167, 16956])
+    ]
+    const parent = scanClaudeLines(
+      lines(...history('p'), call('p', 'yes', '2026-10-24T09:06:00.000Z', [4, 41, 17123])),
+      '2026-10-24T09:00:00.000Z'
+    )
+    const fork = scanClaudeLines(
+      lines(...history('f'), call('f', 'ok', '2026-10-24T09:05:01.000Z', [4, 41, 17123])),
+      '2026-10-24T09:05:00.000Z'
+    )
+    const cost = (recs: typeof parent): number =>
+      recs.reduce((sum, r) => sum + costUsdOf(resolvePricing(r.model)!, r), 0)
+
+    expect(cost(parent)).toBeCloseTo(0.0292072, 9)
+    expect(cost(fork)).toBeCloseTo(0.0019203, 9)
+  })
 })
 
 const THREAD = 'thread-1'
