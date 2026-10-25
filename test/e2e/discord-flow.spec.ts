@@ -3,9 +3,11 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
+  installAgy,
   installCodex,
   installGhForWorkspaceA,
   installMuse,
+  trustInAgy,
   museCalls,
   museSaid,
   seedSettings,
@@ -14,6 +16,8 @@ import {
 } from './helpers/env'
 import {
   butlerSessionOnDisk,
+  centerTerm,
+  runIn,
   discordOnDisk,
   newSessionInWith,
   processAlive,
@@ -34,8 +38,18 @@ import {
   type FakePost
 } from './helpers/fakeDiscord'
 import { startEchoServer } from './helpers/fixtureServer'
+import {
+  addRemoteWorkspace,
+  agyReady,
+  installCodexOnFakeRemote,
+  installFakeRemote,
+  installMuseOnMachine,
+  installRemoteAgy,
+  killFakeRemote,
+  REMOTE_WS_NAME
+} from './helpers/remote'
 import { openSettings } from './helpers/extensions'
-import type { DiscordSettings } from '../../src/shared/types'
+import type { DiscordSettings, SessionInfo } from '../../src/shared/types'
 import { identityOf } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { crossSessionLine, writeLine } from '../../src/main/crossSessionMessage'
@@ -292,12 +306,39 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  for (const conductor of ['claude', 'codex', 'muse'] as const)
-    test(`while the owner is away, a session that finishes its turn is told to a ${conductor} butler in one quiet message that names it; the butler’s answer to that message is not posted to Discord, its answer to the owner still is`, async ({
+  const AGENT_NAME = { claude: 'Claude', codex: 'Codex', muse: 'Muse', agy: 'Antigravity' } as const
+  for (const [conductor, reported, remote] of [
+    ['claude', 'claude', false],
+    ['codex', 'claude', false],
+    ['muse', 'claude', false],
+    ['claude', 'codex', false],
+    ['claude', 'muse', false],
+    ['claude', 'agy', false],
+    ['claude', 'claude', true],
+    ['claude', 'codex', true],
+    ['claude', 'muse', true],
+    ['claude', 'agy', true]
+  ] as const)
+    test(`while the owner is away, a ${remote ? 'remote' : 'local'} ${reported} session that finishes its turn is told to a ${conductor} butler in one quiet message that names it; the butler’s answer to that message is not posted to Discord, its answer to the owner still is`, async ({
       env
     }) => {
-      if (conductor === 'codex') installCodex(env)
-      if (conductor === 'muse') installMuse(env)
+      const used = new Set<string>([conductor, reported])
+      if (remote) installFakeRemote(env)
+      const workspace = remote ? REMOTE_WS_NAME : 'ws-a'
+      if (used.has('codex')) {
+        if (remote) installCodexOnFakeRemote(env)
+        else installCodex(env)
+      }
+      if (used.has('muse')) {
+        installMuse(env)
+        if (remote) installMuseOnMachine(env)
+        else trustInMuse(env, env.workspaces.a)
+      }
+      if (used.has('agy')) {
+        installAgy(env)
+        if (remote) installRemoteAgy(env)
+        else trustInAgy(env, env.workspaces.a)
+      }
       env.launchEnv.KOLOFT_AWAY_DIGEST_MS = String(AWAY_DIGEST_GATHERS_MS)
       seedSettings(env, {
         hintsOff: true,
@@ -311,19 +352,19 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       const fake = await startFakeDiscord(env)
       const { app, page } = await connected(env, fake)
       try {
-        const title = 'Fix the login bug'
-        setNextSessionTitle(env, title)
-        if (conductor === 'claude') await startSessionIn(page, 'ws-a')
-        else await newSessionInWith(page, 'ws-a', 'Claude')
-        const liveTab = async (): Promise<string | undefined> =>
+        if (remote) await addRemoteWorkspace(page, env)
+        if (used.size === 1) await startSessionIn(page, workspace, { remote })
+        else await newSessionInWith(page, workspace, AGENT_NAME[reported])
+        const reportedSession = async (): Promise<SessionInfo | undefined> =>
           (await page.evaluate(() => window.api.sessions.list())).find(
             (s) => !s.butler && s.alive && s.sessionId
-          )?.tabId
-        await expect.poll(liveTab, { timeout: 60_000 }).toBeTruthy()
-        const tab = (await liveTab())!
-        await expect.poll(() => terminalText(page, tab)).not.toBe('')
+          )
+        await expect(centerTerm(page)).not.toBeEmpty({ timeout: 60_000 })
+        if (reported === 'agy') await agyReady(page)
         const postedBefore = said(fake).length
-        await page.evaluate((id) => window.api.terminal.write(id, 'hello\r'), tab)
+        await runIn(page, centerTerm(page), 'hello')
+        await expect.poll(reportedSession, { timeout: 60_000 }).toBeTruthy()
+        const reportedId = (await reportedSession())!.sessionId
 
         const butlerId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
         const butlerGot = (): string => {
@@ -352,8 +393,11 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         await expect
           .poll(butlerGot, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
           .toContain(AWAY_DIGEST_OPENS)
-        expect(butlerGot()).toContain(`"${title}"`)
-        expect(butlerGot()).toContain('finished its turn and waits')
+        expect(butlerGot()).toMatch(
+          new RegExp(
+            `\\(session ${reportedId}, workspace ${workspace}\\) finished its turn and waits`
+          )
+        )
         if (conductor === 'claude')
           await expect
             .poll(() => transcriptText(env, butlerId), {
@@ -379,6 +423,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       } finally {
         await quitAndClose(app)
         await fake.close()
+        if (remote) killFakeRemote(env)
       }
     })
 

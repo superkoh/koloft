@@ -1,6 +1,7 @@
 export const AWAY_AFTER_MS = 5 * 60_000
 // PLATFORM§60
-const PAGE_INPUT_IS_THE_MACS_WITHIN_SECONDS = 1
+const INPUT_IS_THE_MACS_WITHIN_SECONDS = 1
+const HANDS_RECHECKED_AFTER_MS = 1000
 
 const HANDS_ON = new Set(['mouseDown', 'mouseMove', 'mouseWheel', 'rawKeyDown', 'keyDown'])
 
@@ -22,13 +23,16 @@ export class Presence {
     this.lastHands = d.now()
   }
 
-  handsOnWindow(): void {
-    this.lastHands = this.d.now()
-    this.locked = false
+  macLastUsed(): void {
+    this.lastHands = this.d.now() - this.d.macIdleSeconds() * 1000
   }
 
-  handsOnPage(): void {
-    if (this.d.macIdleSeconds() <= PAGE_INPUT_IS_THE_MACS_WITHIN_SECONDS) this.handsOnWindow()
+  handsOn(): void {
+    const now = this.d.now()
+    if (!this.locked && now - this.lastHands < HANDS_RECHECKED_AFTER_MS) return
+    if (this.d.macIdleSeconds() > INPUT_IS_THE_MACS_WITHIN_SECONDS) return
+    this.lastHands = now
+    this.locked = false
   }
 
   screenLocked(): void {

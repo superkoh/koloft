@@ -568,22 +568,19 @@ const readerDocs = new ReaderDocs({
   remoteFileExists: (host, keyed) => hosts.machine(host).fileExists(keyed),
   changed: () => sendToRenderer(CH.sessions.update, onSessionsChanged())
 })
-const lastReplyOf = new Map<string, string>()
-const turnHandedOff = new Set<string>()
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
     void readerDocs.turnEnded(tabId, turn)
     newsJudge.turnEnded(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
-    lastReplyOf.set(tabId, turn.reply)
-    if (sessionCommand.turnEnded(tabId, turn)) turnHandedOff.add(tabId)
-    else turnHandedOff.delete(tabId)
+    const handedOff = sessionCommand.turnEnded(tabId, turn)
+    awayDigest?.turnEnded(tabId, turn.reply, handedOff)
   },
   prompted: (tabId) => {
     consumeOutletDedupe(tabId)
     newsJudge.prompted(tabId)
-    turnHandedOff.delete(tabId)
+    awayDigest?.prompted(tabId)
   },
   bound: (tabId, key, idleCompaction) => {
     if (!idleCompaction) attention.bound(tabId, key)
@@ -754,8 +751,7 @@ const attention = new AttentionTracker((pending, event) => {
   updateDockBadge(pending)
   sendToRenderer(CH.attention.changed, pending)
   retractStaleOsNotifications(pending)
-  if (!event) return
-  routeAttentionEvent(event)
+  if (event) routeAttentionEvent(event)
   awayDigest?.marked()
 }, loadLastRunAttention())
 attention.asleep = (tabId) => sleepers.has(tabId)
@@ -2490,7 +2486,7 @@ function createWindow(): void {
     if (!isAppNavigation(url, appUrl)) e.preventDefault()
   })
   mainWindow.webContents.on('input-event', (_e, input) => {
-    if (isHandsOn(input.type)) presence.handsOnWindow()
+    if (isHandsOn(input.type)) presence.handsOn()
   })
   // PLATFORM§10
   let pressedInHost = false
@@ -2562,6 +2558,7 @@ function rendererUrl(): string {
 }
 
 app.whenReady().then(() => {
+  presence.macLastUsed()
   protocol.handle('koloft-file', async (request) => {
     const url = new URL(request.url)
     const filePath = decodeURIComponent(url.pathname)
@@ -2769,8 +2766,7 @@ app.whenReady().then(() => {
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
-    lastReplyOf.delete(e.id)
-    turnHandedOff.delete(e.id)
+    awayDigest?.forget(e.id)
     forgetFreeOnMachine(e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
@@ -3298,28 +3294,25 @@ app.whenReady().then(() => {
     marks: () => attention.list(),
     butlerSide,
     judging: (tabId) => newsJudge.judging(tabId),
-    handedOff: (tabId) => turnHandedOff.has(tabId),
-    itemOf: (mark) => {
+    sessionOf: (mark) => {
       const s = sessionOfTab(mark.tabId)
       const workspace = sessionBackends.workspaceOfTab(mark.tabId)
       return {
-        kind: mark.kind,
         title: s?.title ?? mark.title,
         sessionId: s?.sessionId ?? mark.sessionId,
-        workspace: workspace && path.basename(workspace),
-        reply: lastReplyOf.get(mark.tabId)
+        workspace: workspace && path.basename(workspace)
       }
     },
     butlerBusy: () => {
       const tab = butlerNow.liveTab()
       return !!tab && !relay.takesCommand(tab)
     },
-    tell: (text) => void relay.tellQuietly(butlerDestination(), text),
+    tell: (text) => relay.tellQuietly(butlerDestination(), text),
     now: Date.now,
     gatherMs: cronTestMs('KOLOFT_AWAY_DIGEST_MS', DIGEST_GATHERS_MS)
   })
   const digest = awayDigest
-  setInterval(() => digest.check(), AWAY_CHECKED_EVERY_MS).unref()
+  setInterval(() => digest.marked(), AWAY_CHECKED_EVERY_MS).unref()
   const pruneAttachments = (): void => pruneStale(attachmentsDir, ATTACHMENTS_KEPT_MS, true)
   pruneAttachments()
   setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
@@ -3493,7 +3486,7 @@ app.whenReady().then(() => {
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return
     contents.on('input-event', (_event, input) => {
-      if (isHandsOn(input.type)) presence.handsOnPage()
+      if (isHandsOn(input.type)) presence.handsOn()
     })
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return
@@ -3526,7 +3519,7 @@ app.whenReady().then(() => {
   powerMonitor.on('unlock-screen', requestWebglRepair)
   powerMonitor.on('lock-screen', () => {
     presence.screenLocked()
-    awayDigest?.check()
+    awayDigest?.marked()
     discordRelay?.checkHeld()
   })
   powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))

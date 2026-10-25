@@ -453,7 +453,17 @@ export class DiscordRelay {
 
   tellQuietly(dest: Destination, text: string): Promise<boolean> {
     this.quietReplies.add(text)
-    return new Promise((resolve) => this.tell(dest, text, resolve, true))
+    return new Promise((resolve) =>
+      this.tell(
+        dest,
+        text,
+        (told) => {
+          if (!told) this.quietReplies.delete(text)
+          resolve(told)
+        },
+        true
+      )
+    )
   }
 
   turnEnded(tabId: string, turn: Turn): void {

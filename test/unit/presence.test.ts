@@ -8,7 +8,7 @@ function clock() {
 }
 
 describe('Presence — the owner is at the Mac only while their own hands are on Koloft', () => {
-  it('counts from launch, and is away once Koloft goes untouched for five minutes, whatever else the Mac is doing', () => {
+  it('is away once Koloft goes untouched for five minutes, whatever else the Mac is doing', () => {
     const { t, presence } = clock()
     t.macIdle = 0
     expect(presence.away()).toBe(false)
@@ -18,30 +18,31 @@ describe('Presence — the owner is at the Mac only while their own hands are on
     expect(presence.away()).toBe(true)
   })
 
-  it('input in Koloft’s own window is the owner’s, even with the Mac otherwise idle', () => {
+  it('at launch counts from when the Mac was last used, so a launch on an idle Mac is already away', () => {
+    const { presence } = clock()
+    presence.macLastUsed()
+    expect(presence.away()).toBe(true)
+  })
+
+  it('input in Koloft counts only when the Mac saw it too, so input a helper or a test driver injects leaves the owner away', () => {
     const { t, presence } = clock()
     t.now += AWAY_AFTER_MS
-    presence.handsOnWindow()
+    t.macIdle = 300
+    presence.handsOn()
+    expect(presence.away()).toBe(true)
+    t.macIdle = 0
+    presence.handsOn()
     expect(presence.away()).toBe(false)
     expect(presence.lastHandsAt()).toBe(t.now)
   })
 
-  it('input in a Workbench page counts only when the Mac saw it too, so a helper driving the page leaves the owner away', () => {
-    const { t, presence } = clock()
-    t.now += AWAY_AFTER_MS
-    t.macIdle = 300
-    presence.handsOnPage()
-    expect(presence.away()).toBe(true)
-    t.macIdle = 0
-    presence.handsOnPage()
-    expect(presence.away()).toBe(false)
-  })
-
   it('a locked screen is away at once, until the owner next touches Koloft', () => {
-    const { presence } = clock()
+    const { t, presence } = clock()
+    t.macIdle = 0
+    presence.handsOn()
     presence.screenLocked()
     expect(presence.away()).toBe(true)
-    presence.handsOnWindow()
+    presence.handsOn()
     expect(presence.away()).toBe(false)
   })
 })
