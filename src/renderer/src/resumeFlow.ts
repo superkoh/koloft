@@ -2,7 +2,7 @@ import { isSessionKind, type SessionBackend } from './agentUi'
 import type { ResumePlan, SessionResumeRequest, SessionResumeResult } from '@shared/types'
 import { basename } from '@shared/preview'
 import { markRestoreLaunch, useStore, type Tab } from './store'
-import { workspaceOfRow } from './sessionRows'
+import { rowLookups, workspaceOfRow } from './sessionRows'
 
 export interface ResumeTarget {
   backendId: SessionBackend
@@ -150,9 +150,7 @@ export async function runResume(target: ResumeTarget, req: SessionResumeRequest)
 
 function liveTabBoundTo(sessionId: string): string | undefined {
   const { sessions, tabs } = useStore.getState()
-  return sessions.find(
-    (s) => s.alive && s.sessionId === sessionId && tabs.some((t) => t.id === s.tabId && t.alive)
-  )?.tabId
+  return rowLookups(sessions, tabs, []).boundTabOf(sessionId)
 }
 
 export async function resumeSession(target: ResumeTarget): Promise<void> {
