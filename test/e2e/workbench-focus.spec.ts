@@ -53,6 +53,21 @@ function activeTag(page: Page): Promise<string> {
   return page.evaluate(() => (document.activeElement as HTMLElement | null)?.tagName ?? 'NONE')
 }
 
+const A_FRAME_LATE_UNDER_LOAD_MS = 500
+
+async function delayEveryAnimationFrame(page: Page, ms: number): Promise<void> {
+  await page.evaluate((delay) => {
+    const real = window.requestAnimationFrame.bind(window)
+    window.requestAnimationFrame = (cb: FrameRequestCallback): number =>
+      window.setTimeout(() => real(cb), delay)
+    window.cancelAnimationFrame = (id: number): void => window.clearTimeout(id)
+  }, ms)
+}
+
+async function framesScheduledSoFarHaveRun(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())))
+}
+
 async function clickNonFocusableFoldIconKeepingPick(page: Page): Promise<void> {
   await page.locator('.ws-head', { hasText: 'ws-b' }).locator('.fico').click()
 }
@@ -244,6 +259,25 @@ test.describe('Workbench focus ring: the keys belong to whichever island is lit,
     await expect(page.locator(WORKBENCH.panel)).not.toHaveClass(/full/)
     await expect.poll(() => focusOwner(page), { timeout: 15_000 }).toBe('panel')
     expect(await litIsland(page)).toBe('panel')
+  })
+
+  test('T-FX-06b: a caret placed in the panel before ⌘⏎’s own caret frame lands — ⌘⇧F’s search box on a busy machine — stays there', async ({
+    app,
+    page
+  }) => {
+    test.setTimeout(240_000)
+    const searchInput = page.locator('.wb-panel .ft-search-input')
+    await startSessionIn(page, 'ws-a')
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+    await delayEveryAnimationFrame(page, A_FRAME_LATE_UNDER_LOAD_MS)
+
+    await toggleFull(app, page)
+    await clickAppMenuItem(app, page, 'find-files')
+    await expect(searchInput).toBeFocused()
+
+    await framesScheduledSoFarHaveRun(page)
+    await expect(page.locator(WORKBENCH.panel)).toHaveClass(/full/)
+    await expect(searchInput).toBeFocused()
   })
 
   test('T-FX-07: Esc inside a guest belongs to the page, not to the panel’s ladder', async ({
