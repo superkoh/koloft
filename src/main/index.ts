@@ -328,6 +328,7 @@ import {
   renewRelayEndpointOnMachine,
   guestDrivenFromAnotherMachine,
   originDrivenFromAnotherMachine,
+  notePageOpenedForAMachine,
   openForMachine,
   relayStripChanged,
   relayTabClosed,
@@ -4037,13 +4038,12 @@ function relayDeps(): RelayDeps {
 
 function openAsDrivingAgentsTab(from: WebContents, url: string): boolean {
   const driver = sessionDrivingGuest(from.id)
+  if (guestDrivenFromAnotherMachine(from.id)) {
+    if (driver) void openForMachine(driver, url, relayDeps().create).catch(() => {})
+    return true
+  }
   if (driver) void cdpOp('create', driver, { url })
   return driver !== null
-}
-
-function openFromAMachinesPage(from: WebContents, url: string): void {
-  const driver = sessionDrivingGuest(from.id)
-  if (driver) void openForMachine(driver, url, relayDeps().create)
 }
 
 function routeGuestPopup(url: string, from: WebContents): void {
@@ -4055,8 +4055,7 @@ function routeGuestPopup(url: string, from: WebContents): void {
     return
   }
   const decision = routeFor(url, 'user')
-  if (decision.dest === 'browser' && guestDrivenFromAnotherMachine(from.id))
-    return openFromAMachinesPage(from, decision.target)
+  if (decision.dest !== 'browser' && guestDrivenFromAnotherMachine(from.id)) return
   if (decision.dest === 'browser' && openAsDrivingAgentsTab(from, decision.target)) return
   const tabId = tabOwningGuest(from)
   if (!tabId) return
@@ -4225,7 +4224,9 @@ function setupBrowserPartition(): void {
         : details.initiatorOrigin !== undefined &&
           originDrivenFromAnotherMachine(details.initiatorOrigin)
     if (!fenced) return callback({})
-    if (details.url.startsWith('file:')) return callback({ cancel: guest !== undefined })
+    if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')
+      notePageOpenedForAMachine(details.url)
+    if (details.url.startsWith('file:')) return callback({ cancel: true })
     void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
   })
   // PLATFORM§13

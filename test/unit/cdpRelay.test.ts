@@ -377,17 +377,23 @@ describe("a session on another machine never reaches this Mac's files or local s
     expect(made.loadURL).toHaveBeenCalledWith('https://example.com/')
   })
 
-  it('keeps a page fenced, and its workers, after the client lets go of it, until the page is closed', async () => {
+  it('keeps a page fenced after the client lets go of it, until the page is closed', async () => {
     relay.relayEndpointOnMachine(TAB)
-    const guest = fakeGuest(11, { url: 'https://evil.example/wait' })
+    const guest = fakeGuest(11)
     const c = await registered()
     await attachedTo(c, 'http://x/a')
     await c.cmd('Target.detachFromTarget', { sessionId: 'KOLOFT-1' })
     expect(relay.guestDrivenFromAnotherMachine(11)).toBe(true)
+    guest.destroy()
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(false)
+  })
+
+  it('remembers every site a fenced page opened, so its workers stay fenced after the page leaves; an opaque origin is never one of them', () => {
+    relay.notePageOpenedForAMachine('https://evil.example/wait')
+    relay.notePageOpenedForAMachine('about:blank')
     expect(relay.originDrivenFromAnotherMachine('https://evil.example')).toBe(true)
     expect(relay.originDrivenFromAnotherMachine('https://example.com')).toBe(false)
-    guest.destroy()
-    expect(relay.originDrivenFromAnotherMachine('https://evil.example')).toBe(false)
+    expect(relay.originDrivenFromAnotherMachine('null')).toBe(false)
   })
 
   it('never shows it, or lets it attach to, a tab on a Mac file or local server, even before the strip has caught up', async () => {

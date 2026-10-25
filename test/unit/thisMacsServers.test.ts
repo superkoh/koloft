@@ -42,6 +42,22 @@ describe('a web address that reaches a server on the Mac Koloft runs on, which a
     expect(await reachesThisMacsServer('https://example.com/')).toBe(false)
   })
 
+  it('counts a name whose lookup takes too long as the Mac, and asks again next time', async () => {
+    vi.useFakeTimers()
+    try {
+      const lookup = vi
+        .spyOn(dns.promises, 'lookup')
+        .mockImplementation((() => new Promise(() => {})) as never)
+      const slow = reachesThisMacsServer('http://slow-answer.test/')
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(await slow).toBe(true)
+      void reachesThisMacsServer('http://slow-answer.test/')
+      expect(lookup).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('leaves out pages that are not served over the network', async () => {
     for (const url of ['about:blank', 'data:text/html,hi', 'file:///etc/hosts', 'not a url'])
       expect(await reachesThisMacsServer(url), url).toBe(false)

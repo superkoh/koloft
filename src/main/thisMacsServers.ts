@@ -60,13 +60,22 @@ const lookedUp = new Map<string, { at: number; reaches: Promise<boolean> }>()
 function nameReachesThisMac(host: string): Promise<boolean> {
   const known = lookedUp.get(host)
   if (known && Date.now() - known.at < A_LOOKED_UP_NAME_STAYS_ANSWERED_MS) return known.reaches
+  const TOO_SLOW = Symbol('too slow')
   const reaches = Promise.race([
     dns.promises.lookup(host, { all: true }).then((found) => {
       const own = ownAddresses()
       return found.some((a) => isThisMacsAddress(a.address, own))
     }),
-    new Promise<boolean>((resolve) => setTimeout(resolve, A_LOOKUP_GIVES_UP_MS, false).unref())
-  ]).catch(() => false)
+    new Promise<typeof TOO_SLOW>((resolve) =>
+      setTimeout(resolve, A_LOOKUP_GIVES_UP_MS, TOO_SLOW).unref()
+    )
+  ]).then(
+    (answer) => {
+      if (answer === TOO_SLOW) lookedUp.delete(host)
+      return answer !== false
+    },
+    () => false
+  )
   if (lookedUp.size >= LOOKED_UP_NAMES_KEPT) lookedUp.clear()
   lookedUp.set(host, { at: Date.now(), reaches })
   return reaches

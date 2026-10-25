@@ -119,17 +119,20 @@ export function guestDrivenFromAnotherMachine(guestId: number): boolean {
 
 function fenceForGood(guestId: number): void {
   if (machineDrivenGuests.has(guestId)) return
-  const wc = webContents.fromId(guestId)
-  if (!wc || wc.isDestroyed()) return
   machineDrivenGuests.add(guestId)
-  wc.once('destroyed', () => machineDrivenGuests.delete(guestId))
+  webContents.fromId(guestId)?.once('destroyed', () => machineDrivenGuests.delete(guestId))
+}
+
+const OPAQUE_ORIGIN = 'null'
+const originsOpenedForAMachine = new Set<string>()
+
+export function notePageOpenedForAMachine(url: string): void {
+  const origin = urlOrNull(url)?.origin
+  if (origin && origin !== OPAQUE_ORIGIN) originsOpenedForAMachine.add(origin)
 }
 
 export function originDrivenFromAnotherMachine(origin: string): boolean {
-  return [...machineDrivenGuests].some((id) => {
-    const wc = webContents.fromId(id)
-    return !!wc && !wc.isDestroyed() && urlOrNull(wc.getURL())?.origin === origin
-  })
+  return originsOpenedForAMachine.has(origin)
 }
 
 const BLANK = 'about:blank'
@@ -141,7 +144,7 @@ export async function openForMachine(
 ): Promise<RelayTarget | null> {
   if (await opensThisMac(url)) return null
   const t = await create(sessionId, BLANK)
-  if (t.guestId === null) return t
+  if (t.guestId === null) throw new Error('could not create a tab')
   fenceForGood(t.guestId)
   if (url !== BLANK)
     void guestOf(t.guestId)
