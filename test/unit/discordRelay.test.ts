@@ -734,6 +734,19 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     expect(posts.map((p) => p.text)).toEqual(['Two things.', 'Hello.'])
   })
 
+  it('the turn that took Koloft’s quiet notice counts as quiet, so no typing shows in Discord, until that turn ends', async () => {
+    const { relay, conductor } = setup()
+    expect(relay.quietTurn(TAB)).toBe(false)
+    expect(await relay.tellQuietly(conductor, 'NOTICE while away')).toBe(true)
+    expect(relay.quietTurn(TAB)).toBe(true)
+    relay.turnEnded(TAB, {
+      said: [{ who: 'owner', text: 'NOTICE while away', at: 1 }],
+      reply: 'Nothing to tell.',
+      at: 1
+    })
+    expect(relay.quietTurn(TAB)).toBe(false)
+  })
+
   it('a question it asks while the owner is at the Mac, after an earlier card of its own was answered, is held and does not take what the owner writes to the butler', async () => {
     let away = true
     const { relay, posts, bodies } = setup({}, [], {

@@ -2442,6 +2442,13 @@ server unless a line says so.
   again later.
 - Measured 2026-10-23 with Electron 43.7.3 on macOS 27.0 (Darwin 27.0.0), Apple silicon, by
   a script run under the repo's Electron from a Koloft Claude Code tab.
+- **Injected input looks real inside Electron but not to the Mac.** CDP
+  `Input.dispatchMouseEvent` / `Input.dispatchKeyEvent` and `webContents.sendInputEvent`
+  on a hidden `BrowserWindow` fire `input-event` (`mouseMove`, `mouseDown`, `mouseWheel`,
+  `keyDown`, `rawKeyDown`…) and DOM events with `isTrusted: true`, the same as a person's.
+  With the Mac idle 15 s, 25 rounds of such input left `getSystemIdleTime()` at 17: it
+  does not reset the Mac's idle time, which a person's input does. Measured 2026-10-25,
+  Electron 43.8.1, macOS 27.0, a script under the repo's Electron.
 
 ## §61 Which gh knows the issues a pull request closes
 

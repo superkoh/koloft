@@ -502,6 +502,8 @@ import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessi
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
+import { isHandsOn, Presence } from './presence'
+import { AwayDigest, DIGEST_GATHERS_MS } from './awayDigest'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
@@ -566,17 +568,22 @@ const readerDocs = new ReaderDocs({
   remoteFileExists: (host, keyed) => hosts.machine(host).fileExists(keyed),
   changed: () => sendToRenderer(CH.sessions.update, onSessionsChanged())
 })
+const lastReplyOf = new Map<string, string>()
+const turnHandedOff = new Set<string>()
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
     void readerDocs.turnEnded(tabId, turn)
     newsJudge.turnEnded(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
-    sessionCommand.turnEnded(tabId, turn)
+    lastReplyOf.set(tabId, turn.reply)
+    if (sessionCommand.turnEnded(tabId, turn)) turnHandedOff.add(tabId)
+    else turnHandedOff.delete(tabId)
   },
   prompted: (tabId) => {
     consumeOutletDedupe(tabId)
     newsJudge.prompted(tabId)
+    turnHandedOff.delete(tabId)
   },
   bound: (tabId, key, idleCompaction) => {
     if (!idleCompaction) attention.bound(tabId, key)
@@ -747,7 +754,9 @@ const attention = new AttentionTracker((pending, event) => {
   updateDockBadge(pending)
   sendToRenderer(CH.attention.changed, pending)
   retractStaleOsNotifications(pending)
-  if (event) routeAttentionEvent(event)
+  if (!event) return
+  routeAttentionEvent(event)
+  awayDigest?.marked()
 }, loadLastRunAttention())
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
@@ -929,14 +938,17 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
   return { title: s?.title, sessionId: s?.sessionId }
 }
-// PLATFORM§60
-const AWAY_AFTER_IDLE_SECONDS = 5 * 60
+const presence = new Presence({
+  now: Date.now,
+  macIdleSeconds: () => powerMonitor.getSystemIdleTime()
+})
+const AWAY_CHECKED_EVERY_MS = 30_000
 function ownerAway(): boolean {
   const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
   if (pretend)
     return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
   if (BACKGROUND_TEST) return true
-  return powerMonitor.getSystemIdleState(AWAY_AFTER_IDLE_SECONDS) !== 'active'
+  return presence.away()
 }
 
 function windowFocused(): boolean {
@@ -1171,6 +1183,7 @@ let butler: Butler | null = null
 let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
 let discordTyping: ButlerTyping | null = null
+let awayDigest: AwayDigest | null = null
 let askButtons: AskButtons | null = null
 let secretAsks: SecretAsks | null = null
 const answerable = new Set<string>()
@@ -2476,6 +2489,9 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', (e, url) => {
     if (!isAppNavigation(url, appUrl)) e.preventDefault()
   })
+  mainWindow.webContents.on('input-event', (_e, input) => {
+    if (isHandsOn(input.type)) presence.handsOnWindow()
+  })
   // PLATFORM§10
   let pressedInHost = false
   mainWindow.webContents.on('before-mouse-event', (e, mouse) => {
@@ -2753,6 +2769,8 @@ app.whenReady().then(() => {
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
+    lastReplyOf.delete(e.id)
+    turnHandedOff.delete(e.id)
     forgetFreeOnMachine(e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
@@ -3171,7 +3189,9 @@ app.whenReady().then(() => {
   discordTyping = new ButlerTyping({
     link,
     channelOf: (tabId) =>
-      discordRelay?.reaches(tabId) ? butlerNow.channelOfTab(tabId) : undefined,
+      discordRelay?.reaches(tabId) && !discordRelay.quietTurn(tabId)
+        ? butlerNow.channelOfTab(tabId)
+        : undefined,
     status: (tabId) => tracker.statusOf(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
@@ -3270,6 +3290,36 @@ app.whenReady().then(() => {
     attachmentsDir
   })
   discordRelay.watchAsks()
+  const relay = discordRelay
+  awayDigest = new AwayDigest({
+    away: ownerAway,
+    lastHandsAt: () => presence.lastHandsAt(),
+    reachable: () => discordConnected && !!butlerNow.channel(),
+    marks: () => attention.list(),
+    butlerSide,
+    judging: (tabId) => newsJudge.judging(tabId),
+    handedOff: (tabId) => turnHandedOff.has(tabId),
+    itemOf: (mark) => {
+      const s = sessionOfTab(mark.tabId)
+      const workspace = sessionBackends.workspaceOfTab(mark.tabId)
+      return {
+        kind: mark.kind,
+        title: s?.title ?? mark.title,
+        sessionId: s?.sessionId ?? mark.sessionId,
+        workspace: workspace && path.basename(workspace),
+        reply: lastReplyOf.get(mark.tabId)
+      }
+    },
+    butlerBusy: () => {
+      const tab = butlerNow.liveTab()
+      return !!tab && !relay.takesCommand(tab)
+    },
+    tell: (text) => void relay.tellQuietly(butlerDestination(), text),
+    now: Date.now,
+    gatherMs: cronTestMs('KOLOFT_AWAY_DIGEST_MS', DIGEST_GATHERS_MS)
+  })
+  const digest = awayDigest
+  setInterval(() => digest.check(), AWAY_CHECKED_EVERY_MS).unref()
   const pruneAttachments = (): void => pruneStale(attachmentsDir, ATTACHMENTS_KEPT_MS, true)
   pruneAttachments()
   setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
@@ -3442,6 +3492,9 @@ app.whenReady().then(() => {
   // PLATFORM§7
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return
+    contents.on('input-event', (_event, input) => {
+      if (isHandsOn(input.type)) presence.handsOnPage()
+    })
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return
       if (!(input.meta || input.control)) return
@@ -3471,7 +3524,11 @@ app.whenReady().then(() => {
   // PLATFORM§20
   powerMonitor.on('resume', requestWebglRepair)
   powerMonitor.on('unlock-screen', requestWebglRepair)
-  powerMonitor.on('lock-screen', () => discordRelay?.checkHeld())
+  powerMonitor.on('lock-screen', () => {
+    presence.screenLocked()
+    awayDigest?.check()
+    discordRelay?.checkHeld()
+  })
   powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3
   powerMonitor.on('resume', () => cronRunner?.onResume())

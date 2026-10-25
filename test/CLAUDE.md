@@ -297,8 +297,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
   `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, `KOLOFT_TEST_REAL_WINDOW`
   (real-window layer), `KOLOFT_TEST_PRESENCE_FILE`
-  (`active`, `idle` or `locked` in place of the Mac's idle state; without it a test run
-  counts the owner as away, so Discord posts as before), the session timing knobs
+  (`active`, `idle` or `locked` in place of whether the owner's hands are on Koloft;
+  without it a test run counts the owner as away, so Discord posts as before),
+  `KOLOFT_AWAY_DIGEST_MS` (how long the away digest gathers before it goes to the
+  butler), the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
   `KOLOFT_FILE_DIALOG_FILE`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_TEST_MACHINE_FILE` and
   `KOLOFT_TEST_PRESENCE_FILE` are read on every use, so a spec may rewrite them after launch.

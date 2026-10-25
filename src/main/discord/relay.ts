@@ -145,6 +145,7 @@ interface Inbound {
   text(): Promise<string>
   command?: boolean
   fromDiscord?: boolean
+  quiet?: boolean
   settle(failed?: string): void
 }
 
@@ -165,6 +166,7 @@ export class DiscordRelay {
   private codexAsks = new Map<string, string | number>()
   private cardOrder = new Set<string>()
   private quietReplies = new Set<string>()
+  private quietTurns = new Set<string>()
   private answering = new Map<string, DiscordAnswer>()
   private held = new Set<string>()
   private heldCheck: ReturnType<typeof setInterval> | undefined
@@ -318,10 +320,16 @@ export class DiscordRelay {
     })
   }
 
-  tell(dest: Destination, text: string, delivered: (ok: boolean) => void = () => undefined): void {
+  tell(
+    dest: Destination,
+    text: string,
+    delivered: (ok: boolean) => void = () => undefined,
+    quiet = false
+  ): void {
     this.enqueue(dest, {
       clientId: `koloft-notice-${++this.told}`,
       text: async () => text,
+      quiet,
       settle: (failed) => delivered(!failed)
     })
   }
@@ -353,12 +361,18 @@ export class DiscordRelay {
     const text = await item.text()
     const answer = item.fromDiscord ? (item.command ? 'turn' : 'message') : undefined
     if (answer) this.answersDiscord(tab, answer)
+    if (item.quiet) this.quietTurns.add(tab)
     try {
       await this.hand(dest, tab, item, text)
     } catch (error) {
       if (answer) this.answering.delete(tab)
+      if (item.quiet) this.quietTurns.delete(tab)
       throw error
     }
+  }
+
+  quietTurn(tab: string): boolean {
+    return this.quietTurns.has(tab)
   }
 
   private async hand(dest: Destination, tab: string, item: Inbound, text: string): Promise<void> {
@@ -439,10 +453,11 @@ export class DiscordRelay {
 
   tellQuietly(dest: Destination, text: string): Promise<boolean> {
     this.quietReplies.add(text)
-    return new Promise((resolve) => this.tell(dest, text, resolve))
+    return new Promise((resolve) => this.tell(dest, text, resolve, true))
   }
 
   turnEnded(tabId: string, turn: Turn): void {
+    this.quietTurns.delete(tabId)
     const answers = turn.said.some((line) => line.text.startsWith(DISCORD_PREFIX))
     const reaches = answers || this.reaches(tabId)
     if (answers || this.answering.get(tabId) === 'turn') this.answering.delete(tabId)
@@ -676,6 +691,7 @@ export class DiscordRelay {
     this.cardOrder.delete(tab)
     this.answering.delete(tab)
     this.held.delete(tab)
+    this.quietTurns.delete(tab)
   }
 
   async catchUp(): Promise<void> {
