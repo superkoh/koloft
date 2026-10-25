@@ -181,6 +181,36 @@ describe('CodexObservation', () => {
   })
 
   // CODEX§20
+  it('a tool question the TUI lets go with no answer stays marked as unanswered, through the end of that turn and a resume of the same thread, until the next turn starts or a later question is answered; an answered one or an error reply never is', () => {
+    const f = fixture()
+    f.bind()
+    const ask = (id: number) =>
+      f.server('item/tool/requestUserInput', { questions: [{ id: 'colour' }] }, id)
+    const reply = (id: number, frame: object) => f.observer.receive('client', { id, ...frame })
+    const green = { result: { answers: { colour: { answers: ['Green'] } } } }
+    f.server('turn/started', { turn: { id: 'asked' } })
+    ask(0)
+    reply(0, green)
+    ask(1)
+    reply(1, { error: { code: -1, message: 'failed' } })
+    expect(f.observer.questionWentUnanswered()).toBe(false)
+
+    ask(2)
+    reply(2, { result: { answers: {} } })
+    f.server('turn/completed', { turn: { id: 'asked' } })
+    f.bind(A, 9, 'thread/resume')
+    expect(f.observer.questionWentUnanswered()).toBe(true)
+
+    f.server('turn/started', { turn: { id: 'owner wrote' } })
+    expect(f.observer.questionWentUnanswered()).toBe(false)
+    ask(3)
+    reply(3, { result: { answers: {} } })
+    ask(4)
+    reply(4, green)
+    expect(f.observer.questionWentUnanswered()).toBe(false)
+  })
+
+  // CODEX§20
   it('holds an open question only in the two shapes that were probed, one question or one enum field with options, until the TUI answers it', () => {
     const f = fixture()
     f.bind()

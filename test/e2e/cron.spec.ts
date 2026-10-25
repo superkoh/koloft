@@ -797,6 +797,47 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
+  test('BB-M33 in Codex: with "Close it" on, a Codex run whose question the TUI let go with no answer stays open and says so; once you write to it and its turn ends, it closes', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+    fs.writeFileSync(path.join(env.home, 'fake-codex-question-gives-up-ms'), '1500')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, { agent: 'Codex', name: 'Colour check', task: 'ask me a colour' })
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Colour check')
+
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+        .toBe('Done — not closed: it asked you a question nobody answered')
+      const row = cronRows(page, 'ws-a')
+      await expect(row).toHaveCount(1)
+      expect(await tabDisplays(page)).toHaveLength(1)
+
+      const tabId = await row.getAttribute('data-tab-id')
+      await closeCron(page)
+      await row.click()
+      await page.evaluate((t) => window.api.terminal.write(t!, 'Green\r'), tabId)
+      await openCron(page, 'ws-a')
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 30_000 })
+        .toBe('Done — closed itself')
+      await expect(row).toHaveCount(0, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('BB-M07: the clock fires on its own, and takes nothing from you', async ({ env }) => {
     test.setTimeout(240_000)
     gitInit(env.workspaces.a)

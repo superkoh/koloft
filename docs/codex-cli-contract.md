@@ -1609,8 +1609,8 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   real TUI over `--remote`): the model called `request_user_input` with two options and
   the TUI drew it as a question the owner could pick by digit. In one run whose brief
   still allowed a plain-text question, the model asked in plain text instead; told to
-  ask every question with that tool, it did. Not probed: what `isBlocking: false`
-  changes. The same on 0.163.0 (2026-10-16, the flag on, `on-request` / `read-only`):
+  ask every question with that tool, it did. What `isBlocking: false` changes is below.
+  The same on 0.163.0 (2026-10-16, the flag on, `on-request` / `read-only`):
   `waitingOnUserInput`, then `item/tool/requestUserInput` (`isBlocking: false`,
   `autoResolutionMs: null`), the turn waited 10 s for the answer, then
   `serverRequest/resolved {threadId, requestId}` came, the flags cleared and the turn
@@ -1627,9 +1627,24 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   red, like wine". That the TUI's notes field sends that `user_note: ` prefix is inferred
   from a string in the binary, not seen on the wire. Each time: `waitingOnUserInput`,
   then `serverRequest/resolved`, then the turn went on.
-- Not probed: `isSecret`, what `isBlocking: false` changes, a form with several fields or
-  a field that is not an enum, and an elicitation `mode` other than `form`. Koloft refuses
-  several questions, free text and those from Discord.
+- **`isBlocking: false` means the TUI answers it with nothing after 120 s.** 2026-10-24,
+  codex-cli 0.162.0, `gpt-6.1-sol`, `features.default_mode_request_user_input=true`, a
+  throwaway `CODEX_HOME` with a copied login, one question (Red / Green) left unanswered,
+  1 run each way. The full-screen `codex --no-daemon` alone in a python pty: the
+  `function_call_output` was `{"answers":{}}` 120.0 s after the call, and the screen showed
+  "auto-resolves in 1m 00s" in the last minute. The same through Koloft's relay (a
+  scheduled run in the hand-test sandbox): the app-server's own log said `<- response:
+  ToolRequestUserInput { request_id: Integer(0), response: ToolRequestUserInputResponse {
+  answers: {} } }` from `client_name="codex-tui"` at 120.05 s; the model then said
+  "Awaiting your answer." and the turn completed. A Node client on a bare `codex
+  app-server --stdio` that never answered saw no `serverRequest/resolved` and no
+  `turn/completed` in 300 s. So the countdown lives in the TUI, not the server; the model's
+  instructions say "If `request_user_input` returns no answers, continue with best
+  judgment". Whether a Plan-mode question (`isBlocking: true`) counts down is not probed
+  yet.
+- Not probed: `isSecret`, a form with several fields or a field that is not an enum, and
+  an elicitation `mode` other than `form`. Koloft refuses several questions, free text and
+  those from Discord.
 
 ## 21. Slash commands typed into the TUI
 
