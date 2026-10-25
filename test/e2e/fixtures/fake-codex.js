@@ -445,22 +445,44 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         result(id, { data: p.archived ? [] : savedThreads(), nextCursor: null })
         return
       }
+      const said = (thread) =>
+        thread.turns
+          .flatMap((turn) => turn.items)
+          .map((item) =>
+            item.type === 'agentMessage'
+              ? item.text
+              : (item.content ?? []).map((c) => c.text).join(' ')
+          )
+          .filter(Boolean)
+      // CODEX§24
       if (method === 'thread/search') {
         const term = String(p.searchTerm).toLowerCase()
-        const said = (thread) =>
-          thread.turns
-            .flatMap((turn) => turn.items)
-            .map((item) =>
-              item.type === 'agentMessage'
-                ? item.text
-                : (item.content ?? []).map((c) => c.text).join(' ')
-            )
-            .find((text) => text?.toLowerCase().includes(term))
+        const environment = (thread) =>
+          `<environment_context> <cwd>${thread.cwd}</cwd> <shell>zsh</shell> </environment_context>`
         const data = (p.archived ? [] : savedThreads()).flatMap((thread) => {
-          const snippet = said(thread)
+          const snippet = [environment(thread), ...said(thread)].find((text) =>
+            text.toLowerCase().includes(term)
+          )
           return snippet ? [{ snippet, thread }] : []
         })
         result(id, { data, nextCursor: null, backwardsCursor: null })
+        return
+      }
+      if (method === 'thread/searchOccurrences') {
+        const term = String(p.searchTerm).toLowerCase()
+        const thread = load(p.threadId)
+        const snippet = thread && said(thread).find((text) => text.toLowerCase().includes(term))
+        const start = snippet ? snippet.toLowerCase().indexOf(term) : 0
+        const data = snippet
+          ? [{ snippet, snippetMatchRange: { start, end: start + term.length } }]
+          : []
+        result(id, { data, nextCursor: null })
+        return
+      }
+      if (method === 'thread/turns/list') {
+        const thread = load(p.threadId)
+        if (!thread) error(id, 'Thread not found')
+        else result(id, { data: thread.turns.slice(-(p.limit ?? 100)), nextCursor: null })
         return
       }
       if (method === 'thread/read') {

@@ -549,6 +549,7 @@ describe('CodexSessions', () => {
                 { id: C, cwd: other, name: 'Elsewhere' }
               ]
             }
+      if (method !== 'thread/search') return { data: [] }
       return {
         data: [
           { snippet: '... the PARSER crashed on an empty file', thread: { id: B, cwd: repo } },
@@ -584,6 +585,37 @@ describe('CodexSessions', () => {
 
     mocks.request.mockRejectedValue(new Error('state database locked'))
     expect(await sessions.searchSnippets('parser')).toEqual([])
+  })
+
+  // CODEX§24
+  it('a thread found only by the environment block Codex adds itself is left out, a thread where the person or the model said the term shows that line, and a thread Codex has not indexed yet keeps its thread/search hit', async () => {
+    const C = '33333333-3333-4333-8333-333333333333'
+    const environment = '<environment_context> <cwd>/repo</cwd> <shell>zsh</shell> ...'
+    const said: Record<string, string[]> = { [B]: ['... so I reran it in ZSH and it passed'] }
+    const indexedTurns: Record<string, unknown[]> = { [A]: [{ id: 'turn' }], [B]: [{ id: 'turn' }] }
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'thread/search')
+        return {
+          data: [A, B, C].map((id) => ({ snippet: environment, thread: { id, cwd: repo } })),
+          nextCursor: null
+        }
+      if (method === 'thread/searchOccurrences')
+        return {
+          data: (said[params.threadId] ?? []).map((snippet) => ({
+            snippet,
+            snippetMatchRange: { start: 22, end: 25 }
+          })),
+          nextCursor: null
+        }
+      if (method === 'thread/turns/list')
+        return { data: indexedTurns[params.threadId] ?? [], nextCursor: null }
+      return { data: [] }
+    })
+
+    expect(await sessions.searchSnippets('zsh')).toEqual([
+      { id: codexSessionKey(B), snippet: '... so I reran it in ZSH and it passed' },
+      { id: codexSessionKey(C), snippet: environment }
+    ])
   })
 
   it('waits for an in-flight stop before restarting and prevents duplicate resume', async () => {

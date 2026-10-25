@@ -84,6 +84,7 @@ import {
   type ListedHook
 } from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
+import { mapAtMost } from './mapAtMost'
 import {
   CODEX_OPEN_SHIM_FOLDER,
   CODEX_TMP_DIR,
@@ -142,6 +143,25 @@ async function* everyPage(
     if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
     if (cursor) cursors.add(cursor)
   } while (cursor)
+}
+
+const THREADS_CHECKED_AT_ONCE = 8
+
+// CODEX§24
+async function saidInThread(
+  rpc: CodexRpc,
+  threadId: string,
+  searchTerm: string,
+  searchSnippet: string
+): Promise<string | undefined> {
+  const occurrences = record(
+    await rpc.request('thread/searchOccurrences', { threadId, searchTerm, limit: 1 })
+  )
+  const first = record(Array.isArray(occurrences.data) ? occurrences.data[0] : undefined)
+  if (typeof first.snippet === 'string') return first.snippet
+  const turns = record(await rpc.request('thread/turns/list', { threadId, limit: 1 }))
+  const indexed = Array.isArray(turns.data) && turns.data.length > 0
+  return indexed ? undefined : searchSnippet
 }
 
 interface ListedThread {
@@ -589,13 +609,19 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   // CODEX§24
-  async searchSnippets(term: string): Promise<{ id: string; snippet: string }[]> {
+  async searchSnippets(
+    term: string,
+    signal?: AbortSignal
+  ): Promise<{ id: string; snippet: string }[]> {
     if (!(await this.availability()).available) return []
-    return this.searchSharedHome(term).catch(() => [])
+    return this.searchSharedHome(term, signal).catch(() => [])
   }
 
-  // CODEX§15
-  private searchSharedHome(term: string): Promise<{ id: string; snippet: string }[]> {
+  // CODEX§15 CODEX§24
+  private searchSharedHome(
+    term: string,
+    signal?: AbortSignal
+  ): Promise<{ id: string; snippet: string }[]> {
     return this.withRpc(undefined, async (rpc) => {
       const found: { id: string; snippet: string }[] = []
       const params = { searchTerm: term, archived: false, sourceKinds }
@@ -604,11 +630,17 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         const thread = userThread(item.thread)
         if (thread)
           found.push({
-            id: codexSessionKey(thread.id),
+            id: thread.id,
             snippet: typeof item.snippet === 'string' ? item.snippet : ''
           })
       }
-      return found
+      const said = await mapAtMost(found, THREADS_CHECKED_AT_ONCE, (hit) =>
+        signal?.aborted ? Promise.resolve(undefined) : saidInThread(rpc, hit.id, term, hit.snippet)
+      )
+      return found.flatMap(({ id }, i) => {
+        const snippet = said[i]
+        return snippet === undefined ? [] : [{ id: codexSessionKey(id), snippet }]
+      })
     })
   }
 
