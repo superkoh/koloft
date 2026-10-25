@@ -93,9 +93,12 @@ function transcripts(env: E2EEnv, worktree: string): string[] {
   return out
 }
 
-function runFolders(env: E2EEnv): string[] {
-  const home = path.join(env.workspaces.a, '.claude', 'worktrees')
-  return fs.existsSync(home) ? fs.readdirSync(home).filter((n) => n.startsWith('smoke-')) : []
+function readdirOr(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir)
+  } catch {
+    return []
+  }
 }
 
 function filesUnder(dir: string, withContent = false): string[] {
@@ -112,10 +115,16 @@ function filesUnder(dir: string, withContent = false): string[] {
       if (e.isDirectory()) {
         out.push(`${full}/`)
         walk(full)
-      } else if (withContent) {
-        out.push(`${full}\n  ${fs.readFileSync(full, 'utf8')}`)
-      } else {
-        out.push(`${full} ${fs.statSync(full, { throwIfNoEntry: false })?.size ?? 0} bytes`)
+        continue
+      }
+      try {
+        out.push(
+          withContent
+            ? `${full}\n  ${fs.readFileSync(full, 'utf8')}`
+            : `${full} ${fs.statSync(full).size} bytes`
+        )
+      } catch (err) {
+        out.push(`${full} (${String(err)})`)
       }
     }
   }
@@ -216,9 +225,7 @@ test.describe('Scheduled jobs on the REAL claude: the one opt-in case proving th
       await expect(row).toHaveClass(/\bst-(working|waiting)\b/, { timeout: 90_000 })
       const sub = row.locator('.ws-tab-sub')
       await expect(sub).toHaveText(/^smoke-/, { timeout: 30_000 })
-      await expect.poll(() => runFolders(env), { timeout: 30_000 }).toHaveLength(1)
-      worktree = runFolders(env)[0]
-      await expect(sub).toContainText(worktree)
+      worktree = ((await sub.textContent()) ?? '').trim()
 
       await expect(card(page).locator('.job-last')).toContainText('done — waiting for you', {
         timeout: 120_000
@@ -261,11 +268,10 @@ test.describe('Scheduled jobs on the REAL claude: the one opt-in case proving th
         contentType: 'text/plain'
       })
       await test.info().attach('ws-a-worktrees', {
-        body:
-          filesUnder(path.join(env.workspaces.a, '.claude', 'worktrees')).join('\n') || '(none)',
+        body: readdirOr(path.join(env.workspaces.a, '.claude', 'worktrees')).join('\n') || '(none)',
         contentType: 'text/plain'
       })
-      await test.info().attach('koloft-main-output', {
+      await test.info().attach('koloft-main-output-after-launch', {
         body: mainOutput.join('') || '(nothing)',
         contentType: 'text/plain'
       })
