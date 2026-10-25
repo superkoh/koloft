@@ -17,16 +17,19 @@ import {
   notesOnDisk,
   notesPath,
   openMenu,
+  processAlive,
   readAllCalls,
   runIn,
   seedJsonl,
   sendShortcut,
+  setNextSessionTitle,
   settingsOnDisk,
   startSessionIn,
   switchToRow,
   waitBooted,
   resumedId,
   waitForAllCalls,
+  waitForCalls,
   wsRows
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
@@ -49,6 +52,8 @@ const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 const BUTLER_ROLE_OPENS = "You are Alfred, the owner's butler in Koloft"
 const ROWS_RESCAN_AND_PUSH_SETTLE_MS = 1500
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
 
 function butlerFolder(env: E2EEnv): string {
   return path.join(env.userData, 'conductors', 'global')
@@ -523,6 +528,26 @@ test.describe('The butler: one global session at the top of the sessions list, k
         text: expect.stringContaining('only the butler and the helpers'),
         exit: 1
       })
+    } finally {
+      await close()
+    }
+  })
+
+  test('koloft todo lists a session whose tab went to sleep as open and idle, never leaving it out as working', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    const { page, close } = await launched(env)
+    try {
+      setNextSessionTitle(env, 'Napping')
+      await startSessionIn(page, 'ws-a')
+      const [napping] = await waitForCalls(env, 1)
+      await openButler(page)
+      await expect.poll(() => processAlive(napping.pid), { timeout: 40_000 }).toBe(false)
+      expect(await koloftSays(page, 'todo')).toMatch(
+        /Open, idle: its tab is not running .*\n- "Napping" · Claude · /
+      )
     } finally {
       await close()
     }
