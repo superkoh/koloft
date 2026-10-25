@@ -578,9 +578,10 @@ describe('rowLookups (which tab, live session and attention mark belong to a sid
     expect(look.hasAliveTab('s-dead')).toBe(false)
   })
 
-  it('a cold row whose session is already bound in a live tab reads running in that tab, before the rows say so', () => {
+  it('a row whose session is already bound in a live tab reads running in that tab, before the rows say so and past a record of a closed tab', () => {
     const bound = rowLookups(
       [
+        { sessionId: 's-back', tabId: 'pty-gone', alive: true },
         { sessionId: 's-back', tabId: 'pty-back', alive: true },
         { sessionId: 's-gone', tabId: 'pty-closed', alive: true }
       ],
@@ -593,6 +594,8 @@ describe('rowLookups (which tab, live session and attention mark belong to a sid
     )
     expect(bound.running({ id: 's-back', running: false })).toBe(true)
     expect(bound.tabOf({ id: 's-back', running: false })).toBe('pty-back')
+    expect(bound.tabOf({ id: 's-back', running: true })).toBe('pty-back')
+    expect(bound.boundTabOf('s-back')).toBe('pty-back')
     expect(bound.running({ id: 's-gone', running: false })).toBe(false)
     expect(bound.tabOf({ id: 's-gone', running: false })).toBeUndefined()
     expect(bound.running({ id: 's-cold', running: false })).toBe(false)

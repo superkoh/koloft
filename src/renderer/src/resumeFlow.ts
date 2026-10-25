@@ -150,7 +150,7 @@ export async function runResume(target: ResumeTarget, req: SessionResumeRequest)
 
 function liveTabBoundTo(sessionId: string): string | undefined {
   const { sessions, tabs } = useStore.getState()
-  return rowLookups(sessions, tabs, []).tabOf({ id: sessionId, running: false })
+  return rowLookups(sessions, tabs, []).boundTabOf(sessionId)
 }
 
 export async function resumeSession(target: ResumeTarget): Promise<void> {

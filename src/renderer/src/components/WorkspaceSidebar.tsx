@@ -1162,10 +1162,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 
   const actions = useMemo<SidebarActions>(() => {
     const rowTarget = (id: string): Extract<MenuTarget, { kind: 'session' }> => {
-      const st = useStore.getState()
-      const w = everyWorkspaceRows(st).find((w) => w.rows.some((r) => r.id === id))!
+      const w = everyWorkspaceRows(useStore.getState()).find((w) =>
+        w.rows.some((r) => r.id === id)
+      )!
       const row = w.rows.find((r) => r.id === id)!
-      const running = rowLookups(st.sessions, st.tabs, []).running(row)
+      const { sessions, tabs } = useStore.getState()
+      const running = rowLookups(sessions, tabs, []).running(row)
       return { kind: 'session', wsPath: w.workspace.path, row: { ...row, running } }
     }
     const wsTarget = (path: string): MenuTarget => {
