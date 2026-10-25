@@ -442,6 +442,9 @@ export class DiscordRelay {
   }
 
   turnEnded(tabId: string, turn: Turn): void {
+    const answers = turn.said.some((line) => line.text.startsWith(DISCORD_PREFIX))
+    const reaches = answers || this.reaches(tabId)
+    if (answers || this.answering.get(tabId) === 'turn') this.answering.delete(tabId)
     const quiet = [...this.quietReplies].find(
       (q) => turn.said.length > 0 && turn.said.every((l) => l.text.includes(q))
     )
@@ -450,11 +453,7 @@ export class DiscordRelay {
       return
     }
     const channelId = this.d.butlerChannelOf(tabId)
-    if (!channelId) return
-    const answers = turn.said.some((line) => line.text.startsWith(DISCORD_PREFIX))
-    const reaches = answers || this.reaches(tabId)
-    if (answers || this.answering.get(tabId) === 'turn') this.answering.delete(tabId)
-    if (reaches && turn.reply.trim()) this.say(channelId, turn.reply)
+    if (channelId && reaches && turn.reply.trim()) this.say(channelId, turn.reply)
   }
 
   private hookFile(tab: string, hook: string, suffix: string): string {
