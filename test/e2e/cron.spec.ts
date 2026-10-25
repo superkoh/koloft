@@ -1336,6 +1336,84 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
+  const REMOTE_AGENTS: {
+    agent: NonNullable<JobSpec['agent']>
+    setUp: (env: E2EEnv) => void
+    freshLaunches: (env: E2EEnv) => number
+  }[] = [
+    {
+      agent: 'Codex',
+      setUp: (env) => {
+        installCodexOnFakeRemote(env)
+        gitInit(remoteDir(env))
+      },
+      freshLaunches: (env) => codexCalls(env).filter((c) => c.method === 'thread/start').length
+    },
+    {
+      agent: 'Muse',
+      setUp: (env) => {
+        installMuse(env)
+        installMuseOnMachine(env)
+        gitInit(remoteDir(env))
+      },
+      freshLaunches: (env) => machineMuseCalls(env).filter((c) => !c.argv.includes('resume')).length
+    },
+    {
+      agent: 'Antigravity',
+      setUp: (env) => {
+        installAgy(env)
+        installRemoteAgy(env)
+      },
+      freshLaunches: (env) =>
+        machineAgyCalls(env).filter((c) => !c.argv.includes('--version')).length
+    }
+  ]
+  for (const { agent, setUp, freshLaunches } of REMOTE_AGENTS) {
+    test(`BB-M08 in ${agent} on a remote workspace: a run left open at quit comes back as the open run, so Run now skips it`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      installFakeRemote(env)
+      setUp(env)
+      try {
+        const first = await launchWithRemote(env)
+        try {
+          await addRemoteWorkspace(first.page, env)
+          const dlg = await openCron(first.page, REMOTE_WS_NAME)
+          await createJob(first.page, dlg, { agent, name: 'Remote report', task: 'look around' })
+          await clickRunNow(first.page, 'Remote report')
+          await waitTurnStopSoTheTranscriptExistsBeforeClose(first.page, 'Remote report')
+        } finally {
+          await quitAndClose(first.app)
+        }
+        expect(readStore(env)?.jobs[0].history[0].state).toBe('ended')
+        expect(freshLaunches(env)).toBe(1)
+
+        const { app, page } = await launchWithRemote(env)
+        try {
+          await openCron(page, REMOTE_WS_NAME)
+          await expect(card(page, 'Remote report').locator('.job-last')).toContainText(
+            'done — waiting for you',
+            { timeout: 90_000 }
+          )
+
+          await clickRunNow(page, 'Remote report')
+          await expect(toastMsg(page)).toHaveText(
+            '⏰ Remote report skipped: the last run is still open'
+          )
+          await expect
+            .poll(async () => (await histLines(page)).map((l) => l.state), { timeout: 20_000 })
+            .toEqual(['Done — waiting for you', 'Skipped — the last run was still open'])
+          expect(freshLaunches(env)).toBe(1)
+        } finally {
+          await quitAndClose(app)
+        }
+      } finally {
+        killFakeRemote(env)
+      }
+    })
+  }
+
   test('BB-M19: a remote job set to "Close it" closes for good once its turn ends: tab, row, and its worktree on the machine', async ({
     env
   }) => {
