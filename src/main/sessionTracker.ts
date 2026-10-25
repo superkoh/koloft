@@ -812,10 +812,11 @@ export class SessionTracker extends SessionRuntime {
       if (!prev) t.shellCpu.set(id, { cpuMs: sh.cpuMs, at: now, quiet: false })
       else if (now - prev.at >= SERVER_QUIET_WINDOW_MS) {
         const perMinute = ((sh.cpuMs - prev.cpuMs) * 60_000) / (now - prev.at)
+        const startedProgramSinceLastLook = sh.youngestAgeMs < now - prev.at
         t.shellCpu.set(id, {
           cpuMs: sh.cpuMs,
           at: now,
-          quiet: perMinute < IDLE_SERVER_CPU_MS_PER_MINUTE
+          quiet: perMinute < IDLE_SERVER_CPU_MS_PER_MINUTE && !startedProgramSinceLastLook
         })
       }
     }

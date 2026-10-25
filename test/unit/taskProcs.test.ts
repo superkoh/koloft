@@ -14,7 +14,7 @@ const PS = [
   '    1     0 12-03:20:11 0:00.00 /sbin/launchd',
   ' 4242     1    01:02:03 0:00.00 /Users/me/.local/bin/claude --settings x.json',
   ' 4300  4242       05:00 0:00.05 /bin/zsh -c source ' + SNAP + ' && eval "sleep 100"',
-  ' 4301  4300       05:00 0:01.50 sleep 100',
+  ' 4301  4300       00:30 0:01.50 sleep 100',
   ' 4400  4242 01-02:00:00 0:00.10 /bin/zsh -c source ' +
     SNAP +
     ' && eval "python3 -m http.server"',
@@ -70,7 +70,7 @@ describe('taskProcs', () => {
     expect(parsePsDuration('garbage')).toBe(0)
   })
 
-  it('maps each tool shell, foreground ones too, to its task by the output file it holds, reports one whose child listens, and never asks lsof about MCP servers or hooks', async () => {
+  it('maps each tool shell, foreground ones too, to its task by the output file it holds, reports one whose child listens and the age of the youngest program under it, and never asks lsof about MCP servers or hooks', async () => {
     const s = stub({
       fd1: [
         'p4300',
@@ -92,13 +92,15 @@ describe('taskProcs', () => {
       pid: 4300,
       ageMs: 5 * 60_000,
       listening: false,
-      cpuMs: 1550
+      cpuMs: 1550,
+      youngestAgeMs: 30_000
     })
     expect(r!.shells.get('bsrv')).toEqual({
       pid: 4400,
       ageMs: 26 * 3600_000,
       listening: true,
-      cpuMs: 2500
+      cpuMs: 2500,
+      youngestAgeMs: 26 * 3600_000
     })
     expect(r!.shells.get('bgit')?.pid).toBe(4500)
     const fd1Call = s.calls.find((c) => c.includes('-d'))!

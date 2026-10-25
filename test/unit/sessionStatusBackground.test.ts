@@ -1134,7 +1134,7 @@ describe('Esc interrupt as turn-end: no Stop ever fires, so the interrupt record
   }, 10_000)
 })
 
-type StagedShell = { ageMs?: number; listening?: boolean; cpuMs?: number }
+type StagedShell = { ageMs?: number; listening?: boolean; cpuMs?: number; youngestAgeMs?: number }
 
 function stageProcs(
   tracker: InstanceType<typeof SessionTracker>,
@@ -1146,7 +1146,13 @@ function stageProcs(
     shells: new Map(
       Object.entries(shells).map(([id, s]) => [
         id,
-        { pid: 1, ageMs: s.ageMs ?? 0, listening: !!s.listening, cpuMs: s.cpuMs ?? 0 }
+        {
+          pid: 1,
+          ageMs: s.ageMs ?? 0,
+          listening: !!s.listening,
+          cpuMs: s.cpuMs ?? 0,
+          youngestAgeMs: s.youngestAgeMs ?? Infinity
+        }
       ])
     )
   })
@@ -1276,7 +1282,16 @@ describe('run-state from the typed task list: each task judged by what it is, an
     tracker.inspect = async () => ({
       at: Date.now(),
       shells: new Map([
-        ['btoolu_e2e', { pid: 1, ageMs: 0, listening: true, cpuMs: (cpuMs += 60_000) }]
+        [
+          'btoolu_e2e',
+          {
+            pid: 1,
+            ageMs: 0,
+            listening: true,
+            cpuMs: (cpuMs += 60_000),
+            youngestAgeMs: Infinity
+          }
+        ]
       ])
     })
     await tracker.reportTurnEnd('tabL4', [{ id: 'btoolu_e2e', type: 'shell' }])
@@ -1284,6 +1299,24 @@ describe('run-state from the typed task list: each task judged by what it is, an
     expect(status(tracker, 'tabL4')).toBe('working')
     expect(parked(tracker, 'tabL4')).toEqual([
       { id: 'btoolu_e2e', kind: 'command', label: 'npx playwright test', state: 'working' }
+    ])
+  }, 10_000)
+
+  it('a listening shell that keeps starting new programs is work, even when the CPU of the ones that exited drops out of its total (an e2e run relaunching its app for each test)', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabL5', cwd, initialLines(cwd))
+    tracker.setStatus('tabL5', 'working')
+    appendJsonl(file, [
+      commandUseRec('toolu_relaunch', cwd, 'npx playwright test'),
+      shellAckRec('toolu_relaunch', cwd)
+    ])
+    stageProcs(tracker, { btoolu_relaunch: { listening: true, cpuMs: 100, youngestAgeMs: 0 } })
+    await tracker.reportTurnEnd('tabL5', [{ id: 'btoolu_relaunch', type: 'shell' }])
+    await sleep(SERVER_QUIET_MS * 4 + SCAN_MS * 2)
+    expect(status(tracker, 'tabL5')).toBe('working')
+    expect(parked(tracker, 'tabL5')).toEqual([
+      { id: 'btoolu_relaunch', kind: 'command', label: 'npx playwright test', state: 'working' }
     ])
   }, 10_000)
 
