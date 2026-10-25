@@ -2006,6 +2006,15 @@ async function addAccount(
   return result.ok ? { ok: true, account } : { ok: false, error: result.error, account }
 }
 
+function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean): void {
+  const acct = findAccount(name, kind)
+  if (!acct) return
+  const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
+  if (status === acct.status) return
+  upsertAccountMeta({ ...acct, status })
+  if (status === 'expired') notifyExpired(name, BACKEND_LABEL[BACKEND_OF_SIGN_IN_FOLDER[kind]])
+}
+
 const codexPicker = new HomeAccountPicker('codex-home')
 const MUSE_QUOTA_FOLDER = 'muse-quota'
 const museProbedAt = new Map<string, number>()
@@ -2034,8 +2043,7 @@ async function probeCodexAccount(name: string): Promise<void> {
   const key = viewKey(name, 'codex-home')
   try {
     const r = await codexSessions.readAccount(codexHomeOf(app.getPath('userData'), name))
-    const status = r.signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
-    if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+    foldHomeSignIn(name, 'codex-home', r.signedIn)
     usageViews.set(key, {
       limits: (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
     })
@@ -2186,9 +2194,7 @@ async function probeMuseAccount(name: string): Promise<void> {
   museProbedAt.set(name, Date.now())
   try {
     const signIn = await museSignIn(serve)
-    const status = signIn !== 'none' ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
-    if (status !== acct.status) upsertAccountMeta({ ...acct, status })
-    if (status === 'expired' && acct.status !== 'expired') notifyExpired(name, 'Muse')
+    foldHomeSignIn(name, 'muse-home', signIn !== 'none')
     if (signIn !== 'subscription') usageViews.delete(key)
     else {
       const dir = path.join(app.getPath('userData'), MUSE_QUOTA_FOLDER)
@@ -2262,8 +2268,7 @@ async function probeAgyAccount(name: string): Promise<void> {
   const home = agyHomeFor(name)
   const apiKey = await agyApiKeyOf(name)
   const signedIn = agySignedIn(home, !!apiKey)
-  const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
-  if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+  foldHomeSignIn(name, 'agy-home', signedIn)
   const key = viewKey(name, 'agy-home')
   if (signedIn && !apiKey) {
     const quota = await agyUsage(home)
