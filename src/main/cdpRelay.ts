@@ -6,9 +6,11 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './cdpProtocol'
 import { inputEmulation } from './cdpInput'
 import { compositionDone } from './hostComposition'
+import { schemeOf } from '@shared/browserRoute'
 
 export interface RelayDeps {
   sessionForTab(tabId: string): string | null
+  onAnotherMachine(tabId: string): boolean
   mount(sessionId: string, targetId: string): Promise<number>
   create(sessionId: string, url: string): Promise<RelayTarget>
   close(sessionId: string, targetId: string): Promise<void>
@@ -18,6 +20,30 @@ export interface RelayDeps {
 
 // PLATFORM§9
 const FORWARD_TIMEOUT_OUTLASTS_CLIENT_TIMEOUTS_MS = 180_000
+
+const SCHEMES_THAT_NEVER_REACH_THIS_MACS_FILES = new Set(['http:', 'https:', 'about:', 'data:'])
+const NO_MAC_FILES_FOR_A_MACHINE =
+  'a session on another machine cannot open or upload files of the Mac Koloft runs on'
+
+function opensThisMacsFiles(url: string): boolean {
+  const scheme = schemeOf(url.trim())
+  return scheme !== '' && !SCHEMES_THAT_NEVER_REACH_THIS_MACS_FILES.has(scheme)
+}
+
+function reachesThisMacsFiles(method: string, params: unknown): boolean {
+  const p = (params ?? {}) as { url?: unknown; data?: { files?: unknown[] } }
+  switch (method) {
+    case 'Page.navigate':
+    case 'Network.loadNetworkResource':
+      return opensThisMacsFiles(String(p.url ?? ''))
+    case 'DOM.setFileInputFiles':
+      return true
+    case 'Input.dispatchDragEvent':
+      return (p.data?.files?.length ?? 0) > 0
+    default:
+      return false
+  }
+}
 
 interface Client {
   ws: WebSocket
@@ -88,6 +114,11 @@ export function relayEndpoint(tabId: string): string {
   return `ws://127.0.0.1:${port}/cdp/${pathFor(tabId)}`
 }
 
+export function renewRelayEndpoint(tabId: string): string {
+  paths.delete(tabId)
+  return relayEndpoint(tabId)
+}
+
 export function writeRelayEnv(openTabIds: string[]): void {
   const dir = cdpEnvDir()
   try {
@@ -115,19 +146,33 @@ function backendFor(client: Client): RelayBackend {
   const live = (): void => {
     if (!client.sessionId) throw new Error('the tab has no running session')
   }
+  const fenced = d.onAnotherMachine(client.tabId)
+  const fence = (reaches: boolean): void => {
+    if (fenced && reaches) throw new Error(NO_MAC_FILES_FOR_A_MACHINE)
+  }
+  const urlOf = (tabId: string): string =>
+    snapshots.get(client.sessionId)?.find((t) => t.targetId === tabId)?.url ?? ''
   // PLATFORM§10
   const afterUsersWord = async (): Promise<void> => {
     await compositionDone()
     if (clients.get(client.tabId) !== client) throw new Error('the client disconnected')
   }
   return {
-    targets: () => (client.sessionId ? asTargets(snapshots.get(client.sessionId) ?? []) : []),
+    targets: () =>
+      client.sessionId
+        ? asTargets(snapshots.get(client.sessionId) ?? []).filter(
+            (t) => !fenced || !opensThisMacsFiles(t.url)
+          )
+        : [],
     mount: async (targetId) => {
       await afterUsersWord()
       live()
-      return await d.mount(client.sessionId, tabIdFor(targetId))
+      const tabId = tabIdFor(targetId)
+      fence(opensThisMacsFiles(urlOf(tabId)))
+      return await d.mount(client.sessionId, tabId)
     },
     create: async (url) => {
+      fence(opensThisMacsFiles(url))
       await afterUsersWord()
       live()
       const t = await d.create(client.sessionId, url)
@@ -205,6 +250,7 @@ function backendFor(client: Client): RelayBackend {
       publishAttached(client)
     },
     forward: async (targetId, guestId, method, params, sessionId) => {
+      fence(reachesThisMacsFiles(method, params))
       await afterUsersWord()
       // PLATFORM§9
       if (method === 'Page.captureScreenshot') {

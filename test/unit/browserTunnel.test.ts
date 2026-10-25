@@ -18,7 +18,6 @@ import type { RunResult } from '../../src/main/remote/ssh'
 
 const HOST = 'devbox'
 const PATH_A = 'a'.repeat(32)
-const PATH_B = 'b'.repeat(32)
 const relay = (port: number, p: string): string => `ws://127.0.0.1:${port}/cdp/${p}`
 const ok = (stdout = '', stderr = ''): RunResult => ({ code: 0, stdout, stderr })
 const TIMED_OUT: RunResult = { code: null, stdout: '', stderr: '' }
@@ -37,6 +36,9 @@ interface Machine {
   ops: string[]
   outlivingKoloft: string[]
   writes: number
+  relayPort: number
+  secrets: Map<string, string>
+  renewals: number
 }
 
 let dir: string
@@ -68,9 +70,37 @@ function newMaster(pid: string): void {
   m.live = []
 }
 
+function endpointOf(tabId: string): string {
+  if (!m.secrets.has(tabId)) m.secrets.set(tabId, `${tabId}-this-run`)
+  return relay(m.relayPort, m.secrets.get(tabId) ?? '')
+}
+
+const tab = (tabId: string): { tabId: string; endpoint: string } => ({
+  tabId,
+  endpoint: endpointOf(tabId)
+})
+
+const onMachinePort = (port: number, tabId: string): string =>
+  relay(port, m.secrets.get(tabId) ?? '')
+
+function restartKoloft(relayPort: number): void {
+  m.relayPort = relayPort
+  m.secrets.clear()
+}
+
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-tunnel-'))
-  m = { pid: '100', nextPort: 40001, live: [], ops: [], outlivingKoloft: [], writes: 0 }
+  m = {
+    pid: '100',
+    nextPort: 40001,
+    live: [],
+    ops: [],
+    outlivingKoloft: [],
+    writes: 0,
+    relayPort: 5000,
+    secrets: new Map(),
+    renewals: 0
+  }
   deps = {
     master: async (_host, op) => {
       m.ops.push(`${op[1]} ${op[3] ?? ''}`.trim())
@@ -92,51 +122,51 @@ beforeEach(() => {
       m.writes++
       return runOnMachine(cmd)
     },
-    forwardFile: (host) => path.join(dir, 'mac', host, 'browser-forward.json')
+    forwardFile: (host) => path.join(dir, 'mac', host, 'browser-forward.json'),
+    renewEndpoint: (tabId) => {
+      m.secrets.set(tabId, `${tabId}-forward-${++m.renewals}`)
+      return endpointOf(tabId)
+    }
   }
 })
 
 describe("the browser tunnel to a machine: one ssh -R per master, each Claude Code tab's address in a file there", () => {
   it('forwards the relay once and writes each tab its own address on the machine port', async () => {
     const t = new BrowserTunnels(deps)
-    const tabs = [
-      { tabId: 'tab1', endpoint: relay(5000, PATH_A) },
-      { tabId: 'tab2', endpoint: relay(5000, PATH_B) }
-    ]
-    await t.sync(HOST, tabs)
-    await t.sync(HOST, tabs)
+    await t.sync(HOST, [tab('tab1'), tab('tab2')])
+    await t.sync(HOST, [tab('tab1'), tab('tab2')])
     expect(m.live).toEqual([{ spec: '0:127.0.0.1:5000', port: 40001 }])
     expect(forwardsAsked()).toBe(1)
     expect(filesOnMachine()).toEqual({
-      'tab1.cdp': relay(40001, PATH_A),
-      'tab2.cdp': relay(40001, PATH_B)
+      'tab1.cdp': onMachinePort(40001, 'tab1'),
+      'tab2.cdp': onMachinePort(40001, 'tab2')
     })
     expect(m.writes).toBe(1)
   })
 
-  it('a new master (the link came back) gets a new forward, every open tab is rewritten and a tab closed meanwhile loses its file', async () => {
+  it('a new master (the link came back) gets a new forward and every open tab a new secret, so an address read off the dropped port opens nothing; a tab closed meanwhile loses its file', async () => {
     const t = new BrowserTunnels(deps)
-    await t.sync(HOST, [
-      { tabId: 'tab1', endpoint: relay(5000, PATH_A) },
-      { tabId: 'tab2', endpoint: relay(5000, PATH_B) }
-    ])
+    await t.sync(HOST, [tab('tab1'), tab('tab2')])
+    const beforeTheDrop = filesOnMachine()['tab1.cdp']
     m.pid = null
-    await t.sync(HOST, [{ tabId: 'tab1', endpoint: relay(5000, PATH_A) }])
+    await t.sync(HOST, [tab('tab1')])
     newMaster('200')
-    await t.sync(HOST, [{ tabId: 'tab1', endpoint: relay(5000, PATH_A) }])
+    await t.sync(HOST, [tab('tab1')])
     expect(m.live).toEqual([{ spec: '0:127.0.0.1:5000', port: 40002 }])
-    expect(filesOnMachine()).toEqual({ 'tab1.cdp': relay(40002, PATH_A) })
+    expect(filesOnMachine()).toEqual({ 'tab1.cdp': onMachinePort(40002, 'tab1') })
+    expect(new URL(onMachinePort(40002, 'tab1')).pathname).not.toBe(new URL(beforeTheDrop).pathname)
   })
 
   it('a Koloft restart on the same master cancels the old forward with the spec exactly as asked, then forwards the new relay', async () => {
-    await new BrowserTunnels(deps).sync(HOST, [{ tabId: 'tab1', endpoint: relay(5000, PATH_A) }])
-    await new BrowserTunnels(deps).sync(HOST, [{ tabId: 'tab1', endpoint: relay(6000, PATH_B) }])
+    await new BrowserTunnels(deps).sync(HOST, [tab('tab1')])
+    restartKoloft(6000)
+    await new BrowserTunnels(deps).sync(HOST, [tab('tab1')])
     expect(m.live).toEqual([{ spec: '0:127.0.0.1:6000', port: 40002 }])
-    expect(filesOnMachine()).toEqual({ 'tab1.cdp': relay(40002, PATH_B) })
+    expect(filesOnMachine()).toEqual({ 'tab1.cdp': onMachinePort(40002, 'tab1') })
   })
 
   it('a Koloft restart with no Claude Code tab left on the machine still cancels the forward the last run left on its master, then asks nothing more', async () => {
-    await new BrowserTunnels(deps).sync(HOST, [{ tabId: 'tab1', endpoint: relay(5000, PATH_A) }])
+    await new BrowserTunnels(deps).sync(HOST, [tab('tab1')])
     const afterRestart = new BrowserTunnels(deps)
     await afterRestart.sync(HOST, [])
     expect(m.live).toEqual([])
@@ -148,18 +178,15 @@ describe("the browser tunnel to a machine: one ssh -R per master, each Claude Co
 
   it('quitting Koloft cancels the forward with a command that outlives Koloft', async () => {
     const t = new BrowserTunnels(deps)
-    await t.sync(HOST, [{ tabId: 'tab1', endpoint: relay(5000, PATH_A) }])
+    await t.sync(HOST, [tab('tab1')])
     t.cancelOnQuit()
     expect(m.outlivingKoloft).toEqual(['-O cancel -R 0:127.0.0.1:5000'])
   })
 
   it('browser control switched off cancels the forward and removes the files; a closed tab loses its file', async () => {
     const t = new BrowserTunnels(deps)
-    await t.sync(HOST, [
-      { tabId: 'tab1', endpoint: relay(5000, PATH_A) },
-      { tabId: 'tab2', endpoint: relay(5000, PATH_B) }
-    ])
-    await t.sync(HOST, [{ tabId: 'tab1', endpoint: relay(5000, PATH_A) }])
+    await t.sync(HOST, [tab('tab1'), tab('tab2')])
+    await t.sync(HOST, [tab('tab1')])
     expect(Object.keys(filesOnMachine())).toEqual(['tab1.cdp'])
     await t.sync(HOST, [{ tabId: 'tab1', endpoint: '' }])
     expect(m.live).toEqual([])
@@ -172,9 +199,8 @@ describe("the browser tunnel to a machine: one ssh -R per master, each Claude Co
   it('a machine whose sshd refuses forwarding is asked once per master, and its tabs get no file', async () => {
     m.forwardAnswer = SSHD_REFUSES
     const t = new BrowserTunnels(deps)
-    const tabs = [{ tabId: 'tab1', endpoint: relay(5000, PATH_A) }]
-    await t.sync(HOST, tabs)
-    await t.sync(HOST, tabs)
+    await t.sync(HOST, [tab('tab1')])
+    await t.sync(HOST, [tab('tab1')])
     expect(forwardsAsked()).toBe(1)
     expect(filesOnMachine()).toEqual({})
   })
@@ -182,12 +208,11 @@ describe("the browser tunnel to a machine: one ssh -R per master, each Claude Co
   it('a forward that timed out is asked for again, and one it may have left on the master is cancelled first', async () => {
     m.forwardAnswer = TIMED_OUT
     const t = new BrowserTunnels(deps)
-    const tabs = [{ tabId: 'tab1', endpoint: relay(5000, PATH_A) }]
-    await t.sync(HOST, tabs)
+    await t.sync(HOST, [tab('tab1')])
     m.forwardAnswer = undefined
-    await t.sync(HOST, tabs)
+    await t.sync(HOST, [tab('tab1')])
     expect(m.live).toEqual([{ spec: '0:127.0.0.1:5000', port: 40002 }])
-    expect(filesOnMachine()).toEqual({ 'tab1.cdp': relay(40002, PATH_A) })
+    expect(filesOnMachine()).toEqual({ 'tab1.cdp': onMachinePort(40002, 'tab1') })
   })
 
   it('a machine with no Claude Code tab is never asked anything', async () => {

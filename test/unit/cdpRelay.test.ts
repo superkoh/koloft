@@ -79,14 +79,17 @@ const SESSION = 'sess-1'
 
 interface Harness extends RelayDeps {
   session: string | null
+  onMachine: boolean
   strip: RelayTarget[]
 }
 
 function makeDeps(): Harness {
   const h: Harness = {
     session: SESSION,
+    onMachine: false,
     strip: [{ targetId: 'bt1', url: 'http://x/a', title: 'A', guestId: 11 }],
     sessionForTab: () => h.session,
+    onAnotherMachine: () => h.onMachine,
     mount: vi.fn(async () => 11),
     create: vi.fn(async (_s: string, url: string) => ({
       targetId: 'bt2',
@@ -263,6 +266,89 @@ describe('a tab whose session went away (§4.4)', () => {
       'the tab has no running session'
     )
     expect(deps.create).not.toHaveBeenCalled()
+  })
+})
+
+describe("a session on another machine never reaches this Mac's files through the Workbench browser", () => {
+  const MAC_FILE = 'file:///Users/me/.ssh/id_ed25519'
+  const errorOf = (reply: Record<string, unknown>): string =>
+    String((reply.error as { message?: string } | undefined)?.message ?? '')
+
+  async function attachedTo(c: Conn, url: string): Promise<string> {
+    const listed = (await c.cmd('Target.getTargets')).result as {
+      targetInfos: { targetId: string; url: string }[]
+    }
+    const targetId = listed.targetInfos.find((t) => t.url === url)?.targetId ?? ''
+    return ((await c.cmd('Target.attachToTarget', { targetId })).result as { sessionId: string })
+      .sessionId
+  }
+
+  it('refuses to open, navigate to, upload or drag in a Mac file, and never shows it a tab already on one; web pages still work', async () => {
+    deps.onMachine = true
+    const guest = fakeGuest(11)
+    fakeGuest(13)
+    relay.relayStripChanged(SESSION, [
+      ...deps.strip,
+      { targetId: 'bt3', url: 'file:///Users/me/notes.html', title: 'notes', guestId: 13 }
+    ])
+    const c = await registered()
+
+    const listed = (await c.cmd('Target.getTargets')).result as { targetInfos: { url: string }[] }
+    expect(listed.targetInfos.map((t) => t.url)).toEqual(['http://x/a'])
+    expect(errorOf(await c.cmd('Target.createTarget', { url: MAC_FILE }))).toContain(
+      'cannot open or upload files of the Mac'
+    )
+    expect(deps.create).not.toHaveBeenCalled()
+
+    const sid = await attachedTo(c, 'http://x/a')
+    for (const [method, params] of [
+      ['Page.navigate', { url: MAC_FILE }],
+      ['Page.navigate', { url: `view-source:${MAC_FILE}` }],
+      ['Network.loadNetworkResource', { url: MAC_FILE, frameId: 'f', options: {} }],
+      ['DOM.setFileInputFiles', { files: ['/Users/me/.ssh/id_ed25519'], backendNodeId: 1 }],
+      [
+        'Input.dispatchDragEvent',
+        { type: 'drop', x: 1, y: 1, data: { items: [], files: ['/etc/hosts'] } }
+      ]
+    ] as const) {
+      expect(errorOf(await c.cmd(method, params, sid))).toContain('cannot open or upload files')
+    }
+    const sent = (): string[] =>
+      guest.debugger.sendCommand.mock.calls.map((call) => String(call[0]))
+    expect(sent()).not.toContain('Page.navigate')
+    expect(sent()).not.toContain('DOM.setFileInputFiles')
+
+    await c.cmd('Page.navigate', { url: 'https://example.com/' }, sid)
+    expect(guest.debugger.sendCommand).toHaveBeenCalledWith('Page.navigate', {
+      url: 'https://example.com/'
+    })
+    await c.cmd('Target.createTarget', { url: 'about:blank' })
+    expect(deps.create).toHaveBeenCalledWith(SESSION, 'about:blank')
+  })
+
+  it("a session on this Mac still opens this Mac's files", async () => {
+    const guest = fakeGuest(11)
+    const c = await registered()
+    const sid = await attachedTo(c, 'http://x/a')
+    await c.cmd('Page.navigate', { url: MAC_FILE }, sid)
+    expect(guest.debugger.sendCommand).toHaveBeenCalledWith('Page.navigate', { url: MAC_FILE })
+  })
+})
+
+describe("a tab's endpoint renewed (a new ssh forward to its machine)", () => {
+  it('turns the old address away, so one read off a port another account took after the link dropped opens nothing', async () => {
+    const old = relay.relayEndpoint(TAB)
+    const renewed = relay.renewRelayEndpoint(TAB)
+    expect(renewed).not.toBe(old)
+    expect(relay.relayEndpoint(TAB)).toBe(renewed)
+
+    const stale = new WebSocket(old)
+    sockets.push(stale)
+    const reason = await new Promise<string>((resolve) =>
+      stale.on('close', (_code, r) => resolve(String(r)))
+    )
+    expect(reason).toBe('unknown endpoint')
+    expect(await (await registered()).cmd('Browser.getVersion')).toHaveProperty('result')
   })
 })
 

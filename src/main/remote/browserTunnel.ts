@@ -43,6 +43,7 @@ export interface BrowserTunnelDeps {
   masterOutlivingKoloft(host: string, op: string[]): void
   run(host: string, cmd: string): Promise<RunResult>
   forwardFile(host: string): string
+  renewEndpoint(tabId: string): string
 }
 
 export interface TunnelTab {
@@ -126,15 +127,19 @@ export class BrowserTunnels {
       if (r.code === 0 && port > 0) forward = { pid, spec, port }
       else if (SSHD_REFUSES_FORWARDING.test(r.stderr)) st.refused = asked
     }
+    const renewed = forward !== undefined && forward !== st.forward
     if (forward !== st.forward) {
       st.forward = forward
       this.save(host, forward)
     }
+    const endpointOf = (t: TunnelTab): string =>
+      renewed && t.endpoint ? this.deps.renewEndpoint(t.tabId) : t.endpoint
     const want = new Map(
       forward
-        ? tabs.flatMap((t) =>
-            t.endpoint ? [[t.tabId, machineAddress(t.endpoint, forward.port)] as const] : []
-          )
+        ? tabs.flatMap((t) => {
+            const endpoint = endpointOf(t)
+            return endpoint ? [[t.tabId, machineAddress(endpoint, forward.port)] as const] : []
+          })
         : []
     )
     const changes: [string, string][] = [

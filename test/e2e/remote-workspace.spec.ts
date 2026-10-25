@@ -913,7 +913,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   })
 
   // PLATFORM§33
-  test("E-RW-41: Koloft's playwright-cli, run by Claude Code on the machine, drives that tab's Workbench browser through the address Koloft writes there, and switching browser control off takes the address away", async ({
+  test("E-RW-41: Koloft's playwright-cli, run by Claude Code on the machine, drives that tab's Workbench browser through the address Koloft writes there but never opens a file of the Mac, and switching browser control off takes the address away", async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -940,6 +940,22 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       )
       expect(await unwrapped(`playwright-cli open ${url}`)).toContain(`Page Title: ${title}`)
       await expect(page.locator(BROWSER.drivenTab)).toHaveCount(1, { timeout: 30_000 })
+
+      const macFile = path.join(env.home, 'only-on-the-mac.html')
+      fs.writeFileSync(macFile, '<title>only-on-the-mac</title>')
+      const lastStep = (text: string): string => text.split('sh exit=').at(-2) ?? ''
+      for (const step of [
+        `playwright-cli goto file://${macFile}`,
+        `playwright-cli tab-new file://${macFile}`
+      ]) {
+        expect(lastStep(await unwrapped(step))).toContain('cannot open or upload files of the Mac')
+      }
+      await run(`playwright-cli eval "() => { location.href = 'file://${macFile}' }"`)
+      expect(lastStep(await unwrapped('playwright-cli eval "() => location.href"'))).toContain(url)
+      const guestUrls = await app.evaluate(({ webContents }) =>
+        webContents.getAllWebContents().map((w) => w.getURL())
+      )
+      expect(guestUrls.filter((u) => u.includes('only-on-the-mac'))).toEqual([])
       await run('playwright-cli close')
 
       await page.evaluate(() => window.api.settings.set({ browserControl: false }))

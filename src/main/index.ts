@@ -324,6 +324,7 @@ import {
   cdpEnvDir,
   relayClientEvicted,
   relayEndpoint,
+  renewRelayEndpoint,
   relayStripChanged,
   relayTabClosed,
   relayTabRebound,
@@ -1120,7 +1121,8 @@ const browserTunnels = new BrowserTunnels({
   masterOutlivingKoloft: (host, op) =>
     masterCommandOutlivingKoloft(host, op, { controlDir: remoteControlDir }),
   run: (host, cmd) => runSsh(host, cmd, { controlDir: remoteControlDir }),
-  forwardFile: (host) => browserForwardFile(app.getPath('userData'), host)
+  forwardFile: (host) => browserForwardFile(app.getPath('userData'), host),
+  renewEndpoint: renewRelayEndpoint
 })
 let loginEnv: Promise<void> | null = null
 process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
@@ -4001,6 +4003,7 @@ function relayDeps(): RelayDeps {
   return {
     sessionForTab: (tabId) =>
       claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
+    onAnotherMachine: (tabId) => remoteHostOfTab(tabId) !== undefined,
     mount: async (sessionId, targetId) => {
       const r = await cdpOp('mount', sessionId, { targetId })
       if (!r.ok || typeof r.guestId !== 'number')
