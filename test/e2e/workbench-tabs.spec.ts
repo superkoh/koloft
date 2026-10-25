@@ -77,6 +77,23 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     }
   })
 
+  test('a click on the pinned Changes tab leaves the caret in the session terminal, while a click on a web tab takes it to the panel', async ({
+    page
+  }) => {
+    await startSessionIn(page, 'ws-a')
+    await agentOpen(page, 'http://127.0.0.1:1/alpha')
+    await expect(wbActiveTab(page)).toHaveText(/alpha/)
+    expect(await focusOwner(page)).toBe('tui')
+
+    await wbTabs(page).nth(0).click()
+    await expect(wbActiveTab(page)).toHaveClass(/pinned/)
+    expect(await focusOwner(page)).toBe('tui')
+
+    await wbTabs(page).nth(1).click()
+    await expect(wbActiveTab(page)).toHaveText(/alpha/)
+    expect(await focusOwner(page)).toBe('panel')
+  })
+
   test('WB-T03: an agent re-open brings its existing tab back to the front', async ({ page }) => {
     await startSessionIn(page, 'ws-a')
     await agentOpen(page, 'http://127.0.0.1:1/alpha')
