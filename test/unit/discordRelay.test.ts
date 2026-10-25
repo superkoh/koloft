@@ -676,12 +676,11 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     let away = true
     const { relay, posts, bodies } = setup({}, [], {
       ownerAway: () => away,
-      askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined),
-      helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined)
+      askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined)
     })
     drop(hookFile(HELPER, 'ask'), QUESTION)
     relay.onAsk(HELPER, QUESTION, HOOK)
-    await vi.waitFor(() => expect(posts).toHaveLength(1))
+    expect(posts).toHaveLength(1)
     expect(await relay.answerSession(HELPER, 'A')).toBeUndefined()
     fs.rmSync(hookFile(HELPER, 'ask'))
 
@@ -692,6 +691,53 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     relay.onMessage(message('704', OWNER, 'how is it going?'))
     await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] how is it going?']))
     expect(fs.existsSync(hookFile(HELPER, 'answer', later))).toBe(false)
+    expect(posts).toHaveLength(1)
+  })
+
+  it('a question held at the Mac and answered there, followed by one posted once the owner left, takes the owner’s typed reply to that card', async () => {
+    let away = false
+    const { relay, posts, bodies } = setup({}, [], {
+      ownerAway: () => away,
+      askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined)
+    })
+    drop(hookFile(HELPER, 'ask'), QUESTION)
+    relay.onAsk(HELPER, QUESTION, HOOK)
+    fs.rmSync(hookFile(HELPER, 'ask'))
+
+    away = true
+    const later = '4343'
+    drop(hookFile(HELPER, 'ask', later), QUESTION)
+    relay.onAsk(HELPER, QUESTION, later)
+    expect(posts).toHaveLength(1)
+    relay.onMessage(message('705', OWNER, 'B'))
+    await vi.waitFor(() => expect(fs.existsSync(hookFile(HELPER, 'answer', later))).toBe(true))
+    expect(bodies()).toEqual([])
+  })
+
+  it('a Codex helper’s question held at the Mac, after an earlier card of its own was answered, does not take what the owner writes to the butler', async () => {
+    let away = true
+    let question: CodexQuestion = {
+      id: 'h1',
+      question: 'Merge #41?',
+      options: [{ label: 'Merge' }]
+    }
+    const writesTo: string[] = []
+    const { relay, posts, bodies } = setup({}, [], {
+      ownerAway: () => away,
+      askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined),
+      backendOf: (t) => (t === HELPER ? 'codex' : 'claude'),
+      pendingQuestion: (t) => (t === HELPER ? question : undefined),
+      type: async (_t, keys) => void writesTo.push(...keys)
+    })
+    relay.codexAsked(HELPER, question)
+    expect(posts).toHaveLength(1)
+
+    away = false
+    question = { id: 'h2', question: 'Delete the branch?', options: [{ label: 'Yes' }] }
+    relay.codexAsked(HELPER, question)
+    relay.onMessage(message('706', OWNER, '1'))
+    await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] 1']))
+    expect(writesTo).toEqual([])
     expect(posts).toHaveLength(1)
   })
 })

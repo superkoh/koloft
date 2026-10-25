@@ -182,6 +182,7 @@ export class DiscordRelay {
   private holds(tab: string): boolean {
     if (this.reaches(tab)) return false
     this.held.add(tab)
+    this.cardOrder.delete(tab)
     this.heldCheck ??= setInterval(() => this.checkHeld(), HELD_ASKS_CHECKED_EVERY_MS).unref()
     return true
   }
@@ -295,7 +296,7 @@ export class DiscordRelay {
   }
 
   private newestCardWaiting(): string | undefined {
-    return [...this.cardOrder].reverse().find((tab) => !this.held.has(tab) && this.dialogOpen(tab))
+    return [...this.cardOrder].reverse().find((tab) => this.dialogOpen(tab))
   }
 
   private commandRefusal(
