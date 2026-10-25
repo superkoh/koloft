@@ -79,7 +79,6 @@ function harness(world: World) {
   const checked: string[] = []
   const deps: TodoVerbDeps = {
     allowed: (tabId) => tabId === BUTLER_TAB,
-    gathered: () => {},
     sidebar: () => world.sidebar,
     pinnedWorkspaces: () =>
       world.sidebar

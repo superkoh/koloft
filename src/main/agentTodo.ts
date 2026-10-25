@@ -44,7 +44,6 @@ export interface ProjectFile {
 
 export interface TodoVerbDeps {
   allowed(tabId: string): boolean
-  gathered(tabId: string): void
   sidebar(): WorkspaceRows[]
   pinnedWorkspaces(): PinnedWorkspace[]
   sessions(): SessionInfo[]
@@ -368,10 +367,7 @@ export function todoVerb(d: TodoVerbDeps): AgentVerb {
   return async (args, caller) => {
     if (!d.allowed(caller.tabId)) return refused(TODO_ONLY_FOR_THE_BUTLER)
     const [sub, ...rest] = args
-    if (sub === undefined) {
-      d.gathered(caller.tabId)
-      return answered(await gather(d, caller.session.backendId))
-    }
+    if (sub === undefined) return answered(await gather(d, caller.session.backendId))
     if (sub === 'note') return noteVerb(d, rest)
     if (sub === 'file') return fileVerb(d, rest)
     return refused(TODO_USAGE, EXIT_USAGE)

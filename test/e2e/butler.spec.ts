@@ -303,7 +303,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
-  test('a helper that ran koloft todo is closed for good, tab and row, once the turn in which it reported to the butler ends', async ({
+  test('a to-do helper in the butler’s folder ends the way the to-do method says: it reports to the butler, then koloft session close takes its tab and row away for good', async ({
     env
   }) => {
     const { page, close } = await launched(env)
@@ -323,8 +323,8 @@ test.describe('The butler: one global session at the top of the sessions list, k
       await switchToRow(page, helperRow)
       expect((await koloftRun(page, 'todo')).exit).toBe(0)
       expect((await koloftRun(page, `session send ${butler.sessionId} Done: 2.`)).exit).toBe(0)
-      await expect(helperRow).toHaveCount(1)
-      await runIn(page, centerTerm(page), 'that was the report')
+      await expect.poll(() => peerLines(env), { timeout: 60_000 }).toContain('Done: 2.')
+      expect((await koloftRun(page, 'session close')).exit).toBe(0)
       await expect(helperRow).toHaveCount(0, { timeout: 30_000 })
       expect(
         (await page.evaluate(() => window.api.sessions.list())).some((s) => s.tabId === helperTab)
