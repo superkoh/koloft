@@ -1314,8 +1314,10 @@ describe('run-state from the typed task list: each task judged by what it is, an
     tracker.pidOf = () => 4242
     tracker.inspect = async () => {
       scan++
-      const cpuMsByPid = new Map([[runnerPid, 100]])
-      if (scan % 2) cpuMsByPid.set(100 + scan, 2_000)
+      const cpuMsByPid = new Map([
+        [runnerPid, 100],
+        [100 + scan, 2_000]
+      ])
       return {
         at: Date.now(),
         shells: new Map([['btoolu_relaunch', { pid: 1, ageMs: 0, listening: true, cpuMsByPid }]])

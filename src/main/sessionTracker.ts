@@ -54,6 +54,7 @@ const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
 
 export { encodeCwd }
 
+// PLATFORM§3
 function cpuSpentSince(seen: Map<number, number>, cpuMsByPid: Map<number, number>): number {
   let spent = 0
   for (const [pid, cpuMs] of cpuMsByPid) {
@@ -436,10 +437,7 @@ interface Tracked {
   reportedAt: number
   openTools: Map<string, ToolCall>
   procs: TaskProcs | null
-  shellCpu: Map<
-    string,
-    { seen: Map<number, number>; cpuMs: number; windowCpuMs: number; at: number; quiet: boolean }
-  >
+  shellCpu: Map<string, { seen: Map<number, number>; spentMs: number; at: number; quiet: boolean }>
   procsAt: number
   procsPromise?: Promise<void>
   lastInterruptTs: number
@@ -822,22 +820,14 @@ export class SessionTracker extends SessionRuntime {
     for (const [id, sh] of procs.shells) {
       const prev = t.shellCpu.get(id)
       if (!prev) {
-        const cpuMs = cpuSpentSince(new Map(), sh.cpuMsByPid)
-        t.shellCpu.set(id, {
-          seen: sh.cpuMsByPid,
-          cpuMs,
-          windowCpuMs: cpuMs,
-          at: now,
-          quiet: false
-        })
+        t.shellCpu.set(id, { seen: sh.cpuMsByPid, spentMs: 0, at: now, quiet: false })
         continue
       }
-      prev.cpuMs += cpuSpentSince(prev.seen, sh.cpuMsByPid)
+      prev.spentMs += cpuSpentSince(prev.seen, sh.cpuMsByPid)
       prev.seen = sh.cpuMsByPid
       if (now - prev.at < SERVER_QUIET_WINDOW_MS) continue
-      const perMinute = ((prev.cpuMs - prev.windowCpuMs) * 60_000) / (now - prev.at)
-      prev.quiet = perMinute < IDLE_SERVER_CPU_MS_PER_MINUTE
-      prev.windowCpuMs = prev.cpuMs
+      prev.quiet = (prev.spentMs * 60_000) / (now - prev.at) < IDLE_SERVER_CPU_MS_PER_MINUTE
+      prev.spentMs = 0
       prev.at = now
     }
   }
