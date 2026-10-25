@@ -101,6 +101,7 @@ export interface EditPaneProps {
   onSaved: () => void
   prose?: boolean
   autosave?: boolean
+  placeholder?: string
 }
 
 export function EditPane({
@@ -109,7 +110,8 @@ export function EditPane({
   focusNonce,
   onSaved,
   prose = false,
-  autosave = false
+  autosave = false,
+  placeholder
 }: EditPaneProps): JSX.Element {
   const areaRef = useRef<HTMLTextAreaElement>(null)
   const [, bump] = useReducer((n: number) => n + 1, 0)
@@ -374,6 +376,7 @@ export function EditPane({
         className="ed-area"
         spellCheck={prose}
         aria-label="File contents"
+        placeholder={placeholder}
         readOnly={!!entry?.readOnly}
         defaultValue={text}
         onInput={(e) => {

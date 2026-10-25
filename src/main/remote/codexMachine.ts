@@ -33,7 +33,7 @@ import {
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
 
 // ADR-0039
-const REMOTE_CODEX_HOME = `${REMOTE_HOME}/codex-home`
+export const REMOTE_CODEX_HOME = `${REMOTE_HOME}/codex-home`
 
 export function codexMachineInstance(userData: string): string {
   return crypto.createHash('sha256').update(userData).digest('hex').slice(0, 12)

@@ -16,6 +16,7 @@ import {
 import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
+import { PICK_OR_OWN_WORDS } from '../../src/main/discord/dialog'
 import { lastCodexTurnPermissions } from './helpers/codexRollout'
 
 function claudeTokenFromKeychain(): string {
@@ -391,7 +392,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // ADR-0029
-  test('a real Claude conductor told not to ask a session checks a pull request itself with koloft gh, naming the repository the owner named', async ({
+  test('a real Claude conductor told not to ask a session checks a pull request itself: its answer has the title only GitHub knows, and its gh call names the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -714,7 +715,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // ADR-0029
-  test('a real Codex conductor checks a pull request itself with koloft gh, naming the repository the owner named', async ({
+  test('a real Codex conductor checks a pull request itself: its answer has the title only GitHub knows, and its gh call names the repository the owner named', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
@@ -758,7 +759,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // CODEX§20
-  test('a real Codex conductor put in Plan mode at the Mac asks the owner a question of its own: it reaches the channel with its options, the owner’s "Green" picks that option, and the conductor goes on with Green', async ({
+  test('a real Codex conductor put in Plan mode at the Mac asks the owner a question of its own: it reaches the channel with its options and the hint that the owner may answer in their own words, the owner’s "Green" picks that option, and the conductor goes on with Green', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
@@ -782,9 +783,8 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       )
       await expect
         .poll(() => said(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
-        .toMatch(
-          /❓ .+\n(.*\n)*1\. Red\b.*\n2\. Green\b.*\n-# Reply with the number or the name of one option\./
-        )
+        .toMatch(/❓ .+\n(.*\n)*1\. Red\b.*\n2\. Green\b.*\n-# /)
+      expect(said(fake).join('\n')).toContain(`\n-# ${PICK_OR_OWN_WORDS}`)
       const before = conductorSaid(fake).length
       const green = fake.say(OWNER, 'Green')
       await expect

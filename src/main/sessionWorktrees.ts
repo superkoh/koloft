@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { SessionStore, type WorktreeResource } from './sessionStore'
+import { gitIgnoredAmong } from './gitIgnored'
 
 const execFileAsync = promisify(execFile)
 
@@ -77,23 +78,6 @@ async function branchExists(io: TreeIo, cwd: string, branch: string): Promise<bo
 
 function validName(name: string): void {
   if (!isValidWorktreeName(name)) throw new Error('Invalid worktree name')
-}
-
-const NOTHING_IGNORED_EXIT = 1
-
-function gitIgnoredAmong(root: string, paths: string[]): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    const child = execFile(
-      'git',
-      ['-C', root, 'check-ignore', '-z', '--stdin'],
-      { maxBuffer: 4 * 1024 * 1024 },
-      (error, stdout) => {
-        if (error && error.code !== NOTHING_IGNORED_EXIT) reject(error)
-        else resolve(stdout.split('\0').filter(Boolean))
-      }
-    )
-    child.stdin?.end(paths.map((p) => p + '\0').join(''))
-  })
 }
 
 // CC§3

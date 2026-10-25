@@ -318,6 +318,9 @@ export function agyCalls(env: E2EEnv, home = env.home): AgyCall[] {
     .map((line) => JSON.parse(line) as AgyCall)
 }
 
+export const agySessionCalls = (env: E2EEnv): AgyCall[] =>
+  agyCalls(env).filter((c) => c.argv[0]?.startsWith('--gemini_dir=') && !c.argv.includes('-p'))
+
 export function ownersGemini(env: E2EEnv): string {
   return path.join(env.home, '.gemini')
 }

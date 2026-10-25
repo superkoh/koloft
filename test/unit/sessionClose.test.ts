@@ -102,6 +102,49 @@ describe('closing a session that runs in its own worktree', () => {
     expect(left.join('\n')).toContain('stray.txt')
   })
 
+  describe('after its pull request was squash-merged and the pruned fetch dropped the deleted remote branch', () => {
+    function squashMergedAndPruned(): string {
+      commit(tree, 'feat.txt', 'one')
+      commit(tree, 'feat.txt', 'two')
+      git(tree, 'push', '-q', 'origin', 'worktree-run-1')
+      const tip = git(tree, 'rev-parse', 'HEAD')
+      git(repo, 'merge', '-q', '--squash', 'worktree-run-1')
+      git(repo, 'commit', '-q', '-m', 'feat (#1)')
+      git(repo, 'push', '-q', 'origin', 'main')
+      git(repo, 'push', '-q', 'origin', '--delete', 'worktree-run-1')
+      git(tree, 'fetch', '-q', '--prune')
+      return tip
+    }
+
+    it('loses nothing when GitHub has a merged pull request whose head is the branch tip, whatever other heads this repo never saw', async () => {
+      const tip = squashMergedAndPruned()
+      const asked: string[] = []
+      const merged = async (_dir: string, branch: string): Promise<string[]> => {
+        asked.push(branch)
+        return branch === 'worktree-run-1' ? ['f'.repeat(40), tip] : []
+      }
+      expect(await whatIsLeft(localGitOut, await treeOf(tree), merged)).toEqual([])
+      expect(asked).toEqual(['worktree-run-1'])
+    })
+
+    it('still names a commit made after the merge, which no pull request holds', async () => {
+      const tip = squashMergedAndPruned()
+      commit(tree, 'after.txt', 'after the merge')
+      const left = await whatIsLeft(localGitOut, await treeOf(tree), async () => [tip])
+      expect(left).toHaveLength(1)
+      expect(left[0]).toContain('after.txt')
+      expect(left[0]).not.toContain('feat.txt')
+    })
+
+    it('keeps the worktree when GitHub cannot be asked, and says pushing would only bring the deleted branch back', async () => {
+      squashMergedAndPruned()
+      const left = await whatIsLeft(localGitOut, await treeOf(tree), async () => null)
+      expect(left).toHaveLength(1)
+      expect(left[0]).toContain('feat.txt')
+      expect(left[0]).toContain('pushing would only bring back the branch GitHub deleted')
+    })
+  })
+
   it('a session in the repository itself has no worktree to remove', async () => {
     expect(await closingTree(localGitOut, projectInfoFor(repo))).toBeNull()
   })
@@ -134,6 +177,33 @@ describe('tidying a scheduled run’s folder (#22)', () => {
     expect(fs.existsSync(tree)).toBe(true)
   })
 
+  function removalCutOffHalfWay(): void {
+    fs.rmSync(path.join(tree, 'node_modules'), { recursive: true })
+    fs.rmSync(path.join(tree, '.gitignore'))
+  }
+
+  it('removes a folder whose removal was cut off half way, as its only changes are deleted files and HEAD still holds them (#696)', async () => {
+    removalCutOffHalfWay()
+    expect(await tidyTree(localGitOut, run(), onDisk)).toEqual({ removed: true, kept: [] })
+    expect(fs.existsSync(tree)).toBe(false)
+    expect(branches()).toEqual(['main'])
+  })
+
+  it('keeps a half-deleted folder that also holds a new file, and names both', async () => {
+    removalCutOffHalfWay()
+    fs.writeFileSync(path.join(tree, 'report.md'), 'draft')
+    const r = await tidyTree(localGitOut, run(), onDisk)
+    expect(r.removed).toBe(false)
+    expect(r.kept).toEqual(['Changes not committed:\n D .gitignore\n?? report.md'])
+    expect(fs.existsSync(tree)).toBe(true)
+  })
+
+  it('still names a deleted file when a session is closed, outside the tidy', async () => {
+    removalCutOffHalfWay()
+    const left = await whatIsLeft(localGitOut, await treeOf(tree))
+    expect(left).toEqual(['Changes not committed:\n D .gitignore'])
+  })
+
   it('deletes the branch a folder removed by hand left behind', async () => {
     removeFolderKeepingBranch()
     expect(await tidyTree(localGitOut, run(), onDisk)).toEqual({ removed: true, kept: [] })
@@ -147,6 +217,18 @@ describe('tidying a scheduled run’s folder (#22)', () => {
     expect(r.removed).toBe(false)
     expect(r.kept[0]).toContain('only-here.txt')
     expect(branches()).toEqual(['main', 'worktree-run-1'])
+  })
+
+  it('deletes the branch a folder removed by hand left behind when a merged pull request holds its commits', async () => {
+    commit(tree, 'squashed.txt', 'merged on GitHub as one commit')
+    const tip = git(tree, 'rev-parse', 'HEAD')
+    removeFolderKeepingBranch()
+    const merged = async (): Promise<string[]> => [tip]
+    expect(await tidyTree(localGitOut, run(), onDisk, merged)).toEqual({
+      removed: true,
+      kept: []
+    })
+    expect(branches()).toEqual(['main'])
   })
 
   it('keeps everything and names the problem when the machine cannot be asked', async () => {

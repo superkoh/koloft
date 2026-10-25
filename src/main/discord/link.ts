@@ -438,7 +438,7 @@ export class DiscordLink {
 
   // PLATFORM§39
   async editCard(channelId: string, messageId: string, card: Card): Promise<void> {
-    const [message] = cardMessages(card)
+    const message = cardMessages(card).at(-1)
     await this.api().request('PATCH', `/channels/${channelId}/messages/${messageId}`, message)
   }
 

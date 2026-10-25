@@ -17,6 +17,9 @@
   overflow-wrap: anywhere;
   tab-size: 2;
 }
+.ed-area::placeholder {
+  color: var(--fg-faint);
+}
 .ed-status {
   flex: 0 0 auto;
   display: flex;

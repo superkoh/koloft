@@ -360,6 +360,27 @@ describe('AgySessions launch', () => {
     expect(hook(off.id, 'SessionStart')).toBe('')
   })
 
+  // AGY§26
+  it('lets agy run koloft commands without an ask only when agent tools are on, here and on a remote machine', async () => {
+    const allowHere = (): unknown =>
+      JSON.parse(
+        fs.readFileSync(path.join(picked!.home, 'antigravity-cli', 'settings.json'), 'utf8')
+      ).permissions
+    agentTools = true
+    await launch()
+    expect(allowHere()).toEqual({ allow: ['command(koloft)'] })
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r' })
+    const there = JSON.parse(machine.launches[0].program.files['pty-r.settings.json'])
+    expect(there.permissions).toEqual({ allow: ['command(koloft)'] })
+    agentTools = false
+    await launch()
+    expect(allowHere()).toBeUndefined()
+    machine.config = { ...machine.config, ownSettings: there }
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r2' })
+    const after = JSON.parse(machine.launches[1].program.files['pty-r2.settings.json'])
+    expect(after.permissions).toBeUndefined()
+  })
+
   // AGY§9 AGY§24
   it('refuses to resume a conversation another agy process holds open, and resumes one whose lock nobody holds', async () => {
     storedMember(A)
@@ -659,13 +680,13 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
   })
 
   // ADR-0031 AGY§12
-  it("quotes the owner's latest words to the model before each model call, so agy replies in their language", async () => {
+  it("tells the model the language of the owner's latest words before each model call, so agy replies in it", async () => {
     const id = await boundTab()
     appendConversation(gemini, A, [
       { type: 'USER_INPUT', content: ownerTyped('先别改代码，帮我查一下') }
     ])
     const out = hook(id, 'PreInvocation', { transcriptPath: agyTranscript(gemini, A) })
-    expect(JSON.parse(out).injectSteps[0].ephemeralMessage).toContain('«先别改代码，帮我查一下»')
+    expect(JSON.parse(out).injectSteps[0].ephemeralMessage).toMatch(/^The user writes Chinese\. /)
   })
 
   it('lists each file agy wrote or edited, with its added and removed lines, and not a file it only read', async () => {
@@ -915,6 +936,18 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
       .mock.calls.map(([, e]) => e)
       .filter((e) => ['prompt', 'notify', 'stop'].includes(e.type))
 
+  // AGY§8
+  it('a remembered conversation on that machine stays while its list cannot be read, and leaves once the machine lists without it', async () => {
+    remoteMember(A)
+    machine.rows = undefined as never
+    await sessions.availability()
+    await sessions.refreshHistory()
+    expect(sessions.rows(REMOTE_WS).map((row) => row.id)).toEqual([agySessionKey(A, 'devbox')])
+    machine.rows = []
+    await sessions.refreshHistory()
+    expect(sessions.rows(REMOTE_WS)).toEqual([])
+  })
+
   it("starts agy on that machine over ssh, on the account's own folder there with Koloft's title and hook scripts from its machine package, the owner's own settings and hooks kept, the API key in the tab's env, and the folder trusted when asked", async () => {
     apiKey = 'key-1'
     machine.config = {
@@ -998,26 +1031,63 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     }
   })
 
-  it('resuming a conversation tmux still runs there attaches to it: the tab binds at once and follows the log its agy writes, found through the pointer the title script left', async () => {
+  it('resuming a conversation tmux still runs there attaches to it: the tab binds at once, reads waiting from the turn that already ended without reporting that turn again (nor when its background work ends), and follows the log its agy writes, found through the pointer the title script left', async () => {
     machine.attach = true
     machine.alive.add(A)
     machine.held = true
     remoteMember(A)
     fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
     const old = path.join(mirror, 'pty-old.agy.jsonl')
-    fs.writeFileSync(old, JSON.stringify({ event: 'Stop', input: { conversationId: A } }) + '\n')
+    const stop = (fullyIdle: boolean): string =>
+      JSON.stringify({ event: 'Stop', input: { conversationId: A, fullyIdle } }) + '\n'
+    fs.writeFileSync(old, stop(false))
+    appendConversation(path.join(home, 'mirror-gemini'), A, [
+      { type: 'USER_INPUT', content: ownerTyped('before the restart') },
+      { type: 'PLANNER_RESPONSE', content: 'Already told.' }
+    ])
     const { id } = await sessions.resume({
       sessionId: agySessionKey(A, 'devbox'),
       cwd: REMOTE_WS
     })
     await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
+    expect(shown()).toEqual([{ type: 'stop' }])
     fs.appendFileSync(
       old,
-      JSON.stringify({ event: 'PreInvocation', input: { conversationId: A } }) + '\n'
+      stop(true) + JSON.stringify({ event: 'PreInvocation', input: { conversationId: A } }) + '\n'
     )
     sessions.followMirrors('devbox')
     expect(runtime.statusOf(id)).toBe('working')
-    expect(shown()).toEqual([{ type: 'prompt' }])
+    expect(shown()).toEqual([{ type: 'stop' }, { type: 'prompt' }])
+    expect(
+      vi.mocked(sessions['deps'].events).mock.calls.filter(([, e]) => e.type === 'turn-ended')
+    ).toEqual([])
+  })
+
+  it('attaching to a conversation tmux still runs there while it waits for an approval shows it waiting for that approval again', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    fs.writeFileSync(
+      path.join(mirror, 'pty-old.agy.jsonl'),
+      [
+        { event: 'PreInvocation', input: { conversationId: A } },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: A,
+            toolCall: { name: 'run_command', args: { CommandLine: 'ls' } }
+          }
+        },
+        { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(sessions.openApproval(id)).toMatchObject({ command: 'ls' }))
+    expect(shown()).toEqual([{ type: 'notify', need: 'approval' }])
   })
 
   it('refuses to resume a conversation another agy on that machine holds', async () => {

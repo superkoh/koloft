@@ -21,6 +21,15 @@ method. A recheck adds its date, version and command to the bullet.
   `xcode-select -p` exits non-zero, and `xcode-select --install` opens Apple's own
   install dialog and returns at once (both inferred, not checked: every Mac this was
   developed on has the tools).
+- Since Claude Code 2.1.309, claude itself refuses to run a `git` that resolves to
+  exactly `/usr/bin/git` when `DEVELOPER_DIR` is unset, `/Library/Developer/CommandLineTools`
+  and `/var/db/xcode_select_link` are missing and no `/Applications/Xcode*.app` exists,
+  and prints `git is not installed on this Mac. To install it, run xcode-select
+  --install, then try again.` (exit 127) instead (`strings` of the 2.1.309 binary,
+  2026-10-23, not run; the changelog's fix for the "Install Command Line Developer
+  Tools" dialog opening at every start). In a Koloft tab the bundled git is first on PATH
+  whenever Koloft found git missing, so claude finds that one and this check does not
+  fire (inferred, not checked on a Mac without the tools).
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).
@@ -258,20 +267,36 @@ method. A recheck adds its date, version and command to the bullet.
   a focused `<webview>`, so a role-based ⌘R inside a web page would reload Koloft and
   kill every terminal. The built-in zoom roles step by 0.5 and clamp to Chromium's
   range of -8 to 9.
-- **A menu accelerator is handled natively, before the page.** It fires even while
-  xterm has focus (a plain renderer keydown listener is swallowed by xterm), and it
-  takes its key before a focused guest page or xterm can see it. ``"Control+`"`` parses
-  on every platform.
+- **A menu accelerator is handled natively.** It fires even while xterm has focus (a
+  plain renderer keydown listener is swallowed by xterm), and it takes its key before
+  xterm can see it. ``"Control+`"`` parses on every platform. A focused `<webview>`
+  page sees a menu key before the menu does (below).
 - **⌘⏎ in ⌘P's textarea reaches the page, not the enabled ⌘⏎ menu item.** With Focus
   Mode's `CmdOrCtrl+Return` item enabled, a real ⌘⏎ typed into ⌘P's textarea did the
   palette's work and left Focus Mode off. Measured 2026-10-23, Electron 43.7.3, macOS 27.0
   in a tart VM, keys posted through CGEvent (real-window case "⌘⏎ typed on the keyboard in
   ⌘P"). Why: the palette's keydown handler calls `preventDefault` — inferred, not
-  checked; a ⌘ key the page sees but does not `preventDefault` was not probed.
+  checked; in Koloft's own window a ⌘ key the page sees but does not `preventDefault`
+  was not probed (for a `<webview>` page, see below).
 - **Keys typed in a focused `<webview>` never reach the host document's listeners**,
-  capture phase included, and a focused guest swallows the app's menu accelerators;
-  keys with no accelerator (⌘T) never reach the host at all. Main has to catch them on
-  the guest's own `before-input-event`.
+  capture phase included; keys with no accelerator (⌘T) never reach the host at all.
+  So a key Koloft must take for itself — ⌘T, or one that must not go to the page or to
+  its menu item (⌘W closes the web tab, not the session) — is caught in main on the
+  guest's own `before-input-event`; Electron's docs say its `preventDefault` stops both
+  the page's `keydown` and the menu shortcut (not probed here).
+- **A focused `<webview>` page gets a menu key first; the app menu fires only when the
+  page does not `preventDefault` it.** With a Workbench web page focused, real ⌘J, ⌘B,
+  ⌥⌘N and ⌘P each reached the guest's `before-input-event`, then the page's `keydown`
+  listener, and then fired their menu item (Next Waiting Session, Toggle Sidebar, Notes,
+  Command Palette). With the page calling `preventDefault` on every `keydown`, the page
+  still saw each key and no menu item fired. Koloft's guest `before-input-event` handler
+  leaves these four keys alone, so whether a menu key works inside a web page is the
+  page's choice: a plain page lets it through, a page that handles the key keeps it.
+  Measured 2026-10-24, Electron 43.8.1, macOS 27.0 in a tart VM: keys posted through
+  CGEvent (§52), menu item clicks recorded by wrapping each item's `click` in main, a
+  local test page; two runs, the page leaving keys alone and the page calling
+  `preventDefault`; control: ⌘B with the session terminal focused fired Toggle Sidebar
+  in both.
 - **`before-input-event` is fed by native input only.** A key event sent straight into a
   guest's render process, or typed inside an extension's action popup, never passes it;
   only `input-event` sees an injected one. A key that `before-input-event` does not
@@ -474,6 +499,13 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   Chromium's folder-listing page is not wired in.
   `ses.fetch(request, { bypassCustomProtocolHandlers: true })` reaches that built-in
   loader without calling a custom `file` handler again.
+- **A `protocol.handle` callback that throws shows up as `ERR_UNEXPECTED` (-9)**, not
+  the error it threw. For a `file://` path that does not exist (a missing name, a path
+  through a file, a broken link), that `ses.fetch` rejects with an error whose text
+  holds `net::ERR_FILE_NOT_FOUND`; left uncaught, the guest fails with
+  `-9 ERR_UNEXPECTED`, while without the custom handler it fails with
+  `-6 ERR_FILE_NOT_FOUND`. A `Response` with status 404 and an HTML body is drawn as a
+  page, with no `did-fail-load`.
 - **Chromium fetches `/favicon.ico` after every navigation**, so a server's request
   count sees one extra hit per page load.
 - **The built-in PDF viewer (PDFium) keeps its page position to itself**: `scrollX` /
@@ -1076,6 +1108,15 @@ inferred, not checked.
   written 500 ms later it was seen in 40 of 40. The same test failed on the GitHub macOS
   runner in 4 of 5 CI runs that day. A test that drops a file right after starting a
   watcher writes it again until it is seen.
+- **A folder watch reports files renamed into place back to back in the order they were
+  written, but one `fs.readFile` per event finishes in any order.** Three drops written
+  with `writeWholeBeforeVisible` one after another: the watch events came in write
+  order in every one of 600 rounds that saw events, while the handlers, each called
+  when its own read finished, ran out of order in 247 of 300 rounds (under 1 ms apart),
+  133 of 300 (same, 8 CPU burners), 40 of 300 (30 ms apart) and 3 of 300 (100 ms apart).
+  Measured 2026-10-22 (Node 24.13.0 under vitest, macOS 27.0) with a throwaway probe on
+  `watchJsonDrops`. So a reader that must keep write order reads one drop at a time, in
+  event order; the drop's own `ts` is whole seconds and cannot sort them.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
 - **A session's two start notes can go unreported.** With the launch line typed about
@@ -1130,6 +1171,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **`git check-ignore`**: `-z` is only valid with `--stdin` (with pathspecs git exits
   128). It exits 1 with empty
   output when nothing is ignored — a normal answer — and 128 outside a repo.
+  Given names as arguments, it prints any name with a non-ASCII character or a `"`
+  quoted and escaped (`秘密.txt` comes back as `"\347\247\230\345\257\206.txt"`);
+  with `-z --stdin` every name comes back exactly as sent. Outside a repo it exits
+  before reading stdin, so writing 5,000 names (~160 KB) to it fails with `EPIPE`, which
+  crashes Node unless the stdin stream has an `error` handler. With
+  `core.precomposeunicode` (on by default in a macOS repo) git matches ignore rules
+  against the composed (NFC) form of a name, as `git status` and `ls-files` show it;
+  a name read from disk in decomposed (NFD) form and sent on stdin as-is matches no
+  rule, though sent as an argument it is composed first. (Measured, git 2.54.0,
+  macOS, 2026-10-25.)
 - **`git ls-files`**: `--others` (and `--ignored`) prints a nested repository as one
   `dir/` entry. Run with `-C <dir>` it lists only files under that folder, relative to
   it, while `git diff --name-status` prints toplevel-relative paths for the whole repo
@@ -1189,6 +1240,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   on macOS 27, 2026-10-11.)
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
   own config is enough), and git splits its command on spaces.
+- **After a squash merge, a pruned fetch makes the branch's commits look unpushed**: the
+  squash commit on `main` is a new commit, so the branch's own commits are reachable only
+  from the branch and its `origin/<branch>` copy. Once the server deletes the branch and
+  anything runs `git fetch --prune`, `origin/<branch>` goes, and
+  `git log <branch> --not --exclude=<branch> --branches --remotes` lists every one of
+  them, even after local `main` fast-forwards to the squash commit. A plain
+  `git fetch origin main` leaves `origin/<branch>` in place. `git log --ignore-missing`
+  skips a `^<sha>` whose object the repo does not have instead of exiting 128.
+  (2026-10-22, git 2.54.0, macOS, on a throwaway bare remote with a second clone doing
+  the squash, push and branch delete.)
 
 ## §31 ripgrep and git grep
 
@@ -1283,6 +1344,12 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (`git ls-remote https://github.com/cli/cli refs/pull/14629/head refs/pull/14580/head`
   listed both). (2026-10-09, gh 2.89.0, by hand against superkoh/koloft and cli/cli, and
   an empty `GH_CONFIG_DIR` with a scratch `HOME`.)
+- **`gh pr list --repo o/r --state merged --head <branch> --json headRefOid`** still
+  finds a pull request after GitHub deleted its branch on merge, and prints
+  `[{"headRefOid":"<sha>"}]`, the branch tip it was merged from — the same sha
+  `refs/pull/<n>/head` holds. A squash merge keeps that sha only as the pull request's
+  head, never in `main`. (2026-10-22, gh 2.89.0, by hand against superkoh/koloft #934,
+  branch `worktree-cmd-p-at-target-workspace`, deleted on merge.)
 - **`gh issue create` with no terminal never prompts**: missing `--title` it exits 1 at
   once with "must provide `--title` and `--body` when not running interactively" and
   creates nothing. A flag given as `--flag=value` keeps a value that starts with `-`
@@ -1452,8 +1519,15 @@ command by hand:
   `inotifywait`; `git grep` is there with git. So content search needs the `git grep`
   fallback, and there is no file watcher to lean on.
 - **A PATH prefix set before `bash -l -i` survives the login files** on that Ubuntu box
-  (`/etc/profile` there does not set PATH). Debian's `/etc/profile` does set PATH, so
-  there it may be lost — inferred, not checked. On a macOS machine, `path_helper` in
+  (`/etc/profile` there does not set PATH). **On Debian 12 it is lost**: `/etc/profile`
+  sets PATH outright (measured as a non-root user), so `bash -l` and `bash -l -i` start with
+  `/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games` and a Workbench shell there
+  said `bash: koloft: command not found`. `bash --init-file <file> -i` that sources
+  `/etc/profile` and the first of `~/.bash_profile`, `~/.bash_login`, `~/.profile`, then
+  puts the prefix back, keeps it; fish 3.6 (`fish -l`) and tcsh (`tcsh -l`) keep the
+  prefix with no help (`tcsh -l` takes no `-c`). An exported `KOLOFT_TAB_ID` survives all
+  three. (2026-10-24: the e2e sshd image, `node:22-bookworm-slim`, as users whose login
+  shells are bash, fish and tcsh.) On a macOS machine, `path_helper` in
   the login files may put a real `claude` in `/usr/local/bin` ahead of that prefix —
   inferred, not checked.
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.
@@ -2320,3 +2394,28 @@ server unless a line says so.
 - Measured 2026-10-19 on macOS 27.0 (Darwin 27.0.0), Apple silicon, 10 cores, 16 GB,
   Node 24.13.0, Google Chrome 155, colima with Docker, by scripts run from a Koloft Claude Code
   tab.
+
+## §60 Electron: is someone at the Mac
+
+- **`powerMonitor.getSystemIdleState(seconds)` answers at once and asks for no
+  permission.** It returns `active` when the keyboard or mouse was used within `seconds`
+  (any app), `idle` after that, `locked` while the screen is locked, and `unknown` when it
+  cannot tell. `powerMonitor.getSystemIdleTime()` gives the seconds since the last input
+  (it read 71 while the person waited on a reply).
+- **There is no "went idle" event.** `powerMonitor` emits `lock-screen` and
+  `unlock-screen`, but nothing when input stops, so going idle is only seen by asking
+  again later.
+- Measured 2026-10-23 with Electron 43.7.3 on macOS 27.0 (Darwin 27.0.0), Apple silicon, by
+  a script run under the repo's Electron from a Koloft Claude Code tab.
+
+## §61 Which gh knows the issues a pull request closes
+
+2026-10-23, the official Linux release builds in Docker, `GH_TOKEN=fake gh pr list --repo
+cli/cli --limit 1 --json number,closingIssuesReferences`:
+
+- **gh 2.71.2** refuses before any network call: `Unknown JSON field:
+  "closingIssuesReferences"`, then the list of fields it knows.
+- **gh 2.72.0** takes the field and goes to GitHub (here `HTTP 401: Bad credentials`).
+
+Koloft dependents: `listTodoPulls` in `src/main/github.ts`, which lists again without the
+field and says so; a remote workspace's pull requests are listed by that machine's gh.

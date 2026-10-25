@@ -96,20 +96,20 @@
           official installer, then signs in.
         </p>
 
-        <figure class="shot" style="--ar: 1322 / 690; --ar-phone: 765 / 1000">
+        <figure class="shot" style="--ar: 1322 / 729; --ar-phone: 765 / 1046">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/h-settings-accounts-phone4.webp"
+                srcset="../img/h-settings-accounts-phone5.webp"
                 width="765"
-                height="1000"
+                height="1046"
               />
               <img
-                src="../img/h-settings-accounts-pane4.webp"
+                src="../img/h-settings-accounts-pane5.webp"
                 width="1322"
-                height="690"
-                alt="Koloft's Settings, Accounts page: the Skip permission prompts and Prefer accounts with fable allowance switches, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
+                height="729"
+                alt="Koloft's Settings, Accounts page: the Skip permission prompts switch, whose note names the flags it adds for Claude, Antigravity, Muse and new Codex sessions, the Prefer accounts with fable allowance switch, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
               />
             </picture>
           </div>
@@ -118,10 +118,15 @@
           </figcaption>
         </figure>
         <p>
-          At the top sits <code>Skip permission prompts</code>, on at first. With it on, a Claude
-          Code, Muse or Antigravity session Koloft starts runs without asking for permission, here
-          or on a machine. A permission setting given to one launch (a scheduled job's, say) still
-          wins. A Codex session you start keeps Codex's own approval settings.
+          At the top sits <code>Skip permission prompts</code>, on at first. With it on, a Muse
+          session Koloft starts, and a Claude Code or Antigravity session it starts on one of your
+          accounts, runs without asking for permission, here or on a machine. So does a new Codex
+          session. It starts with <code class="nowrap">-a never -s danger-full-access</code>: it
+          never asks for permission (Codex's own trust question for a folder it has not seen still
+          comes first), and it runs outside Codex's sandbox (the box Codex runs commands in), so it
+          may write anywhere and use the network. With the switch off, a Codex session follows
+          Codex's own approval settings. A Codex session you resume keeps what it started with. A
+          permission setting given to one launch (a scheduled job's, say) still wins.
         </p>
 
         <h2>Claude</h2>
@@ -335,7 +340,8 @@
             When the session tab you are looking at goes away (you close it, it exits, or it
             crashes), Koloft shows your butler, opening it if it was not open, once the butler is
             set up. Closing the butler's own tab does not open it again; Koloft shows the newest
-            open tab.
+            open tab. A new session that ends before it ever started (you answer "No, exit" to its
+            trust question, say) leaves you on its folder's page, or on the newest open tab.
           </li>
           <li>
             Like any session it goes to sleep after a quiet half hour, unless it has a Discord
@@ -343,8 +349,9 @@
           </li>
           <li>
             You can also talk to it from your phone, once it has a Discord channel (see
-            <a href="../discord/">discord</a>), and from <kbd>⌘P</kbd> (see
-            <a href="../sessions/#find">find any session</a>).
+            <a href="../discord/">discord</a>). With Assist on, what you type in <kbd>⌘P</kbd> that
+            Koloft cannot do by itself goes to a helper of your butler, which reports back to it
+            (see <a href="../sessions/#find">find any session</a>).
           </li>
         </ul>
 
@@ -356,9 +363,17 @@
         <ul class="dash">
           <li>list every session in every folder, open or closed, and list your folders</li>
           <li>
-            start a session in a folder on this Mac, in a worktree of its own when the folder is a
-            git repo; or start a helper in its own folder for a side job, which hangs under its row
-            and reports back
+            start a session in a folder on this Mac or in a
+            <a href="../remote/">remote folder</a>, in a worktree of its own when the folder is a
+            git repo; or start a helper in its own folder for a job outside your projects, which
+            hangs under its row and reports back
+          </li>
+          <li>
+            sort out your to-dos: say "sort out my to-dos" and it gathers the sessions waiting on
+            you, your open pull requests and each project's to-dos. The first time, it asks you once
+            per project where that project's to-dos are kept. Then a helper named "Sort out to-dos"
+            (in your language) asks you about them one at a time, in Koloft or on
+            <a href="../discord/">Discord</a>
           </li>
           <li>
             hear a session's reply: when it hands work to a session, or answers its question, Koloft
@@ -380,13 +395,17 @@
           </li>
           <li>
             use GitHub with <code>koloft gh</code>, naming the repository each time (see
-            <a href="../agents/#gh">what <code>koloft gh</code> refuses</a>)
+            <a href="../agents/#gh">what <code>koloft gh</code> refuses</a>); a plain
+            <code>gh</code> in its own folder works as <code>koloft gh</code>
           </li>
-          <li>send you files and pictures of pages on <a href="../discord/">Discord</a></li>
+          <li>
+            send you files and pictures of pages on <a href="../discord/">Discord</a> (not
+            <a href="../discord/#at-the-mac">while you use the Mac</a>, unless it is answering what
+            you sent from Discord)
+          </li>
         </ul>
         <p>It cannot:</p>
         <ul class="dash">
-          <li>start a session in a <a href="../remote/">remote folder</a></li>
           <li>close an open session it did not start <span class="why">(stop it first)</span></li>
           <li>
             close a session on another machine
@@ -395,8 +414,10 @@
         </ul>
         <p>
           It has no tool limits of its own: it follows your <code>Skip permission prompts</code>
-          setting like any session. It is told that work belonging to a project goes to that
-          project's sessions, and to ask you before deleting or undoing anything.
+          setting like any session. It is told to only talk with you and pass messages, and not to
+          do a task itself unless you tell it to ("do not start a session, do it yourself"): project
+          work goes to a session in that project's folder, anything else to a helper. It is also
+          told to ask you before deleting or undoing anything.
         </p>
         <p>
           It reaches every kind of session the same way, with <code>koloft session send</code>,
@@ -481,10 +502,11 @@
             account in Koloft instead
           </li>
           <li>
-            a Codex session's sandbox (the box Codex works in) may reach the network in a picked
-            folder, so it can push there. In another folder a session you start stays offline unless
-            Settings ▸ Extensions ▸ "Let agents drive this Browser" is on (see
-            <a href="../agents/">agents</a>)
+            with <code>Skip permission prompts</code> off, a Codex session's sandbox may reach the
+            network in a picked folder, so it can push there; in another folder a session you start
+            stays offline unless Settings ▸ Extensions ▸ "Let agents drive this Browser" is on (see
+            <a href="../agents/">agents</a>). With it on, a new Codex session has no sandbox at all
+            (see above)
           </li>
           <li>
             a pick works when the folder's remote is an SSH address too (<code class="nowrap"

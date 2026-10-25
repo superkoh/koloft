@@ -85,6 +85,7 @@ import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
   hostOfKey,
+  type HistoryListing,
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
@@ -443,32 +444,38 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     return { binary: 'ssh', env: this.env, over: (args) => machine.museServe(args) }
   }
 
-  protected async listHistory(): Promise<
-    { key: string; entry: MuseHistoryEntry; archived: boolean }[]
-  > {
+  protected async listHistory(): Promise<HistoryListing<MuseHistoryEntry>> {
     const remote = this.deps.remote
     const hosts = remote?.hosts() ?? []
+    const listedHosts: string[] = []
     const [sessions] = await Promise.all([
       listMuseSessions(this.serveOptions()),
       ...hosts
         .filter((host) => remote!.connected(host))
         .map(async (host) => {
           const listed = await listMuseSessions(this.serveOn(host)).catch(() => undefined)
-          if (listed)
-            this.remoteHistory.set(
-              host,
-              listed.map((entry) => ({ ...entry, cwd: remote!.keyed(host, entry.cwd) }))
-            )
+          if (!listed) return
+          this.remoteHistory.set(
+            host,
+            listed.map((entry) => ({ ...entry, cwd: remote!.keyed(host, entry.cwd) }))
+          )
+          listedHosts.push(host)
         })
     ])
     for (const host of this.remoteHistory.keys())
-      if (!hosts.includes(host)) this.remoteHistory.delete(host)
-    return [
-      ...sessions.map((entry) => ({ key: museSessionKey(entry.id), entry, archived: false })),
-      ...[...this.remoteHistory].flatMap(([host, entries]) =>
-        entries.map((entry) => ({ key: museSessionKey(entry.id, host), entry, archived: false }))
-      )
-    ]
+      if (!hosts.includes(host)) {
+        this.remoteHistory.delete(host)
+        this.listedAt.delete(host)
+      }
+    return {
+      entries: [
+        ...sessions.map((entry) => ({ key: museSessionKey(entry.id), entry, archived: false })),
+        ...[...this.remoteHistory].flatMap(([host, entries]) =>
+          entries.map((entry) => ({ key: museSessionKey(entry.id, host), entry, archived: false }))
+        )
+      ],
+      listedHosts
+    }
   }
 
   async transcriptExists(key: string): Promise<boolean> {
@@ -729,6 +736,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     const tools = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       {
+        backend: 'muse',
         open,
         agent,
         drop: (name) =>
@@ -1035,10 +1043,11 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       const hook = museHook(line)
       if (hook) this.onHook(run, hook)
     } else if (line.t === 'log' && typeof line.payloadType === 'string') {
+      const aNewerStateCameFirst = Number(line.seq) < run.lastSeq
       this.onLogRecord(run, {
         payloadType: line.payloadType,
         payload: record(line.payload),
-        atMs: Date.now()
+        atMs: aNewerStateCameFirst ? 0 : Date.now()
       })
     }
   }
@@ -1122,6 +1131,8 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     run.jobs.clear()
     this.holdForJobs(run)
     run.endedTurns.clear()
+    run.touched.clear()
+    run.liveWrites = 0
     run.log = undefined
     this.bind(
       run,

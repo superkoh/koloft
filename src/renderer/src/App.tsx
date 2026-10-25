@@ -58,7 +58,8 @@ import {
   consumeRestoreExit,
   tabEvictedNotice,
   panelTabId,
-  panelIsOpen
+  panelIsOpen,
+  noteWakingOutput
 } from './store'
 import { WORKBENCH_PANE_MIN } from './auxSurface'
 import {
@@ -155,7 +156,7 @@ import {
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
-const CENTER_TERMINAL_MAX_COLS = 120
+const CENTER_TERMINAL_MAX_COLS = 140
 
 const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch arguments'
 
@@ -1668,13 +1669,16 @@ export default function App(): JSX.Element {
                       key={t.ghost}
                       className="term-wrap"
                       style={{
-                        display: t.id === shown.id || t.ghost === shown.id ? 'block' : 'none'
+                        display:
+                          (t.id === shown.id || t.ghost === shown.id) && !t.wakeOverdue
+                            ? 'block'
+                            : 'none'
                       }}
                       onMouseDown={focusTuiFromMargin}
                     >
                       <TerminalView
                         id={t.ghost}
-                        active={t.id === shown.id || t.ghost === shown.id}
+                        active={(t.id === shown.id || t.ghost === shown.id) && !t.wakeOverdue}
                         scrollbar={false}
                         focusSignal={tuiFocus}
                         maxCols={CENTER_TERMINAL_MAX_COLS}
@@ -1686,13 +1690,13 @@ export default function App(): JSX.Element {
                     className="term-wrap"
                     style={{
                       display: t.id === shown.id ? 'block' : 'none',
-                      visibility: t.ghost ? 'hidden' : undefined
+                      visibility: t.ghost && !t.wakeOverdue ? 'hidden' : undefined
                     }}
                     onMouseDown={focusTuiFromMargin}
                   >
                     <TerminalView
                       id={t.id}
-                      active={t.id === shown.id && !t.ghost}
+                      active={t.id === shown.id && (!t.ghost || !!t.wakeOverdue)}
                       scrollbar={false}
                       maxCols={CENTER_TERMINAL_MAX_COLS}
                       onUserInput={
@@ -1704,9 +1708,14 @@ export default function App(): JSX.Element {
                       onRepainted={() => {
                         if (t.id === activeTabId) setPaintedGen(switchGen)
                       }}
+                      onOutput={
+                        t.ghost && !t.wakeOverdue ? () => noteWakingOutput(t.id) : undefined
+                      }
                     />
-                    {/* CODEX§9 MUSE§10 */}
-                    {t.resuming && t.kind === 'claude' && <ResumingMask title={t.title} />}
+                    {/* CODEX§9 MUSE§10 AGY§5 */}
+                    {t.resuming && (t.kind === 'claude' || t.kind === 'agy') && (
+                      <ResumingMask title={t.title} />
+                    )}
                   </div>
                 ])}
                 {switching && activeTab && (

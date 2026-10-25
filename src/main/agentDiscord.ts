@@ -21,9 +21,12 @@ export const NOT_A_PAGE =
   'koloft: give one HTML file that is there, or one web address that starts with http:// or https:// (like http://localhost:5173).'
 export const NOT_THE_BUTLER =
   'koloft: only the butler bound to a Discord channel can send to Discord.'
+export const OWNER_AT_THE_MAC =
+  'koloft: nothing was sent: the owner is at the Mac, so Discord stays quiet. Show it in the Workbench with koloft open <file or web address> instead.'
 
 export interface DiscordVerbDeps {
   channelOf(tabId: string): string | undefined
+  quiet(tabId: string): boolean
   send(channelId: string, files: DiscordFile[], text: string): Promise<void>
   shoot(url: string): Promise<PagePictures>
   status(): string
@@ -43,6 +46,7 @@ async function send(
   if (!channelId) return refused(NOT_THE_BUTLER)
   const { before: names, after: text } = splitAtDashes(rest)
   if (!names.length && !text) return refused(DISCORD_USAGE, EXIT_USAGE)
+  if (d.quiet(tabId)) return refused(OWNER_AT_THE_MAC)
   const files: DiscordFile[] = []
   for (const name of names) {
     const full = path.resolve(cwd, name)
@@ -83,6 +87,7 @@ async function shot(
   if (before.length !== 1) return refused(DISCORD_USAGE, EXIT_USAGE)
   const url = pageUrl(before[0], cwd)
   if (!url) return refused(NOT_A_PAGE)
+  if (d.quiet(tabId)) return refused(OWNER_AT_THE_MAC)
   const { files, shown, page } = await d.shoot(url)
   await d.send(channelId, files, text)
   const sent =

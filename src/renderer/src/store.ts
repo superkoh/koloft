@@ -63,6 +63,7 @@ export interface Tab {
   jobId?: string
   asleep?: true
   ghost?: string
+  wakeOverdue?: true
 }
 
 export interface OpenFile {
@@ -307,6 +308,7 @@ function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
   return (
     s.activeTabId === tabId &&
     isSessionKind(leaving?.kind) &&
+    !!(leaving?.sessionId || lastSessionId.get(tabId)) &&
     butlerSetUp({ assist: s.settings.assist, channel: s.settings.discord.channel }) &&
     !isButlerTab(s.sessions, s.butlerTab, tabId)
   )
@@ -376,6 +378,25 @@ function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
     ...panelStateMoved(s, asleep.id, t.id)
   }))
   tabStateMoved(asleep.id, t.id, t.sessionId ?? '')
+}
+
+// CC§9
+const A_WAKING_SCREEN_STILL_THIS_LONG_IS_WAITING_FOR_THE_OWNER_MS = 2000
+const wakeQuietTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+export function noteWakingOutput(tabId: string): void {
+  clearTimeout(wakeQuietTimers.get(tabId))
+  wakeQuietTimers.set(
+    tabId,
+    setTimeout(() => {
+      wakeQuietTimers.delete(tabId)
+      useStore.setState((s) =>
+        s.tabs.some((t) => t.id === tabId && t.ghost && !t.wakeOverdue)
+          ? { tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, wakeOverdue: true } : t)) }
+          : s
+      )
+    }, A_WAKING_SCREEN_STILL_THIS_LONG_IS_WAITING_FOR_THE_OWNER_MS)
+  )
 }
 
 function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
@@ -731,6 +752,10 @@ export const useStore = create<AppState>((set, get) => ({
     if (restarting.has(tab.id)) return
     const oldId = tab.id
     const liveClaude = !!sess?.alive && !!sess.sessionId
+    const sayNoConversation = (live: boolean): void => {
+      if (!get().tabs.some((x) => x.id === oldId)) return
+      get().showToast(live ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE)
+    }
     const begin = async (resumeId: string, cwd: string, live: boolean): Promise<void> => {
       const backend = identityOf(resumeId).backendId
       restarting.add(oldId)
@@ -744,7 +769,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (!hasTranscript) {
         restarting.delete(oldId)
-        get().showToast(live ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE)
+        sayNoConversation(live)
         return
       }
       if (!get().tabs.some((x) => x.id === oldId)) {
@@ -816,8 +841,9 @@ export const useStore = create<AppState>((set, get) => ({
       .then((live) => {
         restarting.delete(oldId)
         const bound = live.find((s) => s.tabId === oldId && s.sessionId)
-        if (!bound) return
-        void begin(bound.sessionId, bound.treeRoot || tab.cwd, bound.alive)
+        if (bound) return void begin(bound.sessionId, bound.treeRoot || tab.cwd, bound.alive)
+        const now = get().tabs.find((x) => x.id === oldId)
+        if (now && isSessionKind(now.kind)) sayNoConversation(now.alive)
       })
       .catch(() => restarting.delete(oldId))
   },
@@ -841,7 +867,7 @@ export const useStore = create<AppState>((set, get) => ({
           changed = true
           return {
             ...t,
-            ...(woken ? { ghost: undefined } : {}),
+            ...(woken ? { ghost: undefined, wakeOverdue: undefined } : {}),
             ...(bound ? { resuming: undefined } : {})
           }
         }

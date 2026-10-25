@@ -396,15 +396,31 @@ export function parseHeartbeat(stdout: string): {
   return { alive, git, tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined, stamps, mirrors }
 }
 
+export const UTIL_BASH_LOGIN_FILE = 'util-login.bash'
+
+const utilShellPath = (machineDir: string): string =>
+  `PATH="${machineDir}/util-bin:${machineDir}/bin:$PATH"`
+
+// PLATFORM§37
+export const UTIL_BASH_LOGIN = `[ -r /etc/profile ] && . /etc/profile
+for koloft_f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+  [ -r "$koloft_f" ] && { . "$koloft_f"; break; }
+done
+unset koloft_f
+${REMOTE_ENV_LINES}
+${utilShellPath('${BASH_SOURCE%/*}')}
+`
+
 // PLATFORM§37
 export const UTIL_SH = `#!/bin/sh
 M=$(cd "$(dirname "$0")" && pwd)
 ${REMOTE_ENV_LINES}
 KOLOFT_UTIL=1
-export KOLOFT_UTIL
-PATH="$M/util-bin:$PATH"
-export PATH
+KOLOFT_TAB_ID=$2
+${utilShellPath('$M')}
+export KOLOFT_UTIL KOLOFT_TAB_ID PATH
 cd "$1" 2>/dev/null || cd
-${onATerminalEvenWhenSshGaveNone('$3', '$4', '$2', "'${SHELL:-/bin/sh}' -l")}
+${onATerminalEvenWhenSshGaveNone('$3', '$4', '$2', `sh '$M/util.sh' . $2`)}
+case "\${SHELL:-/bin/sh}" in */bash) exec "$SHELL" --init-file "$M/${UTIL_BASH_LOGIN_FILE}" -i ;; esac
 exec "\${SHELL:-/bin/sh}" -l
 `

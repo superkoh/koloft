@@ -50,6 +50,7 @@ import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
 import type { RemoteGitInfo } from './remote/install'
 import type { SearchCandidate } from './sessionSearch'
+import type { SessionPlace } from './usageCache'
 import { mapAtMost } from './mapAtMost'
 
 const RESCAN_DEBOUNCE_MS = 250
@@ -234,9 +235,6 @@ export class WorkspaceManager {
   }
 
   start(): void {
-    try {
-      fs.mkdirSync(this.deps.projectsRoot, { recursive: true })
-    } catch {}
     this.watchRoots()
     this.scheduleRescan()
   }
@@ -257,6 +255,21 @@ export class WorkspaceManager {
   searchableRows(): SearchCandidate[] {
     return [...this.allRowsCache].flatMap(([workspacePath, rows]) =>
       rows.map((row) => ({ row, workspacePath, file: this.transcriptFileById.get(row.id) }))
+    )
+  }
+
+  transcriptFiles(): { file: string; workspace: string }[] {
+    return [...this.transcriptFileById].flatMap(([id, file]) => {
+      const workspace = this.wsBySession.get(id)
+      return workspace ? [{ file, workspace }] : []
+    })
+  }
+
+  sessionPlaces(): Map<string, SessionPlace> {
+    return new Map(
+      [...this.allRowsCache].flatMap(([workspace, rows]) =>
+        rows.map((r) => [r.id, { workspace, title: r.title }] as const)
+      )
     )
   }
 
@@ -985,6 +998,7 @@ export class WorkspaceManager {
 
   private watchRoot(root: string): void {
     try {
+      fs.mkdirSync(root, { recursive: true })
       const watcher = fs.watch(root, (_event, filename) => {
         if (!filename) return
         if (

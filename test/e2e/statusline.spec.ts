@@ -1,8 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import { test, expect, launchApp } from './helpers/app'
-import { seedSettings } from './helpers/env'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { installCodex, seedSettings } from './helpers/env'
 import { startSessionIn, waitBooted } from './helpers/p1'
+import { fakeCodexLog, startCodex } from './helpers/codex'
+import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
 
 const COLD_BUNDLE_FIRST_RENDER_TIMEOUT_MS = 30_000
 
@@ -161,6 +163,26 @@ test.describe('built-in statusline', () => {
       }
     } finally {
       await app.close().catch(() => {})
+    }
+  })
+
+  // CODEX§8
+  test('toggle off: a Codex tab’s app-server and screen get no status line from Koloft — the owner’s own config.toml stays in charge', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { statuslineBuiltin: false })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const tui = await startCodex(page, env)
+      const servers = fakeCodexLog<{ argv: string[] }>(env, 'fake-codex-server-calls.jsonl')
+      expect(servers.some((call) => call.argv.includes(CODEX_ASKS_AND_WAITS))).toBe(true)
+      for (const argv of [tui.argv, ...servers.map((call) => call.argv)])
+        expect(argv.filter((a) => a.startsWith('tui.status_line='))).toEqual([])
+    } finally {
+      await quitAndClose(app)
     }
   })
 })

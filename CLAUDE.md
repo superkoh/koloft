@@ -157,8 +157,8 @@ Working principles:
   - **How to see it in the shipped app** — what to click in an installed build, and
     for a changed screen or page a screenshot you took of it; or "no way from the app".
   - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it,
-    never a check you could still run. Below high, it is not offered for merge: it
-    says what would make it high.
+    never a check you could still run. Below high, it is not offered for merge: do
+    what makes it high first.
   - **Hand-test before merging** — no, or yes: the one step only a person can do, and
     why no suite, sandbox or dev build you drove could do it.
 
@@ -249,7 +249,7 @@ Working principles:
     zsh prints "no matches found", the command never runs; the tool may
     still report success.
   - Quote a spaced path: '/a b', never /a\ b.
-  - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
+  - Never git -C another checkout: diff origin/<branch>; gh pr diff <n> takes no path.
   - Grep or read only paths you saw; else grep -rl 'word' src.
   - macOS strings -o is offsets: use > file.
   - Read stops at 25,000 tokens (~50 KB), not lines: wc -c a big file, slice it.
@@ -279,7 +279,7 @@ Working principles:
   → GitHub issues. Everything else is git history — deletion loses nothing, while a
   stale doc actively misleads whoever greps it. `docs/` therefore holds only
   documents organized around a subject that outlives any one feature (today: the
-  Claude Code, Codex and platform contract ledgers, the ADRs, and the roadmap),
+  contract ledgers, the ADRs, and the roadmap),
   never a shipped feature's design doc.
 - The roadmap is `docs/roadmap.md`: the tiered checklist, the explicit not-doing list,
   and how much to trust the order. Start any "what's next" discussion from it rather
