@@ -57,6 +57,11 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   ends, though they carry the Enter-time timestamp. Esc during it cancels it (no
   SessionStart) and puts `/compact ` back in the input box. So the session is busy from
   PreCompact to SessionStart `compact`, and no other hook says so.
+  **No SessionEnd fires around it**, measured 2026-10-24 on CC 2.1.310 (interactive pty,
+  model haiku, every hook event logging its payload; two runs, the same both times):
+  SessionStart `startup`, UserPromptSubmit, Stop, PreCompact `manual`, SubagentStop (the
+  summary writer, `agent_type: ""`), SessionStart `compact`, PostCompact `manual`, all one
+  session id; the only SessionEnd was `prompt_input_exit` at the `/exit` typed afterwards.
 - **An automatic compaction fires the same two hooks, with `trigger: "auto"`, inside the
   turn it interrupts** (2026-10-09, CC 2.1.295, interactive pty,
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW=50000`, model haiku, hooks logging their payloads; two
