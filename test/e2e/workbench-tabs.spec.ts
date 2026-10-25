@@ -449,9 +449,10 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     expect(shape.dragCancelled).toBe(true)
   })
 
-  test('WB-T26: a web tab keeps its width while the pointer is over the strip, so a click aimed before its title shortens still lands on the tab, and it narrows once the pointer leaves', async ({
+  test('WB-T26: a web tab that opens while the pointer is over the strip keeps its place and width there, so a click aimed before its title shortens still lands on the tab, and it narrows once the pointer leaves', async ({
     app,
-    page
+    page,
+    env
   }) => {
     test.setTimeout(120_000)
     const srv = await startEchoServer()
@@ -463,13 +464,18 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
         `<!doctype html><html><head><title>${longTitle}</title></head><body>late</body></html>`
       )
       await startSessionIn(page, 'ws-a')
-      await agentOpen(page, url)
+      await runIn(page, centerTerm(page), `/open-later ${url}`)
+      await expect(centerTerm(page)).toContainText('armed open', { timeout: 30_000 })
+      const files = page.locator(WORKBENCH.tabFiles)
+      await files.hover()
+
+      fs.writeFileSync(path.join(env.home, 'go-open'), '')
       const webTab = wbTabs(page).nth(1)
-      await expect(webTab.locator(WORKBENCH.tabLabel)).toHaveText(longTitle, { timeout: 20_000 })
+      await expect(webTab.locator(WORKBENCH.tabLabel)).toHaveText(longTitle, { timeout: 30_000 })
       const guest = await guestByUrl(app, '/late-title')
 
-      await wbTabs(page).nth(0).click()
-      await expect(webTab).not.toHaveClass(/\bon\b/)
+      await files.click()
+      await expect(wbActiveTab(page)).toHaveClass(/pinned/)
       const held = (await webTab.boundingBox())!
       const aim = { x: held.x + held.width / 2, y: held.y + held.height / 2 }
       await page.mouse.move(aim.x, aim.y)
@@ -478,14 +484,15 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
         document.title = t
       }, shortTitle)
       await expect(webTab.locator(WORKBENCH.tabLabel)).toHaveText(shortTitle)
-      expect((await webTab.boundingBox())!.width).toBeCloseTo(held.width, 0)
+      const titled = (await webTab.boundingBox())!
+      expect(titled.x).toBeCloseTo(held.x, 0)
+      expect(titled.width).toBeCloseTo(held.width, 0)
 
       await page.mouse.click(aim.x, aim.y)
-      await expect(webTab).toHaveClass(/\bon\b/)
+      await expect(wbActiveTab(page)).toHaveText(shortTitle)
       await expect(wbTabs(page)).toHaveCount(2)
 
-      const term = (await centerTerm(page).boundingBox())!
-      await page.mouse.move(term.x + term.width / 2, term.y + term.height / 2)
+      await centerTerm(page).hover()
       await expect.poll(async () => (await webTab.boundingBox())!.width).toBeLessThan(held.width)
     } finally {
       await srv.close()

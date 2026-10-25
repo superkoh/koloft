@@ -1,4 +1,4 @@
-import { memo, useState, type JSX } from 'react'
+import { memo, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import {
   IconClose,
   IconFile,
@@ -76,15 +76,17 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
 }): JSX.Element {
   const [drag, setDrag] = useState<{ id: string; over: number } | null>(null)
   const [heldWidths, setHeldWidths] = useState<Record<string, number> | null>(null)
+  const stripRef = useRef<HTMLDivElement>(null)
 
-  const holdTabWidths = (strip: HTMLElement): void => {
-    const widths: Record<string, number> = {}
-    for (const el of strip.querySelectorAll<HTMLElement>('.wb-tab:not(.pinned)')) {
+  useLayoutEffect(() => {
+    if (!heldWidths || !stripRef.current) return
+    let next = heldWidths
+    for (const el of stripRef.current.querySelectorAll<HTMLElement>('.wb-tab:not(.pinned)')) {
       const id = el.dataset.wbTabId
-      if (id) widths[id] = el.getBoundingClientRect().width
+      if (id && !(id in next)) next = { ...next, [id]: el.getBoundingClientRect().width }
     }
-    setHeldWidths(widths)
-  }
+    if (next !== heldWidths) setHeldWidths(next)
+  })
 
   const dropTab = (to: number): void => {
     const id = drag?.id
@@ -111,7 +113,9 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
           : t.url || t.path || undefined
       }
       data-wb-tab-id={t.id}
-      style={{ width: heldWidths?.[t.id] }}
+      style={
+        heldWidths && t.id in heldWidths ? { width: heldWidths[t.id], flexShrink: 0 } : undefined
+      }
       onMouseDown={() => onActivate(t.id)}
       draggable={t.kind !== 'files'}
       onDragStart={(e) => {
@@ -175,8 +179,9 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
 
   return (
     <div
+      ref={stripRef}
       className="wb-tabs"
-      onMouseEnter={(e) => holdTabWidths(e.currentTarget)}
+      onMouseEnter={() => setHeldWidths({})}
       onMouseLeave={() => setHeldWidths(null)}
       onWheel={(e) => {
         const strip = e.currentTarget
