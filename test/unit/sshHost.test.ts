@@ -275,6 +275,35 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
     })
 
+    // CC§9
+    it("stops looking up at the top of the machine's git repo: a repo in a trusted folder is not trusted, a worktree of a trusted repo is", async () => {
+      const node = path.join(home, '.koloft', 'node', 'bin')
+      fs.mkdirSync(node, { recursive: true })
+      fs.symlinkSync(process.execPath, path.join(node, 'node'))
+      fs.mkdirSync(path.join(home, 'plain'))
+      const claudeJson = path.join(home, '.claude.json')
+      fs.writeFileSync(
+        claudeJson,
+        JSON.stringify({ projects: { [home]: { hasTrustDialogAccepted: true } } })
+      )
+
+      expect(await machine().trustsFolder(keyed(path.join(home, 'plain')))).toBe(true)
+      expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(false)
+      await machine().trustFolder(keyed(repo))
+      expect(JSON.parse(fs.readFileSync(claudeJson, 'utf8')).projects[repo]).toEqual({
+        hasTrustDialogAccepted: true
+      })
+
+      fs.writeFileSync(
+        claudeJson,
+        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } })
+      )
+      git('worktree', 'add', '-q', '-b', 'worktree-w', path.join(repo, '.claude', 'worktrees', 'w'))
+      expect(
+        await machine().trustsFolder(keyed(path.join(repo, '.claude', 'worktrees', 'w')))
+      ).toBe(true)
+    })
+
     it("offers the machine's skills to a scheduled task: the workspace's, then the machine home's (BB-M16)", async () => {
       const put = (file: string, text: string): void => {
         fs.mkdirSync(path.dirname(file), { recursive: true })

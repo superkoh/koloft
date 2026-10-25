@@ -1552,7 +1552,21 @@ other bullets of §9 were not re-measured on this build.
   automated that launches CC in a folder for the first time therefore stalls on a
   question. The answer is recorded in `~/.claude.json` as
   `projects[<absolute path>].hasTrustDialogAccepted: true` (key name read off the
-  2.1.263 binary with `strings`, 2026-09-06), and ancestors count. `claude --help`
+  2.1.263 binary with `strings`, 2026-09-06), and ancestors count — **but only up to the
+  top of the git repo the folder is in.** Outside any git repo every ancestor counts;
+  inside one, only the folder and its ancestors up to and including the repo's top
+  folder; in a linked worktree (`.git` is a file), the top folder is the main repo's
+  (the folder above the git dir its `gitdir:` entry's `commondir` names). So a repo
+  under a trusted folder asks again: a folder that sat quietly under a trusted parent
+  asked for trust on the next launch after `git init` in it, and stopped asking once
+  `.git` was removed; with only the repo trusted, neither a subfolder nor
+  `.claude/worktrees/w` asked. Measured 2026-10-24 on CC 2.1.310: a temp `HOME` with a
+  `.claude.json` of `hasCompletedOnboarding: true` plus the trust entries, the binary
+  run in a pty (`script -q`) under `perl -e 'alarm 8; exec @ARGV'`, looking for
+  `Quick safety check` in what it drew. The same binary's code (`strings`) walks up and
+  stops at the repo top; it also checks the folder's own key first, and gives no
+  ancestor's trust to a folder outside the repo top it found (a worktree placed outside
+  its main repo) — read, not run. `claude --help`
   (2.1.281) adds that `-p`, or a stdout that is not a TTY, skips the trust dialog.
   **An older `<config dir>/.config.json` can stand in for `~/.claude.json`** (the config
   dir is `CLAUDE_CONFIG_DIR`, else `~/.claude`): through 2.1.296 its mere existence made

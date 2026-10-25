@@ -17,12 +17,14 @@ const doc =
 describe('isTrustedByClaude', () => {
   it('says yes for the folder itself', () => {
     const read = doc({ '/Users/me/repo': { hasTrustDialogAccepted: true } })
-    expect(isTrustedByClaude(read, '/Users/me/repo')).toBe(true)
+    expect(isTrustedByClaude(read, '/Users/me/repo', null)).toBe(true)
   })
 
   it('says yes when an ancestor was trusted', () => {
     const read = doc({ '/Users/me/repo': { hasTrustDialogAccepted: true } })
-    expect(isTrustedByClaude(read, '/Users/me/repo/.claude/worktrees/job-260906-0900')).toBe(true)
+    expect(isTrustedByClaude(read, '/Users/me/repo/.claude/worktrees/job-260906-0900', null)).toBe(
+      true
+    )
   })
 
   it('says no for a folder nobody answered for, and for one answered with false', () => {
@@ -30,16 +32,68 @@ describe('isTrustedByClaude', () => {
       '/Users/me/other': { hasTrustDialogAccepted: true },
       '/Users/me/repo': { hasTrustDialogAccepted: false }
     })
-    expect(isTrustedByClaude(read, '/Users/me/repo')).toBe(false)
-    expect(isTrustedByClaude(read, '/Users/me/fresh')).toBe(false)
+    expect(isTrustedByClaude(read, '/Users/me/repo', null)).toBe(false)
+    expect(isTrustedByClaude(read, '/Users/me/fresh', null)).toBe(false)
   })
 
   it('says no when the file cannot be read', () => {
     const read = (): unknown => {
       throw new Error('ENOENT')
     }
-    expect(isTrustedByClaude(read, '/Users/me/repo')).toBe(false)
-    expect(isTrustedByClaude(() => null, '/Users/me/repo')).toBe(false)
+    expect(isTrustedByClaude(read, '/Users/me/repo', null)).toBe(false)
+    expect(isTrustedByClaude(() => null, '/Users/me/repo', null)).toBe(false)
+  })
+})
+
+// CC§9
+describe('claudeTrustsFolder stops looking up at the top of the git repo', () => {
+  const layout = (): { tmp: string; file: string; repo: string; worktree: string } => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-trust-')))
+    const repo = path.join(tmp, 'repo')
+    const admin = path.join(repo, '.git', 'worktrees', 'w')
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w')
+    fs.mkdirSync(admin, { recursive: true })
+    fs.mkdirSync(path.join(repo, 'sub'))
+    fs.mkdirSync(path.join(tmp, 'plain', 'sub'), { recursive: true })
+    fs.mkdirSync(worktree, { recursive: true })
+    fs.writeFileSync(path.join(admin, 'commondir'), '../..\n')
+    fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${admin}\n`)
+    return { tmp, file: path.join(tmp, '.claude.json'), repo, worktree }
+  }
+  const trustOnly = (file: string, dir: string): void =>
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ projects: { [dir]: { hasTrustDialogAccepted: true } } })
+    )
+
+  it('says no for a repo inside a trusted folder, and acceptClaudeTrust then records the repo', () => {
+    const { tmp, file, repo } = layout()
+    trustOnly(file, tmp)
+
+    expect(claudeTrustsFolder(file, repo)).toBe(false)
+    expect(claudeTrustsFolder(file, path.join(repo, 'sub'))).toBe(false)
+    acceptClaudeTrust(file, repo)
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).projects[repo]).toEqual({
+      hasTrustDialogAccepted: true
+    })
+    fs.rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('says yes for a plain folder inside a trusted folder', () => {
+    const { tmp, file } = layout()
+    trustOnly(file, tmp)
+
+    expect(claudeTrustsFolder(file, path.join(tmp, 'plain', 'sub'))).toBe(true)
+    fs.rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('says yes for a subfolder of a trusted repo and for a worktree under it', () => {
+    const { tmp, file, repo, worktree } = layout()
+    trustOnly(file, repo)
+
+    expect(claudeTrustsFolder(file, path.join(repo, 'sub'))).toBe(true)
+    expect(claudeTrustsFolder(file, worktree)).toBe(true)
+    fs.rmSync(tmp, { recursive: true, force: true })
   })
 })
 

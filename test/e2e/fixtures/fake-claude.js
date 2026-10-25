@@ -176,7 +176,7 @@ function seededTrustRefuses(dir) {
   }
   for (let p = fs.realpathSync(dir); ; p = path.dirname(p)) {
     if (projects[p]?.hasTrustDialogAccepted === true) return false
-    if (path.dirname(p) === p) return true
+    if (fs.existsSync(path.join(p, '.git')) || path.dirname(p) === p) return true
   }
 }
 

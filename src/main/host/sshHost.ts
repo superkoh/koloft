@@ -170,28 +170,44 @@ export function machineClaudeArgs(
   }
 }
 
-const TRUST_CWD_JS = [
+const CLAUDE_TRUST_JS = [
   'const fs=require("fs"),path=require("path");',
   'const [f,d]=process.argv.slice(1);',
+  'let top=null;',
+  'for(let x=d;;x=path.dirname(x)){',
+  'let s;try{s=fs.lstatSync(path.join(x,".git"))}catch(e){}',
+  'if(s&&s.isDirectory()){top=x;break}',
+  'if(s&&s.isFile()){top=x;try{',
+  'const l=fs.readFileSync(path.join(x,".git"),"utf8").split("\\n").find((l)=>l.startsWith("gitdir:"));',
+  'const g=path.resolve(x,l.slice(7).trim());',
+  'if(path.basename(path.dirname(g))==="worktrees")top=fs.realpathSync(path.dirname(path.dirname(path.dirname(g))))',
+  '}catch(e){}break}',
+  'if(path.dirname(x)===x)break}',
+  'const trusted=(p)=>{',
+  'const ok=(x)=>p[x]&&p[x].hasTrustDialogAccepted===true;',
+  'if(ok(d))return true;',
+  'if(top!==null&&!d.startsWith(top+"/"))return false;',
+  'for(let x=path.dirname(d);;x=path.dirname(x)){',
+  'if(ok(x))return true;',
+  'if(x===top||path.dirname(x)===x)return false}};'
+].join('')
+
+const TRUST_CWD_JS = [
+  CLAUDE_TRUST_JS,
   'let j={};',
   'try{j=JSON.parse(fs.readFileSync(f,"utf8"))}catch(e){if(e.code!=="ENOENT")process.exit(0)}',
   'const p=(j.projects=j.projects||{});',
-  'for(let x=d;;x=path.dirname(x)){',
-  'if(p[x]&&p[x].hasTrustDialogAccepted===true)process.exit(0);',
-  'if(path.dirname(x)===x)break}',
+  'if(trusted(p))process.exit(0);',
   'p[d]=Object.assign({},p[d],{hasTrustDialogAccepted:true});',
   'fs.writeFileSync(f+".koloft",JSON.stringify(j,null,2),{mode:0o600});',
   'fs.renameSync(f+".koloft",f)'
 ].join('')
 
 const TRUSTED_JS = [
-  'const fs=require("fs"),path=require("path");',
-  'const [f,d]=process.argv.slice(1);',
+  CLAUDE_TRUST_JS,
   'let p={};',
   'try{p=JSON.parse(fs.readFileSync(f,"utf8")).projects||{}}catch(e){}',
-  'for(let x=d;;x=path.dirname(x)){',
-  'if(p[x]&&p[x].hasTrustDialogAccepted===true)process.exit(0);',
-  'if(path.dirname(x)===x)process.exit(1)}'
+  'process.exit(trusted(p)?0:1)'
 ].join('')
 
 const NOT_TRUSTED = 1
