@@ -80,23 +80,24 @@ interface PullsOfRepo {
   pulls: TodoPulls
 }
 
-type SessionGroup = 'asking' | 'turnDone' | 'workLeft' | 'closed'
+type SessionGroup = 'asking' | 'turnDone' | 'idle' | 'workLeft' | 'closed'
 
 const GROUP_TITLES: Record<SessionGroup, string> = {
   asking: 'Asking the owner a question',
   turnDone: 'Open, finished its turn',
+  idle: 'Open, idle: its tab is not running (asleep, or on another machine with no tab here, where Koloft cannot see whether it works; read its last turn)',
   workLeft: 'Closed, with work left in its worktree',
   closed: 'Closed, nothing left in a worktree (ask about these as one batch)'
 }
 
-function isBusy({ live, row }: PlacedRow, asking: (tabId: string) => boolean): boolean {
-  if (!live) return row.running
-  return live.status === 'working' && !asking(live.tabId)
+function isBusy({ live }: PlacedRow, asking: (tabId: string) => boolean): boolean {
+  return !!live && live.status === 'working' && !asking(live.tabId)
 }
 
 function groupOf(c: Candidate, asking: (tabId: string) => boolean): SessionGroup {
-  const live = c.placed.live
+  const { live, row } = c.placed
   if (live) return asking(live.tabId) || live.status === 'approval' ? 'asking' : 'turnDone'
+  if (row.running) return 'idle'
   return c.left.length ? 'workLeft' : 'closed'
 }
 

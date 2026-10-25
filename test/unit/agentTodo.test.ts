@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { todoVerb, TODO_ONLY_FOR_THE_BUTLER, type TodoVerbDeps } from '../../src/main/agentTodo'
 import type { TodoPull, TodoPulls } from '../../src/main/github'
 import type { McpServer } from '../../src/main/mcpServers'
+import { formatRemoteKey } from '../../src/shared/remoteKey'
 import type { BackendId, SessionInfo, SessionRow, WorkspaceRows } from '../../src/shared/types'
 
 const NOW = Date.parse('2026-10-22T12:00:00Z')
@@ -9,6 +10,7 @@ const DAY = 86_400_000
 const SHOP = '/work/shop'
 const SHOP_COPY = '/work/shop-2'
 const NOTES_WS = '/work/notes'
+const REMOTE = formatRemoteKey('box', '/srv/app')
 const BUTLER_FOLDER = '/data/conductors/global'
 const BUTLER_TAB = 'tab-butler'
 
@@ -155,24 +157,38 @@ describe('koloft todo', () => {
     })
   })
 
-  it('prints the way to sort out to-dos, then the sessions waiting on the owner by kind, leaving out working ones and the butler’s own folder; only an idle worktree session is checked for work left', async () => {
+  it('prints the way to sort out to-dos, then the sessions waiting on the owner by kind, leaving out working ones and the butler’s own folder; an open session with no live tab is listed as idle, never taken for working; only an idle local worktree session is checked for work left', async () => {
     const asking = row('asking', { running: true, mtime: NOW - DAY })
     const done = row('done', { running: true, backendId: 'codex' })
     const working = row('working', { running: true, cwd: `${SHOP}/.claude/worktrees/busy` })
+    const asleep = row('asleep', {
+      running: true,
+      backendId: 'muse',
+      cwd: `${SHOP}/.claude/worktrees/nap`
+    })
     const dirty = row('dirty', { cwd: `${SHOP}/.claude/worktrees/fix`, mtime: NOW - 3 * DAY })
     const old = row('old', { mtime: NOW - 40 * DAY })
     const helper = row('helper', { cwd: BUTLER_FOLDER })
+    const onBox = row('on-box', { running: true, backendId: 'agy', cwd: '/srv/app' })
     const { run, checked } = harness({
-      sidebar: sidebarOf([[SHOP, [asking, done, working, dirty, old]]], [helper]),
+      sidebar: sidebarOf(
+        [
+          [SHOP, [asking, done, working, asleep, dirty, old]],
+          [REMOTE, [onBox]]
+        ],
+        [helper]
+      ),
       sessions: [live(asking, 'waiting'), live(done, 'idle'), live(working, 'working')],
       asking: ['tab-asking'],
       worktrees: {
         [SHOP]: [
           { dir: `${SHOP}/.claude/worktrees/busy`, branch: 'busy' },
+          { dir: `${SHOP}/.claude/worktrees/nap`, branch: 'nap' },
           { dir: `${SHOP}/.claude/worktrees/fix`, branch: 'fix' }
         ]
       },
       left: {
+        asleep: ['Changes not committed:\n M c.ts'],
         dirty: [
           'Changes not committed:\n M a.ts\n?? b.ts',
           'Commits on no other branch and no remote branch:\nabc1 fix'
@@ -190,24 +206,29 @@ describe('koloft todo', () => {
     expect(sessions).toMatch(
       /Closed, nothing left in a worktree .*\n- "old title" .*last active 40 days ago · id: old/
     )
+    expect(sessions).toMatch(
+      /Open, idle: its tab is not running .*\n- "asleep title" · Muse .* · branch: nap · Changes not committed: 1\n- "on-box title" · Antigravity · .* · box · /
+    )
     expect(sessions).not.toContain('working title')
     expect(sessions).not.toContain('helper title')
-    expect(checked).toEqual(['dirty'])
+    expect(checked.sort()).toEqual(['asleep', 'dirty'])
   })
 
   it('lists the owner’s open pull requests with what decides them; one on a listed worktree session’s branch goes with that session, one on a working session’s stays here and says so, the others are only counted, and the issues pull requests close are named', async () => {
     const fixing = row('fixing', { running: true, cwd: `${SHOP}/.claude/worktrees/fix-login` })
     const busy = row('busy', { running: true, cwd: `${SHOP}/.claude/worktrees/busy` })
+    const asleep = row('asleep', { running: true, cwd: `${SHOP}/.claude/worktrees/refine` })
     const { run } = harness({
       sidebar: sidebarOf([
-        [SHOP, [fixing, busy]],
+        [SHOP, [fixing, busy, asleep]],
         [SHOP_COPY, []]
       ]),
       sessions: [live(fixing, 'waiting'), live(busy, 'working')],
       worktrees: {
         [SHOP]: [
           { dir: `${SHOP}/.claude/worktrees/fix-login`, branch: 'fix-login' },
-          { dir: `${SHOP}/.claude/worktrees/busy`, branch: 'busy' }
+          { dir: `${SHOP}/.claude/worktrees/busy`, branch: 'busy' },
+          { dir: `${SHOP}/.claude/worktrees/refine`, branch: 'refine' }
         ]
       },
       repos: { [SHOP]: 'octo/shop', [SHOP_COPY]: 'octo/shop' },
@@ -220,7 +241,8 @@ describe('koloft todo', () => {
           pull(42, { author: 'bob', reviewers: ['alice'], checks: 'failing', files: 3 }),
           pull(43, { author: 'bob' }),
           pull(44, { branch: 'fix-login' }),
-          pull(45, { branch: 'busy' })
+          pull(45, { branch: 'busy' }),
+          pull(46, { branch: 'refine' })
         ]
       }
     })
@@ -228,6 +250,10 @@ describe('koloft todo', () => {
     expect(section(text, 'SESSIONS')).toMatch(
       /"fixing title" .* · branch: fix-login · its pull request: #44 /
     )
+    expect(section(text, 'SESSIONS')).toMatch(
+      /"asleep title" .* · branch: refine · its pull request: #46 /
+    )
+    expect(section(text, 'PULL REQUESTS')).not.toMatch(/- #46/)
     const pulls = section(text, 'PULL REQUESTS')
     expect(pulls.match(/octo\/shop \(/g)).toHaveLength(1)
     expect(pulls).toContain(
