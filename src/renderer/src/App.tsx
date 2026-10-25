@@ -156,7 +156,7 @@ import {
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
-const CENTER_TERMINAL_MAX_COLS = 120
+const CENTER_TERMINAL_MAX_COLS = 140
 
 const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch arguments'
 
