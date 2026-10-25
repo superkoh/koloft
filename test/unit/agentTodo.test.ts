@@ -68,7 +68,7 @@ interface World {
   asleep?: string[]
   left?: Record<string, string[] | null>
   checkFails?: string[]
-  asksMergedFor?: Record<string, string>
+  asksMerged?: string[]
   merged?: Map<string, string[]> | null
   mergedOne?: Record<string, string[]>
   worktrees?: Record<string, { dir: string; branch?: string }[]>
@@ -98,8 +98,7 @@ function harness(world: World) {
     workLeft: async (r, merged) => {
       checked.push(r.id)
       if (world.checkFails?.includes(r.id)) throw new Error('git timed out')
-      const branch = world.asksMergedFor?.[r.id]
-      if (branch) mergedAnswers[r.id] = await merged(r.cwd, branch)
+      if (world.asksMerged?.includes(r.id)) mergedAnswers[r.id] = await merged(r.cwd, r.id)
       return world.left && r.id in world.left ? world.left[r.id] : []
     },
     worktrees: async (ws) => world.worktrees?.[ws] ?? [],
@@ -299,7 +298,7 @@ describe('koloft todo', () => {
         ],
         [SHOP_COPY]: [{ dir: tree('copied', SHOP_COPY), branch: 'copied' }]
       },
-      asksMergedFor: { shipped: 'shipped', older: 'older', copied: 'copied' },
+      asksMerged: ['shipped', 'older', 'copied'],
       merged: new Map([
         ['shipped', ['aaa1']],
         ['copied', ['ccc3']]
@@ -318,7 +317,7 @@ describe('koloft todo', () => {
       sidebar: sidebarOf([[SHOP, [stray]]]),
       sessions: [],
       worktrees: { [SHOP]: [{ dir: `${SHOP}/.claude/worktrees/stray`, branch: 'stray' }] },
-      asksMergedFor: { stray: 'stray' },
+      asksMerged: ['stray'],
       merged: null,
       left: {
         stray: [`Commits on no other branch and no remote branch:\nddd4 work\n${GITHUB_NOT_ASKED}`]

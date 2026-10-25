@@ -464,7 +464,12 @@ describe('GithubLookup.mergedHeads', () => {
   it('names the head commit of each merged pull request from the branch', async () => {
     const asked: string[][] = []
     const gh = ghAnswering(
-      { stdout: JSON.stringify([{ headRefOid: SHA }, { headRefOid: 7 }]) },
+      {
+        stdout: JSON.stringify([
+          { headRefName: 'fix/login', headRefOid: SHA },
+          { headRefName: 'fix/login', headRefOid: 7 }
+        ])
+      },
       asked
     )
     expect(await make({ gh }).mergedHeads(root, 'fix/login')).toEqual([SHA])

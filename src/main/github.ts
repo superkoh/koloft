@@ -429,24 +429,17 @@ export class GithubLookup {
   }
 
   async mergedHeads(root: string, branch: string): Promise<string[] | null> {
-    const prs = await this.mergedPulls(root, ['--head', branch])
-    return prs && prs.flatMap((p) => (typeof p?.headRefOid === 'string' ? [p.headRefOid] : []))
-  }
-
-  async mergedHeadsByBranch(root: string): Promise<Map<string, string[]> | null> {
-    const prs = await this.mergedPulls(root, ['--limit', String(MERGED_PULLS_IN_ONE_PAGE)])
-    if (!prs) return null
-    const heads = new Map<string, string[]>()
-    for (const p of prs)
-      if (typeof p?.headRefName === 'string' && typeof p?.headRefOid === 'string')
-        heads.set(p.headRefName, [...(heads.get(p.headRefName) ?? []), p.headRefOid])
-    return heads
+    const heads = await this.mergedHeadsByBranch(root, ['--head', branch])
+    return heads && (heads.get(branch) ?? [])
   }
 
   // PLATFORM§32
-  private async mergedPulls(root: string, by: string[]): Promise<ReturnType<typeof ghJsonArray>> {
+  async mergedHeadsByBranch(
+    root: string,
+    by = ['--limit', String(MERGED_PULLS_IN_ONE_PAGE)]
+  ): Promise<Map<string, string[]> | null> {
     const repo = await this.repoFor(root)
-    if (!repo) return []
+    if (!repo) return new Map()
     const gh = this.ghFor(root)
     if (!gh) return null
     const r = await gh([
@@ -460,7 +453,13 @@ export class GithubLookup {
       '--json',
       'headRefName,headRefOid'
     ])
-    return r.code === 0 ? ghJsonArray(r.stdout) : null
+    const prs = r.code === 0 ? ghJsonArray(r.stdout) : null
+    if (!prs) return null
+    const heads = new Map<string, string[]>()
+    for (const p of prs)
+      if (typeof p?.headRefName === 'string' && typeof p?.headRefOid === 'string')
+        heads.set(p.headRefName, [...(heads.get(p.headRefName) ?? []), p.headRefOid])
+    return heads
   }
 
   private async repoFor(root: string): Promise<GithubRepo | null> {

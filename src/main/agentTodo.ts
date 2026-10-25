@@ -294,9 +294,10 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
     trees[sidebar.findIndex((w) => w.workspace.path === p.workspace)]?.find(
       (t) => t.dir === p.row.cwd
     )
+  const repoOf = new Map(workspaces.map((w) => [w.path, w.repo]))
   const mergedOfRepo = new Map<string, Promise<Map<string, string[]> | null>>()
   const mergedIn = (workspace: string): MergedHeads => {
-    const key = workspaces.find((w) => w.path === workspace)?.repo ?? workspace
+    const key = repoOf.get(workspace) ?? workspace
     return async (dir, branch) => {
       const heads = mergedOfRepo.get(key) ?? d.mergedHeadsByBranch(workspace).catch(() => null)
       mergedOfRepo.set(key, heads)
@@ -331,7 +332,6 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
       }
     })
   ])
-  const repoOf = new Map(workspaces.map((w) => [w.path, w.repo]))
   const withSession = new Set<string>()
   const workingSession = new Map<string, string>()
   const groups = new Map<SessionGroup, string[]>()
