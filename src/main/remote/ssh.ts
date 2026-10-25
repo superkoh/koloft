@@ -1,4 +1,4 @@
-import { execFile } from 'child_process'
+import { execFile, spawn } from 'child_process'
 import fs from 'fs'
 
 // PLATFORM§3
@@ -136,6 +136,26 @@ export function runSsh(
     ...r,
     stdout: r.stdout.toString('utf8')
   }))
+}
+
+export function runMasterCommand(
+  host: string,
+  op: string[],
+  opts: { controlDir: string }
+): Promise<RunResult> {
+  return run('ssh', [...sshOptions(opts.controlDir, true), ...op, host], 10_000)
+}
+
+// PLATFORM§41
+export function masterCommandOutlivingKoloft(
+  host: string,
+  op: string[],
+  opts: { controlDir: string }
+): void {
+  spawn('ssh', [...sshOptions(opts.controlDir, true), ...op, host], {
+    detached: true,
+    stdio: 'ignore'
+  }).unref()
 }
 
 export function runSshBytes(

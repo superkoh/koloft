@@ -467,7 +467,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(claudeEnvOf(spec()).KOLOFT_PORT_OFFSET).toBeUndefined()
   })
 
-  it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package and finds the machine's koloft first on its PATH, told which tab it runs in", () => {
+  it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package and finds the machine's playwright-cli, then its koloft, first on its PATH, told which tab it runs in", () => {
     const b = box(spec({ agentPlugin: true }))
     expect(b.run().status).toBe(0)
     const m = `${b.home}/.koloft/m-0000000000000000`
@@ -479,11 +479,11 @@ describe('U-TAB-*: the tab script on the machine', () => {
       '--append-system-prompt-file',
       `${m}/agent-plugin/koloft-prompt.md`
     ])
-    expect(b.env().PATH.split(':')[0]).toBe(`${m}/bin/`)
+    expect(b.env().PATH.split(':').slice(0, 2)).toEqual([`${m}/claude-bin/`, `${m}/bin/`])
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
   })
 
-  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper, and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
+  it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper with no playwright-cli of Koloft's on its PATH (only Claude Code tabs on a machine drive the Workbench browser), and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
     const s = spec({
       tmuxName: 'm-T',
       program: {
@@ -528,6 +528,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
       TBH_CREDENTIAL_BACKEND: 'file',
       TBH_MANAGED_HOOKS_PATH: `${b.home}/.koloft/tabs/T.hooks.json`
     })
+    expect(b.env().PATH).not.toContain('claude-bin')
     expect(fs.readFileSync(path.join(account, 'muse', 'auth.json'), 'utf8')).toBe(
       '{"providers":{}}'
     )

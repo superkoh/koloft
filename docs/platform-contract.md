@@ -512,6 +512,21 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `-9 ERR_UNEXPECTED`, while without the custom handler it fails with
   `-6 ERR_FILE_NOT_FOUND`. A `Response` with status 404 and an HTML body is drawn as a
   page, with no `did-fail-load`.
+- **The partition's `webRequest.onBeforeRequest` sees every `file://` load of a
+  guest, with that guest's `webContentsId`** — a main-frame load (address bar, CDP
+  `Page.navigate`, back/forward), an `<iframe>`, a `fetch` — even with a custom `file`
+  handler installed, and `cancel` stops it before the handler runs. The handler's own
+  `ses.fetch` shows up as a second request with no `webContentsId`. A history step
+  (`goForward`) to a `file://` entry is a fresh request, not a back/forward-cache
+  restore (seen once on 2026-10-25; no test holds it). An `http://` main-frame load started by the page itself (`location.href = …`)
+  and a `fetch` reach it the same way, and answering the callback later, after an async
+  DNS lookup, still holds the load until then. (Measured 2026-10-25, Electron's Chromium
+  in the e2e suite: E-RW-41 fails with either cancel removed.)
+- **No listener that can still cancel a request is told the IP it goes to**: the details
+  of `onBeforeRequest`, `onBeforeSendHeaders` and `onHeadersReceived` carry no `ip`
+  (read in Electron 43.8.1's `electron.d.ts`), and Chromium resolves the name on its own.
+  A host name can only be judged by a separate DNS lookup made first, so a name whose
+  answer changes between the two lookups (DNS rebinding) gets past such a check.
 - **Chromium fetches `/favicon.ico` after every navigation**, so a server's request
   count sees one extra hit per page load.
 - **The built-in PDF viewer (PDFium) keeps its page position to itself**: `scrollX` /
@@ -1431,6 +1446,35 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   held, the 15th printed that line and then `Authenticated … using "publickey"`; with
   10 held, the 11th still rode the master, so the real limit there was not pinned
   down.)
+- **A reverse forward can be added to a live ControlMaster.** `ssh -O forward -R
+  0:127.0.0.1:<port> host` prints the port sshd picked on **stdout** and exits 0; the
+  machine listens on its 127.0.0.1 and ::1 only, and normal commands keep riding the
+  master. `ssh -O check host` prints `Master running (pid=N)` on **stderr**. Facts
+  around it:
+  - `-O cancel -R` must repeat the spec exactly as asked (`0:127.0.0.1:<port>`); with
+    the port sshd picked it prints `port not forwarded` and still **exits 0**, and the
+    forward stays.
+  - When the master goes the forward goes, but a tmux session on the machine stays. A
+    new master can ask for the same machine port by number again — yet asking for a
+    number another program already holds on 127.0.0.1 still exits 0 (sshd got ::1
+    only), and a client to that port reaches the other program. Asking for port `0`
+    every time avoids that.
+  - A port already forwarded on the master cannot be asked for twice (exit 255).
+  - With `AllowTcpForwarding no` on the server, `-O forward` exits 255 with "remote
+    port forwarding failed for listen port 0" and the master stays up for everything
+    else.
+  - Any other account on the machine can connect to the forwarded port.
+  - On Linux the forward's 127.0.0.1 listener shows in `/proc/net/tcp` (state `0A`) with
+    the login user's uid, so a program can tell it from a listener another account
+    opened on the same port after the forward went (measured 2026-10-25, same lab:
+    `playwright-cli` on the machine checked it before connecting, e2e E-SSH-28).
+  - A WebSocket from the machine through it reached a server on the Mac (an 8 MiB reply
+    in 37 ms), and playwright-core `connectOverCDP` and `@playwright/cli` 0.1.22 run on
+    the machine's node 22 drove a headless Chrome on the Mac through it.
+
+  (2026-10-23, OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2 on Debian bookworm through a
+  ProxyJump bastion, the master opened with Koloft's own ssh options, in the e2e Docker
+  ssh lab.)
 
 ## §34 rsync
 

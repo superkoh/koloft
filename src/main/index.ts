@@ -136,10 +136,14 @@ import {
   ensureControlDir,
   rsyncPull,
   backgroundOptions,
+  masterCommandOutlivingKoloft,
+  runMasterCommand,
   runSsh,
   runSshBytes,
   sshOptions
 } from './remote/ssh'
+import { BrowserTunnels } from './remote/browserTunnel'
+import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
 import {
   ENSURE_CODEX_SH,
   ENSURE_SH,
@@ -156,6 +160,7 @@ import {
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   SESSION_BIN_DIR,
+  CLAUDE_BIN_DIR,
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
@@ -163,6 +168,7 @@ import {
   type MachinePackage
 } from './remote/launch'
 import {
+  browserForwardFile,
   machinePackageBase,
   mirrorAgyGemini,
   mirrorHookDir,
@@ -318,6 +324,12 @@ import {
   cdpEnvDir,
   relayClientEvicted,
   relayEndpoint,
+  relayEndpointOnMachine,
+  renewRelayEndpointOnMachine,
+  guestDrivenFromAnotherMachine,
+  originDrivenFromAnotherMachine,
+  notePageOpenedForAMachine,
+  openForMachine,
   relayStripChanged,
   relayTabClosed,
   relayTabRebound,
@@ -340,6 +352,7 @@ import {
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
+import { reachesThisMacsServer } from './thisMacsServers'
 import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
@@ -1120,6 +1133,15 @@ let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
+const browserTunnels = new BrowserTunnels({
+  master: (host, op) => runMasterCommand(host, op, { controlDir: remoteControlDir }),
+  masterOutlivingKoloft: (host, op) =>
+    masterCommandOutlivingKoloft(host, op, { controlDir: remoteControlDir }),
+  run: (host, cmd) => runSsh(host, cmd, { controlDir: remoteControlDir }),
+  forwardFile: (host) => browserForwardFile(app.getPath('userData'), host),
+  endpointOnMachine: relayEndpointOnMachine,
+  renewEndpointOnMachine: renewRelayEndpointOnMachine
+})
 let loginEnv: Promise<void> | null = null
 process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
 
@@ -1150,6 +1172,7 @@ function machinePackage(): MachinePackage {
     [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
+    [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
     [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH,
@@ -3371,7 +3394,14 @@ app.whenReady().then(() => {
     onHooksPulled: (host) => {
       for (const s of storedSessions()) s.followMirrors?.(host)
     },
-    onConnected: (host) => void freshness?.machineUp(host)
+    onConnected: (host) => void freshness?.machineUp(host),
+    onConnectedRound: (host) =>
+      void browserTunnels.sync(
+        host,
+        ptyTabIds()
+          .filter((id) => remoteHostOfTab(id) === host)
+          .map((tabId) => ({ tabId, endpoint: relayEndpoint(tabId) }))
+      )
   })
   ptyMgr.on('typed', (tabId: string) => {
     const host = machineOfTab(tabId)
@@ -3577,7 +3607,10 @@ app.on('before-quit', (e) => {
     approveQuit()
   }
   clearQuitFallback()
-  if (!quitCommitted) rememberOpenTabs()
+  if (!quitCommitted) {
+    rememberOpenTabs()
+    browserTunnels.cancelOnQuit()
+  }
   quitCommitted = true
   if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
     e.preventDefault()
@@ -4054,6 +4087,10 @@ function relayDeps(): RelayDeps {
 
 function openAsDrivingAgentsTab(from: WebContents, url: string): boolean {
   const driver = sessionDrivingGuest(from.id)
+  if (guestDrivenFromAnotherMachine(from.id)) {
+    if (driver) void openForMachine(driver, url, relayDeps().create).catch(() => {})
+    return true
+  }
   if (driver) void cdpOp('create', driver, { url })
   return driver !== null
 }
@@ -4067,6 +4104,7 @@ function routeGuestPopup(url: string, from: WebContents): void {
     return
   }
   const decision = routeFor(url, 'user')
+  if (decision.dest !== 'browser' && guestDrivenFromAnotherMachine(from.id)) return
   if (decision.dest === 'browser' && openAsDrivingAgentsTab(from, decision.target)) return
   const tabId = tabOwningGuest(from)
   if (!tabId) return
@@ -4224,9 +4262,21 @@ function setupBrowserPartition(): void {
     type: 'frame',
     filePath: path.join(__dirname, '../preload/guest.js')
   })
-  // PLATFORM§39
+  // PLATFORM§39 PLATFORM§12
   ses.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) })
+    if (webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin))
+      return callback({ cancel: true })
+    const guest = details.webContentsId
+    const fenced =
+      guest !== undefined
+        ? guestDrivenFromAnotherMachine(guest)
+        : details.initiatorOrigin !== undefined &&
+          originDrivenFromAnotherMachine(details.initiatorOrigin)
+    if (!fenced) return callback({})
+    if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')
+      notePageOpenedForAMachine(details.url)
+    if (details.url.startsWith('file:')) return callback({ cancel: true })
+    void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
   })
   // PLATFORM§13
   ses.webRequest.onHeadersReceived((details, callback) => {

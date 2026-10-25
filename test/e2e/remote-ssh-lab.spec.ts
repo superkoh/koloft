@@ -35,9 +35,12 @@ import {
   waitPanelAttached
 } from './helpers/workbench'
 import { defaultControlDir } from '../../src/main/remote/ssh'
+import { BROWSER } from './helpers/browser'
+import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
 import {
   addWorkspace,
+  agentShell,
   centerTerm,
   closeMenu,
   FAKE_SESSION_TITLE,
@@ -84,6 +87,7 @@ import {
 } from './helpers/docker'
 
 const BACKGROUND_CONNECT_MS = 45_000
+const LAB_PAGE_HOST_THAT_IS_NOT_THE_MAC = 'lab-page.test'
 const TEN_SYNC_ROUNDS_WITH_TABS_OPEN_MS = 20_000
 const LOGINS_OF_THE_FIRST_FULL_ROUND_SETTLE_MS = 5000
 const README = (user: string): string => `# Lab project\n\nkoloft-ssh-lab marker for ${user}.\n`
@@ -595,6 +599,42 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         })
       }
     })
+  })
+
+  // PLATFORM§33
+  test('E-SSH-28: a Claude Code session on a machine behind the jump host drives its Workbench browser with the playwright-cli Koloft fetched there, through an ssh -R on the tab’s connection, and the address goes once browser control is switched off', async ({
+    env
+  }) => {
+    const server = await startEchoServer()
+    env.extraArgs.push(hostResolverSwitch([LAB_PAGE_HOST_THAT_IS_NOT_THE_MAC]))
+    try {
+      await withLab(env, async ({ page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await startSessionIn(page, 'kt-key', { remote: true })
+        const tabId = (await wsRows(page, 'kt-key').first().getAttribute('data-tab-id'))!
+        const address = (): string =>
+          runOnTarget(lab, 'kuser', `cat .koloft/tabs/${tabId}.cdp 2>/dev/null; true`)
+        await expect
+          .poll(address, { timeout: BACKGROUND_CONNECT_MS })
+          .toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[0-9a-f]{32}$/)
+
+        const title = `lab-${Date.now().toString(36)}`
+        const url = server
+          .page('/lab', `<title>${title}</title><body>from the lab</body>`)
+          .replace('127.0.0.1', LAB_PAGE_HOST_THAT_IS_NOT_THE_MAC)
+        const run = agentShell(page, tabId, KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS)
+        expect((await run(`playwright-cli open ${url}`)).replace(/\n/g, '')).toContain(
+          `Page Title: ${title}`
+        )
+        await expect(page.locator(BROWSER.drivenTab)).toHaveCount(1, { timeout: 30_000 })
+        await run('playwright-cli close')
+
+        await page.evaluate(() => window.api.settings.set({ browserControl: false }))
+        await expect.poll(address, { timeout: BACKGROUND_CONNECT_MS }).toBe('')
+      })
+    } finally {
+      await server.close()
+    }
   })
 
   test('E-SSH-16: koloft session new -w, run inside a session on the machine, starts a child session there in a worktree of its own, listed under the session that started it, whose reply-language hook starts from the owner’s last words, not from its task', async ({

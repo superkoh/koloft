@@ -63,6 +63,7 @@ export interface RemoteSyncDeps {
   onLeft?(host: string, sessionIds: string[]): void
   onHooksPulled?(host: string): void
   onConnected?(host: string): void
+  onConnectedRound?(host: string): void
 }
 
 interface HostState {
@@ -361,6 +362,7 @@ export class RemoteSync {
         this.deps.onChange(host)
       }
       if (!before.connected && st.connected) this.deps.onConnected?.(host)
+      if (st.connected) this.deps.onConnectedRound?.(host)
     } finally {
       st.running = false
       for (const done of waiting) done()

@@ -51,6 +51,7 @@ export interface MachinePackage {
 
 export const UTIL_BIN_DIR = 'util-bin/'
 export const SESSION_BIN_DIR = 'bin/'
+export const CLAUDE_BIN_DIR = 'claude-bin/'
 export const AGENT_PLUGIN_DIR = 'agent-plugin/'
 
 export function buildMachinePackage(
@@ -72,7 +73,8 @@ export function buildMachinePackage(
       const full = path.join(dir, rel)
       fs.mkdirSync(path.dirname(full), { recursive: true })
       const executable =
-        rel.endsWith('.sh') || rel.startsWith(UTIL_BIN_DIR) || rel.startsWith(SESSION_BIN_DIR)
+        rel.endsWith('.sh') ||
+        [UTIL_BIN_DIR, SESSION_BIN_DIR, CLAUDE_BIN_DIR].some((bin) => rel.startsWith(bin))
       fs.writeFileSync(full, content, { mode: executable ? 0o755 : 0o644 })
     }
     fs.writeFileSync(path.join(dir, '.complete'), '')
@@ -115,7 +117,8 @@ exit 0`
 
 function claudeRun(spec: TabSpec): string {
   const T = tabPath(spec.tabId)
-  return `  exec claude --settings "${T}.json"${spec.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${spec.claudeArgs.map(shq).join(' ')}\n`
+  return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
+  exec claude --settings "${T}.json"${spec.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${spec.claudeArgs.map(shq).join(' ')}\n`
 }
 
 function claudeFirstRun(spec: TabSpec): string {
