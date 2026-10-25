@@ -4,6 +4,8 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
+import { BROWSER } from './helpers/browser'
+import { startEchoServer } from './helpers/fixtureServer'
 import {
   type E2EEnv,
   installAgy,
@@ -40,6 +42,7 @@ import {
 import {
   type AgentName,
   agentRow,
+  agentShell,
   auxIcon,
   boundSessionId,
   centerTerm,
@@ -81,6 +84,7 @@ import {
 } from './helpers/workbench'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
+const A_CLI_STEP_FINISHES_WITHIN_MS = 60_000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 
 const heartbeatsStamping = (env: E2EEnv, bare: string): number =>
@@ -872,6 +876,44 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(secret).toBeVisible({ timeout: 30_000 })
     } finally {
       await quitAndClose(app)
+    }
+  })
+
+  // PLATFORM§33
+  test("E-RW-41: Koloft's playwright-cli, run by Claude Code on the machine, drives that tab's Workbench browser through the address Koloft writes there, and switching browser control off takes the address away", async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const tabId = (await wsRows(page, REMOTE_WS_NAME).first().getAttribute('data-tab-id'))!
+      const address = path.join(machineHome(env), '.koloft', 'tabs', `${tabId}.cdp`)
+      await expect
+        .poll(() => (fs.existsSync(address) ? fs.readFileSync(address, 'utf8') : ''), {
+          timeout: 30_000
+        })
+        .toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[0-9a-f]{32}$/)
+
+      const title = `remote-${Date.now().toString(36)}`
+      const url = server.page('/remote', `<title>${title}</title><body>from the machine</body>`)
+      const run = agentShell(page, tabId, A_CLI_STEP_FINISHES_WITHIN_MS)
+      const unwrapped = async (command: string): Promise<string> =>
+        (await run(command)).replace(/\n/g, '')
+      expect(await unwrapped('command -v playwright-cli')).toMatch(
+        /\.koloft\/m-[0-9a-f]+\/bin\/playwright-cli/
+      )
+      expect(await unwrapped(`playwright-cli open ${url}`)).toContain(`Page Title: ${title}`)
+      await expect(page.locator(BROWSER.drivenTab)).toHaveCount(1, { timeout: 30_000 })
+      await run('playwright-cli close')
+
+      await page.evaluate(() => window.api.settings.set({ browserControl: false }))
+      await expect.poll(() => fs.existsSync(address), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+      await server.close()
     }
   })
 })
