@@ -64,6 +64,7 @@ interface World {
   sidebar: WorkspaceRows[]
   sessions: SessionInfo[]
   asking?: string[]
+  asleep?: string[]
   left?: Record<string, string[]>
   worktrees?: Record<string, { dir: string; branch?: string }[]>
   repos?: Record<string, string>
@@ -85,6 +86,7 @@ function harness(world: World) {
         .map((w) => ({ path: w.workspace.path, missing: w.workspace.missing })),
     sessions: () => world.sessions,
     asking: (tabId) => world.asking?.includes(tabId) ?? false,
+    asleep: (sessionId) => world.asleep?.includes(sessionId) ?? false,
     workLeft: async (r) => {
       checked.push(r.id)
       return world.left?.[r.id] ?? []
@@ -157,7 +159,7 @@ describe('koloft todo', () => {
     })
   })
 
-  it('prints the way to sort out to-dos, then the sessions waiting on the owner by kind, leaving out working ones and the butler’s own folder; an open session with no live tab is listed as idle, never taken for working; only an idle local worktree session is checked for work left', async () => {
+  it('prints the way to sort out to-dos, then the sessions waiting on the owner by kind, leaving out working ones and the butler’s own folder; a session whose tab is asleep is listed, on this Mac or another machine, while one running with no tab here is left out as working; only an idle local worktree session is checked for work left', async () => {
     const asking = row('asking', { running: true, mtime: NOW - DAY })
     const done = row('done', { running: true, backendId: 'codex' })
     const working = row('working', { running: true, cwd: `${SHOP}/.claude/worktrees/busy` })
@@ -170,20 +172,23 @@ describe('koloft todo', () => {
     const old = row('old', { mtime: NOW - 40 * DAY })
     const helper = row('helper', { cwd: BUTLER_FOLDER })
     const onBox = row('on-box', { running: true, backendId: 'agy', cwd: '/srv/app' })
+    const noTabHere = row('no-tab-here', { running: true, cwd: `${SHOP}/.claude/worktrees/away` })
     const { run, checked } = harness({
       sidebar: sidebarOf(
         [
-          [SHOP, [asking, done, working, asleep, dirty, old]],
+          [SHOP, [asking, done, working, asleep, noTabHere, dirty, old]],
           [REMOTE, [onBox]]
         ],
         [helper]
       ),
       sessions: [live(asking, 'waiting'), live(done, 'idle'), live(working, 'working')],
       asking: ['tab-asking'],
+      asleep: ['asleep', 'on-box'],
       worktrees: {
         [SHOP]: [
           { dir: `${SHOP}/.claude/worktrees/busy`, branch: 'busy' },
           { dir: `${SHOP}/.claude/worktrees/nap`, branch: 'nap' },
+          { dir: `${SHOP}/.claude/worktrees/away`, branch: 'away' },
           { dir: `${SHOP}/.claude/worktrees/fix`, branch: 'fix' }
         ]
       },
@@ -207,11 +212,12 @@ describe('koloft todo', () => {
       /Closed, nothing left in a worktree .*\n- "old title" .*last active 40 days ago · id: old/
     )
     expect(sessions).toMatch(
-      /Open, idle: its tab is not running .*\n- "asleep title" · Muse .* · branch: nap · Changes not committed: 1\n- "on-box title" · Antigravity · .* · box · /
+      /Open, asleep: .*\n- "asleep title" · Muse .* · branch: nap · Changes not committed: 1\n- "on-box title" · Antigravity · .* · box · /
     )
     expect(sessions).not.toContain('working title')
+    expect(sessions).not.toContain('no-tab-here title')
     expect(sessions).not.toContain('helper title')
-    expect(checked.sort()).toEqual(['asleep', 'dirty'])
+    expect([...checked].sort()).toEqual(['asleep', 'dirty'])
   })
 
   it('lists the owner’s open pull requests with what decides them; one on a listed worktree session’s branch goes with that session, one on a working session’s stays here and says so, the others are only counted, and the issues pull requests close are named', async () => {
@@ -224,6 +230,7 @@ describe('koloft todo', () => {
         [SHOP_COPY, []]
       ]),
       sessions: [live(fixing, 'waiting'), live(busy, 'working')],
+      asleep: ['asleep'],
       worktrees: {
         [SHOP]: [
           { dir: `${SHOP}/.claude/worktrees/fix-login`, branch: 'fix-login' },
@@ -253,8 +260,8 @@ describe('koloft todo', () => {
     expect(section(text, 'SESSIONS')).toMatch(
       /"asleep title" .* · branch: refine · its pull request: #46 /
     )
-    expect(section(text, 'PULL REQUESTS')).not.toMatch(/- #46/)
     const pulls = section(text, 'PULL REQUESTS')
+    expect(pulls).not.toMatch(/- #46/)
     expect(pulls.match(/octo\/shop \(/g)).toHaveLength(1)
     expect(pulls).toContain(
       '- #41 "Bump vite" · opened by the owner · checks: passing · 1 file changed · open 5 days · closes #12'

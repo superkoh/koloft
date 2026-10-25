@@ -533,7 +533,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
-  test('koloft todo lists a session whose tab went to sleep as open and idle, never leaving it out as working', async ({
+  test('koloft todo lists a session whose tab went to sleep as open and asleep, never leaving it out as working', async ({
     env
   }) => {
     env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
@@ -545,9 +545,7 @@ test.describe('The butler: one global session at the top of the sessions list, k
       const [napping] = await waitForCalls(env, 1)
       await openButler(page)
       await expect.poll(() => processAlive(napping.pid), { timeout: 40_000 }).toBe(false)
-      expect(await koloftSays(page, 'todo')).toMatch(
-        /Open, idle: its tab is not running .*\n- "Napping" · Claude · /
-      )
+      expect(await koloftSays(page, 'todo')).toMatch(/Open, asleep: .*\n- "Napping" · Claude · /)
     } finally {
       await close()
     }
