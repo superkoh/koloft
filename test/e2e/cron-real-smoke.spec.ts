@@ -4,7 +4,15 @@ import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
-import { encodeCwd, gitInit, openMenu, waitBooted, wsRows } from './helpers/p1'
+import {
+  encodeCwd,
+  gitInit,
+  openMenu,
+  terminalText,
+  termIds,
+  waitBooted,
+  wsRows
+} from './helpers/p1'
 
 function tokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -85,6 +93,45 @@ function transcripts(env: E2EEnv, worktree: string): string[] {
   return out
 }
 
+function readdirOr(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir)
+  } catch {
+    return []
+  }
+}
+
+function filesUnder(dir: string, withContent = false): string[] {
+  const out: string[] = []
+  const walk = (d: string): void => {
+    let entries: fs.Dirent[] = []
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      const full = path.join(d, e.name)
+      if (e.isDirectory()) {
+        out.push(`${full}/`)
+        walk(full)
+        continue
+      }
+      try {
+        out.push(
+          withContent
+            ? `${full}\n  ${fs.readFileSync(full, 'utf8')}`
+            : `${full} ${fs.statSync(full).size} bytes`
+        )
+      } catch (err) {
+        out.push(`${full} (${String(err)})`)
+      }
+    }
+  }
+  walk(dir)
+  return out
+}
+
 function completeRecords(file: string): Rec[] {
   let raw = ''
   try {
@@ -161,6 +208,9 @@ test.describe('Scheduled jobs on the REAL claude: the one opt-in case proving th
     )
 
     const app = await launchApp(env)
+    const mainOutput: string[] = []
+    app.process().stdout?.on('data', (b: Buffer) => mainOutput.push(b.toString()))
+    app.process().stderr?.on('data', (b: Buffer) => mainOutput.push(b.toString()))
     const page = await app.firstWindow()
     let worktree = ''
     try {
@@ -200,12 +250,29 @@ test.describe('Scheduled jobs on the REAL claude: the one opt-in case proving th
         )
         .toContain(CHEAPEST_MODEL)
     } catch (e) {
-      const screens = await page
-        .locator('.terminals .term-wrap')
-        .allInnerTexts()
-        .catch(() => [] as string[])
+      const ids = await termIds(page).catch(() => [] as string[])
+      const screens: string[] = []
+      for (const id of ids) {
+        screens.push(`${id}\n${await terminalText(page, id).catch((err) => String(err))}`)
+      }
       await test.info().attach('terminal-screens', {
-        body: screens.join('\n\n────────\n\n'),
+        body: screens.join('\n\n────────\n\n') || '(no terminal)',
+        contentType: 'text/plain'
+      })
+      await test.info().attach('claude-projects-and-sessions', {
+        body:
+          [
+            ...filesUnder(path.join(env.home, '.claude', 'projects')),
+            ...filesUnder(path.join(env.home, '.claude', 'sessions'), true)
+          ].join('\n') || '(nothing)',
+        contentType: 'text/plain'
+      })
+      await test.info().attach('ws-a-worktrees', {
+        body: readdirOr(path.join(env.workspaces.a, '.claude', 'worktrees')).join('\n') || '(none)',
+        contentType: 'text/plain'
+      })
+      await test.info().attach('koloft-main-output-after-launch', {
+        body: mainOutput.join('') || '(nothing)',
         contentType: 'text/plain'
       })
       const files = worktree ? transcripts(env, worktree) : []
@@ -216,7 +283,7 @@ test.describe('Scheduled jobs on the REAL claude: the one opt-in case proving th
             .join('\n')}`
       )
       await test.info().attach('transcripts', {
-        body: shapes.join('\n\n') || '(no transcript found)',
+        body: shapes.join('\n\n') || `(no transcript found for the worktree "${worktree}")`,
         contentType: 'text/plain'
       })
       throw e
