@@ -631,21 +631,23 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   regex or string included ("runs … inside a construct too complex to verify, so what it
   runs cannot be shown not to be git"), behind `tengu_rustling_lighthouse`, on by
   default (read from the 2.1.296 and 2.1.299 binaries, `strings`, 2026-10-14; not run).
-- **The same guard refuses git aimed at the main checkout, and a typed `!` command too,
-  but lets `koloft` through.** In a `-w` session the Bash tool's
+- **The same guard refuses git aimed at the main checkout, but lets `koloft` through; a
+  typed `!` command was reported refused too.** In a `-w` session the Bash tool's
   `git -C <main checkout> log -1` came back with `This session is isolated in the worktree
   <worktree>, but this command redirects git to the shared checkout via -C. Refusing to
   run it — a worktree-isolated session's git operations must target its own worktree.
   Run the equivalent from <worktree> without the redirect.`, and the command did not run;
   `koloft session list` from the same tool ran and answered. The message is in the
   binary's strings. Measured 2026-10-25 on CC 2.1.310, macOS, a real Koloft worktree
-  session. A merge into the main checkout asked of such a session (`git -C <main> merge
-  …`), and the same command typed by a person with `!` in front, were refused the same
-  way ("This session is isolated in the worktree …"), and a new session started in the
-  main checkout merged it at once (a local report, 2026-10-22, version not written down);
-  on a remote (SSH) machine, inferred, not checked. So Koloft's agent guide sends a
-  worktree session that must merge to a new session in the main checkout (`koloft
-  session new` without `-w`).
+  session. Not measured, from a person's report on 2026-10-22 (local, the version not
+  written down; 2.1.308 or 2.1.309 by the install dates, inferred): a merge into the main
+  checkout asked of such a session (`git -C <main> merge …`), and the same command typed
+  by the person with `!` in front, were refused the same way ("This session is isolated
+  in the worktree …"), and a new session started in the main checkout merged it at once.
+  Other forms (`cd <main> && git …`, `--git-dir=`) were not tried; on a remote (SSH)
+  machine, inferred, not checked. So Koloft's agent guide sends a worktree session whose
+  merge is refused to a new session in the main checkout (`koloft session new` without
+  `-w`).
 - **CC's Bash tool runs its commands with the env `claude` was started with**, so a
   variable set on the launch reaches the model's shell in a `-w` worktree session:
   `KOLOFT_PORT_OFFSET` set in the pty env on this Mac, and exported by the remote tab
