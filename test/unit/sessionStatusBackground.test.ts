@@ -1134,7 +1134,7 @@ describe('Esc interrupt as turn-end: no Stop ever fires, so the interrupt record
   }, 10_000)
 })
 
-type StagedShell = { ageMs?: number; listening?: boolean; cpuMs?: number; youngestAgeMs?: number }
+type StagedShell = { ageMs?: number; listening?: boolean; cpuMs?: number }
 
 function stageProcs(
   tracker: InstanceType<typeof SessionTracker>,
@@ -1150,8 +1150,7 @@ function stageProcs(
           pid: 1,
           ageMs: s.ageMs ?? 0,
           listening: !!s.listening,
-          cpuMs: s.cpuMs ?? 0,
-          youngestAgeMs: s.youngestAgeMs ?? Infinity
+          cpuMsByPid: new Map([[1, s.cpuMs ?? 0]])
         }
       ])
     )
@@ -1288,8 +1287,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
             pid: 1,
             ageMs: 0,
             listening: true,
-            cpuMs: (cpuMs += 60_000),
-            youngestAgeMs: Infinity
+            cpuMsByPid: new Map([[1, (cpuMs += 60_000)]])
           }
         ]
       ])
@@ -1302,7 +1300,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     ])
   }, 10_000)
 
-  it('a listening shell that keeps starting new programs is work, even when the CPU of the ones that exited drops out of its total (an e2e run relaunching its app for each test)', async () => {
+  it('a listening shell whose programs keep exiting and being replaced is work: the CPU an exited one used still counts (an e2e run relaunching its app for each test)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabL5', cwd, initialLines(cwd))
@@ -1311,7 +1309,18 @@ describe('run-state from the typed task list: each task judged by what it is, an
       commandUseRec('toolu_relaunch', cwd, 'npx playwright test'),
       shellAckRec('toolu_relaunch', cwd)
     ])
-    stageProcs(tracker, { btoolu_relaunch: { listening: true, cpuMs: 100, youngestAgeMs: 0 } })
+    const runnerPid = 1
+    let scan = 0
+    tracker.pidOf = () => 4242
+    tracker.inspect = async () => {
+      scan++
+      const cpuMsByPid = new Map([[runnerPid, 100]])
+      if (scan % 2) cpuMsByPid.set(100 + scan, 2_000)
+      return {
+        at: Date.now(),
+        shells: new Map([['btoolu_relaunch', { pid: 1, ageMs: 0, listening: true, cpuMsByPid }]])
+      }
+    }
     await tracker.reportTurnEnd('tabL5', [{ id: 'btoolu_relaunch', type: 'shell' }])
     await sleep(SERVER_QUIET_MS * 4 + SCAN_MS * 2)
     expect(status(tracker, 'tabL5')).toBe('working')

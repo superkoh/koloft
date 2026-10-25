@@ -54,6 +54,15 @@ const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
 
 export { encodeCwd }
 
+function cpuSpentSince(seen: Map<number, number>, cpuMsByPid: Map<number, number>): number {
+  let spent = 0
+  for (const [pid, cpuMs] of cpuMsByPid) {
+    const before = seen.get(pid) ?? 0
+    spent += cpuMs >= before ? cpuMs - before : cpuMs
+  }
+  return spent
+}
+
 const UNLISTED_BACKGROUND_WORK: BackgroundItem = {
   id: 'unlisted',
   kind: 'command',
@@ -427,7 +436,10 @@ interface Tracked {
   reportedAt: number
   openTools: Map<string, ToolCall>
   procs: TaskProcs | null
-  shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
+  shellCpu: Map<
+    string,
+    { seen: Map<number, number>; cpuMs: number; windowCpuMs: number; at: number; quiet: boolean }
+  >
   procsAt: number
   procsPromise?: Promise<void>
   lastInterruptTs: number
@@ -809,16 +821,24 @@ export class SessionTracker extends SessionRuntime {
     for (const id of t.shellCpu.keys()) if (!procs.shells.has(id)) t.shellCpu.delete(id)
     for (const [id, sh] of procs.shells) {
       const prev = t.shellCpu.get(id)
-      if (!prev) t.shellCpu.set(id, { cpuMs: sh.cpuMs, at: now, quiet: false })
-      else if (now - prev.at >= SERVER_QUIET_WINDOW_MS) {
-        const perMinute = ((sh.cpuMs - prev.cpuMs) * 60_000) / (now - prev.at)
-        const startedProgramSinceLastLook = sh.youngestAgeMs < now - prev.at
+      if (!prev) {
+        const cpuMs = cpuSpentSince(new Map(), sh.cpuMsByPid)
         t.shellCpu.set(id, {
-          cpuMs: sh.cpuMs,
+          seen: sh.cpuMsByPid,
+          cpuMs,
+          windowCpuMs: cpuMs,
           at: now,
-          quiet: perMinute < IDLE_SERVER_CPU_MS_PER_MINUTE && !startedProgramSinceLastLook
+          quiet: false
         })
+        continue
       }
+      prev.cpuMs += cpuSpentSince(prev.seen, sh.cpuMsByPid)
+      prev.seen = sh.cpuMsByPid
+      if (now - prev.at < SERVER_QUIET_WINDOW_MS) continue
+      const perMinute = ((prev.cpuMs - prev.windowCpuMs) * 60_000) / (now - prev.at)
+      prev.quiet = perMinute < IDLE_SERVER_CPU_MS_PER_MINUTE
+      prev.windowCpuMs = prev.cpuMs
+      prev.at = now
     }
   }
 

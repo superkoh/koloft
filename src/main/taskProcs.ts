@@ -7,8 +7,7 @@ export interface ShellProc {
   pid: number
   ageMs: number
   listening: boolean
-  cpuMs: number
-  youngestAgeMs: number
+  cpuMsByPid: Map<number, number>
 }
 
 export interface TaskProcs {
@@ -147,8 +146,7 @@ export async function inspectTaskProcs(
       pid,
       ageMs: table.byPid.get(pid)?.ageMs ?? 0,
       listening: tree.some((p) => seen.listening.has(p)),
-      cpuMs: tree.reduce((sum, p) => sum + (table.byPid.get(p)?.cpuMs ?? 0), 0),
-      youngestAgeMs: Math.min(...tree.map((p) => table.byPid.get(p)?.ageMs ?? Infinity))
+      cpuMsByPid: new Map(tree.map((p) => [p, table.byPid.get(p)?.cpuMs ?? 0]))
     })
   }
   return result
