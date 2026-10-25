@@ -57,8 +57,7 @@ when it works. That is what "judged against" means.
 - **Many sessions, one change** — warn when two sessions write the same file (#221); each
   session's listening ports, opened in the Workbench browser (#224).
 - **Branching sessions** — fork a session from the sidebar (#219).
-- **Usage and accounts** — cost history by session, workspace, model and day (#225); pick
-  or pin a custom-endpoint account for a session (#226).
+- **Accounts** — pick or pin a custom-endpoint account for a session (#226).
 
 ### Parked until their trigger
 
