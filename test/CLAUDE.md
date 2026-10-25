@@ -86,7 +86,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     fresh launch outside the butler's folder, used once), `-no-status` (binds but never reports a run-state),
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
-    closes its tab kills it), `-bg-ms` (how long `/bg-reported`'s background work runs,
+    closes its tab kills it), `-trust-question` (holds a session id: resuming that id, it
+    asks CC's folder-trust question before it binds; ↓ then Enter answers yes, deletes
+    the file and starts, Enter alone exits 1), `-bg-ms` (how long `/bg-reported`'s background work runs,
     5 s when absent), `-remove-ms` (how long removing a worktree at `/exit` takes; a
     SIGHUP meanwhile leaves it unremoved), `-remove-fails` (that removal prints CC's
     failure line and leaves the worktree).

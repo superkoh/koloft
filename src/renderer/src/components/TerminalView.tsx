@@ -28,6 +28,7 @@ export function TerminalView({
   scrollbar = true,
   focusSignal,
   onRepainted,
+  onOutput,
   maxCols
 }: {
   id: string
@@ -37,6 +38,7 @@ export function TerminalView({
   scrollbar?: boolean
   focusSignal?: number
   onRepainted?: () => void
+  onOutput?: () => void
   maxCols?: number
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
@@ -44,6 +46,8 @@ export function TerminalView({
   onUserInputRef.current = onUserInput
   const onRepaintedRef = useRef(onRepainted)
   onRepaintedRef.current = onRepainted
+  const onOutputRef = useRef(onOutput)
+  onOutputRef.current = onOutput
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const webglRef = useRef<WebglAddon | null>(null)
@@ -319,6 +323,7 @@ export function TerminalView({
     }
     const offData = window.api.terminal.onData(id, (data) => {
       term.write(data, () => noteConsumed(data.length))
+      onOutputRef.current?.()
     })
     window.api.terminal.attach(id)
     // PLATFORM§22
