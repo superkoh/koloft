@@ -63,6 +63,7 @@ export interface Tab {
   jobId?: string
   asleep?: true
   ghost?: string
+  wakeOverdue?: true
 }
 
 export interface OpenFile {
@@ -179,6 +180,7 @@ interface AppState {
   setTabTitle: (id: string, title: string) => void
   setTabAlive: (id: string, alive: boolean) => void
   setTabAsleep: (id: string) => void
+  markWakeOverdue: (id: string) => void
 
   activateTab: (id: string) => void
   revealTab: (id: string) => void
@@ -716,6 +718,12 @@ export const useStore = create<AppState>((set, get) => ({
           : t
       )
     })),
+  markWakeOverdue: (id) =>
+    set((s) => {
+      const cur = s.tabs.find((t) => t.id === id)
+      if (!cur?.ghost || cur.wakeOverdue) return s
+      return { tabs: s.tabs.map((t) => (t.id === id ? { ...t, wakeOverdue: true } : t)) }
+    }),
   activateTab: (id) => {
     activateOnceSpawned = get().tabs.some((x) => x.id === id) ? null : id
     if (activateOnceSpawned) return
@@ -847,7 +855,7 @@ export const useStore = create<AppState>((set, get) => ({
           changed = true
           return {
             ...t,
-            ...(woken ? { ghost: undefined } : {}),
+            ...(woken ? { ghost: undefined, wakeOverdue: undefined } : {}),
             ...(bound ? { resuming: undefined } : {})
           }
         }

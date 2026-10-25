@@ -60,6 +60,7 @@ import {
   panelTabId,
   panelIsOpen
 } from './store'
+import { useWakeDeadline } from './useWakeDeadline'
 import { WORKBENCH_PANE_MIN } from './auxSurface'
 import {
   clampNotesHeight,
@@ -238,6 +239,7 @@ export default function App(): JSX.Element {
   const tabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
+  useWakeDeadline()
   // PLATFORM§21
   const [switchFrom, setSwitchFrom] = useState(activeTabId)
   const [switchGen, setSwitchGen] = useState(0)
@@ -1668,13 +1670,16 @@ export default function App(): JSX.Element {
                       key={t.ghost}
                       className="term-wrap"
                       style={{
-                        display: t.id === shown.id || t.ghost === shown.id ? 'block' : 'none'
+                        display:
+                          (t.id === shown.id || t.ghost === shown.id) && !t.wakeOverdue
+                            ? 'block'
+                            : 'none'
                       }}
                       onMouseDown={focusTuiFromMargin}
                     >
                       <TerminalView
                         id={t.ghost}
-                        active={t.id === shown.id || t.ghost === shown.id}
+                        active={(t.id === shown.id || t.ghost === shown.id) && !t.wakeOverdue}
                         scrollbar={false}
                         focusSignal={tuiFocus}
                         maxCols={CENTER_TERMINAL_MAX_COLS}
@@ -1686,13 +1691,13 @@ export default function App(): JSX.Element {
                     className="term-wrap"
                     style={{
                       display: t.id === shown.id ? 'block' : 'none',
-                      visibility: t.ghost ? 'hidden' : undefined
+                      visibility: t.ghost && !t.wakeOverdue ? 'hidden' : undefined
                     }}
                     onMouseDown={focusTuiFromMargin}
                   >
                     <TerminalView
                       id={t.id}
-                      active={t.id === shown.id && !t.ghost}
+                      active={t.id === shown.id && (!t.ghost || !!t.wakeOverdue)}
                       scrollbar={false}
                       maxCols={CENTER_TERMINAL_MAX_COLS}
                       onUserInput={

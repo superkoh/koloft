@@ -533,13 +533,39 @@ function startupTurn() {
   process.stdout.write(`\r\n[fake-claude] session ${sessionId} ready in ${cwd}\r\n> `)
 }
 
-const startDelay = delayMs()
-if (startDelay > 0) {
-  process.stdout.write(`\r\n[fake-claude] delayed bind in ${startDelay}ms\r\n`)
-  setTimeout(startupTurn, startDelay)
-} else {
-  startupTurn()
+function startAfterDelay() {
+  const startDelay = delayMs()
+  if (startDelay > 0) {
+    process.stdout.write(`\r\n[fake-claude] delayed bind in ${startDelay}ms\r\n`)
+    setTimeout(startupTurn, startDelay)
+  } else {
+    startupTurn()
+  }
 }
+
+// CC§9
+async function askTrustThenStart(question) {
+  let trusted = false
+  const draw = () =>
+    process.stdout.write(
+      '\r\nQuick safety check: Is this a project you created or one you trust?\r\n' +
+        `${trusted ? ' ' : '❯'} No, exit\r\n${trusted ? '❯' : ' '} Yes, I trust this folder\r\n`
+    )
+  draw()
+  for (;;) {
+    const key = await keyOnTheDialog()
+    if (key.includes('\r')) break
+    if (key.includes('\x1b[B') || key.includes('\x1b[A')) trusted = !trusted
+    draw()
+  }
+  if (!trusted) process.exit(1)
+  fs.rmSync(question, { force: true })
+  startAfterDelay()
+}
+
+const trustQuestion = path.join(home, 'fake-claude-trust-question')
+if (fs.existsSync(trustQuestion)) setImmediate(() => void askTrustThenStart(trustQuestion))
+else startAfterDelay()
 
 let waitingHook = null
 // CC§14
