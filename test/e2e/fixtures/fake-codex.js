@@ -377,7 +377,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
                 ]
               }
             ],
-            isBlocking: true,
+            isBlocking: false,
             autoResolutionMs: null
           }
         })
@@ -811,6 +811,14 @@ async function startTui() {
       const [q] = frame.params.questions
       question = { id: frame.id, key: q.id, labels: q.options.map((o) => o.label) }
       process.stdout.write('\r\n' + q.question + ' ' + question.labels.join(' / ') + ' ')
+      // CODEX§20
+      const givesUpMs = Number(read('fake-codex-question-gives-up-ms')) || 0
+      if (givesUpMs && !frame.params.isBlocking)
+        setTimeout(() => {
+          if (question?.id !== frame.id) return
+          ws.send(JSON.stringify({ id: frame.id, result: { answers: {} } }))
+          question = undefined
+        }, givesUpMs)
     } else if (frame.method === 'item/completed' && /^(koloft|sh)-/.test(frame.params.item.id)) {
       const { aggregatedOutput, exitCode, id } = frame.params.item
       const said = aggregatedOutput.replace(/\r?\n/g, '\r\n')

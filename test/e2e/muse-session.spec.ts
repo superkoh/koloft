@@ -27,6 +27,7 @@ import {
   readCalls,
   runIn,
   sendShortcut,
+  staysOnTheFolderPageNotTheButler,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -95,6 +96,27 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(row).toContainText('hello muse')
       await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
       await expect(page.locator('.aux-ico.waiting-bell .ws-unread-count')).toHaveText('1')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§10
+  test("answering 2 Quit to Muse's trust question before any session opened puts you back on the folder page, and never opens the butler", async ({
+    env
+  }) => {
+    installMuse(env)
+    seedSettings(env, { hintsOff: true, assist: { on: true, backend: 'claude' } })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect(page.locator('.term-wrap:visible')).toContainText('Do you trust this workspace?')
+      await runIn(page, centerTerm(page), '2')
+      await expect(museRows(page)).toHaveCount(0, { timeout: 30_000 })
+      await staysOnTheFolderPageNotTheButler(page, env, 'ws-a')
+      expect(museCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
     }
@@ -366,6 +388,41 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await museRows(page).click()
       await expect.poll(() => museCalls(env).length).toBe(2)
       expect(museCalls(env)[1].sessionId).toBe(first.sessionId)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§2
+  test('/exit typed inside Muse leaves the list for Restore session under the name given with /rename, and the session brought back from there keeps that name', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startMuse(page, env)
+      await runIn(page, centerTerm(page), 'keep me')
+      await expect(museRows(page)).toContainText('keep me')
+      await expect(museRows(page)).toHaveClass(/st-waiting/)
+      await runIn(page, centerTerm(page), '/rename Docs cleanup')
+      await expect(museRows(page)).toContainText('docs cleanup')
+      await runIn(page, centerTerm(page), '/exit')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await expect(museRows(page)).toHaveCount(0)
+
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
+      const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
+      const row = history.getByRole('button').filter({ hasText: 'docs cleanup' })
+      await expect(row).toHaveCount(1)
+      await row.click()
+      await expect.poll(() => museCalls(env).length).toBe(2)
+      expect(museCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(museRows(page)).toContainText('docs cleanup')
     } finally {
       await quitAndClose(app)
     }

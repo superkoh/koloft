@@ -10,12 +10,14 @@ import {
   IconNotifications,
   IconShortcuts,
   IconTerminal,
+  IconUsage,
   type Icon
 } from '../../icons'
 import { clearHistory } from '../../browserHistory'
 import { useStore } from '../../store'
 import { EscScope } from './escScope'
 import { AccountsPane } from './AccountsPane'
+import { UsagePane } from './UsagePane'
 import { SessionsPane } from './SessionsPane'
 import { AppearancePane } from './AppearancePane'
 import { ShortcutsPane } from './ShortcutsPane'
@@ -73,6 +75,7 @@ const PANE_ICONS: Record<SettingsPaneId, Icon> = {
   welcome: IconAiStart,
   sessions: IconTerminal,
   accounts: IconAccounts,
+  usage: IconUsage,
   appearance: IconAppearance,
   shortcuts: IconShortcuts,
   assist: IconAssist,
@@ -201,6 +204,7 @@ export function SettingsModal(): JSX.Element | null {
             {pane === 'welcome' && <WelcomePane />}
             {pane === 'sessions' && <SessionsPane />}
             {pane === 'accounts' && <AccountsPane />}
+            {pane === 'usage' && <UsagePane />}
             {pane === 'appearance' && <AppearancePane />}
             {pane === 'shortcuts' && <ShortcutsPane />}
             {pane === 'notifications' && <NotificationsPane />}

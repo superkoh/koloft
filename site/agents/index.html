@@ -189,11 +189,19 @@
             <code>koloft session close</code> — close itself, or any session started under it with
             <code class="nowrap">session new</code> (by it, by one it started, and so on down the
             chain), for good: its tab, its row in the sidebar, and its worktree and branches if it
-            had one. When you ask, it may also close any other session on this Mac that has ended
-            (an open one is refused: stop it first). Koloft says no, and lists what is left, while:
+            had one. The ended sessions it started are closed with it, and so are the ones those
+            started; Koloft names any it left (still open, or holding work). When you ask, it may
+            also close any other session on this Mac that has ended (an open one is refused: stop it
+            first). Koloft says no, and lists what is left, while:
             <ul class="dash">
               <li>a file is not committed</li>
-              <li>a commit is not on the remote yet</li>
+              <li>
+                a commit is not on the remote yet
+                <span class="why"
+                  >(unless GitHub shows they are the last commits of a pull request that was merged,
+                  as after a squash merge that deleted the branch)</span
+                >
+              </li>
               <li>another open session uses that worktree</li>
             </ul>
           </li>
@@ -219,8 +227,10 @@
           <code class="nowrap">--workspace &lt;folder&gt;</code> to reach another folder in the
           sidebar, by its name or its full path. A session started into another folder this way sits
           at the top of that folder's list (see
-          <a href="../sessions/#session-tree">sessions an agent starts</a>). A new session cannot be
-          started in a remote folder this way.
+          <a href="../sessions/#session-tree">sessions an agent starts</a>). The folder may be a
+          <a href="../remote/">remote folder</a>: the session then runs on that machine, and a
+          Claude Code session there is reached with <code class="nowrap">session send</code>, since
+          Claude's own messages between sessions stay on one machine.
         </p>
         <p>
           With "Let agents use Koloft" on, every session is also told which helper fits which job.
@@ -324,7 +334,9 @@
           Codex settings have an <code>@playwright/mcp</code> entry, its browser tools open tabs in
           Koloft and not a browser of their own. Those tools and <code>playwright-cli</code> reach
           the web tabs. To let them, the session's sandbox (the box Codex runs commands in) gets the
-          network and Playwright's cache folder, for that session only.
+          network and Playwright's cache folder, for that session only. A session started with
+          <a href="../accounts/">Skip permission prompts</a> on has no sandbox, so it needs none of
+          this.
         </p>
 
         <h3>What to expect</h3>

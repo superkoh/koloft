@@ -105,8 +105,8 @@
             <p>
               Press ⌘P, type “add a forgot-password link to the login page” and hit ⏎. Assist picks
               the folder, opens a worktree when the folder is a git repo, names the session, and the
-              agent you picked starts on your words. The ▾ beside the button, or ⇧⏎, picks another
-              agent.
+              agent you picked starts on your words. Type @ and a folder's name to pick the folder
+              yourself. The ▾ beside the button, or ⌘⏎, picks another agent; ⇧⏎ starts a new line.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
@@ -115,7 +115,8 @@
             </ul>
             <p class="fnote">
               Needs Assist on (Settings ▸ Assist); with it off, ⏎ opens the folder picker and keeps
-              your words. In a remote folder the session opens on that machine.
+              your words, unless you named a folder with @. In a remote folder the session opens on
+              that machine.
             </p>
             <a class="more" href="../sessions/#find"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
@@ -165,8 +166,8 @@
               <h3>Ask Koloft itself</h3>
             </div>
             <p>
-              Type “set up Discord” in ⌘P and your words go to your butler, so you do not have to
-              dig through Settings.
+              Type “set up Discord” in ⌘P and a helper of your butler starts on it, so you do not
+              have to dig through Settings.
             </p>
 
             <p class="fnote">
@@ -581,17 +582,18 @@
             </div>
             <p>
               Say “have tidewatch fix the login bug”: your butler starts the session, answers its
-              questions the way you tell it, and tells you when it is done. A side job goes to a
-              helper of its own, which hangs under its row and reports back.
+              questions the way you tell it, and tells you when it is done. A job outside your
+              projects, or a ⌘P request Koloft cannot do by itself (with Assist on), goes to a
+              helper of its own, which hangs under its row, does the job and reports back.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
               <li class="yes">✓ Codex</li>
-              <li class="part">◐ Remote</li>
+              <li class="yes">✓ Remote</li>
             </ul>
             <p class="fnote">
-              The butler runs on your Mac; it can message, read and resume a session in a remote
-              folder, not start one there.
+              The butler runs on your Mac; it can start, message, read and resume a session in a
+              remote folder too.
             </p>
             <a class="more" href="../accounts/#butler"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
@@ -613,8 +615,9 @@
               <li class="yes">✓ Remote</li>
             </ul>
             <p class="fnote">
-              A session's question shows only at the Mac: tell your butler what to pick, and it
-              answers.
+              Questions from your butler and its helpers come to the channel when you are away from
+              the Mac. A session in your folders asks only at the Mac; tell your butler what to
+              pick, and it answers.
             </p>
             <a class="more" href="../discord/"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
@@ -709,18 +712,22 @@
           <article class="fcard">
             <div class="ftop">
               <svg class="icon" aria-hidden="true"><use href="../icons.svg#statusbar" /></svg>
-              <h3>A status line in every Claude session</h3>
+              <h3>A status line under each session</h3>
             </div>
             <p>
               Under each Claude session: which account, how much context is used, the branch, the
-              worktree, the model, and what the session has cost.
+              worktree, the model, and what the session has cost. Codex sessions get a status line
+              too, made of Codex's own items: context used, branch, Codex version, model and its
+              reasoning level, pull request number and folder, and for Enterprise accounts an
+              estimated cost. Antigravity sessions get Koloft's own status line. Turn off Settings ▸
+              Appearance ▸ Built-in status line to get your own back.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>
-              <li class="no">– Codex</li>
+              <li class="yes">✓ Codex</li>
               <li class="yes">✓ Remote</li>
             </ul>
-            <p class="fnote">The status line is a Claude Code feature; Codex has none.</p>
+            <p class="fnote">Muse Code cannot take one.</p>
             <a class="more" href="../accounts/"
               >Read more <svg class="icon" aria-hidden="true"><use href="../icons.svg#arrow" /></svg
             ></a>
@@ -766,9 +773,9 @@
               <h3>Sessions on a timer</h3>
             </div>
             <p>
-              Every hour, day or week, a new session runs what you wrote; in a git repo, in a
-              worktree of its own. Tell it to close when done and it tidies up, unless work is left
-              uncommitted or unmerged.
+              Every hour, day or week, once, or a set wait after each run, a new session runs what
+              you wrote; in a git repo, in a worktree of its own. Tell it to close when done and it
+              tidies up, unless work is left uncommitted or unmerged.
             </p>
             <ul class="kinds">
               <li class="yes">✓ Claude Code</li>

@@ -17,6 +17,7 @@ import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { spawn } from 'child_process'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 import { portOffset } from '@shared/worktreeName'
+import { keyedOn } from '@shared/remoteKey'
 
 const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
@@ -27,7 +28,14 @@ const mocks = vi.hoisted(() => ({
   runtime: vi.fn(),
   update: vi.fn(),
   rpcHomes: [] as (string | undefined)[],
-  rpcOptions: [] as CodexProcessOptions[]
+  rpcOptions: [] as CodexProcessOptions[],
+  crashLeftoverMarkers: [] as string[]
+}))
+vi.mock('../../src/main/leftovers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/main/leftovers')>()),
+  endCodexAppServersLeftByACrash: async (marker: string) => {
+    mocks.crashLeftoverMarkers.push(marker)
+  }
 }))
 vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
   resolveCodexRuntime: mocks.runtime,
@@ -114,6 +122,22 @@ function hookListing(trustStatus: string, listed = REPLY_LANGUAGE_LISTED) {
 const historyOrTrustedHooks = async (method: string) =>
   method === 'hooks/list' ? hookListing('trusted') : { data: [], nextCursor: null }
 
+type MachineDeps = NonNullable<CodexSessionDeps['machine']>
+
+function fakeMachine(overrides: Partial<MachineDeps> = {}): MachineDeps {
+  return {
+    instance: 'test',
+    ready: async () => {},
+    run: async () => ({ code: 0, stdout: '', stderr: '' }),
+    sshArgs: () => [],
+    machinePackage: () => ({}) as never,
+    tabDir: () => directory,
+    fileExists: async () => false,
+    keyed: (machine, onMachineFile) => keyedOn(machine, onMachineFile)!,
+    ...overrides
+  }
+}
+
 function addMember(id = A, cwd = repo, worktreeResourceId?: string) {
   sessions.store.upsertMember({
     id,
@@ -139,6 +163,7 @@ beforeEach(() => {
   transports = []
   mocks.rpcHomes.length = 0
   mocks.rpcOptions.length = 0
+  mocks.crashLeftoverMarkers.length = 0
   mocks.create.mockImplementation(async (options: CodexTransportOptions) => {
     const stop = vi.fn(async () => {})
     const request = vi.fn(async () => ({}))
@@ -170,6 +195,7 @@ beforeEach(() => {
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
     assistOf: () => undefined,
     replyLanguageScript: '/koloft/codex-reply-language.sh',
+    builtInStatusLine: vi.fn(() => true),
     browserEndpoint: vi.fn(() => ''),
     openShimRoot: path.join(directory, 'codex-open'),
     playwrightBin: path.join(directory, 'commands', 'bin'),
@@ -304,6 +330,75 @@ describe('CodexSessions', () => {
     expect(sessions.threadGone(unlisted)).toBe(true)
   })
 
+  // CODEX§15 MUSE§5 AGY§8
+  it('a remembered session leaves the sessions list once a finished listing left its thread out, and comes back once listed again; an archived one stays for its unarchive hint, and so do one bound under half a minute ago and one that ran after that listing (the shared stored-sessions rows, so Muse and Antigravity too)', async () => {
+    const C = '33333333-3333-4333-8333-333333333333'
+    const D = '44444444-4444-4444-8444-444444444444'
+    addMember(A)
+    addMember(B)
+    sessions.store.upsertMember({
+      id: C,
+      key: codexSessionKey(C),
+      workspacePath: repo,
+      cwd: repo,
+      title: 'Just bound',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    })
+    const { id: tab } = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind(0, D)
+    sessions.store.updateMember(codexSessionKey(D), { updatedAt: 1 })
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived ? [{ id: B, cwd: repo }] : []
+    }))
+    await sessions.refreshHistory()
+    const shown = () =>
+      sessions
+        .rows(repo)
+        .map((row) => row.id)
+        .sort()
+    const stays = [B, C, D].map((id) => codexSessionKey(id))
+    expect(shown()).toEqual(stays)
+    await sessions.stop(tab)
+    await sessions.refreshHistory()
+    expect(shown()).toEqual(stays)
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: [{ id: params.archived ? B : A, cwd: repo }]
+    }))
+    await sessions.refreshHistory()
+    expect(shown()).toEqual([A, B, C, D].map((id) => codexSessionKey(id)))
+  })
+
+  // CODEX§16
+  it("a remembered session on a remote machine stays through a listing of this Mac alone and while the machine shows no Codex home, and leaves once that machine's own listing left it out", async () => {
+    let homeThere = false
+    deps.machine = fakeMachine({
+      run: async () => ({ code: homeThere ? 0 : 1, stdout: '', stderr: '' })
+    })
+    const remoteRepo = keyedOn('box', '/srv/repo')!
+    const key = codexSessionKey(A, 'box')
+    sessions.store.upsertMember({
+      id: A,
+      key,
+      workspacePath: remoteRepo,
+      cwd: remoteRepo,
+      title: 'Saved',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    mocks.request.mockImplementation(async () => ({ data: [] }))
+    await sessions.refreshHistory()
+    expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
+    await sessions.refreshMachineHistory('box', true)
+    expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
+    homeThere = true
+    await sessions.refreshMachineHistory('box', true)
+    expect(sessions.rows(remoteRepo)).toEqual([])
+    homeThere = false
+    await sessions.refreshMachineHistory('box', true)
+    expect(sessions.rows(remoteRepo).map((row) => row.id)).toEqual([key])
+  })
+
   it('reports unavailable history instead of returning an empty successful listing', async () => {
     vi.mocked(sessions.availability).mockResolvedValue({
       id: 'codex',
@@ -409,6 +504,34 @@ describe('CodexSessions', () => {
     expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(true)
     expect(mocks.request.mock.calls.slice(asked).map(([method]) => method)).toEqual(['thread/read'])
     expect(mocks.rpcHomes).toEqual([undefined])
+  })
+
+  // CODEX§15
+  it('a thread whose rollout Codex compressed to .jsonl.zst still has a transcript, on this Mac and on a remote machine, though its listing still names the .jsonl', async () => {
+    const listed = path.join(directory, 'rollout-a.jsonl')
+    const read = path.join(directory, 'rollout-b.jsonl')
+    fs.writeFileSync(listed + '.zst', '')
+    fs.writeFileSync(read + '.zst', '')
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'thread/read') return { thread: { id: B, cwd: repo, path: read } }
+      return params.archived ? { data: [] } : { data: [{ id: A, cwd: repo, path: listed }] }
+    })
+    await sessions.refreshHistory()
+    expect(await sessions.transcriptExists(codexSessionKey(A))).toBe(true)
+    expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(true)
+
+    const onMachine = new Set<string>()
+    deps.machine = fakeMachine({
+      fileExists: async (file) => onMachine.has(file),
+      keyed: (machine, onMachineFile) => `${machine}:${onMachineFile}`
+    })
+    mocks.request.mockImplementation(async () => ({
+      thread: { id: B, cwd: '/srv/repo', path: '/srv/rollout-b.jsonl' }
+    }))
+    const remote = codexSessionKey(B, 'box')
+    expect(await sessions.transcriptExists(remote)).toBe(false)
+    onMachine.add(keyedOn('box', '/srv/rollout-b.jsonl.zst')!)
+    expect(await sessions.transcriptExists(remote)).toBe(true)
   })
 
   // CODEX§24
@@ -703,7 +826,7 @@ describe('CodexSessions', () => {
       JSON.stringify({ openId: 'drop-1', path: path.join(repo, 'report.html'), url: '', cwd: repo })
     )
     await expect
-      .poll(() => vi.mocked(deps.events).mock.calls)
+      .poll(() => vi.mocked(deps.events).mock.calls, { timeout: 5000 })
       .toContainEqual([launched.id, { type: 'open', target: path.join(repo, 'report.html') }])
     await sessions.stop(launched.id)
     expect(fs.existsSync(shimDir)).toBe(false)
@@ -1103,6 +1226,37 @@ describe('CodexSessions', () => {
     expect(mocks.close).toHaveBeenCalled()
   })
 
+  async function launchWithBuiltInStatusLine(...switches: boolean[]): Promise<void> {
+    for (const on of switches) {
+      vi.mocked(deps.builtInStatusLine).mockReturnValue(on)
+      await sessions.launch({ kind: 'codex', cwd: repo })
+    }
+  }
+
+  // CODEX§8
+  it("with the built-in status line off, neither a Codex tab's app-server nor its TUI is handed Koloft's status line, so Codex shows the owner's own", async () => {
+    const statusLine = (values: readonly string[]): string[] =>
+      values.filter((v) => v.startsWith('tui.status_line='))
+    await launchWithBuiltInStatusLine(false, true)
+
+    const [off, on] = transports.map((t) => t.options.configOverrides!)
+    const [offArgv, onArgv] = vi.mocked(deps.pty.create).mock.calls.map(([c]) => c.argv!)
+    expect(statusLine(off)).toEqual([])
+    expect(statusLine(offArgv)).toEqual([])
+    expect(statusLine(on)).toHaveLength(1)
+    expect(statusLine(onArgv)).toEqual(statusLine(on))
+    expect(onArgv[onArgv.indexOf(statusLine(on)[0]) - 1]).toBe('-c')
+  })
+
+  // CODEX§5
+  it("the mark Koloft looks for to end a Codex app-server left by a crash is on every tab's app-server, with the built-in status line on or off", async () => {
+    await launchWithBuiltInStatusLine(false, true)
+
+    expect(mocks.crashLeftoverMarkers).toHaveLength(1)
+    for (const { options } of transports)
+      expect(options.configOverrides).toContain(mocks.crashLeftoverMarkers[0])
+  })
+
   // ADR-0043 CODEX§27 CODEX§30
   it("a background tab's app-server, once Codex trusts the hook, holds its next Bash command while the Mac is busy, for at most 25 s; an owner's tab gets no hold", async () => {
     const reg = path.join(directory, 'reg')
@@ -1222,6 +1376,38 @@ describe('CodexSessions', () => {
     expect(sessions.launchedBypassingChecks(again.id)).toBe(true)
     expect(vi.mocked(deps.pty.create).mock.calls[2][0].argv).not.toContain('-a')
     expect(transports[2].options.configOverrides).toEqual(
+      expect.arrayContaining(['approval_policy="never"', 'sandbox_mode="danger-full-access"'])
+    )
+  })
+
+  // CODEX§11
+  it('with skip permission prompts on, a new thread starts with approvals and the sandbox off, while a resume keeps the permission its thread started with, which Codex restores itself', async () => {
+    let skip = false
+    deps.skipPermissions = () => skip
+    const asking = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind(0, A)
+    await sessions.stop(asking.id)
+
+    skip = true
+    const skipping = await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(vi.mocked(deps.pty.create).mock.calls[1][0].argv!.slice(-4)).toEqual([
+      '-a',
+      'never',
+      '-s',
+      'danger-full-access'
+    ])
+    expect(sessions.launchedBypassingChecks(skipping.id)).toBe(true)
+    bind(1, B)
+    await sessions.stop(skipping.id)
+
+    const stillAsking = await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
+    expect(sessions.launchedBypassingChecks(stillAsking.id)).toBe(false)
+    expect(transports[2].options.configOverrides).not.toContain('approval_policy="never"')
+
+    skip = false
+    const stillSkipping = await sessions.resume({ sessionId: codexSessionKey(B), cwd: repo })
+    expect(sessions.launchedBypassingChecks(stillSkipping.id)).toBe(true)
+    expect(transports[3].options.configOverrides).toEqual(
       expect.arrayContaining(['approval_policy="never"', 'sandbox_mode="danger-full-access"'])
     )
   })

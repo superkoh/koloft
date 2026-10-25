@@ -47,7 +47,9 @@ import {
   newSessionInWith,
   notesOnDisk,
   openMenu,
+  openSessionTerminal,
   openWorktreeSession,
+  panelTerm,
   runIn,
   sendShortcut,
   startSessionIn,
@@ -148,6 +150,9 @@ const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
   ['kt-tcsh', 'tuser'],
   ['kt-fish', 'fuser']
 ]
+const ONE_MACHINE_PER_LOGIN_SHELL = MACHINES_FOR_THE_KOLOFT_COMMAND.filter(
+  ([alias]) => alias !== 'kt-few'
+)
 
 test.describe.configure({ timeout: 420_000 })
 test.beforeAll(() =>
@@ -576,6 +581,22 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  test('E-SSH-27: koloft open, typed in the Workbench shell of a session on the machine, shows a file there in that session’s Workbench, on machines whose login shell is bash (whose /etc/profile resets PATH), tcsh and fish', async ({
+    env
+  }) => {
+    await withLab(env, async ({ app, page }) => {
+      for (const [alias, user] of ONE_MACHINE_PER_LOGIN_SHELL) {
+        await addMachine(page, alias, user)
+        await startSessionIn(page, alias, { remote: true })
+        await openSessionTerminal(app, page)
+        await runIn(page, panelTerm(page), 'koloft open README.md')
+        await expect(artifactBody(page)).toContainText(`koloft-ssh-lab marker for ${user}`, {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+      }
+    })
+  })
+
   test('E-SSH-16: koloft session new -w, run inside a session on the machine, starts a child session there in a worktree of its own, listed under the session that started it, whose reply-language hook starts from the owner’s last words, not from its task', async ({
     env
   }) => {
@@ -611,6 +632,52 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           { timeout: 30_000 }
         )
         .toEqual([OWNER_LAST_WORDS, OWNER_LAST_WORDS])
+    })
+  })
+
+  test('E-SSH-26: koloft session new --workspace, run in a Claude session on this Mac, starts a Claude child in a workspace on the machine; the child reports back with koloft session send from there, and the Mac session reaches it with koloft session send too, since SendMessage reaches no session on another machine', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ page, lab }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'ws-a')
+      const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+      const parent = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.tabId === parentTab
+      )!
+      await runIn(
+        page,
+        centerTerm(page),
+        `/koloft session new --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
+      )
+      await expect(centerTerm(page)).toContainText('koloft exit=0', { timeout: 30_000 })
+      await expect(wsRows(page, 'kt-key')).toHaveCount(1, { timeout: 90_000 })
+      await expect(wsRows(page, 'kt-key').first()).toHaveClass(/\bst-waiting\b/, {
+        timeout: 90_000
+      })
+      const kidTab = (await wsRows(page, 'kt-key').first().getAttribute('data-tab-id'))!
+      const write = (tab: string, line: string): Promise<void> =>
+        page.evaluate(([t, l]) => window.api.terminal.write(t, l + '\r'), [tab, line])
+
+      await write(
+        kidTab,
+        `/koloft session send ${parent.nativeSessionId ?? parent.sessionId} all done`
+      )
+      const parentGot = (): string => {
+        const file = path.join(env.home, 'fake-claude-peer.jsonl')
+        return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+      }
+      await expect
+        .poll(parentGot, { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS })
+        .toMatch(/\(From the session \\".+\\", id \S+:\) all done/)
+
+      await write(parentTab, `/koloft session send ${kidTab} keep going`)
+      await expect
+        .poll(() => runOnTarget(lab, 'kuser', 'cat .claude/projects/*/*.jsonl'), {
+          timeout: 60_000
+        })
+        .toContain('keep going')
     })
   })
 
@@ -1076,11 +1143,15 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           ([id, line]) => window.api.terminal.write(id, line),
           [tabId, '/koloft help\r']
         )
+        const koloftTurnOver = /koloft exit=(\d+)[\s\S]*Codex done/
         await expect
-          .poll(async () => /koloft exit=(\d+)/.exec(await terminalText(page, tabId))?.[1], {
+          .poll(async () => koloftTurnOver.exec(await terminalText(page, tabId))?.[1], {
             timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
           })
           .toBe('0')
+        await expect(
+          wsRows(page, 'kt-key').and(page.locator(`[data-tab-id="${tabId}"]`))
+        ).toHaveClass(/\bst-waiting\b/)
         const listening = (): string =>
           runOnTarget(lab, 'kuser', 'ps -eo args | grep -c "[-]-listen" || true').trim()
         const pidFiles = (): string =>

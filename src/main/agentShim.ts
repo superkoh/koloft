@@ -2,12 +2,15 @@ import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { AGENT_GUIDE } from '@shared/agentGuide'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
+import type { BackendId } from '@shared/types'
 import { NEWID_FN } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { SECRET_VERB, writeSudoShims } from './sudoShim'
 
 export const AGENT_SHIM_WAITS_MS = 10_000
 const SHIM_POLL_MS = 50
+const COULD_NOT_REACH_KOLOFT = 'koloft: could not reach Koloft.'
 
 const HEAD = `#!/usr/bin/env bash
 : koloft agent shim
@@ -40,7 +43,7 @@ req="$dir/req-$id.json"
 res="$dir/res-$id.json"
 trap 'rm -f "$req" "$part" 2>/dev/null' EXIT
 trap 'exit 143' TERM HUP INT
-if ! printf '{%s"argv":[%s],"cwd":"%s","pid":%s}\\n' "$tabfield" "$args" "$(jstr "$PWD")" "$$" > "$part" 2>/dev/null || ! mv "$part" "$req" 2>/dev/null; then
+if ! printf '{%s"argv":[%s],"cwd":"%s","pid":%s}\\n' "$tabfield" "$args" "$(jstr "$PWD")" "$$" 2>/dev/null > "$part" || ! mv "$part" "$req" 2>/dev/null; then
   rm -f "$part" 2>/dev/null
   echo "$unwritable" >&2
   exit 1
@@ -73,7 +76,7 @@ if [ -z "$KOLOFT_AGENT_DIR" ] || [ -z "$KOLOFT_TAB_ID" ] || [ -z "$KOLOFT_PID" ]
 fi
 dir="$KOLOFT_AGENT_DIR"
 tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\","
-unwritable="koloft: could not reach Koloft."
+unwritable="${COULD_NOT_REACH_KOLOFT}"
 ${body(AGENT_SHIM_WAITS_MS)}`
 
 export const REMOTE_AGENT_SHIM = `${HEAD}
@@ -86,27 +89,29 @@ mkdir -p "$dir" 2>/dev/null
 tm=""
 [ -n "$TMUX" ] && tm="$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null)"
 tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\",\\"tmux\\":\\"$(jstr "$tm")\\","
-unwritable="koloft: could not reach Koloft."
+unwritable="${COULD_NOT_REACH_KOLOFT}"
 ${body(REMOTE_AGENT_SHIM_WAITS_MS, REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS)}`
 
-// CODEX§12 CODEX§17
-function codexAgentShim(requestDir: string, guide: string): string {
+const CODEX_SANDBOX_IS_READ_ONLY = 'koloft: this sandbox is read-only, so koloft cannot run here.'
+
+// CODEX§12 CODEX§17 MUSE§8 AGY§25
+function folderAgentShim(backend: BackendId, requestDir: string, guide: string): string {
   return `${HEAD}
 case "\${1:-help}" in help|--help) cat ${shq(guide)}; exit 0 ;; esac
 dir=${shq(requestDir)}
 if [ ! -d "$dir" ]; then
-  echo "koloft: this Codex session is no longer linked to Koloft." >&2
+  echo "koloft: this ${BACKEND_LABEL[backend]} session is no longer linked to Koloft." >&2
   exit 1
 fi
 tabfield=""
-unwritable="koloft: this sandbox is read-only, so koloft cannot run here."
+unwritable="${backend === 'codex' ? CODEX_SANDBOX_IS_READ_ONLY : COULD_NOT_REACH_KOLOFT}"
 ${body(AGENT_SHIM_WAITS_MS)}`
 }
 
-export function writeAgentShim(shimDir: string, requestDir: string): void {
+export function writeAgentShim(shimDir: string, requestDir: string, backend: BackendId): void {
   const guide = path.join(shimDir, 'koloft-guide.txt')
   fs.writeFileSync(guide, AGENT_GUIDE + '\n')
-  fs.writeFileSync(path.join(shimDir, 'koloft'), codexAgentShim(requestDir, guide), {
+  fs.writeFileSync(path.join(shimDir, 'koloft'), folderAgentShim(backend, requestDir, guide), {
     mode: 0o755
   })
   writeSudoShims(shimDir)

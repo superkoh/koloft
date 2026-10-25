@@ -15,6 +15,7 @@ import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
+import type { SessionPlace } from './usageCache'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
@@ -33,6 +34,8 @@ import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 
 const AVAILABILITY_FAILURE_MS = 60_000
 const EMIT_THROTTLE_MS = 500
+// MUSE§5 CODEX§2 AGY§8
+const NEW_SESSION_LIST_LAG_MS = 30_000
 
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
@@ -59,6 +62,11 @@ export interface HistoryEntry {
   createdAt?: number
   updatedAt?: number
   cliVersion?: string
+}
+
+export interface HistoryListing<H extends HistoryEntry> {
+  entries: { key: string; entry: H; archived: boolean }[]
+  listedHosts: string[]
 }
 
 export interface StoredRun {
@@ -109,6 +117,8 @@ export interface SessionsWithStore {
   readonly store: SessionStore
   readonly worktrees: SessionWorktrees
   rows(workspace: string): BackendSessionRow[]
+  workspacesFor(cwds: string[]): string[]
+  sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
   members(): Set<string>
   runningBindings(): Map<string, string>
   threadGone(key: string): boolean
@@ -142,6 +152,8 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   protected runs = new Map<string, R>()
   protected history = new Map<string, H>()
   protected archivedIds = new Set<string>()
+  protected listedAt = new Map<string | undefined, number>()
+  private lastRunAt = new Map<string, number>()
   private places = new Map<string, Place>()
   private probed?: { at: number; reply: BackendAvailability }
   private probing?: Promise<BackendAvailability>
@@ -150,7 +162,6 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
-  private listed = false
   private launchingKeys = new Set<string>()
   private relaunchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
@@ -205,7 +216,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     throw new Error(stillOld)
   }
 
-  protected abstract listHistory(): Promise<{ key: string; entry: H; archived: boolean }[]>
+  protected abstract listHistory(): Promise<HistoryListing<H>>
   protected abstract startRun(ctx: StartContext, prepared: P): Promise<R>
   protected abstract untestedNotice(version: string): string
 
@@ -369,6 +380,30 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     const workspace = member?.workspacePath ?? (entry ? this.workspaceFor(entry.cwd) : undefined)
     return workspace ? this.rows(workspace).find((row) => row.id === key) : undefined
   }
+  hasHistoryOn(host: string): boolean {
+    for (const key of this.history.keys()) if (hostOfKey(key) === host) return true
+    return false
+  }
+  sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined {
+    const scope = this.rowScope()
+    return (id, host) => {
+      const key = this.keyOf(id, host)
+      const entry = this.history.get(key)
+      const member = this.store.getMember(key)
+      const workspace =
+        member?.workspacePath ?? (entry ? this.workspaceFor(entry.cwd, scope) : undefined)
+      const title = entry ? this.titleOf(key, entry) : member?.title
+      return workspace && title !== undefined ? { workspace, title } : undefined
+    }
+  }
+  private titleOf(key: string, t: H): string {
+    return (
+      this.store.nameOfLeftMember(key) ||
+      t.name ||
+      t.preview?.slice(0, 100) ||
+      PLACEHOLDER_TITLES[this.id]
+    )
+  }
   members(): Set<string> {
     return new Set([
       ...this.store.listMembers().map((m) => m.key),
@@ -376,11 +411,20 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     ])
   }
 
-  rows(workspace: string): BackendSessionRow[] {
-    const scope: RowScope = {
+  private rowScope(): RowScope {
+    return {
       byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
       remotePlaces: new Map()
     }
+  }
+
+  workspacesFor(cwds: string[]): string[] {
+    const scope = this.rowScope()
+    return cwds.map((cwd) => this.workspaceFor(cwd, scope))
+  }
+
+  rows(workspace: string): BackendSessionRow[] {
+    const scope = this.rowScope()
     const rows = new Map<string, BackendSessionRow>()
     for (const [key, t] of this.history) {
       const member = this.store.getMember(key)
@@ -388,6 +432,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       rows.set(key, this.row(t, scope))
     }
     for (const m of this.store.listMembers(workspace)) {
+      if (this.gone(m.key, m.updatedAt)) continue
       const r: BackendSessionRow = rows.get(m.key) ?? {
         id: m.key,
         title: m.title,
@@ -443,7 +488,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       id: key,
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
-      title: t.name || t.preview?.slice(0, 100) || PLACEHOLDER_TITLES[this.id],
+      title: this.titleOf(key, t),
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? place.worktreeName ?? 'main',
       running: this.readsRunning(key),
@@ -490,9 +535,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       }
     }
     if (this.shuttingDown) return
-    let entries: { key: string; entry: H; archived: boolean }[]
+    let listing: HistoryListing<H>
+    const startedAt = Date.now()
     try {
-      entries = await this.listHistory()
+      listing = await this.listHistory()
     } catch (error) {
       this.noteBinaryGone(error)
       this.historyError = error instanceof Error ? error : new Error(String(error))
@@ -500,14 +546,14 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     }
     const seen = new Map<string, H>()
     const archivedIds = new Set<string>()
-    for (const { key, entry, archived } of entries) {
+    for (const { key, entry, archived } of listing.entries) {
       seen.set(key, entry)
       if (archived) archivedIds.add(key)
     }
     this.history = seen
     this.places.clear()
     this.archivedIds = archivedIds
-    this.listed = true
+    for (const host of [undefined, ...listing.listedHosts]) this.listedAt.set(host, startedAt)
     this.historyError = undefined
     this.changed()
   }
@@ -529,7 +575,19 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   }
 
   threadGone(key: string): boolean {
-    return this.listed && !this.refreshing && !this.history.has(key) && !this.aliveTabFor(key)
+    return !this.refreshing && this.gone(key, this.store.getMember(key)?.updatedAt ?? 0)
+  }
+
+  // CODEX§15 MUSE§5 AGY§8
+  private gone(key: string, boundAt: number): boolean {
+    if (this.history.has(key)) return false
+    const listedAt = this.listedAt.get(hostOfKey(key))
+    const lastLive = Math.max(boundAt, this.lastRunAt.get(key) ?? 0)
+    return (
+      listedAt !== undefined &&
+      lastLive < listedAt - NEW_SESSION_LIST_LAG_MS &&
+      !this.readsRunning(key)
+    )
   }
 
   launchedBypassingChecks(tabId: string): boolean {
@@ -704,7 +762,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       run.resource = this.store.listResources().find((r) => r.worktreePath === treeRoot)
     }
     const m = this.store.getMember(key),
+      leftName = m ? undefined : this.store.nameOfLeftMember(key),
       now = Date.now()
+    if (old && old !== key) this.lastRunAt.set(old, now)
     try {
       this.store.upsertMember({
         id: entry.id,
@@ -714,6 +774,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         title:
           run.launchName ||
           (this.keepsItsOwnTitle && m?.title !== PLACEHOLDER_TITLES[this.id] ? m?.title : '') ||
+          leftName ||
           entry.name ||
           entry.preview?.slice(0, 100) ||
           m?.title ||
@@ -722,7 +783,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
         ...(run.permission !== 'default' ? { permission: run.permission } : {}),
-        ...(this.keepsItsOwnTitle && (run.launchName || m?.named) ? { named: true as const } : {})
+        ...(this.keepsItsOwnTitle && (run.launchName || m?.named || leftName)
+          ? { named: true as const }
+          : {})
       })
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)
@@ -843,6 +906,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
             sessionId: run.info?.sessionId
           })
         this.runs.delete(tabId)
+        if (run.info) this.lastRunAt.set(run.info.sessionId, Date.now())
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {
           try {
             this.removeMember(run.info.sessionId)

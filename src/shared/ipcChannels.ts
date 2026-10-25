@@ -61,6 +61,10 @@ export const CH = {
   session: {
     relocated: 'session:relocated'
   },
+  usage: {
+    read: 'usage:read',
+    changed: 'usage:changed'
+  },
   cron: {
     list: 'cron:list',
     save: 'cron:save',

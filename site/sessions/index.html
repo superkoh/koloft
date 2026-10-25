@@ -289,21 +289,32 @@
             <a href="../accounts/#assist">Assist</a> picks the folder, the worktree and a title, and
             the session starts there with your words as its first message. In a folder git tracks it
             gets a worktree of its own (see <a href="#worktrees">worktree sessions</a>). If the
-            folder's branch is behind, Koloft first asks whether to pull. <kbd>⇧⏎</kbd> works as for
-            <kbd>⌘N</kbd> above.
+            folder's branch is behind, Koloft first asks whether to pull. <kbd>⌘⏎</kbd> picks
+            another agent, as <kbd>⇧⏎</kbd> does for <kbd>⌘N</kbd> above. <kbd>⇧⏎</kbd> starts a new
+            line.
+          </li>
+          <li>
+            To pick the folder yourself, type <kbd>@</kbd>: a <code>Workspaces</code> list of your
+            folders shows up and narrows as you type. <kbd>⏎</kbd> or <kbd>⇥</kbd> fills the name
+            in; <kbd>Esc</kbd> puts the list away and keeps your words. A folder on another machine
+            is named like <code>host:name</code>. With a folder named, <kbd>⏎</kbd> starts the
+            session there, with the rest of your words as its first message (if the folder's branch
+            is behind, Koloft first asks whether to pull). Assist is skipped, so the button reads as
+            it does with Assist off (see below). Name two different folders and the button is off;
+            the tip reads <code>Name one workspace · Esc</code>.
           </li>
           <li>
             Not everything you type starts a session. "open settings" or "check for updates" just
             does it. Ask for a session by what it was doing ("go to the session that was fixing
             login"), and <kbd>⌘P</kbd> jumps to it, starting nothing. With Koloft Assist on, what
-            <kbd>⌘P</kbd> cannot do by itself goes to your <a href="../accounts/#butler">butler</a>,
-            and the screen moves there: words about Koloft itself ("set up Discord"), "ask
-            &lt;folder&gt; …" (with that folder named), a question, or work that fits more than one
-            folder ("fix the tests"). If the butler is closed, it opens with your words. If it is
-            busy, a helper of the butler takes them instead, under the butler's row. The agent you
-            picked goes along (the one on the button, or one from the ▾ list or <kbd>⇧⏎</kbd>): the
-            butler is asked to start any session for this work on that agent, and a helper uses that
-            agent too.
+            <kbd>⌘P</kbd> cannot do by itself (words about Koloft itself like "set up Discord", "ask
+            tidewatch …" with the folder named in plain words, a question, or work that fits more
+            than one folder like "fix the tests") goes to a helper of your
+            <a href="../accounts/#butler">butler</a>: a new session in the butler's own folder,
+            under its row. The screen moves there. If the butler is closed, it opens first. The
+            helper runs on the agent you picked (the one on the button, or one from the ▾ list or
+            <kbd>⌘⏎</kbd>), does the job and reports back to your butler. "Set up Discord" works its
+            own way (see <a href="../discord/#set-up">discord</a>).
           </li>
           <li>
             With Assist off, the button reads <code>Start a session</code> (with more than one
@@ -451,8 +462,9 @@
           <li>Claude and Codex both do this.</li>
           <li>
             If the session that started them ends but its row stays in the list, they stay under
-            that row, now shown as closed. Nothing under a session closes with it, however it is
-            closed.
+            that row, now shown as closed. Closing a session in the app closes nothing under it;
+            <code class="nowrap">koloft session close</code> also closes the ended sessions it
+            started (see <a href="../agents/">agents</a>).
           </li>
           <li>
             A row hangs under its starter only while the starter is in the same folder's list. When
@@ -474,7 +486,7 @@
         <p>
           The first row of the list is your <a href="../accounts/#butler">butler</a>,
           <code>Alfred · Butler</code>, above every folder. When the session tab you are looking at
-          goes away, Koloft shows the butler.
+          goes away, Koloft shows the butler, unless that session ended before it ever started.
         </p>
         <p>
           When the Mac is busy (macOS says memory is tight, or the processors have been very busy

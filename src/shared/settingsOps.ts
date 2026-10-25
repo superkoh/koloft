@@ -28,8 +28,10 @@ export function buildResetPatch(): Partial<Settings> {
     gitPicks,
     gitSuggestionsDismissed,
     gitMachines,
+    todoNotes,
     ...rest
   } = DEFAULT_SETTINGS
+  void todoNotes
   void butler
   void gitAccounts
   void gitPicks
@@ -56,8 +58,10 @@ export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Setting
     gitPicks,
     gitSuggestionsDismissed,
     gitMachines,
+    todoNotes,
     ...rest
   } = patch
+  void todoNotes
   void gitAccounts
   void gitPicks
   void gitSuggestionsDismissed
@@ -84,7 +88,8 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.discord = sanitizeDiscord(merged.discord)
   merged.assist = sanitizeAssist(merged.assist)
   merged.butler = sanitizeButler(merged.butler)
-  merged.newProjectFolders = sanitizeFolderMap(merged.newProjectFolders)
+  merged.newProjectFolders = sanitizeTextMap(merged.newProjectFolders)
+  merged.todoNotes = sanitizeTextMap(merged.todoNotes)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
       ? merged.workbenchWidth
@@ -127,7 +132,7 @@ function sanitizeButler(raw: unknown): ButlerSetting {
   )
 }
 
-function sanitizeFolderMap(raw: unknown): Record<string, string> {
+function sanitizeTextMap(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object') return {}
   return Object.fromEntries(
     Object.entries(raw).filter(

@@ -30,7 +30,7 @@ import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museS
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
-import { sharedProcessTable } from './processTable'
+import { sharedProcessTable, type ProcessTable } from './processTable'
 import { AgySessions } from './agySessions'
 import {
   agyAccountEnv,
@@ -54,7 +54,7 @@ import {
 } from './remote/agyTab'
 import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
-import { museConfigHome } from './museSessionLog'
+import { museConfigHome, museHome } from './museSessionLog'
 import { museSignIn, storeMuseKey } from './museServe'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
@@ -101,7 +101,7 @@ import {
   jsDialogFor,
   standardUserAgent
 } from './browserSecurity'
-import { directoryListingHtml } from './dirListing'
+import { directoryListingHtml, fileNotFoundHtml } from './dirListing'
 import { stripTerminalCodes } from './terminalCodes'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
@@ -135,7 +135,15 @@ import {
   runSshBytes,
   sshOptions
 } from './remote/ssh'
-import { ENSURE_CODEX_SH, ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import {
+  ENSURE_CODEX_SH,
+  ENSURE_SH,
+  TMUX_CONF,
+  UTIL_BASH_LOGIN,
+  UTIL_BASH_LOGIN_FILE,
+  UTIL_SH,
+  remoteShCommand
+} from './remote/install'
 import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
 import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
@@ -158,6 +166,7 @@ import {
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
+import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
@@ -329,6 +338,8 @@ import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
+import createUsageScanWorker from './usageScanWorker?nodeWorker'
+import { UsageCache, listUsageFiles, statOf, type ScannedFile } from './usageCache'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
   attentionReason,
@@ -450,6 +461,17 @@ import {
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { githubVerb, repoFlagOf } from './agentGithub'
+import { todoVerb } from './agentTodo'
+import { claudeJsonPath } from './claudeTrust'
+import {
+  AGY_PROJECT_MCP_FILE,
+  PROJECT_MCP_FILE,
+  claudeServers,
+  codexServers,
+  jsonServers,
+  type ConfigText,
+  type McpServer
+} from './mcpServers'
 import { claudeShowsAPanel, whenMessagingSocket } from './claudeSessionRegistry'
 import {
   asPeerName,
@@ -471,7 +493,7 @@ import {
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
-import { crossSessionLine, writeLineInTurn } from './crossSessionMessage'
+import { A_HELPER_HAS_IT, crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, onlyNews, waitsOnOtherWork } from './turnNews'
@@ -484,6 +506,7 @@ import {
   removeTree,
   tidyTree,
   whatIsLeft,
+  type MergedHeads,
   type TidyResult
 } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
@@ -650,11 +673,35 @@ tracker.needsUser = (id) => attention.waitsOnApproval(id)
 let leftovers: Record<string, LeftoverProcess[]> = {}
 tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
-async function refreshLeftovers(): Promise<void> {
-  const next = await scanLeftovers(await sharedProcessTable.eachRound(LEFTOVER_SCAN_MS))
-  const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
-  leftovers = next
-  if (changed) sendToRenderer(CH.sessions.leftovers, next)
+const LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS = 2 * LEFTOVER_SCAN_MS
+const closedSessionsStoppedUntil = new Map<string, number>()
+async function stopLeftoversOfClosedSessions(
+  found: Record<string, LeftoverProcess[]>
+): Promise<void> {
+  const now = Date.now()
+  for (const [sessionId, until] of closedSessionsStoppedUntil) {
+    if (until < now) closedSessionsStoppedUntil.delete(sessionId)
+    else if (found[sessionId]) {
+      const stopped = await Promise.all(found[sessionId].map((p) => stopLeftover(sessionId, p.pid)))
+      found[sessionId] = found[sessionId].filter((_, i) => !stopped[i])
+      if (!found[sessionId].length) delete found[sessionId]
+    }
+  }
+}
+let leftoverScans: Promise<void> = Promise.resolve()
+function refreshLeftovers(
+  table: () => Promise<ProcessTable | null> = () => sharedProcessTable.eachRound(LEFTOVER_SCAN_MS)
+): Promise<void> {
+  leftoverScans = leftoverScans
+    .then(async () => {
+      const next = await scanLeftovers(await table())
+      await stopLeftoversOfClosedSessions(next)
+      const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
+      leftovers = next
+      if (changed) sendToRenderer(CH.sessions.leftovers, next)
+    })
+    .catch(() => undefined)
+  return leftoverScans
 }
 if (process.platform !== 'win32') {
   setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
@@ -877,6 +924,16 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
   return { title: s?.title, sessionId: s?.sessionId }
 }
+// PLATFORM§60
+const AWAY_AFTER_IDLE_SECONDS = 5 * 60
+function ownerAway(): boolean {
+  const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
+  if (pretend)
+    return !fs.existsSync(pretend) || fs.readFileSync(pretend, 'utf8').trim() !== 'active'
+  if (BACKGROUND_TEST) return true
+  return powerMonitor.getSystemIdleState(AWAY_AFTER_IDLE_SECONDS) !== 'active'
+}
+
 function windowFocused(): boolean {
   try {
     return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
@@ -1070,6 +1127,7 @@ function machinePackage(): MachinePackage {
     [HOLD_FILE]: HOLD_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
+    [UTIL_BASH_LOGIN_FILE]: UTIL_BASH_LOGIN,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
     [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
@@ -1321,6 +1379,42 @@ function butlerSide(tabId: string): boolean {
   )
 }
 
+function textOrNull(file: string): Promise<string | null> {
+  return fs.promises.readFile(file, 'utf8').catch(() => null)
+}
+
+async function mcpServersNow(): Promise<McpServer[]> {
+  const local = (workspaceMgr?.pinnedPaths() ?? []).flatMap((w) =>
+    isRemoteKey(w.path) ? [] : [w.path]
+  )
+  const inProjects = (file: string): Promise<ConfigText[]> =>
+    Promise.all(
+      local.map(async (onlyIn) => ({ onlyIn, text: await textOrNull(path.join(onlyIn, file)) }))
+    )
+  const museSettings = path.join(
+    museConfigHome(museSessions?.defaultEnv ?? process.env),
+    'muse',
+    'settings.json'
+  )
+  const [claudeJson, projectFiles, agyProjectFiles, codexToml, muse, agy] = await Promise.all([
+    textOrNull(claudeJsonPath()),
+    inProjects(PROJECT_MCP_FILE),
+    inProjects(AGY_PROJECT_MCP_FILE),
+    textOrNull(codexSharedConfig()),
+    textOrNull(museSettings),
+    textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
+  ])
+  return [
+    ...claudeServers(claudeJson, projectFiles, [
+      ...local,
+      conductorFolder(app.getPath('userData'))
+    ]),
+    ...codexServers(codexToml),
+    ...jsonServers('muse', [{ text: muse }, ...projectFiles]),
+    ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
+  ]
+}
+
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
   const workspace = sessionBackends.workspaceOfTab(tabId)
   return workspace && workspaceMgr?.isPinned(workspace) ? workspace : undefined
@@ -1505,9 +1599,15 @@ const sessionDeps: SessionVerbDeps = {
   startedSessions,
   closable: closableSessions,
   whatIsLeft: whatClosingWouldLose,
-  closeSoon: (target) =>
-    setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
+  closeSoon: (inOrder) =>
+    setTimeout(async () => {
+      for (const target of inOrder)
+        await closeSessionFully(target).catch((error) =>
+          sendToRenderer(CH.cron.toast, `${target.title}: ${String(error)}`)
+        )
+    }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
+  speaksForTheOwner: butlerSide,
   butlerFolder: () => conductorFolder(app.getPath('userData')),
   butlerHelperRole: () => butlerHelperRole(butlerNameNow()),
   sidebar: () => workspaceMgr?.rows() ?? [],
@@ -1539,12 +1639,14 @@ const sessionDeps: SessionVerbDeps = {
     const callerChannel = butler?.channelOfTab(callerTab)
     const channelId = callerChannel ?? (target.butler ? butler?.channel()?.channelId : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
-    if (!channelId) return void sendToRenderer(CH.cron.toast, text)
-    discordRelay?.say(channelId, `⚠ ${text}`)
+    const butlerTab = callerChannel ? callerTab : butler?.liveTab()
+    if (channelId && discordRelay?.reaches(butlerTab ?? callerTab))
+      discordRelay.say(channelId, `⚠ ${text}`)
+    else sendToRenderer(CH.cron.toast, text)
     if (callerChannel) discordRelay?.tell(butlerDestination(), `[Koloft] ${text}`)
   },
   command: async (callerTab, target, text, tellCaller) =>
-    target.butler && butler?.channelOfTab(callerTab)
+    target.butler && butler?.channelOfTab(callerTab) && discordRelay?.reaches(callerTab)
       ? commandIntoButler(text)
       : typeCommandInto(target, text, { tell: tellCaller }),
   screen: screenOf
@@ -1569,6 +1671,7 @@ const agentRequests = new AgentRequests({
     workspace: workspaceVerb({ sidebar: projectRows }),
     discord: discordVerb({
       channelOf: (tabId) => butler?.channelOfTab(tabId),
+      quiet: (tabId) => !!discordRelay && !discordRelay.reaches(tabId),
       send: async (channelId, files, text) => {
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
@@ -1613,6 +1716,33 @@ const agentRequests = new AgentRequests({
           ? { ok: true, out: onMachine.stdout }
           : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
       }
+    }),
+    todo: todoVerb({
+      allowed: butlerSide,
+      sidebar: () => workspaceMgr?.rows() ?? [],
+      pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
+      sessions: () => allSessions().filter((s) => !s.butler),
+      asking: asksTheOwner,
+      asleep: (sessionId) => !!sleepingTabOf(sessionId),
+      workLeft: async (row) => {
+        const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
+        return tree ? whatIsLeft(hostGitOut, tree) : null
+      },
+      worktrees: sessionDeps.worktrees,
+      repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
+      pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
+      notes: () => loadSettings().todoNotes,
+      saveNote: (key, text) => {
+        const todoNotes = { ...loadSettings().todoNotes, [key]: text }
+        if (!text) delete todoNotes[key]
+        commitSettings({ todoNotes })
+      },
+      projectFiles: async (wsPath) =>
+        (await hosts.of(wsPath).listDir(wsPath)).filter((e) => !e.isDir),
+      readText: (file) => hosts.of(file).readText(file),
+      servers: mcpServersNow,
+      butlerFolder: sessionDeps.butlerFolder,
+      now: Date.now
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -2432,8 +2562,10 @@ app.whenReady().then(() => {
 
   sweepStaleGitRequestDirs(pidAlive)
   const gitRequestDir = newGitRequestDir()
-  const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } =
-    setupShim(gitRequestDir)
+  const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } = setupShim(
+    gitRequestDir,
+    conductorFolder(app.getPath('userData'))
+  )
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
   if (agentRequests.watch(agentDir)) {
@@ -2648,9 +2780,10 @@ app.whenReady().then(() => {
     sendToRenderer(CH.session.relocated, e)
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
-  tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) =>
+  tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
     discordRelay?.toolDone(tabId, call)
-  )
+    void askButtons?.check(tabId)
+  })
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
@@ -2664,10 +2797,12 @@ app.whenReady().then(() => {
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
     const onDiscord = !!butler?.channelOfTab(t.tabId)
-    if (onDiscord && (t.next === 'approval' || t.next === 'waiting'))
+    const asksOnDiscord = butlerSide(t.tabId) && !!butler?.channel()
+    if (asksOnDiscord && (t.next === 'approval' || t.next === 'waiting'))
       void pendingAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
+    if (asksOnDiscord) void askButtons?.check(t.tabId)
     discordTyping?.refresh(t.tabId)
-    if (!(onDiscord && t.next === 'waiting'))
+    if (!(onDiscord && t.next === 'waiting' && discordRelay?.reaches(t.tabId)))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
@@ -2719,7 +2854,9 @@ app.whenReady().then(() => {
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+      skipPermissions: () => loadSettings().skipPermissions,
       replyLanguageScript: hookPaths.codexReplyLanguage,
+      builtInStatusLine: () => loadSettings().statuslineBuiltin,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
@@ -2962,6 +3099,7 @@ app.whenReady().then(() => {
     kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
+    notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
     bindDeadlineMs: cronBindDeadlineMs()
   })
   const discordLockFile = path.join(userData, 'discord.lock')
@@ -3010,7 +3148,8 @@ app.whenReady().then(() => {
   })
   discordTyping = new ButlerTyping({
     link,
-    channelOf: (tabId) => butlerNow.channelOfTab(tabId),
+    channelOf: (tabId) =>
+      discordRelay?.reaches(tabId) ? butlerNow.channelOfTab(tabId) : undefined,
     status: (tabId) => tracker.statusOf(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
@@ -3025,7 +3164,8 @@ app.whenReady().then(() => {
       if (!discordRelay) return STILL_STARTING
       return discordRelay.answerSession(tabId, reply)
     },
-    respond: (i, body) => link.respond(i, body)
+    respond: (i, body) => link.respond(i, body),
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card)
   })
   askButtons = buttons
   const secrets = new SecretAsks({
@@ -3057,6 +3197,7 @@ app.whenReady().then(() => {
       return Buffer.from(await res.arrayBuffer())
     },
     owner: () => butlerNow.owner(),
+    ownerAway,
     butlerName: butlerNameNow,
     destinationOf: (channelId) =>
       butlerNow.isButlerChannel(channelId) ? butlerDestination() : undefined,
@@ -3073,7 +3214,12 @@ app.whenReady().then(() => {
         : []
     },
     butlerChannelOf: (tabId) => butlerNow.channelOfTab(tabId),
+    askChannelOf: (tabId) => (butlerSide(tabId) ? butlerNow.channel()?.channelId : undefined),
+    helperTitle: (tabId) =>
+      butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
+    askPlaced: (card, at) => buttons.placed(card, at),
+    answered: (tabId, reply) => buttons.answered(tabId, reply),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId) => tracker.statusOf(tabId),
@@ -3081,7 +3227,10 @@ app.whenReady().then(() => {
     turnOver: (tabId) => tracker.turnOver(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
+    asksChanged: (tabId) => {
+      ptyMgr.wakeReady(tabId)
+      void buttons.check(tabId)
+    },
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: queueCodexMessage,
@@ -3109,9 +3258,10 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
+      const codexMachines = new Set(codexSessions?.machinesWithTabs())
       const live = new Set([
         ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
-        ...(codexSessions?.machinesWithTabs() ?? [])
+        ...codexMachines
       ])
       const busy = new Set(
         allSessions().flatMap((s) => {
@@ -3123,17 +3273,22 @@ app.whenReady().then(() => {
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
-        ...(agySessions?.usesHost(t.host)
-          ? {
-              extraPulls: [
+        extraPulls: [
+          ...(agySessions?.usesHost(t.host)
+            ? [
                 {
                   from: AGY_REMOTE_BRAIN,
                   to: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain'),
                   flags: AGY_BRAIN_FLAGS
                 }
               ]
-            }
-          : {}),
+            : []),
+          ...usagePulls(userData, t.host, {
+            codex: codexMachines.has(t.host) || !!codexSessions?.hasHistoryOn(t.host),
+            muse: !!museSessions?.hasHistoryOn(t.host),
+            agy: !!agySessions?.usesHost(t.host)
+          })
+        ],
         paths: t.paths,
         hasTabs: live.has(t.host),
         busy: busy.has(t.host)
@@ -3294,6 +3449,7 @@ app.whenReady().then(() => {
   // PLATFORM§20
   powerMonitor.on('resume', requestWebglRepair)
   powerMonitor.on('unlock-screen', requestWebglRepair)
+  powerMonitor.on('lock-screen', () => discordRelay?.checkHeld())
   powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3
   powerMonitor.on('resume', () => cronRunner?.onResume())
@@ -3402,7 +3558,11 @@ function setupLine(playwrightBin?: string): string | undefined {
 const processedOpenIds = new Set<string>()
 
 function watchOpenRequests(openDir: string): fs.FSWatcher | null {
-  return watchJsonDrops(openDir, () => (obj, full) => handleOpenRequest(obj as OpenDrop, full))
+  return watchJsonDrops(
+    openDir,
+    () => (obj, full) => handleOpenRequest(obj as OpenDrop, full),
+    () => true
+  )
 }
 
 const OPEN_REQUEST_STILL_WANTED_MS = 60_000
@@ -3415,7 +3575,7 @@ function sweepOpenRequests(openDir: string): void {
       fs.stat(full, (e, st) => {
         if (e) return
         if (Date.now() - st.mtimeMs <= OPEN_REQUEST_STILL_WANTED_MS) {
-          readJsonDrop(full, 0, (obj) => handleOpenRequest(obj as OpenDrop, full))
+          void readJsonDrop(full, 0, (obj) => handleOpenRequest(obj as OpenDrop, full))
         } else {
           fs.rm(full, { force: true }, () => {})
         }
@@ -3870,21 +4030,25 @@ function browserGuestLimit(): number {
   return Number.isInteger(injected) && injected > 0 ? injected : DEFAULT_BROWSER_GUEST_LIMIT
 }
 
-async function directoryTarget(url: string): Promise<string | null> {
-  let target: string
+function localFilePath(url: string): string | null {
   try {
     const u = new URL(url)
     if (u.host && u.host !== 'localhost') return null
-    target = decodeURIComponent(u.pathname)
-  } catch {
-    return null
-  }
-  try {
-    return (await fs.promises.stat(target)).isDirectory() ? target : null
+    return decodeURIComponent(u.pathname)
   } catch {
     return null
   }
 }
+
+async function isDirectory(target: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(target)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8' }
 
 const liveDownloads = new Map<string, Electron.DownloadItem>()
 
@@ -3953,17 +4117,20 @@ function setupBrowserPartition(): void {
   ses.protocol.handle('koloft-file', async () => new Response('Forbidden', { status: 403 }))
   // PLATFORM§12
   ses.protocol.handle('file', async (request) => {
-    const dir = await directoryTarget(request.url)
-    if (dir) {
-      const entries = (await fs.promises.readdir(dir, { withFileTypes: true })).map((e) => ({
+    const target = localFilePath(request.url)
+    if (target && (await isDirectory(target))) {
+      const entries = (await fs.promises.readdir(target, { withFileTypes: true })).map((e) => ({
         name: e.name,
         isDir: e.isDirectory()
       }))
-      return new Response(directoryListingHtml(dir, entries), {
-        headers: { 'content-type': 'text/html; charset=utf-8' }
-      })
+      return new Response(directoryListingHtml(target, entries), { headers: HTML_HEADERS })
     }
-    return ses.fetch(request, { bypassCustomProtocolHandlers: true })
+    try {
+      return await ses.fetch(request, { bypassCustomProtocolHandlers: true })
+    } catch (err) {
+      if (!target || !String(err).includes('ERR_FILE_NOT_FOUND')) throw err
+      return new Response(fileNotFoundHtml(target), { status: 404, headers: HTML_HEADERS })
+    }
   })
   const guestUA = standardUserAgent(app.userAgentFallback, app.getName())
   // PLATFORM§14
@@ -4183,6 +4350,7 @@ function closableSessions(): ClosableSession[] {
 }
 
 const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
+const mergedHeads: MergedHeads = (dir, branch) => hosts.of(dir).github.mergedHeads(dir, branch)
 
 function treeRootOf(s: SessionInfo): string {
   return projectInfoFor(s.remote ? formatRemoteKey(s.remote.host, s.treeRoot) : s.treeRoot).treeRoot
@@ -4207,7 +4375,7 @@ async function whatClosingWouldLose(
   const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
-    ...(await whatIsLeft(hostGitOut, tree))
+    ...(await whatIsLeft(hostGitOut, tree, mergedHeads))
   ]
 }
 
@@ -4233,6 +4401,12 @@ async function closeSessionFully(
   }
   archiveSession(target.sessionId)
   for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  // CC§9 MUSE§8
+  closedSessionsStoppedUntil.set(
+    target.sessionId,
+    Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
+  )
+  void refreshLeftovers(() => sharedProcessTable.fresh())
 }
 
 async function removeUntouchedWorktree(
@@ -4259,6 +4433,7 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
 const RUN_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
+const RUN_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody answered'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
@@ -4266,9 +4441,13 @@ async function whatClosingTheRunWouldLose(
   worktree?: string
 ): Promise<string[]> {
   if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
+  // CODEX§20
+  const asked = codexSessions?.questionWentUnanswered(tabId)
+    ? [RUN_ASKED_A_QUESTION_NOBODY_ANSWERED]
+    : []
   const session = sessionOfTab(tabId)
-  if (!session) return [NO_SESSION_FOR_THE_RUN]
-  return whatClosingWouldLose(session, cronRunTree(root, worktree))
+  if (!session) return [...asked, NO_SESSION_FOR_THE_RUN]
+  return [...asked, ...(await whatClosingWouldLose(session, cronRunTree(root, worktree)))]
 }
 
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
@@ -4312,7 +4491,12 @@ async function tidyRun(root: string, worktree: string, sessionId?: string): Prom
     if (after === 'unreachable') return machineUnreachable()
   }
   const info = cronRunTree(root, worktree)
-  const result = await tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d))
+  const result = await tidyTree(
+    hostGitOut,
+    info,
+    (d) => hosts.of(d).dirExistsOrThrow(d),
+    mergedHeads
+  )
   if (result.removed)
     for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
   return result
@@ -4609,13 +4793,10 @@ function fromPalette({ words, backend, about, at }: PaletteRequest): string {
   return `The owner typed this in ⌘P: ${words}${where}${routed}${agent}`
 }
 
-// AGY§8
-const A_HELPER_HAS_IT =
-  '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
-
 async function startHelper(
   task: (butler: SessionInfo) => ButlerHelperTask
 ): Promise<ConductorOpenResult> {
+  // AGY§8
   const opened = await butler?.open(A_HELPER_HAS_IT)
   if (!opened) return { ok: false, error: STILL_STARTING }
   if (!opened.ok) return opened
@@ -5305,6 +5486,39 @@ function registerIpc(): void {
     },
     send: (found) => sendToRenderer(CH.sessions.searchHits, found)
   })
+  const usageCache = new UsageCache({
+    cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-4.json'),
+    listFiles: async () => {
+      await workspaceMgr?.firstScan
+      const userData = app.getPath('userData')
+      return listUsageFiles(workspaceMgr?.transcriptFiles() ?? [], [
+        {
+          codexHome: path.dirname(codexSharedConfig()),
+          museHome: museHome(museSessions?.defaultEnv ?? process.env),
+          geminiDir: ownersGemini()
+        },
+        ...(workspaceMgr?.remoteTargets() ?? []).map(({ host }) => machineUsageDirs(userData, host))
+      ])
+    },
+    stat: statOf,
+    scan: (files, scanned, ended) => {
+      // PLATFORM§4
+      const worker = createUsageScanWorker({ workerData: { files } })
+      worker.on('message', (file: ScannedFile) => scanned(file))
+      worker.on('error', (error) => console.error('[koloft] usage read failed', error))
+      worker.once('exit', ended)
+    },
+    codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
+    sessionPlaces: () => {
+      const claude = workspaceMgr?.sessionPlaces()
+      const stored = new Map(storedSessions().map((s) => [s.id, s.sessionPlaces()]))
+      return (backend, id, host) =>
+        backend === 'claude' ? claude?.get(id) : stored.get(backend)?.(id, host)
+    },
+    changed: (read) => sendToRenderer(CH.usage.changed, read)
+  })
+  ipcMain.handle(CH.usage.read, () => usageCache.read())
+
   ipcMain.on(CH.sessions.search, (_e, searchId: unknown, term: unknown) => {
     if (typeof searchId !== 'number' || typeof term !== 'string') return
     sessionSearch.start(searchId, term)

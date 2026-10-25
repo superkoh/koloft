@@ -74,6 +74,15 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the user's words.
 - Muse has no full-text search: `session/list`'s `filter.text` matches name or title
   prefixes only, and `session-index.db` holds only the first prompt.
+- **Tokens per model call** (2026-10-19, Muse Code 1.4.9 Linux arm64, `muse exec` in
+  Docker against a fake model server, numbers checked against what it sent): one
+  `runtime.session` record with `payload.kind == "run"` and `payload.event.kind ==
+  "model_completed"` per call, with `payload.event.model` and `payload.event.usage
+  {input_tokens, output_tokens, cached_tokens, cache_read_tokens, cache_write_tokens,
+  reasoning_tokens}`; `payload.run_id` is the turn. Per call, not running totals. The
+  same numbers are written again as `payload.event.kind == "goal_usage_attribution"`
+  (`record.usage_family: "provider"`), so reading both doubles the total. A subagent's
+  calls are only in its own `subagent/<child>/session.jsonl`.
 - Muse's own list cannot carry a name Koloft gives (checked 2026-10-22 on 1.4.9 in
   Docker, echo provider, a pty-driven TUI and `muse serve`): `session/list` gives
   `title` = the first prompt and `name` = the made-up name; `/rename Docs cleanup`
@@ -142,6 +151,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   session is missing from the list for 3–5 s. `path` is the session's own
   `session.jsonl` (§2): checked 2026-10-20 on Muse 1.4.9 in Docker, by `session/list`
   after a `muse exec --provider echo` run.
+- A deleted session leaves `session/list` at once (2026-10-24, Muse 1.4.13 in Docker,
+  three `muse exec --provider echo` runs, a Node client on `muse serve`): removing a
+  session's folder, or only its `session.jsonl`, dropped it from the next listing; the
+  other sessions stayed. Muse has no way of its own to delete or archive a session: no
+  such subcommand in `muse --help`, and no such `session/*` method in `muse schema
+  generate-ts`.
 - `muse serve --provider echo` (no login needed) can read a session another muse
   process holds: `session/read` returns its items (`userMessage`, `agentMessage`, … with
   `itemId`, `recordedAt`), and `approval/listPending {sessionId}` returns what it waits
@@ -165,6 +180,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   the terminal.
 - While a turn runs the TUI drops an Enter (macOS); a bracketed paste lands in the
   input box unsent until the next Enter.
+- A line feed (`\n`) inside typed text is a new line in the input box, not an Enter:
+  `first line\nsecond line\nthird line` written in one go, with or without
+  bracketed-paste marks, then `\r` 300 ms later, is one `turn_submit` whose prompt keeps
+  all three lines (muse 1.4.11, `1.4.11-R6667.1`, `--provider echo`, Docker, Linux, a
+  python pty driver, October 2026; 2 of 2 tries plain, 1 of 1 pasted). Not probed on
+  macOS.
 
 ## §8 Shell commands inside Muse (macOS)
 
@@ -516,3 +537,26 @@ server of the opening note and with `--provider echo`; October 2026.
   machine, signs muse 1.4.9 in there with the real Meta model: it answered a prompt,
   with `SubagentStart` and `SubagentStop` hooks around its work (Docker, real `ssh`,
   tmux 3.3a, through Koloft, October 2026).
+
+## §18 MCP servers and a project's instruction files
+
+2026-10-23, `Muse Code 1.4.11 (1.4.11-R6667.1)`, Docker, `muse exec` against a fake model
+server (`--base-url`, `META_API_KEY=FAKE`, `MUSE_MODEL=fake-model`); each MCP server a
+tiny stdio server that logged its start; marker words in instruction files, looked for
+in the model request.
+
+- **No `mcp list`:** `muse mcp` has only `login` and `logout`.
+- **Everywhere:** `mcpServers` in `<config>/muse/settings.json` (`{"schema_version":1,
+  "mcpServers":{"<name>":{"type":"stdio","command","args"}}}`) started in every folder.
+- **One project:** `mcpServers` in `<workspace>/.mcp.json`, and only in a trusted
+  workspace (`--trust-workspace` or `trust.json`): folder A trusted started both, A
+  untrusted and B trusted started only the settings one. `<A>/.muse/settings.json` and
+  `<A>/.agents/settings.json` were not read.
+- **Instruction file:** `AGENTS.md` in a trusted workspace (as `<rules-file
+  scope="project" path="AGENTS.md">`; untrusted, muse says it skips it). `CLAUDE.md` is read
+  only where there is no `AGENTS.md` ("CLAUDE.md is ignored this session because
+  AGENTS.md takes precedence"). `MUSE.md` is never read. `<config>/muse/AGENTS.md` is
+  read everywhere, as `scope="user"`.
+
+Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`) and the
+butler's to-do method, which names the files each agent reads.

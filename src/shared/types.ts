@@ -1,4 +1,5 @@
 import type { SessionRoute } from './sessionRoute'
+import type { TokenCounts } from './pricing'
 
 export interface ProjectInfo {
   root: string
@@ -351,6 +352,7 @@ export interface Settings {
   gitPicks: GitRepoPick[]
   gitSuggestionsDismissed: string[]
   gitMachines: Record<string, GitMachine>
+  todoNotes: Record<string, string>
 }
 
 export type AssistSetting = { on: boolean; backend: BackendId } | null
@@ -365,6 +367,7 @@ export const DEFAULT_BUTLER_NAME = 'Alfred'
 export interface ButlerSession {
   sessionIds: string[]
   lastSessionKey?: string
+  knowsTodo?: string[]
 }
 
 export interface DiscordChannel {
@@ -473,11 +476,30 @@ export const DEFAULT_SETTINGS: Settings = {
   gitAccounts: [],
   gitPicks: [],
   gitSuggestionsDismissed: [],
-  gitMachines: {}
+  gitMachines: {},
+  todoNotes: {}
 }
 
 export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'
 export type HostId = 'local' | 'ssh'
+
+export interface UsageRecord extends TokenCounts {
+  sessionId: string
+  day: string
+  model: string
+  surchargeUsd: number
+}
+
+export interface UsageRow extends UsageRecord {
+  backend: BackendId
+  workspace: string
+}
+
+export interface UsageRead {
+  rows: UsageRow[]
+  titles: Record<string, string>
+  reading: boolean
+}
 export interface SessionMethods {
   defaultBackend: BackendId
   enabled: Record<BackendId, boolean>
@@ -710,6 +732,7 @@ export interface SessionUsage {
   inTok: number
   outTok: number
   cacheWriteTok: number
+  cacheWrite1hTok?: number
   cacheReadTok: number
   costUsd?: number
   todayCostUsd?: number
@@ -1251,6 +1274,10 @@ export interface KoloftApi {
     get(): Promise<Settings>
     set(patch: Partial<Settings>): Promise<Settings>
     onUpdate(cb: (s: Settings) => void): () => void
+  }
+  usage: {
+    read(): Promise<UsageRead>
+    onChanged(cb: (read: UsageRead) => void): () => void
   }
   accounts: {
     list(): Promise<AccountView[]>
