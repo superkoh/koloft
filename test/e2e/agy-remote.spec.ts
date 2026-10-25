@@ -76,7 +76,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
   })
 
   // AGY§9
-  test("closing the remote tab ends agy's tmux session there; its row stays, cold, and clicking it resumes the same conversation on the machine", async ({
+  test("closing the remote tab ends agy's tmux session there; its row stays, cold, and clicking it resumes the same conversation on the machine, whose resuming mask lifts once the tab binds to it", async ({
     env
   }) => {
     setUp(env)
@@ -96,6 +96,10 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await row.click()
       await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(2)
       expect(machineAgyCalls(env)[1].argv).toContain(`--conversation=${id}`)
+      expect((await boundRemoteAgy(page)).id).toBe(id)
+      await expect(page.locator('.term-wrap:visible .empty', { hasText: 'Resuming' })).toHaveCount(
+        0
+      )
     } finally {
       await quitAndClose(app)
     }
