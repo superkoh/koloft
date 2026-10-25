@@ -79,7 +79,7 @@ export function BrowserAddressBar({
         ref={inputRef}
         className="url"
         value={draft ?? url}
-        placeholder="Search or enter address (http(s) / file://)"
+        placeholder="Search, address or file name"
         spellCheck={false}
         autoComplete="off"
         onChange={(e) => {

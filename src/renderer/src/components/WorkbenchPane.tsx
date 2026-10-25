@@ -10,7 +10,7 @@ import {
   type JSX
 } from 'react'
 import { IconDownload, IconMore } from '../icons'
-import { routeFor } from '@shared/browserRoute'
+import { fileUrlFor, folderFileOf, opensAsWebTab, routeFor } from '@shared/browserRoute'
 import { CDP_GUEST_ID_RETRIES, CDP_GUEST_ID_RETRY_MS } from '@shared/cdpBudget'
 import { isWebPagePath } from '@shared/preview'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
@@ -29,7 +29,7 @@ import { NO_FOCUS_SIGNAL } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
 import { relOf } from './filesModel'
-import { NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
+import { NO_CAPS, fileExists, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { editRefusal, useEditProbe } from './EditPane'
 import {
   allEditTabs,
@@ -570,30 +570,59 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     })
   }, [openHere, applyLive])
 
-  const submitAddress = useCallback(
-    (raw: string): void => {
+  const openFileTab = useCallback(
+    (path: string): void => {
+      openHere({ kind: 'file', path, source: 'user' }, (r) =>
+        setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
+      )
+    },
+    [openHere]
+  )
+
+  const showInWebTab = useCallback(
+    (url: string): void => {
       if (!ownerTab) return
-      const entry = raw.trim()
+      const shown = statesRef.current[ownerTab] ?? NO_TABS
+      const active = shown.tabs.find((t) => t.id === shown.activeId)
+      if (active?.kind !== 'web') {
+        openHere({ kind: 'web', url, source: 'user' }, (r) => applyLive(r.tabId, url))
+        return
+      }
+      onUpdate(ownerTab, (prev) => navigateTab(prev, active.id, url))
+      applyLive(active.id, url)
+    },
+    [ownerTab, onUpdate, openHere, applyLive]
+  )
+
+  const routeAddress = useCallback(
+    (entry: string): void => {
       const decision = routeFor(
         entry.startsWith('~/') ? window.api.home + entry.slice(1) : entry,
         'address'
       )
-      if (decision.dest === 'preview') {
-        openHere({ kind: 'file', path: decision.target, source: 'user' }, (r) =>
-          setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
-        )
-        return
-      }
-      if (decision.dest !== 'browser') return
-      const url = decision.target
-      if (!activeTab || activeTab.kind !== 'web') {
-        openHere({ kind: 'web', url, source: 'user' }, (r) => applyLive(r.tabId, url))
-        return
-      }
-      onUpdate(ownerTab, (prev) => navigateTab(prev, activeTab.id, url))
-      applyLive(activeTab.id, url)
+      if (decision.dest === 'preview') openFileTab(decision.target)
+      else if (decision.dest === 'browser') showInWebTab(decision.target)
     },
-    [ownerTab, activeTab, onUpdate, openHere, applyLive]
+    [openFileTab, showInWebTab]
+  )
+
+  const submitAddress = useCallback(
+    (raw: string): void => {
+      if (!ownerTab) return
+      const entry = raw.trim()
+      const inFolder = folderFileOf(entry, treeRoot)
+      if (!inFolder) {
+        routeAddress(entry)
+        return
+      }
+      void fileExists(inFolder.path).then((found) => {
+        if (!found) routeAddress(entry)
+        else if (opensAsWebTab(inFolder.path))
+          showInWebTab(fileUrlFor(inFolder.path) + inFolder.suffix)
+        else openFileTab(inFolder.path)
+      })
+    },
+    [ownerTab, treeRoot, routeAddress, showInWebTab, openFileTab]
   )
 
   const guestOf = (id: string | undefined): GuestElement | undefined =>

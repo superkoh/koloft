@@ -84,7 +84,7 @@ const VIEW_SCROLLER = '.code-body, .md-body, .idiff'
 const GIVE_UP_RESTORE_MS = 4000
 const HEADING_AT_TOP_SLACK_PX = 8
 
-async function fileExists(p: string): Promise<boolean> {
+export async function fileExists(p: string): Promise<boolean> {
   try {
     await window.api.preview.readText(p)
     return true

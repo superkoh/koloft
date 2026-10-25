@@ -1,15 +1,18 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
-import type { E2EEnv } from './helpers/env'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { installCodex, type E2EEnv } from './helpers/env'
+import { startCodex } from './helpers/codex'
 import {
   auxIcon,
   centerTerm,
   clickAppMenuItem,
   FAKE_SESSION_TITLE,
   focusOwner,
+  gitInit,
   openSessionTerminal,
+  openWorktreeSession,
   panelTerm,
   runIn,
   startSessionIn,
@@ -41,9 +44,11 @@ import {
 } from './helpers/browser'
 import {
   WORKBENCH,
+  artifactBody,
   openInBrowse,
   persistedTabsOnDisk,
   showBrowse,
+  waitPanelAttached,
   wbActiveTab,
   wbTabs,
   wbUnreadTabs
@@ -514,6 +519,85 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
 
     await typeInAddressBar(page, '~/typed-tilde.html')
     await guestByUrl(app, 'file://' + path.join(env.home, 'typed-tilde.html'))
+  })
+
+  test("a file name typed in the address bar opens that file from the session's own folder — the worktree, in a worktree session — a page as file:// keeping its #part, another file in a file tab, and a name not there still searches", async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    gitInit(env.workspaces.a)
+    env.extraArgs.push(hostResolverSwitch(['duckduckgo.com']))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'ws-a')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('wt896')
+      await page.keyboard.press('Enter')
+      await expect(dlg).toHaveCount(0)
+      await waitForCalls(env, 1)
+      await expect(auxIcon(page, 'Workbench')).toHaveAttribute('aria-disabled', 'false', {
+        timeout: 60_000
+      })
+      const tree = path.join(env.workspaces.a, '.claude', 'worktrees', 'wt896')
+      fs.writeFileSync(path.join(env.workspaces.a, 'index.html'), '<title>repo root</title>')
+      fs.writeFileSync(path.join(tree, 'index.html'), '<title>worktree page</title>')
+      fs.writeFileSync(path.join(tree, 'guide.md'), '# Guide\n\nfrom the worktree\n')
+      await showBrowse(page)
+      await expect(
+        page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: 'guide.md' })
+      ).toBeVisible({ timeout: 30_000 })
+
+      await newWebTab(page)
+      await typeInAddressBar(page, 'index.html#top')
+      const guest = await guestByUrl(app, '/.claude/worktrees/wt896/index.html#top')
+      await expect(guest).toHaveTitle('worktree page')
+
+      await typeInAddressBar(page, 'guide.md')
+      await expect(wbActiveTab(page)).toContainText('guide.md', { timeout: 30_000 })
+      await expect(artifactBody(page)).toContainText('from the worktree', { timeout: 30_000 })
+
+      await newWebTab(page)
+      await typeInAddressBar(page, 'missing.html')
+      await expect
+        .poll(
+          async () =>
+            [await addressValue(page), ...(await guestUrls(app))].some((u) =>
+              /duckduckgo\.com\/\?q=missing\.html/.test(u)
+            ),
+          { timeout: 30_000 }
+        )
+        .toBe(true)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('in a Codex tab a file name typed in the address bar opens that page from its own folder', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      fs.writeFileSync(
+        path.join(env.workspaces.a, 'codex-page.html'),
+        '<title>codex folder</title>'
+      )
+      await waitPanelAttached(page)
+
+      await newWebTab(page)
+      await typeInAddressBar(page, 'codex-page.html')
+      const guest = await guestByUrl(app, '/codex-page.html')
+      await expect(guest).toHaveTitle('codex folder')
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   test('BB-C28: `chrome://` and `devtools://` are hard-blocked with no navigation', async ({
