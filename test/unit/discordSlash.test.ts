@@ -73,6 +73,7 @@ describe('a slash command typed into a session', () => {
 
   it.each([
     ['claude', [RULE, '❯ /context', RULE, '  ⏵⏵ bypass permissions on']],
+    ['muse', [RULE, '❯ /context', RULE]],
     ['muse', [RULE, '❯ /context', '', RULE]],
     ['codex', ['› /context', '', '  GPT-6.1-Sol default']]
   ] as const)(

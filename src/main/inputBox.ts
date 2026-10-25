@@ -7,8 +7,8 @@ export function inputBoxDraft(lines: string[]): string | undefined {
   const rules = lines.flatMap((line, i) => (INPUT_BOX_RULE.test(line.trim()) ? [i] : []))
   if (rules.length < 2) return undefined
   const [above, below] = rules.slice(-2)
-  const [row, ...emptyLines] = lines.slice(above + 1, below).map((line) => line.trim())
-  if (!row?.startsWith(INPUT_ROW_MARK) || emptyLines.some(Boolean)) return undefined
+  const [row, ...rowsUnder] = lines.slice(above + 1, below).map((line) => line.trim())
+  if (!row?.startsWith(INPUT_ROW_MARK) || rowsUnder.some(Boolean)) return undefined
   return row.slice(INPUT_ROW_MARK.length).trim()
 }
 

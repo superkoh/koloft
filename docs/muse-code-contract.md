@@ -374,7 +374,8 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   (120×40), the screen read through `pyte`: `/usage` (its menu shows "/usage  Show session
   usage" under the `❯` row), then `ESC` and CR in one write 0.3 s later, closed the menu
   and left the box as two rows, `❯ /usage` and an empty one, in 3 of 3 tries; a lone CR
-  3 s later ran it (3 of 3, the "Session usage" panel). `ESC` then CR in two writes
+  3 s later ran it (3 of 3, the "Session usage" panel), and so did one 2 s later (3 of
+  3). `ESC` then CR in two writes
   0.3 s apart ran it at once (2 of 2). So a box can hold empty rows under the `❯` row.
 
 ## §12 Handing muse instructions
