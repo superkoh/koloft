@@ -16,6 +16,7 @@ vi.mock('electron', () => ({
 
 interface FakeGuest {
   isDestroyed(): boolean
+  getURL(): string
   debugger: {
     attach: ReturnType<typeof vi.fn>
     detach: ReturnType<typeof vi.fn>
@@ -32,7 +33,7 @@ interface FakeGuest {
   emit(event: string, ...args: unknown[]): void
 }
 
-function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGuest {
+function fakeGuest(id: number, opts: { holdFrameTree?: boolean; url?: string } = {}): FakeGuest {
   const listeners = new Map<string, Set<(...a: never[]) => void>>()
   let attached = false
   let release = (): void => {}
@@ -42,6 +43,7 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGues
   }
   const guest: FakeGuest = {
     isDestroyed: () => false,
+    getURL: () => opts.url ?? 'http://x/a',
     reload: vi.fn(),
     reloadIgnoringCache: vi.fn(),
     debugger: {
@@ -79,18 +81,15 @@ const SESSION = 'sess-1'
 
 interface Harness extends RelayDeps {
   session: string | null
-  onMachine: boolean
   strip: RelayTarget[]
 }
 
 function makeDeps(): Harness {
   const h: Harness = {
     session: SESSION,
-    onMachine: false,
     strip: [{ targetId: 'bt1', url: 'http://x/a', title: 'A', guestId: 11 }],
     sessionForTab: () => h.session,
-    onAnotherMachine: () => h.onMachine,
-    mount: vi.fn(async () => 11),
+    mount: vi.fn(async (_s: string, tabId: string) => Number(tabId.replace('bt', '1'))),
     create: vi.fn(async (_s: string, url: string) => ({
       targetId: 'bt2',
       url,
@@ -283,28 +282,32 @@ describe("a session on another machine never reaches this Mac's files through th
       .sessionId
   }
 
-  it('refuses to open, navigate to, upload or drag in a Mac file, and never shows it a tab already on one; web pages still work', async () => {
-    deps.onMachine = true
+  const NOTES = 'file:///Users/me/notes.html'
+
+  it('refuses to open, navigate to, upload or drag in a Mac file, however the address is written; web pages still work', async () => {
+    relay.relayEndpointForMachine(TAB)
     const guest = fakeGuest(11)
-    fakeGuest(13)
-    relay.relayStripChanged(SESSION, [
-      ...deps.strip,
-      { targetId: 'bt3', url: 'file:///Users/me/notes.html', title: 'notes', guestId: 13 }
-    ])
     const c = await registered()
 
-    const listed = (await c.cmd('Target.getTargets')).result as { targetInfos: { url: string }[] }
-    expect(listed.targetInfos.map((t) => t.url)).toEqual(['http://x/a'])
-    expect(errorOf(await c.cmd('Target.createTarget', { url: MAC_FILE }))).toContain(
-      'cannot open or upload files of the Mac'
-    )
+    for (const url of [
+      MAC_FILE,
+      'fi\tle:///etc/hosts',
+      '\u0001file:///etc/hosts',
+      'FILE:/etc/hosts'
+    ])
+      expect(errorOf(await c.cmd('Target.createTarget', { url }))).toContain(
+        'cannot open or upload files of the Mac'
+      )
     expect(deps.create).not.toHaveBeenCalled()
 
     const sid = await attachedTo(c, 'http://x/a')
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(true)
     for (const [method, params] of [
       ['Page.navigate', { url: MAC_FILE }],
+      ['Page.navigate', { url: 'fi\nle:///etc/hosts' }],
       ['Page.navigate', { url: `view-source:${MAC_FILE}` }],
       ['Network.loadNetworkResource', { url: MAC_FILE, frameId: 'f', options: {} }],
+      ['Fetch.continueRequest', { requestId: 'r', url: MAC_FILE }],
       ['DOM.setFileInputFiles', { files: ['/Users/me/.ssh/id_ed25519'], backendNodeId: 1 }],
       [
         'Input.dispatchDragEvent',
@@ -317,6 +320,14 @@ describe("a session on another machine never reaches this Mac's files through th
       guest.debugger.sendCommand.mock.calls.map((call) => String(call[0]))
     expect(sent()).not.toContain('Page.navigate')
     expect(sent()).not.toContain('DOM.setFileInputFiles')
+    expect(sent()).not.toContain('Fetch.continueRequest')
+
+    await c.cmd(
+      'Page.setDownloadBehavior',
+      { behavior: 'allow', downloadPath: '/Users/me/Library/LaunchAgents' },
+      sid
+    )
+    expect(sent()).not.toContain('Page.setDownloadBehavior')
 
     await c.cmd('Page.navigate', { url: 'https://example.com/' }, sid)
     expect(guest.debugger.sendCommand).toHaveBeenCalledWith('Page.navigate', {
@@ -324,23 +335,62 @@ describe("a session on another machine never reaches this Mac's files through th
     })
     await c.cmd('Target.createTarget', { url: 'about:blank' })
     expect(deps.create).toHaveBeenCalledWith(SESSION, 'about:blank')
+
+    c.ws.close()
+    await until(() => !relay.guestDrivenFromAnotherMachine(11), 'the guest to be let go')
+  })
+
+  it('never shows it, or lets it attach to, a tab on a Mac file, even before the strip has caught up', async () => {
+    relay.relayEndpointForMachine(TAB)
+    fakeGuest(11)
+    fakeGuest(13, { url: NOTES })
+    fakeGuest(14, { url: NOTES })
+    relay.relayStripChanged(SESSION, [
+      ...deps.strip,
+      { targetId: 'bt3', url: NOTES, title: 'notes', guestId: 13 },
+      { targetId: 'bt4', url: 'http://x/before', title: 'before', guestId: 14 }
+    ])
+    const c = await registered()
+    await c.cmd('Target.setDiscoverTargets', { discover: true })
+
+    const listed = (await c.cmd('Target.getTargets')).result as {
+      targetInfos: { targetId: string; url: string }[]
+    }
+    expect(listed.targetInfos.map((t) => t.url)).toEqual(['http://x/a', 'http://x/before'])
+    const lagging = listed.targetInfos[1]?.targetId ?? ''
+    expect(errorOf(await c.cmd('Target.attachToTarget', { targetId: lagging }))).toContain(
+      'cannot open or upload files of the Mac'
+    )
+
+    relay.relayStripChanged(SESSION, [
+      ...deps.strip,
+      { targetId: 'bt3', url: NOTES, title: 'notes', guestId: 13 },
+      { targetId: 'bt4', url: NOTES, title: 'notes', guestId: 14 },
+      { targetId: 'bt5', url: 'file:///Users/me/new.html', title: 'new', guestId: 15 }
+    ])
+    await c.cmd('Browser.getVersion')
+    expect(JSON.stringify(c.events)).not.toContain('file:')
+    expect(c.events.map((e) => e.method)).toContain('Target.targetDestroyed')
   })
 
   it("a session on this Mac still opens this Mac's files", async () => {
     const guest = fakeGuest(11)
     const c = await registered()
     const sid = await attachedTo(c, 'http://x/a')
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(false)
     await c.cmd('Page.navigate', { url: MAC_FILE }, sid)
     expect(guest.debugger.sendCommand).toHaveBeenCalledWith('Page.navigate', { url: MAC_FILE })
   })
 })
 
-describe("a tab's endpoint renewed (a new ssh forward to its machine)", () => {
-  it('turns the old address away, so one read off a port another account took after the link dropped opens nothing', async () => {
+describe("a tab's endpoint made for its machine (each new ssh forward)", () => {
+  it('turns the old address away and sends off a client still on it, so an address read off a port another account took after the link dropped opens nothing', async () => {
     const old = relay.relayEndpoint(TAB)
-    const renewed = relay.renewRelayEndpoint(TAB)
+    const onOld = await registered()
+    const renewed = relay.relayEndpointForMachine(TAB)
     expect(renewed).not.toBe(old)
     expect(relay.relayEndpoint(TAB)).toBe(renewed)
+    expect(await closedReason(onOld)).toBe('the ssh forward to the machine was made again')
 
     const stale = new WebSocket(old)
     sockets.push(stale)

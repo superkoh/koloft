@@ -6,11 +6,10 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './cdpProtocol'
 import { inputEmulation } from './cdpInput'
 import { compositionDone } from './hostComposition'
-import { schemeOf } from '@shared/browserRoute'
+import { urlOrNull } from '@shared/browserRoute'
 
 export interface RelayDeps {
   sessionForTab(tabId: string): string | null
-  onAnotherMachine(tabId: string): boolean
   mount(sessionId: string, targetId: string): Promise<number>
   create(sessionId: string, url: string): Promise<RelayTarget>
   close(sessionId: string, targetId: string): Promise<void>
@@ -21,13 +20,19 @@ export interface RelayDeps {
 // PLATFORM§9
 const FORWARD_TIMEOUT_OUTLASTS_CLIENT_TIMEOUTS_MS = 180_000
 
-const SCHEMES_THAT_NEVER_REACH_THIS_MACS_FILES = new Set(['http:', 'https:', 'about:', 'data:'])
+const SCHEMES_A_MACHINE_MAY_OPEN = new Set(['http:', 'https:', 'about:', 'data:', 'blob:'])
 const NO_MAC_FILES_FOR_A_MACHINE =
   'a session on another machine cannot open or upload files of the Mac Koloft runs on'
 
-function opensThisMacsFiles(url: string): boolean {
-  const scheme = schemeOf(url.trim())
-  return scheme !== '' && !SCHEMES_THAT_NEVER_REACH_THIS_MACS_FILES.has(scheme)
+function showsThisMacsFile(url: string): boolean {
+  const u = urlOrNull(url)
+  if (u?.protocol === 'view-source:') return showsThisMacsFile(u.pathname)
+  return u?.protocol === 'file:'
+}
+
+function opensOnlyWhatAMachineMay(url: string): boolean {
+  const u = urlOrNull(url)
+  return !!u && SCHEMES_A_MACHINE_MAY_OPEN.has(u.protocol)
 }
 
 function reachesThisMacsFiles(method: string, params: unknown): boolean {
@@ -35,7 +40,9 @@ function reachesThisMacsFiles(method: string, params: unknown): boolean {
   switch (method) {
     case 'Page.navigate':
     case 'Network.loadNetworkResource':
-      return opensThisMacsFiles(String(p.url ?? ''))
+      return !opensOnlyWhatAMachineMay(String(p.url ?? ''))
+    case 'Fetch.continueRequest':
+      return p.url !== undefined && !opensOnlyWhatAMachineMay(String(p.url))
     case 'DOM.setFileInputFiles':
       return true
     case 'Input.dispatchDragEvent':
@@ -45,9 +52,15 @@ function reachesThisMacsFiles(method: string, params: unknown): boolean {
   }
 }
 
+const PICKS_A_FOLDER_ON_THIS_MAC = new Set([
+  'Page.setDownloadBehavior',
+  'Browser.setDownloadBehavior'
+])
+
 interface Client {
   ws: WebSocket
   tabId: string
+  onMachine: boolean
   sessionId: string
   protocol: CdpProtocol
   attached: Map<
@@ -94,6 +107,16 @@ function swapIds<T>(value: T, from: string | undefined, to: string | undefined):
 }
 const clients = new Map<string, Client>()
 const snapshots = new Map<string, RelayTarget[]>()
+const machineTabs = new Set<string>()
+const machineDrivenGuests = new Set<number>()
+
+function visibleTo(client: Client, list: RelayTarget[]): RelayTarget[] {
+  return asTargets(client.onMachine ? list.filter((t) => !showsThisMacsFile(t.url)) : list)
+}
+
+export function guestDrivenFromAnotherMachine(guestId: number): boolean {
+  return machineDrivenGuests.has(guestId)
+}
 
 export function cdpEnvDir(): string {
   return path.join(app.getPath('userData'), 'cdp')
@@ -114,7 +137,9 @@ export function relayEndpoint(tabId: string): string {
   return `ws://127.0.0.1:${port}/cdp/${pathFor(tabId)}`
 }
 
-export function renewRelayEndpoint(tabId: string): string {
+export function relayEndpointForMachine(tabId: string): string {
+  machineTabs.add(tabId)
+  relayClientEvicted(tabId, 'the ssh forward to the machine was made again')
   paths.delete(tabId)
   return relayEndpoint(tabId)
 }
@@ -146,12 +171,9 @@ function backendFor(client: Client): RelayBackend {
   const live = (): void => {
     if (!client.sessionId) throw new Error('the tab has no running session')
   }
-  const fenced = d.onAnotherMachine(client.tabId)
   const fence = (reaches: boolean): void => {
-    if (fenced && reaches) throw new Error(NO_MAC_FILES_FOR_A_MACHINE)
+    if (client.onMachine && reaches) throw new Error(NO_MAC_FILES_FOR_A_MACHINE)
   }
-  const urlOf = (tabId: string): string =>
-    snapshots.get(client.sessionId)?.find((t) => t.targetId === tabId)?.url ?? ''
   // PLATFORM§10
   const afterUsersWord = async (): Promise<void> => {
     await compositionDone()
@@ -159,20 +181,14 @@ function backendFor(client: Client): RelayBackend {
   }
   return {
     targets: () =>
-      client.sessionId
-        ? asTargets(snapshots.get(client.sessionId) ?? []).filter(
-            (t) => !fenced || !opensThisMacsFiles(t.url)
-          )
-        : [],
+      client.sessionId ? visibleTo(client, snapshots.get(client.sessionId) ?? []) : [],
     mount: async (targetId) => {
       await afterUsersWord()
       live()
-      const tabId = tabIdFor(targetId)
-      fence(opensThisMacsFiles(urlOf(tabId)))
-      return await d.mount(client.sessionId, tabId)
+      return await d.mount(client.sessionId, tabIdFor(targetId))
     },
     create: async (url) => {
-      fence(opensThisMacsFiles(url))
+      fence(!opensOnlyWhatAMachineMay(url))
       await afterUsersWord()
       live()
       const t = await d.create(client.sessionId, url)
@@ -195,6 +211,7 @@ function backendFor(client: Client): RelayBackend {
     attachGuest: async (targetId, guestId) => {
       if (client.attached.has(targetId)) return
       const wc = guestOf(guestId)
+      fence(showsThisMacsFile(wc.getURL()))
       try {
         wc.debugger.attach('1.3')
       } catch (e) {
@@ -229,6 +246,7 @@ function backendFor(client: Client): RelayBackend {
       }
       wc.debugger.on('message', onMessage as never)
       wc.debugger.once('detach', onDetach)
+      if (client.onMachine) machineDrivenGuests.add(guestId)
       client.attached.set(targetId, {
         guestId,
         onMessage: onMessage as never,
@@ -241,6 +259,7 @@ function backendFor(client: Client): RelayBackend {
       if (!held) return
       client.attached.delete(targetId)
       frameIds.delete(targetId)
+      machineDrivenGuests.delete(held.guestId)
       try {
         const wc = guestOf(held.guestId)
         wc.debugger.off('message', held.onMessage as never)
@@ -251,6 +270,7 @@ function backendFor(client: Client): RelayBackend {
     },
     forward: async (targetId, guestId, method, params, sessionId) => {
       fence(reachesThisMacsFiles(method, params))
+      if (client.onMachine && PICKS_A_FOLDER_ON_THIS_MAC.has(method)) return {}
       await afterUsersWord()
       // PLATFORM§9
       if (method === 'Page.captureScreenshot') {
@@ -365,6 +385,7 @@ async function onConnection(ws: WebSocket, url: string): Promise<void> {
   const client: Client = {
     ws,
     tabId,
+    onMachine: machineTabs.has(tabId),
     sessionId,
     protocol: undefined as unknown as CdpProtocol,
     attached: new Map()
@@ -440,7 +461,7 @@ export function relayStripChanged(sessionId: string, next: RelayTarget[]): void 
   snapshots.set(sessionId, next)
   const client = [...clients.values()].find((c) => c.sessionId === sessionId)
   if (!client) return
-  const diff = stripDiff(asTargets(before), asTargets(next))
+  const diff = stripDiff(visibleTo(client, before), visibleTo(client, next))
   for (const t of diff.created) void client.protocol.targetCreated(t)
   for (const t of diff.changed) client.protocol.targetInfoChanged(t)
   for (const targetId of diff.destroyed) client.protocol.targetDestroyed(targetId)
@@ -459,7 +480,7 @@ export function relayTabRebound(tabId: string, sessionId: string | null): void {
   const client = clients.get(tabId)
   if (!client) return
   if (sessionId !== null && sessionId === client.sessionId) return
-  for (const t of asTargets(snapshots.get(client.sessionId) ?? [])) {
+  for (const t of visibleTo(client, snapshots.get(client.sessionId) ?? [])) {
     client.protocol.targetDestroyed(t.targetId)
   }
   deps?.setAttached(client.sessionId, [])
@@ -468,13 +489,14 @@ export function relayTabRebound(tabId: string, sessionId: string | null): void {
     return
   }
   client.sessionId = sessionId
-  for (const t of asTargets(snapshots.get(sessionId) ?? [])) void client.protocol.targetCreated(t)
+  for (const t of visibleTo(client, snapshots.get(sessionId) ?? []))
+    void client.protocol.targetCreated(t)
 }
 
 export function relayClientEvicted(tabId: string, reason: string): void {
   const client = clients.get(tabId)
   if (!client) return
-  for (const t of asTargets(snapshots.get(client.sessionId) ?? [])) {
+  for (const t of visibleTo(client, snapshots.get(client.sessionId) ?? [])) {
     client.protocol.targetDestroyed(t.targetId)
   }
   dropClient(tabId)
@@ -488,6 +510,7 @@ export function relayAttached(tabId: string): boolean {
 export function relayTabClosed(tabId: string): void {
   relayClientEvicted(tabId, 'the tab this endpoint belonged to was closed')
   paths.delete(tabId)
+  machineTabs.delete(tabId)
   try {
     fs.rmSync(path.join(cdpEnvDir(), tabId), { force: true })
   } catch {}

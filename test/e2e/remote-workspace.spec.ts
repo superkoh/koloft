@@ -4,7 +4,14 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
-import { addressValue, BROWSER, newWebTab, typeInAddressBar } from './helpers/browser'
+import {
+  addressValue,
+  BROWSER,
+  guestByUrl,
+  navButton,
+  newWebTab,
+  typeInAddressBar
+} from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import {
   type E2EEnv,
@@ -86,6 +93,7 @@ import {
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const A_CLI_STEP_FINISHES_WITHIN_MS = 60_000
+const A_REFUSED_LOAD_SETTLES_MS = 3000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 
 const heartbeatsStamping = (env: E2EEnv, bare: string): number =>
@@ -944,18 +952,34 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       const macFile = path.join(env.home, 'only-on-the-mac.html')
       fs.writeFileSync(macFile, '<title>only-on-the-mac</title>')
       const lastStep = (text: string): string => text.split('sh exit=').at(-2) ?? ''
-      for (const step of [
-        `playwright-cli goto file://${macFile}`,
-        `playwright-cli tab-new file://${macFile}`
-      ]) {
-        expect(lastStep(await unwrapped(step))).toContain('cannot open or upload files of the Mac')
-      }
+      const refused = 'cannot open or upload files of the Mac'
+      expect(lastStep(await unwrapped(`playwright-cli goto file://${macFile}`))).toContain(refused)
       await run(`playwright-cli eval "() => { location.href = 'file://${macFile}' }"`)
       expect(lastStep(await unwrapped('playwright-cli eval "() => location.href"'))).toContain(url)
-      const guestUrls = await app.evaluate(({ webContents }) =>
-        webContents.getAllWebContents().map((w) => w.getURL())
+      expect(lastStep(await unwrapped(`playwright-cli tab-new file://${macFile}`))).toContain(
+        refused
       )
-      expect(guestUrls.filter((u) => u.includes('only-on-the-mac'))).toEqual([])
+      await page.locator(BROWSER.drivenTab).first().click()
+      await typeInAddressBar(page, `file://${macFile}`)
+      await guestByUrl(app, 'only-on-the-mac')
+      expect(lastStep(await unwrapped('playwright-cli tab-list'))).not.toContain('only-on-the-mac')
+
+      await navButton(page, 'Back').click()
+      await expect
+        .poll(async () => lastStep(await unwrapped('playwright-cli tab-list')), {
+          timeout: 30_000
+        })
+        .toContain(url)
+      await run(
+        `playwright-cli run-code "async page => { for (const p of page.context().pages()) if (p.url().includes('/remote')) await p.goForward().catch(() => {}) }"`
+      )
+      await page.waitForTimeout(A_REFUSED_LOAD_SETTLES_MS)
+      const titles = await app.evaluate(({ webContents }) =>
+        Promise.all(
+          webContents.getAllWebContents().map((w) => w.executeJavaScript('document.title'))
+        )
+      )
+      expect(titles).not.toContain('only-on-the-mac')
       await run('playwright-cli close')
 
       await page.evaluate(() => window.api.settings.set({ browserControl: false }))

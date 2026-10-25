@@ -324,7 +324,8 @@ import {
   cdpEnvDir,
   relayClientEvicted,
   relayEndpoint,
-  renewRelayEndpoint,
+  relayEndpointForMachine,
+  guestDrivenFromAnotherMachine,
   relayStripChanged,
   relayTabClosed,
   relayTabRebound,
@@ -1122,7 +1123,7 @@ const browserTunnels = new BrowserTunnels({
     masterCommandOutlivingKoloft(host, op, { controlDir: remoteControlDir }),
   run: (host, cmd) => runSsh(host, cmd, { controlDir: remoteControlDir }),
   forwardFile: (host) => browserForwardFile(app.getPath('userData'), host),
-  renewEndpoint: renewRelayEndpoint
+  renewEndpoint: relayEndpointForMachine
 })
 let loginEnv: Promise<void> | null = null
 process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
@@ -4003,7 +4004,6 @@ function relayDeps(): RelayDeps {
   return {
     sessionForTab: (tabId) =>
       claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
-    onAnotherMachine: (tabId) => remoteHostOfTab(tabId) !== undefined,
     mount: async (sessionId, targetId) => {
       const r = await cdpOp('mount', sessionId, { targetId })
       if (!r.ok || typeof r.guestId !== 'number')
@@ -4202,9 +4202,15 @@ function setupBrowserPartition(): void {
     type: 'frame',
     filePath: path.join(__dirname, '../preload/guest.js')
   })
-  // PLATFORM§39
+  // PLATFORM§39 PLATFORM§12
   ses.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) })
+    callback({
+      cancel:
+        webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) ||
+        (details.url.startsWith('file:') &&
+          details.webContentsId !== undefined &&
+          guestDrivenFromAnotherMachine(details.webContentsId))
+    })
   })
   // PLATFORM§13
   ses.webRequest.onHeadersReceived((details, callback) => {

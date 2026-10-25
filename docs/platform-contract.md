@@ -512,6 +512,14 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `-9 ERR_UNEXPECTED`, while without the custom handler it fails with
   `-6 ERR_FILE_NOT_FOUND`. A `Response` with status 404 and an HTML body is drawn as a
   page, with no `did-fail-load`.
+- **The partition's `webRequest.onBeforeRequest` sees every `file://` load of a
+  guest, with that guest's `webContentsId`** — a main-frame load (address bar, CDP
+  `Page.navigate`, back/forward), an `<iframe>`, a `fetch` — even with a custom `file`
+  handler installed, and `cancel` stops it before the handler runs. The handler's own
+  `ses.fetch` shows up as a second request with no `webContentsId`. A history step
+  (`goForward`) to a `file://` entry is a fresh request, not a back/forward-cache
+  restore. (Measured 2026-10-25, Electron's Chromium in the e2e suite: E-RW-41 fails with
+  the cancel removed.)
 - **Chromium fetches `/favicon.ico` after every navigation**, so a server's request
   count sees one extra hit per page load.
 - **The built-in PDF viewer (PDFium) keeps its page position to itself**: `scrollX` /
