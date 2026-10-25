@@ -758,6 +758,20 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   playwright-cli 0.1.18 against Koloft's relay, `test/e2e/real-tools-smoke.spec.ts`:
   `open file://…` fails with that message on the endpoint alone and succeeds with the
   variable set to `1`).
+- **playwright-cli writes its files into `.playwright-cli/` in the working folder unless
+  `PLAYWRIGHT_MCP_OUTPUT_DIR` names another folder**, which it makes if missing. With the
+  variable unset, `open` in a git repo put its page snapshot at
+  `.playwright-cli/page-<time>.yml`; with it set, `open`'s snapshot (on the Workbench
+  relay and on a browser of its own) and `screenshot`'s png (on a browser of its own; on
+  the relay it hit the 5 s action limit) landed in that folder and the repo got nothing.
+  The daemon keeps the folder it was given at `open`: a later `screenshot` run without
+  the variable still wrote there. An explicit `screenshot --filename=x.png` is still
+  relative to the working folder, and the tracing commands use a fixed
+  `.playwright-cli/trace` (read in `coreBundle.js`, not run). Under Claude Code's own
+  Bash sandbox (`sandbox.enabled`, CC 2.1.310) `open` fails before any of this, with
+  `EPERM` on its daemon file under `~/Library/Caches/ms-playwright/daemon/`, whether the
+  variable is set or not. (Measured 2026-10-25 with @playwright/cli 0.1.22 as Koloft
+  0.54.0 ships it.)
 - **Two installs of playwright-cli share a daemon only through a `.playwright`
   folder.** Without one, each install's own root names its bucket, so the same session
   name in the same folder gave two daemons, each reading its own page. With a

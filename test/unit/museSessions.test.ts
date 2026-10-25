@@ -269,11 +269,14 @@ describe('MuseSessions launch', () => {
     ])
   })
 
-  it('hands the Workbench browser to a tab that can drive it', async () => {
+  it("hands the Workbench browser to a tab that can drive it, with playwright-cli's snapshots and screenshots kept in a folder of the tab under the temp folder, out of the workspace", async () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
     expect(created[0].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
-    expect(created[0].env).toMatchObject({ KOLOFT_BROWSER_CDP: endpoint })
+    expect(created[0].env).toMatchObject({
+      KOLOFT_BROWSER_CDP: endpoint,
+      PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', created[0].id)
+    })
     expect(created[0].env.PWTEST_DAEMON_SESSION_DIR).toMatch(/^\/tmp\//)
   })
 
