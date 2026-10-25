@@ -1354,7 +1354,8 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   headRefName,headRefOid`** lists the last N merged pull requests, newest first, one
   `{"headRefName":"<branch>","headRefOid":"<sha>"}` each, branches deleted on merge
   included. On superkoh/koloft, 100 reached back three days and 500 about a month
-  (to 2026-09-23); #934's branch was in both. (2026-10-25, gh 2.89.0, by hand.)
+  (to 2026-09-23); #934's branch was in both. A branch older than the list is missing
+  from it, so missing does not mean "never merged". (2026-10-25, gh 2.89.0, by hand.)
 - **`gh issue create` with no terminal never prompts**: missing `--title` it exits 1 at
   once with "must provide `--title` and `--body` when not running interactively" and
   creates nothing. A flag given as `--flag=value` keeps a value that starts with `-`

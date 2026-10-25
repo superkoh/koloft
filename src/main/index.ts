@@ -1732,6 +1732,7 @@ const agentRequests = new AgentRequests({
       repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
       pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
       mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
+      mergedHeads: (dir, branch) => mergedHeads(dir, branch),
       notes: () => loadSettings().todoNotes,
       saveNote: (key, text) => {
         const todoNotes = { ...loadSettings().todoNotes, [key]: text }
