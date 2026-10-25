@@ -887,12 +887,25 @@ export function sessionVerb(d: SessionVerbDeps): {
   turnEnded(tabId: string, turn: Turn): void
   waitsOnAnother(sessionId: string): boolean
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
+  sortsTheTodos(tabId: string): void
 } {
   const opening = new Map<string, Promise<string | null>>()
   let queued = 0
   let lined = 0
   const replyOwed = new Map<string, OwedReply>()
   const messagedBy = new Map<string, Set<string>>()
+  const todoHelperReported = new Map<string, boolean>()
+
+  const sortsTheTodos = (tabId: string): void => {
+    if (!todoHelperReported.has(tabId)) todoHelperReported.set(tabId, false)
+  }
+
+  const closeTodoHelperThatReported = (tabId: string): void => {
+    if (!todoHelperReported.get(tabId)) return
+    todoHelperReported.delete(tabId)
+    const helper = d.closable().find((s) => s.tabId === tabId)
+    if (helper) d.closeSoon([helper])
+  }
 
   // ADR-0031
   const ownerWordsOf = async (
@@ -1050,6 +1063,7 @@ export function sessionVerb(d: SessionVerbDeps): {
 
   const turnEnded = (tabId: string, turn: Turn): void => {
     messagedBy.delete(tabId)
+    closeTodoHelperThatReported(tabId)
     const owed = replyOwed.get(tabId)
     if (!owed) return
     const { owner, asked } = owed
@@ -1260,6 +1274,8 @@ export function sessionVerb(d: SessionVerbDeps): {
         )
       const to = starter(ref)
       if (to) replyOwed.delete(caller.tabId)
+      if (to?.butler && todoHelperReported.has(caller.tabId))
+        todoHelperReported.set(caller.tabId, true)
       if (to) return deliver('send', to, said, caller, false)
       if (forTheOwner || matchOpen(open, ref) === null)
         return sessionAct(sub, rest, caller, forTheOwner)
@@ -1317,7 +1333,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       )
     )?.tabId ?? null
 
-  return { verb, turnEnded, waitsOnAnother, startButlerHelper }
+  return { verb, turnEnded, waitsOnAnother, startButlerHelper, sortsTheTodos }
 }
 
 export interface WorkspaceVerbDeps {

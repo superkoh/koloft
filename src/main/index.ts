@@ -1719,6 +1719,7 @@ const agentRequests = new AgentRequests({
     }),
     todo: todoVerb({
       allowed: butlerSide,
+      gathered: sessionCommand.sortsTheTodos,
       sidebar: () => workspaceMgr?.rows() ?? [],
       pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
       sessions: () => allSessions().filter((s) => !s.butler),

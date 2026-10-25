@@ -303,6 +303,37 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
+  test('a helper that ran koloft todo is closed for good, tab and row, once the turn in which it reported to the butler ends', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env)
+    try {
+      await openButler(page)
+      const tabId = await butlerTabId(page, env)
+      const butler = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.tabId === tabId
+      )!
+      await page.evaluate(
+        (id) => window.api.terminal.write(id, '/koloft session new -- sort out the to-dos\r'),
+        tabId
+      )
+      const helperRow = butlerHelperRows(page)
+      await expect(helperRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const helperTab = (await helperRow.getAttribute('data-tab-id'))!
+      await switchToRow(page, helperRow)
+      expect((await koloftRun(page, 'todo')).exit).toBe(0)
+      expect((await koloftRun(page, `session send ${butler.sessionId} Done: 2.`)).exit).toBe(0)
+      await expect(helperRow).toHaveCount(1)
+      await runIn(page, centerTerm(page), 'that was the report')
+      await expect(helperRow).toHaveCount(0, { timeout: 30_000 })
+      expect(
+        (await page.evaluate(() => window.api.sessions.list())).some((s) => s.tabId === helperTab)
+      ).toBe(false)
+    } finally {
+      await close()
+    }
+  })
+
   test('Rename… names the butler: its row, the Notes title while it is open and the name on disk change, the old name is kept on disk, and a settings reset keeps both', async ({
     env
   }) => {

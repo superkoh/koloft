@@ -93,6 +93,7 @@ function harness(
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
   turnEnded: (tabId: string, reply: string, said?: string) => void
   waitsOnAnother: (sessionId: string) => boolean
+  sortsTheTodos: (tabId: string) => void
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -227,6 +228,7 @@ function harness(
         at: 1
       }),
     waitsOnAnother: inner.waitsOnAnother,
+    sortsTheTodos: inner.sortsTheTodos,
     launched,
     queued,
     closed,
@@ -1287,6 +1289,33 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
         )
       }
     ])
+  })
+
+  it('a helper that ran koloft todo is closed for good once the turn in which it reported to the butler ends; one that has not reported yet, and a helper that never ran koloft todo, stay open', async () => {
+    const todo = session('todo', 'codex', {
+      sessionId: 'todo-id',
+      title: 'Sort out to-dos',
+      cwd: BUTLER_FOLDER
+    })
+    const other = session('other', 'claude', {
+      sessionId: 'other-id',
+      title: 'Look into logs',
+      cwd: BUTLER_FOLDER
+    })
+    const h = harness([...live, todo, other], {}, [], conducting())
+    h.startedSessions.started('todo', 'cond-id')
+    h.startedSessions.started('other', 'cond-id')
+    h.sortsTheTodos('todo')
+    h.turnEnded('todo', 'Asked the owner about item 1.')
+    expect((await h.verb(['send', 'fix-login', 'merge it'], from('todo'))).exit).toBe(0)
+    h.turnEnded('todo', 'Passed the decision on.')
+    expect((await h.verb(['send', 'cond-id', 'Found it.'], from('other'))).exit).toBe(0)
+    h.turnEnded('other', 'Reported.')
+    expect(h.closed).toEqual([])
+    expect((await h.verb(['send', 'cond-id', 'Done: 2. Left: 1.'], from('todo'))).exit).toBe(0)
+    expect(h.closed).toEqual([])
+    h.turnEnded('todo', 'Reported.')
+    expect(h.closed).toEqual(['todo-id'])
   })
 
   it('send to a session showing the owner a question still delivers, and its answer says the message waits until the question is answered and how to see it, so Assist never reports it as working', async () => {
