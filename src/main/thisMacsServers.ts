@@ -31,10 +31,10 @@ function ownAddresses(): Set<string> {
   )
 }
 
-function isThisMacsAddress(address: string): boolean {
+function isThisMacsAddress(address: string, own: Set<string>): boolean {
   const ip = unmapped(bare(address))
-  if (net.isIPv4(ip)) return ip.startsWith('127.') || ip.startsWith('0.') || ownAddresses().has(ip)
-  return ip === '::1' || ip === '::' || ownAddresses().has(ip)
+  if (net.isIPv4(ip)) return ip.startsWith('127.') || ip.startsWith('0.') || own.has(ip)
+  return ip === '::1' || ip === '::' || own.has(ip)
 }
 
 function serverHost(url: string): string | null {
@@ -45,7 +45,31 @@ function serverHost(url: string): string | null {
 export function namesThisMacsServer(url: string): boolean {
   const host = serverHost(url)
   if (host === null) return false
-  return LOOPBACK_NAME.test(host) || (net.isIP(unmapped(host)) !== 0 && isThisMacsAddress(host))
+  return (
+    LOOPBACK_NAME.test(host) ||
+    (net.isIP(unmapped(host)) !== 0 && isThisMacsAddress(host, ownAddresses()))
+  )
+}
+
+const A_LOOKED_UP_NAME_STAYS_ANSWERED_MS = 10_000
+const A_LOOKUP_GIVES_UP_MS = 3_000
+const LOOKED_UP_NAMES_KEPT = 500
+const lookedUp = new Map<string, { at: number; reaches: Promise<boolean> }>()
+
+// PLATFORM§12
+function nameReachesThisMac(host: string): Promise<boolean> {
+  const known = lookedUp.get(host)
+  if (known && Date.now() - known.at < A_LOOKED_UP_NAME_STAYS_ANSWERED_MS) return known.reaches
+  const reaches = Promise.race([
+    dns.promises.lookup(host, { all: true }).then((found) => {
+      const own = ownAddresses()
+      return found.some((a) => isThisMacsAddress(a.address, own))
+    }),
+    new Promise<boolean>((resolve) => setTimeout(resolve, A_LOOKUP_GIVES_UP_MS, false).unref())
+  ]).catch(() => false)
+  if (lookedUp.size >= LOOKED_UP_NAMES_KEPT) lookedUp.clear()
+  lookedUp.set(host, { at: Date.now(), reaches })
+  return reaches
 }
 
 export async function reachesThisMacsServer(url: string): Promise<boolean> {
@@ -53,10 +77,5 @@ export async function reachesThisMacsServer(url: string): Promise<boolean> {
   if (host === null) return false
   if (namesThisMacsServer(url)) return true
   if (net.isIP(host)) return false
-  try {
-    const found = await dns.promises.lookup(host, { all: true })
-    return found.some((a) => isThisMacsAddress(a.address))
-  } catch {
-    return false
-  }
+  return await nameReachesThisMac(host)
 }

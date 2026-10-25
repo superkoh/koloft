@@ -4,14 +4,7 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
-import {
-  addressValue,
-  BROWSER,
-  guestByUrl,
-  navButton,
-  newWebTab,
-  typeInAddressBar
-} from './helpers/browser'
+import { addressValue, BROWSER, newWebTab, typeInAddressBar } from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import {
   type E2EEnv,
@@ -941,11 +934,10 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         .toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[0-9a-f]{32}$/)
 
       const title = `remote-${Date.now().toString(36)}`
-      const onTheMac = server.page(
-        '/remote',
-        `<title>${title}</title><body>from the machine</body>`
-      )
-      const url = onTheMac.replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
+      const url = server
+        .page('/remote', `<title>${title}</title><body>from the machine</body>`)
+        .replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
+      const onTheMac = server.page('/mac-only', '<title>mac-only-server</title>')
       const run = agentShell(page, tabId, A_CLI_STEP_FINISHES_WITHIN_MS)
       const unwrapped = async (command: string): Promise<string> =>
         (await run(command)).replace(/\n/g, '')
@@ -973,23 +965,13 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
           )
         )
       ).toContain('blocked')
+      await run(`playwright-cli eval "() => { window.open('${onTheMac}') }"`)
       expect(lastStep(await unwrapped(`playwright-cli tab-new file://${macFile}`))).toContain(
         refused
       )
       await page.locator(BROWSER.drivenTab).first().click()
+      await run('playwright-cli close')
       await typeInAddressBar(page, `file://${macFile}`)
-      await guestByUrl(app, 'only-on-the-mac')
-      expect(lastStep(await unwrapped('playwright-cli tab-list'))).not.toContain('only-on-the-mac')
-
-      await navButton(page, 'Back').click()
-      await expect
-        .poll(async () => lastStep(await unwrapped('playwright-cli tab-list')), {
-          timeout: 30_000
-        })
-        .toContain(url)
-      await run(
-        `playwright-cli run-code "async page => { for (const p of page.context().pages()) if (p.url().includes('/remote')) await p.goForward().catch(() => {}) }"`
-      )
       await page.waitForTimeout(A_REFUSED_LOAD_SETTLES_MS)
       const titles = await app.evaluate(({ webContents }) =>
         Promise.all(
@@ -997,7 +979,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         )
       )
       expect(titles).not.toContain('only-on-the-mac')
-      await run('playwright-cli close')
+      expect(titles).not.toContain('mac-only-server')
 
       await page.evaluate(() => window.api.settings.set({ browserControl: false }))
       await expect.poll(() => fs.existsSync(address), { timeout: 30_000 }).toBe(false)

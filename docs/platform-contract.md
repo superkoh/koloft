@@ -522,6 +522,11 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   and a `fetch` reach it the same way, and answering the callback later, after an async
   DNS lookup, still holds the load until then. (Measured 2026-10-25, Electron's Chromium
   in the e2e suite: E-RW-41 fails with either cancel removed.)
+- **No listener that can still cancel a request is told the IP it goes to**: the details
+  of `onBeforeRequest`, `onBeforeSendHeaders` and `onHeadersReceived` carry no `ip`
+  (read in Electron 43.8.1's `electron.d.ts`), and Chromium resolves the name on its own.
+  A host name can only be judged by a separate DNS lookup made first, so a name whose
+  answer changes between the two lookups (DNS rebinding) gets past such a check.
 - **Chromium fetches `/favicon.ico` after every navigation**, so a server's request
   count sees one extra hit per page load.
 - **The built-in PDF viewer (PDFium) keeps its page position to itself**: `scrollX` /

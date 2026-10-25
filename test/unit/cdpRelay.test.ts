@@ -18,6 +18,9 @@ vi.mock('electron', () => ({
 interface FakeGuest {
   isDestroyed(): boolean
   getURL(): string
+  loadURL: ReturnType<typeof vi.fn>
+  once(event: string, fn: () => void): void
+  destroy(): void
   debugger: {
     attach: ReturnType<typeof vi.fn>
     detach: ReturnType<typeof vi.fn>
@@ -42,9 +45,19 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean; url?: string } =
     if (!listeners.has(event)) listeners.set(event, new Set())
     listeners.get(event)?.add(fn)
   }
+  const onDestroyed: (() => void)[] = []
+  let destroyed = false
   const guest: FakeGuest = {
-    isDestroyed: () => false,
+    isDestroyed: () => destroyed,
     getURL: () => opts.url ?? 'http://x/a',
+    loadURL: vi.fn(async () => {}),
+    once: (event, fn) => {
+      if (event === 'destroyed') onDestroyed.push(fn)
+    },
+    destroy: () => {
+      destroyed = true
+      for (const fn of onDestroyed) fn()
+    },
     reload: vi.fn(),
     reloadIgnoringCache: vi.fn(),
     debugger: {
@@ -347,11 +360,34 @@ describe("a session on another machine never reaches this Mac's files or local s
     expect(guest.debugger.sendCommand).toHaveBeenCalledWith('Page.navigate', {
       url: 'https://example.com/'
     })
-    await c.cmd('Target.createTarget', { url: 'about:blank' })
-    expect(deps.create).toHaveBeenCalledWith(SESSION, 'about:blank')
-
     c.ws.close()
-    await until(() => !relay.guestDrivenFromAnotherMachine(11), 'the guest to be let go')
+    await until(() => !relay.relayAttached(TAB), 'the client to go')
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(true)
+    guest.destroy()
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(false)
+  })
+
+  it('opens a page it asks for blank first and fences it before loading the address, so even its first load is fenced', async () => {
+    relay.relayEndpointOnMachine(TAB)
+    const made = fakeGuest(12)
+    const c = await registered()
+    await c.cmd('Target.createTarget', { url: 'https://example.com/' })
+    expect(deps.create).toHaveBeenCalledWith(SESSION, 'about:blank')
+    expect(relay.guestDrivenFromAnotherMachine(12)).toBe(true)
+    expect(made.loadURL).toHaveBeenCalledWith('https://example.com/')
+  })
+
+  it('keeps a page fenced, and its workers, after the client lets go of it, until the page is closed', async () => {
+    relay.relayEndpointOnMachine(TAB)
+    const guest = fakeGuest(11, { url: 'https://evil.example/wait' })
+    const c = await registered()
+    await attachedTo(c, 'http://x/a')
+    await c.cmd('Target.detachFromTarget', { sessionId: 'KOLOFT-1' })
+    expect(relay.guestDrivenFromAnotherMachine(11)).toBe(true)
+    expect(relay.originDrivenFromAnotherMachine('https://evil.example')).toBe(true)
+    expect(relay.originDrivenFromAnotherMachine('https://example.com')).toBe(false)
+    guest.destroy()
+    expect(relay.originDrivenFromAnotherMachine('https://evil.example')).toBe(false)
   })
 
   it('never shows it, or lets it attach to, a tab on a Mac file or local server, even before the strip has caught up', async () => {

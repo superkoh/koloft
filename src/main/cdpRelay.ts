@@ -117,6 +117,39 @@ export function guestDrivenFromAnotherMachine(guestId: number): boolean {
   return machineDrivenGuests.has(guestId)
 }
 
+function fenceForGood(guestId: number): void {
+  if (machineDrivenGuests.has(guestId)) return
+  const wc = webContents.fromId(guestId)
+  if (!wc || wc.isDestroyed()) return
+  machineDrivenGuests.add(guestId)
+  wc.once('destroyed', () => machineDrivenGuests.delete(guestId))
+}
+
+export function originDrivenFromAnotherMachine(origin: string): boolean {
+  return [...machineDrivenGuests].some((id) => {
+    const wc = webContents.fromId(id)
+    return !!wc && !wc.isDestroyed() && urlOrNull(wc.getURL())?.origin === origin
+  })
+}
+
+const BLANK = 'about:blank'
+
+export async function openForMachine(
+  sessionId: string,
+  url: string,
+  create: (sessionId: string, url: string) => Promise<RelayTarget>
+): Promise<RelayTarget | null> {
+  if (await opensThisMac(url)) return null
+  const t = await create(sessionId, BLANK)
+  if (t.guestId === null) return t
+  fenceForGood(t.guestId)
+  if (url !== BLANK)
+    void guestOf(t.guestId)
+      .loadURL(url)
+      .catch(() => {})
+  return t
+}
+
 export function cdpEnvDir(): string {
   return path.join(app.getPath('userData'), 'cdp')
 }
@@ -174,8 +207,8 @@ function backendFor(client: Client): RelayBackend {
   const live = (): void => {
     if (!client.sessionId) throw new Error('the tab has no running session')
   }
-  const fence = (reaches: boolean): void => {
-    if (client.onMachine && reaches) throw new Error(NO_MAC_FILES_FOR_A_MACHINE)
+  const fence = async (reaches: () => boolean | Promise<boolean>): Promise<void> => {
+    if (client.onMachine && (await reaches())) throw new Error(NO_MAC_FILES_FOR_A_MACHINE)
   }
   // PLATFORM§10
   const afterUsersWord = async (): Promise<void> => {
@@ -191,11 +224,12 @@ function backendFor(client: Client): RelayBackend {
       return await d.mount(client.sessionId, tabIdFor(targetId))
     },
     create: async (url) => {
-      if (client.onMachine) fence(await opensThisMac(url))
       await afterUsersWord()
       live()
-      const t = await d.create(client.sessionId, url)
-      if (client.onMachine && t.guestId !== null) machineDrivenGuests.add(t.guestId)
+      const t = client.onMachine
+        ? await openForMachine(client.sessionId, url, d.create)
+        : await d.create(client.sessionId, url)
+      if (!t) throw new Error(NO_MAC_FILES_FOR_A_MACHINE)
       return { ...t, targetId: targetIdFor(t.targetId) }
     },
     close: async (targetId) => {
@@ -215,19 +249,14 @@ function backendFor(client: Client): RelayBackend {
     attachGuest: async (targetId, guestId) => {
       if (client.attached.has(targetId)) return
       const wc = guestOf(guestId)
-      if (client.onMachine) machineDrivenGuests.add(guestId)
-      const letGo = (e: Error): never => {
-        machineDrivenGuests.delete(guestId)
-        throw e
-      }
-      const showsTheMacToAMachine = async (): Promise<boolean> =>
-        client.onMachine &&
-        (showsThisMac(wc.getURL()) || (await reachesThisMacsServer(wc.getURL())))
-      if (await showsTheMacToAMachine()) letGo(new Error(NO_MAC_FILES_FOR_A_MACHINE))
+      if (client.onMachine) fenceForGood(guestId)
+      const showsTheMac = async (): Promise<boolean> =>
+        showsThisMac(wc.getURL()) || (await reachesThisMacsServer(wc.getURL()))
+      await fence(showsTheMac)
       try {
         wc.debugger.attach('1.3')
       } catch (e) {
-        letGo(new Error(`cannot attach to ${targetId}: ${String(e)}`))
+        throw new Error(`cannot attach to ${targetId}: ${String(e)}`)
       }
       try {
         await wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
@@ -250,17 +279,15 @@ function backendFor(client: Client): RelayBackend {
         if (frameId) frameIds.set(targetId, frameId)
       } catch {}
       const gone = clients.get(client.tabId) !== client
-      if (gone || (await showsTheMacToAMachine())) {
+      if (gone || (client.onMachine && (await showsTheMac()))) {
         frameIds.delete(targetId)
         try {
           if (wc.debugger.isAttached()) wc.debugger.detach()
         } catch {}
-        letGo(
-          new Error(
-            gone
-              ? `cannot attach to ${targetId}: the client disconnected`
-              : NO_MAC_FILES_FOR_A_MACHINE
-          )
+        throw new Error(
+          gone
+            ? `cannot attach to ${targetId}: the client disconnected`
+            : NO_MAC_FILES_FOR_A_MACHINE
         )
       }
       wc.debugger.on('message', onMessage as never)
@@ -277,7 +304,6 @@ function backendFor(client: Client): RelayBackend {
       if (!held) return
       client.attached.delete(targetId)
       frameIds.delete(targetId)
-      machineDrivenGuests.delete(held.guestId)
       try {
         const wc = guestOf(held.guestId)
         wc.debugger.off('message', held.onMessage as never)
@@ -287,7 +313,7 @@ function backendFor(client: Client): RelayBackend {
       publishAttached(client)
     },
     forward: async (targetId, guestId, method, params, sessionId) => {
-      if (client.onMachine) fence(await reachesThisMac(method, params))
+      await fence(() => reachesThisMac(method, params))
       await afterUsersWord()
       // PLATFORM§9
       if (method === 'Page.captureScreenshot') {

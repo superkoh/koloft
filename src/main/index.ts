@@ -327,6 +327,8 @@ import {
   relayEndpointOnMachine,
   renewRelayEndpointOnMachine,
   guestDrivenFromAnotherMachine,
+  originDrivenFromAnotherMachine,
+  openForMachine,
   relayStripChanged,
   relayTabClosed,
   relayTabRebound,
@@ -4035,13 +4037,13 @@ function relayDeps(): RelayDeps {
 
 function openAsDrivingAgentsTab(from: WebContents, url: string): boolean {
   const driver = sessionDrivingGuest(from.id)
-  if (!driver) return false
-  if (!guestDrivenFromAnotherMachine(from.id)) void cdpOp('create', driver, { url })
-  else if (!url.startsWith('file:'))
-    void reachesThisMacsServer(url).then((refused) => {
-      if (!refused) void cdpOp('create', driver, { url })
-    })
-  return true
+  if (driver) void cdpOp('create', driver, { url })
+  return driver !== null
+}
+
+function openFromAMachinesPage(from: WebContents, url: string): void {
+  const driver = sessionDrivingGuest(from.id)
+  if (driver) void openForMachine(driver, url, relayDeps().create)
 }
 
 function routeGuestPopup(url: string, from: WebContents): void {
@@ -4053,6 +4055,8 @@ function routeGuestPopup(url: string, from: WebContents): void {
     return
   }
   const decision = routeFor(url, 'user')
+  if (decision.dest === 'browser' && guestDrivenFromAnotherMachine(from.id))
+    return openFromAMachinesPage(from, decision.target)
   if (decision.dest === 'browser' && openAsDrivingAgentsTab(from, decision.target)) return
   const tabId = tabOwningGuest(from)
   if (!tabId) return
@@ -4215,8 +4219,13 @@ function setupBrowserPartition(): void {
     if (webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin))
       return callback({ cancel: true })
     const guest = details.webContentsId
-    if (guest === undefined || !guestDrivenFromAnotherMachine(guest)) return callback({})
-    if (details.url.startsWith('file:')) return callback({ cancel: true })
+    const fenced =
+      guest !== undefined
+        ? guestDrivenFromAnotherMachine(guest)
+        : details.initiatorOrigin !== undefined &&
+          originDrivenFromAnotherMachine(details.initiatorOrigin)
+    if (!fenced) return callback({})
+    if (details.url.startsWith('file:')) return callback({ cancel: guest !== undefined })
     void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
   })
   // PLATFORM§13
