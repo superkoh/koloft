@@ -37,7 +37,7 @@ test.describe('the playwright-cli Koloft ships, run from a Claude Code or Codex 
           )
         ).toMatch(/^(> )?1$/m)
         const outputDirFile = path.join(env.home, 'playwright-output-dir.txt')
-        await run(`printenv PLAYWRIGHT_MCP_OUTPUT_DIR > ${outputDirFile}`)
+        await run(`printenv PLAYWRIGHT_MCP_OUTPUT_DIR > '${outputDirFile}'`)
         const tabOutputDir = fs.readFileSync(outputDirFile, 'utf8').trim()
         expect(tabOutputDir).toMatch(new RegExp(`/koloft-playwright/${tabId}$`))
         expect(await run(`playwright-cli open ${url}`)).toContain(`Page Title: ${title}`)
@@ -46,7 +46,7 @@ test.describe('the playwright-cli Koloft ships, run from a Claude Code or Codex 
         const screen = await run('playwright-cli eval document.title')
         expect(screen).toContain(`"${title}"`)
         expect(screen).not.toContain("the user's own playwright-cli")
-        expect(screen).toMatch(/sh exit=0[\s\S]*sh exit=0[\s\S]*sh exit=0[\s\S]*sh exit=0/)
+        expect(screen.match(/sh exit=0/g)).toHaveLength(4)
         await run('playwright-cli close')
       } finally {
         await quitAndClose(app)
