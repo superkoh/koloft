@@ -8,6 +8,7 @@ import {
   type SearchHit,
   type ContentHit
 } from '@shared/types'
+import { gitIgnoredAmong } from './gitIgnored'
 
 const execFile = promisify(execFileCb)
 
@@ -20,28 +21,12 @@ function sortEntries(entries: DirEntry[]): DirEntry[] {
   })
 }
 
-const NOTHING_IGNORED_EXIT = 1
-
 // PLATFORM§30
-export function gitIgnoredAmong(root: string, paths: string[]): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    const child = execFileCb(
-      'git',
-      ['-C', root, 'check-ignore', '-z', '--stdin'],
-      { maxBuffer: 16 * 1024 * 1024 },
-      (error, stdout) => {
-        if (error && error.code !== NOTHING_IGNORED_EXIT) reject(error)
-        else resolve(stdout.split('\0').filter(Boolean))
-      }
-    )
-    child.stdin?.on('error', () => {})
-    child.stdin?.end(paths.map((p) => p + '\0').join(''))
-  })
-}
-
 async function ignoredChildren(dir: string, names: string[]): Promise<Set<string>> {
   if (names.length === 0) return new Set()
-  return new Set(await gitIgnoredAmong(dir, names).catch(() => []))
+  const onDiskByGitName = new Map(names.map((n) => [n.normalize('NFC'), n]))
+  const ignored = await gitIgnoredAmong(dir, [...onDiskByGitName.keys()]).catch(() => [])
+  return new Set(ignored.map((n) => onDiskByGitName.get(n) ?? n))
 }
 
 export async function dirExists(absPath: string): Promise<boolean> {

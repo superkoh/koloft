@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { SessionStore, type WorktreeResource } from './sessionStore'
-import { gitIgnoredAmong } from './fileTree'
+import { gitIgnoredAmong } from './gitIgnored'
 
 const execFileAsync = promisify(execFile)
 

@@ -53,6 +53,9 @@ describe('searchContent returns every match with full text, with or without a co
   })
 })
 
+const COMPOSED_ACCENT = 'café.txt'
+const DECOMPOSED_ACCENT = 'café.txt'
+
 function initRepo(dir: string): void {
   const r = spawnSync('git', ['init', '-q', dir], { encoding: 'utf8' })
   if (r.status !== 0) throw new Error(`git init failed (${r.status}): ${r.stderr || r.error}`)
@@ -64,9 +67,13 @@ describe('A-01…A-04: listDir / search honour the show-ignored switch', () => {
   beforeAll(() => {
     ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-ign-')))
     initRepo(ws)
-    fs.writeFileSync(path.join(ws, '.gitignore'), '.env\n.venv/\nnode_modules/\n秘密.txt\n')
+    fs.writeFileSync(
+      path.join(ws, '.gitignore'),
+      `.env\n.venv/\nnode_modules/\n秘密.txt\n${COMPOSED_ACCENT}\n`
+    )
     fs.writeFileSync(path.join(ws, '.env'), 'SECRET=1\n')
     fs.writeFileSync(path.join(ws, '秘密.txt'), '')
+    fs.writeFileSync(path.join(ws, DECOMPOSED_ACCENT), '')
     fs.writeFileSync(path.join(ws, 'app.ts'), 'ok\n')
     fs.mkdirSync(path.join(ws, '.venv'))
     fs.writeFileSync(path.join(ws, '.venv', 'pyvenv.cfg'), 'home = /usr\n')
@@ -99,6 +106,15 @@ describe('A-01…A-04: listDir / search honour the show-ignored switch', () => {
     expect((await listDir(ws)).map((e) => e.name)).not.toContain('秘密.txt')
     const on = await listDir(ws, { showIgnored: true })
     expect(on.find((e) => e.name === '秘密.txt')?.ignored).toBe(true)
+  })
+
+  // PLATFORM§30
+  it('off: an ignored file whose name is stored decomposed on disk is out, as git status sees it', async () => {
+    const names = (await listDir(ws)).map((e) => e.name.normalize('NFC'))
+    expect(names).not.toContain(COMPOSED_ACCENT)
+    const on = await listDir(ws, { showIgnored: true })
+    const entry = on.find((e) => e.name.normalize('NFC') === COMPOSED_ACCENT)
+    expect(entry?.ignored).toBe(true)
   })
 
   it('off: an ignored DIRECTORY and the hidden-by-default names are out', async () => {
@@ -212,7 +228,6 @@ describe('A-01…A-04: listDir / search honour the show-ignored switch', () => {
   })
 })
 
-// PLATFORM§30
 // PLATFORM§30
 describe('listDir lists a big folder outside any repository, where git quits before reading the names', () => {
   let ws: string
