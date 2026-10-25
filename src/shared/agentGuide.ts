@@ -95,6 +95,7 @@ ${HELPER_RULES[backend].map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
 ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}${QUESTION_RULE[backend]}`
 }
 
+// CC§3
 export const AGENT_GUIDE = `koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.
 
 RULES
@@ -233,7 +234,7 @@ koloft session stop <id or name>
     Example: koloft session stop "Fix docs links"
 
 koloft session close [<id or name>]
-    Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session started with "koloft session new" by you, or by a session you started, and so on down (open, or already ended), once you have its result; or, when the owner asks, any other ended session on this computer: an open one is refused (stop it first), and so is one on another machine. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no other branch and no remote branch, nothing is closed and Koloft lists what is left. Koloft has no merge button: to bring a worktree session's work into the main checkout, commit it, merge its branch from the main checkout, then close.
+    Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session started with "koloft session new" by you, or by a session you started, and so on down (open, or already ended), once you have its result; or, when the owner asks, any other ended session on this computer: an open one is refused (stop it first), and so is one on another machine. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no other branch and no remote branch, nothing is closed and Koloft lists what is left. Koloft has no merge button: to bring a worktree session's work into the main checkout, commit it in the worktree, merge its branch in the main checkout, then close. From inside the worktree, git aimed at the main checkout may be refused (Claude Code refuses it, and a ! command too): then start a session in the main checkout with koloft session new -- "<task>" (from a worktree session, without -w it starts there), ask it to merge the branch, and close it once it reports the merge done.
     Example: koloft session close "Fix docs links"
 
 TO-DOS
