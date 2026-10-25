@@ -472,17 +472,13 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         const term = String(p.searchTerm).toLowerCase()
         const thread = load(p.threadId)
         const snippet = thread && said(thread).find((text) => text.toLowerCase().includes(term))
-        const start = snippet ? snippet.toLowerCase().indexOf(term) : 0
-        const data = snippet
-          ? [{ snippet, snippetMatchRange: { start, end: start + term.length } }]
-          : []
-        result(id, { data, nextCursor: null })
+        result(id, { data: snippet ? [{ snippet }] : [], nextCursor: null })
         return
       }
       if (method === 'thread/turns/list') {
         const thread = load(p.threadId)
         if (!thread) error(id, 'Thread not found')
-        else result(id, { data: thread.turns.slice(-(p.limit ?? 100)), nextCursor: null })
+        else result(id, { data: thread.turns, nextCursor: null })
         return
       }
       if (method === 'thread/read') {

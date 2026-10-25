@@ -1823,9 +1823,9 @@ word made of "ban" and "jo", with the marker `zebrafinch42` in the prompt; it an
 - Not probed: how long it takes on a home with thousands of threads (no real home was
   searched), and Codex on a remote machine (§16).
 
-Rechecked 2026-10-25 on this Mac with Codex CLI 0.162.0, and the schema and
-`thread/searchOccurrences` again with 0.161.0 (`npm install @openai/codex@0.161.0` into a
-scratch folder): the same Node client and scratch `CODEX_HOME`, one real turn in a work
+Rechecked 2026-10-25 on this Mac with Codex CLI 0.162.0, and the schema,
+`thread/searchOccurrences` and `thread/turns/list` again with 0.161.0 (`npm install
+@openai/codex@0.161.0` into a scratch folder): the same Node client and scratch `CODEX_HOME`, one real turn in a work
 folder named `work-quokkadir77`, then one in a folder holding an `AGENTS.md` with the
 marker `pangolinrule55`.
 
@@ -1854,7 +1854,8 @@ marker `pangolinrule55`.
   (`turns: []`) and `thread/turns/list { threadId, limit: 1 }` (`data: []`), while
   `thread/search` still found it. `thread/resume` built the index: afterwards all three
   answered. `thread/turns/list` with `limit: 1` answers one turn for an indexed thread, so
-  an empty answer tells a thread Codex has not indexed. Nothing in the thread object
+  an empty answer tells a thread Codex has not indexed; for an id Codex does not know it
+  errors `-32600 "thread not loaded: <id>"`. Nothing in the thread object
   `thread/search` returns tells the two apart. A real home on this Mac had 13 of its 68
   unarchived threads (all `source: vscode`, all with turns) outside the index.
 - Not probed: whether Codex later indexes such threads on its own.

@@ -148,20 +148,28 @@ async function* everyPage(
 const THREADS_CHECKED_AT_ONCE = 8
 
 // CODEX§24
+const CODEX_OWN_BLOCK =
+  /<\/?(environment_context|cwd|shell|current_date|timezone|INSTRUCTIONS)>|AGENTS\.md instructions for /
+
+// CODEX§24
 async function saidInThread(
   rpc: CodexRpc,
-  threadId: string,
-  searchTerm: string,
-  searchSnippet: string
+  hit: { id: string; snippet: string },
+  searchTerm: string
 ): Promise<string | undefined> {
-  const occurrences = record(
-    await rpc.request('thread/searchOccurrences', { threadId, searchTerm, limit: 1 })
-  )
-  const first = record(Array.isArray(occurrences.data) ? occurrences.data[0] : undefined)
-  if (typeof first.snippet === 'string') return first.snippet
-  const turns = record(await rpc.request('thread/turns/list', { threadId, limit: 1 }))
-  const indexed = Array.isArray(turns.data) && turns.data.length > 0
-  return indexed ? undefined : searchSnippet
+  const unchecked = CODEX_OWN_BLOCK.test(hit.snippet) ? undefined : hit.snippet
+  try {
+    const occurrences = record(
+      await rpc.request('thread/searchOccurrences', { threadId: hit.id, searchTerm, limit: 1 })
+    )
+    const first = record(Array.isArray(occurrences.data) ? occurrences.data[0] : undefined)
+    if (typeof first.snippet === 'string') return first.snippet
+    const turns = record(await rpc.request('thread/turns/list', { threadId: hit.id, limit: 1 }))
+    const indexed = Array.isArray(turns.data) && turns.data.length > 0
+    return indexed ? undefined : unchecked
+  } catch {
+    return unchecked
+  }
 }
 
 interface ListedThread {
@@ -626,6 +634,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       const found: { id: string; snippet: string }[] = []
       const params = { searchTerm: term, archived: false, sourceKinds }
       for await (const value of everyPage(rpc, 'thread/search', params)) {
+        if (signal?.aborted) return []
         const item = record(value)
         const thread = userThread(item.thread)
         if (thread)
@@ -634,13 +643,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
             snippet: typeof item.snippet === 'string' ? item.snippet : ''
           })
       }
-      const said = await mapAtMost(found, THREADS_CHECKED_AT_ONCE, (hit) =>
-        signal?.aborted ? Promise.resolve(undefined) : saidInThread(rpc, hit.id, term, hit.snippet)
-      )
-      return found.flatMap(({ id }, i) => {
-        const snippet = said[i]
-        return snippet === undefined ? [] : [{ id: codexSessionKey(id), snippet }]
+      const said = await mapAtMost(found, THREADS_CHECKED_AT_ONCE, async (hit) => {
+        if (signal?.aborted) return undefined
+        const snippet = await saidInThread(rpc, hit, term)
+        return snippet === undefined ? undefined : { id: codexSessionKey(hit.id), snippet }
       })
+      return said.filter((h): h is { id: string; snippet: string } => !!h)
     })
   }
 
