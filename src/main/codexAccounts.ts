@@ -8,6 +8,7 @@ import {
   usableAccounts
 } from '@shared/accountUsage'
 import type { AccountView, CodexLimits, CodexLimitWindow, SignInFolderKind } from '@shared/types'
+import { joinProjectTables } from './codexTrust'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -72,10 +73,12 @@ export function prepareCodexHome(home: string, sharedConfig: string): void {
       fs.symlinkSync(theirs, own)
   }
   const config = path.join(home, 'config.toml')
-  try {
-    fs.lstatSync(config)
-    return
-  } catch {}
+  const existing = fs.lstatSync(config, { throwIfNoEntry: false })
+  if (existing?.isSymbolicLink()) return
+  if (existing) {
+    joinProjectTables(sharedConfig, fs.readFileSync(config, 'utf8'))
+    fs.rmSync(config)
+  }
   fs.mkdirSync(path.dirname(sharedConfig), { recursive: true, mode: 0o700 })
   fs.writeFileSync(sharedConfig, '', { flag: 'a', mode: 0o600 })
   fs.symlinkSync(sharedConfig, config)

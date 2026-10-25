@@ -45,6 +45,21 @@ export function acceptCodexTrust(configFile: string, dir: string): void {
   writeConfig(configFile, appendTable(text, `${header}\ntrust_level = "trusted"\n`))
 }
 
+// CODEX§15
+export function joinProjectTables(configFile: string, from: string): void {
+  let text = readConfig(configFile)
+  const have = new Set(text.split(/\r?\n/).map((line) => line.trim()))
+  const lines = from.split(/\r?\n/)
+  for (let start = 0; start < lines.length; start++) {
+    const header = lines[start].trim()
+    if (!header.startsWith('[projects.') || have.has(header)) continue
+    let end = start + 1
+    while (end < lines.length && !lines[end].trim().startsWith('[')) end++
+    text = appendTable(text, `${lines.slice(start, end).join('\n').trimEnd()}\n`)
+  }
+  writeConfig(configFile, text)
+}
+
 // CODEX§27
 export function codexHookTrusted(configFile: string, key: string, hash: string): boolean {
   const lines = readConfig(configFile).split('\n')
