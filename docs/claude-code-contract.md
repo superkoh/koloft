@@ -1237,8 +1237,9 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   (65 tests, 7.4 min, Electron relaunched per test and listening on 127.0.0.1 through
   `--remote-debugging-port=0`) was sampled every 5 s. Over three 2-minute windows its
   tree used 23.7, 4.3 and 2.7 s of CPU per minute, counting programs that had exited
-  (PLATFORM§3); summing only the live ones gave −0.7, 0.9 and 1.1. Its output file grew
-  in every window, by appending: the whole run's lines were still in it at the end.
+  (PLATFORM§3); summing only the live ones gave −0.7, 0.9 and 1.1. A second run gave
+  27.3, 4.5 and 2.2 (live only: −1.7, 0.7, 0.7), and its output file grew in all three
+  windows, by appending: the whole run's lines were still in it at the end.
 - **A background subagent's own background shell stays in the MAIN session's Stop list
   after the subagent ends — in interactive mode.** Measured 2026-10-08 on CC 2.1.295,
   interactive TUI driven through a pty, with Stop/SubagentStop hooks that saved their input:
