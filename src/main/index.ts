@@ -349,6 +349,7 @@ import {
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
+import { reachesThisMacsServer } from './thisMacsServers'
 import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
@@ -4034,9 +4035,13 @@ function relayDeps(): RelayDeps {
 
 function openAsDrivingAgentsTab(from: WebContents, url: string): boolean {
   const driver = sessionDrivingGuest(from.id)
-  const aMacFileForAMachine = url.startsWith('file:') && guestDrivenFromAnotherMachine(from.id)
-  if (driver && !aMacFileForAMachine) void cdpOp('create', driver, { url })
-  return driver !== null
+  if (!driver) return false
+  if (!guestDrivenFromAnotherMachine(from.id)) void cdpOp('create', driver, { url })
+  else if (!url.startsWith('file:'))
+    void reachesThisMacsServer(url).then((refused) => {
+      if (!refused) void cdpOp('create', driver, { url })
+    })
+  return true
 }
 
 function routeGuestPopup(url: string, from: WebContents): void {
@@ -4207,13 +4212,12 @@ function setupBrowserPartition(): void {
   })
   // PLATFORM§39 PLATFORM§12
   ses.webRequest.onBeforeRequest((details, callback) => {
-    callback({
-      cancel:
-        webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) ||
-        (details.url.startsWith('file:') &&
-          details.webContentsId !== undefined &&
-          guestDrivenFromAnotherMachine(details.webContentsId))
-    })
+    if (webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin))
+      return callback({ cancel: true })
+    const guest = details.webContentsId
+    if (guest === undefined || !guestDrivenFromAnotherMachine(guest)) return callback({})
+    if (details.url.startsWith('file:')) return callback({ cancel: true })
+    void reachesThisMacsServer(details.url).then((cancel) => callback({ cancel }))
   })
   // PLATFORM§13
   ses.webRequest.onHeadersReceived((details, callback) => {

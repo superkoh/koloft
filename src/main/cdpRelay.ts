@@ -7,6 +7,7 @@ import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './c
 import { inputEmulation } from './cdpInput'
 import { compositionDone } from './hostComposition'
 import { urlOrNull } from '@shared/browserRoute'
+import { namesThisMacsServer, reachesThisMacsServer } from './thisMacsServers'
 
 export interface RelayDeps {
   sessionForTab(tabId: string): string | null
@@ -22,27 +23,27 @@ const FORWARD_TIMEOUT_OUTLASTS_CLIENT_TIMEOUTS_MS = 180_000
 
 const SCHEMES_A_MACHINE_MAY_OPEN = new Set(['http:', 'https:', 'about:', 'data:', 'blob:'])
 const NO_MAC_FILES_FOR_A_MACHINE =
-  'a session on another machine cannot open or upload files of the Mac Koloft runs on'
+  'a session on another machine cannot reach files or local servers of the Mac Koloft runs on'
 
-function showsThisMacsFile(url: string): boolean {
+function showsThisMac(url: string): boolean {
   const u = urlOrNull(url)
-  if (u?.protocol === 'view-source:') return showsThisMacsFile(u.pathname)
-  return u?.protocol === 'file:'
+  if (u?.protocol === 'view-source:') return showsThisMac(u.pathname)
+  return u?.protocol === 'file:' || namesThisMacsServer(url)
 }
 
-function opensOnlyWhatAMachineMay(url: string): boolean {
+async function opensThisMac(url: string): Promise<boolean> {
   const u = urlOrNull(url)
-  return !!u && SCHEMES_A_MACHINE_MAY_OPEN.has(u.protocol)
+  return !u || !SCHEMES_A_MACHINE_MAY_OPEN.has(u.protocol) || (await reachesThisMacsServer(url))
 }
 
-function reachesThisMacsFiles(method: string, params: unknown): boolean {
+async function reachesThisMac(method: string, params: unknown): Promise<boolean> {
   const p = (params ?? {}) as { url?: unknown; data?: { files?: unknown[] } }
   switch (method) {
     case 'Page.navigate':
     case 'Network.loadNetworkResource':
-      return !opensOnlyWhatAMachineMay(String(p.url ?? ''))
+      return await opensThisMac(String(p.url ?? ''))
     case 'Fetch.continueRequest':
-      return p.url !== undefined && !opensOnlyWhatAMachineMay(String(p.url))
+      return p.url !== undefined && (await opensThisMac(String(p.url)))
     case 'DOM.setFileInputFiles':
     case 'DOM.getFileInfo':
     case 'Page.setDownloadBehavior':
@@ -109,7 +110,7 @@ const machineTabs = new Set<string>()
 const machineDrivenGuests = new Set<number>()
 
 function visibleTo(client: Client, list: RelayTarget[]): RelayTarget[] {
-  return asTargets(client.onMachine ? list.filter((t) => !showsThisMacsFile(t.url)) : list)
+  return asTargets(client.onMachine ? list.filter((t) => !showsThisMac(t.url)) : list)
 }
 
 export function guestDrivenFromAnotherMachine(guestId: number): boolean {
@@ -190,10 +191,11 @@ function backendFor(client: Client): RelayBackend {
       return await d.mount(client.sessionId, tabIdFor(targetId))
     },
     create: async (url) => {
-      fence(!opensOnlyWhatAMachineMay(url))
+      if (client.onMachine) fence(await opensThisMac(url))
       await afterUsersWord()
       live()
       const t = await d.create(client.sessionId, url)
+      if (client.onMachine && t.guestId !== null) machineDrivenGuests.add(t.guestId)
       return { ...t, targetId: targetIdFor(t.targetId) }
     },
     close: async (targetId) => {
@@ -218,9 +220,10 @@ function backendFor(client: Client): RelayBackend {
         machineDrivenGuests.delete(guestId)
         throw e
       }
-      const showsAMacFileToAMachine = (): boolean =>
-        client.onMachine && showsThisMacsFile(wc.getURL())
-      if (showsAMacFileToAMachine()) letGo(new Error(NO_MAC_FILES_FOR_A_MACHINE))
+      const showsTheMacToAMachine = async (): Promise<boolean> =>
+        client.onMachine &&
+        (showsThisMac(wc.getURL()) || (await reachesThisMacsServer(wc.getURL())))
+      if (await showsTheMacToAMachine()) letGo(new Error(NO_MAC_FILES_FOR_A_MACHINE))
       try {
         wc.debugger.attach('1.3')
       } catch (e) {
@@ -247,7 +250,7 @@ function backendFor(client: Client): RelayBackend {
         if (frameId) frameIds.set(targetId, frameId)
       } catch {}
       const gone = clients.get(client.tabId) !== client
-      if (gone || showsAMacFileToAMachine()) {
+      if (gone || (await showsTheMacToAMachine())) {
         frameIds.delete(targetId)
         try {
           if (wc.debugger.isAttached()) wc.debugger.detach()
@@ -284,7 +287,7 @@ function backendFor(client: Client): RelayBackend {
       publishAttached(client)
     },
     forward: async (targetId, guestId, method, params, sessionId) => {
-      fence(reachesThisMacsFiles(method, params))
+      if (client.onMachine) fence(await reachesThisMac(method, params))
       await afterUsersWord()
       // PLATFORM§9
       if (method === 'Page.captureScreenshot') {

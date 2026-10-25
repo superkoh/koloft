@@ -94,6 +94,7 @@ import {
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const A_CLI_STEP_FINISHES_WITHIN_MS = 60_000
 const A_REFUSED_LOAD_SETTLES_MS = 3000
+const PAGE_HOST_THAT_IS_NOT_THE_MAC = 'remote-page.test'
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 
 const heartbeatsStamping = (env: E2EEnv, bare: string): number =>
@@ -921,11 +922,12 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   })
 
   // PLATFORM§33
-  test("E-RW-41: Koloft's playwright-cli, run by Claude Code on the machine, drives that tab's Workbench browser through the address Koloft writes there but never opens a file of the Mac, and switching browser control off takes the address away", async ({
+  test("E-RW-41: Koloft's playwright-cli, run by Claude Code on the machine, drives that tab's Workbench browser through the address Koloft writes there but never opens a file or a local server of the Mac, and switching browser control off takes the address away", async ({
     env
   }) => {
     test.setTimeout(300_000)
     const server = await startEchoServer()
+    env.extraArgs.push(hostResolverSwitch([PAGE_HOST_THAT_IS_NOT_THE_MAC]))
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
@@ -939,7 +941,11 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         .toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[0-9a-f]{32}$/)
 
       const title = `remote-${Date.now().toString(36)}`
-      const url = server.page('/remote', `<title>${title}</title><body>from the machine</body>`)
+      const onTheMac = server.page(
+        '/remote',
+        `<title>${title}</title><body>from the machine</body>`
+      )
+      const url = onTheMac.replace('127.0.0.1', PAGE_HOST_THAT_IS_NOT_THE_MAC)
       const run = agentShell(page, tabId, A_CLI_STEP_FINISHES_WITHIN_MS)
       const unwrapped = async (command: string): Promise<string> =>
         (await run(command)).replace(/\n/g, '')
@@ -952,10 +958,21 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       const macFile = path.join(env.home, 'only-on-the-mac.html')
       fs.writeFileSync(macFile, '<title>only-on-the-mac</title>')
       const lastStep = (text: string): string => text.split('sh exit=').at(-2) ?? ''
-      const refused = 'cannot open or upload files of the Mac'
+      const refused = 'cannot reach files or local servers of the Mac'
       expect(lastStep(await unwrapped(`playwright-cli goto file://${macFile}`))).toContain(refused)
+      expect(lastStep(await unwrapped(`playwright-cli goto ${onTheMac}`))).toContain(refused)
       await run(`playwright-cli eval "() => { location.href = 'file://${macFile}' }"`)
+      await run(
+        `playwright-cli eval "() => { location.href = '${onTheMac.replace('127.0.0.1', 'localhost')}' }"`
+      )
       expect(lastStep(await unwrapped('playwright-cli eval "() => location.href"'))).toContain(url)
+      expect(
+        lastStep(
+          await unwrapped(
+            `playwright-cli eval "() => fetch('${onTheMac}', { mode: 'no-cors' }).then(() => 'reached', () => 'blocked')"`
+          )
+        )
+      ).toContain('blocked')
       expect(lastStep(await unwrapped(`playwright-cli tab-new file://${macFile}`))).toContain(
         refused
       )

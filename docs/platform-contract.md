@@ -518,8 +518,10 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   handler installed, and `cancel` stops it before the handler runs. The handler's own
   `ses.fetch` shows up as a second request with no `webContentsId`. A history step
   (`goForward`) to a `file://` entry is a fresh request, not a back/forward-cache
-  restore. (Measured 2026-10-25, Electron's Chromium in the e2e suite: E-RW-41 fails with
-  the cancel removed.)
+  restore. An `http://` main-frame load started by the page itself (`location.href = …`)
+  and a `fetch` reach it the same way, and answering the callback later, after an async
+  DNS lookup, still holds the load until then. (Measured 2026-10-25, Electron's Chromium
+  in the e2e suite: E-RW-41 fails with either cancel removed.)
 - **Chromium fetches `/favicon.ico` after every navigation**, so a server's request
   count sees one extra hit per page load.
 - **The built-in PDF viewer (PDFium) keeps its page position to itself**: `scrollX` /

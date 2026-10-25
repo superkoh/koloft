@@ -1,3 +1,4 @@
+import dns from 'dns'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -268,10 +269,20 @@ describe('a tab whose session went away (§4.4)', () => {
   })
 })
 
-describe("a session on another machine never reaches this Mac's files through the Workbench browser", () => {
+describe("a session on another machine never reaches this Mac's files or local servers through the Workbench browser", () => {
   const MAC_FILE = 'file:///Users/me/.ssh/id_ed25519'
+  const NAME_FOR_THE_MAC = 'http://mac-server.test/'
+  const REFUSED = 'cannot reach files or local servers of the Mac'
   const errorOf = (reply: Record<string, unknown>): string =>
     String((reply.error as { message?: string } | undefined)?.message ?? '')
+
+  beforeEach(() => {
+    vi.spyOn(dns.promises, 'lookup').mockImplementation((async (host: string) =>
+      host === 'mac-server.test'
+        ? [{ address: '127.0.0.1', family: 4 }]
+        : [{ address: '93.184.216.34', family: 4 }]) as never)
+  })
+  afterEach(() => vi.restoreAllMocks())
 
   async function attachedTo(c: Conn, url: string): Promise<string> {
     const listed = (await c.cmd('Target.getTargets')).result as {
@@ -284,7 +295,7 @@ describe("a session on another machine never reaches this Mac's files through th
 
   const NOTES = 'file:///Users/me/notes.html'
 
-  it('refuses to open, navigate to, upload or drag in a Mac file, however the address is written; web pages still work', async () => {
+  it('refuses to open, navigate to, upload or drag in a Mac file, or open a server on the Mac, however the address is written; web pages still work', async () => {
     relay.relayEndpointOnMachine(TAB)
     const guest = fakeGuest(11)
     const c = await registered()
@@ -293,11 +304,12 @@ describe("a session on another machine never reaches this Mac's files through th
       MAC_FILE,
       'fi\tle:///etc/hosts',
       '\u0001file:///etc/hosts',
-      'FILE:/etc/hosts'
+      'FILE:/etc/hosts',
+      'http://127.0.0.1:8888/tree',
+      'http://localhost:3000/',
+      NAME_FOR_THE_MAC
     ])
-      expect(errorOf(await c.cmd('Target.createTarget', { url }))).toContain(
-        'cannot open or upload files of the Mac'
-      )
+      expect(errorOf(await c.cmd('Target.createTarget', { url })), url).toContain(REFUSED)
     expect(deps.create).not.toHaveBeenCalled()
 
     const sid = await attachedTo(c, 'http://x/a')
@@ -306,6 +318,8 @@ describe("a session on another machine never reaches this Mac's files through th
       ['Page.navigate', { url: MAC_FILE }],
       ['Page.navigate', { url: 'fi\nle:///etc/hosts' }],
       ['Page.navigate', { url: `view-source:${MAC_FILE}` }],
+      ['Page.navigate', { url: 'http://[::1]:5173/' }],
+      ['Page.navigate', { url: NAME_FOR_THE_MAC }],
       ['Network.loadNetworkResource', { url: MAC_FILE, frameId: 'f', options: {} }],
       ['Fetch.continueRequest', { requestId: 'r', url: MAC_FILE }],
       ['DOM.setFileInputFiles', { files: ['/Users/me/.ssh/id_ed25519'], backendNodeId: 1 }],
@@ -316,7 +330,7 @@ describe("a session on another machine never reaches this Mac's files through th
         { type: 'drop', x: 1, y: 1, data: { items: [], files: ['/etc/hosts'] } }
       ]
     ] as const) {
-      expect(errorOf(await c.cmd(method, params, sid))).toContain('cannot open or upload files')
+      expect(errorOf(await c.cmd(method, params, sid))).toContain(REFUSED)
     }
     const sent = (): string[] =>
       guest.debugger.sendCommand.mock.calls.map((call) => String(call[0]))
@@ -340,7 +354,7 @@ describe("a session on another machine never reaches this Mac's files through th
     await until(() => !relay.guestDrivenFromAnotherMachine(11), 'the guest to be let go')
   })
 
-  it('never shows it, or lets it attach to, a tab on a Mac file, even before the strip has caught up', async () => {
+  it('never shows it, or lets it attach to, a tab on a Mac file or local server, even before the strip has caught up', async () => {
     relay.relayEndpointOnMachine(TAB)
     fakeGuest(11)
     fakeGuest(13, { url: NOTES })
@@ -348,7 +362,8 @@ describe("a session on another machine never reaches this Mac's files through th
     relay.relayStripChanged(SESSION, [
       ...deps.strip,
       { targetId: 'bt3', url: NOTES, title: 'notes', guestId: 13 },
-      { targetId: 'bt4', url: 'http://x/before', title: 'before', guestId: 14 }
+      { targetId: 'bt4', url: 'http://x/before', title: 'before', guestId: 14 },
+      { targetId: 'bt6', url: 'http://localhost:3000/', title: 'dev server', guestId: 16 }
     ])
     const c = await registered()
     await c.cmd('Target.setDiscoverTargets', { discover: true })
@@ -358,9 +373,7 @@ describe("a session on another machine never reaches this Mac's files through th
     }
     expect(listed.targetInfos.map((t) => t.url)).toEqual(['http://x/a', 'http://x/before'])
     const lagging = listed.targetInfos[1]?.targetId ?? ''
-    expect(errorOf(await c.cmd('Target.attachToTarget', { targetId: lagging }))).toContain(
-      'cannot open or upload files of the Mac'
-    )
+    expect(errorOf(await c.cmd('Target.attachToTarget', { targetId: lagging }))).toContain(REFUSED)
 
     relay.relayStripChanged(SESSION, [
       ...deps.strip,
