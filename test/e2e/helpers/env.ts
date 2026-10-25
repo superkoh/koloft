@@ -130,6 +130,9 @@ export function setupE2EEnv(): E2EEnv {
 
   const fileDialogFile = path.join(home, 'file-dialog-answers')
 
+  const roomyMachineNotTheDevMacsOwnLoad = path.join(home, 'machine-reading.json')
+  fs.writeFileSync(roomyMachineNotTheDevMacsOwnLoad, JSON.stringify({ pressure: 1, load1: 0 }))
+
   const workspaces = {
     a: makeWorkspace(home, 'ws-a', {
       'README.md': '# Workspace A\n\nkoloft-e2e-alpha marker for ws-a.\n',
@@ -180,6 +183,7 @@ export function setupE2EEnv(): E2EEnv {
     KOLOFT_CDP_LOG: path.join(home, 'cdp-log.txt'),
     KOLOFT_EXTERNAL_OPENS_FILE: externalOpens,
     KOLOFT_FILE_DIALOG_FILE: fileDialogFile,
+    KOLOFT_TEST_MACHINE_FILE: roomyMachineNotTheDevMacsOwnLoad,
     KOLOFT_TEST_BACKGROUND: '1',
     KOLOFT_DOM_RENDERER: '1',
     ELECTRON_RENDERER_URL: undefined
