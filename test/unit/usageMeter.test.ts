@@ -56,6 +56,21 @@ describe('UsageMeter — the spend and context one Claude Code session shows', (
     expect(u.costUsd).toBeCloseTo((100 * 5 + 200 * 25 + 1000 * 6.25 + 5000 * 0.5) / 1_000_000, 10)
   })
 
+  // CC§7
+  it("prices a one-hour cache write at twice the input price, matching Claude Code's own total_cost_usd", () => {
+    const rec = asst({
+      id: 'm',
+      req: 'r',
+      model: 'claude-sonnet-5-5',
+      in: 2,
+      out: 4,
+      cw: 5600,
+      cr: 11333
+    })
+    rec.message!.usage!.cache_creation = { ephemeral_1h_input_tokens: 5600 }
+    expect(meterOf([rec, rec]).usage()!.costUsd).toBeCloseTo(0.0235773, 9)
+  })
+
   // CC§2
   it('books the largest count of a streamed call whose repeated lines grow, as a sub-agent transcript writes them', () => {
     const line = (out: number): TranscriptRecord =>

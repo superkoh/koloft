@@ -148,8 +148,17 @@ export async function runResume(target: ResumeTarget, req: SessionResumeRequest)
   }
 }
 
+function liveTabBoundTo(sessionId: string): string | undefined {
+  const { sessions, tabs } = useStore.getState()
+  return sessions.find(
+    (s) => s.alive && s.sessionId === sessionId && tabs.some((t) => t.id === s.tabId && t.alive)
+  )?.tabId
+}
+
 export async function resumeSession(target: ResumeTarget): Promise<void> {
   if (inFlight.has(target.id)) return
+  const boundAheadOfItsRow = target.wake ? undefined : liveTabBoundTo(target.id)
+  if (boundAheadOfItsRow) return useStore.getState().activateTab(boundAheadOfItsRow)
   inFlight.add(target.id)
   if (target.restore) restoreIds.add(target.id)
   if (!target.wake) useStore.getState().setResumeLaunch({ id: target.id, title: target.title })

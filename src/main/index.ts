@@ -54,7 +54,7 @@ import {
 } from './remote/agyTab'
 import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
-import { museConfigHome } from './museSessionLog'
+import { museConfigHome, museHome } from './museSessionLog'
 import { museSignIn, storeMuseKey } from './museServe'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
@@ -135,7 +135,15 @@ import {
   runSshBytes,
   sshOptions
 } from './remote/ssh'
-import { ENSURE_CODEX_SH, ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import {
+  ENSURE_CODEX_SH,
+  ENSURE_SH,
+  TMUX_CONF,
+  UTIL_BASH_LOGIN,
+  UTIL_BASH_LOGIN_FILE,
+  UTIL_SH,
+  remoteShCommand
+} from './remote/install'
 import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
 import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
@@ -158,6 +166,7 @@ import {
   tabPackageDir
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
+import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
@@ -329,6 +338,8 @@ import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
+import createUsageScanWorker from './usageScanWorker?nodeWorker'
+import { UsageCache, listUsageFiles, statOf, type ScannedFile } from './usageCache'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
   attentionReason,
@@ -1116,6 +1127,7 @@ function machinePackage(): MachinePackage {
     [HOLD_FILE]: HOLD_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
+    [UTIL_BASH_LOGIN_FILE]: UTIL_BASH_LOGIN,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
     [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
@@ -3245,9 +3257,10 @@ app.whenReady().then(() => {
     rsync: (host, r, l, extra) =>
       loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
+      const codexMachines = new Set(codexSessions?.machinesWithTabs())
       const live = new Set([
         ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
-        ...(codexSessions?.machinesWithTabs() ?? [])
+        ...codexMachines
       ])
       const busy = new Set(
         allSessions().flatMap((s) => {
@@ -3259,17 +3272,22 @@ app.whenReady().then(() => {
         host: t.host,
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
-        ...(agySessions?.usesHost(t.host)
-          ? {
-              extraPulls: [
+        extraPulls: [
+          ...(agySessions?.usesHost(t.host)
+            ? [
                 {
                   from: AGY_REMOTE_BRAIN,
                   to: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain'),
                   flags: AGY_BRAIN_FLAGS
                 }
               ]
-            }
-          : {}),
+            : []),
+          ...usagePulls(userData, t.host, {
+            codex: codexMachines.has(t.host) || !!codexSessions?.hasHistoryOn(t.host),
+            muse: !!museSessions?.hasHistoryOn(t.host),
+            agy: !!agySessions?.usesHost(t.host)
+          })
+        ],
         paths: t.paths,
         hasTabs: live.has(t.host),
         busy: busy.has(t.host)
@@ -4414,6 +4432,7 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
 const RUN_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
+const RUN_ASKED_A_QUESTION_NOBODY_ANSWERED = 'it asked you a question nobody answered'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
@@ -4421,9 +4440,13 @@ async function whatClosingTheRunWouldLose(
   worktree?: string
 ): Promise<string[]> {
   if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
+  // CODEX§20
+  const asked = codexSessions?.questionWentUnanswered(tabId)
+    ? [RUN_ASKED_A_QUESTION_NOBODY_ANSWERED]
+    : []
   const session = sessionOfTab(tabId)
-  if (!session) return [NO_SESSION_FOR_THE_RUN]
-  return whatClosingWouldLose(session, cronRunTree(root, worktree))
+  if (!session) return [...asked, NO_SESSION_FOR_THE_RUN]
+  return [...asked, ...(await whatClosingWouldLose(session, cronRunTree(root, worktree)))]
 }
 
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
@@ -5462,6 +5485,39 @@ function registerIpc(): void {
     },
     send: (found) => sendToRenderer(CH.sessions.searchHits, found)
   })
+  const usageCache = new UsageCache({
+    cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-4.json'),
+    listFiles: async () => {
+      await workspaceMgr?.firstScan
+      const userData = app.getPath('userData')
+      return listUsageFiles(workspaceMgr?.transcriptFiles() ?? [], [
+        {
+          codexHome: path.dirname(codexSharedConfig()),
+          museHome: museHome(museSessions?.defaultEnv ?? process.env),
+          geminiDir: ownersGemini()
+        },
+        ...(workspaceMgr?.remoteTargets() ?? []).map(({ host }) => machineUsageDirs(userData, host))
+      ])
+    },
+    stat: statOf,
+    scan: (files, scanned, ended) => {
+      // PLATFORM§4
+      const worker = createUsageScanWorker({ workerData: { files } })
+      worker.on('message', (file: ScannedFile) => scanned(file))
+      worker.on('error', (error) => console.error('[koloft] usage read failed', error))
+      worker.once('exit', ended)
+    },
+    codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
+    sessionPlaces: () => {
+      const claude = workspaceMgr?.sessionPlaces()
+      const stored = new Map(storedSessions().map((s) => [s.id, s.sessionPlaces()]))
+      return (backend, id, host) =>
+        backend === 'claude' ? claude?.get(id) : stored.get(backend)?.(id, host)
+    },
+    changed: (read) => sendToRenderer(CH.usage.changed, read)
+  })
+  ipcMain.handle(CH.usage.read, () => usageCache.read())
+
   ipcMain.on(CH.sessions.search, (_e, searchId: unknown, term: unknown) => {
     if (typeof searchId !== 'number' || typeof term !== 'string') return
     sessionSearch.start(searchId, term)

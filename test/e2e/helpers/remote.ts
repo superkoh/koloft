@@ -106,6 +106,17 @@ export function dropTabLinkWhileItsSessionDies(env: E2EEnv, pid: number): void {
   killSession(pid, env)
 }
 
+export function tmuxClientsOf(tmuxName: string): number[] {
+  const lines = execFileSync('ps', ['-eo', 'pid=,command='], { encoding: 'utf8' }).split('\n')
+  const named = new RegExp(`fake-tmux\\.js .*-[st] ${tmuxName}(\\s|$)`)
+  return lines.filter((l) => named.test(l)).map((l) => Number(l.trim().split(/\s+/)[0]))
+}
+
+export function dropTabLinkWhileItsSessionLives(env: E2EEnv, tmuxName: string): void {
+  fs.writeFileSync(path.join(stateDir(env), 'tab-link-drop'), '')
+  for (const pid of tmuxClientsOf(tmuxName)) process.kill(pid, 'SIGKILL')
+}
+
 export function healConnection(env: E2EEnv): void {
   fs.rmSync(path.join(stateDir(env), 'hb-fail'), { force: true })
 }

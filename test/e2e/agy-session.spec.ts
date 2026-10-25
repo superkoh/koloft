@@ -40,6 +40,7 @@ test.setTimeout(120_000)
 const FAKE_AGY = path.join(__dirname, 'fixtures', 'fake-agy.js')
 const TURN_LONG_ENOUGH_TO_SEE_WORKING_MS = '1500'
 const COMPACTION_LONGER_THAN_THE_HALF_SECOND_BEFORE_IT_SHOWS_MS = '3000'
+const NAMES_THE_CONVERSATION_LATE_ENOUGH_TO_SEE_THE_MASK_MS = '1500'
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
@@ -534,7 +535,8 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
-  test('closing the tab ends agy; its row stays, cold, and clicking it brings the same conversation back', async ({
+  // AGY§5
+  test('closing the tab ends agy; its row stays, cold, and clicking it brings the same conversation back — in a folder agy no longer trusts too, masked as resuming only until agy names the conversation, which it does with the trust question still up, so the mask lifts over the question and yes carries on', async ({
     env
   }) => {
     installAgy(env)
@@ -552,13 +554,41 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await sendShortcut(app, 'shortcut:close-tab')
       await expect.poll(() => processAlive(first.pid)).toBe(false)
       await expect(agyRows(page)).toHaveClass(/cold/)
+
+      fs.writeFileSync(
+        path.join(ownersApp(env), 'settings.json'),
+        JSON.stringify({ trustedWorkspaces: [] })
+      )
+      const ownSettings = path.join(accountHome(env), 'antigravity-cli', 'settings.json')
+      fs.writeFileSync(
+        ownSettings,
+        JSON.stringify({
+          ...JSON.parse(fs.readFileSync(ownSettings, 'utf8')),
+          trustedWorkspaces: []
+        })
+      )
+      fs.writeFileSync(
+        path.join(env.home, 'fake-agy-open-ms'),
+        NAMES_THE_CONVERSATION_LATE_ENOUGH_TO_SEE_THE_MASK_MS
+      )
+
       await agyRows(page).click()
+      const mask = page.locator('.term-wrap:visible .empty', { hasText: 'Resuming' })
+      await expect(mask).toBeVisible({ timeout: 20_000 })
       await expect.poll(() => sessionCalls(env).length).toBe(2)
       expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
         '--dangerously-skip-permissions',
         `--conversation=${id}`
       ])
       await expect.poll(async () => (await boundAgy(page)).id).toBe(id)
+      await expect(mask).toHaveCount(0)
+      await expect(centerTerm(page)).toContainText('Do you trust the contents of this project?')
+      await centerTerm(page).click()
+      await page.keyboard.press('1')
+      await runIn(page, centerTerm(page), 'trusted once more')
+      await expect
+        .poll(() => transcriptOf(env, id), { timeout: 30_000 })
+        .toContain('Answer to: trusted once more')
     } finally {
       await quitAndClose(app)
     }

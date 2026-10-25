@@ -267,6 +267,24 @@ function readText(file: string): string | undefined {
   }
 }
 
+const LOG_TAIL_READ_ON_ATTACH_BYTES = 256 * 1024
+
+function logTail(file: string): { size: number; text: string } {
+  try {
+    const fd = fs.openSync(file, 'r')
+    try {
+      const size = fs.fstatSync(fd).size
+      const buf = Buffer.alloc(Math.min(size, LOG_TAIL_READ_ON_ATTACH_BYTES))
+      fs.readSync(fd, buf, 0, buf.length, size - buf.length)
+      return { size, text: buf.toString('utf8') }
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch {
+    return { size: 0, text: '' }
+  }
+}
+
 function attachedLog(mirror: string, conversationId: string): string | undefined {
   return readText(path.join(mirror, agyLogPointer(conversationId)))?.trim() || undefined
 }
@@ -504,7 +522,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       trust: freshWorktree || opts.trustFolder || assist ? trust : [],
       titleCommand: runWithSh(scripts.title),
       statusLine: this.deps.builtInStatusLine(pick.account),
-      apiKey: !!apiKey
+      apiKey: !!apiKey,
+      allowKoloft: !!agent
     })
     const hold = this.deps.holdScript
     mergeAgyHooks(
@@ -617,20 +636,22 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       (d, i, all) => all.indexOf(d) === i
     )
     const m = remote.machineName()
+    const agentTools = this.deps.agent.enabled(true)
     const settings = mergedAgySettings(config.ownSettings, config.ownersSettings, {
       trust: trusted ? trust : [],
       titleCommand: runMachineScript(m, AGY_TITLE_FILE),
       statusLine: this.deps.builtInStatusLine(pick.account)
         ? runMachineScript(m, AGY_STATUSLINE_FILE)
         : undefined,
-      apiKey: !!apiKey
+      apiKey: !!apiKey,
+      allowKoloft: agentTools
     })
     const hooks = mergedAgyHooks(
       config.ownersHooks,
       koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE), machineAgyHold(remoteMachineDir(m)))
     )
     const instructions = [
-      ...(this.deps.agent.enabled(true) ? [koloftPrompt('agy')] : []),
+      ...(agentTools ? [koloftPrompt('agy')] : []),
       ...(opts.role ? [opts.role] : [])
     ].join('\n\n')
     const ownerTitle = titleCommandIn(config.ownersSettings)
@@ -680,7 +701,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       mirror,
       (attachTo && attachedLog(mirror, attachTo)) || agyLogName(tabId)
     )
-    const alreadyThere = attachTo ? (fs.statSync(logFile, { throwIfNoEntry: false })?.size ?? 0) : 0
+    const alreadyThere = attachTo ? logTail(logFile) : { size: 0, text: '' }
     const run: AgyRun = {
       tabId: handle.id,
       cwd,
@@ -692,12 +713,17 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       bypassing: permission === 'bypass',
       account: pick.account,
       remote: { host: where.host, tmuxName: plan.tmuxName },
-      log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere),
+      log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere.size),
       touched: new Map(),
       liveWrites: 0,
       releaseTools: () => undefined
     }
-    if (attachTo) setImmediate(() => this.runs.get(run.tabId) === run && this.bindTo(run, attachTo))
+    if (attachTo)
+      setImmediate(() => {
+        if (this.runs.get(run.tabId) !== run || run.explicitStop || run.stopping) return
+        this.bindTo(run, attachTo)
+        this.showLastState(run, alreadyThere.text)
+      })
     void remote.nextPull(where.host)
     return run
   }
@@ -755,6 +781,18 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         return run.tabId
     }
     return undefined
+  }
+
+  // AGY§11 AGY§12
+  private showLastState(run: AgyRun, earlierLog: string): void {
+    let last: ProgramStatus | undefined
+    for (const read of earlierLog.split('\n').map((line) => agyLogLine(line))) {
+      if (!read) continue
+      if ('hook' in read && read.hook.event === 'PreToolUse') this.onHook(run, read.hook)
+      last = remoteStatus(run, read) ?? last
+      if (last) run.shown = last.state
+    }
+    if (last) this.emitState(run, last.state === 'done' ? { state: 'idle' } : last)
   }
 
   // AGY§11 AGY§12
@@ -903,7 +941,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (turn?.reply) this.deps.events(run.tabId, { type: 'turn-ended', turn })
     const t = await tokenTotals(file).catch(() => undefined)
     if (!t) return
-    const tokens = { inTok: t.input, outTok: t.output, cacheReadTok: t.cacheRead, cacheWriteTok: 0 }
+    const tokens = {
+      inTok: t.input,
+      outTok: t.output,
+      cacheReadTok: t.cacheRead,
+      cacheWriteTok: 0,
+      cacheWrite1hTok: 0
+    }
     const model = run.title?.model
     const pricing = model ? resolvePricing(model) : undefined
     const used = run.title?.contextUsed

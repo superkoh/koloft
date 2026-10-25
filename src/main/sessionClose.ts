@@ -70,28 +70,49 @@ async function commitsNotHeld(
   return commitsLeft(dir, rest, heads.includes(null))
 }
 
+const DELETED_FROM_THE_FOLDER_ONLY = ' D '
+
+async function whatIsLeftIn(
+  git: GitOut,
+  tree: ClosingTree,
+  merged: MergedHeads | undefined,
+  deletedFilesLoseNothing: boolean
+): Promise<{ left: string[]; onlyDeletedFiles: boolean }> {
+  const [status, commits] = await Promise.all([
+    git(tree.treeRoot, ['status', '--porcelain=v1', '--untracked-files=all']),
+    commitsNotHeld(git, tree.treeRoot, ['HEAD', ...tree.branches], tree.branches, merged)
+  ])
+  if (status === null)
+    return { left: [`git could not read ${tree.treeRoot}.`], onlyDeletedFiles: false }
+  const changes = status.split('\n').filter(Boolean)
+  const onlyDeletedFiles =
+    changes.length > 0 && changes.every((l) => l.startsWith(DELETED_FROM_THE_FOLDER_ONLY))
+  const lost = changes.length > 0 && !(deletedFilesLoseNothing && onlyDeletedFiles)
+  return {
+    left: [...(lost ? [`Changes not committed:\n${status.trimEnd()}`] : []), ...commits],
+    onlyDeletedFiles
+  }
+}
+
 export async function whatIsLeft(
   git: GitOut,
   tree: ClosingTree,
   merged?: MergedHeads
 ): Promise<string[]> {
-  const [status, commits] = await Promise.all([
-    git(tree.treeRoot, ['status', '--porcelain=v1', '--untracked-files=all']),
-    commitsNotHeld(git, tree.treeRoot, ['HEAD', ...tree.branches], tree.branches, merged)
-  ])
-  if (status === null) return [`git could not read ${tree.treeRoot}.`]
-  const left: string[] = []
-  if (status.trim()) left.push(`Changes not committed:\n${status.trimEnd()}`)
-  return [...left, ...commits]
+  return (await whatIsLeftIn(git, tree, merged, false)).left
 }
 
 // PLATFORM§30
-export async function removeTree(git: GitOut, tree: ClosingTree): Promise<string | null> {
+export async function removeTree(
+  git: GitOut,
+  tree: ClosingTree,
+  force = false
+): Promise<string | null> {
   const onItsHost = parseRemoteKey(tree.treeRoot)?.path ?? tree.treeRoot
   await git(tree.root, ['worktree', 'unlock', onItsHost])
   const removed = await git(
     tree.root,
-    ['worktree', 'remove', onItsHost],
+    ['worktree', 'remove', ...(force ? ['--force'] : []), onItsHost],
     DELETING_HUNDREDS_OF_THOUSANDS_OF_IGNORED_FILES_MS
   )
   if (removed === null) return `git could not remove the worktree ${tree.treeRoot}.`
@@ -144,8 +165,8 @@ export async function tidyTree(
       ? REMOVED
       : { removed: false, kept: [`git could not delete ${tree.branches.join(', ')}.`] }
   }
-  const left = await whatIsLeft(git, tree, merged)
-  const problem = left.length ? null : await removeTree(git, tree)
+  const { left, onlyDeletedFiles } = await whatIsLeftIn(git, tree, merged, true)
+  const problem = left.length ? null : await removeTree(git, tree, onlyDeletedFiles)
   const kept = problem ? [problem] : left
   if (!kept.length) return REMOVED
   const anotherRemoverWon =

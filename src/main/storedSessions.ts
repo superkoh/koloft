@@ -15,6 +15,7 @@ import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from './sessionSearch'
+import type { SessionPlace } from './usageCache'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees, type TreeIo } from './sessionWorktrees'
@@ -116,6 +117,8 @@ export interface SessionsWithStore {
   readonly store: SessionStore
   readonly worktrees: SessionWorktrees
   rows(workspace: string): BackendSessionRow[]
+  workspacesFor(cwds: string[]): string[]
+  sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
   members(): Set<string>
   runningBindings(): Map<string, string>
   threadGone(key: string): boolean
@@ -377,6 +380,30 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     const workspace = member?.workspacePath ?? (entry ? this.workspaceFor(entry.cwd) : undefined)
     return workspace ? this.rows(workspace).find((row) => row.id === key) : undefined
   }
+  hasHistoryOn(host: string): boolean {
+    for (const key of this.history.keys()) if (hostOfKey(key) === host) return true
+    return false
+  }
+  sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined {
+    const scope = this.rowScope()
+    return (id, host) => {
+      const key = this.keyOf(id, host)
+      const entry = this.history.get(key)
+      const member = this.store.getMember(key)
+      const workspace =
+        member?.workspacePath ?? (entry ? this.workspaceFor(entry.cwd, scope) : undefined)
+      const title = entry ? this.titleOf(key, entry) : member?.title
+      return workspace && title !== undefined ? { workspace, title } : undefined
+    }
+  }
+  private titleOf(key: string, t: H): string {
+    return (
+      this.store.nameOfLeftMember(key) ||
+      t.name ||
+      t.preview?.slice(0, 100) ||
+      PLACEHOLDER_TITLES[this.id]
+    )
+  }
   members(): Set<string> {
     return new Set([
       ...this.store.listMembers().map((m) => m.key),
@@ -384,11 +411,20 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     ])
   }
 
-  rows(workspace: string): BackendSessionRow[] {
-    const scope: RowScope = {
+  private rowScope(): RowScope {
+    return {
       byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
       remotePlaces: new Map()
     }
+  }
+
+  workspacesFor(cwds: string[]): string[] {
+    const scope = this.rowScope()
+    return cwds.map((cwd) => this.workspaceFor(cwd, scope))
+  }
+
+  rows(workspace: string): BackendSessionRow[] {
+    const scope = this.rowScope()
     const rows = new Map<string, BackendSessionRow>()
     for (const [key, t] of this.history) {
       const member = this.store.getMember(key)
@@ -452,11 +488,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       id: key,
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
-      title:
-        this.store.nameOfLeftMember(key) ||
-        t.name ||
-        t.preview?.slice(0, 100) ||
-        PLACEHOLDER_TITLES[this.id],
+      title: this.titleOf(key, t),
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? place.worktreeName ?? 'main',
       running: this.readsRunning(key),

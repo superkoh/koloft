@@ -235,6 +235,19 @@ Nothing ran against Google's real servers.
   replaces `modelProvider` (§6).
 - Trust is keyed by the folder path as given in `PWD`, not its real path: a symlinked
   folder is saved as the link path.
+- **Resuming behind a first-run screen** (1.4.7, Linux arm64, Docker, tmux, fake
+  Gemini server, 2026-10-24): `--conversation=<id>` with the folder missing from
+  `trustedWorkspaces` shows the same trust screen, but the title script already runs
+  with `conversation_id` = that id (and `conversation_title`), `agent_state`
+  `initializing`, about 0.3 s after launch, while the question is still up; the
+  first run, at once, carries `""` and `authenticating`. So which conversation the
+  process holds is known before the answer. "No, exit" then exits and records no
+  trust; "Yes" opens the history. The id arrives at the same 0.3 s on the colour
+  screen (no `onboarding.json`; `initializing`), on the sign-in screen (no
+  `modelProvider`, no token; still `authenticating`), with `-c` on the trust screen,
+  and with the folder trusted. An id with no stored conversation keeps
+  `conversation_id` `""` (§1: a new conversation, no id before the first prompt).
+  macOS: not probed.
 - `-p` needs neither onboarding nor trust, and records no trust.
 - `/add-dir <dir>` prints "Added <dir> to workspace" with no trust question and does
   not add it to `trustedWorkspaces`.
@@ -385,6 +398,16 @@ Nothing ran against Google's real servers.
   - The user's words are `USER_INPUT.content`, still wrapped as in §2; the reply is
     `PLANNER_RESPONSE.content`; tool results are `GENERIC.content`. Tokens are on
     `PLANNER_RESPONSE` lines.
+  - What the token fields hold (2026-10-19, agy 1.3.6, `agy -p` against a fake model
+    server, two calls checked against what it sent): `input_tokens =
+    promptTokenCount − cachedContentTokenCount` (cached already taken out, unlike
+    CODEX§13), `output_tokens = candidatesTokenCount + thoughtsTokenCount`,
+    `cache_read_tokens = cachedContentTokenCount`. No line names the model: the
+    model each call used is only in `conversations/<id>.db`, table `gen_metadata`,
+    one protobuf row per call in `PLANNER_RESPONSE` order (not keyed by
+    `step_index`), `modelVersion` at field path `[1, 19]`; `executor_metadata` holds
+    the configured model at `[10, 1, 28]`. The title call leaves no `PLANNER_RESPONSE`
+    line and no `gen_metadata` row.
   - `replace_file_content` results hold a unified diff:
     `[diff_block_start]\n@@ -1,5 +1,6 @@\n-l1\n+X1\n l3\n…[diff_block_end]`, with up to
     3 unchanged lines around the change, so added and removed lines can be counted.
@@ -503,8 +526,9 @@ Nothing ran against Google's real servers.
   cache_read_input_tokens}}`, `exceeds_200k_tokens`, `product:"antigravity"`,
   `agent_state`, `sandbox{enabled}`, `terminal_width`, `subagents` (once one ran),
   `conversation_title`, and `tool_confirmation_pending` (seen on macOS).
-  - `agent_state`: `authenticating` (start), `idle`, `working`, `tool_use` (an ask is
-    open), `reviewing` (an artifact is waiting for review, §19).
+  - `agent_state`: `authenticating` (start), `initializing` (1.4.7, a resumed
+    conversation still on the colour or trust screen, §5), `idle`, `working`, `tool_use` (an ask
+    is open), `reviewing` (an artifact is waiting for review, §19).
   - `conversation_title` is `null` until `/rename` or a resume pick, even after the
     summaries row has its made-up title.
   - `transcript_path` points to `<geminiDir>/antigravity/brain/…`, beside
@@ -577,6 +601,22 @@ Nothing ran against Google's real servers.
     whole.
   - `PreInvocation` printing `{"injectSteps":[{"ephemeralMessage":"…"}]}` adds it as
     the last user content of that one request; copies do not pile up.
+  - **What a `PreInvocation` hook can read of the model's earlier words.** 1.4.7 Linux
+    arm64 in Docker, fake Gemini server answering text plus a `run_command` and then
+    text, `-p` and two `-c -p` turns, `--dangerously-skip-permissions`, 2026-10-24:
+    before every model call `transcript_full.jsonl` already holds every earlier step,
+    the last call's `PLANNER_RESPONSE` too, so the words the model wrote beside a tool
+    call are there before the call after that tool. That line reads
+    `{"step_index":…,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":…,"input_tokens":…,"cache_read_tokens":…,"output_tokens":…,"content":"<text>","tool_calls":[…]}`,
+    in that order, with no `{` before `content`. stdin also carries `lastUserInput`, the
+    prompt as typed, unwrapped. After a tool call the ephemeral message reaches the
+    model appended to that call's `functionResponse.output` after a blank line, not as a
+    content of its own. A hook entry `/bin/sh <file>` runs under dash there (Debian
+    12). The same run of the macOS build (1.4.7 darwin_arm64, macOS 26.6.2, a throwaway
+    tart VM) gave the same line shape, order and timing and the same texts at the
+    fake server; its transcript also saves each injected message as a step
+    `{"source":"SYSTEM_SDK","type":"EPHEMERAL_MESSAGE"}` (the Linux transcript was not
+    looked at for this).
 - **A `PreToolUse` hook gets about 30 s unless its entry sets `timeout` (seconds), and one
   that runs out DENIES the tool.** 1.4.2 Linux arm64 in Docker, fake model, `-p …
   --dangerously-skip-permissions --output-format json`, a hook that slept then exited 0
@@ -950,6 +990,24 @@ Nothing ran against Google's real servers.
 - (1.4.2, same setup) `"agentMode": "auto"` in `settings.json` or `--mode auto` on the
   API-key route: no banner, no warning, every ask as in default; the log says `auto
   mode is unavailable, falling back to default`.
+- **Allow rules** (1.4.7, build `1.4.7-5900205422411776`, Linux arm64 from the
+  manifest, sha512 checked, Docker, tmux, fake Gemini server, default mode,
+  2026-10-24). On `koloft open x` the ask reads "2. Yes, and always allow in this
+  conversation for commands that start with 'koloft' / 3. Yes, and always allow for
+  commands that start with 'koloft' (Persist to settings.json)"; `3` writes
+  `"permissions":{"allow":["command(koloft)"]}` into the `--gemini_dir` folder's
+  `antigravity-cli/settings.json`. With `"permissions":{"allow":["command(git
+  status)","command(koloft)"]}` written there before launch, `koloft open x` and
+  `koloft session send <id> "hello there, run the tests"` ran with no ask, and agy kept
+  both rules when it rewrote the file. Still asked: `ls /`, `koloft open x && ls /`
+  (the ask names `ls`), `koloft open x; touch …` (names `touch`), `koloft open $(touch
+  …)`, `koloftx open x`, `koloft open x | sh`, and `/work/bin/koloft open x` (the rule
+  matches the command's first word as typed, not the binary it finds). The macOS
+  build (1.4.7 darwin arm64, sha512 checked, a throwaway tart VM with no screen, run
+  under `expect` answering the terminal queries, same fake server and
+  `WSL_INTEROP`) did the same: asked with no rule; with the rule, `koloft open x` and
+  `koloft session send abc "hello there"` ran with no ask, while `pwd` and `koloft
+  open x; touch …` asked.
 
 ## §27 Terminal modes
 

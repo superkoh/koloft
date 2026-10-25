@@ -164,7 +164,7 @@ export interface TranscriptStep {
   cacheReadTokens: number
 }
 
-function stepOf(line: string): TranscriptStep | undefined {
+export function stepOf(line: string): TranscriptStep | undefined {
   let r: Record<string, unknown>
   try {
     r = record(JSON.parse(line))

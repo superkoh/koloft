@@ -57,6 +57,11 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   ends, though they carry the Enter-time timestamp. Esc during it cancels it (no
   SessionStart) and puts `/compact ` back in the input box. So the session is busy from
   PreCompact to SessionStart `compact`, and no other hook says so.
+  **No SessionEnd fires around it**, measured 2026-10-24 on CC 2.1.310 (interactive pty,
+  model haiku, every hook event logging its payload; two runs, the same both times):
+  SessionStart `startup`, UserPromptSubmit, Stop, PreCompact `manual`, SubagentStop (the
+  summary writer, `agent_type: ""`), SessionStart `compact`, PostCompact `manual`, all one
+  session id; the only SessionEnd was `prompt_input_exit` at the `/exit` typed afterwards.
 - **An automatic compaction fires the same two hooks, with `trigger: "auto"`, inside the
   turn it interrupts** (2026-10-09, CC 2.1.295, interactive pty,
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW=50000`, model haiku, hooks logging their payloads; two
@@ -460,6 +465,10 @@ Unless a bullet below says more, it is inferred, not checked.
   largest value per key gives the last line's sum on both builds, and older transcripts
   on disk still grow, so that is the rule that counts both. Only short thinking + text
   replies were measured; a long multi-block reply is not probed.
+- **A sub-agent transcript names its parent.** Every usage line of
+  `<slug>/<sessionId>/subagents/**/*.jsonl` carries the parent's `sessionId` (5042 of
+  5042 lines, 2026-10-16), and every main transcript's lines carry its file name's id
+  (10867 of 10867).
 - **Some CC versions mix subagent turns (`isSidechain: true`) into the main jsonl**,
   their usage records and Esc interrupts included; their spend is the session's, their
   context window and model are not. Which versions was not recorded.
@@ -830,6 +839,25 @@ the moment its CC starts removing and finishes the removal if Koloft quits first
   direct `--resume` of a running background session is refused with a message naming
   `claude attach <id>` (not re-measured). `claude --resume <id> --fork-session` still
   makes ANOTHER copy, it is not a takeover.
+- **A fork's transcript repeats the parent's usage lines word for word** (2026-10-24,
+  CC 2.1.310, `claude -p --resume <id> --fork-session` on a two-request session): the
+  new file starts with every parent line, same `uuid`, `timestamp`, `message.id`,
+  `requestId` and `usage`, only `sessionId` rewritten to the new id; then its own lines.
+  Its `total_cost_usd` (0.022033) is the parent's (0.0201139) plus its own one request,
+  so the copied history counts toward CC's own figure too; a plain `--resume` of the
+  parent reports its history in `total_cost_usd` the same way (`cost-state` line). Even
+  `promptId` is rewritten, so only the copy's `message.id` + `requestId` tie it to the
+  original in the other file. Which file is the parent: on `-p --fork-session` and the
+  TUI `/fork` (2026-10-24, CC 2.1.310, typed in a pty in a throwaway home; it starts
+  `claude daemon run`, writes the copy to a new transcript and the window keeps the
+  original), the fork's first line with a top-level `timestamp` is a `queue-operation`
+  at fork time, later than the parent's first. A `/background` move does not do that:
+  a `sessionKind: "bg"` transcript on the dev Mac (CC 2.1.283) opens with the copied
+  lines at their original times, so both files start at the same moment. On this
+  Mac's 4,914 transcripts (2026-10-24, ids hashed, no content read), 230 of 147,698
+  calls sit in two files: that bg move and sub-agent files sharing calls. Rechecked
+  with a parent, its fork and the parent resumed after: the three runs' own requests
+  cost $0.031692, and Koloft's Usage rows add up to that.
 - **Interactive sessions have NO re-entry guard**: resuming an already-running normal
   session is not blocked — the same session can be written by two processes at once
   (measured loss, 2026-08-20). The "already running … split-brain" refusal belongs to
@@ -1102,8 +1130,12 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   (cache read $0.20); Opus 5 $5/$25, 1M; Opus 4.6–4.8 $5/$25, 1M;
   Opus 4.5 $5/$25, 200k; Opus 4/4.1 $15/$75, 200k; Sonnet 5 $2/$10, 1M (standard rates
   since CC 2.1.243); Sonnet 4.6 $3/$15, 1M; Sonnet 4/4.5 $3/$15, 200k; Haiku 4.5 $1/$5,
-  200k. A 5-minute cache write costs 1.25× input and a cache read 0.10× input, as
-  ccusage applies them — except the 5.5-generation rows, whose cache read is their own
+  200k. A 5-minute cache write costs 1.25× input and a one-hour cache write 2× input
+  (2026-10-24, CC 2.1.310, two `claude -p --output-format json` runs on a Koloft
+  account, three requests: every cache write was `ephemeral_1h_input_tokens`, none 5m;
+  CC's own `total_cost_usd` matched 2× input on them to the cent, and the transcript's
+  `message.usage.cache_creation` carries the same split). A cache read costs 0.10×
+  input, as ccusage applies it — except the 5.5-generation rows, whose cache read is their own
   figure: Fable 5.1 $0.25, Opus 5.5 $0.20, Sonnet 5.5 $0.10 (Anthropic's pricing page,
   fetched 2026-10-11, which also gives Haiku 5.5 $0.01, the plain 0.10×). Sources (2026-07): the Anthropic model catalog (through the
   local claude-api skill reference) for current families, Anthropic's public pricing
@@ -1228,9 +1260,27 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   the 60 s nudge fired `{"message":"Claude is waiting for your
   input","notification_type":"idle_prompt"}`; both reached a hook with
   `"matcher":"permission_prompt|idle_prompt"`, and neither reached one with
-  `"matcher":"auth_success"`. That `worker_permission_prompt`, `elicitation_dialog` and
-  `elicitation_url_dialog` also mean the run waits on the person is read from their
-  names only; their payloads are not measured.
+  `"matcher":"auth_success"`. That `worker_permission_prompt` and `elicitation_url_dialog`
+  also mean the run waits on the person is read from their names only; their payloads
+  are not measured.
+- **An MCP server's form (`elicitation/create`) sends an `Elicitation` hook, then one
+  `elicitation_dialog` Notification, and no Stop while it stays open.** Measured
+  2026-10-24 on CC 2.1.310: interactive claude in a python pty, haiku,
+  `--dangerously-skip-permissions`, scratch `CLAUDE_CONFIG_DIR`, `--strict-mcp-config`
+  with one stdio MCP server whose tool, when called, sent `elicitation/create`
+  (`message: "Which colour do you prefer?"`, an enum field `colour` of Red / Green), and
+  logging hooks on `Notification` (the matcher Koloft uses), `Stop`, `UserPromptSubmit`,
+  `PermissionRequest`, `Elicitation`, `ElicitationResult` and `PostToolUse`; 1 run. The
+  `Elicitation` hook fired 2.6 s after the prompt with `{mcp_server_name: "probe",
+  message, mode: "form", requested_schema}`; 6 s later came
+  `{"message":"Claude Code needs your input","notification_type":"elicitation_dialog"}`
+  (no `PermissionRequest`); the form ("MCP server “probe” requests your input", Accept /
+  Decline, "Esc to cancel") stayed open about 530 s, until the run was killed, and no
+  other hook fired. `2`, then CR, did not answer it: CR moved the cursor to Accept with
+  the field still "not set"; which keys fill and send it is not probed yet. The 2.1.310
+  binary writes the same text for `elicitation_url_dialog` (`strings`). So with no
+  "permission" in its message Koloft reads it as the `input` turn, which shows as
+  `approval`.
 
 **How a background task shows up in the transcript.** Checked "against real
 transcripts and the CLI's own result schemas" on claude 2.1.222; the forked-skill
@@ -2127,6 +2177,14 @@ below was one run.
   +6 s; the dialog was then left open 330 s and no other Notification came (no
   `idle_prompt`). So a session showing a question stays `approval` for Koloft until it is
   answered.
+- **The same holds on 2.1.310, through Koloft, in a scheduled job set to "Close it".**
+  2026-10-24, the hand-test sandbox (`npm run handtest`, a real local Claude tab, Sonnet,
+  effort low), a job whose task asked one `AskUserQuestion` (Red / Green), started with
+  Run now: Koloft's status log got `prompt`, then `ask` (the `PermissionRequest`), then
+  `notify` "Claude needs your permission" and nothing else; the row showed `st-approval`
+  and the tab, row and worktree stayed for the 300 s the question was left open. `2` typed
+  into the tab picked Green; 1.4 s later the toast said the job "finished and closed" and
+  the row and the worktree were gone. 1 run.
 - **A peer message sent while an `AskUserQuestion` is open waits for the answer.** Same
   run: a `bypass` envelope (§13) written to the session's socket 90 s into the dialog
   drew no reply for the next 240 s; the moment `1` answered the dialog, a

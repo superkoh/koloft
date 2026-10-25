@@ -742,8 +742,6 @@ rl.on('line', (line) => {
 // CC§1
 function compact(trigger, firstRecord, lastRecord) {
   fireHook('compacting', { hook_event_name: 'PreCompact', trigger })
-  if (trigger === 'manual')
-    fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason: 'other' })
   fireHook('start', {
     session_id: sessionId,
     transcript_path: transcript,
