@@ -675,6 +675,39 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     helperQuestion = { id: 'h2', question: 'Delete the branch?', options: [{ label: 'Yes' }] }
     relay.codexAsked(HELPER, helperQuestion)
     expect(posts).toHaveLength(1)
+    away = true
+    relay.checkHeld()
+    expect(posts[1].text).toContain('Delete the branch?')
+  })
+
+  it('a Claude helper answered by a typed Discord reply has its next question held again while the owner is at the Mac once that turn ends', async () => {
+    let away = true
+    const { relay, posts, reactions } = setup({}, [], {
+      ownerAway: () => away,
+      askChannelOf: (t) => (t === HELPER ? CHANNEL : undefined),
+      helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined)
+    })
+    drop(hookFile(HELPER, 'ask'), QUESTION)
+    relay.onAsk(HELPER, QUESTION, HOOK)
+    expect(posts).toHaveLength(1)
+    relay.onMessage(message('712', OWNER, 'B'))
+    await vi.waitFor(() => expect(reactions).toContain('712 +✅'))
+    expect(fs.existsSync(hookFile(HELPER, 'answer'))).toBe(true)
+
+    away = false
+    fs.rmSync(hookFile(HELPER, 'ask'))
+    relay.turnEnded(HELPER, turn('Picked B.', 'Which?'))
+    expect(relay.reaches(HELPER)).toBe(false)
+    const next = {
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [{ question: 'Delete the branch?', options: [{ label: 'Yes' }] }] }
+    }
+    drop(hookFile(HELPER, 'ask', '4243'), next)
+    relay.onAsk(HELPER, next, '4243')
+    expect(posts).toHaveLength(1)
+    away = true
+    relay.checkHeld()
+    expect(posts[1].text).toContain('Delete the branch?')
   })
 
   it('a reply to a turn that held only Koloft’s own notice is not posted to Discord; a turn that also held the owner’s words is', () => {
