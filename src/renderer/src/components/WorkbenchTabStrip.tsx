@@ -24,7 +24,7 @@ function pressOnTabControl(e: { stopPropagation(): void; preventDefault(): void 
 }
 
 function caretInSessionTerminal(): boolean {
-  return !!document.activeElement?.closest('.term-island')
+  return !!document.activeElement?.closest('.term-island .xterm')
 }
 
 function iconFor(t: WorkbenchTab): JSX.Element {

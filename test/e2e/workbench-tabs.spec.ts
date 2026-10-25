@@ -77,7 +77,7 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     }
   })
 
-  test('a click on the pinned Changes tab leaves the caret in the session terminal, while a click on a web tab takes it to the panel', async ({
+  test('a click on the pinned Changes tab leaves the caret in the session terminal, so the next typed line reaches the session, while a click on a web tab takes it to the panel', async ({
     page
   }) => {
     await startSessionIn(page, 'ws-a')
@@ -88,6 +88,9 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     await wbTabs(page).nth(0).click()
     await expect(wbActiveTab(page)).toHaveClass(/pinned/)
     expect(await focusOwner(page)).toBe('tui')
+    await page.keyboard.type('/answer looks good')
+    await page.keyboard.press('Enter')
+    await expect(centerTerm(page)).toContainText('Answer to: looks good', { timeout: 30_000 })
 
     await wbTabs(page).nth(1).click()
     await expect(wbActiveTab(page)).toHaveText(/alpha/)
