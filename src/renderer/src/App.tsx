@@ -1107,16 +1107,13 @@ export default function App(): JSX.Element {
     setNotesFocusWs(notesWs)
     setNotesFocus(0)
   }
-  const runningWelcomeIds = useStore((s) => {
-    const look = rowLookups(s.sessions, s.tabs, [])
-    return (welcomeWs?.rows ?? [])
-      .filter((r) => look.running(r))
-      .map((r) => r.id)
-      .join('\n')
-  }).split('\n')
-  const welcomeRunning = (welcomeWs?.rows ?? []).filter((r) =>
-    runningWelcomeIds.includes(r.id)
-  ).length
+  const runningWelcomeIds = useStore(
+    useShallow((s) => {
+      const look = rowLookups(s.sessions, s.tabs, [])
+      return (welcomeWs?.rows ?? []).filter((r) => look.running(r)).map((r) => r.id)
+    })
+  )
+  const welcomeRunning = runningWelcomeIds.length
   const recentRows = (welcomeWs?.rows ?? [])
     .filter((r) => !runningWelcomeIds.includes(r.id) && !r.pending)
     .sort((a, b) => b.mtime - a.mtime)

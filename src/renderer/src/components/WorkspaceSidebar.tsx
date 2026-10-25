@@ -642,7 +642,7 @@ function SidebarFloating({
     liveTabOf(sessionId, sessions, storeTabs)
 
   const parkedFor = (row: SessionRow): ReturnType<typeof sessionActivityBadge> => {
-    const tabId = row.running ? tabIdFor(row.id) : undefined
+    const tabId = rowLookups(sessions, storeTabs, []).tabOf(row)
     const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
     return sessionActivityBadge(sess, leftovers[row.id])
   }
@@ -1162,10 +1162,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 
   const actions = useMemo<SidebarActions>(() => {
     const rowTarget = (id: string): Extract<MenuTarget, { kind: 'session' }> => {
-      const w = everyWorkspaceRows(useStore.getState()).find((w) =>
-        w.rows.some((r) => r.id === id)
-      )!
-      return { kind: 'session', wsPath: w.workspace.path, row: w.rows.find((r) => r.id === id)! }
+      const st = useStore.getState()
+      const w = everyWorkspaceRows(st).find((w) => w.rows.some((r) => r.id === id))!
+      const row = w.rows.find((r) => r.id === id)!
+      const running = rowLookups(st.sessions, st.tabs, []).running(row)
+      return { kind: 'session', wsPath: w.workspace.path, row: { ...row, running } }
     }
     const wsTarget = (path: string): MenuTarget => {
       const ws = useStore.getState().workspaceRows.find((w) => w.workspace.path === path)!.workspace
@@ -1245,7 +1246,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const removeWorkspace = async (path: string): Promise<void> => {
     const dirty = dirtyInWorkspace(path)
     const running = (rows.find((w) => w.workspace.path === path)?.rows ?? []).filter(
-      (r) => r.running || r.pending
+      (r) => look.running(r) || r.pending
     ).length
     const jobsHere = useStore.getState().cron.jobs.filter((j) => j.workspacePath === path).length
     const plan = removePlan(running, dirty.length)

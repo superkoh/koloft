@@ -254,8 +254,9 @@ export function rowLookups<S extends { sessionId: string; tabId: string; alive: 
   const sessionOnTab = firstBy(sessions, (s) => s.tabId)
   const liveTabOfSession = firstBy(sessions, (s) => (s.alive ? s.sessionId : undefined))
   const openTabOfSession = firstBy(tabs, (t) => (t.alive || t.asleep ? t.sessionId : undefined))
-  const aliveTabSessions = new Set(tabs.filter((t) => t.alive).map((t) => t.sessionId))
-  const aliveTabIds = new Set(tabs.filter((t) => t.alive).map((t) => t.id))
+  const aliveTabs = tabs.filter((t) => t.alive)
+  const aliveTabSessions = new Set(aliveTabs.map((t) => t.sessionId))
+  const aliveTabIds = new Set(aliveTabs.map((t) => t.id))
   const boundInAliveTab = firstBy(sessions, (s) =>
     s.alive && aliveTabIds.has(s.tabId) ? s.sessionId : undefined
   )
