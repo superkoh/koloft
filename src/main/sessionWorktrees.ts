@@ -210,21 +210,27 @@ export class SessionWorktrees {
   }
 
   // CC§3 CODEX§6
-  async recover(worktreePath: string): Promise<WorktreeResource> {
-    const home = worktreeHomeRoot(worktreePath)
-    if (!home) throw new Error('Not a .claude/worktrees folder')
-    const name = path.basename(worktreePath)
+  async recover(sessionCwd: string): Promise<WorktreeResource> {
+    const listedRoot = worktreeHomeRoot(sessionCwd)
+    if (!listedRoot) throw new Error('Not a .claude/worktrees folder')
+    const name = path.basename(sessionCwd)
     validName(name)
-    const root = await rootOf(LOCAL_IO, home)
+    const io = this.io(listedRoot)
+    const root = io.real(listedRoot)
+    const worktreePath = `${root}/.claude/worktrees/${name}`
+    if (await io.exists(worktreePath)) return this.adopt(root, worktreePath)
     return this.materialize({
       id: randomUUID(),
       originalCwd: root,
       worktreePath,
       worktreeName: name,
       worktreeBranch: `worktree-${name}`,
-      originalHeadCommit: await LOCAL_IO.git(root, ['rev-parse', 'HEAD']),
+      originalHeadCommit: await io.git(root, ['rev-parse', 'HEAD']),
       state: 'creating',
       managed: false
+    }).catch((error) => {
+      this.store.removeUnusedResourcesAt(worktreePath)
+      throw error
     })
   }
 

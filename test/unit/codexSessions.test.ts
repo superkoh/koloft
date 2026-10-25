@@ -16,6 +16,7 @@ import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
 import { execFileSync, spawn } from 'child_process'
 import { dirExistsSync, gitProbes } from '../../src/main/resumePlan'
+import { localGitOut } from '../../src/main/host/localHost'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 import { portOffset } from '@shared/worktreeName'
 import { keyedOn } from '@shared/remoteKey'
@@ -689,62 +690,41 @@ describe('CodexSessions', () => {
     ).resolves.toEqual({ ok: false, code: 'cwd-missing' })
   })
 
-  it('a session in a deleted .claude/worktrees folder Koloft has no record of is rebuilt there on resume, on its worktree-<name> branch while that lives, and is recorded from then on, as a Claude Code one is', async () => {
+  it('a session in a deleted .claude/worktrees folder Koloft has no record of, even one reached through a symlink, is rebuilt there on resume, on its worktree-<name> branch while that lives, and is recorded from then on, as a Claude Code one is; a rebuild that fails records nothing', async () => {
     const gitIn = (dir: string, ...args: string[]) =>
-      execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim()
+      execFileSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
+        encoding: 'utf8'
+      }).trim()
     gitIn(repo, 'init', '-q')
-    gitIn(
-      repo,
-      '-c',
-      'user.email=t@t',
-      '-c',
-      'user.name=t',
-      'commit',
-      '-q',
-      '--allow-empty',
-      '-m',
-      'base'
-    )
+    gitIn(repo, 'commit', '-q', '--allow-empty', '-m', 'base')
     const worktree = path.join(repo, '.claude', 'worktrees', 'lost')
     gitIn(repo, 'worktree', 'add', '-q', '-b', 'worktree-lost', worktree)
-    gitIn(
-      worktree,
-      '-c',
-      'user.email=t@t',
-      '-c',
-      'user.name=t',
-      'commit',
-      '-q',
-      '--allow-empty',
-      '-m',
-      'work'
-    )
+    gitIn(worktree, 'commit', '-q', '--allow-empty', '-m', 'work')
     const branchTip = gitIn(repo, 'rev-parse', 'worktree-lost')
-    addMember(A, worktree)
+    const linked = path.join(directory, 'linked')
+    fs.symlinkSync(repo, linked)
+    const sessionCwd = path.join(linked, '.claude', 'worktrees', 'lost')
+    addMember(A, sessionCwd)
+    gitIn(repo, 'worktree', 'lock', worktree)
     fs.rmSync(worktree, { recursive: true })
     const backend = storedBackend(
       sessions,
-      {
-        dirExists: dirExistsSync,
-        occupantOf: () => null,
-        ...gitProbes(async (dir, args) => {
-          try {
-            return gitIn(dir, ...args)
-          } catch {
-            return null
-          }
-        })
-      },
+      { dirExists: dirExistsSync, occupantOf: () => null, ...gitProbes(localGitOut) },
       { runningElsewhere: async () => false } as never
     )
     const key = codexSessionKey(A)
 
     await expect(backend.resumePlan(key)).resolves.toMatchObject({
       action: 'rebuild',
-      worktreePath: worktree,
       branch: 'worktree-lost'
     })
-    const resumed = await backend.resume({ sessionId: key, cwd: worktree, mode: 'rebuild' })
+    await expect(
+      backend.resume({ sessionId: key, cwd: sessionCwd, mode: 'rebuild' })
+    ).resolves.toEqual({ ok: false, code: 'rebuild-failed' })
+    expect(sessions.store.listResources()).toEqual([])
+    gitIn(repo, 'worktree', 'unlock', worktree)
+
+    const resumed = await backend.resume({ sessionId: key, cwd: sessionCwd, mode: 'rebuild' })
     expect(resumed).toMatchObject({ ok: true, cwd: worktree })
     expect(gitIn(worktree, 'rev-parse', 'HEAD')).toBe(branchTip)
     bind(0, A, worktree, 1, 'thread/resume')
