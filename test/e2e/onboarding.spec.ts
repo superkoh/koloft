@@ -113,7 +113,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await expect(welcome(page)).toBeVisible({ timeout: 20_000 })
       await expectStep(page, 1)
       await expect(welcome(page).locator('.big')).toHaveText(
-        'Koloft runs Claude Code — and Codex, if you have it.'
+        'Koloft runs Claude Code, Codex, Muse and Antigravity.'
       )
       await expect(welcome(page).locator('.ob-skip')).toHaveText('Skip the tour')
       await expect(welcome(page).locator('.ob-back')).toHaveCount(0)
