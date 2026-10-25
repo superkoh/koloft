@@ -168,7 +168,9 @@ export function WebPageState({
   ) : tab && !tab.url ? (
     <div className="bempty">
       <div className="bstate-t">No page open yet</div>
-      <div className="bempty-hint">Press ⌘L and enter an address (http(s) / file://)</div>
+      <div className="bempty-hint">
+        Press ⌘L and enter an address, or a file in this folder like index.html
+      </div>
       <div className="bempty-hint">Click a link in the terminal</div>
       <div className="bempty-hint">Or let {agentLabel} open one</div>
     </div>
