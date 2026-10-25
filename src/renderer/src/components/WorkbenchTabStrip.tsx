@@ -75,6 +75,16 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
   onNewMenu: () => void
 }): JSX.Element {
   const [drag, setDrag] = useState<{ id: string; over: number } | null>(null)
+  const [heldWidths, setHeldWidths] = useState<Record<string, number> | null>(null)
+
+  const holdTabWidths = (strip: HTMLElement): void => {
+    const widths: Record<string, number> = {}
+    for (const el of strip.querySelectorAll<HTMLElement>('.wb-tab:not(.pinned)')) {
+      const id = el.dataset.wbTabId
+      if (id) widths[id] = el.getBoundingClientRect().width
+    }
+    setHeldWidths(widths)
+  }
 
   const dropTab = (to: number): void => {
     const id = drag?.id
@@ -101,6 +111,7 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
           : t.url || t.path || undefined
       }
       data-wb-tab-id={t.id}
+      style={{ width: heldWidths?.[t.id] }}
       onMouseDown={() => onActivate(t.id)}
       draggable={t.kind !== 'files'}
       onDragStart={(e) => {
@@ -165,6 +176,8 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
   return (
     <div
       className="wb-tabs"
+      onMouseEnter={(e) => holdTabWidths(e.currentTarget)}
+      onMouseLeave={() => setHeldWidths(null)}
       onWheel={(e) => {
         const strip = e.currentTarget
         if (strip.scrollWidth <= strip.clientWidth) return

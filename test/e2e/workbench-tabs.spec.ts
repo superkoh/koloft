@@ -448,6 +448,49 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     expect(shape.handleLast).toBe(true)
     expect(shape.dragCancelled).toBe(true)
   })
+
+  test('WB-T26: a web tab keeps its width while the pointer is over the strip, so a click aimed before its title shortens still lands on the tab, and it narrows once the pointer leaves', async ({
+    app,
+    page
+  }) => {
+    test.setTimeout(120_000)
+    const srv = await startEchoServer()
+    try {
+      const longTitle = 'A page title long enough to fill the whole tab'
+      const shortTitle = 'A'
+      const url = srv.page(
+        '/late-title',
+        `<!doctype html><html><head><title>${longTitle}</title></head><body>late</body></html>`
+      )
+      await startSessionIn(page, 'ws-a')
+      await agentOpen(page, url)
+      const webTab = wbTabs(page).nth(1)
+      await expect(webTab.locator(WORKBENCH.tabLabel)).toHaveText(longTitle, { timeout: 20_000 })
+      const guest = await guestByUrl(app, '/late-title')
+
+      await wbTabs(page).nth(0).click()
+      await expect(webTab).not.toHaveClass(/\bon\b/)
+      const held = (await webTab.boundingBox())!
+      const aim = { x: held.x + held.width / 2, y: held.y + held.height / 2 }
+      await page.mouse.move(aim.x, aim.y)
+
+      await guest.evaluate((t) => {
+        document.title = t
+      }, shortTitle)
+      await expect(webTab.locator(WORKBENCH.tabLabel)).toHaveText(shortTitle)
+      expect((await webTab.boundingBox())!.width).toBeCloseTo(held.width, 0)
+
+      await page.mouse.click(aim.x, aim.y)
+      await expect(webTab).toHaveClass(/\bon\b/)
+      await expect(wbTabs(page)).toHaveCount(2)
+
+      const term = (await centerTerm(page).boundingBox())!
+      await page.mouse.move(term.x + term.width / 2, term.y + term.height / 2)
+      await expect.poll(async () => (await webTab.boundingBox())!.width).toBeLessThan(held.width)
+    } finally {
+      await srv.close()
+    }
+  })
 })
 
 test.describe('Workbench commands and the panel’s first mount', () => {
