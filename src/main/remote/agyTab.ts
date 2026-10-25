@@ -55,7 +55,6 @@ export interface AgyMachineLaunch {
   tabId: string
   cwd: string
   resumeId?: string
-  banner: string
   env: Record<string, string>
   portOffset?: number
   program: AgyProgram
@@ -73,6 +72,7 @@ export interface AgyMachinePlan {
 export interface AgyTabSpec {
   tabId: string
   account: string
+  banner?: string
   args: string[]
   settings: string
   hooks: string
@@ -92,6 +92,8 @@ export function agyTab(s: AgyTabSpec): AgyProgram {
     `[ -f "$T.${file}" ] && { [ -f "${target}" ] || mv "$T.${file}" "${target}"; rm -f "$T.${file}"; }`
   const exported = [AGY_LOG_ENV, NOTICE_ENV, ...(s.start ? [AGY_START_ENV] : [])]
   const run = [
+    // PLATFORM§35
+    ...(s.banner ? [`echo ${shq(s.banner)}`] : []),
     `A=${remoteAgyHome(s.account)}; G="${REMOTE_GEMINI}"`,
     `mkdir -p "${own}/cache" "$A/config" "${REMOTE_HOOK_DIR}" && chmod 700 "${REMOTE_HOME}/agy"`,
     ...SHARED_FOLDERS.map((d) => `mkdir -p "$G/${d}"; ${link(d)}`),

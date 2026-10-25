@@ -1028,6 +1028,11 @@ Nothing ran against Google's real servers.
   file. On a fresh conversation the prompt box sits right under the banner and
   reaches the bottom rows once the transcript fills the screen. On exit the screen
   holds only the "Resume with -c" lines.
+- In the default inline mode, with onboarding done, a line printed before agy starts
+  stays on row 0 above its banner, directly and inside a tmux pane; the first-run colour
+  picker, by contrast, opened on the alternate screen (seen on 1.3.6). (Linux 1.4.7 from the manifest,
+  sha512 checked, Docker, API-key route, a python pty answering the queries, output
+  replayed into `@xterm/headless`, 2026-10-25).
 
 ## §28 Telemetry
 

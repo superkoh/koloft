@@ -123,10 +123,11 @@ test.describe('Muse Code sessions through the real method chooser, status signal
   })
 
   // MUSE§13
-  test('a Muse account signed in with Meta shows its 5h and 7d quota in the usage panel, read from /usage in a muse that keeps no session log, so no session appears anywhere', async ({
+  test("a Muse account signed in with Meta shows its 5h and 7d quota in the usage panel, read from /usage in a muse that keeps no session log, so no session appears anywhere; a Muse tab then started on it prints that account and quota above Muse's screen, as a Claude tab does", async ({
     env
   }) => {
     installMuse(env)
+    trustInMuse(env, env.workspaces.a)
     seedSettings(env, { hintsOff: true })
     fs.writeFileSync(
       path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
@@ -149,6 +150,11 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(row.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('7%')
       expect(museCalls(env)).toEqual([])
       expect(await page.evaluate(() => window.api.sessions.list())).toEqual([])
+      await page.keyboard.press('Escape')
+      await startMuse(page, env)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        `koloft: → ${E2E_MUSE_ACCOUNT} · 5h 40% · 7d 7%`
+      )
     } finally {
       await quitAndClose(app)
     }

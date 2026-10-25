@@ -1477,8 +1477,13 @@ Codex's own full-screen screen from one that prints and exits.
   Codex CLI 0.162.0 started by Koloft (`--remote`) in a real Electron/xterm tab: a line
   Koloft wrote into the tab before Codex's first output was in neither the screen nor the
   scrollback of the active buffer once the start screen showed
-  (`agent-tools-real-smoke.spec.ts` run). So a note meant for the owner cannot be printed
-  above a Codex tab the way the Claude shim prints its account line.
+  (`agent-tools-real-smoke.spec.ts` run). Seen again 2026-10-25 on 0.162.0 (a python pty
+  answering the terminal's queries, the output replayed into `@xterm/headless`, a scratch
+  `CODEX_HOME` with an API-key `auth.json`): the TUI turns on the alternate screen
+  (`?1049h`) at once, so the line stays only in the normal buffer behind it. With
+  `--no-alt-screen` (a top-level TUI flag, "Disable alternate screen mode") the same line
+  stayed on row 0 and Codex drew its whole TUI inline below it. So Koloft, which starts
+  Codex on the alternate screen, prints no account line above a Codex tab.
 
 ## 19. What a turn said, live and read back
 

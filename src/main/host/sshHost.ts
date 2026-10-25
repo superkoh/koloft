@@ -112,6 +112,7 @@ export interface MuseMachineLaunch {
   fallbackCwd?: string
   resumeSessionId?: string
   account: { name: string; auth(): string }
+  banner?: string
   args: string[]
   trust: string[]
   trustIf?: string
@@ -988,6 +989,7 @@ export class SshHost implements Host {
             run: museRunLines({
               tabId,
               account: spec.account.name,
+              banner: spec.banner,
               args: spec.args,
               trust: spec.trust.map((p) => this.bare(p)),
               trustIf: bareOrNot(spec.trustIf)
@@ -1107,7 +1109,7 @@ export class SshHost implements Host {
           tmuxName,
           machineName: pkg.name,
           cwd: this.bare(spec.cwd),
-          banner: spec.banner,
+          banner: '',
           env: spec.env,
           portOffset: spec.portOffset,
           settings: {},

@@ -336,6 +336,22 @@ describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted 
   })
 })
 
+it("puts a tab's account line above the program's first output, once, the way the Claude shim prints its own before claude starts", () => {
+  const mgr = new PtyManager()
+  const seen: string[] = []
+  mgr.on('data', (d: { data: string }) => seen.push(d.data))
+  mgr.create({
+    kind: 'muse',
+    koloftShim: false,
+    cwd: os.tmpdir(),
+    banner: 'koloft: → ann · 5h 10%'
+  })
+  expect(seen).toEqual([])
+  mocks.state.data!('\x1b[6n')
+  mocks.state.data!('prompt')
+  expect(seen).toEqual(['koloft: → ann · 5h 10%\r\n\x1b[6n', 'prompt'])
+})
+
 // CC§12
 it("tells which tab got input, so a remote tab's sync wakes, but not for a mouse move or a focus change", () => {
   const mgr = new PtyManager()

@@ -95,7 +95,9 @@ const exec = promisify(execFile)
 
 export interface MuseSessionDeps extends StoredSessionDeps {
   openShimRoot: string
-  pickHome(resumeSessionId?: string): { account: string; env: Record<string, string> } | undefined
+  pickHome(
+    resumeSessionId?: string
+  ): { account: string; env: Record<string, string>; banner?: string } | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
@@ -132,6 +134,7 @@ export interface MuseRemoteDeps {
 interface MuseLaunch {
   binary: string
   account: string
+  banner?: string
   env: NodeJS.ProcessEnv
 }
 
@@ -509,7 +512,12 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     // ADR-0030 MUSE§13
     const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.muse)
-    return { binary: this.binary!, account: picked.account, env: { ...this.env, ...picked.env } }
+    return {
+      binary: this.binary!,
+      account: picked.account,
+      banner: picked.banner,
+      env: { ...this.env, ...picked.env }
+    }
   }
 
   protected runDetails(run: MuseRun): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {
@@ -579,7 +587,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   }
 
   // MUSE§17
-  private async startRemoteRun(ctx: StartContext, { account, env }: MuseLaunch): Promise<MuseRun> {
+  private async startRemoteRun(
+    ctx: StartContext,
+    { account, banner, env }: MuseLaunch
+  ): Promise<MuseRun> {
     const { opts, cwd, workspace, resource, freshWorktree } = ctx
     const remote = this.deps.remote
     const host = hostOfPath(cwd)
@@ -593,6 +604,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       fallbackCwd: workspace !== cwd ? workspace : undefined,
       resumeSessionId: resumeId,
       account: { name: account, auth: () => this.credentialFor(account, env, host) },
+      banner,
       args: this.museArgv(opts, approvalFlags(permission), false),
       trust: freshWorktree ? [workspace, cwd] : opts.trustFolder ? [cwd] : [],
       trustIf: resource ? workspace : undefined,
@@ -652,7 +664,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
 
   private async startLocalRun(
     ctx: StartContext,
-    { binary, account, env }: MuseLaunch
+    { binary, account, banner, env }: MuseLaunch
   ): Promise<MuseRun> {
     const { opts, cwd, workspace, resource, freshWorktree } = ctx
     // ADR-0026 MUSE§10
@@ -697,6 +709,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         rows: opts.rows,
         executable: binary,
         argv,
+        banner,
         processEnv: {
           ...env,
           PATH: pathWithDirFirst(env.PATH, tools.dir),

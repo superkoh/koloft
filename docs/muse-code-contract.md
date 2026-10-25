@@ -51,6 +51,11 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - The installer (`curl -fsSL https://dev.meta.ai/install.sh | bash`) puts a launcher
   script at `~/.local/bin/muse`. It ends with `exec "$binary" "$@"`, so the process a
   terminal spawns becomes the muse binary itself and keeps its PID.
+- **The TUI draws inline, with no alternate screen and no screen clear**, so a line
+  printed before muse starts stays on row 0 above its banner and input box (2026-10-25,
+  1.4.13 in the `koloft-muse-probe` Docker image, `--provider echo`, a python pty
+  answering the terminal's queries, output replayed into `@xterm/headless`; inside a
+  tmux pane too, PLATFORM§35).
 
 ## §2 Where Muse keeps its data
 
