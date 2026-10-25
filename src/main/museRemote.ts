@@ -340,6 +340,7 @@ exit 1`
 export interface MuseRunSpec {
   tabId: string
   account: string
+  banner?: string
   args: string[]
   trust: string[]
   trustIf?: string
@@ -353,7 +354,8 @@ export function museRunLines(s: MuseRunSpec): string {
     ...s.trust.flatMap((dir) => ['--trust', dir]),
     ...(s.trustIf ? ['--trust-if', s.trustIf] : [])
   ]
-  return `  O="\${XDG_CONFIG_HOME:-$HOME/.config}/muse"
+  // PLATFORM§35
+  return `${s.banner ? `  printf '%s\\n' ${shq(s.banner)}\n` : ''}  O="\${XDG_CONFIG_HOME:-$HOME/.config}/muse"
   A="$HOME/.koloft/muse-homes/"${shq(s.account)}
   mkdir -p "$A/muse" "$O" && chmod 700 "$HOME/.koloft/muse-homes" "$A" "$A/muse"
   [ -f "$T.auth.json" ] && mv -f "$T.auth.json" "$A/muse/auth.json"

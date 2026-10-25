@@ -14,7 +14,9 @@ import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { CODEX_REPLY_LANGUAGE_HOOKS, codexHoldHook } from '../../src/main/hooks'
 import { HOLD_SCRIPT } from '../../src/main/resourceGuard'
 import { BUSY_MARKER } from '../../src/main/machineRoom'
-import { spawn } from 'child_process'
+import { execFileSync, spawn } from 'child_process'
+import { dirExistsSync, gitProbes } from '../../src/main/resumePlan'
+import { localGitOut } from '../../src/main/host/localHost'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 import { portOffset } from '@shared/worktreeName'
 import { keyedOn } from '@shared/remoteKey'
@@ -93,6 +95,11 @@ const HOOK_HASH = 'sha256:' + 'f'.repeat(64)
 const REPLY_LANGUAGE_ENV = {
   KOLOFT_CODEX_REPLY_LANGUAGE: '/koloft/codex-reply-language.sh',
   KOLOFT_CODEX_SAID: expect.stringMatching(/\/said$/)
+}
+
+const RESERVED_TAB_PLAYWRIGHT_ENV = {
+  PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
+  PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', 'pty-reserved')
 }
 
 const REPLY_LANGUAGE_LISTED = CODEX_REPLY_LANGUAGE_HOOKS.map(({ event, command }) => ({
@@ -549,6 +556,7 @@ describe('CodexSessions', () => {
                 { id: C, cwd: other, name: 'Elsewhere' }
               ]
             }
+      if (method !== 'thread/search') return { data: [] }
       return {
         data: [
           { snippet: '... the PARSER crashed on an empty file', thread: { id: B, cwd: repo } },
@@ -584,6 +592,45 @@ describe('CodexSessions', () => {
 
     mocks.request.mockRejectedValue(new Error('state database locked'))
     expect(await sessions.searchSnippets('parser')).toEqual([])
+  })
+
+  // CODEX§24
+  it("a thread found only by the environment block Codex adds itself is left out, a thread where the person or the model said the term shows that line, and a thread Codex has not indexed yet, or could not check, keeps its thread/search hit unless that hit is one of Codex's own blocks", async () => {
+    const C = '33333333-3333-4333-8333-333333333333'
+    const D = '44444444-4444-4444-8444-444444444444'
+    const E = '55555555-5555-4555-8555-555555555555'
+    const environment = '... /repo</cwd> <shell>zsh</shell> <current_date>2026-10-25 ...'
+    const searched: Record<string, string> = {
+      [A]: environment,
+      [B]: environment,
+      [C]: 'switch the login shell to zsh',
+      [D]: environment,
+      [E]: 'zsh history is gone'
+    }
+    const said: Record<string, string[]> = { [B]: ['... so I reran it in ZSH and it passed'] }
+    const indexedTurns: Record<string, unknown[]> = { [A]: [{ id: 'turn' }], [B]: [{ id: 'turn' }] }
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'thread/search')
+        return {
+          data: Object.entries(searched).map(([id, snippet]) => ({
+            snippet,
+            thread: { id, cwd: repo }
+          })),
+          nextCursor: null
+        }
+      if (method === 'thread/searchOccurrences') {
+        if (params.threadId === E) throw new Error(`thread not loaded: ${E}`)
+        return { data: (said[params.threadId] ?? []).map((snippet) => ({ snippet })) }
+      }
+      if (method === 'thread/turns/list') return { data: indexedTurns[params.threadId] ?? [] }
+      return { data: [] }
+    })
+
+    expect(await sessions.searchSnippets('zsh')).toEqual([
+      { id: codexSessionKey(B), snippet: '... so I reran it in ZSH and it passed' },
+      { id: codexSessionKey(C), snippet: 'switch the login shell to zsh' },
+      { id: codexSessionKey(E), snippet: 'zsh history is gone' }
+    ])
   })
 
   it('waits for an in-flight stop before restarting and prevents duplicate resume', async () => {
@@ -686,6 +733,51 @@ describe('CodexSessions', () => {
     await expect(
       backend.resume({ sessionId: key, cwd: worktree, mode: 'direct' })
     ).resolves.toEqual({ ok: false, code: 'cwd-missing' })
+  })
+
+  it('a session in a deleted .claude/worktrees folder Koloft has no record of, even one reached through a symlink, is rebuilt there on resume, on its worktree-<name> branch while that lives, and is recorded from then on, as a Claude Code one is; a rebuild that fails records nothing', async () => {
+    const gitIn = (dir: string, ...args: string[]) =>
+      execFileSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
+        encoding: 'utf8'
+      }).trim()
+    gitIn(repo, 'init', '-q')
+    gitIn(repo, 'commit', '-q', '--allow-empty', '-m', 'base')
+    const worktree = path.join(repo, '.claude', 'worktrees', 'lost')
+    gitIn(repo, 'worktree', 'add', '-q', '-b', 'worktree-lost', worktree)
+    gitIn(worktree, 'commit', '-q', '--allow-empty', '-m', 'work')
+    const branchTip = gitIn(repo, 'rev-parse', 'worktree-lost')
+    const linked = path.join(directory, 'linked')
+    fs.symlinkSync(repo, linked)
+    const sessionCwd = path.join(linked, '.claude', 'worktrees', 'lost')
+    addMember(A, sessionCwd)
+    gitIn(repo, 'worktree', 'lock', worktree)
+    fs.rmSync(worktree, { recursive: true })
+    const backend = storedBackend(
+      sessions,
+      { dirExists: dirExistsSync, occupantOf: () => null, ...gitProbes(localGitOut) },
+      { runningElsewhere: async () => false } as never
+    )
+    const key = codexSessionKey(A)
+
+    await expect(backend.resumePlan(key)).resolves.toMatchObject({
+      action: 'rebuild',
+      branch: 'worktree-lost'
+    })
+    await expect(
+      backend.resume({ sessionId: key, cwd: sessionCwd, mode: 'rebuild' })
+    ).resolves.toEqual({ ok: false, code: 'rebuild-failed' })
+    expect(sessions.store.listResources()).toEqual([])
+    gitIn(repo, 'worktree', 'unlock', worktree)
+
+    const resumed = await backend.resume({ sessionId: key, cwd: sessionCwd, mode: 'rebuild' })
+    expect(resumed).toMatchObject({ ok: true, cwd: worktree })
+    expect(gitIn(worktree, 'rev-parse', 'HEAD')).toBe(branchTip)
+    bind(0, A, worktree, 1, 'thread/resume')
+    expect(sessions.findRow(key)?.worktreeState).toMatchObject({
+      worktreePath: worktree,
+      worktreeBranch: 'worktree-lost',
+      managed: false
+    })
   })
 
   it('a restarting session reads as running from the old run stopping until the new one starts, and cold again, with the sidebar told, when the new one fails', async () => {
@@ -1070,12 +1162,12 @@ describe('CodexSessions', () => {
     expect(off.configOverrides!.some((o) => o.startsWith('mcp_servers.'))).toBe(false)
     expect(off.sessionEnv).toEqual({
       ...REPLY_LANGUAGE_ENV,
-      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved'
+      ...RESERVED_TAB_PLAYWRIGHT_ENV
     })
   })
 
   // CODEX§26 PLATFORM§17 ADR-0029
-  it("every tab's shell finds Koloft's playwright-cli first and runs it under the tab's own session; with browser control on it also gets the relay endpoint, and its sandbox the network plus Playwright's cache folder on top of the owner's own writable folders, the butler's alike; with browser control off the sandbox stays as it was", async () => {
+  it("every tab's shell finds Koloft's playwright-cli first and runs it under the tab's own session, writing its snapshots and screenshots to the tab's own folder under the temp folder instead of the workspace; with browser control on it also gets the relay endpoint, and its sandbox the network plus Playwright's cache folder on top of the owner's own writable folders, the butler's alike; with browser control off the sandbox stays as it was", async () => {
     const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'b'.repeat(32)
     const cache = path.join(directory, 'Library', 'Caches', 'ms-playwright')
     vi.mocked(deps.browserEndpoint).mockReturnValue(endpoint)
@@ -1090,7 +1182,7 @@ describe('CodexSessions', () => {
       ...REPLY_LANGUAGE_ENV,
       PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
       PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1',
-      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
+      ...RESERVED_TAB_PLAYWRIGHT_ENV,
       KOLOFT_BROWSER_CDP: endpoint
     })
     expect(on.configOverrides).toEqual(
@@ -1111,7 +1203,7 @@ describe('CodexSessions', () => {
       ...REPLY_LANGUAGE_ENV,
       PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
       PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1',
-      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
+      ...RESERVED_TAB_PLAYWRIGHT_ENV,
       KOLOFT_BROWSER_CDP: endpoint
     })
     expect(conductor.configOverrides).toEqual(expect.arrayContaining([...on.configOverrides!]))
@@ -1122,7 +1214,7 @@ describe('CodexSessions', () => {
     expect(off.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.'))).toBe(false)
     expect(off.sessionEnv).toEqual({
       ...REPLY_LANGUAGE_ENV,
-      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved'
+      ...RESERVED_TAB_PLAYWRIGHT_ENV
     })
   })
 

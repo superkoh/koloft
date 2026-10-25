@@ -9,6 +9,7 @@ import type {
 } from './types'
 import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
+import { ageLabel } from './freshnessOps'
 
 export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
   claude: ['oauth', 'apikey', 'custom'],
@@ -455,4 +456,35 @@ export function windowLabel(minutes: number): string {
   if (minutes % (24 * 60) === 0) return `${minutes / (24 * 60)}d`
   if (minutes % 60 === 0) return `${minutes / 60}h`
   return `${minutes}m`
+}
+
+export interface UsedPart {
+  label: string
+  used: number
+}
+
+export function accountLine(
+  name: string,
+  parts: UsedPart[],
+  read?: { at: number; nowMs: number }
+): string {
+  return [
+    `koloft: → ${name}`,
+    ...parts.map((p) => `${p.label} ${Math.round(p.used * 100)}%`),
+    ...(read && read.nowMs - read.at > STALE_MS ? [ageLabel(read.at, read.nowMs)] : [])
+  ].join(' · ')
+}
+
+export function launchLine(a: AccountView, nowMs: number): string {
+  if (a.limits)
+    return accountLine(
+      a.name,
+      a.limits.windows.map((w) => ({ label: windowLabel(w.minutes), used: w.used })),
+      { at: a.limits.at, nowMs }
+    )
+  const quota = a.probeError ? [] : (a.quota ?? [])
+  return accountLine(
+    a.name,
+    quota.map((q) => ({ label: q.label.replaceAll(' · ', ' '), used: q.used }))
+  )
 }

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { todoVerb, TODO_ONLY_FOR_THE_BUTLER, type TodoVerbDeps } from '../../src/main/agentTodo'
 import type { TodoPull, TodoPulls } from '../../src/main/github'
 import type { McpServer } from '../../src/main/mcpServers'
+import { GITHUB_NOT_ASKED } from '../../src/main/sessionClose'
 import { formatRemoteKey } from '../../src/shared/remoteKey'
 import type { BackendId, SessionInfo, SessionRow, WorkspaceRows } from '../../src/shared/types'
 
@@ -67,6 +68,9 @@ interface World {
   asleep?: string[]
   left?: Record<string, string[] | null>
   checkFails?: string[]
+  asksMerged?: string[]
+  merged?: Map<string, string[]> | null
+  mergedOne?: Record<string, string[]>
   worktrees?: Record<string, { dir: string; branch?: string }[]>
   repos?: Record<string, string>
   pulls?: TodoPulls
@@ -78,6 +82,9 @@ interface World {
 function harness(world: World) {
   const notes = { ...(world.notes ?? {}) }
   const checked: string[] = []
+  const mergedAsked: string[] = []
+  const mergedAskedOne: string[] = []
+  const mergedAnswers: Record<string, string[] | null> = {}
   const deps: TodoVerbDeps = {
     allowed: (tabId) => tabId === BUTLER_TAB,
     sidebar: () => world.sidebar,
@@ -88,14 +95,23 @@ function harness(world: World) {
     sessions: () => world.sessions,
     asking: (tabId) => world.asking?.includes(tabId) ?? false,
     asleep: (sessionId) => world.asleep?.includes(sessionId) ?? false,
-    workLeft: async (r) => {
+    workLeft: async (r, merged) => {
       checked.push(r.id)
       if (world.checkFails?.includes(r.id)) throw new Error('git timed out')
+      if (world.asksMerged?.includes(r.id)) mergedAnswers[r.id] = await merged(r.cwd, r.id)
       return world.left && r.id in world.left ? world.left[r.id] : []
     },
     worktrees: async (ws) => world.worktrees?.[ws] ?? [],
     repoOf: async (ws) => world.repos?.[ws] ?? null,
     pulls: async () => world.pulls ?? null,
+    mergedHeadsByBranch: async (ws) => {
+      mergedAsked.push(ws)
+      return world.merged === undefined ? new Map() : world.merged
+    },
+    mergedHeads: async (_dir, branch) => {
+      mergedAskedOne.push(branch)
+      return world.mergedOne?.[branch] ?? []
+    },
     notes: () => ({ ...notes }),
     saveNote: (key, text) => {
       if (text) notes[key] = text
@@ -120,7 +136,7 @@ function harness(world: World) {
         session: { ...live(row('butler'), 'waiting'), tabId, backendId }
       })
     )
-  return { run, notes, checked }
+  return { run, notes, checked, mergedAsked, mergedAskedOne, mergedAnswers }
 }
 
 function sidebarOf(
@@ -261,6 +277,58 @@ describe('koloft todo', () => {
       /Closed, with work left in its worktree, or Koloft could not check it:\n- "gone title" .* · branch: gone · Koloft could not check/
     )
     expect(sessions).not.toContain('nothing left')
+  })
+
+  it('tells the work-left check which commits merged pull requests hold from one list per repository, asking about one branch alone only when it is not in that list', async () => {
+    const tree = (name: string, ws = SHOP) => `${ws}/.claude/worktrees/${name}`
+    const shipped = row('shipped', { cwd: tree('shipped') })
+    const older = row('older', { cwd: tree('older') })
+    const copied = row('copied', { cwd: tree('copied', SHOP_COPY) })
+    const { run, mergedAsked, mergedAskedOne, mergedAnswers } = harness({
+      sidebar: sidebarOf([
+        [SHOP, [shipped, older]],
+        [SHOP_COPY, [copied]]
+      ]),
+      sessions: [],
+      repos: { [SHOP]: 'acme/shop', [SHOP_COPY]: 'acme/shop' },
+      worktrees: {
+        [SHOP]: [
+          { dir: tree('shipped'), branch: 'shipped' },
+          { dir: tree('older'), branch: 'older' }
+        ],
+        [SHOP_COPY]: [{ dir: tree('copied', SHOP_COPY), branch: 'copied' }]
+      },
+      asksMerged: ['shipped', 'older', 'copied'],
+      merged: new Map([
+        ['shipped', ['aaa1']],
+        ['copied', ['ccc3']]
+      ]),
+      mergedOne: { older: ['bbb2'] }
+    })
+    await run([])
+    expect(mergedAnswers).toEqual({ shipped: ['aaa1'], older: ['bbb2'], copied: ['ccc3'] })
+    expect(mergedAsked).toHaveLength(1)
+    expect(mergedAskedOne).toEqual(['older'])
+  })
+
+  it('when GitHub could not be asked about merged pull requests, the work-left check is told so, and the summary counts only the commits and keeps the note', async () => {
+    const stray = row('stray', { cwd: `${SHOP}/.claude/worktrees/stray` })
+    const { run, mergedAskedOne, mergedAnswers } = harness({
+      sidebar: sidebarOf([[SHOP, [stray]]]),
+      sessions: [],
+      worktrees: { [SHOP]: [{ dir: `${SHOP}/.claude/worktrees/stray`, branch: 'stray' }] },
+      asksMerged: ['stray'],
+      merged: null,
+      left: {
+        stray: [`Commits on no other branch and no remote branch:\nddd4 work\n${GITHUB_NOT_ASKED}`]
+      }
+    })
+    const sessions = section((await run([])).text, 'SESSIONS')
+    expect(mergedAnswers).toEqual({ stray: null })
+    expect(mergedAskedOne).toEqual([])
+    expect(sessions).toContain(
+      `branch: stray · Commits on no other branch and no remote branch: 1 (${GITHUB_NOT_ASKED})`
+    )
   })
 
   it('lists the owner’s open pull requests with what decides them; one on a listed worktree session’s branch goes with that session, one on a working session’s stays here and says so, the others are only counted, and the issues pull requests close are named', async () => {

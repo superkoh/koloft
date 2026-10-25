@@ -140,7 +140,7 @@ describe('picking a Codex account', () => {
 })
 
 describe('prepareCodexHome', () => {
-  it('links the shared config.toml into a new home so settings and folder trust stay one, and never replaces a file already there', () => {
+  it('links the shared config.toml into a new home so settings and folder trust stay one', () => {
     const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
     const shared = path.join(dir, 'shared.toml')
     fs.writeFileSync(shared, 'model = "gpt-5"\n')
@@ -148,12 +148,29 @@ describe('prepareCodexHome', () => {
     prepareCodexHome(home, shared)
     expect(fs.readlinkSync(path.join(home, 'config.toml'))).toBe(shared)
     expect(fs.readFileSync(shared, 'utf8')).toBe('model = "gpt-5"\n')
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
 
+  // CODEX§27
+  it('links a home that has a config.toml of its own too: its folder trust tables move into the shared file, each folder once, and its other settings stay only in a kept copy beside the link', () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
+    const shared = path.join(dir, 'shared.toml')
+    fs.writeFileSync(shared, 'model = "gpt-5"\n\n[projects."/both"]\ntrust_level = "trusted"\n')
     const own = path.join(dir, 'homes', 'own')
     fs.mkdirSync(own, { recursive: true })
-    fs.writeFileSync(path.join(own, 'config.toml'), 'model = "o3"\n')
+    const ownText =
+      'model = "o3"\n\n[projects."/both"]\ntrust_level = "trusted"\n\n' +
+      '[tui]\nscreen_reader_detection_done = true\n\n' +
+      '[projects."/only-here"]\ntrust_level = "trusted"\n\n' +
+      '[projects."/only-here"]\ntrust_level = "trusted"\n'
+    fs.writeFileSync(path.join(own, 'config.toml'), ownText)
     prepareCodexHome(own, shared)
-    expect(fs.lstatSync(path.join(own, 'config.toml')).isSymbolicLink()).toBe(false)
+    expect(fs.readlinkSync(path.join(own, 'config.toml'))).toBe(shared)
+    expect(fs.readFileSync(shared, 'utf8')).toBe(
+      'model = "gpt-5"\n\n[projects."/both"]\ntrust_level = "trusted"\n\n' +
+        '[projects."/only-here"]\ntrust_level = "trusted"\n'
+    )
+    expect(fs.readFileSync(path.join(own, 'config.toml.before-shared'), 'utf8')).toBe(ownText)
     fs.rmSync(dir, { recursive: true, force: true })
   })
 

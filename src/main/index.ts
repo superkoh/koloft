@@ -26,12 +26,17 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
-import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museSessions'
+import {
+  MuseSessions,
+  museShowsItsInputBox,
+  type MuseHomePick,
+  type MuseRemoteDeps
+} from './museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { sharedProcessTable, type ProcessTable } from './processTable'
-import { AgySessions } from './agySessions'
+import { AgySessions, type AgyHomePick } from './agySessions'
 import {
   agyAccountEnv,
   agyHomeOf,
@@ -364,7 +369,7 @@ import {
   type GitPlatform,
   type GitTokenAdd
 } from '@shared/types'
-import { ACCOUNT_KINDS_OF, AUTO_PROBE_MS } from '@shared/accountUsage'
+import { ACCOUNT_KINDS_OF, AUTO_PROBE_MS, launchLine } from '@shared/accountUsage'
 import {
   answerPermissionRequest,
   awaitGuestFor,
@@ -1738,13 +1743,15 @@ const agentRequests = new AgentRequests({
       sessions: () => allSessions().filter((s) => !s.butler),
       asking: asksTheOwner,
       asleep: (sessionId) => !!sleepingTabOf(sessionId),
-      workLeft: async (row) => {
+      workLeft: async (row, merged) => {
         const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
-        return tree ? whatIsLeft(hostGitOut, tree) : null
+        return tree ? whatIsLeft(hostGitOut, tree, merged) : null
       },
       worktrees: sessionDeps.worktrees,
       repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
       pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
+      mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
+      mergedHeads: (dir, branch) => mergedHeads(dir, branch),
       notes: () => loadSettings().todoNotes,
       saveNote: (key, text) => {
         const todoNotes = { ...loadSettings().todoNotes, [key]: text }
@@ -2020,6 +2027,15 @@ async function addAccount(
   return result.ok ? { ok: true, account } : { ok: false, error: result.error, account }
 }
 
+function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean): void {
+  const acct = findAccount(name, kind)
+  if (!acct) return
+  const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
+  if (status === acct.status) return
+  upsertAccountMeta({ ...acct, status })
+  if (status === 'expired') notifyExpired(name, BACKEND_LABEL[BACKEND_OF_SIGN_IN_FOLDER[kind]])
+}
+
 const codexPicker = new HomeAccountPicker('codex-home')
 const MUSE_QUOTA_FOLDER = 'muse-quota'
 const museProbedAt = new Map<string, number>()
@@ -2048,8 +2064,7 @@ async function probeCodexAccount(name: string): Promise<void> {
   const key = viewKey(name, 'codex-home')
   try {
     const r = await codexSessions.readAccount(codexHomeOf(app.getPath('userData'), name))
-    const status = r.signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
-    if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+    foldHomeSignIn(name, 'codex-home', r.signedIn)
     usageViews.set(key, {
       limits: (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
     })
@@ -2172,15 +2187,19 @@ function museHomeFor(name: string): string {
 }
 
 // ADR-0030 MUSE§13
-function pickMuseHome(
-  resumeSessionId?: string
-): { account: string; env: Record<string, string> } | undefined {
+function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
   const views = accountViews()
   const picked = musePicker.pick(views, sessionAccounts?.of('muse', resumeSessionId))
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
-  return picked && { account: picked.name, env: museAccountEnv(museHomeFor(picked.name)) }
+  return (
+    picked && {
+      account: picked.name,
+      env: museAccountEnv(museHomeFor(picked.name)),
+      banner: launchLine(picked, Date.now())
+    }
+  )
 }
 
 async function museServeFor(
@@ -2200,9 +2219,7 @@ async function probeMuseAccount(name: string): Promise<void> {
   museProbedAt.set(name, Date.now())
   try {
     const signIn = await museSignIn(serve)
-    const status = signIn !== 'none' ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
-    if (status !== acct.status) upsertAccountMeta({ ...acct, status })
-    if (status === 'expired' && acct.status !== 'expired') notifyExpired(name, 'Muse')
+    foldHomeSignIn(name, 'muse-home', signIn !== 'none')
     if (signIn !== 'subscription') usageViews.delete(key)
     else {
       const dir = path.join(app.getPath('userData'), MUSE_QUOTA_FOLDER)
@@ -2264,9 +2281,15 @@ async function agyApiKeyOf(name: string): Promise<string | undefined> {
 }
 
 // ADR-0030
-function pickAgyHome(resumeSessionId?: string): { account: string; home: string } | undefined {
+function pickAgyHome(resumeSessionId?: string): AgyHomePick | undefined {
   const picked = agyPicker.pick(accountViews(), sessionAccounts?.of('agy', resumeSessionId))
-  return picked && { account: picked.name, home: agyHomeFor(picked.name) }
+  return (
+    picked && {
+      account: picked.name,
+      home: agyHomeFor(picked.name),
+      banner: launchLine(picked, Date.now())
+    }
+  )
 }
 
 // AGY§5 AGY§6
@@ -2276,8 +2299,7 @@ async function probeAgyAccount(name: string): Promise<void> {
   const home = agyHomeFor(name)
   const apiKey = await agyApiKeyOf(name)
   const signedIn = agySignedIn(home, !!apiKey)
-  const status = signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
-  if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+  foldHomeSignIn(name, 'agy-home', signedIn)
   const key = viewKey(name, 'agy-home')
   if (signedIn && !apiKey) {
     const quota = await agyUsage(home)

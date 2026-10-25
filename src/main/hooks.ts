@@ -125,6 +125,12 @@ remind_reply_language() {
   printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\\n' "$1" "$context"
 }`
 
+// PLATFORM§36
+export const STALE_PR_STATUS_FN = `stale_pr_status() {
+  printf '%s' "$1" | grep -qE 'gh pr (create|merge|close|reopen|ready|edit)' &&
+    touch -c -t 200001010000 "$HOME/.cache/ccstatusline/git-review/"*.json 2>/dev/null
+}`
+
 // CC§15 CODEX§27
 const REMIND_AFTER_A_TOOL = `fields="$(grep -o -E '"(transcript_path|agent_id)"[[:space:]]*:[[:space:]]*"[^"]*"')"
   input="$(printf '%s\\n' "$fields" | grep -F '"transcript_path"' | head -n 1)"
@@ -261,6 +267,7 @@ session_id() {
     tr -d '"\\\\[:cntrl:]'
 }
 ${QUOTE_PROMPT_FN}
+${STALE_PR_STATUS_FN}
 log_ask() {
   printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$log"
 }
@@ -326,13 +333,7 @@ case "$event" in
     # CC§14
     log_ask
     ;;
-  posttool)
-    # PLATFORM§36
-    printf '%s' "$input" | grep -qE 'gh pr (create|merge|close|reopen|ready|edit)' || exit 0
-    for f in "$HOME/.cache/ccstatusline/git-review/"*.json; do
-      [ -e "$f" ] && touch -t 200001010000 "$f" 2>/dev/null
-    done
-    ;;
+  posttool) stale_pr_status "$input" ;;
   prompt|stop|notify)
     [ "$event" = "stop" ] && keep_going_for_the_notice && exit 0
     msg="$(printf '%s' "$input" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | tr -d '"\\\\[:cntrl:]')"

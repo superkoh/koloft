@@ -4,8 +4,8 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
-import { BROWSER } from './helpers/browser'
-import { startEchoServer } from './helpers/fixtureServer'
+import { addressValue, BROWSER, newWebTab, typeInAddressBar } from './helpers/browser'
+import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import {
   type E2EEnv,
   installAgy,
@@ -80,7 +80,8 @@ import {
   sendFailingChecks,
   openInBrowse,
   rowMenu,
-  showBrowse
+  showBrowse,
+  wbActiveTab
 } from './helpers/workbench'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
@@ -702,6 +703,38 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         .click({ timeout: 30_000 })
       await expect(title).toContainText('page.html', { timeout: 30_000 })
       await expect(source).toContainText('on the machine', { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test("a file name typed in a remote tab's address bar opens the file on the machine in a file tab, a page as its source, and a path that climbs out of the session's folder searches instead", async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    env.extraArgs.push(hostResolverSwitch(['duckduckgo.com']))
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, 'page.html'), '<h1>typed on the machine</h1>\n')
+      fs.writeFileSync(path.join(path.dirname(dir), 'outside.html'), '<h1>outside</h1>\n')
+
+      await openRemoteSessionWorkbench(page, env)
+      await newWebTab(page)
+      await typeInAddressBar(page, 'page.html')
+      await expect(wbActiveTab(page)).toContainText('page.html', {
+        timeout: 30_000
+      })
+      await expect(artifactBody(page).locator('.code-body')).toContainText('typed on the machine', {
+        timeout: 30_000
+      })
+
+      await newWebTab(page)
+      await typeInAddressBar(page, '../outside.html')
+      await expect
+        .poll(() => addressValue(page), { timeout: 30_000 })
+        .toMatch(/duckduckgo\.com\/\?q=.*outside\.html/)
+      await expect(page.locator(WORKBENCH.tab, { hasText: 'outside.html' })).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }

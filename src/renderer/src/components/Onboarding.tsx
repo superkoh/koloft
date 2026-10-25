@@ -276,7 +276,7 @@ export function Onboarding({
 
         {step === 1 && (
           <>
-            <div className="big">Koloft runs Claude Code — and Codex, if you have it.</div>
+            <div className="big">Koloft runs Claude Code, Codex, Muse and Antigravity.</div>
             <div className="quiet">
               Pick a <b>folder</b>. Koloft shows every <b>session</b> in it. Each session gets a
               side panel, the <b>Workbench</b>: the files the agent changed, a browser, a shell.

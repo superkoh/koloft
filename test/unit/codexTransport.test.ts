@@ -111,6 +111,22 @@ describe('Codex stdio reads', () => {
     await expect(client.request('turn/start', {})).rejects.toThrow('does not allow')
   })
 
+  // CODEX§24
+  it('lets a side connection ask the two checks a search makes of each thread: which of its own words hold the term, and whether Codex indexed it', async () => {
+    const client = rpc()
+    const occurrences = await client.request<{ params: unknown }>('thread/searchOccurrences', {
+      threadId: 't',
+      searchTerm: 'zsh',
+      limit: 1
+    })
+    const turns = await client.request<{ params: unknown }>('thread/turns/list', {
+      threadId: 't',
+      limit: 1
+    })
+    expect(occurrences.params).toEqual({ threadId: 't', searchTerm: 'zsh', limit: 1 })
+    expect(turns.params).toEqual({ threadId: 't', limit: 1 })
+  })
+
   it('reads a frame spanning many pipe reads in time that grows with its size, not its square (catches O(n²), never pins speed)', async () => {
     const SMALL_BYTES = 12 * 1024 * 1024
     const SIZE_RATIO = 8

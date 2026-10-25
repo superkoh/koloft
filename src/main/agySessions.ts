@@ -112,6 +112,7 @@ const exec = promisify(execFile)
 export interface AgyHomePick {
   account: string
   home: string
+  banner?: string
 }
 
 export interface AgySessionDeps extends StoredSessionDeps {
@@ -563,6 +564,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         rows: opts.rows,
         executable: binary,
         argv,
+        // AGY§27
+        banner: pick.banner,
         processEnv: {
           ...env,
           PWD: cwd,
@@ -659,7 +662,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       tabId,
       cwd,
       resumeId,
-      banner: `[Koloft] Antigravity account: ${pick.account}`,
       env: {
         ANT_ACCOUNT: pick.account,
         ...(apiKey ? { [AGY_KEY_FROM_KOLOFT]: apiKey } : {}),
@@ -669,6 +671,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       program: agyTab({
         tabId,
         account: pick.account,
+        banner: pick.banner,
         args: [
           `--csrf_token=${randomBytes(24).toString('hex')}`,
           ...agyArgs(opts, resumeId, permission)

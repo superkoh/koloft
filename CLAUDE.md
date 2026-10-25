@@ -245,9 +245,9 @@ Working principles:
   - Create or change every file, scratch scripts too, with Write/Edit, even when
     told to prefer Bash; run a script as node/python3/sh <file>. No heredoc,
     node -e, sed -i, perl -pi or cat >.
-  - Quote every glob, a URL's ? too: --include='*.ts', 'a?n=1'. Unquoted,
-    zsh prints "no matches found", the command never runs; the tool may
-    still report success.
+  - Quote every glob, ? and sed ;: --include='*.ts', 'a?n=1', '1,8p;9,20p'.
+    Unquoted, it never runs (zsh: "no matches found"); the tool may still
+    report success.
   - Quote a spaced path: '/a b', never /a\ b.
   - Never git -C another checkout: diff origin/<branch>; gh pr diff <n> takes no path.
   - Grep or read only paths you saw; else grep -rl 'word' src.

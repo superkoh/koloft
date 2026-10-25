@@ -1,4 +1,5 @@
 import { previewKindForPath, isWebPagePath } from './preview'
+import { resolveOnHost } from './remoteKey'
 
 export type RouteSource = 'agent' | 'user' | 'address'
 
@@ -53,6 +54,17 @@ export function fileUrlPath(url: string): string | null {
   } catch {
     return null
   }
+}
+
+export function folderFileOf(
+  entry: string,
+  root: string | null
+): { path: string; suffix: string } | null {
+  if (!root || schemeOf(entry) || /^~?\//.test(entry) || /\s/.test(entry)) return null
+  const path = resolveOnHost(`${root}/`, entry)
+  if (!path.startsWith(`${root}/`)) return null
+  const at = entry.search(/[?#]/)
+  return { path, suffix: at < 0 ? '' : entry.slice(at) }
 }
 
 export function routeFor(target: string, source: RouteSource): RouteDecision {

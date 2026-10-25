@@ -326,6 +326,13 @@ describe('AgySessions launch', () => {
     expect(created[3].argv.slice(2)).toEqual([`--conversation=${A}`])
   })
 
+  it("keeps playwright-cli's snapshots and screenshots in a folder of the tab under the temp folder, out of the workspace", async () => {
+    await launch()
+    expect(created[0].env.PLAYWRIGHT_MCP_OUTPUT_DIR).toBe(
+      path.join(os.tmpdir(), 'koloft-playwright', created[0].id)
+    )
+  })
+
   it("keeps the account's sign-in in its own folder instead of the shared macOS Keychain, and routes to its API key when it has one", async () => {
     await launch()
     expect(created[0].env.WSL_INTEROP).toBe('koloft')

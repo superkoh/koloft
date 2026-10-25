@@ -36,7 +36,7 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
   test.setTimeout(240_000)
 
   // AGY§4 AGY§11 AGY§12
-  test("an Antigravity session in a remote workspace runs agy in tmux on that machine, on the account's own folder there linked to the machine's ~/.gemini with Koloft's scripts and the API key; its row binds, takes agy's title and goes working then done", async ({
+  test("an Antigravity session in a remote workspace runs agy in tmux on that machine, on the account's own folder there linked to the machine's ~/.gemini with Koloft's scripts and the API key, the account named above agy's screen; its row binds, takes agy's title and goes working then done", async ({
     env
   }) => {
     setUp(env)
@@ -64,6 +64,9 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       )
 
       await agyReady(page)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        `koloft: → ${E2E_AGY_ACCOUNT}`
+      )
       await runIn(page, centerTerm(page), 'remote words')
       const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'remote words' })
       await expect(row).toHaveClass(/st-working/, { timeout: 60_000 })

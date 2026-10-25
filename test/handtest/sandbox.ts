@@ -309,6 +309,7 @@ async function start(opt: {
     opt.account ?? installed.accounts?.find((a) => a.kind === 'oauth' && a.enabled)?.name
   if (!account) throw new Error('the installed Koloft has no Claude account to lend')
   const env = setupE2EEnv()
+  delete env.launchEnv.KOLOFT_TEST_MACHINE_FILE
   let lab: SshLab | undefined
   try {
     writeGitIdentity(env.home)

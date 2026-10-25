@@ -1035,12 +1035,15 @@ describe('git credential helper and gh wrapper', () => {
 describe('claude shim (Koloft browser endpoint)', () => {
   const endpointAt = (port: number): string => `ws://127.0.0.1:${port}/cdp/${'a'.repeat(32)}`
 
-  it('exports the browser endpoint to the launched claude even with the account balancer off, re-reads the per-tab file on every launch so a changed port reaches an already-open tab, names the playwright-cli session after the tab so two tabs never share one cli daemon, and gives none of it to a utility shell', () => {
+  it('exports the browser endpoint to the launched claude even with the account balancer off, re-reads the per-tab file on every launch so a changed port reaches an already-open tab, names the playwright-cli session after the tab so two tabs never share one cli daemon, sends its snapshots and screenshots to a folder of the tab under the temp folder instead of the workspace, and gives none of it to a utility shell', () => {
     const cdpDir = fs.mkdtempSync(path.join(base, 'cdp-'))
-    const cdpEnv = { KOLOFT_CDP_DIR: cdpDir }
+    const cdpEnv = { KOLOFT_CDP_DIR: cdpDir, TMPDIR: '/tmp-of-the-mac/' }
 
     const beforeEndpoint = runShim([], cdpEnv)
     expect(beforeEndpoint.realEnv?.PLAYWRIGHT_CLI_SESSION).toBe('koloft-tab-shim')
+    expect(beforeEndpoint.realEnv?.PLAYWRIGHT_MCP_OUTPUT_DIR).toBe(
+      '/tmp-of-the-mac/koloft-playwright/tab-shim'
+    )
 
     fs.writeFileSync(path.join(cdpDir, 'tab-shim'), endpointAt(1111))
     const first = runShim([], cdpEnv)
@@ -1060,5 +1063,6 @@ describe('claude shim (Koloft browser endpoint)', () => {
     expect(utilityShell.realEnv?.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBeUndefined()
     expect(utilityShell.realEnv?.PLAYWRIGHT_CLI_SESSION).toBeUndefined()
     expect(utilityShell.realEnv?.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS).toBeUndefined()
+    expect(utilityShell.realEnv?.PLAYWRIGHT_MCP_OUTPUT_DIR).toBeUndefined()
   })
 })

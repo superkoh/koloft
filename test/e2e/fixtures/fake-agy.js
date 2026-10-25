@@ -133,8 +133,8 @@ const SUMMARIES_DDL =
 const CONVERSATION_DDL =
   'CREATE TABLE IF NOT EXISTS steps (idx integer PRIMARY KEY, step_type integer, status integer, step_payload blob);' +
   'CREATE TABLE IF NOT EXISTS trajectory_meta (id integer PRIMARY KEY, payload blob);' +
-  'CREATE TABLE IF NOT EXISTS gen_metadata (idx integer PRIMARY KEY, payload blob);' +
-  'CREATE TABLE IF NOT EXISTS executor_metadata (idx integer PRIMARY KEY, payload blob);' +
+  'CREATE TABLE IF NOT EXISTS gen_metadata (idx integer PRIMARY KEY, data blob);' +
+  'CREATE TABLE IF NOT EXISTS executor_metadata (idx integer PRIMARY KEY, data blob);' +
   'CREATE TABLE IF NOT EXISTS parent_references (id integer PRIMARY KEY, payload blob);' +
   'CREATE TABLE IF NOT EXISTS trajectory_metadata_blob (id integer PRIMARY KEY, payload blob);' +
   'CREATE TABLE IF NOT EXISTS battle_mode_infos (id integer PRIMARY KEY, payload blob);'
@@ -363,6 +363,20 @@ const transcriptPath = (id) => path.join(logsDir(id), 'transcript.jsonl')
 const transcriptFullPath = (id) => path.join(logsDir(id), 'transcript_full.jsonl')
 const conversationDbPath = (id) => path.join(paths.conversations, `${id}.db`)
 
+const varint = (n) => {
+  const out = []
+  while (n >= 0x80) {
+    out.push((n & 0x7f) | 0x80)
+    n >>>= 7
+  }
+  out.push(n)
+  return Buffer.from(out)
+}
+const protobufString = (field, inner) =>
+  Buffer.concat([varint((field << 3) | 2), varint(inner.length), inner])
+// AGY§8
+const genMetadataOf = (modelVersion) =>
+  protobufString(1, protobufString(19, Buffer.from(modelVersion)))
 function withDb(file, work) {
   const db = new DatabaseSync(file)
   try {
@@ -586,6 +600,8 @@ function writeStep(c, record) {
       full.status === 'DONE' ? 3 : 4,
       Buffer.from(JSON.stringify(full))
     )
+    if (full.type === 'PLANNER_RESPONSE')
+      db.prepare('INSERT INTO gen_metadata (data) VALUES (?)').run(genMetadataOf(model.id))
   })
   if (record.userConfig) c.userConfigs[index] = record.userConfig
   updateSummary(c.id, { step_count: c.nextStep, last_modified_time: dbTime() })
@@ -916,7 +932,11 @@ function scheduleTitle(c, text) {
   else setTimeout(store, TITLE_DELAY_MS)
 }
 function spend(c) {
-  const tokens = { input: 1200 + 100 * c.nextStep, cacheRead: 300, output: 40 }
+  const tokens = {
+    input: Number(readSentinel('fake-agy-input-tokens', String(1200 + 100 * c.nextStep))),
+    cacheRead: 300,
+    output: 40
+  }
   c.totals.input += tokens.input
   c.totals.output += tokens.output
   c.totals.cacheRead = tokens.cacheRead

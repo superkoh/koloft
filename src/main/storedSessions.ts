@@ -854,8 +854,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
         async () => !resource || this.dirThere(resource.worktreePath)
       )
     ) {
-      if (!resource) throw new ResumeRefused('rebuild-failed')
-      resource = await this.worktrees.rebuild(resource.id).catch(() => {
+      resource = await (
+        resource ? this.worktrees.rebuild(resource.id) : this.worktrees.recover(cwd)
+      ).catch(() => {
         throw new ResumeRefused('rebuild-failed')
       })
       cwd = resource.worktreePath

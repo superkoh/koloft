@@ -269,11 +269,14 @@ describe('MuseSessions launch', () => {
     ])
   })
 
-  it('hands the Workbench browser to a tab that can drive it', async () => {
+  it("hands the Workbench browser to a tab that can drive it, with playwright-cli's snapshots and screenshots kept in a folder of the tab under the temp folder, out of the workspace", async () => {
     endpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
     expect(created[0].argv).toEqual(['--approval-judge', 'off', '--sandbox-network', 'enabled'])
-    expect(created[0].env).toMatchObject({ KOLOFT_BROWSER_CDP: endpoint })
+    expect(created[0].env).toMatchObject({
+      KOLOFT_BROWSER_CDP: endpoint,
+      PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', created[0].id)
+    })
     expect(created[0].env.PWTEST_DAEMON_SESSION_DIR).toMatch(/^\/tmp\//)
   })
 
@@ -815,7 +818,7 @@ describe('reading the Muse screen before typing into it', () => {
   const STATUS = '  fake-model · high · ~/ws · Auto-review'
 
   // MUSE§11
-  it('takes typing only while the input box shows between the last two rules, whatever hint it holds, with or without background tasks listed under it, and not while an approval box takes its place', () => {
+  it('takes typing only while the input box shows between the last two rules, whatever hint it holds, with an empty line under a draft or not, with or without background tasks listed under it, and not while an approval box takes its place', () => {
     expect(museShowsItsInputBox(['Muse Code 1.4.9', RULE, '❯', RULE, STATUS])).toBe(true)
     expect(
       museShowsItsInputBox([`── Voice input (⌥ + v to start) ${RULE}`, '❯ ', RULE, STATUS])
@@ -826,6 +829,7 @@ describe('reading the Muse screen before typing into it', () => {
     expect(
       museShowsItsInputBox([RULE, '❯ Press Ctrl+O to expand collapsed tool output', RULE, STATUS])
     ).toBe(true)
+    expect(museShowsItsInputBox([RULE, '❯ /usage', '', RULE, STATUS])).toBe(true)
     expect(
       museShowsItsInputBox([
         '◇ Calling tools (1s · esc to interrupt)',

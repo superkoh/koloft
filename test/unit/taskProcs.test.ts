@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import { inspectTaskProcs, makeExec } from '../../src/main/taskProcs'
 import { parseProcessTable, parsePsDuration, type ProcessTable } from '../../src/main/processTable'
 
@@ -70,7 +73,7 @@ describe('taskProcs', () => {
     expect(parsePsDuration('garbage')).toBe(0)
   })
 
-  it('maps each tool shell, foreground ones too, to its task by the output file it holds, reports one whose child listens, and never asks lsof about MCP servers or hooks', async () => {
+  it('maps each tool shell, foreground ones too, to its task by the output file it holds, reports one whose child listens and the CPU of each program under it, and never asks lsof about MCP servers or hooks', async () => {
     const s = stub({
       fd1: [
         'p4300',
@@ -92,13 +95,21 @@ describe('taskProcs', () => {
       pid: 4300,
       ageMs: 5 * 60_000,
       listening: false,
-      cpuMs: 1550
+      cpuMsByPid: new Map([
+        [4300, 50],
+        [4301, 1500]
+      ]),
+      outputBytes: 0
     })
     expect(r!.shells.get('bsrv')).toEqual({
       pid: 4400,
       ageMs: 26 * 3600_000,
       listening: true,
-      cpuMs: 2500
+      cpuMsByPid: new Map([
+        [4400, 100],
+        [4401, 2400]
+      ]),
+      outputBytes: 0
     })
     expect(r!.shells.get('bgit')?.pid).toBe(4500)
     const fd1Call = s.calls.find((c) => c.includes('-d'))!
@@ -155,6 +166,19 @@ describe('taskProcs', () => {
       ['4300', '4400', '4500', '5300'].sort()
     )
     expect(s.calls.filter((c) => c.includes('-sTCP:LISTEN'))).toHaveLength(1)
+  })
+
+  it('reports how much a shell has printed by the size of its output file', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskprocs-'))
+    const tasks = path.join(dir, SID, 'tasks')
+    fs.mkdirSync(tasks, { recursive: true })
+    fs.writeFileSync(path.join(tasks, 'bsleep.output'), '[1/9] first test\n')
+    try {
+      const r = await inspect(stub({ fd1: `p4300\nf1\nn${tasks}/bsleep.output\n` }))
+      expect(r!.shells.get('bsleep')?.outputBytes).toBe(17)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('an output file in another session tasks dir is not one of ours', async () => {
