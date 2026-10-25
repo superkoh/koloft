@@ -578,6 +578,27 @@ describe('rowLookups (which tab, live session and attention mark belong to a sid
     expect(look.hasAliveTab('s-dead')).toBe(false)
   })
 
+  it('a cold row whose session is already bound in a live tab reads running in that tab, before the rows say so', () => {
+    const bound = rowLookups(
+      [
+        { sessionId: 's-back', tabId: 'pty-back', alive: true },
+        { sessionId: 's-gone', tabId: 'pty-closed', alive: true }
+      ],
+      [
+        { id: 'pty-back', sessionId: 's-back', alive: true },
+        { id: 'pty-closed', sessionId: 's-gone', alive: false },
+        { id: 'pty-7', sessionId: 's-cold', alive: true }
+      ],
+      []
+    )
+    expect(bound.running({ id: 's-back', running: false })).toBe(true)
+    expect(bound.tabOf({ id: 's-back', running: false })).toBe('pty-back')
+    expect(bound.running({ id: 's-gone', running: false })).toBe(false)
+    expect(bound.tabOf({ id: 's-gone', running: false })).toBeUndefined()
+    expect(bound.running({ id: 's-cold', running: false })).toBe(false)
+    expect(bound.tabOf({ id: 's-cold', running: false })).toBeUndefined()
+  })
+
   it('the live session on a tab is the first one the stream names, dead or alive', () => {
     expect(look.sessionOn('pty-1')).toBe(sessions[1])
     expect(look.sessionOn('pty-old')).toBe(sessions[0])

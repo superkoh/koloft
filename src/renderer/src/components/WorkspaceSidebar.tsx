@@ -1286,17 +1286,18 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     const cronPrefixes = cronWorktreePrefixes.get(wsPath) ?? []
     const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
       const { row } = node
+      const running = look.running(row)
       const tabId = look.tabOf(row)
       const calling = look.attentionOn(row.id, tabId)
       const sess = tabId ? look.sessionOn(tabId) : undefined
       const stateCls = statusUnavailable(sess)
         ? ''
-        : rowStateClass(row.running, sess?.status, row.pending, sess?.turnOver)
+        : rowStateClass(running, sess?.status, row.pending, sess?.turnOver)
       const badge = sessionActivityBadge(sess, leftovers[row.id])
       const held = tabId ? machine?.held[tabId] : undefined
       const launching = resumeLaunch?.id === row.id
       const active = launching || (!resumeLaunch && !!tabId && tabId === activeTabId)
-      const resumingNow = !row.running && !row.pending && (launching || look.hasAliveTab(row.id))
+      const resumingNow = !running && !row.pending && (launching || look.hasAliveTab(row.id))
       const shownCls = resumingNow ? rowStateClass(false, undefined, true) : stateCls
       const isCronRow =
         capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
@@ -1312,7 +1313,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             className={'ws-tab ' + shownCls + (active ? ' active' : '')}
             tabId={tabId}
             tooltip={
-              row.running || row.pending
+              running || row.pending
                 ? undefined
                 : relTime(row.mtime, now.getTime()) +
                   (row.invalidCwd

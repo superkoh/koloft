@@ -75,6 +75,7 @@ import {
   PREVIEW_CARD_WIDTH_PX,
   previewCardFits,
   relTime,
+  rowLookups,
   selectionRoot,
   sessionsNeedYou,
   waitingTabs,
@@ -1106,9 +1107,18 @@ export default function App(): JSX.Element {
     setNotesFocusWs(notesWs)
     setNotesFocus(0)
   }
-  const welcomeRunning = (welcomeWs?.rows ?? []).filter((r) => r.running).length
+  const runningWelcomeIds = useStore((s) => {
+    const look = rowLookups(s.sessions, s.tabs, [])
+    return (welcomeWs?.rows ?? [])
+      .filter((r) => look.running(r))
+      .map((r) => r.id)
+      .join('\n')
+  }).split('\n')
+  const welcomeRunning = (welcomeWs?.rows ?? []).filter((r) =>
+    runningWelcomeIds.includes(r.id)
+  ).length
   const recentRows = (welcomeWs?.rows ?? [])
-    .filter((r) => !r.running && !r.pending)
+    .filter((r) => !runningWelcomeIds.includes(r.id) && !r.pending)
     .sort((a, b) => b.mtime - a.mtime)
     .slice(0, RECENT_MAX)
 

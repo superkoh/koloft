@@ -115,7 +115,7 @@ export function paletteSessions(
           kind: 'session',
           key: `s:${row.id}`,
           wsPath: ws.path,
-          row,
+          row: { ...row, running: look.running(row) },
           title,
           note: `${place} · ${row.worktree}`,
           calling: !!look.attentionOn(row.id, tabId),
