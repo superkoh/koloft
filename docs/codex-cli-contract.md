@@ -270,6 +270,15 @@ picker shows on `/new` in a TUI connected with `--remote` was not seen in the e2
 of that day (the Playwright MCP case does a `/new` and passed), so it is read, not
 run: **inferred, not checked**.
 
+**A thread goes on in a worktree deleted and made again at the same path.** Checked
+2026-10-25 with codex-cli 0.162.0 and this Mac's own login: `codex app-server` (stdio)
+started a thread in a linked worktree `<repo>/.claude/worktrees/lost` on branch
+`worktree-lost`, and one turn was told a code word. The app-server was stopped, the
+folder deleted, `git worktree remove` and `git worktree add <path> worktree-lost` made
+it again, and a new app-server's `thread/resume {threadId, cwd: <same path>}` returned
+the same thread id and cwd; the next turn answered the code word. The thread was
+archived afterwards.
+
 ## 7. Rechecking a CLI upgrade
 
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0

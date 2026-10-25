@@ -209,7 +209,7 @@ export class SessionWorktrees {
     return this.materialize(resource)
   }
 
-  // CC§3
+  // CC§3 CODEX§6
   async recover(worktreePath: string): Promise<WorktreeResource> {
     const home = worktreeHomeRoot(worktreePath)
     if (!home) throw new Error('Not a .claude/worktrees folder')
