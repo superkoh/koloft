@@ -161,7 +161,7 @@ describe('koloft todo', () => {
     })
   })
 
-  it('prints the way to sort out to-dos, then the sessions waiting on the owner by kind, leaving out working ones and the butler’s own folder; a session whose tab is asleep is listed, on this Mac or another machine, while one running with no tab here is left out as working; only an idle local session in a listed worktree is checked for work left, and an open or asleep one not asking the owner says when nothing is left there or it has no worktree of its own', async () => {
+  it('prints the way to sort out to-dos, then the sessions waiting on the owner by kind, leaving out working ones and the butler’s own folder; a session whose tab is asleep is listed, on this Mac or another machine, while one running with no tab here is left out as working; every idle local open or asleep session is checked for work left, a closed one only in a listed worktree, and an open or asleep one not asking the owner says when nothing is left in its worktree or closing it deletes no worktree', async () => {
     const asking = row('asking', { running: true, mtime: NOW - DAY })
     const done = row('done', { running: true, backendId: 'codex' })
     const clean = row('clean', { running: true, cwd: `${SHOP}/.claude/worktrees/tidy` })
