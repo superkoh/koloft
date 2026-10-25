@@ -551,6 +551,7 @@ describe('CodexSessions', () => {
                 { id: C, cwd: other, name: 'Elsewhere' }
               ]
             }
+      if (method !== 'thread/search') return { data: [] }
       return {
         data: [
           { snippet: '... the PARSER crashed on an empty file', thread: { id: B, cwd: repo } },
@@ -586,6 +587,45 @@ describe('CodexSessions', () => {
 
     mocks.request.mockRejectedValue(new Error('state database locked'))
     expect(await sessions.searchSnippets('parser')).toEqual([])
+  })
+
+  // CODEX§24
+  it("a thread found only by the environment block Codex adds itself is left out, a thread where the person or the model said the term shows that line, and a thread Codex has not indexed yet, or could not check, keeps its thread/search hit unless that hit is one of Codex's own blocks", async () => {
+    const C = '33333333-3333-4333-8333-333333333333'
+    const D = '44444444-4444-4444-8444-444444444444'
+    const E = '55555555-5555-4555-8555-555555555555'
+    const environment = '... /repo</cwd> <shell>zsh</shell> <current_date>2026-10-25 ...'
+    const searched: Record<string, string> = {
+      [A]: environment,
+      [B]: environment,
+      [C]: 'switch the login shell to zsh',
+      [D]: environment,
+      [E]: 'zsh history is gone'
+    }
+    const said: Record<string, string[]> = { [B]: ['... so I reran it in ZSH and it passed'] }
+    const indexedTurns: Record<string, unknown[]> = { [A]: [{ id: 'turn' }], [B]: [{ id: 'turn' }] }
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'thread/search')
+        return {
+          data: Object.entries(searched).map(([id, snippet]) => ({
+            snippet,
+            thread: { id, cwd: repo }
+          })),
+          nextCursor: null
+        }
+      if (method === 'thread/searchOccurrences') {
+        if (params.threadId === E) throw new Error(`thread not loaded: ${E}`)
+        return { data: (said[params.threadId] ?? []).map((snippet) => ({ snippet })) }
+      }
+      if (method === 'thread/turns/list') return { data: indexedTurns[params.threadId] ?? [] }
+      return { data: [] }
+    })
+
+    expect(await sessions.searchSnippets('zsh')).toEqual([
+      { id: codexSessionKey(B), snippet: '... so I reran it in ZSH and it passed' },
+      { id: codexSessionKey(C), snippet: 'switch the login shell to zsh' },
+      { id: codexSessionKey(E), snippet: 'zsh history is gone' }
+    ])
   })
 
   it('waits for an in-flight stop before restarting and prevents duplicate resume', async () => {

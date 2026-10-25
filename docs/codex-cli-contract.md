@@ -1846,6 +1846,43 @@ word made of "ban" and "jo", with the marker `zebrafinch42` in the prompt; it an
 - Not probed: how long it takes on a home with thousands of threads (no real home was
   searched), and Codex on a remote machine (§16).
 
+Rechecked 2026-10-25 on this Mac with Codex CLI 0.162.0, and the schema,
+`thread/searchOccurrences` and `thread/turns/list` again with 0.161.0 (`npm install
+@openai/codex@0.161.0` into a scratch folder): the same Node client and scratch `CODEX_HOME`, one real turn in a work
+folder named `work-quokkadir77`, then one in a folder holding an `AGENTS.md` with the
+marker `pangolinrule55`.
+
+- **`thread/search` matches every user-role message in the rollout, Codex's own too**:
+  `quokkadir77` (only in the folder name), `zsh`, `2026`, `timezone` and `Los_Angeles`
+  each hit the thread with a snippet cut from `<environment_context> <cwd>…</cwd>
+  <shell>zsh</shell> <current_date>…</current_date> <timezone>…</timezone> …`, and
+  `pangolinrule55` hit with a snippet from `# AGENTS.md instructions for <folder>
+  <INSTRUCTIONS> … </INSTRUCTIONS>`. The developer-role messages (`<skills_instructions>`,
+  `<multi_agent_role>`) are not searched: `SKILL.md`, `multi_agent_role`, `sub-agents`
+  returned nothing. Its params have no filter that leaves these blocks out.
+- **`thread/searchOccurrences { threadId, searchTerm, cursor, limit }` matches only the
+  person's typed messages and the model's answers** (its schema: "visible user messages
+  and both partial and final assistant answers"), and answers `{ data: [{ turnId,
+  itemId, snippet, snippetMatchRange: { start, end }, turnCursor }], nextCursor }`, the
+  range in UTF-16 units inside the snippet (`zebrafinch42`, at the end of the prompt,
+  came back as `... ban" followed by … Marker: zebrafinch42`). `quokkadir77`, `zsh` and `pangolinrule55` gave `data: []`; `BANJO`,
+  `zebrafinch42` and `ban` each gave the line they are in. After the first call on a
+  fresh app-server (20–200 ms) each call took 0.3–1 ms on these threads, and 75–160 ms on
+  one thread with 40,000 extra rows (220 MB of JSON) written straight into its
+  `thread_history_1.sqlite` table.
+- **It reads the per-thread index in `thread_history_1.sqlite`, not the rollout, and a
+  thread missing from that index answers `data: []` even for a word it holds**: with the
+  thread's rows and `thread_history_projection_state` row deleted, and again with the
+  rollout copied into an empty `CODEX_HOME`, `banjo` gave `[]`, as did `thread/read`
+  (`turns: []`) and `thread/turns/list { threadId, limit: 1 }` (`data: []`), while
+  `thread/search` still found it. `thread/resume` built the index: afterwards all three
+  answered. `thread/turns/list` with `limit: 1` answers one turn for an indexed thread, so
+  an empty answer tells a thread Codex has not indexed; for an id Codex does not know it
+  errors `-32600 "thread not loaded: <id>"`. Nothing in the thread object
+  `thread/search` returns tells the two apart. A real home on this Mac had 13 of its 68
+  unarchived threads (all `source: vscode`, all with turns) outside the index.
+- Not probed: whether Codex later indexes such threads on its own.
+
 ## 25. The keys the TUI takes
 
 How established: 2026-10-09, Codex CLI 0.162.0, this Mac's own login, `codex --no-daemon`

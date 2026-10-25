@@ -541,6 +541,8 @@ const METHODS_A_SIDE_CONNECTION_MAY_SEND_NEVER_A_TURN = [
   'thread/list',
   // CODEX§24
   'thread/search',
+  'thread/searchOccurrences',
+  'thread/turns/list',
   'thread/read',
   'thread/loaded/list',
   'account/read',

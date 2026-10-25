@@ -300,7 +300,7 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
     }
   })
 
-  test('a local Codex thread is found through its app-server by what the model said, and resumes in Codex on click', async ({
+  test('a local Codex thread is found through its app-server by what the model said, never by the environment block Codex adds itself, and resumes in Codex on click', async ({
     env
   }) => {
     installCodex(env)
@@ -319,7 +319,10 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
         const dialog = await searchFor(app, page, 'OTTER-needle-3')
         await expect(hit(dialog, 'Codex seeded thread')).toBeVisible({ timeout: 2000 })
       }).toPass({ timeout: 30_000 })
-      const row = hit(searchDialog(page), 'Codex seeded thread')
+      const onlyInTheEnvironmentBlock = await searchFor(app, page, 'ZSH')
+      await expect(onlyInTheEnvironmentBlock.locator('.pal-count')).toHaveText('No matches')
+
+      const row = hit(await searchFor(app, page, 'OTTER-needle-3'), 'Codex seeded thread')
       await expect(row.getByRole('img', { name: 'Codex', exact: true })).toBeVisible()
       await expect(row.locator('.restore-snippet b')).toHaveText('otter-needle-3')
       await row.click()
