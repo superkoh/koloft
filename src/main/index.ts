@@ -131,10 +131,13 @@ import {
   ensureControlDir,
   rsyncPull,
   backgroundOptions,
+  runMasterCommand,
   runSsh,
   runSshBytes,
   sshOptions
 } from './remote/ssh'
+import { BrowserTunnels } from './remote/browserTunnel'
+import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
 import {
   ENSURE_CODEX_SH,
   ENSURE_SH,
@@ -158,6 +161,7 @@ import {
   type MachinePackage
 } from './remote/launch'
 import {
+  browserForwardFile,
   machinePackageBase,
   mirrorAgyGemini,
   mirrorHookDir,
@@ -1104,6 +1108,11 @@ let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
+const browserTunnels = new BrowserTunnels({
+  master: (host, op) => runMasterCommand(host, op, { controlDir: remoteControlDir }),
+  run: (host, cmd) => runSsh(host, cmd, { controlDir: remoteControlDir }),
+  forwardFile: (host) => browserForwardFile(app.getPath('userData'), host)
+})
 let loginEnv: Promise<void> | null = null
 process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
 
@@ -1134,6 +1143,7 @@ function machinePackage(): MachinePackage {
     [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
+    [`${SESSION_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
     [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH,
@@ -3305,7 +3315,14 @@ app.whenReady().then(() => {
     onHooksPulled: (host) => {
       for (const s of storedSessions()) s.followMirrors?.(host)
     },
-    onConnected: (host) => void freshness?.machineUp(host)
+    onConnected: (host) => void freshness?.machineUp(host),
+    onConnectedRound: (host) =>
+      void browserTunnels.sync(
+        host,
+        ptyTabIds()
+          .filter((id) => remoteHostOfTab(id) === host && ptyMgr.get(id)?.kind === 'claude')
+          .map((tabId) => ({ tabId, endpoint: relayEndpoint(tabId) }))
+      )
   })
   ptyMgr.on('typed', (tabId: string) => {
     const host = machineOfTab(tabId)

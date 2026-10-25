@@ -231,12 +231,12 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(Object.values(capabilitiesFor('claude', 'local')).every((c) => c === true)).toBe(true)
   })
 
-  it('gives a remote Claude session a Workbench, scheduled tasks and the koloft command but keeps browser control off', () => {
+  it('gives a remote Claude session a Workbench, scheduled tasks, the koloft command and browser control', () => {
     const remote = capabilitiesFor('claude', 'ssh')
     expect(remote.workbench).toBe(true)
     expect(remote.scheduledTasks).toBe(true)
     expect(remote.agentTools).toBe(true)
-    expect(remote.browserControl).not.toBe(true)
+    expect(remote.browserControl).toBe(true)
   })
 
   const ROWS_ONLY_SOME_TABS_HAVE: [string, keyof Capabilities, string[]][] = [
@@ -254,6 +254,11 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       'Koloft follows Claude Code removing its worktree at /exit, and says so when it fails, only on this Mac: through tmux the title code it watches for never arrives, and other agents remove no worktree at exit',
       'worktreeRemovalFollowed',
       ['claude/local']
+    ],
+    [
+      'every tab on this Mac drives the Workbench browser, and on a machine only Claude Code does, through a tunnel on its ssh connection and the playwright-cli Koloft installs there; the other agents there are not probed yet',
+      'browserControl',
+      ['claude/local', 'claude/ssh', 'codex/local', 'muse/local', 'agy/local']
     ]
   ]
   const sharedRowsOf = (backend: BackendId, host: HostId): Partial<Capabilities> =>

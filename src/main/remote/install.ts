@@ -3,6 +3,7 @@ import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { REMOTE_HOOK_DIR, remotePtsFile } from './paths'
 import { ENSURE_CLAUDE_MINIMUM_FN, ENSURE_MUSE_MINIMUM_FN } from '../cliMinimums'
 import { AGY_INSTALLER_URL } from '../toolInstall'
+import { INSTALL_PLAYWRIGHT_CLI_FN } from './playwrightCli'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
@@ -192,6 +193,11 @@ agy)
 esac
 
 ${installNode('the statusline', 'this machine gets no statusline', '[ "$program" != muse ] && ', '[ "$program" = agy ]')}
+
+${INSTALL_PLAYWRIGHT_CLI_FN}
+if [ -z "$program" ] && ! install_playwright_cli; then
+  say "playwright-cli could not be installed: Claude Code sessions on this machine cannot drive the Workbench browser"
+fi
 
 GH_VERSION=${VENDOR_RELEASE.gh.version}
 gh_platform() {

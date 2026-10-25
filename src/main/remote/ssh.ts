@@ -138,6 +138,14 @@ export function runSsh(
   }))
 }
 
+export function runMasterCommand(
+  host: string,
+  op: string[],
+  opts: { controlDir: string }
+): Promise<RunResult> {
+  return run('ssh', [...sshOptions(opts.controlDir, true), ...op, host], 10_000)
+}
+
 export function runSshBytes(
   host: string,
   remoteCmd: string,

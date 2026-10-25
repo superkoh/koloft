@@ -5,6 +5,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, launchApp } from './app'
 import { agyCalls, installCodex, type AgyCall, type E2EEnv } from './env'
 import { encodeCwd, killSession, terminalText, termIds, waitBooted } from './p1'
+import PACKAGE from '../../../package.json'
 
 export const REMOTE_HOST = 'devbox'
 
@@ -212,6 +213,19 @@ export function installFakeRemote(env: E2EEnv): void {
   writeExec(
     path.join(nodeWhereEnsureShLooksSoItNeverReachesForCurlOrSudo, 'node'),
     `#!/bin/sh\nexec ${JSON.stringify(nodeBin)} "$@"\n`
+  )
+  const playwrightCliEnsureShFindsSoItNeverReachesForNpm = path.join(
+    machine,
+    '.koloft',
+    `playwright-cli-${PACKAGE.dependencies['@playwright/cli']}`,
+    'lib',
+    'node_modules',
+    '@playwright'
+  )
+  fs.mkdirSync(playwrightCliEnsureShFindsSoItNeverReachesForNpm, { recursive: true })
+  fs.symlinkSync(
+    path.dirname(require.resolve('@playwright/cli/package.json')),
+    path.join(playwrightCliEnsureShFindsSoItNeverReachesForNpm, 'cli')
   )
 
   env.launchEnv.KOLOFT_FAKE_SSH_STATE = state

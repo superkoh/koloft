@@ -169,7 +169,8 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
   // CC§4 CC§11 CC§14
   claude: {
     local: EVERYTHING,
-    ssh: ON_A_MACHINE
+    // PLATFORM§33
+    ssh: { ...ON_A_MACHINE, browserControl: true }
   },
   codex: {
     local: OUTSIDE_LOCAL_CLAUDE,

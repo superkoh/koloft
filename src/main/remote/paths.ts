@@ -41,4 +41,10 @@ export const REMOTE_HOOK_DIR = `${REMOTE_HOME}/hook-sessions`
 export function remotePtsFile(tabId: string): string {
   return `${REMOTE_HOME}/tabs/${tabId}.pts`
 }
+export function remoteBrowserAddressFile(tabId: string): string {
+  return `${REMOTE_HOME}/tabs/${tabId}.cdp`
+}
+export function browserForwardFile(userData: string, host: string): string {
+  return path.join(remoteBase(userData, host), 'browser-forward.json')
+}
 export const dq = (s: string): string => `"${s}"`

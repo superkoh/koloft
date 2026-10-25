@@ -1405,6 +1405,31 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   held, the 15th printed that line and then `Authenticated … using "publickey"`; with
   10 held, the 11th still rode the master, so the real limit there was not pinned
   down.)
+- **A reverse forward can be added to a live ControlMaster.** `ssh -O forward -R
+  0:127.0.0.1:<port> host` prints the port sshd picked on **stdout** and exits 0; the
+  machine listens on its 127.0.0.1 and ::1 only, and normal commands keep riding the
+  master. `ssh -O check host` prints `Master running (pid=N)` on **stderr**. Facts
+  around it:
+  - `-O cancel -R` must repeat the spec exactly as asked (`0:127.0.0.1:<port>`); with
+    the port sshd picked it prints `port not forwarded` and still **exits 0**, and the
+    forward stays.
+  - When the master goes the forward goes, but a tmux session on the machine stays. A
+    new master can ask for the same machine port by number again — yet asking for a
+    number another program already holds on 127.0.0.1 still exits 0 (sshd got ::1
+    only), and a client to that port reaches the other program. Asking for port `0`
+    every time avoids that.
+  - A port already forwarded on the master cannot be asked for twice (exit 255).
+  - With `AllowTcpForwarding no` on the server, `-O forward` exits 255 with "remote
+    port forwarding failed for listen port 0" and the master stays up for everything
+    else.
+  - Any other account on the machine can connect to the forwarded port.
+  - A WebSocket from the machine through it reached a server on the Mac (an 8 MiB reply
+    in 37 ms), and playwright-core `connectOverCDP` and `@playwright/cli` 0.1.22 run on
+    the machine's node 22 drove a headless Chrome on the Mac through it.
+
+  (2026-10-23, OpenSSH_10.3p1 on macOS 27 to OpenSSH_9.2 on Debian bookworm through a
+  ProxyJump bastion, the master opened with Koloft's own ssh options, in the e2e Docker
+  ssh lab.)
 
 ## §34 rsync
 

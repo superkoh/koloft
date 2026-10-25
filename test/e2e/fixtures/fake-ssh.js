@@ -79,4 +79,12 @@ if (argv.includes('-t')) {
 
 // PLATFORM§33
 if (fs.existsSync(path.join(STATE, 'hb-fail'))) done(SSH_UNREACHABLE_EXIT)
+// PLATFORM§33
+const control = argv[argv.indexOf('-O') + 1]
+if (argv.includes('-O')) {
+  if (control === 'check') process.stderr.write(`Master running (pid=${process.ppid})\n`)
+  if (control === 'forward')
+    process.stdout.write(`${/:(\d+)$/.exec(argv[argv.indexOf('-R') + 1])[1]}\n`)
+  done(0)
+}
 done(runSh(remoteCmd, argv.includes('-n') ? 'ignore' : 'inherit'))
