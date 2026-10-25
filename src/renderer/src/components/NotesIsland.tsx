@@ -15,6 +15,12 @@ export interface NotesIslandProps {
   onReturnFocus: () => void
 }
 
+function emptyNoteLine(butlersNote: boolean, butler: string, agentTools: boolean): string {
+  if (butlersNote)
+    return `Notes for ${butler}.${agentTools ? ` ${butler} and its helpers can read and add to them.` : ''} Kept by Koloft on this Mac.`
+  return `Notes for this folder.${agentTools ? ' Every session here can read and add to them.' : ''} Kept by Koloft on this Mac, not in the folder.`
+}
+
 export function NotesIsland({
   wsPath,
   height,
@@ -27,6 +33,7 @@ export function NotesIsland({
   const [body, setBody] = useState<{ ws: string; failure: string | null } | null>(null)
   const showToast = useStore((s) => s.showToast)
   const butler = useStore((s) => s.settings.butler.name)
+  const agentTools = useStore((s) => s.settings.agentTools)
 
   useEffect(() => {
     setPath(null)
@@ -141,6 +148,7 @@ export function NotesIsland({
               tabId={NOTES_TAB}
               prose
               autosave
+              placeholder={emptyNoteLine(wsPath === GLOBAL_SCOPE, butler, agentTools)}
               focusNonce={focusNonce}
               onSaved={() => {}}
             />
