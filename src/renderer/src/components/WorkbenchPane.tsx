@@ -634,10 +634,16 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       if (set.activeId) useStore.getState().focusPanelTerm(set.activeId)
       return undefined
     }
+    const caretBefore = document.activeElement
     const raf = requestAnimationFrame(() => {
+      const root = rootRef.current
+      const caret = document.activeElement
+      const placedInPanelMeanwhile =
+        caret !== caretBefore && caret !== root && root?.contains(caret)
+      if (placedInPanelMeanwhile) return
       const guest = activeKind === 'web' ? guestOf(set.activeId) : undefined
       if (guest) guest.focus()
-      else rootRef.current?.focus()
+      else root?.focus()
     })
     return () => cancelAnimationFrame(raf)
   }, [panelFocus])
