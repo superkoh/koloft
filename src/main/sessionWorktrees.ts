@@ -7,6 +7,7 @@ import { isValidWorktreeName } from '@shared/worktreeName'
 import { isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { SessionStore, type WorktreeResource } from './sessionStore'
 import { gitIgnoredAmong } from './gitIgnored'
+import { worktreeHomeRoot } from './resumePlan'
 
 const execFileAsync = promisify(execFile)
 
@@ -206,6 +207,25 @@ export class SessionWorktrees {
       return this.adopt(resource.originalCwd, resource.worktreePath)
     }
     return this.materialize(resource)
+  }
+
+  // CC§3
+  async recover(worktreePath: string): Promise<WorktreeResource> {
+    const home = worktreeHomeRoot(worktreePath)
+    if (!home) throw new Error('Not a .claude/worktrees folder')
+    const name = path.basename(worktreePath)
+    validName(name)
+    const root = await rootOf(LOCAL_IO, home)
+    return this.materialize({
+      id: randomUUID(),
+      originalCwd: root,
+      worktreePath,
+      worktreeName: name,
+      worktreeBranch: `worktree-${name}`,
+      originalHeadCommit: await LOCAL_IO.git(root, ['rev-parse', 'HEAD']),
+      state: 'creating',
+      managed: false
+    })
   }
 
   async prepareRenamed(resourceId: string, name: string): Promise<WorktreeResource> {
