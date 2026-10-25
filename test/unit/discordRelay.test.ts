@@ -671,6 +671,29 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     })
     expect(posts.map((p) => p.text)).toEqual(['Two things.', 'Hello.'])
   })
+
+  it('a question it asks while the owner is at the Mac, after an earlier card of its own was answered, is held and does not take what the owner writes to the butler', async () => {
+    let away = true
+    const { relay, posts, bodies } = setup({}, [], {
+      ownerAway: () => away,
+      askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined),
+      helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined)
+    })
+    drop(hookFile(HELPER, 'ask'), QUESTION)
+    relay.onAsk(HELPER, QUESTION, HOOK)
+    await vi.waitFor(() => expect(posts).toHaveLength(1))
+    expect(await relay.answerSession(HELPER, 'A')).toBeUndefined()
+    fs.rmSync(hookFile(HELPER, 'ask'))
+
+    away = false
+    const later = '4343'
+    drop(hookFile(HELPER, 'ask', later), QUESTION)
+    relay.onAsk(HELPER, QUESTION, later)
+    relay.onMessage(message('704', OWNER, 'how is it going?'))
+    await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] how is it going?']))
+    expect(fs.existsSync(hookFile(HELPER, 'answer', later))).toBe(false)
+    expect(posts).toHaveLength(1)
+  })
 })
 
 const turn = (reply: string, ...said: string[]): Turn => ({
