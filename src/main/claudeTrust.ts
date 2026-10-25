@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { isGitCheckout, projectInfoFor, realpathSafe } from './projectInfo'
+import { realpathSafe } from './projectInfo'
 import { writePrivateAtomically } from './privateFile'
 
 export function claudeJsonPath(): string {
@@ -24,18 +24,44 @@ export function isTrustedByClaude(
   if (typeof projects !== 'object' || projects === null) return false
   const byPath = projects as Record<string, { hasTrustDialogAccepted?: unknown } | undefined>
   const trusted = (p: string): boolean => byPath[p]?.hasTrustDialogAccepted === true
-  if (trusted(dir)) return true
-  if (repoTop !== null && !dir.startsWith(repoTop + path.sep)) return false
-  for (let p = path.dirname(dir); ; p = path.dirname(p)) {
+  const inside = (top: string): boolean =>
+    dir === top || dir.startsWith(top.endsWith(path.sep) ? top : top + path.sep)
+  if (repoTop !== null && !inside(repoTop)) return trusted(dir)
+  for (let p = dir; ; p = path.dirname(p)) {
     if (trusted(p)) return true
     if (p === repoTop || path.dirname(p) === p) return false
   }
 }
 
 // CC§9
+function mainRepoTop(worktree: string): string {
+  try {
+    const line = fs
+      .readFileSync(path.join(worktree, '.git'), 'utf8')
+      .split('\n')
+      .find((l) => l.startsWith('gitdir:'))
+    if (!line) return worktree
+    const gitDir = path.resolve(worktree, line.slice('gitdir:'.length).trim())
+    const commonDir = fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim()
+    return realpathSafe(path.dirname(path.resolve(gitDir, commonDir)))
+  } catch {
+    return worktree
+  }
+}
+
+// CC§9
 function claudeTrustRepoTop(realDir: string): string | null {
-  const { root } = projectInfoFor(realDir)
-  return isGitCheckout(root) ? root : null
+  for (let x = realDir; ; x = path.dirname(x)) {
+    let dotGit: fs.Stats | undefined
+    try {
+      dotGit = fs.lstatSync(path.join(x, '.git'))
+    } catch {
+      dotGit = undefined
+    }
+    if (dotGit?.isDirectory()) return x
+    if (dotGit?.isFile()) return mainRepoTop(x)
+    if (path.dirname(x) === x) return null
+  }
 }
 
 // CC§9

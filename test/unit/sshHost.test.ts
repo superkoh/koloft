@@ -64,6 +64,12 @@ const keyed = (p: string): string => `ssh://${MACHINE}${p}`
 const git = (...args: string[]): string =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' })
 
+const putNodeOnMachine = (): void => {
+  const node = path.join(home, '.koloft', 'node', 'bin')
+  fs.mkdirSync(node, { recursive: true })
+  fs.symlinkSync(process.execPath, path.join(node, 'node'))
+}
+
 beforeEach(() => {
   home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-sshhost-')))
   repo = path.join(home, 'proj')
@@ -260,9 +266,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
 
     // CC§9 ADR-0026
     it("trusts a folder in the machine's .claude.json under its real path, keeping what the file had, and reads a folder under it back as trusted", async () => {
-      const node = path.join(home, '.koloft', 'node', 'bin')
-      fs.mkdirSync(node, { recursive: true })
-      fs.symlinkSync(process.execPath, path.join(node, 'node'))
+      putNodeOnMachine()
       fs.writeFileSync(path.join(home, '.claude.json'), '{"numStartups":3}\n')
       expect(await machine().trustsFolder(keyed(repo))).toBe(false)
 
@@ -277,9 +281,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
 
     // CC§9
     it("stops looking up at the top of the machine's git repo: a repo in a trusted folder is not trusted, a worktree of a trusted repo is", async () => {
-      const node = path.join(home, '.koloft', 'node', 'bin')
-      fs.mkdirSync(node, { recursive: true })
-      fs.symlinkSync(process.execPath, path.join(node, 'node'))
+      putNodeOnMachine()
       fs.mkdirSync(path.join(home, 'plain'))
       const claudeJson = path.join(home, '.claude.json')
       fs.writeFileSync(
