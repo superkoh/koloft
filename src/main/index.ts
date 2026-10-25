@@ -1723,6 +1723,7 @@ const agentRequests = new AgentRequests({
       pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
       sessions: () => allSessions().filter((s) => !s.butler),
       asking: asksTheOwner,
+      asleep: (sessionId) => !!sleepingTabOf(sessionId),
       workLeft: async (row) => {
         const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
         return tree ? whatIsLeft(hostGitOut, tree) : []

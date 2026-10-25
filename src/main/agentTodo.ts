@@ -48,6 +48,7 @@ export interface TodoVerbDeps {
   pinnedWorkspaces(): PinnedWorkspace[]
   sessions(): SessionInfo[]
   asking(tabId: string): boolean
+  asleep(sessionId: string): boolean
   workLeft(row: SessionRow): Promise<string[]>
   worktrees(workspace: string): Promise<{ dir: string; branch?: string }[]>
   repoOf(workspace: string): Promise<string | null>
@@ -71,6 +72,7 @@ interface WorkspaceFacts {
 
 interface Candidate {
   placed: PlacedRow
+  busy: boolean
   branch?: string
   left: string[]
 }
@@ -80,23 +82,27 @@ interface PullsOfRepo {
   pulls: TodoPulls
 }
 
-type SessionGroup = 'asking' | 'turnDone' | 'workLeft' | 'closed'
+type SessionGroup = 'asking' | 'turnDone' | 'asleep' | 'workLeft' | 'closed'
 
 const GROUP_TITLES: Record<SessionGroup, string> = {
   asking: 'Asking the owner a question',
   turnDone: 'Open, finished its turn',
+  asleep: 'Open, asleep: its tab is kept but its agent is stopped, so it is not working',
   workLeft: 'Closed, with work left in its worktree',
   closed: 'Closed, nothing left in a worktree (ask about these as one batch)'
 }
 
-function isBusy({ live, row }: PlacedRow, asking: (tabId: string) => boolean): boolean {
-  if (!live) return row.running
-  return live.status === 'working' && !asking(live.tabId)
+type TabState = Pick<TodoVerbDeps, 'asking' | 'asleep'>
+
+function isBusy({ live, row }: PlacedRow, d: TabState): boolean {
+  if (!live) return row.running && !d.asleep(row.id)
+  return live.status === 'working' && !d.asking(live.tabId)
 }
 
-function groupOf(c: Candidate, asking: (tabId: string) => boolean): SessionGroup {
-  const live = c.placed.live
-  if (live) return asking(live.tabId) || live.status === 'approval' ? 'asking' : 'turnDone'
+function groupOf(c: Candidate, d: TabState): SessionGroup {
+  const { live, row } = c.placed
+  if (live) return d.asking(live.tabId) || live.status === 'approval' ? 'asking' : 'turnDone'
+  if (row.running) return 'asleep'
   return c.left.length ? 'workLeft' : 'closed'
 }
 
@@ -265,9 +271,11 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
     pullsOfRepos(d, workspaces),
     mapAtMost(all, GIT_LOOKUPS_AT_ONCE, async (placed): Promise<Candidate> => {
       const tree = treeOf(placed)
-      const checkable = !!tree && !isRemoteKey(placed.workspace) && !isBusy(placed, d.asking)
+      const busy = isBusy(placed, d)
+      const checkable = !!tree && !isRemoteKey(placed.workspace) && !busy
       return {
         placed,
+        busy,
         branch: tree?.branch,
         left: checkable ? await d.workLeft(placed.row).catch(() => []) : []
       }
@@ -284,7 +292,7 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
       repo && c.branch && found?.state === 'ok'
         ? found.pulls.filter((p) => p.branch === c.branch)
         : []
-    if (isBusy(c.placed, d.asking)) {
+    if (c.busy) {
       for (const p of own) workingSession.set(pullKey(repo!, p), c.placed.title)
       continue
     }
@@ -295,7 +303,7 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
       own.map((p) => `its pull request: ${pullFacts(p, me, now)}`),
       now
     )
-    const group = groupOf(c, d.asking)
+    const group = groupOf(c, d)
     groups.set(group, [...(groups.get(group) ?? []), `- ${line}`])
   }
   const sessionPart = (Object.keys(GROUP_TITLES) as SessionGroup[]).flatMap((g) =>
