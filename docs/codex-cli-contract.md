@@ -947,6 +947,15 @@ With `config.toml` a link to an empty shared file, the same start-up write and t
 answer both went into the shared file and the link stayed a link. Hence Koloft makes an
 empty shared file when there is none, rather than skip the link.
 
+**A broken or expired login reads as signed out.** Checked 2026-10-25 with Codex CLI
+0.162.0, no model turn: a Node script ran `codex app-server` on three throwaway
+`CODEX_HOME`s (and `HOME`s) holding no `auth.json`, an `auth.json` that is not JSON, and a
+well-formed ChatGPT `auth.json` whose made-up tokens had expired an hour before. All three
+answered `account/read` with `{account: null, requiresOpenaiAuth: true}`. Rate limits then
+failed: `-32600` for the first two, `-32603` with the server's `401 Unauthorized` for the
+expired one. So Koloft's probe sees a home whose login no longer works as signed out, and
+marks the account expired.
+
 **A home finds a session by the file under its own `sessions/`, wherever that folder
 really is.** Checked 2026-10-08 with Codex CLI 0.162.0, no model turn, no login in any
 home. A Node script ran `codex app-server` on three throwaway `CODEX_HOME`s and sent
