@@ -703,7 +703,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   protected prepare(opts: CreateTabOptions): CodexLaunch {
-    // CODEX§15 ADR-0030
+    // CODEX§15 CODEX§18 ADR-0030
     const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
     if (picked.notice) this.deps.error(picked.notice)

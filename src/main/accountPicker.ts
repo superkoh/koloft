@@ -6,15 +6,14 @@ import type {
   UsageSnapshot
 } from '@shared/types'
 import {
+  accountLine,
   codexBackAt,
   codexWalled,
   fableExhausted,
   keepsResumedSession,
   resetElapsed,
-  STALE_MS,
   usableAccounts
 } from '@shared/accountUsage'
-import { ageLabel } from '@shared/freshnessOps'
 import {
   EPS,
   leximaxFinalists,
@@ -71,21 +70,19 @@ export type PickResponse =
     }
   | { account: null; reason: 'no-accounts' | 'no-usable' }
 
-function pct(v: number): string {
-  return `${Math.round(v * 100)}%`
-}
-
 function bannerFor(
   name: string,
   u: UsageSnapshot | undefined,
   hasOi: boolean,
   nowMs: number
 ): string {
-  if (!u) return `koloft: → ${name}`
-  let s = `koloft: → ${name} · 5h ${pct(u.u5)} · 7d ${pct(u.u7)}`
-  if (hasOi) s += ` · fable ${pct(u.uoi)}`
-  if (nowMs - u.at > STALE_MS) s += ` · ${ageLabel(u.at, nowMs)}`
-  return s
+  if (!u) return accountLine(name, [])
+  const parts = [
+    { label: '5h', used: u.u5 },
+    { label: '7d', used: u.u7 },
+    ...(hasOi ? [{ label: 'fable', used: u.uoi }] : [])
+  ]
+  return accountLine(name, parts, { at: u.at, nowMs })
 }
 
 export function codexAllLimitedNotice(a: AccountView): string | undefined {

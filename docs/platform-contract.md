@@ -1484,6 +1484,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `/tmp`, not under `$HOME`** (tmux(1)), so a fake `$HOME` does not isolate it: a real
   tmux run by any test talks to the one server this user already has, shared by every
   run and holding other homes' sessions.
+- **A line printed before `tmux new-session` is out of sight for as long as the session is
+  attached; one printed inside the pane, before the program starts, stays on screen.**
+  tmux switches the outer terminal to its alternate screen (`?1049h`, then `2J`), so the
+  earlier line sits in the normal buffer behind it. With `echo <line>; exec tmux
+  new-session "muse …"` the line was in neither the screen nor its scrollback once Muse
+  drew; with the `echo` inside the session command it was row 0, above Muse's (and agy's)
+  own screen (2026-10-25, tmux 3.3a in the `koloft-muse-probe` Docker image and in the agy
+  probe image, a python pty answering the terminal's queries, its output replayed into
+  `@xterm/headless`). So a remote tab's account line goes in the pane's run lines.
 
 ## §36 ccstatusline
 

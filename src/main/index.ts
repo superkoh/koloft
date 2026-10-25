@@ -26,12 +26,17 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
-import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museSessions'
+import {
+  MuseSessions,
+  museShowsItsInputBox,
+  type MuseHomePick,
+  type MuseRemoteDeps
+} from './museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { sharedProcessTable, type ProcessTable } from './processTable'
-import { AgySessions } from './agySessions'
+import { AgySessions, type AgyHomePick } from './agySessions'
 import {
   agyAccountEnv,
   agyHomeOf,
@@ -358,7 +363,7 @@ import {
   type GitPlatform,
   type GitTokenAdd
 } from '@shared/types'
-import { ACCOUNT_KINDS_OF, AUTO_PROBE_MS } from '@shared/accountUsage'
+import { ACCOUNT_KINDS_OF, AUTO_PROBE_MS, launchLine } from '@shared/accountUsage'
 import {
   answerPermissionRequest,
   awaitGuestFor,
@@ -2166,15 +2171,19 @@ function museHomeFor(name: string): string {
 }
 
 // ADR-0030 MUSE§13
-function pickMuseHome(
-  resumeSessionId?: string
-): { account: string; env: Record<string, string> } | undefined {
+function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
   const views = accountViews()
   const picked = musePicker.pick(views, sessionAccounts?.of('muse', resumeSessionId))
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
-  return picked && { account: picked.name, env: museAccountEnv(museHomeFor(picked.name)) }
+  return (
+    picked && {
+      account: picked.name,
+      env: museAccountEnv(museHomeFor(picked.name)),
+      banner: launchLine(picked, Date.now())
+    }
+  )
 }
 
 async function museServeFor(
@@ -2256,9 +2265,15 @@ async function agyApiKeyOf(name: string): Promise<string | undefined> {
 }
 
 // ADR-0030
-function pickAgyHome(resumeSessionId?: string): { account: string; home: string } | undefined {
+function pickAgyHome(resumeSessionId?: string): AgyHomePick | undefined {
   const picked = agyPicker.pick(accountViews(), sessionAccounts?.of('agy', resumeSessionId))
-  return picked && { account: picked.name, home: agyHomeFor(picked.name) }
+  return (
+    picked && {
+      account: picked.name,
+      home: agyHomeFor(picked.name),
+      banner: launchLine(picked, Date.now())
+    }
+  )
 }
 
 // AGY§5 AGY§6

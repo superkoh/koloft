@@ -73,7 +73,7 @@ async function startRemoteMuse(page: Page, env: E2EEnv): Promise<MachineMuseCall
 }
 
 test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux with the real wrapper and hooks on the machine', () => {
-  test('E-RM-01: a Muse session starts on the machine with the account Koloft picked, carried there, and its light follows working to waiting through the tmux passthrough', async ({
+  test('E-RM-01: a Muse session starts on the machine with the account Koloft picked, carried there and named above Muse’s screen, and its light follows working to waiting through the tmux passthrough', async ({
     env
   }) => {
     const { app, page } = await launchWithMuseThere(env)
@@ -88,6 +88,9 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
         credentials: 'file'
       })
       expect(fs.statSync(path.join(account, 'muse', 'auth.json')).mode & 0o777).toBe(0o600)
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        `koloft: → ${E2E_MUSE_ACCOUNT}`
+      )
       const row = remoteRows(page)
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
       machineFile(env, 'fake-muse-delay', '1500')

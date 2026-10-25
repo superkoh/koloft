@@ -24,7 +24,8 @@ import {
   FABLE_STOP,
   CAP,
   hasUsableAccount,
-  noUsableAccountLead
+  noUsableAccountLead,
+  launchLine
 } from '../../src/shared/accountUsage'
 import { meta } from './helpers/accounts'
 
@@ -287,6 +288,40 @@ describe('capsuleGlyph — the fable layer', () => {
     expect(capsuleGlyph(view({ usage: { ...full, s5: 'rejected' } }), NOW_MS)).not.toHaveProperty(
       'fable'
     )
+  })
+})
+
+describe('launchLine — the account line a Muse or Antigravity tab prints before its program starts, in the Claude shim’s words', () => {
+  it('names the account and each limit window, flags a reading older than STALE_MS, and is the name alone when there is no reading', () => {
+    const windows = [
+      { minutes: 300, used: 0.104, resetsAt: 0 },
+      { minutes: 10080, used: 0.52, resetsAt: 0 }
+    ]
+    expect(
+      launchLine(view({ name: 'ann', kind: 'muse-home', limits: { windows, at: NOW_MS } }), NOW_MS)
+    ).toBe('koloft: → ann · 5h 10% · 7d 52%')
+    const old = NOW_MS - STALE_MS - 3 * 60_000
+    expect(launchLine(view({ name: 'ann', limits: { windows, at: old } }), NOW_MS)).toMatch(
+      /^koloft: → ann · 5h 10% · 7d 52% · \d+ min ago$/
+    )
+    expect(launchLine(view({ name: 'key', kind: 'agy-home' }), NOW_MS)).toBe('koloft: → key')
+  })
+
+  it('reads an Antigravity bucket as one item, so its group and window do not look like two', () => {
+    const quota = [
+      { label: 'Gemini Models · 5h', used: 0.03 },
+      { label: 'Claude and GPT models · 7d', used: 0 }
+    ]
+    expect(launchLine(view({ name: 'g', kind: 'agy-home', quota }), NOW_MS)).toBe(
+      'koloft: → g · Gemini Models 5h 3% · Claude and GPT models 7d 0%'
+    )
+  })
+
+  it('leaves out an Antigravity quota its last probe failed to refresh, as a bucket carries no time to say how old it is', () => {
+    const quota = [{ label: 'Gemini Models · 5h', used: 0.03 }]
+    expect(
+      launchLine(view({ name: 'g', kind: 'agy-home', quota, probeError: 'network' }), NOW_MS)
+    ).toBe('koloft: → g')
   })
 })
 
