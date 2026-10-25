@@ -36,6 +36,7 @@ const CSI_PATTERN = /^\x1b(?:\[[0-9;?<>=]*[ -/]*[@-~]|O[A-Z])/
 const CSI_KEYS = { A: UP, B: DOWN, C: RIGHT, D: LEFT, Z: SHIFT_TAB }
 const SERVICE_PREFIX = '/exa.language_server_pb.LanguageServerService/'
 const PLAN_MODEL = 'MODEL_PLACEHOLDER_M36'
+const CALL_MODEL_VERSION = 'gemini-3.8-flash'
 const PROJECT_ID = 'default-cli-project'
 const APP_DATA_DIR_NAME = 'antigravity-cli'
 const CONTEXT_WINDOW_SIZE = 1048576
@@ -133,8 +134,8 @@ const SUMMARIES_DDL =
 const CONVERSATION_DDL =
   'CREATE TABLE IF NOT EXISTS steps (idx integer PRIMARY KEY, step_type integer, status integer, step_payload blob);' +
   'CREATE TABLE IF NOT EXISTS trajectory_meta (id integer PRIMARY KEY, payload blob);' +
-  'CREATE TABLE IF NOT EXISTS gen_metadata (idx integer PRIMARY KEY, payload blob);' +
-  'CREATE TABLE IF NOT EXISTS executor_metadata (idx integer PRIMARY KEY, payload blob);' +
+  'CREATE TABLE IF NOT EXISTS gen_metadata (idx integer PRIMARY KEY, data blob);' +
+  'CREATE TABLE IF NOT EXISTS executor_metadata (idx integer PRIMARY KEY, data blob);' +
   'CREATE TABLE IF NOT EXISTS parent_references (id integer PRIMARY KEY, payload blob);' +
   'CREATE TABLE IF NOT EXISTS trajectory_metadata_blob (id integer PRIMARY KEY, payload blob);' +
   'CREATE TABLE IF NOT EXISTS battle_mode_infos (id integer PRIMARY KEY, payload blob);'
@@ -363,6 +364,19 @@ const transcriptPath = (id) => path.join(logsDir(id), 'transcript.jsonl')
 const transcriptFullPath = (id) => path.join(logsDir(id), 'transcript_full.jsonl')
 const conversationDbPath = (id) => path.join(paths.conversations, `${id}.db`)
 
+const varint = (n) => {
+  const out = []
+  while (n >= 0x80) {
+    out.push((n & 0x7f) | 0x80)
+    n >>>= 7
+  }
+  out.push(n)
+  return Buffer.from(out)
+}
+const protobufBytes = (field, inner) =>
+  Buffer.concat([varint((field << 3) | 2), varint(inner.length), inner])
+// AGY§8
+const genMetadataOf = (model) => protobufBytes(1, protobufBytes(19, Buffer.from(model)))
 function withDb(file, work) {
   const db = new DatabaseSync(file)
   try {
@@ -586,6 +600,10 @@ function writeStep(c, record) {
       full.status === 'DONE' ? 3 : 4,
       Buffer.from(JSON.stringify(full))
     )
+    if (full.type === 'PLANNER_RESPONSE')
+      db.prepare('INSERT INTO gen_metadata (data) VALUES (?)').run(
+        genMetadataOf(CALL_MODEL_VERSION)
+      )
   })
   if (record.userConfig) c.userConfigs[index] = record.userConfig
   updateSummary(c.id, { step_count: c.nextStep, last_modified_time: dbTime() })
