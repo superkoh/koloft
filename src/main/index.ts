@@ -154,6 +154,7 @@ import {
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   SESSION_BIN_DIR,
+  CLAUDE_BIN_DIR,
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
@@ -1143,7 +1144,7 @@ function machinePackage(): MachinePackage {
     [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
-    [`${SESSION_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
+    [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
     [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH,
@@ -3320,7 +3321,7 @@ app.whenReady().then(() => {
       void browserTunnels.sync(
         host,
         ptyTabIds()
-          .filter((id) => remoteHostOfTab(id) === host && ptyMgr.get(id)?.kind === 'claude')
+          .filter((id) => remoteHostOfTab(id) === host)
           .map((tabId) => ({ tabId, endpoint: relayEndpoint(tabId) }))
       )
   })

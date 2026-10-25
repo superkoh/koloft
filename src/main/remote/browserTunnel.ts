@@ -1,7 +1,8 @@
 import fs from 'fs'
 import path from 'path'
+import { writeWholeBeforeVisible } from '../jsonDrops'
 import { remoteShCommand } from './install'
-import { remoteBrowserAddressFile } from './paths'
+import { REMOTE_TABS_DIR, remoteBrowserAddressFile } from './paths'
 import type { RunResult } from './ssh'
 
 export function machineAddress(endpoint: string, machinePort: number): string {
@@ -13,12 +14,15 @@ export function parseMasterPid(stderr: string): string | null {
   return /Master running \(pid=(\d+)\)/.exec(stderr)?.[1] ?? null
 }
 
+// PLATFORM§33
+const SSHD_REFUSES_FORWARDING = /remote port forwarding failed/
+
 const forwardSpec = (relayPort: number): string => `0:127.0.0.1:${relayPort}`
 
 export function addressFilesCmd(files: [tabId: string, address: string][]): string {
   const f = remoteBrowserAddressFile('$1')
   return remoteShCommand(
-    `umask 077; mkdir -p "$HOME/.koloft/tabs" || exit 1
+    `umask 077; mkdir -p "${REMOTE_TABS_DIR}" || exit 1
 while [ $# -gt 1 ]; do
   if [ -n "$2" ]; then printf '%s' "$2" > "${f}.part" && mv -f "${f}.part" "${f}" || exit 1
   else rm -f "${f}"; fi
@@ -70,14 +74,14 @@ export class BrowserTunnels {
     try {
       if (!forward) return fs.rmSync(file, { force: true })
       fs.mkdirSync(path.dirname(file), { recursive: true })
-      fs.writeFileSync(file, JSON.stringify(forward))
+      writeWholeBeforeVisible(file, JSON.stringify(forward))
     } catch {}
   }
 
   async sync(host: string, tabs: TunnelTab[]): Promise<void> {
     let st = this.hosts.get(host)
     if (!st) {
-      if (!tabs.length) return
+      if (!tabs.length && !fs.existsSync(this.deps.forwardFile(host))) return
       this.hosts.set(host, (st = { forward: this.load(host), written: new Map(), busy: false }))
     }
     if (st.busy) return
@@ -93,16 +97,13 @@ export class BrowserTunnels {
   // PLATFORM§33
   private async syncHost(host: string, st: HostState, tabs: TunnelTab[]): Promise<void> {
     const pid = parseMasterPid((await this.deps.master(host, ['-O', 'check'])).stderr)
-    if (!pid) {
-      st.written.clear()
-      if (!tabs.length) st.forward = undefined
-      return
-    }
+    if (!pid) return
     const endpoint = tabs.find((t) => t.endpoint)?.endpoint
     const spec = endpoint ? forwardSpec(Number(new URL(endpoint).port)) : ''
     let forward = st.forward?.pid === pid ? st.forward : undefined
     if (forward && forward.spec !== spec) {
-      await this.deps.master(host, ['-O', 'cancel', '-R', forward.spec])
+      const r = await this.deps.master(host, ['-O', 'cancel', '-R', forward.spec])
+      if (r.code === null) return
       forward = undefined
     }
     const asked = `${pid} ${spec}`
@@ -110,18 +111,18 @@ export class BrowserTunnels {
       const r = await this.deps.master(host, ['-O', 'forward', '-R', spec])
       const port = Number(r.stdout.trim())
       if (r.code === 0 && port > 0) forward = { pid, spec, port }
-      else st.refused = asked
+      else if (SSHD_REFUSES_FORWARDING.test(r.stderr)) st.refused = asked
     }
     if (forward !== st.forward) {
       st.forward = forward
-      st.written.clear()
       this.save(host, forward)
     }
     const want = new Map(
-      tabs.map((t) => [
-        t.tabId,
-        forward && t.endpoint ? machineAddress(t.endpoint, forward.port) : ''
-      ])
+      forward
+        ? tabs.flatMap((t) =>
+            t.endpoint ? [[t.tabId, machineAddress(t.endpoint, forward.port)] as const] : []
+          )
+        : []
     )
     const changes: [string, string][] = [
       ...[...want].filter(([tabId, address]) => st.written.get(tabId) !== address),
@@ -132,7 +133,7 @@ export class BrowserTunnels {
     if (!changes.length) return
     if ((await this.deps.run(host, addressFilesCmd(changes))).code !== 0) return
     for (const [tabId, address] of changes) {
-      if (want.has(tabId)) st.written.set(tabId, address)
+      if (address) st.written.set(tabId, address)
       else st.written.delete(tabId)
     }
   }

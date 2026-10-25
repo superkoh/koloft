@@ -5,7 +5,10 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, launchApp } from './app'
 import { agyCalls, installCodex, type AgyCall, type E2EEnv } from './env'
 import { encodeCwd, killSession, terminalText, termIds, waitBooted } from './p1'
-import PACKAGE from '../../../package.json'
+import {
+  PLAYWRIGHT_CLI_JS_UNDER_ITS_FOLDER,
+  PLAYWRIGHT_CLI_UNDER_KOLOFT_HOME
+} from '../../../src/main/remote/playwrightCli'
 
 export const REMOTE_HOST = 'devbox'
 
@@ -214,18 +217,20 @@ export function installFakeRemote(env: E2EEnv): void {
     path.join(nodeWhereEnsureShLooksSoItNeverReachesForCurlOrSudo, 'node'),
     `#!/bin/sh\nexec ${JSON.stringify(nodeBin)} "$@"\n`
   )
-  const playwrightCliEnsureShFindsSoItNeverReachesForNpm = path.join(
-    machine,
-    '.koloft',
-    `playwright-cli-${PACKAGE.dependencies['@playwright/cli']}`,
-    'lib',
-    'node_modules',
-    '@playwright'
+  const playwrightCliTheWrapperFindsSoItNeverReachesForNpm = path.dirname(
+    path.join(
+      machine,
+      '.koloft',
+      PLAYWRIGHT_CLI_UNDER_KOLOFT_HOME,
+      PLAYWRIGHT_CLI_JS_UNDER_ITS_FOLDER
+    )
   )
-  fs.mkdirSync(playwrightCliEnsureShFindsSoItNeverReachesForNpm, { recursive: true })
+  fs.mkdirSync(path.dirname(playwrightCliTheWrapperFindsSoItNeverReachesForNpm), {
+    recursive: true
+  })
   fs.symlinkSync(
     path.dirname(require.resolve('@playwright/cli/package.json')),
-    path.join(playwrightCliEnsureShFindsSoItNeverReachesForNpm, 'cli')
+    playwrightCliTheWrapperFindsSoItNeverReachesForNpm
   )
 
   env.launchEnv.KOLOFT_FAKE_SSH_STATE = state

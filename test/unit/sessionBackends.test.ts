@@ -231,12 +231,11 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(Object.values(capabilitiesFor('claude', 'local')).every((c) => c === true)).toBe(true)
   })
 
-  it('gives a remote Claude session a Workbench, scheduled tasks, the koloft command and browser control', () => {
+  it('gives a remote Claude session a Workbench, scheduled tasks and the koloft command', () => {
     const remote = capabilitiesFor('claude', 'ssh')
     expect(remote.workbench).toBe(true)
     expect(remote.scheduledTasks).toBe(true)
     expect(remote.agentTools).toBe(true)
-    expect(remote.browserControl).toBe(true)
   })
 
   const ROWS_ONLY_SOME_TABS_HAVE: [string, keyof Capabilities, string[]][] = [

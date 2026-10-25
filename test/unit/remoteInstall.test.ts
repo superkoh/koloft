@@ -12,7 +12,6 @@ import {
   parseHeartbeat
 } from '../../src/main/remote/install'
 import { MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
-import { PLAYWRIGHT_CLI_VERSION } from '../../src/main/remote/playwrightCli'
 
 const REAL_TOOLS = [
   'sh',
@@ -427,58 +426,6 @@ exit 0`
     expect(m.run().status).toBe(0)
     expect(m.calls('python3')).toEqual([])
     expect(m.calls('curl')).toEqual([])
-  })
-})
-
-describe("ensure.sh puts Koloft's own playwright-cli on the machine for Claude Code tabs", () => {
-  const cliJs = (home: string): string =>
-    path.join(
-      home,
-      '.koloft',
-      `playwright-cli-${PLAYWRIGHT_CLI_VERSION}`,
-      'lib/node_modules/@playwright/cli/playwright-cli.js'
-    )
-  const NPM = (logs: string, exitCode = 0): string => `printf '%s\\n' "$*" >> "${logs}/npm.log"
-prev=""; for a in "$@"; do [ "$prev" = --prefix ] && p="$a"; prev="$a"; done
-mkdir -p "$p/lib"
-[ ${exitCode} = 0 ] || exit ${exitCode}
-mkdir -p "$p/lib/node_modules/@playwright/cli" && : > "$p/lib/node_modules/@playwright/cli/playwright-cli.js"`
-
-  it('fetches the version this Koloft ships with npm once, into a folder of its own, and never again', () => {
-    const m = machine()
-    complete(m)
-    m.give('npm', NPM(m.logs))
-    expect(m.run().status).toBe(0)
-    expect(fs.existsSync(cliJs(m.home))).toBe(true)
-    expect(m.run().status).toBe(0)
-    expect(m.calls('npm')).toHaveLength(1)
-    expect(m.calls('npm')[0]).toContain(`@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`)
-  })
-
-  it('a failed fetch costs the Workbench browser and says so, not the session', () => {
-    const m = machine()
-    complete(m)
-    m.give('npm', NPM(m.logs, 1))
-    const res = m.run()
-    expect(res.status).toBe(0)
-    expect(res.stdout).toContain('playwright-cli could not be installed')
-    expect(fs.readdirSync(path.join(m.home, '.koloft')).filter((f) => f.includes('.tmp.'))).toEqual(
-      []
-    )
-  })
-
-  it('a Muse or Antigravity tab never fetches it', () => {
-    for (const program of ['muse', 'agy']) {
-      const m = machine()
-      complete(m)
-      m.give('muse', 'echo Muse Code 1.4.9')
-      m.give('agy', 'exit 0')
-      m.give('python3', 'exit 0')
-      m.give('gh', 'exit 0')
-      m.give('npm', NPM(m.logs))
-      m.run(program)
-      expect(m.calls('npm')).toEqual([])
-    }
   })
 })
 
