@@ -44,6 +44,9 @@ function reachesThisMacsFiles(method: string, params: unknown): boolean {
     case 'Fetch.continueRequest':
       return p.url !== undefined && !opensOnlyWhatAMachineMay(String(p.url))
     case 'DOM.setFileInputFiles':
+    case 'DOM.getFileInfo':
+    case 'Page.setDownloadBehavior':
+    case 'Browser.setDownloadBehavior':
       return true
     case 'Input.dispatchDragEvent':
       return (p.data?.files?.length ?? 0) > 0
@@ -51,11 +54,6 @@ function reachesThisMacsFiles(method: string, params: unknown): boolean {
       return false
   }
 }
-
-const PICKS_A_FOLDER_ON_THIS_MAC = new Set([
-  'Page.setDownloadBehavior',
-  'Browser.setDownloadBehavior'
-])
 
 interface Client {
   ws: WebSocket
@@ -137,11 +135,15 @@ export function relayEndpoint(tabId: string): string {
   return `ws://127.0.0.1:${port}/cdp/${pathFor(tabId)}`
 }
 
-export function relayEndpointForMachine(tabId: string): string {
+export function relayEndpointOnMachine(tabId: string): string {
   machineTabs.add(tabId)
+  return relayEndpoint(tabId)
+}
+
+export function renewRelayEndpointOnMachine(tabId: string): string {
   relayClientEvicted(tabId, 'the ssh forward to the machine was made again')
   paths.delete(tabId)
-  return relayEndpoint(tabId)
+  return relayEndpointOnMachine(tabId)
 }
 
 export function writeRelayEnv(openTabIds: string[]): void {
@@ -211,11 +213,18 @@ function backendFor(client: Client): RelayBackend {
     attachGuest: async (targetId, guestId) => {
       if (client.attached.has(targetId)) return
       const wc = guestOf(guestId)
-      fence(showsThisMacsFile(wc.getURL()))
+      if (client.onMachine) machineDrivenGuests.add(guestId)
+      const letGo = (e: Error): never => {
+        machineDrivenGuests.delete(guestId)
+        throw e
+      }
+      const showsAMacFileToAMachine = (): boolean =>
+        client.onMachine && showsThisMacsFile(wc.getURL())
+      if (showsAMacFileToAMachine()) letGo(new Error(NO_MAC_FILES_FOR_A_MACHINE))
       try {
         wc.debugger.attach('1.3')
       } catch (e) {
-        throw new Error(`cannot attach to ${targetId}: ${String(e)}`)
+        letGo(new Error(`cannot attach to ${targetId}: ${String(e)}`))
       }
       try {
         await wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
@@ -237,16 +246,22 @@ function backendFor(client: Client): RelayBackend {
         const frameId = tree.frameTree?.frame?.id
         if (frameId) frameIds.set(targetId, frameId)
       } catch {}
-      if (clients.get(client.tabId) !== client) {
+      const gone = clients.get(client.tabId) !== client
+      if (gone || showsAMacFileToAMachine()) {
         frameIds.delete(targetId)
         try {
           if (wc.debugger.isAttached()) wc.debugger.detach()
         } catch {}
-        throw new Error(`cannot attach to ${targetId}: the client disconnected`)
+        letGo(
+          new Error(
+            gone
+              ? `cannot attach to ${targetId}: the client disconnected`
+              : NO_MAC_FILES_FOR_A_MACHINE
+          )
+        )
       }
       wc.debugger.on('message', onMessage as never)
       wc.debugger.once('detach', onDetach)
-      if (client.onMachine) machineDrivenGuests.add(guestId)
       client.attached.set(targetId, {
         guestId,
         onMessage: onMessage as never,
@@ -270,7 +285,6 @@ function backendFor(client: Client): RelayBackend {
     },
     forward: async (targetId, guestId, method, params, sessionId) => {
       fence(reachesThisMacsFiles(method, params))
-      if (client.onMachine && PICKS_A_FOLDER_ON_THIS_MAC.has(method)) return {}
       await afterUsersWord()
       // PLATFORM§9
       if (method === 'Page.captureScreenshot') {

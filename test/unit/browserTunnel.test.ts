@@ -39,6 +39,7 @@ interface Machine {
   relayPort: number
   secrets: Map<string, string>
   renewals: number
+  onMachine: Set<string>
 }
 
 let dir: string
@@ -86,6 +87,7 @@ const onMachinePort = (port: number, tabId: string): string =>
 function restartKoloft(relayPort: number): void {
   m.relayPort = relayPort
   m.secrets.clear()
+  m.onMachine.clear()
 }
 
 beforeEach(() => {
@@ -99,7 +101,8 @@ beforeEach(() => {
     writes: 0,
     relayPort: 5000,
     secrets: new Map(),
-    renewals: 0
+    renewals: 0,
+    onMachine: new Set()
   }
   deps = {
     master: async (_host, op) => {
@@ -123,7 +126,12 @@ beforeEach(() => {
       return runOnMachine(cmd)
     },
     forwardFile: (host) => path.join(dir, 'mac', host, 'browser-forward.json'),
-    renewEndpoint: (tabId) => {
+    endpointOnMachine: (tabId) => {
+      m.onMachine.add(tabId)
+      return endpointOf(tabId)
+    },
+    renewEndpointOnMachine: (tabId) => {
+      m.onMachine.add(tabId)
       m.secrets.set(tabId, `${tabId}-forward-${++m.renewals}`)
       return endpointOf(tabId)
     }
@@ -155,6 +163,24 @@ describe("the browser tunnel to a machine: one ssh -R per master, each Claude Co
     expect(m.live).toEqual([{ spec: '0:127.0.0.1:5000', port: 40002 }])
     expect(filesOnMachine()).toEqual({ 'tab1.cdp': onMachinePort(40002, 'tab1') })
     expect(new URL(onMachinePort(40002, 'tab1')).pathname).not.toBe(new URL(beforeTheDrop).pathname)
+  })
+
+  it('a Claude Code tab opened while the forward is already up is handed its address as a tab on the machine too, so the Mac-file fence covers it', async () => {
+    const t = new BrowserTunnels(deps)
+    await t.sync(HOST, [tab('tab1')])
+    await t.sync(HOST, [tab('tab1'), tab('tab2')])
+    expect(forwardsAsked()).toBe(1)
+    expect([...m.onMachine].sort()).toEqual(['tab1', 'tab2'])
+    expect(filesOnMachine()['tab2.cdp']).toBe(onMachinePort(40001, 'tab2'))
+  })
+
+  it('a Koloft restart that finds its last forward still on the master and keeps it hands every tab its address as a tab on the machine', async () => {
+    await new BrowserTunnels(deps).sync(HOST, [tab('tab1')])
+    restartKoloft(5000)
+    await new BrowserTunnels(deps).sync(HOST, [tab('tab1')])
+    expect(forwardsAsked()).toBe(1)
+    expect([...m.onMachine]).toEqual(['tab1'])
+    expect(filesOnMachine()['tab1.cdp']).toBe(onMachinePort(40001, 'tab1'))
   })
 
   it('a Koloft restart on the same master cancels the old forward with the spec exactly as asked, then forwards the new relay', async () => {

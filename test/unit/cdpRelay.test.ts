@@ -285,7 +285,7 @@ describe("a session on another machine never reaches this Mac's files through th
   const NOTES = 'file:///Users/me/notes.html'
 
   it('refuses to open, navigate to, upload or drag in a Mac file, however the address is written; web pages still work', async () => {
-    relay.relayEndpointForMachine(TAB)
+    relay.relayEndpointOnMachine(TAB)
     const guest = fakeGuest(11)
     const c = await registered()
 
@@ -309,6 +309,8 @@ describe("a session on another machine never reaches this Mac's files through th
       ['Network.loadNetworkResource', { url: MAC_FILE, frameId: 'f', options: {} }],
       ['Fetch.continueRequest', { requestId: 'r', url: MAC_FILE }],
       ['DOM.setFileInputFiles', { files: ['/Users/me/.ssh/id_ed25519'], backendNodeId: 1 }],
+      ['DOM.getFileInfo', { objectId: 'file-1' }],
+      ['Page.setDownloadBehavior', { behavior: 'allow', downloadPath: '/Users/me/Library' }],
       [
         'Input.dispatchDragEvent',
         { type: 'drop', x: 1, y: 1, data: { items: [], files: ['/etc/hosts'] } }
@@ -318,16 +320,14 @@ describe("a session on another machine never reaches this Mac's files through th
     }
     const sent = (): string[] =>
       guest.debugger.sendCommand.mock.calls.map((call) => String(call[0]))
-    expect(sent()).not.toContain('Page.navigate')
-    expect(sent()).not.toContain('DOM.setFileInputFiles')
-    expect(sent()).not.toContain('Fetch.continueRequest')
-
-    await c.cmd(
-      'Page.setDownloadBehavior',
-      { behavior: 'allow', downloadPath: '/Users/me/Library/LaunchAgents' },
-      sid
-    )
-    expect(sent()).not.toContain('Page.setDownloadBehavior')
+    for (const method of [
+      'Page.navigate',
+      'Fetch.continueRequest',
+      'DOM.setFileInputFiles',
+      'DOM.getFileInfo',
+      'Page.setDownloadBehavior'
+    ])
+      expect(sent()).not.toContain(method)
 
     await c.cmd('Page.navigate', { url: 'https://example.com/' }, sid)
     expect(guest.debugger.sendCommand).toHaveBeenCalledWith('Page.navigate', {
@@ -341,7 +341,7 @@ describe("a session on another machine never reaches this Mac's files through th
   })
 
   it('never shows it, or lets it attach to, a tab on a Mac file, even before the strip has caught up', async () => {
-    relay.relayEndpointForMachine(TAB)
+    relay.relayEndpointOnMachine(TAB)
     fakeGuest(11)
     fakeGuest(13, { url: NOTES })
     fakeGuest(14, { url: NOTES })
@@ -387,7 +387,7 @@ describe("a tab's endpoint made for its machine (each new ssh forward)", () => {
   it('turns the old address away and sends off a client still on it, so an address read off a port another account took after the link dropped opens nothing', async () => {
     const old = relay.relayEndpoint(TAB)
     const onOld = await registered()
-    const renewed = relay.relayEndpointForMachine(TAB)
+    const renewed = relay.renewRelayEndpointOnMachine(TAB)
     expect(renewed).not.toBe(old)
     expect(relay.relayEndpoint(TAB)).toBe(renewed)
     expect(await closedReason(onOld)).toBe('the ssh forward to the machine was made again')

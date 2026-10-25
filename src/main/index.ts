@@ -324,7 +324,8 @@ import {
   cdpEnvDir,
   relayClientEvicted,
   relayEndpoint,
-  relayEndpointForMachine,
+  relayEndpointOnMachine,
+  renewRelayEndpointOnMachine,
   guestDrivenFromAnotherMachine,
   relayStripChanged,
   relayTabClosed,
@@ -1123,7 +1124,8 @@ const browserTunnels = new BrowserTunnels({
     masterCommandOutlivingKoloft(host, op, { controlDir: remoteControlDir }),
   run: (host, cmd) => runSsh(host, cmd, { controlDir: remoteControlDir }),
   forwardFile: (host) => browserForwardFile(app.getPath('userData'), host),
-  renewEndpoint: relayEndpointForMachine
+  endpointOnMachine: relayEndpointOnMachine,
+  renewEndpointOnMachine: renewRelayEndpointOnMachine
 })
 let loginEnv: Promise<void> | null = null
 process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
@@ -4032,7 +4034,8 @@ function relayDeps(): RelayDeps {
 
 function openAsDrivingAgentsTab(from: WebContents, url: string): boolean {
   const driver = sessionDrivingGuest(from.id)
-  if (driver) void cdpOp('create', driver, { url })
+  const aMacFileForAMachine = url.startsWith('file:') && guestDrivenFromAnotherMachine(from.id)
+  if (driver && !aMacFileForAMachine) void cdpOp('create', driver, { url })
   return driver !== null
 }
 
