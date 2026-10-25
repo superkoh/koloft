@@ -27,6 +27,8 @@ import {
   snap,
   startSessionIn,
   switchToRow,
+  terminalText,
+  termIds,
   waitBooted,
   waitForCalls,
   wsRows
@@ -296,6 +298,42 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await expect(mask).toHaveCount(0, { timeout: 30_000 })
       await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await expect(row).toHaveClass(/\bactive\b/)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  // CC§9
+  test('a cold row whose resume stops at Claude asking whether to trust its folder lifts the resume mask to show that question, and once answered the session binds in that tab', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const id = seedJsonl(env, env.workspaces.a, { summary: 'Untrusted resume session' })
+    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), id)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const row = page.locator('.ws .ws-tab', { hasText: 'Untrusted resume session' })
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      const before = new Set(await termIds(page))
+      await row.click()
+
+      const masks = page.locator('.terminals .empty', { hasText: 'Resuming Claude session…' })
+      await expect(masks.first()).toBeVisible({ timeout: 10_000 })
+      const calls = await waitForCalls(env, 1)
+      expect(resumedId(calls[0])).toBe(id)
+      await expect(masks).toHaveCount(0, { timeout: 15_000 })
+      const tab = (await termIds(page)).find((t) => !before.has(t))!
+      expect(await terminalText(page, tab)).toContain('Quick safety check')
+
+      await centerTerm(page).click()
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Enter')
+      await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect(row).toHaveAttribute('data-tab-id', tab)
+      expect(readCalls(env)).toHaveLength(1)
     } finally {
       await app.close().catch(() => {})
     }
