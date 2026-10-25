@@ -40,6 +40,7 @@ export interface MachineForward {
 
 export interface BrowserTunnelDeps {
   master(host: string, op: string[]): Promise<RunResult>
+  masterOutlivingKoloft(host: string, op: string[]): void
   run(host: string, cmd: string): Promise<RunResult>
   forwardFile(host: string): string
 }
@@ -58,8 +59,14 @@ interface HostState {
 
 export class BrowserTunnels {
   private hosts = new Map<string, HostState>()
+  private noForwardLeft = new Set<string>()
 
   constructor(private deps: BrowserTunnelDeps) {}
+
+  cancelOnQuit(): void {
+    for (const [host, st] of this.hosts)
+      if (st.forward) this.deps.masterOutlivingKoloft(host, ['-O', 'cancel', '-R', st.forward.spec])
+  }
 
   private load(host: string): MachineForward | undefined {
     try {
@@ -81,8 +88,14 @@ export class BrowserTunnels {
   async sync(host: string, tabs: TunnelTab[]): Promise<void> {
     let st = this.hosts.get(host)
     if (!st) {
-      if (!tabs.length && !fs.existsSync(this.deps.forwardFile(host))) return
-      this.hosts.set(host, (st = { forward: this.load(host), written: new Map(), busy: false }))
+      if (!tabs.length && this.noForwardLeft.has(host)) return
+      const forward = this.load(host)
+      if (!tabs.length && !forward) return void this.noForwardLeft.add(host)
+      this.hosts.set(host, (st = { forward, written: new Map(), busy: false }))
+    }
+    if (!tabs.some((t) => t.endpoint) && !st.forward && !st.written.size) {
+      if (!tabs.length) this.hosts.delete(host)
+      return
     }
     if (st.busy) return
     st.busy = true
@@ -102,12 +115,12 @@ export class BrowserTunnels {
     const spec = endpoint ? forwardSpec(Number(new URL(endpoint).port)) : ''
     let forward = st.forward?.pid === pid ? st.forward : undefined
     if (forward && forward.spec !== spec) {
-      const r = await this.deps.master(host, ['-O', 'cancel', '-R', forward.spec])
-      if (r.code === null) return
+      if ((await this.deps.master(host, ['-O', 'cancel', '-R', forward.spec])).code !== 0) return
       forward = undefined
     }
     const asked = `${pid} ${spec}`
     if (!forward && spec && st.refused !== asked) {
+      await this.deps.master(host, ['-O', 'cancel', '-R', spec])
       const r = await this.deps.master(host, ['-O', 'forward', '-R', spec])
       const port = Number(r.stdout.trim())
       if (r.code === 0 && port > 0) forward = { pid, spec, port }

@@ -131,6 +131,7 @@ import {
   ensureControlDir,
   rsyncPull,
   backgroundOptions,
+  masterCommandOutlivingKoloft,
   runMasterCommand,
   runSsh,
   runSshBytes,
@@ -1111,6 +1112,8 @@ let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
 const browserTunnels = new BrowserTunnels({
   master: (host, op) => runMasterCommand(host, op, { controlDir: remoteControlDir }),
+  masterOutlivingKoloft: (host, op) =>
+    masterCommandOutlivingKoloft(host, op, { controlDir: remoteControlDir }),
   run: (host, cmd) => runSsh(host, cmd, { controlDir: remoteControlDir }),
   forwardFile: (host) => browserForwardFile(app.getPath('userData'), host)
 })
@@ -3524,7 +3527,10 @@ app.on('before-quit', (e) => {
     approveQuit()
   }
   clearQuitFallback()
-  if (!quitCommitted) rememberOpenTabs()
+  if (!quitCommitted) {
+    rememberOpenTabs()
+    browserTunnels.cancelOnQuit()
+  }
   quitCommitted = true
   if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
     e.preventDefault()

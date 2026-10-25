@@ -1423,6 +1423,10 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
     port forwarding failed for listen port 0" and the master stays up for everything
     else.
   - Any other account on the machine can connect to the forwarded port.
+  - On Linux the forward's 127.0.0.1 listener shows in `/proc/net/tcp` (state `0A`) with
+    the login user's uid, so a program can tell it from a listener another account
+    opened on the same port after the forward went (measured 2026-10-25, same lab:
+    `playwright-cli` on the machine checked it before connecting, e2e E-SSH-28).
   - A WebSocket from the machine through it reached a server on the Mac (an 8 MiB reply
     in 37 ms), and playwright-core `connectOverCDP` and `@playwright/cli` 0.1.22 run on
     the machine's node 22 drove a headless Chrome on the Mac through it.
