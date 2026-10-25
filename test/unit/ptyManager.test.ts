@@ -200,6 +200,7 @@ describe('PtyManager per-tab environment', () => {
     process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT = process.env.KOLOFT_BROWSER_CDP
     process.env.PLAYWRIGHT_CLI_SESSION = 'koloft-parent-tab'
     process.env.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS = '1'
+    process.env.PLAYWRIGHT_MCP_OUTPUT_DIR = '/tmp/koloft-playwright/koloft-parent-tab'
     try {
       const mgr = new PtyManager()
       mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true })
@@ -209,12 +210,14 @@ describe('PtyManager per-tab environment', () => {
       expect(env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBeUndefined()
       expect(env.PLAYWRIGHT_CLI_SESSION).toBeUndefined()
       expect(env.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS).toBeUndefined()
+      expect(env.PLAYWRIGHT_MCP_OUTPUT_DIR).toBeUndefined()
     } finally {
       delete process.env.KOLOFT_CDP_DIR
       delete process.env.KOLOFT_BROWSER_CDP
       delete process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT
       delete process.env.PLAYWRIGHT_CLI_SESSION
       delete process.env.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS
+      delete process.env.PLAYWRIGHT_MCP_OUTPUT_DIR
     }
   })
 

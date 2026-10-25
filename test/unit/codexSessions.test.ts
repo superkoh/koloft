@@ -1070,12 +1070,13 @@ describe('CodexSessions', () => {
     expect(off.configOverrides!.some((o) => o.startsWith('mcp_servers.'))).toBe(false)
     expect(off.sessionEnv).toEqual({
       ...REPLY_LANGUAGE_ENV,
-      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved'
+      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
+      PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', 'pty-reserved')
     })
   })
 
   // CODEX§26 PLATFORM§17 ADR-0029
-  it("every tab's shell finds Koloft's playwright-cli first and runs it under the tab's own session; with browser control on it also gets the relay endpoint, and its sandbox the network plus Playwright's cache folder on top of the owner's own writable folders, the butler's alike; with browser control off the sandbox stays as it was", async () => {
+  it("every tab's shell finds Koloft's playwright-cli first and runs it under the tab's own session, writing its snapshots and screenshots to the tab's own folder under the temp folder and never into the workspace; with browser control on it also gets the relay endpoint, and its sandbox the network plus Playwright's cache folder on top of the owner's own writable folders, the butler's alike; with browser control off the sandbox stays as it was", async () => {
     const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'b'.repeat(32)
     const cache = path.join(directory, 'Library', 'Caches', 'ms-playwright')
     vi.mocked(deps.browserEndpoint).mockReturnValue(endpoint)
@@ -1091,6 +1092,7 @@ describe('CodexSessions', () => {
       PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
       PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1',
       PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
+      PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', 'pty-reserved'),
       KOLOFT_BROWSER_CDP: endpoint
     })
     expect(on.configOverrides).toEqual(
@@ -1112,6 +1114,7 @@ describe('CodexSessions', () => {
       PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
       PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1',
       PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
+      PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', 'pty-reserved'),
       KOLOFT_BROWSER_CDP: endpoint
     })
     expect(conductor.configOverrides).toEqual(expect.arrayContaining([...on.configOverrides!]))
@@ -1122,7 +1125,8 @@ describe('CodexSessions', () => {
     expect(off.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.'))).toBe(false)
     expect(off.sessionEnv).toEqual({
       ...REPLY_LANGUAGE_ENV,
-      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved'
+      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
+      PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', 'pty-reserved')
     })
   })
 
