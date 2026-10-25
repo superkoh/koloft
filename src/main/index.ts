@@ -1726,7 +1726,7 @@ const agentRequests = new AgentRequests({
       asleep: (sessionId) => !!sleepingTabOf(sessionId),
       workLeft: async (row) => {
         const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
-        return tree ? whatIsLeft(hostGitOut, tree, mergedHeads) : null
+        return tree ? whatIsLeft(hostGitOut, tree) : null
       },
       worktrees: sessionDeps.worktrees,
       repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),

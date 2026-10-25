@@ -513,7 +513,11 @@ test.describe('The butler: one global session at the top of the sessions list, k
       expect(todo).toContain(`ws-a · ${env.workspaces.a} · `)
       expect(todo).toContain('no to-do note yet')
       expect(todo).toContain(`Open, finished its turn:\n- "`)
-      expect(todo).toContain(`" · Claude · ${env.workspaces.a} · local · last active`)
+      expect(todo).toMatch(
+        new RegExp(
+          `" · Claude · ${env.workspaces.a} · local · last active .* · closing it deletes no worktree\\n`
+        )
+      )
 
       expect(await koloftSays(page, 'todo note ws-a -- "Issues assigned to me."')).toContain(
         'Saved the to-do note'
@@ -545,7 +549,9 @@ test.describe('The butler: one global session at the top of the sessions list, k
       const [napping] = await waitForCalls(env, 1)
       await openButler(page)
       await expect.poll(() => processAlive(napping.pid), { timeout: 40_000 }).toBe(false)
-      expect(await koloftSays(page, 'todo')).toMatch(/Open, asleep: .*\n- "Napping" · Claude · /)
+      expect(await koloftSays(page, 'todo')).toMatch(
+        /Open, asleep: .*\n- "Napping" · Claude · .* · closing it deletes no worktree\n/
+      )
     } finally {
       await close()
     }

@@ -199,7 +199,6 @@ describe('koloft todo', () => {
       asleep: ['asleep', 'rested', 'on-box'],
       worktrees: {
         [SHOP]: [
-          { dir: SHOP, branch: 'main' },
           { dir: `${SHOP}/.claude/worktrees/tidy`, branch: 'tidy' },
           { dir: `${SHOP}/.claude/worktrees/rest`, branch: 'rest' },
           { dir: `${SHOP}/.claude/worktrees/busy`, branch: 'busy' },
@@ -222,10 +221,10 @@ describe('koloft todo', () => {
     const sessions = section(text, 'SESSIONS')
     expect(sessions).toContain('Asking the owner a question:\n- "asking title" · Claude')
     expect(sessions).toMatch(
-      /Open, finished its turn:\n- "done title" · Codex .* · id: done · branch: main · no worktree of its own\n- "clean title" · Claude .* · branch: tidy · nothing left in its worktree\n/
+      /Open, finished its turn:\n- "done title" · Codex .* · id: done · closing it deletes no worktree\n- "clean title" · Claude .* · branch: tidy · nothing left in its worktree\n/
     )
     expect(sessions).toMatch(
-      /Closed, with work left in its worktree:\n- "dirty title" .* · Changes not committed: 2; Commits on no other branch and no remote branch: 1/
+      /Closed, with work left in its worktree.*:\n- "dirty title" .* · Changes not committed: 2; Commits on no other branch and no remote branch: 1/
     )
     expect(sessions).toMatch(
       /Closed, nothing left in a worktree .*\n- "old title" .*last active 40 days ago · id: old/
@@ -237,28 +236,29 @@ describe('koloft todo', () => {
     expect(sessions).not.toContain('no-tab-here title')
     expect(sessions).not.toContain('helper title')
     expect(sessions.match(/nothing left in its worktree/g)).toHaveLength(2)
-    expect([...checked].sort()).toEqual([
-      'asking',
-      'asleep',
-      'clean',
-      'dirty',
-      'done',
-      'old',
-      'rested'
-    ])
+    expect([...checked].sort()).toEqual(['asking', 'asleep', 'clean', 'dirty', 'done', 'rested'])
   })
 
-  it('never calls a worktree clean when Koloft could not check it', async () => {
+  it('never calls a worktree clean, or a closed session’s worktree empty, when Koloft could not check it', async () => {
     const stuck = row('stuck', { running: true, cwd: `${SHOP}/.claude/worktrees/stuck` })
+    const gone = row('gone', { cwd: `${SHOP}/.claude/worktrees/gone` })
     const { run } = harness({
-      sidebar: sidebarOf([[SHOP, [stuck]]]),
+      sidebar: sidebarOf([[SHOP, [stuck, gone]]]),
       sessions: [live(stuck, 'idle')],
-      worktrees: { [SHOP]: [{ dir: `${SHOP}/.claude/worktrees/stuck`, branch: 'stuck' }] },
-      checkFails: ['stuck']
+      worktrees: {
+        [SHOP]: [
+          { dir: `${SHOP}/.claude/worktrees/stuck`, branch: 'stuck' },
+          { dir: `${SHOP}/.claude/worktrees/gone`, branch: 'gone' }
+        ]
+      },
+      checkFails: ['stuck', 'gone']
     })
     const sessions = section((await run([])).text, 'SESSIONS')
     expect(sessions).toContain(
       'branch: stuck · Koloft could not check what is left in its worktree'
+    )
+    expect(sessions).toMatch(
+      /Closed, with work left in its worktree, or Koloft could not check it:\n- "gone title" .* · branch: gone · Koloft could not check/
     )
     expect(sessions).not.toContain('nothing left')
   })
