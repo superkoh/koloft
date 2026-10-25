@@ -582,6 +582,8 @@ Nothing ran against Google's real servers.
   JSON `\u` escapes (`\u` then `003c`, `003e`, `0026`), so `&&` never shows as such,
   and quotes as `\"`; spaces stay as they are. The hook's
   `$HOME` was the one agy was launched with (a file the hook touched under it changed).
+  The same run of the macOS build (1.4.7 darwin_arm64, macOS 26.6.2, a throwaway tart
+  VM, `/bin/sh` being bash there) gave the same stdin and the same `$HOME`.
 - `PermissionRequest`, `Notification`, `UserPromptSubmit` and `SessionEnd` are
   ignored and never fire. **No hook fires while agy waits for the user**; an ask shows
   only as `PreToolUse` just before it, the 7501 `blocked` frame (§10), `tool_use` in
