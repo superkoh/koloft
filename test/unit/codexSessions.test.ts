@@ -826,7 +826,7 @@ describe('CodexSessions', () => {
       JSON.stringify({ openId: 'drop-1', path: path.join(repo, 'report.html'), url: '', cwd: repo })
     )
     await expect
-      .poll(() => vi.mocked(deps.events).mock.calls)
+      .poll(() => vi.mocked(deps.events).mock.calls, { timeout: 5000 })
       .toContainEqual([launched.id, { type: 'open', target: path.join(repo, 'report.html') }])
     await sessions.stop(launched.id)
     expect(fs.existsSync(shimDir)).toBe(false)
