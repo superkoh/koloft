@@ -136,6 +136,12 @@ method. A recheck adds its date, version and command to the bullet.
   `lstart` and `command` together has to drop `LC_ALL`, carry its value into `LC_CTYPE`
   and set `LC_TIME=C`. `TZ` moves `lstart` too (`TZ=UTC` printed 08:38 for a local
   01:38).
+- **`ps -o time` counts a process's own CPU only, never that of its exited children,
+  and `-S` does not change that.** Measured 2026-10-25, macOS 27.0: a `sh` that ran a
+  3-second busy `perl` and reaped it showed `0:00.00` under `ps -o time`, `ps -S -o time`
+  and `ps -S -axo time` alike. So the summed CPU of a process tree drops each time one
+  of its programs exits, and CPU spent over time has to be added up per pid between
+  readings.
 - **macOS has no `timeout(1)`** (2026-09-24, macOS 27.0: `command -v timeout` found
   nothing), and `/usr/bin/security` waits on a GUI unlock or authorization dialog with
   no timeout of its own. A time limit in a shell script has to be a `kill -0` polling

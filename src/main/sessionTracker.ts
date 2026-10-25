@@ -54,6 +54,16 @@ const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
 
 export { encodeCwd }
 
+// PLATFORM§3
+function cpuSpentSince(seen: Map<number, number>, cpuMsByPid: Map<number, number>): number {
+  let spent = 0
+  for (const [pid, cpuMs] of cpuMsByPid) {
+    const before = seen.get(pid) ?? 0
+    spent += cpuMs >= before ? cpuMs - before : cpuMs
+  }
+  return spent
+}
+
 const UNLISTED_BACKGROUND_WORK: BackgroundItem = {
   id: 'unlisted',
   kind: 'command',
@@ -427,7 +437,17 @@ interface Tracked {
   reportedAt: number
   openTools: Map<string, ToolCall>
   procs: TaskProcs | null
-  shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
+  shellActivity: Map<
+    string,
+    {
+      seen: Map<number, number>
+      spentMs: number
+      outputBytes: number
+      printed: boolean
+      at: number
+      quiet: boolean
+    }
+  >
   procsAt: number
   procsPromise?: Promise<void>
   lastInterruptTs: number
@@ -541,7 +561,7 @@ export class SessionTracker extends SessionRuntime {
       reportedAt: 0,
       openTools: new Map(),
       procs: null,
-      shellCpu: new Map(),
+      shellActivity: new Map(),
       procsAt: 0,
       lastInterruptTs: 0,
       rootPinAwaitingCatchup: false,
@@ -736,7 +756,7 @@ export class SessionTracker extends SessionRuntime {
             }
             continue
           }
-          if (sh.listening && t.shellCpu.get(task.id)?.quiet) {
+          if (sh.listening && t.shellActivity.get(task.id)?.quiet) {
             parked.push({
               id: task.id,
               kind: 'server',
@@ -797,7 +817,7 @@ export class SessionTracker extends SessionRuntime {
         if (this.tracked.get(t.info.tabId) !== t) return
         t.procs = procs
         t.procsAt = procs?.at ?? Date.now()
-        if (procs) this.sampleShellCpu(t, procs, t.procsAt)
+        if (procs) this.sampleShellActivity(t, procs, t.procsAt)
       } finally {
         t.procsPromise = undefined
       }
@@ -805,19 +825,31 @@ export class SessionTracker extends SessionRuntime {
     await t.procsPromise
   }
 
-  private sampleShellCpu(t: Tracked, procs: TaskProcs, now: number): void {
-    for (const id of t.shellCpu.keys()) if (!procs.shells.has(id)) t.shellCpu.delete(id)
+  private sampleShellActivity(t: Tracked, procs: TaskProcs, now: number): void {
+    for (const id of t.shellActivity.keys()) if (!procs.shells.has(id)) t.shellActivity.delete(id)
     for (const [id, sh] of procs.shells) {
-      const prev = t.shellCpu.get(id)
-      if (!prev) t.shellCpu.set(id, { cpuMs: sh.cpuMs, at: now, quiet: false })
-      else if (now - prev.at >= SERVER_QUIET_WINDOW_MS) {
-        const perMinute = ((sh.cpuMs - prev.cpuMs) * 60_000) / (now - prev.at)
-        t.shellCpu.set(id, {
-          cpuMs: sh.cpuMs,
+      const prev = t.shellActivity.get(id)
+      if (!prev) {
+        t.shellActivity.set(id, {
+          seen: sh.cpuMsByPid,
+          spentMs: 0,
+          outputBytes: sh.outputBytes,
+          printed: false,
           at: now,
-          quiet: perMinute < IDLE_SERVER_CPU_MS_PER_MINUTE
+          quiet: false
         })
+        continue
       }
+      prev.spentMs += cpuSpentSince(prev.seen, sh.cpuMsByPid)
+      prev.seen = sh.cpuMsByPid
+      prev.printed ||= sh.outputBytes > prev.outputBytes
+      prev.outputBytes = sh.outputBytes
+      if (now - prev.at < SERVER_QUIET_WINDOW_MS) continue
+      prev.quiet =
+        !prev.printed && (prev.spentMs * 60_000) / (now - prev.at) < IDLE_SERVER_CPU_MS_PER_MINUTE
+      prev.spentMs = 0
+      prev.printed = false
+      prev.at = now
     }
   }
 
