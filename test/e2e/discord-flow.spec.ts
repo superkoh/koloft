@@ -3,9 +3,11 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
+  installAgy,
   installCodex,
   installGhForWorkspaceA,
   installMuse,
+  trustInAgy,
   museCalls,
   museSaid,
   seedSettings,
@@ -14,6 +16,8 @@ import {
 } from './helpers/env'
 import {
   butlerSessionOnDisk,
+  centerTerm,
+  runIn,
   discordOnDisk,
   newSessionInWith,
   processAlive,
@@ -34,8 +38,18 @@ import {
   type FakePost
 } from './helpers/fakeDiscord'
 import { startEchoServer } from './helpers/fixtureServer'
+import {
+  addRemoteWorkspace,
+  agyReady,
+  installCodexOnFakeRemote,
+  installFakeRemote,
+  installMuseOnMachine,
+  installRemoteAgy,
+  killFakeRemote,
+  REMOTE_WS_NAME
+} from './helpers/remote'
 import { openSettings } from './helpers/extensions'
-import type { DiscordSettings } from '../../src/shared/types'
+import type { DiscordSettings, SessionInfo } from '../../src/shared/types'
 import { identityOf } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { crossSessionLine, writeLine } from '../../src/main/crossSessionMessage'
@@ -54,6 +68,8 @@ const IDLE_TO_SLEEP_MS = 3000
 const DIALOG_ON_SCREEN = '[fake-claude] dialog on screen'
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const TALLER_THAN_ONE_PICTURE_PX = 20_000
+const AWAY_DIGEST_GATHERS_MS = 500
+const AWAY_DIGEST_OPENS = 'The owner is away from Koloft, and these sessions changed'
 
 function seedConductor(
   env: E2EEnv,
@@ -289,6 +305,127 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await fake.close()
     }
   })
+
+  const AGENT_NAME = { claude: 'Claude', codex: 'Codex', muse: 'Muse', agy: 'Antigravity' } as const
+  for (const [conductor, reported, remote] of [
+    ['claude', 'claude', false],
+    ['codex', 'claude', false],
+    ['muse', 'claude', false],
+    ['claude', 'codex', false],
+    ['claude', 'muse', false],
+    ['claude', 'agy', false],
+    ['claude', 'claude', true],
+    ['claude', 'codex', true],
+    ['claude', 'muse', true],
+    ['claude', 'agy', true]
+  ] as const)
+    test(`while the owner is away, a ${remote ? 'remote' : 'local'} ${reported} session that finishes its turn is told to a ${conductor} butler in one quiet message that names it; the butler’s answer to that message is not posted to Discord, its answer to the owner still is`, async ({
+      env
+    }) => {
+      const used = new Set<string>([conductor, reported])
+      if (remote) installFakeRemote(env)
+      const workspace = remote ? REMOTE_WS_NAME : 'ws-a'
+      if (used.has('codex')) {
+        if (remote) installCodexOnFakeRemote(env)
+        else installCodex(env)
+      }
+      if (used.has('muse')) {
+        installMuse(env)
+        if (remote) installMuseOnMachine(env)
+        else trustInMuse(env, env.workspaces.a)
+      }
+      if (used.has('agy')) {
+        installAgy(env)
+        if (remote) installRemoteAgy(env)
+        else trustInAgy(env, env.workspaces.a)
+      }
+      env.launchEnv.KOLOFT_AWAY_DIGEST_MS = String(AWAY_DIGEST_GATHERS_MS)
+      seedSettings(env, {
+        hintsOff: true,
+        assist: { on: true, backend: conductor },
+        discord: {
+          userId: OWNER.id,
+          userName: OWNER.username,
+          channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' }
+        }
+      })
+      const fake = await startFakeDiscord(env)
+      const { app, page } = await connected(env, fake)
+      try {
+        if (remote) await addRemoteWorkspace(page, env)
+        if (used.size === 1) await startSessionIn(page, workspace, { remote })
+        else await newSessionInWith(page, workspace, AGENT_NAME[reported])
+        const reportedSession = async (): Promise<SessionInfo | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => !s.butler && s.alive && s.sessionId
+          )
+        await expect(centerTerm(page)).not.toBeEmpty({ timeout: 60_000 })
+        if (reported === 'agy') await agyReady(page)
+        const postedBefore = said(fake).length
+        await runIn(page, centerTerm(page), 'hello')
+        await expect.poll(reportedSession, { timeout: 60_000 }).toBeTruthy()
+        const reportedId = (await reportedSession())!.sessionId
+
+        const butlerId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
+        const butlerGot = (): string => {
+          if (conductor === 'claude') return peerMessages(env).join('\n')
+          if (conductor === 'codex')
+            return codexQueued(env)
+              .map(([, text]) => text ?? '')
+              .join('\n')
+          const file = path.join(
+            env.home,
+            '.local',
+            'share',
+            'muse',
+            'sessions',
+            'fake',
+            `${butlerId}.json`
+          )
+          const s = JSON.parse(fileText(file) || '{"items":[]}') as {
+            items: { kind: string; text: string }[]
+          }
+          return s.items
+            .filter((i) => i.kind === 'userMessage')
+            .map((i) => i.text)
+            .join('\n')
+        }
+        await expect
+          .poll(butlerGot, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toContain(AWAY_DIGEST_OPENS)
+        expect(butlerGot()).toMatch(
+          new RegExp(
+            `\\(session ${reportedId}, workspace ${workspace}\\) finished its turn and waits`
+          )
+        )
+        if (conductor === 'claude')
+          await expect
+            .poll(() => transcriptText(env, butlerId), {
+              timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+            })
+            .toContain('Peer said:')
+        await expect
+          .poll(
+            async () =>
+              (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)?.status,
+            { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+          )
+          .toBe('waiting')
+
+        fake.say(OWNER, 'ping after the digest')
+        await expect
+          .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toContain('ping after the digest')
+        const leaked = said(fake)
+          .slice(postedBefore)
+          .filter((p) => p.includes(AWAY_DIGEST_OPENS) && !p.includes('ping after the digest'))
+        expect(leaked).toEqual([])
+      } finally {
+        await quitAndClose(app)
+        await fake.close()
+        if (remote) killFakeRemote(env)
+      }
+    })
 
   test('the butler’s koloft discord send uploads a file with a line of text to its channel', async ({
     env

@@ -884,7 +884,7 @@ interface OwedReply {
 
 export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
-  turnEnded(tabId: string, turn: Turn): void
+  turnEnded(tabId: string, turn: Turn): boolean
   waitsOnAnother(sessionId: string): boolean
   startButlerHelper(butler: SessionInfo, task: ButlerHelperTask): Promise<string | null>
 } {
@@ -1048,20 +1048,21 @@ export function sessionVerb(d: SessionVerbDeps): {
           (replyOwed.get(s.tabId)?.owner === sessionId || !!messagedBy.get(s.tabId)?.has(sessionId))
       )
 
-  const turnEnded = (tabId: string, turn: Turn): void => {
+  const turnEnded = (tabId: string, turn: Turn): boolean => {
     messagedBy.delete(tabId)
     const owed = replyOwed.get(tabId)
-    if (!owed) return
+    if (!owed) return false
     const { owner, asked } = owed
-    if (asked !== undefined && !turn.said.some((l) => l.text.includes(asked))) return
+    if (asked !== undefined && !turn.said.some((l) => l.text.includes(asked))) return false
     replyOwed.delete(tabId)
-    if (!turn.reply.trim()) return
+    if (!turn.reply.trim()) return false
     const parent = placedRows(d.sidebar(), d.allSessions()).find((p) => p.row.id === owner)
     const to = d.butlerTarget(owner) ?? (parent && rowTarget(d, parent))
-    if (!to) return
+    if (!to) return false
     const session = d.allSessions().find((s) => s.tabId === tabId)
-    if (!session) return
+    if (!session) return false
     deliverOrReport({ tabId, session }, to, sessionSays(session, turn.reply))
+    return true
   }
 
   const deliverOrReport = (
