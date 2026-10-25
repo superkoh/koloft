@@ -17,6 +17,7 @@ export interface PresenceDeps {
 // PLATFORM§60
 export class Presence {
   private lastHands: number
+  private lastAsked = -Infinity
   private locked = false
 
   constructor(private readonly d: PresenceDeps) {
@@ -29,7 +30,8 @@ export class Presence {
 
   handsOn(): void {
     const now = this.d.now()
-    if (!this.locked && now - this.lastHands < HANDS_RECHECKED_AFTER_MS) return
+    if (now - this.lastAsked < HANDS_RECHECKED_AFTER_MS) return
+    this.lastAsked = now
     if (this.d.macIdleSeconds() > INPUT_IS_THE_MACS_WITHIN_SECONDS) return
     this.lastHands = now
     this.locked = false

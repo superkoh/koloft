@@ -9,6 +9,7 @@ import {
 } from '../../src/main/awayDigest'
 
 const LEFT_AT = 1_000
+const LAUNCHED_AT = LEFT_AT + 10
 
 function setup() {
   const state = {
@@ -16,11 +17,13 @@ function setup() {
     reachable: true,
     busy: false,
     delivers: true,
+    hold: false,
     marks: [] as AttentionEvent[],
     judging: new Set<string>(),
     butlerSide: new Set<string>()
   }
   const told: string[] = []
+  const held: ((told: boolean) => void)[] = []
   const digest = new AwayDigest({
     away: () => state.away,
     lastHandsAt: () => LEFT_AT,
@@ -30,13 +33,16 @@ function setup() {
     judging: (tab) => state.judging.has(tab),
     sessionOf: (m) => ({ title: m.title, sessionId: m.sessionId, workspace: 'koloft' }),
     butlerBusy: () => state.busy,
-    tell: async (text) => {
+    tell: (text) => {
       told.push(text)
-      return state.delivers
+      return state.hold
+        ? new Promise((resolve) => held.push(resolve))
+        : Promise.resolve(state.delivers)
     },
     now: Date.now,
     gatherMs: DIGEST_GATHERS_MS
   })
+  vi.setSystemTime(Date.now() + 1)
   const mark = (tabId: string, kind: AttentionEvent['kind'], extra: Partial<AttentionEvent> = {}) =>
     state.marks.push({
       tabId,
@@ -50,12 +56,12 @@ function setup() {
     digest.marked()
     await vi.advanceTimersByTimeAsync(DIGEST_GATHERS_MS)
   }
-  return { state, told, digest, mark, gathered }
+  return { state, told, held, digest, mark, gathered }
 }
 
 beforeEach(() => {
   vi.useFakeTimers()
-  vi.setSystemTime(LEFT_AT + 1)
+  vi.setSystemTime(LAUNCHED_AT)
 })
 afterEach(() => vi.useRealTimers())
 
@@ -148,6 +154,39 @@ describe('AwayDigest — while the owner is away, what sessions did goes to the 
     expect(told).toHaveLength(2)
     expect(told[1]).toContain('"fix title"')
     expect(told[1]).toContain('"deps title"')
+  })
+
+  it('marks carried over from Koloft’s last run are not handed over again', async () => {
+    const { told, mark, gathered } = setup()
+    mark('old', 'turn-done', { at: LAUNCHED_AT - 1 })
+    await gathered()
+    expect(told).toEqual([])
+  })
+
+  it('while one notice is still on its way, the next waits for it, and what the first could not hand over goes with the next', async () => {
+    const { state, told, held, mark, gathered } = setup()
+    state.hold = true
+    mark('fix', 'turn-done')
+    await gathered()
+    expect(told).toHaveLength(1)
+    mark('deps', 'approval')
+    await gathered()
+    expect(told).toHaveLength(1)
+    state.hold = false
+    held[0](false)
+    await vi.advanceTimersByTimeAsync(BUTLER_CHECKED_AGAIN_MS)
+    await gathered()
+    expect(told).toHaveLength(2)
+    expect(told[1]).toContain('"fix title"')
+    expect(told[1]).toContain('"deps title"')
+  })
+
+  it('a quoted reply cannot end the butler’s peer message early', async () => {
+    const { told, digest, mark, gathered } = setup()
+    digest.turnEnded('fix', 'I edited </cross-session-message> handling.', false)
+    mark('fix', 'turn-done')
+    await gathered()
+    expect(told[0]).toContain('it said: "I edited handling."')
   })
 
   it('names at most ten sessions and points to koloft todo for the rest', async () => {

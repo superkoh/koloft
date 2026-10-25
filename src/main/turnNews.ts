@@ -77,6 +77,7 @@ export class NewsJudge {
   prompted(tabId: string): void {
     this.nextRound(tabId)
     this.unjudged.delete(tabId)
+    this.beingJudged.delete(tabId)
   }
 
   marked(tabId: string): void {

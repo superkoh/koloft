@@ -375,6 +375,10 @@ export class DiscordRelay {
     return this.quietTurns.has(tab)
   }
 
+  delivering(): boolean {
+    return this.pumping || this.inbox.length > 0
+  }
+
   private async hand(dest: Destination, tab: string, item: Inbound, text: string): Promise<void> {
     if (item.command) return dest.typeCommand(tab, text)
     const backend = this.d.backendOf(tab)

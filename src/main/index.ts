@@ -939,6 +939,9 @@ const presence = new Presence({
   macIdleSeconds: () => powerMonitor.getSystemIdleTime()
 })
 const AWAY_CHECKED_EVERY_MS = 30_000
+function handsOnKoloft(_e: unknown, input: { type: string }): void {
+  if (isHandsOn(input.type)) presence.handsOn()
+}
 function ownerAway(): boolean {
   const pretend = process.env.KOLOFT_TEST_PRESENCE_FILE
   if (pretend)
@@ -2485,9 +2488,7 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', (e, url) => {
     if (!isAppNavigation(url, appUrl)) e.preventDefault()
   })
-  mainWindow.webContents.on('input-event', (_e, input) => {
-    if (isHandsOn(input.type)) presence.handsOn()
-  })
+  mainWindow.webContents.on('input-event', handsOnKoloft)
   // PLATFORM§10
   let pressedInHost = false
   mainWindow.webContents.on('before-mouse-event', (e, mouse) => {
@@ -3305,7 +3306,7 @@ app.whenReady().then(() => {
     },
     butlerBusy: () => {
       const tab = butlerNow.liveTab()
-      return !!tab && !relay.takesCommand(tab)
+      return relay.delivering() || (!!tab && !relay.takesCommand(tab))
     },
     tell: (text) => relay.tellQuietly(butlerDestination(), text),
     now: Date.now,
@@ -3485,9 +3486,7 @@ app.whenReady().then(() => {
   // PLATFORM§7
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return
-    contents.on('input-event', (_event, input) => {
-      if (isHandsOn(input.type)) presence.handsOn()
-    })
+    contents.on('input-event', handsOnKoloft)
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return
       if (!(input.meta || input.control)) return

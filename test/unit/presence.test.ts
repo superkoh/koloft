@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { AWAY_AFTER_MS, Presence } from '../../src/main/presence'
 
+const A_SECOND_LATER = 1000
+
 function clock() {
   const t = { now: 1_000_000, macIdle: 600 }
   const presence = new Presence({ now: () => t.now, macIdleSeconds: () => t.macIdle })
@@ -30,6 +32,7 @@ describe('Presence — the owner is at the Mac only while their own hands are on
     t.macIdle = 300
     presence.handsOn()
     expect(presence.away()).toBe(true)
+    t.now += A_SECOND_LATER
     t.macIdle = 0
     presence.handsOn()
     expect(presence.away()).toBe(false)
@@ -42,6 +45,7 @@ describe('Presence — the owner is at the Mac only while their own hands are on
     presence.handsOn()
     presence.screenLocked()
     expect(presence.away()).toBe(true)
+    t.now += A_SECOND_LATER
     presence.handsOn()
     expect(presence.away()).toBe(false)
   })

@@ -6,6 +6,7 @@ export const VERDICT_WAITED_AT_MOST_MS = 60_000
 export const BUTLER_CHECKED_AGAIN_MS = 5_000
 export const ITEMS_PER_DIGEST = 10
 const REPLY_CHARS_QUOTED = 300
+const PEER_MESSAGE_END = '</cross-session-message>'
 
 export interface DigestItem {
   kind: AttentionKind
@@ -36,7 +37,7 @@ const HAPPENED: Record<AttentionKind, string> = {
 }
 
 function oneLine(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
+  return text.replaceAll(PEER_MESSAGE_END, '').replace(/\s+/g, ' ').trim()
 }
 
 function lineOf(item: DigestItem, n: number): string {
@@ -61,12 +62,15 @@ export function digestText(items: DigestItem[]): string {
 
 export class AwayDigest {
   private timer: ReturnType<typeof setTimeout> | undefined
-  private handedUpTo = 0
+  private handedUpTo: number
+  private telling = false
   private waitingSince: number | undefined
   private lastReply = new Map<string, string>()
   private handedOff = new Set<string>()
 
-  constructor(private readonly d: AwayDigestDeps) {}
+  constructor(private readonly d: AwayDigestDeps) {
+    this.handedUpTo = d.now()
+  }
 
   turnEnded(tabId: string, reply: string, handedOff: boolean): void {
     this.lastReply.set(tabId, reply)
@@ -111,18 +115,24 @@ export class AwayDigest {
     const now = this.d.now()
     this.waitingSince ??= now
     const unjudged = fresh.some((m) => m.kind === 'turn-done' && this.d.judging(m.tabId))
-    if ((unjudged && now - this.waitingSince < VERDICT_WAITED_AT_MOST_MS) || this.d.butlerBusy())
+    if (
+      (unjudged && now - this.waitingSince < VERDICT_WAITED_AT_MOST_MS) ||
+      this.telling ||
+      this.d.butlerBusy()
+    )
       return this.later(BUTLER_CHECKED_AGAIN_MS)
     this.waitingSince = undefined
     const before = this.handedUpTo
-    this.handedUpTo = now
+    this.handedUpTo = Math.max(...fresh.map((m) => m.at))
+    this.telling = true
     const items = fresh.map((m) => ({
       ...this.d.sessionOf(m),
       kind: m.kind,
       reply: this.lastReply.get(m.tabId)
     }))
     void this.d.tell(digestText(items)).then((told) => {
-      if (!told && this.handedUpTo === now) this.handedUpTo = before
+      this.telling = false
+      if (!told) this.handedUpTo = before
     })
   }
 }
