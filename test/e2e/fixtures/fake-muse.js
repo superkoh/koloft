@@ -9,7 +9,7 @@ const ESC = '\x1b'
 const STATUS_ASK = `${ESC}]7501;?${ESC}\\`
 const STATUS_ON = `${ESC}]7501;?:states=`
 const MODEL = 'fake-model'
-const TOKENS_PER_REPLY = { input_tokens: 2000, cached_tokens: 0, output_tokens: 500 }
+const TOKENS_PER_REPLY = { input_tokens: 2000, cache_read_tokens: 500, output_tokens: 500 }
 const argv = process.argv.slice(2)
 const home = process.env.HOME
 const museHome = path.join(process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'muse')

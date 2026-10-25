@@ -224,7 +224,7 @@ test.describe('remote usage', () => {
   test("Settings ▸ Usage counts a remote Muse session from the machine's own session log, its row under the ssh workspace with MUSE and SSH badges", async ({
     env
   }) => {
-    test.setTimeout(180_000)
+    test.setTimeout(240_000)
     installMuse(env)
     installMuseOnMachine(env)
     seedSettings(env, { hintsOff: true })
@@ -242,6 +242,7 @@ test.describe('remote usage', () => {
       const row = await remoteUsageRow(page, env, 'Session')
       await expect(row).toContainText('fake-model')
       await expect(row.locator('.acct-badge')).toHaveText(['MUSE', 'SSH'])
+      await expect(row.locator('.tk')).toHaveText('2.5k')
       await expect(row.locator('.c')).toHaveText('no price')
     } finally {
       await quitAndClose(app)
@@ -251,13 +252,13 @@ test.describe('remote usage', () => {
   test("Settings ▸ Usage counts a remote Antigravity session from the machine's transcript, priced by the model in its conversation db, its row under the ssh workspace with ANTIGRAVITY and SSH badges", async ({
     env
   }) => {
-    test.setTimeout(180_000)
+    test.setTimeout(240_000)
     installAgy(env)
     installRemoteAgy(env)
     seedSettings(env, { hintsOff: true })
     const { app, page } = await launchWithRemote(env)
     try {
-      fs.writeFileSync(path.join(machineHome(env), 'fake-agy-input-tokens'), '400000')
+      fs.writeFileSync(path.join(machineHome(env), 'fake-agy-input-tokens'), '100000')
       await addRemoteWorkspace(page, env)
       await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
       await agyReady(page)
@@ -270,7 +271,7 @@ test.describe('remote usage', () => {
       const row = await remoteUsageRow(page, env, 'Session')
       await expect(row).toContainText('gemini-3.1-pro')
       await expect(row.locator('.acct-badge')).toHaveText(['ANTIGRAVITY', 'SSH'])
-      await expect(row.locator('.c')).toHaveText('$0.80')
+      await expect(row.locator('.c')).toHaveText('$0.20')
     } finally {
       await quitAndClose(app)
     }

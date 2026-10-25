@@ -601,9 +601,7 @@ function writeStep(c, record) {
       Buffer.from(JSON.stringify(full))
     )
     if (full.type === 'PLANNER_RESPONSE')
-      db.prepare('INSERT INTO gen_metadata (data) VALUES (?)').run(
-        genMetadataOf(model.id.slice(0, -(model.effort.length + 1)))
-      )
+      db.prepare('INSERT INTO gen_metadata (data) VALUES (?)').run(genMetadataOf(model.id))
   })
   if (record.userConfig) c.userConfigs[index] = record.userConfig
   updateSummary(c.id, { step_count: c.nextStep, last_modified_time: dbTime() })
