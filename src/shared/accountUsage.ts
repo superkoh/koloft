@@ -463,11 +463,15 @@ export interface UsedPart {
   used: number
 }
 
-export function accountLine(name: string, parts: UsedPart[], at?: number, nowMs = 0): string {
+export function accountLine(
+  name: string,
+  parts: UsedPart[],
+  read?: { at: number; nowMs: number }
+): string {
   return [
     `koloft: → ${name}`,
     ...parts.map((p) => `${p.label} ${Math.round(p.used * 100)}%`),
-    ...(at !== undefined && nowMs - at > STALE_MS ? [ageLabel(at, nowMs)] : [])
+    ...(read && read.nowMs - read.at > STALE_MS ? [ageLabel(read.at, read.nowMs)] : [])
   ].join(' · ')
 }
 
@@ -476,11 +480,11 @@ export function launchLine(a: AccountView, nowMs: number): string {
     return accountLine(
       a.name,
       a.limits.windows.map((w) => ({ label: windowLabel(w.minutes), used: w.used })),
-      a.limits.at,
-      nowMs
+      { at: a.limits.at, nowMs }
     )
+  const quota = a.probeError ? [] : (a.quota ?? [])
   return accountLine(
     a.name,
-    (a.quota ?? []).map((q) => ({ label: q.label.split(' · ').join(' '), used: q.used }))
+    quota.map((q) => ({ label: q.label.replaceAll(' · ', ' '), used: q.used }))
   )
 }

@@ -93,11 +93,15 @@ import {
 
 const exec = promisify(execFile)
 
+export interface MuseHomePick {
+  account: string
+  env: Record<string, string>
+  banner?: string
+}
+
 export interface MuseSessionDeps extends StoredSessionDeps {
   openShimRoot: string
-  pickHome(
-    resumeSessionId?: string
-  ): { account: string; env: Record<string, string>; banner?: string } | undefined
+  pickHome(resumeSessionId?: string): MuseHomePick | undefined
   playwrightBin: string
   browserEndpoint(tabId: string): string
   assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
@@ -709,6 +713,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         rows: opts.rows,
         executable: binary,
         argv,
+        // MUSE§1
         banner,
         processEnv: {
           ...env,

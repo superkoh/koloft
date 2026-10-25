@@ -316,6 +316,13 @@ describe('launchLine — the account line a Muse or Antigravity tab prints befor
       'koloft: → g · Gemini Models 5h 3% · Claude and GPT models 7d 0%'
     )
   })
+
+  it('leaves out an Antigravity quota its last probe failed to refresh, as a bucket carries no time to say how old it is', () => {
+    const quota = [{ label: 'Gemini Models · 5h', used: 0.03 }]
+    expect(
+      launchLine(view({ name: 'g', kind: 'agy-home', quota, probeError: 'network' }), NOW_MS)
+    ).toBe('koloft: → g')
+  })
 })
 
 // CODEX§15

@@ -26,7 +26,12 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
-import { MuseSessions, museShowsItsInputBox, type MuseRemoteDeps } from './museSessions'
+import {
+  MuseSessions,
+  museShowsItsInputBox,
+  type MuseHomePick,
+  type MuseRemoteDeps
+} from './museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
@@ -2158,9 +2163,7 @@ function museHomeFor(name: string): string {
 }
 
 // ADR-0030 MUSE§13
-function pickMuseHome(
-  resumeSessionId?: string
-): { account: string; env: Record<string, string>; banner: string } | undefined {
+function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
   const views = accountViews()
   const picked = musePicker.pick(views, sessionAccounts?.of('muse', resumeSessionId))
   const stale = (a: AccountView): boolean =>

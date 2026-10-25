@@ -82,7 +82,7 @@ function bannerFor(
     { label: '7d', used: u.u7 },
     ...(hasOi ? [{ label: 'fable', used: u.uoi }] : [])
   ]
-  return accountLine(name, parts, u.at, nowMs)
+  return accountLine(name, parts, { at: u.at, nowMs })
 }
 
 export function codexAllLimitedNotice(a: AccountView): string | undefined {
