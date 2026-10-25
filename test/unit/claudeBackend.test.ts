@@ -94,10 +94,16 @@ const MACHINE_TABS = {
 
 const CODEX_TABS = { 'pty-cx': 'devbox', 'pty-cy': 'otherbox' } as Record<string, string>
 
+const WORKBENCH_SHELLS = {
+  'pty-wa': { util: true, ownerTabId: 'pty-a' },
+  'pty-wcx': { util: true, ownerTabId: 'pty-cx' },
+  'pty-wgone': { util: true, ownerTabId: 'pty-gone' }
+} as Record<string, { util: boolean; ownerTabId: string }>
+
 function machineBackend(): {
   boundTo: Map<string, string>
   binds: [string, string][]
-  answeredFor: string[]
+  answeredFor: (string | undefined)[]
   sent: [string, string, string][]
   drop(name: string, body: unknown): void
   appendLog(name: string, lines: unknown[]): void
@@ -105,11 +111,12 @@ function machineBackend(): {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-backend-machine-'))
   const boundTo = new Map(Object.keys(MACHINE_TABS).map((id) => [id, `sid-of-${id}`]))
   const binds: [string, string][] = []
-  const answeredFor: string[] = []
+  const answeredFor: (string | undefined)[] = []
   const sent: [string, string, string][] = []
   const backend = new ClaudeBackend({
     pty: {
-      get: (id: string) => (MACHINE_TABS[id] || CODEX_TABS[id] ? {} : undefined),
+      get: (id: string) =>
+        WORKBENCH_SHELLS[id] ?? (MACHINE_TABS[id] || CODEX_TABS[id] ? {} : undefined),
       clearResumeIntent: () => {}
     },
     machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
@@ -224,6 +231,20 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
     await new Promise((r) => setTimeout(r, A_FEW_MIRROR_PULLS_MS))
 
     expect(m.sent).toEqual([['devbox', 'r7', replyJson(answered('for pty-cx'))]])
+  })
+
+  it('answers a request from a Workbench shell on that machine as the session tab that owns the shell, Claude or Codex, and one whose owner is gone at once, with no tab, instead of leaving it to time out', async () => {
+    const m = machineBackend()
+    m.drop('req-r8.json', request('pty-wa', ''))
+    m.drop('req-r9.json', request('pty-wcx', ''))
+    m.drop('req-r10.json', request('pty-wgone', ''))
+    await vi.waitFor(() => expect(m.sent).toHaveLength(3), { timeout: 5000 })
+
+    expect(Object.fromEntries(m.sent.map(([, id, reply]) => [id, reply]))).toEqual({
+      r8: replyJson(answered('for pty-a')),
+      r9: replyJson(answered('for pty-cx')),
+      r10: replyJson(answered('for undefined'))
+    })
   })
 })
 

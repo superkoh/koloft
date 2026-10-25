@@ -135,7 +135,15 @@ import {
   runSshBytes,
   sshOptions
 } from './remote/ssh'
-import { ENSURE_CODEX_SH, ENSURE_SH, TMUX_CONF, UTIL_SH, remoteShCommand } from './remote/install'
+import {
+  ENSURE_CODEX_SH,
+  ENSURE_SH,
+  TMUX_CONF,
+  UTIL_BASH_LOGIN,
+  UTIL_BASH_LOGIN_FILE,
+  UTIL_SH,
+  remoteShCommand
+} from './remote/install'
 import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
 import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
@@ -1119,6 +1127,7 @@ function machinePackage(): MachinePackage {
     [HOLD_FILE]: HOLD_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
+    [UTIL_BASH_LOGIN_FILE]: UTIL_BASH_LOGIN,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
     [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
