@@ -270,6 +270,15 @@ picker shows on `/new` in a TUI connected with `--remote` was not seen in the e2
 of that day (the Playwright MCP case does a `/new` and passed), so it is read, not
 run: **inferred, not checked**.
 
+**A thread goes on in a worktree deleted and made again at the same path.** Checked
+2026-10-25 with codex-cli 0.162.0 and this Mac's own login: `codex app-server` (stdio)
+started a thread in a linked worktree `<repo>/.claude/worktrees/lost` on branch
+`worktree-lost`, and one turn was told a code word. The app-server was stopped, the
+folder deleted, `git worktree remove` and `git worktree add <path> worktree-lost` made
+it again, and a new app-server's `thread/resume {threadId, cwd: <same path>}` returned
+the same thread id and cwd; the next turn answered the code word. The thread was
+archived afterwards.
+
 ## 7. Rechecking a CLI upgrade
 
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0
@@ -947,6 +956,20 @@ With `config.toml` a link to an empty shared file, the same start-up write and t
 answer both went into the shared file and the link stayed a link. Hence Koloft makes an
 empty shared file when there is none, rather than skip the link.
 
+**A broken or expired login reads as signed out.** Checked 2026-10-25 with Codex CLI
+0.162.0, no model turn: a Node script ran `codex app-server` on three throwaway
+`CODEX_HOME`s (and `HOME`s) holding no `auth.json`, an `auth.json` that is not JSON, and a
+well-formed ChatGPT `auth.json` whose made-up tokens had expired an hour before. All three
+answered `account/read` with `{account: null, requiresOpenaiAuth: true}`. Rate limits then
+failed: `-32600` for the first two, `-32603` with the server's `401 Unauthorized` for the
+expired one. So Koloft's probe sees a home whose login no longer works as signed out, and
+marks the account expired. Offline is different: with `HTTPS_PROXY`, `HTTP_PROXY` and
+`ALL_PROXY` pointed at a closed local port, the same expired login (and a made-up one not
+yet expired) made `account/read` fail with error `-32603` ("workspace routing discovery
+unauthorized (401)") instead of answering `account: null`, so a probe with no network ends
+in an error and leaves the account's status alone. A real login whose access token ran out
+while offline was not tried.
+
 **A home finds a session by the file under its own `sessions/`, wherever that folder
 really is.** Checked 2026-10-08 with Codex CLI 0.162.0, no model turn, no login in any
 home. A Node script ran `codex app-server` on three throwaway `CODEX_HOME`s and sent
@@ -1477,8 +1500,13 @@ Codex's own full-screen screen from one that prints and exits.
   Codex CLI 0.162.0 started by Koloft (`--remote`) in a real Electron/xterm tab: a line
   Koloft wrote into the tab before Codex's first output was in neither the screen nor the
   scrollback of the active buffer once the start screen showed
-  (`agent-tools-real-smoke.spec.ts` run). So a note meant for the owner cannot be printed
-  above a Codex tab the way the Claude shim prints its account line.
+  (`agent-tools-real-smoke.spec.ts` run). Seen again 2026-10-25 on 0.162.0 (a python pty
+  answering the terminal's queries, the output replayed into `@xterm/headless`, a scratch
+  `CODEX_HOME` with an API-key `auth.json`): the TUI turns on the alternate screen
+  (`?1049h`) at once, so the line stays only in the normal buffer behind it. With
+  `--no-alt-screen` (a top-level TUI flag, "Disable alternate screen mode") the same line
+  stayed on row 0 and Codex drew its whole TUI inline below it. So Koloft, which starts
+  Codex on the alternate screen, prints no account line above a Codex tab.
 
 ## 19. What a turn said, live and read back
 
@@ -1822,6 +1850,43 @@ word made of "ban" and "jo", with the marker `zebrafinch42` in the prompt; it an
   `searchTerm` is refused with `-32600 "thread/search requires a non-empty searchTerm"`.
 - Not probed: how long it takes on a home with thousands of threads (no real home was
   searched), and Codex on a remote machine (§16).
+
+Rechecked 2026-10-25 on this Mac with Codex CLI 0.162.0, and the schema,
+`thread/searchOccurrences` and `thread/turns/list` again with 0.161.0 (`npm install
+@openai/codex@0.161.0` into a scratch folder): the same Node client and scratch `CODEX_HOME`, one real turn in a work
+folder named `work-quokkadir77`, then one in a folder holding an `AGENTS.md` with the
+marker `pangolinrule55`.
+
+- **`thread/search` matches every user-role message in the rollout, Codex's own too**:
+  `quokkadir77` (only in the folder name), `zsh`, `2026`, `timezone` and `Los_Angeles`
+  each hit the thread with a snippet cut from `<environment_context> <cwd>…</cwd>
+  <shell>zsh</shell> <current_date>…</current_date> <timezone>…</timezone> …`, and
+  `pangolinrule55` hit with a snippet from `# AGENTS.md instructions for <folder>
+  <INSTRUCTIONS> … </INSTRUCTIONS>`. The developer-role messages (`<skills_instructions>`,
+  `<multi_agent_role>`) are not searched: `SKILL.md`, `multi_agent_role`, `sub-agents`
+  returned nothing. Its params have no filter that leaves these blocks out.
+- **`thread/searchOccurrences { threadId, searchTerm, cursor, limit }` matches only the
+  person's typed messages and the model's answers** (its schema: "visible user messages
+  and both partial and final assistant answers"), and answers `{ data: [{ turnId,
+  itemId, snippet, snippetMatchRange: { start, end }, turnCursor }], nextCursor }`, the
+  range in UTF-16 units inside the snippet (`zebrafinch42`, at the end of the prompt,
+  came back as `... ban" followed by … Marker: zebrafinch42`). `quokkadir77`, `zsh` and `pangolinrule55` gave `data: []`; `BANJO`,
+  `zebrafinch42` and `ban` each gave the line they are in. After the first call on a
+  fresh app-server (20–200 ms) each call took 0.3–1 ms on these threads, and 75–160 ms on
+  one thread with 40,000 extra rows (220 MB of JSON) written straight into its
+  `thread_history_1.sqlite` table.
+- **It reads the per-thread index in `thread_history_1.sqlite`, not the rollout, and a
+  thread missing from that index answers `data: []` even for a word it holds**: with the
+  thread's rows and `thread_history_projection_state` row deleted, and again with the
+  rollout copied into an empty `CODEX_HOME`, `banjo` gave `[]`, as did `thread/read`
+  (`turns: []`) and `thread/turns/list { threadId, limit: 1 }` (`data: []`), while
+  `thread/search` still found it. `thread/resume` built the index: afterwards all three
+  answered. `thread/turns/list` with `limit: 1` answers one turn for an indexed thread, so
+  an empty answer tells a thread Codex has not indexed; for an id Codex does not know it
+  errors `-32600 "thread not loaded: <id>"`. Nothing in the thread object
+  `thread/search` returns tells the two apart. A real home on this Mac had 13 of its 68
+  unarchived threads (all `source: vscode`, all with turns) outside the index.
+- Not probed: whether Codex later indexes such threads on its own.
 
 ## 25. The keys the TUI takes
 

@@ -867,6 +867,49 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('a Codex session whose .claude/worktrees folder was deleted and whose worktree Koloft has no record of is rebuilt there from its branch on a click, for the same thread', async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    let app = await launchApp(env)
+    let first: CodexCall
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      first = await startCodexInWorktree(page, env, 'codex-lost')
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      fs.writeFileSync(path.join(first.cwd, 'kept.txt'), 'committed on the branch')
+      gitCommitAll(first.cwd)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
+    } finally {
+      await quitAndClose(app)
+    }
+    const storeFile = path.join(env.userData, 'sessions.json')
+    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'))
+    store.resources = {}
+    for (const member of Object.values<{ worktreeResourceId?: string }>(store.members))
+      delete member.worktreeResourceId
+    fs.writeFileSync(storeFile, JSON.stringify(store))
+    fs.rmSync(first.cwd, { recursive: true, force: true })
+
+    app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await codexRows(page).click()
+      await expect.poll(() => codexCalls(env).length).toBe(2)
+      await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/)
+      expect(codexCalls(env)[1]).toMatchObject({ cwd: first.cwd, sessionId: first.sessionId })
+      expect(fs.readFileSync(path.join(first.cwd, 'kept.txt'), 'utf8')).toBe(
+        'committed on the branch'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('a Codex worktree another session still runs in stays when one tab closes, and goes when the last one does', async ({
     env
   }) => {

@@ -136,6 +136,12 @@ method. A recheck adds its date, version and command to the bullet.
   `lstart` and `command` together has to drop `LC_ALL`, carry its value into `LC_CTYPE`
   and set `LC_TIME=C`. `TZ` moves `lstart` too (`TZ=UTC` printed 08:38 for a local
   01:38).
+- **`ps -o time` counts a process's own CPU only, never that of its exited children,
+  and `-S` does not change that.** Measured 2026-10-25, macOS 27.0: a `sh` that ran a
+  3-second busy `perl` and reaped it showed `0:00.00` under `ps -o time`, `ps -S -o time`
+  and `ps -S -axo time` alike. So the summed CPU of a process tree drops each time one
+  of its programs exits, and CPU spent over time has to be added up per pid between
+  readings.
 - **macOS has no `timeout(1)`** (2026-09-24, macOS 27.0: `command -v timeout` found
   nothing), and `/usr/bin/security` waits on a GUI unlock or authorization dialog with
   no timeout of its own. A time limit in a shell script has to be a `kill -0` polling
@@ -752,6 +758,20 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   playwright-cli 0.1.18 against Koloft's relay, `test/e2e/real-tools-smoke.spec.ts`:
   `open file://…` fails with that message on the endpoint alone and succeeds with the
   variable set to `1`).
+- **playwright-cli writes its files into `.playwright-cli/` in the working folder unless
+  `PLAYWRIGHT_MCP_OUTPUT_DIR` names another folder**, which it makes if missing. With the
+  variable unset, `open` in a git repo put its page snapshot at
+  `.playwright-cli/page-<time>.yml`; with it set, `open`'s snapshot (on the Workbench
+  relay and on a browser of its own) and `screenshot`'s png (on a browser of its own; on
+  the relay it hit the 5 s action limit) landed in that folder and the repo got nothing.
+  The daemon keeps the folder it was given at `open`: a later `screenshot` run without
+  the variable still wrote there. An explicit `screenshot --filename=x.png` is still
+  relative to the working folder, and the tracing commands use a fixed
+  `.playwright-cli/trace` (read in `coreBundle.js`, not run). Under Claude Code's own
+  Bash sandbox (`sandbox.enabled`, CC 2.1.310) `open` fails before any of this, with
+  `EPERM` on its daemon file under `~/Library/Caches/ms-playwright/daemon/`, whether the
+  variable is set or not. (Measured 2026-10-25 with @playwright/cli 0.1.22 as Koloft
+  0.54.0 ships it.)
 - **Two installs of playwright-cli share a daemon only through a `.playwright`
   folder.** Without one, each install's own root names its bucket, so the same session
   name in the same folder gave two daemons, each reading its own page. With a
@@ -1350,6 +1370,12 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `refs/pull/<n>/head` holds. A squash merge keeps that sha only as the pull request's
   head, never in `main`. (2026-10-22, gh 2.89.0, by hand against superkoh/koloft #934,
   branch `worktree-cmd-p-at-target-workspace`, deleted on merge.)
+- **Without `--head`, `gh pr list --repo o/r --state merged --limit N --json
+  headRefName,headRefOid`** lists the last N merged pull requests, newest first, one
+  `{"headRefName":"<branch>","headRefOid":"<sha>"}` each, branches deleted on merge
+  included. On superkoh/koloft, 100 reached back three days and 500 about a month
+  (to 2026-09-23); #934's branch was in both. A branch older than the list is missing
+  from it, so missing does not mean "never merged". (2026-10-25, gh 2.89.0, by hand.)
 - **`gh issue create` with no terminal never prompts**: missing `--title` it exits 1 at
   once with "must provide `--title` and `--body` when not running interactively" and
   creates nothing. A flag given as `--flag=value` keeps a value that starts with `-`
@@ -1478,6 +1504,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `/tmp`, not under `$HOME`** (tmux(1)), so a fake `$HOME` does not isolate it: a real
   tmux run by any test talks to the one server this user already has, shared by every
   run and holding other homes' sessions.
+- **A line printed before `tmux new-session` is out of sight for as long as the session is
+  attached; one printed inside the pane, before the program starts, stays on screen.**
+  tmux switches the outer terminal to its alternate screen (`?1049h`, then `2J`), so the
+  earlier line sits in the normal buffer behind it. With `echo <line>; exec tmux
+  new-session "muse …"` the line was in neither the screen nor its scrollback once Muse
+  drew; with the `echo` inside the session command it was row 0, above Muse's (and agy's)
+  own screen (2026-10-25, tmux 3.3a in the `koloft-muse-probe` Docker image and in the agy
+  probe image, a python pty answering the terminal's queries, its output replayed into
+  `@xterm/headless`). So a remote tab's account line goes in the pane's run lines.
 
 ## §36 ccstatusline
 

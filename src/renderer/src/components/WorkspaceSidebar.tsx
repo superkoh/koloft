@@ -642,7 +642,7 @@ function SidebarFloating({
     liveTabOf(sessionId, sessions, storeTabs)
 
   const parkedFor = (row: SessionRow): ReturnType<typeof sessionActivityBadge> => {
-    const tabId = row.running ? tabIdFor(row.id) : undefined
+    const tabId = rowLookups(sessions, storeTabs, []).tabOf(row)
     const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
     return sessionActivityBadge(sess, leftovers[row.id])
   }
@@ -1165,7 +1165,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       const w = everyWorkspaceRows(useStore.getState()).find((w) =>
         w.rows.some((r) => r.id === id)
       )!
-      return { kind: 'session', wsPath: w.workspace.path, row: w.rows.find((r) => r.id === id)! }
+      const row = w.rows.find((r) => r.id === id)!
+      const { sessions, tabs } = useStore.getState()
+      const running = rowLookups(sessions, tabs, []).running(row)
+      return { kind: 'session', wsPath: w.workspace.path, row: { ...row, running } }
     }
     const wsTarget = (path: string): MenuTarget => {
       const ws = useStore.getState().workspaceRows.find((w) => w.workspace.path === path)!.workspace
@@ -1245,7 +1248,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const removeWorkspace = async (path: string): Promise<void> => {
     const dirty = dirtyInWorkspace(path)
     const running = (rows.find((w) => w.workspace.path === path)?.rows ?? []).filter(
-      (r) => r.running || r.pending
+      (r) => look.running(r) || r.pending
     ).length
     const jobsHere = useStore.getState().cron.jobs.filter((j) => j.workspacePath === path).length
     const plan = removePlan(running, dirty.length)
@@ -1286,17 +1289,18 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     const cronPrefixes = cronWorktreePrefixes.get(wsPath) ?? []
     const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
       const { row } = node
+      const running = look.running(row)
       const tabId = look.tabOf(row)
       const calling = look.attentionOn(row.id, tabId)
       const sess = tabId ? look.sessionOn(tabId) : undefined
       const stateCls = statusUnavailable(sess)
         ? ''
-        : rowStateClass(row.running, sess?.status, row.pending, sess?.turnOver)
+        : rowStateClass(running, sess?.status, row.pending, sess?.turnOver)
       const badge = sessionActivityBadge(sess, leftovers[row.id])
       const held = tabId ? machine?.held[tabId] : undefined
       const launching = resumeLaunch?.id === row.id
       const active = launching || (!resumeLaunch && !!tabId && tabId === activeTabId)
-      const resumingNow = !row.running && !row.pending && (launching || look.hasAliveTab(row.id))
+      const resumingNow = !running && !row.pending && (launching || look.hasAliveTab(row.id))
       const shownCls = resumingNow ? rowStateClass(false, undefined, true) : stateCls
       const isCronRow =
         capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
@@ -1312,7 +1316,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             className={'ws-tab ' + shownCls + (active ? ' active' : '')}
             tabId={tabId}
             tooltip={
-              row.running || row.pending
+              running || row.pending
                 ? undefined
                 : relTime(row.mtime, now.getTime()) +
                   (row.invalidCwd

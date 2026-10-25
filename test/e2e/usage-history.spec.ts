@@ -2,13 +2,17 @@ import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import { DatabaseSync } from 'node:sqlite'
+import type { Locator, Page } from '@playwright/test'
 import { expect, launchApp, test, quitAndClose } from './helpers/app'
-import type { E2EEnv } from './helpers/env'
+import { installAgy, installMuse, seedSettings, type E2EEnv } from './helpers/env'
 import { openSettings } from './helpers/extensions'
-import { newSessionInWith, seedJsonl, waitBooted, wsRows } from './helpers/p1'
+import { centerTerm, newSessionInWith, runIn, seedJsonl, waitBooted, wsRows } from './helpers/p1'
 import {
   addRemoteWorkspace,
+  agyReady,
   installCodexOnFakeRemote,
+  installMuseOnMachine,
+  installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
   machineHome,
@@ -209,23 +213,88 @@ test.describe('remote usage', () => {
         wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'Codex fixture session' })
       ).toHaveClass(/st-waiting/, { timeout: 60_000 })
 
-      await openSettings(page)
-      await page.locator('.set-ni', { hasText: 'Usage' }).click()
-      await page.locator('.costs-head button', { hasText: 'Workspace' }).click()
-      await expect
-        .poll(
-          async () => {
-            await page.evaluate(() => window.api.usage.read())
-            return page.locator('.costs-row', { hasText: remoteKey(env) }).count()
-          },
-          { timeout: 60_000 }
-        )
-        .toBe(1)
-      const row = page.locator('.costs-row', { hasText: remoteKey(env) })
+      const row = await remoteUsageRow(page, env, 'Workspace')
       await expect(row.locator('.acct-badge')).toHaveText('SSH')
       await expect(row.locator('.c')).toHaveText('$2.00')
     } finally {
       await quitAndClose(app)
     }
   })
+
+  test("Settings ▸ Usage counts a remote Muse session from the machine's own session log, its row under the ssh workspace with MUSE and SSH badges", async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installMuse(env)
+    installMuseOnMachine(env)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Muse')
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      await runIn(page, centerTerm(page), 'remote words')
+      await expect(wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'remote words' })).toHaveClass(
+        /st-waiting/,
+        { timeout: 60_000 }
+      )
+
+      const row = await remoteUsageRow(page, env, 'Session')
+      await expect(row).toContainText('fake-model')
+      await expect(row.locator('.acct-badge')).toHaveText(['MUSE', 'SSH'])
+      await expect(row.locator('.tk')).toHaveText('2.5k')
+      await expect(row.locator('.c')).toHaveText('no price')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test("Settings ▸ Usage counts a remote Antigravity session from the machine's transcript, priced by the model in its conversation db, its row under the ssh workspace with ANTIGRAVITY and SSH badges", async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installAgy(env)
+    installRemoteAgy(env)
+    seedSettings(env, { hintsOff: true })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      fs.writeFileSync(path.join(machineHome(env), 'fake-agy-input-tokens'), '100000')
+      await addRemoteWorkspace(page, env)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'remote words')
+      await expect(wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'remote words' })).toHaveClass(
+        /st-waiting/,
+        { timeout: 60_000 }
+      )
+
+      const row = await remoteUsageRow(page, env, 'Session')
+      await expect(row).toContainText('gemini-3.1-pro')
+      await expect(row.locator('.acct-badge')).toHaveText(['ANTIGRAVITY', 'SSH'])
+      await expect(row.locator('.c')).toHaveText('$0.20')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 })
+
+async function remoteUsageRow(
+  page: Page,
+  env: E2EEnv,
+  by: 'Workspace' | 'Session'
+): Promise<Locator> {
+  await openSettings(page)
+  await page.locator('.set-ni', { hasText: 'Usage' }).click()
+  await page.locator('.costs-head button', { hasText: by }).click()
+  const row = page.locator('.costs-row', { hasText: remoteKey(env) })
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => window.api.usage.read())
+        return row.count()
+      },
+      { timeout: 60_000 }
+    )
+    .toBe(1)
+  return row
+}

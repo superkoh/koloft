@@ -23,6 +23,7 @@ import {
 import type { TodoPull, TodoPulls } from './github'
 import { mapAtMost } from './mapAtMost'
 import { mcpLines, type McpServer } from './mcpServers'
+import { GITHUB_NOT_ASKED, type MergedHeads } from './sessionClose'
 
 export const TODO_ONLY_FOR_THE_BUTLER =
   'koloft todo: only the butler and the helpers it starts in its own folder can use it.'
@@ -49,10 +50,12 @@ export interface TodoVerbDeps {
   sessions(): SessionInfo[]
   asking(tabId: string): boolean
   asleep(sessionId: string): boolean
-  workLeft(row: SessionRow): Promise<string[] | null>
+  workLeft(row: SessionRow, merged: MergedHeads): Promise<string[] | null>
   worktrees(workspace: string): Promise<{ dir: string; branch?: string }[]>
   repoOf(workspace: string): Promise<string | null>
   pulls(workspace: string): Promise<TodoPulls | null>
+  mergedHeadsByBranch(workspace: string): Promise<Map<string, string[]> | null>
+  mergedHeads(dir: string, branch: string): Promise<string[] | null>
   notes(): Record<string, string>
   saveNote(key: string, text: string): void
   projectFiles(workspace: string): Promise<ProjectFile[]>
@@ -129,9 +132,9 @@ function worktreeFacts(check: WorktreeCheck, group: SessionGroup): string[] {
   return openAndNotAsking ? [NOTHING_LEFT] : []
 }
 
-async function checkWorktree(d: TodoVerbDeps, row: SessionRow): Promise<WorktreeCheck> {
+async function checkWorktree(workLeft: () => Promise<string[] | null>): Promise<WorktreeCheck> {
   try {
-    const left = await d.workLeft(row)
+    const left = await workLeft()
     return left ? { state: 'checked', left } : { state: 'noWorktree' }
   } catch {
     return { state: 'failed' }
@@ -141,8 +144,10 @@ async function checkWorktree(d: TodoVerbDeps, row: SessionRow): Promise<Worktree
 function leftSummary(left: string[]): string {
   return left
     .map((block) => {
-      const [head, ...items] = block.split('\n')
-      return items.length ? `${head.replace(/:$/, '')}: ${items.length}` : head
+      const [head, ...lines] = block.split('\n')
+      const items = lines.filter((l) => l !== GITHUB_NOT_ASKED)
+      const notAsked = items.length < lines.length ? ` (${GITHUB_NOT_ASKED})` : ''
+      return items.length ? `${head.replace(/:$/, '')}: ${items.length}${notAsked}` : head
     })
     .join('; ')
 }
@@ -289,6 +294,17 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
     trees[sidebar.findIndex((w) => w.workspace.path === p.workspace)]?.find(
       (t) => t.dir === p.row.cwd
     )
+  const repoOf = new Map(workspaces.map((w) => [w.path, w.repo]))
+  const mergedOfRepo = new Map<string, Promise<Map<string, string[]> | null>>()
+  const mergedIn = (workspace: string): MergedHeads => {
+    const key = repoOf.get(workspace) ?? workspace
+    return async (dir, branch) => {
+      const heads = mergedOfRepo.get(key) ?? d.mergedHeadsByBranch(workspace).catch(() => null)
+      mergedOfRepo.set(key, heads)
+      const byBranch = await heads
+      return byBranch && (byBranch.get(branch) ?? d.mergedHeads(dir, branch))
+    }
+  }
   const [files, pullsOf, candidates] = await Promise.all([
     Promise.all(
       workspaces.map((w) =>
@@ -310,11 +326,12 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
         placed,
         busy,
         branch: tree?.branch,
-        check: checkable ? await checkWorktree(d, placed.row) : { state: 'skipped' }
+        check: checkable
+          ? await checkWorktree(() => d.workLeft(placed.row, mergedIn(placed.workspace)))
+          : { state: 'skipped' }
       }
     })
   ])
-  const repoOf = new Map(workspaces.map((w) => [w.path, w.repo]))
   const withSession = new Set<string>()
   const workingSession = new Map<string, string>()
   const groups = new Map<SessionGroup, string[]>()

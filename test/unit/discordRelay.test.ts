@@ -648,6 +648,68 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
     await vi.waitFor(() => expect(commands).toEqual(['/compact']))
   })
 
+  it('answered by a typed Discord reply, its next question is held again while the owner is at the Mac once that turn ends', async () => {
+    let away = true
+    let helperQuestion: CodexQuestion | undefined = {
+      id: 'h1',
+      question: 'Merge #41?',
+      options: [{ label: 'Merge' }, { label: 'Leave it' }]
+    }
+    const { relay, posts, reactions } = setup({}, [], {
+      ownerAway: () => away,
+      askChannelOf: (t) => (t === HELPER ? CHANNEL : undefined),
+      helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined),
+      backendOf: (t) => (t === HELPER ? 'codex' : 'claude'),
+      pendingQuestion: (t) => (t === HELPER ? helperQuestion : undefined),
+      type: async () => undefined
+    })
+    relay.codexAsked(HELPER, helperQuestion)
+    expect(posts).toHaveLength(1)
+    relay.onMessage(message('711', OWNER, '1'))
+    await vi.waitFor(() => expect(reactions).toContain('711 +✅'))
+
+    away = false
+    helperQuestion = undefined
+    relay.turnEnded(HELPER, turn('Merged.', 'Merge #41?'))
+    expect(relay.reaches(HELPER)).toBe(false)
+    helperQuestion = { id: 'h2', question: 'Delete the branch?', options: [{ label: 'Yes' }] }
+    relay.codexAsked(HELPER, helperQuestion)
+    expect(posts).toHaveLength(1)
+    away = true
+    relay.checkHeld()
+    expect(posts[1].text).toContain('Delete the branch?')
+  })
+
+  it('a Claude helper answered by a typed Discord reply has its next question held again while the owner is at the Mac once that turn ends', async () => {
+    let away = true
+    const { relay, posts, reactions } = setup({}, [], {
+      ownerAway: () => away,
+      askChannelOf: (t) => (t === HELPER ? CHANNEL : undefined),
+      helperTitle: (t) => (t === HELPER ? 'Sort out to-dos' : undefined)
+    })
+    drop(hookFile(HELPER, 'ask'), QUESTION)
+    relay.onAsk(HELPER, QUESTION, HOOK)
+    expect(posts).toHaveLength(1)
+    relay.onMessage(message('712', OWNER, 'B'))
+    await vi.waitFor(() => expect(reactions).toContain('712 +✅'))
+    expect(fs.existsSync(hookFile(HELPER, 'answer'))).toBe(true)
+
+    away = false
+    fs.rmSync(hookFile(HELPER, 'ask'))
+    relay.turnEnded(HELPER, turn('Picked B.', 'Which?'))
+    expect(relay.reaches(HELPER)).toBe(false)
+    const next = {
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [{ question: 'Delete the branch?', options: [{ label: 'Yes' }] }] }
+    }
+    drop(hookFile(HELPER, 'ask', '4243'), next)
+    relay.onAsk(HELPER, next, '4243')
+    expect(posts).toHaveLength(1)
+    away = true
+    relay.checkHeld()
+    expect(posts[1].text).toContain('Delete the branch?')
+  })
+
   it('a reply to a turn that held only Koloft’s own notice is not posted to Discord; a turn that also held the owner’s words is', () => {
     const { relay, posts, conductor } = setup()
     void relay.tellQuietly(conductor, 'NOTICE about koloft todo')
@@ -670,6 +732,75 @@ describe('DiscordRelay: a helper the butler started in its own folder', () => {
       at: 2
     })
     expect(posts.map((p) => p.text)).toEqual(['Two things.', 'Hello.'])
+  })
+
+  it('a question it asks while the owner is at the Mac, after an earlier card of its own was answered, is held and does not take what the owner writes to the butler', async () => {
+    let away = true
+    const { relay, posts, bodies } = setup({}, [], {
+      ownerAway: () => away,
+      askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined)
+    })
+    drop(hookFile(HELPER, 'ask'), QUESTION)
+    relay.onAsk(HELPER, QUESTION, HOOK)
+    expect(posts).toHaveLength(1)
+    expect(await relay.answerSession(HELPER, 'A')).toBeUndefined()
+    fs.rmSync(hookFile(HELPER, 'ask'))
+
+    away = false
+    const later = '4343'
+    drop(hookFile(HELPER, 'ask', later), QUESTION)
+    relay.onAsk(HELPER, QUESTION, later)
+    relay.onMessage(message('704', OWNER, 'how is it going?'))
+    await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] how is it going?']))
+    expect(fs.existsSync(hookFile(HELPER, 'answer', later))).toBe(false)
+    expect(posts).toHaveLength(1)
+  })
+
+  it('a question held at the Mac and answered there, followed by one posted once the owner left, takes the owner’s typed reply to that card', async () => {
+    let away = false
+    const { relay, posts, bodies } = setup({}, [], {
+      ownerAway: () => away,
+      askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined)
+    })
+    drop(hookFile(HELPER, 'ask'), QUESTION)
+    relay.onAsk(HELPER, QUESTION, HOOK)
+    fs.rmSync(hookFile(HELPER, 'ask'))
+
+    away = true
+    const later = '4343'
+    drop(hookFile(HELPER, 'ask', later), QUESTION)
+    relay.onAsk(HELPER, QUESTION, later)
+    expect(posts).toHaveLength(1)
+    relay.onMessage(message('705', OWNER, 'B'))
+    await vi.waitFor(() => expect(fs.existsSync(hookFile(HELPER, 'answer', later))).toBe(true))
+    expect(bodies()).toEqual([])
+  })
+
+  it('a Codex helper’s question held at the Mac, after an earlier card of its own was answered, does not take what the owner writes to the butler', async () => {
+    let away = true
+    let question: CodexQuestion = {
+      id: 'h1',
+      question: 'Merge #41?',
+      options: [{ label: 'Merge' }]
+    }
+    const writesTo: string[] = []
+    const { relay, posts, bodies } = setup({}, [], {
+      ownerAway: () => away,
+      askChannelOf: (t) => (t === TAB || t === HELPER ? CHANNEL : undefined),
+      backendOf: (t) => (t === HELPER ? 'codex' : 'claude'),
+      pendingQuestion: (t) => (t === HELPER ? question : undefined),
+      type: async (_t, keys) => void writesTo.push(...keys)
+    })
+    relay.codexAsked(HELPER, question)
+    expect(posts).toHaveLength(1)
+
+    away = false
+    question = { id: 'h2', question: 'Delete the branch?', options: [{ label: 'Yes' }] }
+    relay.codexAsked(HELPER, question)
+    relay.onMessage(message('706', OWNER, '1'))
+    await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] 1']))
+    expect(writesTo).toEqual([])
+    expect(posts).toHaveLength(1)
   })
 })
 

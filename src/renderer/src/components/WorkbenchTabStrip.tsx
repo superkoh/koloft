@@ -23,6 +23,10 @@ function pressOnTabControl(e: { stopPropagation(): void; preventDefault(): void 
   e.preventDefault()
 }
 
+function caretInSessionTerminal(): boolean {
+  return !!document.activeElement?.closest('.term-island .xterm')
+}
+
 function iconFor(t: WorkbenchTab): JSX.Element {
   return t.kind === 'files' ? (
     <IconFiles size={13} />
@@ -116,7 +120,10 @@ export const WorkbenchTabStrip = memo(function WorkbenchTabStrip({
       style={
         heldWidths && t.id in heldWidths ? { width: heldWidths[t.id], flexShrink: 0 } : undefined
       }
-      onMouseDown={() => onActivate(t.id)}
+      onMouseDown={(e) => {
+        if (t.kind === 'files' && caretInSessionTerminal()) e.preventDefault()
+        onActivate(t.id)
+      }}
       draggable={t.kind !== 'files'}
       onDragStart={(e) => {
         if (t.kind === 'files') return

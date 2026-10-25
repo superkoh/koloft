@@ -230,6 +230,8 @@ export function isOrphanRow(
 }
 
 interface RowLookups<S> {
+  running: (row: { id: string; running: boolean }) => boolean
+  boundTabOf: (sessionId: string) => string | undefined
   tabOf: (row: { id: string; running: boolean; pending?: boolean }) => string | undefined
   sessionOn: (tabId: string) => S | undefined
   attentionOn: (rowId: string, tabId: string | undefined) => AttentionEvent | undefined
@@ -254,10 +256,19 @@ export function rowLookups<S extends { sessionId: string; tabId: string; alive: 
   const liveTabOfSession = firstBy(sessions, (s) => (s.alive ? s.sessionId : undefined))
   const openTabOfSession = firstBy(tabs, (t) => (t.alive || t.asleep ? t.sessionId : undefined))
   const aliveTabSessions = new Set(tabs.filter((t) => t.alive).map((t) => t.sessionId))
+  const aliveTabIds = new Set(tabs.filter((t) => t.alive).map((t) => t.id))
+  const boundInAliveTab = firstBy(sessions, (s) =>
+    s.alive && aliveTabIds.has(s.tabId) ? s.sessionId : undefined
+  )
+  const boundTabOf = (sessionId: string): string | undefined =>
+    boundInAliveTab.get(sessionId)?.tabId
   return {
+    running: (row) => row.running || !!boundTabOf(row.id),
+    boundTabOf,
     tabOf: (row) => {
       if (row.pending) return row.id
-      if (!row.running) return undefined
+      const bound = boundTabOf(row.id)
+      if (bound || !row.running) return bound
       return liveTabOfSession.get(row.id)?.tabId ?? openTabOfSession.get(row.id)?.id
     },
     sessionOn: (tabId) => sessionOnTab.get(tabId),

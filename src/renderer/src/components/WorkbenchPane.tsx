@@ -10,7 +10,7 @@ import {
   type JSX
 } from 'react'
 import { IconDownload, IconMore } from '../icons'
-import { routeFor } from '@shared/browserRoute'
+import { folderFileOf, routeFor } from '@shared/browserRoute'
 import { CDP_GUEST_ID_RETRIES, CDP_GUEST_ID_RETRY_MS } from '@shared/cdpBudget'
 import { isWebPagePath } from '@shared/preview'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
@@ -29,7 +29,7 @@ import { NO_FOCUS_SIGNAL } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
 import { relOf } from './filesModel'
-import { NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
+import { NO_CAPS, fileExists, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { editRefusal, useEditProbe } from './EditPane'
 import {
   allEditTabs,
@@ -553,6 +553,15 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     useStore.getState().openTerminalTab(ownerTab)
   }, [ownerTab, sessionCold])
 
+  const openFileTab = useCallback(
+    (path: string): void => {
+      openHere({ kind: 'file', path, source: 'user' }, (r) =>
+        setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
+      )
+    },
+    [openHere]
+  )
+
   const openFilePicker = useCallback((): void => {
     void window.api.preview.openFileDialog().then((picked) => {
       if (!picked) return
@@ -564,36 +573,48 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         )
         return
       }
-      openHere({ kind: 'file', path: picked, source: 'user' }, (r) =>
-        setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
-      )
+      openFileTab(picked)
     })
-  }, [openHere, applyLive])
+  }, [openHere, applyLive, openFileTab])
+
+  const latestAddress = useRef(0)
+
+  const showInWebTab = useCallback(
+    (url: string): void => {
+      if (!ownerTab) return
+      const shown = statesRef.current[ownerTab] ?? NO_TABS
+      const active = shown.tabs.find((t) => t.id === shown.activeId)
+      if (active?.kind !== 'web') {
+        openHere({ kind: 'web', url, source: 'user' }, (r) => applyLive(r.tabId, url))
+        return
+      }
+      onUpdate(ownerTab, (prev) => navigateTab(prev, active.id, url))
+      applyLive(active.id, url)
+    },
+    [ownerTab, onUpdate, openHere, applyLive]
+  )
 
   const submitAddress = useCallback(
-    (raw: string): void => {
-      if (!ownerTab) return
+    async (raw: string): Promise<void> => {
       const entry = raw.trim()
+      const submitted = ++latestAddress.current
+      const inFolder = folderFileOf(entry, treeRoot)
+      if (inFolder && (await fileExists(inFolder.path))) {
+        if (submitted !== latestAddress.current) return
+        const page = routeFor(inFolder.path, 'user')
+        if (page.dest === 'browser') showInWebTab(page.target + inFolder.suffix)
+        else openFileTab(inFolder.path)
+        return
+      }
+      if (submitted !== latestAddress.current) return
       const decision = routeFor(
         entry.startsWith('~/') ? window.api.home + entry.slice(1) : entry,
         'address'
       )
-      if (decision.dest === 'preview') {
-        openHere({ kind: 'file', path: decision.target, source: 'user' }, (r) =>
-          setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
-        )
-        return
-      }
-      if (decision.dest !== 'browser') return
-      const url = decision.target
-      if (!activeTab || activeTab.kind !== 'web') {
-        openHere({ kind: 'web', url, source: 'user' }, (r) => applyLive(r.tabId, url))
-        return
-      }
-      onUpdate(ownerTab, (prev) => navigateTab(prev, activeTab.id, url))
-      applyLive(activeTab.id, url)
+      if (decision.dest === 'preview') openFileTab(decision.target)
+      else if (decision.dest === 'browser') showInWebTab(decision.target)
     },
-    [ownerTab, activeTab, onUpdate, openHere, applyLive]
+    [treeRoot, showInWebTab, openFileTab]
   )
 
   const guestOf = (id: string | undefined): GuestElement | undefined =>
@@ -634,10 +655,16 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       if (set.activeId) useStore.getState().focusPanelTerm(set.activeId)
       return undefined
     }
+    const caretBefore = document.activeElement
     const raf = requestAnimationFrame(() => {
+      const root = rootRef.current
+      const caret = document.activeElement
+      const placedInPanelMeanwhile =
+        caret !== caretBefore && caret !== root && root?.contains(caret)
+      if (placedInPanelMeanwhile) return
       const guest = activeKind === 'web' ? guestOf(set.activeId) : undefined
       if (guest) guest.focus()
-      else rootRef.current?.focus()
+      else root?.focus()
     })
     return () => cancelAnimationFrame(raf)
   }, [panelFocus])

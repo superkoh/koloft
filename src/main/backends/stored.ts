@@ -4,7 +4,7 @@ import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import type { MuseSessions } from '../museSessions'
 import type { AgySessions } from '../agySessions'
-import { dirExistsSync, planResume, ResumeRefused, type ResumeProbes } from '../resumePlan'
+import { planResume, ResumeRefused, type ResumeProbes } from '../resumePlan'
 
 export function storedBackend(
   sessions: CodexSessions | MuseSessions | AgySessions,
@@ -40,9 +40,6 @@ export function storedBackend(
       if (await own.runningElsewhere(key)) return { action: 'unavailable', reason: 'running' }
       const row = sessions.findRow(key)
       const onMachine = !!row && isRemoteKey(row.cwd)
-      if (row && !onMachine && !row.worktreeState && !dirExistsSync(row.cwd)) {
-        return { action: 'unavailable', reason: 'no-cwd' }
-      }
       const probes = onMachine ? machineProbes?.(row.cwd) : resumeProbes
       if (!probes) return { action: 'unavailable', reason: 'not-found' }
       return planResume(row, probes, row?.worktreeState?.worktreePath)

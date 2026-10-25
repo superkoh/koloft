@@ -43,6 +43,7 @@ interface CreateArgs {
   ownerTabId?: string
   resized?: (id: string, cols: number, rows: number) => void
   remoteHost?: string
+  banner?: string
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
@@ -243,7 +244,10 @@ export class PtyManager extends EventEmitter {
     )
 
     const cwdParser = args.util ? new OscCwdParser() : undefined
-    proc.onData((data) => {
+    let banner = args.banner ? `${args.banner}\r\n` : ''
+    proc.onData((output) => {
+      const data = banner + output
+      banner = ''
       watchForReadyShell(data)
       this.emit('data', { id, data })
       const cwd = cwdParser?.push(data)

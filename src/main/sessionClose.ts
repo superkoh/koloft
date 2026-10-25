@@ -44,7 +44,7 @@ function commitsOnlyOn(
   ])
 }
 
-const GITHUB_NOT_ASKED =
+export const GITHUB_NOT_ASKED =
   'Koloft could not ask GitHub whether a merged pull request holds them. If one does, nothing is lost, and pushing would only bring back the branch GitHub deleted.'
 
 function commitsLeft(dir: string, onlyHere: string | null, githubNotAsked = false): string[] {

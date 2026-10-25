@@ -179,7 +179,8 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   constants below), and on 2.1.308, darwin-arm64 and linux-arm64 (`strings`,
   2026-10-22: the same again), and on 2.1.309, darwin-arm64 and linux-arm64 (`strings`,
   2026-10-23: the same array, the limit `12` beside the `prompt`/`agent` type filter,
-  and the skill-hook constants `1024` and `16384`).
+  and the skill-hook constants `1024` and `16384`), and on 2.1.310, darwin-arm64 and
+  linux-arm64 (`strings`, 2026-10-25: the same again).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -631,6 +632,23 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   regex or string included ("runs … inside a construct too complex to verify, so what it
   runs cannot be shown not to be git"), behind `tengu_rustling_lighthouse`, on by
   default (read from the 2.1.296 and 2.1.299 binaries, `strings`, 2026-10-14; not run).
+- **The same guard refuses git aimed at the main checkout, but lets `koloft` through; a
+  typed `!` command was reported refused too.** In a `-w` session the Bash tool's
+  `git -C <main checkout> log -1` came back with `This session is isolated in the worktree
+  <worktree>, but this command redirects git to the shared checkout via -C. Refusing to
+  run it — a worktree-isolated session's git operations must target its own worktree.
+  Run the equivalent from <worktree> without the redirect.`, and the command did not run;
+  `koloft session list` from the same tool ran and answered. The message is in the
+  binary's strings. Measured 2026-10-25 on CC 2.1.310, macOS, a real Koloft worktree
+  session. Not measured, from a person's report on 2026-10-22 (local, the version not
+  written down; 2.1.308 or 2.1.309 by the install dates, inferred): a merge into the main
+  checkout asked of such a session (`git -C <main> merge …`), and the same command typed
+  by the person with `!` in front, were refused the same way ("This session is isolated
+  in the worktree …"), and a new session started in the main checkout merged it at once.
+  Other forms (`cd <main> && git …`, `--git-dir=`) were not tried; on a remote (SSH)
+  machine, inferred, not checked. So Koloft's agent guide sends a worktree session whose
+  merge is refused to a new session in the main checkout (`koloft session new` without
+  `-w`).
 - **CC's Bash tool runs its commands with the env `claude` was started with**, so a
   variable set on the launch reaches the model's shell in a `-w` worktree session:
   `KOLOFT_PORT_OFFSET` set in the pty env on this Mac, and exported by the remote tab
@@ -1040,7 +1058,12 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   started borrows the desktop app's login) acts only with
   `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` and `CLAUDE_CODE_HOST_AUTH_ENV_VAR` set, which
   Koloft does not set, so the shim's `CLAUDE_CODE_OAUTH_TOKEN` takes the same path as
-  before. Both read, not run.
+  before. Both read, not run. Between 2.1.309 and 2.1.310 (`strings -n 6`, 2026-10-25,
+  darwin-arm64 and linux-arm64): `ANTHROPIC_*` and `*_MODEL` identical at 77 and 14;
+  `CLAUDE_CODE_*` gains 4 (`ARTIFACT_ASK_FIRST`, `DESKTOP_CONNECTOR_NAMES`,
+  `RETRY_WATCHDOG_SCOPE`, `TOOL_CONTAINER_PLUGINS_NAMED`), none of which `src/` sets, and
+  loses none; `tengu_*` gains 22 and loses 2 (one is `tengu_amber_sentinel`, §8); all 15
+  names `src/` uses are still there.
   2.1.302 is the
   first build that reads `CLAUDE_CODE_AUTO_MODE_MODEL` (2.1.301 only names it in the env
   allow-list), with a server-configured classifier model taking priority over it; Koloft
@@ -1077,6 +1100,36 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   official login flow for a long-lived, inference-only token (scope below): it prints the authorization URL and, on success, the token on
   its output. **CC's Bash-tool children inherit the parent claude's full env**, so
   nested claude calls inherit the injected token (inferred, not checked).
+- **Since 2.1.310 a gateway that refuses the effort beta or `role: "system"` turns
+  gets the request again without them, and Koloft's hook text still arrives.**
+  Measured 2026-10-25 on CC 2.1.309 and 2.1.310: `claude -p` with one Bash tool call
+  against a fake Anthropic API (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN=fake`, every
+  model slot pinned to `gw-model`, throwaway `HOME` and `CLAUDE_CONFIG_DIR`, `--settings`
+  hooks for SessionStart, UserPromptSubmit and PostToolUse each giving
+  `additionalContext`), the server logging every request and answering 400 by rule.
+  - Accepted, both builds send `anthropic-beta` `effort-2025-11-24` with
+    `output_config: {"effort": …}` (with or without `--effort`) and put all three hooks'
+    text in `{role: "system"}` entries inside `messages` (beta
+    `mid-conversation-tool-changes-2026-07-01`), not in the top-level `system`. Pinned to
+    `claude-sonnet-4-5`, 2.1.310 sent neither, and the hook text went into user messages
+    as `<system-reminder>` blocks.
+  - A 400 in Anthropic's own wording ``Unexpected value(s) `effort-2025-11-24` for the
+    `anthropic-beta` header…``: 2.1.309 failed (`API Error: 400 …`); 2.1.310 sent it again
+    without the beta value and `output_config` and went on (`[effort] the server refused
+    effort for model gw-model … this Claude Code process will not send either to this
+    model again.`). The switch lives in memory: a second process (`-p --resume`) met the
+    400 once more and recovered the same way.
+  - A 400 refusing `role: "system"` (pydantic `messages.1.role: Input should be 'user'
+    or 'assistant'`, or serde ``unknown variant `system` ``): 2.1.309 failed; 2.1.310 sent
+    it again with no system entries and without that beta, and went on.
+    `Unexpected role "system". …` was already recovered by 2.1.309. On the resend the
+    SessionStart and UserPromptSubmit text sat in the user message as `<system-reminder>`
+    blocks and the PostToolUse text at the end of the `tool_result`. The entries stayed off
+    for the rest of the conversation and after a `-p --resume`; a new session sent them
+    again (the log says "until /clear or /compact").
+  - Other wordings (`Unsupported beta: effort-2025-11-24`, a bare `Bad Request`, `system
+    role is not supported in messages…`) failed on both builds.
+  Not run: the interactive TUI; which real gateways answer which wording.
 - **CC's safety classifier can silently swap the model**: a blocked fable request is
   re-run on Opus and the session pinned there, so the model a session was launched
   with is not always the model it runs; the status JSON names the model in use.
@@ -1195,7 +1248,13 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   sleep <n>" or "sleep <n> followed by: …", and the model is told to use Monitor or
   `run_in_background`. Seen the same day: a subagent told to run `sleep 300` in the
   foreground was refused, and one left free to choose ran it in the background instead.
-  `perl -e "sleep 300"` does not match the check.
+  `perl -e "sleep 300"` does not match the check. Up to 2.1.309 this refusal, the
+  Monitor tool and plugin monitors sat behind the server flag `tengu_amber_sentinel`
+  (default off, so off wherever the flag never arrives — inferred, not checked);
+  2.1.310 dropped that flag from all of them, the changelog's "Monitor … when telemetry
+  or nonessential traffic is disabled; long foreground sleeps are now blocked there
+  too". The regex `^sleep\s+(\d+(?:\.\d*)?)\s*$` and the "Blocked: …" text are the
+  same (`strings`, 2026-10-25, not run).
 - **An idle teammate is still `running`**. CC's own activity checks use
   `status === 'running' && !isIdle`; hooks never see `isIdle`. On disk the idle edge
   is a user record in the lead's transcript — `Another Claude session sent a
@@ -1232,6 +1291,14 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   scripts). CPU does tell them apart: over 60 s an idle `python3 -m http.server` used
   0.01 s of CPU per minute, while a test run uses tens of seconds per minute. A busy
   emulator (qemu) also used 24.5 s per minute, so it reads as work too.
+- **A test run is not always busy on CPU, but it keeps printing.** Measured 2026-10-25,
+  CC 2.1.310, macOS 27.0: a background `npx playwright test` of four Koloft e2e specs
+  (65 tests, 7.4 min, Electron relaunched per test and listening on 127.0.0.1 through
+  `--remote-debugging-port=0`) was sampled every 5 s. Over three 2-minute windows its
+  tree used 23.7, 4.3 and 2.7 s of CPU per minute, counting programs that had exited
+  (PLATFORM§3); summing only the live ones gave −0.7, 0.9 and 1.1. A second run gave
+  27.3, 4.5 and 2.2 (live only: −1.7, 0.7, 0.7), and its output file grew in all three
+  windows, by appending: the whole run's lines were still in it at the end.
 - **A background subagent's own background shell stays in the MAIN session's Stop list
   after the subagent ends — in interactive mode.** Measured 2026-10-08 on CC 2.1.295,
   interactive TUI driven through a pty, with Stop/SubagentStop hooks that saved their input:
@@ -1357,7 +1424,7 @@ line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is p
 `cron-real-smoke.spec.ts` › BB-R01, green on 2.1.296 (2026-10-11), 2.1.299
 (2026-10-14), 2.1.300 (2026-10-15), 2.1.301 (2026-10-16), 2.1.302 (2026-10-17),
 2.1.303 (2026-10-19), 2.1.304 (2026-10-20), 2.1.306 (2026-10-21), 2.1.308
-(2026-10-22) and 2.1.309 (2026-10-23).
+(2026-10-22), 2.1.309 (2026-10-23) and 2.1.310 (2026-10-25).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1861,7 +1928,9 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   kinds and startup probe (`strings`, 2026-10-14, 2026-10-16, 2026-10-17, 2026-10-19,
   2026-10-20, 2026-10-21 and 2026-10-22; on 2.1.306 only the builder pieces and the
   startup probe's strings were counted, equal to 2.1.304's; on 2.1.308 the builder code,
-  minified names evened out, equals 2.1.306's). The name "Program Status" came only from the changelog the binary
+  minified names evened out, equals 2.1.306's). On 2.1.310 the sequence is still written
+  unwrapped; the tmux passthrough that release added (for a mod's `Image`) is the image
+  renderer's own wrapper (`strings`, 2026-10-25). The name "Program Status" came only from the changelog the binary
   carries, which in 2.1.306 covers 2.1.296–2.1.304, so it is no longer in its strings.
   Since Codex CLI 0.163.0 the Codex TUI writes OSC 7501 too, with no query first and
   only `state` and `app=codex` (`docs/codex-cli-contract.md` §25).
@@ -2175,7 +2244,8 @@ below was one run.
   before E-SSH-10/11/12/15/17, all green (2026-10-21), and on linux-arm64 2.1.308 before
   E-SSH-10/11/12/15/17/C2, all green, the fallback the same in `strings` (2026-10-22),
   and on linux-arm64 2.1.309 the same again (2026-10-23; the new `tengu_mossy_anchor`
-  is a different gate). A user's own `claude -p` in a Koloft terminal is the measured case.
+  is a different gate), and on linux-arm64 2.1.310 before E-SSH-10/11/12/15/17/C2, all
+  green (2026-10-25). A user's own `claude -p` in a Koloft terminal is the measured case.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
   runs), also for a plan in `bypassPermissions`.
@@ -2308,8 +2378,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2026-10-15), 2.1.301 (`2.1.301 (Claude Code)`, 2026-10-16), 2.1.302 (`2.1.302
   (Claude Code)`, 2026-10-17), 2.1.303 (`2.1.303 (Claude Code)`, 2026-10-19),
   2.1.304 (`2.1.304 (Claude Code)`, 2026-10-20), 2.1.306 (`2.1.306 (Claude Code)`,
-  2026-10-21), 2.1.308 (`2.1.308 (Claude Code)`, 2026-10-22) and 2.1.309 (`2.1.309
-  (Claude Code)`, 2026-10-23).
+  2026-10-21), 2.1.308 (`2.1.308 (Claude Code)`, 2026-10-22), 2.1.309 (`2.1.309
+  (Claude Code)`, 2026-10-23) and 2.1.310 (`2.1.310 (Claude Code)`, 2026-10-25; its
+  `--help` byte-identical to 2.1.309's).
   **2.1.303 differs from 2.1.302 only in a built-in deny list of four root
   certificates** checked as the TLS trust store loads (the runtime's roots, the system
   store and `NODE_EXTRA_CA_CERTS`; `strings -n 6` set diffs, 2026-10-19: beside the
@@ -2365,7 +2436,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2.1.306, and npm's and the download host's `stable` 2.1.304; on 2026-10-22 every
   channel offered 2.1.308 (npm `latest`, `next` and `stable`, and the download host's
   `latest` and `stable`); on 2026-10-23 npm `latest` and `next` and the download host's
-  `latest` offered 2.1.309, and npm's and the download host's `stable` 2.1.308.
+  `latest` offered 2.1.309, and npm's and the download host's `stable` 2.1.308; on
+  2026-10-25 npm `latest` and `next` and the download host's `latest` offered 2.1.310,
+  and npm's and the download host's `stable` still 2.1.308.
 - **One version's binary for one platform sits at
   `downloads.claude.ai/claude-code-releases/<version>/<platform>/claude`**, platform as
   in `linux-arm64`: on 2026-10-12 `2.1.296/linux-arm64/claude` answered 200 with
@@ -2382,7 +2455,9 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   its strings stamp `2.1.306` only), and on 2026-10-22 `2.1.308/linux-arm64/claude` with
   292,085,944 bytes (ETag the file's MD5 again, strings stamp `2.1.308` only), and on
   2026-10-23 `2.1.309/linux-arm64/claude` with 293,331,128 bytes (ETag the file's MD5,
-  strings stamp `2.1.309` only) — each ran as the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
+  strings stamp `2.1.309` only), and on 2026-10-25 `2.1.310/linux-arm64/claude` with
+  291,496,120 bytes (ETag the file's MD5, strings stamp `2.1.310` only) — each ran as
+  the lab's remote `claude`. `linux-x64` is inferred from the same shape, not checked.
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
 
@@ -2400,6 +2475,10 @@ unset), its prompt both typed and given as the launch argument.
   "hookName":"UserPromptSubmit","hookEvent":"UserPromptSubmit",…},"rendered":[{"content":
   "<system-reminder>\nUserPromptSubmit hook additional context: <text>\n</system-reminder>"}],
   "renderedRole":"system"}`, written right after the prompt.
+- **In the API request it is a `{role: "system"}` entry inside `messages`** for a pinned
+  `gw-model` or `claude-opus-5-5`, and a `<system-reminder>` block in the user message
+  for `claude-sonnet-4-5` or after a gateway refused system entries (2026-10-25, CC
+  2.1.310, fake API; §7).
 - **The interactive screen does not show the text.** While the hook runs, the spinner line
   reads `(running UserPromptSubmit hook · 0s)`; after that only the prompt and the reply
   are drawn.

@@ -356,6 +356,50 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   })
 })
 
+// PLATFORM§36 AGY§12
+describe('after a gh pr command the status line asks GitHub again', () => {
+  let cached: string
+  const mtime = (): number => fs.statSync(cached).mtimeMs
+  const OLDER_THAN_THE_CACHE_TTL = Date.now() - 30_000
+
+  beforeEach(() => {
+    const cache = path.join(dir, '.cache', 'ccstatusline', 'git-review')
+    fs.mkdirSync(cache, { recursive: true })
+    cached = path.join(cache, 'git-review-a.json')
+    fs.writeFileSync(cached, '')
+  })
+
+  const ran = (commandLine: string, lastUserInput: string, sh = runWithSh(scripts.hook)): void => {
+    const input = JSON.stringify({
+      conversationId: 'c1',
+      error: '',
+      lastUserInput,
+      stepIdx: 3,
+      toolCall: {
+        args: { CommandLine: commandLine, WaitMsBeforeAsync: 5000, toolSummary: 'run it' },
+        name: 'run_command'
+      }
+    }).replace(/[<>&]/g, (c) => `\\u00${c.charCodeAt(0).toString(16)}`)
+    run(`${sh} PostToolUse`, input, { HOME: dir })
+  }
+
+  it('a gh pr command that changes a PR, sent as agy escapes it, marks the cached PR status stale', () => {
+    ran('git push -u origin x && gh pr create --title "Fix \\"it\\"" --fill', 'open it')
+    expect(mtime()).toBeLessThan(OLDER_THAN_THE_CACHE_TTL)
+  })
+
+  it('does the same on a machine whose sh is dash', () => {
+    ran('gh pr merge 89 --squash', 'merge it', `/bin/dash ${scripts.hook}`)
+    expect(mtime()).toBeLessThan(OLDER_THAN_THE_CACHE_TTL)
+  })
+
+  it("only the command that ran counts: the owner's words naming gh pr leave the cache alone", () => {
+    const before = mtime()
+    ran('ls -la', 'please run gh pr create when done')
+    expect(mtime()).toBe(before)
+  })
+})
+
 describe('the title script agy runs on every state change (AGY§9 AGY§11)', () => {
   const titleCommand = (): string => runWithSh(scripts.title)
 
