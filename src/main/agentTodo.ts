@@ -49,7 +49,7 @@ export interface TodoVerbDeps {
   sessions(): SessionInfo[]
   asking(tabId: string): boolean
   asleep(sessionId: string): boolean
-  workLeft(row: SessionRow): Promise<string[]>
+  workLeft(row: SessionRow): Promise<string[] | null>
   worktrees(workspace: string): Promise<{ dir: string; branch?: string }[]>
   repoOf(workspace: string): Promise<string | null>
   pulls(workspace: string): Promise<TodoPulls | null>
@@ -74,8 +74,7 @@ interface Candidate {
   placed: PlacedRow
   busy: boolean
   branch?: string
-  checked: boolean
-  left: string[]
+  left?: string[] | null
 }
 
 interface PullsOfRepo {
@@ -84,8 +83,12 @@ interface PullsOfRepo {
 }
 
 const NOTHING_LEFT = 'nothing left in its worktree'
+const NO_WORKTREE = 'no worktree of its own'
+const COULD_NOT_CHECK = 'Koloft could not check what is left in its worktree'
 
 type SessionGroup = 'asking' | 'turnDone' | 'asleep' | 'workLeft' | 'closed'
+
+const OPEN_AND_NOT_ASKING: SessionGroup[] = ['turnDone', 'asleep']
 
 const GROUP_TITLES: Record<SessionGroup, string> = {
   asking: 'Asking the owner a question',
@@ -107,7 +110,12 @@ function groupOf(c: Candidate, d: TabState): SessionGroup {
   const { live, row } = c.placed
   if (live) return d.asking(live.tabId) || live.status === 'approval' ? 'asking' : 'turnDone'
   if (row.running) return 'asleep'
-  return c.left.length ? 'workLeft' : 'closed'
+  return c.left?.length ? 'workLeft' : 'closed'
+}
+
+function nothingLeftFacts(left: string[] | null | undefined): string[] {
+  if (left === null) return [NO_WORKTREE]
+  return left?.length === 0 ? [NOTHING_LEFT] : []
 }
 
 function leftSummary(left: string[]): string {
@@ -136,7 +144,7 @@ function isOwners(p: TodoPull, me: string | null): boolean {
   return !!me && (p.author === me || p.reviewers.includes(me))
 }
 
-function sessionLine(c: Candidate, pulls: string[], now: number): string {
+function sessionLine(c: Candidate, group: SessionGroup, pulls: string[], now: number): string {
   const { placed } = c
   const { row } = placed
   return [
@@ -147,8 +155,8 @@ function sessionLine(c: Candidate, pulls: string[], now: number): string {
     `last active ${ageLabel(row.mtime, now)}`,
     `id: ${row.nativeSessionId ?? row.id}`,
     ...(c.branch ? [`branch: ${c.branch}`] : []),
-    ...(c.left.length ? [leftSummary(c.left)] : []),
-    ...(c.checked && !c.left.length && (placed.live || row.running) ? [NOTHING_LEFT] : []),
+    ...(c.left?.length ? [leftSummary(c.left)] : []),
+    ...(OPEN_AND_NOT_ASKING.includes(group) ? nothingLeftFacts(c.left) : []),
     ...pulls
   ].join(' · ')
 }
@@ -282,8 +290,7 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
         placed,
         busy,
         branch: tree?.branch,
-        checked: checkable,
-        left: checkable ? await d.workLeft(placed.row).catch(() => []) : []
+        left: checkable ? await d.workLeft(placed.row).catch(() => [COULD_NOT_CHECK]) : undefined
       }
     })
   ])
@@ -304,12 +311,13 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
     }
     for (const p of own) withSession.add(pullKey(repo!, p))
     const me = found?.state === 'ok' ? found.me : null
+    const group = groupOf(c, d)
     const line = sessionLine(
       c,
+      group,
       own.map((p) => `its pull request: ${pullFacts(p, me, now)}`),
       now
     )
-    const group = groupOf(c, d)
     groups.set(group, [...(groups.get(group) ?? []), `- ${line}`])
   }
   const sessionPart = (Object.keys(GROUP_TITLES) as SessionGroup[]).flatMap((g) =>

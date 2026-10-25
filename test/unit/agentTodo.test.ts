@@ -65,7 +65,8 @@ interface World {
   sessions: SessionInfo[]
   asking?: string[]
   asleep?: string[]
-  left?: Record<string, string[]>
+  left?: Record<string, string[] | null>
+  checkFails?: string[]
   worktrees?: Record<string, { dir: string; branch?: string }[]>
   repos?: Record<string, string>
   pulls?: TodoPulls
@@ -89,7 +90,8 @@ function harness(world: World) {
     asleep: (sessionId) => world.asleep?.includes(sessionId) ?? false,
     workLeft: async (r) => {
       checked.push(r.id)
-      return world.left?.[r.id] ?? []
+      if (world.checkFails?.includes(r.id)) throw new Error('git timed out')
+      return world.left && r.id in world.left ? world.left[r.id] : []
     },
     worktrees: async (ws) => world.worktrees?.[ws] ?? [],
     repoOf: async (ws) => world.repos?.[ws] ?? null,
@@ -159,7 +161,7 @@ describe('koloft todo', () => {
     })
   })
 
-  it('prints the way to sort out to-dos, then the sessions waiting on the owner by kind, leaving out working ones and the butler’s own folder; a session whose tab is asleep is listed, on this Mac or another machine, while one running with no tab here is left out as working; only an idle local worktree session is checked for work left, and an open or asleep one checked clean says nothing is left there', async () => {
+  it('prints the way to sort out to-dos, then the sessions waiting on the owner by kind, leaving out working ones and the butler’s own folder; a session whose tab is asleep is listed, on this Mac or another machine, while one running with no tab here is left out as working; only an idle local session in a listed worktree is checked for work left, and an open or asleep one not asking the owner says when nothing is left there or it has no worktree of its own', async () => {
     const asking = row('asking', { running: true, mtime: NOW - DAY })
     const done = row('done', { running: true, backendId: 'codex' })
     const clean = row('clean', { running: true, cwd: `${SHOP}/.claude/worktrees/tidy` })
@@ -197,6 +199,7 @@ describe('koloft todo', () => {
       asleep: ['asleep', 'rested', 'on-box'],
       worktrees: {
         [SHOP]: [
+          { dir: SHOP, branch: 'main' },
           { dir: `${SHOP}/.claude/worktrees/tidy`, branch: 'tidy' },
           { dir: `${SHOP}/.claude/worktrees/rest`, branch: 'rest' },
           { dir: `${SHOP}/.claude/worktrees/busy`, branch: 'busy' },
@@ -206,6 +209,7 @@ describe('koloft todo', () => {
         ]
       },
       left: {
+        done: null,
         asleep: ['Changes not committed:\n M c.ts'],
         dirty: [
           'Changes not committed:\n M a.ts\n?? b.ts',
@@ -218,7 +222,7 @@ describe('koloft todo', () => {
     const sessions = section(text, 'SESSIONS')
     expect(sessions).toContain('Asking the owner a question:\n- "asking title" · Claude')
     expect(sessions).toMatch(
-      /Open, finished its turn:\n- "done title" · Codex .* · id: done\n- "clean title" · Claude .* · branch: tidy · nothing left in its worktree\n/
+      /Open, finished its turn:\n- "done title" · Codex .* · id: done · branch: main · no worktree of its own\n- "clean title" · Claude .* · branch: tidy · nothing left in its worktree\n/
     )
     expect(sessions).toMatch(
       /Closed, with work left in its worktree:\n- "dirty title" .* · Changes not committed: 2; Commits on no other branch and no remote branch: 1/
@@ -233,7 +237,30 @@ describe('koloft todo', () => {
     expect(sessions).not.toContain('no-tab-here title')
     expect(sessions).not.toContain('helper title')
     expect(sessions.match(/nothing left in its worktree/g)).toHaveLength(2)
-    expect([...checked].sort()).toEqual(['asleep', 'clean', 'dirty', 'rested'])
+    expect([...checked].sort()).toEqual([
+      'asking',
+      'asleep',
+      'clean',
+      'dirty',
+      'done',
+      'old',
+      'rested'
+    ])
+  })
+
+  it('never calls a worktree clean when Koloft could not check it', async () => {
+    const stuck = row('stuck', { running: true, cwd: `${SHOP}/.claude/worktrees/stuck` })
+    const { run } = harness({
+      sidebar: sidebarOf([[SHOP, [stuck]]]),
+      sessions: [live(stuck, 'idle')],
+      worktrees: { [SHOP]: [{ dir: `${SHOP}/.claude/worktrees/stuck`, branch: 'stuck' }] },
+      checkFails: ['stuck']
+    })
+    const sessions = section((await run([])).text, 'SESSIONS')
+    expect(sessions).toContain(
+      'branch: stuck · Koloft could not check what is left in its worktree'
+    )
+    expect(sessions).not.toContain('nothing left')
   })
 
   it('lists the owner’s open pull requests with what decides them; one on a listed worktree session’s branch goes with that session, one on a working session’s stays here and says so, the others are only counted, and the issues pull requests close are named', async () => {
