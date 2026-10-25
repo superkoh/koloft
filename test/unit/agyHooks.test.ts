@@ -356,6 +356,55 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   })
 })
 
+// PLATFORM§36 AGY§12 AGY§13
+describe('after a gh pr command the status line asks GitHub again', () => {
+  let cache: string
+  const cached = (name: string): string => path.join(cache, name)
+  const mtime = (name: string): number => fs.statSync(cached(name)).mtimeMs
+  const OLDER_THAN_THE_CACHE_TTL = Date.now() - 30_000
+
+  beforeEach(() => {
+    cache = path.join(dir, '.cache', 'ccstatusline', 'git-review')
+    fs.mkdirSync(cache, { recursive: true })
+    for (const name of ['git-review-a.json', 'git-review-b.json', 'git-review-a.json.lock'])
+      fs.writeFileSync(cached(name), '')
+  })
+
+  const ran = (commandLine: string, lastUserInput = 'go on', command?: string): void => {
+    const input = {
+      conversationId: 'c1',
+      error: '',
+      lastUserInput,
+      stepIdx: 3,
+      toolCall: {
+        args: { CommandLine: commandLine, WaitMsBeforeAsync: 5000, toolSummary: 'run it' },
+        name: 'run_command'
+      }
+    }
+    run(command ?? commandFor('PostToolUse'), JSON.stringify(input), { HOME: dir })
+  }
+
+  it('a gh pr command that changes a PR marks every cached PR status stale, never its lock', () => {
+    const lock = mtime('git-review-a.json.lock')
+    ran('git push -u origin x && gh pr create --title "Fix \\"it\\"" --fill')
+    expect(mtime('git-review-a.json')).toBeLessThan(OLDER_THAN_THE_CACHE_TTL)
+    expect(mtime('git-review-b.json')).toBeLessThan(OLDER_THAN_THE_CACHE_TTL)
+    expect(mtime('git-review-a.json.lock')).toBe(lock)
+  })
+
+  it('does the same on a machine whose sh is dash', () => {
+    ran('gh pr merge 89 --squash', 'go on', `/bin/dash ${scripts.hook} PostToolUse`)
+    expect(mtime('git-review-a.json')).toBeLessThan(OLDER_THAN_THE_CACHE_TTL)
+  })
+
+  it("only the command that ran counts: the owner's words naming gh pr, or a gh pr that only reads, leave the cache alone", () => {
+    const before = mtime('git-review-a.json')
+    ran('ls -la', 'please run gh pr create when done')
+    ran('gh pr view 12')
+    expect(mtime('git-review-a.json')).toBe(before)
+  })
+})
+
 describe('the title script agy runs on every state change (AGY§9 AGY§11)', () => {
   const titleCommand = (): string => runWithSh(scripts.title)
 

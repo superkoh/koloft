@@ -17,6 +17,7 @@ import {
   NOTICE_THIS_TURN,
   QUOTED_NOTE_BYTES,
   QUOTED_PROMPT_BYTES,
+  STALE_PR_STATUS_FN,
   TAKE_NOTICE_FN,
   TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE,
   type HoldEvent,
@@ -61,6 +62,7 @@ ${TAKE_NOTICE_FN}
 ${KEEP_GOING_FOR_THE_NOTICE_FN}
 ${LANGUAGE_FNS}
 ${LAST_REPLY_FN}
+${STALE_PR_STATUS_FN}
 if [ "$event" = "Stop" ]; then
   keep_going_for_the_notice && exit 0
   [ -n "$turn" ] && rm -f "$turn"
@@ -79,6 +81,8 @@ case "$event" in
     told="$([ -n "$turn" ] && cat "$turn" 2>/dev/null)$said"
     [ -n "$told" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}' "$told"
     ;;
+  # AGY§12 AGY§13
+  PostToolUse) stale_pr_status "$(printf '%s' "$input" | tr -d '\\n' | LC_ALL=C sed -n -E 's/.*"CommandLine" *: *"${JSON_STRING_BODY}".*/\\1/p')" ;;
 esac
 exit 0
 `

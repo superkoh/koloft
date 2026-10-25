@@ -573,6 +573,14 @@ Nothing ran against Google's real servers.
   | `PostToolUse` | after the tool really ran (not when denied); for a background command, when it ends | `toolCall`, `stepIdx`, `error:""`; no output, no diff |
   | `Stop` | end of the agent loop | `executionNum`, `terminationReason` (`NO_TOOL_CALL`, `TERMINAL_CUSTOM_HOOK` after `/compact`, `ERROR`), `fullyIdle` (false while a subagent runs), `error` |
 
+- **What a `PostToolUse` hook sees of a `run_command`.** 1.4.7 Linux arm64 in Docker,
+  fake Gemini server, `-p` then `-c -p`, `--dangerously-skip-permissions`, hook entry
+  `/bin/sh <file>` (dash), 2026-10-25: stdin is one compact line holding
+  `"toolCall":{"args":{"CommandLine":"<cmd>","WaitMsBeforeAsync":…,"toolSummary":…},"name":"run_command"}`
+  and also `lastUserInput`, the prompt as typed, so words the user wrote show up in
+  every tool event of that turn. Inside `CommandLine`, `<`, `>` and `&` arrive as
+  `<`, `>`, `&` and quotes as `\"`; spaces stay as they are. The hook's
+  `$HOME` was the one agy was launched with (a file the hook touched under it changed).
 - `PermissionRequest`, `Notification`, `UserPromptSubmit` and `SessionEnd` are
   ignored and never fire. **No hook fires while agy waits for the user**; an ask shows
   only as `PreToolUse` just before it, the 7501 `blocked` frame (§10), `tool_use` in
