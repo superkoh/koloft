@@ -1177,6 +1177,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **`git check-ignore`**: `-z` is only valid with `--stdin` (with pathspecs git exits
   128). It exits 1 with empty
   output when nothing is ignored — a normal answer — and 128 outside a repo.
+  Given names as arguments, it prints any name with a non-ASCII character or a `"`
+  quoted and escaped (`秘密.txt` comes back as `"\347\247\230\345\257\206.txt"`);
+  with `-z --stdin` every name comes back exactly as sent. Outside a repo it exits
+  before reading stdin, so writing 5,000 names (~160 KB) to it fails with `EPIPE`, which
+  crashes Node unless the stdin stream has an `error` handler. With
+  `core.precomposeunicode` (on by default in a macOS repo) git matches ignore rules
+  against the composed (NFC) form of a name, as `git status` and `ls-files` show it;
+  a name read from disk in decomposed (NFD) form and sent on stdin as-is matches no
+  rule, though sent as an argument it is composed first. (Measured, git 2.54.0,
+  macOS, 2026-10-25.)
 - **`git ls-files`**: `--others` (and `--ignored`) prints a nested repository as one
   `dir/` entry. Run with `-C <dir>` it lists only files under that folder, relative to
   it, while `git diff --name-status` prints toplevel-relative paths for the whole repo
