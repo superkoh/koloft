@@ -74,6 +74,7 @@ interface Candidate {
   placed: PlacedRow
   busy: boolean
   branch?: string
+  checked: boolean
   left: string[]
 }
 
@@ -82,6 +83,8 @@ interface PullsOfRepo {
   pulls: TodoPulls
 }
 
+const NOTHING_LEFT = 'nothing left in its worktree'
+
 type SessionGroup = 'asking' | 'turnDone' | 'asleep' | 'workLeft' | 'closed'
 
 const GROUP_TITLES: Record<SessionGroup, string> = {
@@ -89,7 +92,8 @@ const GROUP_TITLES: Record<SessionGroup, string> = {
   turnDone: 'Open, finished its turn',
   asleep: 'Open, asleep: its tab is kept but its agent is stopped, so it is not working',
   workLeft: 'Closed, with work left in its worktree',
-  closed: 'Closed, nothing left in a worktree (ask about these as one batch)'
+  closed:
+    'Closed, nothing left in a worktree (ask about these as one batch, together with the open and asleep sessions whose work is done)'
 }
 
 type TabState = Pick<TodoVerbDeps, 'asking' | 'asleep'>
@@ -144,6 +148,7 @@ function sessionLine(c: Candidate, pulls: string[], now: number): string {
     `id: ${row.nativeSessionId ?? row.id}`,
     ...(c.branch ? [`branch: ${c.branch}`] : []),
     ...(c.left.length ? [leftSummary(c.left)] : []),
+    ...(c.checked && !c.left.length && (placed.live || row.running) ? [NOTHING_LEFT] : []),
     ...pulls
   ].join(' · ')
 }
@@ -277,6 +282,7 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
         placed,
         busy,
         branch: tree?.branch,
+        checked: checkable,
         left: checkable ? await d.workLeft(placed.row).catch(() => []) : []
       }
     })
