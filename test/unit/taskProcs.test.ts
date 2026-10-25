@@ -169,11 +169,16 @@ describe('taskProcs', () => {
   })
 
   it('reports how much a shell has printed by the size of its output file', async () => {
-    const tasks = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'taskprocs-')), SID, 'tasks')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskprocs-'))
+    const tasks = path.join(dir, SID, 'tasks')
     fs.mkdirSync(tasks, { recursive: true })
     fs.writeFileSync(path.join(tasks, 'bsleep.output'), '[1/9] first test\n')
-    const r = await inspect(stub({ fd1: `p4300\nf1\nn${tasks}/bsleep.output\n` }))
-    expect(r!.shells.get('bsleep')?.outputBytes).toBe(17)
+    try {
+      const r = await inspect(stub({ fd1: `p4300\nf1\nn${tasks}/bsleep.output\n` }))
+      expect(r!.shells.get('bsleep')?.outputBytes).toBe(17)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('an output file in another session tasks dir is not one of ours', async () => {

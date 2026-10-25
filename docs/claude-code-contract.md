@@ -1232,6 +1232,13 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   scripts). CPU does tell them apart: over 60 s an idle `python3 -m http.server` used
   0.01 s of CPU per minute, while a test run uses tens of seconds per minute. A busy
   emulator (qemu) also used 24.5 s per minute, so it reads as work too.
+- **A test run is not always busy on CPU, but it keeps printing.** Measured 2026-10-25,
+  CC 2.1.310, macOS 27.0: a background `npx playwright test` of four Koloft e2e specs
+  (65 tests, 7.4 min, Electron relaunched per test and listening on 127.0.0.1 through
+  `--remote-debugging-port=0`) was sampled every 5 s. Over three 2-minute windows its
+  tree used 23.7, 4.3 and 2.7 s of CPU per minute, counting programs that had exited
+  (PLATFORM§3); summing only the live ones gave −0.7, 0.9 and 1.1. Its output file grew
+  in every window, by appending: the whole run's lines were still in it at the end.
 - **A background subagent's own background shell stays in the MAIN session's Stop list
   after the subagent ends — in interactive mode.** Measured 2026-10-08 on CC 2.1.295,
   interactive TUI driven through a pty, with Stop/SubagentStop hooks that saved their input:

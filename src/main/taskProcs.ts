@@ -140,20 +140,26 @@ export async function inspectTaskProcs(
   const seen = await read
   if (!seen) return null
   const sessionTasks = path.sep + path.join(sessionId, 'tasks')
-  for (const pid of shells) {
-    const name = seen.outputOf.get(pid)
-    if (name === undefined || !path.dirname(name).endsWith(sessionTasks)) continue
-    const tree = descendants(table, pid)
-    result.shells.set(path.basename(name, '.output'), {
-      pid,
-      ageMs: table.byPid.get(pid)?.ageMs ?? 0,
-      listening: tree.some((p) => seen.listening.has(p)),
-      cpuMsByPid: new Map(tree.map((p) => [p, table.byPid.get(p)?.cpuMs ?? 0])),
-      outputBytes: await fs.promises.stat(name).then(
-        (st) => st.size,
-        () => 0
-      )
+  const found = await Promise.all(
+    shells.map(async (pid): Promise<[string, ShellProc] | null> => {
+      const name = seen.outputOf.get(pid)
+      if (name === undefined || !path.dirname(name).endsWith(sessionTasks)) return null
+      const tree = descendants(table, pid)
+      return [
+        path.basename(name, '.output'),
+        {
+          pid,
+          ageMs: table.byPid.get(pid)?.ageMs ?? 0,
+          listening: tree.some((p) => seen.listening.has(p)),
+          cpuMsByPid: new Map(tree.map((p) => [p, table.byPid.get(p)?.cpuMs ?? 0])),
+          outputBytes: await fs.promises.stat(name).then(
+            (st) => st.size,
+            () => 0
+          )
+        }
+      ]
     })
-  }
+  )
+  for (const entry of found) if (entry) result.shells.set(...entry)
   return result
 }
