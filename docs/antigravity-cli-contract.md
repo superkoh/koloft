@@ -984,6 +984,24 @@ Nothing ran against Google's real servers.
 - (1.4.2, same setup) `"agentMode": "auto"` in `settings.json` or `--mode auto` on the
   API-key route: no banner, no warning, every ask as in default; the log says `auto
   mode is unavailable, falling back to default`.
+- **Allow rules** (1.4.7, build `1.4.7-5900205422411776`, Linux arm64 from the
+  manifest, sha512 checked, Docker, tmux, fake Gemini server, default mode,
+  2026-10-24). On `koloft open x` the ask reads "2. Yes, and always allow in this
+  conversation for commands that start with 'koloft' / 3. Yes, and always allow for
+  commands that start with 'koloft' (Persist to settings.json)"; `3` writes
+  `"permissions":{"allow":["command(koloft)"]}` into the `--gemini_dir` folder's
+  `antigravity-cli/settings.json`. With `"permissions":{"allow":["command(git
+  status)","command(koloft)"]}` written there before launch, `koloft open x` and
+  `koloft session send <id> "hello there, run the tests"` ran with no ask, and agy kept
+  both rules when it rewrote the file. Still asked: `ls /`, `koloft open x && ls /`
+  (the ask names `ls`), `koloft open x; touch …` (names `touch`), `koloft open $(touch
+  …)`, `koloftx open x`, `koloft open x | sh`, and `/work/bin/koloft open x` (the rule
+  matches the command's first word as typed, not the binary it finds). The macOS
+  build (1.4.7 darwin arm64, sha512 checked, a throwaway tart VM with no screen, run
+  under `expect` answering the terminal queries, same fake server and
+  `WSL_INTEROP`) did the same: asked with no rule; with the rule, `koloft open x` and
+  `koloft session send abc "hello there"` ran with no ask, while `pwd` and `koloft
+  open x; touch …` asked.
 
 ## §27 Terminal modes
 
