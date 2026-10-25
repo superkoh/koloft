@@ -36,7 +36,6 @@ const CSI_PATTERN = /^\x1b(?:\[[0-9;?<>=]*[ -/]*[@-~]|O[A-Z])/
 const CSI_KEYS = { A: UP, B: DOWN, C: RIGHT, D: LEFT, Z: SHIFT_TAB }
 const SERVICE_PREFIX = '/exa.language_server_pb.LanguageServerService/'
 const PLAN_MODEL = 'MODEL_PLACEHOLDER_M36'
-const CALL_MODEL_VERSION = 'gemini-3.8-flash'
 const PROJECT_ID = 'default-cli-project'
 const APP_DATA_DIR_NAME = 'antigravity-cli'
 const CONTEXT_WINDOW_SIZE = 1048576
@@ -373,10 +372,11 @@ const varint = (n) => {
   out.push(n)
   return Buffer.from(out)
 }
-const protobufBytes = (field, inner) =>
+const protobufString = (field, inner) =>
   Buffer.concat([varint((field << 3) | 2), varint(inner.length), inner])
 // AGY§8
-const genMetadataOf = (model) => protobufBytes(1, protobufBytes(19, Buffer.from(model)))
+const genMetadataOf = (modelVersion) =>
+  protobufString(1, protobufString(19, Buffer.from(modelVersion)))
 function withDb(file, work) {
   const db = new DatabaseSync(file)
   try {
@@ -602,7 +602,7 @@ function writeStep(c, record) {
     )
     if (full.type === 'PLANNER_RESPONSE')
       db.prepare('INSERT INTO gen_metadata (data) VALUES (?)').run(
-        genMetadataOf(CALL_MODEL_VERSION)
+        genMetadataOf(model.id.slice(0, -(model.effort.length + 1)))
       )
   })
   if (record.userConfig) c.userConfigs[index] = record.userConfig
@@ -934,7 +934,11 @@ function scheduleTitle(c, text) {
   else setTimeout(store, TITLE_DELAY_MS)
 }
 function spend(c) {
-  const tokens = { input: 1200 + 100 * c.nextStep, cacheRead: 300, output: 40 }
+  const tokens = {
+    input: Number(readSentinel('fake-agy-input-tokens', String(1200 + 100 * c.nextStep))),
+    cacheRead: 300,
+    output: 40
+  }
   c.totals.input += tokens.input
   c.totals.output += tokens.output
   c.totals.cacheRead = tokens.cacheRead

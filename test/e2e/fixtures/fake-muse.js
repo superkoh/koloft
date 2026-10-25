@@ -8,6 +8,8 @@ const { spawnSync } = require('child_process')
 const ESC = '\x1b'
 const STATUS_ASK = `${ESC}]7501;?${ESC}\\`
 const STATUS_ON = `${ESC}]7501;?:states=`
+const MODEL = 'fake-model'
+const TOKENS_PER_REPLY = { input_tokens: 2000, cached_tokens: 0, output_tokens: 500 }
 const argv = process.argv.slice(2)
 const home = process.env.HOME
 const museHome = path.join(process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'muse')
@@ -295,7 +297,7 @@ function tui() {
   const inputBox = () => {
     const rule = '─'.repeat(40)
     process.stdout.write(
-      `${rule}\r\n❯\r\n${rule}\r\n  fake-model · ${path.basename(process.cwd())}\r\n`
+      `${rule}\r\n❯\r\n${rule}\r\n  ${MODEL} · ${path.basename(process.cwd())}\r\n`
     )
   }
   const commit = (turnId, text) => {
@@ -306,6 +308,12 @@ function tui() {
       recordedAt: now()
     })
     save(session)
+    // MUSE§2
+    logRecord(session.id, 'runtime.session', {
+      kind: 'run',
+      run_id: turnId,
+      event: { kind: 'model_completed', model: MODEL, usage: TOKENS_PER_REPLY }
+    })
     logRecord(session.id, 'runtime.session', {
       kind: 'run',
       run_id: turnId,

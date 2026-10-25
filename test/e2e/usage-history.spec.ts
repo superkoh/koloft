@@ -16,7 +16,6 @@ import {
   killFakeRemote,
   launchWithRemote,
   machineHome,
-  machineMuseCalls,
   remoteDir,
   remoteKey,
   REMOTE_WS_NAME
@@ -82,15 +81,15 @@ function seedCodex(codexHome: string, cwd: string, now: Date): void {
   ])
 }
 
-function seedMuse(home: string, now: Date, sessionId: string = crypto.randomUUID()): void {
+function seedMuse(env: E2EEnv, now: Date): void {
   const file = path.join(
-    home,
+    env.home,
     '.local',
     'share',
     'muse',
     'sessions',
     ...dateDir(now),
-    sessionId,
+    crypto.randomUUID(),
     'session.jsonl'
   )
   appendLines(file, [
@@ -154,7 +153,7 @@ test('Settings ▸ Usage counts Claude Code, Codex, Muse and Antigravity session
   const now = new Date()
   seedClaude(env, now)
   seedCodex(path.join(env.home, '.codex'), env.workspaces.a, now)
-  seedMuse(env.home, now)
+  seedMuse(env, now)
   seedAntigravity(env, now)
 
   const app = await launchApp(env)
@@ -234,10 +233,14 @@ test.describe('remote usage', () => {
       await addRemoteWorkspace(page, env)
       await newSessionInWith(page, REMOTE_WS_NAME, 'Muse')
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      seedMuse(machineHome(env), new Date(), machineMuseCalls(env)[0].sessionId)
+      await runIn(page, centerTerm(page), 'remote words')
+      await expect(wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'remote words' })).toHaveClass(
+        /st-waiting/,
+        { timeout: 60_000 }
+      )
 
       const row = await remoteUsageRow(page, env, 'Session')
-      await expect(row).toContainText('muse-model')
+      await expect(row).toContainText('fake-model')
       await expect(row.locator('.acct-badge')).toHaveText(['MUSE', 'SSH'])
       await expect(row.locator('.c')).toHaveText('no price')
     } finally {
@@ -254,6 +257,7 @@ test.describe('remote usage', () => {
     seedSettings(env, { hintsOff: true })
     const { app, page } = await launchWithRemote(env)
     try {
+      fs.writeFileSync(path.join(machineHome(env), 'fake-agy-input-tokens'), '400000')
       await addRemoteWorkspace(page, env)
       await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
       await agyReady(page)
@@ -264,9 +268,9 @@ test.describe('remote usage', () => {
       )
 
       const row = await remoteUsageRow(page, env, 'Session')
-      await expect(row).toContainText('gemini-3.8-flash')
+      await expect(row).toContainText('gemini-3.1-pro')
       await expect(row.locator('.acct-badge')).toHaveText(['ANTIGRAVITY', 'SSH'])
-      await expect(row.locator('.c')).toHaveText(/^\$\d/)
+      await expect(row.locator('.c')).toHaveText('$0.80')
     } finally {
       await quitAndClose(app)
     }
