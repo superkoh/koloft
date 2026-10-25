@@ -7,6 +7,7 @@ import type { AccountView } from '../../src/shared/types'
 import { test, expect, launchApp, osOutlets, quitAndClose } from './helpers/app'
 import {
   E2E_AGY_ACCOUNT,
+  E2E_CODEX_ACCOUNT,
   E2E_MUSE_ACCOUNT,
   installAgy,
   installCodex,
@@ -890,14 +891,14 @@ test('a Codex, Muse or Antigravity account found signed out leaves the pool with
     await waitBooted(page)
     const statuses = async (): Promise<(string | undefined)[]> => {
       const views = await page.evaluate(() => window.api.accounts.probe())
-      return ['e2e-codex', E2E_MUSE_ACCOUNT, E2E_AGY_ACCOUNT].map(
+      return [E2E_CODEX_ACCOUNT, E2E_MUSE_ACCOUNT, E2E_AGY_ACCOUNT].map(
         (name) => views.find((a) => a.name === name)?.status
       )
     }
     expect(await statuses()).toEqual(['ok', 'ok', 'ok'])
     const notifiedBefore = (await osOutlets(app)).notifications.length
 
-    fs.rmSync(path.join(env.userData, 'codex-homes', 'e2e-codex', 'auth.json'))
+    fs.rmSync(path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT, 'auth.json'))
     fs.writeFileSync(
       path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
       '{}'
@@ -918,7 +919,7 @@ test('a Codex, Muse or Antigravity account found signed out leaves the pool with
     expect(notified).toEqual(
       expect.arrayContaining(
         [
-          ['Codex', 'e2e-codex'],
+          ['Codex', E2E_CODEX_ACCOUNT],
           ['Muse', E2E_MUSE_ACCOUNT],
           ['Antigravity', E2E_AGY_ACCOUNT]
         ].map(([label, name]) => ({

@@ -954,7 +954,12 @@ well-formed ChatGPT `auth.json` whose made-up tokens had expired an hour before.
 answered `account/read` with `{account: null, requiresOpenaiAuth: true}`. Rate limits then
 failed: `-32600` for the first two, `-32603` with the server's `401 Unauthorized` for the
 expired one. So Koloft's probe sees a home whose login no longer works as signed out, and
-marks the account expired.
+marks the account expired. Offline is different: with `HTTPS_PROXY`, `HTTP_PROXY` and
+`ALL_PROXY` pointed at a closed local port, the same expired login (and a made-up one not
+yet expired) made `account/read` fail with error `-32603` ("workspace routing discovery
+unauthorized (401)") instead of answering `account: null`, so a probe with no network ends
+in an error and leaves the account's status alone. A real login whose access token ran out
+while offline was not tried.
 
 **A home finds a session by the file under its own `sessions/`, wherever that folder
 really is.** Checked 2026-10-08 with Codex CLI 0.162.0, no model turn, no login in any
