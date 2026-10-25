@@ -1556,7 +1556,10 @@ other bullets of §9 were not re-measured on this build.
   top of the git repo the folder is in.** Outside any git repo every ancestor counts;
   inside one, only the folder and its ancestors up to and including the repo's top
   folder; in a linked worktree (`.git` is a file), the top folder is the main repo's
-  (the folder above the git dir its `gitdir:` entry's `commondir` names). So a repo
+  (the folder above the git dir its `gitdir:` entry's `commondir` names; `commondir` is
+  read off the 2.1.310 binary, not run — the worktree probed sat inside its main repo,
+  where `commondir` and the path shape agree, so a bare repo's worktree is not probed
+  yet). So a repo
   under a trusted folder asks again: a folder that sat quietly under a trusted parent
   asked for trust on the next launch after `git init` in it, and stopped asking once
   `.git` was removed; with only the repo trusted, neither a subfolder nor
