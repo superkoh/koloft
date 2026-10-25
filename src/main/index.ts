@@ -1729,13 +1729,15 @@ const agentRequests = new AgentRequests({
       sessions: () => allSessions().filter((s) => !s.butler),
       asking: asksTheOwner,
       asleep: (sessionId) => !!sleepingTabOf(sessionId),
-      workLeft: async (row) => {
+      workLeft: async (row, merged) => {
         const tree = await closingTree(hostGitOut, projectInfoFor(row.cwd))
-        return tree ? whatIsLeft(hostGitOut, tree) : null
+        return tree ? whatIsLeft(hostGitOut, tree, merged) : null
       },
       worktrees: sessionDeps.worktrees,
       repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
       pulls: (wsPath) => hosts.of(wsPath).github.todoPulls(wsPath),
+      mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
+      mergedHeads: (dir, branch) => mergedHeads(dir, branch),
       notes: () => loadSettings().todoNotes,
       saveNote: (key, text) => {
         const todoNotes = { ...loadSettings().todoNotes, [key]: text }
