@@ -79,7 +79,8 @@ import {
   sendFailingChecks,
   openInBrowse,
   rowMenu,
-  showBrowse
+  showBrowse,
+  wbActiveTab
 } from './helpers/workbench'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
@@ -719,7 +720,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await openRemoteSessionWorkbench(page, env)
       await newWebTab(page)
       await typeInAddressBar(page, 'page.html')
-      await expect(page.locator(WORKBENCH.tabActive)).toContainText('page.html', {
+      await expect(wbActiveTab(page)).toContainText('page.html', {
         timeout: 30_000
       })
       await expect(artifactBody(page).locator('.code-body')).toContainText('typed on the machine', {

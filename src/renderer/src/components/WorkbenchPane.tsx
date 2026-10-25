@@ -10,7 +10,7 @@ import {
   type JSX
 } from 'react'
 import { IconDownload, IconMore } from '../icons'
-import { fileUrlFor, folderFileOf, opensAsWebTab, routeFor } from '@shared/browserRoute'
+import { folderFileOf, routeFor } from '@shared/browserRoute'
 import { CDP_GUEST_ID_RETRIES, CDP_GUEST_ID_RETRY_MS } from '@shared/cdpBudget'
 import { isWebPagePath } from '@shared/preview'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
@@ -553,6 +553,15 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     useStore.getState().openTerminalTab(ownerTab)
   }, [ownerTab, sessionCold])
 
+  const openFileTab = useCallback(
+    (path: string): void => {
+      openHere({ kind: 'file', path, source: 'user' }, (r) =>
+        setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
+      )
+    },
+    [openHere]
+  )
+
   const openFilePicker = useCallback((): void => {
     void window.api.preview.openFileDialog().then((picked) => {
       if (!picked) return
@@ -564,20 +573,11 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         )
         return
       }
-      openHere({ kind: 'file', path: picked, source: 'user' }, (r) =>
-        setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
-      )
+      openFileTab(picked)
     })
-  }, [openHere, applyLive])
+  }, [openHere, applyLive, openFileTab])
 
-  const openFileTab = useCallback(
-    (path: string): void => {
-      openHere({ kind: 'file', path, source: 'user' }, (r) =>
-        setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
-      )
-    },
-    [openHere]
-  )
+  const latestAddress = useRef(0)
 
   const showInWebTab = useCallback(
     (url: string): void => {
@@ -594,8 +594,19 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     [ownerTab, onUpdate, openHere, applyLive]
   )
 
-  const routeAddress = useCallback(
-    (entry: string): void => {
+  const submitAddress = useCallback(
+    async (raw: string): Promise<void> => {
+      const entry = raw.trim()
+      const submitted = ++latestAddress.current
+      const inFolder = folderFileOf(entry, treeRoot)
+      if (inFolder && (await fileExists(inFolder.path))) {
+        if (submitted !== latestAddress.current) return
+        const page = routeFor(inFolder.path, 'user')
+        if (page.dest === 'browser') showInWebTab(page.target + inFolder.suffix)
+        else openFileTab(inFolder.path)
+        return
+      }
+      if (submitted !== latestAddress.current) return
       const decision = routeFor(
         entry.startsWith('~/') ? window.api.home + entry.slice(1) : entry,
         'address'
@@ -603,26 +614,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
       if (decision.dest === 'preview') openFileTab(decision.target)
       else if (decision.dest === 'browser') showInWebTab(decision.target)
     },
-    [openFileTab, showInWebTab]
-  )
-
-  const submitAddress = useCallback(
-    (raw: string): void => {
-      if (!ownerTab) return
-      const entry = raw.trim()
-      const inFolder = folderFileOf(entry, treeRoot)
-      if (!inFolder) {
-        routeAddress(entry)
-        return
-      }
-      void fileExists(inFolder.path).then((found) => {
-        if (!found) routeAddress(entry)
-        else if (opensAsWebTab(inFolder.path))
-          showInWebTab(fileUrlFor(inFolder.path) + inFolder.suffix)
-        else openFileTab(inFolder.path)
-      })
-    },
-    [ownerTab, treeRoot, routeAddress, showInWebTab, openFileTab]
+    [treeRoot, showInWebTab, openFileTab]
   )
 
   const guestOf = (id: string | undefined): GuestElement | undefined =>

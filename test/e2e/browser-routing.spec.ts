@@ -562,16 +562,10 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
       await newWebTab(page)
       await typeInAddressBar(page, 'missing.html')
       await expect
-        .poll(
-          async () =>
-            [await addressValue(page), ...(await guestUrls(app))].some((u) =>
-              /duckduckgo\.com\/\?q=missing\.html/.test(u)
-            ),
-          { timeout: 30_000 }
-        )
-        .toBe(true)
+        .poll(() => addressValue(page), { timeout: 30_000 })
+        .toMatch(/duckduckgo\.com\/\?q=missing\.html/)
     } finally {
-      await app.close().catch(() => {})
+      await quitAndClose(app)
     }
   })
 
