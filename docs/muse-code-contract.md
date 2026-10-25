@@ -151,6 +151,12 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   session is missing from the list for 3–5 s. `path` is the session's own
   `session.jsonl` (§2): checked 2026-10-20 on Muse 1.4.9 in Docker, by `session/list`
   after a `muse exec --provider echo` run.
+- A deleted session leaves `session/list` at once (2026-10-24, Muse 1.4.13 in Docker,
+  three `muse exec --provider echo` runs, a Node client on `muse serve`): removing a
+  session's folder, or only its `session.jsonl`, dropped it from the next listing; the
+  other sessions stayed. Muse has no way of its own to delete or archive a session: no
+  such subcommand in `muse --help`, and no such `session/*` method in `muse schema
+  generate-ts`.
 - `muse serve --provider echo` (no login needed) can read a session another muse
   process holds: `session/read` returns its items (`userMessage`, `agentMessage`, … with
   `itemId`, `recordedAt`), and `approval/listPending {sessionId}` returns what it waits

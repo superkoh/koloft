@@ -966,6 +966,17 @@ Koloft links every account home's `sessions/` and `archived_sessions/` to the de
 home's, lists history once from the default home, and resumes a session in whichever
 account the picker chooses.
 
+**A deleted rollout leaves `thread/list` at once; an archived one moves to the
+`archived: true` list.** Checked 2026-10-24 with codex-cli 0.162.0, a Node client on
+`codex app-server` in a throwaway `CODEX_HOME` holding three copied interactive rollouts,
+no login. Deleting one rollout file dropped its thread from the very next `thread/list`
+on the same app-server, and from a fresh one; `thread/read` on the deleted id still
+answered with its old `path` (from the home's sqlite), so only the listing says it is
+gone. `thread/archive` on another moved it from the `archived: false` list to the
+`archived: true` one, on the same and on a fresh app-server; removing `archived_sessions/`
+dropped it from both. Every page was read (`nextCursor` to the end), so a thread missing
+from a finished listing is gone, not just old.
+
 **But "ok" above means no error, not the turns: a home reads a thread's turns only
 once its own sqlite has loaded that thread.** Checked 2026-10-11 on Codex CLI 0.162.1
 and 0.161.0 alike (so not a change of 0.162): in the layout Koloft makes (a default

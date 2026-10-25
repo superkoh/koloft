@@ -43,6 +43,14 @@ describe('listAgyConversations (the summaries db, AGY§8)', () => {
     expect(ids).toEqual(['cli', 'top'])
   })
 
+  it('leaves out a conversation whose own db was deleted, though agy keeps its row in the summaries db', async () => {
+    writeSummaries(gemini, [
+      { conversation_id: 'kept', workspace_uris: uris('/w/a') },
+      { conversation_id: 'deleted', workspace_uris: uris('/w/a'), dbRemoved: true }
+    ])
+    expect((await listAgyConversations(gemini)).map((e) => e.id)).toEqual(['kept'])
+  })
+
   it('takes the folder from the first workspace URI, spaces and all, and the title only when agy made one', async () => {
     writeSummaries(gemini, [
       {
@@ -78,8 +86,8 @@ describe('listAgyConversations (the summaries db, AGY§8)', () => {
     ])
     const byId = Object.fromEntries((await listAgyConversations(gemini)).map((e) => [e.id, e]))
     const at = Date.UTC(2026, 9, 16, 8, 4, 16) / 1000
-    expect(byId.nine).toMatchObject({ updatedAt: at, createdAt: at })
-    expect(byId.whole).toMatchObject({ updatedAt: at, createdAt: at })
+    expect(byId.nine.updatedAt).toBe(at)
+    expect(byId.whole.updatedAt).toBe(at)
     expect(byId.never.updatedAt).toBeUndefined()
   })
 

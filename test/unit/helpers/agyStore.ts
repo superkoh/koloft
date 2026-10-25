@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { DatabaseSync } from 'node:sqlite'
-import { agyTranscript, summariesDb } from '../../../src/main/agyStore'
+import { agyTranscript, conversationDb, summariesDb } from '../../../src/main/agyStore'
 
 export interface SummaryFixture {
   conversation_id: string
@@ -12,6 +12,7 @@ export interface SummaryFixture {
   step_count?: number
   parent_conversation_id?: string
   app_data_dir?: string
+  dbRemoved?: true
 }
 
 const SUMMARY_COLUMNS = [
@@ -43,7 +44,12 @@ export function writeSummaries(geminiDir: string, rows: SummaryFixture[]): void 
     const insert = db.prepare(
       `insert or replace into conversation_summaries (${SUMMARY_COLUMNS.join(', ')}) values (${SUMMARY_COLUMNS.map(() => '?').join(', ')})`
     )
-    for (const row of rows)
+    for (const row of rows) {
+      if (!row.dbRemoved) {
+        const conversation = conversationDb(geminiDir, row.conversation_id)
+        fs.mkdirSync(path.dirname(conversation), { recursive: true })
+        fs.writeFileSync(conversation, '')
+      }
       insert.run(
         row.conversation_id,
         row.title ?? '',
@@ -54,6 +60,7 @@ export function writeSummaries(geminiDir: string, rows: SummaryFixture[]): void 
         row.parent_conversation_id ?? '',
         row.app_data_dir ?? ''
       )
+    }
   } finally {
     db.close()
   }

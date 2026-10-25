@@ -93,14 +93,15 @@ export async function listAgyConversations(geminiDir: string): Promise<HistoryEn
   } finally {
     sqlite.close()
   }
-  for (const row of rows) {
-    if (typeof row.conversation_id !== 'string') continue
+  const kept = rows.filter((row) => {
+    if (typeof row.conversation_id !== 'string') return false
     const st = fs.statSync(conversationDb(geminiDir, row.conversation_id), {
       throwIfNoEntry: false
     })
     if (st) row.born = st.birthtimeMs || st.ctimeMs
-  }
-  return historyEntries(rows)
+    return !!st
+  })
+  return historyEntries(kept)
 }
 
 export function historyEntries(rows: SummaryRow[]): HistoryEntry[] {
@@ -135,12 +136,15 @@ if (fs.existsSync(db)) {
     sqlite.close()
   }
 }
-for (const row of rows) {
+rows = rows.filter((row) => {
   try {
     const st = fs.statSync(conversations + '/' + row.conversation_id + '.db')
     row.born = st.birthtimeMs || st.ctimeMs
-  } catch {}
-}
+    return true
+  } catch {
+    return false
+  }
+})
 process.stdout.write(JSON.stringify(rows))
 `
 

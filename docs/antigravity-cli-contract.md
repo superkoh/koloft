@@ -381,6 +381,12 @@ Nothing ran against Google's real servers.
   - Another process can read it, and a live conversation's db, mid-turn
     (`sqlite3 -readonly`, Node `node:sqlite` with `readOnly:true`).
   - A `-p` run's row has the run's cwd in `workspace_uris`.
+  - A deleted conversation keeps its row (2026-10-24, agy 1.3.6 in Docker, a fake
+    Gemini server, three `-p` runs): with `conversations/<id>.db` and `brain/<id>/`
+    removed, the row stayed with its `step_count`, also after another `-p` run; `-p
+    --conversation <id>` then warned `conversation "<id>" not found` and started a new
+    conversation. So the row alone does not say the conversation is still there; its
+    `.db` does.
 - **`conversations/<id>.db`** (about 450 KB): tables `steps(idx, step_type, status,
   step_payload, …)`, `trajectory_meta`, `gen_metadata`, `executor_metadata`,
   `parent_references`, `trajectory_metadata_blob`, `battle_mode_infos`. Payloads are
