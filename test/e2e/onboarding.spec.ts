@@ -363,7 +363,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
     }
   })
 
-  test('T-OB-15: Check again on step 4 really checks again, so a tool installed a moment ago is found, and only a found Codex brings the line on why its light turns amber more often', async ({
+  test('T-OB-15: Check again on step 4 really checks again, so a tool installed a moment ago is found', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -378,15 +378,12 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await page.waitForLoadState('domcontentloaded')
       await advanceTo(page, 4)
       const primary = welcome(page).locator('.btn-primary')
-      const codexAmberLine = welcome(page).locator('.quiet', { hasText: /^Codex asks before/ })
       await expect(primary).toHaveText('Check again', { timeout: 20_000 })
-      await expect(codexAmberLine).toHaveCount(0)
 
       fs.mkdirSync(path.dirname(codex), { recursive: true })
       fs.symlinkSync(path.join(__dirname, 'fixtures', 'fake-codex.js'), codex)
       await primary.click()
       await expect(primary).toHaveText('＋ Start first session', { timeout: 20_000 })
-      await expect(codexAmberLine).toHaveCount(1)
     } finally {
       await quitAndClose(app)
     }

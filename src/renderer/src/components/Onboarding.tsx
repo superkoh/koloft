@@ -202,7 +202,6 @@ export function Onboarding({
   const [checked, setChecked] = useState<string[]>([])
   const [probe, setProbe] = useState<Probe>('pending')
   const [otherFound, setOtherFound] = useState(false)
-  const [codexFound, setCodexFound] = useState(false)
 
   useEffect(() => {
     if (step !== 2 || found !== null) return
@@ -215,12 +214,10 @@ export function Onboarding({
   const runProbe = useCallback((): void => {
     setProbe('pending')
     setOtherFound(false)
-    setCodexFound(false)
     void window.api.sessions.backends(true).then((backends) => {
       setOtherFound(
         SESSION_BACKENDS.some((b) => b !== ALWAYS_ON_BACKEND && backendAvailable(backends, b))
       )
-      setCodexFound(backendAvailable(backends, 'codex'))
       setProbe(backendAvailable(backends, ALWAYS_ON_BACKEND) ? 'found' : 'missing')
     })
   }, [])
@@ -384,12 +381,6 @@ export function Onboarding({
               starts in auto mode. To be asked before each step, turn that switch off and pick
               manual with ⇧Tab in the session.
             </div>
-            {codexFound && (
-              <div className="quiet">
-                Codex asks before a step its own settings do not allow, so its light turns amber
-                more often; Koloft leaves that choice to Codex.
-              </div>
-            )}
             <div className="quiet">
               When Koloft is in the background, a light turning amber or green also sends a
               notification (Settings ▸ Notifications).
