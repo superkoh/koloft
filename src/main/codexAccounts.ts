@@ -8,6 +8,7 @@ import {
   usableAccounts
 } from '@shared/accountUsage'
 import type { AccountView, CodexLimits, CodexLimitWindow, SignInFolderKind } from '@shared/types'
+import { joinProjectTables } from './codexTrust'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -32,6 +33,7 @@ export function codexHomes(userData: string): string[] {
 
 const FOLDERS_EVERY_HOME_SHARES = ['sessions', 'archived_sessions', 'skills', 'rules']
 const OWNER_FILES_EVERY_HOME_READS = ['AGENTS.md']
+const SPLIT_CONFIG_KEPT_AS = 'config.toml.before-shared'
 
 function newerThan(a: string, b: string): boolean {
   const there = fs.statSync(b, { throwIfNoEntry: false })
@@ -72,10 +74,12 @@ export function prepareCodexHome(home: string, sharedConfig: string): void {
       fs.symlinkSync(theirs, own)
   }
   const config = path.join(home, 'config.toml')
-  try {
-    fs.lstatSync(config)
-    return
-  } catch {}
+  const existing = fs.lstatSync(config, { throwIfNoEntry: false })
+  if (existing?.isSymbolicLink()) return
+  if (existing) {
+    joinProjectTables(sharedConfig, fs.readFileSync(config, 'utf8'))
+    fs.renameSync(config, path.join(home, SPLIT_CONFIG_KEPT_AS))
+  }
   fs.mkdirSync(path.dirname(sharedConfig), { recursive: true, mode: 0o700 })
   fs.writeFileSync(sharedConfig, '', { flag: 'a', mode: 0o600 })
   fs.symlinkSync(sharedConfig, config)

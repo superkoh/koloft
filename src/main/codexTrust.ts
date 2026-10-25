@@ -39,10 +39,24 @@ function appendTable(text: string, table: string): string {
 
 // CODEX§11 ADR-0026
 export function acceptCodexTrust(configFile: string, dir: string): void {
-  const text = readConfig(configFile)
-  const header = projectHeader(dir)
-  if (text.split(/\r?\n/).some((line) => line.trim() === header)) return
-  writeConfig(configFile, appendTable(text, `${header}\ntrust_level = "trusted"\n`))
+  joinProjectTables(configFile, `${projectHeader(dir)}\ntrust_level = "trusted"\n`)
+}
+
+// CODEX§15 CODEX§27
+export function joinProjectTables(configFile: string, from: string): void {
+  const before = readConfig(configFile)
+  let text = before
+  const have = new Set(text.split(/\r?\n/).map((line) => line.trim()))
+  const lines = from.split(/\r?\n/)
+  for (let start = 0; start < lines.length; start++) {
+    const header = lines[start].trim()
+    if (!header.startsWith('[projects.') || have.has(header)) continue
+    have.add(header)
+    let end = start + 1
+    while (end < lines.length && !lines[end].trim().startsWith('[')) end++
+    text = appendTable(text, `${lines.slice(start, end).join('\n').trimEnd()}\n`)
+  }
+  if (text !== before) writeConfig(configFile, text)
 }
 
 // CODEX§27
