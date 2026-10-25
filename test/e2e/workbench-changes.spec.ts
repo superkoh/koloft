@@ -491,6 +491,12 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
         throw new Error('the summary header left the screen — it must survive every scroll offset')
       return Math.round(box.y)
     }
+    await total.evaluate((el) => {
+      const islandRiseInAndAnyOtherEntrance: Animation[] = []
+      for (let n: Element | null = el; n; n = n.parentElement)
+        islandRiseInAndAnyOtherEntrance.push(...n.getAnimations())
+      return Promise.all(islandRiseInAndAnyOtherEntrance.map((a) => a.finished))
+    })
     const before = await topRoundedPastSubpixelNoise()
     await list.evaluate((el) => {
       el.scrollTop = el.scrollHeight
