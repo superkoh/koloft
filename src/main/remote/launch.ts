@@ -143,9 +143,7 @@ export function tabScript(spec: TabSpec): string {
   const H = `$HOME/.koloft/hook-sessions/${spec.tabId}`
   const program = spec.program
   // PLATFORM§35
-  const attachTo = program
-    ? `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
-    : `'${spec.tmuxName}'`
+  const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
   // PLATFORM§35
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
@@ -172,7 +170,10 @@ exit $c
 
 export function writeTabPackage(dir: string, spec: TabSpec): void {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const files = spec.program?.files ?? { [`${spec.tabId}.json`]: JSON.stringify(spec.settings) }
+  const files = spec.program?.files ?? {
+    [`${spec.tabId}.json`]: JSON.stringify(spec.settings),
+    [`${spec.tabId}.tmux`]: spec.tmuxName
+  }
   for (const [name, text] of Object.entries(files))
     fs.writeFileSync(path.join(dir, name), text, { mode: 0o600 })
   fs.writeFileSync(path.join(dir, `${spec.tabId}.sh`), tabScript(spec), { mode: 0o700 })
@@ -279,4 +280,11 @@ export function resizeStandInCmd(tabId: string, cols: number, rows: number): str
 export function killSessionCmd(tmuxName: string): string {
   assertSafeNames(tmuxName)
   return remoteShCommand(`tmux -L koloft kill-session -t ${tmuxName}`)
+}
+
+export function renameSessionCmd(tabId: string, from: string, to: string): string {
+  assertSafeNames(tabId, from, to)
+  return remoteShCommand(
+    `tmux -L koloft rename-session -t ${from} ${to} && printf %s ${to} > "${tabPath(tabId)}.tmux"`
+  )
 }
