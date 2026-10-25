@@ -5,6 +5,7 @@ import path from 'path'
 import { spawn, spawnSync } from 'child_process'
 import { MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from '../../src/main/museRemote'
 import { NOTICE_SUFFIX, noticeLine, seedHandedOverOwnerWords } from '../../src/main/hooks'
+import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from '../../src/main/crossSessionMessage'
 
 const SID = '019a0000-0000-7000-8000-000000000001'
 const python = spawnSync('python3', ['-c', 'import pty, termios'], { encoding: 'utf8' })
@@ -67,6 +68,8 @@ process.stdin.on('data', (chunk) => {
   setTimeout(() => {
     fs.appendFileSync(log, JSON.stringify({ payload_type: 'session.name.changed', payload: { new_name: 'renamed', source: 'user' } }) + '\\n')
     fs.appendFileSync(log, JSON.stringify({ payload_type: 'runtime.session', payload: { kind: 'run', event: { kind: 'assistant_message_committed', text: 'not forwarded' } } }) + '\\n')
+    fs.appendFileSync(log, JSON.stringify({ payload_type: 'runtime.command.accepted', payload: { command_kind: 'context.compact.manual' } }) + '\\n')
+    fs.appendFileSync(log, JSON.stringify({ payload_type: 'context.compact.manual.outcome', payload: { terminal_outcome: 'compacted' } }) + '\\n')
     process.stdout.write(ESC + ']7501;state=blocked:app=muse:kind=permission' + ESC + '\\\\')
   }, 1500)
   setTimeout(() => process.exit(7), 3000)
@@ -116,7 +119,7 @@ const lines = (file: string): Record<string, unknown>[] =>
 describe.skipIf(!PYTHON_WITH_PTY)(
   'muse-wrap.py, the python3 pty wrapper a remote Muse tab runs in tmux',
   () => {
-    it("answers Muse's status query itself, sends each state on as a numbered tmux passthrough and as a mirror line, names the tmux session after the bound session, forwards renames from the log, and exits with Muse's code", async () => {
+    it("answers Muse's status query itself, sends each state on as a numbered tmux passthrough and as a mirror line, names the tmux session after the bound session, forwards renames and a manual /compact's start and end from the log, and exits with Muse's code", async () => {
       const m = machine()
       installFakeMuse(m)
       const { code, out } = await runWrapper(m, [])
@@ -130,15 +133,28 @@ describe.skipIf(!PYTHON_WITH_PTY)(
       )
       const hookDir = path.join(m.home, '.koloft', 'hook-sessions')
       const mirror = lines(path.join(hookDir, 'pty-1.muse.jsonl'))
-      expect(mirror).toHaveLength(4)
+      expect(mirror).toHaveLength(6)
       expect(mirror).toEqual(
         expect.arrayContaining([
           { t: 'state', seq: 1, state: 'idle', kind: null },
           { t: 'bound', sessionId: SID },
           {
             t: 'log',
+            seq: expect.any(Number),
             payloadType: 'session.name.changed',
             payload: { new_name: 'renamed', source: 'user' }
+          },
+          {
+            t: 'log',
+            seq: expect.any(Number),
+            payloadType: 'runtime.command.accepted',
+            payload: { command_kind: 'context.compact.manual' }
+          },
+          {
+            t: 'log',
+            seq: expect.any(Number),
+            payloadType: 'context.compact.manual.outcome',
+            payload: { terminal_outcome: 'compacted' }
           },
           { t: 'state', seq: 2, state: 'blocked', kind: 'permission' }
         ])
@@ -253,6 +269,25 @@ describe('muse-hook.sh, the hook a remote Muse tab runs', () => {
     expect(fs.existsSync(mirror)).toBe(false)
     expect(run('{"session_id":"a","stop_hook_active":true}')).toBe('')
     expect(lines(mirror)).toMatchObject([{ t: 'hook', event: 'Stop' }])
+  })
+
+  it("a message from another session, a notice from Koloft and the note Koloft opens a butler with for a ⌘P request keep the quote of the owner's own last prompt", () => {
+    const m = machine()
+    const script = path.join(m.home, 'muse-hook.sh')
+    fs.writeFileSync(script, REMOTE_MUSE_HOOK_SH)
+    for (const dir of ['hook-sessions', 'tabs'])
+      fs.mkdirSync(path.join(m.home, '.koloft', dir), { recursive: true })
+    const run = (event: string, input: string): string =>
+      spawnSync('bash', [script, 'pty-1', event], { env: m.env, input, encoding: 'utf8' }).stdout
+    run('UserPromptSubmit', JSON.stringify({ session_id: 'a', prompt: '请看一下这个文件' }))
+    for (const notTheOwners of [
+      `${FROM_A_SESSION}"Fix docs", id abc:) Done: PR #12 is open.`,
+      `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb.`,
+      A_HELPER_HAS_IT
+    ])
+      run('UserPromptSubmit', JSON.stringify({ session_id: 'a', prompt: notTheOwners }))
+    const said = JSON.parse(run('PostToolUse', '{"session_id":"a","tool_name":"read_file"}'))
+    expect(said.hookSpecificOutput.additionalContext).toContain('The user writes Chinese')
   })
 
   it("a session another session started keeps the owner's language past the English task it was handed", () => {

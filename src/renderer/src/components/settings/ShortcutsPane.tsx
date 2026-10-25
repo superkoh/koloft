@@ -27,7 +27,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
           { what: 'Starts a session in your workspace with the default method.' },
           {
             where: 'Several workspaces',
-            what: 'Asks which one. Enter uses the default method, ⇧⏎ the next one, ⌃⏎ the third.'
+            what: 'Asks which one. Enter uses the default method, ⇧⏎ another one (a list when there are several).'
           },
           { where: 'No workspace yet', what: 'Shows a notice instead.' }
         ]

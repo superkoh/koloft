@@ -44,7 +44,7 @@ export function DiscordPane(): JSX.Element {
           <small>
             {setUp
               ? `Already set up. Run it again to fix a problem, change the bot or add a server: the steps that are done are skipped.`
-              : `${name} starts a session that opens the Discord website in its Workbench browser and does each step it can. You sign in, type your password and pass the "I am human" checks. Already have a bot? It can use that too.`}
+              : `Koloft starts a helper for ${name}. The helper opens the Discord website in its Workbench browser and does each step it can. You sign in, type your password and pass the "I am human" checks. Already have a bot? It can use that too.`}
           </small>
         </div>
         <button className="btn-primary" onClick={() => void setUpWithButler()}>

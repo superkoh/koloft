@@ -197,6 +197,27 @@ async function marksOnceAllWait(
   return (await pendingAttention(page)).sort((a, b) => a.tabId.localeCompare(b.tabId))
 }
 
+async function writeSharedThenTurnDone(
+  page: Page,
+  shared: string,
+  writer: BackendId,
+  timeout: number
+): Promise<void> {
+  const tab = await tabOf(page, writer)
+  const before = Date.now()
+  await runIn(page, centerTerm(page), '/write shared.txt')
+  await expect.poll(() => fs.existsSync(shared), { timeout: 30_000 }).toBe(true)
+  await expect
+    .poll(
+      async () =>
+        (await pendingAttention(page)).some(
+          (m) => m.tabId === tab && m.kind === 'turn-done' && m.at > before
+        ),
+      { timeout }
+    )
+    .toBe(true)
+}
+
 async function heldThenHandedIn(
   page: Page,
   sessions: { backendId: BackendId; heard: Heard; wroteJustNow?: boolean }[],
@@ -471,16 +492,9 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await claudeThenCodex(page, env, async () => {
-        const before = Date.now()
-        await runIn(page, centerTerm(page), '/write shared.txt')
-        await expect.poll(() => fs.existsSync(shared), { timeout: 30_000 }).toBe(true)
-        await expect
-          .poll(async () => (await pendingAttention(page)).some((m) => m.at > before), {
-            timeout: NOTICE_ARRIVES_WITHIN_MS
-          })
-          .toBe(true)
-      })
+      await claudeThenCodex(page, env, () =>
+        writeSharedThenTurnDone(page, shared, 'claude', NOTICE_ARRIVES_WITHIN_MS)
+      )
 
       await runIn(page, centerTerm(page), '/write shared.txt')
       const marks = await marksOnceAllWait(page, 'ws-a', NOTICE_ARRIVES_WITHIN_MS)
@@ -654,6 +668,90 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
         },
         marks,
         told,
+        REMOTE_NOTICE_ARRIVES_WITHIN_MS
+      )
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
+    }
+  })
+
+  test('on another machine over ssh, when a Codex session writes a file a Claude session in the same folder wrote, each is told the other changed it and to read it again: the waiting Claude session with its next prompt, its red dot as it was', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installCodexOnFakeRemote(env)
+    checkoutWithOrigin(remoteDir(env), machineHome(env))
+    const shared = path.join(remoteDir(env), 'shared.txt')
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true, method: 'Claude' })
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-waiting\b/, {
+        timeout: 60_000
+      })
+      await writeSharedThenTurnDone(page, shared, 'claude', REMOTE_NOTICE_ARRIVES_WITHIN_MS)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
+      await expect(
+        wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'Codex fixture session' })
+      ).toHaveClass(/st-waiting/, { timeout: 60_000 })
+
+      await writeSharedThenTurnDone(page, shared, 'codex', REMOTE_NOTICE_ARRIVES_WITHIN_MS)
+      const marks = await marksOnceAllWait(page, REMOTE_WS_NAME, REMOTE_NOTICE_ARRIVES_WITHIN_MS)
+
+      await heldThenHandedIn(
+        page,
+        [
+          { backendId: 'claude', heard: claudeHeard },
+          { backendId: 'codex', heard: codexHeard, wroteJustNow: true }
+        ],
+        {
+          notices: path.join(machineHome(env), '.koloft', 'hook-sessions'),
+          agents: machineHome(env)
+        },
+        marks,
+        toldSameFile,
+        REMOTE_NOTICE_ARRIVES_WITHIN_MS
+      )
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
+    }
+  })
+
+  test('on another machine over ssh, when an Antigravity session writes a file a Muse session in the same folder wrote, each is told the other changed it and to read it again: the waiting Muse session with its next prompt, its red dot as it was', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installMuse(env)
+    installAgy(env)
+    installMuseOnMachine(env)
+    installRemoteAgy(env)
+    seedSettings(env, { hintsOff: true })
+    checkoutWithOrigin(remoteDir(env), machineHome(env))
+    const shared = path.join(remoteDir(env), 'shared.txt')
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await museThenAgy(page, REMOTE_WS_NAME, REMOTE_SESSION_BINDS_WITHIN_MS, () =>
+        writeSharedThenTurnDone(page, shared, 'muse', REMOTE_NOTICE_ARRIVES_WITHIN_MS)
+      )
+
+      await writeSharedThenTurnDone(page, shared, 'agy', REMOTE_NOTICE_ARRIVES_WITHIN_MS)
+      const marks = await marksOnceAllWait(page, REMOTE_WS_NAME, REMOTE_NOTICE_ARRIVES_WITHIN_MS)
+
+      await heldThenHandedIn(
+        page,
+        [
+          { backendId: 'muse', heard: museHeard },
+          { backendId: 'agy', heard: agyHeard, wroteJustNow: true }
+        ],
+        {
+          notices: path.join(machineHome(env), '.koloft', 'hook-sessions'),
+          agents: machineHome(env)
+        },
+        marks,
+        toldSameFile,
         REMOTE_NOTICE_ARRIVES_WITHIN_MS
       )
     } finally {

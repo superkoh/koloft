@@ -1,13 +1,11 @@
 import type { SessionUsage } from '@shared/types'
-import { costUsdOf, resolvePricing, type TokenCounts } from '@shared/pricing'
+import { costUsdOf, resolvePricing, TOKEN_FIELDS, type TokenCounts } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import type { TranscriptRecord } from './transcriptRecord'
 
 function num(x: unknown): number {
   return typeof x === 'number' && isFinite(x) && x > 0 ? x : 0
 }
-
-const TOKEN_FIELDS = ['inTok', 'outTok', 'cacheWriteTok', 'cacheReadTok'] as const
 
 function growthOver(booked: TokenCounts, line: TokenCounts): TokenCounts {
   const grown = { ...line }
@@ -18,7 +16,13 @@ function growthOver(booked: TokenCounts, line: TokenCounts): TokenCounts {
 export class UsageMeter {
   private seen = new Map<string, TokenCounts>()
   private counted = false
-  private tokens: TokenCounts = { inTok: 0, outTok: 0, cacheWriteTok: 0, cacheReadTok: 0 }
+  private tokens: TokenCounts = {
+    inTok: 0,
+    outTok: 0,
+    cacheWriteTok: 0,
+    cacheWrite1hTok: 0,
+    cacheReadTok: 0
+  }
   private costUsd = 0
   private unknownModel = false
   private model?: string
@@ -37,6 +41,7 @@ export class UsageMeter {
       inTok: num(u.input_tokens),
       outTok: num(u.output_tokens),
       cacheWriteTok: num(u.cache_creation_input_tokens),
+      cacheWrite1hTok: num(u.cache_creation?.ephemeral_1h_input_tokens),
       cacheReadTok: num(u.cache_read_input_tokens)
     }
     let add = line

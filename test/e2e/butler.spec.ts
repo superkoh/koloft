@@ -17,15 +17,19 @@ import {
   notesOnDisk,
   notesPath,
   openMenu,
+  processAlive,
   readAllCalls,
   runIn,
   seedJsonl,
   sendShortcut,
+  setNextSessionTitle,
   settingsOnDisk,
   startSessionIn,
+  switchToRow,
   waitBooted,
   resumedId,
   waitForAllCalls,
+  waitForCalls,
   wsRows
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
@@ -48,6 +52,8 @@ const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 const BUTLER_ROLE_OPENS = "You are Alfred, the owner's butler in Koloft"
 const ROWS_RESCAN_AND_PUSH_SETTLE_MS = 1500
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
 
 function butlerFolder(env: E2EEnv): string {
   return path.join(env.userData, 'conductors', 'global')
@@ -297,6 +303,37 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
+  test('a to-do helper in the butler’s folder ends the way the to-do method says: it reports to the butler, then koloft session close takes its tab and row away for good', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env)
+    try {
+      await openButler(page)
+      const tabId = await butlerTabId(page, env)
+      const butler = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.tabId === tabId
+      )!
+      await page.evaluate(
+        (id) => window.api.terminal.write(id, '/koloft session new -- sort out the to-dos\r'),
+        tabId
+      )
+      const helperRow = butlerHelperRows(page)
+      await expect(helperRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const helperTab = (await helperRow.getAttribute('data-tab-id'))!
+      await switchToRow(page, helperRow)
+      expect((await koloftRun(page, 'todo')).exit).toBe(0)
+      expect((await koloftRun(page, `session send ${butler.sessionId} Done: 2.`)).exit).toBe(0)
+      await expect.poll(() => peerLines(env), { timeout: 60_000 }).toContain('Done: 2.')
+      expect((await koloftRun(page, 'session close')).exit).toBe(0)
+      await expect(helperRow).toHaveCount(0, { timeout: 30_000 })
+      expect(
+        (await page.evaluate(() => window.api.sessions.list())).some((s) => s.tabId === helperTab)
+      ).toBe(false)
+    } finally {
+      await close()
+    }
+  })
+
   test('Rename… names the butler: its row, the Notes title while it is open and the name on disk change, the old name is kept on disk, and a settings reset keeps both', async ({
     env
   }) => {
@@ -489,6 +526,84 @@ test.describe('The butler: one global session at the top of the sessions list, k
         'runs on another machine'
       )
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(1)
+    } finally {
+      await close()
+      killFakeRemote(env)
+    }
+  })
+
+  test('the butler’s koloft todo prints how to sort out the to-dos, each workspace and the sessions waiting on the owner; koloft todo note keeps a workspace’s to-do note in Koloft’s settings; a session in a workspace is refused koloft todo', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env)
+    try {
+      await startSessionIn(page, 'ws-a')
+      await openButler(page)
+      const todo = await koloftSays(page, 'todo')
+      expect(todo).toContain('SORTING OUT THE TO-DOS')
+      expect(todo).toContain(`ws-a · ${env.workspaces.a} · `)
+      expect(todo).toContain('no to-do note yet')
+      expect(todo).toContain(`Open, finished its turn:\n- "`)
+      expect(todo).toMatch(
+        new RegExp(
+          `" · Claude · ${env.workspaces.a} · local · last active .* · closing it deletes no worktree\\n`
+        )
+      )
+
+      expect(await koloftSays(page, 'todo note ws-a -- "Issues assigned to me."')).toContain(
+        'Saved the to-do note'
+      )
+      expect(Object.values(settingsOnDisk(env).todoNotes as Record<string, string>)).toEqual([
+        'Issues assigned to me.'
+      ])
+      expect(await koloftSays(page, 'todo note ws-a')).toContain('Issues assigned to me.')
+
+      await switchToRow(page, wsRows(page, 'ws-a'))
+      expect(await koloftRun(page, 'todo')).toEqual({
+        text: expect.stringContaining('only the butler and the helpers'),
+        exit: 1
+      })
+    } finally {
+      await close()
+    }
+  })
+
+  test('koloft todo lists a session whose tab went to sleep as open and asleep, never leaving it out as working', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    const { page, close } = await launched(env)
+    try {
+      setNextSessionTitle(env, 'Napping')
+      await startSessionIn(page, 'ws-a')
+      const [napping] = await waitForCalls(env, 1)
+      await openButler(page)
+      await expect.poll(() => processAlive(napping.pid), { timeout: 40_000 }).toBe(false)
+      expect(await koloftSays(page, 'todo')).toMatch(
+        /Open, asleep: .*\n- "Napping" · Claude · .* · closing it deletes no worktree\n/
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  test('for a workspace on another machine, koloft todo lists its instruction files and koloft todo file reads one over the connection Koloft already has', async ({
+    env
+  }) => {
+    installFakeRemote(env)
+    seedRemoteWorkspace(env)
+    fs.mkdirSync(remoteDir(env), { recursive: true })
+    fs.writeFileSync(path.join(remoteDir(env), 'AGENTS.md'), 'Needs decision (@octo): marks it.')
+    const { page, close } = await launched(env)
+    try {
+      await openButler(page)
+      await expect
+        .poll(async () => koloftSays(page, 'todo'), { timeout: 60_000 })
+        .toMatch(/proj · .* · no to-do note yet · files: AGENTS\.md/)
+      expect(await koloftSays(page, `todo file ${REMOTE_WS_NAME} AGENTS.md`)).toContain(
+        'Needs decision (@octo): marks it.'
+      )
     } finally {
       await close()
       killFakeRemote(env)

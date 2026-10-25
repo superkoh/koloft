@@ -144,8 +144,9 @@ export function AccountsPane(): JSX.Element {
           <b>Skip permission prompts</b>
           <small>
             Adds <code>--dangerously-skip-permissions</code> to Claude and Antigravity when Koloft
-            injects an account, and starts Muse with <code>:unrestricted</code> — never overrides
-            permission flags you pass yourself.
+            injects an account, starts Muse with <code>:unrestricted</code>, and starts new Codex
+            sessions with <code>-a never -s danger-full-access</code> — never overrides permission
+            flags you pass yourself.
           </small>
         </div>
         <Switch

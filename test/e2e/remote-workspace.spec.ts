@@ -6,16 +6,24 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
 import {
   type E2EEnv,
+  installAgy,
   installCodex,
   installFakeGh,
+  installMuse,
   seedNoClaudeAccountButStillSetUp,
+  seedSettings,
   setGithubFixture,
   writeGitIdentity
 } from './helpers/env'
 import {
   addRemoteWorkspace,
+  agyReady,
+  boundRemoteAgy,
   breakConnection,
   healConnection,
+  installCodexOnFakeRemote,
+  installMuseOnMachine,
+  installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
   machineHome,
@@ -30,6 +38,7 @@ import {
   liveTmuxSessions
 } from './helpers/remote'
 import {
+  type AgentName,
   agentRow,
   auxIcon,
   boundSessionId,
@@ -41,6 +50,7 @@ import {
   gitInit,
   layoutOnDisk,
   menuItemTexts,
+  newSessionInWith,
   oneStillRunning,
   openMenu,
   openSessionTerminal,
@@ -58,6 +68,7 @@ import {
   FAILED_LOG,
   ONE_FAILING_OF_FIVE,
   WORKBENCH,
+  artifactBody,
   browseRow,
   claudePrompts,
   commentOnFirstHunk,
@@ -89,6 +100,36 @@ async function openRemoteSessionWorkbench(page: Page, env: E2EEnv): Promise<void
   await wsRows(page, REMOTE_WS_NAME).first().click()
   await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
 }
+
+const OTHER_AGENTS_ON_THE_MACHINE: {
+  id: string
+  label: AgentName
+  install: (env: E2EEnv) => void
+  bound?: (page: Page) => Promise<unknown>
+}[] = [
+  { id: 'E-RW-38', label: 'Codex', install: installCodexOnFakeRemote },
+  {
+    id: 'E-RW-39',
+    label: 'Muse',
+    install: (env: E2EEnv): void => {
+      installMuse(env)
+      installMuseOnMachine(env)
+    }
+  },
+  {
+    id: 'E-RW-40',
+    label: 'Antigravity',
+    install: (env: E2EEnv): void => {
+      installAgy(env)
+      installRemoteAgy(env)
+    },
+    bound: async (page: Page) => {
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'first words')
+      return boundRemoteAgy(page)
+    }
+  }
+]
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -249,6 +290,30 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await quitAndClose(app)
     }
   })
+
+  for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
+    test(`${agent.id}: koloft open, typed in the Workbench shell of a ${agent.label} session on the machine, shows a file there in that session’s Workbench`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        fs.writeFileSync(path.join(remoteDir(env), 'shown.md'), `# shown for ${agent.label}\n`)
+        await addRemoteWorkspace(page, env)
+        await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+        await agent.bound?.(page)
+        await openSessionTerminal(app, page)
+        await runIn(page, panelTerm(page), 'koloft open shown.md')
+        await expect(artifactBody(page)).toContainText(`shown for ${agent.label}`, {
+          timeout: 60_000
+        })
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 
   test('E-RW-24: an ssh drop keeps the remote Changes list and offers Retry, never "This directory no longer exists."', async ({
     env
