@@ -485,24 +485,17 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     const room = await list.evaluate((el) => el.scrollHeight - el.clientHeight)
     expect(room).toBeGreaterThan(0)
 
-    const topRoundedPastSubpixelNoise = async (): Promise<number> => {
-      const box = await total.boundingBox()
-      if (!box)
-        throw new Error('the summary header left the screen — it must survive every scroll offset')
-      return Math.round(box.y)
-    }
-    await total.evaluate((el) => {
-      const islandRiseInAndAnyOtherEntrance: Animation[] = []
-      for (let n: Element | null = el; n; n = n.parentElement)
-        islandRiseInAndAnyOtherEntrance.push(...n.getAnimations())
-      return Promise.all(islandRiseInAndAnyOtherEntrance.map((a) => a.finished))
-    })
-    const before = await topRoundedPastSubpixelNoise()
+    const topInPanelSoTheIslandRiseInMovesBothAlike = (): Promise<number> =>
+      total.evaluate((el) => {
+        const panel = el.closest('.wb-panel')!.getBoundingClientRect()
+        return Math.round(el.getBoundingClientRect().y - panel.y)
+      })
+    const before = await topInPanelSoTheIslandRiseInMovesBothAlike()
     await list.evaluate((el) => {
       el.scrollTop = el.scrollHeight
     })
     expect(await list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
-    expect(await topRoundedPastSubpixelNoise()).toBe(before)
+    expect(await topInPanelSoTheIslandRiseInMovesBothAlike()).toBe(before)
   })
 
   test('a directory split by its subdirectory leaves no orphaned rows — across a poll, or a session switch', async ({
