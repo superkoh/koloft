@@ -53,15 +53,34 @@ function activeTag(page: Page): Promise<string> {
   return page.evaluate(() => (document.activeElement as HTMLElement | null)?.tagName ?? 'NONE')
 }
 
-const A_FRAME_LATE_UNDER_LOAD_MS = 500
+async function holdAnimationFramesLikeABusyMachine(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const realRequest = window.requestAnimationFrame.bind(window)
+    const realCancel = window.cancelAnimationFrame.bind(window)
+    const held = new Map<number, FrameRequestCallback>()
+    let nextHeldId = -1
+    window.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      const id = nextHeldId--
+      held.set(id, cb)
+      return id
+    }
+    window.cancelAnimationFrame = (id: number): void => {
+      if (!held.delete(id)) realCancel(id)
+    }
+    ;(window as unknown as { __releaseHeldFrames: () => void }).__releaseHeldFrames = () => {
+      window.requestAnimationFrame = realRequest
+      window.cancelAnimationFrame = realCancel
+      const now = performance.now()
+      for (const cb of held.values()) cb(now)
+      held.clear()
+    }
+  })
+}
 
-async function delayEveryAnimationFrame(page: Page, ms: number): Promise<void> {
-  await page.evaluate((delay) => {
-    const real = window.requestAnimationFrame.bind(window)
-    window.requestAnimationFrame = (cb: FrameRequestCallback): number =>
-      window.setTimeout(() => real(cb), delay)
-    window.cancelAnimationFrame = (id: number): void => window.clearTimeout(id)
-  }, ms)
+async function releaseHeldFrames(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    (window as unknown as { __releaseHeldFrames: () => void }).__releaseHeldFrames()
+  )
 }
 
 async function framesScheduledSoFarHaveRun(page: Page): Promise<void> {
@@ -261,7 +280,7 @@ test.describe('Workbench focus ring: the keys belong to whichever island is lit,
     expect(await litIsland(page)).toBe('panel')
   })
 
-  test('T-FX-06b: a caret placed in the panel before ⌘⏎’s own caret frame lands — ⌘⇧F’s search box on a busy machine — stays there', async ({
+  test('T-FX-06b: ⌘⏎ never takes a caret already on something in the panel — ⌘⇧F’s search box placed before its frame lands on a busy machine, or before ⌘⏎ itself', async ({
     app,
     page
   }) => {
@@ -269,14 +288,21 @@ test.describe('Workbench focus ring: the keys belong to whichever island is lit,
     const searchInput = page.locator('.wb-panel .ft-search-input')
     await startSessionIn(page, 'ws-a')
     await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
-    await delayEveryAnimationFrame(page, A_FRAME_LATE_UNDER_LOAD_MS)
 
+    await holdAnimationFramesLikeABusyMachine(page)
     await toggleFull(app, page)
+    await expect(page.locator(WORKBENCH.panel)).toHaveClass(/full/)
     await clickAppMenuItem(app, page, 'find-files')
     await expect(searchInput).toBeFocused()
+    await releaseHeldFrames(page)
+    await expect(searchInput).toBeFocused()
 
-    await framesScheduledSoFarHaveRun(page)
+    await toggleFull(app, page)
+    await expect(page.locator(WORKBENCH.panel)).not.toHaveClass(/full/)
+    await expect(searchInput).toBeFocused()
+    await toggleFull(app, page)
     await expect(page.locator(WORKBENCH.panel)).toHaveClass(/full/)
+    await framesScheduledSoFarHaveRun(page)
     await expect(searchInput).toBeFocused()
   })
 
