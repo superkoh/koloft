@@ -81,8 +81,8 @@ case "$event" in
     told="$([ -n "$turn" ] && cat "$turn" 2>/dev/null)$said"
     [ -n "$told" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}' "$told"
     ;;
-  # AGY§12 AGY§13
-  PostToolUse) stale_pr_status "$(printf '%s' "$input" | tr -d '\\n' | LC_ALL=C sed -n -E 's/.*"CommandLine" *: *"${JSON_STRING_BODY}".*/\\1/p')" ;;
+  # AGY§12 PLATFORM§36
+  PostToolUse) case "$input" in *'gh pr '*) stale_pr_status "$(printf '%s' "$input" | tr -d '\\n' | LC_ALL=C sed -n -E 's/.*"CommandLine" *: *"${JSON_STRING_BODY}".*/\\1/p')" ;; esac ;;
 esac
 exit 0
 `

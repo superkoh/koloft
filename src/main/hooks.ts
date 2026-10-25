@@ -127,11 +127,8 @@ remind_reply_language() {
 
 // PLATFORM§36
 export const STALE_PR_STATUS_FN = `stale_pr_status() {
-  printf '%s' "$1" | grep -qE 'gh pr (create|merge|close|reopen|ready|edit)' || return 0
-  for f in "$HOME/.cache/ccstatusline/git-review/"*.json; do
-    [ -e "$f" ] && touch -t 200001010000 "$f" 2>/dev/null
-  done
-  return 0
+  printf '%s' "$1" | grep -qE 'gh pr (create|merge|close|reopen|ready|edit)' &&
+    touch -c -t 200001010000 "$HOME/.cache/ccstatusline/git-review/"*.json 2>/dev/null
 }`
 
 // CC§15 CODEX§27

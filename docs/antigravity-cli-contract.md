@@ -579,7 +579,8 @@ Nothing ran against Google's real servers.
   `"toolCall":{"args":{"CommandLine":"<cmd>","WaitMsBeforeAsync":…,"toolSummary":…},"name":"run_command"}`
   and also `lastUserInput`, the prompt as typed, so words the user wrote show up in
   every tool event of that turn. Inside `CommandLine`, `<`, `>` and `&` arrive as
-  `<`, `>`, `&` and quotes as `\"`; spaces stay as they are. The hook's
+  JSON `\u` escapes (`\u` then `003c`, `003e`, `0026`), so `&&` never shows as such,
+  and quotes as `\"`; spaces stay as they are. The hook's
   `$HOME` was the one agy was launched with (a file the hook touched under it changed).
 - `PermissionRequest`, `Notification`, `UserPromptSubmit` and `SessionEnd` are
   ignored and never fire. **No hook fires while agy waits for the user**; an ask shows
