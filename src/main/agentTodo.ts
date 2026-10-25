@@ -49,7 +49,7 @@ export interface TodoVerbDeps {
   sessions(): SessionInfo[]
   asking(tabId: string): boolean
   asleep(sessionId: string): boolean
-  workLeft(row: SessionRow): Promise<string[]>
+  workLeft(row: SessionRow): Promise<string[] | null>
   worktrees(workspace: string): Promise<{ dir: string; branch?: string }[]>
   repoOf(workspace: string): Promise<string | null>
   pulls(workspace: string): Promise<TodoPulls | null>
@@ -74,13 +74,23 @@ interface Candidate {
   placed: PlacedRow
   busy: boolean
   branch?: string
-  left: string[]
+  check: WorktreeCheck
 }
+
+type WorktreeCheck =
+  | { state: 'skipped' }
+  | { state: 'failed' }
+  | { state: 'noWorktree' }
+  | { state: 'checked'; left: string[] }
 
 interface PullsOfRepo {
   repo: string
   pulls: TodoPulls
 }
+
+const NOTHING_LEFT = 'nothing left in its worktree'
+const NO_WORKTREE = 'closing it deletes no worktree'
+const COULD_NOT_CHECK = 'Koloft could not check what is left in its worktree'
 
 type SessionGroup = 'asking' | 'turnDone' | 'asleep' | 'workLeft' | 'closed'
 
@@ -88,8 +98,9 @@ const GROUP_TITLES: Record<SessionGroup, string> = {
   asking: 'Asking the owner a question',
   turnDone: 'Open, finished its turn',
   asleep: 'Open, asleep: its tab is kept but its agent is stopped, so it is not working',
-  workLeft: 'Closed, with work left in its worktree',
-  closed: 'Closed, nothing left in a worktree (ask about these as one batch)'
+  workLeft: 'Closed, with work left in its worktree, or Koloft could not check it',
+  closed:
+    'Closed, nothing left in a worktree (ask about these as one batch, together with the open and asleep sessions whose work is done)'
 }
 
 type TabState = Pick<TodoVerbDeps, 'asking' | 'asleep'>
@@ -103,7 +114,28 @@ function groupOf(c: Candidate, d: TabState): SessionGroup {
   const { live, row } = c.placed
   if (live) return d.asking(live.tabId) || live.status === 'approval' ? 'asking' : 'turnDone'
   if (row.running) return 'asleep'
-  return c.left.length ? 'workLeft' : 'closed'
+  const { check } = c
+  return check.state === 'failed' || (check.state === 'checked' && check.left.length)
+    ? 'workLeft'
+    : 'closed'
+}
+
+function worktreeFacts(check: WorktreeCheck, group: SessionGroup): string[] {
+  const openAndNotAsking = group === 'turnDone' || group === 'asleep'
+  if (check.state === 'failed') return [COULD_NOT_CHECK]
+  if (check.state === 'noWorktree') return openAndNotAsking ? [NO_WORKTREE] : []
+  if (check.state === 'skipped') return []
+  if (check.left.length) return [leftSummary(check.left)]
+  return openAndNotAsking ? [NOTHING_LEFT] : []
+}
+
+async function checkWorktree(d: TodoVerbDeps, row: SessionRow): Promise<WorktreeCheck> {
+  try {
+    const left = await d.workLeft(row)
+    return left ? { state: 'checked', left } : { state: 'noWorktree' }
+  } catch {
+    return { state: 'failed' }
+  }
 }
 
 function leftSummary(left: string[]): string {
@@ -132,7 +164,7 @@ function isOwners(p: TodoPull, me: string | null): boolean {
   return !!me && (p.author === me || p.reviewers.includes(me))
 }
 
-function sessionLine(c: Candidate, pulls: string[], now: number): string {
+function sessionLine(c: Candidate, group: SessionGroup, pulls: string[], now: number): string {
   const { placed } = c
   const { row } = placed
   return [
@@ -143,7 +175,7 @@ function sessionLine(c: Candidate, pulls: string[], now: number): string {
     `last active ${ageLabel(row.mtime, now)}`,
     `id: ${row.nativeSessionId ?? row.id}`,
     ...(c.branch ? [`branch: ${c.branch}`] : []),
-    ...(c.left.length ? [leftSummary(c.left)] : []),
+    ...worktreeFacts(c.check, group),
     ...pulls
   ].join(' · ')
 }
@@ -272,12 +304,13 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
     mapAtMost(all, GIT_LOOKUPS_AT_ONCE, async (placed): Promise<Candidate> => {
       const tree = treeOf(placed)
       const busy = isBusy(placed, d)
-      const checkable = !!tree && !isRemoteKey(placed.workspace) && !busy
+      const open = !!placed.live || placed.row.running
+      const checkable = (!!tree || open) && !isRemoteKey(placed.workspace) && !busy
       return {
         placed,
         busy,
         branch: tree?.branch,
-        left: checkable ? await d.workLeft(placed.row).catch(() => []) : []
+        check: checkable ? await checkWorktree(d, placed.row) : { state: 'skipped' }
       }
     })
   ])
@@ -298,12 +331,13 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
     }
     for (const p of own) withSession.add(pullKey(repo!, p))
     const me = found?.state === 'ok' ? found.me : null
+    const group = groupOf(c, d)
     const line = sessionLine(
       c,
+      group,
       own.map((p) => `its pull request: ${pullFacts(p, me, now)}`),
       now
     )
-    const group = groupOf(c, d)
     groups.set(group, [...(groups.get(group) ?? []), `- ${line}`])
   }
   const sessionPart = (Object.keys(GROUP_TITLES) as SessionGroup[]).flatMap((g) =>
