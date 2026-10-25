@@ -59,20 +59,14 @@ function initRepo(dir: string): void {
   if (!fs.existsSync(path.join(dir, '.git'))) throw new Error(`no .git in ${dir}`)
 }
 
-function gitCallsItIgnored(dir: string, name: string): boolean {
-  const r = spawnSync('git', ['-C', dir, 'check-ignore', '--', name], { encoding: 'utf8' })
-  if (r.status === 0) return true
-  if (r.status === 1) return false
-  throw new Error(`git check-ignore failed (${r.status}): ${r.stderr || r.error}`)
-}
-
 describe('A-01…A-04: listDir / search honour the show-ignored switch', () => {
   let ws: string
   beforeAll(() => {
     ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-ign-')))
     initRepo(ws)
-    fs.writeFileSync(path.join(ws, '.gitignore'), '.env\n.venv/\nnode_modules/\n')
+    fs.writeFileSync(path.join(ws, '.gitignore'), '.env\n.venv/\nnode_modules/\n秘密.txt\n')
     fs.writeFileSync(path.join(ws, '.env'), 'SECRET=1\n')
+    fs.writeFileSync(path.join(ws, '秘密.txt'), '')
     fs.writeFileSync(path.join(ws, 'app.ts'), 'ok\n')
     fs.mkdirSync(path.join(ws, '.venv'))
     fs.writeFileSync(path.join(ws, '.venv', 'pyvenv.cfg'), 'home = /usr\n')
@@ -100,6 +94,13 @@ describe('A-01…A-04: listDir / search honour the show-ignored switch', () => {
     expect(entries.find((e) => e.name === 'app.ts')?.ignored).toBeUndefined()
   })
 
+  // PLATFORM§30
+  it('off: an ignored file whose name is not ASCII is out too', async () => {
+    expect((await listDir(ws)).map((e) => e.name)).not.toContain('秘密.txt')
+    const on = await listDir(ws, { showIgnored: true })
+    expect(on.find((e) => e.name === '秘密.txt')?.ignored).toBe(true)
+  })
+
   it('off: an ignored DIRECTORY and the hidden-by-default names are out', async () => {
     const names = (await listDir(ws)).map((e) => e.name)
     expect(names).not.toContain('.venv')
@@ -109,6 +110,19 @@ describe('A-01…A-04: listDir / search honour the show-ignored switch', () => {
 
   it('off: a directory merely NAMED like build output is listed — only git decides', async () => {
     expect((await listDir(ws)).map((e) => e.name)).toContain('build')
+  })
+
+  it('a symlink to a directory is listed as a directory, and a symlink to a file as a file', async () => {
+    fs.symlinkSync(path.join(ws, 'build'), path.join(ws, 'build-link'))
+    fs.symlinkSync(path.join(ws, 'app.ts'), path.join(ws, 'app-link.ts'))
+    try {
+      const entries = await listDir(ws)
+      expect(entries.find((e) => e.name === 'build-link')?.isDir).toBe(true)
+      expect(entries.find((e) => e.name === 'app-link.ts')?.isDir).toBe(false)
+    } finally {
+      fs.unlinkSync(path.join(ws, 'build-link'))
+      fs.unlinkSync(path.join(ws, 'app-link.ts'))
+    }
   })
 
   it('on: EVERYTHING comes back — ignored directories and node_modules/.git, marked, and they open', async () => {
@@ -199,38 +213,21 @@ describe('A-01…A-04: listDir / search honour the show-ignored switch', () => {
 })
 
 // PLATFORM§30
-describe('A-08: listDir marks ignored files past a first check-ignore batch that matched nothing', () => {
+// PLATFORM§30
+describe('listDir lists a big folder outside any repository, where git quits before reading the names', () => {
   let ws: string
-  let lastName: string
-  const IGNORE_BATCH_COPIED_FROM_FILETREE = 500
+  const MANY_ENTRIES_PAST_THE_PIPE_BUFFER = 5000
   beforeAll(() => {
-    ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-batch-')))
-    initRepo(ws)
-    fs.writeFileSync(path.join(ws, '.gitignore'), 'nothing-here\n')
-    for (let i = 0; i < 600; i++) fs.writeFileSync(path.join(ws, `f${i}.txt`), '')
-    const order = fs.readdirSync(ws).filter((n) => n !== '.git')
-    if (order.length !== 601) throw new Error(`expected 601 entries, got ${order.length}`)
-    lastName = order[order.length - 1]
-    if (lastName === '.gitignore') lastName = order[order.length - 2]
-    fs.writeFileSync(path.join(ws, '.gitignore'), lastName + '\n')
+    ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-norepo-')))
+    for (let i = 0; i < MANY_ENTRIES_PAST_THE_PIPE_BUFFER; i++)
+      fs.writeFileSync(path.join(ws, `file-with-a-long-name-${i}.txt`), '')
   })
   afterAll(() => fs.rmSync(ws, { recursive: true, force: true }))
 
-  it('a later batch is still asked after an earlier one matched nothing', async () => {
-    const order = fs.readdirSync(ws).filter((n) => n !== '.git')
-    expect(order.indexOf(lastName)).toBeGreaterThanOrEqual(IGNORE_BATCH_COPIED_FROM_FILETREE)
-    expect(gitCallsItIgnored(ws, lastName)).toBe(true)
-    const first = spawnSync(
-      'git',
-      ['-C', ws, 'check-ignore', '--', ...order.slice(0, IGNORE_BATCH_COPIED_FROM_FILETREE)],
-      {
-        encoding: 'utf8'
-      }
-    )
-    expect({ status: first.status, stdout: first.stdout }).toEqual({ status: 1, stdout: '' })
-
+  it('returns every entry, none marked ignored', async () => {
     const entries = await listDir(ws, { showIgnored: true })
-    expect(entries.find((e) => e.name === lastName)?.ignored).toBe(true)
+    expect(entries).toHaveLength(MANY_ENTRIES_PAST_THE_PIPE_BUFFER)
+    expect(entries.filter((e) => e.ignored)).toEqual([])
   })
 })
 
