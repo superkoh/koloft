@@ -1,4 +1,5 @@
 import { execFile } from 'child_process'
+import fs from 'fs'
 import path from 'path'
 import { descendants, type ProcessTable } from './processTable'
 import { looksLikeClaude } from './claudeLiveness'
@@ -8,6 +9,7 @@ export interface ShellProc {
   ageMs: number
   listening: boolean
   cpuMsByPid: Map<number, number>
+  outputBytes: number
 }
 
 export interface TaskProcs {
@@ -146,7 +148,11 @@ export async function inspectTaskProcs(
       pid,
       ageMs: table.byPid.get(pid)?.ageMs ?? 0,
       listening: tree.some((p) => seen.listening.has(p)),
-      cpuMsByPid: new Map(tree.map((p) => [p, table.byPid.get(p)?.cpuMs ?? 0]))
+      cpuMsByPid: new Map(tree.map((p) => [p, table.byPid.get(p)?.cpuMs ?? 0])),
+      outputBytes: await fs.promises.stat(name).then(
+        (st) => st.size,
+        () => 0
+      )
     })
   }
   return result

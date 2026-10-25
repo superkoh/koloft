@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import { inspectTaskProcs, makeExec } from '../../src/main/taskProcs'
 import { parseProcessTable, parsePsDuration, type ProcessTable } from '../../src/main/processTable'
 
@@ -95,7 +98,8 @@ describe('taskProcs', () => {
       cpuMsByPid: new Map([
         [4300, 50],
         [4301, 1500]
-      ])
+      ]),
+      outputBytes: 0
     })
     expect(r!.shells.get('bsrv')).toEqual({
       pid: 4400,
@@ -104,7 +108,8 @@ describe('taskProcs', () => {
       cpuMsByPid: new Map([
         [4400, 100],
         [4401, 2400]
-      ])
+      ]),
+      outputBytes: 0
     })
     expect(r!.shells.get('bgit')?.pid).toBe(4500)
     const fd1Call = s.calls.find((c) => c.includes('-d'))!
@@ -161,6 +166,14 @@ describe('taskProcs', () => {
       ['4300', '4400', '4500', '5300'].sort()
     )
     expect(s.calls.filter((c) => c.includes('-sTCP:LISTEN'))).toHaveLength(1)
+  })
+
+  it('reports how much a shell has printed by the size of its output file', async () => {
+    const tasks = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'taskprocs-')), SID, 'tasks')
+    fs.mkdirSync(tasks, { recursive: true })
+    fs.writeFileSync(path.join(tasks, 'bsleep.output'), '[1/9] first test\n')
+    const r = await inspect(stub({ fd1: `p4300\nf1\nn${tasks}/bsleep.output\n` }))
+    expect(r!.shells.get('bsleep')?.outputBytes).toBe(17)
   })
 
   it('an output file in another session tasks dir is not one of ours', async () => {

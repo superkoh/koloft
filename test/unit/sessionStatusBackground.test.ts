@@ -1150,7 +1150,8 @@ function stageProcs(
           pid: 1,
           ageMs: s.ageMs ?? 0,
           listening: !!s.listening,
-          cpuMsByPid: new Map([[1, s.cpuMs ?? 0]])
+          cpuMsByPid: new Map([[1, s.cpuMs ?? 0]]),
+          outputBytes: 0
         }
       ])
     )
@@ -1287,7 +1288,8 @@ describe('run-state from the typed task list: each task judged by what it is, an
             pid: 1,
             ageMs: 0,
             listening: true,
-            cpuMsByPid: new Map([[1, (cpuMs += 60_000)]])
+            cpuMsByPid: new Map([[1, (cpuMs += 60_000)]]),
+            outputBytes: 0
           }
         ]
       ])
@@ -1320,7 +1322,9 @@ describe('run-state from the typed task list: each task judged by what it is, an
       ])
       return {
         at: Date.now(),
-        shells: new Map([['btoolu_relaunch', { pid: 1, ageMs: 0, listening: true, cpuMsByPid }]])
+        shells: new Map([
+          ['btoolu_relaunch', { pid: 1, ageMs: 0, listening: true, cpuMsByPid, outputBytes: 0 }]
+        ])
       }
     }
     await tracker.reportTurnEnd('tabL5', [{ id: 'btoolu_relaunch', type: 'shell' }])
@@ -1328,6 +1332,40 @@ describe('run-state from the typed task list: each task judged by what it is, an
     expect(status(tracker, 'tabL5')).toBe('working')
     expect(parked(tracker, 'tabL5')).toEqual([
       { id: 'btoolu_relaunch', kind: 'command', label: 'npx playwright test', state: 'working' }
+    ])
+  }, 10_000)
+
+  it('a listening shell that keeps printing is work even while its CPU is low (an e2e run waiting inside a test)', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabL7', cwd, initialLines(cwd))
+    tracker.setStatus('tabL7', 'working')
+    appendJsonl(file, [
+      commandUseRec('toolu_printing', cwd, 'npx playwright test'),
+      shellAckRec('toolu_printing', cwd)
+    ])
+    let outputBytes = 0
+    tracker.pidOf = () => 4242
+    tracker.inspect = async () => ({
+      at: Date.now(),
+      shells: new Map([
+        [
+          'btoolu_printing',
+          {
+            pid: 1,
+            ageMs: 0,
+            listening: true,
+            cpuMsByPid: new Map([[1, 100]]),
+            outputBytes: (outputBytes += 80)
+          }
+        ]
+      ])
+    })
+    await tracker.reportTurnEnd('tabL7', [{ id: 'btoolu_printing', type: 'shell' }])
+    await sleep(SERVER_QUIET_MS * 4 + SCAN_MS * 2)
+    expect(status(tracker, 'tabL7')).toBe('working')
+    expect(parked(tracker, 'tabL7')).toEqual([
+      { id: 'btoolu_printing', kind: 'command', label: 'npx playwright test', state: 'working' }
     ])
   }, 10_000)
 
