@@ -154,6 +154,7 @@ export type TodoPulls =
   | { state: 'failed'; why: string }
 
 const TODO_PULLS_LIMIT = 100
+const MERGED_PULLS_LOOKED_AT = 500
 const PULL_FIELDS =
   'number,title,author,reviewRequests,headRefName,isCrossRepository,isDraft,changedFiles,createdAt,statusCheckRollup'
 const CLOSES_FIELD = 'closingIssuesReferences'
@@ -427,8 +428,26 @@ export class GithubLookup {
     return failingChecksText(gh, repo, pr)
   }
 
-  // PLATFORM§32
   async mergedHeads(root: string, branch: string): Promise<string[] | null> {
+    const prs = await this.mergedPulls(root, ['--head', branch])
+    return prs && prs.flatMap((p) => (typeof p?.headRefOid === 'string' ? [p.headRefOid] : []))
+  }
+
+  async mergedHeadsByBranch(root: string): Promise<Map<string, string[]> | null> {
+    const prs = await this.mergedPulls(root, ['--limit', String(MERGED_PULLS_LOOKED_AT)])
+    if (!prs) return null
+    const heads = new Map<string, string[]>()
+    for (const p of prs)
+      if (typeof p?.headRefName === 'string' && typeof p?.headRefOid === 'string')
+        heads.set(p.headRefName, [...(heads.get(p.headRefName) ?? []), p.headRefOid])
+    return heads
+  }
+
+  // PLATFORM§32
+  private async mergedPulls(
+    root: string,
+    narrow: string[]
+  ): Promise<ReturnType<typeof ghJsonArray>> {
     const repo = await this.repoFor(root)
     if (!repo) return []
     const gh = this.ghFor(root)
@@ -440,13 +459,11 @@ export class GithubLookup {
       slug(repo),
       '--state',
       'merged',
-      '--head',
-      branch,
+      ...narrow,
       '--json',
-      'headRefOid'
+      'headRefName,headRefOid'
     ])
-    const prs = r.code === 0 ? ghJsonArray(r.stdout) : null
-    return prs && prs.flatMap((p) => (typeof p?.headRefOid === 'string' ? [p.headRefOid] : []))
+    return r.code === 0 ? ghJsonArray(r.stdout) : null
   }
 
   private async repoFor(root: string): Promise<GithubRepo | null> {

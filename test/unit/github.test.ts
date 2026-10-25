@@ -479,7 +479,7 @@ describe('GithubLookup.mergedHeads', () => {
         '--head',
         'fix/login',
         '--json',
-        'headRefOid'
+        'headRefName,headRefOid'
       ]
     ])
   })
@@ -496,6 +496,30 @@ describe('GithubLookup.mergedHeads', () => {
       make({ gh: ghAnswering(r) }).mergedHeads(root, 'x')
     expect(await heads({ code: GH_SIGNED_OUT, stdout: '' })).toBeNull()
     expect(await heads({ code: null, missing: true, stdout: '' })).toBeNull()
+  })
+
+  it('by branch: one list of the repository’s merged pull requests names each branch’s head commits; a failed gh cannot say', async () => {
+    const asked: string[][] = []
+    const gh = ghAnswering(
+      {
+        stdout: JSON.stringify([
+          { headRefName: 'fix/login', headRefOid: SHA },
+          { headRefName: 'fix/login', headRefOid: 'b'.repeat(40) },
+          { headRefName: 'docs', headRefOid: 7 }
+        ])
+      },
+      asked
+    )
+    expect(await make({ gh }).mergedHeadsByBranch(root)).toEqual(
+      new Map([['fix/login', [SHA, 'b'.repeat(40)]]])
+    )
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).toEqual(
+      expect.arrayContaining(['--state', 'merged', '--repo', 'acme/widgets'])
+    )
+    expect(
+      await make({ gh: ghAnswering({ code: GH_SIGNED_OUT, stdout: '' }) }).mergedHeadsByBranch(root)
+    ).toBeNull()
   })
 })
 

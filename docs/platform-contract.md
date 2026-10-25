@@ -1350,6 +1350,11 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `refs/pull/<n>/head` holds. A squash merge keeps that sha only as the pull request's
   head, never in `main`. (2026-10-22, gh 2.89.0, by hand against superkoh/koloft #934,
   branch `worktree-cmd-p-at-target-workspace`, deleted on merge.)
+- **Without `--head`, `gh pr list --repo o/r --state merged --limit N --json
+  headRefName,headRefOid`** lists the last N merged pull requests, newest first, one
+  `{"headRefName":"<branch>","headRefOid":"<sha>"}` each, branches deleted on merge
+  included. On superkoh/koloft, 100 reached back three days and 500 about a month
+  (to 2026-09-23); #934's branch was in both. (2026-10-25, gh 2.89.0, by hand.)
 - **`gh issue create` with no terminal never prompts**: missing `--title` it exits 1 at
   once with "must provide `--title` and `--body` when not running interactively" and
   creates nothing. A flag given as `--flag=value` keeps a value that starts with `-`
