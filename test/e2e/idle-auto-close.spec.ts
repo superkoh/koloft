@@ -160,7 +160,7 @@ test('a session that wakes into Claude asking whether to trust its folder shows 
     await expect(row('Asks trust A')).toHaveClass(/\bst-idle\b/)
     const before = new Set(await termIds(page))
 
-    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), '')
+    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), a.sessionId)
     await row('Asks trust A').click()
     const calls = await waitForCalls(env, 3)
     expect(resumedId(calls[2])).toBe(a.sessionId)

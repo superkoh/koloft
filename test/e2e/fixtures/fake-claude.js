@@ -554,8 +554,8 @@ async function askTrustThenStart(question) {
   draw()
   for (;;) {
     const key = await keyOnTheDialog()
-    if (key.includes('\r')) break
     if (key.includes('\x1b[B') || key.includes('\x1b[A')) trusted = !trusted
+    if (key.includes('\r')) break
     draw()
   }
   if (!trusted) process.exit(1)
@@ -563,8 +563,17 @@ async function askTrustThenStart(question) {
   startAfterDelay()
 }
 
+function asksTrustFor(file) {
+  try {
+    return fs.readFileSync(file, 'utf8').trim() === resumeId
+  } catch {
+    return false
+  }
+}
+
 const trustQuestion = path.join(home, 'fake-claude-trust-question')
-if (fs.existsSync(trustQuestion)) setImmediate(() => void askTrustThenStart(trustQuestion))
+if (resumeId && asksTrustFor(trustQuestion))
+  setImmediate(() => void askTrustThenStart(trustQuestion))
 else startAfterDelay()
 
 let waitingHook = null

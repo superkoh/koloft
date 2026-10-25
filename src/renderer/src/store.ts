@@ -180,7 +180,6 @@ interface AppState {
   setTabTitle: (id: string, title: string) => void
   setTabAlive: (id: string, alive: boolean) => void
   setTabAsleep: (id: string) => void
-  markWakeOverdue: (id: string) => void
 
   activateTab: (id: string) => void
   revealTab: (id: string) => void
@@ -379,6 +378,25 @@ function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
     ...panelStateMoved(s, asleep.id, t.id)
   }))
   tabStateMoved(asleep.id, t.id, t.sessionId ?? '')
+}
+
+// CC§9
+const A_WAKING_SCREEN_STILL_THIS_LONG_IS_WAITING_FOR_THE_OWNER_MS = 2000
+const wakeQuietTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+export function noteWakingOutput(tabId: string): void {
+  clearTimeout(wakeQuietTimers.get(tabId))
+  wakeQuietTimers.set(
+    tabId,
+    setTimeout(() => {
+      wakeQuietTimers.delete(tabId)
+      useStore.setState((s) =>
+        s.tabs.some((t) => t.id === tabId && t.ghost && !t.wakeOverdue)
+          ? { tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, wakeOverdue: true } : t)) }
+          : s
+      )
+    }, A_WAKING_SCREEN_STILL_THIS_LONG_IS_WAITING_FOR_THE_OWNER_MS)
+  )
 }
 
 function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
@@ -718,12 +736,6 @@ export const useStore = create<AppState>((set, get) => ({
           : t
       )
     })),
-  markWakeOverdue: (id) =>
-    set((s) => {
-      const cur = s.tabs.find((t) => t.id === id)
-      if (!cur?.ghost || cur.wakeOverdue) return s
-      return { tabs: s.tabs.map((t) => (t.id === id ? { ...t, wakeOverdue: true } : t)) }
-    }),
   activateTab: (id) => {
     activateOnceSpawned = get().tabs.some((x) => x.id === id) ? null : id
     if (activateOnceSpawned) return

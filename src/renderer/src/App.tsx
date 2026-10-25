@@ -58,9 +58,9 @@ import {
   consumeRestoreExit,
   tabEvictedNotice,
   panelTabId,
-  panelIsOpen
+  panelIsOpen,
+  noteWakingOutput
 } from './store'
-import { useWakeDeadline } from './useWakeDeadline'
 import { WORKBENCH_PANE_MIN } from './auxSurface'
 import {
   clampNotesHeight,
@@ -239,7 +239,6 @@ export default function App(): JSX.Element {
   const tabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
-  useWakeDeadline()
   // PLATFORM§21
   const [switchFrom, setSwitchFrom] = useState(activeTabId)
   const [switchGen, setSwitchGen] = useState(0)
@@ -1709,6 +1708,9 @@ export default function App(): JSX.Element {
                       onRepainted={() => {
                         if (t.id === activeTabId) setPaintedGen(switchGen)
                       }}
+                      onOutput={
+                        t.ghost && !t.wakeOverdue ? () => noteWakingOutput(t.id) : undefined
+                      }
                     />
                     {/* CODEX§9 MUSE§10 AGY§5 */}
                     {t.resuming && (t.kind === 'claude' || t.kind === 'agy') && (

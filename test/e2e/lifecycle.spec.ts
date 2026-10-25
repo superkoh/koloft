@@ -309,7 +309,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
   }) => {
     test.setTimeout(120_000)
     const id = seedJsonl(env, env.workspaces.a, { summary: 'Untrusted resume session' })
-    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), '')
+    fs.writeFileSync(path.join(env.home, 'fake-claude-trust-question'), id)
 
     const app = await launchApp(env)
     try {
