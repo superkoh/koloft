@@ -595,6 +595,22 @@ Nothing ran against Google's real servers.
     whole.
   - `PreInvocation` printing `{"injectSteps":[{"ephemeralMessage":"…"}]}` adds it as
     the last user content of that one request; copies do not pile up.
+  - **What a `PreInvocation` hook can read of the model's earlier words.** 1.4.7 Linux
+    arm64 in Docker, fake Gemini server answering text plus a `run_command` and then
+    text, `-p` and two `-c -p` turns, `--dangerously-skip-permissions`, 2026-10-24:
+    before every model call `transcript_full.jsonl` already holds every earlier step,
+    the last call's `PLANNER_RESPONSE` too, so the words the model wrote beside a tool
+    call are there before the call after that tool. That line reads
+    `{"step_index":…,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":…,"input_tokens":…,"cache_read_tokens":…,"output_tokens":…,"content":"<text>","tool_calls":[…]}`,
+    in that order, with no `{` before `content`. stdin also carries `lastUserInput`, the
+    prompt as typed, unwrapped. After a tool call the ephemeral message reaches the
+    model appended to that call's `functionResponse.output` after a blank line, not as a
+    content of its own. A hook entry `/bin/sh <file>` runs under dash there (Debian
+    12). The same run of the macOS build (1.4.7 darwin_arm64, macOS 26.6.2, a throwaway
+    tart VM) gave the same line shape, order and timing and the same texts at the
+    fake server; its transcript also saves each injected message as a step
+    `{"source":"SYSTEM_SDK","type":"EPHEMERAL_MESSAGE"}` (the Linux transcript was not
+    looked at for this).
 - **A `PreToolUse` hook gets about 30 s unless its entry sets `timeout` (seconds), and one
   that runs out DENIES the tool.** 1.4.2 Linux arm64 in Docker, fake model, `-p …
   --dangerously-skip-permissions --output-format json`, a hook that slept then exited 0
