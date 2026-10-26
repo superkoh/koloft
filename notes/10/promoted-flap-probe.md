@@ -46,6 +46,13 @@ promotion` (the promotion lands, the turn-end in the same parse rests it at once
 hold before the check. `fresh subagent growth promotes a resting dot` passes because it
 only waits for the final waiting.
 
+The same probe with one more line before the growth loop —
+`tracker.setStatus('tabP1', 'working'); await tracker.reportTurnEnd('tabP1', [])`, a
+turn end whose list is empty — blinks on `origin/main` too: `151:working`, `401:waiting`,
+`903:working`, `1154:waiting`, … `3912:working`. Once a list has come, `promote` is never
+read (`judgeHold` goes to the list first), so `main` already blinks after a Stop; option A
+makes the time before the first Stop behave the same way.
+
 In the shipped app the same loop runs with a 10 s stop hold and a 2 s resume window, so
 the dot would go green, rest about 10 s later, and go green again while the subagent runs,
 until the next Stop brings a list.
