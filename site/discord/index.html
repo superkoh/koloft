@@ -242,20 +242,22 @@ your Mac
           <code>✅ Answered on the computer.</code> or <code>⏹ The session closed.</code>
         </p>
 
-        <h3 id="at-the-mac">While you use the Mac</h3>
+        <h3 id="at-the-mac">While you use Koloft</h3>
         <p>
-          While you use the Mac (a key or the mouse in the last 5 minutes, and the screen not
-          locked), Discord stays quiet: you see your butler in Koloft. It does not post its replies
-          to things you did not send from Discord, and the bot does not type. A question it asks on
-          its own waits, and comes to the channel when you leave (the screen locks, or 5 minutes go
-          by with no input) if it is still open. Write from Discord and the answer still comes back
-          there, questions included. If a question was waiting when you write, its card comes first,
-          and Koloft tells you your message was not delivered: answer the question, then send your
-          message again. A note that your butler could not reach a session shows in Koloft, not in
-          Discord. Password and code cards (below) always come to Discord.
+          While you use Koloft (you typed, clicked, scrolled or moved the mouse in Koloft's window
+          in the last 5 minutes, and the screen is not locked), Discord stays quiet: you see your
+          butler in Koloft. Your butler does not post its replies to things you did not send from
+          Discord, and the bot does not type. A question it asks on its own waits, and comes to the
+          channel when you leave (the screen locks, or 5 minutes go by with no input in Koloft) if
+          it is still open. After the screen locks, you count as away until you use Koloft again.
+          Write from Discord and the answer still comes back there, questions included. If a
+          question was waiting when you write, its card comes first, and Koloft tells you your
+          message was not delivered: answer the question, then send your message again. A note that
+          your butler could not reach a session shows in Koloft, not in Discord. Password and code
+          cards (below) always come to Discord.
         </p>
 
-        <h3>Your sessions</h3>
+        <h3 id="your-sessions">Your sessions</h3>
         <p>
           Sessions in your folders do not post to Discord. When your butler hands a session work,
           Koloft hands the session's reply back to the butler once its turn ends, and the butler
@@ -265,11 +267,22 @@ your Mac
           <a href="../accounts/#what-it-can-do">what your butler can do</a>.
         </p>
         <p>
+          While you are away, Koloft tells your butler about your sessions, on your Mac and on
+          remote folders. When one finishes its turn, waits for an answer or an OK, or stops by
+          surprise, Koloft waits at least half a minute to gather what else happens, then sends it
+          all in one quiet message: which session, its folder, and, for a finished turn, the start
+          of its reply. Your butler decides whether you need to know, and writes to you in the
+          channel only if you do. Its answer to that message is not posted, and the bot does not
+          type. Left out: your butler's own helpers, a turn whose reply already went back to whoever
+          started the session, and a turn that only reports (see
+          <a href="../sessions/#red-dots">red dots</a>).
+        </p>
+        <p>
           A helper your butler started in its own folder is different: its questions come to the
           channel, titled with its name and <code>(Alfred's helper)</code>. Like the butler's own,
-          they wait while you use the Mac. Press a button or type a reply to answer one. Once you
+          they wait while you use Koloft. Press a button or type a reply to answer one. Once you
           answer one of a helper's cards by typing, that helper's questions come right away until
-          its turn ends; after that they wait again while you use the Mac. When cards from your
+          its turn ends; after that they wait again while you use Koloft. When cards from your
           butler and a helper both wait, a typed reply answers the one posted last.
         </p>
 
@@ -338,9 +351,9 @@ your Mac
           as several, top to bottom, at most 10.
         </p>
         <p>
-          While you <a href="#at-the-mac">use the Mac</a>, your butler cannot send files or
-          pictures, unless it is answering what you sent from Discord. It is told to show the file
-          or page in the Workbench instead.
+          While you <a href="#at-the-mac">use Koloft</a>, your butler cannot send files or pictures,
+          unless it is answering what you sent from Discord. It is told to show the file or page in
+          the Workbench instead.
         </p>
 
         <p>
@@ -367,21 +380,22 @@ your Mac
                 <td>butler replies</td>
                 <td>
                   Every reply your butler writes, whole, and its own question cards; while you use
-                  the Mac, only its answers to what you sent from Discord.
+                  Koloft, only its answers to what you sent from Discord. Never its answer to
+                  Koloft's quiet message about your sessions.
                 </td>
               </tr>
               <tr>
                 <td>helper questions</td>
                 <td>
                   The question cards of the helpers your butler started in its own folder, held
-                  while you use the Mac like the butler's.
+                  while you use Koloft like the butler's.
                 </td>
               </tr>
               <tr>
                 <td>files and pictures</td>
                 <td>
                   What your butler sends with <code>koloft discord send</code> or shot; while you
-                  use the Mac, only when it answers what you sent from Discord.
+                  use Koloft, only when it answers what you sent from Discord.
                 </td>
               </tr>
               <tr>
@@ -402,13 +416,13 @@ your Mac
                 <td>typing</td>
                 <td>
                   While your butler works on what you sent, or while you are away, a typing signal
-                  every 8 seconds.
+                  every 8 seconds; none while it reads Koloft's quiet message about your sessions.
                 </td>
               </tr>
               <tr>
                 <td>errors</td>
                 <td>
-                  A short note when something goes wrong; while you use the Mac, a note that your
+                  A short note when something goes wrong; while you use Koloft, a note that your
                   butler could not reach a session shows in Koloft instead.
                 </td>
               </tr>

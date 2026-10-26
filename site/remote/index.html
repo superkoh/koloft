@@ -228,7 +228,7 @@ your Mac                     the other machine
           </li>
         </ul>
 
-        <h3>What Koloft installs there</h3>
+        <h3 id="installs">What Koloft installs there</h3>
         <ul class="dash">
           <li>
             <code>bash</code>, <code>tmux</code>, <code>rsync</code>, <code>python3</code> (for
@@ -248,6 +248,10 @@ your Mac                     the other machine
           </li>
           <li>
             <code>gh</code>, GitHub's command-line tool, if the machine has none (about 40 MB, once)
+          </li>
+          <li>
+            <code>playwright-cli</code>, with <code>npm</code>, the first time a Claude Code session
+            there runs it (about 20 MB, once)
           </li>
           <li>
             the sign-in tool (Git Credential Manager), if the machine has none, when you add a
@@ -299,8 +303,8 @@ your Mac                     the other machine
           <li>Images and PDFs (document files) from the machine do not show a preview.</li>
           <li>An agent's <code>open &lt;url&gt;</code> does not reach the Workbench.</li>
           <li>
-            The agent cannot drive your web tabs. See
-            <a href="../agents/">Agents can use Koloft too</a>.
+            Only a Claude Code session there can drive your web tabs; Codex, Muse and Antigravity
+            cannot yet. See <a href="../agents/#remote-browser">Agents can use Koloft too</a>.
           </li>
           <li>
             A session row's menu offers Copy path (<code>machine:/path</code>) instead of Reveal in
