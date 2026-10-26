@@ -170,7 +170,6 @@ export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
     listDir,
     dirExists,
     dirExistsOrThrow: dirExists,
-    reachOrThrow: async () => {},
     makeDir: (dir) =>
       fs.promises.mkdir(dir).then(
         () => true,

@@ -885,7 +885,6 @@ export class ClaudeBackend implements SessionBackend {
     const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
     const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
     const host = this.d.hosts.of(root)
-    await host.reachOrThrow()
     if (opts.worktree && !opts.scheduled && !opts.resumeSessionId) await host.trustFolder(root)
     return this.createTab(host, {
       tabId: opts.tabId,

@@ -1130,6 +1130,7 @@ export class SshHost implements Host {
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
     await this.sshReady()
+    await this.reachOrThrow()
     const settings = d.settings()
     const agentTools = d.agentTools()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()

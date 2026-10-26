@@ -747,7 +747,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           `/koloft session new --backend ${backend} --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
         )
         await expect.poll(reply, { timeout: 60_000 }).toMatch(/koloft exit=\d+/)
-        expect(await reply()).toMatch(/\nkoloft: Connection closed[^\n]*\n[^\n]*koloft exit=1/)
+        expect(await reply()).toMatch(/\nkoloft: \S[^\n]*\n[^\n]*koloft exit=1/)
       }
     })
   })

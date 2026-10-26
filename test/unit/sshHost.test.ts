@@ -472,7 +472,7 @@ describe('a remote Workbench while the ssh link is down', () => {
     await expect(host.dirExistsOrThrow(keyed(repo))).rejects.toThrow('Operation timed out')
   })
 
-  it('refuses a session start with ssh’s reason when the machine is out of reach, but not when it only needs someone to sign in, which the session tab is for', async () => {
+  it('refuses a session start with ssh’s reason when the machine is out of reach, but not when it only needs someone to sign in, which the session tab is for, nor when ssh is merely slow', async () => {
     await expect(machine(unreachable).reachOrThrow()).rejects.toThrow('Operation timed out')
     const needsPassword = async (): Promise<BytesResult> => ({
       code: 255,
@@ -480,6 +480,12 @@ describe('a remote Workbench while the ssh link is down', () => {
       stderr: 'puser@devbox: Permission denied (publickey,password).'
     })
     await expect(machine(needsPassword).reachOrThrow()).resolves.toBeUndefined()
+    const slow = async (): Promise<BytesResult> => ({
+      code: null,
+      stdout: Buffer.alloc(0),
+      stderr: ''
+    })
+    await expect(machine(slow).reachOrThrow()).resolves.toBeUndefined()
     await expect(machine().reachOrThrow()).resolves.toBeUndefined()
   })
 })

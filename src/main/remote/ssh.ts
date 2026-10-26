@@ -65,7 +65,9 @@ const SHELL_PRINTS_AT_LOGIN = /unexpected tag|protocol version mismatch|is your 
 
 export function machineOutOfReach(r: { code: number | null; stderr: string }): boolean {
   return (
-    sshLinkBroke(r) && !NEEDS_SOMEONE_TO_SIGN_IN.test(r.stderr) && !r.stderr.includes(MASTER_FULL)
+    r.code === SSH_LINK_BROKE_EXIT &&
+    !NEEDS_SOMEONE_TO_SIGN_IN.test(r.stderr) &&
+    !r.stderr.includes(MASTER_FULL)
   )
 }
 
