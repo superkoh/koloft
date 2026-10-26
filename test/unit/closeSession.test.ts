@@ -167,7 +167,9 @@ describe('closeConfirmBody with unsaved files (B-25 merged dialog)', () => {
 // PLATFORM§29
 describe('unexpectedExitNotice (the one account of a session that died)', () => {
   it('names the signal for a killed claude, the code for an error exit', () => {
-    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'claude', true)).toContain('signal 9')
+    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'claude', true)).toBe(
+      'Claude session ended: killed by signal 9'
+    )
     expect(unexpectedExitNotice({ exitCode: 1 }, 'claude', true)).toBe(
       'Claude session ended unexpectedly (exit code 1)'
     )
@@ -179,6 +181,9 @@ describe('unexpectedExitNotice (the one account of a session that died)', () => 
     )
     expect(unexpectedExitNotice({ exitCode: 3 }, 'codex', false)).toBe(
       'Codex closed before the session started (exit code 3)'
+    )
+    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'codex', false)).toBe(
+      'Codex closed before the session started (killed by signal 9)'
     )
   })
 

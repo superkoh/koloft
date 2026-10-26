@@ -998,7 +998,7 @@ export default function App(): JSX.Element {
       const tab = useStore.getState().tabs.find((t) => t.id === e.id)
       if (tab?.sessionId) releaseResume(tab.sessionId)
       if (unexpectedExitWanted(tab, e)) {
-        useStore.getState().showToast(unexpectedExitNotice(e, tab.kind, tabEverBound(tab)))
+        useStore.getState().showToast(unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id)))
       }
       if (tab) askAboutLeftEdits(tab)
       closeTab(e.id)
