@@ -1,6 +1,6 @@
 import { stripTerminalCodes } from './terminalCodes'
 
-export type CommandOutputKind = 'printed' | 'notice' | 'details'
+export type CommandOutputKind = 'printed' | 'notice' | 'details' | 'built-in'
 
 export interface CommandOutput {
   kind: CommandOutputKind
@@ -8,12 +8,16 @@ export interface CommandOutput {
 }
 
 const PRINTED = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/
+// CC§2
+const A_BUILT_IN_COMMAND_RAN = /^<command-name>([^<]*)<\/command-name>/
 
 // CC§2
 const A_HOOK_RAN = /^[A-Za-z]+ \[.*\] completed successfully$/
 
 function printed(content: unknown): CommandOutput | null {
   if (typeof content !== 'string') return null
+  const builtIn = A_BUILT_IN_COMMAND_RAN.exec(content)?.[1]
+  if (builtIn) return { kind: 'built-in', text: builtIn }
   const out = PRINTED.exec(content)?.[1]
   if (out === undefined) return null
   const text = stripTerminalCodes(out)

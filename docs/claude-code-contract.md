@@ -518,7 +518,12 @@ Unless a bullet below says more, it is inferred, not checked.
     own hook on the Linux build over SSH, CC 2.1.289). A `<command-name>` record names the command, and a
     `user` `isMeta` record holds `<local-command-caveat>`.
   - `/context` also adds a `user` `isMeta` record whose content is the same report as
-    clean markdown ("## Context Usage …").
+    clean markdown ("## Context Usage …"). Its three records come in a row: a
+    `system`/`local_command` record starting `<command-name>/context</command-name>`,
+    the stdout one, then the clean report (2026-10-26, CC 2.1.291, read from a butler
+    transcript on this Mac where `/context` was typed from Discord). The clean report
+    is an `isMeta` record with no `origin`, just like a custom command's body, so only
+    the `<command-name>` record tells the two apart.
   - An unknown command writes one `system`/`informational` record, `level: "warning"`,
     content "Unknown command: /x. Did you mean /y?", and nothing else.
   - `/compact` first writes a plain `user` record whose content is `"/compact"` with no

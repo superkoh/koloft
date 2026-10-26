@@ -930,6 +930,13 @@ function handleLine(line) {
       {
         type: 'system',
         subtype: 'local_command',
+        content:
+          '<command-name>/context</command-name>\n<command-message>context</command-message>\n<command-args></command-args>',
+        cwd
+      },
+      {
+        type: 'system',
+        subtype: 'local_command',
         content: '<local-command-stdout>Context Usage 14%</local-command-stdout>',
         cwd
       },

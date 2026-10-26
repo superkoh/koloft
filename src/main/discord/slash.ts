@@ -89,6 +89,7 @@ interface Pending {
   typedAt: number
   keyBefore?: string
   outputs: CommandOutput[]
+  builtIn: boolean
   worked: boolean
   turnEnded: boolean
   reply?: string
@@ -121,9 +122,7 @@ function screenShot(lines: string[] | undefined): string | undefined {
 function resultCard(p: Pending, screen: string[] | undefined): Card | undefined {
   const details = p.outputs.filter((o) => o.kind === 'details').map((o) => o.text)
   const printed = p.outputs.filter((o) => o.kind !== 'details').map((o) => o.text)
-  // CC§2
-  const builtIn = p.outputs.some((o) => o.kind === 'printed')
-  const said = details.length && (builtIn || !p.worked) ? details : printed
+  const said = details.length && (p.builtIn || !p.worked) ? details : printed
   const body: string[] = []
   if (p.newKey) body.push(`It is a new conversation now, with the id ${p.newKey}.`)
   if (p.reply && !p.target.butler) body.push(p.reply)
@@ -205,6 +204,7 @@ export class SlashCommands {
       typedAt: Date.now(),
       keyBefore: this.d.keyOf(tab),
       outputs: [],
+      builtIn: false,
       worked: false,
       turnEnded: false,
       pressedEsc: false,
@@ -307,6 +307,11 @@ export class SlashCommands {
   output(tab: string, output: CommandOutput): void {
     const p = this.pending.get(tab)
     if (!p) return
+    // CC§2
+    if (output.kind === 'built-in') {
+      p.builtIn = true
+      return
+    }
     p.outputs.push(output)
     this.settleSoon(tab, p)
   }

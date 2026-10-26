@@ -59,13 +59,28 @@ describe('what a Claude slash command left in the transcript', () => {
     ).toEqual({ kind: 'details', text: '## Context Usage\n\n**Tokens:** 28.5k / 200k (14%)' })
   })
 
-  it('nothing for the record that only names the command, an empty output, the caveat, or a prompt', () => {
-    for (const record of [
-      {
+  it('that a built-in command ran, from the record that names it; a skill or custom command, whose record starts with its message, is not built-in', () => {
+    expect(
+      commandOutputOf({
         type: 'system',
         subtype: 'local_command',
         content: '<command-name>/clear</command-name>\n<command-message>clear</command-message>'
-      },
+      })
+    ).toEqual({ kind: 'built-in', text: '/clear' })
+    expect(
+      commandOutputOf({
+        type: 'user',
+        origin: { kind: 'human' },
+        message: {
+          content:
+            '<command-message>koloft:koloft</command-message>\n<command-name>/koloft:koloft</command-name>\n<command-args>session list</command-args>'
+        }
+      })
+    ).toBeNull()
+  })
+
+  it('nothing for an empty output, the caveat, or a prompt', () => {
+    for (const record of [
       {
         type: 'system',
         subtype: 'local_command',
