@@ -59,6 +59,7 @@ import { launchMode } from '../remote/sync'
 import {
   backgroundOptions,
   ensureControlDir,
+  machineOutOfReach,
   problemOf,
   sshLinkBroke,
   sshOptions,
@@ -725,6 +726,11 @@ export class SshHost implements Host {
     const r = await this.testDir(dir)
     if (sshLinkBroke(r)) throw new Error(problemOf(r))
     return r.code === 0
+  }
+
+  async reachOrThrow(): Promise<void> {
+    const r = await this.sh('true', [])
+    if (machineOutOfReach(r)) throw new Error(problemOf(r))
   }
 
   async makeDir(dir: string): Promise<boolean> {

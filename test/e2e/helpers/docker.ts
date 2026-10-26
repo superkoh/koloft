@@ -283,6 +283,10 @@ export function stopSshLab(lab: SshLab, controlDir?: string): void {
   spawnSync(docker(), ['network', 'rm', lab.network], { stdio: 'ignore' })
 }
 
+export function stopMachine(lab: SshLab): void {
+  dk(['stop', '-t', '1', lab.target])
+}
+
 export function runOnTarget(
   lab: SshLab,
   user: string,

@@ -78,6 +78,7 @@ export interface Host {
   listDir(dir: string, opts?: ShowIgnored): Promise<DirEntry[]>
   dirExists(dir: string): Promise<boolean>
   dirExistsOrThrow(dir: string): Promise<boolean>
+  reachOrThrow(): Promise<void>
   makeDir(dir: string): Promise<boolean>
   search(
     root: string,
