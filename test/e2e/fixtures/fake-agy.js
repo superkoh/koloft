@@ -1903,7 +1903,8 @@ function openLaunchConversation() {
 
 function nextPhase() {
   if (!signedIn()) return showSignIn()
-  if (!onboardingDone()) return showColorScheme()
+  if (!onboardingDone() || fs.existsSync(sentinel('fake-agy-stuck-in-setup')))
+    return showColorScheme()
   if (!trusted()) return showTrust()
   enterPrompt()
 }

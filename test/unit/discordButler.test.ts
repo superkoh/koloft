@@ -346,6 +346,55 @@ describe('the butler', () => {
     expect(c.isButlerSession('tab-1')).toBe(false)
   })
 
+  it('on Antigravity, which makes its conversation only at the first prompt, one started with nothing to say is held to the deadline only once words are on their way; started with words or resumed, it is held at once', async () => {
+    vi.useFakeTimers()
+    choice = { backend: 'agy' }
+    const c = make()
+    const quietTab = await opened(c)
+    expect(c.awaitsFirstWords(quietTab)).toBe(true)
+    vi.advanceTimersByTime(DEADLINE_MS)
+    expect(killed).toEqual([])
+    expect(toasts).toEqual([])
+    c.firstWordsComing(quietTab)
+    expect(c.awaitsFirstWords(quietTab)).toBe(false)
+    vi.advanceTimersByTime(DEADLINE_MS)
+    expect(killed).toEqual([quietTab])
+    expect(toasts).toEqual(['Alfred did not start.'])
+    c.onPtyExit(quietTab)
+
+    const told = c.open('set up Discord')
+    await vi.waitFor(() => expect(started).toHaveLength(2))
+    release()
+    const toldTab = await told
+    if (!toldTab.ok) throw new Error(toldTab.error)
+    expect(c.awaitsFirstWords(toldTab.tabId)).toBe(false)
+    vi.advanceTimersByTime(DEADLINE_MS)
+    expect(killed).toEqual([quietTab, toldTab.tabId])
+    c.onPtyExit(toldTab.tabId)
+
+    const agyKey = 'agy:local:conv-1'
+    session = { sessionIds: [agyKey], lastSessionKey: agyKey }
+    transcripts.add(agyKey)
+    const again = make()
+    const resumedTab = await again.open()
+    if (!resumedTab.ok) throw new Error(resumedTab.error)
+    expect(again.awaitsFirstWords(resumedTab.tabId)).toBe(false)
+    vi.advanceTimersByTime(DEADLINE_MS)
+    expect(killed).toContain(resumedTab.tabId)
+  })
+
+  it('a quiet Antigravity butler that bound already is never closed by words sent to it later', async () => {
+    vi.useFakeTimers()
+    choice = { backend: 'agy' }
+    const c = make()
+    const tab = await opened(c)
+    c.onBound(tab, 'agy:local:conv-1')
+    expect(c.awaitsFirstWords(tab)).toBe(false)
+    c.firstWordsComing(tab)
+    vi.advanceTimersByTime(DEADLINE_MS)
+    expect(killed).toEqual([])
+  })
+
   it('only while bound to Discord is it kept awake and its channel known by its tab; unbinding keeps its conversation and its tab', async () => {
     const c = make()
     c.bind(CHANNEL)

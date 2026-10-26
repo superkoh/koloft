@@ -138,6 +138,11 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   running TUI). Without it Koloft binds a resumed tab only at its first prompt.
 - macOS 1.4.10 also writes `~/Library/Application Support/Muse/session-name-authority/
   session-names.db` in the real user's home, whatever `HOME` says.
+- A fresh TUI writes its file at launch, before any prompt, so its session exists from
+  the start (unlike AGY§8). 2026-10-26, muse 1.4.11 in Docker (`koloft-muse-probe-1411`),
+  `--provider echo --trust-workspace`, a pty driver that answered the terminal's
+  queries and typed nothing for 8 s: the registry file and
+  `sessions/<date>/<id>/.session.lock` were both there.
 - On `/clear`, `/new` and in-TUI `/resume` the old file goes and the new session's
   file appears with the same pid. `muse resume <id>` writes the resumed id. After
   `/exit` the last file stays behind, stale.

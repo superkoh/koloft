@@ -10,7 +10,7 @@ import type {
   DiscordSettings
 } from '@shared/types'
 import { CannotMakeChannels, type NewChannel } from './link'
-import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
 import { butlerNames, newerSnowflake, peerNamesOf } from '@shared/conductors'
 import { butlerRole, TODO_NOTICE } from '@shared/agentGuide'
 import { errorText } from '../agentRequests'
@@ -69,6 +69,7 @@ export class Butler {
   private stopping = new Set<string>()
   private opening: Promise<ConductorOpenResult> | undefined
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
+  private waitingForWords: string | undefined
 
   constructor(private d: ButlerDeps) {
     this.discord = d.load()
@@ -263,6 +264,7 @@ export class Butler {
     else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
     let resumedOld = false
+    let started = false
     try {
       if (resumable) {
         const live = this.d.liveTabFor(launch.backend, key)
@@ -278,15 +280,31 @@ export class Butler {
       resumedOld = hasTranscript && !this.session.knowsTodo?.includes(key)
       // AGY§8
       if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
-      else tabId = await this.d.start({ ...launch, firstPrompt })
+      else {
+        started = true
+        tabId = await this.d.start({ ...launch, firstPrompt })
+      }
     } catch (error) {
       return refusal(errorText(error))
     }
     if (!tabId) return refusal(`${launch.title} could not start.`)
     if (resumedOld && key !== undefined) this.tellOfTodo(key)
     this.resident = tabId
-    this.armDeadline(tabId, launch.title)
+    // AGY§8
+    if (started && !firstPrompt && conversationAtFirstPrompt(launch.backend))
+      this.waitingForWords = tabId
+    else this.armDeadline(tabId, launch.title)
     return { ok: true, tabId }
+  }
+
+  awaitsFirstWords(tabId: string): boolean {
+    return tabId === this.waitingForWords
+  }
+
+  firstWordsComing(tabId: string): void {
+    if (tabId !== this.waitingForWords) return
+    this.waitingForWords = undefined
+    this.armDeadline(tabId, this.d.butler().name)
   }
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
@@ -317,6 +335,7 @@ export class Butler {
   }
 
   private forgetTab(tabId: string): void {
+    if (tabId === this.waitingForWords) this.waitingForWords = undefined
     clearTimeout(this.deadlines.get(tabId))
     this.deadlines.delete(tabId)
   }

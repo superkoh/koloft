@@ -52,6 +52,7 @@ function setup(
     name: 'Assist',
     liveTab: () => TAB,
     open: async () => TAB,
+    firstWordsComing: () => undefined,
     typeCommand: async (_t, command) => void commands.push(command),
     seen: (id) => void last.push(id),
     ...dest
@@ -91,6 +92,7 @@ function setup(
     answered: (tab, reply) => void answered.push({ tab, reply }),
     backendOf: () => 'claude',
     boundKey: () => 'session-1',
+    showsPromptBeforeBind: () => false,
     status: (): SessionStatus => 'waiting',
     awaitsInput: () => false,
     turnOver: (t) => ['waiting', 'idle'].includes(deps.status(t) ?? ''),
@@ -924,5 +926,31 @@ describe('DiscordRelay: Koloft telling a conductor something', () => {
       expect(bodies()).toEqual(['[Koloft] Could not deliver to fix-login: it closed.'])
     )
     expect(fs.existsSync(path.join(dir, `${TAB}.discord-ids`))).toBe(false)
+  })
+})
+
+// AGY§8
+describe('DiscordRelay: an Antigravity butler that has no conversation yet', () => {
+  it('holds the butler to its start deadline at once, and types an owner message as its first prompt as soon as it shows its prompt, without waiting for a bind', async () => {
+    let prompt = false
+    const coming: string[] = []
+    const { relay, writes } = setup(
+      {},
+      [],
+      {
+        backendOf: () => 'agy',
+        boundKey: () => undefined,
+        status: () => undefined,
+        showsPromptBeforeBind: () => prompt
+      },
+      { firstWordsComing: (tab) => void coming.push(tab) }
+    )
+    relay.onMessage(message('701', OWNER, 'what is on today'))
+    await vi.waitFor(() => expect(coming).toEqual([TAB]))
+    expect(writes).toEqual([])
+    prompt = true
+    await vi.waitFor(() =>
+      expect(writes.map((w) => w.data)).toEqual(['[Discord] what is on today', '\r'])
+    )
   })
 })

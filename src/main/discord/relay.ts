@@ -95,6 +95,7 @@ export interface Destination {
   name: string
   liveTab(): string | undefined
   open(): Promise<string>
+  firstWordsComing(tab: string): void
   typeCommand(tab: string, command: string): Promise<void>
   seen(messageId: string): void
 }
@@ -121,6 +122,7 @@ export interface RelayDeps {
   answered(tabId: string, reply: string): void
   backendOf(tabId: string): BackendId | undefined
   boundKey(tabId: string): string | undefined
+  showsPromptBeforeBind(tabId: string): boolean
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
   turnOver(tabId: string): boolean
@@ -401,6 +403,7 @@ export class DiscordRelay {
   private async readyTab(dest: Destination): Promise<string> {
     const already = dest.liveTab()
     const tab = await dest.open()
+    dest.firstWordsComing(tab)
     if (!(await this.d.ready(tab, () => this.typable(tab), BUTLER_GETS_READY_WITHIN_MS)))
       throw new Error(
         this.d.alive(tab)
@@ -411,7 +414,9 @@ export class DiscordRelay {
     return tab
   }
 
+  // AGY§8
   private typable(tab: string): boolean {
+    if (this.d.showsPromptBeforeBind(tab)) return true
     const status = this.d.status(tab)
     return (
       !!this.d.boundKey(tab) &&

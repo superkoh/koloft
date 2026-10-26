@@ -3284,6 +3284,7 @@ app.whenReady().then(() => {
     answered: (tabId, reply) => buttons.answered(tabId, reply),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
+    showsPromptBeforeBind,
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
@@ -3329,7 +3330,9 @@ app.whenReady().then(() => {
     },
     butlerBusy: () => {
       const tab = butlerNow.liveTab()
-      return relay.delivering() || (!!tab && !relay.takesCommand(tab))
+      return (
+        relay.delivering() || (!!tab && !relay.takesCommand(tab) && !showsPromptBeforeBind(tab))
+      )
     },
     tell: (text) => relay.tellQuietly(butlerDestination(), text),
     now: Date.now,
@@ -4765,6 +4768,10 @@ async function resumeRow(
   return { ok: true, tabId: res.id }
 }
 
+function showsPromptBeforeBind(tabId: string): boolean {
+  return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
+}
+
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
   return ptyMgr.whenReady(
     tabId,
@@ -4878,6 +4885,7 @@ function butlerDestination(): Destination {
       if (!opened.ok) throw new Error(opened.error)
       return opened.tabId
     },
+    firstWordsComing: (tabId) => butler?.firstWordsComing(tabId),
     typeCommand: async (tabId, command) => {
       const channelId = butler?.channel()?.channelId
       if (!channelId) throw new Error(NO_CHANNEL_BOUND)
@@ -4921,6 +4929,8 @@ async function startHelper(
   const opened = await butler?.open(A_HELPER_HAS_IT)
   if (!opened) return { ok: false, error: STILL_STARTING }
   if (!opened.ok) return opened
+  if (butler?.awaitsFirstWords(opened.tabId))
+    discordRelay?.tell(butlerDestination(), A_HELPER_HAS_IT)
   const parent = (await tabReady(opened.tabId, cronBindDeadlineMs(), false))
     ? sessionOfTab(opened.tabId)
     : undefined
