@@ -2505,3 +2505,16 @@ cli/cli --limit 1 --json number,closingIssuesReferences`:
 
 Koloft dependents: `listTodoPulls` in `src/main/github.ts`, which lists again without the
 field and says so; a remote workspace's pull requests are listed by that machine's gh.
+
+## §62 Node `fs.rmSync` on a symbolic link to a folder
+
+- **Node 24 refuses it without `recursive`.** `fs.rmSync(link, { force: true })`, where
+  `link` is a symbolic link to a folder, throws `ERR_FS_EISDIR` ("Path is a directory") on
+  Node 24.13.0; on Node 22.12.0 (the version CI runs) it removes the link.
+- **With `recursive: true` both remove only the link**: the folder it points to and its
+  files stay.
+- Measured 2026-10-26 with a scratch script: Node 24.13.0 on macOS 27.0, Node 22.12.0 in the
+  `node:22.12.0-bookworm-slim` Docker image.
+
+Koloft dependents: `installFakeRemote` in `test/e2e/helpers/remote.ts`, which a case may
+call twice on one home, the second time over the link the first one made.
