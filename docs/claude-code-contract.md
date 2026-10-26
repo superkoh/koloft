@@ -520,10 +520,18 @@ Unless a bullet below says more, it is inferred, not checked.
   - `/context` also adds a `user` `isMeta` record whose content is the same report as
     clean markdown ("## Context Usage …"). Its three records come in a row: a
     `system`/`local_command` record starting `<command-name>/context</command-name>`,
-    the stdout one, then the clean report (2026-10-26, CC 2.1.291, read from a butler
-    transcript on this Mac where `/context` was typed from Discord). The clean report
-    is an `isMeta` record with no `origin`, just like a custom command's body, so only
-    the `<command-name>` record tells the two apart.
+    the stdout one, then the clean report (a butler transcript written by CC 2.1.291,
+    where `/context` was typed from Discord; read 2026-10-26). `/goal <text>` writes the
+    same three kinds of record — `<command-name>/goal…`, `Goal set: …` stdout, then an
+    `isMeta` record with no `origin` ("A session-scoped Stop hook is now active …") —
+    and then runs a model turn (CC 2.1.287 and 2.1.296 transcripts). So an `isMeta`
+    record after a `<command-name>` record is not always a clean report.
+  - Every record whose string content starts with a `<command-` tag in this Mac's
+    transcripts of the last 90 days (CC 2.1.251–2.1.310, read 2026-10-26): name-first
+    ones were all built-ins (`/context`, `/model`, `/goal`, `/clear`, `/compact`,
+    `/exit`, `/remote-control`), as `system`/`local_command` or `user` records;
+    skills and custom commands were all message-first from 2.1.283 on; none held a
+    `<local-command-stdout>` too.
   - An unknown command writes one `system`/`informational` record, `level: "warning"`,
     content "Unknown command: /x. Did you mean /y?", and nothing else.
   - `/compact` first writes a plain `user` record whose content is `"/compact"` with no
