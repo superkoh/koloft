@@ -399,8 +399,8 @@
           too, through Koloft's own ssh link to that machine. There it works with
           <code>playwright-cli</code> only: Koloft puts it on the machine the first time the session
           runs it (see <a href="../remote/">what Koloft installs there</a>), and it finds the
-          address on its own each time it runs. Playwright MCP tools and your own scripts there do
-          not reach the web tabs.
+          address on its own each time it runs. Only <code>playwright-cli</code> is handed the
+          address, so Playwright MCP tools there do not reach the web tabs.
         </p>
         <ul class="dash">
           <li>
@@ -410,14 +410,16 @@
             <code
               >a session on another machine cannot reach files or local servers of the Mac Koloft
               runs on</code
-            >. A web server it starts on the machine cannot be shown this way either.
+            >. A web server it starts on the machine shows only at an address your Mac can reach
+            (the machine's own name or IP address), never as <code>localhost</code>.
           </li>
           <li>
             A web tab it has driven stays fenced the same way for you too, until you close that tab.
           </li>
           <li>
             With the switch off, or while Koloft is not connected to the machine,
-            <code>playwright-cli</code> says why and starts a browser of its own there.
+            <code>playwright-cli</code> says why, and then has no way to the web tabs (it tries a
+            browser of the machine's own, if it has one).
           </li>
           <li>
             Codex, Muse and Antigravity sessions on a remote folder cannot drive the web tabs.
