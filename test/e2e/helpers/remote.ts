@@ -249,7 +249,9 @@ export function installRemoteAgy(env: E2EEnv): void {
 }
 
 export function machineAgyCalls(env: E2EEnv): AgyCall[] {
-  return agyCalls(env, machineHome(env)).filter((c) => !c.argv.includes('-p'))
+  return agyCalls(env, machineHome(env)).filter(
+    (c) => !c.argv.includes('-p') && !c.argv.includes('--version')
+  )
 }
 
 export async function agyReady(page: Page): Promise<void> {

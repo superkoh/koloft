@@ -1405,8 +1405,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         installAgy(env)
         installRemoteAgy(env)
       },
-      freshLaunches: (env) =>
-        machineAgyCalls(env).filter((c) => !c.argv.includes('--version')).length
+      freshLaunches: (env) => machineAgyCalls(env).length
     }
   ]
   for (const { agent, setUp, freshLaunches } of REMOTE_AGENTS) {
@@ -1534,10 +1533,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         installAgy(env)
         installRemoteAgy(env)
       },
-      ranIn: (env) =>
-        machineAgyCalls(env)
-          .filter((c) => !c.argv.includes('--version'))
-          .map((c) => c.cwd)
+      ranIn: (env) => machineAgyCalls(env).map((c) => c.cwd)
     }
   ]
   for (const { agent, setUp, ranIn } of REMOTE_CLOSE_IT_AGENTS) {
