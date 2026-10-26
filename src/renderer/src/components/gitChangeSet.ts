@@ -7,7 +7,7 @@ export interface GitChangeSet {
   base: string | null | undefined
   rootMissing: boolean
   watchDead: boolean
-  readFailed: boolean
+  firstReadFailed: boolean
   reread: () => void
 }
 
@@ -60,7 +60,10 @@ export function useGitChangeSet(
   const [watchDead, setWatchDead] = useState(false)
   const [readFailed, setReadFailed] = useState(false)
   const fetchNow = useRef<(() => void) | null>(null)
-  const reread = useCallback(() => fetchNow.current?.(), [])
+  const reread = useCallback(() => {
+    setReadFailed(false)
+    fetchNow.current?.()
+  }, [])
 
   useEffect(() => {
     setGit({})
@@ -121,5 +124,6 @@ export function useGitChangeSet(
     }
   }, [active, root, baseChoice, refreshNonce])
 
-  return { git, numstat, base, rootMissing, watchDead, readFailed, reread }
+  const firstReadFailed = readFailed && base === undefined
+  return { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread }
 }

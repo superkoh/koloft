@@ -187,7 +187,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
 
   const files = useFilesController(ownerTab, treeRoot)
   const refreshFiles = files.refresh
-  const { git, numstat, base, rootMissing, watchDead, readFailed, reread } = useGitChangeSet(
+  const { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread } = useGitChangeSet(
     treeRoot,
     visible,
     files.baseChoice,
@@ -1502,7 +1502,8 @@ export const WorkbenchPane = memo(function WorkbenchPane({
             git={git}
             numstat={numstat}
             base={base}
-            readFailed={readFailed}
+            firstReadFailed={firstReadFailed}
+            onReread={reread}
             active={visible && activeKind === 'files'}
             onBody={reportFilesBody}
             onOpenWeb={openWebFromFiles}

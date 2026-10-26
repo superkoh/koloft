@@ -460,7 +460,8 @@ export interface FilesBodyProps {
   git: GitStatusMap
   numstat: GitNumstatMap
   base: string | null | undefined
-  readFailed: boolean
+  firstReadFailed: boolean
+  onReread: () => void
   active: boolean
   onBody: (el: HTMLElement | null) => void
   onOpenWeb: (path: string) => void
@@ -480,7 +481,8 @@ export const FilesBody = memo(function FilesBody({
   git,
   numstat,
   base,
-  readFailed,
+  firstReadFailed,
+  onReread,
   active,
   onBody,
   onOpenWeb,
@@ -582,13 +584,13 @@ export const FilesBody = memo(function FilesBody({
           root={root}
           sideWidth={shownSideWidth}
           base={base}
-          readFailed={readFailed}
+          firstReadFailed={firstReadFailed}
           git={git}
           numstat={numstat}
           filters={c.filters}
           session={session}
           refreshNonce={c.refreshNonce}
-          onRetry={c.refresh}
+          onReread={onReread}
           anchor={c.anchor}
           active={active}
           onOpenWeb={onOpenWeb}

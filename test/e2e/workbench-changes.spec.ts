@@ -71,6 +71,30 @@ const blockOf = (page: Page, rel: string): Locator =>
   page.locator(`${CV.block}[data-path="${rel}"]`)
 const stream = (page: Page): Locator => page.locator(CV.stream)
 
+const GIT_KILLED_AFTER_MS = 3000
+
+function hangStatusReadsWhileFlagged(
+  env: E2EEnv,
+  root: string
+): { hangFromNowOn: string; hung: string } {
+  const hangFromNowOn = path.join(env.home, 'git-status-hangs')
+  const hung = path.join(env.home, 'git-status-hung')
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'git'),
+    `#!/usr/bin/env bash\n` +
+      `if [ -e "${hangFromNowOn}" ] && [ "$1" = "-C" ] && [ "$2" = "${root}" ]; then\n` +
+      `  case " $* " in\n` +
+      `    *" --name-status "*|*" --numstat "*) : > "${hung}"; exec sleep 60 ;;\n` +
+      `  esac\n` +
+      `fi\n` +
+      `exec "${realGit}" "$@"\n`,
+    { mode: 0o755 }
+  )
+  env.launchEnv.KOLOFT_GIT_TIMEOUT_MS = String(GIT_KILLED_AFTER_MS)
+  return { hangFromNowOn, hung }
+}
+
 async function shownPaths(page: Page): Promise<string[]> {
   return (await rows(page).evaluateAll((els) =>
     els.map((e) => (e as HTMLElement).dataset.path ?? '')
@@ -1195,22 +1219,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     test.setTimeout(180_000)
     const fx = setupChangeFixture(env.workspaces.a)
     fx.modifyTracked(2)
-    const hangFromNowOn = path.join(env.home, 'git-status-hangs')
-    const hung = path.join(env.home, 'git-status-hung')
-    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
-    fs.writeFileSync(
-      path.join(env.fakeBin, 'git'),
-      `#!/usr/bin/env bash\n` +
-        `if [ -e "${hangFromNowOn}" ] && [ "$1" = "-C" ] && [ "$2" = "${fx.root}" ]; then\n` +
-        `  case " $* " in\n` +
-        `    *" --name-status "*|*" --numstat "*) : > "${hung}"; exec sleep 60 ;;\n` +
-        `  esac\n` +
-        `fi\n` +
-        `exec "${realGit}" "$@"\n`,
-      { mode: 0o755 }
-    )
-    const GIT_KILLED_AFTER_MS = 3000
-    env.launchEnv.KOLOFT_GIT_TIMEOUT_MS = String(GIT_KILLED_AFTER_MS)
+    const { hangFromNowOn, hung } = hangStatusReadsWhileFlagged(env, fx.root)
     await app.close().catch(() => {})
     const next = await launchApp(env)
     try {
@@ -1242,21 +1251,8 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     test.setTimeout(180_000)
     const fx = setupChangeFixture(env.workspaces.a)
     fx.modifyTracked(2)
-    const hangWhileThere = path.join(env.home, 'git-status-hangs')
-    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
-    fs.writeFileSync(
-      path.join(env.fakeBin, 'git'),
-      `#!/usr/bin/env bash\n` +
-        `if [ -e "${hangWhileThere}" ] && [ "$1" = "-C" ] && [ "$2" = "${fx.root}" ]; then\n` +
-        `  case " $* " in\n` +
-        `    *" --name-status "*|*" --numstat "*) exec sleep 60 ;;\n` +
-        `  esac\n` +
-        `fi\n` +
-        `exec "${realGit}" "$@"\n`,
-      { mode: 0o755 }
-    )
-    fs.writeFileSync(hangWhileThere, '')
-    env.launchEnv.KOLOFT_GIT_TIMEOUT_MS = '3000'
+    const { hangFromNowOn } = hangStatusReadsWhileFlagged(env, fx.root)
+    fs.writeFileSync(hangFromNowOn, '')
     await app.close().catch(() => {})
     const next = await launchApp(env)
     try {
@@ -1270,7 +1266,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       })
       await expect(page.locator(CV.empty)).toHaveCount(0)
 
-      fs.rmSync(hangWhileThere)
+      fs.rmSync(hangFromNowOn)
       await banner.getByRole('button', { name: 'Retry' }).click()
       await waitStream(page, 2)
       await expect(badge(page)).toHaveText('2 files')
