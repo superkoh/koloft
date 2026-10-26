@@ -8,10 +8,13 @@ import { spawn, spawnSync } from 'child_process'
 import {
   accountEnv,
   buildMachinePackage,
+  claudeProgram,
   killSessionCmd,
   launchLine,
+  machineToolProgram,
   tabScript,
   writeTabPackage,
+  type ClaudeTab,
   type TabSpec
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
@@ -136,16 +139,19 @@ async function until(pred: () => boolean, ms = 15_000): Promise<boolean> {
   return pred()
 }
 
-const spec = (over: Partial<TabSpec> = {}): TabSpec => ({
-  tabId: 'T',
-  tmuxName: 'k-sess1',
-  machineName: 'm-0000000000000000',
-  cwd: '/tmp',
-  banner: 'koloft: bravo',
-  settings: { hooks: {} },
-  claudeArgs: ['--session-id', 'sess1'],
-  ...over
-})
+const spec = (over: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
+  const s = {
+    tabId: 'T',
+    tmuxName: 'k-sess1',
+    machineName: 'm-0000000000000000',
+    cwd: '/tmp',
+    banner: 'koloft: bravo',
+    settings: { hooks: {} },
+    claudeArgs: ['--session-id', 'sess1'],
+    ...over
+  }
+  return { ...s, program: over.program ?? claudeProgram(s) }
+}
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
   const pkg = buildMachinePackage(path.join(r.dir, 'pkg'), files)
@@ -486,16 +492,16 @@ describe('U-TAB-*: the tab script on the machine', () => {
   it("a Muse tab moves the carried credential into its account's folder on the machine, links the machine user's own Muse settings and trust there even before that user has them (muse writes through the link), drops an AGENTS.md link whose file is gone, runs muse through the wrapper with no playwright-cli of Koloft's on its PATH (only Claude Code tabs on a machine drive the Workbench browser), and a reconnect attaches by the name the wrapper last gave the tmux session", () => {
     const s = spec({
       tmuxName: 'm-T',
-      program: {
-        name: 'muse',
-        run: museRunLines({
+      program: machineToolProgram(
+        'muse',
+        museRunLines({
           tabId: 'T',
           account: "o'brien",
           args: ['--approval-judge', 'off', 'say hi'],
           trust: []
         }),
-        files: { 'T.auth.json': '{"providers":{}}', 'T.hooks.json': '{"hooks":{}}' }
-      }
+        { 'T.auth.json': '{"providers":{}}', 'T.hooks.json': '{"hooks":{}}' }
+      )
     })
     const b = box(s)
     const own = path.join(b.home, '.config', 'muse')

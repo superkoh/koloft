@@ -5,7 +5,7 @@ import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
 import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
 import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
 import { remoteShCommand } from './install'
-import type { TabSpec } from './launch'
+import { machineToolProgram, type TabProgram } from './launch'
 import { REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
 
 const AGY_KEY_ENV = 'GEMINI_API_KEY'
@@ -57,7 +57,7 @@ export interface AgyMachineLaunch {
   resumeId?: string
   env: Record<string, string>
   portOffset?: number
-  program: AgyProgram
+  program: TabProgram
 }
 
 export interface AgyMachinePlan {
@@ -81,10 +81,8 @@ export interface AgyTabSpec {
   start?: string
 }
 
-export type AgyProgram = NonNullable<TabSpec['program']>
-
 // AGY§4 AGY§5 AGY§6
-export function agyTab(s: AgyTabSpec): AgyProgram {
+export function agyTab(s: AgyTabSpec): TabProgram {
   const own = `$A/${AGY_APP_DIR}`
   const link = (rel: string): string =>
     `[ "$(readlink "$A/${rel}")" = "$G/${rel}" ] || { rm -rf "$A/${rel}"; ln -s "$G/${rel}" "$A/${rel}"; }`
@@ -109,17 +107,13 @@ export function agyTab(s: AgyTabSpec): AgyProgram {
     `exec agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`
   ]
   const file = (name: string): string => `${s.tabId}.${name}`
-  return {
-    name: 'agy',
-    run: run.map((line) => `  ${line}\n`).join(''),
-    files: {
-      [file('settings.json')]: s.settings,
-      [file('hooks.json')]: s.hooks,
-      ...(s.onboarding ? { [file('onboarding.json')]: s.onboarding } : {}),
-      ...(s.token ? { [file('auth.json')]: s.token } : {}),
-      ...(s.start ? { [file('start.json')]: s.start } : {})
-    }
-  }
+  return machineToolProgram('agy', run.map((line) => `  ${line}\n`).join(''), {
+    [file('settings.json')]: s.settings,
+    [file('hooks.json')]: s.hooks,
+    ...(s.onboarding ? { [file('onboarding.json')]: s.onboarding } : {}),
+    ...(s.token ? { [file('auth.json')]: s.token } : {}),
+    ...(s.start ? { [file('start.json')]: s.start } : {})
+  })
 }
 
 const CONFIG_SPLIT = '\u0001'

@@ -101,12 +101,46 @@ export interface TabSpec {
   banner: string
   env?: Record<string, string>
   portOffset?: number
+  ownerWords?: string
+  program: TabProgram
+}
+
+export interface TabProgram {
+  run: string
+  beforeEnsure: string
+  ensureArgs: string
+  beforeTmux: string
+  files: Record<string, string>
+}
+
+export interface ClaudeTab {
+  tabId: string
+  tmuxName: string
   settings: Record<string, unknown>
   ownerWords?: string
   agentPlugin?: boolean
   claudeArgs: string[]
-  program?: { name: 'muse' | 'agy'; run: string; files: Record<string, string> }
 }
+
+export const claudeProgram = (c: ClaudeTab): TabProgram => ({
+  run: claudeRun(c),
+  beforeEnsure: '',
+  ensureArgs: '',
+  beforeTmux: claudeFirstRun(c),
+  files: { [`${c.tabId}.json`]: JSON.stringify(c.settings), [`${c.tabId}.tmux`]: c.tmuxName }
+})
+
+export const machineToolProgram = (
+  name: 'muse' | 'agy',
+  run: string,
+  files: Record<string, string>
+): TabProgram => ({
+  run,
+  beforeEnsure: `trap 'rm -f "$T.auth.json"' EXIT\n`,
+  ensureArgs: ` ${name}`,
+  beforeTmux: 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n',
+  files
+})
 
 export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
 
@@ -115,13 +149,13 @@ const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
-function claudeRun(spec: TabSpec): string {
+function claudeRun(spec: ClaudeTab): string {
   const T = tabPath(spec.tabId)
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
   exec claude --settings "${T}.json"${spec.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${spec.claudeArgs.map(shq).join(' ')}\n`
 }
 
-function claudeFirstRun(spec: TabSpec): string {
+function claudeFirstRun(spec: ClaudeTab): string {
   const T = tabPath(spec.tabId)
   return `${spec.ownerWords ? `mkdir -p "$HOME/.koloft/hook-sessions" && mv -f "${T}".said* "$HOME/.koloft/hook-sessions/"\n` : ''}# CC§10
 CJ="$HOME/.claude.json"
@@ -157,14 +191,14 @@ if [ "$1" = run ]; then
   KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
   unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
-${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}${program ? program.run : claudeRun(spec)}fi
+${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}${program.run}fi
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t ${attachTo}
-${program ? `trap 'rm -f "$T.auth.json"' EXIT\n` : ''}sh "$M/ensure.sh"${program ? ` ${program.name}` : ''} || exit $?
+${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureArgs} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}"
-${program ? 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n' : claudeFirstRun(spec)}tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
+${program.beforeTmux}tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 c=$?
 rm -f "${T}.env"
 exit $c
@@ -173,11 +207,7 @@ exit $c
 
 export function writeTabPackage(dir: string, spec: TabSpec): void {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const files = spec.program?.files ?? {
-    [`${spec.tabId}.json`]: JSON.stringify(spec.settings),
-    [`${spec.tabId}.tmux`]: spec.tmuxName
-  }
-  for (const [name, text] of Object.entries(files))
+  for (const [name, text] of Object.entries(spec.program.files))
     fs.writeFileSync(path.join(dir, name), text, { mode: 0o600 })
   fs.writeFileSync(path.join(dir, `${spec.tabId}.sh`), tabScript(spec), { mode: 0o700 })
   if (spec.ownerWords) seedHandedOverOwnerWords(saidFile(dir, spec.tabId), spec.ownerWords)
