@@ -184,7 +184,7 @@ interface AgyRun extends StoredRun {
   liveWrites: number
   background?: BackgroundItem
   lastTool?: { name: string; args: Record<string, unknown> }
-  standingCrons?: Set<string>
+  schedules?: Set<string>
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
@@ -793,11 +793,19 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     for (const read of earlierLog.split('\n').map((line) => agyLogLine(line))) {
       if (!read) continue
       if ('hook' in read && read.hook.event === 'PreToolUse') this.onHook(run, read.hook)
-      else if ('hook' in read) this.trackStandingCron(run, read.hook)
       last = remoteStatus(run, read) ?? last
       if (last) run.shown = last.state
     }
     if (last) this.emitState(run, last.state === 'done' ? { state: 'idle' } : last)
+    this.replaySchedules(run)
+  }
+
+  // AGY§13
+  private replaySchedules(run: AgyRun): void {
+    for (const line of (readText(run.log.file) ?? '').split('\n')) {
+      const read = agyLogLine(line)
+      if (read && 'hook' in read) this.trackSchedule(run, read.hook)
+    }
   }
 
   // AGY§11 AGY§12
@@ -805,8 +813,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const read = agyLogLine(line)
     if (!read) return
     if ('hook' in read && !run.info && !run.explicitStop) this.bindTo(run, read.hook.conversationId)
-    if ('hook' in read) this.onHook(run, read.hook)
-    else this.onTitle(run, read.title)
+    if ('hook' in read) {
+      this.trackSchedule(run, read.hook)
+      this.onHook(run, read.hook)
+    } else this.onTitle(run, read.title)
     const status = run.remote && run.info && !run.explicitStop && remoteStatus(run, read)
     if (status && status.state !== run.shown) {
       run.shown = status.state
@@ -845,14 +855,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
     this.bind(run, known ?? { id: conversationId, cwd: run.cwd }, switched ? 'switch' : 'replace')
-    this.holdForStandingCrons(run)
+    if (run.schedules?.size) this.deps.runtime.setWakeupPending(run.tabId, true)
     void this.refreshHistory().catch(() => undefined)
   }
 
   // AGY§12
   private onHook(run: AgyRun, hook: AgyHook): void {
     if (run.explicitStop || run.stopping) return
-    this.trackStandingCron(run, hook)
     if (hook.conversationId !== run.info?.nativeSessionId) return
     const { input } = hook
     switch (hook.event) {
@@ -869,28 +878,23 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§13
-  private trackStandingCron(run: AgyRun, hook: AgyHook): void {
+  private trackSchedule(run: AgyRun, hook: AgyHook): void {
+    if (run.explicitStop || run.stopping) return
     const { event, input, conversationId } = hook
     const call = record(input.toolCall)
+    if (call.name !== 'schedule' && call.name !== 'manage_task') return
     const args = record(call.args)
-    const crons = (run.standingCrons ??= new Set())
-    const taskId = `${conversationId}/task-${String(input.stepIdx)}`
-    if (event === 'PreToolUse' && call.name === 'schedule' && args.IsDaemon === true)
-      crons.add(taskId)
-    else if (event === 'PostToolUse' && call.name === 'schedule') crons.delete(taskId)
-    else if (
-      event === 'PostToolUse' &&
-      call.name === 'manage_task' &&
-      args.Action === 'kill' &&
-      !input.error
-    )
-      crons.delete(String(args.TaskId))
-    else return
-    this.holdForStandingCrons(run)
-  }
-
-  private holdForStandingCrons(run: AgyRun): void {
-    this.deps.runtime.setWakeupPending(run.tabId, !!run.standingCrons?.size)
+    const schedules = (run.schedules ??= new Set())
+    const before = schedules.size
+    if (call.name === 'schedule') {
+      const taskId = `${conversationId}/task-${String(input.stepIdx)}`
+      if (event === 'PreToolUse') schedules.add(taskId)
+      else if (event === 'PostToolUse') schedules.delete(taskId)
+    } else if (event === 'PostToolUse' && argOf(args, 'Action') === 'kill' && !input.error) {
+      const taskId = argOf(args, 'TaskId') ?? ''
+      schedules.delete(taskId.includes('/') ? taskId : `${conversationId}/${taskId}`)
+    }
+    if (schedules.size !== before) this.deps.runtime.setWakeupPending(run.tabId, schedules.size > 0)
   }
 
   // AGY§8 AGY§12

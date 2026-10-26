@@ -689,15 +689,23 @@ Nothing ran against Google's real servers.
     every `Stop`, the one that set it up included, while it keeps firing every minute.
   - `manage_task {Action:"kill", TaskId:"<task id>"}` cancels it ("Task … cancelled."):
     `Pre`/`PostToolUse` fire for `manage_task` with `error:""`; no `PostToolUse` for
-    the `schedule` ever comes. A kill with a wrong id fails with a non-empty `error`.
-  - After `/clear` the screen and footer show no task, yet the daemon cron went on
-    firing a turn in the old conversation, its hooks carrying the old conversation id.
+    the `schedule` ever comes. The short id `task-2`, sent from the conversation that
+    set it, cancels it the same way. A malformed id fails with a non-empty `error`.
+  - A `CronExpression` agy cannot read ("not a cron") fails at once: `PostToolUse` for
+    the `schedule` comes right after its `PreToolUse`, with `error` "invalid
+    CronExpression …".
+  - After `/clear` the screen and footer show no task, yet a daemon cron and a 45 s
+    one-shot timer both went on to fire a turn in the old conversation, their hooks
+    (the timer's `PostToolUse` too) carrying the old conversation id.
+  - A message the user typed did not cancel a timer set with `TimerCondition:"any"`:
+    the `Stop` after it still said `fullyIdle:false`.
   - It lives in the process: killed and resumed with `-c`, agy showed the conversation
     but nothing fired in the next 150 s and the footer listed no task.
   - The Connect API's `ListBackgroundTasks {cascadeId}` lists it while it waits
     (`toolName:"schedule"`, `description:"Timer: 25s, Prompt: …"`) and returns `{}` once
     it has ended.
-  - Not probed: a `TimerCondition` timer cancelled by a message; the macOS build.
+  - Not probed: a `TimerCondition` timer cancelled by a subagent's or a task's message;
+    cancelling a task from the TUI's `/tasks`; the macOS build.
 
 ## §14 Asks in the terminal and the keys that answer them
 

@@ -2375,12 +2375,17 @@ lines of `test/unit/sessionRoute.real.test.ts`.
 `codex exec --ephemeral --ignore-user-config -s read-only` in an empty folder, the
 owner's login, `gpt-6.1-sol`, told to call no tool:
 
+- The request itself was not captured on this route (it goes to OpenAI). On the API-key
+  route the request's tool list was read at a fake Responses server (section 16):
+  `exec_command, write_stdin, request_user_input, apply_patch, view_image, get_goal,
+  create_goal, update_goal, tool_search, web_search`, none of which schedules anything.
 - Asked for every tool it can call, the model listed `functions.wait`,
   `request_user_input`, `request_user_input_async`, `exec`, `apply_patch`,
   `create_goal`, `get_goal`, `update_goal`, `exec_command`, `write_stdin`,
   `view_image`, the MCP resource tools, `request_plugin_install`, `clock__curr_time`,
   `image_gen__imagegen`, `web__run`, `clock.sleep` and the `collaboration.*` agent tools,
-  and said none of them starts a turn after the current one has ended.
+  and answered that none of them starts a turn after the current one has ended (its own
+  account of its tools, not read from the request).
 - Asked to quote them, it gave `clock.sleep` as "Pause execution for a specified
   duration. The sleep ends early when new input arrives for the active turn. Returns the
   elapsed wall-clock time." with `duration_ms` from 1 to 43200000; and
