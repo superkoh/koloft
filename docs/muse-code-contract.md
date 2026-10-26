@@ -347,6 +347,9 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   folder's real path.
 - An entry another program wrote first is honoured (no question), and muse keeps the
   other entries when it adds one (it rewrites the file pretty-printed).
+- "2 Quit" (↓ then Enter), or Esc, exits with code 0 within 0.3 s, erases the
+  question from the screen and writes nothing to `trust.json` (Muse Code 1.4.13 on
+  Linux in Docker, `--provider echo`, 2026-10-26; macOS not probed yet).
 - `--trust-workspace` trusts the folder for that run only and saves nothing.
 - `muse resume <id>` asks the same question when the folder has no decision, and
   writes no live-registry file (§4) until it is answered, so nothing tells which

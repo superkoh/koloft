@@ -478,9 +478,14 @@ no key.
   Trust this folder?" for `<repo>/.claude/worktrees/<name>`. A second table for the
   worktree path itself stopped it.
 - Unanswered, the question left `config.toml` byte-for-byte unchanged.
-- What Codex writes when a person answers **No** was not tried. That it writes a
-  table for the folder (so Koloft, which leaves any existing table alone, never
-  overrides the answer) is **inferred, not checked**.
+- **Codex CLI 0.162.0 (2026-10-26) has no No**: in a git repository the question
+  offers "1. Trust and continue / 2. Back to Agent Command Center". Picking 2 (↓ then
+  Enter), or Esc, does not exit: Codex shows its task list ("Agent command center …
+  No tasks yet") and writes nothing to `config.toml`; Esc there goes back to the
+  ordinary prompt, and Ctrl+C there prints "Shutting down..." and exits 0. The same
+  under `--remote`. In a plain empty folder that is not a git repository it did not
+  ask at all. Probed with a pty driver, a temp HOME and `CODEX_HOME` holding an
+  API-key `auth.json`.
 - The same table shape (`[projects."<absolute path>"]` / `trust_level = "trusted"`) is
   what Codex itself had written into this Mac's own `~/.codex/config.toml`, read on the
   same day.
