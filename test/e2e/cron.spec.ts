@@ -900,8 +900,9 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
 
       await waitNewCall(env, 1, EVERY_MINUTE_DUE_PLUS_TICK_MS)
       expect(Date.now() - closedAt).toBeGreaterThanOrEqual(ONE_MINUTE_LESS_THE_POLL_LAG_MS)
-      const states = (await histLines(page)).map((l) => l.state)
-      expect(new Set(states)).toEqual(new Set(['Done — closed itself']))
+      await expect
+        .poll(async () => (await histLines(page)).map((l) => l.state), { timeout: 60_000 })
+        .toEqual(['Done — closed itself', 'Done — closed itself'])
     } finally {
       await app.close().catch(() => {})
     }
