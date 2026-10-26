@@ -31,6 +31,7 @@ import {
 } from '@shared/cronHistory'
 import { effortsFor, NAMED_MODELS, namedModel } from '@shared/cronModels'
 import {
+  effortOf,
   emptyFields,
   modelValue,
   permissionAfterSwitch,
@@ -38,7 +39,7 @@ import {
   scheduleToFields,
   suggest,
   validate,
-  withAllowedEffort,
+  toModelFields,
   type JobFields,
   type WhenKind
 } from '../cronForm'
@@ -69,11 +70,16 @@ const WHEN_CHIPS: { kind: WhenKind; label: string }[] = [
 const AFTER_HINT =
   'The wait starts when a run\'s tab is gone. With "Leave it open", that is when you close it.'
 
-const modelChips = (backend: BackendId): { value: string; label: string }[] => [
-  { value: '', label: 'Default' },
-  ...NAMED_MODELS[backend].map((m) => ({ value: m.id, label: m.label })),
-  { value: 'other', label: 'Other…' }
-]
+const MODEL_CHIPS_OF = Object.fromEntries(
+  SESSION_BACKENDS.map((b) => [
+    b,
+    [
+      { value: '', label: 'Default' },
+      ...NAMED_MODELS[b].map((m) => ({ value: m.id, label: m.label })),
+      { value: 'other', label: 'Other…' }
+    ]
+  ])
+) as Record<BackendId, { value: string; label: string }[]>
 
 const EFFORT_CHIPS: { value: JobFields['effort']; label: string }[] = [
   { value: '', label: 'Same as usual' },
@@ -232,20 +238,16 @@ export function CronJobsDialog({
 
   const edit = (job: CronJob): void => {
     const f = emptyFields(cronBackend(job))
-    const named = !job.model || namedModel(f.backend, job.model) !== undefined
-    setFields(
-      withAllowedEffort({
-        ...f,
-        ...scheduleToFields(job.schedule),
-        name: job.name,
-        task: job.task,
-        model: named ? (job.model ?? '') : 'other',
-        modelOther: named ? '' : (job.model ?? ''),
-        effort: job.effort ?? '',
-        permission: job.permission,
-        autoClose: job.autoClose === true
-      })
-    )
+    setFields({
+      ...f,
+      ...scheduleToFields(job.schedule),
+      name: job.name,
+      task: job.task,
+      ...toModelFields(f.backend, job.model),
+      effort: job.effort ?? '',
+      permission: job.permission,
+      autoClose: job.autoClose === true
+    })
     setTouched(false)
     setServerErrors([])
     setAutoCloseBeforeAfter(null)
@@ -263,7 +265,7 @@ export function CronJobsDialog({
   const patch = (p: Partial<JobFields>): void => {
     setTouched(true)
     setServerErrors([])
-    setFields((f) => withAllowedEffort({ ...f, ...p }))
+    setFields((f) => ({ ...f, ...p }))
   }
 
   const editing = form?.mode === 'edit' ? jobs.find((j) => j.id === form.id) : undefined
@@ -415,6 +417,7 @@ export function CronJobsDialog({
   const label = BACKEND_LABEL[fields.backend]
   const efforts = effortsFor(fields.backend, modelValue(fields))
   const effortChips = EFFORT_CHIPS.filter((c) => c.value === '' || efforts.includes(c.value))
+  const effort = effortOf(fields)
 
   const permissionHint =
     (settings.skipPermissions
@@ -635,7 +638,7 @@ export function CronJobsDialog({
       <span className="flabel">Model</span>
       <div className="fcol">
         <div className="chips">
-          {modelChips(fields.backend).map((c) => (
+          {MODEL_CHIPS_OF[fields.backend].map((c) => (
             <button
               key={c.label}
               className={'chip' + (fields.model === c.value ? ' on' : '')}
@@ -668,7 +671,7 @@ export function CronJobsDialog({
           {effortChips.map((c) => (
             <button
               key={c.label}
-              className={'chip' + (fields.effort === c.value ? ' on' : '')}
+              className={'chip' + (effort === c.value ? ' on' : '')}
               onClick={() => patch({ effort: c.value })}
             >
               {c.label}

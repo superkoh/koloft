@@ -878,7 +878,8 @@ Nothing ran against Google's real servers.
   (--model "<m>" --effort "<e>"): <base> has no "<e>" effort (available: …)`.
   `gemini-3.1-pro` (also the default, `--model` left out) takes low and high, not
   medium; `gemini-4-argon`, `gemini-3.8-flash` and `gemini-3.6-flash` take low, medium
-  and high. Argon sends `thinkingLevel` (`LOW`/`MEDIUM`/`HIGH`, `MEDIUM` with no
+  and high. `gemini-3.7-flash` was not run; that it takes the three its `agy models`
+  ids name, as every model run did, is inferred, not checked. Argon sends `thinkingLevel` (`LOW`/`MEDIUM`/`HIGH`, `MEDIUM` with no
   `--effort`) instead of `thinkingBudget`; Flash with no `--effort` is medium (4000).
   An id that names its effort (`gemini-3.1-pro-high`, `gemini-4-argon-low`) runs with
   no `--effort` or the same one, and exits 1 on any other: `--model <id> conflicts with

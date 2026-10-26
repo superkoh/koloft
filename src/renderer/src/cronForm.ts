@@ -11,7 +11,7 @@ import type {
 import { CRON_SAVE_MESSAGES as M } from '@shared/cronMessages'
 import { hasWordChar, isValidModelName, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { nextDue } from '@shared/cronHistory'
-import { effortsFor } from '@shared/cronModels'
+import { namedModel, takenEffort } from '@shared/cronModels'
 import { localDayKey } from '@shared/usageFormat'
 import {
   describeWhen,
@@ -97,10 +97,18 @@ export function modelValue(f: JobFields): string | undefined {
   return f.model
 }
 
-export function withAllowedEffort(f: JobFields): JobFields {
-  return f.effort && !effortsFor(f.backend, modelValue(f)).includes(f.effort)
-    ? { ...f, effort: '' }
-    : f
+export function effortOf(f: JobFields): JobFields['effort'] {
+  return takenEffort(f.backend, modelValue(f), f.effort || undefined) ?? ''
+}
+
+export function toModelFields(
+  backend: BackendId,
+  model: string | undefined
+): Pick<JobFields, 'model' | 'modelOther'> {
+  if (!model) return { model: '', modelOther: '' }
+  return namedModel(backend, model)
+    ? { model, modelOther: '' }
+    : { model: 'other', modelOther: model }
 }
 
 export type ValidateResult =
@@ -157,7 +165,8 @@ export function validate(f: JobFields, now = new Date(), saved?: Schedule): Vali
     enabled: true
   }
   if (model !== undefined) input.model = model
-  if (f.effort) input.effort = f.effort
+  const effort = effortOf(f)
+  if (effort) input.effort = effort
   if (f.autoClose) input.autoClose = true
   return { ok: true, input }
 }

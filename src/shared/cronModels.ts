@@ -31,17 +31,28 @@ export function namedModel(backend: BackendId, id: string | undefined): NamedMod
   return NAMED_MODELS[backend].find((m) => m.id === id)
 }
 
+const LOW_MEDIUM_HIGH: readonly CronEffort[] = ['low', 'medium', 'high']
 const AGY_EFFORTS_EVERY_MODEL_TAKES: readonly CronEffort[] = ['low', 'high']
 const AGY_EFFORTS_OF: ReadonlyMap<string, readonly CronEffort[]> = new Map([
-  ['gemini-4-argon', ['low', 'medium', 'high']],
-  ['gemini-3.8-flash', ['low', 'medium', 'high']],
-  ['gemini-3.1-pro', ['low', 'high']]
+  ['gemini-4-argon', LOW_MEDIUM_HIGH],
+  ['gemini-3.8-flash', LOW_MEDIUM_HIGH],
+  ['gemini-3.7-flash', LOW_MEDIUM_HIGH],
+  ['gemini-3.6-flash', LOW_MEDIUM_HIGH],
+  ['gemini-3.1-pro', AGY_EFFORTS_EVERY_MODEL_TAKES]
 ])
-const AGY_ID_NAMING_ITS_EFFORT = /-(low|medium|high)$/
 
 export function effortsFor(backend: BackendId, model: string | undefined): readonly CronEffort[] {
   if (backend !== 'agy') return CRON_EFFORTS
   // AGY§21
-  if (model && AGY_ID_NAMING_ITS_EFFORT.test(model)) return []
+  const named = model && LOW_MEDIUM_HIGH.find((e) => model.endsWith(`-${e}`))
+  if (named) return [named]
   return (model && AGY_EFFORTS_OF.get(model)) || AGY_EFFORTS_EVERY_MODEL_TAKES
+}
+
+export function takenEffort(
+  backend: BackendId,
+  model: string | undefined,
+  effort: CronEffort | undefined
+): CronEffort | undefined {
+  return effort && effortsFor(backend, model).includes(effort) ? effort : undefined
 }

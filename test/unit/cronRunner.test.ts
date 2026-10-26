@@ -1504,16 +1504,6 @@ describe('CronRunner.save — the same rules the form uses', () => {
       'a model with a space in it',
       { model: 'gpt 4' },
       'Use letters, digits, dots, colons, dashes or underscores.'
-    ],
-    [
-      'an Antigravity thinking level its default model would exit on',
-      { backend: 'agy', effort: 'medium' },
-      'This model does not take that thinking level.'
-    ],
-    [
-      'any thinking level beside an Antigravity model id that already names one',
-      { backend: 'agy', model: 'gemini-3.1-pro-high', effort: 'high' },
-      'This model does not take that thinking level.'
     ]
   ]
 
@@ -1597,6 +1587,33 @@ describe('CronRunner.save — the same rules the form uses', () => {
     const again = h.runner.save({ ...BASE, id: 'j1' })
     expect(again.ok && 'effort' in again.job).toBe(false)
     expect(again.ok && 'autoClose' in again.job).toBe(false)
+  })
+
+  it('saves an Antigravity job without a thinking level its model would exit on, and keeps one it takes', () => {
+    const h = makeHarness([])
+    const pro = h.runner.save({ ...BASE, backend: 'agy', effort: 'medium' })
+    expect(pro.ok && 'effort' in pro.job).toBe(false)
+    const flash = h.runner.save({
+      ...BASE,
+      backend: 'agy',
+      model: 'gemini-3.6-flash',
+      effort: 'medium'
+    })
+    expect(flash.ok && flash.job.effort).toBe('medium')
+    const named = h.runner.save({
+      ...BASE,
+      backend: 'agy',
+      model: 'gemini-3.1-pro-high',
+      effort: 'high'
+    })
+    expect(named.ok && named.job.effort).toBe('high')
+  })
+
+  it('starts an Antigravity job saved before with a thinking level its model would exit on without that level', async () => {
+    const h = makeHarness([makeJob({ backend: 'agy', effort: 'xhigh' })])
+    await h.runner.runNow('j1')
+    expect(h.launches).toHaveLength(1)
+    expect(h.launches[0].effort).toBeUndefined()
   })
 
   it('trims the name and the task before it saves them', () => {
