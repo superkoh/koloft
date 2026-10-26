@@ -221,9 +221,14 @@ export function agyQuotaFrom(stdout: string): QuotaBucket[] | undefined {
 }
 
 // AGY§6
+export function agyApiKeyRoute(home: string): boolean {
+  return readJson(settingsFile(home)).modelProvider === 'gemini'
+}
+
+// AGY§6
 export function setAgyApiKeyRoute(home: string, on: boolean): void {
+  if (on === agyApiKeyRoute(home)) return
   const own = readJson(settingsFile(home))
-  if (on === (own.modelProvider === 'gemini')) return
   if (on) own.modelProvider = 'gemini'
   else delete own.modelProvider
   writeAgyJson(settingsFile(home), own)

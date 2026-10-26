@@ -338,23 +338,33 @@ const exportsOf = (env: Record<string, string>): string =>
     .map(([k, v]) => `${k}="${v}"`)
     .join(' ')}`
 
-const ARGS_INCLUDE_PRINT = `for a in "$@"; do case "$a" in -p|--print|--prompt) pick=1 ;; esac; done`
+const AGY_PRINT_OUTSIDE_A_SUBCOMMAND = `valflag=0
+  for a in "$@"; do
+    if [ "$valflag" = "1" ]; then valflag=0; continue; fi
+    case "$a" in
+      -p|--print|--prompt) pick=1 ;;
+      ${AGY_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
+    esac
+  done
+  case "$sub" in ${AGY_SUBCOMMANDS_WITHOUT_A_TUI}) pick=0 ;; esac`
 
 const UTIL_TERMINAL_ACCOUNT: Record<GuardedTool, { reachesTheModel: string; useIt: string }> = {
   // CODEX§15
   codex: {
-    reachesTheModel: 'case "$sub" in exec|e|review) pick=1 ;; esac',
-    useIt: exportsOf({ CODEX_HOME: '$phome' })
+    reachesTheModel: 'case "$sub" in exec|e|review|apply|a|app-server|mcp-server) pick=1 ;; esac',
+    useIt: `unset CODEX_API_KEY OPENAI_API_KEY
+    ${exportsOf({ CODEX_HOME: '$phome' })}`
   },
   // MUSE§13
   muse: {
-    reachesTheModel: 'case "$sub" in exec) pick=1 ;; esac',
+    reachesTheModel: 'case "$sub" in exec|serve) pick=1 ;; esac',
     useIt: exportsOf(museAccountEnv('$phome'))
   },
   // AGY§6 AGY§7
   agy: {
-    reachesTheModel: ARGS_INCLUDE_PRINT,
-    useIt: `${exportsOf(agyAccountEnv())}
+    reachesTheModel: AGY_PRINT_OUTSIDE_A_SUBCOMMAND,
+    useIt: `unset GEMINI_API_KEY
+    ${exportsOf(agyAccountEnv())}
     if [ "$(pick_field kind)" = "apikey" ]; then
       read_keychain "__KOLOFT_KEYCHAIN_NS__${keychainServiceSuffix('agy-home')}" "$pacct"
       [ -n "$ptok" ] ||
@@ -373,6 +383,7 @@ ${UTIL_TERMINAL_REFUSAL[bin]}
 if [ "$KOLOFT_UTIL" = "1" ]; then
   pick=0
   ${reachesTheModel}
+  for a in "$@"; do case "$a" in -h|--help|-V|--version) pick=0 ;; esac; done
   if [ "$pick" = "1" ]; then
 ${NEWID_FN}
 ${PICK_ACCOUNT_FNS}

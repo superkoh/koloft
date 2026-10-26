@@ -305,6 +305,10 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       addCodexAccount(env, '{}')
       addMuseAccount(env)
       addAgyAccount(env)
+      fs.writeFileSync(
+        path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT, 'antigravity-cli', 'settings.json'),
+        JSON.stringify({ modelProvider: 'gemini' })
+      )
       const recorders = path.join(env.home, 'recorders')
       fs.mkdirSync(recorders)
       const recorder = (name: string, check: string): void =>

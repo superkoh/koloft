@@ -744,20 +744,41 @@ describe('codex, muse and agy in a Koloft terminal run on an account from Settin
     [['exec', 'say hi']],
     [['-m', 'gpt-5', 'exec', 'say hi']],
     [['e', 'say hi']],
-    [['review', '--uncommitted']]
-  ])('codex %j gets the picked account’s CODEX_HOME and shows its line', async (args) => {
-    const r = await runShimPick(
-      args,
-      { account: 'cx1', home: '/koloft/codex-homes/cx1', banner: 'koloft: → cx1 · 7d 12%' },
-      UTIL,
-      'codex'
-    )
-    expect(r.status).toBe(0)
-    expect(r.realArgs).toEqual(args)
-    expect(r.realEnv?.CODEX_HOME).toBe('/koloft/codex-homes/cx1')
-    expect(r.stderr).toContain('koloft: → cx1 · 7d 12%')
-    expect(fs.readdirSync(pickDir)).toHaveLength(0)
-  })
+    [['review', '--uncommitted']],
+    [['mcp-server']]
+  ])(
+    'codex %j gets the picked account’s CODEX_HOME, not a key the shell exported, and shows its line',
+    async (args) => {
+      const r = await runShimPick(
+        args,
+        { account: 'cx1', home: '/koloft/codex-homes/cx1', banner: 'koloft: → cx1 · 7d 12%' },
+        { ...UTIL, CODEX_API_KEY: 'from-a-profile', OPENAI_API_KEY: 'from-a-profile' },
+        'codex'
+      )
+      expect(r.status).toBe(0)
+      expect(r.realArgs).toEqual(args)
+      expect(r.realEnv?.CODEX_HOME).toBe('/koloft/codex-homes/cx1')
+      expect(r.realEnv?.CODEX_API_KEY).toBeUndefined()
+      expect(r.realEnv?.OPENAI_API_KEY).toBeUndefined()
+      expect(r.stderr).toContain('koloft: → cx1 · 7d 12%')
+      expect(fs.readdirSync(pickDir)).toHaveLength(0)
+    }
+  )
+
+  it.each([
+    ['codex', ['exec', '--help']],
+    ['muse', ['exec', '-h']],
+    ['agy', ['-p', '--help']],
+    ['agy', ['mcp', 'add', 'srv', '--', 'npx', 'tool', '-p', '3000']],
+    ['agy', ['--model', '-p', 'mcp', 'list']]
+  ] as const)(
+    '%s %j never reaches the model, so it asks for no account and runs as it is',
+    (bin, args) => {
+      const r = runShim([...args], UTIL, bin)
+      expect(r.status).toBe(0)
+      expect(r.realArgs).toEqual(args)
+    }
+  )
 
   it('codex: the all-accounts-limited notice prints as its own line', async () => {
     const r = await runShimPick(
@@ -805,11 +826,11 @@ describe('codex, muse and agy in a Koloft terminal run on an account from Settin
     expect(r.realEnv?.TBH_CREDENTIAL_BACKEND).toBe('file')
   })
 
-  it('agy -p on a Google account runs in that account’s folder, with the sign-in kept in it and no key', async () => {
+  it('agy -p on a Google account runs in that account’s folder, with the sign-in kept in it and no key, not even one the shell exported', async () => {
     const r = await runShimPick(
       ['--model', 'x', '-p', 'say hi'],
       { account: 'g1', home: '/koloft/agy-homes/g1', banner: 'koloft: → g1' },
-      UTIL,
+      { ...UTIL, GEMINI_API_KEY: 'from-a-profile' },
       'agy'
     )
     expect(r.status).toBe(0)
@@ -864,7 +885,7 @@ describe('muse guard (Koloft terminal hard block — the same funnel as claude a
     }
   )
 
-  it.each([[['--model', 'x', 'serve']], [['login']], [['--version']]])(
+  it.each([[['--model', 'x', 'config']], [['login']], [['--version']]])(
     'a form that opens no TUI %j passes through untouched',
     (args) => {
       const r = runShim(args, UTIL, 'muse')

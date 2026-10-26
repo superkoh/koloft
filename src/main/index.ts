@@ -39,6 +39,7 @@ import { sharedProcessTable, type ProcessTable } from './processTable'
 import { AgySessions, type AgyHomePick } from './agySessions'
 import {
   agyAccountEnv,
+  agyApiKeyRoute,
   agyHomeOf,
   agySignedIn,
   oneShotAgyHome,
@@ -1832,43 +1833,21 @@ interface UtilTerminalPick {
   kind?: 'apikey'
 }
 
-function homeAccountLine(name: string, kind: SignInFolderKind): string | undefined {
-  const view = accountViews().find((a) => a.kind === kind && a.name === name)
-  return view && launchLine(view, Date.now())
-}
-
 const utilTerminalPicks: Record<
   Exclude<BackendId, 'claude'>,
-  () => Promise<UtilTerminalPick | undefined>
+  () => UtilTerminalPick | undefined
 > = {
-  codex: async () => {
+  codex: () => {
     const picked = pickCodexHome()
-    return (
-      picked && {
-        account: picked.account,
-        home: picked.home,
-        banner: homeAccountLine(picked.account, 'codex-home'),
-        warning: picked.notice
-      }
-    )
+    return picked && { ...picked, warning: picked.notice }
   },
-  muse: async () => {
+  muse: () => {
     const picked = pickMuseHome()
-    return (
-      picked && {
-        account: picked.account,
-        home: museHomeFor(picked.account),
-        banner: picked.banner
-      }
-    )
+    return picked && { account: picked.account, home: picked.home, banner: picked.banner }
   },
-  agy: async () => {
+  agy: () => {
     const picked = pickAgyHome()
-    if (!picked) return undefined
-    const { account, home, banner } = picked
-    return (await agyApiKeyOf(account))
-      ? { account, home, banner, kind: 'apikey' }
-      : { account, home, banner }
+    return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
   }
 }
 
@@ -1881,7 +1860,12 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   const resPath = path.join(pickDir, `res-${id}.json`)
   const backend = obj.backend
   if (backend === 'codex' || backend === 'muse' || backend === 'agy') {
-    const picked = await utilTerminalPicks[backend]()
+    let picked: UtilTerminalPick | undefined
+    try {
+      picked = utilTerminalPicks[backend]()
+    } catch (err) {
+      console.error(`[koloft] picking a ${backend} account for a terminal failed:`, err)
+    }
     try {
       writeWholeBeforeVisible(resPath, JSON.stringify(picked ?? {}))
     } catch {}
@@ -2125,7 +2109,7 @@ function codexSharedConfig(): string {
 // CODEX§15
 function pickCodexHome(
   resumeSessionId?: string
-): { account: string; home: string; notice?: string } | undefined {
+): { account: string; home: string; banner: string; notice?: string } | undefined {
   const views = accountViews()
   const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
   if (!picked) return undefined
@@ -2133,7 +2117,12 @@ function pickCodexHome(
   if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home, notice: codexAllLimitedNotice(picked) }
+  return {
+    account: picked.name,
+    home,
+    banner: launchLine(picked, Date.now()),
+    notice: codexAllLimitedNotice(picked)
+  }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {
@@ -2265,19 +2254,20 @@ function museHomeFor(name: string): string {
 }
 
 // ADR-0030 MUSE§13
-function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
+function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string }) | undefined {
   const views = accountViews()
   const picked = musePicker.pick(views, sessionAccounts?.of('muse', resumeSessionId))
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
-  return (
-    picked && {
-      account: picked.name,
-      env: museAccountEnv(museHomeFor(picked.name)),
-      banner: launchLine(picked, Date.now())
-    }
-  )
+  if (!picked) return undefined
+  const home = museHomeFor(picked.name)
+  return {
+    account: picked.name,
+    home,
+    env: museAccountEnv(home),
+    banner: launchLine(picked, Date.now())
+  }
 }
 
 async function museServeFor(
