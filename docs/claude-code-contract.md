@@ -697,25 +697,33 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   `refs/remotes/origin/<default>` and hands `git worktree add` a `<sha>^{commit}` rather
   than a ref name; for a normal checkout the start point is the same as on 2.1.304. Read
   from the strings of 2.1.304 and 2.1.306, 2026-10-21, not run.
-- **A worktree name whose folder is gone but whose branch is left is not refused: `-w`
-  makes the folder again and resets the branch to the start point, so the branch's own
-  commits drop off it.** With `.claude/worktrees/<n>` deleted (`git worktree prune` run)
-  and `worktree-<n>` kept, `claude -w <n>` started the session in a new
-  `.claude/worktrees/<n>` (the SessionStart hook's `cwd`), locked it, and left
-  `worktree-<n>` at the start point (here local HEAD, no `origin`). When the branch held a
-  commit of its own, its reflog then read `branch: Reset to <sha>^{commit}` and the commit
-  was reachable from no branch (`git fsck --lost-found` listed it as dangling); nothing on
-  the screen said so. When the branch had no commit of its own, the result looked the same
-  as a fresh `-w <n>`. Measured 2026-10-26, claude 2.1.310 (the real binary, not the shim),
-  a throwaway one-commit repo, a scratch `HOME` whose `~/.claude.json` trusted the repo,
-  no login, driven in a python pty with a `--settings` SessionStart hook, then
-  `git branch -v`, `git reflog` and `git fsck`.
+- **A worktree name whose folder is gone but whose branch is left is not refused once git
+  has forgotten the folder: `-w` makes the folder again and resets the branch to the
+  start point, so the branch's own commits drop off it.** With `.claude/worktrees/<n>`
+  deleted, `git worktree prune` run and `worktree-<n>` kept, `claude -w <n>` started the
+  session in a new `.claude/worktrees/<n>` (the SessionStart hook's `cwd`), locked it, and
+  left `worktree-<n>` at the start point: local HEAD in a repo with no `origin`, and
+  `origin/main` (a commit local HEAD did not have) in a repo whose `origin` was ahead.
+  When the branch held a commit of its own, its reflog then read
+  `branch: Reset to <sha>^{commit}` and the commit was reachable from no branch
+  (`git fsck --lost-found` listed it as dangling); nothing on the screen said so. When the
+  branch had no commit of its own, the result looked the same as a fresh `-w <n>`.
+  **While git still lists the deleted folder (no prune), `-w <n>` refuses and exits 1**,
+  printing `Error creating worktree: branch "worktree-<n>" for worktree "<n>" is already
+  checked out elsewhere in this repository. Pass a different --worktree name.`; the branch
+  and its commit stay. Measured 2026-10-26, claude 2.1.310 (the real binary, not the
+  shim), a throwaway one-commit repo (with and without a bare `origin`), a scratch `HOME`
+  whose `~/.claude.json` trusted the repo, no login, driven in a python pty with a
+  `--settings` SessionStart hook, then `git worktree list`, `git branch -v`, `git reflog`
+  and `git fsck`.
 
 Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claude
 2.1.227 binary. Koloft dependents: the resume decision tree in `src/main/resumePlan.ts`
 (behind `sessions:resumePlan`); `claudeArgv` in `src/main/claudeArgs.ts`, which composes
 `--resume`/`-w`; `copyWorktreeIncludes` in `src/main/sessionWorktrees.ts`, which copies
-the same files into a worktree Koloft makes or rebuilds itself.
+the same files into a worktree Koloft makes or rebuilds itself; `worktreeNameFor` and
+`CronRunner.taken` in `src/main/cronRunner.ts`, which count a left `worktree-<n>` branch
+as a taken name so a scheduled run never hands `-w` such a name.
 
 ## §4 Worktree session exit
 
