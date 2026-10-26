@@ -236,8 +236,8 @@ Working principles:
 
   ```
   Shell rules — a guard refuses the rest; each refusal is a lost turn:
-  - One plain command per Bash call, absolute paths. No loop, $(…) or shell
-    variable whose value lands in a command's arguments; no env -u or HOME=.
+  - One plain command per Bash call, absolute paths. No loop, $(…), backtick
+    (a grep pattern's too) or variable in an argument; no env -u or HOME=.
   - Also refused: a path outside the worktree inside a chain, a cd outside then
     git, a shell name or builtin as an argument (grep -n "source" f, bash
     --version, docker … sh -c), python3 - or sh <file> whose text names git
