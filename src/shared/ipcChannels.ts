@@ -9,7 +9,6 @@ export const CH = {
     flowStats: 'terminal:flowStats',
     resize: 'terminal:resize',
     kill: 'terminal:kill',
-    moveOwner: 'terminal:moveOwner',
     exit: 'terminal:exit',
     processTitle: 'terminal:processTitle',
     cwd: 'terminal:cwd',
@@ -35,7 +34,8 @@ export const CH = {
     dirtyTabs: 'workbench:dirtyTabs'
   },
   tabs: {
-    list: 'tabs:list'
+    list: 'tabs:list',
+    moved: 'tabs:moved'
   },
   tab: {
     killedByMain: 'tab:killedByMain',
