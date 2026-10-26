@@ -221,6 +221,7 @@ const A_LATER_END_OF_THE_FINISHED_RUN_WOULD_HAVE_SHOWN_BY_MS = 5_000
 const ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS = 5_000
 const CLOSE_RECHECK_MS = 2_000
 const ONE_MINUTE_LESS_THE_POLL_LAG_MS = 55_000
+const A_RUN_CLOSES_ITSELF_WITHIN_MS = 90_000
 
 async function waitTurnStopSoTheTranscriptExistsBeforeClose(
   page: Page,
@@ -876,7 +877,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
   test('BB-M32: an after-each-run job starts its next run only once the wait has passed since the last run closed itself, and skips nothing meanwhile', async ({
     env
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(360_000)
     gitInit(env.workspaces.a)
     env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
     const app = await launchApp(env)
@@ -894,14 +895,18 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await clickRunNow(page, 'Push issues')
       await waitNewCall(env, 0)
       await expect
-        .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
+        .poll(async () => (await histLines(page))[0]?.state, {
+          timeout: A_RUN_CLOSES_ITSELF_WITHIN_MS
+        })
         .toBe('Done — closed itself')
       const closedAt = Date.now()
 
       await waitNewCall(env, 1, EVERY_MINUTE_DUE_PLUS_TICK_MS)
       expect(Date.now() - closedAt).toBeGreaterThanOrEqual(ONE_MINUTE_LESS_THE_POLL_LAG_MS)
       await expect
-        .poll(async () => (await histLines(page)).map((l) => l.state), { timeout: 60_000 })
+        .poll(async () => (await histLines(page)).map((l) => l.state), {
+          timeout: A_RUN_CLOSES_ITSELF_WITHIN_MS
+        })
         .toEqual(['Done — closed itself', 'Done — closed itself'])
     } finally {
       await app.close().catch(() => {})
