@@ -907,6 +907,14 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async resume(req: SessionResumeRequest): Promise<SessionResumeResult> {
+    try {
+      return await this.resumeTab(req)
+    } catch (error) {
+      return { ok: false, code: 'backend', message: errorText(error) }
+    }
+  }
+
+  private async resumeTab(req: SessionResumeRequest): Promise<SessionResumeResult> {
     const sid = req?.sessionId
     const asked = req?.cwd
     if (
@@ -954,23 +962,19 @@ export class ClaudeBackend implements SessionBackend {
       }
       if (!dirExistsSync(cwd)) return { ok: false, code: 'cwd-missing' }
     }
-    try {
-      const r = await this.createTab(host, {
-        root: home ?? cwd,
-        cwd,
-        resumeSessionId: sid,
-        worktree,
-        cols: req.cols,
-        rows: req.rows,
-        role: req.role,
-        conductor: req.conductor,
-        permission: req.permission,
-        trustFolder: req.trustFolder
-      })
-      return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
-    } catch (error) {
-      return { ok: false, code: 'backend', message: errorText(error) }
-    }
+    const r = await this.createTab(host, {
+      root: home ?? cwd,
+      cwd,
+      resumeSessionId: sid,
+      worktree,
+      cols: req.cols,
+      rows: req.rows,
+      role: req.role,
+      conductor: req.conductor,
+      permission: req.permission,
+      trustFolder: req.trustFolder
+    })
+    return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
 
   resumePlan(key: string): Promise<ResumePlan> {

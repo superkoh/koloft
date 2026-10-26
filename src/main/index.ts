@@ -4722,8 +4722,8 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
   await mapAtMost(ids, RESUMES_AT_ONCE, resumeOne)
 }
 
-function couldNotStart(title: string): string {
-  return `Could not start “${title}” — click it to try again.`
+function couldNotStart(title: string, reason?: string): string {
+  return `Could not start “${title}” — ${reason || 'click it to try again.'}`
 }
 
 // CC§11
@@ -4754,7 +4754,7 @@ async function resumeRow(
     mode: plan.action
   })
   if (!res.ok) {
-    return { ok: false, error: res.code === 'backend' ? res.message : couldNotStart(row.title) }
+    return { ok: false, error: couldNotStart(row.title, res.code === 'backend' ? res.message : '') }
   }
   const spawned: SpawnedTab = {
     id: res.id,

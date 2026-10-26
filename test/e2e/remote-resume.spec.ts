@@ -147,7 +147,7 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
     }
   })
 
-  test('reopening a remote Claude tab after a restart while no Koloft account can be used says why in the toast, not just "click it to try again"', async ({
+  test('reopening a remote Claude tab after a restart while no Koloft account can be used names the session and says why in the toast, not just "click it to try again", and starts nothing', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -170,10 +170,12 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
-      await expect(page.locator('.toast-msg')).toContainText(NO_USABLE_ACCOUNT.claude, {
-        timeout: 90_000
-      })
+      await expect(page.locator('.toast-msg')).toContainText(
+        `Could not start “Yesterday on the build machine” — ${NO_USABLE_ACCOUNT.claude}`,
+        { timeout: 90_000 }
+      )
       expect(readCalls(env)).toEqual([])
+      await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bcold\b/)
     } finally {
       await quitAndClose(app)
     }
