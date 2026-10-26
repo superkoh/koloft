@@ -29,6 +29,7 @@ import type { RemoteSync } from '../remote/sync'
 import {
   AGENT_DROP_NAME,
   REQUEST_NAME,
+  errorText,
   replyJson,
   tabSpokenFor,
   type AgentReply
@@ -953,19 +954,23 @@ export class ClaudeBackend implements SessionBackend {
       }
       if (!dirExistsSync(cwd)) return { ok: false, code: 'cwd-missing' }
     }
-    const r = await this.createTab(host, {
-      root: home ?? cwd,
-      cwd,
-      resumeSessionId: sid,
-      worktree,
-      cols: req.cols,
-      rows: req.rows,
-      role: req.role,
-      conductor: req.conductor,
-      permission: req.permission,
-      trustFolder: req.trustFolder
-    })
-    return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
+    try {
+      const r = await this.createTab(host, {
+        root: home ?? cwd,
+        cwd,
+        resumeSessionId: sid,
+        worktree,
+        cols: req.cols,
+        rows: req.rows,
+        role: req.role,
+        conductor: req.conductor,
+        permission: req.permission,
+        trustFolder: req.trustFolder
+      })
+      return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
+    } catch (error) {
+      return { ok: false, code: 'backend', message: errorText(error) }
+    }
   }
 
   resumePlan(key: string): Promise<ResumePlan> {

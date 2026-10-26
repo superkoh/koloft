@@ -4753,7 +4753,9 @@ async function resumeRow(
     cwd: plan.action === 'rebuild' ? plan.resumeCwd : plan.cwd,
     mode: plan.action
   })
-  if (!res.ok) return { ok: false, error: couldNotStart(row.title) }
+  if (!res.ok) {
+    return { ok: false, error: res.code === 'backend' ? res.message : couldNotStart(row.title) }
+  }
   const spawned: SpawnedTab = {
     id: res.id,
     kind: row.backendId,
