@@ -331,7 +331,7 @@ describe.each([
     tool: 'claude',
     tab: undefined,
     min: MIN_CLAUDE_VERSION,
-    olderYetLaterAsText: '2.1.99',
+    older: '2.1.99',
     versionLine: '%s (Claude Code)'
   },
   {
@@ -339,7 +339,7 @@ describe.each([
     tool: 'agy',
     tab: 'agy',
     min: MIN_AGY_VERSION,
-    olderYetLaterAsText: '1.3.6',
+    older: '1.3.6',
     versionLine: '%s'
   }
 ])('ensure.sh holds a remote $product to the minimum this Koloft supports', (t) => {
@@ -360,7 +360,7 @@ exit 0`
   it('an older one is updated before the session starts', () => {
     const m = machine()
     complete(m)
-    toolAt(m, t.olderYetLaterAsText, '99.0.0')
+    toolAt(m, t.older, '99.0.0')
     const res = m.run(t.tab)
     expect(res.status).toBe(0)
     expect(m.calls(t.tool)).toEqual(['update'])
@@ -370,11 +370,11 @@ exit 0`
   it(`one the update cannot lift stops the session and says to run ${t.tool} update`, () => {
     const m = machine()
     complete(m)
-    toolAt(m, t.olderYetLaterAsText)
+    toolAt(m, t.older)
     const res = m.run(t.tab)
     expect(res.status).toBe(4)
     expect(m.calls(t.tool)).toEqual(['update'])
-    expect(res.stderr).toContain(`Run "${t.tool} update" yourself`)
+    expect(res.stderr).toContain(`Run "${t.tool} update"`)
   })
 })
 

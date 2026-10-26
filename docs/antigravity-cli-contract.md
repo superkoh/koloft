@@ -122,12 +122,15 @@ only downloaded the public release.
 - `agy update` on 1.3.6 at `~/.local/bin/agy`, run by its name from `PATH` as a plain
   user, with the network on (2026-10-26, Linux arm64 Docker): it fetched the current
   release, 1.4.7, in about 3 seconds, asked for no password and read nothing from
-  stdin; the next `agy --version` printed `1.4.7`. The same binary in a folder the
+  stdin; the next `agy --version` printed `1.4.7`. `AGY_CLI_DISABLE_AUTO_UPDATE=true`
+  does not stop it: the same run with it set updated just the same. The same binary in a folder the
   user cannot write (`/usr/local/bin`, owned by another user) printed `Error: directory
   /usr/local/bin is not fully accessible (readable: true, writable: false)`, exited 1
   and stayed 1.3.6.
 - The installer takes only `-d`/`--dir`: no flag or variable picks a version, it
-  always installs what the manifest names (read 2026-10-26).
+  always installs what the manifest names (read 2026-10-26). Run as a plain user while
+  an unwritable `/usr/local/bin/agy` 1.3.6 was on `PATH`, it put 1.4.7 at
+  `~/.local/bin/agy` and exited 0 (same container, same day).
 - Only `AGY_CLI_DISABLE_AUTO_UPDATE=true` turns it off (log: `Auto-update disabled via
   environment variable`). `1`, `TRUE`, `True`, `yes` and `on` do not. No
   `settings.json` key does.

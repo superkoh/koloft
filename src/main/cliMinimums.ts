@@ -1,3 +1,5 @@
+import { AGY_INSTALLER_URL } from './toolInstall'
+
 // CC§16 CODEX§7
 export const MIN_CLAUDE_VERSION = '2.1.293'
 export const MIN_CODEX_VERSION = '0.161.0'
@@ -48,11 +50,13 @@ export const ENSURE_MUSE_MINIMUM_FN = ensureMinimumFn({
   byHand: 'Run "muse --version" there with a working network'
 })
 
+export const AGY_UPDATE_TIMEOUT_MS = 5 * 60_000
+
 // AGY§3
 export const ENSURE_AGY_MINIMUM_FN = ensureMinimumFn({
   tool: 'agy',
   product: 'Antigravity CLI',
   min: MIN_AGY_VERSION,
-  update: '"$1" update',
-  byHand: 'Run "agy update" yourself'
+  update: `if command -v timeout >/dev/null 2>&1; then timeout ${AGY_UPDATE_TIMEOUT_MS / 1000} "$1" update; else "$1" update; fi`,
+  byHand: `Run "agy update" there as a user who can write the folder agy is in, or install agy for yourself with "curl -fsSL ${AGY_INSTALLER_URL} | bash"`
 })
