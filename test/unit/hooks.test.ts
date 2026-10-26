@@ -1045,10 +1045,10 @@ describe('injected hook script', () => {
       expect(local[0].matcher).toBe('*')
       expect(local[0].hooks[0].command).toMatch(/ ask$/)
       expect(local[0].hooks[0].timeout).toBe(3600)
-      const remote = hookSettings('/m/hook.sh', '/m/reg', 'tabC2', {
-        quote: dq,
-        dialogs: 'record-only'
-      }).hooks as Record<string, { hooks: { command: string; timeout?: number }[] }[]>
+      const remote = machineHookSettings('tabC2', '$HOME/.koloft/m', false, false).hooks as Record<
+        string,
+        { hooks: { command: string; timeout?: number }[] }[]
+      >
       expect(remote.PermissionRequest[0].hooks[0].command).toMatch(/ asked$/)
       expect(remote.PermissionRequest[0].hooks[0]).not.toHaveProperty('timeout')
     })
