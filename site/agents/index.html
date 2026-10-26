@@ -369,8 +369,8 @@
                 <td>pages it can see</td>
                 <td>
                   That session's tabs only. Each session has its own address, reachable only from
-                  this Mac (and, for a Claude Code session on a remote folder, from that machine
-                  through Koloft's ssh link), behind a path no one can guess.
+                  this Mac, behind a path no one can guess. A Claude Code session on a remote folder
+                  also reaches it from that machine, through Koloft's ssh link.
                 </td>
               </tr>
               <tr>
@@ -396,11 +396,12 @@
         <h3 id="remote-browser">Claude Code on a remote folder</h3>
         <p>
           A Claude Code session on a <a href="../remote/">remote folder</a> can drive its web tabs
-          too, through Koloft's own ssh link to that machine. There it works with
-          <code>playwright-cli</code> only: Koloft puts it on the machine the first time the session
-          runs it (see <a href="../remote/">what Koloft installs there</a>), and it finds the
-          address on its own each time it runs. Only <code>playwright-cli</code> is handed the
-          address, so Playwright MCP tools there do not reach the web tabs.
+          too, through Koloft's own ssh link to that machine. There it works only through
+          <code>playwright-cli</code>, not Playwright MCP tools. Koloft puts
+          <code>playwright-cli</code> on the machine with <code>npm</code> (Node's package tool) the
+          first time the session runs it (see
+          <a href="../remote/#installs">what Koloft installs there</a>), and it finds the address on
+          its own each time it runs.
         </p>
         <ul class="dash">
           <li>
@@ -413,16 +414,11 @@
             >. A web server it starts on the machine shows only at an address your Mac can reach
             (the machine's own name or IP address), never as <code>localhost</code>.
           </li>
+          <li>A web tab it has used keeps these limits for you too, until you close it.</li>
           <li>
-            A web tab it has driven stays fenced the same way for you too, until you close that tab.
-          </li>
-          <li>
-            With the switch off, or while Koloft is not connected to the machine,
-            <code>playwright-cli</code> says why, and then has no way to the web tabs (it tries a
-            browser of the machine's own, if it has one).
-          </li>
-          <li>
-            Codex, Muse and Antigravity sessions on a remote folder cannot drive the web tabs.
+            With the switch off, while Koloft is not connected to the machine, or when the machine's
+            ssh server does not allow port forwarding, <code>playwright-cli</code> says why and
+            cannot reach the web tabs.
           </li>
         </ul>
 
@@ -442,10 +438,7 @@
         <ul class="dash">
           <li>
             <s class="struck">the browser for Codex, Muse and Antigravity in remote folders</s>
-            <span class="why"
-              >(they have the koloft command there, but only Claude Code drives the web tabs,
-              yet)</span
-            >
+            <span class="why">(they have the koloft command there, but not the web tabs yet)</span>
           </li>
         </ul>
 
