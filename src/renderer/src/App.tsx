@@ -59,7 +59,8 @@ import {
   tabEvictedNotice,
   panelTabId,
   panelIsOpen,
-  noteWakingOutput
+  noteWakingOutput,
+  tabEverBound
 } from './store'
 import { WORKBENCH_PANE_MIN } from './auxSurface'
 import {
@@ -997,7 +998,7 @@ export default function App(): JSX.Element {
       const tab = useStore.getState().tabs.find((t) => t.id === e.id)
       if (tab?.sessionId) releaseResume(tab.sessionId)
       if (unexpectedExitWanted(tab, e)) {
-        useStore.getState().showToast(unexpectedExitNotice(e, tab.kind))
+        useStore.getState().showToast(unexpectedExitNotice(e, tab.kind, tabEverBound(tab)))
       }
       if (tab) askAboutLeftEdits(tab)
       closeTab(e.id)

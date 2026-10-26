@@ -303,12 +303,18 @@ function killTerminalsOf(tabId: string): string[] {
   }
   return ids
 }
+
+export function tabEverBound(tab: { id: string; sessionId?: string }): boolean {
+  return !!(tab.sessionId || lastSessionId.get(tab.id))
+}
+
 function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
   const leaving = s.tabs.find((t) => t.id === tabId)
   return (
     s.activeTabId === tabId &&
     isSessionKind(leaving?.kind) &&
-    !!(leaving?.sessionId || lastSessionId.get(tabId)) &&
+    !!leaving &&
+    tabEverBound(leaving) &&
     butlerSetUp({ assist: s.settings.assist, channel: s.settings.discord.channel }) &&
     !isButlerTab(s.sessions, s.butlerTab, tabId)
   )

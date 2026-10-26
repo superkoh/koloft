@@ -55,13 +55,16 @@ export function sessionEndedBody(title: string, files: string[]): string {
 
 export function unexpectedExitNotice(
   exit: { exitCode: number; signal?: number },
-  backend: SessionBackend
+  backend: SessionBackend,
+  everBound: boolean
 ): string {
   // PLATFORM§29
   if (exit.signal) return `${BACKEND_LABEL[backend]} session ended: killed by signal ${exit.signal}`
   // ADR-0030
   if (backend === 'claude' && exit.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
     return SHIM_FOUND_NO_ACCOUNT_NOTICE
+  if (!everBound)
+    return `${BACKEND_LABEL[backend]} closed before the session started (exit code ${exit.exitCode})`
   return `${BACKEND_LABEL[backend]} session ended unexpectedly (exit code ${exit.exitCode})`
 }
 
