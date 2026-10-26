@@ -110,6 +110,7 @@ export function commandKeys(text: string, backend: BackendId | undefined): strin
   ]
 }
 
+// CODEX§21 MUSE§19
 const SCREEN_LINES_IN_A_RESULT = 40
 
 function screenShot(lines: string[] | undefined): string | undefined {

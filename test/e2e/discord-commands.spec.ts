@@ -189,7 +189,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     }
   })
 
-  // MUSE§11
+  // MUSE§11 MUSE§19
   test('D-CMD-6: in a Muse session, the butler’s koloft session command types the command once its input box is empty and hands the butler its screen, since Muse draws a command’s output only there', async ({
     env
   }) => {
