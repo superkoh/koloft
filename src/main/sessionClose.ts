@@ -102,17 +102,25 @@ export async function whatIsLeft(
   return (await whatIsLeftIn(git, tree, merged, false)).left
 }
 
+const onItsHost = (dir: string): string => parseRemoteKey(dir)?.path ?? dir
+
+// PLATFORM§30
+async function relinkIfItsGitFileWent(git: GitOut, info: ProjectInfo): Promise<void> {
+  const insideAnotherCheckout = (await git(info.treeRoot, ['rev-parse', '--show-prefix']))?.trim()
+  if (insideAnotherCheckout) await git(info.root, ['worktree', 'repair', onItsHost(info.treeRoot)])
+}
+
 // PLATFORM§30
 export async function removeTree(
   git: GitOut,
   tree: ClosingTree,
   force = false
 ): Promise<string | null> {
-  const onItsHost = parseRemoteKey(tree.treeRoot)?.path ?? tree.treeRoot
-  await git(tree.root, ['worktree', 'unlock', onItsHost])
+  const dir = onItsHost(tree.treeRoot)
+  await git(tree.root, ['worktree', 'unlock', dir])
   const removed = await git(
     tree.root,
-    ['worktree', 'remove', ...(force ? ['--force'] : []), onItsHost],
+    ['worktree', 'remove', ...(force ? ['--force'] : []), dir],
     DELETING_HUNDREDS_OF_THOUSANDS_OF_IGNORED_FILES_MS
   )
   if (removed === null) return `git could not remove the worktree ${tree.treeRoot}.`
@@ -155,6 +163,7 @@ export async function tidyTree(
   } catch (error) {
     return machineUnreachable((error as Error).message)
   }
+  if (there && info.worktreeName) await relinkIfItsGitFileWent(git, info)
   const tree = await closingTree(git, info)
   if (!tree) return NOTHING_THERE
   if (!there) {

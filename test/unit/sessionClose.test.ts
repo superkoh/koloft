@@ -198,6 +198,16 @@ describe('tidying a scheduled run’s folder (#22)', () => {
     expect(fs.existsSync(tree)).toBe(true)
   })
 
+  it('removes a folder whose removal was cut off after its .git file went, though git there reads the parent checkout (#1012)', async () => {
+    removalCutOffHalfWay()
+    fs.rmSync(path.join(tree, '.git'))
+    fs.writeFileSync(path.join(repo, 'parent-draft.md'), 'not the run’s')
+    expect(await tidyTree(localGitOut, run(), onDisk)).toEqual({ removed: true, kept: [] })
+    expect(fs.existsSync(tree)).toBe(false)
+    expect(branches()).toEqual(['main'])
+    expect(git(repo, 'worktree', 'list', '--porcelain')).not.toContain('run-1')
+  })
+
   it('still names a deleted file when a session is closed, outside the tidy', async () => {
     removalCutOffHalfWay()
     const left = await whatIsLeft(localGitOut, await treeOf(tree))
