@@ -104,7 +104,7 @@ interface PlainFrame {
   portals: string[]
 }
 
-function packFilm(takes: RawFrame[][]): string {
+export function packFilm(takes: RawFrame[][], marks: Record<string, number> = {}): string {
   const styles: string[] = []
   const styleIndex = new Map<string, number>()
   const addStyle = (text: string): number => {
@@ -133,10 +133,16 @@ function packFilm(takes: RawFrame[][]): string {
     }
   }
   const kept: PlainFrame[] = []
-  for (const f of frames) {
+  const rawOfKept: number[] = []
+  for (const [raw, f] of frames.entries()) {
     const prev = kept[kept.length - 1]
     if (prev && f.root === prev.root && f.portals.join() === prev.portals.join()) continue
     kept.push(f)
+    rawOfKept.push(raw)
+  }
+  const firstChangeAtOrAfter = (raw: number): number => {
+    const at = rawOfKept.findIndex((r) => r >= raw)
+    return at < 0 ? kept.length - 1 : at
   }
   let prevDoc = ''
   const packed = kept.map((f) => {
@@ -161,11 +167,20 @@ function packFilm(takes: RawFrame[][]): string {
       d: [p, s, doc.slice(p, doc.length - s)]
     }
   })
-  return 'window.KOLOFT_FRAMES = ' + JSON.stringify({ styles, frames: packed }) + '\n'
+  const keptMarks = Object.fromEntries(
+    Object.entries(marks).map(([name, raw]) => [name, firstChangeAtOrAfter(raw)])
+  )
+  return (
+    'window.KOLOFT_FRAMES = ' + JSON.stringify({ styles, frames: packed, marks: keptMarks }) + '\n'
+  )
 }
 
-export function writeFilm(name: string, takes: RawFrame[][]): void {
-  fs.writeFileSync(path.join(SITE_DEMO, `${name}.frames.js`), packFilm(takes))
+export function writeFilm(
+  name: string,
+  takes: RawFrame[][],
+  marks: Record<string, number> = {}
+): void {
+  fs.writeFileSync(path.join(SITE_DEMO, `${name}.frames.js`), packFilm(takes, marks))
 }
 
 function siteCssFrom(builtCss: string): string {

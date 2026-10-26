@@ -175,11 +175,13 @@ async function sizeWindow(app: ElectronApplication, w: number, h: number): Promi
 interface Reel {
   shot(light?: boolean): Promise<void>
   roll(ms: number, every?: number): Promise<void>
+  mark(name: string): void
   save(name: string): void
 }
 
 function reel(page: Page): Reel {
   let frames: RawFrame[] = []
+  let marks: Record<string, number> = {}
   const shot = async (light = true): Promise<void> => {
     frames.push({ t: Date.now(), ...(await frameOf(page, light && frames.length > 0)) })
   }
@@ -192,9 +194,13 @@ function reel(page: Page): Reel {
         await page.waitForTimeout(every)
       }
     },
+    mark(name) {
+      marks[name] = frames.length
+    },
     save(name) {
-      writeFilm(name, [frames])
+      writeFilm(name, [frames], marks)
       frames = []
+      marks = {}
     }
   }
 }
@@ -233,11 +239,13 @@ async function startUsageServer(byToken: Record<string, [number, number]>): Prom
 }
 
 interface Film {
+  mark(name: string): void
   stop(name: string): Promise<void>
 }
 
 function startFilm(page: Page, everyMs = 600): Film {
   const frames: RawFrame[] = []
+  const marks: Record<string, number> = {}
   let on = true
   const loop = (async () => {
     while (on) {
@@ -248,10 +256,13 @@ function startFilm(page: Page, everyMs = 600): Film {
     }
   })()
   return {
+    mark(name) {
+      marks[name] = frames.length
+    },
     async stop(name) {
       on = false
       await loop
-      writeFilm(name, [frames])
+      writeFilm(name, [frames], marks)
     }
   }
 }
@@ -322,8 +333,10 @@ test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what wa
     await typeFilmed(page, r, 'login')
     await r.roll(1000)
     await page.keyboard.press('ArrowDown')
+    r.mark('down')
     await r.roll(900)
     await page.keyboard.press('Enter')
+    r.mark('enter')
     await expect(palette).toHaveCount(0)
     await r.roll(2500, 250)
     r.save('pal-jump')
@@ -335,8 +348,10 @@ test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what wa
     await typeFilmed(page, r, 'timer')
     await r.roll(1000)
     await page.keyboard.press('Alt+Enter')
+    r.mark('search')
     await r.roll(4000, 200)
     await page.keyboard.press('Enter')
+    r.mark('enter')
     await r.roll(2500, 250)
     r.save('pal-search')
 
@@ -344,9 +359,11 @@ test('pal-jump, pal-search, pal-start: ⌘P jumps to a session, searches what wa
     await sendShortcut(app, 'shortcut:command-palette')
     await expect(box).toBeFocused()
     await r.roll(700)
+    r.mark('typing')
     await typeFilmed(page, r, "tidewatch's weather calls keep failing, make them retry")
     await r.roll(1500)
     await page.keyboard.press('Enter')
+    r.mark('enter')
     await r.roll(1500, 150)
     const until = Date.now() + 90_000
     while (Date.now() < until && (await palette.count()) > 0) await r.roll(300, 150)
@@ -398,6 +415,7 @@ test('tree: a real claude splits a job into two sibling sessions that hang under
       'get two sessions on this in parallel: a /health endpoint, and a quick start in the README'
     )
     await expect(children).toHaveCount(2, { timeout: 300_000 })
+    film.mark('children')
     await expect(children.first()).toHaveClass(/\bst-working\b/, { timeout: 120_000 })
     await expect
       .poll(
@@ -454,10 +472,12 @@ test('browser: a real claude opens a page in its own Workbench, clicks Refresh a
     await expect(row).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
     const webTab = page.locator('.wb-panel .wb-tab:not(.pinned)', { hasText: 'Tidewatch' })
     await expect(webTab).toBeVisible({ timeout: 300_000 })
+    film.mark('page')
     await webTab.click()
     await expect(row).not.toHaveClass(/\bst-working\b/, { timeout: 600_000 })
     await page.waitForTimeout(3000)
     const term = await openSessionTerminal(app, page)
+    film.mark('terminal')
     await runIn(page, term, 'ls src && git --no-pager log --oneline -3')
     await expect(panelTerm(page)).toContainText('routes', { timeout: 20_000 })
     await page.waitForTimeout(3000)
