@@ -98,6 +98,9 @@ function writeSubagentJsonl(
   fs.writeFileSync(path.join(dir, name), lines.map((l) => JSON.stringify(l)).join('\n') + '\n')
 }
 
+const agentTaskId = (toolUseId: string): string => 'a' + toolUseId
+const shellTaskId = (toolUseId: string): string => 'b' + toolUseId
+
 // CC§8
 function spawnRec(
   toolUseId: string,
@@ -108,7 +111,7 @@ function spawnRec(
   return {
     type: 'user',
     timestamp: new Date().toISOString(),
-    toolUseResult: { status, agentId: 'a' + toolUseId, ...extra },
+    toolUseResult: { status, agentId: agentTaskId(toolUseId), ...extra },
     message: {
       role: 'user',
       content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'Spawned successfully.' }]
@@ -132,7 +135,7 @@ function forkedSkillRec(
       commandName,
       status: 'forked',
       ...(background ? { background: true } : {}),
-      agentId: 'a' + toolUseId,
+      agentId: agentTaskId(toolUseId),
       result: `Running in the background as @${commandName}`
     },
     message: {
@@ -159,7 +162,7 @@ function shellAckRec(toolUseId: string, cwd: string, extra: Record<string, unkno
       stderr: '',
       interrupted: false,
       isImage: false,
-      backgroundTaskId: 'b' + toolUseId,
+      backgroundTaskId: shellTaskId(toolUseId),
       ...extra
     },
     message: {
@@ -176,22 +179,28 @@ function shellAckRec(toolUseId: string, cwd: string, extra: Record<string, unkno
   }
 }
 
-function notifText(toolUseId: string, status: string): string {
+// CC§8
+function notifText(toolUseId: string, status: string, taskId = agentTaskId(toolUseId)): string {
   return (
-    `<task-notification>\n<task-id>t_${toolUseId}</task-id>\n` +
+    `<task-notification>\n<task-id>${taskId}</task-id>\n` +
     `<tool-use-id>${toolUseId}</tool-use-id>\n<status>${status}</status>\n` +
     `<summary>done</summary>\n</task-notification>`
   )
 }
 
 // CC§8
-function attachNotifRec(toolUseId: string, cwd: string, status = 'completed'): unknown {
+function attachNotifRec(
+  toolUseId: string,
+  cwd: string,
+  status = 'completed',
+  taskId = agentTaskId(toolUseId)
+): unknown {
   return {
     type: 'attachment',
     timestamp: new Date().toISOString(),
     attachment: {
       type: 'queued_command',
-      prompt: notifText(toolUseId, status),
+      prompt: notifText(toolUseId, status, taskId),
       commandMode: 'task-notification'
     },
     cwd
@@ -202,13 +211,14 @@ function attachNotifRec(toolUseId: string, cwd: string, status = 'completed'): u
 function queueNotifRec(
   toolUseId: string,
   operation: 'enqueue' | 'remove' = 'enqueue',
-  status = 'completed'
+  status = 'completed',
+  taskId = agentTaskId(toolUseId)
 ): unknown {
   return {
     type: 'queue-operation',
     operation,
     timestamp: new Date().toISOString(),
-    content: notifText(toolUseId, status)
+    content: notifText(toolUseId, status, taskId)
   }
 }
 
@@ -272,13 +282,7 @@ function notifRec(
     type: 'user',
     timestamp: new Date().toISOString(),
     origin: { kind: 'task-notification' },
-    message: {
-      role: 'user',
-      content:
-        `<task-notification>\n<task-id>t_${toolUseId}</task-id>\n` +
-        `<tool-use-id>${toolUseId}</tool-use-id>\n<status>${status}</status>\n` +
-        `<summary>done</summary>\n</task-notification>`
-    },
+    message: { role: 'user', content: notifText(toolUseId, status) },
     cwd
   }
 }
@@ -402,7 +406,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     const file = await bindCaughtUp(tracker, 'tabB3', cwd, initialLines(cwd))
     tracker.setStatus('tabB3', 'working')
 
-    appendJsonl(file, [spawnRec('toolu_k1', cwd), spawnRec('toolu_k2', cwd, 'teammate_spawned')])
+    appendJsonl(file, [spawnRec('toolu_k1', cwd), spawnRec('toolu_k2', cwd)])
     await tracker.reportTurnEnd('tabB3')
     expect(status(tracker, 'tabB3')).toBe('working')
 
@@ -727,7 +731,9 @@ describe('run-state vs background work: any live background task keeps the sessi
     await tracker.reportTurnEnd('tabS1')
     expect(status(tracker, 'tabS1')).toBe('working')
 
-    appendJsonl(file, [queueNotifRec('toolu_build')])
+    appendJsonl(file, [
+      queueNotifRec('toolu_build', 'enqueue', 'completed', shellTaskId('toolu_build'))
+    ])
     await tracker.reportTurnEnd('tabS1')
     expect(status(tracker, 'tabS1')).toBe('waiting')
   })
@@ -753,12 +759,14 @@ describe('run-state vs background work: any live background task keeps the sessi
     await tracker.reportTurnEnd('tabS3')
     expect(status(tracker, 'tabS3')).toBe('working')
 
-    appendJsonl(file, [queueNotifRec('toolu_devserver')])
+    appendJsonl(file, [
+      queueNotifRec('toolu_devserver', 'enqueue', 'completed', shellTaskId('toolu_devserver'))
+    ])
     await tracker.reportTurnEnd('tabS3')
     expect(status(tracker, 'tabS3')).toBe('waiting')
   })
 
-  it('a Monitor task holds working until its notification', async () => {
+  it('a Monitor acked before any report is parked at the turn-end, and its notification clears the badge', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabS4', cwd, initialLines(cwd))
@@ -766,12 +774,14 @@ describe('run-state vs background work: any live background task keeps the sessi
 
     appendJsonl(file, [monitorAckRec('toolu_mon', cwd)])
     await tracker.reportTurnEnd('tabS4')
-    expect(status(tracker, 'tabS4')).toBe('working')
-
-    appendJsonl(file, [attachNotifRec('toolu_mon', cwd)])
-    await tracker.reportTurnEnd('tabS4')
     expect(status(tracker, 'tabS4')).toBe('waiting')
-  })
+    expect(parked(tracker, 'tabS4')).toEqual([
+      { id: 'mtoolu_mon', kind: 'monitor', label: 'mtoolu_mon', state: 'waiting' }
+    ])
+
+    appendJsonl(file, [attachNotifRec('toolu_mon', cwd, 'completed', 'mtoolu_mon')])
+    await waitFor(tracker, (s) => s.tabId === 'tabS4' && s.background === undefined, 6000)
+  }, 10_000)
 
   // CC§8
   it('a skill forked into the background holds working — its own wrap-up must not rest the dot', async () => {
@@ -829,7 +839,9 @@ describe('run-state vs background work: any live background task keeps the sessi
     await tracker.reportTurnEnd('tabS5')
     expect(status(tracker, 'tabS5')).toBe('working')
 
-    appendJsonl(file, [queueNotifRec('toolu_stopme', 'enqueue', 'stopped')])
+    appendJsonl(file, [
+      queueNotifRec('toolu_stopme', 'enqueue', 'stopped', shellTaskId('toolu_stopme'))
+    ])
     await tracker.reportTurnEnd('tabS5')
     expect(status(tracker, 'tabS5')).toBe('waiting')
   })
@@ -938,6 +950,8 @@ describe('run-state vs background work: any live background task keeps the sessi
     const file = await bindCaughtUp(tracker, 'tabX1', cwd, initialLines(cwd))
     tracker.setStatus('tabX1', 'working')
 
+    appendJsonl(file, [spawnRec('toolu_side', cwd)])
+    await sleep(SILENCE_MS + 100)
     const now = Date.now()
     appendJsonl(file, [mainAssistantRec(cwd, now - 200), mainAssistantRec(cwd, now, true)])
     await tracker.reportTurnEnd('tabX1')
@@ -1546,7 +1560,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     const file = await bindCaughtUp(tracker, 'tabL12', cwd, initialLines(cwd))
     stageProcs(tracker, {})
     tracker.setStatus('tabL12', 'working')
-    await tracker.reportTurnEnd('tabL12', [{ id: 't_x1', type: 'subagent' }])
+    await tracker.reportTurnEnd('tabL12', [{ id: agentTaskId('x1'), type: 'subagent' }])
     expect(status(tracker, 'tabL12')).toBe('working')
     appendJsonl(file, [attachNotifRec('x1', cwd)])
     await waitFor(tracker, (s) => s.tabId === 'tabL12' && s.status === 'waiting', 6000)
