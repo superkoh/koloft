@@ -691,6 +691,8 @@ Nothing ran against Google's real servers.
     `Pre`/`PostToolUse` fire for `manage_task` with `error:""`; no `PostToolUse` for
     the `schedule` ever comes. The short id `task-2`, sent from the conversation that
     set it, cancels it the same way. A malformed id fails with a non-empty `error`.
+    After `/clear`, `task-2` sent from the new conversation came back to the model as
+    "Tool execution was canceled", with a `PreToolUse` and no `PostToolUse`.
   - A `CronExpression` agy cannot read ("not a cron") fails at once: `PostToolUse` for
     the `schedule` comes right after its `PreToolUse`, with `error` "invalid
     CronExpression …".

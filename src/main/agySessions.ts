@@ -803,6 +803,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§13
   private replaySchedules(run: AgyRun): void {
     for (const line of (readText(run.log.file) ?? '').split('\n')) {
+      if (!line.includes('"schedule"') && !line.includes('"manage_task"')) continue
       const read = agyLogLine(line)
       if (read && 'hook' in read) this.trackSchedule(run, read.hook)
     }
