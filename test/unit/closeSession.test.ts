@@ -12,17 +12,17 @@ import {
 } from '../../src/renderer/src/closeSession'
 
 describe('unexpectedExitWanted', () => {
-  const crash = { exitCode: 1 }
-  it('wants the line for an ordinary claude tab that ended badly', () => {
+  const crash = { exitCode: 1, unexpected: true as const }
+  it('keeps an ordinary claude tab that main says ended badly on its own', () => {
     expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, crash)).toBe(true)
-    expect(unexpectedExitWanted({ kind: 'claude' }, { exitCode: 0, signal: 9 })).toBe(true)
+    expect(unexpectedExitWanted({ kind: 'claude' }, crash)).toBe(true)
   })
   it('reports Codex crashes using its own source', () => {
     expect(unexpectedExitWanted({ kind: 'codex', sessionId: 'codex:local:a' }, crash)).toBe(true)
     expect(unexpectedExitNotice(crash, 'codex')).toContain('Codex')
   })
-  it('does not want it for a clean exit, or for a tab that is not a conversation', () => {
-    expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, { exitCode: 0 })).toBe(false)
+  it('does not want it for an exit main did not call unexpected, or for a tab that is not a conversation', () => {
+    expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, {})).toBe(false)
     expect(unexpectedExitWanted({ kind: 'terminal' }, crash)).toBe(false)
     expect(unexpectedExitWanted(undefined, crash)).toBe(false)
   })
@@ -172,7 +172,7 @@ describe('unexpectedExitNotice (the one account of a session that died)', () => 
   })
 
   // ADR-0030
-  it('says Claude did not start for want of an account when the claude shim refused it, since the tab and its message are gone at once', () => {
+  it('says Claude did not start for want of an account when the claude shim refused it', () => {
     expect(unexpectedExitNotice({ exitCode: SHIM_FOUND_NO_ACCOUNT_EXIT }, 'claude')).toBe(
       SHIM_FOUND_NO_ACCOUNT_NOTICE
     )

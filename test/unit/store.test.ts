@@ -67,6 +67,17 @@ describe('store: claude → shell revert, only after a session actually bound', 
     expect(t.sessionId).toBeUndefined()
   })
 
+  it('keeps a tab whose agent exited unexpectedly as that agent, dead, when its session leaves the list', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'end1', kind: 'codex', title: 'My run', cwd: '/w', alive: true })
+    s.setSessions([session('end1')])
+    s.keepEndedTab('end1')
+    s.setTabAlive('end1', true)
+    s.setSessions([])
+    const t = useStore.getState().tabs.find((x) => x.id === 'end1')!
+    expect(t).toMatchObject({ kind: 'codex', title: 'My run', alive: false, ended: true })
+  })
+
   it('does NOT revert a claude tab that never bound a session (launch window)', () => {
     const s = useStore.getState()
     s.addTab({ id: 'nev1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })

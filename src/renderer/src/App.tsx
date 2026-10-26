@@ -84,6 +84,7 @@ import {
 } from './sessionRows'
 import { beginLayoutDrag, endLayoutDrag } from './resizeGate'
 import { unexpectedExitNotice, unexpectedExitWanted } from './closeSession'
+import { lastLinesOnceWritten, writeOnScreen } from './terminalScreens'
 import { requestCloseTab } from './closeFlow'
 import {
   allDirty,
@@ -98,6 +99,7 @@ import {
 import { browserOpenTargetSession, overlayPresentation } from './browserOpenTarget'
 
 const FIXED_VIEWPORT_FOR_OFFSCREEN_DRIVEN_PAGE = { width: 1000, height: 700 }
+const LAST_SCREEN_LINES_LOGGED = 20
 import {
   rearmResume,
   releaseResume,
@@ -997,7 +999,14 @@ export default function App(): JSX.Element {
       const tab = useStore.getState().tabs.find((t) => t.id === e.id)
       if (tab?.sessionId) releaseResume(tab.sessionId)
       if (unexpectedExitWanted(tab, e)) {
-        useStore.getState().showToast(unexpectedExitNotice(e, tab.kind))
+        const notice = unexpectedExitNotice(e, tab.kind)
+        useStore.getState().showToast(notice)
+        useStore.getState().keepEndedTab(e.id)
+        void lastLinesOnceWritten(e.id, LAST_SCREEN_LINES_LOGGED).then((lines) => {
+          window.api.terminal.logUnexpectedExit({ id: e.id, lines })
+          writeOnScreen(e.id, `\x1b[0m\r\n[Koloft] ${notice}\r\n`)
+        })
+        return
       }
       if (tab) askAboutLeftEdits(tab)
       closeTab(e.id)

@@ -1036,6 +1036,12 @@ export interface TerminalExit {
   id: string
   exitCode: number
   signal?: number
+  unexpected?: true
+}
+
+export interface UnexpectedExitScreen {
+  id: string
+  lines: string[]
 }
 
 export function exitedAbnormally(exit: Pick<TerminalExit, 'exitCode' | 'signal'>): boolean {
@@ -1092,6 +1098,7 @@ export interface KoloftApi {
     onSpawned(cb: (t: SpawnedTab) => void): () => void
     onScreenRequest(cb: (r: ScreenRequest) => void): () => void
     answerScreen(a: ScreenAnswer): void
+    logUnexpectedExit(s: UnexpectedExitScreen): void
   }
   workbench: {
     get(sessionId: string): Promise<SessionWorkbenchState>

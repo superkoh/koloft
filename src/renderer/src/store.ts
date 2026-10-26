@@ -64,6 +64,7 @@ export interface Tab {
   asleep?: true
   ghost?: string
   wakeOverdue?: true
+  ended?: true
 }
 
 export interface OpenFile {
@@ -179,6 +180,7 @@ interface AppState {
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
   setTabAlive: (id: string, alive: boolean) => void
+  keepEndedTab: (id: string) => void
   setTabAsleep: (id: string) => void
 
   activateTab: (id: string) => void
@@ -719,9 +721,15 @@ export const useStore = create<AppState>((set, get) => ({
   setTabAlive: (id, alive) =>
     set((s) => {
       const cur = s.tabs.find((t) => t.id === id)
-      if (!cur || cur.alive === alive || cur.asleep) return s
+      if (!cur || cur.alive === alive || cur.asleep || cur.ended) return s
       return { tabs: s.tabs.map((t) => (t.id === id ? { ...t, alive } : t)) }
     }),
+  keepEndedTab: (id) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === id ? { ...t, alive: false, ended: true, resuming: undefined } : t
+      )
+    })),
   setTabAsleep: (id) =>
     set((s) => ({
       tabs: s.tabs.map((t) =>
@@ -814,7 +822,8 @@ export const useStore = create<AppState>((set, get) => ({
                     cwd: res.cwd,
                     sessionId: resumeId,
                     alive: true,
-                    respawning: undefined
+                    respawning: undefined,
+                    ended: undefined
                   }
                 : x
             ),
@@ -874,6 +883,7 @@ export const useStore = create<AppState>((set, get) => ({
         if (
           isSessionKind(t.kind) &&
           !t.asleep &&
+          !t.ended &&
           !liveTabs.has(t.id) &&
           everBoundSession.has(t.id) &&
           !restarting.has(t.id)

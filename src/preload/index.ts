@@ -101,7 +101,8 @@ const api: KoloftApi = {
       ipcRenderer.on(CH.terminal.screen, handler)
       return () => ipcRenderer.removeListener(CH.terminal.screen, handler)
     },
-    answerScreen: (a) => ipcRenderer.send(CH.terminal.screenDone, a)
+    answerScreen: (a) => ipcRenderer.send(CH.terminal.screenDone, a),
+    logUnexpectedExit: (s) => ipcRenderer.send(CH.terminal.unexpectedExit, s)
   },
   workbench: {
     get: (sessionId) => ipcRenderer.invoke(CH.workbench.get, sessionId),
