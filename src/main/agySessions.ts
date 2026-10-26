@@ -184,6 +184,7 @@ interface AgyRun extends StoredRun {
   liveWrites: number
   background?: BackgroundItem
   lastTool?: { name: string; args: Record<string, unknown> }
+  standingCrons?: Set<string>
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
@@ -792,6 +793,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     for (const read of earlierLog.split('\n').map((line) => agyLogLine(line))) {
       if (!read) continue
       if ('hook' in read && read.hook.event === 'PreToolUse') this.onHook(run, read.hook)
+      else if ('hook' in read) this.trackStandingCron(run, read.hook)
       last = remoteStatus(run, read) ?? last
       if (last) run.shown = last.state
     }
@@ -843,12 +845,14 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
     this.bind(run, known ?? { id: conversationId, cwd: run.cwd }, switched ? 'switch' : 'replace')
+    this.holdForStandingCrons(run)
     void this.refreshHistory().catch(() => undefined)
   }
 
   // AGY§12
   private onHook(run: AgyRun, hook: AgyHook): void {
     if (run.explicitStop || run.stopping) return
+    this.trackStandingCron(run, hook)
     if (hook.conversationId !== run.info?.nativeSessionId) return
     const { input } = hook
     switch (hook.event) {
@@ -862,6 +866,31 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       case 'Stop':
         return this.onStop(run, input)
     }
+  }
+
+  // AGY§13
+  private trackStandingCron(run: AgyRun, hook: AgyHook): void {
+    const { event, input, conversationId } = hook
+    const call = record(input.toolCall)
+    const args = record(call.args)
+    const crons = (run.standingCrons ??= new Set())
+    const taskId = `${conversationId}/task-${String(input.stepIdx)}`
+    if (event === 'PreToolUse' && call.name === 'schedule' && args.IsDaemon === true)
+      crons.add(taskId)
+    else if (event === 'PostToolUse' && call.name === 'schedule') crons.delete(taskId)
+    else if (
+      event === 'PostToolUse' &&
+      call.name === 'manage_task' &&
+      args.Action === 'kill' &&
+      !input.error
+    )
+      crons.delete(String(args.TaskId))
+    else return
+    this.holdForStandingCrons(run)
+  }
+
+  private holdForStandingCrons(run: AgyRun): void {
+    this.deps.runtime.setWakeupPending(run.tabId, !!run.standingCrons?.size)
   }
 
   // AGY§8 AGY§12

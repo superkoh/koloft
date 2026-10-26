@@ -670,6 +670,34 @@ Nothing ran against Google's real servers.
 - A subagent is a child conversation: a summaries row with `parent_conversation_id`,
   `nesting_depth:1`, `agent_name:"self"`. Its result makes the parent run another
   turn.
+- **`schedule` and what the hooks see of it.** 1.4.7 Linux arm64 in Docker with no
+  network, fake Gemini server, the TUI in tmux, every hook logged, 2026-10-26. The
+  tool is `schedule {Prompt, DurationSeconds | CronExpression, IsDaemon?,
+  MaxIterations?, ExactTiming?, TimerCondition?}`: a one-shot timer or a cron, run as a
+  background task whose id is `<conversation id>/task-<stepIdx of the call>`. The call
+  returns at once ("Tool is running as a background task with task id: …"); the footer
+  shows "1 task(s)" and a line "● [time] 25s timer running".
+  - `PreToolUse` carries `toolCall {name:"schedule", args}` and `stepIdx`.
+    `PostToolUse` for it comes only when the task ends: a timer when it fires, a cron
+    after its last firing (`MaxIterations`), with the same `stepIdx`.
+  - Each firing starts a turn by itself: `PreInvocation` (`invocationNum` 0), one model
+    request whose last content is a `<SYSTEM_MESSAGE>` "[Message] … sender=<task id>
+    priority=MESSAGE_PRIORITY_HIGH content=<Prompt>", then `Stop`. No `SessionStart`.
+  - While a timer or a plain cron waits, every `Stop` says `fullyIdle:false` (a 25 s
+    timer; a `* * * * *` cron with `MaxIterations` 2, both firings); the `Stop` after
+    the last firing says `true`. A cron with `IsDaemon:true` gives `fullyIdle:true` on
+    every `Stop`, the one that set it up included, while it keeps firing every minute.
+  - `manage_task {Action:"kill", TaskId:"<task id>"}` cancels it ("Task … cancelled."):
+    `Pre`/`PostToolUse` fire for `manage_task` with `error:""`; no `PostToolUse` for
+    the `schedule` ever comes. A kill with a wrong id fails with a non-empty `error`.
+  - After `/clear` the screen and footer show no task, yet the daemon cron went on
+    firing a turn in the old conversation, its hooks carrying the old conversation id.
+  - It lives in the process: killed and resumed with `-c`, agy showed the conversation
+    but nothing fired in the next 150 s and the footer listed no task.
+  - The Connect API's `ListBackgroundTasks {cascadeId}` lists it while it waits
+    (`toolName:"schedule"`, `description:"Timer: 25s, Prompt: …"`) and returns `{}` once
+    it has ended.
+  - Not probed: a `TimerCondition` timer cancelled by a message; the macOS build.
 
 ## §14 Asks in the terminal and the keys that answer them
 
