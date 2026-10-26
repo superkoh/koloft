@@ -6,6 +6,17 @@ import { spawn, spawnSync } from 'child_process'
 import { MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from '../../src/main/museRemote'
 import { NOTICE_SUFFIX, noticeLine, seedHandedOverOwnerWords } from '../../src/main/hooks'
 import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from '../../src/main/crossSessionMessage'
+import {
+  compactionEnds,
+  compactionStarts,
+  finishedWork,
+  firedJob,
+  logRecord,
+  museNameOf,
+  renamedTo,
+  startsATurnByItself,
+  type LogRecord
+} from '../../src/main/museSessionLog'
 
 const SID = '019a0000-0000-7000-8000-000000000001'
 const python = spawnSync('python3', ['-c', 'import pty, termios'], { encoding: 'utf8' })
@@ -197,6 +208,64 @@ describe.skipIf(!PYTHON_WITH_PTY)(
     }, 20_000)
   }
 )
+
+describe('the session-log lines muse-wrap.py passes on', () => {
+  const wrapperMarks = [
+    ...MUSE_WRAP_PY.match(/^LOG_MARKS = \((.*)\)$/m)![1].matchAll(/b'([^']*)'/g)
+  ].map((m) => m[1])
+  const queued = (source: Record<string, unknown>): string =>
+    JSON.stringify({
+      payload_type: 'runtime.session',
+      payload: {
+        event: { kind: 'inbox_item_queued', source, registered_work_id: 'w1' }
+      }
+    })
+  const readersARemoteTabActsOn: [string, (r: LogRecord) => unknown, string][] = [
+    [
+      'museNameOf',
+      museNameOf,
+      JSON.stringify({
+        payload_type: 'session.name.changed',
+        payload: { new_name: 'n', source: 'user' }
+      })
+    ],
+    [
+      'renamedTo',
+      renamedTo,
+      JSON.stringify({
+        payload_type: 'session.name.changed',
+        payload: { new_name: 'n', source: 'user' }
+      })
+    ],
+    ['startsATurnByItself', startsATurnByItself, queued({ source: 'scheduled', job_id: 'j1' })],
+    ['firedJob', firedJob, queued({ source: 'scheduled', job_id: 'j1' })],
+    ['finishedWork', finishedWork, queued({ source: 'background_task_terminal' })],
+    [
+      'compactionStarts',
+      compactionStarts,
+      JSON.stringify({
+        payload_type: 'runtime.command.accepted',
+        payload: { command_kind: 'context.compact.manual' }
+      })
+    ],
+    [
+      'compactionEnds',
+      compactionEnds,
+      JSON.stringify({
+        payload_type: 'context.compact.manual.outcome',
+        payload: { terminal_outcome: 'compacted' }
+      })
+    ]
+  ]
+
+  it.each(readersARemoteTabActsOn)(
+    'a record %s acts on reaches a remote tab, because its line carries one of the marks the wrapper looks for',
+    (_name, reader, line) => {
+      expect(reader(logRecord(line)!)).toBeTruthy()
+      expect(wrapperMarks.some((mark) => line.includes(mark))).toBe(true)
+    }
+  )
+})
 
 describe('muse-hook.sh, the hook a remote Muse tab runs', () => {
   it("appends each event as one whole line to its tab's mirror file, and hands Koloft's instructions over only at SessionStart", () => {
