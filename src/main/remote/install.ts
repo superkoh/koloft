@@ -1,7 +1,11 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { REMOTE_HOOK_DIR, remotePtsFile } from './paths'
-import { ENSURE_CLAUDE_MINIMUM_FN, ENSURE_MUSE_MINIMUM_FN } from '../cliMinimums'
+import {
+  ENSURE_AGY_MINIMUM_FN,
+  ENSURE_CLAUDE_MINIMUM_FN,
+  ENSURE_MUSE_MINIMUM_FN
+} from '../cliMinimums'
 import { AGY_INSTALLER_URL } from '../toolInstall'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
@@ -165,6 +169,7 @@ have bash || install_pkg bash || exit 4
 program="$1"
 ${ENSURE_CLAUDE_MINIMUM_FN}
 ${ENSURE_MUSE_MINIMUM_FN}
+${ENSURE_AGY_MINIMUM_FN}
 python_has_pty() { python3 -c 'import pty, termios' >/dev/null 2>&1; }
 official_install() {
   have curl || have wget || install_pkg curl || { say "need curl or wget to install $1"; exit 4; }
@@ -184,6 +189,7 @@ muse)
 agy)
   # AGY§3
   have agy || official_install agy ${AGY_INSTALLER_URL}
+  ensure_agy_minimum agy || exit 4
   ;;
 *)
   have claude || official_install claude https://claude.ai/install.sh

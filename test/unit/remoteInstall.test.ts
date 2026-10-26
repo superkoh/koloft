@@ -11,7 +11,7 @@ import {
   heartbeatCmd,
   parseHeartbeat
 } from '../../src/main/remote/install'
-import { MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
+import { MIN_AGY_VERSION, MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
 
 const REAL_TOOLS = [
   'sh',
@@ -325,17 +325,33 @@ exec "$@"`
   })
 })
 
-describe('ensure.sh holds a remote Claude Code to the minimum this Koloft supports', () => {
-  const OLDER_YET_LATER_AS_TEXT = '2.1.99'
-  const claudeAt = (m: Machine, version: string, updatesTo?: string): void => {
-    const file = path.join(m.home, 'claude-version')
+describe.each([
+  {
+    product: 'Claude Code',
+    tool: 'claude',
+    tab: undefined,
+    min: MIN_CLAUDE_VERSION,
+    olderYetLaterAsText: '2.1.99',
+    versionLine: '%s (Claude Code)'
+  },
+  {
+    product: 'Antigravity CLI',
+    tool: 'agy',
+    tab: 'agy',
+    min: MIN_AGY_VERSION,
+    olderYetLaterAsText: '1.3.6',
+    versionLine: '%s'
+  }
+])('ensure.sh holds a remote $product to the minimum this Koloft supports', (t) => {
+  const toolAt = (m: Machine, version: string, updatesTo?: string): void => {
+    const file = path.join(m.home, `${t.tool}-version`)
     fs.writeFileSync(file, version)
     const bump = updatesTo ? `printf '%s' ${updatesTo} > ${JSON.stringify(file)}` : ':'
     m.give(
-      'claude',
+      t.tool,
       `case "$1" in
---version) printf '%s (Claude Code)\\n' "$(cat ${JSON.stringify(file)})" ;;
-update) printf 'update\\n' >> ${JSON.stringify(path.join(m.logs, 'claude.log'))}; ${bump} ;;
+--version) printf '${t.versionLine}\\n' "$(cat ${JSON.stringify(file)})" ;;
+update) printf 'update\\n' >> ${JSON.stringify(path.join(m.logs, `${t.tool}.log`))}; ${bump} ;;
 esac
 exit 0`
     )
@@ -344,21 +360,21 @@ exit 0`
   it('an older one is updated before the session starts', () => {
     const m = machine()
     complete(m)
-    claudeAt(m, OLDER_YET_LATER_AS_TEXT, '99.0.0')
-    const res = m.run()
+    toolAt(m, t.olderYetLaterAsText, '99.0.0')
+    const res = m.run(t.tab)
     expect(res.status).toBe(0)
-    expect(m.calls('claude')).toEqual(['update'])
-    expect(res.stderr).toContain(`older than ${MIN_CLAUDE_VERSION}`)
+    expect(m.calls(t.tool)).toEqual(['update'])
+    expect(res.stderr).toContain(`older than ${t.min}`)
   })
 
-  it('one the update cannot lift stops the session and says to run claude update', () => {
+  it(`one the update cannot lift stops the session and says to run ${t.tool} update`, () => {
     const m = machine()
     complete(m)
-    claudeAt(m, OLDER_YET_LATER_AS_TEXT)
-    const res = m.run()
+    toolAt(m, t.olderYetLaterAsText)
+    const res = m.run(t.tab)
     expect(res.status).toBe(4)
-    expect(m.calls('claude')).toEqual(['update'])
-    expect(res.stderr).toContain('Run "claude update" yourself')
+    expect(m.calls(t.tool)).toEqual(['update'])
+    expect(res.stderr).toContain(`Run "${t.tool} update" yourself`)
   })
 })
 

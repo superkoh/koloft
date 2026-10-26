@@ -47,3 +47,12 @@ export const ENSURE_MUSE_MINIMUM_FN = ensureMinimumFn({
   update: 'MUSE_SYNC_UPDATE=1 "$1" --version >/dev/null 2>&1',
   byHand: 'Run "muse --version" there with a working network'
 })
+
+// AGY§3
+export const ENSURE_AGY_MINIMUM_FN = ensureMinimumFn({
+  tool: 'agy',
+  product: 'Antigravity CLI',
+  min: MIN_AGY_VERSION,
+  update: '"$1" update',
+  byHand: 'Run "agy update" yourself'
+})
