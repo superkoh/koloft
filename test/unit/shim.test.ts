@@ -164,7 +164,8 @@ function runShim(
 function runShimPick(
   args: string[],
   answer: Record<string, unknown>,
-  extraEnv: Record<string, string> = {}
+  extraEnv: Record<string, string> = {},
+  bin: 'claude' | 'codex' | 'muse' | 'agy' = 'claude'
 ): Promise<ShimRun> {
   const cwd = os.tmpdir()
   const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
@@ -184,7 +185,7 @@ function runShimPick(
     fs.renameSync(`${resPath}.tmp`, resPath)
   }, 20)
   return new Promise((resolve) => {
-    const child = spawn(path.join(shimDir, 'claude'), args, { cwd, env })
+    const child = spawn(path.join(shimDir, bin), args, { cwd, env })
     let stderr = ''
     child.stderr.on('data', (c) => (stderr += c))
     child.on('close', (status) => {
@@ -709,10 +710,8 @@ describe('codex guard (Koloft terminal hard block — the same funnel as claude,
   )
 
   it.each([
-    [['exec', 'say hi']],
-    [['-m', 'gpt-5', 'exec', 'say hi']],
-    [['review', '--uncommitted']],
     [['login']],
+    [['logout']],
     [['mcp', 'list']],
     [['migrate-nfs-db', '--staging-dir', '/tmp/codex-db']],
     [['resume', '--help']],
@@ -725,11 +724,130 @@ describe('codex guard (Koloft terminal hard block — the same funnel as claude,
     expect(r.realArgs).toEqual(args)
   })
 
-  it("outside a Koloft terminal (a session's own shell) even a bare codex passes through", () => {
-    const r = runCodex([])
+  it.each([[[]], [['exec', 'say hi']]])(
+    "outside a Koloft terminal (a session's own shell) codex %j passes through with no account pick",
+    (args) => {
+      const r = runCodex(args)
+      expect(r.status).toBe(0)
+      expect(r.stderr).not.toContain('⛔')
+      expect(r.realArgs).toEqual(args)
+      expect(r.realEnv?.CODEX_HOME).toBeUndefined()
+    }
+  )
+})
+
+// ADR-0030
+describe('codex, muse and agy in a Koloft terminal run on an account from Settings ▸ Accounts, never on the Mac’s own login', () => {
+  const UTIL = { KOLOFT_UTIL: '1' }
+
+  it.each([
+    [['exec', 'say hi']],
+    [['-m', 'gpt-5', 'exec', 'say hi']],
+    [['e', 'say hi']],
+    [['review', '--uncommitted']]
+  ])('codex %j gets the picked account’s CODEX_HOME and shows its line', async (args) => {
+    const r = await runShimPick(
+      args,
+      { account: 'cx1', home: '/koloft/codex-homes/cx1', banner: 'koloft: → cx1 · 7d 12%' },
+      UTIL,
+      'codex'
+    )
     expect(r.status).toBe(0)
-    expect(r.stderr).not.toContain('⛔')
-    expect(r.realArgs).toEqual([])
+    expect(r.realArgs).toEqual(args)
+    expect(r.realEnv?.CODEX_HOME).toBe('/koloft/codex-homes/cx1')
+    expect(r.stderr).toContain('koloft: → cx1 · 7d 12%')
+    expect(fs.readdirSync(pickDir)).toHaveLength(0)
+  })
+
+  it('codex: the all-accounts-limited notice prints as its own line', async () => {
+    const r = await runShimPick(
+      ['exec', 'say hi'],
+      {
+        account: 'cx1',
+        home: '/h/cx1',
+        banner: 'koloft: → cx1',
+        warning: 'every one is at its limit'
+      },
+      UTIL,
+      'codex'
+    )
+    expect(r.stderr.split('\n')).toContain('every one is at its limit')
+  })
+
+  it.each([
+    ['codex', ['exec', 'say hi']],
+    ['muse', ['exec', 'say hi']],
+    ['agy', ['-p', 'say hi']]
+  ] as const)('%s with no usable account is refused and never starts', async (bin, args) => {
+    const r = await runShimPick([...args], { account: null }, UTIL, bin)
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(r.stderr).toContain(NO_USABLE_ACCOUNT[bin])
+    expect(r.realArgs).toBeNull()
+  })
+
+  it('codex outside a Koloft tab (no pick watcher) is refused rather than run on this Mac’s login', () => {
+    const r = runShim(['exec', 'say hi'], UTIL, 'codex')
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(r.stderr).toContain('codex runs here only inside a Koloft tab')
+    expect(r.realArgs).toBeNull()
+  })
+
+  it('muse exec gets the picked account’s config folder and file sign-in', async () => {
+    const r = await runShimPick(
+      ['exec', 'say hi'],
+      { account: 'm1', home: '/koloft/muse-homes/m1', banner: 'koloft: → m1' },
+      UTIL,
+      'muse'
+    )
+    expect(r.status).toBe(0)
+    expect(r.realArgs).toEqual(['exec', 'say hi'])
+    expect(r.realEnv?.XDG_CONFIG_HOME).toBe('/koloft/muse-homes/m1')
+    expect(r.realEnv?.TBH_CREDENTIAL_BACKEND).toBe('file')
+  })
+
+  it('agy -p on a Google account runs in that account’s folder, with the sign-in kept in it and no key', async () => {
+    const r = await runShimPick(
+      ['--model', 'x', '-p', 'say hi'],
+      { account: 'g1', home: '/koloft/agy-homes/g1', banner: 'koloft: → g1' },
+      UTIL,
+      'agy'
+    )
+    expect(r.status).toBe(0)
+    expect(r.realArgs0).toEqual([
+      '--gemini_dir=/koloft/agy-homes/g1',
+      '--model',
+      'x',
+      '-p',
+      'say hi'
+    ])
+    expect(r.realEnv?.WSL_INTEROP).toBe('koloft')
+    expect(r.realEnv?.GEMINI_API_KEY).toBeUndefined()
+  })
+
+  it('agy -p on a key account gets the key from this build’s Keychain, never on stdio', async () => {
+    fs.writeFileSync(path.join(fakeKeychainDir, 'k1'), 'AIza-NEVER-ON-STDIO')
+    const r = await runShimPick(
+      ['-p', 'say hi'],
+      { account: 'k1', home: '/koloft/agy-homes/k1', banner: 'koloft: → k1', kind: 'apikey' },
+      UTIL,
+      'agy'
+    )
+    expect(r.status).toBe(0)
+    expect(r.realEnv?.GEMINI_API_KEY).toBe('AIza-NEVER-ON-STDIO')
+    expect(r.stderr).not.toContain('NEVER-ON-STDIO')
+    expect(fs.readFileSync(path.join(shimDir, 'agy'), 'utf8')).toContain('"koloft-dev-agy-home"')
+  })
+
+  it('agy -p on a key account whose key is missing is refused', async () => {
+    const r = await runShimPick(
+      ['-p', 'say hi'],
+      { account: 'ghost', home: '/h/ghost', kind: 'apikey' },
+      UTIL,
+      'agy'
+    )
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(r.stderr).toContain('could not read the key of ghost')
+    expect(r.realArgs).toBeNull()
   })
 })
 
@@ -746,7 +864,7 @@ describe('muse guard (Koloft terminal hard block — the same funnel as claude a
     }
   )
 
-  it.each([[['exec', 'say hi']], [['--model', 'x', 'serve']], [['login']], [['--version']]])(
+  it.each([[['--model', 'x', 'serve']], [['login']], [['--version']]])(
     'a form that opens no TUI %j passes through untouched',
     (args) => {
       const r = runShim(args, UTIL, 'muse')
@@ -771,17 +889,14 @@ describe('agy guard (Koloft terminal hard block — the same funnel as claude, c
     expect(r.realArgs).toBeNull()
   })
 
-  it.each([
-    [['-p', 'say hi']],
-    [['--model', 'x', '--print', 'say hi']],
-    [['mcp', 'list']],
-    [['update']],
-    [['--version']]
-  ])('a form that opens no TUI %j passes through untouched', (args) => {
-    const r = runShim(args, UTIL, 'agy')
-    expect(r.status).toBe(0)
-    expect(r.realArgs).toEqual(args)
-  })
+  it.each([[['mcp', 'list']], [['update']], [['--version']]])(
+    'a form that opens no TUI %j passes through untouched',
+    (args) => {
+      const r = runShim(args, UTIL, 'agy')
+      expect(r.status).toBe(0)
+      expect(r.realArgs).toEqual(args)
+    }
+  )
 })
 
 describe('claude shim (scheduled jobs: first prompt + session name ride env vars, never the typed command line — BB-E19 / §4.6)', () => {

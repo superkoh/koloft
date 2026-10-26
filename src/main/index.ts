@@ -1824,19 +1824,76 @@ async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
   return { ...env, ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' }
 }
 
+interface UtilTerminalPick {
+  account: string
+  home: string
+  banner?: string
+  warning?: string
+  kind?: 'apikey'
+}
+
+function homeAccountLine(name: string, kind: SignInFolderKind): string | undefined {
+  const view = accountViews().find((a) => a.kind === kind && a.name === name)
+  return view && launchLine(view, Date.now())
+}
+
+const utilTerminalPicks: Record<
+  Exclude<BackendId, 'claude'>,
+  () => Promise<UtilTerminalPick | undefined>
+> = {
+  codex: async () => {
+    const picked = pickCodexHome()
+    return (
+      picked && {
+        account: picked.account,
+        home: picked.home,
+        banner: homeAccountLine(picked.account, 'codex-home'),
+        warning: picked.notice
+      }
+    )
+  },
+  muse: async () => {
+    const picked = pickMuseHome()
+    return (
+      picked && {
+        account: picked.account,
+        home: museHomeFor(picked.account),
+        banner: picked.banner
+      }
+    )
+  },
+  agy: async () => {
+    const picked = pickAgyHome()
+    if (!picked) return undefined
+    const { account, home, banner } = picked
+    return (await agyApiKeyOf(account))
+      ? { account, home, banner, kind: 'apikey' }
+      : { account, home, banner }
+  }
+}
+
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
-  const obj = raw as { tabId?: string; ts?: number }
+  const obj = raw as { tabId?: string; ts?: number; backend?: string }
   const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
   if (!obj.tabId || !tab) return
   const id = reqName.slice('req-'.length).replace(/\.json$/, '')
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
+  const resPath = path.join(pickDir, `res-${id}.json`)
+  const backend = obj.backend
+  if (backend === 'codex' || backend === 'muse' || backend === 'agy') {
+    const picked = await utilTerminalPicks[backend]()
+    try {
+      writeWholeBeforeVisible(resPath, JSON.stringify(picked ?? {}))
+    } catch {}
+    pushAccounts()
+    return
+  }
   const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
   if (endpoint?.model) payload.model = endpoint.model
-  const resPath = path.join(pickDir, `res-${id}.json`)
   try {
     writeWholeBeforeVisible(resPath, JSON.stringify(payload))
   } catch {}

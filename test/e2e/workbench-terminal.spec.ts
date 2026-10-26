@@ -1,8 +1,16 @@
 import fs from 'fs'
 import path from 'path'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import type { ElectronApplication, Page } from '@playwright/test'
-import type { E2EEnv } from './helpers/env'
+import {
+  E2E_AGY_ACCOUNT,
+  E2E_CODEX_ACCOUNT,
+  E2E_MUSE_ACCOUNT,
+  addAgyAccount,
+  addCodexAccount,
+  addMuseAccount,
+  type E2EEnv
+} from './helpers/env'
 import {
   centerTerm,
   clickAppMenuItem,
@@ -287,6 +295,52 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       await runIn(page, panelTerm(page), 'claude -p "x"')
       const calls = await waitForCalls(env, 2)
       expect(calls[1].argv).toContain('-p')
+    })
+
+    // ADR-0030
+    test('T-WT-05b: codex exec, muse exec and agy -p in a terminal tab run on the account Koloft picks from Settings ▸ Accounts, not on the Mac’s own login', async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      addCodexAccount(env, '{}')
+      addMuseAccount(env)
+      addAgyAccount(env)
+      const recorders = path.join(env.home, 'recorders')
+      fs.mkdirSync(recorders)
+      const recorder = (name: string, check: string): void =>
+        fs.writeFileSync(
+          path.join(recorders, name),
+          `#!/bin/sh\nif ${check}; then echo WT05B_${name}_OK; else echo WT05B_${name}_BAD; fi\n`,
+          { mode: 0o755 }
+        )
+      recorder(
+        'codex',
+        `[ "$CODEX_HOME" = '${path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT)}' ]`
+      )
+      recorder(
+        'muse',
+        `[ "$XDG_CONFIG_HOME" = '${path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT)}' ] && [ "$TBH_CREDENTIAL_BACKEND" = file ]`
+      )
+      recorder(
+        'agy',
+        `[ "$1" = '--gemini_dir=${path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)}' ] && [ "$WSL_INTEROP" = koloft ] && [ "$GEMINI_API_KEY" = fake-gemini-key ]`
+      )
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await sessionWithShell(app, page, 'ws-a')
+        await runIn(
+          page,
+          panelTerm(page),
+          `export PATH="${env.shimDir}:${recorders}:$PATH"; hash -r; codex exec hi; muse exec hi; agy -p hi`
+        )
+        for (const name of ['codex', 'muse', 'agy'])
+          await expect(panelTerm(page)).toContainText(`WT05B_${name}_OK`, { timeout: 25_000 })
+        await expect(panelTerm(page)).not.toContainText('_BAD')
+      } finally {
+        await quitAndClose(app)
+      }
     })
 
     test('T-WT-06: Esc pressed in a shell reaches the shell, not the panel’s Esc ladder', async ({
