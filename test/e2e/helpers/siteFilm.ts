@@ -104,7 +104,7 @@ interface PlainFrame {
   portals: string[]
 }
 
-export function packFilm(takes: RawFrame[][], marks: Record<string, number> = {}): string {
+export function packFilm(takes: RawFrame[][], marks: Record<string, number>): string {
   const styles: string[] = []
   const styleIndex = new Map<string, number>()
   const addStyle = (text: string): number => {
@@ -175,11 +175,7 @@ export function packFilm(takes: RawFrame[][], marks: Record<string, number> = {}
   )
 }
 
-export function writeFilm(
-  name: string,
-  takes: RawFrame[][],
-  marks: Record<string, number> = {}
-): void {
+export function writeFilm(name: string, takes: RawFrame[][], marks: Record<string, number>): void {
   fs.writeFileSync(path.join(SITE_DEMO, `${name}.frames.js`), packFilm(takes, marks))
 }
 

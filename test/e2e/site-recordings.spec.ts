@@ -247,17 +247,20 @@ function startFilm(page: Page, everyMs = 600): Film {
   const frames: RawFrame[] = []
   const marks: Record<string, number> = {}
   let on = true
+  let shooting = false
   const loop = (async () => {
     while (on) {
+      shooting = true
       try {
         frames.push({ t: Date.now(), ...(await frameOf(page)) })
       } catch {}
+      shooting = false
       await new Promise((ok) => setTimeout(ok, everyMs))
     }
   })()
   return {
     mark(name) {
-      marks[name] = frames.length
+      marks[name] = frames.length + (shooting ? 1 : 0)
     },
     async stop(name) {
       on = false

@@ -123,10 +123,10 @@
         const from = params.get('from') || '0'
         const [, name, offset] = /^([a-z-]+)([+-]\d+)?$/.exec(from) || []
         const startAt = name in marks ? marks[name] + Number(offset || 0) : Number(from) || 0
-        const tell = (msg) => parent.postMessage({ film, marks, ...msg }, '*')
+        const tell = (msg) => parent.postMessage({ film, ...msg }, '*')
         if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
           show(data, frames.length - 1)
-          return tell({ koloftReady: true })
+          return tell({ koloftReady: true, marks })
         }
         let i = startAt
         let timer = 0
@@ -162,7 +162,7 @@
           }
         })
         show(data, startAt)
-        tell({ koloftReady: true })
+        tell({ koloftReady: true, marks })
       }
     </script>
   </body>
