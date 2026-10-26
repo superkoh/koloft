@@ -1,8 +1,8 @@
 import fs from 'fs'
 import path from 'path'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import type { ElectronApplication, Page } from '@playwright/test'
-import type { E2EEnv } from './helpers/env'
+import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
   clickAppMenuItem,
@@ -68,6 +68,9 @@ function withShimsAheadOfSystemOpen(env: E2EEnv, cmd: string): string {
 
 const leaveTimeToSwitchSessionBeforeOpenLands = 'sleep 3; '
 const ESC_KEY_CODE = 27
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const LONG_ENOUGH_FOR_AN_IDLE_TAB_TO_SLEEP_MS = 4 * (WAITING_TO_IDLE_MS + IDLE_TO_SLEEP_MS)
 
 async function sessionWithShell(app: ElectronApplication, page: Page, ws: string): Promise<void> {
   await startSessionIn(page, ws)
@@ -569,6 +572,57 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       await expect(panelTerm(page)).toContainText('WT16_BEFORE_RESTART', { timeout: 25_000 })
       await runIn(page, panelTerm(page), 'echo WT16_ALIVE_$$')
       await expect(panelTerm(page)).toContainText(`WT16_ALIVE_${pid}`, { timeout: 25_000 })
+    })
+
+    test('T-WT-18: after ⇧⌘R, koloft open typed in the tab’s shell still opens the file in that tab’s Workbench', async ({
+      app,
+      page,
+      env
+    }) => {
+      test.setTimeout(300_000)
+      fs.writeFileSync(path.join(env.workspaces.a, 'wt18.md'), 'WT18_FILE_BODY\n')
+      await sessionWithShell(app, page, 'ws-a')
+      await waitForCalls(env, 1)
+      await panelShellPid(page, 'WT18')
+
+      await sendShortcut(app, 'shortcut:restart-session')
+      await waitForCalls(env, 2)
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+
+      await runIn(page, panelTerm(page), 'koloft open wt18.md; echo "WT18_EXIT=$?"')
+      await expect(panelTerm(page)).toContainText('WT18_EXIT=0', { timeout: 30_000 })
+      await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('wt18.md')
+      await expect(page.locator(WORKBENCH.readingBody)).toContainText('WT18_FILE_BODY')
+    })
+
+    test('T-WT-19: after ⇧⌘R, a tab whose shell still runs never goes to sleep for being idle, while an ordinary one beside it does', async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+      env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startSessionIn(page, 'ws-b')
+        const [ordinary] = await waitForCalls(env, 1)
+        await sessionWithShell(app, page, 'ws-a')
+        await waitForCalls(env, 2)
+        await panelShellPid(page, 'WT19')
+        await sendShortcut(app, 'shortcut:restart-session')
+        const restarted = (await waitForCalls(env, 3))[2]
+        await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        await expect.poll(() => processAlive(ordinary.pid), { timeout: 60_000 }).toBe(false)
+
+        await startSessionIn(page, 'ws-b')
+        await page.waitForTimeout(LONG_ENOUGH_FOR_AN_IDLE_TAB_TO_SLEEP_MS)
+
+        expect(processAlive(restarted.pid)).toBe(true)
+      } finally {
+        await quitAndClose(app)
+      }
     })
   })
 

@@ -390,6 +390,10 @@ export class PtyManager extends EventEmitter {
     if (h) h.resumeSessionId = undefined
   }
 
+  moveOwner(oldOwnerTabId: string, newOwnerTabId: string): void {
+    for (const h of this.list()) if (h.ownerTabId === oldOwnerTabId) h.ownerTabId = newOwnerTabId
+  }
+
   killUtilOrphans(): void {
     for (const h of this.list()) if (h.util) this.kill(h.id)
   }

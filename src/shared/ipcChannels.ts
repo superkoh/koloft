@@ -9,6 +9,7 @@ export const CH = {
     flowStats: 'terminal:flowStats',
     resize: 'terminal:resize',
     kill: 'terminal:kill',
+    moveOwner: 'terminal:moveOwner',
     exit: 'terminal:exit',
     processTitle: 'terminal:processTitle',
     cwd: 'terminal:cwd',

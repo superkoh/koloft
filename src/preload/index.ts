@@ -72,6 +72,8 @@ const api: KoloftApi = {
     flowStats: () => ipcRenderer.invoke(CH.terminal.flowStats),
     resize: (id, cols, rows) => ipcRenderer.send(CH.terminal.resize, id, cols, rows),
     kill: (id, restarting) => ipcRenderer.send(CH.terminal.kill, id, restarting),
+    moveOwner: (oldOwnerTabId, newOwnerTabId) =>
+      ipcRenderer.send(CH.terminal.moveOwner, oldOwnerTabId, newOwnerTabId),
     onData: (id, cb) => {
       terminalDataSinks.set(id, cb)
       return () => terminalDataSinks.delete(id)

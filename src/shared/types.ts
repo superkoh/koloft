@@ -1085,6 +1085,7 @@ export interface KoloftApi {
     flowStats(): Promise<FlowStats[]>
     resize(id: string, cols: number, rows: number): void
     kill(id: string, restarting?: boolean): void
+    moveOwner(oldOwnerTabId: string, newOwnerTabId: string): void
     onData(id: string, cb: (data: string) => void): () => void
     onExit(cb: (e: TerminalExit) => void): () => void
     onProcessTitle(cb: (t: TerminalProcessTitle) => void): () => void

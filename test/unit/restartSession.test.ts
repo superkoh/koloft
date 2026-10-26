@@ -98,7 +98,8 @@ beforeEach(() => {
         kill: (id: string) => {
           killed.push(id)
           order.push('kill')
-        }
+        },
+        moveOwner: () => {}
       }
     }
   }
