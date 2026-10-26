@@ -1235,6 +1235,51 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     }
   })
 
+  test('a git status that hangs on the very first read shows the retry banner once git is killed, and Retry reads the change set again', async ({
+    app,
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(2)
+    const hangWhileThere = path.join(env.home, 'git-status-hangs')
+    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
+    fs.writeFileSync(
+      path.join(env.fakeBin, 'git'),
+      `#!/usr/bin/env bash\n` +
+        `if [ -e "${hangWhileThere}" ] && [ "$1" = "-C" ] && [ "$2" = "${fx.root}" ]; then\n` +
+        `  case " $* " in\n` +
+        `    *" --name-status "*|*" --numstat "*) exec sleep 60 ;;\n` +
+        `  esac\n` +
+        `fi\n` +
+        `exec "${realGit}" "$@"\n`,
+      { mode: 0o755 }
+    )
+    fs.writeFileSync(hangWhileThere, '')
+    env.launchEnv.KOLOFT_GIT_TIMEOUT_MS = '3000'
+    await app.close().catch(() => {})
+    const next = await launchApp(env)
+    try {
+      const page = await next.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      await openChanges(page)
+      const banner = page.locator(CV.banner)
+      await expect(banner).toContainText('Repo too large or git unresponsive — retry.', {
+        timeout: 30_000
+      })
+      await expect(page.locator(CV.empty)).toHaveCount(0)
+
+      fs.rmSync(hangWhileThere)
+      await banner.getByRole('button', { name: 'Retry' }).click()
+      await waitStream(page, 2)
+      await expect(badge(page)).toHaveText('2 files')
+      await expect(banner).toHaveCount(0)
+    } finally {
+      await next.close().catch(() => {})
+    }
+  })
+
   test('the stream keeps saying "Reading the change set…" while the aggregate diff has files but the status rows have not arrived', async ({
     app,
     env

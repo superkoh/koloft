@@ -50,11 +50,13 @@ import '../inlineDiff.css'
 export interface ChangesViewProps {
   root: string
   base: string | null | undefined
+  readFailed: boolean
   git: GitStatusMap
   numstat: GitNumstatMap
   filters: ChangeFilters
   session: SessionInfo | null
   refreshNonce: number
+  onRetry: () => void
   anchor: { rel: string; nonce: number } | null
   active: boolean
   onOpenWeb: (path: string) => void
@@ -99,11 +101,13 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   const {
     root,
     base,
+    readFailed,
     git,
     numstat,
     filters,
     session,
     refreshNonce,
+    onRetry,
     anchor,
     active,
     onOpenWeb,
@@ -123,7 +127,6 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   const [blockView, setBlockView] = useState<Record<string, 'diff' | 'source'>>({})
   const [seen, setSeen] = useState<Record<string, true>>({})
   const [load, setLoad] = useState<LoadState>(IDLE_LOAD)
-  const [retryNonce, setRetryNonce] = useState(0)
   const [current, setCurrent] = useState<string | null>(null)
 
   const streamEl = useRef<HTMLDivElement>(null)
@@ -173,7 +176,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     setOpened({})
   }, [refreshNonce, base, root])
 
-  const trigger = useRef({ refreshNonce, retryNonce, base, root })
+  const trigger = useRef({ refreshNonce, base, root })
   const failed = useRef(false)
   const rootTheBaselineIsFor = useRef(root)
   useEffect(() => {
@@ -182,12 +185,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     if (!active) return
     if (baseUnresolved(base) || rootTheBaselineIsFor.current !== root) return
     const t = trigger.current
-    const manual =
-      t.refreshNonce !== refreshNonce ||
-      t.retryNonce !== retryNonce ||
-      t.base !== base ||
-      t.root !== root
-    trigger.current = { refreshNonce, retryNonce, base, root }
+    const manual = t.refreshNonce !== refreshNonce || t.base !== base || t.root !== root
+    trigger.current = { refreshNonce, base, root }
     if (failed.current && !manual) return
     if (manual) failed.current = false
     setLoad((l) => (l.pending ? l : { ...l, pending: true }))
@@ -277,7 +276,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [active, root, base, refreshNonce, retryNonce, git, numstat])
+  }, [active, root, base, refreshNonce, git, numstat])
 
   const obs = useRef<IntersectionObserver | null>(null)
   const watched = useRef(new Set<HTMLElement>())
@@ -449,10 +448,11 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     [split]
   )
 
-  const banner = load.failed ? (
+  const gitFailed = load.failed || (readFailed && baseUnresolved(base))
+  const banner = gitFailed ? (
     <div className="cv-banner cv-banner-err" role="status">
       <span>{MSG.gitFailed}</span>
-      <button className="cv-retry" onClick={() => setRetryNonce((n) => n + 1)}>
+      <button className="cv-retry" onClick={onRetry}>
         Retry
       </button>
     </div>
@@ -516,7 +516,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       <div className="cv-stream" ref={streamEl}>
         {banner}
         {shown.length === 0
-          ? !load.failed && (
+          ? !gitFailed && (
               <div className="fv-empty cv-empty">
                 <p>{emptyMsg}</p>
               </div>
