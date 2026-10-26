@@ -621,15 +621,10 @@ test.describe('Codex sessions through the real method chooser, process transport
         )
       const preset = statusOverride(first.argv)
       expect(preset).toBeDefined()
-      expect(JSON.parse(preset!.slice('tui.status_line='.length))).toEqual(
-        expect.arrayContaining([
-          'context-used',
-          'five-hour-limit',
-          'weekly-limit',
-          'git-branch',
-          'model-with-reasoning',
-          'current-dir'
-        ])
+      const items: string[] = JSON.parse(preset!.slice('tui.status_line='.length))
+      expect(items.slice(0, 3)).toEqual(['context-used', 'five-hour-limit', 'weekly-limit'])
+      expect(items).toEqual(
+        expect.arrayContaining(['git-branch', 'model-with-reasoning', 'current-dir'])
       )
       expect(codexCalls(env).map((call) => statusOverride(call.argv))).toEqual([
         preset,
