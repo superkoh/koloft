@@ -120,8 +120,8 @@ shell.
   connection. The Workbench works there too — its files, changes, edits and shell are
   the machine's — with a few gaps for now: images and PDFs from the machine do not
   preview, an agent's `open <url>` does not reach the Workbench, only a Claude Code
-  session drives its browser (with `playwright-cli`, never the Mac's own files or local
-  servers), and the session cannot be renamed from Koloft.
+  session drives its browser, never to the Mac's own files or local servers, and the
+  session cannot be renamed from Koloft.
 - **Stays current** — `Koloft ▸ Check for Updates…` downloads and swaps the app bundle
   in place; a banner in the sidebar says when a newer one is out.
 - **Smaller things** — a first-run walkthrough and a handful of tips that appear the
