@@ -69,8 +69,9 @@ export function lastCompletedText(stdout: string): string | null {
 const NAME_CHANGED = 'session.name.changed'
 const QUEUED = 'inbox_item_queued'
 const MANUAL_COMPACT = 'context.compact.manual'
+const MANUAL_COMPACT_OUTCOME = `${MANUAL_COMPACT}.outcome`
 
-export const REMOTE_LOG_MARKS = [NAME_CHANGED, QUEUED, MANUAL_COMPACT]
+export const REMOTE_LOG_MARKS: readonly string[] = [NAME_CHANGED, QUEUED, MANUAL_COMPACT]
 
 // MUSE§2
 export const museNameOf = (r: LogRecord): string | undefined =>
@@ -111,8 +112,7 @@ export const compactionStarts = (r: LogRecord): boolean =>
   r.payloadType === 'runtime.command.accepted' && r.payload.command_kind === MANUAL_COMPACT
 
 // MUSE§9
-export const compactionEnds = (r: LogRecord): boolean =>
-  r.payloadType === `${MANUAL_COMPACT}.outcome`
+export const compactionEnds = (r: LogRecord): boolean => r.payloadType === MANUAL_COMPACT_OUTCOME
 
 // MUSE§9
 export function firedJob(r: LogRecord): string | undefined {

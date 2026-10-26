@@ -6,17 +6,7 @@ import { spawn, spawnSync } from 'child_process'
 import { MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from '../../src/main/museRemote'
 import { NOTICE_SUFFIX, noticeLine, seedHandedOverOwnerWords } from '../../src/main/hooks'
 import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from '../../src/main/crossSessionMessage'
-import {
-  compactionEnds,
-  compactionStarts,
-  finishedWork,
-  firedJob,
-  logRecord,
-  museNameOf,
-  renamedTo,
-  startsATurnByItself,
-  type LogRecord
-} from '../../src/main/museSessionLog'
+import * as museLog from '../../src/main/museSessionLog'
 
 const SID = '019a0000-0000-7000-8000-000000000001'
 const python = spawnSync('python3', ['-c', 'import pty, termios'], { encoding: 'utf8' })
@@ -213,58 +203,63 @@ describe('the session-log lines muse-wrap.py passes on', () => {
   const wrapperMarks = [
     ...MUSE_WRAP_PY.match(/^LOG_MARKS = \((.*)\)$/m)![1].matchAll(/b'([^']*)'/g)
   ].map((m) => m[1])
+  const line = (payloadType: string, payload: Record<string, unknown>): string =>
+    JSON.stringify({ payload_type: payloadType, payload })
   const queued = (source: Record<string, unknown>): string =>
-    JSON.stringify({
-      payload_type: 'runtime.session',
-      payload: {
-        event: { kind: 'inbox_item_queued', source, registered_work_id: 'w1' }
-      }
+    line('runtime.session', {
+      event: { kind: 'inbox_item_queued', source, registered_work_id: 'w1' }
     })
-  const readersARemoteTabActsOn: [string, (r: LogRecord) => unknown, string][] = [
+  const renamed = line('session.name.changed', { new_name: 'n', source: 'user' })
+  const scheduled = queued({ source: 'scheduled', job_id: 'j1' })
+  const readersARemoteTabActsOn: [(r: museLog.LogRecord) => unknown, string][] = [
+    [museLog.museNameOf, renamed],
+    [museLog.renamedTo, renamed],
+    [museLog.startsATurnByItself, scheduled],
+    [museLog.firedJob, scheduled],
+    [museLog.finishedWork, queued({ source: 'background_task_terminal' })],
     [
-      'museNameOf',
-      museNameOf,
-      JSON.stringify({
-        payload_type: 'session.name.changed',
-        payload: { new_name: 'n', source: 'user' }
-      })
+      museLog.compactionStarts,
+      line('runtime.command.accepted', { command_kind: 'context.compact.manual' })
     ],
     [
-      'renamedTo',
-      renamedTo,
-      JSON.stringify({
-        payload_type: 'session.name.changed',
-        payload: { new_name: 'n', source: 'user' }
-      })
-    ],
-    ['startsATurnByItself', startsATurnByItself, queued({ source: 'scheduled', job_id: 'j1' })],
-    ['firedJob', firedJob, queued({ source: 'scheduled', job_id: 'j1' })],
-    ['finishedWork', finishedWork, queued({ source: 'background_task_terminal' })],
-    [
-      'compactionStarts',
-      compactionStarts,
-      JSON.stringify({
-        payload_type: 'runtime.command.accepted',
-        payload: { command_kind: 'context.compact.manual' }
-      })
-    ],
-    [
-      'compactionEnds',
-      compactionEnds,
-      JSON.stringify({
-        payload_type: 'context.compact.manual.outcome',
-        payload: { terminal_outcome: 'compacted' }
-      })
+      museLog.compactionEnds,
+      line('context.compact.manual.outcome', { terminal_outcome: 'compacted' })
     ]
   ]
+  const readersARemoteTabLeavesToItsHooks = ['replyIn', 'turnEndedIn']
+  const notReaders = [
+    'museHome',
+    'museConfigHome',
+    'museSessionLog',
+    'logRecord',
+    'lastCompletedText',
+    'runEvent',
+    'LineTail',
+    'SessionLogTail',
+    'textOfLogLine',
+    'saidInLog'
+  ]
 
-  it.each(readersARemoteTabActsOn)(
+  it.each(readersARemoteTabActsOn.map(([reader, l]) => [reader.name, reader, l] as const))(
     'a record %s acts on reaches a remote tab, because its line carries one of the marks the wrapper looks for',
-    (_name, reader, line) => {
-      expect(reader(logRecord(line)!)).toBeTruthy()
-      expect(wrapperMarks.some((mark) => line.includes(mark))).toBe(true)
+    (_name, reader, l) => {
+      expect(reader(museLog.logRecord(l)!)).toBeTruthy()
+      expect(wrapperMarks.some((mark) => l.includes(mark))).toBe(true)
     }
   )
+
+  it('every function the session-log module exports is a reader checked above, a reader a remote tab leaves to its hooks, or no reader at all', () => {
+    const exported = Object.entries(museLog)
+      .filter(([, v]) => typeof v === 'function')
+      .map(([name]) => name)
+    expect(exported.sort()).toEqual(
+      [
+        ...readersARemoteTabActsOn.map(([reader]) => reader.name),
+        ...readersARemoteTabLeavesToItsHooks,
+        ...notReaders
+      ].sort()
+    )
+  })
 })
 
 describe('muse-hook.sh, the hook a remote Muse tab runs', () => {
