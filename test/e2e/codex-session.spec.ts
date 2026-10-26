@@ -624,6 +624,8 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(JSON.parse(preset!.slice('tui.status_line='.length))).toEqual(
         expect.arrayContaining([
           'context-used',
+          'five-hour-limit',
+          'weekly-limit',
           'git-branch',
           'model-with-reasoning',
           'current-dir'

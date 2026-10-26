@@ -372,8 +372,30 @@ unless marked.
   account, worktree, plan and usage return no matches.
 - `five-hour-limit` and `weekly-limit` are described as **remaining** usage on the
   primary and secondary limit. On the unauthenticated home both are omitted; the
-  picker preview's `primary 0% · secondary 0%` is sample text. What they show on a
-  signed-in home was not checked.
+  picker preview's `primary 0% · secondary 0%` is sample text.
+- **What `five-hour-limit` and `weekly-limit` draw.** Checked 2026-10-26 on 0.162.0, no
+  real login: a TUI started as `--remote ws://…` against a small relay in front of an
+  `app-server --listen ws://…` on a scratch `CODEX_HOME` (API-key `auth.json`, a local
+  fake Responses server). The relay answered `account/read` as a ChatGPT `pro` account,
+  answered the TUI's own `account/rateLimits/read` (sent once at startup) in section 15's
+  shape, and later pushed `account/rateLimits/updated`. The PTY output was decoded with
+  pyte.
+  - Primary `{usedPercent: 25, windowDurationMins: 300}`, secondary `{usedPercent: 60,
+    windowDurationMins: 10080}`: the footer read `Context 0% used · 5h 75% left · weekly
+    40% left · …` from the startup read, and kept it after a turn.
+  - The items pick a window by its length, not its slot: with only a primary
+    `{usedPercent: 85, windowDurationMins: 10080}` (the shape section 15 measured on a Pro
+    login), `weekly-limit` alone drew `weekly 15% left` and `five-hour-limit` alone drew
+    nothing.
+  - `account/rateLimits/read` answering `-32600` (signed out, or an API-key login): both
+    omitted, no warning, the turn ran.
+  - Neither item takes an "Ignored invalid status line items" warning. Below 25% left,
+    Codex adds its own "Heads up, you have less than 25% of your weekly limit left"
+    warning and a line above the composer; that comes with the data, not with the items.
+  - At 100 columns, `context-used, five-hour-limit, weekly-limit, …` kept both limits
+    and cut `current-dir` with an ellipsis.
+  - `x-codex-primary-*` / `x-codex-secondary-*` headers on a custom provider's responses
+    (API-key login) did not fill either item.
 - `branch-changes` counts **committed** changes against the default branch only: an
   uncommitted edit showed `No changes`, the same edit committed showed `+2 -0`. It is
   not a substitute for working-directory change counts.
