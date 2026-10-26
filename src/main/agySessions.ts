@@ -177,7 +177,7 @@ interface AgyRun extends StoredRun {
   dir?: string
   remote?: { host: string; tmuxName: string }
   shown?: string
-  shownBeforeBind?: string
+  promptBeforeBind?: boolean
   log: LineTail
   title?: AgyTitleState
   givenTitle?: string
@@ -921,7 +921,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!run || run.explicitStop || states.length === 0) return
     run.log.read()
     if (!run.info) {
-      run.shownBeforeBind = states[states.length - 1].state
+      run.promptBeforeBind = states[states.length - 1].state === 'idle'
       this.deps.pty.wakeReady(tabId)
       return
     }
@@ -931,7 +931,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   // AGY§8 AGY§10
   showsPromptBeforeBind(tabId: string): boolean {
     const run = this.runs.get(tabId)
-    return !!run && !run.info && !run.explicitStop && run.shownBeforeBind === 'idle'
+    return !!run && !run.info && !run.explicitStop && !!run.promptBeforeBind
   }
 
   private emitState(run: AgyRun, status: ProgramStatus): void {

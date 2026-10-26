@@ -95,7 +95,6 @@ export interface Destination {
   name: string
   liveTab(): string | undefined
   open(): Promise<string>
-  firstWordsComing(tab: string): void
   typeCommand(tab: string, command: string): Promise<void>
   seen(messageId: string): void
 }
@@ -364,8 +363,15 @@ export class DiscordRelay {
     const answer = item.fromDiscord ? (item.command ? 'turn' : 'message') : undefined
     if (answer) this.answersDiscord(tab, answer)
     if (item.quiet) this.quietTurns.add(tab)
+    const first = !this.d.boundKey(tab)
     try {
       await this.hand(dest, tab, item, text)
+      // AGY§8
+      if (
+        first &&
+        !(await this.d.ready(tab, () => !!this.d.boundKey(tab), BUTLER_GETS_READY_WITHIN_MS))
+      )
+        throw new Error(`${dest.name} closed before it took this.`)
     } catch (error) {
       if (answer) this.answering.delete(tab)
       if (item.quiet) this.quietTurns.delete(tab)
@@ -403,7 +409,6 @@ export class DiscordRelay {
   private async readyTab(dest: Destination): Promise<string> {
     const already = dest.liveTab()
     const tab = await dest.open()
-    dest.firstWordsComing(tab)
     if (!(await this.d.ready(tab, () => this.typable(tab), BUTLER_GETS_READY_WITHIN_MS)))
       throw new Error(
         this.d.alive(tab)
@@ -427,9 +432,14 @@ export class DiscordRelay {
     )
   }
 
+  // AGY§8
   takesCommand(tab: string): boolean {
     return (
-      this.typable(tab) && this.d.turnOver(tab) && !this.dialogOpen(tab) && this.d.queueDrained(tab)
+      this.d.showsPromptBeforeBind(tab) ||
+      (this.typable(tab) &&
+        this.d.turnOver(tab) &&
+        !this.dialogOpen(tab) &&
+        this.d.queueDrained(tab))
     )
   }
 

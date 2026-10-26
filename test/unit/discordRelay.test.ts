@@ -22,6 +22,7 @@ import { waitingForAnswer } from '../../src/shared/slashCommands'
 const OWNER = '555'
 const CHANNEL = '222'
 const TAB = 'pty-x-1'
+const READY_POLLED_TWICE_MS = 120
 
 let dir: string
 beforeEach(() => {
@@ -52,7 +53,6 @@ function setup(
     name: 'Assist',
     liveTab: () => TAB,
     open: async () => TAB,
-    firstWordsComing: () => undefined,
     typeCommand: async (_t, command) => void commands.push(command),
     seen: (id) => void last.push(id),
     ...dest
@@ -931,26 +931,35 @@ describe('DiscordRelay: Koloft telling a conductor something', () => {
 
 // AGY§8
 describe('DiscordRelay: an Antigravity butler that has no conversation yet', () => {
-  it('holds the butler to its start deadline at once, and types an owner message as its first prompt as soon as it shows its prompt, without waiting for a bind', async () => {
+  it('types an owner message as its first prompt as soon as it shows its prompt, without waiting for a bind, and types the next one only once that bound it', async () => {
     let prompt = false
-    const coming: string[] = []
-    const { relay, writes } = setup(
-      {},
-      [],
-      {
-        backendOf: () => 'agy',
-        boundKey: () => undefined,
-        status: () => undefined,
-        showsPromptBeforeBind: () => prompt
-      },
-      { firstWordsComing: (tab) => void coming.push(tab) }
-    )
+    let key: string | undefined
+    const { relay, writes, reactions } = setup({}, [], {
+      backendOf: () => 'agy',
+      boundKey: () => key,
+      status: () => (key ? 'working' : undefined),
+      showsPromptBeforeBind: () => prompt && !key
+    })
     relay.onMessage(message('701', OWNER, 'what is on today'))
-    await vi.waitFor(() => expect(coming).toEqual([TAB]))
+    relay.onMessage(message('702', OWNER, 'and tomorrow'))
+    await new Promise((r) => setTimeout(r, READY_POLLED_TWICE_MS))
     expect(writes).toEqual([])
     prompt = true
     await vi.waitFor(() =>
       expect(writes.map((w) => w.data)).toEqual(['[Discord] what is on today', '\r'])
     )
+    await new Promise((r) => setTimeout(r, READY_POLLED_TWICE_MS))
+    expect(writes).toHaveLength(2)
+    expect(reactions).not.toContain('701 +✅')
+    key = 'agy:local:conv-1'
+    await vi.waitFor(() =>
+      expect(writes.map((w) => w.data)).toEqual([
+        '[Discord] what is on today',
+        '\r',
+        '[Discord] and tomorrow',
+        '\r'
+      ])
+    )
+    expect(reactions).toContain('701 +✅')
   })
 })

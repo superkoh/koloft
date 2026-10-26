@@ -4,11 +4,11 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
   agySessionCalls,
+  agyTranscriptOf,
   installAgy,
   installCodex,
   installGhForWorkspaceA,
   installMuse,
-  ownersGemini,
   trustInAgy,
   museCalls,
   museSaid,
@@ -198,16 +198,7 @@ async function connected(
 
 // AGY§8
 function agyPrompts(env: E2EEnv, conversationId: string): string {
-  const file = path.join(
-    ownersGemini(env),
-    'antigravity-cli',
-    'brain',
-    conversationId,
-    '.system_generated',
-    'logs',
-    'transcript.jsonl'
-  )
-  return fileText(file)
+  return agyTranscriptOf(env, conversationId)
     .split('\n')
     .filter(Boolean)
     .map((l) => JSON.parse(l) as { type: string; content?: string })

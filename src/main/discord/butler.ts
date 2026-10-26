@@ -47,6 +47,7 @@ export interface ButlerDeps {
   rowsChanged(): void
   toast(text: string): void
   notice(text: string): Promise<boolean>
+  showsPromptBeforeBind(tabId: string): boolean
   bindDeadlineMs: number
 }
 
@@ -232,9 +233,13 @@ export class Butler {
     this.d.save(this.discord)
   }
 
-  open(firstPrompt?: string): Promise<ConductorOpenResult> {
+  async open(firstPrompt?: string): Promise<ConductorOpenResult> {
     this.opening ??= this.openNow(firstPrompt).finally(() => (this.opening = undefined))
-    return this.opening
+    const opened = await this.opening
+    // AGY§8
+    if (opened.ok && firstPrompt && this.firstWordsComing(opened.tabId))
+      void this.d.notice(firstPrompt)
+    return opened
   }
 
   private launchFor(backend: BackendId): ButlerLaunch {
@@ -293,18 +298,15 @@ export class Butler {
     // AGY§8
     if (started && !firstPrompt && conversationAtFirstPrompt(launch.backend))
       this.waitingForWords = tabId
-    else this.armDeadline(tabId, launch.title)
+    this.armDeadline(tabId, launch.title)
     return { ok: true, tabId }
   }
 
-  awaitsFirstWords(tabId: string): boolean {
-    return tabId === this.waitingForWords
-  }
-
-  firstWordsComing(tabId: string): void {
-    if (tabId !== this.waitingForWords) return
+  firstWordsComing(tabId: string): boolean {
+    if (tabId !== this.waitingForWords) return false
     this.waitingForWords = undefined
     this.armDeadline(tabId, this.d.butler().name)
+    return true
   }
 
   // CC§23 CODEX§17 MUSE§9 AGY§8
@@ -316,9 +318,15 @@ export class Butler {
   }
 
   private armDeadline(tabId: string, title: string): void {
+    clearTimeout(this.deadlines.get(tabId))
     const timer = setTimeout(() => {
       this.deadlines.delete(tabId)
       if (this.resident !== tabId) return
+      // AGY§8 AGY§10
+      if (this.d.showsPromptBeforeBind(tabId)) {
+        this.waitingForWords = tabId
+        return
+      }
       this.stopResident()
       this.d.toast(`${title} did not start.`)
     }, this.d.bindDeadlineMs)

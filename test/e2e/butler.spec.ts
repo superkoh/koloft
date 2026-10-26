@@ -544,22 +544,18 @@ test.describe('The butler: one global session at the top of the sessions list, k
   })
 
   // AGY§5 AGY§8
-  test('an Antigravity butler stuck on a setup screen at launch is closed as "did not start" once words are sent to it, not before', async ({
+  test('an Antigravity butler opened from the sidebar that is stuck on a setup screen is closed at the start deadline as "did not start", with nothing said to it', async ({
     env
   }) => {
     installAgy(env)
     fs.writeFileSync(path.join(env.home, 'fake-agy-stuck-in-setup'), '')
     env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = String(SHORT_BIND_DEADLINE_MS)
-    const { app, page, close } = await launched(env, AGY_EVERYWHERE)
+    const { page, close } = await launched(env, { assist: { on: true, backend: 'agy' } })
     try {
       await butlerRow(page).click()
       await expect(butlerRow(page)).toHaveClass(/\bactive\b/, { timeout: 60_000 })
-      await page.waitForTimeout(SHORT_BIND_DEADLINE_MS + DEADLINE_FIRED_SETTLE_MS)
-      await expectNoToastAtAnyMomentOfAWindow(page)
-
-      await askInPalette(app, page, 'turn on dark mode')
       await expect(page.locator('.toast', { hasText: 'Alfred did not start.' })).toBeVisible({
-        timeout: SHORT_BIND_DEADLINE_MS * 4
+        timeout: SHORT_BIND_DEADLINE_MS * 3
       })
       expect(butlerSessionOnDisk(env)?.sessionIds ?? []).toEqual([])
     } finally {

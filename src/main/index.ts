@@ -3160,6 +3160,7 @@ app.whenReady().then(() => {
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer(CH.cron.toast, text),
     notice: async (text) => (await discordRelay?.tellQuietly(butlerDestination(), text)) ?? false,
+    showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
   const discordLockFile = path.join(userData, 'discord.lock')
@@ -3330,9 +3331,7 @@ app.whenReady().then(() => {
     },
     butlerBusy: () => {
       const tab = butlerNow.liveTab()
-      return (
-        relay.delivering() || (!!tab && !relay.takesCommand(tab) && !showsPromptBeforeBind(tab))
-      )
+      return relay.delivering() || (!!tab && !relay.takesCommand(tab))
     },
     tell: (text) => relay.tellQuietly(butlerDestination(), text),
     now: Date.now,
@@ -4883,9 +4882,9 @@ function butlerDestination(): Destination {
       const opened = await butler?.open()
       if (!opened) throw new Error(STILL_STARTING)
       if (!opened.ok) throw new Error(opened.error)
+      butler?.firstWordsComing(opened.tabId)
       return opened.tabId
     },
-    firstWordsComing: (tabId) => butler?.firstWordsComing(tabId),
     typeCommand: async (tabId, command) => {
       const channelId = butler?.channel()?.channelId
       if (!channelId) throw new Error(NO_CHANNEL_BOUND)
@@ -4929,8 +4928,6 @@ async function startHelper(
   const opened = await butler?.open(A_HELPER_HAS_IT)
   if (!opened) return { ok: false, error: STILL_STARTING }
   if (!opened.ok) return opened
-  if (butler?.awaitsFirstWords(opened.tabId))
-    discordRelay?.tell(butlerDestination(), A_HELPER_HAS_IT)
   const parent = (await tabReady(opened.tabId, cronBindDeadlineMs(), false))
     ? sessionOfTab(opened.tabId)
     : undefined
