@@ -871,6 +871,18 @@ Nothing ran against Google's real servers.
 - `--effort low|medium|high|xhigh|max`, but each model allows fewer (3.1 Pro: low and
   high; `xhigh` exits 1). It becomes `thinkingBudget`: low 1024 (Pro) / 1000 (Flash),
   high −1.
+- 1.4.7 (2026-10-26, Linux arm64 in Docker, `--network none`, fake Gemini server, one
+  `agy -p` per model and effort, exit code and request read): `agy models` adds
+  `gemini-4-argon-{high,medium,low}` (14 rows, the rest as above). Every model refuses
+  `xhigh` and `max` before any request, exit 1, `error: invalid model selection
+  (--model "<m>" --effort "<e>"): <base> has no "<e>" effort (available: …)`.
+  `gemini-3.1-pro` (also the default, `--model` left out) takes low and high, not
+  medium; `gemini-4-argon`, `gemini-3.8-flash` and `gemini-3.6-flash` take low, medium
+  and high. Argon sends `thinkingLevel` (`LOW`/`MEDIUM`/`HIGH`, `MEDIUM` with no
+  `--effort`) instead of `thinkingBudget`; Flash with no `--effort` is medium (4000).
+  An id that names its effort (`gemini-3.1-pro-high`, `gemini-4-argon-low`) runs with
+  no `--effort` or the same one, and exits 1 on any other: `--model <id> conflicts with
+  --effort=<e>`.
 - On the Google route the list comes from `fetchAvailableModels`; an empty answer
   gives `no model configuration is available for this account`, and the real shape
   is not probed.

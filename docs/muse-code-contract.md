@@ -38,6 +38,13 @@ so; the model's own shell tool was checked against those on macOS with the fake 
 - Options Koloft uses: `--model <id>`, `--reasoning-effort
   none|minimal|low|medium|high|xhigh|max|ultra`, `--trust-workspace` (§10), and the
   approval and sandbox flags of §15. `--model` is refused with `--provider echo`.
+- **No model names without a login.** The models come from the provider's catalog
+  (`GET /muse-code/models` on the fake server; "failed to fetch model catalog", §13),
+  and this Mac has no Meta login, so which ids a real account gets is **not probed
+  yet**. `muse model-profile show <model>` (1.4.11, Docker, 2026-10-26) answers for any
+  name, `nope-model` too, so it names nothing; its help gives `muse-spark-1.3` as the
+  example, and `muse-spark-1.2` and `muse-spark-1.3` (with `-internal` and
+  `-contributor` forms) are the only `muse-spark-*` strings in the binary.
 - `-c KEY=JSON` sets one setting for the run; an unknown key refuses the run.
   `-c run.developer_prompt="…"` reaches the model, but only until `/clear` (macOS
   measured: the second session's request carried no developer prompt). Koloft hands

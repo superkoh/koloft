@@ -29,13 +29,16 @@ import {
   oncePassed,
   whenLine
 } from '@shared/cronHistory'
+import { effortsFor, NAMED_MODELS, namedModel } from '@shared/cronModels'
 import {
   emptyFields,
+  modelValue,
   permissionAfterSwitch,
   fieldsToSchedule,
   scheduleToFields,
   suggest,
   validate,
+  withAllowedEffort,
   type JobFields,
   type WhenKind
 } from '../cronForm'
@@ -66,20 +69,11 @@ const WHEN_CHIPS: { kind: WhenKind; label: string }[] = [
 const AFTER_HINT =
   'The wait starts when a run\'s tab is gone. With "Leave it open", that is when you close it.'
 
-const MODEL_CHIPS: { value: JobFields['model']; label: string }[] = [
+const modelChips = (backend: BackendId): { value: string; label: string }[] => [
   { value: '', label: 'Default' },
-  { value: 'fable', label: 'Fable' },
-  { value: 'opus', label: 'Opus' },
-  { value: 'sonnet', label: 'Sonnet' },
+  ...NAMED_MODELS[backend].map((m) => ({ value: m.id, label: m.label })),
   { value: 'other', label: 'Other…' }
 ]
-
-const MODEL_CHIPS_OF: Record<BackendId, typeof MODEL_CHIPS> = {
-  claude: MODEL_CHIPS,
-  codex: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other'),
-  muse: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other'),
-  agy: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other')
-}
 
 const EFFORT_CHIPS: { value: JobFields['effort']; label: string }[] = [
   { value: '', label: 'Same as usual' },
@@ -238,21 +232,20 @@ export function CronJobsDialog({
 
   const edit = (job: CronJob): void => {
     const f = emptyFields(cronBackend(job))
-    setFields({
-      ...f,
-      ...scheduleToFields(job.schedule),
-      name: job.name,
-      task: job.task,
-      model: !job.model
-        ? ''
-        : job.model === 'fable' || job.model === 'opus' || job.model === 'sonnet'
-          ? job.model
-          : 'other',
-      modelOther: job.model && !['fable', 'opus', 'sonnet'].includes(job.model) ? job.model : '',
-      effort: job.effort ?? '',
-      permission: job.permission,
-      autoClose: job.autoClose === true
-    })
+    const named = !job.model || namedModel(f.backend, job.model) !== undefined
+    setFields(
+      withAllowedEffort({
+        ...f,
+        ...scheduleToFields(job.schedule),
+        name: job.name,
+        task: job.task,
+        model: named ? (job.model ?? '') : 'other',
+        modelOther: named ? '' : (job.model ?? ''),
+        effort: job.effort ?? '',
+        permission: job.permission,
+        autoClose: job.autoClose === true
+      })
+    )
     setTouched(false)
     setServerErrors([])
     setAutoCloseBeforeAfter(null)
@@ -270,7 +263,7 @@ export function CronJobsDialog({
   const patch = (p: Partial<JobFields>): void => {
     setTouched(true)
     setServerErrors([])
-    setFields((f) => ({ ...f, ...p }))
+    setFields((f) => withAllowedEffort({ ...f, ...p }))
   }
 
   const editing = form?.mode === 'edit' ? jobs.find((j) => j.id === form.id) : undefined
@@ -420,7 +413,8 @@ export function CronJobsDialog({
   const stepKind = isStepKind(fields.whenKind)
 
   const label = BACKEND_LABEL[fields.backend]
-  const modelChips = MODEL_CHIPS_OF[fields.backend]
+  const efforts = effortsFor(fields.backend, modelValue(fields))
+  const effortChips = EFFORT_CHIPS.filter((c) => c.value === '' || efforts.includes(c.value))
 
   const permissionHint =
     (settings.skipPermissions
@@ -457,7 +451,7 @@ export function CronJobsDialog({
                     patch({
                       backend: b,
                       permission: permissionAfterSwitch(fields, b),
-                      ...(MODEL_CHIPS_OF[b].some((c) => c.value === fields.model)
+                      ...(fields.model === 'other' || namedModel(b, fields.model)
                         ? {}
                         : { model: '' })
                     })
@@ -641,7 +635,7 @@ export function CronJobsDialog({
       <span className="flabel">Model</span>
       <div className="fcol">
         <div className="chips">
-          {modelChips.map((c) => (
+          {modelChips(fields.backend).map((c) => (
             <button
               key={c.label}
               className={'chip' + (fields.model === c.value ? ' on' : '')}
@@ -671,7 +665,7 @@ export function CronJobsDialog({
       <span className="flabel">Thinking</span>
       <div className="fcol">
         <div className="chips">
-          {EFFORT_CHIPS.map((c) => (
+          {effortChips.map((c) => (
             <button
               key={c.label}
               className={'chip' + (fields.effort === c.value ? ' on' : '')}

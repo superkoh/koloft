@@ -11,6 +11,7 @@ import type {
 import { CRON_SAVE_MESSAGES as M } from '@shared/cronMessages'
 import { hasWordChar, isValidModelName, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { nextDue } from '@shared/cronHistory'
+import { effortsFor } from '@shared/cronModels'
 import { localDayKey } from '@shared/usageFormat'
 import {
   describeWhen,
@@ -34,7 +35,7 @@ export interface JobFields {
   days: number[]
   n: number
   unit: 'minutes' | 'hours'
-  model: '' | 'fable' | 'opus' | 'sonnet' | 'other'
+  model: string
   modelOther: string
   effort: '' | CronEffort
   permission: CronPermission
@@ -94,6 +95,12 @@ export function modelValue(f: JobFields): string | undefined {
   if (f.model === '') return undefined
   if (f.model === 'other') return f.modelOther.trim()
   return f.model
+}
+
+export function withAllowedEffort(f: JobFields): JobFields {
+  return f.effort && !effortsFor(f.backend, modelValue(f)).includes(f.effort)
+    ? { ...f, effort: '' }
+    : f
 }
 
 export type ValidateResult =

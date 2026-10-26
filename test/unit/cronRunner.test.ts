@@ -1504,6 +1504,16 @@ describe('CronRunner.save — the same rules the form uses', () => {
       'a model with a space in it',
       { model: 'gpt 4' },
       'Use letters, digits, dots, colons, dashes or underscores.'
+    ],
+    [
+      'an Antigravity thinking level its default model would exit on',
+      { backend: 'agy', effort: 'medium' },
+      'This model does not take that thinking level.'
+    ],
+    [
+      'any thinking level beside an Antigravity model id that already names one',
+      { backend: 'agy', model: 'gemini-3.1-pro-high', effort: 'high' },
+      'This model does not take that thinking level.'
     ]
   ]
 

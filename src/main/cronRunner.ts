@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
+import { effortsFor } from '@shared/cronModels'
 import {
   cronBackend,
   CRON_PERMISSIONS,
@@ -244,6 +245,9 @@ function saveErrors(
   else if (c.task.length > 4096) errs.push(CRON_SAVE_MESSAGES.taskLong)
   errs.push(...scheduleErrors(schedule, now, saved))
   if (c.model !== undefined && !isValidModelName(c.model)) errs.push(CRON_SAVE_MESSAGES.model)
+  if (c.effort && !effortsFor(c.backend, c.model).includes(c.effort)) {
+    errs.push(CRON_SAVE_MESSAGES.effort)
+  }
   return errs
 }
 
