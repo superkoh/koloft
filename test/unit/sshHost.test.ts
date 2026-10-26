@@ -433,11 +433,12 @@ describe('freshness of a checkout on the machine', () => {
   })
 })
 
-const unreachable = async (): Promise<BytesResult> => ({
-  code: 255,
+const sshFails = (code: number | null, stderr: string) => async (): Promise<BytesResult> => ({
+  code,
   stdout: Buffer.alloc(0),
-  stderr: 'ssh: connect to host devbox port 22: Operation timed out'
+  stderr
 })
+const unreachable = sshFails(255, 'ssh: connect to host devbox port 22: Operation timed out')
 
 describe("Claude's folder trust on the machine", () => {
   it('does not call a folder untrusted when the machine cannot be reached', async () => {
@@ -474,18 +475,9 @@ describe('a remote Workbench while the ssh link is down', () => {
 
   it('refuses a session start with ssh’s reason when the machine is out of reach, but not when it only needs someone to sign in, which the session tab is for, nor when ssh is merely slow', async () => {
     await expect(machine(unreachable).reachOrThrow()).rejects.toThrow('Operation timed out')
-    const needsPassword = async (): Promise<BytesResult> => ({
-      code: 255,
-      stdout: Buffer.alloc(0),
-      stderr: 'puser@devbox: Permission denied (publickey,password).'
-    })
+    const needsPassword = sshFails(255, 'puser@devbox: Permission denied (publickey,password).')
     await expect(machine(needsPassword).reachOrThrow()).resolves.toBeUndefined()
-    const slow = async (): Promise<BytesResult> => ({
-      code: null,
-      stdout: Buffer.alloc(0),
-      stderr: ''
-    })
-    await expect(machine(slow).reachOrThrow()).resolves.toBeUndefined()
+    await expect(machine(sshFails(null, '')).reachOrThrow()).resolves.toBeUndefined()
     await expect(machine().reachOrThrow()).resolves.toBeUndefined()
   })
 })
