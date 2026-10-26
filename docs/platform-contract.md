@@ -1267,8 +1267,8 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   marks it `prunable`. **`git worktree repair <path>`, run in the parent, writes the
   `.git` file back but exits non-zero** (`repair: .git file broken: <path>`); afterwards
   `status` lists the deleted files as ` D` and `git worktree remove --force` removes the
-  folder and its registration. A locked tree repairs the same way (pinned by a unit
-  test). (Measured 2026-10-26
+  folder and its registration. Once the registration under `.git/worktrees/<name>` is
+  gone too, `repair` cannot write the file back. (Measured 2026-10-26
   with the `.git` file deleted by hand, on git 2.54.0 macOS and git 2.39.5 Debian 12 in
   Docker, on a throwaway repo.)
 - **The mtime of `<repo>/.git/worktrees` moves when a linked worktree is added, removed
