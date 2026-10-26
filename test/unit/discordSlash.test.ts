@@ -139,6 +139,38 @@ describe('a slash command typed into a session', () => {
     )
   })
 
+  it('a built-in command’s clean details still win when the session flashed to working while it ran', async () => {
+    const { slash, posts, setStatus } = setup()
+    await slash.typeWhenIdle(child, '/context', CHANNEL)
+    slash.output(TAB, { kind: 'printed', text: 'Context Usage 14%' })
+    slash.output(TAB, { kind: 'details', text: '## Context Usage\n**Tokens:** 28.5k / 200k' })
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([
+      '⌨️ **fix-login** ran /context:\n## Context Usage\n**Tokens:** 28.5k / 200k'
+    ])
+  })
+
+  it('a custom command’s expanded prompt is never posted as its result: the card is its turn’s reply, or Done.', async () => {
+    const { slash, posts, setStatus } = setup()
+    await slash.typeWhenIdle(child, '/review', CHANNEL)
+    slash.output(TAB, { kind: 'details', text: 'Review the changes on this branch.' })
+    setStatus('working')
+    slash.turnEnded(TAB, { said: [], reply: 'All good.', at: Date.now() })
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    await slash.typeWhenIdle(child, '/review', CHANNEL)
+    slash.output(TAB, { kind: 'details', text: 'Review the changes on this branch.' })
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS)
+    expect(posts).toEqual([
+      '⌨️ **fix-login** ran /review:\nAll good.',
+      '⌨️ **fix-login** ran /review:\nDone.'
+    ])
+  })
+
   it('waits for a turn the command started and posts its reply', async () => {
     const { slash, posts, setStatus } = setup()
     await slash.typeWhenIdle(child, '/review', CHANNEL)

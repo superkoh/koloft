@@ -121,7 +121,9 @@ function screenShot(lines: string[] | undefined): string | undefined {
 function resultCard(p: Pending, screen: string[] | undefined): Card | undefined {
   const details = p.outputs.filter((o) => o.kind === 'details').map((o) => o.text)
   const printed = p.outputs.filter((o) => o.kind !== 'details').map((o) => o.text)
-  const said = details.length && !p.worked ? details : printed
+  // CC§2
+  const builtIn = p.outputs.some((o) => o.kind === 'printed')
+  const said = details.length && (builtIn || !p.worked) ? details : printed
   const body: string[] = []
   if (p.newKey) body.push(`It is a new conversation now, with the id ${p.newKey}.`)
   if (p.reply && !p.target.butler) body.push(p.reply)
