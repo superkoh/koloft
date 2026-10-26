@@ -1839,7 +1839,14 @@ const utilTerminalPicks: Record<
 > = {
   codex: () => {
     const picked = pickCodexHome()
-    return picked && { ...picked, warning: picked.notice }
+    return (
+      picked && {
+        account: picked.account,
+        home: picked.home,
+        banner: picked.banner,
+        warning: picked.notice
+      }
+    )
   },
   muse: () => {
     const picked = pickMuseHome()
@@ -1858,8 +1865,8 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   const id = reqName.slice('req-'.length).replace(/\.json$/, '')
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
   const resPath = path.join(pickDir, `res-${id}.json`)
-  const backend = obj.backend
-  if (backend === 'codex' || backend === 'muse' || backend === 'agy') {
+  const backend = backendIdOf(obj.backend)
+  if (backend && backend !== 'claude') {
     let picked: UtilTerminalPick | undefined
     try {
       picked = utilTerminalPicks[backend]()

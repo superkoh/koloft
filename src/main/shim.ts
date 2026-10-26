@@ -141,12 +141,14 @@ const CODEX_SUBCOMMANDS_WITHOUT_A_TUI = [
   'help'
 ].join('|')
 
+const HELP_OR_VERSION = '-h|--help|-V|--version'
+
 function utilTerminalRefusesInteractive(
   label: string,
   flagsFollowedByAValue: string,
   subcommandsWithoutATui: string,
   hint: string,
-  flagsWithoutATui = '-h|--help|-V|--version'
+  flagsWithoutATui = HELP_OR_VERSION
 ): string {
   return `if [ "$KOLOFT_UTIL" = "1" ]; then
   utilok=0
@@ -280,8 +282,13 @@ const GUARDED_OUTSIDE_THE_CLAUDE_SHIM = (
   Object.keys(UTIL_TERMINAL_REFUSAL) as (keyof typeof UTIL_TERMINAL_REFUSAL)[]
 ).filter((tool): tool is GuardedTool => tool !== 'claude')
 
-function execNextOnPath(bin: string): string {
-  return `self=$(cd "$(dirname "$0")" && pwd)
+export function utilTerminalGuard(
+  bin: keyof typeof UTIL_TERMINAL_REFUSAL,
+  accountPick = ''
+): string {
+  return `#!/bin/sh
+${UTIL_TERMINAL_REFUSAL[bin]}
+${accountPick}self=$(cd "$(dirname "$0")" && pwd)
 IFS=:
 set -f
 for d in $PATH; do
@@ -291,12 +298,6 @@ done
 echo "${bin}: not found" >&2
 exit 127
 `
-}
-
-export function utilTerminalGuard(bin: keyof typeof UTIL_TERMINAL_REFUSAL): string {
-  return `#!/bin/sh
-${UTIL_TERMINAL_REFUSAL[bin]}
-${execNextOnPath(bin)}`
 }
 
 // ADR-0030
@@ -353,7 +354,7 @@ const UTIL_TERMINAL_ACCOUNT: Record<GuardedTool, { reachesTheModel: string; useI
   codex: {
     reachesTheModel: 'case "$sub" in exec|e|review|apply|a|app-server|mcp-server) pick=1 ;; esac',
     useIt: `unset CODEX_API_KEY OPENAI_API_KEY
-    ${exportsOf({ CODEX_HOME: '$phome' })}`
+    export CODEX_HOME="$phome"`
   },
   // MUSE§13
   muse: {
@@ -376,14 +377,12 @@ const UTIL_TERMINAL_ACCOUNT: Record<GuardedTool, { reachesTheModel: string; useI
   }
 }
 
-function utilTerminalAccountShim(bin: GuardedTool): string {
+function utilTerminalAccountPick(bin: GuardedTool): string {
   const { reachesTheModel, useIt } = UTIL_TERMINAL_ACCOUNT[bin]
-  return `#!/bin/sh
-${UTIL_TERMINAL_REFUSAL[bin]}
-if [ "$KOLOFT_UTIL" = "1" ]; then
+  return `if [ "$KOLOFT_UTIL" = "1" ]; then
   pick=0
   ${reachesTheModel}
-  for a in "$@"; do case "$a" in -h|--help|-V|--version) pick=0 ;; esac; done
+  for a in "$@"; do case "$a" in ${HELP_OR_VERSION}) pick=0 ;; esac; done
   if [ "$pick" = "1" ]; then
 ${NEWID_FN}
 ${PICK_ACCOUNT_FNS}
@@ -396,7 +395,7 @@ ${PICK_ACCOUNT_FNS}
     [ -n "$pwarn" ] && printf '%s\\n' "$pwarn" >&2
   fi
 fi
-${execNextOnPath(bin)}`
+`
 }
 
 const SHIM_SCRIPT = `#!/usr/bin/env bash
@@ -649,7 +648,10 @@ export function setupShim(gitAuthDir: string, butlerFolder: string): ShimPaths {
     const guardPath = path.join(shimDir, tool)
     fs.writeFileSync(
       guardPath,
-      utilTerminalAccountShim(tool).replaceAll('__KOLOFT_KEYCHAIN_NS__', ns),
+      utilTerminalGuard(tool, utilTerminalAccountPick(tool)).replaceAll(
+        '__KOLOFT_KEYCHAIN_NS__',
+        ns
+      ),
       { mode: 0o755 }
     )
     fs.chmodSync(guardPath, 0o755)
