@@ -1735,7 +1735,8 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   the box. `/diff` runs git through `command/exec` and opens a pager that Esc does not
   close and `q` does. `/status` shows its answer only on the screen (it only calls
   `account/rateLimits/read`).
-- **What a slash command prints lands in no store Koloft can read** (2026-10-26, Codex CLI
+- **What a slash command prints is written to no file; only `/diff`'s text crosses the
+  wire** (2026-10-26, Codex CLI
   0.162.0, a real `codex --remote` TUI in a python pty, 120×40, the screen read through
   `pyte`, on a Node relay in front of `codex app-server --stdio` that logged every line; a
   temporary `CODEX_HOME` whose model was a fake Responses-API server on localhost, no
@@ -1748,8 +1749,7 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   `command/exec` requests (`git rev-parse --is-inside-work-tree`, two `git config` reads,
   `git … diff --no-textconv --no-ext-diff --submodule=short --ignore-submodules=dirty
   --color`, `git ls-files --others --exclude-standard`), and the `diff` reply's `stdout`
-  held the diff the pager showed, colour codes included. `/approvals` is not a command on
-  0.162.0 ("Unrecognized command").
+  held the diff the pager showed, colour codes included.
 - **Esc at an idle prompt**: one shows "esc again to edit previous message"; a second
   one opens "Browsing transcript", where Enter rewinds.
 - **Queued messages and idle**: two `thread/queue/add` sent during a turn ran as two

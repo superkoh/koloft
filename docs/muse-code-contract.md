@@ -587,5 +587,4 @@ butler's to-do method, which names the files each agent reads.
   `muse serve --provider echo` returned for `session/read` and `view/page {limit: 1000}`;
   the prompt and its echoed reply were in every one of them.
 - **`/diff` is not a Muse command.** Typed the same way, it went to the model as a prompt:
-  a `userMessage` "/diff" and the reply "echo: /diff". The `/` menu lists 52 commands, the
-  first ones `/bug`, `/clear`, `/compact`, `/copy`, `/deep-research`, `/effort`, `/export`.
+  a `userMessage` "/diff" and the reply "echo: /diff".
