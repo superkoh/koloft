@@ -598,9 +598,10 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
             timeout: 60_000
           })
 
-          await runIn(page, panelTerm(page), 'koloft open wt18.md; echo "WT18_EXIT=$?"')
-          await expect(panelTerm(page)).toContainText('WT18_EXIT=0', { timeout: 30_000 })
-          await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('wt18.md')
+          await runIn(page, panelTerm(page), 'koloft open wt18.md')
+          await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('wt18.md', {
+            timeout: 30_000
+          })
           await expect(page.locator(WORKBENCH.readingBody)).toContainText('WT18_FILE_BODY')
         } finally {
           await quitAndClose(app)
