@@ -3593,6 +3593,9 @@ setQuitAsk(askQuit)
 
 let storedQuitPending = false
 let storedQuitStopped = false
+const TAB_HANGUP_GRACE_MS = 5000
+let tabsEnding = false
+let tabsEnded = false
 app.on('before-quit', (e) => {
   const decision = quitDecision(Date.now())
   if (decision === 'wait') {
@@ -3626,6 +3629,17 @@ app.on('before-quit', (e) => {
         )
       ).finally(() => {
         storedQuitStopped = true
+        app.quit()
+      })
+    }
+    return
+  }
+  if (!tabsEnded && ptyMgr.anyRunning()) {
+    e.preventDefault()
+    if (!tabsEnding) {
+      tabsEnding = true
+      void ptyMgr.endAll(TAB_HANGUP_GRACE_MS).finally(() => {
+        tabsEnded = true
         app.quit()
       })
     }

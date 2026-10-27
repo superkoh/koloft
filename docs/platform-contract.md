@@ -1926,6 +1926,14 @@ Gateway (the live connection that pushes events):
 - Measured 2026-10-09 on macOS 27.0.1 with a bare Electron 43.7.3 app (node-pty from the
   repo, no window): one pty child running `sh` with HUP/TERM traps, one detached `sh`
   helper, then `app.quit()` one second in.
+- **A pty program that ignores SIGHUP holds the app's quit for good.** While Node shuts
+  down, node-pty joins the thread that waits for the program to exit
+  (`SetupExitCallback` → `std::thread::join` in `pty.node`, seen with `sample`), so the
+  main process never exits while the program lives; JS timers no longer run by then.
+  Killing the program (SIGKILL) before the quit goes on is the only way out. Measured
+  2026-10-27 (Electron 43.8.1, node-pty 1.1.0, macOS 27.0) in the e2e app: a Workbench
+  shell running `trap '' HUP; exec sleep 600` kept Koloft up past 120 s, the same shell
+  without the trap quit in 88 ms.
 
 ## §42 A Node command-line tool run on Electron's own Node
 

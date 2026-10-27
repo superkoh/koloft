@@ -54,6 +54,7 @@ interface CreateArgs {
 }
 
 const UTIL_TITLE_POLL_MS = 1500
+const EXIT_CHECK_MS = 50
 
 const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
 
@@ -99,6 +100,7 @@ export class PtyManager extends EventEmitter {
   agentDir?: string
 
   private ptys = new Map<string, PtyHandle>()
+  private running = new Set<pty.IPty>()
   private readyWaiters = new Map<string, Set<() => void>>()
   private typing = new Map<string, Promise<void>>()
   private counter = 0
@@ -218,6 +220,7 @@ export class PtyManager extends EventEmitter {
       remoteHost: args.remoteHost
     }
     this.ptys.set(id, handle)
+    this.running.add(proc)
 
     let titlePoll: ReturnType<typeof setInterval> | undefined
 
@@ -258,6 +261,7 @@ export class PtyManager extends EventEmitter {
     })
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
+      this.running.delete(proc)
       if (titlePoll) clearInterval(titlePoll)
       for (const file of sourcedFiles) fs.rm(file, { force: true }, () => {})
       this.wakeReady(id)
@@ -388,6 +392,24 @@ export class PtyManager extends EventEmitter {
   clearResumeIntent(id: string): void {
     const h = this.ptys.get(id)
     if (h) h.resumeSessionId = undefined
+  }
+
+  anyRunning(): boolean {
+    return this.running.size > 0
+  }
+
+  // PLATFORM§41
+  async endAll(hangupGraceMs: number): Promise<void> {
+    const signal = (proc: pty.IPty, name?: string): void => {
+      try {
+        proc.kill(name)
+      } catch {}
+    }
+    for (const proc of this.running) signal(proc)
+    const deadline = Date.now() + hangupGraceMs
+    while (this.running.size > 0 && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, EXIT_CHECK_MS))
+    for (const proc of this.running) signal(proc, 'SIGKILL')
   }
 
   killUtilOrphans(): void {
