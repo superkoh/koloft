@@ -2675,13 +2675,21 @@ throwaway `HOME`, all `ANTHROPIC_*`, `CLAUDE*`, `KOLOFT_*` and `MCP_*` variables
 servers `globalprobe` (top-level `mcpServers` of `~/.claude.json`), `localprobe`
 (`projects["<A>"].mcpServers`) and `projectprobe` (`<A>/.mcp.json`).
 
-- **Folder A saw all three, folder B only `globalprobe`.** A plain sub-folder of A saw
-  `globalprobe` and `projectprobe` (`.mcp.json` is found by walking up), not
-  `localprobe`. `mcp get` labels them `User config (available in all your projects)`,
-  `Local config (private to you in this project)` and `Project config (shared via
-  .mcp.json)`.
+- **Folder A saw all three, folder B only `globalprobe`.** With A not a git repository,
+  a plain sub-folder of A saw `globalprobe` and `projectprobe` (`.mcp.json` is found by
+  walking up), not `localprobe`. `mcp get` labels them `User config (available in all
+  your projects)`, `Local config (private to you in this project)` and `Project config
+  (shared via .mcp.json)`.
 - **`claude mcp add --scope user`** writes the top-level `mcpServers`; without `--scope`
-  it writes `projects["<cwd>"].mcpServers` ("local").
+  it writes `projects["<key>"].mcpServers` ("local"), where `<key>` is the git top-level
+  of the cwd, the main checkout for a linked worktree, and the cwd itself only outside
+  any repository. `mcp list` / `get` / `remove` run anywhere below that key find and
+  change the same entry. 2.1.311 changed only the `File modified: … [project: X]` line,
+  which on 2.1.310 named the cwd while the write went to the root. Measured 2026-10-27,
+  CC 2.1.310 and 2.1.311, `claude mcp add/list/get/remove` under a throwaway `HOME` with
+  the same variables removed, run from A, A/sub, a linked worktree W of A and W/sub, with
+  A a git repository and again with A not one. A submodule, and `/mcp` in the TUI, were
+  not probed.
 - **A `.mcp.json` server connects only after approval:** `mcp list` showed it `⏸ Pending
   approval` until the folder's trust was accepted and its name was in
   `enabledMcpjsonServers` (which claude moves into `<A>/.claude/settings.local.json`).

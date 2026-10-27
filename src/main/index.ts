@@ -484,9 +484,11 @@ import { claudeJsonPath } from './claudeTrust'
 import {
   AGY_PROJECT_MCP_FILE,
   PROJECT_MCP_FILE,
+  claudeProjectKey,
   claudeServers,
   codexServers,
   jsonServers,
+  type ClaudeFolder,
   type ConfigText,
   type McpServer
 } from './mcpServers'
@@ -1436,19 +1438,22 @@ async function mcpServersNow(): Promise<McpServer[]> {
     'muse',
     'settings.json'
   )
-  const [claudeJson, projectFiles, agyProjectFiles, codexToml, muse, agy] = await Promise.all([
-    textOrNull(claudeJsonPath()),
-    inProjects(PROJECT_MCP_FILE),
-    inProjects(AGY_PROJECT_MCP_FILE),
-    textOrNull(codexSharedConfig()),
-    textOrNull(museSettings),
-    textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
-  ])
+  const claudeFolderOf = async (folder: string): Promise<ClaudeFolder> => ({
+    folder,
+    projectKey: claudeProjectKey(folder, await syncRepoKeys.resolve(folder))
+  })
+  const [claudeJson, projectFiles, agyProjectFiles, codexToml, muse, agy, claudeFolders] =
+    await Promise.all([
+      textOrNull(claudeJsonPath()),
+      inProjects(PROJECT_MCP_FILE),
+      inProjects(AGY_PROJECT_MCP_FILE),
+      textOrNull(codexSharedConfig()),
+      textOrNull(museSettings),
+      textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json')),
+      Promise.all([...local, conductorFolder(app.getPath('userData'))].map(claudeFolderOf))
+    ])
   return [
-    ...claudeServers(claudeJson, projectFiles, [
-      ...local,
-      conductorFolder(app.getPath('userData'))
-    ]),
+    ...claudeServers(claudeJson, projectFiles, claudeFolders),
     ...codexServers(codexToml),
     ...jsonServers('muse', [{ text: muse }, ...projectFiles]),
     ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])

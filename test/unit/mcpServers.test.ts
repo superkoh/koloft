@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { claudeServers, codexServers, jsonServers } from '../../src/main/mcpServers'
+import {
+  claudeProjectKey,
+  claudeServers,
+  codexServers,
+  jsonServers
+} from '../../src/main/mcpServers'
 
 describe('the MCP servers koloft todo reads from each agent’s own config', () => {
   // CC§22
@@ -19,7 +24,10 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
           { onlyIn: '/work/shop', text: JSON.stringify({ mcpServers: { notion: {} } }) },
           { onlyIn: '/work/blog', text: null }
         ],
-        ['/work/shop', '/work/blog']
+        [
+          { folder: '/work/shop', projectKey: '/work/shop' },
+          { folder: '/work/blog', projectKey: '/work/blog' }
+        ]
       )
     ).toEqual([
       { name: 'linear', backend: 'claude' },
@@ -28,6 +36,19 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
     ])
     expect(claudeServers(null, [], [])).toEqual([])
     expect(claudeServers('not json', [], [])).toEqual([])
+  })
+
+  // CC§22
+  it('Claude: a folder inside a git repository, or a linked worktree of one, gets the servers Claude Code keeps under the main checkout; a folder outside any repository keeps its own key', () => {
+    expect(claudeProjectKey('/work/mono/app', '/work/mono/.git')).toBe('/work/mono')
+    expect(claudeProjectKey('/work/mono-wt', '/work/mono/.git')).toBe('/work/mono')
+    expect(claudeProjectKey('/work/notes', null)).toBe('/work/notes')
+    const claudeJson = JSON.stringify({
+      projects: { '/work/mono': { mcpServers: { jira: {} } } }
+    })
+    expect(
+      claudeServers(claudeJson, [], [{ folder: '/work/mono/app', projectKey: '/work/mono' }])
+    ).toEqual([{ name: 'jira', backend: 'claude', onlyIn: '/work/mono/app' }])
   })
 
   // MUSE§18 AGY§30
