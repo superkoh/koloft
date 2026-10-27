@@ -281,4 +281,11 @@ describe('resumeFailureMessage', () => {
     expect(resumeFailureMessage({ ok: false, code: 'invalid-args' })).toBe('Resume failed')
     expect(resumeFailureMessage({ ok: false, code: 'rebuild-failed' })).toBe('Resume failed')
   })
+
+  it("gives the agent's own reason, or a generic failure when it gave none", () => {
+    expect(resumeFailureMessage({ ok: false, code: 'backend', message: 'No account' })).toBe(
+      'No account'
+    )
+    expect(resumeFailureMessage({ ok: false, code: 'backend', message: '' })).toBe('Resume failed')
+  })
 })

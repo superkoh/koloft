@@ -35,7 +35,7 @@ const FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT = '--use-fake-device-for-
 const FAKE_CLAUDE_SRC = path.join(__dirname, '..', 'fixtures', 'fake-claude.js')
 
 const UNPACKAGED_BUILD_APIKEY_SVC = 'koloft-dev-anthropic-api'
-const E2E_CLAUDE_ACCOUNT = 'e2e-key'
+export const E2E_CLAUDE_ACCOUNT = 'e2e-key'
 const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
 export const E2E_CODEX_ACCOUNT = 'e2e-codex'
 export const E2E_MUSE_ACCOUNT = 'e2e-muse'
