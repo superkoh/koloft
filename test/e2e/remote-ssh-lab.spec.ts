@@ -1243,10 +1243,11 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await ranInCodexTabAndExitedZero(
           page,
           tabId,
-          '/sh command -v gh && gh --version',
-          /\/home\/kuser\/\.local\/bin\/gh[\s\S]*gh version \d[\s\S]*sh exit=(\d+)[\s\S]*Codex done/,
+          '/sh gh --version',
+          /gh version \d[\s\S]*sh exit=(\d+)[\s\S]*Codex done/,
           ONE_COMMAND_CODEX_RUNS_ON_THE_MACHINE_MS
         )
+        expect(runOnTarget(lab, 'kuser', 'ls .local/bin')).toMatch(/^gh$/m)
       },
       (lab) => {
         installFakeCodexOnTarget(lab)
