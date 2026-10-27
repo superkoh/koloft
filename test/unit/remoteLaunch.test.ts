@@ -8,7 +8,7 @@ import { spawn, spawnSync } from 'child_process'
 import {
   accountEnv,
   buildMachinePackage,
-  claudeProgram,
+  claudeTabSpec,
   killSessionCmd,
   launchLine,
   machineToolProgram,
@@ -139,18 +139,22 @@ async function until(pred: () => boolean, ms = 15_000): Promise<boolean> {
   return pred()
 }
 
-const spec = (over: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
-  const s = {
+const spec = ({
+  settings = { hooks: {} },
+  claudeArgs = ['--session-id', 'sess1'],
+  agentPlugin,
+  program,
+  ...over
+}: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
+  const tab = {
     tabId: 'T',
     tmuxName: 'k-sess1',
     machineName: 'm-0000000000000000',
     cwd: '/tmp',
     banner: 'koloft: bravo',
-    settings: { hooks: {} },
-    claudeArgs: ['--session-id', 'sess1'],
     ...over
   }
-  return { ...s, program: over.program ?? claudeProgram(s) }
+  return program ? { ...tab, program } : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin })
 }
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {

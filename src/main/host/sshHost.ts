@@ -38,7 +38,7 @@ import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
 import { FINGERPRINT, remoteShCommand } from '../remote/install'
 import {
-  claudeProgram,
+  claudeTabSpec,
   killSessionCmd,
   machineToolProgram,
   renameSessionCmd,
@@ -1151,25 +1151,27 @@ export class SshHost implements Host {
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       launchCommand: (tabId) => {
         const tabDir = tabPackageDir(d.userData, tabId)
-        writeTabPackage(tabDir, {
-          tabId,
-          tmuxName,
-          machineName: pkg.name,
-          cwd,
-          fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
-          banner: account?.banner ?? '',
-          env: account?.env,
-          portOffset: worktree ? portOffset(worktree) : undefined,
-          ownerWords: spec.ownerWords,
-          program: claudeProgram({
-            tabId,
-            tmuxName,
-            settings: d.hookSettings(tabId, machineDir, agentTools),
-            ownerWords: spec.ownerWords,
-            agentPlugin: agentTools,
-            claudeArgs
-          })
-        })
+        writeTabPackage(
+          tabDir,
+          claudeTabSpec(
+            {
+              tabId,
+              tmuxName,
+              machineName: pkg.name,
+              cwd,
+              fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
+              banner: account?.banner ?? '',
+              env: account?.env,
+              portOffset: worktree ? portOffset(worktree) : undefined,
+              ownerWords: spec.ownerWords
+            },
+            {
+              settings: d.hookSettings(tabId, machineDir, agentTools),
+              agentPlugin: agentTools,
+              claudeArgs
+            }
+          )
+        )
         return this.tabLaunchLine(pkg, tabDir, tabId, mode)
       },
       resized: this.resized,

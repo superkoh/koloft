@@ -108,26 +108,28 @@ export interface TabSpec {
 export interface TabProgram {
   run: string
   beforeEnsure: string
-  ensureArgs: string
+  ensureTool?: 'muse' | 'agy'
   beforeTmux: string
   files: Record<string, string>
 }
 
 export interface ClaudeTab {
-  tabId: string
-  tmuxName: string
   settings: Record<string, unknown>
-  ownerWords?: string
   agentPlugin?: boolean
   claudeArgs: string[]
 }
 
-export const claudeProgram = (c: ClaudeTab): TabProgram => ({
-  run: claudeRun(c),
-  beforeEnsure: '',
-  ensureArgs: '',
-  beforeTmux: claudeFirstRun(c),
-  files: { [`${c.tabId}.json`]: JSON.stringify(c.settings), [`${c.tabId}.tmux`]: c.tmuxName }
+export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabSpec => ({
+  ...tab,
+  program: {
+    run: claudeRun(tab.tabId, c),
+    beforeEnsure: '',
+    beforeTmux: claudeFirstRun(tab),
+    files: {
+      [`${tab.tabId}.json`]: JSON.stringify(c.settings),
+      [`${tab.tabId}.tmux`]: tab.tmuxName
+    }
+  }
 })
 
 export const machineToolProgram = (
@@ -137,7 +139,7 @@ export const machineToolProgram = (
 ): TabProgram => ({
   run,
   beforeEnsure: `trap 'rm -f "$T.auth.json"' EXIT\n`,
-  ensureArgs: ` ${name}`,
+  ensureTool: name,
   beforeTmux: 'tmux -L koloft set -gq allow-passthrough on 2>/dev/null\n',
   files
 })
@@ -149,13 +151,13 @@ const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
-function claudeRun(spec: ClaudeTab): string {
-  const T = tabPath(spec.tabId)
+function claudeRun(tabId: string, c: ClaudeTab): string {
+  const T = tabPath(tabId)
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  exec claude --settings "${T}.json"${spec.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${spec.claudeArgs.map(shq).join(' ')}\n`
+  exec claude --settings "${T}.json"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${c.claudeArgs.map(shq).join(' ')}\n`
 }
 
-function claudeFirstRun(spec: ClaudeTab): string {
+function claudeFirstRun(spec: Omit<TabSpec, 'program'>): string {
   const T = tabPath(spec.tabId)
   return `${spec.ownerWords ? `mkdir -p "$HOME/.koloft/hook-sessions" && mv -f "${T}".said* "$HOME/.koloft/hook-sessions/"\n` : ''}# CC§10
 CJ="$HOME/.claude.json"
@@ -194,7 +196,7 @@ if [ "$1" = run ]; then
 ${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}${program.run}fi
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t ${attachTo}
-${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureArgs} || exit $?
+${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}"
