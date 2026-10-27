@@ -1157,7 +1157,11 @@ function loginEnvReady(): Promise<void> {
     .then(({ env }) => {
       Object.assign(process.env, sshEnvFromLogin(process.env, env))
       if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
-      if (gitFirstBin) preferTheUsersGit(gitFirstBin, process.env.PATH)
+      try {
+        if (gitFirstBin) preferTheUsersGit(gitFirstBin, process.env.PATH)
+      } catch (err) {
+        console.error('[koloft] could not hand git to the one on the login PATH:', err)
+      }
     })
     .catch(() => undefined))
 }

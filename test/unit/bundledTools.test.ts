@@ -7,10 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir() } }))
 
 const { pathWithDirLast } = await import('../../src/main/toolInstall')
-const { gitLauncherScript, gitMissing, gitSystemConfig, preferTheUsersGit, setupBundledGit } =
+const { gitLauncherScript, gitMissing, gitSystemConfig, preferTheUsersGit } =
   await import('../../src/main/bundledTools')
-
-const VENDORED_GIT = path.join(__dirname, '..', '..', 'vendor', 'git', 'libexec', 'git-core', 'git')
+const { writeExecutable } = await import('../../src/main/playwrightCli')
 
 let dir: string
 
@@ -58,32 +57,41 @@ describe('the bundled git', () => {
     }
   })
 
-  it.skipIf(!fs.existsSync(VENDORED_GIT))(
-    'gives way to a git the login shell shows, past links to itself, and a later launch rewrites it without writing into the user’s git',
-    () => {
-      const own = path.join(dir, 'own')
-      const theirs = executable(path.join(own, 'git'), '#!/bin/sh\necho theirs\n')
-      const shim = path.join(dir, 'shim')
-      const prev = process.env.KOLOFT_TEST_CLT
-      process.env.KOLOFT_TEST_CLT = 'missing'
-      try {
-        const gitBin = setupBundledGit(path.join(dir, 'install'), '/usr/bin')!
-        const launcher = path.join(gitBin, 'git')
-        fs.mkdirSync(shim)
-        fs.symlinkSync(launcher, path.join(shim, 'git'))
+  it('gives way to the first git on the login PATH that answers by itself, skipping links back to it, a shim that runs it again, and a shim that fails', () => {
+    const gitBin = path.join(dir, 'git-bin')
+    const launcher = executable(path.join(gitBin, 'git'), '#!/bin/sh\necho /shipped/core\n')
+    const linkBack = path.join(dir, 'link-back')
+    fs.mkdirSync(linkBack)
+    fs.symlinkSync(launcher, path.join(linkBack, 'git'))
+    const runsItAgain = path.join(dir, 'runs-it-again')
+    executable(path.join(runsItAgain, 'git'), `#!/bin/sh\nexec '${launcher}' "$@"\n`)
+    const fails = path.join(dir, 'fails')
+    executable(path.join(fails, 'git'), '#!/bin/sh\nexit 1\n')
+    const own = path.join(dir, 'own')
+    const theirs = executable(path.join(own, 'git'), '#!/bin/sh\necho /own/core\n')
+    const prev = process.env.KOLOFT_TEST_CLT
+    process.env.KOLOFT_TEST_CLT = 'missing'
+    try {
+      preferTheUsersGit(gitBin, `${gitBin}:${linkBack}:${runsItAgain}:${fails}`)
+      expect(fs.lstatSync(launcher).isSymbolicLink()).toBe(false)
 
-        preferTheUsersGit(gitBin, `${gitBin}:${shim}:/usr/bin:${own}`)
-        expect(fs.readlinkSync(launcher)).toBe(theirs)
-
-        expect(setupBundledGit(path.join(dir, 'install'), '/usr/bin')).toBe(gitBin)
-        expect(fs.readFileSync(theirs, 'utf8')).toBe('#!/bin/sh\necho theirs\n')
-        expect(fs.lstatSync(launcher).isSymbolicLink()).toBe(false)
-      } finally {
-        if (prev === undefined) delete process.env.KOLOFT_TEST_CLT
-        else process.env.KOLOFT_TEST_CLT = prev
-      }
+      preferTheUsersGit(gitBin, `${gitBin}:${linkBack}:${runsItAgain}:${fails}:/usr/bin:${own}`)
+      expect(fs.readlinkSync(launcher)).toBe(theirs)
+    } finally {
+      if (prev === undefined) delete process.env.KOLOFT_TEST_CLT
+      else process.env.KOLOFT_TEST_CLT = prev
     }
-  )
+  })
+
+  it('is written again on the next launch without writing into the user’s git its launcher links to', () => {
+    const theirs = executable(path.join(dir, 'own', 'git'), '#!/bin/sh\necho theirs\n')
+    const launcher = path.join(dir, 'git-bin', 'git')
+    fs.mkdirSync(path.dirname(launcher))
+    fs.symlinkSync(theirs, launcher)
+    writeExecutable(launcher, '#!/bin/sh\necho shipped\n')
+    expect(fs.readFileSync(theirs, 'utf8')).toBe('#!/bin/sh\necho theirs\n')
+    expect(fs.readFileSync(launcher, 'utf8')).toBe('#!/bin/sh\necho shipped\n')
+  })
 
   it('runs git from its own folder with its own exec path and system config, passing every argument', () => {
     const root = path.join(dir, 'git root')

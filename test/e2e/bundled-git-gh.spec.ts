@@ -48,7 +48,7 @@ test.describe('the git and gh Koloft ships, as a Claude Code or Codex session on
       fs.mkdirSync(nixBin, { recursive: true })
       fs.writeFileSync(
         path.join(nixBin, 'git'),
-        `#!/bin/sh\nprintf '%s\\n' "$*" >> '${nixCalls}'\n` +
+        `#!/bin/sh\nprintf '%s %s\\n' "$PPID" "$*" >> '${nixCalls}'\n` +
           `[ "$1" = --version ] && exec echo "the user's nix git"\nexec /usr/bin/git "$@"\n`,
         { mode: 0o755 }
       )
@@ -73,11 +73,11 @@ test.describe('the git and gh Koloft ships, as a Claude Code or Codex session on
           timeout: 25_000
         })
 
+        const koloft = await app.evaluate(() => process.pid)
+        const koloftsOwnGitWork = new RegExp(`^${koloft} (?!--version$|--exec-path$)`)
         await expect
-          .poll(() => fs.readFileSync(nixCalls, 'utf8').split('\n').filter(Boolean), {
-            timeout: 30_000
-          })
-          .toContainEqual(expect.not.stringMatching(/^--version$/))
+          .poll(() => fs.readFileSync(nixCalls, 'utf8').split('\n'), { timeout: 30_000 })
+          .toContainEqual(expect.stringMatching(koloftsOwnGitWork))
       } finally {
         await quitAndClose(app)
       }

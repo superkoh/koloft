@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
@@ -73,20 +74,38 @@ export function setupBundledGit(
   fs.mkdirSync(dir, { recursive: true })
   const config = path.join(installDir, 'gitconfig')
   fs.writeFileSync(config, gitSystemConfig(root))
-  const launcher = path.join(dir, 'git')
-  linkOrUnlink(launcher, undefined)
-  writeExecutable(launcher, gitLauncherScript(root, config))
+  writeExecutable(path.join(dir, 'git'), gitLauncherScript(root, config))
   return dir
+}
+
+const A_GIT_ANSWERS_ITS_EXEC_PATH_WITHIN_MS = 5_000
+
+function execPathOf(git: string): string | undefined {
+  try {
+    return execFileSync(git, ['--exec-path'], {
+      encoding: 'utf8',
+      timeout: A_GIT_ANSWERS_ITS_EXEC_PATH_WITHIN_MS
+    }).trim()
+  } catch {
+    return undefined
+  }
 }
 
 // PLATFORM§1
 export function preferTheUsersGit(gitBinDir: string, pathVar: string | undefined): void {
   const launcher = path.join(gitBinDir, 'git')
-  const shipped = fs.realpathSync(launcher)
+  const shipped = execPathOf(launcher)
   const theirs = dirsAnotherGitMayBeIn(pathVar)
     .map((dir) => path.join(dir, 'git'))
-    .find((git) => isExecutableFile(git) && fs.realpathSync(git) !== shipped)
-  if (theirs) linkOrUnlink(launcher, theirs)
+    .find((git) => {
+      if (!isExecutableFile(git)) return false
+      const answer = execPathOf(git)
+      return answer !== undefined && answer !== shipped
+    })
+  if (!theirs) return
+  const next = `${launcher}.next`
+  linkOrUnlink(next, theirs)
+  fs.renameSync(next, launcher)
 }
 
 export function linkOrUnlink(link: string, target: string | undefined): void {
