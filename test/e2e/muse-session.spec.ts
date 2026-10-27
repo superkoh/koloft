@@ -29,7 +29,6 @@ import {
   runIn,
   sendShortcut,
   staysOnTheFolderPageNotTheButler,
-  STORE_WATCH_GOES_LIVE_AFTER_BOOT_MS,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -622,7 +621,6 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       const page = await app.firstWindow()
       await waitBooted(page)
       expect(await restoreOffered(page, 'ws-a')).toBe(false)
-      await page.waitForTimeout(STORE_WATCH_GOES_LIVE_AFTER_BOOT_MS)
       const sessions = path.join(env.home, '.local', 'share', 'muse', 'sessions')
       const id = '01a17db8-7cda-7722-8212-7f60790ea9c8'
       const listed = path.join(sessions, 'fake', `${id}.json`)

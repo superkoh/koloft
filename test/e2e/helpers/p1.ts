@@ -794,8 +794,6 @@ export async function closeMenu(page: Page): Promise<void> {
   await expect(page.locator('.menu')).toHaveCount(0)
 }
 
-export const STORE_WATCH_GOES_LIVE_AFTER_BOOT_MS = 3000
-
 export async function restoreOffered(page: Page, wsName: string): Promise<boolean> {
   await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
   const greyed = await page.locator('.menu .mi.disabled', { hasText: 'Restore session' }).count()

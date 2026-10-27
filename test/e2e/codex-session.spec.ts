@@ -62,7 +62,6 @@ import {
   restoreOffered,
   runIn,
   sendShortcut,
-  STORE_WATCH_GOES_LIVE_AFTER_BOOT_MS,
   settingsOnDisk,
   snap,
   startSessionIn,
@@ -1986,7 +1985,6 @@ test.describe('Codex sessions through the real method chooser, process transport
       const page = await app.firstWindow()
       await waitBooted(page)
       expect(await restoreOffered(page, 'ws-a')).toBe(false)
-      await page.waitForTimeout(STORE_WATCH_GOES_LIVE_AFTER_BOOT_MS)
       const now = Math.floor(Date.now() / 1000)
       const id = randomUUID()
       const rollout = path.join(env.launchEnv.CODEX_HOME!, 'sessions', `${id}.json`)

@@ -6,6 +6,8 @@ import { HISTORY_STORES, watchHistory, type HistoryStore } from '../../src/main/
 
 const SETTLE_MS = 50
 const QUIET_WINDOW_MS = 600
+const LONG_SETTLE_MS = 1000
+const SECOND_SESSION_LATE_IN_THE_WINDOW_MS = 700
 
 const dirs: string[] = []
 const closers: (() => void)[] = []
@@ -14,42 +16,50 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
 })
 
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+const quiet = (): Promise<void> => sleep(QUIET_WINDOW_MS)
+
 function write(dir: string, rel: string, text = '{}\n'): void {
   fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true })
   fs.appendFileSync(path.join(dir, rel), text)
 }
 
+function tempDir(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-history-'))
+  dirs.push(dir)
+  return dir
+}
+
 // PLATFORM§28
 async function watching(
   store: HistoryStore,
-  warmUp: (n: number) => string
+  warmUp: (n: number) => string,
+  dir = tempDir(),
+  settleMs = SETTLE_MS
 ): Promise<{ dir: string; lists: () => number; listed: () => Promise<void> }> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-history-'))
-  dirs.push(dir)
   let count = 0
-  closers.push(watchHistory({ ...store, settleMs: SETTLE_MS }, dir, () => void count++))
+  closers.push(watchHistory({ ...store, settleMs }, dir, () => void count++))
+  await vi.waitFor(() => expect(count).toBe(1), { timeout: 3000 })
   let n = 0
   await vi.waitFor(
     () => {
       write(dir, warmUp(n++))
-      expect(count).toBeGreaterThan(0)
+      expect(count).toBeGreaterThan(1)
     },
-    { timeout: 5000, interval: 200 }
+    { timeout: 5000 + settleMs * 5, interval: settleMs + 200 }
   )
-  await new Promise((r) => setTimeout(r, QUIET_WINDOW_MS))
+  await sleep(QUIET_WINDOW_MS + settleMs)
   let seen = count
   return {
     dir,
     lists: () => count - seen,
     listed: async () => {
       await vi.waitFor(() => expect(count).toBeGreaterThan(seen), { timeout: 3000 })
-      await new Promise((r) => setTimeout(r, QUIET_WINDOW_MS))
+      await sleep(QUIET_WINDOW_MS)
       seen = count
     }
   }
 }
-
-const quiet = (): Promise<void> => new Promise((r) => setTimeout(r, QUIET_WINDOW_MS))
 
 describe('the session list of an agent Koloft does not run asks it again when its own store gains or loses a session', () => {
   it('Codex: a rollout written in a new day folder is listed once, its later turns are not, and deleting it lists again', async () => {
@@ -61,6 +71,19 @@ describe('the session list of an agent Koloft does not run asks it again when it
     await quiet()
     expect(w.lists()).toBe(0)
     fs.unlinkSync(path.join(w.dir, rollout))
+    await w.listed()
+  })
+
+  it('a session already on disk when the watch began is listed with the first listing, not again at its next turn, while deleting it still lists', async () => {
+    const dir = tempDir()
+    const older = path.join('2026', '10', '26', 'rollout-older.jsonl')
+    write(dir, older)
+    await quiet()
+    const w = await watching(HISTORY_STORES.codex, (n) => `warm-${n}.jsonl`, dir)
+    write(w.dir, older, 'next turn\n')
+    await quiet()
+    expect(w.lists()).toBe(0)
+    fs.unlinkSync(path.join(w.dir, older))
     await w.listed()
   })
 
@@ -95,15 +118,24 @@ describe('the session list of an agent Koloft does not run asks it again when it
     await w.listed()
   })
 
+  it('a second session late in the wait for the first waits its own full time, so one listing sees both', async () => {
+    const w = await watching(HISTORY_STORES.agy, (n) => `warm-${n}.db`, tempDir(), LONG_SETTLE_MS)
+    write(w.dir, 'first.db')
+    await sleep(SECOND_SESSION_LATE_IN_THE_WINDOW_MS)
+    write(w.dir, 'second.db')
+    await sleep(LONG_SETTLE_MS - SECOND_SESSION_LATE_IN_THE_WINDOW_MS + 200)
+    expect(w.lists()).toBe(0)
+    await vi.waitFor(() => expect(w.lists()).toBe(1), { timeout: 3000 })
+  })
+
   it('a store folder two levels short of existing, as for someone who never ran the agent, is listed when the agent makes it and watched from then on', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-history-'))
-    dirs.push(root)
-    const dir = path.join(root, 'muse', 'sessions')
+    const dir = path.join(tempDir(), 'muse', 'sessions')
     let count = 0
     closers.push(
       watchHistory({ ...HISTORY_STORES.muse, settleMs: SETTLE_MS }, dir, () => void count++)
     )
     await quiet()
+    expect(count).toBe(0)
     fs.mkdirSync(dir, { recursive: true })
     await vi.waitFor(() => expect(count).toBe(1), { timeout: 3000 })
     await quiet()

@@ -28,7 +28,6 @@ import {
   runIn,
   sendShortcut,
   staysOnTheFolderPageNotTheButler,
-  STORE_WATCH_GOES_LIVE_AFTER_BOOT_MS,
   waitBooted,
   waitConductorStarted,
   wsGroup,
@@ -776,7 +775,6 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       const page = await app.firstWindow()
       await waitBooted(page)
       expect(await restoreOffered(page, 'ws-a')).toBe(false)
-      await page.waitForTimeout(STORE_WATCH_GOES_LIVE_AFTER_BOOT_MS)
       const printed = execFileSync(
         process.execPath,
         [FAKE_AGY, '-p', 'started in a plain terminal', '--output-format', 'json'],
