@@ -5,6 +5,9 @@ import os from 'os'
 import path from 'path'
 import { startToolShim, type ToolShim } from '../../src/main/toolShim'
 
+const SWEEPS_BEFORE_GIVING_UP_MS = 3000
+const ANOTHER_SWEEP_HAS_RUN_MS = 1500
+
 let base: string
 let started: ToolShim | undefined
 
@@ -32,7 +35,7 @@ function folderWatchThatNeverReports(): void {
 
 describe('startToolShim', () => {
   // PLATFORM§28
-  it('a koloft request the folder watch never reports is still answered, so a Codex, Muse or Antigravity tab never waits out its time on a lost event', async () => {
+  it('a koloft request the folder watch never reports is still answered, and only once though it stays in the folder, so a Codex, Muse or Antigravity tab never waits out its time on a lost event', async () => {
     folderWatchThatNeverReports()
     const agent = vi.fn()
     started = startToolShim(
@@ -47,7 +50,9 @@ describe('startToolShim', () => {
     const request = { argv: ['session', 'send', 'parent', 'all done'], cwd: base }
     fs.writeFileSync(path.join(requestDir, 'req-1.json'), JSON.stringify(request))
     await vi.waitFor(() => expect(agent).toHaveBeenCalledWith(requestDir, 'req-1.json', request), {
-      timeout: 5000
+      timeout: SWEEPS_BEFORE_GIVING_UP_MS
     })
+    await new Promise((r) => setTimeout(r, ANOTHER_SWEEP_HAS_RUN_MS))
+    expect(agent).toHaveBeenCalledTimes(1)
   })
 })

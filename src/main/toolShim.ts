@@ -46,16 +46,18 @@ export function startToolShim(
     const dropped = opts.drop && oncePerName(opts.drop)
     const isOpenDrop = (name: string): boolean =>
       !name.startsWith('req-') && !name.startsWith('res-') && !opts.drop?.(name)
-    const request: DropHandlerFor = (name) =>
+    const requests = oncePerName((name) =>
       agent ? (obj): void => agent(shim.requestDir, name, obj) : null
+    )
+    const handlerFor: DropHandlerFor = (name) => {
+      if (name.startsWith('req-')) return requests(name)
+      if (name.startsWith('res-')) return null
+      return dropped?.(name) ?? opens(name)
+    }
     const drops = watchAndSweepJsonDrops(
       shim.requestDir,
-      (name) => {
-        if (name.startsWith('req-')) return request(name)
-        if (name.startsWith('res-')) return null
-        return dropped?.(name) ?? opens(name)
-      },
-      (name) => (name.startsWith('req-') ? request(name) : (dropped?.(name) ?? null)),
+      handlerFor,
+      (name) => (isOpenDrop(name) ? null : handlerFor(name)),
       isOpenDrop
     )
     return {
