@@ -117,6 +117,15 @@ export function readFrame(line: Buffer): ReadFrame | undefined {
   return { raw: line, head: headOf(parsed), parse }
 }
 
+// CODEX§20
+function questionThatWaitsForTheOwner({ raw, head, parse }: ReadFrame): Buffer {
+  if (head.method !== 'item/tool/requestUserInput') return raw
+  const frame = parse()
+  const params = frame.params as Record<string, unknown> | undefined
+  if (params?.isBlocking !== false) return raw
+  return Buffer.from(JSON.stringify({ ...frame, params: { ...params, isBlocking: true } }))
+}
+
 function headOf({ id, method }: Record<string, unknown>): CodexFrameHead {
   if (typeof method === 'string') return { method }
   return typeof id === 'string' || typeof id === 'number' ? { replyTo: id } : {}
@@ -446,13 +455,13 @@ export async function createCodexTransport(
   const upstreamOf: CodexUpstreamFactory =
     options.upstream ?? ((frame, failure) => new CodexProcess(options, frame, failure))
   const upstream = upstreamOf((read) => {
-    const { raw, head } = read
-    const { replyTo } = head
+    const { replyTo } = read.head
     // CODEX§1
     if (typeof replyTo === 'string' && replyTo.startsWith(OWN_REQUEST_ID_PREFIX)) {
       settleRequest(own, replyTo, read.parse)
       return
     }
+    const raw = questionThatWaitsForTheOwner(read)
     observe('server', read)
     if (client?.readyState === WebSocket.OPEN) {
       if (client.bufferedAmount > upstream.limit * 2)

@@ -42,6 +42,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
  if(mode==='partial') {process.stdout.write('{');process.exit(0);return;}
  if(mode==='oversize') {process.stdout.write('x'.repeat(2000));return;}
  if(mode==='approval') {out({id:991,method:'item/commandExecution/requestApproval',params:{command:'echo ok'}});return;}
+ if(mode==='question') {out({id:992,method:'item/tool/requestUserInput',params:{threadId:'t',questions:[{id:'colour',question:'Red or Green?'}],isBlocking:false,autoResolutionMs:null}});return;}
  if(mode==='tree') {
    const child=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},1000);setTimeout(()=>process.exit(0),10000)"],{detached:true,stdio:'ignore'});
    child.unref();
@@ -363,6 +364,36 @@ describe('Codex TUI transport', () => {
     expect(observed).toContainEqual({ id: 'mine', result: {} })
     expect(observed.some((frame) => frame.id === 'plugin-list-1')).toBe(false)
     expect(errors).toEqual([])
+  })
+
+  // CODEX§20
+  it('a question Codex would let the TUI give up on after two minutes reaches the TUI as one that waits for the owner, while the observer sees what Codex sent', async () => {
+    const observed: CodexFrame[] = []
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: (direction, frame) => {
+        if (direction === 'server') observed.push(frame)
+      }
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const question = nextFrame(socket)
+    socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'question' } }))
+    expect(await question).toEqual({
+      id: 992,
+      method: 'item/tool/requestUserInput',
+      params: {
+        threadId: 't',
+        questions: [{ id: 'colour', question: 'Red or Green?' }],
+        isBlocking: true,
+        autoResolutionMs: null
+      }
+    })
+    expect(observed).toContainEqual(
+      expect.objectContaining({ id: 992, params: expect.objectContaining({ isBlocking: false }) })
+    )
   })
 
   it('an observer cannot rewrite TUI requests or stop their delivery by throwing', async () => {
