@@ -2694,7 +2694,8 @@ servers `globalprobe` (top-level `mcpServers` of `~/.claude.json`), `localprobe`
   approval` until the folder's trust was accepted and its name was in
   `enabledMcpjsonServers` (which claude moves into `<A>/.claude/settings.local.json`).
 
-Koloft dependents: `claudeServers` in `src/main/mcpServers.ts`, which `koloft todo` lists.
+Koloft dependents: `claudeServers` in `src/main/mcpServers.ts`, which `koloft todo` lists,
+and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` key it reads.
 
 ## §23 A resumed conversation keeps its first system prompt
 

@@ -1,4 +1,3 @@
-import path from 'path'
 import type { BackendId } from '@shared/types'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
 
@@ -46,13 +45,6 @@ export interface ClaudeFolder {
 }
 
 // CC§22
-export function claudeProjectKey(folder: string, commonGitDir: string | null): string {
-  return commonGitDir && path.basename(commonGitDir) === '.git'
-    ? path.dirname(commonGitDir)
-    : folder
-}
-
-// CC§22
 export function claudeServers(
   claudeJson: string | null,
   projectFiles: ConfigText[],
@@ -63,7 +55,9 @@ export function claudeServers(
   return [
     ...listed('claude', doc.mcpServers),
     ...folders.flatMap(({ folder, projectKey }) =>
-      listed('claude', asRecord(projects[projectKey]).mcpServers, folder)
+      [...new Set([projectKey, folder])].flatMap((key) =>
+        listed('claude', asRecord(projects[key]).mcpServers, folder)
+      )
     ),
     ...jsonServers('claude', projectFiles)
   ]

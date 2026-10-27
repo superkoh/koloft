@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import {
   acceptClaudeTrust,
+  claudeProjectKey,
   claudeTrustsFolder,
   isTrustedByClaude,
   markClaudeOnboarded
@@ -111,6 +112,16 @@ describe('claudeTrustsFolder stops looking up at the top of the git repo', () =>
     expect(claudeTrustsFolder(file, worktree)).toBe(false)
     trustOnly(outer)
     expect(claudeTrustsFolder(file, worktree)).toBe(true)
+  })
+
+  // CC§22
+  it('claudeProjectKey: a folder inside a repo and a linked worktree of it share the main checkout’s projects key; a plain folder keeps its own', () => {
+    const { repo, worktree } = repoWithWorktree()
+    fs.mkdirSync(path.join(tmp, 'plain', 'sub'), { recursive: true })
+
+    expect(claudeProjectKey(path.join(repo, 'sub'))).toBe(repo)
+    expect(claudeProjectKey(worktree)).toBe(repo)
+    expect(claudeProjectKey(path.join(tmp, 'plain', 'sub'))).toBe(path.join(tmp, 'plain', 'sub'))
   })
 })
 
