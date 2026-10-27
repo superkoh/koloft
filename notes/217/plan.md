@@ -1,7 +1,8 @@
 # #217 plan: pick an element in a Workbench web tab and send it to the session
 
 Mockup: `mockups/217/index.html` (real app DOM + compiled CSS; the page inside the tab
-and the highlight are drawn by hand).
+and the highlight are drawn by hand). Checked independently against the code; the
+findings are fixed below.
 
 ## What the owner sees
 
@@ -12,20 +13,21 @@ and the highlight are drawn by hand).
 2. Click it: the button shows "on" (`.bnav.on`, colour `var(--accent)`, the same look as
    `.icobtn.on`). Hovering the page outlines the element under the mouse with its tag and
    size (Chromium's own inspect overlay). A click picks it and does not reach the page.
-   Esc, or the button again, stops without sending; switching tab or navigating stops too.
+   Esc, the button again, a click outside the page, switching tab or navigating stops
+   without sending.
 3. After one pick, picking stops. The pick lands as ONE bracketed paste in the input box
-   of the session this Workbench belongs to (`session.tabId`, the same target as ✎ comment
-   in `ChangesView.tsx`), unsent, and keyboard focus moves to that terminal. No toast (✎
-   comment has none). The owner types the request after the paste and presses Enter; text
-   typed after a paste is taken as the person's words (CC§18). This is the path #4 built,
-   which the issue asks to share.
-4. The button is greyed, with the reason in its tooltip, when:
-   - there is no live session, or it waits on a permission question (`commentBlocked` in
-     `changesModel.ts`, same messages as ✎ comment);
-   - the tab is blank or shows an error page;
-   - an agent is driving this tab right now (the tab id is in the store's `cdpAttached`
-     for any session): "The agent is using this page". A guest takes only one debugger
-     attachment (measured, below), and the relay holds it.
+   of the session this Workbench belongs to, unsent, and focus goes back to that terminal
+   — exactly the ✎ comment path (#4): the renderer calls
+   `window.api.terminal.paste(session.tabId, text)` then `onReturnFocus()`
+   (`ChangesView.tsx:420-428`). That IPC handler (`src/main/index.ts:5165`) also frees a
+   queued background tab and keeps the text for a sleeping tab, so the pick never calls
+   `ptyMgr.paste` itself. No toast (✎ comment has none). The owner types the request
+   after the paste and presses Enter; text typed after a paste is taken as the person's
+   words (CC§18).
+4. The button is greyed, with the reason in its tooltip, when there is no live session or
+   it waits on a permission question (`commentBlocked` in `changesModel.ts`, the same
+   messages as ✎ comment), or the tab failed or crashed (`TabRuntime.fail` / `crashed`,
+   `WorkbenchWebGuests.tsx`). An agent driving the same page does NOT grey it (below).
 
 ## What the paste holds
 
@@ -33,7 +35,7 @@ and the highlight are drawn by hand).
 Element picked in the Workbench browser
 Page: <url> ("<title>")
 Element: <tag#id.class>, <w> × <h> px at (<x>, <y>)
-Picture: <path to PNG>
+Picture: <absolute path to PNG, on the machine the agent runs on>
 HTML:
 <outer HTML, cut at ~4,000 characters + "… N more characters">
 CSS (computed):
@@ -44,39 +46,66 @@ line-height, flex/grid basics, gap, box-shadow, opacity>
 
 ## How it works
 
-- Renderer: the button calls a new IPC, `window.api.browser.pickElement(guestId,
-  sessionTabId)`; `guestId` is the active `BrowserGuest`'s `getWebContentsId()`.
+- Renderer: the button calls a new IPC, `window.api.browser.pickElement(guestId)`, which
+  resolves with the pick (or nothing when stopped); `guestId` is the active
+  `BrowserGuest`'s `getWebContentsId()`. The renderer builds nothing; main returns the
+  final text, and the renderer pastes it as in step 3.
 - Main, new module (e.g. `src/main/elementPick.ts`), on the guest's
-  `webContents.debugger`: attach; `DOM.enable`, `CSS.enable`, `Overlay.enable`;
+  `webContents.debugger`: `DOM.enable`, `CSS.enable`, `Overlay.enable`;
   `Overlay.setInspectMode {mode: 'searchForNode', highlightConfig}`; wait for
   `Overlay.inspectNodeRequested {backendNodeId}`; then `DOM.getOuterHTML`,
   `DOM.getDocument` + `DOM.pushNodesByBackendIdsToFrontend` +
   `CSS.getComputedStyleForNode`, `DOM.getBoxModel`, `Page.getLayoutMetrics`,
-  `Page.captureScreenshot {clip}`; `Overlay.setInspectMode {mode: 'none'}`; detach.
-- The clip is the box model's border quad **plus** `cssVisualViewport.pageX/pageY`:
-  the box model is in viewport coordinates, the capture clip in page coordinates.
-- Measured 2026-10-27, Electron 43.8.1 / Chromium 150.0.7871.250, a scratch main script
-  with a `<webview>` in a hidden `BrowserWindow`, input sent with
-  `Input.dispatchMouseEvent`:
-  - every command above answered; `Overlay.inspectNodeRequested` came with a
-    `backendNodeId`; the page's own click handler ran 0 times while inspect mode was on;
-  - `CSS.getComputedStyleForNode` gave 481 properties;
-  - with the page scrolled (scrollY 1040), a clip taken straight from `DOM.getBoxModel`
-    (y 500) gave an empty transparent picture; the same box plus `cssVisualViewport.pageY`
-    gave the button (centre pixel rgb(10,120,250), as styled);
-  - the guest's own `webContents.capturePage(rect)` also worked (400×120 at device scale 2);
-  - a second `debugger.attach` on the same guest threw "Debugger is already attached to
-    the target".
-  These go into PLATFORM§16 when it is built.
-- Not probed yet: Esc inside the guest (planned: the guest's `before-input-event` in
-  main); a real mouse instead of `Input.dispatchMouseEvent`; elements inside a
-  cross-origin iframe.
-- Picture file: local tabs → under Koloft's userData (`picks/<tabId>/<n>.png`), removed
-  when the tab closes. Remote tabs → copied over the existing ssh master with
-  `runSsh(host, 'mkdir -p … && cat > …', {input: png})` (`runSsh` already takes `input`,
-  `src/main/remote/ssh.ts`) to `$HOME/.koloft/tabs/<tabId>.picks/<n>.png` (beside
-  `REMOTE_TABS_DIR`, `src/main/remote/paths.ts`), and that remote path goes in the paste.
-- Paste: the existing `ptyMgr.paste(tabId, text)` (`src/main/ptyManager.ts`).
+  `Page.captureScreenshot {clip}` with a time limit (a guest with no visible box never
+  answers a capture, PLATFORM§9); `Overlay.setInspectMode {mode: 'none'}`. It never sends
+  a `*.disable`.
+- The clip is the box model's border quad **plus** `cssVisualViewport.pageX/pageY`: the
+  box model is in viewport coordinates, the capture clip in page coordinates.
+- **One debugger attachment per guest, shared.** A guest takes one
+  `debugger.attach` (a second throws). A small holder in main counts who holds each guest
+  (the relay's `attachGuest`/`detachGuest` in `cdpRelay.ts` and the picker): it attaches
+  on the first hold and detaches on the last release. So when an agent already holds the
+  page the picker borrows that attachment and never detaches it, and an agent that
+  attaches while a pick is open joins it instead of failing with "already attached".
+  The picker's Overlay events also reach the agent's client through the relay's
+  `onMessage`; the measurement below shows Playwright does not mind.
+- Esc: while picking, the renderer listens for Esc on the window in the capture phase
+  (as `BrowserActions.tsx` does), since after the click focus sits on the host button;
+  the guest's `before-input-event` covers the case where the page itself has focus.
+  Because a click outside the page stops picking, an Esc meant for the terminal is never
+  taken.
+- Picture file: a new `Host` method (e.g. `savePick(tabId, png): Promise<string>`)
+  returns the absolute path the agent can open. `LocalHost` writes under Koloft's
+  userData, `picks/<session tab id>-<n>.png`. `SshHost` writes through its own `sh`
+  (`remoteShCommand`, as `answerAgent` does, so it runs under `sh` even when the login
+  shell is fish, PLATFORM§33) to `$HOME/.koloft/picks/<session tab id>-<n>.png` with the
+  PNG on stdin, and prints the absolute path (`cd … && pwd -P`), which is what goes in
+  the paste. Nothing on either side cleans a tab's files when it closes today, so each
+  save also deletes picks older than a day in the same folder.
+
+## Measured
+
+- 2026-10-27, Electron 43.8.1 / Chromium 150.0.7871.250, a scratch main script with a
+  `<webview>` (a real layout box) in a `BrowserWindow` built with `show: false` — not
+  the CSS-hidden webview of PLATFORM§9 — input sent with `Input.dispatchMouseEvent`:
+  every command above answered; `Overlay.inspectNodeRequested` came with a
+  `backendNodeId`; the page's own click handler ran 0 times in inspect mode;
+  `CSS.getComputedStyleForNode` gave 481 properties; with the page scrolled (scrollY
+  1040) a clip straight from `DOM.getBoxModel` (y 500) gave an empty transparent picture,
+  the same box plus `cssVisualViewport.pageY` gave the button (centre pixel
+  rgb(10,120,250), as styled); the guest's own `webContents.capturePage(rect)` also
+  worked; a second `debugger.attach` threw "Debugger is already attached to the target".
+- 2026-10-27, the built app in an e2e run: a real Playwright client attached to a
+  Workbench tab through Koloft's CDP relay, then main ran the whole pick above through
+  the guest's already-attached debugger (no attach, no detach). Afterwards the client's
+  click landed (page click count 1 → 2), an element handle taken before the pick still
+  read its text, a locator, a screenshot and a navigation all worked, and the debugger
+  stayed attached.
+- These go into PLATFORM§16 when built.
+- Not probed yet: a real mouse instead of `Input.dispatchMouseEvent`, and whether focus
+  comes back to the terminal from a guest that a real click focused (PLATFORM§16: a real
+  mousedown makes the guest the window's focused frame) — if it does not, the words the
+  owner types next would land in the page; elements inside a cross-origin iframe.
 
 ## Each kind of session tab (4 agents × this Mac / over SSH = 8)
 
@@ -87,15 +116,16 @@ block it.
 | Tab | Text paste | Picture |
 |---|---|---|
 | Claude Code, this Mac | bracketed paste waits unsent (CC§18, measured) | Mac path; Read opens images |
-| Codex, this Mac | same (CODEX§23, measured) | Mac path; Codex lists a `view_image` tool |
-| Muse, this Mac | same (MUSE§7, measured) | Mac path |
+| Codex, this Mac | same (CODEX§23, measured) | Mac path; Codex's tool list has `view_image` (CODEX§16) |
+| Muse, this Mac | measured on Linux only (MUSE§7: "Not probed on macOS") | Mac path |
 | Antigravity, this Mac | same (AGY§15, measured) | Mac path |
 | Claude Code, over SSH | paste over ssh + tmux measured (CC§18, E-SSH-10) | copied to the machine |
-| Codex / Muse / Antigravity, over SSH | the same pty paste ✎ comment uses; not measured per agent | copied to the machine |
+| Codex / Muse / Antigravity, over SSH | the same pty paste ✎ comment uses; not probed per agent (CODEX§23: "not probed for Codex") | copied to the machine |
 
-Not probed yet: whether each agent opens a picture path that sits inside a paste on its
-own, or needs it in the typed words after the paste. Probed on the real binaries while
-building; for an agent that does not, the path line moves to the typed-after part.
+Not probed yet, all checked on the real binaries while building: Muse's paste on macOS;
+the paste over ssh + tmux for remote Codex, Muse and Antigravity; whether each agent
+opens a picture path that sits inside a paste on its own, or needs it in the typed words
+after the paste (for one that does not, the path line moves to the typed-after part).
 
 ## Questions for the owner
 
@@ -108,10 +138,11 @@ building; for an agent that does not, the path line moves to the typed-after par
 
 ## Building, once agreed
 
-Files: `BrowserAddressBar.tsx` (button), `WorkbenchPane.tsx` (wire, greyed reasons),
-`workbench.css` (`.bnav.on`), preload + shared IPC channel, main `elementPick.ts` (CDP
-steps + text), the remote copy, a new icon sheet. Estimate ~200–300 runtime lines.
-Tests: unit for the text builder; e2e: a pick on a fixture page in a local Claude tab
-(fake-claude keeps a bracketed paste until Enter), a Codex tab, a remote tab (fake-ssh),
-and greyed while an agent holds the tab; real-tool smoke for whether each agent opens the
-picture.
+Files: `BrowserAddressBar.tsx` (button), `WorkbenchPane.tsx` (wire, greyed reasons,
+paste), `workbench.css` (`.bnav.on`), preload + shared IPC channel, main
+`elementPick.ts` (CDP steps + text), the shared debugger holder used by `cdpRelay.ts`,
+`Host.savePick` (local + ssh), a new icon sheet. Estimate ~250–350 runtime lines.
+Tests: unit for the text builder and the holder; e2e: a pick on a fixture page in a local
+Claude tab (fake-claude keeps a bracketed paste until Enter), a Codex tab, a remote tab
+(fake-ssh), and a pick while a Playwright client holds the page; real-tool runs for the
+"not probed yet" list above.

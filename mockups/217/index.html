@@ -157,8 +157,8 @@
       <p class="cap">
         The button turns orange (the same "on" look as the Outline button). Moving the mouse over
         the page outlines the element under it, with its tag and size. A click picks it and does not
-        reach the page (measured: the page's own click handler did not run). Esc, or the button
-        again, stops without sending.
+        reach the page (measured: the page's own click handler did not run). Esc, the button again,
+        or a click outside the page stops without sending.
       </p>
 
       <h2>3. Sent: it waits in the session's input box</h2>
@@ -175,7 +175,7 @@
 Element picked in the Workbench browser
 Page: http://localhost:5173/pricing ("Pricing")
 Element: button#buy, 65 × 21 px at (8, 79)
-Picture: /Users/you/Library/Application Support/Koloft/picks/3f2a/1.png
+Picture: /Users/you/Library/Application Support/Koloft/picks/3f2a-1.png
 HTML:
 &lt;button id="buy"&gt;Buy now&lt;/button&gt;
 CSS (computed):
@@ -219,11 +219,11 @@ line-height: normal; …</pre>
         <tr>
           <td>Codex, this Mac</td>
           <td>Same (measured, CODEX§23)</td>
-          <td>Path on this Mac; Codex has <code>view_image</code></td>
+          <td>Path on this Mac; Codex has a <code>view_image</code> tool (CODEX§16)</td>
         </tr>
         <tr>
           <td>Muse, this Mac</td>
-          <td>Same (measured, MUSE§7)</td>
+          <td>Measured on Linux only (MUSE§7); not probed on macOS yet</td>
           <td>Path on this Mac</td>
         </tr>
         <tr>
@@ -238,7 +238,7 @@ line-height: normal; …</pre>
         </tr>
         <tr>
           <td>Codex / Muse / Antigravity, over SSH</td>
-          <td>Same paste path as ✎ comment</td>
+          <td>The same pty paste ✎ comment uses; not probed yet for these three agents</td>
           <td>Same copy to the machine</td>
         </tr>
       </table>
@@ -255,9 +255,9 @@ line-height: normal; …</pre>
         </li>
         <li>A blank tab or an error page: greyed.</li>
         <li>
-          An agent is driving this page right now (the tab shows as held by the agent): greyed,
-          tooltip "The agent is using this page". The page allows only one debugger connection at a
-          time (measured), and the agent's is already on it.
+          An agent driving the same page does <b>not</b> grey it: the pick shares the agent's
+          connection to the page, and the agent keeps working afterwards (measured with a real
+          Playwright client in the built app).
         </li>
       </ul>
     </main>
