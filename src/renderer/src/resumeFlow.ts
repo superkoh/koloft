@@ -121,7 +121,7 @@ export async function runResume(target: ResumeTarget, req: SessionResumeRequest)
         return
       }
       releaseResume(target.id)
-      st.showToast(resumeFailureMessage(res.code, 'message' in res ? res.message : undefined))
+      st.showToast(resumeFailureMessage(res))
       return
     }
     st.addTab({

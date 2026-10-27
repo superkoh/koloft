@@ -275,8 +275,10 @@ describe('a rebuild that fails', () => {
 
 describe('resumeFailureMessage', () => {
   it('keeps the vanished-folder wording distinct from a generic failure', () => {
-    expect(resumeFailureMessage('cwd-missing')).toBe('Folder is gone — cannot resume here')
-    expect(resumeFailureMessage('invalid-args')).toBe('Resume failed')
-    expect(resumeFailureMessage('rebuild-failed')).toBe('Resume failed')
+    expect(resumeFailureMessage({ ok: false, code: 'cwd-missing' })).toBe(
+      'Folder is gone — cannot resume here'
+    )
+    expect(resumeFailureMessage({ ok: false, code: 'invalid-args' })).toBe('Resume failed')
+    expect(resumeFailureMessage({ ok: false, code: 'rebuild-failed' })).toBe('Resume failed')
   })
 })

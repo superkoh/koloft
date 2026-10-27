@@ -3,7 +3,12 @@ import http from 'http'
 import type { AddressInfo } from 'net'
 import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { addKeychainEntry, seededAccount, seedSettings } from './helpers/env'
+import {
+  addKeychainEntry,
+  seedNoClaudeAccountButStillSetUp,
+  seededAccount,
+  seedSettings
+} from './helpers/env'
 import {
   installFakeRemote,
   killFakeRemote,
@@ -14,6 +19,7 @@ import {
   sshCommands
 } from './helpers/remote'
 import { resumedId, seedJsonl, waitBooted, waitForCalls, wsRows } from './helpers/p1'
+import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -51,6 +57,36 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
       expect(sshCommands(env).some((c) => /tabs\/[^"]+\.sh"?\s+start/.test(c))).toBe(true)
       await expect(page.locator('.modal')).toHaveCount(0)
       await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('with no Claude account Koloft can use, clicking a cold remote row says so and starts nothing on the machine', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    seedNoClaudeAccountButStillSetUp(env)
+    installFakeRemote(env)
+    seedRemoteWorkspace(env)
+    seedJsonl(env, remoteDir(env), {
+      root: path.join(env.userData, 'remote', REMOTE_HOST, 'projects'),
+      cwd: remoteDir(env),
+      summary: 'Yesterday on the build machine'
+    })
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await row.click()
+      await expect(page.locator('.toast-msg')).toHaveText(NO_USABLE_ACCOUNT.claude, {
+        timeout: 60_000
+      })
+      expect(sshCommands(env).some((c) => /tabs\/[^"]+\.sh"?\s+start/.test(c))).toBe(false)
     } finally {
       await quitAndClose(app)
     }

@@ -19,12 +19,9 @@ export function launchErrorMessage(e: unknown): string {
   return e instanceof Error ? ipcErrorText(e) : 'Could not start session.'
 }
 
-export function resumeFailureMessage(
-  code: Extract<SessionResumeResult, { ok: false }>['code'],
-  message?: string
-): string {
-  if (code === 'backend') return message || 'Resume failed'
-  return code === 'cwd-missing' ? 'Folder is gone — cannot resume here' : 'Resume failed'
+export function resumeFailureMessage(res: Extract<SessionResumeResult, { ok: false }>): string {
+  if (res.code === 'backend') return res.message || 'Resume failed'
+  return res.code === 'cwd-missing' ? 'Folder is gone — cannot resume here' : 'Resume failed'
 }
 
 // ADR-0025

@@ -16,7 +16,6 @@ import {
   type LeftoverProcess,
   type MachineState,
   type SessionInfo,
-  type SessionResumeResult,
   type TabKind,
   type Settings,
   type ReleaseNotes,
@@ -787,11 +786,13 @@ export const useStore = create<AppState>((set, get) => ({
       window.api.terminal.kill(oldId, true)
       void window.api.sessions
         .resume({ sessionId: resumeId, cwd })
-        .catch((): SessionResumeResult => ({ ok: false, code: 'backend', message: '' }))
         .then((res) => {
           if (!res.ok) {
+            const open = get().tabs.some((x) => x.id === oldId)
             const main =
-              res.code === 'rebuild-failed' ? workspaceOfRow(get().workspaceRows, resumeId) : null
+              open && res.code === 'rebuild-failed'
+                ? workspaceOfRow(get().workspaceRows, resumeId)
+                : null
             if (main) {
               get().setResumeDialog({
                 kind: 'escape',
@@ -799,10 +800,7 @@ export const useStore = create<AppState>((set, get) => ({
                 worktreeName: basename(cwd),
                 cwd: main
               })
-            } else
-              get().showToast(
-                resumeFailureMessage(res.code, 'message' in res ? res.message : undefined)
-              )
+            } else if (open) get().showToast(resumeFailureMessage(res))
             throw new Error(res.code)
           }
           if (!get().tabs.some((x) => x.id === oldId)) {
