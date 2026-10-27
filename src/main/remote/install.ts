@@ -155,6 +155,9 @@ if ${only}! node_ok && [ ! -f "$no_build_runs" ]; then
   fi
 fi`
 
+const GH_TRIES_AGAIN_AFTER_MINUTES = 24 * 60
+
+// PLATFORM§44
 const INSTALL_GH = `GH_VERSION=${VENDOR_RELEASE.gh.version}
 gh_platform() {
   case "$(uname -s)" in Linux) gh_os=linux; gh_ext=tar.gz ;; Darwin) gh_os=macOS; gh_ext=zip ;; *) return 1 ;; esac
@@ -171,12 +174,17 @@ install_gh() {
   mkdir -p "$HOME/.local/bin" && mv "$tmp/$name/bin/gh" "$HOME/.local/bin/gh" || return 1
   rm -rf "$tmp"
 }
-if ! have gh; then
+gh_failed="$HOME/.koloft/gh-$GH_VERSION.failed"
+if ! have gh && [ -z "$(find "$gh_failed" -mmin -${GH_TRIES_AGAIN_AFTER_MINUTES} 2>/dev/null)" ]; then
+  have curl || have wget || { { [ "$(id -u)" = 0 ] || sudo -n true >/dev/null 2>&1; } && install_pkg curl; } || :
   say "installing gh $GH_VERSION, the GitHub CLI (about 40 MB, once)"
-  gh_platform && install_gh || { rm -rf "$HOME/.koloft/gh.tmp.$$"; say "gh could not be installed: sessions on this machine have no gh"; }
+  gh_platform && install_gh || {
+    rm -rf "$HOME/.koloft/gh.tmp.$$"; : > "$gh_failed"
+    say "gh could not be installed: sessions on this machine have no gh (Koloft tries again in a day)"
+  }
 fi`
 
-// PLATFORM§37 PLATFORM§44
+// PLATFORM§37
 export const ENSURE_SH = `#!/bin/sh
 ${REMOTE_ENV_LINES}
 ${INSTALL_PKG}

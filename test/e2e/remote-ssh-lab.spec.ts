@@ -292,6 +292,41 @@ async function newRealSessionOnKtKey(page: Page, lab: SshLab): Promise<RealSessi
   return boundRealSession(page, lab)
 }
 
+const LAB_CODEX_TOKEN = 'mac-token-for-the-lab'
+
+function installCodexSignedInForTheLab(env: E2EEnv): void {
+  installCodex(
+    env,
+    JSON.stringify({ tokens: { access_token: LAB_CODEX_TOKEN, account_id: 'lab' } })
+  )
+}
+
+async function codexTabOnKtKey(page: Page): Promise<string> {
+  await addMachine(page, 'kt-key', 'kuser')
+  await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+  await newSessionInWith(page, 'kt-key', 'Codex')
+  await expect(wsRows(page, 'kt-key').filter({ hasText: 'Codex fixture session' })).toHaveClass(
+    /st-waiting/,
+    { timeout: 120_000 }
+  )
+  return (await page.evaluate(() => window.api.sessions.list())).find(
+    (s) => s.backendId === 'codex' && s.alive
+  )!.tabId
+}
+
+async function ranInCodexTabAndExitedZero(
+  page: Page,
+  tabId: string,
+  line: string,
+  turnOverWithExit: RegExp,
+  timeout: number
+): Promise<void> {
+  await page.evaluate(([id, typed]) => window.api.terminal.write(id, typed), [tabId, `${line}\r`])
+  await expect
+    .poll(async () => turnOverWithExit.exec(await terminalText(page, tabId))?.[1], { timeout })
+    .toBe('0')
+}
+
 async function typeAndSubmit(page: Page, session: RealSession, text: string): Promise<void> {
   const prompts = (): number => claudePromptsIn(session.transcript()).length
   const before = prompts()
@@ -1162,35 +1197,21 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   test('E-SSH-23: a Codex session on a Linux machine behind the jump host runs its app-server there, signed in from this Mac; koloft run by it there answers from this Koloft, though a login shell there would drop the koloft command from PATH; and closing its tab ends that server', async ({
     env
   }) => {
-    installCodex(
-      env,
-      JSON.stringify({ tokens: { access_token: 'mac-token-for-the-lab', account_id: 'lab' } })
-    )
+    installCodexSignedInForTheLab(env)
     await withLab(
       env,
       async ({ app, page, lab }) => {
-        await addMachine(page, 'kt-key', 'kuser')
-        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
-        await newSessionInWith(page, 'kt-key', 'Codex')
-        await expect(
-          wsRows(page, 'kt-key').filter({ hasText: 'Codex fixture session' })
-        ).toHaveClass(/st-waiting/, { timeout: 120_000 })
+        const tabId = await codexTabOnKtKey(page)
         expect(runOnTarget(lab, 'kuser', 'cat fake-codex-logins.jsonl')).toContain(
-          '"accessToken":"mac-token-for-the-lab"'
+          `"accessToken":"${LAB_CODEX_TOKEN}"`
         )
-        const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.backendId === 'codex' && s.alive
-        )!.tabId
-        await page.evaluate(
-          ([id, line]) => window.api.terminal.write(id, line),
-          [tabId, '/koloft help\r']
+        await ranInCodexTabAndExitedZero(
+          page,
+          tabId,
+          '/koloft help',
+          /koloft exit=(\d+)[\s\S]*Codex done/,
+          KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
         )
-        const koloftTurnOver = /koloft exit=(\d+)[\s\S]*Codex done/
-        await expect
-          .poll(async () => koloftTurnOver.exec(await terminalText(page, tabId))?.[1], {
-            timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
-          })
-          .toBe('0')
         await expect(
           wsRows(page, 'kt-key').and(page.locator(`[data-tab-id="${tabId}"]`))
         ).toHaveClass(/\bst-waiting\b/)
@@ -1213,34 +1234,19 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   test('E-SSH-30: a Codex session on a Linux machine that has no gh gets the gh Koloft installs there, and a command Codex runs there finds it (downloads gh)', async ({
     env
   }) => {
-    installCodex(
-      env,
-      JSON.stringify({ tokens: { access_token: 'mac-token-for-the-lab', account_id: 'lab' } })
-    )
+    installCodexSignedInForTheLab(env)
     await withLab(
       env,
       async ({ page, lab }) => {
         expect(runOnTarget(lab, 'kuser', 'command -v gh || echo none').trim()).toBe('none')
-        await addMachine(page, 'kt-key', 'kuser')
-        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
-        await newSessionInWith(page, 'kt-key', 'Codex')
-        await expect(
-          wsRows(page, 'kt-key').filter({ hasText: 'Codex fixture session' })
-        ).toHaveClass(/st-waiting/, { timeout: 120_000 })
-        const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.backendId === 'codex' && s.alive
-        )!.tabId
-        await page.evaluate(
-          ([id, line]) => window.api.terminal.write(id, line),
-          [tabId, '/sh gh --version\r']
+        const tabId = await codexTabOnKtKey(page)
+        await ranInCodexTabAndExitedZero(
+          page,
+          tabId,
+          '/sh command -v gh && gh --version',
+          /\/home\/kuser\/\.local\/bin\/gh[\s\S]*gh version \d[\s\S]*sh exit=(\d+)[\s\S]*Codex done/,
+          ONE_COMMAND_CODEX_RUNS_ON_THE_MACHINE_MS
         )
-        const ghTurnOver = /gh version \d[\s\S]*sh exit=(\d+)[\s\S]*Codex done/
-        await expect
-          .poll(async () => ghTurnOver.exec(await terminalText(page, tabId))?.[1], {
-            timeout: ONE_COMMAND_CODEX_RUNS_ON_THE_MACHINE_MS
-          })
-          .toBe('0')
-        expect(runOnTarget(lab, 'kuser', 'ls .local/bin')).toMatch(/^gh$/m)
       },
       (lab) => {
         installFakeCodexOnTarget(lab)
