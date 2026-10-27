@@ -1022,7 +1022,9 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
           timeout: A_REAL_MODEL_TURN_MS
         })
         .toBeGreaterThan(0)
-      expect(codexRolloutText(env, sessionId)).toMatch(/agent-plugin\/skills[\s\S]*- koloft: /)
+      expect(codexRolloutText(env, sessionId)).toMatch(
+        /agent-plugin\/skills`[\s\S]*- koloft:koloft: /
+      )
       expect(CODEX_TRANSCRIPT.replies(env, sessionId).at(-1)).toMatch(/koloft/)
       expect(fs.existsSync(path.join(env.home, '.codex', 'skills', 'koloft'))).toBe(false)
     } catch (e) {

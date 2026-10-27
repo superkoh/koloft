@@ -1431,6 +1431,10 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   a new app-server that got it first also read the skill. Nothing is kept: the home got
   no `config.toml` and no `skills/koloft`, and a second app-server started on that home
   without the call listed no `koloft`.
+  Given Koloft's plugin folder's `skills/` (whose parent holds
+  `.claude-plugin/plugin.json` named `koloft`), a real 0.162.0 TUI started by Koloft
+  listed the skill as `- koloft:koloft: …` with that folder as `r1`, and the model read
+  the file (`agent-tools-real-smoke.spec.ts`, same day).
 - **Hooks:** `-c 'hooks.SessionStart=[{hooks=[{type="command",command=…}]}]'` shows in
   `hooks/list` with source `sessionFlags` and `trustStatus: "untrusted"`, and does not
   run. `-c 'hooks.state."<key>".trusted_hash=…'` did not change that. The same

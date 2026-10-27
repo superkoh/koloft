@@ -1160,4 +1160,8 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   outside `<gd>` were refused the same way.
 - agy's own changelog says `agy plugin validate` warns when a skill's body is over 24
   KB; what agy itself does with a longer one was not probed.
-- Not probed: the macOS build; what the interactive TUI does where `-p` refused a read.
+- The macOS build 1.4.8 (same build number, `darwin_arm64.json`) in a tart VM on
+  macOS 26.6.2, same day and method: `-p /skills` listed
+  `<gd>/antigravity-cli/skills/koloft/SKILL.md`, the request's `<skills>` block held
+  its line, and `read_file` of it succeeded.
+- Not probed: what the interactive TUI does where `-p` refused a read.
