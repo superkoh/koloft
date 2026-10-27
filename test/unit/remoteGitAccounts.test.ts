@@ -197,8 +197,8 @@ describe('a suggestion for a repository on a machine', () => {
     const clues: MachineClues = oneTrip
       ? await machine.cluesIn('box', dir)
       : {
-          env: await machine.clueEnv('box'),
-          git: (cwd, args, input) => machine.clueGit('box', cwd, args, input),
+          env: {},
+          git: (cwd, args, { input }) => machine.clueGit('box', cwd, args, input),
           ssh: (args) => machine.clueSsh('box', args),
           readFile: (file) => machine.clueFile('box', file)
         }
@@ -206,11 +206,8 @@ describe('a suggestion for a repository on a machine', () => {
       dir,
       { network: false, pushChecks: false },
       {
-        git: (cwd, args, opts) => clues.git(cwd, args, opts.input),
-        ssh: clues.ssh,
-        readFile: clues.readFile,
+        ...clues,
         home,
-        env: clues.env,
         githubUrl: GITHUB_URL,
         accounts: () => [github],
         serverOf: credentialUrlOf,
@@ -232,7 +229,8 @@ describe('a suggestion for a repository on a machine', () => {
         ['credential.https://github.com.helper', '!gh auth git-credential']
       ]),
       repo('configured', 'https://github.com/acme/app.git', [
-        ['credential.https://github.com.username', 'bob']
+        ['credential.https://github.com.username', 'bob'],
+        ['credential.https://github.com.helper', '!printf "password=gho_%s\\n" FROM_HELPER']
       ]),
       repo('in-url', 'https://bob@github.com/acme/app.git'),
       repo('ssh', 'git@github.com:acme/app.git')
@@ -241,7 +239,7 @@ describe('a suggestion for a repository on a machine', () => {
     for (const dir of repos) {
       const one = await suggestOnMachine(dir, true)
       expect(one.trips).toHaveLength(1)
-      expect(one.trips.join('')).not.toContain('gho_SECRET')
+      expect(one.trips.join('')).not.toMatch(/gho_SECRET|gho_FROM_HELPER/)
       expect(one.suggestion).toEqual((await suggestOnMachine(dir, false)).suggestion)
       found.push(one.suggestion)
     }

@@ -932,11 +932,8 @@ export class GitAccountService {
       dir,
       { network: network && facts.timeout, pushChecks: false },
       {
-        git: (cwd, args, opts) => clues.git(cwd, args, opts.input),
-        ssh: clues.ssh,
-        readFile: clues.readFile,
+        ...clues,
         home: facts.home,
-        env: clues.env,
         githubUrl: GITHUB_URL,
         accounts: () => this.accountsIn(machine),
         serverOf: credentialUrlOf,

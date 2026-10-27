@@ -7,7 +7,6 @@ import type { GhResult } from './prChecks'
 import { problemOf, type RunResult } from './remote/ssh'
 import {
   CLUE_ALL,
-  CLUE_ENV,
   CLUE_ENV_STEP,
   CLUE_FILE_STEP,
   CLUE_GIT,
@@ -34,6 +33,7 @@ import {
   type MachineFacts
 } from './remote/gitAccounts'
 import type { GitRunResult } from './gitSteps'
+import type { SuggestDeps } from './gitAccountSuggest'
 
 const GCM_INSTALL_TIMEOUT_MS = 5 * 60_000
 const MACHINE_STEP_TIMEOUT_MS = 30_000
@@ -214,26 +214,21 @@ export class GitMachineAccounts {
     return this.run(machine, CLUE_SSH, args, { timeoutMs: MACHINE_STEP_TIMEOUT_MS })
   }
 
-  async clueEnv(machine: string): Promise<NodeJS.ProcessEnv> {
-    const r = await this.run(machine, CLUE_ENV)
-    return r.code === 0 ? parseClueEnv(r.stdout) : {}
-  }
-
   async clueFile(machine: string, file: string): Promise<string | null> {
     const r = await this.run(machine, CLUE_READ_WITHOUT_TOKENS, [file])
     return r.code === 0 ? r.stdout : null
   }
 
   async cluesIn(machine: string, dir: string): Promise<MachineClues> {
-    const r = await this.run(machine, CLUE_ALL, [dir])
-    const answers = r.code === 0 ? parseClueAll(r.stdout) : new Map<string, GitRunResult>()
+    const r = await this.run(machine, CLUE_ALL, [dir], { timeoutMs: MACHINE_STEP_TIMEOUT_MS })
+    const answers = parseClueAll(r.stdout)
     const answered = (words: string[], input?: string): GitRunResult | undefined =>
       answers.get(clueKey(words, input))
     const env = answered([CLUE_ENV_STEP])
     return {
-      env: env ? parseClueEnv(env.stdout) : await this.clueEnv(machine),
-      git: async (cwd, args, input) =>
-        (cwd === dir && answered(['git', ...args], input)) ||
+      env: env ? parseClueEnv(env.stdout) : {},
+      git: async (cwd, args, { input }) =>
+        (cwd === dir ? answered(['git', ...args], input) : undefined) ??
         this.clueGit(machine, cwd, args, input),
       ssh: async (args) => answered(['ssh', ...args]) ?? this.clueSsh(machine, args),
       readFile: async (file) => {
@@ -245,9 +240,4 @@ export class GitMachineAccounts {
   }
 }
 
-export interface MachineClues {
-  env: NodeJS.ProcessEnv
-  git(cwd: string, args: string[], input?: string): Promise<GitRunResult>
-  ssh(args: string[]): Promise<GitRunResult>
-  readFile(file: string): Promise<string | null>
-}
+export type MachineClues = Pick<SuggestDeps, 'env' | 'git' | 'ssh' | 'readFile'>
