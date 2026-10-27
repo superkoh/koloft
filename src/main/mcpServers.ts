@@ -55,9 +55,7 @@ export function claudeServers(
   return [
     ...listed('claude', doc.mcpServers),
     ...folders.flatMap(({ folder, projectKey }) =>
-      [...new Set([projectKey, folder])].flatMap((key) =>
-        listed('claude', asRecord(projects[key]).mcpServers, folder)
-      )
+      listed('claude', asRecord(projects[projectKey]).mcpServers, folder)
     ),
     ...jsonServers('claude', projectFiles)
   ]

@@ -2684,7 +2684,9 @@ servers `globalprobe` (top-level `mcpServers` of `~/.claude.json`), `localprobe`
   it writes `projects["<key>"].mcpServers` ("local"), where `<key>` is the git top-level
   of the cwd, the main checkout for a linked worktree, and the cwd itself only outside
   any repository. `mcp list` / `get` / `remove` run anywhere below that key find and
-  change the same entry. 2.1.311 changed only the `File modified: … [project: X]` line,
+  change the same entry, and an entry under a repository sub-folder's own path is not
+  loaded there (`mcp get` of it in that sub-folder: `No MCP server named …`, 2.1.311,
+  one run with both keys seeded). 2.1.311 changed only the `File modified: … [project: X]` line,
   which on 2.1.310 named the cwd while the write went to the root. Measured 2026-10-27,
   CC 2.1.310 and 2.1.311, `claude mcp add/list/get/remove` under a throwaway `HOME` with
   the same variables removed, run from A, A/sub, a linked worktree W of A and W/sub, with
