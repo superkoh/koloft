@@ -56,14 +56,14 @@ interface CreateArgs {
 
 const UTIL_TITLE_POLL_MS = 1500
 
+const QUIT_HANGUP_GRACE_SECONDS = 10
 const KILL_IF_STILL_OURS = `k=$1
 s=$2
 shift 2
 sleep "$s"
 for p in "$@"; do
-  [ "$(ps -o ppid= -p "$p" | tr -d ' ')" = "$k" ] && kill -9 -- "-$p" "$p"
-done 2>/dev/null
-exit 0`
+  [ "$(ps -o ppid= -p "$p" | tr -d ' ')" = "$k" ] && kill -9 -- "-$p"
+done`
 
 const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
 
@@ -404,14 +404,23 @@ export class PtyManager extends EventEmitter {
   }
 
   // PLATFORM§41
-  killWhatOutlivesTheQuit(afterSeconds: number): void {
+  killWhatOutlivesTheQuit(): void {
     const pids = [...this.running].map((proc) => String(proc.pid))
     if (!pids.length) return
     spawn(
       '/bin/sh',
-      ['-c', KILL_IF_STILL_OURS, 'sh', String(process.pid), String(afterSeconds), ...pids],
+      [
+        '-c',
+        KILL_IF_STILL_OURS,
+        'sh',
+        String(process.pid),
+        String(QUIT_HANGUP_GRACE_SECONDS),
+        ...pids
+      ],
       { detached: true, stdio: 'ignore' }
-    ).unref()
+    )
+      .on('error', () => {})
+      .unref()
   }
 
   killUtilOrphans(): void {

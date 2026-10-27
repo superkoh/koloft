@@ -3593,7 +3593,6 @@ setQuitAsk(askQuit)
 
 let storedQuitPending = false
 let storedQuitStopped = false
-const TAB_HANGUP_GRACE_SECONDS = 5
 app.on('before-quit', (e) => {
   const decision = quitDecision(Date.now())
   if (decision === 'wait') {
@@ -3636,7 +3635,6 @@ app.on('before-quit', (e) => {
     if (leaving?.claudePid && leaving.treeRoot)
       finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)
   }
-  ptyMgr.killWhatOutlivesTheQuit(TAB_HANGUP_GRACE_SECONDS)
   claudeTabExits.clear()
   cronRunner?.quitSweep()
   cronRunner?.stop()
@@ -3654,6 +3652,8 @@ app.on('before-quit', (e) => {
   closeAllDirWatchers()
   resetQuitGuard()
 })
+
+app.on('quit', () => ptyMgr.killWhatOutlivesTheQuit())
 
 function setupLine(playwrightBin?: string): string | undefined {
   if (!ptyMgr.shimDir) return undefined

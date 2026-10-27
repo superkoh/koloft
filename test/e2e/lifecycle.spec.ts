@@ -51,7 +51,7 @@ const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const NO_SLEEP_DURING_THE_CHECKS_MS = 600_000
 const BIND_LATER_THAN_THE_QUIT_MS = 15_000
-const QUITS_WITHIN_MS = 20_000
+const QUITS_WITHIN_MS = 30_000
 
 function openTabsOnDisk(env: E2EEnv): unknown {
   try {
