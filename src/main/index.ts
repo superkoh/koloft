@@ -1642,10 +1642,15 @@ const sessionDeps: SessionVerbDeps = {
   closeSoon: (inOrder, tellStarter) =>
     setTimeout(async () => {
       for (const target of inOrder) {
-        const tell = (text: string): void => (tellTheOwner(text), tellStarter(target, text))
-        await closeSessionFully(target, undefined, tell).catch((error) =>
+        const tell = (text: string): void => {
+          tellTheOwner(text)
+          tellStarter(target, text)
+        }
+        const closed = await closeSessionFully(target, undefined, tell).catch((error) => {
           tell(`${target.title}: ${String(error)}`)
-        )
+          return false
+        })
+        if (!closed) return
       }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
@@ -4511,14 +4516,14 @@ async function closeSessionFully(
   target: ClosableSession,
   info = projectInfoFor(target.treeRoot),
   tell = tellTheOwner
-): Promise<void> {
+): Promise<boolean> {
   const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
   if (tabId) {
     sendToRenderer(CH.tab.killedByMain, tabId)
     await killTabPty(tabId)
   } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
     tell(`${target.title} was opened again, so Koloft did not close it.`)
-    return
+    return false
   }
   const tree = await closingTree(hostGitOut, info)
   const alreadyRemoved =
@@ -4526,9 +4531,9 @@ async function closeSessionFully(
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
     tell(
-      `${target.title}: its tab is closed, but its worktree stayed. ${problem}\nOnce the folder is gone, close the session again.`
+      `Koloft could not finish closing ${target.title}. ${problem}\nOnce that is dealt with, close the session again.`
     )
-    return
+    return false
   }
   archiveSession(target.sessionId)
   for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
@@ -4538,6 +4543,7 @@ async function closeSessionFully(
     Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
   )
   void refreshLeftovers(() => sharedProcessTable.fresh())
+  return true
 }
 
 async function removeUntouchedWorktree(

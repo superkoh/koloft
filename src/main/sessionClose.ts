@@ -109,7 +109,7 @@ export async function removeTree(
   tree: ClosingTree,
   force = false
 ): Promise<string | null> {
-  const onItsHost = parseRemoteKey(tree.treeRoot)?.path ?? tree.treeRoot
+  const onItsHost = barePath(tree.treeRoot)
   await git(tree.root, ['worktree', 'unlock', onItsHost])
   let gitSaid = ''
   const removed = await git(
