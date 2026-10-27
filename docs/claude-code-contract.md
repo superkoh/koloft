@@ -1636,9 +1636,18 @@ other bullets of §9 were not re-measured on this build.
   `Quick safety check` in what it drew. The same binary's code (`strings`) walks up and
   stops at the repo top; it also checks the folder's own key first, and gives no
   ancestor's trust to a folder outside the repo top it found (a worktree placed outside
-  its main repo) — read, not run. What CC takes as the top when a `.git` file has no
-  readable `commondir` (a submodule, a worktree whose main repo is gone) is not probed
-  yet. `claude --help`
+  its main repo) — read, not run. **A `.git` file whose git dir has no readable
+  `commondir` makes its own folder the top.** Measured 2026-10-27 on CC 2.1.311, the same
+  temp-`HOME` method (the binary in a python pty for 9 s), one run per case. A submodule
+  `P/R/sub` (its `.git` file naming `P/R/.git/modules/sub`, made with `git init
+  --separate-git-dir`) asked with only `P/R` trusted and with only `P` trusted, and did
+  not ask with `P/R/sub` trusted. A worktree whose main repo is gone (`P/W/.git` naming a
+  missing git dir) asked with only `P` trusted and not with `P/W` trusted; the same
+  inside another repo `P/Q` asked with `P/Q` or `P` trusted. Controls: with nothing
+  trusted it asked; with only `P` trusted, a launch in the repo `P/R` asked. The binary
+  also holds a `rootOnly` branch (only the root's own key counts, no walk), but in 2.1.311
+  the root finder behind it asks a function compiled to `return!1`, so it never finds a
+  root and the branch never runs (read with `strings`, not run). `claude --help`
   (2.1.281) adds that `-p`, or a stdout that is not a TTY, skips the trust dialog.
   **An older `<config dir>/.config.json` can stand in for `~/.claude.json`** (the config
   dir is `CLAUDE_CONFIG_DIR`, else `~/.claude`): through 2.1.296 its mere existence made
