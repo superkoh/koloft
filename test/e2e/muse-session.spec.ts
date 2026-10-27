@@ -25,9 +25,11 @@ import {
   openWorktreeSession,
   processAlive,
   readCalls,
+  restoreOffered,
   runIn,
   sendShortcut,
   staysOnTheFolderPageNotTheButler,
+  STORE_WATCH_GOES_LIVE_AFTER_BOOT_MS,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -604,6 +606,53 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await expect(page.locator('.terminals .term-wrap')).toHaveCount(0, { timeout: 30_000 })
       await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§5
+  test('a Muse session started in a plain terminal while Koloft is open turns Restore session on for its folder with nothing else done, and deleting its folder there turns it off again', async ({
+    env
+  }) => {
+    installMuse(env)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      expect(await restoreOffered(page, 'ws-a')).toBe(false)
+      await page.waitForTimeout(STORE_WATCH_GOES_LIVE_AFTER_BOOT_MS)
+      const sessions = path.join(env.home, '.local', 'share', 'muse', 'sessions')
+      const id = '01a17db8-7cda-7722-8212-7f60790ea9c8'
+      const listed = path.join(sessions, 'fake', `${id}.json`)
+      const at = new Date()
+      const p2 = (n: number): string => String(n).padStart(2, '0')
+      const folder = path.join(
+        sessions,
+        String(at.getFullYear()),
+        p2(at.getMonth() + 1),
+        p2(at.getDate()),
+        id
+      )
+      fs.mkdirSync(path.dirname(listed), { recursive: true })
+      fs.writeFileSync(
+        listed,
+        JSON.stringify({
+          id,
+          cwd: fs.realpathSync(env.workspaces.a),
+          title: 'started in a plain terminal',
+          createdAt: at.toISOString(),
+          updatedAt: at.toISOString(),
+          items: []
+        })
+      )
+      fs.mkdirSync(folder, { recursive: true })
+      fs.writeFileSync(path.join(folder, 'session.jsonl'), '{}\n')
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 20_000 }).toBe(true)
+      fs.unlinkSync(listed)
+      fs.rmSync(folder, { recursive: true })
+      await expect.poll(() => restoreOffered(page, 'ws-a'), { timeout: 20_000 }).toBe(false)
     } finally {
       await quitAndClose(app)
     }

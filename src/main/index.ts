@@ -60,6 +60,7 @@ import {
 import { agyBackend } from './backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome, museHome } from './museSessionLog'
+import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
@@ -3031,6 +3032,8 @@ app.whenReady().then(() => {
       })
       .catch((error) => sendToRenderer(CH.cron.toast, String(error)))
   }
+  for (const stored of [codexSessions, museSessions, agySessions])
+    if (stored) void watchHistoryOf(stored).catch(() => undefined)
   workspaceMgr = new WorkspaceManager({
     additionalRows: (wsPath) =>
       storedSessions().flatMap((stored) =>

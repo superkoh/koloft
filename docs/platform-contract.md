@@ -1914,6 +1914,15 @@ Gateway (the live connection that pushes events):
   reported `change` and the single ones `rename`. A watcher that must know what
   happened has to look at the file itself.
 - A write inside a subdirectory gave no event at all; creating the subdirectory gave one.
+- **With `recursive: true` every event names the path below the watched folder, and
+  still says `rename` for an append.** Measured 2026-10-27 on macOS 27.0 (APFS) under
+  Electron 43.8.1's own Node 24.22 (`ELECTRON_RUN_AS_NODE=1`): creating
+  `2026/10/27/rollout-new.jsonl` in a new day folder gave `rename` for `2026/10/27` and
+  for the file; a single append, twenty quick appends and five appends 300 ms apart each
+  gave `rename` with the file's path (the twenty folded into one); deleting a file gave
+  `rename`; removing a folder gave `rename` for every file in it and for the folder. So a
+  recursive watcher, too, must look at the file to tell a new or deleted one from an
+  append.
 
 ## §41 What an Electron app's quit does to its children
 
