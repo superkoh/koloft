@@ -825,7 +825,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(row).toHaveClass(/st-approval/, { timeout: 60_000 })
       await page.waitForTimeout(TUI_GIVES_UP_ON_A_QUESTION_MS * 2)
       await expect(row).toHaveClass(/st-approval/)
-      expect((await histLines(page))[0]?.state).not.toMatch(/^Done/)
+      expect((await histLines(page)).some((line) => line.state.startsWith('Done'))).toBe(false)
       expect(await tabDisplays(page)).toHaveLength(1)
 
       const tabId = await row.getAttribute('data-tab-id')
