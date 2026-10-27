@@ -1639,11 +1639,11 @@ const sessionDeps: SessionVerbDeps = {
   startedSessions,
   closable: closableSessions,
   whatIsLeft: whatClosingWouldLose,
-  closeSoon: (inOrder) =>
+  closeSoon: (inOrder, tell = tellTheOwner) =>
     setTimeout(async () => {
       for (const target of inOrder)
-        await closeSessionFully(target).catch((error) =>
-          sendToRenderer(CH.cron.toast, `${target.title}: ${String(error)}`)
+        await closeSessionFully(target, undefined, tell).catch((error) =>
+          tell(`${target.title}: ${String(error)}`)
         )
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
@@ -4470,7 +4470,8 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
+const hostGitOut: GitOut = (dir, args, timeoutMs, onFailure) =>
+  hosts.of(dir).gitOut(dir, args, timeoutMs, onFailure)
 const mergedHeads: MergedHeads = (dir, branch) => hosts.of(dir).github.mergedHeads(dir, branch)
 
 function treeRootOf(s: SessionInfo): string {
@@ -4500,16 +4501,22 @@ async function whatClosingWouldLose(
   ]
 }
 
+function tellTheOwner(text: string): void {
+  sendToRenderer(CH.cron.toast, text)
+  if (discordRelay && ownerAway()) discordRelay.tell(butlerDestination(), `[Koloft] ${text}`)
+}
+
 async function closeSessionFully(
   target: ClosableSession,
-  info = projectInfoFor(target.treeRoot)
+  info = projectInfoFor(target.treeRoot),
+  tell = tellTheOwner
 ): Promise<void> {
   const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
   if (tabId) {
     sendToRenderer(CH.tab.killedByMain, tabId)
     await killTabPty(tabId)
   } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
-    sendToRenderer(CH.cron.toast, `${target.title} was opened again, so Koloft did not close it.`)
+    tell(`${target.title} was opened again, so Koloft did not close it.`)
     return
   }
   const tree = await closingTree(hostGitOut, info)
@@ -4517,7 +4524,7 @@ async function closeSessionFully(
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
-    sendToRenderer(CH.cron.toast, `${target.title}: ${problem}`)
+    tell(`${target.title} was not closed. ${problem}`)
     return
   }
   archiveSession(target.sessionId)

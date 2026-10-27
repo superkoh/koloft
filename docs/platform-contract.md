@@ -1256,6 +1256,20 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   follows the folder's read order, not the name order: killed at 5 s, a tree of `.git`,
   `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
   gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
+- **`git worktree remove` that cannot delete a file still unregisters the tree**: a
+  read-only folder anywhere inside (`chmod 555`, ignored or tracked), a read-only parent
+  folder, or a `chflags uchg` file makes it exit 255 with one line on stderr,
+  `error: failed to delete '<tree>': Permission denied` (`Operation not permitted` for
+  `uchg`). By then git has deleted `.git/worktrees/<name>`, so the leftover folder is
+  no worktree: `git worktree list` no longer shows it, its branch stays, and a second
+  `git worktree remove`, `--force --force` too, answers "is not a working tree". Only
+  deleting the folder by hand (after `chmod -R u+w`) finishes it. Whether the tree's
+  own `.git` file is gone follows the folder's read order: on macOS it stayed, so git
+  run inside fails (`status` exits 128); on Linux it went, so git run inside finds the
+  repository above it and reads that one's HEAD and status. A process whose cwd is
+  inside the tree, holding a file there open, does not stop the removal on either.
+  (Measured 2026-10-27 on throwaway repos as a non-root user: git 2.54.0 on macOS
+  APFS; git 2.39.5 on Debian 12 in the e2e sshd Docker image.)
 - **The mtime of `<repo>/.git/worktrees` moves when a linked worktree is added, removed
   or pruned, and only then**: a repo with none has no such folder, `git worktree add`
   creates it, and the last `remove` or `prune` deletes it again. A checkout or a lock

@@ -110,14 +110,24 @@ export async function removeTree(
 ): Promise<string | null> {
   const onItsHost = parseRemoteKey(tree.treeRoot)?.path ?? tree.treeRoot
   await git(tree.root, ['worktree', 'unlock', onItsHost])
+  let gitSaid = ''
   const removed = await git(
     tree.root,
     ['worktree', 'remove', ...(force ? ['--force'] : []), onItsHost],
-    DELETING_HUNDREDS_OF_THOUSANDS_OF_IGNORED_FILES_MS
+    DELETING_HUNDREDS_OF_THOUSANDS_OF_IGNORED_FILES_MS,
+    (stderr) => (gitSaid = stderr.trim())
   )
-  if (removed === null) return `git could not remove the worktree ${tree.treeRoot}.`
+  if (removed === null) return couldNotRemove(tree, onItsHost, gitSaid)
   await deleteBranches(git, tree.root, tree.branches)
   return null
+}
+
+function couldNotRemove(tree: ClosingTree, onItsHost: string, gitSaid: string): string {
+  const said = gitSaid ? `:\n${gitSaid}` : '.'
+  const root = parseRemoteKey(tree.root)?.path ?? tree.root
+  const named = `worktree-${path.basename(onItsHost)}`
+  const branch = tree.branches.includes(named) ? ` && git -C '${root}' branch -D ${named}` : ''
+  return `git could not remove the worktree ${tree.treeRoot}${said}\nTo finish by hand, run: chmod -R u+w '${onItsHost}' && rm -rf '${onItsHost}'${branch}\nThen close the session again.`
 }
 
 async function deleteBranches(git: GitOut, root: string, branches: string[]): Promise<boolean> {

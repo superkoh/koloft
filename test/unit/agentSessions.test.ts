@@ -96,6 +96,7 @@ function harness(
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
+  closeFailureTold: (((text: string) => void) | undefined)[]
   reads: { key: string; n: number }[]
   lines: { tabId: string; line: string }[]
   pressed: { tabId: string; keys: string[] }[]
@@ -116,6 +117,7 @@ function harness(
   const launched: Launch[] = []
   const queued: { tabId: string; text: string; clientId?: string }[] = []
   const closed: string[] = []
+  const closeFailureTold: (((text: string) => void) | undefined)[] = []
   const reads: { key: string; n: number }[] = []
   const lines: { tabId: string; line: string }[] = []
   const pressed: { tabId: string; keys: string[] }[] = []
@@ -167,8 +169,9 @@ function harness(
     startedSessions,
     closable: () => [...sessions, ...cold],
     whatIsLeft: async (target) => conducting.leftOf?.[target.sessionId] ?? left,
-    closeSoon: (inOrder) => {
+    closeSoon: (inOrder, tell) => {
       closed.push(...inOrder.map((target) => target.sessionId))
+      closeFailureTold.push(tell)
     },
     isButler: (tabId) => !!conducting.scopes?.[tabId],
     speaksForTheOwner: (tabId) =>
@@ -230,6 +233,7 @@ function harness(
     launched,
     queued,
     closed,
+    closeFailureTold,
     reads,
     lines,
     pressed,
@@ -875,6 +879,50 @@ describe('koloft session close', () => {
     expect((await verb(['close'], from('me'))).exit).toBe(0)
     expect((await verb(['close'], from('cx'))).exit).toBe(0)
     expect(closed).toEqual(['me-session', 'cx-session'])
+  })
+
+  it('a close that fails is told to the session that started the closed one, starting it again if it is closed, whether the session closed itself or its starter closed it; one nobody started is left to Koloft to tell the owner', async () => {
+    const h = harness(
+      [
+        session('me', 'claude', { title: 'Lead' }),
+        session('kid', 'claude', { sessionId: 'kid-id', title: 'Fix docs' }),
+        session('new-tab', 'claude', { title: 'Docs fixer' })
+      ],
+      {},
+      [],
+      {
+        sidebar: sidebar([
+          [WS, [row('planner-id', { title: 'Planner' }), row('me-session', { running: true })]]
+        ])
+      }
+    )
+    h.startedSessions.started('kid', 'planner-id')
+    h.startedSessions.bound('kid', 'kid-id')
+    await h.verb(['new', '--', 'go'], from('me'))
+
+    await h.verb(['close'], from('kid'))
+    await h.verb(['close', 'Docs fixer'], from('me'))
+    await h.verb(['close'], from('me'))
+    const [toPlanner, toMe, nobody] = h.closeFailureTold
+    toPlanner?.('Fix docs was not closed. git could not remove the worktree.')
+    toMe?.('Docs fixer was not closed. git could not remove the worktree.')
+
+    expect(nobody).toBeUndefined()
+    await vi.waitFor(() => expect(h.resumed).toContain('planner-id'))
+    await vi.waitFor(() =>
+      expect(h.lines).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            tabId: 'planner-id-tab',
+            line: expect.stringContaining('Fix docs was not closed.')
+          }),
+          expect.objectContaining({
+            tabId: 'me',
+            line: expect.stringContaining('Docs fixer was not closed.')
+          })
+        ])
+      )
+    )
   })
 
   it('closes a session it started with koloft session new, by its title, quoted or not, or tab id, while it is open', async () => {

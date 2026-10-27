@@ -401,7 +401,7 @@ export interface SessionVerbDeps {
   startedSessions: StartedSessions
   closable(): ClosableSession[]
   whatIsLeft(target: ClosableSession): Promise<string[]>
-  closeSoon(inOrder: ClosableSession[]): void
+  closeSoon(inOrder: ClosableSession[], tell?: (text: string) => void): void
   isButler(tabId: string): boolean
   speaksForTheOwner(tabId: string): boolean
   butlerFolder(): string
@@ -682,6 +682,13 @@ function starterRow(
 ): PlacedRow | undefined {
   const [id] = d.startedSessions.startersOf({ ...caller.session, tabId: caller.tabId })
   return id === undefined ? undefined : placedRows(d.sidebar(), open).find((r) => r.row.id === id)
+}
+
+function starterTarget(d: SessionVerbDeps, s: ClosableSession): Target | undefined {
+  const [id] = d.startedSessions.startersOf(s)
+  if (id === undefined) return undefined
+  const row = placedRows(d.sidebar(), d.allSessions()).find((r) => r.row.id === id)
+  return d.butlerTarget(id) ?? (row && rowTarget(d, row))
 }
 
 interface NamedRows {
@@ -1288,7 +1295,11 @@ export function sessionVerb(d: SessionVerbDeps): {
           `koloft session close: nothing was closed.\n\n${left.join('\n\n')}\n\nCommit and push every change, end any other session in that worktree, then run koloft session close again.`
         )
       const started = await startedSessionsToClose(d, target, caller.tabId)
-      d.closeSoon([target, ...started.close])
+      const starter = starterTarget(d, target)
+      d.closeSoon(
+        [target, ...started.close],
+        starter && ((text) => deliverOrReport(caller, starter, text))
+      )
       return answered(
         [
           target.tabId === caller.tabId

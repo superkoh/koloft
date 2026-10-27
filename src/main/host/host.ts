@@ -15,6 +15,7 @@ import type { FreshnessRunner } from '../gitFreshness'
 import type { DiffResult, GitDiffResult } from '../gitStatus'
 import type { GithubLookup } from '../github'
 import type { GitRunResult } from '../gitSteps'
+import type { GitOut } from '../resumePlan'
 import type { RemoteTab } from '../sessionTracker'
 
 export interface ShowIgnored {
@@ -115,7 +116,7 @@ export interface Host {
   trustsFolder(dir: string): Promise<boolean>
   listSkills(root: string): Promise<SkillSuggestion[]>
   keyed(p: string): string
-  gitOut(root: string, args: string[], timeoutMs?: number): Promise<string | null>
+  gitOut: GitOut
   gitRun(root: string, args: string[], network?: boolean): Promise<GitRunResult>
   reveal(p: string): void
   osOpen(p: string): void

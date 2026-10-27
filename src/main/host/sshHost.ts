@@ -634,17 +634,24 @@ export class SshHost implements Host {
     })
   }
 
-  gitOut(root: string, args: string[], timeoutMs?: number): Promise<string | null> {
-    return this.runGit(GIT, root, args, timeoutMs)
+  gitOut(
+    root: string,
+    args: string[],
+    timeoutMs?: number,
+    onFailure?: (stderr: string) => void
+  ): Promise<string | null> {
+    return this.runGit(GIT, root, args, timeoutMs, onFailure)
   }
 
   private async runGit(
     script: string,
     root: string,
     args: string[],
-    timeoutMs?: number
+    timeoutMs?: number,
+    onFailure?: (stderr: string) => void
   ): Promise<string | null> {
     const r = await this.sh(script, ['-C', this.bare(root), ...args], { timeoutMs })
+    if (r.code !== 0) onFailure?.(r.stderr)
     return r.code === 0 ? r.stdout.toString('utf8') : null
   }
 
