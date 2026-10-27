@@ -930,6 +930,29 @@ describe('DiscordRelay: the owner at the Mac', () => {
     relay.checkHeld()
     expect(posts).toHaveLength(1)
   })
+
+  it('the same for a Codex question: held at the Mac and answered there, a new one asked just after the owner leaves is posted once', () => {
+    let away = false
+    let question: CodexQuestion | undefined = {
+      id: 'q1',
+      question: 'Ship it?',
+      options: [{ label: 'Yes' }]
+    }
+    const { relay, posts } = setup({}, [], {
+      backendOf: () => 'codex',
+      ownerAway: () => away,
+      pendingQuestion: () => question
+    })
+    relay.codexAsked(TAB, question)
+    question = undefined
+
+    away = true
+    question = { id: 'q2', question: 'Again?', options: [{ label: 'Yes' }] }
+    relay.codexAsked(TAB, question)
+    expect(posts).toHaveLength(1)
+    relay.checkHeld()
+    expect(posts).toHaveLength(1)
+  })
 })
 
 describe('DiscordRelay: Koloft telling a conductor something', () => {
