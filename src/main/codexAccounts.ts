@@ -1,14 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import {
-  RESUME_KEEPS_ACCOUNT_UP_TO,
-  codexBackAt,
-  codexHeaviest,
-  codexWalled,
-  usableAccounts
-} from '@shared/accountUsage'
+import { RESUME_KEEPS_ACCOUNT_UP_TO, homeRoom, usableAccounts } from '@shared/accountUsage'
 import type { AccountView, CodexLimits, CodexLimitWindow, SignInFolderKind } from '@shared/types'
 import { joinProjectTables } from './codexTrust'
+import { SCORE_PER_LIVE_SESSION } from './accountPicker'
+import { EPS } from './usageProbe'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -145,23 +141,31 @@ export class HomeAccountPicker {
 
   constructor(private kind: SignInFolderKind) {}
 
-  pick(accounts: AccountView[], resumedOn?: string): AccountView | undefined {
+  private inTurn<A>(accounts: A[]): A {
+    return accounts[this.turn++ % accounts.length]
+  }
+
+  pick(
+    accounts: AccountView[],
+    resumedOn?: string,
+    live: Map<string, number> = new Map()
+  ): AccountView | undefined {
     const pool = usableAccounts(accounts, [this.kind])
     if (pool.length === 0) return undefined
     const same = pool.find((a) => a.name === resumedOn)
-    if (
-      same &&
-      (!same.limits ||
-        (!codexWalled(same.limits) && codexHeaviest(same.limits) <= RESUME_KEEPS_ACCOUNT_UP_TO))
-    )
+    const sameRoom = same && homeRoom(same)
+    if (same && (!sameRoom || (!sameRoom.walled && sameRoom.used <= RESUME_KEEPS_ACCOUNT_UP_TO)))
       return same
-    const measured = pool.filter((a) => a.limits && !codexWalled(a.limits))
-    if (measured.length > 0)
-      return measured.reduce((best, a) =>
-        codexHeaviest(a.limits!) < codexHeaviest(best.limits!) ? a : best
-      )
-    const unmeasured = pool.filter((a) => !a.limits)
-    if (unmeasured.length > 0) return unmeasured[this.turn++ % unmeasured.length]
-    return pool.reduce((best, a) => (codexBackAt(a.limits!) < codexBackAt(best.limits!) ? a : best))
+    const rooms = pool.map((a) => ({ a, room: homeRoom(a) }))
+    const open = rooms.flatMap(({ a, room }) => (room && !room.walled ? [{ a, room }] : []))
+    if (open.length > 0) {
+      const score = ({ a, room }: (typeof open)[number]): number =>
+        room.used + (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION
+      const least = Math.min(...open.map(score))
+      return this.inTurn(open.filter((o) => score(o) <= least + EPS)).a
+    }
+    const unmeasured = rooms.filter(({ room }) => !room)
+    if (unmeasured.length > 0) return this.inTurn(unmeasured).a
+    return pool.reduce((best, a) => (homeRoom(a)!.backAt < homeRoom(best)!.backAt ? a : best))
   }
 }

@@ -113,6 +113,7 @@ export interface AgyHomePick {
   account: string
   home: string
   banner?: string
+  notice?: string
 }
 
 export interface AgySessionDeps extends StoredSessionDeps {
@@ -470,7 +471,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // ADR-0030
     const pick = this.deps.pickHome(opts.resumeSessionId)
     if (!pick) throw new Error(NO_USABLE_ACCOUNT.agy)
+    if (pick.notice) this.deps.error(pick.notice)
     return { binary: this.binary!, pick, env: { ...(this.processEnv ?? process.env) } }
+  }
+
+  protected launchAccount({ pick }: AgyLaunch): string {
+    return pick.account
   }
 
   protected runDetails(run: AgyRun): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {

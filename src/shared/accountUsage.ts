@@ -4,6 +4,7 @@ import type {
   AccountView,
   BackendId,
   CodexLimits,
+  QuotaBucket,
   SignInBackend,
   UsageSnapshot
 } from './types'
@@ -187,10 +188,39 @@ export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
 }
 
 // AGY§23
+export function quotaHeaviest(quota: QuotaBucket[]): number {
+  return Math.max(0, ...quota.map((q) => q.used))
+}
+
+// AGY§23
+export function quotaBackAt(quota: QuotaBucket[]): number {
+  const full = quota.filter((q) => q.used >= 1)
+  return Math.max(0, ...(full.length ? full : quota).map((q) => q.resetsAt ?? 0))
+}
+
+export interface HomeRoom {
+  used: number
+  walled: boolean
+  backAt: number
+}
+
+export function homeRoom(a: Pick<AccountView, 'limits' | 'quota'>): HomeRoom | undefined {
+  if (a.limits)
+    return {
+      used: codexHeaviest(a.limits),
+      walled: codexWalled(a.limits),
+      backAt: codexBackAt(a.limits)
+    }
+  if (!a.quota?.length) return undefined
+  const used = quotaHeaviest(a.quota)
+  return { used, walled: used >= 1, backAt: quotaBackAt(a.quota) }
+}
+
+// AGY§23
 export function quotaGlyph(a: AccountView): CapsuleGlyph {
   if (a.status !== 'ok') return { kind: 'grey' }
   if (!a.quota?.length) return { kind: 'empty' }
-  const heaviest = Math.max(...a.quota.map((q) => q.used))
+  const heaviest = quotaHeaviest(a.quota)
   if (heaviest >= 1) return { kind: 'walled', stale: false }
   return {
     kind: 'bar',

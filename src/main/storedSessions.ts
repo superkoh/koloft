@@ -28,6 +28,7 @@ import {
 } from './resumePlan'
 import type { CliRuntime } from './cliRuntime'
 import type { HoldScript } from './hooks'
+import type { LaunchedSession } from './accountPicker'
 import { isNewer } from './releaseNotes'
 import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
@@ -165,6 +166,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   private launchingKeys = new Set<string>()
   private relaunchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
+  private preparing = new Set<P>()
   protected shuttingDown = false
   private emitTimer?: ReturnType<typeof setTimeout>
   private lastEmitMs = 0
@@ -232,6 +234,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
 
   protected runDetails(_run: R): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {
     return {}
+  }
+
+  protected launchAccount(_prepared: P): string | undefined {
+    return undefined
   }
 
   protected degradedDetails(): BackendSessionInfo['details'] {
@@ -335,6 +341,15 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
 
   list(): BackendSessionInfo[] {
     return [...this.runs.values()].flatMap((r) => (r.info ? [{ ...r.info }] : []))
+  }
+  launchedSessions(): LaunchedSession[] {
+    const running = [...this.runs.values()].map((r) => ({
+      tabId: r.tabId,
+      account: this.runDetails(r).pickedAccount,
+      status: r.info?.status
+    }))
+    const starting = [...this.preparing].map((p) => ({ tabId: '', account: this.launchAccount(p) }))
+    return [...running, ...starting]
   }
   hasTab(tabId: string): boolean {
     return this.runs.has(tabId)
@@ -692,23 +707,29 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error(`This ${this.label} session is already open.`)
     const prepared = this.prepare(opts)
-    let freshWorktree = false
-    if (opts.worktreeResourceId) {
-      const saved = this.store.getResource(opts.worktreeResourceId)
-      if (!saved || saved.originalCwd !== workspace || opts.worktree || opts.resumeSessionId)
-        throw new Error('Invalid worktree recovery request.')
-      resource = await this.worktrees.rebuild(saved.id)
-      cwd = resource.worktreePath
-    } else if (opts.worktree) {
-      resource = await this.worktrees.create(workspace, opts.worktree)
-      cwd = resource.worktreePath
-      freshWorktree = !opts.scheduled
-    } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
-      resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
+    this.preparing.add(prepared)
+    let run: R
+    try {
+      let freshWorktree = false
+      if (opts.worktreeResourceId) {
+        const saved = this.store.getResource(opts.worktreeResourceId)
+        if (!saved || saved.originalCwd !== workspace || opts.worktree || opts.resumeSessionId)
+          throw new Error('Invalid worktree recovery request.')
+        resource = await this.worktrees.rebuild(saved.id)
+        cwd = resource.worktreePath
+      } else if (opts.worktree) {
+        resource = await this.worktrees.create(workspace, opts.worktree)
+        cwd = resource.worktreePath
+        freshWorktree = !opts.scheduled
+      } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
+        resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
+      }
+      this.assertStarting()
+      run = await this.startRun({ opts, cwd, workspace, resource, freshWorktree }, prepared)
+      this.runs.set(run.tabId, run)
+    } finally {
+      this.preparing.delete(prepared)
     }
-    this.assertStarting()
-    const run = await this.startRun({ opts, cwd, workspace, resource, freshWorktree }, prepared)
-    this.runs.set(run.tabId, run)
     this.changed()
     this.warnUntestedVersion(available)
     return { id: run.tabId, cwd }

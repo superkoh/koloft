@@ -97,6 +97,7 @@ export interface MuseHomePick {
   account: string
   env: Record<string, string>
   banner?: string
+  notice?: string
 }
 
 export interface MuseSessionDeps extends StoredSessionDeps {
@@ -516,12 +517,17 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     // ADR-0030 MUSE§13
     const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.muse)
+    if (picked.notice) this.deps.error(picked.notice)
     return {
       binary: this.binary!,
       account: picked.account,
       banner: picked.banner,
       env: { ...this.env, ...picked.env }
     }
+  }
+
+  protected launchAccount(launch: MuseLaunch): string {
+    return launch.account
   }
 
   protected runDetails(run: MuseRun): Pick<BackendSessionInfo, 'details' | 'pickedAccount'> {

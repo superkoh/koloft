@@ -54,7 +54,8 @@ let created: {
 let started: number
 let agentTools: boolean
 let endpoint: string
-let picked: { account: string; env: Record<string, string> } | undefined
+let picked: { account: string; env: Record<string, string>; notice?: string } | undefined
+let shown: string[]
 let assist: { role: string } | undefined
 let skipPermissions: boolean
 let servers: Set<string>
@@ -145,6 +146,7 @@ beforeEach(() => {
   agentTools = false
   endpoint = ''
   picked = { account: 'work', env: { TBH_CREDENTIAL_BACKEND: 'file' } }
+  shown = []
   assist = undefined
   skipPermissions = false
   servers = new Set()
@@ -180,7 +182,7 @@ beforeEach(() => {
     projectInfo: (p) => ({ root: repo, treeRoot: p }),
     changed: vi.fn(),
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
-    error: vi.fn(),
+    error: vi.fn((message: string) => void shown.push(message)),
     openShimRoot: path.join(home, 'muse-open'),
     pickHome: () => picked,
     playwrightBin: tools,
@@ -290,6 +292,14 @@ describe('MuseSessions launch', () => {
     expect(created[0].env.TBH_CREDENTIAL_BACKEND).toBe('file')
     picked = undefined
     await expect(launch()).rejects.toThrow(/No Muse account/)
+  })
+
+  it('says so when every Muse account is at its limit and the session starts anyway on the first to reset', async () => {
+    await launch()
+    expect(shown).toEqual([])
+    picked = { account: 'work', env: {}, notice: 'Every Muse account is at its limit' }
+    await launch()
+    expect(shown).toEqual(['Every Muse account is at its limit'])
   })
 
   it("puts the tab's own open, gh and playwright-cli commands first on muse's PATH, in place of Koloft's shim", async () => {

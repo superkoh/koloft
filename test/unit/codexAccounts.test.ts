@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { describe, expect, it } from 'vitest'
 import { HomeAccountPicker, limitsFrom, prepareCodexHome } from '../../src/main/codexAccounts'
-import { codexAllLimitedNotice } from '../../src/main/accountPicker'
+import { allLimitedNotice } from '../../src/main/accountPicker'
 import { windowLabel } from '../../src/shared/accountUsage'
 import type { AccountView } from '../../src/shared/types'
 
@@ -121,8 +121,66 @@ describe('picking a Codex account', () => {
     const soon = account('soon', { limits: walledUntil(1_900_000_000) })
     const picked = picker.pick([late, soon])
     expect(picked?.name).toBe('soon')
-    expect(codexAllLimitedNotice(picked!)).toMatch(/soon.*\d\d:\d\d/)
-    expect(codexAllLimitedNotice(account('light', { limits: used(0.25) }))).toBeUndefined()
+    expect(allLimitedNotice(picked!, 'codex')).toMatch(/Every Codex account.*soon.*\d\d:\d\d/)
+    expect(allLimitedNotice(account('light', { limits: used(0.25) }), 'codex')).toBeUndefined()
+  })
+
+  it('steers clear of an account a live session already runs on, the way Claude Code accounts are picked', () => {
+    const picker = new HomeAccountPicker('codex-home')
+    const pool = [account('a', { limits: used(0.2) }), account('b', { limits: used(0.22) })]
+    expect(picker.pick(pool, undefined, new Map([['a', 1]]))?.name).toBe('b')
+    expect(picker.pick(pool, undefined, new Map([['b', 1]]))?.name).toBe('a')
+    const far = [account('a', { limits: used(0.1) }), account('b', { limits: used(0.6) })]
+    expect(picker.pick(far, undefined, new Map([['a', 1]]))?.name).toBe('a')
+  })
+
+  it('takes turns between accounts used about the same, instead of starting every session on one', () => {
+    const picker = new HomeAccountPicker('codex-home')
+    const pool = [account('a', { limits: used(0.3) }), account('b', { limits: used(0.32) })]
+    expect([picker.pick(pool)?.name, picker.pick(pool)?.name, picker.pick(pool)?.name]).toEqual([
+      'a',
+      'b',
+      'a'
+    ])
+  })
+})
+
+// AGY§23
+describe('picking an Antigravity account by the quota /usage reports', () => {
+  const agy = (name: string, quota: AccountView['quota']): AccountView =>
+    account(name, { kind: 'agy-home', quota })
+
+  it('picks the account with the most quota left, and leaves a used-up one', () => {
+    const picker = new HomeAccountPicker('agy-home')
+    const pool = [
+      agy('full', [{ label: 'Gemini Models · 5h', used: 1, resetsAt: 1_900_000_000 }]),
+      agy('busy', [{ label: 'Gemini Models · 5h', used: 0.7 }]),
+      agy('light', [
+        { label: 'Gemini Models · 5h', used: 0.1 },
+        { label: 'Gemini Models · 7d', used: 0.2 }
+      ])
+    ]
+    expect(picker.pick(pool)?.name).toBe('light')
+  })
+
+  it('a resumed session leaves an account whose quota is used up', () => {
+    const picker = new HomeAccountPicker('agy-home')
+    const pool = [
+      agy('same', [{ label: 'Gemini Models · 7d', used: 1, resetsAt: 1_900_000_000 }]),
+      agy('other', [{ label: 'Gemini Models · 7d', used: 0.4 }])
+    ]
+    expect(picker.pick(pool, 'same')?.name).toBe('other')
+  })
+
+  it('when every account is used up, starts on the one that resets soonest and says so', () => {
+    const picker = new HomeAccountPicker('agy-home')
+    const pool = [
+      agy('late', [{ label: 'Gemini Models · 5h', used: 1, resetsAt: 2_000_000_000 }]),
+      agy('soon', [{ label: 'Gemini Models · 5h', used: 1, resetsAt: 1_900_000_000 }])
+    ]
+    const picked = picker.pick(pool)
+    expect(picked?.name).toBe('soon')
+    expect(allLimitedNotice(picked!, 'agy')).toMatch(/Every Antigravity account.*soon/)
   })
 
   it('a resumed session keeps the account it ran on until that account is past 95% used, and is never stuck on one that cannot run', () => {

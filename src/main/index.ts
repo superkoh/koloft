@@ -235,7 +235,8 @@ import { probeAccount, shouldSkipFable } from './usageProbe'
 import {
   AccountPicker,
   PROBE_TIMEOUT_MS,
-  codexAllLimitedNotice,
+  allLimitedNotice,
+  liveSessionsPerAccount,
   type PickResponse
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
@@ -2070,13 +2071,17 @@ function pickCodexHome(
   resumeSessionId?: string
 ): { account: string; home: string; notice?: string } | undefined {
   const views = accountViews()
-  const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
+  const picked = codexPicker.pick(
+    views,
+    sessionAccounts?.of('codex', resumeSessionId),
+    liveSessionsPerAccount(codexSessions?.launchedSessions() ?? [], undefined)
+  )
   if (!picked) return undefined
   const stale = (a: AccountView): boolean => !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home, notice: codexAllLimitedNotice(picked) }
+  return { account: picked.name, home, notice: allLimitedNotice(picked, 'codex') }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {
@@ -2210,7 +2215,11 @@ function museHomeFor(name: string): string {
 // ADR-0030 MUSE§13
 function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
   const views = accountViews()
-  const picked = musePicker.pick(views, sessionAccounts?.of('muse', resumeSessionId))
+  const picked = musePicker.pick(
+    views,
+    sessionAccounts?.of('muse', resumeSessionId),
+    liveSessionsPerAccount(museSessions?.launchedSessions() ?? [], undefined)
+  )
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
@@ -2218,7 +2227,8 @@ function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
     picked && {
       account: picked.name,
       env: museAccountEnv(museHomeFor(picked.name)),
-      banner: launchLine(picked, Date.now())
+      banner: launchLine(picked, Date.now()),
+      notice: allLimitedNotice(picked, 'muse')
     }
   )
 }
@@ -2282,6 +2292,7 @@ async function addMuseKey(name: string, key: string): Promise<AccountAddResult> 
 }
 
 const agyPicker = new HomeAccountPicker('agy-home')
+const agyProbedAt = new Map<string, number>()
 const preparedAgyHomes = new Set<string>()
 
 function ownersGemini(): string {
@@ -2303,12 +2314,21 @@ async function agyApiKeyOf(name: string): Promise<string | undefined> {
 
 // ADR-0030
 function pickAgyHome(resumeSessionId?: string): AgyHomePick | undefined {
-  const picked = agyPicker.pick(accountViews(), sessionAccounts?.of('agy', resumeSessionId))
+  const views = accountViews()
+  const picked = agyPicker.pick(
+    views,
+    sessionAccounts?.of('agy', resumeSessionId),
+    liveSessionsPerAccount(agySessions?.launchedSessions() ?? [], undefined)
+  )
+  const stale = (a: AccountView): boolean =>
+    Date.now() - (agyProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
+  if (views.some((a) => a.kind === 'agy-home' && a.enabled && stale(a))) void probeAgyAccounts()
   return (
     picked && {
       account: picked.name,
       home: agyHomeFor(picked.name),
-      banner: launchLine(picked, Date.now())
+      banner: launchLine(picked, Date.now()),
+      notice: allLimitedNotice(picked, 'agy')
     }
   )
 }
@@ -2317,6 +2337,7 @@ function pickAgyHome(resumeSessionId?: string): AgyHomePick | undefined {
 async function probeAgyAccount(name: string): Promise<void> {
   const acct = findAccount(name, 'agy-home')
   if (!acct) return
+  agyProbedAt.set(name, Date.now())
   const home = agyHomeFor(name)
   const apiKey = await agyApiKeyOf(name)
   const signedIn = agySignedIn(home, !!apiKey)
