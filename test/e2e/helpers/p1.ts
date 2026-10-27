@@ -805,6 +805,13 @@ export async function closeMenu(page: Page): Promise<void> {
   await expect(page.locator('.menu')).toHaveCount(0)
 }
 
+export async function wsMenuTexts(page: Page, wsName: string): Promise<string[]> {
+  await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
+  const items = await menuItemTexts(page)
+  await closeMenu(page)
+  return items
+}
+
 export function gitMark(page: Page, wsName: string): Locator {
   return page.locator('.ws-head', { hasText: wsName }).locator(':scope > .ws-git')
 }

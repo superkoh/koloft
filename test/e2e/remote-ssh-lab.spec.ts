@@ -63,6 +63,7 @@ import {
   waitBooted,
   worktreeDialog,
   wsGroup,
+  wsMenuTexts,
   wsRows
 } from './helpers/p1'
 import {
@@ -1234,15 +1235,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await addMachine(page, 'kt-key', 'kuser')
         await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
         await expect
-          .poll(
-            async () => {
-              await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
-              const items = await menuItemTexts(page)
-              await closeMenu(page)
-              return items.join(' | ')
-            },
-            { timeout: 60_000 }
-          )
+          .poll(async () => (await wsMenuTexts(page, 'kt-key')).join(' | '), { timeout: 60_000 })
           .toContain('New worktree session')
         await openWorktreeSession(page, 'kt-key')
         await worktreeDialog(page).locator('input').fill('lab-tree')

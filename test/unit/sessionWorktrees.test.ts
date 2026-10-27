@@ -207,7 +207,7 @@ describe.each(SIDES)('the files .worktreeinclude lists, in a workspace $where', 
 
     const resource = await worktrees.create(side.at(repo), 'one')
     const tree = barePath(resource.worktreePath)
-    expect(copied(tree)).toEqual(['.env', 'secrets/key.txt'])
+    expect(copied(resource.worktreePath)).toEqual(['.env', 'secrets/key.txt'])
     expect(fs.readFileSync(path.join(tree, '.env'), 'utf8')).toBe('PORT=3000\n')
 
     fs.rmSync(tree, { recursive: true })

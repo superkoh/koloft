@@ -53,6 +53,7 @@ import {
   dialogPrimary,
   gitCommitAll,
   gitInit,
+  gitRepoWithAnIncludedEnv,
   newSessionInWith,
   oneStillRunning,
   openMenu,
@@ -765,11 +766,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     env
   }) => {
     installCodex(env)
-    gitInit(env.workspaces.a)
-    fs.writeFileSync(path.join(env.workspaces.a, '.gitignore'), 'NOTES.md\n.env\n')
-    fs.writeFileSync(path.join(env.workspaces.a, '.worktreeinclude'), '.env\n')
-    gitCommitAll(env.workspaces.a)
-    fs.writeFileSync(path.join(env.workspaces.a, '.env'), 'PORT=3000\n')
+    gitRepoWithAnIncludedEnv(env.workspaces.a)
     const includedIn = (dir: string): boolean => fs.existsSync(path.join(dir, '.env'))
     const app = await launchApp(env)
     try {

@@ -20,12 +20,11 @@ import {
   gitRepoWithAnIncludedEnv,
   gitWorktreeAdd,
   INCLUDED_ENV,
-  menuItemTexts,
-  openMenu,
   openWorktreeSession,
   resumedId,
   sendShortcut,
   waitForCalls,
+  wsMenuTexts,
   wsRows
 } from './helpers/p1'
 
@@ -43,14 +42,6 @@ async function closeActiveTab(app: ElectronApplication, page: Page): Promise<voi
   }
 }
 
-async function wsMenuTexts(page: Page): Promise<string[]> {
-  await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
-  const items = await menuItemTexts(page)
-  await page.keyboard.press('Escape')
-  await expect(page.locator('.menu')).toHaveCount(0)
-  return items
-}
-
 test.describe('worktree sessions in a remote workspace, driven by the machine’s own git answer', () => {
   test('E-RW-14: a remote git folder offers New worktree session, and creating one runs `-w` on the machine', async ({
     env
@@ -63,7 +54,9 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
       await addRemoteWorkspace(page, env)
 
       await expect
-        .poll(async () => (await wsMenuTexts(page)).join(' | '), { timeout: 60_000 })
+        .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+          timeout: 60_000
+        })
         .toContain('New worktree session')
 
       const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
@@ -100,7 +93,9 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
     try {
       await addRemoteWorkspace(page, env)
       await expect
-        .poll(async () => (await wsMenuTexts(page)).join(' | '), { timeout: 60_000 })
+        .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+          timeout: 60_000
+        })
         .toContain('New worktree session')
 
       const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
@@ -134,7 +129,9 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
     try {
       await addRemoteWorkspace(page, env)
       await expect
-        .poll(async () => (await wsMenuTexts(page)).join(' | '), { timeout: 60_000 })
+        .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+          timeout: 60_000
+        })
         .toContain('New worktree session')
 
       const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
@@ -174,7 +171,9 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
     try {
       await addRemoteWorkspace(page, env)
       await expect
-        .poll(async () => (await wsMenuTexts(page)).join(' | '), { timeout: 60_000 })
+        .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+          timeout: 60_000
+        })
         .toContain('New worktree session')
       const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
       await dlg.getByRole('textbox').click()
@@ -220,7 +219,9 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
     try {
       await addRemoteWorkspace(page, env)
       await expect
-        .poll(async () => (await wsMenuTexts(page)).join(' | '), { timeout: 60_000 })
+        .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+          timeout: 60_000
+        })
         .toContain('New worktree session')
       const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
       await dlg.getByRole('textbox').click()

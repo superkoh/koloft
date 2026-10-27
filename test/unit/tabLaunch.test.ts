@@ -164,7 +164,8 @@ const machineTreeIo: TreeIo = {
     (await execFileAsync('git', ['-C', barePath(dir), ...args])).stdout.trimEnd(),
   exists: async (p) => fs.existsSync(barePath(p)),
   real: (p) => p,
-  keyed: (listed) => `ssh://${MACHINE}${listed}`
+  keyed: (listed) => `ssh://${MACHINE}${listed}`,
+  machine: undefined
 }
 
 async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<string> {

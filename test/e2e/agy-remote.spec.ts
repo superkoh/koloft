@@ -7,14 +7,13 @@ import {
   chooseBackend,
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
-  menuItemTexts,
   newSessionInWith,
-  openMenu,
   openWorktreeSession,
   runIn,
   sendShortcut,
   waitBooted,
   worktreeDialog,
+  wsMenuTexts,
   wsRows
 } from './helpers/p1'
 import {
@@ -102,16 +101,9 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       const page = await app.firstWindow()
       await waitBooted(page)
       await expect
-        .poll(
-          async () => {
-            await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
-            const items = await menuItemTexts(page)
-            await page.keyboard.press('Escape')
-            await expect(page.locator('.menu')).toHaveCount(0)
-            return items.join(' | ')
-          },
-          { timeout: 60_000 }
-        )
+        .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+          timeout: 60_000
+        })
         .toContain('New worktree session')
       await openWorktreeSession(page, REMOTE_WS_NAME)
       await worktreeDialog(page).locator('input').fill('agy-tree')

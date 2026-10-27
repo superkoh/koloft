@@ -27,7 +27,7 @@ export interface TreeIo {
   exists(p: string): Promise<boolean>
   real(p: string): string
   keyed(listed: string): string
-  machine?: ScriptRunner
+  machine: ScriptRunner | undefined
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -39,7 +39,8 @@ const LOCAL_IO: TreeIo = {
   git,
   exists: async (p) => fs.existsSync(p),
   real: (p) => fs.realpathSync(p),
-  keyed: (listed) => path.resolve(listed)
+  keyed: (listed) => path.resolve(listed),
+  machine: undefined
 }
 
 async function checkouts(io: TreeIo, cwd: string): Promise<Checkout[]> {
@@ -87,18 +88,20 @@ function validName(name: string): void {
 const COPY_INCLUDES_SH = `root=$1 tree=$2
 [ -f "$root/.worktreeinclude" ] || exit 0
 git -C "$root" ls-files -z --others --ignored --exclude-from="$root/.worktreeinclude" |
-  git -C "$root" check-ignore -z --stdin | tr '\\0' '\\n' |
-  while IFS= read -r rel; do
-    [ -f "$root/$rel" ] && [ ! -L "$root/$rel" ] && [ ! -e "$tree/$rel" ] || continue
-    mkdir -p "$(dirname "$tree/$rel")" && cp "$root/$rel" "$tree/$rel" || exit 1
-  done`
+  git -C "$root" check-ignore -z --stdin |
+  xargs -0 sh -c 'root=$1 tree=$2; shift 2
+for rel do
+  [ -f "$root/$rel" ] && [ ! -L "$root/$rel" ] && [ ! -e "$tree/$rel" ] || continue
+  mkdir -p "$(dirname "$tree/$rel")" && cp "$root/$rel" "$tree/$rel" || exit 1
+done' sh "$root" "$tree"`
 
-const SAME_AS_ROOT_SH = `root=$1 tree=$2
-shift 2
+const IGNORED_FILES_SAME_AS_ROOT_SH = `root=$1 tree=$2
+git -C "$tree" ls-files -z --others --ignored --exclude-standard |
+  xargs -0 sh -c 'root=$1 tree=$2; shift 2
 for rel do
   [ -f "$tree/$rel" ] && [ ! -L "$tree/$rel" ] && [ -f "$root/$rel" ] && [ ! -L "$root/$rel" ] &&
     cmp -s "$root/$rel" "$tree/$rel" || exit 1
-done`
+done' sh "$root" "$tree"`
 
 // CC§3
 export async function copyWorktreeIncludes(
@@ -145,6 +148,24 @@ async function sameFileInRoot(root: string, tree: string, rel: string): Promise<
   } catch {
     return false
   }
+}
+
+async function ignoredFilesSameAsRoot(io: TreeIo, root: string, tree: string): Promise<boolean> {
+  if (io.machine) {
+    const args = [barePath(root), barePath(tree)]
+    return (await io.machine.runScript(IGNORED_FILES_SAME_AS_ROOT_SH, args)) !== null
+  }
+  const ignored = await io.git(tree, [
+    'ls-files',
+    '-z',
+    '--others',
+    '--ignored',
+    '--exclude-standard'
+  ])
+  for (const rel of ignored.split('\0').filter(Boolean)) {
+    if (!(await sameFileInRoot(root, tree, rel))) return false
+  }
+  return true
 }
 
 export class SessionWorktrees {
@@ -206,27 +227,18 @@ export class SessionWorktrees {
     const tree = resource.worktreePath
     const io = this.io(tree)
     try {
-      const [branch, head, changes, ignored] = await Promise.all([
+      const [branch, head, changes, ignoredSame] = await Promise.all([
         io.git(tree, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
         io.git(tree, ['rev-parse', 'HEAD']),
         io.git(tree, ['status', '--porcelain', '--untracked-files=all']),
-        io.git(tree, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard'])
+        ignoredFilesSameAsRoot(io, resource.originalCwd, tree)
       ])
-      if (
-        branch !== `worktree-${resource.worktreeName}` ||
-        head !== resource.originalHeadCommit ||
-        changes
+      return (
+        branch === `worktree-${resource.worktreeName}` &&
+        head === resource.originalHeadCommit &&
+        !changes &&
+        ignoredSame
       )
-        return false
-      const rels = ignored.split('\0').filter(Boolean)
-      if (rels.length && io.machine) {
-        const args = [barePath(resource.originalCwd), barePath(tree), ...rels]
-        return (await io.machine.runScript(SAME_AS_ROOT_SH, args)) !== null
-      }
-      for (const rel of rels) {
-        if (!(await sameFileInRoot(resource.originalCwd, tree, rel))) return false
-      }
-      return true
     } catch {
       return false
     }

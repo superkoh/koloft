@@ -936,11 +936,7 @@ export class ClaudeBackend implements SessionBackend {
         if (
           !GIT_REF_RE.test(plan.branch) ||
           !GIT_REF_RE.test(plan.baseRef) ||
-          !(await rebuildWorktree(
-            plan,
-            hostGit(host),
-            home ? this.d.hosts.machine(parseRemoteKey(home)!.host) : undefined
-          ))
+          !(await rebuildWorktree(plan, hostGit(host), this.d.hosts.machineOf(home ?? asked)))
         ) {
           return { ok: false, code: 'rebuild-failed' }
         }
