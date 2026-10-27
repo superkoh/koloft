@@ -1638,16 +1638,18 @@ other bullets of §9 were not re-measured on this build.
   ancestor's trust to a folder outside the repo top it found (a worktree placed outside
   its main repo) — read, not run. **A `.git` file whose git dir has no readable
   `commondir` makes its own folder the top.** Measured 2026-10-27 on CC 2.1.311, the same
-  temp-`HOME` method (the binary in a python pty for 9 s), one run per case. A submodule
-  `P/R/sub` (its `.git` file naming `P/R/.git/modules/sub`, made with `git init
-  --separate-git-dir`) asked with only `P/R` trusted and with only `P` trusted, and did
-  not ask with `P/R/sub` trusted. A worktree whose main repo is gone (`P/W/.git` naming a
-  missing git dir) asked with only `P` trusted and not with `P/W` trusted; the same
-  inside another repo `P/Q` asked with `P/Q` or `P` trusted. Controls: with nothing
-  trusted it asked; with only `P` trusted, a launch in the repo `P/R` asked. The binary
-  also holds a `rootOnly` branch (only the root's own key counts, no walk), but in 2.1.311
-  the root finder behind it asks a function compiled to `return!1`, so it never finds a
-  root and the branch never runs (read with `strings`, not run). `claude --help`
+  temp-`HOME` method (the binary in a python pty for 9 s; a "no" run drew the main screen
+  instead), two runs per case, same answer both times. A real submodule `P/R/sub` (made
+  with `git submodule add`; its git dir `P/R/.git/modules/sub` has no `commondir`), and
+  the same shape made with `git init --separate-git-dir`: asked with only `P/R` trusted
+  and with only `P` trusted, did not ask with `P/R/sub` trusted. A worktree whose main
+  repo is gone (`P/W/.git` naming a git dir that no longer exists): asked with only `P`
+  trusted, did not ask with `P/W` trusted. Such a worktree at `P/Q/W`, inside a plain repo
+  `P/Q`: asked with only `P/Q` trusted and with only `P` trusted. Controls: with nothing
+  trusted it asked; with only `P` trusted, a launch in the repo `P/R` asked. The code also
+  holds a second path, marked by the word `rootOnly`, where only one folder's own entry
+  counts; in 2.1.311 the check that turns it on always says no, so it never runs (read
+  with `strings`, not run) — look for `rootOnly` again on each upgrade. `claude --help`
   (2.1.281) adds that `-p`, or a stdout that is not a TTY, skips the trust dialog.
   **An older `<config dir>/.config.json` can stand in for `~/.claude.json`** (the config
   dir is `CLAUDE_CONFIG_DIR`, else `~/.claude`): through 2.1.296 its mere existence made
