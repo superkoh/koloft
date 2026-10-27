@@ -855,8 +855,42 @@ the moment its CC starts removing and finishes the removal if Koloft quits first
   Open the background session in this terminal. ← returns to agent view, Ctrl+Z drops
   back to your shell. The session keeps running either way.` The changelog also says a
   direct `--resume` of a running background session is refused with a message naming
-  `claude attach <id>` (not re-measured). `claude --resume <id> --fork-session` still
-  makes ANOTHER copy, it is not a takeover.
+  `claude attach <id>`; on 2.1.311 it is not refused but turned into an attach (next
+  block). `claude --resume <id> --fork-session` still makes ANOTHER copy, it is not a
+  takeover.
+- **What a `/fork` copy looks like from outside** (2026-10-27, CC 2.1.311, 3 runs:
+  a throwaway `HOME`, a local fake Messages API behind `ANTHROPIC_BASE_URL` and a
+  fake key from `apiKeyHelper`, the interactive TUI driven in a python pty, a logging
+  hook on SessionStart / UserPromptSubmit / Stop / SessionEnd in user settings):
+  - Typing `/fork` after one finished turn prints `session waiting for a prompt ·
+    <first 8 hex of the new id>`; the window keeps the original session.
+  - The copy gets its own registry file at once: `kind: "bg"`, plus a `jobId` (those
+    same 8 hex), its own `pid`, `procStart` and `messagingSocketPath`; `name` starts as
+    the first prompt's text. The window's entry stays `kind: "interactive"`.
+  - `~/.claude/jobs/<jobId>/` appears with `state.json`, `parent-transcript.jsonl` and
+    `tmp/` (`timeline.jsonl` only after the copy's first turn); its transcript is a
+    normal `~/.claude/projects/<cwd slug>/<new id>.jsonl`.
+  - Its SessionStart carries `source: "fork"` with the new id and the extra keys
+    `seconds_since_last_response`, `context_tokens`, `prompt_cache_likely_expired`,
+    `estimated_cache_write_usd` (second sample of `source=fork`, 3 of 3 runs).
+  - `claude agents --json` (no TTY, exit 0, ~1 s) lists **both** the window's session
+    and the copy. Keys: `pid, cwd, kind, startedAt, sessionId, name, status`, and on
+    the copy also `id` (= `jobId`) and `state`. `kind` is `"interactive"` for the
+    window and `"background"` for the copy; the copy's `state` read `blocked` while it
+    waited for its first prompt and `working` after a turn had finished, with `status:
+    "idle"` both times. `--cwd <dir>` and `--all` gave the same two rows here (nothing
+    had finished). No statusline was configured, so no text came before the `[`.
+  - `claude attach <jobId>` in a second pty shows the copy's conversation full screen;
+    a prompt typed there runs in the copy (its hooks fire under the copy's id, its
+    registry `name` follows). No new registry file appears for the attach. Closing that
+    pty (SIGHUP) leaves the copy running and listed.
+  - **`claude --resume <copy's full id>` while the copy runs becomes the attach**: the
+    process's command line reads `claude attach <jobId>` within 12 s, no second
+    registry entry appears, and a prompt typed there runs in the copy.
+  - The copy is hosted by a transient daemon (`daemon.log`: `origin=transient`, `bg
+    claimed-spare <jobId> (slash)`), whose control socket is
+    `/tmp/cc-daemon-<uid>/<hash>/control.sock`, one per `HOME`. `claude daemon stop
+    --any` ended it and the copy (`bg settled <jobId> (killed)`).
 - **A fork's transcript repeats the parent's usage lines word for word** (2026-10-24,
   CC 2.1.310, `claude -p --resume <id> --fork-session` on a two-request session): the
   new file starts with every parent line, same `uuid`, `timestamp`, `message.id`,
@@ -1779,6 +1813,9 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
   `nameSource: 'derived' | 'user' | 'auto'`, `status: 'busy' | 'idle'`. A sibling
   `<pid>.<sha256>.key` sits next to each one. Re-read 2026-09-24 on CC 2.1.281: 7
   entries, the same 18 keys, `entrypoint: 'sdk-cli'` on 3 of them.
+- **A `/fork` copy writes one too, with `kind: "bg"` and a `jobId`** (2026-10-27, CC
+  2.1.311, §5), so a live entry for an id can belong to a background copy that
+  `claude --resume` would attach to rather than run twice.
 - **A `claude -p` run writes an entry too** (`kind: "interactive"`, `entrypoint:
   "sdk-cli"`, busy then idle, removed on exit). For `claude -p --resume <id>` of a
   `/rename`d session, on 2.1.309 the entry takes the session's title with `nameSource:
