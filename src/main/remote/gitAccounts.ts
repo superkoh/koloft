@@ -5,6 +5,7 @@ import { credentialRequest, gcmProviderOf } from '../gitCredentialManager'
 import { GH_SIGNED_OUT } from '../prChecks'
 import { GH_TOKEN_EXPORTS, MACHINE_TOKEN_FROM_HELPER } from '../gitCredentialScripts'
 import { FETCH_FN, REMOTE_GIT_DIR } from './install'
+import type { RunResult } from './ssh'
 
 const REMOTE_GCM_DIR = '.koloft/gcm'
 const GCM_BIN_NAME = 'git-credential-manager'
@@ -160,11 +161,91 @@ const CLUE_ENV_PLAIN = [
 ]
 const CLUE_ENV_PRESENT = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN']
 
-export const CLUE_ENV = [
+const CLUE_ENV_LINES = [
   ...CLUE_ENV_PLAIN.map((k) => `[ -n "$${k}" ] && printf '%s=%s\\n' ${k} "$${k}"`),
-  ...CLUE_ENV_PRESENT.map((k) => `[ -n "$${k}" ] && echo ${k}=1`),
-  'exit 0'
+  ...CLUE_ENV_PRESENT.map((k) => `[ -n "$${k}" ] && echo ${k}=1`)
 ].join('\n')
+
+export const CLUE_ENV = `${CLUE_ENV_LINES}\nexit 0`
+
+export const CLUE_ENV_STEP = 'clue_env'
+export const CLUE_FILE_STEP = 'clue_file'
+
+export const CLUE_ALL = `${OWN_SETUP_ONLY}
+cd "$1" 2>/dev/null || exit 128
+export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false
+t="$(mktemp -d)" || exit 1
+trap 'rm -rf "$t"' EXIT
+: >"$t/in"
+${CLUE_ENV_STEP}() {
+${CLUE_ENV_LINES}
+return 0
+}
+${CLUE_FILE_STEP}() { ${CLUE_READ_WITHOUT_TOKENS}; }
+b64() { base64 <"$t/$1" | tr -d '\\n'; }
+step() {
+  "$@" <"$t/in" >"$t/out" 2>"$t/err"
+  c=$?
+  { printf '%s\\t' "$@"; cat "$t/in"; } >"$t/key"
+  printf '%s %s %s %s\\n' "$(b64 key)" "$c" "$(b64 out)" "$(b64 err)"
+  : >"$t/in"
+  v=""
+  [ "$c" = 0 ] && v="$(cat "$t/out")"
+}
+step ${CLUE_ENV_STEP}
+step git symbolic-ref --short -q HEAD
+b="$v"
+f=origin
+p=""
+if [ -n "$b" ]; then
+  step git config --get "branch.$b.remote"
+  [ -n "$v" ] && f="$v"
+  step git config --get "branch.$b.pushRemote"
+  p="$v"
+fi
+[ -n "$p" ] || { step git config --get remote.pushDefault; p="$v"; }
+[ -n "$p" ] || p="$f"
+step git remote get-url --push "$p"
+u="$v"
+case "$u" in
+  '') exit 0 ;;
+  http://*|https://*)
+    step git remote get-url "$f"
+    printf 'url=%s\\n\\n' "$(printf '%s' "$u" | sed 's#^\\([a-z]*://\\)[^@/]*@#\\1#')" >"$t/in"
+    step git -c credential.helper= -c core.askPass= credential fill
+    step git config --get-regexp '^credential\\..*helper$'
+    d="\${GH_CONFIG_DIR:-\${XDG_CONFIG_HOME:+$XDG_CONFIG_HOME/gh}}"
+    step ${CLUE_FILE_STEP} "\${d:-$HOME/.config/gh}/hosts.yml" ;;
+  ssh://*)
+    a="\${u#ssh://}"
+    a="\${a%%/*}"
+    case "$a" in
+      *:*) step ssh -G -p "\${a##*:}" "\${a%:*}" ;;
+      *) step ssh -G "$a" ;;
+    esac
+    step git config --get core.sshCommand ;;
+  *:*)
+    step ssh -G "\${u%%:*}"
+    step git config --get core.sshCommand ;;
+esac
+step git log -g -n50 --format=%gs%x09%ce
+step git config --get user.email
+exit 0`
+
+export function clueKey(words: string[], input = ''): string {
+  return words.map((w) => `${w}\t`).join('') + input
+}
+
+export function parseClueAll(stdout: string): Map<string, RunResult> {
+  const text = (b64: string): string => Buffer.from(b64, 'base64').toString('utf8')
+  const answers = new Map<string, RunResult>()
+  for (const line of stdout.split('\n')) {
+    const [key, code, out, err] = line.replace(/\r$/, '').split(' ')
+    if (err !== undefined)
+      answers.set(text(key), { code: Number(code), stdout: text(out), stderr: text(err) })
+  }
+  return answers
+}
 
 export function parseClueEnv(stdout: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}

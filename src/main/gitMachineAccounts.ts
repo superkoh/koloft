@@ -6,7 +6,10 @@ import { accountConfigText, fileNameOf, gitAccountFiles } from './gitConfigFile'
 import type { GhResult } from './prChecks'
 import { problemOf, type RunResult } from './remote/ssh'
 import {
+  CLUE_ALL,
   CLUE_ENV,
+  CLUE_ENV_STEP,
+  CLUE_FILE_STEP,
   CLUE_GIT,
   CLUE_READ_WITHOUT_TOKENS,
   CLUE_SSH,
@@ -19,11 +22,13 @@ import {
   RECEIVE_FILES,
   REPO_KEYS,
   SYNC_FILES,
+  clueKey,
   fileLines,
   gcmDownload,
   machineGhMissing,
   machineHelperScript,
   machinePaths,
+  parseClueAll,
   parseClueEnv,
   parsePreflight,
   type MachineFacts
@@ -218,4 +223,31 @@ export class GitMachineAccounts {
     const r = await this.run(machine, CLUE_READ_WITHOUT_TOKENS, [file])
     return r.code === 0 ? r.stdout : null
   }
+
+  async cluesIn(machine: string, dir: string): Promise<MachineClues> {
+    const r = await this.run(machine, CLUE_ALL, [dir])
+    const answers = r.code === 0 ? parseClueAll(r.stdout) : new Map<string, GitRunResult>()
+    const answered = (words: string[], input?: string): GitRunResult | undefined =>
+      answers.get(clueKey(words, input))
+    const env = answered([CLUE_ENV_STEP])
+    return {
+      env: env ? parseClueEnv(env.stdout) : await this.clueEnv(machine),
+      git: async (cwd, args, input) =>
+        (cwd === dir && answered(['git', ...args], input)) ||
+        this.clueGit(machine, cwd, args, input),
+      ssh: async (args) => answered(['ssh', ...args]) ?? this.clueSsh(machine, args),
+      readFile: async (file) => {
+        const read = answered([CLUE_FILE_STEP, file])
+        if (!read) return this.clueFile(machine, file)
+        return read.code === 0 ? read.stdout : null
+      }
+    }
+  }
+}
+
+export interface MachineClues {
+  env: NodeJS.ProcessEnv
+  git(cwd: string, args: string[], input?: string): Promise<GitRunResult>
+  ssh(args: string[]): Promise<GitRunResult>
+  readFile(file: string): Promise<string | null>
 }
