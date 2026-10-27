@@ -69,6 +69,7 @@ import {
   NEEDS_LINUX_MUSE,
   dockerAvailable,
   FAKE_RESPONSES_PORT,
+  installCurlOnTarget,
   installFakeCodexOnTarget,
   installRealMuseOnTheMachine,
   installLabSsh,
@@ -127,6 +128,7 @@ const COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN = [
 ].join('\n')
 
 const KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS = 45_000
+const ONE_COMMAND_CODEX_RUNS_ON_THE_MACHINE_MS = 30_000
 const REAL_CODEX = process.env.KOLOFT_SMOKE_CODEX ?? ''
 const REAL_CODEX_AUTH = process.env.KOLOFT_SMOKE_CODEX_AUTH ?? ''
 const A_FIRST_CODEX_INSTALL_ON_THE_MACHINE_MS = 300_000
@@ -1205,6 +1207,45 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect.poll(() => [listening(), pidFiles()], { timeout: 30_000 }).toEqual(['0', '0'])
       },
       (lab) => installFakeCodexOnTarget(lab)
+    )
+  })
+
+  test('E-SSH-30: a Codex session on a Linux machine that has no gh gets the gh Koloft installs there, and a command Codex runs there finds it (downloads gh)', async ({
+    env
+  }) => {
+    installCodex(
+      env,
+      JSON.stringify({ tokens: { access_token: 'mac-token-for-the-lab', account_id: 'lab' } })
+    )
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        expect(runOnTarget(lab, 'kuser', 'command -v gh || echo none').trim()).toBe('none')
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await newSessionInWith(page, 'kt-key', 'Codex')
+        await expect(
+          wsRows(page, 'kt-key').filter({ hasText: 'Codex fixture session' })
+        ).toHaveClass(/st-waiting/, { timeout: 120_000 })
+        const tabId = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.backendId === 'codex' && s.alive
+        )!.tabId
+        await page.evaluate(
+          ([id, line]) => window.api.terminal.write(id, line),
+          [tabId, '/sh gh --version\r']
+        )
+        const ghTurnOver = /gh version \d[\s\S]*sh exit=(\d+)[\s\S]*Codex done/
+        await expect
+          .poll(async () => ghTurnOver.exec(await terminalText(page, tabId))?.[1], {
+            timeout: ONE_COMMAND_CODEX_RUNS_ON_THE_MACHINE_MS
+          })
+          .toBe('0')
+        expect(runOnTarget(lab, 'kuser', 'ls .local/bin')).toMatch(/^gh$/m)
+      },
+      (lab) => {
+        installFakeCodexOnTarget(lab)
+        installCurlOnTarget(lab)
+      }
     )
   })
 

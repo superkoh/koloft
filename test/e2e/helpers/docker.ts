@@ -339,6 +339,16 @@ export function installFakeCodexOnTarget(lab: SshLab): void {
   ])
 }
 
+export function installCurlOnTarget(lab: SshLab): void {
+  dk([
+    'exec',
+    lab.target,
+    'sh',
+    '-c',
+    'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl'
+  ])
+}
+
 export const FAKE_RESPONSES_PORT = 8090
 
 export function startFakeResponsesOnTarget(lab: SshLab, command: string, log: string): void {
