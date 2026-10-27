@@ -914,6 +914,22 @@ describe('DiscordRelay: the owner at the Mac', () => {
     expect(posts).toHaveLength(1)
     expect(posts[0].text).toContain('Which?')
   })
+
+  it('a question held at the Mac and answered there, then a new one asked just after the owner leaves, is posted once: the next check of held questions does not post it again', () => {
+    let away = false
+    const { relay, posts } = setup({}, [], { ownerAway: () => away })
+    drop(hookFile(TAB, 'ask'), QUESTION)
+    relay.onAsk(TAB, QUESTION, HOOK)
+    fs.rmSync(hookFile(TAB, 'ask'))
+
+    away = true
+    const later = '4343'
+    drop(hookFile(TAB, 'ask', later), QUESTION)
+    relay.onAsk(TAB, QUESTION, later)
+    expect(posts).toHaveLength(1)
+    relay.checkHeld()
+    expect(posts).toHaveLength(1)
+  })
 })
 
 describe('DiscordRelay: Koloft telling a conductor something', () => {

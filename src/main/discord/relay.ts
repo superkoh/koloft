@@ -182,7 +182,10 @@ export class DiscordRelay {
   }
 
   private holds(tab: string): boolean {
-    if (this.reaches(tab)) return false
+    if (this.reaches(tab)) {
+      this.held.delete(tab)
+      return false
+    }
     this.held.add(tab)
     this.cardOrder.delete(tab)
     this.heldCheck ??= setInterval(() => this.checkHeld(), HELD_ASKS_CHECKED_EVERY_MS).unref()
