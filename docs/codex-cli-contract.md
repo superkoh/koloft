@@ -1692,8 +1692,11 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   Same day and setup, default mode, 1 run: the app-server sent `isBlocking: false`, the
   relay passed the request on with `isBlocking: true`; the TUI drew no countdown, sent
   nothing for 150 s, and a digit then answered it (`serverRequest/resolved`, the turn went
-  on with the pick); the answer frame is the same either way. So Koloft's relay sets it on
-  every question it passes to the TUI.
+  on with the pick); the answer frame is the same either way. A second run, same setup:
+  Down, Down, Tab, the words, Enter (300 ms apart) on such a rewritten question sent
+  `{answers: {colour: {answers: ["None of the above", "user_note: Purple with dots"]}}}`,
+  as on a non-blocking one, and the model repeated the words. Not probed: Esc on it, and
+  whether a non-null `autoResolutionMs` counts down on its own.
 - Not probed: `isSecret`, a form with several fields or a field that is not an enum, and
   an elicitation `mode` other than `form`. Koloft refuses several questions, free text and
   those from Discord.

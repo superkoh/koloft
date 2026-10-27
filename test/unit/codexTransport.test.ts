@@ -42,7 +42,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
  if(mode==='partial') {process.stdout.write('{');process.exit(0);return;}
  if(mode==='oversize') {process.stdout.write('x'.repeat(2000));return;}
  if(mode==='approval') {out({id:991,method:'item/commandExecution/requestApproval',params:{command:'echo ok'}});return;}
- if(mode==='question') {out({id:992,method:'item/tool/requestUserInput',params:{threadId:'t',questions:[{id:'colour',question:'Red or Green?'}],isBlocking:false,autoResolutionMs:null}});return;}
+ if(mode==='question') {out({id:992,method:'item/tool/requestUserInput',params:{threadId:'t',questions:[{id:'colour',question:'Red or Green?'}],isBlocking:false,autoResolutionMs:120000}});return;}
  if(mode==='tree') {
    const child=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},1000);setTimeout(()=>process.exit(0),10000)"],{detached:true,stdio:'ignore'});
    child.unref();
@@ -367,7 +367,7 @@ describe('Codex TUI transport', () => {
   })
 
   // CODEX§20
-  it('a question Codex would let the TUI give up on after two minutes reaches the TUI as one that waits for the owner, while the observer sees what Codex sent', async () => {
+  it('a question Codex would let the TUI give up on after two minutes reaches the TUI as one that waits for the owner with no timer, while the observer sees what Codex sent', async () => {
     const observed: CodexFrame[] = []
     const transport = await createCodexTransport({
       binary,

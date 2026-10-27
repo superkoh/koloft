@@ -122,8 +122,10 @@ function questionThatWaitsForTheOwner({ raw, head, parse }: ReadFrame): Buffer {
   if (head.method !== 'item/tool/requestUserInput') return raw
   const frame = parse()
   const params = frame.params as Record<string, unknown> | undefined
-  if (params?.isBlocking !== false) return raw
-  return Buffer.from(JSON.stringify({ ...frame, params: { ...params, isBlocking: true } }))
+  if (!params || (params.isBlocking === true && params.autoResolutionMs == null)) return raw
+  return Buffer.from(
+    JSON.stringify({ ...frame, params: { ...params, isBlocking: true, autoResolutionMs: null } })
+  )
 }
 
 function headOf({ id, method }: Record<string, unknown>): CodexFrameHead {
