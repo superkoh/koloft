@@ -86,7 +86,7 @@ import {
   type RemoteAgyConfig
 } from './remote/agyTab'
 import { remoteMachineDir } from './remote/paths'
-import { agentSkillMarkdown, keepKoloftSkillIn } from './agentPlugin'
+import { keepKoloftSkillIn } from './agentPlugin'
 import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile } from './hooks'
 import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
@@ -685,7 +685,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         onboarding: readText(agyOnboardingFile(pick.home)),
         token: apiKey ? undefined : readText(agyTokenFile(pick.home)),
         start: instructions ? sessionStartOutput(instructions) : undefined,
-        skill: agentTools ? agentSkillMarkdown() : undefined
+        skillFromMachine: agentTools ? m : undefined
       }),
       portOffset: resource ? portOffset(resource.worktreeName) : undefined
     })

@@ -5,7 +5,7 @@ import type { Socket } from 'net'
 import WebSocket from 'ws'
 import { shq } from '@shared/shellQuote'
 import { CODEX_FIRST_ON_PATH, REMOTE_ENV_LINES, remoteShCommand } from './install'
-import { assertSafeNames, tabPushed, type MachinePackage } from './launch'
+import { assertSafeNames, koloftSkillLine, tabPushed, type MachinePackage } from './launch'
 import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import {
@@ -18,7 +18,6 @@ import {
 } from '../codexTransport'
 import { record } from '../codexObservation'
 import { hookStateHeader } from '../codexTrust'
-import { KOLOFT_SKILL, agentSkillMarkdown } from '../agentPlugin'
 import {
   CODEX_HOLD_REG_ENV,
   CODEX_HOLD_SCRIPT_ENV,
@@ -119,11 +118,7 @@ export function codexTabScript(s: CodexTabSpec): string {
   ].join(' ')
   const serve = `codex app-server --listen "unix://$S.sock" ${config}`
   const ownerWords = s.ownerWords ? ownerWordsLines(s.ownerWords) : ''
-  const skill = `K="$H/skills/${KOLOFT_SKILL}"\n${
-    s.agentTools
-      ? `mkdir -p "$K" && printf '%s' ${shq(agentSkillMarkdown())} > "$K/SKILL.md"\n`
-      : 'rm -rf "$K"\n'
-  }`
+  const skill = `${koloftSkillLine('$H/skills', s.agentTools ? '$M' : undefined)}\n`
   return `#!/bin/sh
 M="${remoteMachineDir(s.machineName)}"
 ${REMOTE_ENV_LINES}

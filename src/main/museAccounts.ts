@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { record } from './codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
-import { KOLOFT_SKILL } from './agentPlugin'
+import { KOLOFT_SKILL, keepKoloftSkillIn } from './agentPlugin'
 
 const MUSE_HOMES = 'muse-homes'
 
@@ -75,11 +75,8 @@ function linkOwnersSkills(own: string, owners: string): void {
 }
 
 // MUSE§16
-export function placeKoloftSkill(home: string, skill: string | undefined): void {
-  const dir = path.join(home, 'muse', 'skills', KOLOFT_SKILL)
-  if (!skill) return fs.rmSync(dir, { recursive: true, force: true })
-  fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, 'SKILL.md'), skill)
+export function placeKoloftSkill(home: string, on: boolean): void {
+  keepKoloftSkillIn(path.join(home, 'muse', 'skills'), on)
 }
 
 // MUSE§2 MUSE§13

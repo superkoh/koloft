@@ -499,7 +499,9 @@ export async function createCodexTransport(
           upstream.write(line)
           // CODEX§17
           if (read.head.method === 'initialized' && options.skillRoots)
-            request('skills/extraRoots/set', { extraRoots: options.skillRoots }).catch(() => {})
+            request('skills/extraRoots/set', { extraRoots: options.skillRoots }).catch((err) =>
+              console.error('[koloft] Codex did not take the koloft skill:', err)
+            )
         } catch (error) {
           fail(asError(error))
         }

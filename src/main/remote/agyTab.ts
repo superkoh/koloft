@@ -2,11 +2,10 @@ import { shq } from '@shared/shellQuote'
 import { record } from '../codexObservation'
 import { AGY_APP_DIR, TOP_LEVEL_ROWS } from '../agyStore'
 import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
-import { KOLOFT_SKILL } from '../agentPlugin'
 import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
 import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
 import { remoteShCommand } from './install'
-import type { TabSpec } from './launch'
+import { koloftSkillLine, type TabSpec } from './launch'
 import { REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
 
 const AGY_KEY_ENV = 'GEMINI_API_KEY'
@@ -80,7 +79,7 @@ export interface AgyTabSpec {
   onboarding?: string
   token?: string
   start?: string
-  skill?: string
+  skillFromMachine?: string
 }
 
 // AGY§31
@@ -106,7 +105,7 @@ export function agyTab(s: AgyTabSpec): AgyProgram {
     `mv -f "$T.settings.json" "${own}/settings.json" && mv -f "$T.hooks.json" "$A/config/hooks.json"`,
     seed('onboarding.json', `${own}/cache/onboarding.json`),
     seed('auth.json', `${own}/antigravity-oauth-token`),
-    `S="$A/${AGY_SKILLS}/${KOLOFT_SKILL}"; if [ -f "$T.skill.md" ]; then mkdir -p "$S" && mv -f "$T.skill.md" "$S/SKILL.md"; else rm -rf "$S"; fi`,
+    koloftSkillLine(`$A/${AGY_SKILLS}`, s.skillFromMachine && remoteMachineDir(s.skillFromMachine)),
     `unset ${AGY_KEY_ENV}; [ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
     `${AGY_LOG_ENV}="${REMOTE_HOOK_DIR}/${agyLogName(s.tabId)}"`,
     `${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"`,
@@ -123,8 +122,7 @@ export function agyTab(s: AgyTabSpec): AgyProgram {
       [file('hooks.json')]: s.hooks,
       ...(s.onboarding ? { [file('onboarding.json')]: s.onboarding } : {}),
       ...(s.token ? { [file('auth.json')]: s.token } : {}),
-      ...(s.start ? { [file('start.json')]: s.start } : {}),
-      ...(s.skill ? { [file('skill.md')]: s.skill } : {})
+      ...(s.start ? { [file('start.json')]: s.start } : {})
     }
   }
 }

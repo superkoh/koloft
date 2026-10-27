@@ -9,6 +9,7 @@ import {
   accountEnv,
   buildMachinePackage,
   killSessionCmd,
+  koloftSkillLine,
   launchLine,
   tabScript,
   writeTabPackage,
@@ -420,6 +421,27 @@ function claudeEnvOf(s: TabSpec): Record<string, string> {
   b.run()
   return b.env()
 }
+
+describe('the koloft skill a Codex or Antigravity tab keeps in its home on the machine', () => {
+  it('is copied whole from the machine package while agent tools are on, replacing an older copy, and removed once they are off', () => {
+    const root = mkroot('skill')
+    const machineDir = path.join(root, 'm-1')
+    const skills = path.join(root, 'home', 'skills')
+    const installed = path.join(skills, 'koloft', 'SKILL.md')
+    buildMachinePackage(root, { 'agent-plugin/skills/koloft/SKILL.md': 'NEW' })
+    const pkg = fs.readdirSync(root).find((n) => n.startsWith('m-'))!
+    fs.renameSync(path.join(root, pkg), machineDir)
+    fs.mkdirSync(path.dirname(installed), { recursive: true })
+    fs.writeFileSync(installed, 'OLD')
+    const run = (line: string): number | null =>
+      spawnSync(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, ['-c', line]).status
+    expect(run(koloftSkillLine(skills, machineDir))).toBe(0)
+    expect(fs.readFileSync(installed, 'utf8')).toBe('NEW')
+    expect(fs.readdirSync(path.dirname(installed))).toEqual(['SKILL.md'])
+    expect(run(koloftSkillLine(skills, undefined))).toBe(0)
+    expect(fs.existsSync(path.join(skills, 'koloft'))).toBe(false)
+  })
+})
 
 describe('U-TAB-*: the tab script on the machine', () => {
   it('falls back to the workspace root when the recorded directory is gone, so a resume into a removed worktree still opens', () => {
