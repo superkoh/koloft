@@ -1268,6 +1268,9 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   run inside fails (`status` exits 128); on Linux it went, so git run inside finds the
   repository above it and reads that one's HEAD and status. A process whose cwd is
   inside the tree, holding a file there open, does not stop the removal on either.
+  Apple's git prints that line in English even under `LANG=zh_CN.UTF-8`, and the git
+  Koloft ships has no `share/locale`; a remote machine's git with its translations
+  installed is not probed.
   (Measured 2026-10-27 on throwaway repos as a non-root user: git 2.54.0 on macOS
   APFS; git 2.39.5 on Debian 12 in the e2e sshd Docker image.)
 - **The mtime of `<repo>/.git/worktrees` moves when a linked worktree is added, removed

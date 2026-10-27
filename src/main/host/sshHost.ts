@@ -86,7 +86,7 @@ import {
   type RemoteAgyConfig
 } from '../remote/agyTab'
 import { listSkills, type SkillFs } from '../skillList'
-import { worktreeNameAround } from '../resumePlan'
+import { worktreeNameAround, type GitOut } from '../resumePlan'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
@@ -634,14 +634,8 @@ export class SshHost implements Host {
     })
   }
 
-  gitOut(
-    root: string,
-    args: string[],
-    timeoutMs?: number,
-    onFailure?: (stderr: string) => void
-  ): Promise<string | null> {
-    return this.runGit(GIT, root, args, timeoutMs, onFailure)
-  }
+  gitOut: GitOut = (root, args, timeoutMs, onFailure) =>
+    this.runGit(GIT, root, args, timeoutMs, onFailure)
 
   private async runGit(
     script: string,

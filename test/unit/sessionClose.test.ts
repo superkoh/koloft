@@ -94,6 +94,14 @@ describe('closing a session that runs in its own worktree', () => {
     expect(await closingTree(localGitOut, projectInfoFor(tree))).toBeNull()
   })
 
+  it('a worktree git refuses to remove to keep a new file is reported in git’s words with no command that would delete it', async () => {
+    fs.writeFileSync(path.join(tree, 'new.txt'), 'written after the check')
+    const problem = await removeTree(localGitOut, await treeOf(tree))
+    expect(problem).toContain('contains modified or untracked files')
+    expect(problem).not.toContain('rm -rf')
+    expect(fs.existsSync(path.join(tree, 'new.txt'))).toBe(true)
+  })
+
   it('a commit another local branch also holds loses nothing, though no remote has it', async () => {
     commit(tree, 'merged.txt', 'merged into main, never pushed')
     git(repo, 'merge', '-q', '--ff-only', 'worktree-run-1')

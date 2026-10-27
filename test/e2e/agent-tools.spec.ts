@@ -583,7 +583,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         return lines.map((l) => JSON.parse(l).message.content).join('\n')
       }
       await expect.poll(callerGot, { timeout: 60_000 }).toContain('Permission denied')
-      expect(callerGot()).toContain('kid was not closed')
+      expect(callerGot()).toContain(
+        '(From Koloft:) kid: its tab is closed, but its worktree stayed.'
+      )
       await expect(rows).toHaveCount(2)
 
       execFileSync('/bin/sh', ['-c', /run: (.*)/.exec(callerGot())?.[1] ?? 'false'])

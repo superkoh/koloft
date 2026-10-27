@@ -1639,12 +1639,14 @@ const sessionDeps: SessionVerbDeps = {
   startedSessions,
   closable: closableSessions,
   whatIsLeft: whatClosingWouldLose,
-  closeSoon: (inOrder, tell = tellTheOwner) =>
+  closeSoon: (inOrder, tellStarter) =>
     setTimeout(async () => {
-      for (const target of inOrder)
+      for (const target of inOrder) {
+        const tell = (text: string): void => (tellTheOwner(text), tellStarter(target, text))
         await closeSessionFully(target, undefined, tell).catch((error) =>
           tell(`${target.title}: ${String(error)}`)
         )
+      }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   isButler: (tabId) => !!butler?.isButlerTab(tabId),
   speaksForTheOwner: butlerSide,
@@ -4470,8 +4472,7 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-const hostGitOut: GitOut = (dir, args, timeoutMs, onFailure) =>
-  hosts.of(dir).gitOut(dir, args, timeoutMs, onFailure)
+const hostGitOut: GitOut = (dir, ...rest) => hosts.of(dir).gitOut(dir, ...rest)
 const mergedHeads: MergedHeads = (dir, branch) => hosts.of(dir).github.mergedHeads(dir, branch)
 
 function treeRootOf(s: SessionInfo): string {
@@ -4524,7 +4525,9 @@ async function closeSessionFully(
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
-    tell(`${target.title} was not closed. ${problem}`)
+    tell(
+      `${target.title}: its tab is closed, but its worktree stayed. ${problem}\nOnce the folder is gone, close the session again.`
+    )
     return
   }
   archiveSession(target.sessionId)
