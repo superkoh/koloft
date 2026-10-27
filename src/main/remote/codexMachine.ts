@@ -18,8 +18,7 @@ import {
 } from '../codexTransport'
 import { record } from '../codexObservation'
 import { hookStateHeader } from '../codexTrust'
-import { agentSkillMarkdown } from '../agentPlugin'
-import { KOLOFT_SKILL } from '../museAccounts'
+import { KOLOFT_SKILL, agentSkillMarkdown } from '../agentPlugin'
 import {
   CODEX_HOLD_REG_ENV,
   CODEX_HOLD_SCRIPT_ENV,

@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { record } from './codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
+import { KOLOFT_SKILL } from './agentPlugin'
 
 const MUSE_HOMES = 'muse-homes'
 
@@ -58,8 +59,6 @@ function linkBack(own: string, owners: string): void {
   }
   if (!mustExist || fs.existsSync(owners)) fs.symlinkSync(owners, own)
 }
-
-export const KOLOFT_SKILL = 'koloft'
 
 // MUSE§16
 function linkOwnersSkills(own: string, owners: string): void {

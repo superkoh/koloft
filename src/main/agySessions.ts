@@ -74,6 +74,7 @@ import { AgyApi, activeHookName, type PendingInteraction } from './agyApi'
 import {
   AGY_HOOK_FILE,
   AGY_KEY_FROM_KOLOFT,
+  AGY_SKILLS,
   AGY_STATUSLINE_FILE,
   AGY_TITLE_FILE,
   agyLogName,
@@ -85,6 +86,7 @@ import {
   type RemoteAgyConfig
 } from './remote/agyTab'
 import { remoteMachineDir } from './remote/paths'
+import { agentSkillMarkdown, keepKoloftSkillIn } from './agentPlugin'
 import { HOLD_TAB_ENV, NOTICE_ENV, noticeFile } from './hooks'
 import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { capTouched, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
@@ -517,6 +519,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const gemini = this.gemini
     // AGY§4
     prepareAgyHome(pick.home, gemini)
+    // AGY§31
+    keepKoloftSkillIn(path.join(pick.home, AGY_SKILLS), !!agent)
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     mergeAgySettings(pick.home, gemini, {
@@ -680,7 +684,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         hooks: agyJsonText(hooks),
         onboarding: readText(agyOnboardingFile(pick.home)),
         token: apiKey ? undefined : readText(agyTokenFile(pick.home)),
-        start: instructions ? sessionStartOutput(instructions) : undefined
+        start: instructions ? sessionStartOutput(instructions) : undefined,
+        skill: agentTools ? agentSkillMarkdown() : undefined
       }),
       portOffset: resource ? portOffset(resource.worktreeName) : undefined
     })

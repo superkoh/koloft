@@ -35,8 +35,8 @@ function setUp(env: E2EEnv): void {
 test.describe('Antigravity sessions in a remote workspace, over the fake ssh with tmux and only the CLI faked', () => {
   test.setTimeout(240_000)
 
-  // AGY§4 AGY§11 AGY§12
-  test("an Antigravity session in a remote workspace runs agy in tmux on that machine, on the account's own folder there linked to the machine's ~/.gemini with Koloft's scripts and the API key, the account named above agy's screen; its row binds, takes agy's title and goes working then done", async ({
+  // AGY§4 AGY§11 AGY§12 AGY§31
+  test("an Antigravity session in a remote workspace runs agy in tmux on that machine, on the account's own folder there linked to the machine's ~/.gemini with Koloft's scripts, the koloft skill and the API key, the account named above agy's screen; its row binds, takes agy's title and goes working then done", async ({
     env
   }) => {
     setUp(env)
@@ -62,6 +62,9 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       expect(fs.readlinkSync(path.join(accountFolder(env), 'antigravity-cli', 'brain'))).toBe(
         path.join(machineHome(env), '.gemini', 'antigravity-cli', 'brain')
       )
+      const skill = path.join(accountFolder(env), 'antigravity-cli', 'skills', 'koloft', 'SKILL.md')
+      expect(fs.lstatSync(skill).isFile()).toBe(true)
+      expect(fs.readFileSync(skill, 'utf8')).toMatch(/^---\nname: koloft\n/)
 
       await agyReady(page)
       await expect(page.locator('.term-wrap:visible .xterm')).toContainText(

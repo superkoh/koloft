@@ -4,9 +4,17 @@ import { AGENT_GUIDE, AGENT_SKILL_DESCRIPTION, koloftPrompt } from '@shared/agen
 
 export const AGENT_PROMPT_FILE = 'koloft-prompt.md'
 const SKILLS = 'skills'
+export const KOLOFT_SKILL = 'koloft'
 
 export function agentPluginSkills(pluginDir: string): string {
   return path.join(pluginDir, SKILLS)
+}
+
+export function keepKoloftSkillIn(skillsDir: string, on: boolean): void {
+  const dir = path.join(skillsDir, KOLOFT_SKILL)
+  if (!on) return fs.rmSync(dir, { recursive: true, force: true })
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'SKILL.md'), agentSkillMarkdown())
 }
 
 export function agentSkillMarkdown(): string {
@@ -20,7 +28,7 @@ export function agentPluginFiles(): Record<string, string> {
       name: 'koloft',
       description: 'Lets this session use Koloft, the app it runs in.'
     }),
-    [`${SKILLS}/koloft/SKILL.md`]: agentSkillMarkdown(),
+    [`${SKILLS}/${KOLOFT_SKILL}/SKILL.md`]: agentSkillMarkdown(),
     [AGENT_PROMPT_FILE]: `${koloftPrompt('claude')}\n`
   }
 }
