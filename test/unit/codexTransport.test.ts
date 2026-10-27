@@ -29,9 +29,11 @@ beforeEach(async () => {
 const {spawn} = require('child_process');
 const readline = require('readline');
 let initialized = false;
+const seen = [];
 const out = obj => process.stdout.write(JSON.stringify(obj) + '\\n');
 readline.createInterface({input:process.stdin}).on('line', line => {
  const f=JSON.parse(line);
+ seen.push(f.params?.extraRoots ? f.method + ' ' + f.params.extraRoots.join(',') : f.method);
  if(f.method==='initialize') {out({id:f.id,result:{userAgent:'fake'}});return;}
  if(f.method==='initialized') {initialized=true;return;}
  if(f.id===991 && !f.method) {out({method:'approval/received',params:f.result});return;}
@@ -55,7 +57,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
    process.stdout.write(bytes.subarray(0,offset));
    setTimeout(()=>process.stdout.write(bytes.subarray(offset)),15);return;
  }
- out({id:f.id,result:{data:[],params:f.params,env:{home:process.env.CODEX_HOME,key:process.env.OPENAI_API_KEY,thread:process.env.CODEX_THREAD_ID,tab:process.env.KOLOFT_TAB_ID,offset:process.env.KOLOFT_PORT_OFFSET}}});
+ out({id:f.id,result:{data:[],params:f.params,seen,env:{home:process.env.CODEX_HOME,key:process.env.OPENAI_API_KEY,thread:process.env.CODEX_THREAD_ID,tab:process.env.KOLOFT_TAB_ID,offset:process.env.KOLOFT_PORT_OFFSET}}});
 });
 process.stdin.on('end',()=>process.exit(0));
 `,
@@ -406,6 +408,32 @@ describe('Codex TUI transport', () => {
     ).resolves.toMatchObject({ params: { threadId: 'main' } })
     await tuiRead('after')
     expect(seen.map((f) => f.id)).toEqual([0, 'after'])
+  })
+
+  // CODEX§17
+  it("Koloft's skills folder reaches the app-server right after the TUI's initialized, ahead of the thread the TUI starts next, and its answer never reaches the TUI", async () => {
+    const transport = await createCodexTransport({
+      binary,
+      cwd: directory,
+      onFrame: () => {},
+      skillRoots: ['/koloft/plugin/skills']
+    })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const reply = nextFrame(socket)
+    socket.send(JSON.stringify({ id: 2, method: 'thread/start', params: {} }))
+    expect(await reply).toMatchObject({
+      id: 2,
+      result: {
+        seen: [
+          'initialize',
+          'initialized',
+          'skills/extraRoots/set /koloft/plugin/skills',
+          'thread/start'
+        ]
+      }
+    })
   })
 
   it("an error answer fails Koloft's request and is not saved up for a TUI that connects later", async () => {

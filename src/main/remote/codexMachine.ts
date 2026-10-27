@@ -18,6 +18,8 @@ import {
 } from '../codexTransport'
 import { record } from '../codexObservation'
 import { hookStateHeader } from '../codexTrust'
+import { agentSkillMarkdown } from '../agentPlugin'
+import { KOLOFT_SKILL } from '../museAccounts'
 import {
   CODEX_HOLD_REG_ENV,
   CODEX_HOLD_SCRIPT_ENV,
@@ -98,7 +100,7 @@ export function ownerWordsLines(ownerWords: string): string {
     .join('')
 }
 
-// ADR-0039 CODEX§16
+// ADR-0039 CODEX§16 CODEX§17
 export function codexTabScript(s: CodexTabSpec): string {
   assertSafeNames(s.tabId, s.instance, s.machineName, ...Object.keys(s.env))
   const exports = Object.entries(s.env)
@@ -118,6 +120,11 @@ export function codexTabScript(s: CodexTabSpec): string {
   ].join(' ')
   const serve = `codex app-server --listen "unix://$S.sock" ${config}`
   const ownerWords = s.ownerWords ? ownerWordsLines(s.ownerWords) : ''
+  const skill = `K="$H/skills/${KOLOFT_SKILL}"\n${
+    s.agentTools
+      ? `mkdir -p "$K" && printf '%s' ${shq(agentSkillMarkdown())} > "$K/SKILL.md"\n`
+      : 'rm -rf "$K"\n'
+  }`
   return `#!/bin/sh
 M="${remoteMachineDir(s.machineName)}"
 ${REMOTE_ENV_LINES}
@@ -125,7 +132,7 @@ sh "$M/${ENSURE_CODEX_FILE}" ${shq(s.version)} || exit $?
 ${CODEX_FIRST_ON_PATH}
 H="${REMOTE_CODEX_HOME}"
 mkdir -p "$H" "${serversDir(s.instance)}" && chmod 700 "$H" "${serversDir(s.instance)}" || exit 3
-cd ${shq(s.cwd)} || exit 3
+${skill}cd ${shq(s.cwd)} || exit 3
 ${trust}${hookTrustLines(s.hookTrust)}S="${serversDir(s.instance)}/${s.tabId}"
 rm -f "$S".*
 ${ownerWords}${LOGIN_PATH_TOO}

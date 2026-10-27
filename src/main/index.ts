@@ -531,7 +531,7 @@ import {
 } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
+import { agentPluginFiles, agentPluginSkills, writeAgentPlugin } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 // PLATFORM§4
@@ -2924,7 +2924,8 @@ app.whenReady().then(() => {
       gitBin: gitFirstBin,
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
-        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
+        skillsFolder: () => claudeAgentPlugin && agentPluginSkills(claudeAgentPlugin)
       },
       gitAccounts: {
         configEnv: (env) => gitAccounts!.configEnv(env),

@@ -3,6 +3,11 @@ import path from 'path'
 import { AGENT_GUIDE, AGENT_SKILL_DESCRIPTION, koloftPrompt } from '@shared/agentGuide'
 
 export const AGENT_PROMPT_FILE = 'koloft-prompt.md'
+const SKILLS = 'skills'
+
+export function agentPluginSkills(pluginDir: string): string {
+  return path.join(pluginDir, SKILLS)
+}
 
 export function agentSkillMarkdown(): string {
   return `---\nname: koloft\ndescription: ${JSON.stringify(AGENT_SKILL_DESCRIPTION)}\n---\n\n${AGENT_GUIDE}\n`
@@ -15,7 +20,7 @@ export function agentPluginFiles(): Record<string, string> {
       name: 'koloft',
       description: 'Lets this session use Koloft, the app it runs in.'
     }),
-    'skills/koloft/SKILL.md': agentSkillMarkdown(),
+    [`${SKILLS}/koloft/SKILL.md`]: agentSkillMarkdown(),
     [AGENT_PROMPT_FILE]: `${koloftPrompt('claude')}\n`
   }
 }

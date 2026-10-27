@@ -37,6 +37,7 @@ export type CodexUpstreamFactory = (
 
 export interface CodexTransportOptions extends CodexProcessOptions {
   upstream?: CodexUpstreamFactory
+  skillRoots?: string[]
   onFrame(direction: 'client' | 'server', frame: CodexFrame): void
   observes?(direction: 'client' | 'server', head: CodexFrameHead): boolean
   onDisconnect?(): void
@@ -443,6 +444,14 @@ export async function createCodexTransport(
     report(error)
     void stop().catch(report)
   }
+  const request = (
+    method: string,
+    params: unknown,
+    timeoutMs = DEFAULT_TIMEOUT
+  ): Promise<unknown> =>
+    sendRequest(own, `${OWN_REQUEST_ID_PREFIX}${randomUUID()}`, method, params, timeoutMs, (raw) =>
+      upstream.write(raw)
+    )
   const upstreamOf: CodexUpstreamFactory =
     options.upstream ?? ((frame, failure) => new CodexProcess(options, frame, failure))
   const upstream = upstreamOf((read) => {
@@ -488,6 +497,9 @@ export async function createCodexTransport(
           observe('client', read)
           // CODEX§1
           upstream.write(line)
+          // CODEX§17
+          if (read.head.method === 'initialized' && options.skillRoots)
+            request('skills/extraRoots/set', { extraRoots: options.skillRoots }).catch(() => {})
         } catch (error) {
           fail(asError(error))
         }
@@ -518,19 +530,7 @@ export async function createCodexTransport(
     })
     await fs.chmod(socketPath, 0o600)
     // CODEX§9
-    return {
-      url: `unix://${socketPath}`,
-      stop,
-      request: (method, params, timeoutMs = DEFAULT_TIMEOUT) =>
-        sendRequest(
-          own,
-          `${OWN_REQUEST_ID_PREFIX}${randomUUID()}`,
-          method,
-          params,
-          timeoutMs,
-          (raw) => upstream.write(raw)
-        )
-    }
+    return { url: `unix://${socketPath}`, stop, request }
   } catch (error) {
     await stop().catch(report)
     throw error

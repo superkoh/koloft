@@ -160,7 +160,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   })
 
   // ADR-0039 CODEX§16
-  test('E-RC-02: a closed remote Codex session resumes from its row on a new server there; koloft inside it answers from this Koloft; and when its ssh line drops, the next prompt still gets its answer', async ({
+  test("E-RC-02: a closed remote Codex session resumes from its row on a new server there; koloft inside it answers from this Koloft, and Koloft's Codex home there holds the koloft skill; and when its ssh line drops, the next prompt still gets its answer", async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
@@ -192,6 +192,12 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
           timeout: KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS
         })
         .toEqual(['0'])
+      expect(
+        fs.readFileSync(
+          path.join(machineHome(env), '.koloft', 'codex-home', 'skills', 'koloft', 'SKILL.md'),
+          'utf8'
+        )
+      ).toMatch(/^---\nname: koloft\n/)
 
       const turnsDone = async (): Promise<number> =>
         (await terminalText(page, tabId)).split('Codex done').length - 1

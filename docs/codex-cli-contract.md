@@ -1415,6 +1415,22 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   `skills/list` (scope `user`) and used by the model. `-c 'skills.config=[{path=…}]'`
   with a path to a folder, or to a `SKILL.md`, outside those roots added nothing to
   `skills/list`.
+- **`skills/extraRoots/set {extraRoots: [<folder>]}` adds a skills folder for that one
+  app-server, and the model gets it.** 2026-10-27, Codex CLI 0.162.0 (model turns, a
+  throwaway `CODEX_HOME` holding a copy of this Mac's login, deleted afterwards) and
+  0.161.0 (no model turn); a Node client on `codex app-server --stdio`. The method is in
+  the schema without `--experimental` on both, and answered `{}` on a connection whose
+  `initialize` asked for no experimental API. Afterwards `skills/list` showed
+  `koloft` from `<folder>/koloft/SKILL.md` with scope `user`; the rollout's skill list
+  named the folder as `r1` beside `skills/.system` as `r0`, and the model, asked for a
+  word only the body held, read the file and said it. It works sent before
+  `thread/start`, and sent after `thread/start` but before the first `turn/start`: the
+  list is built at the first turn. Written in one burst right after `initialized`,
+  with `thread/start` next and no wait for its answer, it was answered first and the
+  skill reached the rollout, 4 of 4 rounds. A thread started without it and resumed on
+  a new app-server that got it first also read the skill. Nothing is kept: the home got
+  no `config.toml` and no `skills/koloft`, and a second app-server started on that home
+  without the call listed no `koloft`.
 - **Hooks:** `-c 'hooks.SessionStart=[{hooks=[{type="command",command=…}]}]'` shows in
   `hooks/list` with source `sessionFlags` and `trustStatus: "untrusted"`, and does not
   run. `-c 'hooks.state."<key>".trusted_hash=…'` did not change that. The same

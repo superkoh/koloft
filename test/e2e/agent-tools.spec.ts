@@ -712,6 +712,42 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     expect(fs.readFileSync(prompt, 'utf8')).toContain('koloft session new -w')
   })
 
+  // CODEX§17
+  test('a Codex session gets the koloft skill through its app-server, from a folder outside the Codex home it shares with the owner’s own codex, before its thread starts', async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startLocalSession(page, env, 'codex')
+      const sent = fs
+        .readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              direction: string
+              frame: { method?: string; params?: { extraRoots?: string[] } }
+            }
+        )
+        .filter((e) => e.direction === 'client')
+        .map((e) => e.frame)
+      const methods = sent.map((f) => f.method)
+      expect(methods.indexOf('skills/extraRoots/set')).toBe(methods.indexOf('initialized') + 1)
+      expect(methods.indexOf('skills/extraRoots/set')).toBeLessThan(methods.indexOf('thread/start'))
+      const [root] = sent.find((f) => f.method === 'skills/extraRoots/set')!.params!.extraRoots!
+      expect(root.startsWith(env.launchEnv.CODEX_HOME!)).toBe(false)
+      expect(fs.readFileSync(path.join(root, 'koloft', 'SKILL.md'), 'utf8')).toMatch(
+        /^---\nname: koloft\n/
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('with agent tools off in Settings, koloft in a new session is refused, and the session starts without Koloft’s prompt', async ({
     env
   }) => {
