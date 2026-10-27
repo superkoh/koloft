@@ -156,6 +156,17 @@ export function gitCommitAll(dir: string): void {
   )
 }
 
+export const INCLUDED_ENV = 'PORT=3000\n'
+
+// CC§3
+export function gitRepoWithAnIncludedEnv(dir: string): void {
+  gitInit(dir)
+  fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n.env\n')
+  fs.writeFileSync(path.join(dir, '.worktreeinclude'), '.env\n')
+  gitCommitAll(dir)
+  fs.writeFileSync(path.join(dir, '.env'), INCLUDED_ENV)
+}
+
 // CC§3
 export function gitWorktreeAdd(repo: string, name: string): string {
   assertFixtureDir('gitWorktreeAdd', repo)

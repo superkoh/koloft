@@ -76,7 +76,7 @@ import {
 } from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
-import { copyWorktreeIncludes } from '../sessionWorktrees'
+import { copyWorktreeIncludes, type ScriptRunner } from '../sessionWorktrees'
 import { GIT_REF_RE } from '../gitSteps'
 import {
   dirExistsSync,
@@ -131,7 +131,7 @@ async function rebuildWorktree(
     baseRef: string
   },
   git: GitOut,
-  onThisMac: boolean
+  machine: ScriptRunner | undefined
 ): Promise<boolean> {
   const root = worktreeHomeRoot(spec.worktreePath)
   if (!root) return false
@@ -143,7 +143,7 @@ async function rebuildWorktree(
     ? ['worktree', 'add', spec.worktreePath, spec.branch]
     : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
   if ((await git(root, args)) === null) return false
-  if (onThisMac) await copyWorktreeIncludes(root, spec.worktreePath)
+  await copyWorktreeIncludes(root, spec.worktreePath, machine)
   return true
 }
 
@@ -936,7 +936,11 @@ export class ClaudeBackend implements SessionBackend {
         if (
           !GIT_REF_RE.test(plan.branch) ||
           !GIT_REF_RE.test(plan.baseRef) ||
-          !(await rebuildWorktree(plan, hostGit(host), !home))
+          !(await rebuildWorktree(
+            plan,
+            hostGit(host),
+            home ? this.d.hosts.machine(parseRemoteKey(home)!.host) : undefined
+          ))
         ) {
           return { ok: false, code: 'rebuild-failed' }
         }

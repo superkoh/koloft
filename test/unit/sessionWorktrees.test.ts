@@ -1,11 +1,39 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { execFileSync } from 'child_process'
+import { execFile, execFileSync } from 'child_process'
+import { promisify } from 'util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BackgroundFile } from '../../src/main/backgroundFile'
 import { SessionStore } from '../../src/main/sessionStore'
-import { SessionWorktrees } from '../../src/main/sessionWorktrees'
+import { SessionWorktrees, type TreeIo } from '../../src/main/sessionWorktrees'
+import { barePath, formatRemoteKey } from '../../src/shared/remoteKey'
+
+const MACHINE = 'lab'
+
+function shOnMachine(script: string, args: string[]): Promise<string | null> {
+  return new Promise((resolve) =>
+    execFile('sh', ['-c', script, 'sh', ...args], (error, stdout) => resolve(error ? null : stdout))
+  )
+}
+
+const machineIo: TreeIo = {
+  git: async (dir, args) =>
+    (await promisify(execFile)('git', ['-C', barePath(dir), ...args])).stdout.trimEnd(),
+  exists: async (p) => fs.existsSync(barePath(p)),
+  real: (p) => p,
+  keyed: (listed) => formatRemoteKey(MACHINE, listed),
+  machine: { runScript: shOnMachine }
+}
+
+const SIDES = [
+  { where: 'on this Mac', make: () => new SessionWorktrees(store), at: (p: string) => p },
+  {
+    where: 'on another machine over ssh',
+    make: () => new SessionWorktrees(store, () => machineIo),
+    at: (p: string) => formatRemoteKey(MACHINE, p)
+  }
+]
 
 let directory: string
 let repo: string
@@ -117,6 +145,47 @@ describe('SessionWorktrees', () => {
     expect(git('-C', rebuilt.worktreePath, 'branch', '--show-current')).toBe('pr-branch')
   })
 
+  it('a worktree name stays recorded after its folder and branch are gone, so no new worktree takes it', async () => {
+    const resource = await worktrees.create(repo, 'one')
+    git('worktree', 'remove', resource.worktreePath)
+    git('branch', '-D', 'worktree-one')
+    expect(worktrees.recorded(resource.worktreePath)).toBe(true)
+    await expect(worktrees.create(repo, 'one')).rejects.toThrow('recovery record')
+  })
+
+  it('refuses a locked missing worktree without modifying it', async () => {
+    const resource = await worktrees.create(repo, 'one')
+    git('worktree', 'lock', resource.worktreePath)
+    fs.rmSync(resource.worktreePath, { recursive: true })
+    await expect(worktrees.rebuild(resource.id)).rejects.toThrow('locked')
+    expect(git('worktree', 'list', '--porcelain')).toContain('locked')
+    expect(store.getResource(resource.id)?.state).toBe('failed')
+  })
+
+  it('adopts an existing detached checkout without changing its branch or files', async () => {
+    const checkout = path.join(directory, 'outside namespace')
+    git('worktree', 'add', '--detach', checkout, 'HEAD')
+    fs.writeFileSync(path.join(checkout, 'file.txt'), 'dirty detached checkout')
+    const adopted = await worktrees.adopt(repo, checkout)
+    expect(adopted.managed).toBe(false)
+    expect(adopted.worktreeBranch).toBeNull()
+    expect(fs.readFileSync(path.join(checkout, 'file.txt'), 'utf8')).toBe('dirty detached checkout')
+  })
+
+  it('rejects invalid names and name collisions without touching an existing checkout', async () => {
+    await expect(worktrees.create(repo, '../escape')).rejects.toThrow('Invalid worktree name')
+    const resource = await worktrees.create(repo, 'one')
+    await expect(worktrees.create(repo, 'one')).rejects.toThrow('already exists')
+    expect(fs.existsSync(path.join(resource.worktreePath, 'file.txt'))).toBe(true)
+    expect(store.listResources()).toHaveLength(1)
+  })
+})
+
+describe.each(SIDES)('the files .worktreeinclude lists, in a workspace $where', (side) => {
+  beforeEach(() => {
+    worktrees = side.make()
+  })
+
   it('copies into a new or rebuilt checkout exactly the files .worktreeinclude lists that git ignores, never a link', async () => {
     const write = (rel: string, text: string): void => {
       fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true })
@@ -133,14 +202,15 @@ describe('SessionWorktrees', () => {
     fs.symlinkSync('.env', path.join(repo, 'link.env'))
     const copied = (worktreePath: string): string[] =>
       ['.env', 'secrets/key.txt', 'build/out.js', 'notes.txt', 'link.env'].filter((rel) =>
-        fs.existsSync(path.join(worktreePath, rel))
+        fs.existsSync(path.join(barePath(worktreePath), rel))
       )
 
-    const resource = await worktrees.create(repo, 'one')
-    expect(copied(resource.worktreePath)).toEqual(['.env', 'secrets/key.txt'])
-    expect(fs.readFileSync(path.join(resource.worktreePath, '.env'), 'utf8')).toBe('PORT=3000\n')
+    const resource = await worktrees.create(side.at(repo), 'one')
+    const tree = barePath(resource.worktreePath)
+    expect(copied(tree)).toEqual(['.env', 'secrets/key.txt'])
+    expect(fs.readFileSync(path.join(tree, '.env'), 'utf8')).toBe('PORT=3000\n')
 
-    fs.rmSync(resource.worktreePath, { recursive: true })
+    fs.rmSync(tree, { recursive: true })
     const rebuilt = await worktrees.rebuild(resource.id)
     expect(copied(rebuilt.worktreePath)).toEqual(['.env', 'secrets/key.txt'])
   })
@@ -155,8 +225,8 @@ describe('SessionWorktrees', () => {
     fs.writeFileSync(path.join(repo, 'secrets', 'key.txt'), 'k')
     let n = 0
     const untouchedAfter = async (touch: (tree: string) => void): Promise<boolean> => {
-      const resource = await worktrees.create(repo, `case-${++n}`)
-      touch(resource.worktreePath)
+      const resource = await worktrees.create(side.at(repo), `case-${++n}`)
+      touch(barePath(resource.worktreePath))
       return worktrees.untouched(resource)
     }
     const inTree = (tree: string, ...args: string[]): string => git('-C', tree, ...args)
@@ -194,41 +264,8 @@ describe('SessionWorktrees', () => {
 
     const checkout = path.join(directory, 'adopted')
     git('worktree', 'add', '-b', 'worktree-adopted', checkout)
-    expect(await worktrees.untouched(await worktrees.adopt(repo, checkout))).toBe(false)
-  })
-
-  it('a worktree name stays recorded after its folder and branch are gone, so no new worktree takes it', async () => {
-    const resource = await worktrees.create(repo, 'one')
-    git('worktree', 'remove', resource.worktreePath)
-    git('branch', '-D', 'worktree-one')
-    expect(worktrees.recorded(resource.worktreePath)).toBe(true)
-    await expect(worktrees.create(repo, 'one')).rejects.toThrow('recovery record')
-  })
-
-  it('refuses a locked missing worktree without modifying it', async () => {
-    const resource = await worktrees.create(repo, 'one')
-    git('worktree', 'lock', resource.worktreePath)
-    fs.rmSync(resource.worktreePath, { recursive: true })
-    await expect(worktrees.rebuild(resource.id)).rejects.toThrow('locked')
-    expect(git('worktree', 'list', '--porcelain')).toContain('locked')
-    expect(store.getResource(resource.id)?.state).toBe('failed')
-  })
-
-  it('adopts an existing detached checkout without changing its branch or files', async () => {
-    const checkout = path.join(directory, 'outside namespace')
-    git('worktree', 'add', '--detach', checkout, 'HEAD')
-    fs.writeFileSync(path.join(checkout, 'file.txt'), 'dirty detached checkout')
-    const adopted = await worktrees.adopt(repo, checkout)
-    expect(adopted.managed).toBe(false)
-    expect(adopted.worktreeBranch).toBeNull()
-    expect(fs.readFileSync(path.join(checkout, 'file.txt'), 'utf8')).toBe('dirty detached checkout')
-  })
-
-  it('rejects invalid names and name collisions without touching an existing checkout', async () => {
-    await expect(worktrees.create(repo, '../escape')).rejects.toThrow('Invalid worktree name')
-    const resource = await worktrees.create(repo, 'one')
-    await expect(worktrees.create(repo, 'one')).rejects.toThrow('already exists')
-    expect(fs.existsSync(path.join(resource.worktreePath, 'file.txt'))).toBe(true)
-    expect(store.listResources()).toHaveLength(1)
+    expect(await worktrees.untouched(await worktrees.adopt(side.at(repo), side.at(checkout)))).toBe(
+      false
+    )
   })
 })

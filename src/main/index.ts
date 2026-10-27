@@ -1378,7 +1378,7 @@ function machineTreeIo(cwd: string): TreeIo {
     exists: (p) => machine.dirExists(p),
     real: (p) => p,
     keyed: (listed) => pinnedKeyOn(host, listed),
-    onThisMac: false
+    machine
   }
 }
 
@@ -5998,7 +5998,9 @@ function registerIpc(): void {
         pr as number,
         branch
       )
-      if (r.ok && hostOf(root) === 'local') await copyWorktreeIncludes(root, r.dir)
+      const machine = parseRemoteKey(root)?.host
+      if (r.ok)
+        await copyWorktreeIncludes(root, r.dir, machine ? hosts.machine(machine) : undefined)
       return r
     }
   )

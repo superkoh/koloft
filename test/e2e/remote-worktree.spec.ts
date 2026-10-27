@@ -17,7 +17,9 @@ import {
 import {
   FAKE_SESSION_TITLE,
   gitInit,
+  gitRepoWithAnIncludedEnv,
   gitWorktreeAdd,
+  INCLUDED_ENV,
   menuItemTexts,
   openMenu,
   openWorktreeSession,
@@ -162,12 +164,12 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
     }
   })
 
-  test('E-RW-21: a cold worktree row whose worktree is gone from the machine rebuilds it there with git before resuming, from the folder that holds its transcript', async ({
+  test('E-RW-21: a cold worktree row whose worktree is gone from the machine rebuilds it there with git, with the ignored files .worktreeinclude lists copied in there, before resuming, from the folder that holds its transcript', async ({
     env
   }) => {
     test.setTimeout(300_000)
     installFakeRemote(env)
-    gitInit(remoteDir(env))
+    gitRepoWithAnIncludedEnv(remoteDir(env))
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
@@ -201,6 +203,7 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
       expect(
         execFileSync('git', ['-C', wtDir, 'branch', '--show-current'], { encoding: 'utf8' })
       ).toBe('worktree-gone\n')
+      expect(fs.readFileSync(path.join(wtDir, '.env'), 'utf8')).toBe(INCLUDED_ENV)
       expect(fs.realpathSync(resume.cwd)).toBe(fs.realpathSync(remoteDir(env)))
     } finally {
       await quitAndClose(app)

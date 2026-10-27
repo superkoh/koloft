@@ -4,7 +4,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { barePath, isRemoteKey } from '@shared/remoteKey'
 import { SessionStore, type WorktreeResource } from './sessionStore'
 import { gitIgnoredAmong } from './gitIgnored'
 import { worktreeHomeRoot } from './resumePlan'
@@ -18,12 +18,16 @@ interface Checkout {
   locked: boolean
 }
 
+export interface ScriptRunner {
+  runScript(script: string, args: string[]): Promise<string | null>
+}
+
 export interface TreeIo {
   git(cwd: string, args: string[]): Promise<string>
   exists(p: string): Promise<boolean>
   real(p: string): string
   keyed(listed: string): string
-  onThisMac: boolean
+  machine?: ScriptRunner
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -35,8 +39,7 @@ const LOCAL_IO: TreeIo = {
   git,
   exists: async (p) => fs.existsSync(p),
   real: (p) => fs.realpathSync(p),
-  keyed: (listed) => path.resolve(listed),
-  onThisMac: true
+  keyed: (listed) => path.resolve(listed)
 }
 
 async function checkouts(io: TreeIo, cwd: string): Promise<Checkout[]> {
@@ -81,8 +84,35 @@ function validName(name: string): void {
   if (!isValidWorktreeName(name)) throw new Error('Invalid worktree name')
 }
 
+const COPY_INCLUDES_SH = `root=$1 tree=$2
+[ -f "$root/.worktreeinclude" ] || exit 0
+git -C "$root" ls-files -z --others --ignored --exclude-from="$root/.worktreeinclude" |
+  git -C "$root" check-ignore -z --stdin | tr '\\0' '\\n' |
+  while IFS= read -r rel; do
+    [ -f "$root/$rel" ] && [ ! -L "$root/$rel" ] && [ ! -e "$tree/$rel" ] || continue
+    mkdir -p "$(dirname "$tree/$rel")" && cp "$root/$rel" "$tree/$rel" || exit 1
+  done`
+
+const SAME_AS_ROOT_SH = `root=$1 tree=$2
+shift 2
+for rel do
+  [ -f "$tree/$rel" ] && [ ! -L "$tree/$rel" ] && [ -f "$root/$rel" ] && [ ! -L "$root/$rel" ] &&
+    cmp -s "$root/$rel" "$tree/$rel" || exit 1
+done`
+
 // CC§3
-export async function copyWorktreeIncludes(root: string, worktreePath: string): Promise<void> {
+export async function copyWorktreeIncludes(
+  root: string,
+  worktreePath: string,
+  machine?: ScriptRunner
+): Promise<void> {
+  if (machine) {
+    if (
+      (await machine.runScript(COPY_INCLUDES_SH, [barePath(root), barePath(worktreePath)])) === null
+    )
+      console.error('[koloft] could not copy the .worktreeinclude files into', worktreePath)
+    return
+  }
   try {
     const includeFile = path.join(root, '.worktreeinclude')
     if (!fs.existsSync(includeFile)) return
@@ -188,8 +218,13 @@ export class SessionWorktrees {
         changes
       )
         return false
-      for (const rel of ignored.split('\0').filter(Boolean)) {
-        if (!io.onThisMac || !(await sameFileInRoot(resource.originalCwd, tree, rel))) return false
+      const rels = ignored.split('\0').filter(Boolean)
+      if (rels.length && io.machine) {
+        const args = [barePath(resource.originalCwd), barePath(tree), ...rels]
+        return (await io.machine.runScript(SAME_AS_ROOT_SH, args)) !== null
+      }
+      for (const rel of rels) {
+        if (!(await sameFileInRoot(resource.originalCwd, tree, rel))) return false
       }
       return true
     } catch {
@@ -298,7 +333,6 @@ export class SessionWorktrees {
   ): Promise<WorktreeResource> {
     const resource = pending
     const io = this.io(resource.originalCwd)
-    const bare = (p: string): string => parseRemoteKey(p)?.path ?? p
     try {
       const root = await rootOf(io, resource.originalCwd)
       if (root !== resource.originalCwd) throw new Error('The recorded repository has changed')
@@ -308,9 +342,9 @@ export class SessionWorktrees {
       if (stale) {
         if (stale.locked)
           throw new Error('The missing worktree is locked; unlock it before rebuilding')
-        await io.git(root, ['worktree', 'remove', bare(resource.worktreePath)])
+        await io.git(root, ['worktree', 'remove', barePath(resource.worktreePath)])
       }
-      const tree = bare(resource.worktreePath)
+      const tree = barePath(resource.worktreePath)
       const branch = resource.worktreeBranch
       const args = branch
         ? reuseBranch && (await branchExists(io, root, branch))
@@ -318,7 +352,7 @@ export class SessionWorktrees {
           : ['worktree', 'add', '-b', branch, tree, resource.originalHeadCommit]
         : ['worktree', 'add', '--detach', tree, resource.originalHeadCommit]
       await io.git(root, args)
-      if (io.onThisMac) await copyWorktreeIncludes(root, resource.worktreePath)
+      await copyWorktreeIncludes(root, resource.worktreePath, io.machine)
       const ready: WorktreeResource = { ...pending, state: 'ready' }
       this.store.putResource(ready)
       return ready

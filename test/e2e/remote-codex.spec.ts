@@ -7,8 +7,8 @@ import { portOffset } from '../../src/shared/worktreeName'
 import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
 import {
   chooseBackend,
-  gitCommitAll,
-  gitInit,
+  gitRepoWithAnIncludedEnv,
+  INCLUDED_ENV,
   menuItemTexts,
   newSessionInWith,
   openMenu,
@@ -217,14 +217,13 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   })
 
   // CODEX§11
-  test('E-RC-03: a Codex worktree session there gets its worktree made on the machine, its server the port offset of that name, and, with skip permission prompts on, approvals and the sandbox off', async ({
+  test('E-RC-03: a Codex worktree session there gets its worktree made on the machine with the ignored files .worktreeinclude lists copied in there, its server the port offset of that name, and, with skip permission prompts on, approvals and the sandbox off', async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
     fs.mkdirSync(remoteDir(env), { recursive: true })
     fs.writeFileSync(path.join(remoteDir(env), 'README.md'), '# proj\n')
-    gitInit(remoteDir(env))
-    gitCommitAll(remoteDir(env))
+    gitRepoWithAnIncludedEnv(remoteDir(env))
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
@@ -246,6 +245,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await expect.poll(() => machineServers(env).length, { timeout: 60_000 }).toBe(1)
       const tree = path.join(remoteDir(env), '.claude', 'worktrees', 'rc-tree')
       expect(fs.existsSync(path.join(tree, '.git'))).toBe(true)
+      expect(fs.readFileSync(path.join(tree, '.env'), 'utf8')).toBe(INCLUDED_ENV)
       expect(machineServers(env)[0]).toMatchObject({
         cwd: fs.realpathSync(tree),
         portOffset: String(portOffset('rc-tree'))
