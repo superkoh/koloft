@@ -1,5 +1,5 @@
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
-import { hasWorkbench, ipcErrorText, isSessionKind } from './agentUi'
+import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
@@ -16,6 +16,7 @@ import {
   type LeftoverProcess,
   type MachineState,
   type SessionInfo,
+  type SessionResumeResult,
   type TabKind,
   type Settings,
   type ReleaseNotes,
@@ -786,6 +787,7 @@ export const useStore = create<AppState>((set, get) => ({
       window.api.terminal.kill(oldId, true)
       void window.api.sessions
         .resume({ sessionId: resumeId, cwd })
+        .catch((): SessionResumeResult => ({ ok: false, code: 'backend', message: '' }))
         .then((res) => {
           if (!res.ok) {
             const main =
@@ -797,7 +799,10 @@ export const useStore = create<AppState>((set, get) => ({
                 worktreeName: basename(cwd),
                 cwd: main
               })
-            }
+            } else
+              get().showToast(
+                resumeFailureMessage(res.code, 'message' in res ? res.message : undefined)
+              )
             throw new Error(res.code)
           }
           if (!get().tabs.some((x) => x.id === oldId)) {

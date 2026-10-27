@@ -1,5 +1,5 @@
-import { isSessionKind, type SessionBackend } from './agentUi'
-import type { ResumePlan, SessionResumeRequest, SessionResumeResult } from '@shared/types'
+import { isSessionKind, resumeFailureMessage, type SessionBackend } from './agentUi'
+import type { ResumePlan, SessionResumeRequest } from '@shared/types'
 import { basename } from '@shared/preview'
 import { markRestoreLaunch, useStore, type Tab } from './store'
 import { rowLookups, workspaceOfRow } from './sessionRows'
@@ -73,14 +73,6 @@ export function mainRequest(target: ResumeTarget, cwd: string): SessionResumeReq
 export const RUNNING_ELSEWHERE_MS = 60_000
 export function mayBeRunningElsewhere(mtime: number, now: number): boolean {
   return now - mtime < RUNNING_ELSEWHERE_MS
-}
-
-export function resumeFailureMessage(
-  code: Extract<SessionResumeResult, { ok: false }>['code'],
-  message?: string
-): string {
-  if (code === 'backend') return message || 'Resume failed'
-  return code === 'cwd-missing' ? 'Folder is gone — cannot resume here' : 'Resume failed'
 }
 
 const inFlight = new Set<string>()

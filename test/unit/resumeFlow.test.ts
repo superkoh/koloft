@@ -10,12 +10,12 @@ import {
   releaseResume,
   releaseSettledResumes,
   renamedRequest,
-  resumeFailureMessage,
   resumeInFlight,
   resumeSession,
   runResume,
   UNAVAILABLE_NOTICE
 } from '../../src/renderer/src/resumeFlow'
+import { resumeFailureMessage } from '../../src/renderer/src/agentUi'
 import { useStore } from '../../src/renderer/src/store'
 
 const target = { id: 'sid-1', backendId: 'claude' as const, title: 'Refactor session management' }
