@@ -198,7 +198,13 @@ import {
   statusLineSetting
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
-import { bundledGcm, bundledGhDir, gitMissing, linkOrUnlink, setupBundledGit } from './bundledTools'
+import {
+  bundledGcm,
+  bundledGhDir,
+  linkOrUnlink,
+  preferTheUsersGit,
+  setupBundledGit
+} from './bundledTools'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
@@ -1151,6 +1157,7 @@ function loginEnvReady(): Promise<void> {
     .then(({ env }) => {
       Object.assign(process.env, sshEnvFromLogin(process.env, env))
       if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
+      if (gitFirstBin) preferTheUsersGit(gitFirstBin, process.env.PATH)
     })
     .catch(() => undefined))
 }
@@ -2581,7 +2588,7 @@ function rendererUrl(): string {
   return devUrl || pathToFileURL(path.join(__dirname, '../renderer/index.html')).toString()
 }
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   presence.macLastUsed()
   protocol.handle('koloft-file', async (request) => {
     const url = new URL(request.url)
@@ -2650,9 +2657,11 @@ app.whenReady().then(async () => {
   playwrightCliBin = playwrightBin
   fallbackBin = bundledGhDir()
   if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
-  if (gitMissing(process.env.PATH)) await loginEnvReady()
   gitFirstBin = setupBundledGit(path.dirname(playwrightBin), process.env.PATH)
-  if (gitFirstBin) process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+  if (gitFirstBin) {
+    process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+    void loginEnvReady()
+  }
   // PLATFORM§2
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   removeStaleLoginDirs(app.getPath('userData'))

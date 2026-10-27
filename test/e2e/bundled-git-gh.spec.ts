@@ -37,17 +37,21 @@ test.describe('the git and gh Koloft ships, as a Claude Code or Codex session on
       }
     })
 
-    test(`${backend}: a git only the login shell puts on the PATH (nix, asdf, mise) wins over the git Koloft ships, in the agent and in the terminal`, async ({
+    test(`${backend}: a git only the login shell puts on the PATH (nix, asdf, mise) wins over the git Koloft ships, in the agent, the terminal and Koloft’s own git calls`, async ({
       env
     }) => {
       test.setTimeout(180_000)
       env.launchEnv.KOLOFT_TEST_CLT = 'missing'
       if (backend === 'codex') installCodex(env)
       const nixBin = path.join(env.home, '.nix-profile', 'bin')
+      const nixCalls = path.join(env.home, 'nix-git-calls.txt')
       fs.mkdirSync(nixBin, { recursive: true })
-      fs.writeFileSync(path.join(nixBin, 'git'), '#!/bin/sh\necho "the user\'s nix git"\n', {
-        mode: 0o755
-      })
+      fs.writeFileSync(
+        path.join(nixBin, 'git'),
+        `#!/bin/sh\nprintf '%s\\n' "$*" >> '${nixCalls}'\n` +
+          `[ "$1" = --version ] && exec echo "the user's nix git"\nexec /usr/bin/git "$@"\n`,
+        { mode: 0o755 }
+      )
       fs.appendFileSync(
         path.join(env.home, '.zprofile'),
         'export PATH="$HOME/.nix-profile/bin:$PATH"\n'
@@ -61,15 +65,19 @@ test.describe('the git and gh Koloft ships, as a Claude Code or Codex session on
         const tabId = (await wsRows(page, 'ws-a').getAttribute('data-tab-id'))!
         const run = agentShell(page, tabId, A_SHELL_STEP_FINISHES_WITHIN_MS)
 
-        const git = await run('git --version')
-        expect(git).toContain("the user's nix git")
-        expect(git).not.toContain('git version 2.53.0')
+        expect(await run('git --version')).toContain("the user's nix git")
 
         await openSessionTerminal(app, page)
         await runIn(page, panelTerm(page), 'git --version | sed "s/^/TERM_/"')
         await expect(panelTerm(page)).toContainText("TERM_the user's nix git", {
           timeout: 25_000
         })
+
+        await expect
+          .poll(() => fs.readFileSync(nixCalls, 'utf8').split('\n').filter(Boolean), {
+            timeout: 30_000
+          })
+          .toContainEqual(expect.not.stringMatching(/^--version$/))
       } finally {
         await quitAndClose(app)
       }

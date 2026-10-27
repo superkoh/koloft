@@ -73,8 +73,20 @@ export function setupBundledGit(
   fs.mkdirSync(dir, { recursive: true })
   const config = path.join(installDir, 'gitconfig')
   fs.writeFileSync(config, gitSystemConfig(root))
-  writeExecutable(path.join(dir, 'git'), gitLauncherScript(root, config))
+  const launcher = path.join(dir, 'git')
+  linkOrUnlink(launcher, undefined)
+  writeExecutable(launcher, gitLauncherScript(root, config))
   return dir
+}
+
+// PLATFORM§1
+export function preferTheUsersGit(gitBinDir: string, pathVar: string | undefined): void {
+  const launcher = path.join(gitBinDir, 'git')
+  const shipped = fs.realpathSync(launcher)
+  const theirs = dirsAnotherGitMayBeIn(pathVar)
+    .map((dir) => path.join(dir, 'git'))
+    .find((git) => isExecutableFile(git) && fs.realpathSync(git) !== shipped)
+  if (theirs) linkOrUnlink(launcher, theirs)
 }
 
 export function linkOrUnlink(link: string, target: string | undefined): void {

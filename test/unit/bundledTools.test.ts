@@ -7,8 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir() } }))
 
 const { pathWithDirLast } = await import('../../src/main/toolInstall')
-const { gitLauncherScript, gitMissing, gitSystemConfig } =
+const { gitLauncherScript, gitMissing, gitSystemConfig, preferTheUsersGit, setupBundledGit } =
   await import('../../src/main/bundledTools')
+
+const VENDORED_GIT = path.join(__dirname, '..', '..', 'vendor', 'git', 'libexec', 'git-core', 'git')
 
 let dir: string
 
@@ -55,6 +57,33 @@ describe('the bundled git', () => {
       else process.env.KOLOFT_TEST_CLT = prev
     }
   })
+
+  it.skipIf(!fs.existsSync(VENDORED_GIT))(
+    'gives way to a git the login shell shows, past links to itself, and a later launch rewrites it without writing into the user’s git',
+    () => {
+      const own = path.join(dir, 'own')
+      const theirs = executable(path.join(own, 'git'), '#!/bin/sh\necho theirs\n')
+      const shim = path.join(dir, 'shim')
+      const prev = process.env.KOLOFT_TEST_CLT
+      process.env.KOLOFT_TEST_CLT = 'missing'
+      try {
+        const gitBin = setupBundledGit(path.join(dir, 'install'), '/usr/bin')!
+        const launcher = path.join(gitBin, 'git')
+        fs.mkdirSync(shim)
+        fs.symlinkSync(launcher, path.join(shim, 'git'))
+
+        preferTheUsersGit(gitBin, `${gitBin}:${shim}:/usr/bin:${own}`)
+        expect(fs.readlinkSync(launcher)).toBe(theirs)
+
+        expect(setupBundledGit(path.join(dir, 'install'), '/usr/bin')).toBe(gitBin)
+        expect(fs.readFileSync(theirs, 'utf8')).toBe('#!/bin/sh\necho theirs\n')
+        expect(fs.lstatSync(launcher).isSymbolicLink()).toBe(false)
+      } finally {
+        if (prev === undefined) delete process.env.KOLOFT_TEST_CLT
+        else process.env.KOLOFT_TEST_CLT = prev
+      }
+    }
+  )
 
   it('runs git from its own folder with its own exec path and system config, passing every argument', () => {
     const root = path.join(dir, 'git root')
