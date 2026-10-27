@@ -198,7 +198,7 @@ import {
   statusLineSetting
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
-import { bundledGcm, bundledGhDir, linkOrUnlink, setupBundledGit } from './bundledTools'
+import { bundledGcm, bundledGhDir, gitMissing, linkOrUnlink, setupBundledGit } from './bundledTools'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
@@ -2581,7 +2581,7 @@ function rendererUrl(): string {
   return devUrl || pathToFileURL(path.join(__dirname, '../renderer/index.html')).toString()
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   presence.macLastUsed()
   protocol.handle('koloft-file', async (request) => {
     const url = new URL(request.url)
@@ -2650,6 +2650,7 @@ app.whenReady().then(() => {
   playwrightCliBin = playwrightBin
   fallbackBin = bundledGhDir()
   if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
+  if (gitMissing(process.env.PATH)) await loginEnvReady()
   gitFirstBin = setupBundledGit(path.dirname(playwrightBin), process.env.PATH)
   if (gitFirstBin) process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
   // PLATFORM§2

@@ -37,6 +37,44 @@ test.describe('the git and gh Koloft ships, as a Claude Code or Codex session on
       }
     })
 
+    test(`${backend}: a git only the login shell puts on the PATH (nix, asdf, mise) wins over the git Koloft ships, in the agent and in the terminal`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      env.launchEnv.KOLOFT_TEST_CLT = 'missing'
+      if (backend === 'codex') installCodex(env)
+      const nixBin = path.join(env.home, '.nix-profile', 'bin')
+      fs.mkdirSync(nixBin, { recursive: true })
+      fs.writeFileSync(path.join(nixBin, 'git'), '#!/bin/sh\necho "the user\'s nix git"\n', {
+        mode: 0o755
+      })
+      fs.appendFileSync(
+        path.join(env.home, '.zprofile'),
+        'export PATH="$HOME/.nix-profile/bin:$PATH"\n'
+      )
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await page.waitForLoadState('domcontentloaded')
+        await waitBooted(page)
+        await startLocalSession(page, env, backend)
+        const tabId = (await wsRows(page, 'ws-a').getAttribute('data-tab-id'))!
+        const run = agentShell(page, tabId, A_SHELL_STEP_FINISHES_WITHIN_MS)
+
+        const git = await run('git --version')
+        expect(git).toContain("the user's nix git")
+        expect(git).not.toContain('git version 2.53.0')
+
+        await openSessionTerminal(app, page)
+        await runIn(page, panelTerm(page), 'git --version | sed "s/^/TERM_/"')
+        await expect(panelTerm(page)).toContainText("TERM_the user's nix git", {
+          timeout: 25_000
+        })
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
     test(`${backend}: a Mac with its own git and gh keeps both: the agent runs a gh and a git that are not the ones Koloft ships`, async ({
       env
     }) => {
