@@ -1,5 +1,6 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
+import { spawn } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -54,7 +55,15 @@ interface CreateArgs {
 }
 
 const UTIL_TITLE_POLL_MS = 1500
-const EXIT_CHECK_MS = 50
+
+const KILL_IF_STILL_OURS = `k=$1
+s=$2
+shift 2
+sleep "$s"
+for p in "$@"; do
+  [ "$(ps -o ppid= -p "$p" | tr -d ' ')" = "$k" ] && kill -9 -- "-$p" "$p"
+done 2>/dev/null
+exit 0`
 
 const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
 
@@ -394,22 +403,15 @@ export class PtyManager extends EventEmitter {
     if (h) h.resumeSessionId = undefined
   }
 
-  anyRunning(): boolean {
-    return this.running.size > 0
-  }
-
   // PLATFORM§41
-  async endAll(hangupGraceMs: number): Promise<void> {
-    const signal = (proc: pty.IPty, name?: string): void => {
-      try {
-        proc.kill(name)
-      } catch {}
-    }
-    for (const proc of this.running) signal(proc)
-    const deadline = Date.now() + hangupGraceMs
-    while (this.running.size > 0 && Date.now() < deadline)
-      await new Promise((resolve) => setTimeout(resolve, EXIT_CHECK_MS))
-    for (const proc of this.running) signal(proc, 'SIGKILL')
+  killWhatOutlivesTheQuit(afterSeconds: number): void {
+    const pids = [...this.running].map((proc) => String(proc.pid))
+    if (!pids.length) return
+    spawn(
+      '/bin/sh',
+      ['-c', KILL_IF_STILL_OURS, 'sh', String(process.pid), String(afterSeconds), ...pids],
+      { detached: true, stdio: 'ignore' }
+    ).unref()
   }
 
   killUtilOrphans(): void {

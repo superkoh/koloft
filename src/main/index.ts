@@ -3593,9 +3593,7 @@ setQuitAsk(askQuit)
 
 let storedQuitPending = false
 let storedQuitStopped = false
-const TAB_HANGUP_GRACE_MS = 5000
-let tabsEnding = false
-let tabsEnded = false
+const TAB_HANGUP_GRACE_SECONDS = 5
 app.on('before-quit', (e) => {
   const decision = quitDecision(Date.now())
   if (decision === 'wait') {
@@ -3634,21 +3632,11 @@ app.on('before-quit', (e) => {
     }
     return
   }
-  if (!tabsEnded && ptyMgr.anyRunning()) {
-    e.preventDefault()
-    if (!tabsEnding) {
-      tabsEnding = true
-      void ptyMgr.endAll(TAB_HANGUP_GRACE_MS).finally(() => {
-        tabsEnded = true
-        app.quit()
-      })
-    }
-    return
-  }
   for (const { leaving } of claudeTabExits.values()) {
     if (leaving?.claudePid && leaving.treeRoot)
       finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)
   }
+  ptyMgr.killWhatOutlivesTheQuit(TAB_HANGUP_GRACE_SECONDS)
   claudeTabExits.clear()
   cronRunner?.quitSweep()
   cronRunner?.stop()

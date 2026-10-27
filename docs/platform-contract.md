@@ -1929,8 +1929,9 @@ Gateway (the live connection that pushes events):
 - **A pty program that ignores SIGHUP holds the app's quit for good.** While Node shuts
   down, node-pty joins the thread that waits for the program to exit
   (`SetupExitCallback` → `std::thread::join` in `pty.node`, seen with `sample`), so the
-  main process never exits while the program lives; JS timers no longer run by then.
-  Killing the program (SIGKILL) before the quit goes on is the only way out. Measured
+  main process never exits while the program lives; JS timers no longer run by then, so
+  only a process outside the app can end the wait, by killing the program. While the
+  app hangs there, the program's parent pid is still the app's main process. Measured
   2026-10-27 (Electron 43.8.1, node-pty 1.1.0, macOS 27.0) in the e2e app: a Workbench
   shell running `trap '' HUP; exec sleep 600` kept Koloft up past 120 s, the same shell
   without the trap quit in 88 ms.
