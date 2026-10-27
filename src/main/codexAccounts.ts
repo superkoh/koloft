@@ -3,7 +3,11 @@ import path from 'path'
 import { RESUME_KEEPS_ACCOUNT_UP_TO, homeRoom, usableAccounts } from '@shared/accountUsage'
 import type { AccountView, CodexLimits, CodexLimitWindow, SignInFolderKind } from '@shared/types'
 import { joinProjectTables } from './codexTrust'
-import { SCORE_PER_LIVE_SESSION } from './accountPicker'
+import {
+  SCORE_PER_LIVE_SESSION,
+  liveSessionsPerAccount,
+  type LaunchedSession
+} from './accountPicker'
 import { EPS } from './usageProbe'
 
 const CODEX_HOMES = 'codex-homes'
@@ -141,31 +145,39 @@ export class HomeAccountPicker {
 
   constructor(private kind: SignInFolderKind) {}
 
-  private inTurn<A>(accounts: A[]): A {
-    return accounts[this.turn++ % accounts.length]
-  }
-
   pick(
     accounts: AccountView[],
     resumedOn?: string,
-    live: Map<string, number> = new Map()
+    launched: LaunchedSession[] = []
   ): AccountView | undefined {
     const pool = usableAccounts(accounts, [this.kind])
     if (pool.length === 0) return undefined
-    const same = pool.find((a) => a.name === resumedOn)
-    const sameRoom = same && homeRoom(same)
-    if (same && (!sameRoom || (!sameRoom.walled && sameRoom.used <= RESUME_KEEPS_ACCOUNT_UP_TO)))
-      return same
-    const rooms = pool.map((a) => ({ a, room: homeRoom(a) }))
-    const open = rooms.flatMap(({ a, room }) => (room && !room.walled ? [{ a, room }] : []))
-    if (open.length > 0) {
-      const score = ({ a, room }: (typeof open)[number]): number =>
-        room.used + (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION
-      const least = Math.min(...open.map(score))
-      return this.inTurn(open.filter((o) => score(o) <= least + EPS)).a
+    const nowSec = Math.floor(Date.now() / 1000)
+    const rooms = pool.map((a) => ({ a, room: homeRoom(a, nowSec) }))
+    const same = rooms.find(({ a }) => a.name === resumedOn)
+    if (same && (!same.room || (!same.room.walled && same.room.used <= RESUME_KEEPS_ACCOUNT_UP_TO)))
+      return same.a
+    const live = liveSessionsPerAccount(launched, undefined)
+    const open = rooms.filter(({ room }) => room && !room.walled)
+    const ranked = (open.length > 0 ? open : rooms.filter(({ room }) => !room)).map(
+      ({ a, room }) => ({
+        a,
+        score: (room?.used ?? 0) + (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION
+      })
+    )
+    if (ranked.length > 0) {
+      const least = Math.min(...ranked.map((r) => r.score))
+      const finalists = ranked.filter((r) => r.score <= least + EPS)
+      return finalists[finalists.length > 1 ? this.turn++ % finalists.length : 0].a
     }
-    const unmeasured = rooms.filter(({ room }) => !room)
-    if (unmeasured.length > 0) return this.inTurn(unmeasured).a
-    return pool.reduce((best, a) => (homeRoom(a)!.backAt < homeRoom(best)!.backAt ? a : best))
+    const backAt = ({ room }: (typeof rooms)[number]): number => room?.backAt || Infinity
+    return rooms.reduce((best, r) => (backAt(r) < backAt(best) ? r : best)).a
+  }
+
+  peek(accounts: AccountView[]): AccountView | undefined {
+    const turn = this.turn
+    const picked = this.pick(accounts)
+    this.turn = turn
+    return picked
   }
 }

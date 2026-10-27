@@ -4,7 +4,6 @@ import type {
   AccountView,
   BackendId,
   CodexLimits,
-  QuotaBucket,
   SignInBackend,
   UsageSnapshot
 } from './types'
@@ -157,8 +156,22 @@ export function capsuleGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   }
 }
 
+interface UsedWindow {
+  used: number
+  resetsAt?: number
+}
+
+function heaviestOf(windows: UsedWindow[]): number {
+  return Math.max(0, ...windows.map((w) => w.used))
+}
+
+function backAtOf(windows: UsedWindow[]): number {
+  const full = windows.filter((w) => w.used >= 1)
+  return Math.max(0, ...(full.length ? full : windows).map((w) => w.resetsAt ?? 0))
+}
+
 export function codexHeaviest(limits: CodexLimits): number {
-  return Math.max(0, ...limits.windows.map((w) => w.used))
+  return heaviestOf(limits.windows)
 }
 
 // CODEX§15
@@ -167,8 +180,7 @@ export function codexWalled(limits: CodexLimits): boolean {
 }
 
 export function codexBackAt(limits: CodexLimits): number {
-  const full = limits.windows.filter((w) => w.used >= 1)
-  return Math.max(0, ...(full.length ? full : limits.windows).map((w) => w.resetsAt))
+  return backAtOf(limits.windows)
 }
 
 export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
@@ -187,40 +199,30 @@ export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   }
 }
 
-// AGY§23
-export function quotaHeaviest(quota: QuotaBucket[]): number {
-  return Math.max(0, ...quota.map((q) => q.used))
-}
-
-// AGY§23
-export function quotaBackAt(quota: QuotaBucket[]): number {
-  const full = quota.filter((q) => q.used >= 1)
-  return Math.max(0, ...(full.length ? full : quota).map((q) => q.resetsAt ?? 0))
-}
-
 export interface HomeRoom {
   used: number
   walled: boolean
   backAt: number
 }
 
-export function homeRoom(a: Pick<AccountView, 'limits' | 'quota'>): HomeRoom | undefined {
-  if (a.limits)
-    return {
-      used: codexHeaviest(a.limits),
-      walled: codexWalled(a.limits),
-      backAt: codexBackAt(a.limits)
-    }
-  if (!a.quota?.length) return undefined
-  const used = quotaHeaviest(a.quota)
-  return { used, walled: used >= 1, backAt: quotaBackAt(a.quota) }
+// AGY§23
+export function homeRoom(
+  a: Pick<AccountView, 'limits' | 'quota'>,
+  nowSec: number
+): HomeRoom | undefined {
+  if (!a.limits && !a.quota?.length) return undefined
+  const windows: UsedWindow[] = a.limits?.windows ?? a.quota ?? []
+  const used = heaviestOf(windows)
+  const backAt = backAtOf(windows)
+  const full = a.limits ? codexWalled(a.limits) : used >= 1
+  return { used, walled: full && !resetElapsed(backAt, nowSec), backAt }
 }
 
 // AGY§23
 export function quotaGlyph(a: AccountView): CapsuleGlyph {
   if (a.status !== 'ok') return { kind: 'grey' }
   if (!a.quota?.length) return { kind: 'empty' }
-  const heaviest = quotaHeaviest(a.quota)
+  const heaviest = heaviestOf(a.quota)
   if (heaviest >= 1) return { kind: 'walled', stale: false }
   return {
     kind: 'bar',

@@ -484,18 +484,21 @@ describe('CodexSessions', () => {
     expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/home')
   })
 
-  it('a second launch started while the first is still opening already counts the first one on its account, so the picker can steer it elsewhere', async () => {
+  it('a second launch started while the first is still opening already counts the first one on its account, so the picker can steer it elsewhere; a tab being closed no longer counts', async () => {
     const seen: string[][] = []
     vi.mocked(deps.pickHome).mockImplementation(() => {
       seen.push(sessions.launchedSessions().map((s) => s.account ?? ''))
       return { account: 'work', home: '/homes/work' }
     })
-    await Promise.all([
+    const [first] = await Promise.all([
       sessions.launch({ kind: 'codex', cwd: repo }),
       sessions.launch({ kind: 'codex', cwd: repo })
     ])
     expect(seen).toEqual([[], ['work']])
     expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work', 'work'])
+    const closing = sessions.stop(first.id)
+    expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work'])
+    await closing
   })
 
   // CODEX§15

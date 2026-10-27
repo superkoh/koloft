@@ -166,7 +166,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   private launchingKeys = new Set<string>()
   private relaunchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
-  private preparing = new Set<P>()
+  private starting = new Set<LaunchedSession>()
   protected shuttingDown = false
   private emitTimer?: ReturnType<typeof setTimeout>
   private lastEmitMs = 0
@@ -343,13 +343,14 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     return [...this.runs.values()].flatMap((r) => (r.info ? [{ ...r.info }] : []))
   }
   launchedSessions(): LaunchedSession[] {
-    const running = [...this.runs.values()].map((r) => ({
-      tabId: r.tabId,
-      account: this.runDetails(r).pickedAccount,
-      status: r.info?.status
-    }))
-    const starting = [...this.preparing].map((p) => ({ tabId: '', account: this.launchAccount(p) }))
-    return [...running, ...starting]
+    const running = [...this.runs.values()]
+      .filter((r) => !r.stopping)
+      .map((r) => ({
+        tabId: r.tabId,
+        account: this.runDetails(r).pickedAccount,
+        status: r.info?.status
+      }))
+    return [...running, ...this.starting]
   }
   hasTab(tabId: string): boolean {
     return this.runs.has(tabId)
@@ -707,7 +708,8 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error(`This ${this.label} session is already open.`)
     const prepared = this.prepare(opts)
-    this.preparing.add(prepared)
+    const starting = { tabId: '', account: this.launchAccount(prepared) }
+    this.starting.add(starting)
     let run: R
     try {
       let freshWorktree = false
@@ -728,7 +730,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       run = await this.startRun({ opts, cwd, workspace, resource, freshWorktree }, prepared)
       this.runs.set(run.tabId, run)
     } finally {
-      this.preparing.delete(prepared)
+      this.starting.delete(starting)
     }
     this.changed()
     this.warnUntestedVersion(available)

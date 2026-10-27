@@ -127,21 +127,47 @@ describe('picking a Codex account', () => {
 
   it('steers clear of an account a live session already runs on, the way Claude Code accounts are picked', () => {
     const picker = new HomeAccountPicker('codex-home')
+    const on = (name: string, status?: 'working' | 'idle') => [
+      { tabId: 't', account: name, status }
+    ]
     const pool = [account('a', { limits: used(0.2) }), account('b', { limits: used(0.22) })]
-    expect(picker.pick(pool, undefined, new Map([['a', 1]]))?.name).toBe('b')
-    expect(picker.pick(pool, undefined, new Map([['b', 1]]))?.name).toBe('a')
+    expect(picker.pick(pool, undefined, on('a'))?.name).toBe('b')
+    expect(picker.pick(pool, undefined, on('B', 'working'))?.name).toBe('a')
+    expect(picker.pick(pool, undefined, on('a', 'idle'))?.name).toBe('a')
     const far = [account('a', { limits: used(0.1) }), account('b', { limits: used(0.6) })]
-    expect(picker.pick(far, undefined, new Map([['a', 1]]))?.name).toBe('a')
+    expect(picker.pick(far, undefined, on('a'))?.name).toBe('a')
+    const unmeasured = [account('a'), account('b')]
+    expect(picker.pick(unmeasured, undefined, on('a'))?.name).toBe('b')
   })
 
-  it('takes turns between accounts used about the same, instead of starting every session on one', () => {
+  it('takes turns between accounts used about the same, instead of starting every session on one; only asking which one it would be does not move the turn', () => {
     const picker = new HomeAccountPicker('codex-home')
     const pool = [account('a', { limits: used(0.3) }), account('b', { limits: used(0.32) })]
+    expect(picker.peek(pool)?.name).toBe('a')
+    expect(picker.peek(pool)?.name).toBe('a')
     expect([picker.pick(pool)?.name, picker.pick(pool)?.name, picker.pick(pool)?.name]).toEqual([
       'a',
       'b',
       'a'
     ])
+  })
+
+  it('an account whose limit has already reset is not treated as used up, even before it is measured again', () => {
+    const picker = new HomeAccountPicker('codex-home')
+    const pastReset = account('past', {
+      limits: { windows: [{ minutes: 300, used: 1, resetsAt: 1_000 }], at: 1 }
+    })
+    expect(picker.pick([pastReset, account('unmeasured')])?.name).toBe('past')
+    expect(allLimitedNotice(pastReset, 'codex')).toBeUndefined()
+  })
+
+  it('when every account is used up, one whose reset time is unknown is not taken for the first to reset', () => {
+    const picker = new HomeAccountPicker('codex-home')
+    const unknown = account('unknown', { limits: used(1) })
+    const soon = account('soon', {
+      limits: { windows: [{ minutes: 300, used: 1, resetsAt: 1_900_000_000 }], at: 1 }
+    })
+    expect(picker.pick([unknown, soon])?.name).toBe('soon')
   })
 })
 

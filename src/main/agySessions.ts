@@ -120,7 +120,7 @@ export interface AgySessionDeps extends StoredSessionDeps {
   openShimRoot: string
   scriptsDir: string
   ownersGemini(): string
-  pickHome(resumeSessionId?: string): AgyHomePick | undefined
+  pickHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined
   apiKeyOf(account: string): Promise<string | undefined>
   playwrightBin: string
   browserEndpoint(tabId: string): string
@@ -389,7 +389,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
 
   // AGY§5
   trustsFolder(dir: string): boolean | Promise<boolean> {
-    const picked = this.deps.pickHome()
+    const picked = this.deps.pickHome(undefined, true)
     if (!picked) return false
     const key = parseRemoteKey(dir)
     if (!key) return agyTrustsFolder(picked.home, dir)

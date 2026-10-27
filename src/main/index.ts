@@ -236,7 +236,6 @@ import {
   AccountPicker,
   PROBE_TIMEOUT_MS,
   allLimitedNotice,
-  liveSessionsPerAccount,
   type PickResponse
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
@@ -1525,17 +1524,17 @@ const whyAssistCannotRun: Record<BackendId, () => Promise<string | undefined>> =
   codex: async () => {
     if (!codexSessions || !(await codexSessions.availability()).available)
       return 'Codex is not available on this Mac'
-    return codexPicker.pick(accountViews()) ? undefined : 'every Codex account is at its limit'
+    return codexPicker.peek(accountViews()) ? undefined : 'every Codex account is at its limit'
   },
   muse: async () => {
     if (!museSessions || !(await museSessions.availability()).available)
       return 'Muse is not available on this Mac'
-    return musePicker.pick(accountViews()) ? undefined : 'there is no usable Muse account'
+    return musePicker.peek(accountViews()) ? undefined : 'there is no usable Muse account'
   },
   agy: async () => {
     if (!agySessions || !(await agySessions.availability()).available)
       return 'Antigravity is not available on this Mac'
-    return agyPicker.pick(accountViews()) ? undefined : 'there is no usable Antigravity account'
+    return agyPicker.peek(accountViews()) ? undefined : 'there is no usable Antigravity account'
   }
 }
 
@@ -2074,7 +2073,7 @@ function pickCodexHome(
   const picked = codexPicker.pick(
     views,
     sessionAccounts?.of('codex', resumeSessionId),
-    liveSessionsPerAccount(codexSessions?.launchedSessions() ?? [], undefined)
+    codexSessions?.launchedSessions()
   )
   if (!picked) return undefined
   const stale = (a: AccountView): boolean => !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
@@ -2218,7 +2217,7 @@ function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
   const picked = musePicker.pick(
     views,
     sessionAccounts?.of('muse', resumeSessionId),
-    liveSessionsPerAccount(museSessions?.launchedSessions() ?? [], undefined)
+    museSessions?.launchedSessions()
   )
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
@@ -2313,16 +2312,19 @@ async function agyApiKeyOf(name: string): Promise<string | undefined> {
 }
 
 // ADR-0030
-function pickAgyHome(resumeSessionId?: string): AgyHomePick | undefined {
+function pickAgyHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined {
   const views = accountViews()
-  const picked = agyPicker.pick(
-    views,
-    sessionAccounts?.of('agy', resumeSessionId),
-    liveSessionsPerAccount(agySessions?.launchedSessions() ?? [], undefined)
-  )
+  const picked = onlyAsking
+    ? agyPicker.peek(views)
+    : agyPicker.pick(
+        views,
+        sessionAccounts?.of('agy', resumeSessionId),
+        agySessions?.launchedSessions()
+      )
   const stale = (a: AccountView): boolean =>
     Date.now() - (agyProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
-  if (views.some((a) => a.kind === 'agy-home' && a.enabled && stale(a))) void probeAgyAccounts()
+  if (!onlyAsking && views.some((a) => a.kind === 'agy-home' && a.enabled && stale(a)))
+    void probeAgyAccounts()
   return (
     picked && {
       account: picked.name,
