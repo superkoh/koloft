@@ -803,6 +803,41 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  test('E-SSH-32: resuming a closed Claude Code session on a machine that has gone down says ssh’s reason, the same one koloft session new gives there, and opens no tab', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ app, page, lab }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const row = wsRows(page, 'kt-key').first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+
+      await startSessionIn(page, 'ws-a')
+      const parentTab = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id'))!
+      stopMachine(lab)
+      const before = (await terminalText(page, parentTab)).length
+      const reply = async (): Promise<string> => (await terminalText(page, parentTab)).slice(before)
+      await runIn(
+        page,
+        centerTerm(page),
+        `/koloft session new --backend claude --workspace ${remoteKeyFor('kt-key', 'kuser')} -- "/answer hi"`
+      )
+      await expect.poll(reply, { timeout: 60_000 }).toMatch(/koloft exit=\d+/)
+      const refused = /\nkoloft: (\S[^\n]*)\n[^\n]*koloft exit=1/.exec(await reply())
+      expect(refused).not.toBeNull()
+      const reason = refused![1].trim()
+
+      await row.click()
+      await expect(page.locator('.toast-msg')).toContainText(reason, { timeout: 30_000 })
+      await expect(wsRows(page, 'kt-key')).toHaveCount(1)
+      await expect(row).toHaveClass(/\bcold\b/)
+    })
+  })
+
   test('E-SSH-21: closing a scheduled run’s tab on the machine takes its worktree folder and branch away there once its claude has left, History says "folder removed", and its row stays', async ({
     env
   }) => {
