@@ -1030,6 +1030,13 @@ plugins. Each run sent `initialize`, `initialized`, `account/read` and
   `<CODEX_HOME>/sessions/…`, so a session lives in the home it was started in, and only
   an app-server on that home can list, read or resume it.
 
+**An API-key home has an account but no rate limits.** Checked 2026-10-28 with Codex CLI
+0.162.0, no model turn: a Node script ran `codex login --with-api-key` (a made-up key on
+stdin) in a throwaway `HOME` and `CODEX_HOME`, then `codex app-server` on stdio there.
+`account/read` answered `{account: {type: "apiKey"}, requiresOpenaiAuth: true}`;
+`thread/start` answered a new thread; `account/rateLimits/read` answered error `-32600`,
+"chatgpt authentication required to read rate limits".
+
 **A shared config.toml.** Same day and version, no model: a home whose `config.toml` was
 a symbolic link to a file elsewhere answered `config/read` with the model set in that
 file. In the real TUI (Python PTY, section 11's setup) in a folder with no trust table,
