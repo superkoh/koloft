@@ -800,76 +800,63 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
   })
 
-  it('shows a command agy runs as a daemon as a parked server, which agy reports fully idle, through /clear, until it exits or agy kills it; a plain background command is not one', async () => {
+  it("shows a command agy runs as a daemon as a parked server once the turn is over and agy's own task list has it, through /clear, until it exits, agy kills it or the list loses it, as after a kill from /tasks, which no hook reports; a plain background command or an ask still open is not one", async () => {
+    apiAnswers = true
     const id = await boundTab()
-    const servers = (): unknown[] =>
-      (sessions.list()[0].background ?? []).filter((item) => item.kind === 'server')
+    const listed = (...steps: number[]): void => {
+      backgroundTasks = {
+        tasks: steps.map((n) => ({ conversationId: A, task: { taskId: `${A}/task-${n}` } }))
+      }
+    }
+    const serverIds = (): string[] => (sessions.list()[0].background ?? []).map((item) => item.id)
+    const turnOver = async (conversationId: string, asks: number): Promise<void> => {
+      title(id, { conversation_id: conversationId, agent_state: 'idle', task_count: 1 })
+      await vi.waitFor(() => expect(sent('ListBackgroundTasks')).toHaveLength(asks))
+      await hooksTaken(id)
+    }
     hook(id, 'PreToolUse', { toolCall: daemon('python3 -m http.server 8077'), stepIdx: 2 })
     hook(id, 'PreToolUse', { toolCall: daemon('npm run watch'), stepIdx: 4 })
     hook(id, 'PreToolUse', {
       toolCall: { name: 'run_command', args: { CommandLine: 'sleep 25', WaitMsBeforeAsync: 500 } },
       stepIdx: 6
     })
-    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    title(id, { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true })
     await hooksTaken(id)
-    expect(servers()).toEqual([
-      { id: `${A}/task-2`, kind: 'server', label: 'python3 -m http.server 8077', state: 'waiting' },
-      { id: `${A}/task-4`, kind: 'server', label: 'npm run watch', state: 'waiting' }
-    ])
+    expect(sessions.list()[0].background).toBeUndefined()
+    listed(2, 4, 6)
+    await turnOver(A, 1)
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        {
+          id: `${A}/task-2`,
+          kind: 'server',
+          label: 'python3 -m http.server 8077',
+          state: 'waiting'
+        },
+        { id: `${A}/task-4`, kind: 'server', label: 'npm run watch', state: 'waiting' }
+      ])
+    )
     expect(runtime.statusOf(id)).toBe('waiting')
     title(id, { conversation_id: B })
     say(id, state('idle'))
     await vi.waitFor(() => expect(sessions.list()[0].nativeSessionId).toBe(B))
-    expect(servers()).toHaveLength(2)
+    expect(serverIds()).toHaveLength(2)
+    hook(id, 'PostToolUse', { conversationId: A, toolCall: daemon('x'), stepIdx: 2 })
+    await hooksTaken(id)
+    expect(serverIds()).toEqual([`${A}/task-4`])
+    hook(id, 'PreToolUse', { conversationId: B, toolCall: daemon('npm run dev'), stepIdx: 3 })
     hook(id, 'PostToolUse', {
-      conversationId: A,
-      toolCall: daemon('python3 -m http.server 8077'),
-      stepIdx: 2
-    })
-    hook(id, 'PostToolUse', {
-      conversationId: A,
-      stepIdx: 9,
+      conversationId: B,
+      stepIdx: 5,
       error: '',
-      toolCall: killTask(`${A}/task-4`)
+      toolCall: killTask('task-3')
     })
-    await hooksTaken(id)
-    expect(sessions.list()[0].background).toBeUndefined()
-  })
-
-  it('drops daemons a turn-over title counts fewer tasks than, as after a kill from /tasks or a declined ask, which no hook reports; a title mid-turn, before agy counts the new task, drops none', async () => {
-    const id = await boundTab()
-    const shown = (): number => sessions.list()[0].background?.length ?? 0
-    hook(id, 'PreToolUse', { toolCall: daemon('python3 -m http.server 8077'), stepIdx: 2 })
-    await hooksTaken(id)
-    title(id, { conversation_id: A, agent_state: 'working' })
-    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
-    await hooksTaken(id)
-    expect(shown()).toBe(1)
-    title(id, { conversation_id: A, agent_state: 'idle' })
-    await hooksTaken(id)
-    expect(shown()).toBe(0)
-    hook(id, 'PreToolUse', { toolCall: daemon('npm run dev'), stepIdx: 5 })
-    title(id, { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true })
-    await hooksTaken(id)
-    expect(shown()).toBe(1)
-    title(id, { conversation_id: A, agent_state: 'idle' })
-    await hooksTaken(id)
-    expect(shown()).toBe(0)
-  })
-
-  it("asks agy's own task list which daemon ended when a turn-over title counts fewer tasks than daemons but not none", async () => {
-    apiAnswers = true
-    const id = await boundTab()
-    hook(id, 'PreToolUse', { toolCall: daemon('python3 -m http.server 8077'), stepIdx: 2 })
-    hook(id, 'PreToolUse', { toolCall: daemon('npm run watch'), stepIdx: 4 })
-    backgroundTasks = { tasks: [{ conversationId: A, task: { taskId: `${A}/task-4` } }] }
-    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
-    await vi.waitFor(() =>
-      expect(sessions.list()[0].background).toEqual([
-        { id: `${A}/task-4`, kind: 'server', label: 'npm run watch', state: 'waiting' }
-      ])
-    )
-    expect(sent('ListBackgroundTasks')).toEqual([{ cascadeId: A }])
+    listed(4)
+    await turnOver(B, 3)
+    expect(serverIds()).toEqual([`${A}/task-4`])
+    listed()
+    await turnOver(B, 4)
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
   })
 
   it('keeps a tab that set a standing cron, which agy reports fully idle, from closing as idle until the cron has fired for the last time', async () => {
@@ -1278,6 +1265,37 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     fs.appendFileSync(old, line('PostToolUse', { toolCall: STANDING_CRON, stepIdx: 6 }))
     sessions.followMirrors('devbox')
     expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('a remote tab, with no task list to ask, shows a daemon once a turn-over title counts tasks and drops it once one counts none; on an agy that never sends task_count it keeps it', async () => {
+    const background = (tabId: string): unknown =>
+      sessions.list().find((s) => s.tabId === tabId)?.background
+    const pre = (conversationId: string): unknown => ({
+      event: 'PreToolUse',
+      input: { conversationId, stepIdx: 2, toolCall: daemon('npm run dev') }
+    })
+    const counting = (await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })).id
+    mirrored(counting, [
+      { event: 'SessionStart', input: { conversationId: A } },
+      pre(A),
+      { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+    ])
+    expect(background(counting)).toBeUndefined()
+    mirrored(counting, [{ conversation_id: A, agent_state: 'idle', task_count: 1 }])
+    expect(background(counting)).toEqual([
+      { id: `${A}/task-2`, kind: 'server', label: 'npm run dev', state: 'waiting' }
+    ])
+    mirrored(counting, [{ conversation_id: A, agent_state: 'idle' }])
+    expect(background(counting)).toBeUndefined()
+    const older = (await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })).id
+    mirrored(older, [
+      { event: 'SessionStart', input: { conversationId: B } },
+      pre(B),
+      { conversation_id: B, agent_state: 'idle' }
+    ])
+    expect(background(older)).toEqual([
+      { id: `${B}/task-2`, kind: 'server', label: 'npm run dev', state: 'waiting' }
+    ])
   })
 
   it('attaching to a conversation tmux still runs there shows the daemons it left running, and not one a later turn-over title stopped counting', async () => {

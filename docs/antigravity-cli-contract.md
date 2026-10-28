@@ -740,9 +740,11 @@ only downloaded the public release.
   - `python3 -m http.server` with `IsDaemon:true`: `PreToolUse` carries the args
     as sent (`"IsDaemon":true`, typed), the command is a direct child of agy, the
     turn's `Stop` says `fullyIdle:true`, the footer shows "1 task(s) · /tasks" and a
-    line "● [time] <command> running", and `ListBackgroundTasks` lists it with
-    `isDaemon:true` and the task id `<conversation id>/task-<stepIdx>`. No hook comes
-    while it runs.
+    line "● [time] <command> running", and `ListBackgroundTasks {cascadeId}` answers
+    `{tasks:[{conversationId, task:{taskId:"<conversation id>/task-<stepIdx>",
+    toolName:"run_command", toolSummary, description:"<command>", startTime,
+    stepIndex, logUri, isDaemon:true}}]}` (a plain backgrounded command: the same
+    without `isDaemon`; no task: `{}`). No hook comes while it runs.
   - The same with no `IsDaemon` (`sleep 25`): `Stop` says `fullyIdle:false`; when it
     ends, `PostToolUse` with the same `stepIdx`, then a turn agy starts by itself on a
     `<SYSTEM_MESSAGE>` "Task id … finished with result", then `Stop` with
