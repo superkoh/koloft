@@ -1762,8 +1762,24 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   app-server --stdio` that never answered saw no `serverRequest/resolved` and no
   `turn/completed` in 300 s. So the countdown lives in the TUI, not the server; the model's
   instructions say "If `request_user_input` returns no answers, continue with best
-  judgment". Whether a Plan-mode question (`isBlocking: true`) counts down is not probed
-  yet.
+  judgment". **A Plan-mode question does not count down.** 2026-10-27, codex-cli 0.162.0,
+  `gpt-6-astra` (low effort), the flag on, a throwaway `CODEX_HOME` with a copied login,
+  the real TUI in a python pty (120×40) with `--remote` to a WebSocket relay in front of
+  `codex app-server --stdio` that logged every frame, 1 run: `/plan`, then a prompt asking
+  one Red / Green question. The request came with `isBlocking: true, autoResolutionMs:
+  null`; the screen drew no "auto-resolves", the TUI sent nothing for 150 s, and a digit
+  then answered it as usual. No config key or request field that lets a client make a
+  default-mode question blocking was found: `isBlocking` and `autoResolutionMs` show up in
+  the 0.162.0 strings only as fields of the question event and request. **The TUI goes by
+  the `isBlocking` it is sent, so a relay that sets it to `true` stops the countdown.**
+  Same day and setup, default mode, 1 run: the app-server sent `isBlocking: false`, the
+  relay passed the request on with `isBlocking: true`; the TUI drew no countdown, sent
+  nothing for 150 s, and a digit then answered it (`serverRequest/resolved`, the turn went
+  on with the pick); the answer frame is the same either way. A second run, same setup:
+  Down, Down, Tab, the words, Enter (300 ms apart) on such a rewritten question sent
+  `{answers: {colour: {answers: ["None of the above", "user_note: Purple with dots"]}}}`,
+  as on a non-blocking one, and the model repeated the words. Not probed: Esc on it, and
+  whether a non-null `autoResolutionMs` counts down on its own.
 - Not probed: `isSecret`, a form with several fields or a field that is not an enum, and
   an elicitation `mode` other than `form`. Koloft refuses several questions, free text and
   those from Discord.
