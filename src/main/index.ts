@@ -593,6 +593,7 @@ const sessionBackends = new SessionBackends({
     awayDigest?.turnEnded(tabId, turn.reply, handedOff)
   },
   prompted: (tabId) => {
+    claudeAsks.delete(tabId)
     consumeOutletDedupe(tabId)
     newsJudge.prompted(tabId)
     awayDigest?.prompted(tabId)
@@ -610,8 +611,8 @@ const sessionBackends = new SessionBackends({
   exited: (tabId, subject) => attention.onExited(tabId, subject),
   asked: (tabId, ask) => {
     claudeAsks.set(tabId, ask)
-    discordRelay?.onAsk(tabId, ask)
-    sendToRenderer(CH.sessions.update, onSessionsChanged())
+    if (discordRelay) discordRelay.onAsk(tabId, ask)
+    else sendToRenderer(CH.sessions.update, onSessionsChanged())
   },
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
@@ -626,7 +627,7 @@ sessionBackends.askingOf = (tabId) => {
   const owner = storedOwnerOf(tabId)
   const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
   if (stored) return storedAskLine(stored)
-  const ask = discordRelay?.openPayload(tabId) ?? claudeAsks.get(tabId)
+  const ask = claudeAsks.get(tabId) ?? discordRelay?.heldAsk(tabId)
   return ask && claudeAskLine(ask)
 }
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
@@ -2842,6 +2843,7 @@ app.whenReady().then(() => {
     }
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
+    claudeAsks.delete(e.id)
     tabLifecycle.emit('teardown', exit)
     sendToRenderer(CH.terminal.exit, e)
   })
@@ -2856,6 +2858,7 @@ app.whenReady().then(() => {
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
+    claudeAsks.delete(tabId)
     discordRelay?.toolDone(tabId, call)
     void askButtons?.check(tabId)
   })

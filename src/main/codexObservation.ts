@@ -1,5 +1,5 @@
 import { PLAN_READY, type BackgroundItem } from '@shared/types'
-import { codexItemDid, codexPlanReady } from './rowActivity'
+import { codexEditTarget, codexItemDid } from './rowActivity'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from './sessionRuntime'
 import path from 'path'
@@ -223,6 +223,7 @@ export class CodexObservation {
   private lastWritten?: string
   private liveWrites = 0
   private planReady = false
+  private editing = new Map<string, string>()
   private queued = new Set<string>()
   unsubscribed = false
   turns = new TurnLog()
@@ -346,6 +347,7 @@ export class CodexObservation {
       this.lastTouched = this.lastWritten = undefined
       this.liveWrites = 0
       this.planReady = false
+      this.editing.clear()
       this.pricedThrough = this.longContextSurchargeUsd = 0
       this.model = typeof result.model === 'string' ? result.model : (thread.model ?? undefined)
       const cwd =
@@ -386,8 +388,10 @@ export class CodexObservation {
       this.approvals.set(id, method)
       this.approvalThreads.set(id, p.threadId as string)
       const question = codexQuestionOf(method, p)
+      const file = typeof p.itemId === 'string' ? this.editing.get(p.itemId) : undefined
       this.approvalAsks.set(id, {
         ...(typeof p.command === 'string' ? { command: p.command } : {}),
+        ...(file ? { file } : {}),
         ...(typeof p.reason === 'string' ? { reason: p.reason } : {}),
         ...(question ? { question } : {})
       })
@@ -395,11 +399,17 @@ export class CodexObservation {
       this.publishActivity()
     } else if (ownedChild) {
       return
-    } else if (method === 'item/started' || method === 'item/completed') {
+    } else if (method === 'item/started') {
+      const file = codexEditTarget(item)
+      if (file && typeof item.id === 'string') this.editing.set(item.id, file)
+    } else if (method === 'item/completed') {
+      if (typeof item.id === 'string') this.editing.delete(item.id)
       const did =
-        method === 'item/started'
-          ? codexItemDid(item)
-          : (codexPlanReady(item) ?? (item.status === 'completed' ? codexItemDid(item) : undefined))
+        item.type === 'plan'
+          ? PLAN_READY
+          : item.status === 'completed'
+            ? codexItemDid(item)
+            : undefined
       if (!did) return
       this.planReady = did === PLAN_READY
       this.emit({ type: 'did', what: did })

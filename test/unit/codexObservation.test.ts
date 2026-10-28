@@ -554,19 +554,29 @@ describe('CodexObservation', () => {
     })
   })
 
-  it('says on the row what the session itself last started, a ready plan until the next turn starts, and nothing from another thread', () => {
+  it('says on the row what the session itself last finished, a ready plan until the next turn starts, and nothing declined, still running or from another thread', () => {
     const f = fixture()
     const did = () => f.events.flatMap((e) => (e.type === 'did' ? [e.what] : []))
     f.bind()
-    f.server('item/started', command('npm test', [{ type: 'unknown', command: 'npm test' }]))
+    f.server('item/started', { item: { ...command('npm test', []).item, status: 'inProgress' } })
+    expect(did()).toEqual([])
+    f.server('item/completed', command('npm test', [{ type: 'unknown', command: 'npm test' }]))
     f.server(
-      'item/started',
-      patch('inProgress', [{ path: '/repo/src/foo.ts', kind: { type: 'add' }, diff: 'x\n' }])
+      'item/completed',
+      patch('completed', [{ path: '/repo/src/foo.ts', kind: { type: 'add' }, diff: 'x\n' }])
     )
-    f.server('item/started', command('cat a.md', [{ type: 'read', path: '/repo/a.md' }]))
-    f.server('item/started', {
-      item: { type: 'commandExecution', id: 'raw', command: "/bin/zsh -lc 'rm -rf build'" }
-    })
+    f.server(
+      'item/completed',
+      patch('declined', [{ path: '/repo/src/bar.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server('item/completed', command('cat a.md', [{ type: 'read', path: '/repo/a.md' }]))
+    f.server(
+      'item/completed',
+      command('cat a.md && rm -rf build', [
+        { type: 'read', path: '/repo/a.md' },
+        { type: 'unknown', command: 'rm -rf build' }
+      ])
+    )
     f.observer.receive('server', {
       method: 'item/completed',
       params: { threadId: A, item: { type: 'plan', id: 't-plan', text: '1. a\n2. b' } }
@@ -575,7 +585,7 @@ describe('CodexObservation', () => {
       'Ran npm test',
       'Edited foo.ts',
       'Read a.md',
-      'Ran rm -rf build',
+      'Ran cat a.md && rm -rf build',
       PLAN_READY
     ])
     f.server('turn/started', { turn: { id: 'next' } })
@@ -583,10 +593,25 @@ describe('CodexObservation', () => {
     f.server('turn/started', { turn: { id: 'another' } })
     expect(did()).toHaveLength(6)
     f.observer.receive('server', {
-      method: 'item/started',
+      method: 'item/completed',
       params: { threadId: B, item: command('ls', [{ type: 'unknown', command: 'ls' }]).item }
     })
     expect(did()).toHaveLength(6)
+  })
+
+  it('a patch Codex asks to apply names the file it would change', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/started',
+      patch('inProgress', [{ path: '/repo/src/foo.ts', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server('item/fileChange/requestApproval', { itemId: 'patch', reason: 'outside' }, 7)
+    expect(f.observer.openApproval()).toEqual({
+      id: 7,
+      file: '/repo/src/foo.ts',
+      reason: 'outside'
+    })
   })
 
   it('ignores a declined patch and a shell command that only writes through the shell', () => {

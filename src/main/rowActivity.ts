@@ -1,6 +1,5 @@
 import type { AskPayload } from '@shared/sessionEvent'
 import { basename } from '@shared/preview'
-import { PLAN_READY } from '@shared/types'
 import { questionsOf, type CodexApproval, type CodexQuestion } from './discord/dialog'
 
 const LINE_KEEPS_CHARS = 200
@@ -53,29 +52,27 @@ export function claudeToolDid(name: string, input: Record<string, unknown>): str
 
 const SHELL_WRAPPED = /^\S*sh -lc '([\s\S]*)'$/
 
-// CODEX§12
-export function codexItemDid(item: Record<string, unknown>): string | undefined {
-  if (item.type === 'commandExecution') {
-    const first = (Array.isArray(item.commandActions) ? item.commandActions : [])[0] as
-      Record<string, unknown> | undefined
-    if (first?.type === 'read' && str(first.path)) return read(String(first.path))
-    const command = str(first?.command) ?? str(item.command)
-    return command && ran(SHELL_WRAPPED.exec(command)?.[1] ?? command)
-  }
-  if (item.type === 'fileChange') {
-    const change = (Array.isArray(item.changes) ? item.changes : [])[0] as
-      Record<string, unknown> | undefined
-    return str(change?.path) && edited(String(change?.path))
-  }
-  if (item.type === 'mcpToolCall') return str(item.tool) && used(String(item.tool))
-  if (item.type === 'webSearch')
-    return str(item.query) && `Searched the web for ${oneLine(String(item.query))}`
-  return undefined
+function records(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? (value as Record<string, unknown>[]) : []
 }
 
-// CODEX§19
-export function codexPlanReady(item: Record<string, unknown>): string | undefined {
-  return item.type === 'plan' ? PLAN_READY : undefined
+// CODEX§12
+export function codexEditTarget(item: Record<string, unknown>): string | undefined {
+  return item.type === 'fileChange' ? str(records(item.changes)[0]?.path) : undefined
+}
+
+// CODEX§12
+export function codexItemDid(item: Record<string, unknown>): string | undefined {
+  if (item.type === 'fileChange') {
+    const file = codexEditTarget(item)
+    return file && edited(file)
+  }
+  if (item.type !== 'commandExecution') return undefined
+  const actions = records(item.commandActions)
+  const only = actions.length === 1 ? actions[0] : undefined
+  if (only?.type === 'read' && str(only.path)) return read(String(only.path))
+  const command = str(only?.command) ?? str(item.command)
+  return command && ran(SHELL_WRAPPED.exec(command)?.[1] ?? command)
 }
 
 // MUSE§9
@@ -103,7 +100,7 @@ export function agyToolDid(
   name: string,
   arg: (key: string) => string | undefined
 ): string | undefined {
-  const file = arg('TargetFile') ?? arg('AbsolutePath')
+  const file = arg('TargetFile')
   switch (name) {
     case 'ask_question':
       return undefined
@@ -113,8 +110,6 @@ export function agyToolDid(
       return file && edited(file)
     case 'write_to_file':
       return file && wrote(file)
-    case 'view_file':
-      return file && read(file)
   }
   return name ? used(name) : undefined
 }

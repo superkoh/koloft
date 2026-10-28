@@ -855,14 +855,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     switch (hook.event) {
       case 'PreToolUse': {
         const call = record(input.toolCall)
-        const tool = { name: String(call.name ?? ''), args: record(call.args) }
-        run.lastTool = tool
-        const did = agyToolDid(tool.name, (key) => argOf(tool.args, key))
-        if (did) this.deps.events(run.tabId, { type: 'did', what: did })
+        run.lastTool = { name: String(call.name ?? ''), args: record(call.args) }
         return
       }
-      case 'PostToolUse':
+      case 'PostToolUse': {
+        const call = record(input.toolCall)
+        const did = agyToolDid(String(call.name ?? ''), (key) => argOf(record(call.args), key))
+        if (did) this.deps.events(run.tabId, { type: 'did', what: did })
         return void this.afterTool(run, input)
+      }
       case 'Stop':
         return this.onStop(run, input)
     }
@@ -1063,6 +1064,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             }
           })
     }
+    this.changedSoon()
   }
 
   // AGY§12 AGY§13
@@ -1110,6 +1112,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       approval: { id: askId, command: plan, reason: 'Approve the plan', plan: true }
     }
     this.deps.events(run.tabId, { type: 'notify', need: 'approval' })
+    this.changedSoon()
   }
 
   openApproval(tabId: string): CodexApproval | undefined {

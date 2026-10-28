@@ -71,7 +71,7 @@ test('C2: a live Claude Code row says under its branch what it did, while it wor
   const line = row.locator('.ws-tab-act')
   const sessions = page.locator('.isl-sessions')
   await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
-  await expect(line).toHaveText('Last: Wrote NOTES.md')
+  await expect(line).toHaveCount(0)
 
   await runIn(page, centerTerm(page), '/bash rm -rf build')
   await expect(row).toHaveClass(/\bst-approval\b/, { timeout: 15_000 })

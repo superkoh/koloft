@@ -127,7 +127,7 @@ export function rowStateClass(
 
 export function rowActivityLine(
   shownCls: string,
-  session?: Pick<SessionInfo, 'lastAction' | 'asking' | 'turnOver'>
+  session?: Pick<SessionInfo, 'lastAction' | 'asking'>
 ): string | undefined {
   if (!session || !shownCls.startsWith('st-') || shownCls === 'st-pending') return undefined
   if (shownCls === 'st-approval' && session.asking) return session.asking

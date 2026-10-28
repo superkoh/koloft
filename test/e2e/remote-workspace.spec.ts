@@ -226,7 +226,6 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(rows.first()).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
       await expect(rows.first()).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
       const line = rows.first().locator('.ws-tab-act')
-      await expect(line).toHaveText('Last: Wrote NOTES.md', { timeout: 30_000 })
       await runIn(page, centerTerm(page), '/bash rm -rf build')
       await expect(rows.first()).toHaveClass(/\bst-approval\b/, { timeout: 60_000 })
       await expect(line).toHaveText('Wants to run: rm -rf build', { timeout: 30_000 })

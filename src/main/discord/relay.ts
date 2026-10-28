@@ -558,8 +558,9 @@ export class DiscordRelay {
     return ask && claudeDialog(ask.payload)
   }
 
-  openPayload(tab: string): AskPayload | undefined {
-    return this.openAsk(tab)?.payload
+  heldAsk(tab: string): AskPayload | undefined {
+    const ask = this.openAsk(tab)
+    return ask?.hook ? ask.payload : undefined
   }
 
   private release(tab: string, hook: string, output: unknown = {}): void {

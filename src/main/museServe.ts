@@ -180,8 +180,12 @@ const commandOf = (args: Record<string, unknown>): string | undefined =>
 export function museAsk(reply: unknown): MuseAsk {
   const r = record(reply)
   const approval = record(Array.isArray(r.approvals) ? r.approvals[0] : undefined)
-  if (typeof approval.approvalId === 'string')
-    return { approval: { id: approval.approvalId, command: commandOf(record(approval.rawArgs)) } }
+  if (typeof approval.approvalId === 'string') {
+    const args = record(approval.rawArgs)
+    const command = commandOf(args)
+    const file = command === args.path ? command : undefined
+    return { approval: { id: approval.approvalId, command, ...(file ? { file } : {}) } }
+  }
   const input = record(Array.isArray(r.userInputs) ? r.userInputs[0] : undefined)
   const questions = Array.isArray(input.questions) ? input.questions.map(record) : []
   const q = questions[0]

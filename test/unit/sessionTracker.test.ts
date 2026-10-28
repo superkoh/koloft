@@ -2019,4 +2019,41 @@ describe('SessionTracker — what each turn said: the owner, another session, an
         { tabId: 'tabAsk', name: 'AskUserQuestion', input: {} }
       ])
   })
+
+  // CC§2
+  it('the row line says a command the session ran once its result lands, and never one the person turned down', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    const done: string[] = []
+    tracker.on('tool-done', (e: { input: { command?: string } }) =>
+      done.push(e.input.command ?? '')
+    )
+    tracker.track('tabDid', cwd)
+    const sid = '55555555-5555-4555-8555-555555555555'
+    const run = (id: string, command: string, s: number): unknown =>
+      said({ type: 'tool_use', id, name: 'Bash', input: { command } }, s)
+    const result = (id: string, s: number, more: object = {}): unknown => ({
+      type: 'user',
+      isSidechain: false,
+      timestamp: at(s),
+      message: { role: 'user', content: [{ tool_use_id: id, type: 'tool_result', ...more }] }
+    })
+    const file = writeJsonl(cwd, sid, [human('earlier', 1)])
+    tracker.bindSession('tabDid', file, sid, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabDid' && x.title === 'earlier')
+    fs.appendFileSync(file, JSON.stringify(run('t1', 'npm test', 30)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(result('t1', 31)) + '\n')
+    await waitFor(tracker, (x) => x.tabId === 'tabDid' && x.lastAction === 'Ran npm test')
+    fs.appendFileSync(file, JSON.stringify(run('t2', 'rm -rf build', 32)) + '\n')
+    const turnedDown = {
+      is_error: true,
+      content: "The user doesn't want to proceed with this tool use. The tool use was rejected."
+    }
+    fs.appendFileSync(file, JSON.stringify(result('t2', 33, turnedDown)) + '\n')
+    await expect.poll(() => done).toEqual(['npm test', 'rm -rf build'])
+    const info = (tracker as unknown as { list(): SessionInfo[] })
+      .list()
+      .find((x) => x.tabId === 'tabDid')
+    expect(info?.lastAction).toBe('Ran npm test')
+  })
 })
