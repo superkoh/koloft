@@ -90,7 +90,7 @@ import type { Turn } from '@shared/turns'
 import { AttentionTracker } from './attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
-import { OPEN_REQUEST_STILL_WANTED_MS, setupShim, utilTerminalGuard } from './shim'
+import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import {
@@ -3686,12 +3686,7 @@ function setupLine(playwrightBin?: string): string | undefined {
 const processedOpenIds = new Set<string>()
 
 function watchOpenRequests(openDir: string): fs.FSWatcher | null {
-  const handle = (obj: unknown, full: string): void => {
-    const drop = obj as OpenDrop
-    if (Date.now() - (drop?.ts ?? 0) * 1000 <= OPEN_REQUEST_STILL_WANTED_MS)
-      handleOpenRequest(drop, full)
-    else fs.rm(full, { force: true }, () => {})
-  }
+  const handle = (obj: unknown, full: string): void => handleOpenRequest(obj as OpenDrop, full)
   return watchAndSweepJsonDrops(
     openDir,
     () => handle,

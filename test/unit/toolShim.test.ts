@@ -37,16 +37,12 @@ function folderWatchThatReportsOnlyWhatItIsTold(): (name: string) => void {
   return (name) => report?.('rename', name)
 }
 
-function folderWatchThatNeverReports(): void {
-  folderWatchThatReportsOnlyWhatItIsTold()
-}
-
 describe('startToolShim', () => {
   // PLATFORM§28
   it(
     'a koloft request the folder watch never reports is still answered, and only once though it stays in the folder, so a Codex, Muse or Antigravity tab never waits out its time on a lost event',
     async () => {
-      folderWatchThatNeverReports()
+      folderWatchThatReportsOnlyWhatItIsTold()
       const agent = vi.fn()
       started = startToolShim(
         {

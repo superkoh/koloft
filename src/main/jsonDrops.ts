@@ -59,18 +59,21 @@ async function readInWriteOrder(
 ): Promise<void> {
   const names = await fs.promises.readdir(dir)
   const written = await Promise.all(
-    names
-      .filter((name) => name.endsWith('.json') && inWriteOrder(name) && handlerFor(name))
-      .map((name) =>
-        fs.promises.stat(path.join(dir, name)).then(
-          (st) => ({ name, at: st.mtimeMs }),
-          () => null
-        )
+    names.filter(isWriteOrdered(inWriteOrder)).map((name) =>
+      fs.promises.stat(path.join(dir, name)).then(
+        (st) => ({ name, at: st.mtimeMs }),
+        () => null
       )
+    )
   )
+  const found = written.filter((w): w is { name: string; at: number } => w !== null)
   // PLATFORM§28
-  for (const { name } of written.flatMap((w) => (w ? [w] : [])).sort((a, b) => a.at - b.at))
+  for (const { name } of found.sort((a, b) => a.at - b.at))
     await readNamedDrop(dir, name, handlerFor)
+}
+
+function isWriteOrdered(inWriteOrder: InWriteOrder): (name: string) => boolean {
+  return (name) => name.endsWith('.json') && inWriteOrder(name)
 }
 
 function onePassAtATime(
@@ -101,9 +104,9 @@ function sweepJsonDrops(
 ): void {
   fs.readdir(dir, (err, names) => {
     if (err) return
-    for (const name of names)
-      if (name.endsWith('.json') && !inWriteOrder(name)) void readNamedDrop(dir, name, sweepFor)
-    passInWriteOrder()
+    const ordered = isWriteOrdered(inWriteOrder)
+    for (const name of names) if (!ordered(name)) void readNamedDrop(dir, name, sweepFor)
+    if (names.some(ordered)) passInWriteOrder()
   })
 }
 
@@ -127,12 +130,8 @@ function watchWith(
   }
 }
 
-export function watchJsonDrops(
-  dir: string,
-  handlerFor: DropHandlerFor,
-  inWriteOrder: InWriteOrder = noDropInWriteOrder
-): fs.FSWatcher | null {
-  return watchWith(dir, handlerFor, inWriteOrder, onePassAtATime(dir, handlerFor, inWriteOrder))
+export function watchJsonDrops(dir: string, handlerFor: DropHandlerFor): fs.FSWatcher | null {
+  return watchWith(dir, handlerFor, noDropInWriteOrder, () => {})
 }
 
 // PLATFORM§28
@@ -147,6 +146,7 @@ export function watchAndSweepJsonDrops(
   const passInWriteOrder = onePassAtATime(dir, handlerFor, inWriteOrder)
   const watcher = watchWith(dir, handlerFor, inWriteOrder, passInWriteOrder)
   if (watcher) {
+    passInWriteOrder()
     const sweep = setInterval(
       () => sweepJsonDrops(dir, sweepFor, inWriteOrder, passInWriteOrder),
       SWEEP_FOR_A_LOST_DROP_MS

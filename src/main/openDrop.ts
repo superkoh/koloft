@@ -8,7 +8,6 @@ export interface OpenDrop {
   path?: string
   url?: string
   cwd?: string
-  ts?: number
 }
 
 export function openDropTarget(drop: OpenDrop): string {

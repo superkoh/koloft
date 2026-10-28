@@ -5,24 +5,24 @@ import path from 'path'
 import {
   oncePerName,
   watchAndSweepJsonDrops,
-  watchJsonDrops,
   writeWholeBeforeVisible
 } from '../../src/main/jsonDrops'
 
 const DROP_LONG_SETTLED_BEFORE_THE_WATCH_MS = 1500
 const DROPS_WRITTEN_BACK_TO_BACK = 12
 
-describe('watchJsonDrops: drops marked in write order reach their handler in the order they were written', () => {
+describe('watchAndSweepJsonDrops: drops marked in write order reach their handler in the order they were written', () => {
   it('hands drops written back to back over in write order, as an agent opening two pages in one command expects its tabs', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-drops-'))
     const seen: number[] = []
     let watchLive = false
-    const watcher = watchJsonDrops(
+    const watcher = watchAndSweepJsonDrops(
       dir,
       (name) =>
         name.startsWith('until-seen-')
           ? (): void => void (watchLive = true)
           : (obj): void => void seen.push((obj as { n: number }).n),
+      undefined,
       () => true
     )
     try {

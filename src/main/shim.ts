@@ -514,7 +514,7 @@ exit 0
 
 const STALE_REGISTRATION_AGE_MS = 12 * 60 * 60 * 1000
 const STALE_PICK_AGE_MS = 60 * 60 * 1000
-export const OPEN_REQUEST_STILL_WANTED_MS = 60_000
+const OPEN_REQUEST_STILL_WANTED_MS = 60_000
 
 // ADR-0004
 function pruneStale(dir: string, maxAgeMs = STALE_REGISTRATION_AGE_MS): void {
