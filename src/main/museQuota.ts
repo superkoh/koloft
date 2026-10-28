@@ -63,7 +63,8 @@ function screenOf(term: Terminal): string[] {
 export function readMuseQuota(
   binary: string,
   env: NodeJS.ProcessEnv,
-  cwd: string
+  cwd: string,
+  started: (proc: pty.IPty) => void
 ): Promise<CodexLimits | undefined> {
   return new Promise((resolve) => {
     const term = new Terminal({ cols: COLS, rows: ROWS })
@@ -74,6 +75,7 @@ export function readMuseQuota(
       cwd,
       env
     })
+    started(proc)
     let typedAt = 0
     let settled = false
     const finish = (limits: CodexLimits | undefined): void => {

@@ -56,7 +56,7 @@ interface CreateArgs {
 
 const UTIL_TITLE_POLL_MS = 1500
 
-const QUIT_HANGUP_GRACE_SECONDS = 10
+const HANGUP_GRACE_SECONDS = 10
 const KILL_IF_STILL_OURS = `k=$1
 s=$2
 shift 2
@@ -229,7 +229,7 @@ export class PtyManager extends EventEmitter {
       remoteHost: args.remoteHost
     }
     this.ptys.set(id, handle)
-    this.running.add(proc)
+    this.killAtQuitIfStillRunning(proc)
 
     let titlePoll: ReturnType<typeof setInterval> | undefined
 
@@ -270,7 +270,6 @@ export class PtyManager extends EventEmitter {
     })
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
-      this.running.delete(proc)
       if (titlePoll) clearInterval(titlePoll)
       for (const file of sourcedFiles) fs.rm(file, { force: true }, () => {})
       this.wakeReady(id)
@@ -383,7 +382,23 @@ export class PtyManager extends EventEmitter {
         h.proc.kill()
       } catch {}
       this.ptys.delete(id)
+      this.killLaterIfHangupIgnored(h.proc)
     }
+  }
+
+  // PLATFORM§41
+  private killLaterIfHangupIgnored(proc: pty.IPty): void {
+    setTimeout(() => {
+      if (!this.running.has(proc)) return
+      try {
+        process.kill(-proc.pid, 'SIGKILL')
+      } catch {}
+    }, HANGUP_GRACE_SECONDS * 1000).unref()
+  }
+
+  killAtQuitIfStillRunning(proc: pty.IPty): void {
+    this.running.add(proc)
+    proc.onExit(() => this.running.delete(proc))
   }
 
   get(id: string): PtyHandle | undefined {
@@ -413,14 +428,7 @@ export class PtyManager extends EventEmitter {
     if (!pids.length) return
     spawn(
       '/bin/sh',
-      [
-        '-c',
-        KILL_IF_STILL_OURS,
-        'sh',
-        String(process.pid),
-        String(QUIT_HANGUP_GRACE_SECONDS),
-        ...pids
-      ],
+      ['-c', KILL_IF_STILL_OURS, 'sh', String(process.pid), String(HANGUP_GRACE_SECONDS), ...pids],
       { detached: true, stdio: 'ignore' }
     )
       .on('error', () => {})

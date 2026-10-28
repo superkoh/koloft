@@ -26,6 +26,7 @@ import {
   runClaudeElsewhere,
   runIn,
   seedJsonl,
+  sendShortcut,
   setNextSessionTitle,
   snap,
   startSessionIn,
@@ -52,6 +53,7 @@ const IDLE_TO_SLEEP_MS = 3000
 const NO_SLEEP_DURING_THE_CHECKS_MS = 600_000
 const BIND_LATER_THAN_THE_QUIT_MS = 15_000
 const QUITS_WITHIN_MS = 30_000
+const CLOSED_PROGRAM_ENDS_WITHIN_MS = 20_000
 
 function openTabsOnDisk(env: E2EEnv): unknown {
   try {
@@ -196,6 +198,35 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       expect(processAlive(pid)).toBe(false)
     } finally {
       await quitAndClose(app).catch(() => {})
+      if (pid) killSession(pid, env)
+    }
+  })
+
+  test('closing a tab whose program ignores the hangup signal still ends that program within seconds, while Koloft keeps running', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const ignoresHangup = path.join(env.home, 'ignores-hangup.sh')
+    fs.writeFileSync(ignoresHangup, "trap '' HUP\nwhile :; do sleep 1; done\n")
+    let pid = 0
+    try {
+      await startSessionIn(page, 'ws-a')
+      await openSessionTerminal(app, page)
+      pid = await panelShellPid(page, 'CLOSEHUP')
+      await runIn(page, panelTerm(page), `exec sh '${ignoresHangup}'`)
+      await expect
+        .poll(() => execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }))
+        .toContain(ignoresHangup)
+
+      await panelTerm(page).click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(panelTerm(page)).toHaveCount(0, { timeout: 20_000 })
+      await expect
+        .poll(() => processAlive(pid), { timeout: CLOSED_PROGRAM_ENDS_WITHIN_MS })
+        .toBe(false)
+    } finally {
       if (pid) killSession(pid, env)
     }
   })

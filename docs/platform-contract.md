@@ -1977,6 +1977,11 @@ Gateway (the live connection that pushes events):
   2026-10-27 (Electron 43.8.1, node-pty 1.1.0, macOS 27.0) in the e2e app: a Workbench
   shell running `trap '' HUP; exec sleep 600` kept Koloft up past 120 s, the same shell
   without the trap quit in 88 ms.
+- **node-pty's `kill()` is one SIGHUP and nothing after it.** A program that ignores it
+  keeps running with its terminal gone. Measured 2026-10-28 (Electron 43.8.1, node-pty
+  1.1.0, macOS 27.0) in the e2e app: a Workbench shell `exec`ing a script with
+  `trap '' HUP` was still alive 20 s after its tab closed. The pty's pid leads its own
+  process group, so `kill -9 -<pid>` ends the program and what it started.
 
 ## §42 A Node command-line tool run on Electron's own Node
 
