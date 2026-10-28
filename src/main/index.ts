@@ -1223,17 +1223,20 @@ let discordConnected = false
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
 const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
-const PICKS_KEPT_MS = 24 * 60 * 60 * 1000
+const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
+const ELEMENT_PICKS_KEPT_MS = 24 * 60 * 60 * 1000
+const ELEMENT_PICKS_PRUNED_EVERY_MS = 60 * 60 * 1000
+
+function elementPicksDir(): string {
+  return path.join(app.getPath('userData'), 'element-picks')
+}
 
 async function savePickOnThisMac(png: Buffer): Promise<string> {
-  const dir = path.join(app.getPath('userData'), 'picks')
-  await fs.promises.mkdir(dir, { recursive: true })
-  pruneStale(dir, PICKS_KEPT_MS, true)
-  const file = path.join(dir, `${crypto.randomUUID()}.png`)
+  await fs.promises.mkdir(elementPicksDir(), { recursive: true })
+  const file = path.join(elementPicksDir(), `${crypto.randomUUID()}.png`)
   await fs.promises.writeFile(file, png)
   return file
 }
-const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
 
 // CODEX§3 CODEX§20 MUSE§5
 async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
@@ -2649,6 +2652,9 @@ app.whenReady().then(() => {
     sweepOpenRequests(openDir)
   }
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
+  const pruneElementPicks = (): void => pruneStale(elementPicksDir(), ELEMENT_PICKS_KEPT_MS, true)
+  pruneElementPicks()
+  setInterval(pruneElementPicks, ELEMENT_PICKS_PRUNED_EVERY_MS).unref()
 
   ptyMgr.cdpDir = cdpEnvDir()
   startRelay(relayDeps())

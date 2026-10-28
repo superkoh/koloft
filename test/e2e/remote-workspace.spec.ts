@@ -484,11 +484,10 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       const [prompt] = fromPick()
       expect(prompt).toContain(`Element: ${PICKED_LABEL}`)
       const picture = picturePath(prompt)
-      const picks = fs.realpathSync(path.join(machineHome(env), '.koloft', 'picks'))
+      const picks = fs.realpathSync(path.join(machineHome(env), '.koloft', 'element-picks'))
       expect(path.dirname(picture)).toBe(picks)
       expect(isPng(picture)).toBe(true)
-      const localPicks = path.join(env.userData, 'picks')
-      expect(fs.existsSync(localPicks) ? fs.readdirSync(localPicks) : [], localPicks).toEqual([])
+      expect(fs.existsSync(path.join(env.userData, 'element-picks'))).toBe(false)
     } finally {
       await quitAndClose(app)
       await server.close()

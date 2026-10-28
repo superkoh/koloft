@@ -1983,7 +1983,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(prompt).toContain('Element picked in the Workbench browser')
       expect(prompt).toContain(`Element: ${PICKED_LABEL}`)
       const picture = picturePath(prompt)
-      expect(picture.startsWith(path.join(env.userData, 'picks'))).toBe(true)
+      expect(picture.startsWith(path.join(env.userData, 'element-picks'))).toBe(true)
       expect(isPng(picture)).toBe(true)
     } finally {
       await quitAndClose(app)

@@ -1,28 +1,44 @@
 import type { WebContents } from 'electron'
 
-const holders = new Map<number, number>()
+const attachments = new Map<number, { holders: number; onDetach: () => void }>()
 const ownSessions = new Set<string>()
 const ownTargetsOpening = new Set<string>()
 
 // PLATFORM§16
 export function holdDebugger(wc: WebContents): () => void {
   const id = wc.id
-  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3')
-  holders.set(id, (holders.get(id) ?? 0) + 1)
+  let attachment = attachments.get(id)
+  if (!attachment || !wc.debugger.isAttached()) {
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3')
+    const fresh = {
+      holders: 0,
+      onDetach: (): void => {
+        if (attachments.get(id) === fresh) attachments.delete(id)
+      }
+    }
+    attachment = fresh
+    attachments.set(id, fresh)
+    wc.debugger.once('detach', fresh.onDetach)
+  }
+  const held = attachment
+  held.holders++
   let released = false
   return () => {
     if (released) return
     released = true
-    const left = (holders.get(id) ?? 1) - 1
-    if (left > 0) {
-      holders.set(id, left)
-      return
-    }
-    holders.delete(id)
+    held.holders--
+    if (held.holders > 0 || attachments.get(id) !== held) return
+    attachments.delete(id)
     try {
-      if (!wc.isDestroyed() && wc.debugger.isAttached()) wc.debugger.detach()
+      if (wc.isDestroyed()) return
+      wc.debugger.off('detach', held.onDetach)
+      if (wc.debugger.isAttached()) wc.debugger.detach()
     } catch {}
   }
+}
+
+export function forgetOwnSession(sessionId: string): void {
+  ownSessions.delete(sessionId)
 }
 
 function sendOn(wc: WebContents, parent: string, method: string, params: object): Promise<unknown> {

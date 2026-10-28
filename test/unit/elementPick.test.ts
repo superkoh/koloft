@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cssValue, elementLabel, pickText } from '../../src/main/elementPick'
+import { cssLines, elementLabel, pickText } from '../../src/main/elementPick'
 import {
   closeOwnSession,
   hiddenFromClients,
@@ -24,12 +24,13 @@ const picked = {
     'padding-right': '0px',
     'padding-bottom': '0px',
     'padding-left': '0px',
-    'border-top-width': '1px',
-    'border-right-width': '1px',
-    'border-bottom-width': '1px',
-    'border-left-width': '1px',
-    'border-top-style': 'solid',
-    'border-top-color': 'rgb(0, 0, 0)',
+    ...Object.fromEntries(
+      ['top', 'right', 'bottom', 'left'].flatMap((s) => [
+        [`border-${s}-width`, '1px'],
+        [`border-${s}-style`, 'solid'],
+        [`border-${s}-color`, 'rgb(0, 0, 0)']
+      ])
+    ),
     color: 'rgb(255, 255, 255)'
   }
 }
@@ -74,7 +75,7 @@ describe('the text a pick pastes into the session', () => {
   })
 })
 
-describe('the CSS shorthand a pick shows', () => {
+describe('the CSS a pick shows, built from the longhands Chromium reports', () => {
   it('lists all four sides when they differ', () => {
     const css = {
       'padding-top': '1px',
@@ -82,11 +83,34 @@ describe('the CSS shorthand a pick shows', () => {
       'padding-bottom': '3px',
       'padding-left': '4px'
     }
-    expect(cssValue(css, 'padding')).toBe('1px 2px 3px 4px')
+    expect(cssLines(css)).toEqual(['padding: 1px 2px 3px 4px;'])
   })
 
-  it('takes a property Chromium reports directly over its sides', () => {
-    expect(cssValue({ gap: '8px' }, 'gap')).toBe('8px')
+  it('puts gap and border-radius back together from their parts', () => {
+    const css = {
+      'row-gap': '8px',
+      'column-gap': '8px',
+      'border-top-left-radius': '6px',
+      'border-top-right-radius': '6px',
+      'border-bottom-right-radius': '6px',
+      'border-bottom-left-radius': '6px'
+    }
+    expect(cssLines(css)).toEqual(['border-radius: 6px;', 'gap: 8px;'])
+  })
+
+  it('names each side of a border that differs, with its style and colour', () => {
+    const side = (s: string, w: string, style: string, color: string): Record<string, string> => ({
+      [`border-${s}-width`]: w,
+      [`border-${s}-style`]: style,
+      [`border-${s}-color`]: color
+    })
+    const css = {
+      ...side('top', '0px', 'none', 'rgb(0, 0, 0)'),
+      ...side('right', '0px', 'none', 'rgb(0, 0, 0)'),
+      ...side('bottom', '1px', 'solid', 'rgb(255, 0, 0)'),
+      ...side('left', '0px', 'none', 'rgb(0, 0, 0)')
+    }
+    expect(cssLines(css)).toEqual(['border-bottom: 1px solid rgb(255, 0, 0);'])
   })
 })
 
@@ -102,13 +126,17 @@ function fakeGuest(): {
   wc: Parameters<typeof holdDebugger>[0]
   attaches: () => number
   attached: () => boolean
+  detachFromOutside: () => void
 } {
   let attached = false
   let attaches = 0
+  const onDetach = new Set<() => void>()
   const wc = {
     id: Math.floor(Math.random() * 1e9),
     isDestroyed: () => false,
     debugger: {
+      once: (_: string, f: () => void) => onDetach.add(f),
+      off: (_: string, f: () => void) => onDetach.delete(f),
       isAttached: () => attached,
       attach: () => {
         if (attached) throw new Error('Debugger is already attached to the target')
@@ -120,7 +148,16 @@ function fakeGuest(): {
       }
     }
   } as unknown as Parameters<typeof holdDebugger>[0]
-  return { wc, attaches: () => attaches, attached: () => attached }
+  return {
+    wc,
+    attaches: () => attaches,
+    attached: () => attached,
+    detachFromOutside: () => {
+      attached = false
+      for (const f of [...onDetach]) f()
+      onDetach.clear()
+    }
+  }
 }
 
 describe('a session Koloft opens on a guest for itself', () => {
@@ -181,6 +218,18 @@ describe('one debugger attachment per guest, shared by the agent and the picker'
     picker()
     expect(g.attached()).toBe(true)
     agent()
+    expect(g.attached()).toBe(false)
+  })
+
+  it('starts a fresh count after the debugger is detached from outside, so a holder from before cannot detach the new one', () => {
+    const g = fakeGuest()
+    const before = holdDebugger(g.wc)
+    g.detachFromOutside()
+    const after = holdDebugger(g.wc)
+    expect(g.attaches()).toBe(2)
+    before()
+    expect(g.attached()).toBe(true)
+    after()
     expect(g.attached()).toBe(false)
   })
 

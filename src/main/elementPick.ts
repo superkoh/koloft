@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import { closeOwnSession, holdDebugger, openOwnSession } from './guestDebugger'
+import { closeOwnSession, forgetOwnSession, holdDebugger, openOwnSession } from './guestDebugger'
 import { within } from './within'
 
 const HTML_KEPT_CHARS = 4000
@@ -50,21 +50,41 @@ export interface PickedElement {
   png: Buffer | null
 }
 
-export function cssValue(css: Record<string, string>, name: string): string | undefined {
-  if (css[name] !== undefined) return css[name]
-  const side = (s: string): string | undefined =>
-    name === 'border' ? css[`border-${s}-width`] : css[`${name}-${s}`]
-  const sides = SIDES.map(side)
-  if (sides.some((v) => v === undefined)) return undefined
-  const [t, r, b, l] = sides
-  if (name === 'border') {
-    const style = css['border-top-style']
-    const color = css['border-top-color']
-    return t === r && t === b && t === l ? `${t} ${style} ${color}` : sides.join(' ')
-  }
-  if (t === r && t === b && t === l) return t
-  if (t === b && r === l) return `${t} ${r}`
-  return sides.join(' ')
+const SHORTHAND_PARTS: Record<string, string[]> = {
+  margin: SIDES.map((s) => `margin-${s}`),
+  padding: SIDES.map((s) => `padding-${s}`),
+  'border-radius': ['top-left', 'top-right', 'bottom-right', 'bottom-left'].map(
+    (c) => `border-${c}-radius`
+  ),
+  gap: ['row-gap', 'column-gap']
+}
+
+function collapse(values: string[]): string {
+  if (values.every((v) => v === values[0])) return values[0]
+  if (values.length === 4 && values[0] === values[2] && values[1] === values[3])
+    return `${values[0]} ${values[1]}`
+  return values.join(' ')
+}
+
+function borderLines(css: Record<string, string>): string[] {
+  const sides = SIDES.map((s) => ({
+    side: s,
+    style: css[`border-${s}-style`],
+    value: `${css[`border-${s}-width`]} ${css[`border-${s}-style`]} ${css[`border-${s}-color`]}`
+  }))
+  if (sides.some((s) => s.style === undefined)) return []
+  if (sides.every((s) => s.value === sides[0].value)) return [`border: ${sides[0].value};`]
+  return sides.filter((s) => s.style !== 'none').map((s) => `border-${s.side}: ${s.value};`)
+}
+
+export function cssLines(css: Record<string, string>): string[] {
+  return CSS_SHOWN.flatMap((name) => {
+    if (name === 'border') return borderLines(css)
+    const parts = SHORTHAND_PARTS[name]?.map((p) => css[p])
+    const value =
+      css[name] ?? (parts && parts.every((v) => v !== undefined) ? collapse(parts) : undefined)
+    return value === undefined ? [] : [`${name}: ${value};`]
+  })
 }
 
 export function elementLabel(node: { localName: string; attributes?: string[] }): string {
@@ -84,10 +104,6 @@ export function pickText(p: Omit<PickedElement, 'png'>, picture: string | null):
     p.html.length > HTML_KEPT_CHARS
       ? `${p.html.slice(0, HTML_KEPT_CHARS)}… ${p.html.length - HTML_KEPT_CHARS} more characters`
       : p.html
-  const css = CSS_SHOWN.flatMap((name) => {
-    const v = cssValue(p.css, name)
-    return v === undefined ? [] : [`${name}: ${v};`]
-  })
   const { x, y, width, height } = p.box
   return [
     'Element picked in the Workbench browser',
@@ -98,7 +114,7 @@ export function pickText(p: Omit<PickedElement, 'png'>, picture: string | null):
     'HTML:',
     html,
     'CSS (computed):',
-    ...css
+    ...cssLines(p.css)
   ].join('\n')
 }
 
@@ -272,23 +288,35 @@ async function runPick(wc: WebContents, stopped: Promise<null>): Promise<PickedE
   const frames: Frame[] = []
   try {
     await openFrames(wc, frames)
-    await Promise.all(
-      frames.map(async (frame) => {
-        await send(wc, frame, 'DOM.enable')
-        await send(wc, frame, 'Overlay.enable')
-        await send(wc, frame, 'Overlay.setInspectMode', {
-          mode: 'searchForNode',
-          highlightConfig: HIGHLIGHT
-        })
+    const inspect = (frame: Frame, mode: 'searchForNode' | 'none'): Promise<unknown> =>
+      send(wc, frame, 'Overlay.setInspectMode', {
+        mode,
+        highlightConfig: mode === 'none' ? {} : HIGHLIGHT
       })
-    )
-    const got = await nodeToPick(wc, frames, stopped)
-    return got && (await readPick(wc, frames[0], got.frame, got.node))
+    const setUp = async (frame: Frame): Promise<Frame> => {
+      await send(wc, frame, 'DOM.enable')
+      await send(wc, frame, 'Overlay.enable')
+      await inspect(frame, 'searchForNode')
+      return frame
+    }
+    const [root, ...children] = frames
+    const live = [
+      await setUp(root),
+      ...(await Promise.all(children.map((f) => setUp(f).catch(() => null)))).filter(
+        (f): f is Frame => f !== null
+      )
+    ]
+    const got = await nodeToPick(wc, live, stopped)
+    if (!got) return null
+    await Promise.all(live.map((f) => inspect(f, 'none').catch(() => {})))
+    return await readPick(wc, root, got.frame, got.node)
   } finally {
-    if (!wc.isDestroyed()) {
-      const [root, ...children] = frames
+    const [root, ...children] = frames
+    if (wc.isDestroyed()) {
+      for (const f of frames) forgetOwnSession(f.session)
+    } else if (root) {
       await Promise.all(children.map((f) => closeOwnSession(wc, f.session, root.session)))
-      if (root) await closeOwnSession(wc, root.session)
+      await closeOwnSession(wc, root.session)
     }
     release()
   }

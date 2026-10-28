@@ -4,6 +4,7 @@ import { useStore } from '../store'
 export const PICK_BUTTON_LABEL = 'Pick an element'
 export const PICK_MSG_PAGE_NOT_SHOWN = 'The page is not showing — reload it first'
 export const PICK_MSG_FAILED = 'Koloft could not read that element.'
+export const PICK_MSG_NOT_PASTED = 'The picked element could not be put in the session.'
 
 export function useElementPick(
   pasteTab: string | null,
@@ -32,23 +33,23 @@ export function useElementPick(
     const held = { guest }
     current.current = held
     setPicking(true)
-    void window.api.browser
-      .pickElement(guest, pasteTab)
-      .then(async (text) => {
-        if (current.current !== held) return
-        current.current = null
-        setPicking(false)
-        if (!text || blockedNow.current) return
-        await window.api.terminal.paste(pasteTab, text)
-        onReturnFocus()
-      })
-      .catch(() => {
-        if (current.current === held) {
-          current.current = null
-          setPicking(false)
-        }
-        useStore.getState().showToast(PICK_MSG_FAILED)
-      })
+    const settle = (): boolean => {
+      if (current.current !== held) return false
+      current.current = null
+      setPicking(false)
+      return true
+    }
+    void window.api.browser.pickElement(guest, pasteTab).then(
+      (text) => {
+        if (!settle() || !text || blockedNow.current) return
+        window.api.terminal.paste(pasteTab, text).then(onReturnFocus, () => {
+          useStore.getState().showToast(PICK_MSG_NOT_PASTED)
+        })
+      },
+      () => {
+        if (settle()) useStore.getState().showToast(PICK_MSG_FAILED)
+      }
+    )
   }, [guestId, pasteTab, onReturnFocus, stop])
 
   useEffect(() => stop, [pageKey, pasteTab, stop])

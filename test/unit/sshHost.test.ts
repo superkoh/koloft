@@ -339,10 +339,10 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
     })
 
-    it("saves a picked element's picture on the machine and answers with its absolute path there, deleting pictures older than a day", async () => {
-      const picks = path.join(home, '.koloft', 'picks')
+    it("saves a picked element's picture on the machine and answers with its absolute path there, deleting anything older than a day left in its folder", async () => {
+      const picks = path.join(home, '.koloft', 'element-picks')
       fs.mkdirSync(picks, { recursive: true })
-      const old = path.join(picks, 'old.png')
+      const old = path.join(picks, 'old.png.part')
       fs.writeFileSync(old, 'x')
       const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
       fs.utimesSync(old, twoDaysAgo, twoDaysAgo)

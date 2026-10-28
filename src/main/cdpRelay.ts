@@ -7,7 +7,6 @@ import { CdpProtocol, stripDiff, type RelayBackend, type RelayTarget } from './c
 import { inputEmulation } from './cdpInput'
 import { compositionDone } from './hostComposition'
 import { hiddenFromClients, holdDebugger } from './guestDebugger'
-import { stopPick } from './elementPick'
 import { urlOrNull } from '@shared/browserRoute'
 import { namesThisMacsServer, reachesThisMacsServer } from './thisMacsServers'
 
@@ -325,8 +324,8 @@ function backendFor(client: Client): RelayBackend {
         const wc = guestOf(held.guestId)
         wc.debugger.off('message', held.onMessage as never)
         wc.debugger.off('detach', held.onDetach as never)
+        void wc.debugger.sendCommand('Fetch.disable').catch(() => {})
       } catch {}
-      stopPick(held.guestId)
       held.release()
       publishAttached(client)
     },

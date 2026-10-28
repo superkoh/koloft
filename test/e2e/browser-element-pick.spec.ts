@@ -88,7 +88,7 @@ test.describe('Pick an element in a Workbench web tab and paste it into the sess
     expect(prompt).toContain('background-color: rgb(10, 120, 250);')
     expect(prompt.endsWith(' make it green BP-01')).toBe(true)
     const picture = picturePath(prompt)
-    expect(picture.startsWith(path.join(env.userData, 'picks') + path.sep)).toBe(true)
+    expect(picture.startsWith(path.join(env.userData, 'element-picks') + path.sep)).toBe(true)
     expect(isPng(picture)).toBe(true)
     expect(await pictureCentre(app, picture)).toEqual([10, 120, 250])
     expect(await guest.evaluate('window.clicks')).toBe(0)

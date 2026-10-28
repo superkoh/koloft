@@ -576,7 +576,7 @@ t="$fresh"; k=fresh
 [ -n "$merged" ] && [ -f "${file}" ] && { t="$merged"; k=merged; }
 printf '%s' "$t" > "${file}.part" && mv -f "${file}.part" "${file}" && printf '%s' "$k"`
 
-const SAVE_PICK = `d="$HOME/.koloft/picks"
+const SAVE_PICK = `d="$HOME/.koloft/element-picks"
 mkdir -p "$d" && cd "$d" || exit 1
 find . -type f -mtime +0 -exec rm -f {} + 2>/dev/null
 cat > "$1.part" && mv -f "$1.part" "$1" && printf '%s/%s' "$(pwd -P)" "$1"`
