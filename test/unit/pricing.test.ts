@@ -47,6 +47,20 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(resolvePricing('gpt-6-astra-2026-09-01')).toBeUndefined()
   })
 
+  // CODEX§13
+  it.each([
+    'gpt-6.1-sol',
+    'gpt-6.1-terra',
+    'gpt-6-astra',
+    'gpt-6-sol',
+    'gpt-6-luna',
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna'
+  ])('prices %s, a model Codex model/list offers, so a session on it shows a cost', (id) => {
+    expect(resolvePricing(id)).toBeDefined()
+  })
+
   // AGY§21
   it.each([
     ['gemini-3.1-pro-low', { inPerM: 2, outPerM: 12, cacheReadPerM: 0.2 }],

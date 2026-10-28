@@ -817,7 +817,14 @@ tokens (input / cached input / output): `gpt-6-astra` 10 / 1 / 50, `gpt-6-sol` 2
 `gpt-5.3-codex` 1.75 / 0.175 / 14, `gpt-5.2` 1.75 / 0.175 / 14, `gpt-5.1` 1.25 / 0.125 /
 10, `gpt-5` 1.25 / 0.125 / 10. **`gpt-6.1-sol` 2 / 0.10 / 10** (the same page, fetched
 2026-10-11; Codex 0.161.0 made it the default model of the bundled catalog, so a fresh
-account home runs on it). OpenAI charges nothing to write the cache. The page lists
+account home runs on it). **`gpt-6.1-terra` 1 / 0.05 / 5, long context 2 / 0.10 /
+7.5** (the same page, fetched 2026-10-28; `model/list` offered it on Codex 0.164.0 and
+0.165.0 alike that day, `isDefault: false`, efforts `low` … `ultra`, and the fresh
+home's `models_cache.json` gave it a `context_window` of 500000, so it reaches the long
+price as `gpt-6.1-sol` does). The page now also lists 30-minute and 12-hour
+cache-write prices (about 1.25 and 2.5 times the input price), but Codex reported
+`cache_write_input_tokens` 0 in every record of a fresh home's turns on 0.164.0 and
+0.165.0 (2026-10-28), so Koloft prices cache writes at 0. The page lists
 a higher "long context" price for prompts above 272K tokens; Codex's window on this Mac
 (258400 on the wire, 272000 in `~/.codex/models_cache.json`) stays below it, so only
 the short-context price is used — **no longer true for `gpt-6.1-sol`**: on 2026-10-16
