@@ -1709,7 +1709,12 @@ test.describe('Codex sessions through the real method chooser, process transport
     installCodex(env)
     seedSettings(env, { hintsOff: true })
     const readFails = path.join(env.home, 'fake-codex-account-read-fails')
-    const readFailed = path.join(env.home, 'fake-codex-account-read-failed')
+    const workHome = path.join(env.userData, 'codex-homes', 'work')
+    const signedInReadFailed = (): boolean =>
+      fakeCodexLog<{ codexHome: string; signedIn: boolean }>(
+        env,
+        'fake-codex-account-read-failures.jsonl'
+      ).some((r) => r.codexHome === workHome && r.signedIn)
     fs.writeFileSync(readFails, '')
     const app = await launchApp(env)
     try {
@@ -1720,13 +1725,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await page.getByRole('button', { name: 'Sign in to Codex' }).click()
       await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
       await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
-      await expect
-        .poll(() => fs.existsSync(path.join(env.userData, 'codex-homes', 'work', 'auth.json')), {
-          timeout: 30_000
-        })
-        .toBe(true)
-      fs.rmSync(readFailed, { force: true })
-      await expect.poll(() => fs.existsSync(readFailed), { timeout: 30_000 }).toBe(true)
+      await expect.poll(signedInReadFailed, { timeout: 30_000 }).toBe(true)
       fs.rmSync(readFails)
 
       await page.getByRole('button', { name: 'Refresh usage' }).click()
