@@ -7,6 +7,8 @@ import { codexCalls, startLocalSession } from './helpers/codex'
 import {
   centerTerm,
   clickAppMenuItem,
+  closeKeptTab,
+  ENDED_ROW_NOTE,
   focusOwner,
   gitInit,
   killSession,
@@ -399,7 +401,7 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       expect(fs.existsSync(env.openCalls)).toBe(false)
     })
 
-    test('T-WT-10: claude dying kills the session’s shells and drops their tabs', async ({
+    test('T-WT-10: claude dying keeps the session’s shells while its tab is kept; closing that tab kills them and drops their tabs', async ({
       app,
       page,
       env
@@ -412,8 +414,12 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
 
       // CC§1
       killSession(session.pid, env)
-      await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bcold\b/, { timeout: 40_000 })
+      const row = wsRows(page, 'ws-a').first()
+      await expect(row.locator('.ws-tab-sub')).toHaveText(ENDED_ROW_NOTE, { timeout: 40_000 })
+      expect(processAlive(pid)).toBe(true)
+      await expect(termBodies(page)).toHaveCount(1)
 
+      await closeKeptTab(page, row)
       await expect.poll(() => processAlive(pid), { timeout: 40_000 }).toBe(false)
       await expect(termBodies(page)).toHaveCount(0, { timeout: 20_000 })
     })

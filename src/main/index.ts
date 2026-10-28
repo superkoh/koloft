@@ -2802,7 +2802,11 @@ app.whenReady().then(() => {
   ptyMgr.on('exit', (e) => {
     const exited = ptyMgr.get(e.id)
     const unexpected =
-      !e.endedByKoloft && !quitCommitted && exitedAbnormally(e) && !!backendIdOf(exited?.kind)
+      !e.endedByKoloft &&
+      !closedTabs.has(e.id) &&
+      !quitCommitted &&
+      exitedAbnormally(e) &&
+      !!backendIdOf(exited?.kind)
     if (unexpected && exited) unexpectedExits.set(e.id, unexpectedExitHeading(exited, e))
     const left = closedTabs.has(e.id) ? closedTabs.get(e.id) : leftTabOf(sessionOfTab(e.id))
     closedTabs.delete(e.id)

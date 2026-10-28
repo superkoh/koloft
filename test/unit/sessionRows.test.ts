@@ -21,6 +21,7 @@ import {
   rowsUnder,
   welcomeQuietLine,
   welcomeTarget,
+  endedTabOf,
   withEndedRows,
   type RowNode
 } from '../../src/renderer/src/sessionRows'
@@ -54,6 +55,13 @@ describe('withEndedRows (a tab whose agent died on its own keeps one row until i
       ['s9', 's9', undefined, false]
     ])
     expect(rows[1].rows).toEqual([])
+  })
+
+  it('lets the row follow a live tab once its session is running again elsewhere, not the dead one', () => {
+    const dead = { ...died, sessionId: 's1' }
+    const live = { sessionId: 's1', tabId: 't2', alive: true }
+    expect(endedTabOf({ id: 's1' }, [dead], [])).toBe(dead)
+    expect(endedTabOf({ id: 's1' }, [dead], [live])).toBeUndefined()
   })
 
   it('adds nothing while the list still shows the tab or its session, so the row never doubles', () => {

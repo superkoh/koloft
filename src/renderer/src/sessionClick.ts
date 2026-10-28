@@ -37,7 +37,7 @@ export function visitNextWaiting(): void {
 
 export function openSessionRow(row: SessionRow, wsPath: string): void {
   const st = useStore.getState()
-  const ended = endedTabOf(row, st.tabs)
+  const ended = endedTabOf(row, st.tabs, st.sessions)
   if (ended) {
     st.activateTab(ended.id)
     return

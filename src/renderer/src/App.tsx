@@ -60,8 +60,7 @@ import {
   panelTabId,
   panelIsOpen,
   noteWakingOutput,
-  tabEverBound,
-  rememberLaunch
+  tabEverBound
 } from './store'
 import { WORKBENCH_PANE_MIN } from './auxSurface'
 import {
@@ -408,13 +407,13 @@ export default function App(): JSX.Element {
       const launch = { kind: backend, ...opts }
       const res = await window.api.terminal.create(launch)
       if (!res.ok) throw new Error(LAUNCH_REFUSED_NOTICE)
-      rememberLaunch(res.id, launch)
       addTab({
         id: res.id,
         kind: backend,
         title: BACKEND_LABEL[backend],
         cwd: res.cwd,
-        alive: true
+        alive: true,
+        launch
       })
     },
     [addTab]
@@ -1005,13 +1004,15 @@ export default function App(): JSX.Element {
       if (unexpectedExitWanted(tab, e)) {
         const notice = unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id))
         useStore.getState().showToast(notice)
-        useStore.getState().keepEndedTab(e.id, endedRowNote(e))
-        void lastLinesOnceWritten(e.id, LAST_SCREEN_LINES_LOGGED).then((lines) => {
-          window.api.terminal.logUnexpectedExit({ id: e.id, lines })
-          writeOnScreen(e.id, `\x1b[0m\r\n[Koloft] ${notice}\r\n`)
-        })
-        return
+        if (useStore.getState().keepEndedTab(e.id, endedRowNote(e))) {
+          void lastLinesOnceWritten(e.id, LAST_SCREEN_LINES_LOGGED).then((lines) => {
+            window.api.terminal.logUnexpectedExit({ id: e.id, lines })
+            writeOnScreen(e.id, `\x1b[0m\r\n[Koloft] ${notice}\r\n`)
+          })
+          return
+        }
       }
+      if (e.unexpected) window.api.terminal.logUnexpectedExit({ id: e.id, lines: [] })
       if (tab) askAboutLeftEdits(tab)
       closeTab(e.id)
     })

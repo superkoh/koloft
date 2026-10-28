@@ -13,6 +13,7 @@ import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
+import { everyWorkspaceRows } from './butlerRows'
 
 export { statusUnavailable }
 
@@ -282,31 +283,45 @@ interface EndedTab {
   id: string
   title: string
   sessionId?: string
-  ended?: { row?: SessionRow; wsPath?: string }
+  ended?: { row: SessionRow; wsPath: string }
 }
+
+type Ended<T extends EndedTab> = T & { ended: NonNullable<T['ended']> }
+
+const isEnded = <T extends EndedTab>(t: T): t is Ended<T> => !!t.ended
 
 export function endedTabOf<T extends EndedTab>(
   row: { id: string },
-  tabs: readonly T[]
-): T | undefined {
-  return tabs.find((t) => t.ended && (t.id === row.id || t.sessionId === row.id))
+  tabs: readonly T[],
+  sessions: readonly { sessionId: string; tabId: string; alive: boolean }[]
+): Ended<T> | undefined {
+  const ended = tabs.find(
+    (t): t is Ended<T> => isEnded(t) && (t.id === row.id || t.sessionId === row.id)
+  )
+  if (!ended) return undefined
+  const liveElsewhere = sessions.some(
+    (s) => s.alive && s.sessionId === row.id && s.tabId !== ended.id
+  )
+  return liveElsewhere ? undefined : ended
 }
 
 export function withEndedRows(all: WorkspaceRows[], tabs: readonly EndedTab[]): WorkspaceRows[] {
+  const ended = tabs.filter(isEnded)
+  if (!ended.length) return all
   const shown = new Set(all.flatMap((w) => w.rows.map((r) => r.id)))
-  const lost = tabs.filter(
-    (t) =>
-      t.ended?.row &&
-      ![t.id, t.sessionId, t.ended.row.id].some((id) => id !== undefined && shown.has(id))
+  const lost = ended.filter(
+    (t) => ![t.id, t.sessionId, t.ended.row.id].some((id) => id !== undefined && shown.has(id))
   )
   if (!lost.length) return all
   return all.map((w) => {
-    const here = lost.filter((t) => t.ended?.wsPath === w.workspace.path)
+    const here = lost.filter((t) => t.ended.wsPath === w.workspace.path)
     if (!here.length) return w
-    const kept = here.map((t): SessionRow => {
-      const row = t.ended!.row!
-      return { ...row, title: row.pending ? t.title : row.title, running: false, pending: false }
-    })
+    const kept = here.map(({ title, ended: { row } }): SessionRow => ({
+      ...row,
+      title: row.pending ? title : row.title,
+      running: false,
+      pending: false
+    }))
     return { ...w, rows: [...kept, ...w.rows] }
   })
 }
@@ -316,10 +331,9 @@ export function shownRows(s: {
   butlerWorkspace: WorkspaceRows | null
   tabs: readonly EndedTab[]
 }): { workspaceRows: WorkspaceRows[]; butlerWorkspace: WorkspaceRows | null } {
-  const all = withEndedRows(
-    s.butlerWorkspace ? [...s.workspaceRows, s.butlerWorkspace] : s.workspaceRows,
-    s.tabs
-  )
+  const every = everyWorkspaceRows(s)
+  const all = withEndedRows(every, s.tabs)
+  if (all === every) return { workspaceRows: s.workspaceRows, butlerWorkspace: s.butlerWorkspace }
   return s.butlerWorkspace
     ? { workspaceRows: all.slice(0, -1), butlerWorkspace: all[all.length - 1] }
     : { workspaceRows: all, butlerWorkspace: null }

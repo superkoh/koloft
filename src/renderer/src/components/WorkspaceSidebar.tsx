@@ -661,7 +661,7 @@ function SidebarFloating({
       ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit })
       : t.kind === 'queued'
         ? 2
-        : endedTabOf(t.row, storeTabs)
+        : endedTabOf(t.row, storeTabs, sessions)
           ? 2
           : t.row.pending
             ? 1
@@ -884,7 +884,7 @@ function SidebarFloating({
       )
     }
     const { row } = target
-    const ended = endedTabOf(row, storeTabs)
+    const ended = endedTabOf(row, storeTabs, sessions)
     if (ended) {
       return (
         <div className="menu" style={style} onMouseEnter={keepMenu} onMouseLeave={scheduleClose}>
@@ -1160,7 +1160,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     const lookNow = rowLookups(st.sessions, st.tabs, st.attention)
     for (const w of everyWorkspaceRows(shownRows(st))) {
       const row = w.rows.find(
-        (r) => (endedTabOf(r, st.tabs)?.id ?? lookNow.tabOf(r)) === reveal.tabId
+        (r) => (endedTabOf(r, st.tabs, st.sessions)?.id ?? lookNow.tabOf(r)) === reveal.tabId
       )
       if (!row) continue
       setCollapsed((c) => (c[w.workspace.path] ? { ...c, [w.workspace.path]: false } : c))
@@ -1327,7 +1327,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     const cronPrefixes = cronWorktreePrefixes.get(wsPath) ?? []
     const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
       const { row } = node
-      const ended = endedTabOf(row, storeTabs)
+      const ended = endedTabOf(row, storeTabs, sessions)
       const running = !ended && look.running(row)
       const tabId = ended?.id ?? look.tabOf(row)
       const calling = look.attentionOn(row.id, tabId)
@@ -1382,7 +1382,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             folded={folded}
             backend={showBackend ? row.backendId : undefined}
             startedBy={row.parentId && butlerKeys?.includes(row.parentId) ? butlerName : undefined}
-            worktree={ended?.ended ? `${row.worktree} · ${ended.ended.note}` : row.worktree}
+            worktree={ended ? `${row.worktree} · ${ended.ended.note}` : row.worktree}
             memory={memoryShown(machine, tabId)}
             actions={actions}
           />

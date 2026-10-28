@@ -6,8 +6,7 @@ import {
   useStore,
   openInterceptedFile,
   markRestoreLaunch,
-  consumeRestoreExit,
-  rememberLaunch
+  consumeRestoreExit
 } from '../../src/renderer/src/store'
 import {
   allEditTabs,
@@ -95,7 +94,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
     })
   })
 
-  it('gives a launch that died before its starting row ever arrived a row of its own, in the workspace it was started in', () => {
+  it('gives a launch that died before its starting row ever arrived a row of its own, in the workspace holding its folder', () => {
     useStore.setState({
       butlerWorkspace: null,
       workspaceRows: [
@@ -103,14 +102,25 @@ describe('store: claude → shell revert, only after a session actually bound', 
       ]
     })
     const s = useStore.getState()
-    s.addTab({ id: 'end2', kind: 'codex', title: 'Codex', cwd: '/w', alive: true })
-    rememberLaunch('end2', { kind: 'codex', cwd: '/w', worktree: 'fix-1' })
-    s.keepEndedTab('end2', 'exited (code 3)')
-    const t = useStore.getState().tabs.find((x) => x.id === 'end2')!
-    expect(t.ended).toMatchObject({
+    const launch = { kind: 'codex' as const, cwd: '/w', worktree: 'fix-1' }
+    s.addTab({ id: 'end2', kind: 'codex', title: 'Codex', cwd: '/w', alive: true, launch })
+    s.addTab({ id: 'end3', kind: 'claude', title: 'Claude', cwd: '/w/.wt/pr-7', alive: true })
+    expect(s.keepEndedTab('end2', 'exited (code 3)')).toBe(true)
+    expect(s.keepEndedTab('end3', 'exited (code 1)')).toBe(true)
+    const ended = (id: string): unknown => useStore.getState().tabs.find((x) => x.id === id)!.ended
+    expect(ended('end2')).toMatchObject({
       wsPath: '/w',
       row: { id: 'end2', title: 'Codex', worktree: 'fix-1', backendId: 'codex' }
     })
+    expect(ended('end3')).toMatchObject({ wsPath: '/w', row: { worktree: 'pr-7' } })
+  })
+
+  it('does not keep a dead tab it cannot place in any workspace, so it never stays open without a row', () => {
+    useStore.setState({ butlerWorkspace: null, workspaceRows: [] })
+    const s = useStore.getState()
+    s.addTab({ id: 'end4', kind: 'codex', title: 'Codex', cwd: '/elsewhere', alive: true })
+    expect(s.keepEndedTab('end4', 'exited (code 1)')).toBe(false)
+    expect(useStore.getState().tabs.find((x) => x.id === 'end4')).toMatchObject({ alive: true })
   })
 
   it('does NOT revert a claude tab that never bound a session (launch window)', () => {
