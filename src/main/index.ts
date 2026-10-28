@@ -39,6 +39,7 @@ import { sharedProcessTable, type ProcessTable } from './processTable'
 import { AgySessions, type AgyHomePick } from './agySessions'
 import {
   agyAccountEnv,
+  agyApiKeyRoute,
   agyHomeOf,
   agySignedIn,
   oneShotAgyHome,
@@ -1827,19 +1828,66 @@ async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
   return { ...env, ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' }
 }
 
+interface UtilTerminalPick {
+  account: string
+  home: string
+  banner?: string
+  warning?: string
+  kind?: 'apikey'
+}
+
+const utilTerminalPicks: Record<
+  Exclude<BackendId, 'claude'>,
+  () => UtilTerminalPick | undefined
+> = {
+  codex: () => terminalPickOf(pickCodexHome()),
+  muse: () => terminalPickOf(pickMuseHome()),
+  agy: () => {
+    const picked = terminalPickOf(pickAgyHome())
+    return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
+  }
+}
+
+function terminalPickOf(
+  picked: { account: string; home: string; banner?: string; notice?: string } | undefined
+): UtilTerminalPick | undefined {
+  return (
+    picked && {
+      account: picked.account,
+      home: picked.home,
+      banner: picked.banner,
+      warning: picked.notice
+    }
+  )
+}
+
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
-  const obj = raw as { tabId?: string; ts?: number }
+  const obj = raw as { tabId?: string; ts?: number; backend?: string }
   const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
   if (!obj.tabId || !tab) return
   const id = reqName.slice('req-'.length).replace(/\.json$/, '')
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
+  const resPath = path.join(pickDir, `res-${id}.json`)
+  const backend = backendIdOf(obj.backend)
+  if (backend && backend !== 'claude') {
+    let picked: UtilTerminalPick | undefined
+    try {
+      picked = utilTerminalPicks[backend]()
+    } catch (err) {
+      console.error(`[koloft] picking a ${backend} account for a terminal failed:`, err)
+    }
+    try {
+      writeWholeBeforeVisible(resPath, JSON.stringify(picked ?? {}))
+    } catch {}
+    pushAccounts()
+    return
+  }
   const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
   if (endpoint?.model) payload.model = endpoint.model
-  const resPath = path.join(pickDir, `res-${id}.json`)
   try {
     writeWholeBeforeVisible(resPath, JSON.stringify(payload))
   } catch {}
@@ -2071,7 +2119,7 @@ function codexSharedConfig(): string {
 // CODEX§15
 function pickCodexHome(
   resumeSessionId?: string
-): { account: string; home: string; notice?: string } | undefined {
+): { account: string; home: string; banner: string; notice?: string } | undefined {
   const views = accountViews()
   const picked = codexPicker.pick(
     views,
@@ -2083,7 +2131,12 @@ function pickCodexHome(
   if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home, notice: allLimitedNotice(picked, 'codex') }
+  return {
+    account: picked.name,
+    home,
+    banner: launchLine(picked, Date.now()),
+    notice: allLimitedNotice(picked, 'codex')
+  }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {
@@ -2215,7 +2268,7 @@ function museHomeFor(name: string): string {
 }
 
 // ADR-0030 MUSE§13
-function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
+function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string }) | undefined {
   const views = accountViews()
   const picked = musePicker.pick(
     views,
@@ -2225,14 +2278,15 @@ function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
-  return (
-    picked && {
-      account: picked.name,
-      env: museAccountEnv(museHomeFor(picked.name)),
-      banner: launchLine(picked, Date.now()),
-      notice: allLimitedNotice(picked, 'muse')
-    }
-  )
+  if (!picked) return undefined
+  const home = museHomeFor(picked.name)
+  return {
+    account: picked.name,
+    home,
+    env: museAccountEnv(home),
+    banner: launchLine(picked, Date.now()),
+    notice: allLimitedNotice(picked, 'muse')
+  }
 }
 
 async function museServeFor(
