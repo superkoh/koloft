@@ -43,6 +43,10 @@ const killTask = (TaskId: string): Record<string, unknown> => ({
   name: 'manage_task',
   args: { Action: 'kill', TaskId }
 })
+const daemon = (CommandLine: string): Record<string, unknown> => ({
+  name: 'run_command',
+  args: { CommandLine, IsDaemon: true, WaitMsBeforeAsync: 500, toolSummary: 'Dev server startup' }
+})
 
 let home: string
 let repo: string
@@ -71,6 +75,7 @@ let mirror: string
 let server: http.Server
 let apiAnswers: boolean
 let trajectory: unknown
+let backgroundTasks: unknown
 let apiCalls: { method: string; body: unknown }[]
 
 beforeAll(async () => {
@@ -86,7 +91,13 @@ beforeAll(async () => {
       if (method === 'StreamAgentStateUpdates') return res.end()
       apiCalls.push({ method, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) })
       res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(method === 'GetCascadeTrajectory' ? JSON.stringify({ trajectory }) : '{}')
+      res.end(
+        method === 'GetCascadeTrajectory'
+          ? JSON.stringify({ trajectory })
+          : method === 'ListBackgroundTasks'
+            ? JSON.stringify(backgroundTasks)
+            : '{}'
+      )
     })
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -173,6 +184,7 @@ beforeEach(() => {
   assist = undefined
   apiAnswers = false
   trajectory = undefined
+  backgroundTasks = {}
   apiCalls = []
   machine = {
     launches: [],
@@ -786,6 +798,56 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     expect(sessions.list()[0].background![0]).toMatchObject({ kind: 'agent', state: 'working' })
     hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
     await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+
+  it('shows a command agy runs as a daemon as a parked server, which agy reports fully idle, through /clear, until it exits or agy kills it; a plain background command is not one', async () => {
+    const id = await boundTab()
+    const servers = (): unknown[] =>
+      (sessions.list()[0].background ?? []).filter((item) => item.kind === 'server')
+    hook(id, 'PreToolUse', { toolCall: daemon('python3 -m http.server 8077'), stepIdx: 2 })
+    hook(id, 'PreToolUse', { toolCall: daemon('npm run watch'), stepIdx: 4 })
+    hook(id, 'PreToolUse', {
+      toolCall: { name: 'run_command', args: { CommandLine: 'sleep 25', WaitMsBeforeAsync: 500 } },
+      stepIdx: 6
+    })
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    await hooksTaken(id)
+    expect(servers()).toEqual([
+      { id: `${A}/task-2`, kind: 'server', label: 'python3 -m http.server 8077', state: 'waiting' },
+      { id: `${A}/task-4`, kind: 'server', label: 'npm run watch', state: 'waiting' }
+    ])
+    expect(runtime.statusOf(id)).toBe('waiting')
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    await vi.waitFor(() => expect(sessions.list()[0].nativeSessionId).toBe(B))
+    expect(servers()).toHaveLength(2)
+    hook(id, 'PostToolUse', {
+      conversationId: A,
+      toolCall: daemon('python3 -m http.server 8077'),
+      stepIdx: 2
+    })
+    hook(id, 'PostToolUse', {
+      conversationId: A,
+      stepIdx: 9,
+      error: '',
+      toolCall: killTask(`${A}/task-4`)
+    })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toBeUndefined()
+  })
+
+  it("drops a daemon once agy's own task list has shown it and then no longer does, as after a kill from /tasks, which no hook reports", async () => {
+    apiAnswers = true
+    const listed = { conversationId: A, task: { taskId: `${A}/task-2`, isDaemon: true } }
+    backgroundTasks = { tasks: [listed] }
+    const id = await boundTab()
+    hook(id, 'PreToolUse', { toolCall: daemon('python3 -m http.server 8077'), stepIdx: 2 })
+    await vi.waitFor(() => expect(sent('ListBackgroundTasks')).toContainEqual({ cascadeId: A }))
+    expect(sessions.list()[0].background).toHaveLength(1)
+    backgroundTasks = {}
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined(), {
+      timeout: 5000
+    })
   })
 
   it('keeps a tab that set a standing cron, which agy reports fully idle, from closing as idle until the cron has fired for the last time', async () => {

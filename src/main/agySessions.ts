@@ -189,6 +189,8 @@ interface AgyRun extends StoredRun {
   background?: BackgroundItem
   lastTool?: { name: string; args: Record<string, unknown> }
   schedules?: Set<string>
+  daemons?: Map<string, { label: string; listed: boolean }>
+  daemonsCheckedAt?: number
   waiting?: AgyAsk
   stream?: { conversationId: string; close(): void }
   compacting?: { shown: boolean; timer?: ReturnType<typeof setTimeout> }
@@ -221,6 +223,8 @@ const HELD_ELSEWHERE =
   'This Antigravity session is open in another agy window. Close it there first: two windows on one conversation lose each other’s turns.'
 // AGY§13
 const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content'])
+// AGY§13
+const DAEMON_RECHECK_MS = 2000
 
 // AGY§26
 function permissionFlags(permission: LaunchPermission): string[] {
@@ -768,7 +772,48 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       this.ticking = undefined
       return
     }
-    for (const run of this.runs.values()) if (!run.explicitStop && !run.remote) run.log.read()
+    for (const run of this.runs.values())
+      if (!run.explicitStop && !run.remote) {
+        run.log.read()
+        this.recheckDaemons(run)
+      }
+  }
+
+  // AGY§13
+  private recheckDaemons(run: AgyRun): void {
+    const daemons = run.daemons
+    const now = Date.now()
+    if (!run.api || !daemons?.size || now - (run.daemonsCheckedAt ?? 0) < DAEMON_RECHECK_MS) return
+    run.daemonsCheckedAt = now
+    const conversations = new Set([...daemons.keys()].map((id) => id.split('/')[0]))
+    void Promise.all([...conversations].map((id) => run.api!.backgroundTaskIds(id)))
+      .then((lists) => {
+        const live = new Set(lists.flatMap((ids) => [...ids]))
+        const gone: string[] = []
+        for (const [id, daemon] of daemons) {
+          if (live.has(id)) daemon.listed = true
+          else if (daemon.listed) gone.push(id)
+        }
+        this.dropDaemons(run, gone)
+      })
+      .catch(() => undefined)
+  }
+
+  private dropDaemons(run: AgyRun, ids: string[]): void {
+    if (ids.filter((id) => run.daemons?.delete(id)).length) this.publishBackground(run)
+  }
+
+  private publishBackground(run: AgyRun): void {
+    const servers: BackgroundItem[] = [...(run.daemons ?? [])].map(([id, { label }]) => ({
+      id,
+      kind: 'server',
+      label,
+      state: 'waiting'
+    }))
+    this.deps.events(run.tabId, {
+      type: 'background-changed',
+      items: [...(run.background ? [run.background] : []), ...servers]
+    })
   }
 
   // AGY§29
@@ -808,15 +853,20 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       if (last) run.shown = last.state
     }
     if (last) this.emitState(run, last.state === 'done' ? { state: 'idle' } : last)
-    this.replaySchedules(run)
+    this.replayTasks(run)
   }
 
   // AGY§13
-  private replaySchedules(run: AgyRun): void {
+  private replayTasks(run: AgyRun): void {
     for (const line of (readText(run.log.file) ?? '').split('\n')) {
-      if (!line.includes('"schedule"') && !line.includes('"manage_task"')) continue
+      if (
+        !line.includes('"schedule"') &&
+        !line.includes('"manage_task"') &&
+        !line.includes('"IsDaemon":true')
+      )
+        continue
       const read = agyLogLine(line)
-      if (read && 'hook' in read) this.trackSchedule(run, read.hook)
+      if (read && 'hook' in read) this.trackTasks(run, read.hook)
     }
   }
 
@@ -826,7 +876,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (!read) return
     if ('hook' in read && !run.info && !run.explicitStop) this.bindTo(run, read.hook.conversationId)
     if ('hook' in read) {
-      this.trackSchedule(run, read.hook)
+      this.trackTasks(run, read.hook)
       this.onHook(run, read.hook)
     } else this.onTitle(run, read.title)
     const status = run.remote && run.info && !run.explicitStop && remoteStatus(run, read)
@@ -867,6 +917,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.stream = undefined
     if (run.remote) run.remote.tmuxName = tmuxSessionName(conversationId)
     this.bind(run, known ?? { id: conversationId, cwd: run.cwd }, switched ? 'switch' : 'replace')
+    if (run.daemons?.size) this.publishBackground(run)
     if (run.schedules?.size) this.deps.runtime.setWakeupPending(run.tabId, true)
     void this.refreshHistory().catch(() => undefined)
   }
@@ -890,21 +941,31 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§13
-  private trackSchedule(run: AgyRun, hook: AgyHook): void {
+  private trackTasks(run: AgyRun, hook: AgyHook): void {
     if (run.explicitStop || run.stopping) return
     const { event, input, conversationId } = hook
     const call = record(input.toolCall)
-    if (call.name !== 'schedule' && call.name !== 'manage_task') return
     const args = record(call.args)
+    const taskId = `${conversationId}/task-${String(input.stepIdx)}`
+    if (call.name === 'run_command' && args.IsDaemon === true) {
+      if (event === 'PreToolUse') {
+        const label = argOf(args, 'CommandLine')?.slice(0, 160) ?? 'Background command'
+        ;(run.daemons ??= new Map()).set(taskId, { label, listed: false })
+        this.publishBackground(run)
+      } else if (event === 'PostToolUse') this.dropDaemons(run, [taskId])
+      return
+    }
+    if (call.name !== 'schedule' && call.name !== 'manage_task') return
     const schedules = (run.schedules ??= new Set())
     const before = schedules.size
     if (call.name === 'schedule') {
-      const taskId = `${conversationId}/task-${String(input.stepIdx)}`
       if (event === 'PreToolUse') schedules.add(taskId)
       else if (event === 'PostToolUse') schedules.delete(taskId)
     } else if (event === 'PostToolUse' && argOf(args, 'Action') === 'kill' && !input.error) {
-      const taskId = argOf(args, 'TaskId') ?? ''
-      schedules.delete(taskId.includes('/') ? taskId : `${conversationId}/${taskId}`)
+      const killed = argOf(args, 'TaskId') ?? ''
+      const id = killed.includes('/') ? killed : `${conversationId}/${killed}`
+      schedules.delete(id)
+      this.dropDaemons(run, [id])
     }
     if (schedules.size !== before) this.deps.runtime.setWakeupPending(run.tabId, schedules.size > 0)
   }
@@ -949,10 +1010,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     run.background = busy
       ? { id: 'agy-background', kind: 'agent', label: 'Background work', state: 'working' }
       : undefined
-    this.deps.events(run.tabId, {
-      type: 'background-changed',
-      items: run.background ? [run.background] : []
-    })
+    this.publishBackground(run)
   }
 
   // AGY§10

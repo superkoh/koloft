@@ -723,6 +723,41 @@ only downloaded the public release.
     it has ended.
   - Not probed: a `TimerCondition` timer cancelled by a subagent's or a task's message;
     cancelling a task from the TUI's `/tasks`; the macOS build.
+- **Daemon commands, and no Monitor.** 1.4.7 Linux arm64 in Docker with no network, a
+  fake Gemini server, the TUI in tmux with `--dangerously-skip-permissions`, every hook
+  logged, `ps` and `ListBackgroundTasks` read every few seconds, 2026-10-28.
+  - The tool list that build sent was `read_file`, `run_command`, `manage_task`,
+    `send_message`, `schedule`, `invoke_subagent`, `define_subagent`,
+    `manage_subagents`, `write_file`, `edit_file`, `search_web`, `ask_question`.
+    `run_command` takes `{CommandLine, WaitMsBeforeAsync, toolSummary, IsDaemon?}`;
+    `IsDaemon` is described as "long-running support processes that are meant to keep
+    running in the background indefinitely … (e.g., dev servers, file watchers,
+    tunnels)". Its description also says a backgrounded command notifies the model
+    when it finishes. No tool streams a running command's output to the model or wakes
+    it on a line of output, the way Claude Code's Monitor does (CC§8); `schedule`'s
+    `TimerCondition` only cancels a timer early when a message arrives.
+  - `python3 -m http.server` with `IsDaemon:true`: `PreToolUse` carries the args
+    as sent (`"IsDaemon":true`, typed), the command is a direct child of agy, the
+    turn's `Stop` says `fullyIdle:true`, the footer shows "1 task(s) · /tasks" and a
+    line "● [time] <command> running", and `ListBackgroundTasks` lists it with
+    `isDaemon:true` and the task id `<conversation id>/task-<stepIdx>`. No hook comes
+    while it runs.
+  - The same with no `IsDaemon` (`sleep 25`): `Stop` says `fullyIdle:false`; when it
+    ends, `PostToolUse` with the same `stepIdx`, then a turn agy starts by itself on a
+    `<SYSTEM_MESSAGE>` "Task id … finished with result", then `Stop` with
+    `fullyIdle:true`. A daemon that exits by itself (`sleep 10` with `IsDaemon:true`)
+    gives the same `PostToolUse` and the same turn.
+  - `manage_task {Action:"kill", TaskId}` on a daemon: `Pre`/`PostToolUse` for
+    `manage_task` with `error:""`, the process gone, `ListBackgroundTasks` empty; no
+    `PostToolUse` for the `run_command`. Without `toolSummary` the call is valid; with
+    it, it fails tool validation and no hook fires.
+  - `/tasks` opens a list ("Agent Backgrounded", the command and "running"; keys
+    "enter View output  k Kill Task  x Remove Task From List"). `k` killed the daemon:
+    the process was gone and `ListBackgroundTasks` empty within 3 s, and no hook came
+    in the next 30 s, nor with the next turn.
+  - After `/clear` the footer showed no task while the daemon kept running, and
+    `ListBackgroundTasks` with the old conversation id still listed it. Ending agy
+    (Ctrl+C twice) ended it.
 
 ## §14 Asks in the terminal and the keys that answer them
 
