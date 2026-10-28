@@ -370,10 +370,41 @@ unless marked.
 - `account`, `account-email`, `plan`, `rate-limits`, `git-worktree`, `git-changes`,
   `git-review` and `session-cost` produce invalid-item warnings; picker searches for
   account, worktree, plan and usage return no matches.
-- `five-hour-limit` and `weekly-limit` are described as **remaining** usage on the
-  primary and secondary limit. On the unauthenticated home both are omitted; the
-  picker preview's `primary 0% · secondary 0%` is sample text. What they show on a
-  signed-in home was not checked.
+- The picker describes `five-hour-limit` and `weekly-limit` as **remaining** usage on
+  the primary and secondary limit, but they pick a window by its length (below). On the
+  unauthenticated home both are omitted; the picker preview's `primary 0% · secondary
+  0%` is sample text.
+- **What `five-hour-limit` and `weekly-limit` draw.** Checked 2026-10-26 on 0.162.0, no
+  real login: a TUI started as `--remote ws://…` against a small relay in front of an
+  `app-server --listen ws://…` on a scratch `CODEX_HOME` (API-key `auth.json`, a local
+  fake Responses server). The relay answered `account/read` as a ChatGPT `pro` account,
+  answered the TUI's own `account/rateLimits/read` in section 15's shape, and pushed
+  `account/rateLimits/updated`. The PTY output was decoded with pyte.
+  - Primary `{usedPercent: 25, windowDurationMins: 300}`, secondary `{usedPercent: 60,
+    windowDurationMins: 10080}`: the footer read `Context 0% used · 5h 75% left · weekly
+    40% left · …` from the startup read, and kept it after a turn.
+  - **The footer follows the TUI's own read, which it repeats every 60 s.** The TUI sent
+    `account/rateLimits/read` at startup and then once a minute (7 reads in 390 s). When
+    the relay answered the second read with new numbers, the footer changed at that
+    minute (`5h 50% left · weekly 10% left`). A pushed `account/rateLimits/updated` with
+    new numbers did not change the footer (it raised Codex's low-limit warning below),
+    and the app-server's own push after each turn on the API-key home (`primary: null,
+    secondary: null`) did not blank it.
+  - The items pick a window by its length, not its slot: with only a primary
+    `{usedPercent: 85, windowDurationMins: 10080}` (the shape section 15 measured on a Pro
+    login), `weekly-limit` alone drew `weekly 15% left` and `five-hour-limit` alone drew
+    nothing.
+  - `account/rateLimits/read` answering `-32600` (signed out, or an API-key login): both
+    omitted, no warning, the turn ran.
+  - Neither item takes an "Ignored invalid status line items" warning. Below 25% left,
+    Codex adds its own "Heads up, you have less than 25% of your weekly limit left"
+    warning and a line above the composer; that comes with the data, not with the items.
+  - Koloft's list `context-used, five-hour-limit, weekly-limit, git-branch,
+    codex-version, model-with-reasoning, …` in a folder with no branch: at 100 columns
+    both limits stayed and `current-dir` was cut with an ellipsis; at 80 columns the
+    model name was cut too (`· probe-model defau…`).
+  - `x-codex-primary-*` / `x-codex-secondary-*` headers on a custom provider's responses
+    (API-key login) did not fill either item.
 - `branch-changes` counts **committed** changes against the default branch only: an
   uncommitted edit showed `No changes`, the same edit committed showed `+2 -0`. It is
   not a substitute for working-directory change counts.
