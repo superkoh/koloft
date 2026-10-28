@@ -80,6 +80,7 @@ export function elementLabel(node: { localName: string; attributes?: string[] })
   return node.localName + (id ? `#${id}` : '') + classes.map((c) => `.${c}`).join('')
 }
 
+// CC§18 CODEX§23
 export function pickText(p: Omit<PickedElement, 'png'>, picture: string | null): string {
   const round = (n: number): number => Math.round(n)
   const html =
