@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/headless'
 import type { CodexLimits, CodexLimitWindow } from '@shared/types'
 import { museShowsItsInputBox } from './museSessions'
 import { typeKeys } from './typeKeys'
+import type { PtyManager } from './ptyManager'
 
 // MUSE§13
 const QUOTA_ARGS = ['--no-session-log', '--trust-workspace']
@@ -64,7 +65,7 @@ export function readMuseQuota(
   binary: string,
   env: NodeJS.ProcessEnv,
   cwd: string,
-  started: (proc: pty.IPty) => void
+  ptys: Pick<PtyManager, 'track' | 'hangUp'>
 ): Promise<CodexLimits | undefined> {
   return new Promise((resolve) => {
     const term = new Terminal({ cols: COLS, rows: ROWS })
@@ -75,7 +76,7 @@ export function readMuseQuota(
       cwd,
       env
     })
-    started(proc)
+    ptys.track(proc)
     let typedAt = 0
     let settled = false
     const finish = (limits: CodexLimits | undefined): void => {
@@ -83,7 +84,7 @@ export function readMuseQuota(
       settled = true
       clearInterval(poll)
       clearTimeout(deadline)
-      proc.kill()
+      ptys.hangUp(proc)
       term.dispose()
       resolve(limits)
     }

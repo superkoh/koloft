@@ -226,6 +226,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await expect
         .poll(() => processAlive(pid), { timeout: CLOSED_PROGRAM_ENDS_WITHIN_MS })
         .toBe(false)
+      await expect(wsRows(page, 'ws-a')).toHaveCount(1)
     } finally {
       if (pid) killSession(pid, env)
     }

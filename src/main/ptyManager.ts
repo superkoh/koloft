@@ -65,6 +65,25 @@ for p in "$@"; do
   [ "$(ps -o ppid= -p "$p" | tr -d ' ')" = "$k" ] && kill -9 -- "-$p"
 done`
 
+// PLATFORM§41
+function killLaterIfStillOurs(pids: number[]): void {
+  if (!pids.length) return
+  spawn(
+    '/bin/sh',
+    [
+      '-c',
+      KILL_IF_STILL_OURS,
+      'sh',
+      String(process.pid),
+      String(HANGUP_GRACE_SECONDS),
+      ...pids.map(String)
+    ],
+    { detached: true, stdio: 'ignore' }
+  )
+    .on('error', () => {})
+    .unref()
+}
+
 const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
 
 // PLATFORM§2
@@ -229,7 +248,7 @@ export class PtyManager extends EventEmitter {
       remoteHost: args.remoteHost
     }
     this.ptys.set(id, handle)
-    this.killAtQuitIfStillRunning(proc)
+    this.track(proc)
 
     let titlePoll: ReturnType<typeof setInterval> | undefined
 
@@ -378,25 +397,20 @@ export class PtyManager extends EventEmitter {
   kill(id: string): void {
     const h = this.ptys.get(id)
     if (h) {
-      try {
-        h.proc.kill()
-      } catch {}
+      this.hangUp(h.proc)
       this.ptys.delete(id)
-      this.killLaterIfHangupIgnored(h.proc)
     }
   }
 
-  // PLATFORM§41
-  private killLaterIfHangupIgnored(proc: pty.IPty): void {
-    setTimeout(() => {
-      if (!this.running.has(proc)) return
-      try {
-        process.kill(-proc.pid, 'SIGKILL')
-      } catch {}
-    }, HANGUP_GRACE_SECONDS * 1000).unref()
+  // PLATFORM§29
+  hangUp(proc: pty.IPty): void {
+    try {
+      proc.kill()
+    } catch {}
+    killLaterIfStillOurs([proc.pid])
   }
 
-  killAtQuitIfStillRunning(proc: pty.IPty): void {
+  track(proc: pty.IPty): void {
     this.running.add(proc)
     proc.onExit(() => this.running.delete(proc))
   }
@@ -424,15 +438,7 @@ export class PtyManager extends EventEmitter {
 
   // PLATFORM§41
   killWhatOutlivesTheQuit(): void {
-    const pids = [...this.running].map((proc) => String(proc.pid))
-    if (!pids.length) return
-    spawn(
-      '/bin/sh',
-      ['-c', KILL_IF_STILL_OURS, 'sh', String(process.pid), String(HANGUP_GRACE_SECONDS), ...pids],
-      { detached: true, stdio: 'ignore' }
-    )
-      .on('error', () => {})
-      .unref()
+    killLaterIfStillOurs([...this.running].map((proc) => proc.pid))
   }
 
   killUtilOrphans(): void {
