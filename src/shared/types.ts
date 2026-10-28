@@ -1175,6 +1175,8 @@ export interface KoloftApi {
     clearData(): Promise<void>
     openExternal(url: string): void
     toggleDevTools(guestId: number): void
+    pickElement(guestId: number, sessionTabId: string): Promise<string | null>
+    stopPick(guestId: number): void
   }
   extensions: {
     list(): Promise<ExtensionInfo[]>

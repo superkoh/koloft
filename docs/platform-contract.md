@@ -705,6 +705,23 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **`webContents.debugger` and the DevTools window can hold one guest at the same time**,
   whichever comes first, and neither is thrown off (measured on Electron 43 /
   Chromium 150).
+- **One `debugger.attach` per guest; two users share it.** A second `attach` on the same
+  guest throws "Debugger is already attached to the target". Measured 2026-10-27,
+  Electron 43.8.1 / Chromium 150.0.7871.250, in the built app: with a real Playwright
+  client attached through Koloft's relay, main ran a whole element pick (below) through
+  the same attachment, with no attach or detach of its own; afterwards the client's
+  click, an element handle taken before the pick, a locator, a screenshot and a
+  navigation all still worked. The pick's `Overlay.*` events reach the client too, and
+  Playwright ignores them.
+- **Picking an element in a guest** (same measurement, plus a scratch main script with a
+  `<webview>` in a `show: false` window, input sent with `Input.dispatchMouseEvent`):
+  `Overlay.setInspectMode {mode: 'searchForNode'}` outlines the element under the mouse
+  and a click sends `Overlay.inspectNodeRequested {backendNodeId}`; the page's own click
+  handler ran 0 times. `CSS.getComputedStyleForNode` gave 481 properties. `DOM.getBoxModel`
+  is in viewport coordinates while the `Page.captureScreenshot` clip is in page
+  coordinates: with the page scrolled 1040 px, a clip straight from the box model came
+  back as an empty transparent picture; adding `Page.getLayoutMetrics`'
+  `cssVisualViewport.pageX/pageY` gave the element.
 
 ## §17 Playwright as a CDP client
 

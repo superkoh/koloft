@@ -339,6 +339,21 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
     })
 
+    it("saves a picked element's picture on the machine and answers with its absolute path there, deleting pictures older than a day", async () => {
+      const picks = path.join(home, '.koloft', 'picks')
+      fs.mkdirSync(picks, { recursive: true })
+      const old = path.join(picks, 'old.png')
+      fs.writeFileSync(old, 'x')
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+      fs.utimesSync(old, twoDaysAgo, twoDaysAgo)
+
+      const saved = await machine().savePick('tab-1-5.png', Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+
+      expect(saved).toBe(path.join(fs.realpathSync(picks), 'tab-1-5.png'))
+      expect([...fs.readFileSync(saved)]).toEqual([0x89, 0x50, 0x4e, 0x47])
+      expect(fs.readdirSync(picks)).toEqual(['tab-1-5.png'])
+    })
+
     it('measures how far the checkout is behind origin, fetching in the same command only when asked, and fast-forwards it in one command that answers with the checkout as it now stands', async () => {
       const publisher = withOrigin()
       publishTwo(publisher)

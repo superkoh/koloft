@@ -4,7 +4,16 @@ import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
-import { addressValue, BROWSER, newWebTab, typeInAddressBar } from './helpers/browser'
+import {
+  addressValue,
+  BROWSER,
+  newWebTab,
+  openPickPage,
+  PICKED_LABEL,
+  PICK_PAGE,
+  pickIntoSession,
+  typeInAddressBar
+} from './helpers/browser'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
 import {
   type E2EEnv,
@@ -443,6 +452,44 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expectOnePromptFromTheComment(() => claudePrompts(transcript), head, note)
     } finally {
       await quitAndClose(app)
+    }
+  })
+
+  test('BP-07: an element picked in a remote session’s web tab reaches claude on the machine as one unsent paste, its picture copied to the machine and named by the machine’s own path', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await row.click()
+      const tabId = await row.getAttribute('data-tab-id')
+      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+      const transcript = transcriptFile(
+        machineHome(env),
+        dir,
+        (await boundSessionId(page, tabId)) ?? ''
+      )
+      const guest = await openPickPage(app, page, server.page('/pick', PICK_PAGE))
+
+      await pickIntoSession(page, guest, '#buy', ' BP-07 remote')
+      const fromPick = (): string[] => claudePrompts(transcript).filter((p) => p.includes('BP-07'))
+      await expect.poll(fromPick, { timeout: 90_000 }).toHaveLength(1)
+      const [prompt] = fromPick()
+      expect(prompt).toContain(`Element: ${PICKED_LABEL}`)
+      const picture = /^Picture: (.+)$/m.exec(prompt)?.[1] ?? ''
+      const picks = fs.realpathSync(path.join(machineHome(env), '.koloft', 'picks'))
+      expect(path.dirname(picture)).toBe(picks)
+      expect([...fs.readFileSync(picture).subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47])
+      const localPicks = path.join(env.userData, 'picks')
+      expect(fs.existsSync(localPicks) ? fs.readdirSync(localPicks) : [], localPicks).toEqual([])
+    } finally {
+      await quitAndClose(app)
+      await server.close()
     }
   })
 

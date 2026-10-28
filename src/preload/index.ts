@@ -332,7 +332,10 @@ const api: KoloftApi = {
     certProceed: (url) => ipcRenderer.invoke(CH.browser.certProceed, url),
     clearData: () => ipcRenderer.invoke(CH.browser.clearData),
     openExternal: (url) => ipcRenderer.send(CH.browser.openExternal, url),
-    toggleDevTools: (guestId) => ipcRenderer.send(CH.browser.devtools, guestId)
+    toggleDevTools: (guestId) => ipcRenderer.send(CH.browser.devtools, guestId),
+    pickElement: (guestId, sessionTabId) =>
+      ipcRenderer.invoke(CH.browser.pickElement, guestId, sessionTabId),
+    stopPick: (guestId) => ipcRenderer.send(CH.browser.pickStop, guestId)
   },
   extensions: {
     list: () => ipcRenderer.invoke(CH.ext.list),

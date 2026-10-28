@@ -369,7 +369,8 @@
   color: var(--fg-dim);
   cursor: pointer;
 }
-.bnav:hover {
+.bnav:hover,
+.bnav.on {
   color: var(--accent);
 }
 .bnav.dis {

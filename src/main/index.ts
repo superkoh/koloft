@@ -340,6 +340,7 @@ import {
   relayAttached,
   type RelayDeps
 } from './cdpRelay'
+import { pickElement, pickText, savePickHere, stopPick } from './elementPick'
 import { compositionDone, hostComposing } from './hostComposition'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
 import {
@@ -5732,6 +5733,27 @@ function registerIpc(): void {
     if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return
     if (guest.isDevToolsOpened()) guest.closeDevTools()
     else guest.openDevTools({ mode: 'detach', activate: !BACKGROUND_TEST })
+  })
+  ipcMain.handle(CH.browser.pickElement, async (_e, id: unknown, tabId: unknown) => {
+    if (typeof id !== 'number' || typeof tabId !== 'string') return null
+    const guest = webContents.fromId(id)
+    if (!guest || guest.getType() !== 'webview') return null
+    if (guest.session !== session.fromPartition(BROWSER_PARTITION)) return null
+    const picked = await pickElement(guest)
+    if (!picked) return null
+    const name = `${tabId}-${Date.now()}.png`
+    const machine = machineOfTab(tabId)
+    const picture = picked.png
+      ? await (
+          machine
+            ? hosts.machine(machine).savePick(name, picked.png)
+            : savePickHere(path.join(app.getPath('userData'), 'picks'), name, picked.png)
+        ).catch(() => null)
+      : null
+    return pickText(picked, picture)
+  })
+  ipcMain.on(CH.browser.pickStop, (_e, id: unknown) => {
+    if (typeof id === 'number') stopPick(id)
   })
   ipcMain.handle(CH.ext.list, () =>
     listExtensions().map(({ id, name, version, enabled }) => ({ id, name, version, enabled }))

@@ -44,6 +44,7 @@ export const BROWSER = {
   permissionDeny: '.wb-panel .bperm .bperm-b:not(.pri)',
   permissionRefused: '.wb-panel .bperm.refused',
   downloadButton: '.wb-panel .baddr [aria-label="Downloads"]',
+  pickButton: '.wb-panel .baddr [aria-label="Pick an element"]',
   downloadPanel: '.wb-panel .bdl',
   downloadRow: '.wb-panel .bdl .bdl-row',
   downloadClear: '.wb-panel .bdl .bdl-clear',
@@ -342,6 +343,54 @@ export async function rendererZoomFactor(app: ElectronApplication): Promise<numb
     const win = BrowserWindow.getAllWindows()[0]
     return win ? win.webContents.getZoomFactor() : 0
   })
+}
+
+export const PICK_PAGE =
+  '<!doctype html><title>Pick</title><div style="height:1500px">top</div>' +
+  '<button id="buy" class="primary" style="width:200px;height:60px;border:0;background:rgb(10,120,250)">Buy</button>' +
+  '<script>window.clicks=0;document.getElementById("buy").onclick=()=>window.clicks++</script>'
+export const PICKED_LABEL = 'button#buy.primary, 200 × 60 px'
+export const INSPECT_MODE_SETTLES_MS = 1000
+
+export async function openPickPage(
+  app: ElectronApplication,
+  page: Page,
+  url: string
+): Promise<Page> {
+  await newWebTab(page)
+  await typeInAddressBar(page, url)
+  const guest = await guestByUrl(app, url)
+  await guest.locator('#buy').scrollIntoViewIfNeeded()
+  return guest
+}
+
+export async function clickInPickMode(page: Page, guest: Page, selector: string): Promise<void> {
+  const button = page.locator(BROWSER.pickButton)
+  await expect(button).toBeEnabled({ timeout: 60_000 })
+  await button.click()
+  await expect(button).toHaveAttribute('aria-pressed', 'true')
+  await page.waitForTimeout(INSPECT_MODE_SETTLES_MS)
+  const box = await guest.locator(selector).boundingBox()
+  if (!box) throw new Error(`${selector} has no box`)
+  await guest.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await guest.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await expect(button).toHaveAttribute('aria-pressed', 'false', { timeout: 20_000 })
+}
+
+export async function pickIntoSession(
+  page: Page,
+  guest: Page,
+  selector: string,
+  typedAfter: string
+): Promise<void> {
+  await clickInPickMode(page, guest, selector)
+  await expect
+    .poll(() => page.evaluate(() => !!document.activeElement?.closest('.term-island')), {
+      timeout: 20_000
+    })
+    .toBe(true)
+  await page.keyboard.type(typedAfter)
+  await page.keyboard.press('Enter')
 }
 
 export async function openViaAgent(page: Page, target: string): Promise<void> {
