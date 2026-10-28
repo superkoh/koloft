@@ -258,7 +258,7 @@ Working principles:
   - Grep or read only paths you saw; else grep -rl 'word' src.
   - macOS strings -o is offsets: use > file.
   - Read stops at 25,000 tokens (~50 KB), not lines: wc -c a big file, slice it.
-  - grep is ugrep and fails on {0,N} spans: use /usr/bin/grep -o -E, N ≤ 255.
+  - {0,N} spans: grep (ugrep) fails; /usr/bin/grep -o -E fails above 255 too.
   - Findings go in your final message; the harness refuses report files.
   ```
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
