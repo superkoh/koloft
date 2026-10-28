@@ -28,7 +28,7 @@ import {
   crossSessionLine,
   type ModeClass
 } from '../crossSessionMessage'
-import { discordIdsFile } from '../hooks'
+import { discordIdsFile, noteDiscordSaid } from '../hooks'
 import {
   askHow,
   claudeDialog,
@@ -392,8 +392,11 @@ export class DiscordRelay {
     if (item.command) return dest.typeCommand(tab, text)
     const backend = this.d.backendOf(tab)
     const route = backend && messagingOf(backend, false)
-    if (route === 'queue') return this.d.queue(tab, text, item.clientId)
     if (route === 'peerLine') return this.sendAsPeer(tab, text, item.clientId)
+    // ADR-0028 AGY§16
+    if (backend !== 'agy' && text.startsWith(DISCORD_PREFIX))
+      noteDiscordSaid(this.d.regDir, tab, text)
+    if (route === 'queue') return this.d.queue(tab, text, item.clientId)
     await this.d.type(tab, [text, '\r'])
   }
 

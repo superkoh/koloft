@@ -39,6 +39,7 @@ import { sharedProcessTable, type ProcessTable } from './processTable'
 import { AgySessions, type AgyHomePick } from './agySessions'
 import {
   agyAccountEnv,
+  agyApiKeyRoute,
   agyHomeOf,
   agySignedIn,
   oneShotAgyHome,
@@ -62,6 +63,7 @@ import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { museConfigHome, museHome } from './museSessionLog'
 import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
+import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
 import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from './storedSessions'
 import type { SessionEvent } from '@shared/sessionEvent'
@@ -402,6 +404,7 @@ import type {
   CodexLimits,
   CodexResetOutcome,
   SignInResult,
+  SignInFailure,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
   BrowserDownload,
@@ -1833,19 +1836,66 @@ async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
   return { ...env, ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' }
 }
 
+interface UtilTerminalPick {
+  account: string
+  home: string
+  banner?: string
+  warning?: string
+  kind?: 'apikey'
+}
+
+const utilTerminalPicks: Record<
+  Exclude<BackendId, 'claude'>,
+  () => UtilTerminalPick | undefined
+> = {
+  codex: () => terminalPickOf(pickCodexHome()),
+  muse: () => terminalPickOf(pickMuseHome()),
+  agy: () => {
+    const picked = terminalPickOf(pickAgyHome())
+    return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
+  }
+}
+
+function terminalPickOf(
+  picked: { account: string; home: string; banner?: string; notice?: string } | undefined
+): UtilTerminalPick | undefined {
+  return (
+    picked && {
+      account: picked.account,
+      home: picked.home,
+      banner: picked.banner,
+      warning: picked.notice
+    }
+  )
+}
+
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
-  const obj = raw as { tabId?: string; ts?: number }
+  const obj = raw as { tabId?: string; ts?: number; backend?: string }
   const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
   if (!obj.tabId || !tab) return
   const id = reqName.slice('req-'.length).replace(/\.json$/, '')
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
+  const resPath = path.join(pickDir, `res-${id}.json`)
+  const backend = backendIdOf(obj.backend)
+  if (backend && backend !== 'claude') {
+    let picked: UtilTerminalPick | undefined
+    try {
+      picked = utilTerminalPicks[backend]()
+    } catch (err) {
+      console.error(`[koloft] picking a ${backend} account for a terminal failed:`, err)
+    }
+    try {
+      writeWholeBeforeVisible(resPath, JSON.stringify(picked ?? {}))
+    } catch {}
+    pushAccounts()
+    return
+  }
   const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
   if (endpoint?.model) payload.model = endpoint.model
-  const resPath = path.join(pickDir, `res-${id}.json`)
   try {
     writeWholeBeforeVisible(resPath, JSON.stringify(payload))
   } catch {}
@@ -2086,7 +2136,7 @@ function codexSharedConfig(): string {
 // CODEX§15
 function pickCodexHome(
   resumeSessionId?: string
-): { account: string; home: string; notice?: string } | undefined {
+): { account: string; home: string; banner: string; notice?: string } | undefined {
   const views = accountViews()
   const picked = codexPicker.pick(
     views,
@@ -2098,7 +2148,12 @@ function pickCodexHome(
   if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
   const home = codexHomeOf(app.getPath('userData'), picked.name)
   prepareCodexHome(home, codexSharedConfig())
-  return { account: picked.name, home, notice: allLimitedNotice(picked, 'codex') }
+  return {
+    account: picked.name,
+    home,
+    banner: launchLine(picked, Date.now()),
+    notice: allLimitedNotice(picked, 'codex')
+  }
 }
 
 async function probeCodexAccount(name: string): Promise<void> {
@@ -2139,7 +2194,42 @@ function probeCodexAccounts(): Promise<void> {
   return codexProbeRound
 }
 
-const signInPtys = new Map<string, { kind: SignInFolderKind; name: string }>()
+interface HomeSignInTab {
+  kind: SignInFolderKind
+  name: string
+  again: boolean
+  output: SignInOutput
+}
+const signInPtys = new Map<string, HomeSignInTab>()
+let signInFailure: SignInFailure | null = null
+
+function setSignInFailure(f: SignInFailure | null): void {
+  signInFailure = f
+  sendToRenderer(CH.accounts.signInFailure, f)
+}
+
+function forgetAccount(name: string, kind: AccountKind): void {
+  removeAccountMeta(name, kind)
+  usageViews.delete(viewKey(name, kind))
+  picker.forget(kind, name)
+  pushAccounts()
+}
+
+async function endHomeSignIn(s: HomeSignInTab): Promise<void> {
+  const probeAnswered = await probeHomeAccount[s.kind](s.name).then(
+    () => !usageViews.get(viewKey(s.name, s.kind))?.probeError,
+    () => false
+  )
+  const account = findAccount(s.name, s.kind)
+  if (!probeAnswered || !account || account.status === 'ok') return
+  if (!s.again) forgetAccount(s.name, s.kind)
+  setSignInFailure({
+    backend: BACKEND_OF_SIGN_IN_FOLDER[s.kind],
+    name: s.name,
+    again: s.again,
+    tail: s.output.tail()
+  })
+}
 
 function noteHomeAccount(name: string, kind: SignInFolderKind): void {
   const acct = findAccount(name, kind)
@@ -2200,18 +2290,25 @@ async function signInToHome(
       : 'invalid-name'
     : validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
+  if (signInFailure) setSignInFailure(null)
   const login = await homeLogin[kind](name)
   noteHomeAccount(name, kind)
   const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
   const args = (login.args ?? ['login']).map(shq).join(' ')
+  // PLATFORM§63
   const signIn = (quotedBinary: string): string =>
-    `${assignments.join(' ')} ${quotedBinary} ${args} && exit`
+    `exec env ${assignments.join(' ')} ${quotedBinary} ${args}`
   const tab = homeShellTab(
-    login.binary
-      ? signIn(shq(login.binary))
-      : installThen(BACKEND_OF_SIGN_IN_FOLDER[kind], signIn, process.env.KOLOFT_TEST_TOOL_INSTALLER)
+    `${MARK_OUTPUT_START}; ` +
+      (login.binary
+        ? signIn(shq(login.binary))
+        : installThen(
+            BACKEND_OF_SIGN_IN_FOLDER[kind],
+            signIn,
+            process.env.KOLOFT_TEST_TOOL_INSTALLER
+          ))
   )
-  signInPtys.set(tab.tabId, { kind, name })
+  signInPtys.set(tab.tabId, { kind, name, again, output: new SignInOutput() })
   if (!login.binary) toolInstallPtys.add(tab.tabId)
   return { ok: true, ...tab }
 }
@@ -2230,7 +2327,7 @@ function museHomeFor(name: string): string {
 }
 
 // ADR-0030 MUSE§13
-function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
+function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string }) | undefined {
   const views = accountViews()
   const picked = musePicker.pick(
     views,
@@ -2240,14 +2337,15 @@ function pickMuseHome(resumeSessionId?: string): MuseHomePick | undefined {
   const stale = (a: AccountView): boolean =>
     Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
   if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
-  return (
-    picked && {
-      account: picked.name,
-      env: museAccountEnv(museHomeFor(picked.name)),
-      banner: launchLine(picked, Date.now()),
-      notice: allLimitedNotice(picked, 'muse')
-    }
-  )
+  if (!picked) return undefined
+  const home = museHomeFor(picked.name)
+  return {
+    account: picked.name,
+    home,
+    env: museAccountEnv(home),
+    banner: launchLine(picked, Date.now()),
+    notice: allLimitedNotice(picked, 'muse')
+  }
 }
 
 async function museServeFor(
@@ -2792,6 +2890,7 @@ app.whenReady().then(() => {
     // CC§12
     if (sleepers.has(d.id)) return
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
+    if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
     watchForWorktreeRemoval(d.id, d.data)
     pendingData.set(d.id, (pendingData.get(d.id) ?? '') + d.data)
     if (!flushTimer) flushTimer = setTimeout(flushData, PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
@@ -2843,10 +2942,10 @@ app.whenReady().then(() => {
       sessionBackends.forgetAvailability()
       sendToRenderer(CH.sessions.toolsChanged)
     }
-    const signedIn = signInPtys.get(e.id)
-    if (signedIn) {
+    const signingIn = signInPtys.get(e.id)
+    if (signingIn) {
       signInPtys.delete(e.id)
-      void probeHomeAccount[signedIn.kind](signedIn.name)
+      void endHomeSignIn(signingIn)
     }
     if (teardownKilledPtys.delete(e.id)) {
       flowGates.get(e.id)?.reset()
@@ -5375,10 +5474,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.accounts.remove, async (_e, name: string, kind: AccountKind) => {
     // CODEX§15 MUSE§13
     if (!SIGN_IN_FOLDER_KINDS.includes(kind)) await keychainDelete(kind, name)
-    removeAccountMeta(name, kind)
-    usageViews.delete(viewKey(name, kind))
-    picker.forget(kind, name)
-    pushAccounts()
+    forgetAccount(name, kind)
   })
   ipcMain.handle(CH.accounts.toggle, (_e, name: string, kind: AccountKind, enabled: boolean) => {
     setAccountEnabled(name, kind, enabled === true)
@@ -5403,6 +5499,8 @@ function registerIpc(): void {
         ? signInToHome(kind, name, again === true)
         : { ok: false, error: 'invalid-name' }
   )
+  ipcMain.handle(CH.accounts.signInFailure, () => signInFailure)
+  ipcMain.on(CH.accounts.dismissSignInFailure, () => setSignInFailure(null))
   ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
   ipcMain.on(CH.accounts.cancelLogin, () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)

@@ -34,6 +34,24 @@ describe('ProgramStatusParser (OSC 7501, MUSE§3)', () => {
     })
   })
 
+  // AGY§10
+  it("keeps a turn's end however long the reply its done frame carries and however the frame is split, cutting only the message", () => {
+    const reply = 'A long reply. '.repeat(30_000)
+    const msg = Buffer.from(reply, 'utf8').toString('base64')
+    for (const term of ['\x07', `${ESC}\\`]) {
+      const frame = `${ESC}]7501;state=done:app=antigravity:msg=${msg}${term}`
+      for (const cuts of [[frame.length - 1], [5000, 300_000, frame.length - 1]]) {
+        const p = new ProgramStatusParser()
+        const bounds = [0, ...cuts, frame.length]
+        const states = bounds
+          .slice(1)
+          .flatMap((end, k) => p.push(frame.slice(bounds[k], end)).states)
+        expect(states.map((s) => s.state)).toEqual(['done'])
+        expect(reply.startsWith(states[0].msg?.slice(0, 1000) ?? '-')).toBe(true)
+      }
+    }
+  })
+
   it("ignores a background worker's frame and every other OSC", () => {
     const p = new ProgramStatusParser()
     expect(p.push(`${ESC}]7501;state=working:app=muse:id=w1\x07${ESC}]0;title\x07`)).toEqual({

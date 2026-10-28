@@ -1702,7 +1702,46 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
-  test('a Codex sign-in tab still waiting for the browser names itself above the terminal, and its Cancel closes it and brings Settings ▸ Accounts back', async ({
+  test('a Codex sign-in that worked but whose first check after it fails keeps the new account’s row and says nothing failed, and a later Refresh usage shows its weekly use', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    const readFails = path.join(env.home, 'fake-codex-account-read-fails')
+    const workHome = path.join(env.userData, 'codex-homes', 'work')
+    const signedInReadFailed = (): boolean =>
+      fakeCodexLog<{ codexHome: string; signedIn: boolean }>(
+        env,
+        'fake-codex-account-read-failures.jsonl'
+      ).some((r) => r.codexHome === workHome && r.signedIn)
+    fs.writeFileSync(readFails, '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in to Codex' }).click()
+      await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+      await expect.poll(signedInReadFailed, { timeout: 30_000 }).toBe(true)
+      fs.rmSync(readFails)
+
+      await page.getByRole('button', { name: 'Refresh usage' }).click()
+      const row = page.locator('.acct-row', {
+        has: page.locator('.acct-name', { hasText: /^work$/ })
+      })
+      await expect(row.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('30%', {
+        timeout: 30_000
+      })
+      await expect(page.locator('.acct-login-state.bad')).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
+  test('a Codex sign-in tab still waiting for the browser names itself above the terminal, and its Cancel closes it and brings Settings ▸ Accounts back saying the sign-in did not complete, with no row left for the new account, and Try again opens the tab again', async ({
     env
   }) => {
     installCodex(env)
@@ -1722,6 +1761,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       const bar = page.locator('.term-island > .wb-bar')
       await expect(bar.locator('.wb-title')).toHaveText('Codex sign in: work', { timeout: 20_000 })
       await snap(page, 'codex-sign-in-tab-bar')
+      await expect(page.locator('.term-wrap:visible .xterm')).toContainText(
+        'Open this page to sign in',
+        { timeout: 20_000 }
+      )
       await bar.getByRole('button', { name: 'Cancel' }).click()
 
       await expect(bar).toHaveCount(0)
@@ -1731,6 +1774,70 @@ test.describe('Codex sessions through the real method chooser, process transport
         { timeout: 20_000 }
       )
       expect(fs.existsSync(path.join(env.userData, 'codex-homes', 'work', 'auth.json'))).toBe(false)
+      const dialog = page.locator('.acct-add')
+      await expect(dialog.locator('.acct-login-state.bad')).toContainText(
+        'Sign-in did not complete.',
+        { timeout: 20_000 }
+      )
+      await expect(dialog.locator('.acct-login-tail')).toHaveText(
+        'Open this page to sign in: https://auth.openai.com/oauth/authorize?fake=1'
+      )
+      await expect(page.locator('.acct-name', { hasText: /^work$/ })).toHaveCount(0)
+      await snap(page, 'codex-sign-in-did-not-complete')
+
+      await dialog.getByRole('button', { name: 'Try again' }).click()
+      await expect(bar.locator('.wb-title')).toHaveText('Codex sign in: work', { timeout: 20_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
+  test('a Codex Sign in again that is cancelled says the sign-in did not complete and keeps the account’s row, still asking to sign in again', async ({
+    env
+  }) => {
+    installCodex(env)
+    fs.rmSync(path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT, 'auth.json'))
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8')
+    ) as { accounts: Record<string, unknown>[] }
+    seedSettings(env, {
+      hintsOff: true,
+      accounts: settings.accounts.map((a) =>
+        a.name === E2E_CODEX_ACCOUNT ? { ...a, status: 'expired' } : a
+      )
+    })
+    fs.writeFileSync(path.join(env.home, 'fake-codex-login-waits'), '')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      const row = page.locator('.acct-row', {
+        has: page.locator('.acct-name', { hasText: /^e2e-codex$/ })
+      })
+      await row.getByRole('button', { name: 'Sign in again' }).click()
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+
+      const bar = page.locator('.term-island > .wb-bar')
+      await expect(bar.locator('.wb-title')).toHaveText(`Codex sign in: ${E2E_CODEX_ACCOUNT}`, {
+        timeout: 20_000
+      })
+      await bar.getByRole('button', { name: 'Cancel' }).click()
+
+      const dialog = page.locator('.acct-add')
+      await expect(dialog.locator('.acct-add-title')).toHaveText(
+        `Sign in again ${E2E_CODEX_ACCOUNT}`,
+        { timeout: 20_000 }
+      )
+      await expect(dialog.locator('.acct-login-state.bad')).toContainText(
+        'Sign-in did not complete.'
+      )
+      await expect(row.getByRole('button', { name: 'Sign in again' })).toBeVisible()
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect(row).toBeVisible()
     } finally {
       await quitAndClose(app)
     }

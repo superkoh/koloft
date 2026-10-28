@@ -198,6 +198,33 @@ The completed **spawn tool call** is not completion of the **spawned child**.
 The parent-child relationship comes from the collab item, not from treating every
 other thread on the wire as a child. Temporary title threads share that wire too.
 
+### No Monitor; a server left in a background terminal
+
+**Measured 2026-10-28, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`),
+macOS, `codex app-server --stdio` driven by a Node script, a fresh `CODEX_HOME` whose model
+was a fake Responses-API server on localhost, `sandbox_mode = "danger-full-access"`, no
+login, 1 run.**
+
+- `codex features list` has no Monitor-like feature, and section 32's tool list has no
+  tool that wakes the model on a running command's output; a command that outlives its
+  turn ends with `item/completed` and starts no turn. The thread's only way to wait is
+  `clock.sleep` inside a turn (section 32).
+- The fake model answered with one `exec_command {cmd: "python3 -m http.server 18799",
+  yield_time_ms: 1000}`, then a message. The item was `/bin/zsh -lc 'python3 -m
+  http.server 18799'`, `inProgress`, `processId` `"71962"`; the turn completed with it
+  still `inProgress`. `ps` then showed the server as a direct child of the app-server
+  pid, its command line the interpreter's own file (`…/Python.app/Contents/MacOS/Python
+  -m http.server 18799`, as in MUSE§8).
+- `thread/backgroundTerminals/list {threadId}` (an experimental method: it is in
+  `codex app-server generate-json-schema --experimental` only, and `initialize` sent
+  `capabilities.experimentalApi: true`) answered one entry `{itemId: "call_1", processId:
+  "71962", command: "python3 -m http.server 18799", cwd, osPid: null, cpuPercent: null,
+  rssKb: null}`: no OS PID on macOS.
+- `thread/backgroundTerminals/clean {threadId}` answered `{}`, the item then completed
+  `failed` with `exitCode: -1`, the process was gone and the list was empty. The binary's
+  strings hold "thread/backgroundTerminals/clean failed in TUI", "/ps to view" and
+  "/stop to close"; the TUI's `/ps` and `/stop` were not run.
+
 ### Schema limits
 
 The 0.153.4 generated schemas declare:
@@ -1003,6 +1030,13 @@ plugins. Each run sent `initialize`, `initialized`, `account/read` and
   `<CODEX_HOME>/sessions/…`, so a session lives in the home it was started in, and only
   an app-server on that home can list, read or resume it.
 
+**An API-key home has an account but no rate limits.** Checked 2026-10-28 with Codex CLI
+0.162.0, no model turn: a Node script ran `codex login --with-api-key` (a made-up key on
+stdin) in a throwaway `HOME` and `CODEX_HOME`, then `codex app-server` on stdio there.
+`account/read` answered `{account: {type: "apiKey"}, requiresOpenaiAuth: true}`;
+`thread/start` answered a new thread; `account/rateLimits/read` answered error `-32600`,
+"chatgpt authentication required to read rate limits".
+
 **A shared config.toml.** Same day and version, no model: a home whose `config.toml` was
 a symbolic link to a file elsewhere answered `config/read` with the model set in that
 file. In the real TUI (Python PTY, section 11's setup) in a folder with no trust table,
@@ -1200,10 +1234,18 @@ probed: a real `consume` — every try spends one of the owner's resets, so Kolo
 it only on a walled account and only the fake codex has run it; whether
 `nothingToReset` leaves the credit unspent is inferred from its description.
 
+**A `codex login` stopped part way leaves the home signed out.** Checked 2026-10-28 with
+Codex CLI 0.165.0 (Linux, `node:22-bookworm` Docker image, no account): `codex login` and
+`codex login --device-auth`, each in an empty `CODEX_HOME` under `script`, were sent SIGHUP
+8 s in, while waiting for the browser or the device code. Each home then held only a
+`log/` folder, no `auth.json`, and `codex login status` printed "Not logged in" and
+exited 1. So the probe Koloft runs when a sign-in tab closes reads such a home as not
+signed in.
+
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
-  done (Koloft types `codex login && exit` into the sign-in terminal, so the tab closes
-  only on exit 0) — **inferred, not checked**;
+  done (Koloft execs `codex login` in the sign-in terminal, so the tab closes when it
+  ends, and the probe after it decides) — **inferred, not checked**;
 - that two homes with two different logins each use their own login, so moving new
   sessions between homes spreads use across the two accounts — **inferred, not checked**.
 
@@ -2544,4 +2586,32 @@ owner's login, `gpt-6.1-sol`, told to call no tool:
   and a prompt line telling the model to prefer `clock.sleep` "over automations". No
   app-server method or model tool that makes an automation was found in its strings;
   what makes one in the Codex desktop app was not probed.
+
+## 33. A message queued from outside Koloft
+
+2026-10-28, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`), a
+throwaway `CODEX_HOME` with no login (deleted afterwards), a Node client on
+`codex app-server --stdio` (`initialize` with `experimentalApi: true`), the folder trusted,
+a `UserPromptSubmit` hook given with `-c` and trusted as in section 27 that logged its
+stdin. Each turn then failed at the model (401), after the hook had run. One run.
+
+- **Anything that knows the tab's `CODEX_HOME` and thread id can put a turn into it.**
+  `codex queue --thread <id> --message "[Discord] …"`, run as a separate process with the
+  same `CODEX_HOME`, printed `Queued message <id> for thread <id>.` and exited 0. The
+  stdio app-server, which no client of that process had asked, sent
+  `thread/queue/changed`, then (once its running turn ended) `turn/started` for a turn
+  whose `userMessage` held the text, with a `clientId` Codex made up (a UUID). The home
+  gained `queue_1.sqlite`, which is how the two processes met. That a TUI on `--remote`
+  in front of that server draws it is inferred, not checked: the server, not the TUI,
+  drained the queue.
+- **`UserPromptSubmit` cannot tell who queued a message.** For the message Koloft's own
+  `thread/queue/add` sent (`clientUserMessageId: "koloft-discord-1"`) and for the one
+  `codex queue` sent, the stdin had the same fields: `session_id`, `turn_id`,
+  `transcript_path`, `cwd`, `hook_event_name`, `model`, `permission_mode`, `prompt` — the
+  text as sent, no client id. The hook ran before the turn's `userMessage` item was
+  sent, so the id was not in the rollout yet either.
+- **The `prompt` is compact JSON with non-ASCII text left as UTF-8.** A queued
+  `[Discord] 你好 "a" <b> é<TAB>x<LF>line2` reached the hook as
+  `"prompt":"[Discord] 你好 \"a\" <b> é\tx\nline2"`: only the quote, the tab and the line
+  feed escaped, as Node's `JSON.stringify` does (second run, same setup).
 
