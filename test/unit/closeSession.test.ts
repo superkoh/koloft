@@ -85,6 +85,11 @@ describe('closeTabIntent (D3 ⌘W gate)', () => {
     expect(closeTabIntent(tab('t1'), [pending])).toEqual({ kind: 'close' })
   })
 
+  it('closes a kept tab whose agent died at once, even while the session list has not yet heard it stopped working', () => {
+    const kept = { ...tab('t1'), ended: { note: 'killed (signal 9)' } }
+    expect(closeTabIntent(kept, [sess('t1', { status: 'working' })])).toEqual({ kind: 'close' })
+  })
+
   it('closes a tab whose session is already gone', () => {
     expect(closeTabIntent(tab('t1'), [])).toEqual({ kind: 'close' })
     expect(closeTabIntent(tab('t1'), [sess('t1', { alive: false, status: 'working' })])).toEqual({

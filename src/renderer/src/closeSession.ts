@@ -11,10 +11,11 @@ export type CloseIntent =
 export const CLOSE_CONFIRM_TITLE = 'Close running session?'
 
 export function closeTabIntent(
-  tab: { id: string; kind: TabKind; title: string } | undefined,
+  tab: { id: string; kind: TabKind; title: string; ended?: unknown } | undefined,
   sessions: SessionInfo[]
 ): CloseIntent {
   if (!tab) return { kind: 'none' }
+  if (tab.ended) return { kind: 'close' }
   const bound = sessions.find((s) => s.tabId === tab.id && s.alive && !!s.sessionId)
   if (bound && (bound.status === 'working' || bound.status === 'approval')) {
     return { kind: 'confirm', status: bound.status, title: bound.title || tab.title }
