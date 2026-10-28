@@ -54,12 +54,7 @@ export function startToolShim(
       if (name.startsWith('res-')) return null
       return dropped?.(name) ?? opens(name)
     }
-    const drops = watchAndSweepJsonDrops(
-      shim.requestDir,
-      handlerFor,
-      (name) => (isOpenDrop(name) ? null : handlerFor(name)),
-      isOpenDrop
-    )
+    const drops = watchAndSweepJsonDrops(shim.requestDir, handlerFor, handlerFor, isOpenDrop)
     return {
       shim,
       release: () => {

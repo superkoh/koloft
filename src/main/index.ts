@@ -176,13 +176,7 @@ import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { SECRET_VERB, SUDO_SHIM_FILES } from './sudoShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
-import {
-  oncePerName,
-  readJsonDrop,
-  watchAndSweepJsonDrops,
-  watchJsonDrops,
-  writeWholeBeforeVisible
-} from './jsonDrops'
+import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
   AGY_STATUSLINE_JS,
   bundlePath,
@@ -2659,10 +2653,7 @@ app.whenReady().then(() => {
   }
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
-  if (watchOpenRequests(openDir)) {
-    ptyMgr.openDir = openDir
-    sweepOpenRequests(openDir)
-  }
+  if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
 
   ptyMgr.cdpDir = cdpEnvDir()
@@ -3695,30 +3686,9 @@ function setupLine(playwrightBin?: string): string | undefined {
 const processedOpenIds = new Set<string>()
 
 function watchOpenRequests(openDir: string): fs.FSWatcher | null {
-  return watchJsonDrops(
-    openDir,
-    () => (obj, full) => handleOpenRequest(obj as OpenDrop, full),
-    () => true
-  )
-}
-
-const OPEN_REQUEST_STILL_WANTED_MS = 60_000
-function sweepOpenRequests(openDir: string): void {
-  fs.readdir(openDir, (err, names) => {
-    if (err) return
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue
-      const full = path.join(openDir, name)
-      fs.stat(full, (e, st) => {
-        if (e) return
-        if (Date.now() - st.mtimeMs <= OPEN_REQUEST_STILL_WANTED_MS) {
-          void readJsonDrop(full, 0, (obj) => handleOpenRequest(obj as OpenDrop, full))
-        } else {
-          fs.rm(full, { force: true }, () => {})
-        }
-      })
-    }
-  })
+  const handle = (): ((obj: unknown, full: string) => void) => (obj, full) =>
+    handleOpenRequest(obj as OpenDrop, full)
+  return watchAndSweepJsonDrops(openDir, handle, handle, () => true)
 }
 
 // ADR-0009
